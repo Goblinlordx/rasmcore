@@ -100,15 +100,15 @@ plan:
 - phase: Node.js Test Harness
   tasks:
   - text: Create test project with fixture loading utilities (read from tests/fixtures/generated/)
-    done: false
+    done: true
   - text: Implement MAE/PSNR comparison functions in TypeScript
-    done: false
+    done: true
   - text: 'Decoder tests: format detection, decode all formats, dimensions validation'
-    done: false
+    done: true
   - text: 'Transform tests: resize (MAE < 10), crop/rotate/flip (MAE < 1.0) vs ImageMagick'
-    done: false
+    done: true
   - text: 'Filter tests: grayscale (MAE < 5) vs ImageMagick'
-    done: false
+    done: true
 - phase: Integration
   tasks:
   - text: Add SDK generation and test steps to scripts/validate.sh (conditional on jco availability)
