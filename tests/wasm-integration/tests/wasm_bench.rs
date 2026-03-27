@@ -1,5 +1,5 @@
 //! Three-tier performance comparison:
-//!   1. ImageMagick CLI (reference tool, via Docker)
+//!   1. ImageMagick CLI (reference tool — local binary preferred, Docker fallback)
 //!   2. Native Rust (domain functions, no WASM)
 //!   3. WASM-in-wasmtime (full component model stack)
 //!
@@ -12,8 +12,8 @@ use rasmcore_image::domain::{decoder, encoder, filters, transform};
 use wasm_integration::exports::rasmcore::image::transform::ResizeFilter;
 use wasm_integration::*;
 
-const WARMUP_ITERS: u32 = 1;
-const BENCH_ITERS: u32 = 5;
+const WARMUP_ITERS: u32 = 2;
+const BENCH_ITERS: u32 = 10;
 const DOCKER_IMAGE: &str = "dpokidov/imagemagick:7.1.2-12";
 
 fn fmt_duration(d: Duration) -> String {
@@ -27,46 +27,89 @@ fn fmt_duration(d: Duration) -> String {
     }
 }
 
-// ─── ImageMagick (Docker) ───
+// ─── ImageMagick backend detection ───
 
-fn imagemagick_available() -> bool {
-    Command::new("docker")
+enum MagickBackend {
+    Local(String),   // path to magick binary
+    Docker(String),  // docker image name
+    None,
+}
+
+impl MagickBackend {
+    fn label(&self) -> &str {
+        match self {
+            MagickBackend::Local(_) => "ImageMagick (local)",
+            MagickBackend::Docker(_) => "ImageMagick (Docker)",
+            MagickBackend::None => "ImageMagick",
+        }
+    }
+}
+
+fn detect_magick() -> MagickBackend {
+    // Prefer local magick binary — no container overhead
+    if let Ok(output) = Command::new("magick")
+        .arg("--version")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout);
+            let first_line = version.lines().next().unwrap_or("unknown");
+            eprintln!("  Using local ImageMagick: {first_line}");
+            return MagickBackend::Local("magick".into());
+        }
+    }
+
+    // Fallback to Docker
+    if Command::new("docker")
         .args(["image", "inspect", DOCKER_IMAGE])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+    {
+        eprintln!("  Using Docker ImageMagick: {DOCKER_IMAGE}");
+        return MagickBackend::Docker(DOCKER_IMAGE.into());
+    }
+
+    MagickBackend::None
 }
 
-fn run_magick(dir: &str, args: &[&str]) {
-    let vol = format!("{dir}:/work:ro");
-    let mut cmd_args = vec![
-        "run",
-        "--rm",
-        "--entrypoint",
-        "magick",
-        "-v",
-        &vol,
-        DOCKER_IMAGE,
-    ];
-    cmd_args.extend_from_slice(args);
-    let status = Command::new("docker")
-        .args(&cmd_args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .expect("failed to run docker");
-    assert!(status.success());
+fn run_magick_cmd(backend: &MagickBackend, fixture_dir: &str, args: &[&str]) {
+    match backend {
+        MagickBackend::Local(bin) => {
+            let status = Command::new(bin)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .expect("failed to run magick");
+            assert!(status.success(), "magick command failed: {args:?}");
+        }
+        MagickBackend::Docker(image) => {
+            let vol = format!("{fixture_dir}:/work:ro");
+            let mut cmd_args = vec!["run", "--rm", "--entrypoint", "magick", "-v", &vol, image];
+            cmd_args.extend_from_slice(args);
+            let status = Command::new("docker")
+                .args(&cmd_args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .expect("failed to run docker");
+            assert!(status.success(), "docker magick command failed: {args:?}");
+        }
+        MagickBackend::None => unreachable!(),
+    }
 }
 
-fn bench_magick(dir: &str, args: &[&str]) -> Duration {
-    // Warmup
+fn bench_magick(backend: &MagickBackend, fixture_dir: &str, args: &[&str]) -> Duration {
     for _ in 0..WARMUP_ITERS {
-        run_magick(dir, args);
+        run_magick_cmd(backend, fixture_dir, args);
     }
     let start = Instant::now();
     for _ in 0..BENCH_ITERS {
-        run_magick(dir, args);
+        run_magick_cmd(backend, fixture_dir, args);
     }
     start.elapsed() / BENCH_ITERS
 }
@@ -90,8 +133,21 @@ fn bench_native<F: FnMut()>(mut f: F) -> Duration {
 #[ignore] // Run explicitly: cargo test -p wasm-integration --test wasm_bench -- --ignored --nocapture
 fn three_tier_performance_comparison() {
     let fixture_path = fixtures_dir().join("inputs/gradient_64x64.png");
-    let fixture_dir = fixture_path.parent().unwrap().to_str().unwrap().to_string();
+    let fixture_abs = std::fs::canonicalize(&fixture_path).unwrap();
+    let fixture_dir = fixture_abs.parent().unwrap().to_str().unwrap().to_string();
+    let fixture_file = fixture_abs.to_str().unwrap().to_string();
     let data = load_fixture("gradient_64x64.png");
+
+    // Detect ImageMagick backend
+    let backend = detect_magick();
+    let has_magick = !matches!(backend, MagickBackend::None);
+
+    // For local magick, args use absolute paths; for Docker, /work/ paths
+    let input_path = match &backend {
+        MagickBackend::Local(_) => fixture_file.as_str(),
+        MagickBackend::Docker(_) => "/work/gradient_64x64.png",
+        MagickBackend::None => "",
+    };
 
     // Prepare native inputs
     let native_decoded = decoder::decode(&data).unwrap();
@@ -104,14 +160,9 @@ fn three_tier_performance_comparison() {
         .unwrap()
         .unwrap();
 
-    let has_magick = imagemagick_available();
-
     // ── Decode ──
     let magick_decode = if has_magick {
-        bench_magick(
-            &fixture_dir,
-            &["/work/gradient_64x64.png", "-ping", "null:"],
-        )
+        bench_magick(&backend, &fixture_dir, &[input_path, "-ping", "null:"])
     } else {
         Duration::ZERO
     };
@@ -132,13 +183,18 @@ fn three_tier_performance_comparison() {
 
     // ── Encode ──
     let magick_encode = if has_magick {
-        bench_magick(&fixture_dir, &["/work/gradient_64x64.png", "PNG:/dev/null"])
+        bench_magick(
+            &backend,
+            &fixture_dir,
+            &[input_path, "PNG:/dev/null"],
+        )
     } else {
         Duration::ZERO
     };
 
     let native_encode = bench_native(|| {
-        let _ = encoder::encode(&native_decoded.pixels, &native_decoded.info, "png", None).unwrap();
+        let _ =
+            encoder::encode(&native_decoded.pixels, &native_decoded.info, "png", None).unwrap();
     });
 
     let enc = bindings.rasmcore_image_encoder();
@@ -172,8 +228,9 @@ fn three_tier_performance_comparison() {
     // ── Resize ──
     let magick_resize = if has_magick {
         bench_magick(
+            &backend,
             &fixture_dir,
-            &["/work/gradient_64x64.png", "-resize", "32x16!", "null:"],
+            &[input_path, "-resize", "32x16!", "null:"],
         )
     } else {
         Duration::ZERO
@@ -223,8 +280,9 @@ fn three_tier_performance_comparison() {
     // ── Blur ──
     let magick_blur = if has_magick {
         bench_magick(
+            &backend,
             &fixture_dir,
-            &["/work/gradient_64x64.png", "-blur", "0x2", "null:"],
+            &[input_path, "-blur", "0x2", "null:"],
         )
     } else {
         Duration::ZERO
@@ -252,18 +310,21 @@ fn three_tier_performance_comparison() {
 
     // ── Report ──
     let na = "N/A".to_string();
+    let magick_label = backend.label();
     println!();
     println!("================================================================================");
-    println!("         Three-Tier Performance Comparison (64x64 PNG, {BENCH_ITERS} iterations)");
+    println!(
+        "         Three-Tier Performance Comparison (64x64 PNG, {BENCH_ITERS} iterations)"
+    );
     println!("================================================================================");
     println!();
     println!(
         "  {:<12} {:>22}  {:>14}  {:>14}",
-        "Operation", "ImageMagick (Docker)", "Native Rust", "WASM/wasmtime"
+        "Operation", magick_label, "Native Rust", "WASM/wasmtime"
     );
     println!(
         "  {:<12} {:>22}  {:>14}  {:>14}",
-        "---------", "--------------------", "-----------", "-------------"
+        "---------", "---------------------", "-----------", "-------------"
     );
     println!(
         "  {:<12} {:>22}  {:>14}  {:>14}",
@@ -311,8 +372,9 @@ fn three_tier_performance_comparison() {
     );
     println!();
     if !has_magick {
-        println!("  Note: ImageMagick Docker image not found — install with:");
-        println!("    docker pull {DOCKER_IMAGE}");
+        println!("  Note: No ImageMagick found. Install via:");
+        println!("    brew install imagemagick   (local, recommended)");
+        println!("    docker pull {DOCKER_IMAGE}  (Docker fallback)");
     }
     println!("================================================================================");
     println!();
