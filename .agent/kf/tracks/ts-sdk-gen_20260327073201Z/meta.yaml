@@ -1,0 +1,8 @@
+title: TypeScript SDK Generation & Validation via jco
+status: pending
+type: feature
+approved: false
+created: '2026-03-27'
+updated: '2026-03-27'
+deps:
+- wasm-host-validation_20260327073200Z

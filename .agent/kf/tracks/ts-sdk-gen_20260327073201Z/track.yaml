@@ -1,0 +1,86 @@
+id: ts-sdk-gen_20260327073201Z
+title: "TypeScript SDK Generation & Validation via jco"
+type: feature
+status: pending
+created: 2026-03-27
+updated: "2026-03-27"
+spec:
+  summary: |
+    jco transpilation pipeline producing TypeScript bindings from the rasmcore-image
+    WASM component, with a Node.js test harness validating against ImageMagick
+    reference fixtures to prove cross-language SDK consumption.
+  context: |
+    The project's core value proposition is cross-language portability via WASM
+    Component Model. TypeScript/Node.js via jco is the most mature host SDK path
+    (listed as production-ready in tech-stack.yaml). This track generates a
+    TypeScript SDK from the component and proves it works with a Node.js test
+    harness against the same ImageMagick fixtures used for Rust validation.
+
+    This is the first concrete proof that the rasmcore components are consumable
+    from a non-Rust language, validating the entire WASM Component Model promise.
+  codebase_analysis: |
+    - jco is documented as the TypeScript tooling in tech-stack.yaml but not yet installed
+    - jco transpile converts a .wasm component into ES module + TypeScript type declarations
+    - Output is a self-contained importable package with zero runtime dependencies
+    - Same ImageMagick fixtures in tests/fixtures/generated/ can be loaded from Node.js via fs
+    - No existing TypeScript or JavaScript in the repo
+    - WIT interfaces export 4 interfaces: decoder, encoder, transform, filters
+    - Track 1 (wasm-host-validation) validates the component works in wasmtime first
+  acceptance_criteria:
+    - jco transpilation script produces ES module + .d.ts types from the built .wasm
+    - Generated TypeScript types match the WIT interface (decoder, encoder, transform, filters)
+    - Node.js test harness loads the transpiled module and calls all interfaces
+    - "Decoder tests: format detection, decode PNG/JPEG/WebP, dimensions match"
+    - "Transform tests: resize, crop, rotate — output compared against ImageMagick (MAE thresholds)"
+    - "Filter tests: grayscale — output compared against ImageMagick"
+    - SDK generation step documented and integrated into project tooling
+    - Generated SDK is gitignored (build artifact), generation command is scripted
+  out_of_scope: |
+    - npm package publishing or registry setup
+    - Browser or Deno runtime testing
+    - TypeScript SDK API design beyond what jco generates
+    - Performance benchmarking from TypeScript (covered by Track 1 for wasmtime)
+  technical_notes: |
+    Use jco transpile to convert the built .wasm component into an ES module.
+    The output will be a directory with .js and .d.ts files that can be imported
+    directly in Node.js (with --experimental-wasm-modules or via jco shim).
+
+    Place the transpilation output in sdk/typescript/generated/ (gitignored).
+    Place the test harness in sdk/typescript/tests/. Use Node.js built-in test
+    runner (node:test) or a lightweight runner to avoid heavy framework deps.
+
+    The generated types will mirror the WIT interface — decoder, encoder,
+    transform, filters with the same function signatures. Buffer types map to
+    Uint8Array in TypeScript.
+plan:
+  - phase: "Foundation"
+    tasks:
+      - text: "Install jco and configure as project dev dependency (package.json)"
+        done: false
+      - text: "Create sdk/typescript/ directory structure with .gitignore for generated output"
+        done: false
+      - text: "Write transpilation script that builds .wasm and runs jco transpile"
+        done: false
+  - phase: "SDK Generation"
+    tasks:
+      - text: "Transpile rasmcore-image component and verify output structure"
+        done: false
+      - text: "Verify generated TypeScript types match WIT interfaces (decoder, encoder, transform, filters)"
+        done: false
+  - phase: "Node.js Test Harness"
+    tasks:
+      - text: "Create test project with fixture loading utilities (read from tests/fixtures/generated/)"
+        done: false
+      - text: "Implement MAE/PSNR comparison functions in TypeScript"
+        done: false
+      - text: "Decoder tests: format detection, decode all formats, dimensions validation"
+        done: false
+      - text: "Transform tests: resize (MAE < 10), crop/rotate/flip (MAE < 1.0) vs ImageMagick"
+        done: false
+      - text: "Filter tests: grayscale (MAE < 5) vs ImageMagick"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Add SDK generation and test steps to scripts/validate.sh (conditional on jco availability)"
+        done: false
+extra: {}

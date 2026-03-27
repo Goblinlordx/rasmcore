@@ -1,0 +1,109 @@
+id: wasm-host-validation_20260327073200Z
+title: "Wasmtime Host Integration & Performance Validation"
+type: feature
+status: pending
+created: 2026-03-27
+updated: "2026-03-27"
+spec:
+  summary: |
+    Rust test crate that loads the built .wasm component via wasmtime, exercises
+    all interfaces through component model bindings, validates output against
+    ImageMagick reference fixtures, and benchmarks three performance tiers:
+    ImageMagick CLI, native Rust, WASM-in-wasmtime.
+  context: |
+    The current parity tests call domain functions directly in native Rust — they
+    never load the .wasm binary through an actual WASM runtime. This means the
+    adapter layer (type conversions, error translation, WIT binding glue) and the
+    component model serialization are completely untested. This track closes that
+    gap by loading the component in wasmtime and validating every operation against
+    ImageMagick reference outputs (not our own domain implementation).
+
+    Additionally, the project needs comparative performance data across three tiers
+    to understand the WASM overhead: ImageMagick CLI (the reference tool), native
+    Rust (our domain logic without WASM), and WASM-in-wasmtime (the full component
+    model stack). This informs optimization priorities and sets expectations for
+    consumers.
+  codebase_analysis: |
+    - Built component at target/wasm32-wasip1/debug/rasmcore_image.wasm (component model)
+    - WIT interfaces in wit/image/ and wit/core/ — 4 exported interfaces (decoder, encoder, transform, filters)
+    - wasmtime 33.0.0 installed locally, supports component model
+    - cargo-component 0.21.1 available for builds
+    - ImageMagick fixtures already exist in tests/fixtures/generated/ (gradient_64x64, plasma_256x256)
+    - wasmtime::component::bindgen! macro generates host-side Rust types from WIT
+    - Existing bench.rs has native Rust timing but no comparative framework
+    - Existing parity.rs has MAE/PSNR comparison utilities (can be shared)
+  acceptance_criteria:
+    - New workspace crate tests/wasm-integration with wasmtime dependency
+    - Host bindings generated from WIT via bindgen! macro
+    - Component loads successfully in wasmtime
+    - "Decoder: format detection, decode, decode_as, supported_formats — all validated through WASM"
+    - "Encoder: encode roundtrip (PNG lossless exact, JPEG PSNR > 30dB) — validated against ImageMagick"
+    - "Transform: resize (MAE < 10 vs ImageMagick), crop/rotate/flip (MAE < 1.0) — validated through WASM"
+    - "Filters: grayscale (MAE < 5 vs ImageMagick), blur/sharpen/brightness/contrast produce valid output through WASM"
+    - Benchmark harness measures three tiers for decode, encode, resize, blur
+    - Benchmark results reported in comparable format (wall-clock per operation)
+    - All comparisons use the SAME ImageMagick fixtures and thresholds as existing parity tests
+    - Test runner integrated into scripts/validate.sh (conditional on built .wasm)
+  out_of_scope: |
+    - WASI filesystem/network capability testing
+    - Multi-component composition
+    - Performance optimization (this track measures; optimization comes later)
+    - Criterion integration (wall-clock timing is sufficient for comparative data)
+  technical_notes: |
+    Use wasmtime::component::bindgen! macro pointed at wit/image/ and wit/core/ to
+    generate host-side Rust types. Load the .wasm from the cargo-component build
+    output directory. The test crate should be a separate workspace member under
+    tests/wasm-integration/ so it can depend on wasmtime without polluting the
+    guest crate's dependencies.
+
+    For the ImageMagick benchmark tier, use std::process::Command to invoke the
+    magick CLI and measure wall-clock time. This gives a fair comparison since
+    ImageMagick is the reference tool consumers would otherwise use.
+
+    Share fixture loading and comparison utilities (MAE, PSNR) with the existing
+    parity tests — either via a shared test-utils crate or by duplicating the
+    small helper functions.
+plan:
+  - phase: "Foundation"
+    tasks:
+      - text: "Create tests/wasm-integration workspace crate with wasmtime, wasmtime-wasi dependencies"
+        done: false
+      - text: "Configure bindgen! macro against wit/image/ and wit/core/ WIT packages"
+        done: false
+      - text: "Build component loading helper that finds and instantiates rasmcore_image.wasm"
+        done: false
+  - phase: "Host Harness"
+    tasks:
+      - text: "Implement fixture loading utilities (shared with existing parity tests)"
+        done: false
+      - text: "Implement comparison functions (MAE, PSNR) for output validation"
+        done: false
+  - phase: "Interface Tests"
+    tasks:
+      - text: "Decoder tests through WASM: format detection, decode all formats, decode_as, supported_formats"
+        done: false
+      - text: "Encoder tests through WASM: PNG roundtrip exact, JPEG quality roundtrip PSNR > 30dB"
+        done: false
+      - text: "Transform tests through WASM: resize (MAE < 10), crop/rotate/flip (MAE < 1.0) vs ImageMagick"
+        done: false
+      - text: "Filter tests through WASM: grayscale (MAE < 5), blur/sharpen/brightness/contrast validation"
+        done: false
+  - phase: "Performance Comparison"
+    tasks:
+      - text: "ImageMagick CLI benchmark runner — time magick commands for decode, encode, resize, blur on fixtures"
+        done: false
+      - text: "Native Rust benchmark — wall-clock timing for domain functions on the same operations and fixtures"
+        done: false
+      - text: "WASM-in-wasmtime benchmark — time the same operations through the component model harness"
+        done: false
+      - text: "Comparison reporter — output a table of all three tiers side-by-side"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Ensure all correctness tests pass with cargo test"
+        done: false
+      - text: "Add WASM integration test step to scripts/validate.sh (conditional on built .wasm)"
+        done: false
+      - text: "Verify test reproducibility — clean build and run from scratch"
+        done: false
+extra: {}
