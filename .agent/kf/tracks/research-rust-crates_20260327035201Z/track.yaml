@@ -1,73 +1,86 @@
 id: research-rust-crates_20260327035201Z
-title: "Research: Rust Crate Evaluation for WASM Targets"
+title: 'Research: Rust Crate Evaluation for WASM Targets'
 type: research
 status: pending
 created: 2026-03-27
-updated: 2026-03-27
+updated: '2026-03-27'
 spec:
-  summary: |
-    Evaluate candidate Rust crates across image, video, and data processing domains
+  summary: 'Evaluate candidate Rust crates across image, video, and data processing domains
+
     for WASM compilation readiness, pure-Rust availability, and API suitability.
-  context: |
-    The razm/core vision requires best-in-class Rust libraries that can compile to
+
+    '
+  context: 'The razm/core vision requires best-in-class Rust libraries that can compile to
+
     wasm32-wasip2 without C dependencies. We need to verify which crates actually
+
     meet this requirement and identify gaps where we may need custom implementations.
-  codebase_analysis: |
-    Fresh project — no existing code. Evaluating external crate ecosystem.
+
+    '
+  codebase_analysis: 'Fresh project — no existing code. Evaluating external crate ecosystem.
+
+    '
   acceptance_criteria:
-    - Evaluate image crate for WASM compilation — document supported formats, limitations
-    - Investigate OxiMedia — verify existence, maturity, WASM support claims
-    - Evaluate rav1e for AV1 encoding from WASM — performance characteristics
-    - Research pure-Rust video decoder options (VP9, AV1)
-    - Evaluate Polars WASM support — what subset works, memory constraints
-    - For each crate, document C dependency status (pure Rust vs sys crates)
-    - Produce a matrix of crate vs capability vs WASM-readiness
-    - Identify gaps where no suitable pure-Rust WASM-ready crate exists
-  out_of_scope: |
-    Building production modules. Small compilation tests are in scope to verify claims.
-  technical_notes: |
-    Key concern is C/sys dependencies. Many Rust crates wrap C libraries (e.g., image
+  - Evaluate image crate for WASM compilation — document supported formats, limitations
+  - Investigate OxiMedia — verify existence, maturity, WASM support claims
+  - Evaluate rav1e for AV1 encoding from WASM — performance characteristics
+  - Research pure-Rust video decoder options (VP9, AV1)
+  - Evaluate Polars WASM support — what subset works, memory constraints
+  - For each crate, document C dependency status (pure Rust vs sys crates)
+  - Produce a matrix of crate vs capability vs WASM-readiness
+  - Identify gaps where no suitable pure-Rust WASM-ready crate exists
+  out_of_scope: 'Building production modules. Small compilation tests are in scope to verify claims.
+
+    '
+  technical_notes: 'Key concern is C/sys dependencies. Many Rust crates wrap C libraries (e.g., image
+
     uses some C codecs, ffmpeg wrappers). We need to identify which capabilities are
+
     available in pure Rust and which would require either custom implementation or
+
     accepting C dependencies compiled to WASM via wasi-sdk.
 
+
     For feasibility verification, small cargo-component projects that import a crate
+
     and compile to wasm32-wasip2 are encouraged.
+
+    '
 plan:
-  - phase: "Image Processing Crates"
-    tasks:
-      - text: "Evaluate image crate — WASM compilation, format support, pure-Rust status"
-        done: false
-      - text: "Research OxiMedia — verify existence, check repos/releases, assess maturity"
-        done: false
-      - text: "Research other image crates — resvg, tiny-skia, image-rs ecosystem"
-        done: false
-      - text: "Feasibility test — compile a minimal image processing example to WASM"
-        done: false
-  - phase: "Video Processing Crates"
-    tasks:
-      - text: "Evaluate rav1e — AV1 encoding, WASM target support, performance notes"
-        done: false
-      - text: "Research dav1d-rs or pure-Rust AV1 decoders"
-        done: false
-      - text: "Research VP9 encoder/decoder availability in pure Rust"
-        done: false
-      - text: "Survey open codec landscape — what formats have pure-Rust implementations"
-        done: false
-  - phase: "Data Processing Crates"
-    tasks:
-      - text: "Evaluate Polars — WASM support, feature gates, memory model on WASM"
-        done: false
-      - text: "Research Arrow-rs WASM capabilities as a lower-level alternative"
-        done: false
-      - text: "Survey data format crates — CSV, Parquet, JSON, MessagePack WASM readiness"
-        done: false
-  - phase: "Synthesis"
-    tasks:
-      - text: "Build crate evaluation matrix (crate x capability x WASM-readiness x pure-Rust)"
-        done: false
-      - text: "Identify critical gaps and potential mitigation strategies"
-        done: false
-      - text: "Document recommendations for each domain"
-        done: false
+- phase: Image Processing Crates
+  tasks:
+  - text: Evaluate image crate — WASM compilation, format support, pure-Rust status
+    done: true
+  - text: Research OxiMedia — verify existence, check repos/releases, assess maturity
+    done: true
+  - text: Research other image crates — resvg, tiny-skia, image-rs ecosystem
+    done: true
+  - text: Feasibility test — compile a minimal image processing example to WASM
+    done: true
+- phase: Video Processing Crates
+  tasks:
+  - text: Evaluate rav1e — AV1 encoding, WASM target support, performance notes
+    done: true
+  - text: Research dav1d-rs or pure-Rust AV1 decoders
+    done: true
+  - text: Research VP9 encoder/decoder availability in pure Rust
+    done: true
+  - text: Survey open codec landscape — what formats have pure-Rust implementations
+    done: true
+- phase: Data Processing Crates
+  tasks:
+  - text: Evaluate Polars — WASM support, feature gates, memory model on WASM
+    done: true
+  - text: Research Arrow-rs WASM capabilities as a lower-level alternative
+    done: true
+  - text: Survey data format crates — CSV, Parquet, JSON, MessagePack WASM readiness
+    done: true
+- phase: Synthesis
+  tasks:
+  - text: Build crate evaluation matrix (crate x capability x WASM-readiness x pure-Rust)
+    done: true
+  - text: Identify critical gaps and potential mitigation strategies
+    done: true
+  - text: Document recommendations for each domain
+    done: true
 extra: {}
