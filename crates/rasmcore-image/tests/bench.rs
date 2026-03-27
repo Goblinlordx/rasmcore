@@ -7,17 +7,17 @@
 use std::path::Path;
 use std::time::Instant;
 
-use rasmcore_image::domain::{decoder, encoder, filters, transform};
 use rasmcore_image::domain::types::*;
+use rasmcore_image::domain::{decoder, encoder, filters, transform};
 
 fn fixtures_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/generated")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/generated")
 }
 
 fn load_fixture(name: &str) -> Vec<u8> {
-    std::fs::read(fixtures_dir().join("inputs").join(name))
-        .unwrap_or_else(|e| panic!("Fixture not found: {name}: {e}. Run tests/fixtures/generate.sh"))
+    std::fs::read(fixtures_dir().join("inputs").join(name)).unwrap_or_else(|e| {
+        panic!("Fixture not found: {name}: {e}. Run tests/fixtures/generate.sh")
+    })
 }
 
 fn bench<F: FnOnce() -> R, R>(label: &str, f: F) -> R {
@@ -59,10 +59,24 @@ fn benchmark_transform() {
     let decoded = decoder::decode(&data).unwrap();
 
     bench("Resize 256→128 lanczos", || {
-        transform::resize(&decoded.pixels, &decoded.info, 128, 128, ResizeFilter::Lanczos3).unwrap()
+        transform::resize(
+            &decoded.pixels,
+            &decoded.info,
+            128,
+            128,
+            ResizeFilter::Lanczos3,
+        )
+        .unwrap()
     });
     bench("Resize 256→512 bilinear", || {
-        transform::resize(&decoded.pixels, &decoded.info, 512, 512, ResizeFilter::Bilinear).unwrap()
+        transform::resize(
+            &decoded.pixels,
+            &decoded.info,
+            512,
+            512,
+            ResizeFilter::Bilinear,
+        )
+        .unwrap()
     });
     bench("Crop 128x128", || {
         transform::crop(&decoded.pixels, &decoded.info, 64, 64, 128, 128).unwrap()

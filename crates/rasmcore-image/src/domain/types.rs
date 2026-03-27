@@ -1,5 +1,5 @@
-/// Domain-level types for image processing.
-/// These are independent of WIT — the adapter layer converts to/from WIT types.
+//! Domain-level types for image processing.
+//! These are independent of WIT — the adapter layer converts to/from WIT types.
 
 /// Pixel format of image data
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

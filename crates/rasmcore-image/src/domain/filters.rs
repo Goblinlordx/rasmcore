@@ -1,7 +1,7 @@
 use image::DynamicImage;
 
 use super::error::ImageError;
-use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
+use super::types::{DecodedImage, ImageInfo, PixelFormat};
 
 /// Apply gaussian blur
 pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError> {
@@ -64,21 +64,15 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
 
 fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, ImageError> {
     match info.format {
-        PixelFormat::Rgb8 => {
-            image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
-                .map(DynamicImage::ImageRgb8)
-                .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        PixelFormat::Rgba8 => {
-            image::RgbaImage::from_raw(info.width, info.height, pixels.to_vec())
-                .map(DynamicImage::ImageRgba8)
-                .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        PixelFormat::Gray8 => {
-            image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
-                .map(DynamicImage::ImageLuma8)
-                .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
+        PixelFormat::Rgb8 => image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
+            .map(DynamicImage::ImageRgb8)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
+        PixelFormat::Rgba8 => image::RgbaImage::from_raw(info.width, info.height, pixels.to_vec())
+            .map(DynamicImage::ImageRgba8)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
+        PixelFormat::Gray8 => image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
+            .map(DynamicImage::ImageLuma8)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
         other => Err(ImageError::UnsupportedFormat(format!(
             "filter on {other:?} not supported"
         ))),
@@ -97,6 +91,7 @@ fn extract_pixels(img: &DynamicImage, original_format: PixelFormat) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::ColorSpace;
 
     fn make_image(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();

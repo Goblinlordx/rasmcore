@@ -50,10 +50,7 @@ fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
     }
 }
 
-fn pixels_to_dynamic_image(
-    pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<DynamicImage, ImageError> {
+fn pixels_to_dynamic_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, ImageError> {
     match info.format {
         PixelFormat::Rgb8 => {
             let img = image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
@@ -88,9 +85,7 @@ mod tests {
     use crate::domain::types::ColorSpace;
 
     fn make_rgb8_pixels(width: u32, height: u32) -> (Vec<u8>, ImageInfo) {
-        let pixels: Vec<u8> = (0..(width * height * 3))
-            .map(|i| (i % 256) as u8)
-            .collect();
+        let pixels: Vec<u8> = (0..(width * height * 3)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {
             width,
             height,
@@ -101,9 +96,7 @@ mod tests {
     }
 
     fn make_rgba8_pixels(width: u32, height: u32) -> (Vec<u8>, ImageInfo) {
-        let pixels: Vec<u8> = (0..(width * height * 4))
-            .map(|i| (i % 256) as u8)
-            .collect();
+        let pixels: Vec<u8> = (0..(width * height * 4)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {
             width,
             height,

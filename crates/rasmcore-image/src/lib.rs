@@ -4,7 +4,6 @@
 /// - Domain logic lives in domain/ — fully testable without WASM
 /// - The WASM adapter (bindings + impl) is gated behind target_arch = "wasm32"
 /// - Domain defines its own error types; adapter translates to WIT errors
-
 pub mod domain;
 
 // WASM adapter layer — only compiled for wasm32 targets

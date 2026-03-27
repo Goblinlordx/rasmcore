@@ -1,18 +1,16 @@
 //! WASM adapter layer — thin WIT binding glue.
 //! Only compiled for wasm32 targets.
 
+use crate::bindings;
 use crate::bindings::exports::rasmcore::image::{decoder, encoder, filters, transform};
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
-use crate::bindings;
 
 use crate::domain;
 
 fn to_wit_error(e: domain::error::ImageError) -> RasmcoreError {
     match e {
         domain::error::ImageError::InvalidInput(msg) => RasmcoreError::InvalidInput(msg),
-        domain::error::ImageError::UnsupportedFormat(msg) => {
-            RasmcoreError::UnsupportedFormat(msg)
-        }
+        domain::error::ImageError::UnsupportedFormat(msg) => RasmcoreError::UnsupportedFormat(msg),
         domain::error::ImageError::NotImplemented => RasmcoreError::NotImplemented,
         domain::error::ImageError::ProcessingFailed(msg) => RasmcoreError::CodecError(msg),
         domain::error::ImageError::InvalidParameters(msg) => RasmcoreError::InvalidInput(msg),
@@ -148,9 +146,8 @@ impl transform::Guest for Component {
             transform::ResizeFilter::Bicubic => domain::types::ResizeFilter::Bicubic,
             transform::ResizeFilter::Lanczos3 => domain::types::ResizeFilter::Lanczos3,
         };
-        let result =
-            domain::transform::resize(&pixels, &domain_info, width, height, domain_filter)
-                .map_err(to_wit_error)?;
+        let result = domain::transform::resize(&pixels, &domain_info, width, height, domain_filter)
+            .map_err(to_wit_error)?;
         Ok((result.pixels, to_wit_image_info(&result.info)))
     }
 
@@ -194,8 +191,7 @@ impl transform::Guest for Component {
             transform::FlipDirection::Horizontal => domain::types::FlipDirection::Horizontal,
             transform::FlipDirection::Vertical => domain::types::FlipDirection::Vertical,
         };
-        let result =
-            domain::transform::flip(&pixels, &domain_info, dir).map_err(to_wit_error)?;
+        let result = domain::transform::flip(&pixels, &domain_info, dir).map_err(to_wit_error)?;
         Ok((result.pixels, to_wit_image_info(&result.info)))
     }
 

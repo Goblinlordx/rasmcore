@@ -1,7 +1,9 @@
 use image::DynamicImage;
 
 use super::error::ImageError;
-use super::types::{ColorSpace, DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation};
+use super::types::{
+    ColorSpace, DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation,
+};
 
 /// Resize an image to new dimensions
 pub fn resize(
@@ -106,21 +108,15 @@ pub fn convert_format(
 
 fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, ImageError> {
     match info.format {
-        PixelFormat::Rgb8 => {
-            image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
-                .map(DynamicImage::ImageRgb8)
-                .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        PixelFormat::Rgba8 => {
-            image::RgbaImage::from_raw(info.width, info.height, pixels.to_vec())
-                .map(DynamicImage::ImageRgba8)
-                .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        PixelFormat::Gray8 => {
-            image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
-                .map(DynamicImage::ImageLuma8)
-                .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
+        PixelFormat::Rgb8 => image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
+            .map(DynamicImage::ImageRgb8)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
+        PixelFormat::Rgba8 => image::RgbaImage::from_raw(info.width, info.height, pixels.to_vec())
+            .map(DynamicImage::ImageRgba8)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
+        PixelFormat::Gray8 => image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
+            .map(DynamicImage::ImageLuma8)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
         other => Err(ImageError::UnsupportedFormat(format!(
             "transform from {other:?} not supported"
         ))),

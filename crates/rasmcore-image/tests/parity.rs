@@ -6,12 +6,11 @@
 /// Prerequisites: run `tests/fixtures/generate.sh` first.
 use std::path::Path;
 
-use rasmcore_image::domain::{decoder, encoder, filters, transform};
 use rasmcore_image::domain::types::*;
+use rasmcore_image::domain::{decoder, encoder, filters, transform};
 
 fn fixtures_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/generated")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/generated")
 }
 
 fn load_fixture(name: &str) -> Vec<u8> {
@@ -34,21 +33,6 @@ fn load_reference(name: &str) -> Vec<u8> {
             e
         )
     })
-}
-
-/// Decode a PNG fixture and a PNG reference, compare raw pixel data.
-/// Returns (rasmcore_pixels, reference_pixels, width, height).
-fn decode_and_compare_setup(
-    fixture_name: &str,
-    reference_name: &str,
-) -> (DecodedImage, DecodedImage) {
-    let fixture_data = load_fixture(fixture_name);
-    let reference_data = load_reference(reference_name);
-
-    let rasmcore_result = decoder::decode(&fixture_data).expect("rasmcore decode failed");
-    let reference_result = decoder::decode(&reference_data).expect("reference decode failed");
-
-    (rasmcore_result, reference_result)
 }
 
 /// Calculate mean absolute error between two pixel buffers
@@ -126,7 +110,11 @@ fn parity_decode_all_formats() {
             "format detection failed for {name}"
         );
         let result = decoder::decode(&data);
-        assert!(result.is_ok(), "decode failed for {name}: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "decode failed for {name}: {:?}",
+            result.err()
+        );
         let img = result.unwrap();
         assert_eq!(img.info.width, 64, "width mismatch for {name}");
         assert_eq!(img.info.height, 64, "height mismatch for {name}");
@@ -152,7 +140,6 @@ fn parity_encode_jpeg_roundtrip_quality() {
     let data = load_fixture("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
     let encoded = encoder::encode(&decoded.pixels, &decoded.info, "jpeg", Some(95)).unwrap();
-    let re_decoded = decoder::decode(&encoded).unwrap();
     // JPEG is lossy — check PSNR > 30dB (generous for high quality)
     let decoded_rgba = decoder::decode_as(&data, PixelFormat::Rgba8).unwrap();
     let re_decoded_rgba = decoder::decode_as(&encoded, PixelFormat::Rgba8).unwrap();
@@ -172,8 +159,14 @@ fn parity_resize_lanczos() {
     let data = load_fixture("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
 
-    let resized = transform::resize(&decoded.pixels, &decoded.info, 32, 16, ResizeFilter::Lanczos3)
-        .unwrap();
+    let resized = transform::resize(
+        &decoded.pixels,
+        &decoded.info,
+        32,
+        16,
+        ResizeFilter::Lanczos3,
+    )
+    .unwrap();
     assert_eq!(resized.info.width, 32);
     assert_eq!(resized.info.height, 16);
 
@@ -183,10 +176,7 @@ fn parity_resize_lanczos() {
 
     // Resize algorithms differ between libraries — allow MAE < 10
     let mae = mean_absolute_error(&resized.pixels, &ref_decoded.pixels);
-    assert!(
-        mae < 10.0,
-        "resize MAE vs ImageMagick too high: {mae:.2}"
-    );
+    assert!(mae < 10.0, "resize MAE vs ImageMagick too high: {mae:.2}");
 }
 
 #[test]
@@ -255,8 +245,7 @@ fn parity_flip_horizontal() {
 fn parity_flip_vertical() {
     let data = load_fixture("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
-    let flipped =
-        transform::flip(&decoded.pixels, &decoded.info, FlipDirection::Vertical).unwrap();
+    let flipped = transform::flip(&decoded.pixels, &decoded.info, FlipDirection::Vertical).unwrap();
 
     let ref_data = load_reference("flip_vertical.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();

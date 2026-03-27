@@ -18,10 +18,9 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
 
 /// Decode an image from raw bytes
 pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
-    let img = image::load_from_memory(data)
-        .map_err(|e| ImageError::InvalidInput(e.to_string()))?;
+    let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
-    let (format, info) = extract_info(&img);
+    let (format, _info) = extract_info(&img);
     let pixels = match format {
         PixelFormat::Rgba8 => img.to_rgba8().into_raw(),
         PixelFormat::Rgb8 => img.to_rgb8().into_raw(),
@@ -50,8 +49,7 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
 
 /// Decode and convert to a specific pixel format
 pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage, ImageError> {
-    let img = image::load_from_memory(data)
-        .map_err(|e| ImageError::InvalidInput(e.to_string()))?;
+    let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
     let (pixels, format) = match target_format {
         PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),

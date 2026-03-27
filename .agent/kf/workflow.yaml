@@ -1,14 +1,13 @@
-# Workflow — razm/core
+# Workflow — rasmcore
 version: "1.0"
+
+verification:
+  command: "./scripts/validate.sh"
+  description: "Format check (rustfmt), lint (clippy), domain tests, parity tests, WASM build"
+
 phases:
-  - name: research
-    description: "Investigate technologies, verify feasibility, document findings"
-    current: true
-  - name: design
-    description: "Define WIT interfaces, module boundaries, and architecture"
-  - name: prototype
-    description: "Build minimal proof-of-concept implementations"
   - name: implementation
     description: "Full implementation of core modules"
+    current: true
   - name: integration
     description: "Host SDK development and cross-language testing"
