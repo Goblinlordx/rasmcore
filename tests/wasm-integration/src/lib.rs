@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine, Store};
-use wasmtime_wasi::p2::{WasiCtx, WasiCtxBuilder, WasiView, IoView};
+use wasmtime_wasi::p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 
 wasmtime::component::bindgen!({
     path: "../../wit/image",
@@ -52,8 +52,8 @@ pub fn instantiate_image_component() -> (Store<HostState>, ImageProcessor) {
     };
     let mut store = Store::new(&engine, state);
 
-    let bindings =
-        ImageProcessor::instantiate(&mut store, &component, &linker).expect("failed to instantiate component");
+    let bindings = ImageProcessor::instantiate(&mut store, &component, &linker)
+        .expect("failed to instantiate component");
 
     (store, bindings)
 }
@@ -74,7 +74,10 @@ fn find_component_wasm() -> PathBuf {
     }
     panic!(
         "rasmcore_image.wasm not found. Run `cargo component build -p rasmcore-image` first.\nSearched: {:?}",
-        candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -82,8 +85,7 @@ fn find_component_wasm() -> PathBuf {
 
 /// Root directory for test fixtures.
 pub fn fixtures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/generated")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/generated")
 }
 
 /// Load a fixture input image.

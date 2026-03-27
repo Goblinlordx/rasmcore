@@ -40,7 +40,15 @@ fn imagemagick_available() -> bool {
 
 fn run_magick(dir: &str, args: &[&str]) {
     let vol = format!("{dir}:/work:ro");
-    let mut cmd_args = vec!["run", "--rm", "--entrypoint", "magick", "-v", &vol, DOCKER_IMAGE];
+    let mut cmd_args = vec![
+        "run",
+        "--rm",
+        "--entrypoint",
+        "magick",
+        "-v",
+        &vol,
+        DOCKER_IMAGE,
+    ];
     cmd_args.extend_from_slice(args);
     let status = Command::new("docker")
         .args(&cmd_args)
@@ -100,7 +108,10 @@ fn three_tier_performance_comparison() {
 
     // ── Decode ──
     let magick_decode = if has_magick {
-        bench_magick(&fixture_dir, &["/work/gradient_64x64.png", "-ping", "null:"])
+        bench_magick(
+            &fixture_dir,
+            &["/work/gradient_64x64.png", "-ping", "null:"],
+        )
     } else {
         Duration::ZERO
     };
@@ -132,17 +143,38 @@ fn three_tier_performance_comparison() {
 
     let enc = bindings.rasmcore_image_encoder();
     for _ in 0..WARMUP_ITERS {
-        let _ = enc.call_encode(&mut store, &wasm_decoded.pixels, wasm_decoded.info, "png", None).unwrap().unwrap();
+        let _ = enc
+            .call_encode(
+                &mut store,
+                &wasm_decoded.pixels,
+                wasm_decoded.info,
+                "png",
+                None,
+            )
+            .unwrap()
+            .unwrap();
     }
     let start = Instant::now();
     for _ in 0..BENCH_ITERS {
-        let _ = enc.call_encode(&mut store, &wasm_decoded.pixels, wasm_decoded.info, "png", None).unwrap().unwrap();
+        let _ = enc
+            .call_encode(
+                &mut store,
+                &wasm_decoded.pixels,
+                wasm_decoded.info,
+                "png",
+                None,
+            )
+            .unwrap()
+            .unwrap();
     }
     let wasm_encode = start.elapsed() / BENCH_ITERS;
 
     // ── Resize ──
     let magick_resize = if has_magick {
-        bench_magick(&fixture_dir, &["/work/gradient_64x64.png", "-resize", "32x16!", "null:"])
+        bench_magick(
+            &fixture_dir,
+            &["/work/gradient_64x64.png", "-resize", "32x16!", "null:"],
+        )
     } else {
         Duration::ZERO
     };
@@ -160,17 +192,40 @@ fn three_tier_performance_comparison() {
 
     let tr = bindings.rasmcore_image_transform();
     for _ in 0..WARMUP_ITERS {
-        let _ = tr.call_resize(&mut store, &wasm_decoded.pixels, wasm_decoded.info, 32, 16, ResizeFilter::Lanczos3).unwrap().unwrap();
+        let _ = tr
+            .call_resize(
+                &mut store,
+                &wasm_decoded.pixels,
+                wasm_decoded.info,
+                32,
+                16,
+                ResizeFilter::Lanczos3,
+            )
+            .unwrap()
+            .unwrap();
     }
     let start = Instant::now();
     for _ in 0..BENCH_ITERS {
-        let _ = tr.call_resize(&mut store, &wasm_decoded.pixels, wasm_decoded.info, 32, 16, ResizeFilter::Lanczos3).unwrap().unwrap();
+        let _ = tr
+            .call_resize(
+                &mut store,
+                &wasm_decoded.pixels,
+                wasm_decoded.info,
+                32,
+                16,
+                ResizeFilter::Lanczos3,
+            )
+            .unwrap()
+            .unwrap();
     }
     let wasm_resize = start.elapsed() / BENCH_ITERS;
 
     // ── Blur ──
     let magick_blur = if has_magick {
-        bench_magick(&fixture_dir, &["/work/gradient_64x64.png", "-blur", "0x2", "null:"])
+        bench_magick(
+            &fixture_dir,
+            &["/work/gradient_64x64.png", "-blur", "0x2", "null:"],
+        )
     } else {
         Duration::ZERO
     };
@@ -181,11 +236,17 @@ fn three_tier_performance_comparison() {
 
     let fl = bindings.rasmcore_image_filters();
     for _ in 0..WARMUP_ITERS {
-        let _ = fl.call_blur(&mut store, &wasm_decoded.pixels, wasm_decoded.info, 2.0).unwrap().unwrap();
+        let _ = fl
+            .call_blur(&mut store, &wasm_decoded.pixels, wasm_decoded.info, 2.0)
+            .unwrap()
+            .unwrap();
     }
     let start = Instant::now();
     for _ in 0..BENCH_ITERS {
-        let _ = fl.call_blur(&mut store, &wasm_decoded.pixels, wasm_decoded.info, 2.0).unwrap().unwrap();
+        let _ = fl
+            .call_blur(&mut store, &wasm_decoded.pixels, wasm_decoded.info, 2.0)
+            .unwrap()
+            .unwrap();
     }
     let wasm_blur = start.elapsed() / BENCH_ITERS;
 
@@ -196,29 +257,55 @@ fn three_tier_performance_comparison() {
     println!("         Three-Tier Performance Comparison (64x64 PNG, {BENCH_ITERS} iterations)");
     println!("================================================================================");
     println!();
-    println!("  {:<12} {:>22}  {:>14}  {:>14}", "Operation", "ImageMagick (Docker)", "Native Rust", "WASM/wasmtime");
-    println!("  {:<12} {:>22}  {:>14}  {:>14}", "---------", "--------------------", "-----------", "-------------");
-    println!("  {:<12} {:>22}  {:>14}  {:>14}",
+    println!(
+        "  {:<12} {:>22}  {:>14}  {:>14}",
+        "Operation", "ImageMagick (Docker)", "Native Rust", "WASM/wasmtime"
+    );
+    println!(
+        "  {:<12} {:>22}  {:>14}  {:>14}",
+        "---------", "--------------------", "-----------", "-------------"
+    );
+    println!(
+        "  {:<12} {:>22}  {:>14}  {:>14}",
         "decode",
-        if has_magick { fmt_duration(magick_decode) } else { na.clone() },
+        if has_magick {
+            fmt_duration(magick_decode)
+        } else {
+            na.clone()
+        },
         fmt_duration(native_decode),
         fmt_duration(wasm_decode),
     );
-    println!("  {:<12} {:>22}  {:>14}  {:>14}",
+    println!(
+        "  {:<12} {:>22}  {:>14}  {:>14}",
         "encode",
-        if has_magick { fmt_duration(magick_encode) } else { na.clone() },
+        if has_magick {
+            fmt_duration(magick_encode)
+        } else {
+            na.clone()
+        },
         fmt_duration(native_encode),
         fmt_duration(wasm_encode),
     );
-    println!("  {:<12} {:>22}  {:>14}  {:>14}",
+    println!(
+        "  {:<12} {:>22}  {:>14}  {:>14}",
         "resize",
-        if has_magick { fmt_duration(magick_resize) } else { na.clone() },
+        if has_magick {
+            fmt_duration(magick_resize)
+        } else {
+            na.clone()
+        },
         fmt_duration(native_resize),
         fmt_duration(wasm_resize),
     );
-    println!("  {:<12} {:>22}  {:>14}  {:>14}",
+    println!(
+        "  {:<12} {:>22}  {:>14}  {:>14}",
         "blur",
-        if has_magick { fmt_duration(magick_blur) } else { na.clone() },
+        if has_magick {
+            fmt_duration(magick_blur)
+        } else {
+            na.clone()
+        },
         fmt_duration(native_blur),
         fmt_duration(wasm_blur),
     );

@@ -139,9 +139,9 @@ plan:
 - phase: Verification
   tasks:
   - text: Ensure all correctness tests pass with cargo test
-    done: false
+    done: true
   - text: Add WASM integration test step to scripts/validate.sh (conditional on built .wasm)
-    done: false
+    done: true
   - text: Verify test reproducibility — clean build and run from scratch
-    done: false
+    done: true
 extra: {}

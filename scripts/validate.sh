@@ -58,6 +58,22 @@ else
   FAILED=1
 fi
 
+echo "=== 6. WASM integration tests ==="
+WASM_FILE="target/wasm32-wasip1/debug/rasmcore_image.wasm"
+if [ ! -f "$WASM_FILE" ]; then
+  WASM_FILE="target/wasm32-wasip1/release/rasmcore_image.wasm"
+fi
+if [ -f "$WASM_FILE" ] && [ -d "tests/fixtures/generated" ]; then
+  if cargo test -p wasm-integration --test wasm_parity 2>&1; then
+    echo "  PASS"
+  else
+    echo "  FAIL — WASM integration tests failed"
+    FAILED=1
+  fi
+else
+  echo "  SKIP — requires built .wasm and fixtures"
+fi
+
 echo ""
 if [ "$FAILED" -eq 0 ]; then
   echo "=== ALL CHECKS PASSED ==="

@@ -8,7 +8,9 @@
 //!   1. `cargo component build -p rasmcore-image`
 //!   2. `tests/fixtures/generate.sh`
 
-use wasm_integration::exports::rasmcore::image::transform::{FlipDirection, ResizeFilter, Rotation};
+use wasm_integration::exports::rasmcore::image::transform::{
+    FlipDirection, ResizeFilter, Rotation,
+};
 use wasm_integration::rasmcore::core::types::PixelFormat;
 use wasm_integration::*;
 
@@ -71,7 +73,11 @@ fn wasm_decoder_decode_all_formats() {
             "format detection failed for {name}"
         );
         let result = decoder.call_decode(&mut store, &data).unwrap();
-        assert!(result.is_ok(), "decode failed for {name}: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "decode failed for {name}: {:?}",
+            result.err()
+        );
         let img = result.unwrap();
         assert_eq!(img.info.width, 64, "width mismatch for {name}");
         assert_eq!(img.info.height, 64, "height mismatch for {name}");
