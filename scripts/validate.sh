@@ -51,7 +51,7 @@ else
 fi
 
 echo "=== 5. WASM build ==="
-if cargo component build --workspace 2>&1; then
+if cargo component build -p rasmcore-image 2>&1; then
   echo "  PASS"
 else
   echo "  FAIL — WASM component build failed"
