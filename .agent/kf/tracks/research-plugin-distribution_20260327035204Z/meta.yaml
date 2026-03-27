@@ -1,0 +1,9 @@
+title: 'Research: Plugin Distribution & Patent-Encumbered Codec Strategy'
+status: pending
+type: research
+approved: false
+created: '2026-03-27'
+updated: '2026-03-27'
+deps:
+- research-wasm-toolchain_20260327035200Z
+- research-wit-interfaces_20260327035202Z

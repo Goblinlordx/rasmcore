@@ -1,0 +1,65 @@
+id: research-wasm-toolchain_20260327035200Z
+title: "Research: WASM Component Model & Toolchain Maturity"
+type: research
+status: pending
+created: 2026-03-27
+updated: 2026-03-27
+spec:
+  summary: |
+    Investigate the current state of WASI 0.2/0.3, the WASM Component Model,
+    and the surrounding toolchain to determine what is production-ready vs
+    experimental for our use case.
+  context: |
+    razm/core intends to build all modules as WASM components using WASI 0.2/0.3.
+    Before committing to this architecture, we need to verify the toolchain maturity
+    and identify any gaps or blockers.
+  codebase_analysis: |
+    Fresh project — no existing code. This is foundational research.
+  acceptance_criteria:
+    - Document WASI 0.2 vs 0.3 feature comparison and stability status
+    - Document cargo-component current capabilities and limitations
+    - Document wit-bindgen support matrix across target languages (Rust, Go, TS, Python)
+    - Document wasmtime embedding status for Go and TypeScript hosts
+    - Document jco (TS) and componentize-py maturity levels
+    - Identify any blocking gaps for our streaming/large-file use case
+    - Produce a go/no-go recommendation for WASI 0.2 vs 0.3 as our target
+  out_of_scope: |
+    Actual implementation of any WASM modules. This is research and documentation only.
+  technical_notes: |
+    Research should cover: Bytecode Alliance releases and roadmaps, WASI preview2/preview3
+    status, wasm-tools CLI capabilities, component composition tooling, and cross-language
+    binding generation. Check real GitHub repos and release notes, not just documentation claims.
+plan:
+  - phase: "WASI Standard Investigation"
+    tasks:
+      - text: "Research WASI 0.2 (preview2) current status — what interfaces are stable"
+        done: false
+      - text: "Research WASI 0.3 (preview3) status — what is new, what is experimental"
+        done: false
+      - text: "Document wasi:io streams interface — capabilities for chunked file processing"
+        done: false
+  - phase: "Toolchain Evaluation"
+    tasks:
+      - text: "Evaluate cargo-component — project setup, build workflow, known issues"
+        done: false
+      - text: "Evaluate wit-bindgen — language support matrix, code generation quality"
+        done: false
+      - text: "Evaluate wasm-tools — composition, validation, inspection capabilities"
+        done: false
+  - phase: "Host SDK Assessment"
+    tasks:
+      - text: "Assess wasmtime-go — API stability, component model support, performance"
+        done: false
+      - text: "Assess jco — TypeScript/Node.js component hosting, npm integration"
+        done: false
+      - text: "Assess componentize-py — Python component creation and hosting"
+        done: false
+      - text: "Assess wasmtime Rust embedding — baseline reference implementation"
+        done: false
+  - phase: "Synthesis"
+    tasks:
+      - text: "Compile findings into a structured research document"
+        done: false
+      - text: "Produce go/no-go recommendation with identified risks and mitigations"
+        done: false
+extra: {}

@@ -1,0 +1,61 @@
+id: research-plugin-distribution_20260327035204Z
+title: "Research: Plugin Distribution & Patent-Encumbered Codec Strategy"
+type: research
+status: pending
+created: 2026-03-27
+updated: 2026-03-27
+spec:
+  summary: |
+    Research legal and technical strategies for distributing patent-encumbered
+    codecs as sidecar WASM plugins, including module signing, discovery,
+    and dynamic linking patterns.
+  context: |
+    The project must support H.264, HEVC, and other patent-encumbered codecs
+    without bundling them in the core open-source distribution. The WASM Component
+    Model's composability makes a sidecar/plugin pattern technically feasible —
+    we need to validate the approach and design the distribution mechanism.
+  codebase_analysis: |
+    Fresh project. Research targets WASM component composition and distribution patterns.
+  acceptance_criteria:
+    - Document WASM component composition mechanisms for plugin loading
+    - Research module signing and verification for WASM components
+    - Document existing WASM component registry/distribution systems (warg, etc.)
+    - Research legal precedents for codec plugin distribution models
+    - Design a proposed plugin discovery and loading architecture
+    - Identify which codecs need sidecar treatment vs can be bundled
+    - Document the runtime linking flow — how a host discovers and loads plugins
+  out_of_scope: |
+    Implementing the plugin system. Legal counsel (we document patterns, not legal advice).
+  technical_notes: |
+    The WASM Component Model supports composition — linking components together
+    by matching imports/exports. A codec plugin would export an encoder/decoder
+    interface that the core engine imports. The question is how to discover,
+    verify, and load these at runtime vs build-time.
+plan:
+  - phase: "Component Composition Research"
+    tasks:
+      - text: "Research WASM component composition — build-time vs runtime linking"
+        done: false
+      - text: "Research wasm-compose tool capabilities and patterns"
+        done: false
+      - text: "Document how imports/exports matching works for plugin interfaces"
+        done: false
+  - phase: "Distribution & Security"
+    tasks:
+      - text: "Research warg (WebAssembly Registry) — status, capabilities"
+        done: false
+      - text: "Research WASM module signing and verification mechanisms"
+        done: false
+      - text: "Survey existing plugin distribution models in the WASM ecosystem"
+        done: false
+      - text: "Document codec licensing landscape — which codecs need sidecar treatment"
+        done: false
+  - phase: "Synthesis"
+    tasks:
+      - text: "Design proposed plugin architecture document"
+        done: false
+      - text: "Document runtime plugin discovery and loading flow"
+        done: false
+      - text: "Produce distribution strategy recommendation"
+        done: false
+extra: {}
