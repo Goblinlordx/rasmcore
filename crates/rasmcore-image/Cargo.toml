@@ -10,7 +10,7 @@ image = { workspace = true, features = [
 ] }
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [package.metadata.component]
 package = "rasmcore:image"

@@ -75,9 +75,15 @@ $IM /out/inputs/gradient_64x64.png -colorspace Gray /out/reference/grayscale.png
 # Blur (sigma 2.0)
 $IM /out/inputs/gradient_64x64.png -blur 0x2 /out/reference/blur_sigma2.png
 
-# --- Store hash for cache invalidation --------------------------------------
+# --- Verify reproducibility (hash all outputs) -------------------------------
+echo "  Verifying output hashes..."
+OUTPUT_HASH=$(cd "$OUT_DIR" && find . \( -name '*.png' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' -o -name '*.bmp' -o -name '*.tiff' -o -name '*.qoi' \) | sort | xargs shasum -a 256 | shasum -a 256 | awk '{print $1}')
+echo "$OUTPUT_HASH" > "$OUT_DIR/.output_hash"
+
+# --- Store script hash for cache invalidation --------------------------------
 echo "$CURRENT_HASH" > "$HASH_FILE"
 
 echo "=== Done. Fixtures in $OUT_DIR ==="
 echo "  Inputs:     $(ls "$OUT_DIR/inputs/" | wc -l | tr -d ' ') files"
 echo "  References: $(ls "$OUT_DIR/reference/" | wc -l | tr -d ' ') files"
+echo "  Output hash: $OUTPUT_HASH"
