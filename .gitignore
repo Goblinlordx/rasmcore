@@ -22,6 +22,9 @@ Thumbs.db
 # Node.js (for jco integration tests)
 node_modules/
 
+# Generated test fixtures (regenerated from generate.sh, cached by hash)
+tests/fixtures/generated/
+
 # Environment
 .env
 .env.local
