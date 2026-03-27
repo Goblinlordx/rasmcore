@@ -1,0 +1,9 @@
+[package]
+name = "wasm-integration"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+wasmtime = { version = "33", features = ["component-model"] }
+wasmtime-wasi = "33"
