@@ -113,19 +113,19 @@ plan:
 - phase: Host Harness
   tasks:
   - text: Implement fixture loading utilities (shared with existing parity tests)
-    done: false
+    done: true
   - text: Implement comparison functions (MAE, PSNR) for output validation
-    done: false
+    done: true
 - phase: Interface Tests
   tasks:
   - text: 'Decoder tests through WASM: format detection, decode all formats, decode_as, supported_formats'
-    done: false
+    done: true
   - text: 'Encoder tests through WASM: PNG roundtrip exact, JPEG quality roundtrip PSNR > 30dB'
-    done: false
+    done: true
   - text: 'Transform tests through WASM: resize (MAE < 10), crop/rotate/flip (MAE < 1.0) vs ImageMagick'
-    done: false
+    done: true
   - text: 'Filter tests through WASM: grayscale (MAE < 5), blur/sharpen/brightness/contrast validation'
-    done: false
+    done: true
 - phase: Performance Comparison
   tasks:
   - text: ImageMagick CLI benchmark runner — time magick commands for decode, encode, resize, blur on fixtures
