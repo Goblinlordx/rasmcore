@@ -1,87 +1,108 @@
 id: image-mvp_20260327044101Z
-title: "rasmcore-image MVP Component"
+title: rasmcore-image MVP Component
 type: feature
 status: pending
 created: 2026-03-27
-updated: 2026-03-27
+updated: '2026-03-27'
 spec:
-  summary: |
-    Implement the rasmcore-image WASM component — image decoding, encoding,
+  summary: 'Implement the rasmcore-image WASM component — image decoding, encoding,
+
     transforms, and filters. Core operations to prove the architecture end-to-end.
-  context: |
-    This is the MVP for rasmcore. The image component is the first real module,
+
+    '
+  context: 'This is the MVP for rasmcore. The image component is the first real module,
+
     proving that the WIT interfaces, cargo-component build, and WASM component
+
     output all work together. Uses the image crate for format I/O and photon-rs
+
     for processing operations. Post-MVP, this module will expand toward full
+
     ImageMagick feature parity.
-  codebase_analysis: |
-    Depends on scaffold track for workspace, WIT files, and crate stubs.
+
+    '
+  codebase_analysis: 'Depends on scaffold track for workspace, WIT files, and crate stubs.
+
     Architecture specifies image crate with default-features=false for WASM
+
     compatibility (no rayon/threading). photon-rs is WASM-first by design.
+
     WIT interfaces define decoder, encoder, transform, and filters.
+
+    '
   acceptance_criteria:
-    - Decoder supports PNG, JPEG, WebP, GIF, BMP, TIFF, AVIF, QOI, ICO
-    - Decoder returns correct pixel data and image-info metadata
-    - detect-format correctly identifies image format from header bytes
-    - Encoder supports PNG, JPEG, WebP with configurable quality
-    - Transform resize works with all 4 filter modes (nearest, bilinear, bicubic, lanczos3)
-    - Transform crop, rotate (90/180/270), flip (h/v) all work correctly
-    - Pixel format conversion works between RGB8, RGBA8, Gray8
-    - Filters blur, sharpen, brightness, contrast, grayscale produce correct output
-    - All operations return appropriate rasmcore-error on invalid input
-    - Component builds to valid WASM and passes wasm-tools validate
-    - supported-formats() returns accurate lists for decoder and encoder
-  out_of_scope: |
-    GPU-accelerated filters (Phase 5). Advanced ImageMagick operations like
+  - Decoder supports PNG, JPEG, WebP, GIF, BMP, TIFF, AVIF, QOI, ICO
+  - Decoder returns correct pixel data and image-info metadata
+  - detect-format correctly identifies image format from header bytes
+  - Encoder supports PNG, JPEG, WebP with configurable quality
+  - Transform resize works with all 4 filter modes (nearest, bilinear, bicubic, lanczos3)
+  - Transform crop, rotate (90/180/270), flip (h/v) all work correctly
+  - Pixel format conversion works between RGB8, RGBA8, Gray8
+  - Filters blur, sharpen, brightness, contrast, grayscale produce correct output
+  - All operations return appropriate rasmcore-error on invalid input
+  - Component builds to valid WASM and passes wasm-tools validate
+  - supported-formats() returns accurate lists for decoder and encoder
+  out_of_scope: 'GPU-accelerated filters (Phase 5). Advanced ImageMagick operations like
+
     compositing, distortions, morphology, drawing (post-MVP expansion).
+
     Streaming I/O for very large images. Animated GIF frame handling.
-  technical_notes: |
-    Key implementation notes from research:
+
+    '
+  technical_notes: 'Key implementation notes from research:
+
     - image crate must use default-features = false (rayon breaks WASM)
+
     - Enable specific format features explicitly in Cargo.toml
+
     - photon-rs handles pixel manipulation, image crate handles format I/O
+
     - All functions are coarse-grained — take/return full buffers
+
     - pixel-format conversion may need manual implementation for YUV formats
+
     - JPEG decode is lossy — parity tests use PSNR/SSIM, not exact match
+
+    '
 plan:
-  - phase: "Image Decoder"
-    tasks:
-      - text: "Implement detect-format using image crate header sniffing"
-        done: false
-      - text: "Implement decode for PNG, JPEG, WebP, GIF, BMP, TIFF, AVIF, QOI, ICO"
-        done: false
-      - text: "Implement decode-as with target pixel format conversion"
-        done: false
-      - text: "Implement supported-formats returning all supported decode formats"
-        done: false
-  - phase: "Image Encoder"
-    tasks:
-      - text: "Implement encode for PNG format"
-        done: false
-      - text: "Implement encode for JPEG format with quality parameter"
-        done: false
-      - text: "Implement encode for WebP format with quality parameter"
-        done: false
-      - text: "Implement supported-formats returning all supported encode formats"
-        done: false
-  - phase: "Image Transforms"
-    tasks:
-      - text: "Implement resize with nearest, bilinear, bicubic, lanczos3 filters"
-        done: false
-      - text: "Implement crop with bounds validation"
-        done: false
-      - text: "Implement rotate (90, 180, 270 degrees)"
-        done: false
-      - text: "Implement flip (horizontal, vertical)"
-        done: false
-      - text: "Implement convert-format for pixel format conversion (RGB8, RGBA8, Gray8 at minimum)"
-        done: false
-  - phase: "Image Filters"
-    tasks:
-      - text: "Implement blur (gaussian) with configurable radius"
-        done: false
-      - text: "Implement sharpen with configurable amount"
-        done: false
-      - text: "Implement brightness, contrast, and grayscale adjustments"
-        done: false
+- phase: Image Decoder
+  tasks:
+  - text: Implement detect-format using image crate header sniffing
+    done: true
+  - text: Implement decode for PNG, JPEG, WebP, GIF, BMP, TIFF, AVIF, QOI, ICO
+    done: true
+  - text: Implement decode-as with target pixel format conversion
+    done: true
+  - text: Implement supported-formats returning all supported decode formats
+    done: true
+- phase: Image Encoder
+  tasks:
+  - text: Implement encode for PNG format
+    done: true
+  - text: Implement encode for JPEG format with quality parameter
+    done: true
+  - text: Implement encode for WebP format with quality parameter
+    done: true
+  - text: Implement supported-formats returning all supported encode formats
+    done: true
+- phase: Image Transforms
+  tasks:
+  - text: Implement resize with nearest, bilinear, bicubic, lanczos3 filters
+    done: true
+  - text: Implement crop with bounds validation
+    done: true
+  - text: Implement rotate (90, 180, 270 degrees)
+    done: true
+  - text: Implement flip (horizontal, vertical)
+    done: true
+  - text: Implement convert-format for pixel format conversion (RGB8, RGBA8, Gray8 at minimum)
+    done: true
+- phase: Image Filters
+  tasks:
+  - text: Implement blur (gaussian) with configurable radius
+    done: true
+  - text: Implement sharpen with configurable amount
+    done: true
+  - text: Implement brightness, contrast, and grayscale adjustments
+    done: true
 extra: {}
