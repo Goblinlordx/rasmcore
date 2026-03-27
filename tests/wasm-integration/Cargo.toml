@@ -7,3 +7,4 @@ publish = false
 [dependencies]
 wasmtime = { version = "33", features = ["component-model"] }
 wasmtime-wasi = "33"
+rasmcore-image = { path = "../../crates/rasmcore-image" }

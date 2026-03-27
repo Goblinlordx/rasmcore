@@ -129,13 +129,13 @@ plan:
 - phase: Performance Comparison
   tasks:
   - text: ImageMagick CLI benchmark runner — time magick commands for decode, encode, resize, blur on fixtures
-    done: false
+    done: true
   - text: Native Rust benchmark — wall-clock timing for domain functions on the same operations and fixtures
-    done: false
+    done: true
   - text: WASM-in-wasmtime benchmark — time the same operations through the component model harness
-    done: false
+    done: true
   - text: Comparison reporter — output a table of all three tiers side-by-side
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Ensure all correctness tests pass with cargo test
