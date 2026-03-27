@@ -1,0 +1,20 @@
+[package]
+name = "rasmcore-image"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+wit-bindgen-rt = "0.41.0"
+image = { workspace = true, features = [
+    "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
+] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "rasmcore:image"
+target.path = "../../wit/image"
+
+[package.metadata.component.target.dependencies]
+"rasmcore:core" = { path = "../../wit/core" }

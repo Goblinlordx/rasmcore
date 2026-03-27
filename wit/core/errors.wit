@@ -1,4 +1,4 @@
-package rasmcore:core@0.1.0;
+package rasmcore:core;
 
 /// Error types shared across all rasmcore modules
 interface errors {
