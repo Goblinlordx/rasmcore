@@ -1,0 +1,22 @@
+package rasmcore:image@0.1.0;
+
+/// Image filters and effects
+interface filters {
+    use rasmcore:core/types.{buffer, image-info};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// Apply gaussian blur
+    blur: func(pixels: buffer, info: image-info, radius: f32) -> result<buffer, rasmcore-error>;
+
+    /// Apply sharpening
+    sharpen: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+
+    /// Adjust brightness (-1.0 to 1.0)
+    brightness: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+
+    /// Adjust contrast (-1.0 to 1.0)
+    contrast: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+
+    /// Convert to grayscale
+    grayscale: func(pixels: buffer, info: image-info) -> result<tuple<buffer, image-info>, rasmcore-error>;
+}

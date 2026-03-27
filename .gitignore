@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Cargo lock for library crates (we're a workspace of components)
+# Keep Cargo.lock committed for reproducible builds
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# WASM build artifacts (outside target/)
+*.wasm.d
+
+# Node.js (for jco integration tests)
+node_modules/
+
+# Environment
+.env
+.env.local

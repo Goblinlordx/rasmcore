@@ -1,0 +1,25 @@
+package rasmcore:image@0.1.0;
+
+/// Image format detection and decoding
+interface decoder {
+    use rasmcore:core/types.{buffer, image-info, pixel-format};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// Decoded image data with metadata
+    record decoded-image {
+        pixels: buffer,
+        info: image-info,
+    }
+
+    /// Detect image format from header bytes
+    detect-format: func(header: buffer) -> option<string>;
+
+    /// Decode an image from a buffer
+    decode: func(data: buffer) -> result<decoded-image, rasmcore-error>;
+
+    /// Decode with specific output pixel format
+    decode-as: func(data: buffer, target-format: pixel-format) -> result<decoded-image, rasmcore-error>;
+
+    /// List supported decode formats
+    supported-formats: func() -> list<string>;
+}

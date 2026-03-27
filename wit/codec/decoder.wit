@@ -1,0 +1,23 @@
+package rasmcore:codec@0.1.0;
+
+/// Video/audio decoder plugin interface
+interface decoder {
+    use rasmcore:core/types.{buffer, frame-info, codec-info};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// A decoded output frame
+    record decoded-frame {
+        data: buffer,
+        info: frame-info,
+    }
+
+    /// Stateful decoder resource
+    resource decoder-instance {
+        constructor(codec-id: string);
+        push-packet: func(data: buffer) -> result<list<decoded-frame>, rasmcore-error>;
+        flush: func() -> result<list<decoded-frame>, rasmcore-error>;
+    }
+
+    /// Discover what this plugin can decode
+    supported-codecs: func() -> list<codec-info>;
+}

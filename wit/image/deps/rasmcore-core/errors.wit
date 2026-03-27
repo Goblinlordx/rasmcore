@@ -1,0 +1,15 @@
+package rasmcore:core;
+
+/// Error types shared across all rasmcore modules
+interface errors {
+    /// Universal error type for rasmcore operations
+    variant rasmcore-error {
+        invalid-input(string),
+        unsupported-format(string),
+        codec-error(string),
+        io-error(string),
+        out-of-memory,
+        not-implemented,
+        invalid-state(string),
+    }
+}

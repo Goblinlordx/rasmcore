@@ -1,0 +1,72 @@
+package rasmcore:core@0.1.0;
+
+/// Shared types used across all rasmcore modules
+interface types {
+    /// Raw byte buffer — universal data container
+    type buffer = list<u8>;
+
+    /// Pixel formats for image/video frame data
+    enum pixel-format {
+        rgb8,
+        rgba8,
+        bgr8,
+        bgra8,
+        gray8,
+        gray16,
+        yuv420p,
+        yuv422p,
+        yuv444p,
+        nv12,
+    }
+
+    /// Color space identifiers
+    enum color-space {
+        srgb,
+        linear-srgb,
+        display-p3,
+        bt709,
+        bt2020,
+    }
+
+    /// Audio sample formats
+    enum sample-format {
+        f32-le,
+        s16-le,
+        s32-le,
+        u8-sample,
+    }
+
+    /// Image dimensions and format metadata
+    record image-info {
+        width: u32,
+        height: u32,
+        format: pixel-format,
+        color-space: color-space,
+    }
+
+    /// Video frame metadata
+    record frame-info {
+        width: u32,
+        height: u32,
+        format: pixel-format,
+        timestamp-us: s64,
+        duration-us: s64,
+        keyframe: bool,
+    }
+
+    /// Audio buffer metadata
+    record audio-info {
+        sample-rate: u32,
+        channels: u16,
+        format: sample-format,
+        frame-count: u32,
+    }
+
+    /// Codec identification
+    record codec-info {
+        id: string,
+        name: string,
+        mime-type: string,
+        is-patent-encumbered: bool,
+    }
+}

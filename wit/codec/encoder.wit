@@ -1,0 +1,45 @@
+package rasmcore:codec@0.1.0;
+
+/// Video/audio encoder plugin interface
+interface encoder {
+    use rasmcore:core/types.{buffer, frame-info, codec-info};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// Encoder configuration
+    record encoder-config {
+        codec-id: string,
+        width: u32,
+        height: u32,
+        framerate-num: u32,
+        framerate-den: u32,
+        bitrate-bps: u64,
+        /// Codec-specific key-value parameters
+        params: list<tuple<string, string>>,
+    }
+
+    /// An encoded output packet
+    record encoded-packet {
+        data: buffer,
+        timestamp-us: s64,
+        duration-us: s64,
+        keyframe: bool,
+    }
+
+    /// Encoder performance stats
+    record encoder-stats {
+        frames-in: u64,
+        packets-out: u64,
+        bytes-out: u64,
+    }
+
+    /// Stateful encoder resource
+    resource encoder-instance {
+        constructor(config: encoder-config);
+        push-frame: func(data: buffer, info: frame-info) -> result<list<encoded-packet>, rasmcore-error>;
+        flush: func() -> result<list<encoded-packet>, rasmcore-error>;
+        stats: func() -> encoder-stats;
+    }
+
+    /// Discover what this plugin can encode
+    supported-codecs: func() -> list<codec-info>;
+}

@@ -1,0 +1,9 @@
+package rasmcore:image@0.1.0;
+
+/// World for a complete image processing component
+world image-processor {
+    export decoder;
+    export encoder;
+    export transform;
+    export filters;
+}

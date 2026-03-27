@@ -1,0 +1,13 @@
+package rasmcore:image@0.1.0;
+
+/// Image encoding to various formats
+interface encoder {
+    use rasmcore:core/types.{buffer, image-info};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// Encode pixel data to a specific format
+    encode: func(pixels: buffer, info: image-info, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
+
+    /// List supported encode formats
+    supported-formats: func() -> list<string>;
+}
