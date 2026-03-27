@@ -1,0 +1,79 @@
+id: scaffold_20260327044100Z
+title: "Project Scaffold & Build System"
+type: chore
+status: pending
+created: 2026-03-27
+updated: 2026-03-27
+spec:
+  summary: |
+    Set up the rasmcore monorepo foundation — Cargo workspace, WIT interface
+    definitions, cargo-component build configuration, and wasm-tools validation.
+  context: |
+    This is the first implementation track for rasmcore. The repo is currently
+    empty except for .agent/kf/ project management files. This track creates
+    the entire project structure that all subsequent tracks build upon.
+    The repo serves as the monorepo for the full rasmcore module suite.
+  codebase_analysis: |
+    Empty repo — only .agent/kf/ exists. Architecture design is in
+    .agent/kf/tracks/design-architecture_20260327035205Z/findings/.
+    WIT interfaces are drafted in 02-wit-interfaces.md.
+    Module structure is defined in 03-module-architecture.md.
+  acceptance_criteria:
+    - Cargo workspace builds successfully with cargo-component
+    - All WIT interface files exist and are syntactically valid
+    - rasmcore-types crate compiles with generated bindings from WIT
+    - rasmcore-image crate scaffold compiles (stub implementations returning not-implemented)
+    - wasm-tools validate passes on built .wasm output
+    - Build produces a valid WASM component for wasm32-wasip2 target
+    - Workspace structure matches architecture design (wit/, crates/, tests/)
+  out_of_scope: |
+    Actual implementation of image processing logic — that is the next track.
+    Only stub implementations that compile and return not-implemented errors.
+    No CI pipeline setup (local build validation only for now).
+  technical_notes: |
+    Use cargo-component for build since we have custom WIT interfaces.
+    The wasm32-wasip2 target must be installed via rustup.
+    WIT files go in wit/ at repo root, crates reference them via
+    package.metadata.component in Cargo.toml.
+    Only scaffold crates needed for Phase 1 (rasmcore-types, rasmcore-image).
+    Other crate directories can be created empty or deferred.
+plan:
+  - phase: "Workspace Setup"
+    tasks:
+      - text: "Create root Cargo.toml workspace manifest with resolver 2"
+        done: false
+      - text: "Create .gitignore for Rust/WASM artifacts"
+        done: false
+      - text: "Verify rustup target wasm32-wasip2 is available, document in README or Makefile"
+        done: false
+      - text: "Install/verify cargo-component and wasm-tools are available"
+        done: false
+  - phase: "WIT Interface Definitions"
+    tasks:
+      - text: "Create wit/core/types.wit with shared types (buffer, pixel-format, color-space, image-info, frame-info, audio-info, codec-info)"
+        done: false
+      - text: "Create wit/core/errors.wit with rasmcore-error variant"
+        done: false
+      - text: "Create wit/image/decoder.wit, encoder.wit, transform.wit, filters.wit"
+        done: false
+      - text: "Create wit/codec/encoder.wit and decoder.wit (plugin interfaces)"
+        done: false
+      - text: "Validate all WIT files parse correctly with wasm-tools"
+        done: false
+  - phase: "Crate Scaffolding"
+    tasks:
+      - text: "Create crates/rasmcore-types/ — shared Rust types generated from WIT bindings"
+        done: false
+      - text: "Create crates/rasmcore-image/ with Cargo.toml, cargo-component metadata, and stub lib.rs"
+        done: false
+      - text: "Implement stub exports for all rasmcore:image interfaces (return not-implemented errors)"
+        done: false
+      - text: "Add workspace dependency declarations for image and photon-rs crates"
+        done: false
+  - phase: "Build Verification"
+    tasks:
+      - text: "Build rasmcore-image with cargo component build --release"
+        done: false
+      - text: "Validate output .wasm with wasm-tools validate and wasm-tools print (inspect exports)"
+        done: false
+extra: {}

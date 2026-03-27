@@ -1,0 +1,83 @@
+id: testing-integration_20260327044102Z
+title: "Testing Infrastructure & Host Integration"
+type: chore
+status: pending
+created: 2026-03-27
+updated: 2026-03-27
+spec:
+  summary: |
+    Build the parity test framework, benchmark harness, test fixtures, and
+    verify host integration via jco (TypeScript) and wasmtime (Rust).
+  context: |
+    Every rasmcore module must have parity tests against native counterparts
+    and benchmark tests comparing WASM vs native performance. This track
+    builds that infrastructure for rasmcore-image and validates that the
+    component works from TypeScript (via jco) and Rust (via wasmtime).
+    The testing infrastructure established here becomes the template for
+    all future modules.
+  codebase_analysis: |
+    Depends on image-mvp track for a working rasmcore-image component.
+    Architecture specifies parity tests vs libpng, libjpeg-turbo, ImageMagick.
+    Benchmark framework compares WASM vs native execution of the same Rust code.
+    jco 1.0 is stable for TypeScript transpilation.
+    wasmtime Rust embedding is production-ready.
+  acceptance_criteria:
+    - Parity test framework exists and runs against rasmcore-image
+    - PNG decode output matches libpng/ImageMagick pixel-for-pixel
+    - JPEG decode output matches libjpeg with PSNR > 60dB
+    - Resize output matches ImageMagick with SSIM > 0.99
+    - Benchmark harness measures WASM vs native for decode, encode, resize, blur
+    - Test fixtures include sample images in each supported format
+    - jco successfully transpiles rasmcore-image.wasm to ES module
+    - TypeScript can import and call all exported interfaces
+    - wasmtime Rust host can load and call the component
+    - All test results are reproducible and documented
+  out_of_scope: |
+    CI/CD pipeline setup (that is a separate operational concern).
+    Performance optimization (this track measures, optimization comes later).
+    Full ImageMagick parity testing (post-MVP operation coverage).
+  technical_notes: |
+    Parity tests need native tools installed (imagemagick, libpng, libjpeg).
+    Use command-line tools for reference output generation.
+    Benchmarks should use criterion or similar Rust benchmark framework.
+    For jco integration, need Node.js and @bytecodealliance/jco installed.
+    TypeScript test can be a simple script that imports the transpiled module.
+    wasmtime test is a Rust binary in tests/ that loads the .wasm component.
+plan:
+  - phase: "Test Fixtures"
+    tasks:
+      - text: "Create/collect sample images in each supported format (PNG, JPEG, WebP, GIF, BMP, TIFF, QOI)"
+        done: false
+      - text: "Generate reference outputs using ImageMagick for resize, crop, rotate, flip operations"
+        done: false
+      - text: "Generate reference decode outputs using libpng and libjpeg-turbo"
+        done: false
+  - phase: "Parity Test Framework"
+    tasks:
+      - text: "Build parity test harness that loads rasmcore-image via wasmtime and compares output"
+        done: false
+      - text: "Implement pixel-exact comparison for lossless formats (PNG, BMP, QOI)"
+        done: false
+      - text: "Implement PSNR/SSIM comparison for lossy formats (JPEG, WebP)"
+        done: false
+      - text: "Write parity tests for decode, encode, resize, crop, rotate, flip, grayscale"
+        done: false
+  - phase: "Benchmark Harness"
+    tasks:
+      - text: "Set up criterion benchmark framework for native Rust execution"
+        done: false
+      - text: "Set up WASM benchmark runner (wasmtime-based)"
+        done: false
+      - text: "Write benchmarks for decode, encode, resize, blur across image sizes"
+        done: false
+  - phase: "Host Integration Verification"
+    tasks:
+      - text: "Transpile rasmcore-image.wasm to ES module using jco"
+        done: false
+      - text: "Write TypeScript test script that imports and exercises all interfaces"
+        done: false
+      - text: "Write Rust wasmtime host example that loads and calls the component"
+        done: false
+      - text: "Document the end-to-end workflow (build, validate, transpile, test)"
+        done: false
+extra: {}
