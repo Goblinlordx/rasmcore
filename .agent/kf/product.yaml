@@ -1,5 +1,5 @@
-# Product Definition — razm/core
-name: razm-core
+# Product Definition — rasmcore
+name: rasmcore
 tagline: "Modular WASM Component Ecosystem for Media & Data Processing"
 description: |
   A set of interoperable Rust modules compiled to WebAssembly (WASI 0.2/0.3 Component Model)

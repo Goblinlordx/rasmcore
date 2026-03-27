@@ -1,5 +1,5 @@
 # Kiloforge Configuration
 version: "1.0"
-project_name: razm-core
+project_name: rasmcore
 primary_branch: main
 created: 2026-03-27
