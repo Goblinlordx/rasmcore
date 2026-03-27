@@ -1,61 +1,72 @@
 id: research-gpu-wasm_20260327035203Z
-title: "Research: GPU Acceleration from WASM via wgpu/WebGPU"
+title: 'Research: GPU Acceleration from WASM via wgpu/WebGPU'
 type: research
 status: pending
 created: 2026-03-27
-updated: 2026-03-27
+updated: '2026-03-27'
 spec:
-  summary: |
-    Assess the feasibility and current state of GPU compute access from WASM
+  summary: 'Assess the feasibility and current state of GPU compute access from WASM
+
     modules, focusing on wgpu and WebGPU for media processing workloads.
-  context: |
-    GPU acceleration is desired for compute-heavy operations like video transcoding
+
+    '
+  context: 'GPU acceleration is desired for compute-heavy operations like video transcoding
+
     and image filtering. The wgpu crate provides a unified GPU abstraction that
+
     works natively (Vulkan/Metal/DX12) and in browsers (WebGPU). We need to
+
     understand what is actually possible from within a WASM component today.
-  codebase_analysis: |
-    Fresh project. Research targets external GPU/WASM integration status.
+
+    '
+  codebase_analysis: 'Fresh project. Research targets external GPU/WASM integration status.
+
+    '
   acceptance_criteria:
-    - Document wgpu WASM compilation status and supported features
-    - Document WebGPU compute shader availability across browsers and runtimes
-    - Assess whether wasmtime or other runtimes support GPU passthrough
-    - Identify the gap between native wgpu and WASM-hosted wgpu capabilities
-    - Research WASI-webgpu proposal status
-    - Document performance characteristics — is GPU from WASM viable for real workloads
-    - Produce feasibility assessment with timeline estimates for GPU support
-  out_of_scope: |
-    Writing GPU compute shaders or building GPU pipelines.
-  technical_notes: |
-    Key distinction: WebGPU in the browser vs GPU access from a WASI runtime.
+  - Document wgpu WASM compilation status and supported features
+  - Document WebGPU compute shader availability across browsers and runtimes
+  - Assess whether wasmtime or other runtimes support GPU passthrough
+  - Identify the gap between native wgpu and WASM-hosted wgpu capabilities
+  - Research WASI-webgpu proposal status
+  - Document performance characteristics — is GPU from WASM viable for real workloads
+  - Produce feasibility assessment with timeline estimates for GPU support
+  out_of_scope: 'Writing GPU compute shaders or building GPU pipelines.
+
+    '
+  technical_notes: 'Key distinction: WebGPU in the browser vs GPU access from a WASI runtime.
+
     Browser WebGPU is more mature. Server-side WASM GPU access may require
+
     non-standard runtime extensions. Need to map out both paths.
+
+    '
 plan:
-  - phase: "wgpu & WebGPU Status"
-    tasks:
-      - text: "Research wgpu crate — WASM target support, feature matrix"
-        done: false
-      - text: "Research WebGPU compute shader support across major browsers"
-        done: false
-      - text: "Research WASI-webgpu proposal — status, timeline, implementation"
-        done: false
-  - phase: "Runtime GPU Access"
-    tasks:
-      - text: "Assess wasmtime GPU access capabilities or extensions"
-        done: false
-      - text: "Research other WASM runtimes with GPU support (wasm3, wasmer, etc.)"
-        done: false
-      - text: "Document the native vs browser GPU access gap"
-        done: false
-  - phase: "Feasibility Assessment"
-    tasks:
-      - text: "Identify which media processing operations benefit most from GPU"
-        done: false
-      - text: "Assess performance overhead of GPU access through WASM layer"
-        done: false
-      - text: "Research existing projects using wgpu from WASM for compute"
-        done: false
-  - phase: "Synthesis"
-    tasks:
-      - text: "Produce GPU feasibility report with recommendations and timeline"
-        done: false
+- phase: wgpu & WebGPU Status
+  tasks:
+  - text: Research wgpu crate — WASM target support, feature matrix
+    done: true
+  - text: Research WebGPU compute shader support across major browsers
+    done: true
+  - text: Research WASI-webgpu proposal — status, timeline, implementation
+    done: true
+- phase: Runtime GPU Access
+  tasks:
+  - text: Assess wasmtime GPU access capabilities or extensions
+    done: true
+  - text: Research other WASM runtimes with GPU support (wasm3, wasmer, etc.)
+    done: true
+  - text: Document the native vs browser GPU access gap
+    done: true
+- phase: Feasibility Assessment
+  tasks:
+  - text: Identify which media processing operations benefit most from GPU
+    done: true
+  - text: Assess performance overhead of GPU access through WASM layer
+    done: true
+  - text: Research existing projects using wgpu from WASM for compute
+    done: true
+- phase: Synthesis
+  tasks:
+  - text: Produce GPU feasibility report with recommendations and timeline
+    done: true
 extra: {}
