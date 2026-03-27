@@ -1,0 +1,13 @@
+{
+  "name": "rasmcore",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sdk:generate": "scripts/generate-ts-sdk.sh",
+    "sdk:test": "node --test sdk/typescript/tests/"
+  },
+  "devDependencies": {
+    "@bytecodealliance/jco": "^1.17.5"
+  }
+}
