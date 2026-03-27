@@ -36,4 +36,38 @@ target_users:
   - "Cross-language teams (Go, TypeScript, Python, Rust)"
   - "High-security environments (government, military, enterprise)"
 
-current_phase: research
+current_phase: implementation
+
+technical_requirements:
+  architecture:
+    - name: hexagonal-architecture
+      description: |
+        All modules use ports/adapters (hexagonal) architecture. WIT exports are
+        thin adapters that convert types and delegate to domain logic. Domain logic
+        has zero WIT dependencies and is fully exercisable via native Rust tests.
+    - name: domain-defined-errors
+      description: |
+        Domain layer defines its own explicit error types. The adapter layer
+        translates domain errors to WIT rasmcore-error at the boundary.
+        Domain errors are never leaked through the interface layer untranslated.
+
+  development_process:
+    - name: tdd-at-domain-boundaries
+      description: |
+        Development follows TDD style. Domain tests are written FIRST and drive
+        implementation. Tests exercise domain logic at domain function boundaries
+        (not models in isolation, not at the WIT/WASM adapter layer). The domain
+        test suite is the feature completeness definition — if it's not tested
+        at the domain boundary, it's not done.
+    - name: parity-and-benchmark-testing
+      description: |
+        Every module has parity tests comparing output against best-in-class native
+        reference implementations (e.g., ImageMagick for image, FFmpeg for video).
+        Benchmark tests measure WASM vs native performance. These are the ONLY tests
+        that run at the WASM/adapter layer — they validate the full stack against
+        external references.
+
+  testing_hierarchy:
+    primary: "Domain unit tests at domain boundaries (TDD, native cargo test)"
+    secondary: "Parity tests against reference implementations (WASM integration)"
+    tertiary: "Benchmark tests comparing WASM vs native performance"

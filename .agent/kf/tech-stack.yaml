@@ -1,7 +1,4 @@
 # Tech Stack — rasmcore
-#
-# NOTE: This is a RESEARCH PHASE project. The tech stack below represents
-# the intended/candidate technologies to be validated during research.
 
 language:
   primary: rust
@@ -9,37 +6,48 @@ language:
 
 compilation_target:
   primary: wasm32-wasip2
-  note: "WASI 0.2/0.3 Component Model"
+  note: "WASI 0.2 now, design for 0.3 migration"
 
 interface_definition:
   format: wit
   tooling:
-    - wit-bindgen
-    - wasm-tools
     - cargo-component
+    - wasm-tools
+    - wit-bindgen (via cargo-component)
 
 host_sdks:
-  - language: go
-    tooling: wit-bindgen-go, wasmtime-go
   - language: typescript
     tooling: jco
-  - language: python
-    tooling: componentize-py
+    status: production-ready
   - language: rust
     tooling: wasmtime
+    status: production-ready
+  - language: go
+    tooling: N/A
+    status: "no Component Model host — consumer-side limitation"
+  - language: python
+    tooling: componentize-py (guest only)
+    status: partial
 
-candidate_crates:
+confirmed_crates:
   image:
-    - image
-    - "OxiMedia (to verify existence/maturity)"
+    - image (default-features = false, WASM-ready)
+    - photon-rs (WASM-first image processing)
+    - resvg (SVG rendering, optional)
   video:
-    - rav1e
-    - "open codec crates (to research)"
+    - rav1e (AV1 encoder)
+    - rav1d (AV1 decoder, ISRG-backed)
   data:
-    - polars
+    - polars (default-features = false for WASM)
+    - parquet-wasm
+    - serde ecosystem (json, csv, msgpack, cbor)
   gpu:
-    - wgpu
+    - wgpu (browser WebGPU now, wasi-gfx later)
 
 project_tooling:
   documentation: markdown
   track_management: kiloforge
+  build: cargo-component
+  validation: wasm-tools validate
+  composition: wasm-tools compose
+  distribution: wkg (OCI registries)
