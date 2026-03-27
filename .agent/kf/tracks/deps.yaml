@@ -10,9 +10,15 @@
 #   - Developer checks deps before claiming: all deps must be completed.
 #   - Cycles are forbidden.
 #
-# UPDATED: 2026-03-27T07:37:00Z
+# UPDATED: 2026-03-27T10:06:00Z
 
-wasm-host-validation_20260327073200Z: []
+encoder-refactor-foundation_20260327101000Z: []
 
-ts-sdk-gen_20260327073201Z:
-  - wasm-host-validation_20260327073200Z
+encoder-jpeg_20260327101001Z:
+  - encoder-refactor-foundation_20260327101000Z
+
+encoder-png_20260327101002Z:
+  - encoder-refactor-foundation_20260327101000Z
+
+encoder-webp_20260327101003Z:
+  - encoder-refactor-foundation_20260327101000Z

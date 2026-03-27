@@ -1,0 +1,78 @@
+id: encoder-jpeg_20260327101001Z
+title: "JPEG Codec — Typed Encode/Decode Config (ITU-T T.81 / T.871)"
+type: feature
+status: pending
+created: 2026-03-27
+updated: "2026-03-27"
+spec:
+  summary: |
+    Full JPEG codec with typed config records for both encoding and decoding.
+    Encoding config includes quality, progressive, chroma subsampling. Decoding
+    config includes color space handling. Standards-aligned with ITU-T T.81/T.871.
+  context: |
+    JPEG has the richest parameter set of the initial three image formats. The
+    current implementation only supports quality (u8) for encoding and has no
+    decode-time configuration. This track adds comprehensive JPEG configuration
+    following the per-format pattern established by the foundation track.
+
+    Standards references:
+    - ITU-T T.81 (1992) — JPEG baseline and progressive encoding
+    - ITU-T T.871 (2011) — JPEG File Interchange Format (JFIF) 1.02
+    - ISO/IEC 10918-1:1994 — Same as T.81 (ISO version)
+    - EXIF 3.0 (CIPA DC-008-2023) — Metadata handling in JPEG files
+  codebase_analysis: |
+    - Foundation track creates domain/encoder/jpeg.rs and domain/decoder/jpeg.rs
+    - image crate JpegEncoder supports quality via new_with_quality()
+    - Progressive encoding may not be directly supported by the image crate
+    - Chroma subsampling not configurable via image crate API
+    - JPEG decoding currently uses image::load_from_memory with no config
+    - For decode, color space handling (force RGB vs preserve YCbCr) is relevant
+  acceptance_criteria:
+    - WIT jpeg-encode-config has quality (u8, default 85), progressive (bool)
+    - WIT jpeg-decode-config has color-space-handling enum if relevant
+    - Domain JpegEncodeConfig and JpegDecodeConfig structs mirror WIT
+    - encode_jpeg produces valid JPEG with configurable quality
+    - Quality parameter demonstrably affects output size
+    - Default configs produce output identical to current behavior
+    - Domain unit tests cover all config combinations
+    - WASM integration tests for encode-jpeg and decode-jpeg with typed config
+    - TS SDK tests for encodeJpeg and decodeJpeg with typed config
+    - Standards references documented in module-level doc comments
+  out_of_scope: |
+    - JPEG 2000 (JP2) or JPEG XL — different codecs with separate tracks
+    - Lossless JPEG (JPEG-LS, ITU-T T.87)
+    - EXIF metadata read/write (separate concern)
+    - Arithmetic coding (patent-encumbered, non-free repo)
+  technical_notes: |
+    The image crate JpegEncoder has limited config surface. Progressive encoding
+    and chroma subsampling may not be controllable. Accept the config fields,
+    use what the backend supports, document limitations in comments referencing
+    the relevant T.81 sections.
+
+    When we eventually replace the image crate backend with a pure Rust
+    reimplementation, the config fields will become fully functional. Designing
+    the interface now means consumers get a stable API regardless of backend.
+plan:
+  - phase: "Config & Domain"
+    tasks:
+      - text: "Expand WIT jpeg-encode-config with quality (u8, default 85), progressive (bool)"
+        done: false
+      - text: "Update domain JpegEncodeConfig, implement encode_jpeg with full config"
+        done: false
+      - text: "Domain unit tests for quality variations, progressive flag, default config"
+        done: false
+  - phase: "Adapter & SDK"
+    tasks:
+      - text: "Update adapter for encode-jpeg WIT function"
+        done: false
+      - text: "WASM integration test for encode-jpeg with typed config"
+        done: false
+      - text: "TS SDK test for encodeJpeg with typed config"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "JPEG roundtrip parity through WASM (PSNR > 30dB at quality 95)"
+        done: false
+      - text: "Verify quality param affects output size (q=50 smaller than q=95)"
+        done: false
+extra: {}

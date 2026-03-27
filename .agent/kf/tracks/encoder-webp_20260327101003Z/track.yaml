@@ -1,0 +1,71 @@
+id: encoder-webp_20260327101003Z
+title: "WebP Codec — Typed Encode/Decode Config (Google WebP Container / RIFF)"
+type: feature
+status: pending
+created: 2026-03-27
+updated: "2026-03-27"
+spec:
+  summary: |
+    WebP codec with typed config records for encoding (quality, lossless mode)
+    and decoding. Standards-aligned with the WebP container specification.
+  context: |
+    WebP supports both lossy (VP8-based) and lossless encoding with quality and
+    method controls. The current implementation uses image crate defaults. This
+    track adds full WebP configuration including the critical lossy vs lossless
+    mode selection.
+
+    Standards references:
+    - WebP Container Specification (Google, 2024) — RIFF-based container format
+    - VP8 Data Format and Decoding Guide (RFC 6386) — Lossy compression basis
+    - WebP Lossless Bitstream Specification (Google) — Lossless mode
+    - RIFF (Resource Interchange File Format) — Container basis
+  codebase_analysis: |
+    - Foundation track creates domain/encoder/webp.rs and domain/decoder/webp.rs
+    - image crate WebPEncoder supports quality parameter
+    - Lossy vs lossless mode selection is the key differentiator
+    - Lossless WebP should produce pixel-exact roundtrip
+    - WebP decoding currently uses generic image::load_from_memory
+  acceptance_criteria:
+    - WIT webp-encode-config has quality (option<u8>), lossless (bool)
+    - Domain WebpEncodeConfig struct mirrors WIT record
+    - encode_webp produces valid WebP with configurable parameters
+    - Lossless mode produces pixel-exact roundtrip
+    - Quality parameter controls lossy output size
+    - Default config produces output identical to current behavior
+    - Domain unit tests cover lossy, lossless, quality variations
+    - WASM integration test for encode-webp with typed config
+    - TS SDK test for encodeWebp with typed config
+    - Standards references in module doc comments
+  out_of_scope: |
+    - Animated WebP
+    - WebP alpha channel quality (separate from main quality)
+    - Near-lossless mode
+    - Extended file format (XMP, EXIF metadata in WebP)
+  technical_notes: |
+    The lossless flag is the most important addition — it changes the encoding
+    algorithm entirely (VP8L vs VP8). When lossless is true, quality is ignored.
+    Document this in the WIT interface comments.
+plan:
+  - phase: "Config & Domain"
+    tasks:
+      - text: "Expand WIT webp-encode-config with quality (option<u8>), lossless (bool, default false)"
+        done: false
+      - text: "Update domain WebpEncodeConfig, implement encode_webp with full config"
+        done: false
+      - text: "Domain unit tests for lossy vs lossless, quality variations, default config"
+        done: false
+  - phase: "Adapter & SDK"
+    tasks:
+      - text: "Update adapter for encode-webp WIT function"
+        done: false
+      - text: "WASM integration test for encode-webp with typed config"
+        done: false
+      - text: "TS SDK test for encodeWebp with typed config"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "WebP lossless roundtrip pixel-exact through WASM"
+        done: false
+      - text: "Verify quality param affects lossy output size"
+        done: false
+extra: {}

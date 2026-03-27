@@ -1,0 +1,71 @@
+id: encoder-png_20260327101002Z
+title: "PNG Codec — Typed Encode/Decode Config (ISO/IEC 15948 / W3C PNG 1.2)"
+type: feature
+status: pending
+created: 2026-03-27
+updated: "2026-03-27"
+spec:
+  summary: |
+    PNG codec with typed config records for encoding (compression level, filter
+    strategy) and decoding. Standards-aligned with ISO/IEC 15948 and W3C PNG
+    Third Edition.
+  context: |
+    PNG is lossless but has tunable compression affecting size and speed. The
+    current implementation uses image crate defaults with no configuration.
+    This track adds compression level and filter strategy controls.
+
+    Standards references:
+    - ISO/IEC 15948:2004 — PNG specification (same as W3C)
+    - W3C PNG Specification, Third Edition (2024-01-18)
+    - RFC 2083 — PNG 1.0 (historic, superseded by ISO/IEC 15948)
+    - RFC 1950/1951 — zlib/DEFLATE compression used by PNG
+  codebase_analysis: |
+    - Foundation track creates domain/encoder/png.rs and domain/decoder/png.rs
+    - image crate PngEncoder supports CompressionType and FilterType
+    - CompressionType: Default, Fast, Best, Huffman, Rle
+    - FilterType: NoFilter, Sub, Up, Avg, Paeth, Adaptive
+    - PNG decoding currently uses generic image::load_from_memory
+  acceptance_criteria:
+    - WIT png-encode-config has compression-level (option<u8>), filter-type enum
+    - Domain PngEncodeConfig struct mirrors WIT record
+    - encode_png produces valid PNG with configurable compression
+    - Compression level affects output size (higher = smaller but slower)
+    - Default config produces output identical to current behavior
+    - Domain unit tests cover compression levels and filter types
+    - WASM integration test for encode-png with typed config
+    - TS SDK test for encodePng with typed config
+    - Standards references in module doc comments
+  out_of_scope: |
+    - APNG (animated PNG) — separate format concern
+    - PNG interlacing config (Adam7)
+    - ICC color profile embedding
+    - PNG text/metadata chunks
+  technical_notes: |
+    PNG filter-type maps directly to image crate FilterType enum. Compression
+    level can either map to the named CompressionType variants or to a numeric
+    zlib level (0-9). Prefer the numeric level for precision, mapping to
+    CompressionType internally.
+plan:
+  - phase: "Config & Domain"
+    tasks:
+      - text: "Expand WIT png-encode-config with compression-level (option<u8>), filter-type enum"
+        done: false
+      - text: "Update domain PngEncodeConfig, implement encode_png with full config"
+        done: false
+      - text: "Domain unit tests for compression levels, filter types, default config"
+        done: false
+  - phase: "Adapter & SDK"
+    tasks:
+      - text: "Update adapter for encode-png WIT function"
+        done: false
+      - text: "WASM integration test for encode-png with typed config"
+        done: false
+      - text: "TS SDK test for encodePng with typed config"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "PNG roundtrip pixel-exact through WASM with all config variations"
+        done: false
+      - text: "Verify compression level affects output size"
+        done: false
+extra: {}

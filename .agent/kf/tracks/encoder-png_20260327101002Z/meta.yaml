@@ -1,0 +1,8 @@
+title: PNG Codec — Typed Encode/Decode Config (ISO/IEC 15948 / W3C PNG 1.2)
+status: pending
+type: feature
+approved: false
+created: '2026-03-27'
+updated: '2026-03-27'
+deps:
+- encoder-refactor-foundation_20260327101000Z
