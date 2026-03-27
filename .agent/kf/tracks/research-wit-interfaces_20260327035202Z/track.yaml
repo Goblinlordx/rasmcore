@@ -1,65 +1,77 @@
 id: research-wit-interfaces_20260327035202Z
-title: "Research: WIT Interface Design Patterns & Governance"
+title: 'Research: WIT Interface Design Patterns & Governance'
 type: research
 status: pending
 created: 2026-03-27
-updated: 2026-03-27
+updated: '2026-03-27'
 spec:
-  summary: |
-    Study WIT interface design patterns from the Bytecode Alliance and existing
+  summary: 'Study WIT interface design patterns from the Bytecode Alliance and existing
+
     component ecosystems to inform our own interface governance strategy.
-  context: |
-    Interface governance is identified as the biggest architectural challenge. If our
+
+    '
+  context: 'Interface governance is identified as the biggest architectural challenge. If our
+
     image tool and video tool need to interoperate, they must agree on shared types
+
     (Buffer, Frame, Stream). Getting the WIT interfaces right is critical — they are
+
     the contract that everything else builds on.
-  codebase_analysis: |
-    Fresh project. Research targets external WIT definitions and patterns.
+
+    '
+  codebase_analysis: 'Fresh project. Research targets external WIT definitions and patterns.
+
+    '
   acceptance_criteria:
-    - Document Bytecode Alliance standard WIT definitions (wasi:io, wasi:filesystem, wasi:http)
-    - Analyze how existing WASM component projects structure their WIT worlds
-    - Research shared type patterns — how Buffer/Frame/Stream types should be defined
-    - Document WIT versioning and evolution strategies
-    - Study Fermyon, Fastly, and other production WIT usage
-    - Produce draft governance principles for our interface design
-    - Identify the minimal set of shared types needed across image/video/data domains
-  out_of_scope: |
-    Writing final WIT interfaces — that belongs to the architecture design track.
-  technical_notes: |
-    Key question: Should we define our own "razm" world with custom interfaces, or
+  - Document Bytecode Alliance standard WIT definitions (wasi:io, wasi:filesystem, wasi:http)
+  - Analyze how existing WASM component projects structure their WIT worlds
+  - Research shared type patterns — how Buffer/Frame/Stream types should be defined
+  - Document WIT versioning and evolution strategies
+  - Study Fermyon, Fastly, and other production WIT usage
+  - Produce draft governance principles for our interface design
+  - Identify the minimal set of shared types needed across image/video/data domains
+  out_of_scope: 'Writing final WIT interfaces — that belongs to the architecture design track.
+
+    '
+  technical_notes: 'Key question: Should we define our own "razm" world with custom interfaces, or
+
     compose standard WASI interfaces with thin domain-specific extensions?
 
+
     Need to understand: WIT package namespacing, interface imports vs exports,
+
     resource types, and how component composition works at the WIT level.
+
+    '
 plan:
-  - phase: "Standard WIT Analysis"
-    tasks:
-      - text: "Study wasi:io interface definitions — streams, poll, error handling"
-        done: false
-      - text: "Study wasi:filesystem interface — path operations, directory listing"
-        done: false
-      - text: "Study wasi:http interface — request/response model, streaming bodies"
-        done: false
-      - text: "Document WIT syntax and type system capabilities"
-        done: false
-  - phase: "Ecosystem Patterns"
-    tasks:
-      - text: "Analyze Fermyon Spin component interfaces and world definitions"
-        done: false
-      - text: "Analyze Fastly Compute component model usage"
-        done: false
-      - text: "Research other notable WASM component projects for WIT patterns"
-        done: false
-  - phase: "Shared Type Design Research"
-    tasks:
-      - text: "Research buffer/memory sharing patterns between WASM components"
-        done: false
-      - text: "Research frame/image representation standards in WIT"
-        done: false
-      - text: "Document WIT resource types and ownership semantics"
-        done: false
-  - phase: "Synthesis"
-    tasks:
-      - text: "Compile interface governance principles document"
-        done: false
+- phase: Standard WIT Analysis
+  tasks:
+  - text: Study wasi:io interface definitions — streams, poll, error handling
+    done: true
+  - text: Study wasi:filesystem interface — path operations, directory listing
+    done: true
+  - text: Study wasi:http interface — request/response model, streaming bodies
+    done: true
+  - text: Document WIT syntax and type system capabilities
+    done: true
+- phase: Ecosystem Patterns
+  tasks:
+  - text: Analyze Fermyon Spin component interfaces and world definitions
+    done: true
+  - text: Analyze Fastly Compute component model usage
+    done: true
+  - text: Research other notable WASM component projects for WIT patterns
+    done: true
+- phase: Shared Type Design Research
+  tasks:
+  - text: Research buffer/memory sharing patterns between WASM components
+    done: true
+  - text: Research frame/image representation standards in WIT
+    done: true
+  - text: Document WIT resource types and ownership semantics
+    done: true
+- phase: Synthesis
+  tasks:
+  - text: Compile interface governance principles document
+    done: true
 extra: {}
