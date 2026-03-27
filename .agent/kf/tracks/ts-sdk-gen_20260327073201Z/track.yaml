@@ -112,5 +112,5 @@ plan:
 - phase: Integration
   tasks:
   - text: Add SDK generation and test steps to scripts/validate.sh (conditional on jco availability)
-    done: false
+    done: true
 extra: {}

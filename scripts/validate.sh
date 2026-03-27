@@ -74,6 +74,29 @@ else
   echo "  SKIP — requires built .wasm and fixtures"
 fi
 
+echo "=== 7. TypeScript SDK tests ==="
+if command -v npx &>/dev/null && [ -f "package.json" ] && [ -d "tests/fixtures/generated" ]; then
+  # Generate SDK if not already present
+  if [ ! -f "sdk/typescript/generated/rasmcore-image.js" ]; then
+    if bash scripts/generate-ts-sdk.sh 2>&1; then
+      echo "  SDK generated"
+    else
+      echo "  FAIL — SDK generation failed"
+      FAILED=1
+    fi
+  fi
+  if [ -f "sdk/typescript/generated/rasmcore-image.js" ]; then
+    if node --test sdk/typescript/tests/ 2>&1; then
+      echo "  PASS"
+    else
+      echo "  FAIL — TypeScript SDK tests failed"
+      FAILED=1
+    fi
+  fi
+else
+  echo "  SKIP — requires npx, package.json, and fixtures"
+fi
+
 echo ""
 if [ "$FAILED" -eq 0 ]; then
   echo "=== ALL CHECKS PASSED ==="
