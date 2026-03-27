@@ -1,75 +1,91 @@
 id: design-architecture_20260327035205Z
-title: "Research: Architecture Design & Interface Specification"
+title: 'Research: Architecture Design & Interface Specification'
 type: research
 status: pending
 created: 2026-03-27
-updated: 2026-03-27
+updated: '2026-03-27'
 spec:
-  summary: |
-    Synthesize all research findings into concrete architecture decisions,
+  summary: 'Synthesize all research findings into concrete architecture decisions,
+
     draft WIT interface definitions, module structure, and a phased
+
     implementation roadmap for the razm/core ecosystem.
-  context: |
-    This is the capstone research track. After all investigation tracks are complete,
+
+    '
+  context: 'This is the capstone research track. After all investigation tracks are complete,
+
     this track takes the findings and produces the actual design artifacts that will
+
     guide implementation. This is where we make binding decisions about interfaces,
+
     module boundaries, and project structure.
-  codebase_analysis: |
-    Will build on findings from all prior research tracks stored in
+
+    '
+  codebase_analysis: 'Will build on findings from all prior research tracks stored in
+
     .agent/kf/tracks/{trackId}/ directories.
+
+    '
   acceptance_criteria:
-    - Produce final technology decision document (go/no-go for each component)
-    - Draft complete set of WIT interface definitions for core domains
-    - Define module structure — what components exist, their responsibilities
-    - Define shared type definitions (Buffer, Frame, Stream, Error)
-    - Design the host SDK API surface for Go, TypeScript, and Python
-    - Produce dependency/composition diagram showing how modules relate
-    - Create phased implementation roadmap with clear milestones
-    - Identify minimum viable product (MVP) scope for first release
-  out_of_scope: |
-    Actual implementation. This produces the blueprint, not the building.
-  technical_notes: |
-    Key decisions to make:
+  - Produce final technology decision document (go/no-go for each component)
+  - Draft complete set of WIT interface definitions for core domains
+  - Define module structure — what components exist, their responsibilities
+  - Define shared type definitions (Buffer, Frame, Stream, Error)
+  - Design the host SDK API surface for Go, TypeScript, and Python
+  - Produce dependency/composition diagram showing how modules relate
+  - Create phased implementation roadmap with clear milestones
+  - Identify minimum viable product (MVP) scope for first release
+  out_of_scope: 'Actual implementation. This produces the blueprint, not the building.
+
+    '
+  technical_notes: 'Key decisions to make:
+
     - WASI 0.2 vs 0.3 target
+
     - Coarse-grained vs fine-grained API design (buffer passing strategy)
+
     - Monorepo vs multi-repo structure
+
     - Which domains to tackle first (MVP ordering)
+
     - Plugin interface versioning strategy
+
+    '
 plan:
-  - phase: "Research Synthesis"
-    tasks:
-      - text: "Review and consolidate all research track findings"
-        done: false
-      - text: "Identify confirmed capabilities vs known gaps vs risks"
-        done: false
-      - text: "Produce technology decision matrix with rationale"
-        done: false
-  - phase: "Interface Design"
-    tasks:
-      - text: "Draft shared core types WIT package (buffer, stream, frame, error)"
-        done: false
-      - text: "Draft image-processing WIT interface definitions"
-        done: false
-      - text: "Draft video-processing WIT interface definitions"
-        done: false
-      - text: "Draft data-processing WIT interface definitions"
-        done: false
-      - text: "Draft plugin/codec WIT interface pattern"
-        done: false
-  - phase: "Module Architecture"
-    tasks:
-      - text: "Define module dependency graph and composition model"
-        done: false
-      - text: "Design host SDK API surface for each target language"
-        done: false
-      - text: "Define repository structure and build system"
-        done: false
-  - phase: "Roadmap"
-    tasks:
-      - text: "Define MVP scope — minimum set of modules for first useful release"
-        done: false
-      - text: "Create phased implementation roadmap with milestones"
-        done: false
-      - text: "Identify team/resource requirements for each phase"
-        done: false
+- phase: Research Synthesis
+  tasks:
+  - text: Review and consolidate all research track findings
+    done: true
+  - text: Identify confirmed capabilities vs known gaps vs risks
+    done: true
+  - text: Produce technology decision matrix with rationale
+    done: true
+- phase: Interface Design
+  tasks:
+  - text: Draft shared core types WIT package (buffer, stream, frame, error)
+    done: true
+  - text: Draft image-processing WIT interface definitions
+    done: true
+  - text: Draft video-processing WIT interface definitions
+    done: true
+  - text: Draft data-processing WIT interface definitions
+    done: true
+  - text: Draft plugin/codec WIT interface pattern
+    done: true
+- phase: Module Architecture
+  tasks:
+  - text: Define module dependency graph and composition model
+    done: true
+  - text: Design host SDK API surface for each target language
+    done: true
+  - text: Define repository structure and build system
+    done: true
+- phase: Roadmap
+  tasks:
+  - text: Define MVP scope — minimum set of modules for first useful release
+    done: true
+  - text: Create phased implementation roadmap with milestones
+    done: true
+  - text: Identify team/resource requirements for each phase
+    done: true
 extra: {}
