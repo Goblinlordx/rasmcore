@@ -1,0 +1,45 @@
+# Tech Stack — razm/core
+#
+# NOTE: This is a RESEARCH PHASE project. The tech stack below represents
+# the intended/candidate technologies to be validated during research.
+
+language:
+  primary: rust
+  note: "Core modules written in Rust, compiled to WASM"
+
+compilation_target:
+  primary: wasm32-wasip2
+  note: "WASI 0.2/0.3 Component Model"
+
+interface_definition:
+  format: wit
+  tooling:
+    - wit-bindgen
+    - wasm-tools
+    - cargo-component
+
+host_sdks:
+  - language: go
+    tooling: wit-bindgen-go, wasmtime-go
+  - language: typescript
+    tooling: jco
+  - language: python
+    tooling: componentize-py
+  - language: rust
+    tooling: wasmtime
+
+candidate_crates:
+  image:
+    - image
+    - "OxiMedia (to verify existence/maturity)"
+  video:
+    - rav1e
+    - "open codec crates (to research)"
+  data:
+    - polars
+  gpu:
+    - wgpu
+
+project_tooling:
+  documentation: markdown
+  track_management: kiloforge

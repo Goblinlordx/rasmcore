@@ -1,0 +1,39 @@
+# Product Definition — razm/core
+name: razm-core
+tagline: "Modular WASM Component Ecosystem for Media & Data Processing"
+description: |
+  A set of interoperable Rust modules compiled to WebAssembly (WASI 0.2/0.3 Component Model)
+  providing best-in-class image, video, and data processing with simple cross-language APIs.
+
+  The project eliminates C/C++ FFI security risks, achieves seamless portability, and enables
+  modular plugin distribution — including a sidecar pattern for patent-encumbered codecs.
+
+vision: |
+  Build a "Universal Pure-Rust WASM Engine" — an ecosystem of interoperable components that
+  provide image processing, video processing, and data transformation capabilities across
+  any platform and language through standardized WIT interfaces.
+
+goals:
+  - Seamless cross-platform, cross-language portability via WASM Component Model
+  - Security-first design — eliminate C/C++ parser vulnerabilities
+  - Modular plugin architecture with WIT interface governance
+  - Support for large file streaming via WASI-IO (no full-file memory loading)
+  - GPU acceleration via wgpu/WebGPU where available
+  - Patent-encumbered codec support via sidecar plugin distribution
+
+domains:
+  - name: image-processing
+    description: "Image format handling, conversion, filtering, and manipulation"
+  - name: video-processing
+    description: "Video encoding, decoding, transcoding, and frame manipulation"
+  - name: data-processing
+    description: "Data transformation, format conversion, and high-performance analytics"
+  - name: core-runtime
+    description: "Shared types, buffer management, stream interfaces, and plugin hosting"
+
+target_users:
+  - "Application developers needing portable media/data processing"
+  - "Cross-language teams (Go, TypeScript, Python, Rust)"
+  - "High-security environments (government, military, enterprise)"
+
+current_phase: research

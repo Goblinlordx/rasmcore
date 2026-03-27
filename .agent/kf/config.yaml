@@ -1,0 +1,5 @@
+# Kiloforge Configuration
+version: "1.0"
+project_name: razm-core
+primary_branch: main
+created: 2026-03-27
