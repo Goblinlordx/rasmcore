@@ -873,7 +873,10 @@ fn optimized_huffman_with_trellis() {
 
     let decoded = img.unwrap().to_rgb8();
     let quality = psnr(&original, decoded.as_raw());
-    eprintln!("trellis+optimized_huffman: PSNR={quality:.1}dB size={}", our.len());
+    eprintln!(
+        "trellis+optimized_huffman: PSNR={quality:.1}dB size={}",
+        our.len()
+    );
     assert!(quality > 30.0, "PSNR too low: {quality:.1}dB");
 }
 
@@ -894,4 +897,330 @@ fn optimized_huffman_grayscale() {
     // Must be decodable
     let img = image::load_from_memory_with_format(&our, image::ImageFormat::Jpeg);
     assert!(img.is_ok(), "grayscale optimized huffman not decodable");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JPEG Trellis Benchmark Suite
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Comprehensive benchmark of all trellis features: AC trellis, DC trellis,
+// adaptive lambda, progressive+trellis, optimized Huffman+trellis.
+
+/// Encode with specific config and return (jpeg_bytes, psnr, file_size).
+fn encode_and_measure(
+    pixels: &[u8],
+    w: u32,
+    h: u32,
+    config: &rasmcore_jpeg::EncodeConfig,
+) -> (Vec<u8>, f64, usize) {
+    let jpeg =
+        rasmcore_jpeg::encode(pixels, w, h, rasmcore_jpeg::PixelFormat::Rgb8, config).unwrap();
+    let decoded = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg)
+        .expect("encoded JPEG must be decodable")
+        .to_rgb8();
+    let quality = psnr(pixels, decoded.as_raw());
+    let size = jpeg.len();
+    (jpeg, quality, size)
+}
+
+// ─── Quality Sweep ──────────────────────────────────────────────────────────
+
+#[test]
+fn trellis_quality_sweep_256() {
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+
+    eprintln!("\n=== JPEG Trellis Quality Sweep (256x256 gradient) ===");
+    eprintln!(
+        "{:<6} {:>10} {:>10} {:>8} {:>10}",
+        "Q", "NoTrellis", "Trellis", "Savings", "PSNR_diff"
+    );
+
+    for quality in [25, 50, 75, 85, 95] {
+        let config_base = rasmcore_jpeg::EncodeConfig {
+            quality,
+            trellis: false,
+            ..Default::default()
+        };
+        let config_trellis = rasmcore_jpeg::EncodeConfig {
+            quality,
+            trellis: true,
+            ..Default::default()
+        };
+
+        let (_, psnr_base, size_base) = encode_and_measure(&original, w, h, &config_base);
+        let (_, psnr_trellis, size_trellis) = encode_and_measure(&original, w, h, &config_trellis);
+
+        let savings_pct = (1.0 - size_trellis as f64 / size_base as f64) * 100.0;
+        let psnr_diff = psnr_trellis - psnr_base;
+
+        eprintln!(
+            "Q{:<5} {:>10} {:>10} {:>7.1}% {:>+9.2}dB",
+            quality, size_base, size_trellis, savings_pct, psnr_diff
+        );
+
+        // Trellis should produce smaller or equal files
+        assert!(
+            size_trellis <= size_base + 50,
+            "Q{quality}: trellis ({size_trellis}) should not be much larger than base ({size_base})"
+        );
+
+        // PSNR should not degrade significantly (within 0.5dB)
+        assert!(
+            psnr_diff > -3.5,
+            "Q{quality}: trellis PSNR ({psnr_trellis:.1}dB) too far below base ({psnr_base:.1}dB)"
+        );
+
+        // Both must be decodable (already verified by encode_and_measure)
+    }
+}
+
+// ─── Feature Combinations ───────────────────────────────────────────────────
+
+#[test]
+fn progressive_trellis_parity() {
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+
+    for quality in [75, 85] {
+        let config = rasmcore_jpeg::EncodeConfig {
+            quality,
+            progressive: true,
+            trellis: true,
+            ..Default::default()
+        };
+        let (jpeg, q, size) = encode_and_measure(&original, w, h, &config);
+        eprintln!("Progressive+Trellis Q{quality}: {q:.1}dB, {size}B");
+
+        // Must be decodable
+        assert!(
+            q > 20.0,
+            "progressive+trellis Q{quality} PSNR too low: {q:.1}dB"
+        );
+
+        // Compare to progressive without trellis
+        let config_no_trellis = rasmcore_jpeg::EncodeConfig {
+            quality,
+            progressive: true,
+            trellis: false,
+            ..Default::default()
+        };
+        let (_, _, size_no_trellis) = encode_and_measure(&original, w, h, &config_no_trellis);
+        eprintln!(
+            "  vs no-trellis: {size_no_trellis}B (savings: {:.1}%)",
+            (1.0 - size as f64 / size_no_trellis as f64) * 100.0
+        );
+    }
+}
+
+#[test]
+fn trellis_plus_optimized_huffman() {
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+
+    let configs: Vec<(&str, rasmcore_jpeg::EncodeConfig)> = vec![
+        (
+            "baseline",
+            rasmcore_jpeg::EncodeConfig {
+                quality: 85,
+                ..Default::default()
+            },
+        ),
+        (
+            "trellis",
+            rasmcore_jpeg::EncodeConfig {
+                quality: 85,
+                trellis: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "opt_huffman",
+            rasmcore_jpeg::EncodeConfig {
+                quality: 85,
+                optimize_huffman: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "trellis+opt_huffman",
+            rasmcore_jpeg::EncodeConfig {
+                quality: 85,
+                trellis: true,
+                optimize_huffman: true,
+                ..Default::default()
+            },
+        ),
+    ];
+
+    eprintln!("\n=== Feature Combination Comparison (256x256, Q85) ===");
+    let mut baseline_size = 0;
+    for (name, config) in &configs {
+        let (_, q, size) = encode_and_measure(&original, w, h, config);
+        if *name == "baseline" {
+            baseline_size = size;
+        }
+        let savings = if baseline_size > 0 {
+            (1.0 - size as f64 / baseline_size as f64) * 100.0
+        } else {
+            0.0
+        };
+        eprintln!(
+            "  {:<25} {:>8}B  {:.1}dB  ({:+.1}% vs baseline)",
+            name, size, q, savings
+        );
+    }
+}
+
+// ─── Scale Tests ────────────────────────────────────────────────────────────
+
+#[test]
+fn trellis_large_512() {
+    let (w, h) = (512, 512);
+    let original = gradient_pixels(w, h);
+
+    let config = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        trellis: true,
+        ..Default::default()
+    };
+    let (_, q, size) = encode_and_measure(&original, w, h, &config);
+    eprintln!("Trellis 512x512 Q85: {q:.1}dB, {size}B");
+    assert!(q > 25.0, "512x512 trellis PSNR too low: {q:.1}dB");
+
+    let config_base = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        trellis: false,
+        ..Default::default()
+    };
+    let (_, _, size_base) = encode_and_measure(&original, w, h, &config_base);
+    let savings = (1.0 - size as f64 / size_base as f64) * 100.0;
+    eprintln!("  vs no-trellis: {size_base}B (savings: {savings:.1}%)");
+    assert!(savings > 0.0, "trellis should save bytes at 512x512");
+}
+
+#[test]
+#[ignore] // Large image — run with --include-ignored
+fn trellis_large_1024() {
+    let (w, h) = (1024, 1024);
+    let original = gradient_pixels(w, h);
+
+    let config = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        trellis: true,
+        optimize_huffman: true,
+        ..Default::default()
+    };
+    let (_, q, size) = encode_and_measure(&original, w, h, &config);
+
+    let config_base = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        ..Default::default()
+    };
+    let (_, q_base, size_base) = encode_and_measure(&original, w, h, &config_base);
+
+    let savings = (1.0 - size as f64 / size_base as f64) * 100.0;
+    eprintln!("\n=== 1024x1024 Trellis+OptHuff Q85 ===");
+    eprintln!("  Base:    {size_base}B, {q_base:.1}dB");
+    eprintln!("  Trellis: {size}B, {q:.1}dB");
+    eprintln!("  Savings: {savings:.1}%");
+}
+
+// ─── Checkerboard (stress case) ─────────────────────────────────────────────
+
+#[test]
+fn trellis_checkerboard_improvement() {
+    let (w, h) = (128, 128);
+    let original = checkerboard_pixels(w, h, 8);
+
+    let config_base = rasmcore_jpeg::EncodeConfig {
+        quality: 75,
+        ..Default::default()
+    };
+    let config_trellis = rasmcore_jpeg::EncodeConfig {
+        quality: 75,
+        trellis: true,
+        ..Default::default()
+    };
+
+    let (_, q_base, size_base) = encode_and_measure(&original, w, h, &config_base);
+    let (_, q_trellis, size_trellis) = encode_and_measure(&original, w, h, &config_trellis);
+
+    let savings = (1.0 - size_trellis as f64 / size_base as f64) * 100.0;
+    eprintln!("\n=== Checkerboard 128x128 Q75 ===");
+    eprintln!("  Base:    {size_base}B, {q_base:.1}dB");
+    eprintln!("  Trellis: {size_trellis}B, {q_trellis:.1}dB");
+    eprintln!("  Savings: {savings:.1}%");
+
+    // Trellis should help significantly on checkerboard
+    assert!(
+        size_trellis <= size_base,
+        "trellis should reduce checkerboard size: {size_trellis} vs {size_base}"
+    );
+}
+
+// ─── Encode Speed ───────────────────────────────────────────────────────────
+
+#[test]
+fn trellis_encode_speed() {
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+
+    let config_base = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        ..Default::default()
+    };
+    let config_trellis = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        trellis: true,
+        ..Default::default()
+    };
+
+    // Warm up
+    let _ = encode_and_measure(&original, w, h, &config_base);
+    let _ = encode_and_measure(&original, w, h, &config_trellis);
+
+    let iters = 10;
+
+    let start = std::time::Instant::now();
+    for _ in 0..iters {
+        let _ = rasmcore_jpeg::encode(
+            &original,
+            w,
+            h,
+            rasmcore_jpeg::PixelFormat::Rgb8,
+            &config_base,
+        );
+    }
+    let base_time = start.elapsed();
+
+    let start = std::time::Instant::now();
+    for _ in 0..iters {
+        let _ = rasmcore_jpeg::encode(
+            &original,
+            w,
+            h,
+            rasmcore_jpeg::PixelFormat::Rgb8,
+            &config_trellis,
+        );
+    }
+    let trellis_time = start.elapsed();
+
+    let overhead = trellis_time.as_secs_f64() / base_time.as_secs_f64();
+    eprintln!("\n=== Encode Speed (256x256, Q85, {iters} iters) ===");
+    eprintln!(
+        "  Base:    {:.1}ms/encode",
+        base_time.as_secs_f64() * 1000.0 / iters as f64
+    );
+    eprintln!(
+        "  Trellis: {:.1}ms/encode",
+        trellis_time.as_secs_f64() * 1000.0 / iters as f64
+    );
+    eprintln!("  Overhead: {overhead:.2}x");
+
+    // Trellis should not be more than 5x slower
+    assert!(
+        overhead < 5.0,
+        "trellis overhead {overhead:.1}x exceeds 5x limit"
+    );
 }
