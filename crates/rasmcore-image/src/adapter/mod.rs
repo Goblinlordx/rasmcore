@@ -85,6 +85,20 @@ fn to_domain_image_info(info: &types::ImageInfo) -> domain::types::ImageInfo {
     }
 }
 
+fn to_domain_tiff_compression(
+    c: Option<encoder::TiffCompression>,
+) -> domain::encoder::tiff::TiffCompression {
+    match c {
+        None => domain::encoder::tiff::TiffCompression::Lzw,
+        Some(encoder::TiffCompression::None) => domain::encoder::tiff::TiffCompression::None,
+        Some(encoder::TiffCompression::Lzw) => domain::encoder::tiff::TiffCompression::Lzw,
+        Some(encoder::TiffCompression::Deflate) => domain::encoder::tiff::TiffCompression::Deflate,
+        Some(encoder::TiffCompression::Packbits) => {
+            domain::encoder::tiff::TiffCompression::PackBits
+        }
+    }
+}
+
 fn to_domain_png_filter(f: Option<encoder::PngFilterType>) -> domain::encoder::png::PngFilterType {
     match f {
         None => domain::encoder::png::PngFilterType::Adaptive,
@@ -229,6 +243,18 @@ impl encoder::Guest for Component {
             lossless: config.lossless.unwrap_or(false),
         };
         domain::encoder::webp::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
+    fn encode_tiff(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::TiffEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let domain_config = domain::encoder::tiff::TiffEncodeConfig {
+            compression: to_domain_tiff_compression(config.compression),
+        };
+        domain::encoder::tiff::encode(&pixels, &domain_info, &domain_config).map_err(to_wit_error)
     }
 
     fn encode_gif(

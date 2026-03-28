@@ -126,6 +126,18 @@ pub fn write_gif(
     }
 }
 
+/// Write a node's output as TIFF with typed config.
+pub fn write_tiff(
+    graph: &mut NodeGraph,
+    node_id: u32,
+    config: &encoder::tiff::TiffEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = graph.request_region(node_id, full)?;
+    encoder::tiff::encode(&pixels, &info, config)
+}
+
 /// Write a node's output as WebP with typed config and optional metadata.
 pub fn write_webp(
     graph: &mut NodeGraph,

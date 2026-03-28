@@ -51,6 +51,19 @@ interface pipeline {
         lossless: option<bool>,
     }
 
+    /// TIFF compression algorithm (mirrors encoder tiff-compression).
+    enum tiff-compression {
+        none,
+        lzw,
+        deflate,
+        packbits,
+    }
+
+    /// TIFF write configuration.
+    record tiff-write-config {
+        compression: option<tiff-compression>,
+    }
+
     /// GIF write configuration.
     record gif-write-config {
         repeat: option<u16>,
@@ -130,6 +143,9 @@ interface pipeline {
 
         /// Write as WebP. If metadata is provided, it is embedded.
         write-webp: func(source: node-id, config: webp-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
+
+        /// Write as TIFF.
+        write-tiff: func(source: node-id, config: tiff-write-config) -> result<buffer, rasmcore-error>;
 
         /// Write as GIF. If metadata is provided, it is embedded.
         write-gif: func(source: node-id, config: gif-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;

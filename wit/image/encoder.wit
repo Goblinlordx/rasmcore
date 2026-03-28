@@ -45,6 +45,24 @@ interface encoder {
         lossless: option<bool>,
     }
 
+    /// TIFF compression algorithm.
+    enum tiff-compression {
+        /// No compression.
+        none,
+        /// LZW compression (default, good general-purpose lossless).
+        lzw,
+        /// Deflate/zlib compression (better ratio, slower).
+        deflate,
+        /// PackBits run-length encoding (fast, moderate compression).
+        packbits,
+    }
+
+    /// TIFF encode configuration
+    record tiff-encode-config {
+        /// Compression algorithm (default: lzw)
+        compression: option<tiff-compression>,
+    }
+
     /// GIF encode configuration
     record gif-encode-config {
         /// Repeat count: 0 = infinite loop, n = repeat n times (default: 0)
@@ -65,6 +83,9 @@ interface encoder {
 
     /// Encode pixel data to WebP with typed configuration
     encode-webp: func(pixels: buffer, info: image-info, config: webp-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to TIFF with typed configuration
+    encode-tiff: func(pixels: buffer, info: image-info, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
 
     /// Encode pixel data to GIF with typed configuration
     encode-gif: func(pixels: buffer, info: image-info, config: gif-encode-config) -> result<buffer, rasmcore-error>;

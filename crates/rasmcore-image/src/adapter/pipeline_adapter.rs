@@ -32,6 +32,24 @@ fn to_domain_png_filter_pipeline(
     }
 }
 
+fn to_domain_tiff_compression_pipeline(
+    c: Option<pipeline::TiffCompression>,
+) -> crate::domain::encoder::tiff::TiffCompression {
+    match c {
+        None => crate::domain::encoder::tiff::TiffCompression::Lzw,
+        Some(pipeline::TiffCompression::None) => {
+            crate::domain::encoder::tiff::TiffCompression::None
+        }
+        Some(pipeline::TiffCompression::Lzw) => crate::domain::encoder::tiff::TiffCompression::Lzw,
+        Some(pipeline::TiffCompression::Deflate) => {
+            crate::domain::encoder::tiff::TiffCompression::Deflate
+        }
+        Some(pipeline::TiffCompression::Packbits) => {
+            crate::domain::encoder::tiff::TiffCompression::PackBits
+        }
+    }
+}
+
 /// Pipeline resource implementation wrapping the domain NodeGraph.
 pub struct PipelineResource {
     graph: RefCell<NodeGraph>,
@@ -302,6 +320,17 @@ impl GuestImagePipeline for PipelineResource {
             domain_meta.as_ref(),
         )
         .map_err(to_wit_error)
+    }
+
+    fn write_tiff(
+        &self,
+        source: NodeId,
+        config: pipeline::TiffWriteConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let cfg = domain::encoder::tiff::TiffEncodeConfig {
+            compression: to_domain_tiff_compression_pipeline(config.compression),
+        };
+        sink::write_tiff(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
     }
 
     fn write(
