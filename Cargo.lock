@@ -2186,6 +2186,16 @@ name = "rasmcore-fits"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-hevc"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-bitio",
+ "rasmcore-color",
+ "rasmcore-dct",
+ "rasmcore-isobmff",
+]
+
+[[package]]
 name = "rasmcore-image"
 version = "0.1.0"
 dependencies = [

@@ -17,6 +17,7 @@ members = [
     "crates/rasmcore-fits",
     "crates/rasmcore-isobmff",
     "crates/rasmcore-dct",
+    "crates/rasmcore-hevc",
     "tests/wasm-integration",
     "tests/codec-parity",
 ]
