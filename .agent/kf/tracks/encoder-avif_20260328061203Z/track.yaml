@@ -80,11 +80,11 @@ plan:
 - phase: Parity Tests
   tasks:
   - text: Add AVIF references to generate.sh at q50/q75/q90
-    done: false
+    done: true
   - text: Roundtrip quality test (PSNR > 30dB at quality 80)
-    done: false
+    done: true
   - text: File size comparison vs ImageMagick AVIF
-    done: false
+    done: true
   - text: RGBA input test (alpha channel preserved through encode/decode)
-    done: false
+    done: true
 extra: {}

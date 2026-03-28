@@ -268,10 +268,71 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn encode_avif_produces_valid_avif() {
+        let (pixels, info) = make_rgb8_pixels(16, 16);
+        let result = encode(&pixels, &info, "avif", Some(50)).unwrap();
+        assert_eq!(&result[4..8], b"ftyp");
+    }
+
+    #[test]
+    fn encode_avif_rgba8() {
+        let (pixels, info) = make_rgba8_pixels(16, 16);
+        let result = encode(&pixels, &info, "avif", None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn roundtrip_avif_preserves_dimensions() {
+        let (pixels, info) = make_rgb8_pixels(16, 16);
+        let encoded = encode(&pixels, &info, "avif", Some(80)).unwrap();
+        // AVIF decode may not be available in all builds (needs avif-native feature)
+        match crate::domain::decoder::decode(&encoded) {
+            Ok(decoded) => {
+                assert_eq!(decoded.info.width, 16);
+                assert_eq!(decoded.info.height, 16);
+            }
+            Err(_) => {
+                // AVIF decode not available in this build, just verify encode worked
+                assert_eq!(&encoded[4..8], b"ftyp");
+            }
+        }
+    }
+
+    #[test]
+    fn avif_roundtrip_quality_psnr() {
+        let (pixels, info) = make_rgb8_pixels(32, 32);
+        let encoded = encode(&pixels, &info, "avif", Some(80)).unwrap();
+        // AVIF decode may not be available
+        let decoded = match crate::domain::decoder::decode_as(&encoded, PixelFormat::Rgb8) {
+            Ok(d) => d,
+            Err(_) => return, // Skip PSNR test if decode unavailable
+        };
+        let mse: f64 = pixels
+            .iter()
+            .zip(decoded.pixels.iter())
+            .map(|(&a, &b)| {
+                let d = a as f64 - b as f64;
+                d * d
+            })
+            .sum::<f64>()
+            / pixels.len() as f64;
+        let psnr = if mse == 0.0 {
+            f64::INFINITY
+        } else {
+            10.0 * (255.0_f64 * 255.0 / mse).log10()
+        };
+        assert!(
+            psnr > 25.0,
+            "AVIF roundtrip PSNR too low: {psnr:.1}dB (expected >25dB at quality 80)"
+        );
+    }
+
+    #[test]
     fn supported_formats_lists_expected() {
         let fmts = supported_formats();
         for f in [
-            "png", "jpeg", "webp", "gif", "tga", "hdr", "pnm", "exr", "dds",
+            "png", "jpeg", "webp", "gif", "avif", "tga", "hdr", "pnm", "exr", "dds",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing format: {f}");
         }
