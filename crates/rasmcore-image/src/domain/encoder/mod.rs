@@ -43,9 +43,11 @@ pub fn encode(
             png::encode(&img, info, &config)
         }
         "webp" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            let config = webp::WebpEncodeConfig::default();
-            webp::encode(&img, info, &config)
+            let config = webp::WebpEncodeConfig {
+                quality: quality.unwrap_or(75),
+                lossless: false,
+            };
+            webp::encode_pixels(pixels, info, &config)
         }
         "gif" => {
             let img = pixels_to_dynamic_image(pixels, info)?;

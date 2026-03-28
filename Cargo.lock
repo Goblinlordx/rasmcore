@@ -2139,10 +2139,20 @@ version = "0.1.0"
 [[package]]
 name = "rasmcore-bmp"
 version = "0.1.0"
+dependencies = [
+ "rasmcore-bitio",
+]
 
 [[package]]
 name = "rasmcore-color"
 version = "0.1.0"
+
+[[package]]
+name = "rasmcore-deflate"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-bitio",
+]
 
 [[package]]
 name = "rasmcore-image"
@@ -2163,6 +2173,7 @@ dependencies = [
  "rasmcore-pnm",
  "rasmcore-qoi",
  "rasmcore-tga",
+ "rasmcore-webp",
  "rgb",
  "tiff",
  "wit-bindgen-rt",
@@ -2173,6 +2184,14 @@ dependencies = [
 [[package]]
 name = "rasmcore-jxl"
 version = "0.1.0"
+
+[[package]]
+name = "rasmcore-lzw"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-bitio",
+ "weezl",
+]
 
 [[package]]
 name = "rasmcore-pipeline"

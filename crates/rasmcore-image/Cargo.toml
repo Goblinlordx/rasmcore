@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 rasmcore-pipeline = { path = "../rasmcore-pipeline" }
+rasmcore-webp = { path = "../rasmcore-webp" }
 fast_image_resize = "5"
 libblur = "0.15"
 moxcms = "0.8"
