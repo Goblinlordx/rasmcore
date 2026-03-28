@@ -1,0 +1,8 @@
+title: JPEG Progressive Decode — SOF2 Multi-Scan Spectral Selection
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg-encoder-mcu-fix_20260328095000Z

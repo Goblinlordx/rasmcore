@@ -1,0 +1,54 @@
+id: jpeg-progressive-decode_20260328095001Z
+title: JPEG Progressive Decode — SOF2 Multi-Scan Spectral Selection
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Decode progressive JPEG (SOF2) with multi-scan spectral selection and successive
+    approximation. DC-first + AC refinement scan accumulation.
+  context: Encoder already supports progressive (SOF2) with 3-5 scan output. Decoder
+    returns Unsupported for SOF2. Need to accumulate coefficients across multiple
+    SOS scans, handling spectral selection (Ss/Se) and successive approximation (Ah/Al).
+  codebase_analysis: ''
+  acceptance_criteria:
+  - Decode SOF2 progressive JPEG files
+  - Handle DC-first scan (Ss=0, Se=0) and AC refinement scans
+  - Handle successive approximation (Ah/Al bit shifts)
+  - 'Roundtrip: our progressive encode then our progressive decode at PSNR > 25dB'
+  - Decode progressive JPEGs from ImageMagick/libjpeg-turbo
+  out_of_scope: ''
+  technical_notes: 'Architecture: allocate coefficient buffer for all components upfront.
+    Each SOS scan fills a subset of coefficients (Ss..Se range). After all scans,
+    dequantize + IDCT + color convert as normal. Key change from baseline: multiple
+    passes through SOS markers instead of single-pass.'
+plan:
+- phase: Multi-Scan Infrastructure
+  tasks:
+  - text: Allocate per-component coefficient buffers for all MCU blocks
+    done: false
+  - text: Parse multiple SOS markers with spectral selection (Ss, Se) and successive
+      approximation (Ah, Al)
+    done: false
+  - text: Dispatch to DC-first scan decoder or AC refinement scan decoder based on
+      Ss/Se
+    done: false
+- phase: Scan Decoders
+  tasks:
+  - text: 'Implement DC-first scan (Ss=0, Se=0, Al=bit shift): decode DC with point
+      transform'
+    done: false
+  - text: 'Implement AC band scan (Ss>0): decode AC coefficients for spectral range
+      with EOBn runs'
+    done: false
+  - text: 'Implement successive approximation refinement (Ah>0): refine previously
+      decoded coefficients'
+    done: false
+- phase: Validation
+  tasks:
+  - text: 'Roundtrip: our progressive encode then our progressive decode, PSNR > 25dB'
+    done: false
+  - text: Decode progressive JPEG from image crate, compare to baseline decode of
+      same image
+    done: false
+extra: {}

@@ -1,0 +1,43 @@
+id: jpeg-encoder-mcu-fix_20260328095000Z
+title: JPEG Encoder Multi-MCU Fix — Bit Alignment Between Blocks
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Fix encoder bit alignment bug causing invalid output for images larger
+    than 8x8. Decoder proven correct (MAE 0.04 vs reference).
+  context: 'Our encoder produces valid 8x8 single-MCU JPEGs but fails for multi-MCU
+    images (16x16+). Decoder is proven correct: MAE 0.04 when decoding image crate
+    JPEGs. The bug is in the encoder entropy output — likely a bit-alignment issue
+    between MCU blocks or incorrect byte-stuffing.'
+  codebase_analysis: ''
+  acceptance_criteria:
+  - 16x16, 32x32, 64x64 grayscale roundtrip at PSNR > 30dB
+  - 16x16 RGB 4:2:0 roundtrip at PSNR > 25dB
+  - Output decodable by image crate AND our decoder
+  - Previously ignored test re-enabled and passing
+  out_of_scope: ''
+  technical_notes: 'Debug approach: encode 16x16 gray, compare entropy bitstream byte-by-byte
+    against image crate output for same input. Likely fix: bit writer flush/alignment
+    at MCU boundary, or byte-stuffing of 0xFF in entropy data.'
+plan:
+- phase: Diagnosis
+  tasks:
+  - text: 'Create byte-level comparison test: encode 16x16 gray with our encoder vs
+      image crate, diff entropy data'
+    done: false
+  - text: Identify the exact byte/bit offset where our output diverges from reference
+    done: false
+  - text: Trace through HuffmanEntropyEncoder encode_block to find alignment issue
+    done: false
+- phase: Fix and Validate
+  tasks:
+  - text: Fix the identified bit alignment or byte-stuffing issue
+    done: false
+  - text: Re-enable ignored gradient test and verify PSNR > 25dB
+    done: false
+  - text: Test 16x16, 32x32, 64x64 gray and RGB roundtrip via our encode then our
+      decode
+    done: false
+extra: {}
