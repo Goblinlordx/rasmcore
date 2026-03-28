@@ -1,0 +1,41 @@
+id: hevc-csbf-init-fix_20260329000000Z
+title: Fix CODED_SUB_BLOCK_FLAG I-slice init values
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: I-slice CODED_SUB_BLOCK_FLAG_INIT values [153,111,153,111] are wrong — should be [91,171,134,141] per HEVC spec
+    Table 9-32 and libde265 reference. This causes coded_sub_block_flag context to have state=7 instead of expected state=15
+    at QP=19, producing wrong residual coefficient decoding for all images with non-zero residuals.
+  context: The hevc-bin-trace-audit track identified this via bin-by-bin comparison against libde265. The gradient_128x128_q22
+    bin trace matches the reference through bin 30 but diverges at bin 31 (coded_sub_block_flag) because context 14 has state=7
+    instead of the expected state=15. The init table CODED_SUB_BLOCK_FLAG_INIT[0] uses wrong I-slice values — they appear
+    to be CNU placeholders instead of the correct spec values.
+  codebase_analysis: 'Single file change: crates/rasmcore-hevc/src/cabac/context.rs line containing CODED_SUB_BLOCK_FLAG_INIT.
+    Current I-slice row: [153, 111, 153, 111]. Correct values from libde265 contextmodel.cc initValue_coded_sub_block_flag[0..4]:
+    [91, 171, 134, 141]. P/B values [121, 140, 61, 154] are already correct.'
+  acceptance_criteria:
+  - CODED_SUB_BLOCK_FLAG_INIT I-slice values are [91, 171, 134, 141]
+  - Bin trace test for gradient_128x128_q22 matches reference past bin 31 (coded_sub_block_flag)
+  - flat_64x64 parity tests still pass at 48.1dB
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: Residual coding context derivation fixes (covered by hevc-residual-fix track). P/B-slice init table corrections
+    (not tested).
+  technical_notes: 'One-line fix: change CODED_SUB_BLOCK_FLAG_INIT[0] from [153, 111, 153, 111] to [91, 171, 134, 141]. Then
+    run bin trace test to verify the coded_sub_block_flag context state matches the libde265 reference at bin 31 of gradient_128x128_q22.'
+plan: []
+extra: {}
+plan:
+  - phase: Fix Init Table
+    tasks:
+      - text: "Change CODED_SUB_BLOCK_FLAG_INIT I-slice values from [153,111,153,111] to [91,171,134,141]"
+        done: false
+      - text: "Run bin_trace test for gradient_128x128_q22 with --features trace and verify coded_sub_block_flag context matches reference"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "Run all parity tests — flat cases must still pass at 48.1dB"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test -p rasmcore-hevc passes"
+        done: false
