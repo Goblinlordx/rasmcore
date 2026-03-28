@@ -3,120 +3,123 @@ title: Pixel Point Operations — LUT-Based Gamma, Invert, Threshold, Posterize,
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: Per-pixel point operations implemented as composable 256-entry LUTs. Individual ops
-    (gamma, invert, threshold, posterize, clamp) each generate a [u8; 256] lookup table.
-    The pipeline optimizer fuses consecutive point-op nodes into a single combined LUT,
-    reducing N operations to one memory pass regardless of chain length.
-  context: |
-    libvips provides vips_gamma(), vips_invert(), vips_relational_const() (threshold).
+  summary: Per-pixel point operations implemented as composable 256-entry LUTs. Individual ops (gamma, invert, threshold,
+    posterize, clamp) each generate a [u8; 256] lookup table. The pipeline optimizer fuses consecutive point-op nodes into
+    a single combined LUT, reducing N operations to one memory pass regardless of chain length.
+  context: 'libvips provides vips_gamma(), vips_invert(), vips_relational_const() (threshold).
+
     ImageMagick provides --auto-gamma, --negate, --threshold, --posterize, --clamp.
+
     These are fundamental per-pixel ops used as building blocks by higher-level
+
     operations (auto-level, normalize). All are u8->u8 mappings expressible as LUTs.
 
+
     Key insight: every point op is a pure function from input byte to output byte.
+
     When the user chains gamma -> contrast -> posterize, the pipeline can compose
+
     the three LUTs at graph-build time into a single fused LUT, then apply it in
+
     one pass at execution time. This is how libvips optimizes point-op chains.
-  codebase_analysis: |
-    filters.rs already has contrast() which builds a [u8; 256] LUT internally.
+
+    '
+  codebase_analysis: 'filters.rs already has contrast() which builds a [u8; 256] LUT internally.
+
     brightness() does a per-pixel add. Both are point ops that fit this pattern.
+
     The pipeline (pipeline/nodes/) uses an ImageNode trait with compute_region().
+
     A FusedLutNode can implement ImageNode and compose with any upstream point-op
+
     nodes. The optimization pass runs at graph construction time (before execution),
+
     walking the node chain and collapsing adjacent LUT-compatible nodes.
 
+
     Existing brightness() should be refactored to use the LUT infrastructure too,
+
     since brightness(amount) = LUT[i] = clamp(i + offset, 0, 255). Similarly,
+
     contrast() already uses a LUT and can be migrated to the shared infrastructure.
+
+    '
   acceptance_criteria:
-    - PointOp enum with variants for Gamma, Invert, Threshold, Posterize, Clamp, Brightness, Contrast
-    - build_lut(op) -> [u8; 256] generates a LUT for any single PointOp
-    - compose_luts(a, b) -> [u8; 256] fuses two LUTs (b applied after a)
-    - apply_lut(pixels, info, lut) applies a LUT to all color channels, preserving alpha
-    - Pipeline FusedLutNode collapses consecutive point-op nodes into one LUT + one pass
-    - Individual functions gamma(), invert(), threshold(), posterize(), clamp() for direct use
-    - All ops support RGB8, RGBA8, Gray8 (alpha channel preserved)
-    - Output matches ImageMagick reference within MAE < 0.5 for all test patterns
-    - Chained ops (e.g., gamma -> invert -> posterize) produce identical output whether fused or applied separately
-    - Performance within 2x of ImageMagick for single ops; faster for fused chains on 4K images
-  out_of_scope: |
-    Auto-gamma (needs histogram — handled by histogram-analysis track).
+  - PointOp enum with variants for Gamma, Invert, Threshold, Posterize, Clamp, Brightness, Contrast
+  - build_lut(op) -> [u8; 256] generates a LUT for any single PointOp
+  - compose_luts(a, b) -> [u8; 256] fuses two LUTs (b applied after a)
+  - apply_lut(pixels, info, lut) applies a LUT to all color channels, preserving alpha
+  - Pipeline FusedLutNode collapses consecutive point-op nodes into one LUT + one pass
+  - Individual functions gamma(), invert(), threshold(), posterize(), clamp() for direct use
+  - All ops support RGB8, RGBA8, Gray8 (alpha channel preserved)
+  - Output matches ImageMagick reference within MAE < 0.5 for all test patterns
+  - Chained ops (e.g., gamma -> invert -> posterize) produce identical output whether fused or applied separately
+  - Performance within 2x of ImageMagick for single ops; faster for fused chains on 4K images
+  out_of_scope: 'Auto-gamma (needs histogram — handled by histogram-analysis track).
+
     Per-channel LUTs (all ops here are channel-uniform). 3D CLUTs / Hald CLUTs.
+
     Custom arbitrary LUT loading from file.
-  technical_notes: |
-    Core types:
-      enum PointOp { Gamma(f32), Invert, Threshold(u8), Posterize(u8), Clamp(u8,u8), Brightness(f32), Contrast(f32) }
-      fn build_lut(op: PointOp) -> [u8; 256]
-      fn compose_luts(first: &[u8; 256], second: &[u8; 256]) -> [u8; 256]  // fused[i] = second[first[i]]
-      fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Vec<u8>
 
-    LUT formulas:
-      Gamma:     LUT[i] = round(255 * (i/255)^(1/gamma))
-      Invert:    LUT[i] = 255 - i
-      Threshold: LUT[i] = if i >= level { 255 } else { 0 }
-      Posterize: LUT[i] = round(round(i*(n-1)/255) * 255/(n-1))
-      Clamp:     LUT[i] = i.clamp(min, max)
-      Brightness: LUT[i] = (i as i16 + offset).clamp(0, 255) as u8
-      Contrast:  LUT[i] = ((factor * (i as f32 - 128.0)) + 128.0).clamp(0, 255) as u8
-
-    Pipeline fusion: walk node graph, detect maximal runs of consecutive
-    PointOpNode nodes. Any non-point-op node (blur, sharpen, resize, median,
-    crop, etc.) acts as a fusion barrier — it breaks the chain because it
-    needs spatial context, not just the current pixel value. Example:
-      brightness -> blur -> contrast -> invert -> posterize
-    becomes:
-      FusedLut1 -> blur -> FusedLut2
-    Two LUT passes + one blur pass instead of four point-op passes + one blur.
-    Each fused run collapses to one FusedLutNode with a pre-composed [u8; 256].
-    O(256) composition cost per node at plan time, O(1) per pixel at runtime.
-
-    For RGBA: apply LUT to R, G, B channels only; copy alpha unchanged.
-    Reference: ImageMagick CLI for output parity, libvips for perf target.
+    '
+  technical_notes: "Core types:\n  enum PointOp { Gamma(f32), Invert, Threshold(u8), Posterize(u8), Clamp(u8,u8), Brightness(f32),\
+    \ Contrast(f32) }\n  fn build_lut(op: PointOp) -> [u8; 256]\n  fn compose_luts(first: &[u8; 256], second: &[u8; 256])\
+    \ -> [u8; 256]  // fused[i] = second[first[i]]\n  fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Vec<u8>\n\
+    \nLUT formulas:\n  Gamma:     LUT[i] = round(255 * (i/255)^(1/gamma))\n  Invert:    LUT[i] = 255 - i\n  Threshold: LUT[i]\
+    \ = if i >= level { 255 } else { 0 }\n  Posterize: LUT[i] = round(round(i*(n-1)/255) * 255/(n-1))\n  Clamp:     LUT[i]\
+    \ = i.clamp(min, max)\n  Brightness: LUT[i] = (i as i16 + offset).clamp(0, 255) as u8\n  Contrast:  LUT[i] = ((factor\
+    \ * (i as f32 - 128.0)) + 128.0).clamp(0, 255) as u8\n\nPipeline fusion: walk node graph, detect maximal runs of consecutive\n\
+    PointOpNode nodes. Any non-point-op node (blur, sharpen, resize, median,\ncrop, etc.) acts as a fusion barrier — it breaks\
+    \ the chain because it\nneeds spatial context, not just the current pixel value. Example:\n  brightness -> blur -> contrast\
+    \ -> invert -> posterize\nbecomes:\n  FusedLut1 -> blur -> FusedLut2\nTwo LUT passes + one blur pass instead of four point-op\
+    \ passes + one blur.\nEach fused run collapses to one FusedLutNode with a pre-composed [u8; 256].\nO(256) composition\
+    \ cost per node at plan time, O(1) per pixel at runtime.\n\nFor RGBA: apply LUT to R, G, B channels only; copy alpha unchanged.\n\
+    Reference: ImageMagick CLI for output parity, libvips for perf target.\n"
 plan:
-  - phase: LUT Infrastructure
-    tasks:
-      - text: Define PointOp enum with all 7 variants (Gamma, Invert, Threshold, Posterize, Clamp, Brightness, Contrast)
-        done: false
-      - text: Implement build_lut(op) -> [u8; 256] for each variant
-        done: false
-      - text: Implement compose_luts(first, second) -> [u8; 256] for LUT fusion
-        done: false
-      - text: Implement apply_lut(pixels, info, lut) with alpha-channel preservation
-        done: false
-  - phase: Public API
-    tasks:
-      - text: Implement gamma(), invert(), threshold(), posterize(), clamp() as thin wrappers over build_lut + apply_lut
-        done: false
-      - text: Migrate existing brightness() and contrast() to use build_lut + apply_lut internally
-        done: false
-  - phase: Pipeline Fusion
-    tasks:
-      - text: Add PointOpNode pipeline node that stores a PointOp and delegates to build_lut + apply_lut
-        done: false
-      - text: Implement FusedLutNode that holds a pre-composed [u8; 256] from multiple PointOps
-        done: false
-      - text: Add pipeline optimization pass that detects consecutive PointOpNode runs and replaces with FusedLutNode
-        done: false
-      - text: Add WIT interface declarations for gamma, invert, threshold, posterize, clamp
-        done: false
-      - text: Wire WIT adapters to domain functions
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit tests for each build_lut variant with known input/output values
-        done: false
-      - text: Unit test for compose_luts — verify gamma -> invert -> posterize chain matches sequential application
-        done: false
-      - text: Unit test that fused pipeline output == unfused pipeline output for multi-op chains
-        done: false
-      - text: Generate reference outputs via ImageMagick CLI for test fixtures
-        done: false
-      - text: Parity tests — compare our output vs ImageMagick reference (MAE < 0.5)
-        done: false
-      - text: Perf benchmark vs ImageMagick on 4K image — single op and fused chain
-        done: false
-      - text: WASM build check, existing test regression, pipeline graph tests
-        done: false
+- phase: LUT Infrastructure
+  tasks:
+  - text: Define PointOp enum with all 7 variants (Gamma, Invert, Threshold, Posterize, Clamp, Brightness, Contrast)
+    done: true
+  - text: Implement build_lut(op) -> [u8; 256] for each variant
+    done: true
+  - text: Implement compose_luts(first, second) -> [u8; 256] for LUT fusion
+    done: true
+  - text: Implement apply_lut(pixels, info, lut) with alpha-channel preservation
+    done: true
+- phase: Public API
+  tasks:
+  - text: Implement gamma(), invert(), threshold(), posterize(), clamp() as thin wrappers over build_lut + apply_lut
+    done: true
+  - text: Migrate existing brightness() and contrast() to use build_lut + apply_lut internally
+    done: true
+- phase: Pipeline Fusion
+  tasks:
+  - text: Add PointOpNode pipeline node that stores a PointOp and delegates to build_lut + apply_lut
+    done: true
+  - text: Implement FusedLutNode that holds a pre-composed [u8; 256] from multiple PointOps
+    done: true
+  - text: Add pipeline optimization pass that detects consecutive PointOpNode runs and replaces with FusedLutNode
+    done: true
+  - text: Add WIT interface declarations for gamma, invert, threshold, posterize, clamp
+    done: true
+  - text: Wire WIT adapters to domain functions
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for each build_lut variant with known input/output values
+    done: true
+  - text: Unit test for compose_luts — verify gamma -> invert -> posterize chain matches sequential application
+    done: true
+  - text: Unit test that fused pipeline output == unfused pipeline output for multi-op chains
+    done: true
+  - text: Generate reference outputs via ImageMagick CLI for test fixtures
+    done: true
+  - text: Parity tests — compare our output vs ImageMagick reference (MAE < 0.5)
+    done: true
+  - text: Perf benchmark vs ImageMagick on 4K image — single op and fused chain
+    done: true
+  - text: WASM build check, existing test regression, pipeline graph tests
+    done: true
 extra: {}
