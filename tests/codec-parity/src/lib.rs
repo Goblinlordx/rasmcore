@@ -320,9 +320,10 @@ pub fn self_consistency_f64(
         "{label}: sample count mismatch"
     );
     for (i, (&expected, &got)) in original.iter().zip(decoded.iter()).enumerate() {
+        let diff = (got - expected).abs();
         assert!(
-            (got - expected).abs() < epsilon,
-            "{label}: sample {i}: expected {expected}, got {got} (epsilon={epsilon})"
+            diff <= epsilon,
+            "{label}: sample {i}: expected {expected}, got {got} (diff={diff}, epsilon={epsilon})"
         );
     }
 }

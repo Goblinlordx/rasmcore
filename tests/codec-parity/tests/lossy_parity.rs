@@ -77,55 +77,75 @@ fn jpeg_checker_q85() {
     );
 }
 
-// ─── FITS (self-consistency via generic harness) ───────────────────────────
+// ─── FITS (self-consistency) ────────────────────────────────────────────────
+//
+// Integer types (u8, i16, i32) and f64 must roundtrip BIT-EXACT (epsilon = 0.0).
+// Only f32 gets epsilon because f32→f64 conversion introduces representational
+// noise (e.g., 0.1f32 becomes 0.10000000149011612f64).
 
 #[test]
-fn fits_u8() {
+fn fits_u8_bit_exact() {
     let original: Vec<f64> = gradient_gray(32, 32).iter().map(|&v| v as f64).collect();
     self_consistency_f64(
-        "FITS u8",
+        "FITS u8 (bit-exact)",
         &original,
         || rasmcore_fits::encode_u8(&gradient_gray(32, 32), 32, 32).unwrap(),
         |data| rasmcore_fits::decode(data).unwrap().1,
-        0.01,
+        0.0, // u8→f64 is exact: every u8 has a perfect f64 representation
     );
 }
 
 #[test]
-fn fits_i16() {
+fn fits_i16_bit_exact() {
     let original: Vec<f64> = (0..16 * 16).map(|i| (i * 10 - 1280) as f64).collect();
     let pixels_i16: Vec<i16> = (0..16 * 16).map(|i| (i * 10 - 1280) as i16).collect();
     self_consistency_f64(
-        "FITS i16",
+        "FITS i16 (bit-exact)",
         &original,
         || rasmcore_fits::encode_i16(&pixels_i16, 16, 16).unwrap(),
         |data| rasmcore_fits::decode(data).unwrap().1,
-        0.01,
+        0.0, // i16→f64 is exact: every i16 has a perfect f64 representation
     );
 }
 
 #[test]
-fn fits_f32() {
-    let original: Vec<f64> = (0..16 * 16).map(|i| (i as f64 * 0.5 - 64.0)).collect();
-    let pixels_f32: Vec<f32> = original.iter().map(|&v| v as f32).collect();
+fn fits_i32_bit_exact() {
+    let original: Vec<f64> = (0..8 * 8).map(|i| (i * 100000 - 3200000) as f64).collect();
+    let pixels_i32: Vec<i32> = (0..8 * 8).map(|i| (i * 100000 - 3200000) as i32).collect();
     self_consistency_f64(
-        "FITS f32",
+        "FITS i32 (bit-exact)",
+        &original,
+        || rasmcore_fits::encode_i32(&pixels_i32, 8, 8).unwrap(),
+        |data| rasmcore_fits::decode(data).unwrap().1,
+        0.0, // i32→f64 is exact: every i32 has a perfect f64 representation (f64 has 53-bit mantissa)
+    );
+}
+
+#[test]
+fn fits_f32_epsilon() {
+    // f32→f64 has representational noise: 0.5f32 is exact, but 0.1f32 is not.
+    // Use values that are exact in f32 to verify the codec itself is lossless,
+    // then the epsilon only covers the f32→f64 cast in the test comparison.
+    let pixels_f32: Vec<f32> = (0..16 * 16).map(|i| i as f32 * 0.5 - 64.0).collect();
+    let original: Vec<f64> = pixels_f32.iter().map(|&v| v as f64).collect();
+    self_consistency_f64(
+        "FITS f32 (f32 precision)",
         &original,
         || rasmcore_fits::encode_f32(&pixels_f32, 16, 16).unwrap(),
         |data| rasmcore_fits::decode(data).unwrap().1,
-        1e-5,
+        0.0, // These specific f32 values (multiples of 0.5) are exact in f64
     );
 }
 
 #[test]
-fn fits_f64() {
+fn fits_f64_bit_exact() {
     let original: Vec<f64> = (0..8 * 8).map(|i| i as f64 * 1.23456789).collect();
     let original_clone = original.clone();
     self_consistency_f64(
-        "FITS f64",
+        "FITS f64 (bit-exact)",
         &original,
         move || rasmcore_fits::encode_f64(&original_clone, 8, 8).unwrap(),
         |data| rasmcore_fits::decode(data).unwrap().1,
-        1e-10,
+        0.0, // f64→big-endian bytes→f64 is IEEE 754 lossless
     );
 }

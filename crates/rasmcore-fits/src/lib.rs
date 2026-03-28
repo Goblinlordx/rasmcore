@@ -217,6 +217,22 @@ pub fn encode_i16(pixels: &[i16], width: u32, height: u32) -> Result<Vec<u8>, Fi
     Ok(out)
 }
 
+/// Encode i32 grayscale pixels to FITS (BITPIX=32).
+pub fn encode_i32(pixels: &[i32], width: u32, height: u32) -> Result<Vec<u8>, FitsError> {
+    let expected = width as usize * height as usize;
+    if pixels.len() < expected {
+        return Err(FitsError::BufferTooSmall);
+    }
+    let header = build_header(width, height, Bitpix::I32, &[]);
+    let mut out = Vec::with_capacity(header.len() + pad_to_block(expected * 4));
+    out.extend_from_slice(&header);
+    for &v in &pixels[..expected] {
+        out.extend_from_slice(&v.to_be_bytes());
+    }
+    pad_block(&mut out);
+    Ok(out)
+}
+
 /// Encode f32 grayscale pixels to FITS (BITPIX=-32).
 pub fn encode_f32(pixels: &[f32], width: u32, height: u32) -> Result<Vec<u8>, FitsError> {
     let expected = width as usize * height as usize;
