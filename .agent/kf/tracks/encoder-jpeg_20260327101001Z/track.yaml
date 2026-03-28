@@ -1,140 +1,104 @@
 id: encoder-jpeg_20260327101001Z
-title: "JPEG Codec — zenjpeg Backend, Progressive, Parity Tests"
+title: JPEG Codec — zenjpeg Backend, Progressive, Parity Tests
 type: feature
 status: pending
 created: 2026-03-27
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Replace the image crate's basic JpegEncoder with zenjpeg (pure Rust,
+  summary: 'Replace the image crate''s basic JpegEncoder with zenjpeg (pure Rust,
+
     jpegli/mozjpeg-level quality) as the JPEG encoding backend. Add progressive
+
     encoding, enforce determinism, and validate quality-per-byte parity against
+
     jpegli and MozJPEG using Butteraugli and DSSIM metrics.
-  context: |
-    The current JPEG encoder uses image::codecs::jpeg::JpegEncoder — the
-    lowest quality-per-byte option available. Quality-per-byte ranking:
 
-    1. jpegli (Google) — 35% better compression, full JPEG compliance
-    2. MozJPEG (Mozilla) — ~10% better than libjpeg-turbo
-    3. zenjpeg (pure Rust) — combines mozjpeg + jpegli innovations,
-       within 0.21% of C versions, WASM-compatible, no unsafe code
-    4. libjpeg-turbo (ImageMagick default)
-    5. image crate JpegEncoder <- current, worst option
-
-    zenjpeg is the right choice for rasmcore:
-    - Pure Rust, no C dependencies
-    - WASM-compatible natively (no Emscripten needed)
-    - Trellis quantization, progressive encoding, scan optimization
-    - SIMD via safe `wide` crate
-    - Within 0.21% of jpegli C library for max compression
-    - Delivers jpegli-level quality-per-byte in pure Rust
-
-    Existing scaffolding (WIT records, domain struct, adapter, pipeline sink)
-    remains — we swap the encoding backend inside domain/encoder/jpeg.rs.
-
-    Standards: ITU-T T.81 (baseline + progressive), ITU-T T.871 (JFIF 1.02)
-
-    Determinism: zenjpeg is deterministic (no randomness). WASM floats are
-    IEEE 754 deterministic.
-  codebase_analysis: |
-    - jpeg.rs currently uses image::codecs::jpeg::JpegEncoder::new_with_quality
-    - zenjpeg provides encode API that accepts quality, progressive, and
-      advanced options (trellis quantization, scan optimization)
-    - The swap is localized to domain/encoder/jpeg.rs — domain API unchanged
-    - JpegEncodeConfig gains: progressive (bool), and potentially trellis (bool)
-    - WIT config records and adapter wiring need progressive field added
-    - pipeline sink calls domain encoder — transparent to pipeline layer
-    - Perceptual quality metrics for testing (dev-dependencies only):
-      - butteraugli 0.9.0 (psychovisual, gold standard for encoder comparison)
-      - dssim-core 3.4.0 (multi-scale SSIM in Lab, fast regression checks)
+    '
+  context: "The current JPEG encoder uses image::codecs::jpeg::JpegEncoder — the\nlowest quality-per-byte option available.\
+    \ Quality-per-byte ranking:\n\n1. jpegli (Google) — 35% better compression, full JPEG compliance\n2. MozJPEG (Mozilla)\
+    \ — ~10% better than libjpeg-turbo\n3. zenjpeg (pure Rust) — combines mozjpeg + jpegli innovations,\n   within 0.21% of\
+    \ C versions, WASM-compatible, no unsafe code\n4. libjpeg-turbo (ImageMagick default)\n5. image crate JpegEncoder <- current,\
+    \ worst option\n\nzenjpeg is the right choice for rasmcore:\n- Pure Rust, no C dependencies\n- WASM-compatible natively\
+    \ (no Emscripten needed)\n- Trellis quantization, progressive encoding, scan optimization\n- SIMD via safe `wide` crate\n\
+    - Within 0.21% of jpegli C library for max compression\n- Delivers jpegli-level quality-per-byte in pure Rust\n\nExisting\
+    \ scaffolding (WIT records, domain struct, adapter, pipeline sink)\nremains — we swap the encoding backend inside domain/encoder/jpeg.rs.\n\
+    \nStandards: ITU-T T.81 (baseline + progressive), ITU-T T.871 (JFIF 1.02)\n\nDeterminism: zenjpeg is deterministic (no\
+    \ randomness). WASM floats are\nIEEE 754 deterministic.\n"
+  codebase_analysis: "- jpeg.rs currently uses image::codecs::jpeg::JpegEncoder::new_with_quality\n- zenjpeg provides encode\
+    \ API that accepts quality, progressive, and\n  advanced options (trellis quantization, scan optimization)\n- The swap\
+    \ is localized to domain/encoder/jpeg.rs — domain API unchanged\n- JpegEncodeConfig gains: progressive (bool), and potentially\
+    \ trellis (bool)\n- WIT config records and adapter wiring need progressive field added\n- pipeline sink calls domain encoder\
+    \ — transparent to pipeline layer\n- Perceptual quality metrics for testing (dev-dependencies only):\n  - butteraugli\
+    \ 0.9.0 (psychovisual, gold standard for encoder comparison)\n  - dssim-core 3.4.0 (multi-scale SSIM in Lab, fast regression\
+    \ checks)\n"
   acceptance_criteria:
-    - zenjpeg replaces image crate JpegEncoder as JPEG encoding backend
-    - WIT jpeg-encode-config adds progressive field (option<bool>)
-    - WIT jpeg-write-config adds progressive field (option<bool>)
-    - Domain JpegEncodeConfig adds progressive bool (default false)
-    - Progressive encoding actually works (zenjpeg supports it natively)
-    - Determinism test: encode same input twice, output is byte-identical
-    - Quality curve test: encode at q10/q30/q50/q70/q85/q95
-    - Butteraugli distance equal to or better than ImageMagick at each quality
-    - DSSIM score equal to or better than ImageMagick at each quality
-    - File sizes equal to or smaller than ImageMagick at each quality
-    - Quality curve is monotonically increasing (higher quality = larger file)
-    - cargo test passes (native), cargo component build succeeds (WASM)
-    - All existing tests continue to pass
-  out_of_scope: |
-    - JPEG 2000, JPEG XL, JPEG-LS — separate codecs
-    - EXIF metadata — covered by p0-gif-exif-orient track
-    - Decode-time config
-    - Exposing zenjpeg advanced options (trellis, scan optimization) in WIT
-      — keep internal for now, expose if users need them later
-  technical_notes: |
-    Backend swap approach:
-    1. Add zenjpeg as dependency in Cargo.toml
-    2. Replace image::codecs::jpeg::JpegEncoder usage in jpeg.rs with zenjpeg
-    3. Map JpegEncodeConfig fields to zenjpeg API:
-       - quality -> zenjpeg quality parameter
-       - progressive -> zenjpeg progressive mode
-    4. Enable trellis quantization by default (best quality-per-byte)
-    5. Domain function signature unchanged — swap is internal
-
-    zenjpeg advantages over image crate JpegEncoder:
-    - Trellis quantization (optimal coefficient selection)
-    - Progressive encoding (native support, not a no-op)
-    - Scan optimization (better progressive scan ordering)
-    - SIMD via safe `wide` crate
-    - 0.21% of jpegli C library compression efficiency
-
-    Testing strategy (determinism-first):
-    1. Determinism: encode(input, config) twice = identical bytes
-    2. Quality curve: at q10/q30/q50/q70/q85/q95 vs ImageMagick
-       - Butteraugli: must be equal or better (lower distance)
-       - DSSIM: must be equal or better (lower score)
-       - File size: must be equal or smaller
-    3. Progressive: verify progressive JPEG produced when flag is true
-    4. Edge cases: quality 1, quality 100, 1x1, RGBA8 input
-
-    We expect to BEAT ImageMagick (libjpeg-turbo) on quality-per-byte since
-    zenjpeg implements jpegli/mozjpeg optimizations. The parity test thresholds
-    should be "equal or better", not "within X tolerance".
+  - zenjpeg replaces image crate JpegEncoder as JPEG encoding backend
+  - WIT jpeg-encode-config adds progressive field (option<bool>)
+  - WIT jpeg-write-config adds progressive field (option<bool>)
+  - Domain JpegEncodeConfig adds progressive bool (default false)
+  - Progressive encoding actually works (zenjpeg supports it natively)
+  - Determinism test: encode same input twice, output is byte-identical
+  - Quality curve test: encode at q10/q30/q50/q70/q85/q95
+  - Butteraugli distance equal to or better than ImageMagick at each quality
+  - DSSIM score equal to or better than ImageMagick at each quality
+  - File sizes equal to or smaller than ImageMagick at each quality
+  - Quality curve is monotonically increasing (higher quality = larger file)
+  - cargo test passes (native), cargo component build succeeds (WASM)
+  - All existing tests continue to pass
+  out_of_scope: "- JPEG 2000, JPEG XL, JPEG-LS — separate codecs\n- EXIF metadata — covered by p0-gif-exif-orient track\n\
+    - Decode-time config\n- Exposing zenjpeg advanced options (trellis, scan optimization) in WIT\n  — keep internal for now,\
+    \ expose if users need them later\n"
+  technical_notes: "Backend swap approach:\n1. Add zenjpeg as dependency in Cargo.toml\n2. Replace image::codecs::jpeg::JpegEncoder\
+    \ usage in jpeg.rs with zenjpeg\n3. Map JpegEncodeConfig fields to zenjpeg API:\n   - quality -> zenjpeg quality parameter\n\
+    \   - progressive -> zenjpeg progressive mode\n4. Enable trellis quantization by default (best quality-per-byte)\n5. Domain\
+    \ function signature unchanged — swap is internal\n\nzenjpeg advantages over image crate JpegEncoder:\n- Trellis quantization\
+    \ (optimal coefficient selection)\n- Progressive encoding (native support, not a no-op)\n- Scan optimization (better progressive\
+    \ scan ordering)\n- SIMD via safe `wide` crate\n- 0.21% of jpegli C library compression efficiency\n\nTesting strategy\
+    \ (determinism-first):\n1. Determinism: encode(input, config) twice = identical bytes\n2. Quality curve: at q10/q30/q50/q70/q85/q95\
+    \ vs ImageMagick\n   - Butteraugli: must be equal or better (lower distance)\n   - DSSIM: must be equal or better (lower\
+    \ score)\n   - File size: must be equal or smaller\n3. Progressive: verify progressive JPEG produced when flag is true\n\
+    4. Edge cases: quality 1, quality 100, 1x1, RGBA8 input\n\nWe expect to BEAT ImageMagick (libjpeg-turbo) on quality-per-byte\
+    \ since\nzenjpeg implements jpegli/mozjpeg optimizations. The parity test thresholds\nshould be \"equal or better\", not\
+    \ \"within X tolerance\".\n"
 plan:
-  - phase: "Backend Swap"
-    tasks:
-      - text: "Add zenjpeg as dependency, verify WASM compilation (cargo component build)"
-        done: false
-      - text: "Replace JpegEncoder with zenjpeg in domain/encoder/jpeg.rs"
-        done: false
-      - text: "Enable trellis quantization by default for best quality-per-byte"
-        done: false
-      - text: "Add progressive encoding support via zenjpeg API"
-        done: false
-  - phase: "Config Extension"
-    tasks:
-      - text: "Add progressive field to WIT jpeg-encode-config and jpeg-write-config"
-        done: false
-      - text: "Add progressive bool to domain JpegEncodeConfig (default false)"
-        done: false
-      - text: "Update adapter encode_jpeg and pipeline write_jpeg for progressive field"
-        done: false
-  - phase: "Test Infrastructure"
-    tasks:
-      - text: "Add butteraugli and dssim-core as dev-dependencies in Cargo.toml"
-        done: false
-      - text: "Add ImageMagick JPEG references to generate.sh at q10/q30/q50/q70/q85/q95"
-        done: false
-  - phase: "Quality Curve Validation"
-    tasks:
-      - text: "Determinism test: encode same photo twice at q85, assert byte-identical"
-        done: false
-      - text: "Quality curve: Butteraugli distance at each quality equal or better than ImageMagick"
-        done: false
-      - text: "Quality curve: DSSIM at each quality equal or better than ImageMagick"
-        done: false
-      - text: "Quality curve: file sizes at each quality equal or smaller than ImageMagick"
-        done: false
-      - text: "Progressive test: verify progressive JPEG structure when flag is true"
-        done: false
-      - text: "Domain test: edge cases — quality 1, quality 100, 1x1 image, RGBA8 input"
-        done: false
-      - text: "Verify all existing encoder and pipeline tests pass"
-        done: false
+- phase: Backend Swap
+  tasks:
+  - text: Add zenjpeg as dependency, verify WASM compilation (cargo component build)
+    done: true
+  - text: Replace JpegEncoder with zenjpeg in domain/encoder/jpeg.rs
+    done: true
+  - text: Enable trellis quantization by default for best quality-per-byte
+    done: true
+  - text: Add progressive encoding support via zenjpeg API
+    done: true
+- phase: Config Extension
+  tasks:
+  - text: Add progressive field to WIT jpeg-encode-config and jpeg-write-config
+    done: true
+  - text: Add progressive bool to domain JpegEncodeConfig (default false)
+    done: true
+  - text: Update adapter encode_jpeg and pipeline write_jpeg for progressive field
+    done: true
+- phase: Test Infrastructure
+  tasks:
+  - text: Add butteraugli and dssim-core as dev-dependencies in Cargo.toml
+    done: true
+  - text: Add ImageMagick JPEG references to generate.sh at q10/q30/q50/q70/q85/q95
+    done: true
+- phase: Quality Curve Validation
+  tasks:
+  - text: 'Determinism test: encode same photo twice at q85, assert byte-identical'
+    done: true
+  - text: 'Quality curve: Butteraugli distance at each quality equal or better than ImageMagick'
+    done: true
+  - text: 'Quality curve: DSSIM at each quality equal or better than ImageMagick'
+    done: true
+  - text: 'Quality curve: file sizes at each quality equal or smaller than ImageMagick'
+    done: true
+  - text: 'Progressive test: verify progressive JPEG structure when flag is true'
+    done: true
+  - text: 'Domain test: edge cases — quality 1, quality 100, 1x1 image, RGBA8 input'
+    done: true
+  - text: Verify all existing encoder and pipeline tests pass
+    done: true
 extra: {}
