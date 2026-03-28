@@ -27,7 +27,7 @@ mod tests {
         let mut graph = NodeGraph::new(4 * 1024 * 1024);
 
         let src = graph.add_node(Box::new(SourceNode::new(png_data).unwrap()));
-        let output = sink::write(&mut graph, src, "png", None).unwrap();
+        let output = sink::write(&mut graph, src, "png", None, None).unwrap();
 
         // Output should be valid PNG
         assert_eq!(&output[..4], &[0x89, 0x50, 0x4E, 0x47]);
@@ -51,7 +51,7 @@ mod tests {
         assert_eq!(graph.node_info(resized).unwrap().width, 32);
         assert_eq!(graph.node_info(resized).unwrap().height, 16);
 
-        let output = sink::write(&mut graph, resized, "png", None).unwrap();
+        let output = sink::write(&mut graph, resized, "png", None, None).unwrap();
         // Decode the output and verify dimensions
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         assert_eq!(decoded.info.width, 32);
@@ -67,7 +67,7 @@ mod tests {
         let src_info = graph.node_info(src).unwrap();
         let cropped = graph.add_node(Box::new(CropNode::new(src, src_info, 10, 10, 20, 20)));
 
-        let output = sink::write(&mut graph, cropped, "png", None).unwrap();
+        let output = sink::write(&mut graph, cropped, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         assert_eq!(decoded.info.width, 20);
         assert_eq!(decoded.info.height, 20);
@@ -93,7 +93,7 @@ mod tests {
 
         let blurred = graph.add_node(Box::new(BlurNode::new(resized, resized_info, 2.0)));
 
-        let output = sink::write(&mut graph, blurred, "jpeg", Some(85)).unwrap();
+        let output = sink::write(&mut graph, blurred, "jpeg", Some(85), None).unwrap();
         // Should produce valid JPEG
         assert_eq!(&output[..2], &[0xFF, 0xD8]);
     }
@@ -122,8 +122,8 @@ mod tests {
             ResizeFilter::Lanczos3,
         )));
 
-        let thumb_out = sink::write(&mut graph, thumb, "png", None).unwrap();
-        let large_out = sink::write(&mut graph, large, "png", None).unwrap();
+        let thumb_out = sink::write(&mut graph, thumb, "png", None, None).unwrap();
+        let large_out = sink::write(&mut graph, large, "png", None, None).unwrap();
 
         let thumb_dec = crate::domain::decoder::decode(&thumb_out).unwrap();
         let large_dec = crate::domain::decoder::decode(&large_out).unwrap();
@@ -142,7 +142,7 @@ mod tests {
 
         assert_eq!(graph.node_info(gray).unwrap().format, PixelFormat::Gray8);
 
-        let output = sink::write(&mut graph, gray, "png", None).unwrap();
+        let output = sink::write(&mut graph, gray, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         assert_eq!(decoded.info.format, PixelFormat::Gray8);
     }
@@ -162,7 +162,7 @@ mod tests {
             FlipDirection::Horizontal,
         )));
 
-        let output = sink::write(&mut graph, flipped, "png", None).unwrap();
+        let output = sink::write(&mut graph, flipped, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         // 64x64 rotated 90 = 64x64 (square), flipped = 64x64
         assert_eq!(decoded.info.width, 64);
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(graph.node_info(comp).unwrap().width, 64);
         assert_eq!(graph.node_info(comp).unwrap().height, 64);
 
-        let output = sink::write(&mut graph, comp, "png", None).unwrap();
+        let output = sink::write(&mut graph, comp, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         assert_eq!(decoded.info.width, 64);
         assert_eq!(decoded.info.height, 64);
@@ -296,7 +296,7 @@ mod tests {
             24,
         )));
 
-        let output = sink::write(&mut graph, comp, "png", None).unwrap();
+        let output = sink::write(&mut graph, comp, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         assert_eq!(decoded.info.width, 64);
         assert_eq!(decoded.info.height, 64);

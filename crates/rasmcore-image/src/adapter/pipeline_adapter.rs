@@ -229,47 +229,79 @@ impl GuestImagePipeline for PipelineResource {
         &self,
         source: NodeId,
         config: pipeline::JpegWriteConfig,
+        metadata: Option<pipeline::MetadataSet>,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let cfg = domain::encoder::jpeg::JpegEncodeConfig {
             quality: config.quality.unwrap_or(85),
             progressive: config.progressive.unwrap_or(false),
         };
-        sink::write_jpeg(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
+        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
+        sink::write_jpeg(
+            &mut self.graph.borrow_mut(),
+            source,
+            &cfg,
+            domain_meta.as_ref(),
+        )
+        .map_err(to_wit_error)
     }
 
     fn write_png(
         &self,
         source: NodeId,
         config: pipeline::PngWriteConfig,
+        metadata: Option<pipeline::MetadataSet>,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let cfg = domain::encoder::png::PngEncodeConfig {
             compression_level: config.compression_level.unwrap_or(6),
             filter_type: to_domain_png_filter_pipeline(config.filter_type),
         };
-        sink::write_png(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
+        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
+        sink::write_png(
+            &mut self.graph.borrow_mut(),
+            source,
+            &cfg,
+            domain_meta.as_ref(),
+        )
+        .map_err(to_wit_error)
     }
 
     fn write_webp(
         &self,
         source: NodeId,
         config: pipeline::WebpWriteConfig,
+        metadata: Option<pipeline::MetadataSet>,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let cfg = domain::encoder::webp::WebpEncodeConfig {
             quality: config.quality.unwrap_or(75),
             lossless: config.lossless.unwrap_or(false),
         };
-        sink::write_webp(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
+        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
+        sink::write_webp(
+            &mut self.graph.borrow_mut(),
+            source,
+            &cfg,
+            domain_meta.as_ref(),
+        )
+        .map_err(to_wit_error)
     }
 
     fn write_gif(
         &self,
         source: NodeId,
         config: pipeline::GifWriteConfig,
+        metadata: Option<pipeline::MetadataSet>,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let cfg = domain::encoder::gif::GifEncodeConfig {
             repeat: config.repeat.unwrap_or(0),
         };
-        sink::write_gif(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
+        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
+        sink::write_gif(
+            &mut self.graph.borrow_mut(),
+            source,
+            &cfg,
+            domain_meta.as_ref(),
+        )
+        .map_err(to_wit_error)
     }
 
     fn write(
@@ -277,7 +309,16 @@ impl GuestImagePipeline for PipelineResource {
         source: NodeId,
         format: String,
         quality: Option<u8>,
+        metadata: Option<pipeline::MetadataSet>,
     ) -> Result<Vec<u8>, RasmcoreError> {
-        sink::write(&mut self.graph.borrow_mut(), source, &format, quality).map_err(to_wit_error)
+        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
+        sink::write(
+            &mut self.graph.borrow_mut(),
+            source,
+            &format,
+            quality,
+            domain_meta.as_ref(),
+        )
+        .map_err(to_wit_error)
     }
 }

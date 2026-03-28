@@ -111,13 +111,13 @@ plan:
 - phase: Pipeline Write Integration
   tasks:
   - text: Add optional MetadataSet parameter to all domain sink functions (write_jpeg, write_png, write_gif, write_webp, write)
-    done: false
+    done: true
   - text: Wire MetadataSet ICC embedding into jpeg and png encoders (use existing embed_icc_profile internally)
-    done: false
+    done: true
   - text: Update WIT pipeline write sinks with optional metadata-set parameter
-    done: false
+    done: true
   - text: Update adapter layer (mod.rs + pipeline_adapter.rs) for MetadataSet type conversion
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Domain tests for metadata roundtrip (read JPEG metadata, write to PNG, verify ICC preserved)

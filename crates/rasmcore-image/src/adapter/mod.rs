@@ -475,4 +475,43 @@ impl metadata::Guest for Component {
     fn has_exif(data: Vec<u8>) -> bool {
         domain::metadata::has_exif(&data)
     }
+
+    fn read_metadata(data: Vec<u8>) -> Result<metadata::MetadataSet, RasmcoreError> {
+        let ms = domain::metadata::read_metadata(&data).map_err(to_wit_error)?;
+        Ok(to_wit_metadata_set(&ms))
+    }
+}
+
+fn to_wit_metadata_set(ms: &domain::metadata_set::MetadataSet) -> metadata::MetadataSet {
+    metadata::MetadataSet {
+        exif: ms.exif.clone(),
+        xmp: ms.xmp.clone(),
+        iptc: ms.iptc.clone(),
+        icc_profile: ms.icc_profile.clone(),
+        format_specific: ms
+            .format_specific
+            .iter()
+            .map(|c| metadata::MetadataChunk {
+                key: c.key.clone(),
+                value: c.value.clone(),
+            })
+            .collect(),
+    }
+}
+
+fn to_domain_metadata_set(ms: &metadata::MetadataSet) -> domain::metadata_set::MetadataSet {
+    domain::metadata_set::MetadataSet {
+        exif: ms.exif.clone(),
+        xmp: ms.xmp.clone(),
+        iptc: ms.iptc.clone(),
+        icc_profile: ms.icc_profile.clone(),
+        format_specific: ms
+            .format_specific
+            .iter()
+            .map(|c| domain::metadata_set::MetadataChunk {
+                key: c.key.clone(),
+                value: c.value.clone(),
+            })
+            .collect(),
+    }
 }

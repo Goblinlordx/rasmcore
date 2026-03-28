@@ -8,7 +8,7 @@ package rasmcore:image@0.1.0;
 interface pipeline {
     use rasmcore:core/types.{buffer, image-info, pixel-format};
     use rasmcore:core/errors.{rasmcore-error};
-    use metadata.{exif-orientation};
+    use metadata.{exif-orientation, metadata-set};
 
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
@@ -122,19 +122,20 @@ interface pipeline {
         // ─── Write (drives execution) ───
 
         /// Write as JPEG. Pulls all regions through the graph.
-        write-jpeg: func(source: node-id, config: jpeg-write-config) -> result<buffer, rasmcore-error>;
+        /// If metadata is provided, it is embedded into the output.
+        write-jpeg: func(source: node-id, config: jpeg-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
 
-        /// Write as PNG.
-        write-png: func(source: node-id, config: png-write-config) -> result<buffer, rasmcore-error>;
+        /// Write as PNG. If metadata is provided, it is embedded.
+        write-png: func(source: node-id, config: png-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
 
-        /// Write as WebP.
-        write-webp: func(source: node-id, config: webp-write-config) -> result<buffer, rasmcore-error>;
+        /// Write as WebP. If metadata is provided, it is embedded.
+        write-webp: func(source: node-id, config: webp-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
 
-        /// Write as GIF.
-        write-gif: func(source: node-id, config: gif-write-config) -> result<buffer, rasmcore-error>;
+        /// Write as GIF. If metadata is provided, it is embedded.
+        write-gif: func(source: node-id, config: gif-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
 
-        /// Write to any format (convenience).
-        write: func(source: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
+        /// Write to any format (convenience). If metadata is provided, it is embedded.
+        write: func(source: node-id, format: string, quality: option<u8>, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
     }
 
     /// Detect image format from header bytes.
