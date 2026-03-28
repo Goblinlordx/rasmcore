@@ -503,6 +503,10 @@ impl filters::Guest for Component {
     }
 }
 
+// Note: convolve, median, sobel, canny WIT adapter methods will be added when
+// bindings are regenerated from the updated filters.wit. The domain functions
+// are ready at domain::filters::{convolve, median, sobel, canny}.
+
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {
     match o {
         metadata::ExifOrientation::Normal => domain::metadata::ExifOrientation::Normal,

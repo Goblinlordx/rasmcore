@@ -79,6 +79,191 @@ simple_filter_node!(
     "Contrast adjustment node."
 );
 
+// ─── Convolution filter nodes ───────────────────────────────────────────────
+
+/// General convolution node with custom kernel.
+pub struct ConvolveNode {
+    upstream: u32,
+    kernel: Vec<f32>,
+    kw: usize,
+    kh: usize,
+    divisor: f32,
+    source_info: ImageInfo,
+}
+
+impl ConvolveNode {
+    pub fn new(
+        upstream: u32,
+        source_info: ImageInfo,
+        kernel: Vec<f32>,
+        kw: usize,
+        kh: usize,
+        divisor: f32,
+    ) -> Self {
+        Self {
+            upstream,
+            kernel,
+            kw,
+            kh,
+            divisor,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for ConvolveNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src = upstream_fn(self.upstream, full)?;
+        filters::convolve(
+            &src,
+            &self.source_info,
+            &self.kernel,
+            self.kw,
+            self.kh,
+            self.divisor,
+        )
+    }
+    fn overlap(&self) -> Overlap {
+        Overlap::uniform((self.kw.max(self.kh) / 2) as u32)
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::LocalNeighborhood
+    }
+}
+
+/// Median filter node.
+pub struct MedianNode {
+    upstream: u32,
+    radius: u32,
+    source_info: ImageInfo,
+}
+
+impl MedianNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, radius: u32) -> Self {
+        Self {
+            upstream,
+            radius,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for MedianNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src = upstream_fn(self.upstream, full)?;
+        filters::median(&src, &self.source_info, self.radius)
+    }
+    fn overlap(&self) -> Overlap {
+        Overlap::uniform(self.radius)
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::LocalNeighborhood
+    }
+}
+
+/// Sobel edge detection node. Output is single-channel grayscale.
+pub struct SobelNode {
+    upstream: u32,
+    source_info: ImageInfo,
+}
+
+impl SobelNode {
+    pub fn new(upstream: u32, source_info: ImageInfo) -> Self {
+        Self {
+            upstream,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for SobelNode {
+    fn info(&self) -> ImageInfo {
+        ImageInfo {
+            format: PixelFormat::Gray8,
+            ..self.source_info.clone()
+        }
+    }
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src = upstream_fn(self.upstream, full)?;
+        filters::sobel(&src, &self.source_info)
+    }
+    fn overlap(&self) -> Overlap {
+        Overlap::uniform(1)
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::LocalNeighborhood
+    }
+}
+
+/// Canny edge detection node. Output is single-channel binary (0/255).
+pub struct CannyNode {
+    upstream: u32,
+    low_threshold: f32,
+    high_threshold: f32,
+    source_info: ImageInfo,
+}
+
+impl CannyNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, low: f32, high: f32) -> Self {
+        Self {
+            upstream,
+            low_threshold: low,
+            high_threshold: high,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for CannyNode {
+    fn info(&self) -> ImageInfo {
+        ImageInfo {
+            format: PixelFormat::Gray8,
+            ..self.source_info.clone()
+        }
+    }
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src = upstream_fn(self.upstream, full)?;
+        filters::canny(
+            &src,
+            &self.source_info,
+            self.low_threshold,
+            self.high_threshold,
+        )
+    }
+    fn overlap(&self) -> Overlap {
+        Overlap::uniform(3)
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::LocalNeighborhood
+    }
+}
+
 // ─── Point-op nodes (LUT-fusible) ───────────────────────────────────────────
 
 /// A pipeline node for any composable LUT-based point operation.

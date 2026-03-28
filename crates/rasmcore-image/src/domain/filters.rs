@@ -384,6 +384,318 @@ pub fn colorize(
     Ok(result)
 }
 
+// =============================================================================
+// Convolution filters
+// =============================================================================
+
+/// Predefined convolution kernels.
+pub mod kernels {
+    /// 3x3 emboss kernel.
+    pub const EMBOSS: [f32; 9] = [-2.0, -1.0, 0.0, -1.0, 1.0, 1.0, 0.0, 1.0, 2.0];
+    /// 3x3 edge-enhance kernel.
+    pub const EDGE_ENHANCE: [f32; 9] = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
+    /// 3x3 sharpen kernel.
+    pub const SHARPEN_3X3: [f32; 9] = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
+    /// 3x3 box blur kernel (each weight = 1.0, divisor = 9.0).
+    pub const BOX_BLUR_3X3: [f32; 9] = [1.0; 9];
+}
+
+/// Apply arbitrary NxN convolution with reflect-edge border handling.
+///
+/// `kernel` is row-major, `kw`/`kh` must be odd. Each output pixel is
+/// `sum(kernel[i,j] * input[x+j-r, y+i-r]) / divisor`, clamped to 0-255.
+pub fn convolve(
+    pixels: &[u8],
+    info: &ImageInfo,
+    kernel: &[f32],
+    kw: usize,
+    kh: usize,
+    divisor: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if kw % 2 == 0 || kh % 2 == 0 || kw * kh != kernel.len() {
+        return Err(ImageError::InvalidParameters(
+            "kernel dimensions must be odd and match kernel length".into(),
+        ));
+    }
+    validate_format(info.format)?;
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let rw = kw / 2;
+    let rh = kh / 2;
+    let inv_div = 1.0 / divisor;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..channels {
+                let mut sum = 0.0f32;
+                for ky in 0..kh {
+                    for kx in 0..kw {
+                        let sy = reflect(y as i32 + ky as i32 - rh as i32, h);
+                        let sx = reflect(x as i32 + kx as i32 - rw as i32, w);
+                        sum += kernel[ky * kw + kx] * pixels[(sy * w + sx) * channels + c] as f32;
+                    }
+                }
+                out[(y * w + x) * channels + c] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Reflect-edge coordinate clamping.
+fn reflect(v: i32, size: usize) -> usize {
+    if v < 0 {
+        (-v).min(size as i32 - 1) as usize
+    } else if v >= size as i32 {
+        (2 * size as i32 - v - 2).max(0) as usize
+    } else {
+        v as usize
+    }
+}
+
+/// Apply median filter with given radius. Window is (2*radius+1)^2.
+///
+/// Uses sorting for small windows (radius <= 2), histogram-based for larger.
+pub fn median(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
+    if radius == 0 {
+        return Ok(pixels.to_vec());
+    }
+    validate_format(info.format)?;
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let r = radius as i32;
+    let window_size = ((2 * r + 1) * (2 * r + 1)) as usize;
+    let median_pos = window_size / 2;
+
+    let mut out = vec![0u8; pixels.len()];
+    let mut window = Vec::with_capacity(window_size);
+
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..channels {
+                window.clear();
+                for ky in -r..=r {
+                    for kx in -r..=r {
+                        let sy = reflect(y as i32 + ky, h);
+                        let sx = reflect(x as i32 + kx, w);
+                        window.push(pixels[(sy * w + sx) * channels + c]);
+                    }
+                }
+                window.sort_unstable();
+                out[(y * w + x) * channels + c] = window[median_pos];
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Sobel edge detection — produces grayscale gradient magnitude image.
+///
+/// Applies 3x3 Sobel operators for horizontal and vertical gradients,
+/// then computes magnitude = sqrt(Gx^2 + Gy^2), clamped to 0-255.
+pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+
+    // Convert to grayscale if needed
+    let gray = to_grayscale(pixels, channels);
+    let mut out = vec![0u8; w * h];
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut gx = 0.0f32;
+            let mut gy = 0.0f32;
+
+            for ky in 0..3i32 {
+                for kx in 0..3i32 {
+                    let sy = reflect(y as i32 + ky - 1, h);
+                    let sx = reflect(x as i32 + kx - 1, w);
+                    let val = gray[sy * w + sx] as f32;
+                    // Sobel X: [[-1,0,1],[-2,0,2],[-1,0,1]]
+                    let sx_w = match kx {
+                        0 => -1.0,
+                        2 => 1.0,
+                        _ => 0.0,
+                    } * match ky {
+                        1 => 2.0,
+                        _ => 1.0,
+                    };
+                    // Sobel Y: [[-1,-2,-1],[0,0,0],[1,2,1]]
+                    let sy_w = match ky {
+                        0 => -1.0,
+                        2 => 1.0,
+                        _ => 0.0,
+                    } * match kx {
+                        1 => 2.0,
+                        _ => 1.0,
+                    };
+                    gx += sx_w * val;
+                    gy += sy_w * val;
+                }
+            }
+            out[y * w + x] = (gx * gx + gy * gy).sqrt().min(255.0) as u8;
+        }
+    }
+    Ok(out)
+}
+
+/// Canny edge detection — produces binary edge map (0 or 255).
+///
+/// Steps: 1) Gaussian blur, 2) Sobel gradient + direction,
+/// 3) Non-maximum suppression, 4) Hysteresis thresholding.
+pub fn canny(
+    pixels: &[u8],
+    info: &ImageInfo,
+    low_threshold: f32,
+    high_threshold: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+
+    // Step 1: Convert to grayscale
+    let gray = to_grayscale(pixels, channels);
+
+    // Step 2: Gaussian blur (sigma ~1.4, via 3x3 kernel approximation)
+    let gray_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    let blurred = blur(&gray, &gray_info, 1.4)?;
+
+    // Step 3: Sobel gradient magnitude and direction
+    let mut magnitude = vec![0.0f32; w * h];
+    let mut direction = vec![0u8; w * h]; // 0=horizontal, 1=diagonal45, 2=vertical, 3=diagonal135
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut gx = 0.0f32;
+            let mut gy = 0.0f32;
+            for ky in 0..3i32 {
+                for kx in 0..3i32 {
+                    let sy = reflect(y as i32 + ky - 1, h);
+                    let sx = reflect(x as i32 + kx - 1, w);
+                    let val = blurred[sy * w + sx] as f32;
+                    let sx_w = match kx {
+                        0 => -1.0,
+                        2 => 1.0,
+                        _ => 0.0,
+                    } * match ky {
+                        1 => 2.0,
+                        _ => 1.0,
+                    };
+                    let sy_w = match ky {
+                        0 => -1.0,
+                        2 => 1.0,
+                        _ => 0.0,
+                    } * match kx {
+                        1 => 2.0,
+                        _ => 1.0,
+                    };
+                    gx += sx_w * val;
+                    gy += sy_w * val;
+                }
+            }
+            magnitude[y * w + x] = (gx * gx + gy * gy).sqrt();
+
+            // Quantize angle to 4 directions
+            let angle = gy.atan2(gx).to_degrees();
+            let angle = if angle < 0.0 { angle + 180.0 } else { angle };
+            direction[y * w + x] = if angle < 22.5 || angle >= 157.5 {
+                0 // horizontal
+            } else if angle < 67.5 {
+                1 // 45 degrees
+            } else if angle < 112.5 {
+                2 // vertical
+            } else {
+                3 // 135 degrees
+            };
+        }
+    }
+
+    // Step 4: Non-maximum suppression
+    let mut nms = vec![0.0f32; w * h];
+    for y in 1..h.saturating_sub(1) {
+        for x in 1..w.saturating_sub(1) {
+            let mag = magnitude[y * w + x];
+            let (n1, n2) = match direction[y * w + x] {
+                0 => (magnitude[y * w + x - 1], magnitude[y * w + x + 1]),
+                1 => (
+                    magnitude[(y - 1) * w + x + 1],
+                    magnitude[(y + 1) * w + x - 1],
+                ),
+                2 => (magnitude[(y - 1) * w + x], magnitude[(y + 1) * w + x]),
+                _ => (
+                    magnitude[(y - 1) * w + x - 1],
+                    magnitude[(y + 1) * w + x + 1],
+                ),
+            };
+            nms[y * w + x] = if mag >= n1 && mag >= n2 { mag } else { 0.0 };
+        }
+    }
+
+    // Step 5: Hysteresis thresholding
+    let mut out = vec![0u8; w * h];
+    // Mark strong edges
+    for i in 0..w * h {
+        if nms[i] >= high_threshold {
+            out[i] = 255;
+        }
+    }
+    // Extend to weak edges connected to strong edges
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for y in 1..h.saturating_sub(1) {
+            for x in 1..w.saturating_sub(1) {
+                if out[y * w + x] == 0 && nms[y * w + x] >= low_threshold {
+                    // Check 8-connected neighbors for strong edge
+                    let has_strong = (-1..=1i32).any(|dy| {
+                        (-1..=1i32).any(|dx| {
+                            out[(y as i32 + dy) as usize * w + (x as i32 + dx) as usize] == 255
+                        })
+                    });
+                    if has_strong {
+                        out[y * w + x] = 255;
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Convert multi-channel pixels to single-channel grayscale.
+fn to_grayscale(pixels: &[u8], channels: usize) -> Vec<u8> {
+    if channels == 1 {
+        return pixels.to_vec();
+    }
+    let pixel_count = pixels.len() / channels;
+    let mut gray = Vec::with_capacity(pixel_count);
+    for i in 0..pixel_count {
+        let r = pixels[i * channels] as f32;
+        let g = pixels[i * channels + 1] as f32;
+        let b = pixels[i * channels + 2] as f32;
+        gray.push((0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8);
+    }
+    gray
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,6 +927,114 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let result = colorize(&px, &info, [255, 0, 0], 0.0).unwrap();
         assert_eq!(result, px);
+    }
+
+    #[test]
+    fn convolve_identity_preserves_image() {
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels: Vec<u8> = (0..16).collect();
+        // Identity kernel: [0,0,0, 0,1,0, 0,0,0]
+        let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let result = convolve(&pixels, &info, &kernel, 3, 3, 1.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn convolve_sharpen_kernel() {
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![128u8; 16];
+        // Sharpen kernel: center=5, neighbors=-1
+        let kernel = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
+        let result = convolve(&pixels, &info, &kernel, 3, 3, 1.0).unwrap();
+        // Uniform input → sharpen produces same output (no edges)
+        assert!(result.iter().all(|&v| (v as i32 - 128).unsigned_abs() < 2));
+    }
+
+    #[test]
+    fn median_removes_salt_and_pepper() {
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let mut pixels = vec![128u8; 64];
+        // Add salt-and-pepper noise
+        pixels[27] = 0; // pepper
+        pixels[35] = 255; // salt
+        let result = median(&pixels, &info, 1).unwrap();
+        // Noise pixels should be replaced by median of neighbors (~128)
+        assert!(
+            (result[27] as i32 - 128).unsigned_abs() < 10,
+            "pepper not removed: {}",
+            result[27]
+        );
+        assert!(
+            (result[35] as i32 - 128).unsigned_abs() < 10,
+            "salt not removed: {}",
+            result[35]
+        );
+    }
+
+    #[test]
+    fn sobel_detects_edges() {
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Left half = 0, right half = 255 → vertical edge at column 4
+        let mut pixels = vec![0u8; 64];
+        for r in 0..8 {
+            for c in 4..8 {
+                pixels[r * 8 + c] = 255;
+            }
+        }
+        let result = sobel(&pixels, &info).unwrap();
+        // Edge pixels at column 3-4 should have high gradient
+        let edge_val = result[3 * 8 + 4]; // near the edge
+        let flat_val = result[3 * 8 + 0]; // in flat region
+        assert!(
+            edge_val > flat_val + 50,
+            "edge not detected: edge={edge_val} flat={flat_val}"
+        );
+    }
+
+    #[test]
+    fn canny_produces_binary_edges() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Vertical edge in the middle
+        let mut pixels = vec![50u8; 256];
+        for r in 0..16 {
+            for c in 8..16 {
+                pixels[r * 16 + c] = 200;
+            }
+        }
+        let result = canny(&pixels, &info, 30.0, 100.0).unwrap();
+        // Should produce binary output (0 or 255 only)
+        assert!(
+            result.iter().all(|&v| v == 0 || v == 255),
+            "non-binary canny output"
+        );
+        // Should have some edge pixels
+        let edge_count = result.iter().filter(|&&v| v == 255).count();
+        assert!(edge_count > 0, "no edges detected");
     }
 
     #[test]

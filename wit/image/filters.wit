@@ -36,4 +36,17 @@ interface filters {
 
     /// Tint image toward target color (0=none, 1=full tint)
     colorize: func(pixels: buffer, info: image-info, target-r: u8, target-g: u8, target-b: u8, amount: f32) -> result<buffer, rasmcore-error>;
+
+    /// Apply NxN convolution with custom kernel (row-major, odd dimensions).
+    /// Divisor normalizes the kernel sum (e.g. 9.0 for a 3x3 box blur).
+    convolve: func(pixels: buffer, info: image-info, kernel: list<f32>, kernel-width: u32, kernel-height: u32, divisor: f32) -> result<buffer, rasmcore-error>;
+
+    /// Median filter — replaces each pixel with the median of its (2r+1)x(2r+1) neighborhood.
+    median: func(pixels: buffer, info: image-info, radius: u32) -> result<buffer, rasmcore-error>;
+
+    /// Sobel edge detection — returns grayscale gradient magnitude image.
+    sobel: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+
+    /// Canny edge detection — returns binary edge map (0 or 255).
+    canny: func(pixels: buffer, info: image-info, low-threshold: f32, high-threshold: f32) -> result<buffer, rasmcore-error>;
 }

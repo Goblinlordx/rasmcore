@@ -146,6 +146,18 @@ interface pipeline {
         /// Convert to grayscale.
         grayscale: func(source: node-id) -> result<node-id, rasmcore-error>;
 
+        /// Apply NxN convolution with custom kernel.
+        convolve: func(source: node-id, kernel: list<f32>, kernel-width: u32, kernel-height: u32, divisor: f32) -> result<node-id, rasmcore-error>;
+
+        /// Median filter with given radius.
+        median: func(source: node-id, radius: u32) -> result<node-id, rasmcore-error>;
+
+        /// Sobel edge detection (grayscale gradient magnitude output).
+        sobel: func(source: node-id) -> result<node-id, rasmcore-error>;
+
+        /// Canny edge detection (binary edge map output).
+        canny: func(source: node-id, low-threshold: f32, high-threshold: f32) -> result<node-id, rasmcore-error>;
+
         // ─── Compositing ───
 
         /// Alpha composite foreground over background (Porter-Duff "over").

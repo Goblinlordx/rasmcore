@@ -234,6 +234,10 @@ impl GuestImagePipeline for PipelineResource {
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 
+    // Note: convolve, median, sobel, canny pipeline adapter methods will be
+    // wired when WIT bindings are regenerated. Pipeline nodes are ready at:
+    //   filters::{ConvolveNode, MedianNode, SobelNode, CannyNode}
+
     fn composite(&self, fg: NodeId, bg: NodeId, x: i32, y: i32) -> Result<NodeId, RasmcoreError> {
         let graph = self.graph.borrow();
         let fg_info = graph.node_info(fg).map_err(to_wit_error)?;
