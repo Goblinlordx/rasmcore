@@ -1,168 +1,142 @@
 id: color-crate_20260328070200Z
-title: "rasmcore-color — Shared Color Space Conversion Crate"
+title: rasmcore-color — Shared Color Space Conversion Crate
 type: refactor
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Extract color space conversion into a shared rasmcore-color crate with
+  summary: 'Extract color space conversion into a shared rasmcore-color crate with
+
     parameterized coefficient matrices (BT.601, BT.709, BT.2020). Refactor
+
     rasmcore-webp to use it. Both rasmcore-jpeg and rasmcore-webp will depend
+
     on this crate. Zero external dependencies.
-  context: |
-    rasmcore-webp currently has an inline color.rs implementing RGB-to-YCbCr
+
+    '
+  context: 'rasmcore-webp currently has an inline color.rs implementing RGB-to-YCbCr
+
     conversion with hardcoded BT.601 integer coefficients. The upcoming
+
     rasmcore-jpeg crate needs the exact same conversion. Future codecs
+
     (AVIF/AV1, HEIF/H.265) will need BT.709 and BT.2020.
 
+
     Rather than duplicate the code, extract it into a shared crate that
+
     both codec crates depend on. The conversion is parameterized by a
+
     coefficient matrix, with BT.601/BT.709/BT.2020 as named presets.
 
+
     BT.601 is mandatory for JPEG (ITU-T T.81) and VP8 (RFC 6386) — the
+
     decoder on the other end assumes these coefficients. BT.709 is used
+
     by H.264/H.265/AV1. BT.2020 is used by HDR content. The standard
+
     to use is dictated by the codec, not by user preference.
 
+
     All arithmetic uses integer fixed-point math (no floating point in
+
     hot paths) matching the existing rasmcore-webp implementation.
-  codebase_analysis: |
-    Existing implementation in rasmcore-webp/src/color.rs:
-    - YuvImage struct with separate Y, U, V planes
-    - rgb_to_yuv420(): full-resolution Y, half-resolution U/V via 2x2 averaging
-    - rgba_to_yuv420(): strips alpha then delegates to rgb_to_yuv420
-    - BT.601 integer coefficients: Y = (66R + 129G + 25B + 128)>>8 + 16
-    - Handles odd dimensions with div_ceil(2)
-    - 5 tests covering dimensions, odd sizes, black/white reference values
 
-    rasmcore-pipeline (crates/rasmcore-pipeline):
-    - Current shared primitives crate (SpatialCache, Rect, Overlap)
-    - Color math is a different domain — separate crate is cleaner
-
-    Workspace structure (Cargo.toml):
-    - Members: rasmcore-pipeline, rasmcore-image, rasmcore-webp, rasmcore-jxl, wasm-integration
-    - Workspace deps: image = "0.25"
-
-    rasmcore-webp/Cargo.toml has zero runtime dependencies (by design).
-    Adding rasmcore-color as a dependency is acceptable since it is our
-    own code with zero external dependencies — the "zero deps" property
-    is preserved transitively.
-
-    BT.601 integer coefficients (used by JPEG, VP8):
-      Y  =  ( 66*R + 129*G +  25*B + 128) >> 8 + 16
-      Cb = (-38*R -  74*G + 112*B + 128) >> 8 + 128
-      Cr = (112*R -  94*G -  18*B + 128) >> 8 + 128
-
-    BT.709 integer coefficients (used by H.264, AV1):
-      Y  =  ( 47*R + 157*G +  16*B + 128) >> 8 + 16
-      Cb = (-26*R -  87*G + 112*B + 128) >> 8 + 128
-      Cr = (112*R - 102*G -  10*B + 128) >> 8 + 128
-
-    BT.2020 integer coefficients (used by HDR):
-      Y  =  ( 67*R + 174*G +  13*B + 128) >> 8 + 16
-      Cb = (-36*R -  76*G + 112*B + 128) >> 8 + 128
-      Cr = (112*R - 101*G -  11*B + 128) >> 8 + 128
+    '
+  codebase_analysis: "Existing implementation in rasmcore-webp/src/color.rs:\n- YuvImage struct with separate Y, U, V planes\n\
+    - rgb_to_yuv420(): full-resolution Y, half-resolution U/V via 2x2 averaging\n- rgba_to_yuv420(): strips alpha then delegates\
+    \ to rgb_to_yuv420\n- BT.601 integer coefficients: Y = (66R + 129G + 25B + 128)>>8 + 16\n- Handles odd dimensions with\
+    \ div_ceil(2)\n- 5 tests covering dimensions, odd sizes, black/white reference values\n\nrasmcore-pipeline (crates/rasmcore-pipeline):\n\
+    - Current shared primitives crate (SpatialCache, Rect, Overlap)\n- Color math is a different domain — separate crate is\
+    \ cleaner\n\nWorkspace structure (Cargo.toml):\n- Members: rasmcore-pipeline, rasmcore-image, rasmcore-webp, rasmcore-jxl,\
+    \ wasm-integration\n- Workspace deps: image = \"0.25\"\n\nrasmcore-webp/Cargo.toml has zero runtime dependencies (by design).\n\
+    Adding rasmcore-color as a dependency is acceptable since it is our\nown code with zero external dependencies — the \"\
+    zero deps\" property\nis preserved transitively.\n\nBT.601 integer coefficients (used by JPEG, VP8):\n  Y  =  ( 66*R +\
+    \ 129*G +  25*B + 128) >> 8 + 16\n  Cb = (-38*R -  74*G + 112*B + 128) >> 8 + 128\n  Cr = (112*R -  94*G -  18*B + 128)\
+    \ >> 8 + 128\n\nBT.709 integer coefficients (used by H.264, AV1):\n  Y  =  ( 47*R + 157*G +  16*B + 128) >> 8 + 16\n \
+    \ Cb = (-26*R -  87*G + 112*B + 128) >> 8 + 128\n  Cr = (112*R - 102*G -  10*B + 128) >> 8 + 128\n\nBT.2020 integer coefficients\
+    \ (used by HDR):\n  Y  =  ( 67*R + 174*G +  13*B + 128) >> 8 + 16\n  Cb = (-36*R -  76*G + 112*B + 128) >> 8 + 128\n \
+    \ Cr = (112*R - 101*G -  11*B + 128) >> 8 + 128\n"
   acceptance_criteria:
-    - New rasmcore-color crate in workspace with zero external dependencies
-    - Parameterized RGB-to-YCbCr conversion with coefficient matrix
-    - Parameterized YCbCr-to-RGB inverse conversion
-    - Named presets for BT.601, BT.709, BT.2020
-    - Chroma subsampling support (4:2:0 with 2x2 averaging, 4:4:4 full resolution)
-    - RGBA input support (alpha channel discarded)
-    - Gray8 input support (Y-only, no chroma)
-    - All integer arithmetic (no floating point in conversion hot path)
-    - Handles odd image dimensions correctly
-    - rasmcore-webp refactored to depend on rasmcore-color instead of inline color.rs
-    - All existing rasmcore-webp tests pass after refactor
-    - Reference value tests for BT.601 black/white/primary colors
-    - Roundtrip test (RGB -> YCbCr -> RGB within 1 step of original)
-  out_of_scope: |
-    - Full-range vs limited-range variants (use limited/studio range matching current impl)
+  - New rasmcore-color crate in workspace with zero external dependencies
+  - Parameterized RGB-to-YCbCr conversion with coefficient matrix
+  - Parameterized YCbCr-to-RGB inverse conversion
+  - Named presets for BT.601, BT.709, BT.2020
+  - Chroma subsampling support (4:2:0 with 2x2 averaging, 4:4:4 full resolution)
+  - RGBA input support (alpha channel discarded)
+  - Gray8 input support (Y-only, no chroma)
+  - All integer arithmetic (no floating point in conversion hot path)
+  - Handles odd image dimensions correctly
+  - rasmcore-webp refactored to depend on rasmcore-color instead of inline color.rs
+  - All existing rasmcore-webp tests pass after refactor
+  - Reference value tests for BT.601 black/white/primary colors
+  - Roundtrip test (RGB -> YCbCr -> RGB within 1 step of original)
+  out_of_scope: '- Full-range vs limited-range variants (use limited/studio range matching current impl)
+
     - SIMD optimization (rely on auto-vectorization, SIMD track later)
+
     - Gamma/transfer function handling (linear math only)
+
     - ICC profile-based conversion (handled by moxcms in rasmcore-image)
+
     - HDR tone mapping
-  technical_notes: |
-    Crate structure:
 
-    crates/rasmcore-color/src/
-      lib.rs       — Public API, re-exports
-      matrix.rs    — ColorMatrix struct with BT601/BT709/BT2020 constants
-      convert.rs   — RGB-to-YCbCr and YCbCr-to-RGB conversion functions
-      subsample.rs — Chroma subsampling (4:2:0 averaging, 4:4:4 passthrough)
-      types.rs     — YuvImage, ChromaSubsampling enum, PixelFormat
-
-    The ColorMatrix holds 6 integer coefficients (3 for Y, 3 for Cb/Cr share
-    the same structure) plus the offset constants (16 for Y, 128 for chroma).
-
-    ```rust
-    pub struct ColorMatrix {
-        // Y = (yr*R + yg*G + yb*B + 128) >> 8 + y_offset
-        pub yr: i32, pub yg: i32, pub yb: i32, pub y_offset: i32,
-        // Cb = (cbr*R + cbg*G + cbb*B + 128) >> 8 + c_offset
-        pub cbr: i32, pub cbg: i32, pub cbb: i32,
-        // Cr = (crr*R + crg*G + crb*B + 128) >> 8 + c_offset
-        pub crr: i32, pub crg: i32, pub crb: i32,
-        pub c_offset: i32,
-    }
-    ```
-
-    Usage from rasmcore-webp:
-    ```rust
-    use rasmcore_color::{rgb_to_ycbcr_420, ColorMatrix};
-    let yuv = rgb_to_ycbcr_420(pixels, width, height, &ColorMatrix::BT601);
-    ```
-
-    Refactoring rasmcore-webp:
-    - Replace `pub mod color;` with `use rasmcore_color`
-    - Delete inline color.rs
-    - Update imports in any file that used `crate::color::*`
-    - The YuvImage type moves to rasmcore-color (re-export if needed)
-
-    The inverse conversion (YCbCr-to-RGB) is needed for reconstructed frame
-    output and decoder pipelines. It uses the inverse matrix coefficients.
+    '
+  technical_notes: "Crate structure:\n\ncrates/rasmcore-color/src/\n  lib.rs       — Public API, re-exports\n  matrix.rs \
+    \   — ColorMatrix struct with BT601/BT709/BT2020 constants\n  convert.rs   — RGB-to-YCbCr and YCbCr-to-RGB conversion\
+    \ functions\n  subsample.rs — Chroma subsampling (4:2:0 averaging, 4:4:4 passthrough)\n  types.rs     — YuvImage, ChromaSubsampling\
+    \ enum, PixelFormat\n\nThe ColorMatrix holds 6 integer coefficients (3 for Y, 3 for Cb/Cr share\nthe same structure) plus\
+    \ the offset constants (16 for Y, 128 for chroma).\n\n```rust\npub struct ColorMatrix {\n    // Y = (yr*R + yg*G + yb*B\
+    \ + 128) >> 8 + y_offset\n    pub yr: i32, pub yg: i32, pub yb: i32, pub y_offset: i32,\n    // Cb = (cbr*R + cbg*G +\
+    \ cbb*B + 128) >> 8 + c_offset\n    pub cbr: i32, pub cbg: i32, pub cbb: i32,\n    // Cr = (crr*R + crg*G + crb*B + 128)\
+    \ >> 8 + c_offset\n    pub crr: i32, pub crg: i32, pub crb: i32,\n    pub c_offset: i32,\n}\n```\n\nUsage from rasmcore-webp:\n\
+    ```rust\nuse rasmcore_color::{rgb_to_ycbcr_420, ColorMatrix};\nlet yuv = rgb_to_ycbcr_420(pixels, width, height, &ColorMatrix::BT601);\n\
+    ```\n\nRefactoring rasmcore-webp:\n- Replace `pub mod color;` with `use rasmcore_color`\n- Delete inline color.rs\n- Update\
+    \ imports in any file that used `crate::color::*`\n- The YuvImage type moves to rasmcore-color (re-export if needed)\n\
+    \nThe inverse conversion (YCbCr-to-RGB) is needed for reconstructed frame\noutput and decoder pipelines. It uses the inverse\
+    \ matrix coefficients.\n"
 plan:
-  - phase: Crate Scaffold
-    tasks:
-      - text: "Create rasmcore-color crate with Cargo.toml (zero deps), add to workspace"
-        done: false
-      - text: "Define ColorMatrix struct with BT.601, BT.709, BT.2020 presets as const"
-        done: false
-      - text: "Define YuvImage, ChromaSubsampling enum, input PixelFormat types"
-        done: false
-  - phase: Core Conversion
-    tasks:
-      - text: "Implement rgb_to_ycbcr (full-resolution, parameterized by ColorMatrix)"
-        done: false
-      - text: "Implement chroma subsampling (4:2:0 with 2x2 block averaging, odd dimensions)"
-        done: false
-      - text: "Implement rgb_to_ycbcr_420 convenience function (convert + subsample)"
-        done: false
-      - text: "Implement rgba_to_ycbcr_420 (strip alpha, delegate)"
-        done: false
-      - text: "Implement gray_to_y (luma-only for grayscale input)"
-        done: false
-      - text: "Implement ycbcr_to_rgb inverse conversion (parameterized by ColorMatrix)"
-        done: false
-  - phase: Refactor rasmcore-webp
-    tasks:
-      - text: "Add rasmcore-color dependency to rasmcore-webp/Cargo.toml"
-        done: false
-      - text: "Replace inline color.rs with rasmcore-color imports"
-        done: false
-      - text: "Verify all existing rasmcore-webp tests pass"
-        done: false
-  - phase: Tests & Verification
-    tasks:
-      - text: "BT.601 reference values test (black=Y16, white=Y235, neutral chroma=128)"
-        done: false
-      - text: "BT.709 reference values test"
-        done: false
-      - text: "Roundtrip test (RGB -> YCbCr -> RGB within 1 of original for all standards)"
-        done: false
-      - text: "Odd dimensions and edge cases (1x1, 1x2, 3x5)"
-        done: false
-      - text: "Full workspace builds and all tests pass"
-        done: false
+- phase: Crate Scaffold
+  tasks:
+  - text: Create rasmcore-color crate with Cargo.toml (zero deps), add to workspace
+    done: true
+  - text: Define ColorMatrix struct with BT.601, BT.709, BT.2020 presets as const
+    done: true
+  - text: Define YuvImage, ChromaSubsampling enum, input PixelFormat types
+    done: true
+- phase: Core Conversion
+  tasks:
+  - text: Implement rgb_to_ycbcr (full-resolution, parameterized by ColorMatrix)
+    done: true
+  - text: Implement chroma subsampling (4:2:0 with 2x2 block averaging, odd dimensions)
+    done: true
+  - text: Implement rgb_to_ycbcr_420 convenience function (convert + subsample)
+    done: true
+  - text: Implement rgba_to_ycbcr_420 (strip alpha, delegate)
+    done: true
+  - text: Implement gray_to_y (luma-only for grayscale input)
+    done: true
+  - text: Implement ycbcr_to_rgb inverse conversion (parameterized by ColorMatrix)
+    done: true
+- phase: Refactor rasmcore-webp
+  tasks:
+  - text: Add rasmcore-color dependency to rasmcore-webp/Cargo.toml
+    done: false
+  - text: Replace inline color.rs with rasmcore-color imports
+    done: false
+  - text: Verify all existing rasmcore-webp tests pass
+    done: false
+- phase: Tests & Verification
+  tasks:
+  - text: BT.601 reference values test (black=Y16, white=Y235, neutral chroma=128)
+    done: false
+  - text: BT.709 reference values test
+    done: false
+  - text: Roundtrip test (RGB -> YCbCr -> RGB within 1 of original for all standards)
+    done: false
+  - text: Odd dimensions and edge cases (1x1, 1x2, 3x5)
+    done: false
+  - text: Full workspace builds and all tests pass
+    done: false
 extra: {}

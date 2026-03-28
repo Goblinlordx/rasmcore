@@ -7,7 +7,7 @@
 
 use crate::block::{self, MacroblockInfo};
 use crate::boolcoder::BoolWriter;
-use crate::color::YuvImage;
+use rasmcore_color::YuvImage;
 use crate::dct;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};

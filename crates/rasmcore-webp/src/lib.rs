@@ -8,7 +8,7 @@
 //! Each module is a reusable component with a clean public API:
 //! - [`boolcoder`] — Boolean arithmetic encoder (general-purpose)
 //! - [`dct`] — 4×4 integer DCT/IDCT and Walsh-Hadamard Transform
-//! - [`color`] — RGB↔YUV420 conversion
+//! - [`rasmcore_color`] — RGB↔YCbCr conversion (shared crate, BT.601/BT.709/BT.2020)
 //! - [`predict`] — VP8 intra-prediction modes
 //! - [`quant`] — Quantization tables and quality mapping
 //!
@@ -24,7 +24,6 @@
 
 // Encoder pipeline modules (public for reuse)
 pub mod boolcoder;
-pub mod color;
 pub mod dct;
 pub mod predict;
 pub mod quant;
@@ -89,10 +88,14 @@ pub fn encode(
 
     let quality = config.quality.clamp(1, 100);
 
-    // 1. RGB → YUV420 conversion
+    // 1. RGB → YUV420 conversion (BT.601 per VP8/RFC 6386)
     let yuv = match format {
-        PixelFormat::Rgb8 => color::rgb_to_yuv420(pixels, width, height),
-        PixelFormat::Rgba8 => color::rgba_to_yuv420(pixels, width, height),
+        PixelFormat::Rgb8 => {
+            rasmcore_color::rgb_to_ycbcr_420(pixels, width, height, &rasmcore_color::ColorMatrix::BT601)
+        }
+        PixelFormat::Rgba8 => {
+            rasmcore_color::rgba_to_ycbcr_420(pixels, width, height, &rasmcore_color::ColorMatrix::BT601)
+        }
     };
 
     // 2. Quality → quantizer parameter
