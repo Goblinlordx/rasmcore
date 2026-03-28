@@ -105,7 +105,7 @@ impl HuffmanTable {
                 EncodeError::DecodeFailed("unexpected end of entropy data".into())
             })?;
             code = (code << 1) | (bit as u32);
-            if (code as i32) <= self.max_code[bits] {
+            if code >= self.min_code[bits] && (code as i32) <= self.max_code[bits] {
                 let index = (code as i32 + self.val_offset[bits]) as usize;
                 return Ok(self.symbols[index]);
             }
@@ -1395,6 +1395,33 @@ mod tests {
         let data = [0b10000000]; // bit 1 then bit 0...
         let mut reader = BitReader::new(&data, BitOrder::MsbFirst);
         assert_eq!(table.decode(&mut reader).unwrap(), 1); // bit=1 → symbol 1
+    }
+
+    #[test]
+    fn huffman_table_with_code_length_gaps() {
+        // Table with gaps: 0 symbols at bits=1, 2 symbols at bits=2, 1 at bits=3.
+        // This creates min_code[3] = 4 (not 0), so codes 0-3 at 3 bits are invalid.
+        // Before the fix, code=0 at bits=3 would falsely match (0 <= max_code[3]=4).
+        let mut lengths = [0u8; 16];
+        lengths[1] = 2; // 2 symbols at bit length 2
+        lengths[2] = 1; // 1 symbol at bit length 3
+        let symbols = vec![0xA, 0xB, 0xC]; // arbitrary symbols
+
+        let table = HuffmanTable::from_lengths_and_symbols(&lengths, &symbols);
+
+        // bits=2: codes 00, 01 → symbols 0xA, 0xB
+        // bits=3: code 100 → symbol 0xC
+        // Code 00 (2 bits) → 0xA
+        let data = [0b00100000]; // bits: 0,0 then 1,0,0
+        let mut reader = BitReader::new(&data, BitOrder::MsbFirst);
+        assert_eq!(table.decode(&mut reader).unwrap(), 0xA);
+        // Code 100 (3 bits) → 0xC (must NOT falsely match at bits=2)
+        assert_eq!(table.decode(&mut reader).unwrap(), 0xC);
+
+        // Code 01 (2 bits) → 0xB
+        let data2 = [0b01000000];
+        let mut reader2 = BitReader::new(&data2, BitOrder::MsbFirst);
+        assert_eq!(table.decode(&mut reader2).unwrap(), 0xB);
     }
 
     #[test]
