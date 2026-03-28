@@ -1,0 +1,8 @@
+title: Histogram Analysis — Compute, Equalize, Normalize, Auto-Level, Statistics
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- pixel-point-ops_20260329161700Z

@@ -1,0 +1,80 @@
+id: geometric-extended_20260329161704Z
+title: Extended Geometry — Arbitrary Rotation, Pad/Extend, Trim, Affine Transform
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Geometric transforms beyond 90-degree increments — arbitrary angle rotation with
+    interpolation, canvas pad/extend with configurable fill, auto-trim of uniform borders,
+    and general 2D affine transform. Matches libvips vips_rotate()/vips_embed()/vips_find_trim()
+    and ImageMagick -rotate/-extent/-trim/-affine.
+  context: |
+    Current rotate() only supports 90/180/270 degrees via pixel transpose. Arbitrary angle
+    rotation is the most requested missing geometric operation. Pad/extend is needed for
+    letterboxing and social media format adaptation. Trim removes uniform borders (common
+    after scanning or screenshots). Affine transform is the general 2D matrix transform.
+  codebase_analysis: |
+    transform.rs has rotate() with Rotation enum (R90/R180/R270) using row/col swaps. resize()
+    uses fast_image_resize with Lanczos3 interpolation. Arbitrary rotation can reuse the
+    fast_image_resize interpolation infrastructure or implement bilinear sampling directly.
+    Pad/extend needs to allocate a larger buffer and blit the original image at an offset.
+    Trim needs edge detection by comparing border pixels against a threshold.
+    Affine uses a 2x3 matrix applied per output pixel with inverse mapping + interpolation.
+  acceptance_criteria:
+    - rotate_arbitrary(pixels, info, degrees, bg_color) rotates by any angle with bilinear interpolation
+    - pad(pixels, info, top, right, bottom, left, fill_color) extends canvas with fill
+    - trim(pixels, info, threshold) removes uniform borders within color threshold
+    - affine(pixels, info, matrix_2x3, interpolation) applies general affine transform
+    - Rotation output matches ImageMagick -rotate reference within MAE < 1.0 (excluding anti-aliased edges)
+    - Trim matches ImageMagick -trim bounding box within +-1 pixel
+    - Performance within 2x of ImageMagick for rotation on 4K images
+  out_of_scope: |
+    Perspective (4-point) transform. Barrel/pincushion distortion. Mesh warping.
+    Smart crop (separate track). Tiling/replication.
+  technical_notes: |
+    Arbitrary rotation: for each output (x,y), compute source (x',y') via inverse rotation
+    matrix, sample with bilinear interpolation. Output dimensions: bounding box of rotated
+    corners. Background fill for uncovered regions. Pad: allocate (w+left+right, h+top+bottom),
+    fill with color, blit original at (left, top). Trim: scan inward from each edge comparing
+    against corner pixel within threshold. Affine: same inverse-mapping approach as rotation
+    but with general [a,b,tx; c,d,ty] matrix.
+    Reference: magick input.png -rotate 37 -background white ref_rot37.png
+plan:
+  - phase: Core Geometry
+    tasks:
+      - text: Implement rotate_arbitrary(pixels, info, degrees, bg_color) with bilinear interpolation
+        done: false
+      - text: Implement pad(pixels, info, top, right, bottom, left, fill_color) — extend canvas
+        done: false
+      - text: Implement trim(pixels, info, threshold) — detect and remove uniform borders
+        done: false
+      - text: Implement affine(pixels, info, matrix, interpolation) — general 2x3 affine transform
+        done: false
+  - phase: Pipeline Integration
+    tasks:
+      - text: Add RotateArbitraryNode, PadNode, TrimNode, AffineNode pipeline nodes
+        done: false
+      - text: Add WIT interface declarations for all 4 operations
+        done: false
+      - text: Wire WIT adapters to domain functions
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit tests for rotation at 0, 45, 90, 180, 270, 359 degrees
+        done: false
+      - text: Unit tests for pad with various fill colors and asymmetric padding
+        done: false
+      - text: Unit tests for trim on images with known uniform borders
+        done: false
+      - text: Generate ImageMagick references for rotate 37, rotate 45, trim, pad
+        done: false
+      - text: Parity tests — rotation output vs magick -rotate (MAE < 1.0, edge-excluded)
+        done: false
+      - text: Parity tests — trim bounding box vs magick -trim (within +-1px)
+        done: false
+      - text: Perf benchmark vs ImageMagick on 4K image for arbitrary rotation
+        done: false
+      - text: WASM build check and pipeline graph tests
+        done: false
+extra: {}

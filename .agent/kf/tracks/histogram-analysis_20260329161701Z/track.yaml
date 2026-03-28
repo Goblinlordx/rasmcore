@@ -1,0 +1,81 @@
+id: histogram-analysis_20260329161701Z
+title: Histogram Analysis — Compute, Equalize, Normalize, Auto-Level, Statistics
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Histogram computation, equalization, normalization, auto-level, and basic
+    image statistics (min, max, mean, stddev). Enables automatic contrast improvement
+    matching libvips and ImageMagick behavior.
+  context: |
+    libvips provides vips_hist_find(), vips_hist_equal(), vips_hist_norm(), vips_hist_local()
+    (CLAHE), vips_stats(), vips_avg(), vips_deviate(). ImageMagick provides --equalize,
+    --normalize, --auto-level, --contrast-stretch, --clahe. These are among the most
+    commonly used auto-correction operations in image pipelines.
+  codebase_analysis: |
+    No histogram infrastructure exists. filters.rs has contrast() which does a linear
+    remap but not histogram-based. Statistics (min/max/mean) are not computed anywhere.
+    The pixel-point-ops track provides clamp and threshold which this track uses
+    internally for level stretching.
+  acceptance_criteria:
+    - histogram(pixels, info) returns [u32; 256] per channel frequency distribution
+    - statistics(pixels, info) returns min, max, mean, stddev per channel
+    - equalize(pixels, info) applies histogram equalization (cumulative distribution remap)
+    - normalize(pixels, info) stretches histogram to full [0, 255] range (like ImageMagick --normalize)
+    - auto_level(pixels, info) linear stretch from actual min/max to full range
+    - Output of equalize matches ImageMagick -equalize within MAE < 1.0
+    - Output of normalize matches ImageMagick -normalize within MAE < 1.0
+    - Performance within 2x of libvips for histogram operations on 4K images
+  out_of_scope: |
+    CLAHE (contrast-limited adaptive histogram equalization) — complex, separate track.
+    Histogram matching (match one image to another). Multi-dimensional histograms.
+  technical_notes: |
+    Histogram: single pass O(n), accumulate per-channel counts. Stats: single pass for
+    min/max/sum/sum_sq, derive mean and stddev. Equalize: build CDF from histogram,
+    normalize CDF to [0,255], apply as LUT. Normalize: find 0.5% and 99.5% percentiles
+    from histogram, linear stretch between them (matches ImageMagick convention).
+    Auto-level: use actual min/max, linear stretch. All LUT-based for SIMD throughput.
+    Reference: magick input.png -equalize ref_eq.png, magick input.png -normalize ref_norm.png.
+plan:
+  - phase: Core Histogram
+    tasks:
+      - text: Implement histogram() — per-channel u32[256] frequency count
+        done: false
+      - text: Implement statistics() — min, max, mean, stddev per channel in single pass
+        done: false
+      - text: Implement equalize() — CDF-based histogram equalization via LUT
+        done: false
+  - phase: Auto-Correction
+    tasks:
+      - text: Implement normalize() — percentile-based linear stretch (0.5%/99.5%)
+        done: false
+      - text: Implement auto_level() — min/max linear stretch to full range
+        done: false
+      - text: Implement contrast_stretch(black_point, white_point) — configurable percentile stretch
+        done: false
+  - phase: Pipeline Integration
+    tasks:
+      - text: Add pipeline nodes for equalize, normalize, auto_level, contrast_stretch
+        done: false
+      - text: Add WIT interface declarations and wire adapters
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit tests for histogram correctness (known pixel patterns)
+        done: false
+      - text: Unit tests for statistics (known min/max/mean/stddev)
+        done: false
+      - text: Generate ImageMagick reference outputs for equalize and normalize
+        done: false
+      - text: Parity tests — equalize output vs magick -equalize (MAE < 1.0)
+        done: false
+      - text: Parity tests — normalize output vs magick -normalize (MAE < 1.0)
+        done: false
+      - text: Perf benchmark vs ImageMagick/libvips on 4K image, report wall-clock
+        done: false
+      - text: WASM build check and existing test regression
+        done: false
+      - text: Pipeline graph tests with new nodes
+        done: false
+extra: {}

@@ -1,0 +1,79 @@
+id: pixel-point-ops_20260329161700Z
+title: Pixel Point Operations — Gamma, Invert, Threshold, Posterize, Clamp
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Per-pixel point operations requiring no neighborhood context. Gamma correction,
+    invert/negate, binary threshold, posterize, and value clamp. Foundation for auto-level
+    and other higher-level operations.
+  context: |
+    libvips provides vips_gamma(), vips_invert(), vips_relational_const() (threshold).
+    ImageMagick provides --auto-gamma, --negate, --threshold, --posterize, --clamp.
+    These are fundamental per-pixel ops used as building blocks by higher-level
+    operations (auto-level, normalize). All are embarrassingly parallel — ideal for
+    SIMD128 auto-vectorization.
+  codebase_analysis: |
+    filters.rs already has blur, sharpen, brightness, contrast, grayscale using the
+    pattern: validate_format() -> operate on pixel buffer -> return Vec<u8>. Point ops
+    follow the same pattern. Each op is a simple per-pixel function applied via
+    iterator. The existing contrast() uses a 256-entry LUT — gamma and posterize
+    should use the same LUT approach for throughput.
+  acceptance_criteria:
+    - gamma(pixels, info, gamma_value) applies power-law correction per channel
+    - invert(pixels, info) negates all channel values (255 - v)
+    - threshold(pixels, info, level) produces binary black/white output
+    - posterize(pixels, info, levels) reduces to N discrete levels per channel
+    - clamp(pixels, info, min, max) constrains pixel values to [min, max]
+    - All ops support RGB8, RGBA8, Gray8 (alpha channel preserved where applicable)
+    - Output matches ImageMagick reference within MAE < 0.5 for all test patterns
+    - Performance within 2x of ImageMagick for 4K images
+  out_of_scope: |
+    Auto-gamma (needs histogram — handled by histogram-analysis track).
+    Tone curves / custom LUT application.
+  technical_notes: |
+    Gamma: LUT[i] = round(255 * (i/255)^(1/gamma)). Invert: LUT[i] = 255 - i.
+    Threshold: if v >= level then 255 else 0. Posterize: LUT[i] = round(round(i * (levels-1) / 255) * 255 / (levels-1)).
+    All are LUT-based for SIMD throughput. For RGBA, skip alpha channel.
+    Reference: ImageMagick CLI for output parity, libvips for perf target.
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Implement gamma() with 256-entry LUT, power-law correction
+        done: false
+      - text: Implement invert() — negate all channels (255 - v), preserve alpha
+        done: false
+      - text: Implement threshold() — binary output at configurable level
+        done: false
+      - text: Implement posterize() — reduce to N discrete levels per channel
+        done: false
+      - text: Implement clamp() — constrain pixel values to [min, max] range
+        done: false
+  - phase: Pipeline Integration
+    tasks:
+      - text: Add GammaNode, InvertNode, ThresholdNode, PosterizeNode, ClampNode pipeline nodes
+        done: false
+      - text: Add WIT interface declarations for all 5 operations
+        done: false
+      - text: Wire WIT adapters to domain functions
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit tests for each op with known input/output values
+        done: false
+      - text: Generate reference outputs via ImageMagick CLI for test fixtures
+        done: false
+      - text: Parity tests — compare our output vs ImageMagick reference (MAE < 0.5)
+        done: false
+      - text: Perf benchmark vs ImageMagick on 4K test image, report wall-clock times
+        done: false
+  - phase: WASM Validation
+    tasks:
+      - text: Verify WASM build succeeds with new ops (cargo component check)
+        done: false
+      - text: Verify all existing tests still pass
+        done: false
+      - text: Verify pipeline graph tests with new nodes
+        done: false
+extra: {}
