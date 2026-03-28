@@ -1,0 +1,82 @@
+id: encoder-tiff_20260328061201Z
+title: "TIFF Encode — Compression Config, WIT Interface, Pipeline Sink"
+type: feature
+status: pending
+created: 2026-03-28
+updated: '2026-03-28'
+spec:
+  summary: |
+    Add TIFF encoder module with compression type and color type config.
+    Full per-format WIT interface, adapter, and pipeline write sink.
+    Parity tests vs ImageMagick reference output.
+  context: |
+    TIFF is a critical format for publishing, scanning, GIS, and medical imaging.
+    Decode already works via the image crate (tiff feature enabled). Encode is
+    supported by the image crate's TiffEncoder but not yet wired into rasmcore.
+
+    TIFF supports multiple compression algorithms (none, LZW, Deflate, PackBits)
+    and color types (RGB, RGBA, Gray). These should be exposed as config options.
+  codebase_analysis: |
+    - TIFF decode already works (feature enabled, image crate auto-detects)
+    - image crate TiffEncoder supports: compression type, color type
+    - Pattern: follow png.rs / jpeg.rs encoder module pattern
+    - Files to create: domain/encoder/tiff.rs
+    - Files to modify: domain/encoder/mod.rs, wit/image/encoder.wit,
+      wit/image/pipeline.wit, adapter/mod.rs, adapter/pipeline_adapter.rs,
+      domain/pipeline/nodes/sink.rs
+  acceptance_criteria:
+    - TIFF encode works with default config (LZW compression)
+    - Compression options configurable (none, lzw, deflate, packbits)
+    - WIT tiff-encode-config and tiff-write-config records defined
+    - Adapter encode_tiff and pipeline write_tiff wired
+    - Pipeline sink write_tiff drives execution correctly
+    - Roundtrip test (encode then decode, pixel-exact for lossless)
+    - Parity test vs ImageMagick TIFF output (file sizes in same ballpark)
+    - RGB8, RGBA8, and Gray8 input formats supported
+    - cargo test passes, cargo component build succeeds
+  out_of_scope: |
+    - Multi-page TIFF (future track)
+    - GeoTIFF tags
+    - BigTIFF (>4GB files)
+    - JPEG-in-TIFF compression
+  technical_notes: |
+    image crate TiffEncoder API:
+      TiffEncoder::new(writer)
+        .with_compression(tiff::encoder::Compression::Lzw)
+        .write_image(pixels, width, height, color_type)
+
+    Compression enum mapping:
+      None -> tiff::encoder::Compression::None (or Uncompressed)
+      Lzw -> tiff::encoder::Compression::Lzw
+      Deflate -> tiff::encoder::Compression::Deflate
+      PackBits -> tiff::encoder::Compression::PackBits
+
+    The image crate re-exports tiff types. Check exact API at encode time.
+plan:
+  - phase: Encoder Module
+    tasks:
+      - text: Create domain/encoder/tiff.rs with TiffEncodeConfig (compression, default LZW)
+        done: false
+      - text: Implement encode() function using image crate TiffEncoder
+        done: false
+      - text: Add tiff module to domain/encoder/mod.rs and encode dispatch
+        done: false
+      - text: Unit tests for each compression type and color format
+        done: false
+  - phase: WIT + Adapter + Pipeline
+    tasks:
+      - text: Add tiff-encode-config and tiff-write-config to WIT interfaces
+        done: false
+      - text: Add encode_tiff to adapter encoder impl
+        done: false
+      - text: Add write_tiff to pipeline adapter and sink
+        done: false
+  - phase: Parity Tests
+    tasks:
+      - text: Add TIFF references to generate.sh (LZW, Deflate, uncompressed)
+        done: false
+      - text: Roundtrip pixel-exact test (TIFF is lossless)
+        done: false
+      - text: File size parity vs ImageMagick at each compression level
+        done: false
+extra: {}
