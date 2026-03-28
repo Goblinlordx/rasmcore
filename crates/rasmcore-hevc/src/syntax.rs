@@ -586,7 +586,8 @@ fn decode_residual_coeffs(
 
     if last_x == 0 && last_y == 0 {
         // Only DC coefficient
-        let level = decode_coeff_level(cabac, contexts)?;
+        let mut num_gt1 = 0u32;
+        let level = decode_coeff_level(cabac, contexts, &mut num_gt1, log2_size)?;
         let sign = cabac.decode_bypass()?;
         coeffs[0] = if sign != 0 { -level } else { level };
         return Ok(coeffs);
@@ -603,21 +604,53 @@ fn decode_residual_coeffs(
         .unwrap_or(0);
 
     // Decode significance flags and levels for each position
+    // Use sub-block-based context derivation (HEVC Section 9.3.4.2.5)
+    let mut num_greater1 = 0u32;
     for scan_idx in (0..=last_scan_pos).rev() {
         let (sx, sy) = scan[scan_idx];
         let pos = sy * size as usize + sx;
 
         if scan_idx == last_scan_pos {
             // Last position is always significant
-            let level = decode_coeff_level(cabac, contexts)?;
+            let level = decode_coeff_level(cabac, contexts, &mut num_greater1, log2_size)?;
             let sign = cabac.decode_bypass()?;
             coeffs[pos] = if sign != 0 { -level } else { level };
         } else {
-            // Decode significance flag
-            let sig_ctx = SIG_COEFF_CTX_OFFSET;
+            // sig_coeff_flag context: depends on position within the TU
+            // Simplified derivation: use position-based offset within
+            // the 42-context sig_coeff table
+            let sig_ctx_inc = if sx + sy == 0 {
+                0 // DC position
+            } else if log2_size == 2 {
+                // 4×4 TU: context depends on scan position (Table 9-39)
+                let ctx_set = if scan_idx < 4 {
+                    0
+                } else if scan_idx < 8 {
+                    1
+                } else {
+                    2
+                };
+                ctx_set * 4 + (sx.min(1) + sy.min(1)).min(3)
+            } else {
+                // Larger TUs: use diagonal position
+                let diag = sx + sy;
+                if diag == 0 {
+                    0
+                } else if diag < 3 {
+                    1
+                } else if diag < 6 {
+                    2
+                } else {
+                    3
+                }
+            };
+            // For luma at log2TrafoSize > 2: offset by 21
+            let sig_ctx = SIG_COEFF_CTX_OFFSET + if log2_size > 2 { 21 } else { 0 } + sig_ctx_inc;
+            let sig_ctx = sig_ctx.min(SIG_COEFF_CTX_OFFSET + 41);
+
             let sig = cabac.decode_bin(&mut contexts[sig_ctx])? != 0;
             if sig {
-                let level = decode_coeff_level(cabac, contexts)?;
+                let level = decode_coeff_level(cabac, contexts, &mut num_greater1, log2_size)?;
                 let sign = cabac.decode_bypass()?;
                 coeffs[pos] = if sign != 0 { -level } else { level };
             }
@@ -628,6 +661,9 @@ fn decode_residual_coeffs(
 }
 
 /// Decode the last significant coefficient X and Y prefixes.
+///
+/// HEVC Section 9.3.4.2.3 (Table 9-32): context offset for last_sig_coeff depends
+/// on log2TrafoSize and color component (cIdx).
 fn decode_last_sig_coeff_pos(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
@@ -635,11 +671,17 @@ fn decode_last_sig_coeff_pos(
 ) -> Result<(u32, u32), HevcError> {
     let max_prefix = (log2_size << 1) - 1;
 
-    // X prefix (truncated unary)
+    // HEVC Table 9-32: context offset for last_sig_coeff_x/y_prefix
+    // For luma (cIdx=0): ctxOffset = 3*(log2TrafoSize-2) + ((log2TrafoSize-1)>>2)
+    // For chroma: ctxOffset = 15 (fixed offset after luma contexts)
+    // ctxShift = (log2TrafoSize+1)>>2 for luma, 3>>2=0 for chroma
+    let ctx_offset = 3 * (log2_size - 2) + ((log2_size - 1) >> 2);
+    let ctx_shift = (log2_size + 1) >> 2;
+
+    // X prefix (truncated unary with position-dependent context)
     let mut last_x_prefix = 0u32;
-    let ctx_base_x = LAST_SIG_X_CTX_OFFSET;
     for i in 0..max_prefix {
-        let ctx_idx = ctx_base_x + i;
+        let ctx_idx = LAST_SIG_X_CTX_OFFSET + ctx_offset + (i >> ctx_shift);
         if ctx_idx >= contexts.len() {
             break;
         }
@@ -650,11 +692,10 @@ fn decode_last_sig_coeff_pos(
         last_x_prefix += 1;
     }
 
-    // Y prefix (truncated unary)
+    // Y prefix (same context derivation, uses Y context base)
     let mut last_y_prefix = 0u32;
-    let ctx_base_y = LAST_SIG_Y_CTX_OFFSET;
     for i in 0..max_prefix {
-        let ctx_idx = ctx_base_y + i;
+        let ctx_idx = LAST_SIG_Y_CTX_OFFSET + ctx_offset + (i >> ctx_shift);
         if ctx_idx >= contexts.len() {
             break;
         }
@@ -694,20 +735,30 @@ fn decode_last_sig_coeff_pos(
 }
 
 /// Decode a single coefficient absolute level.
+///
+/// Uses sub-block-based context derivation for gt1/gt2 flags.
 fn decode_coeff_level(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
+    num_greater1: &mut u32,
+    _log2_size: usize,
 ) -> Result<i16, HevcError> {
     // coeff_abs_level_greater1_flag
-    let gt1_ctx = GT1_CTX_OFFSET;
+    // Context set depends on position and previously decoded gt1 flags
+    // HEVC Table 9-40: ctxSet = (num_greater1 > 0) ? 0..3 based on sub-block
+    // Simplified: use first context set, advance through contexts
+    let gt1_ctx_base = GT1_CTX_OFFSET + (*num_greater1 as usize).min(3) * 4;
+    let gt1_ctx = gt1_ctx_base.min(GT1_CTX_OFFSET + 23);
     let greater1 = cabac.decode_bin(&mut contexts[gt1_ctx])? != 0;
 
     if !greater1 {
         return Ok(1); // Level = 1
     }
+    *num_greater1 += 1;
 
     // coeff_abs_level_greater2_flag
-    let gt2_ctx = GT2_CTX_OFFSET;
+    // Context depends on which context set was used for gt1
+    let gt2_ctx = GT2_CTX_OFFSET + (*num_greater1 as usize - 1).min(5);
     let greater2 = cabac.decode_bin(&mut contexts[gt2_ctx])? != 0;
 
     if !greater2 {
@@ -715,7 +766,7 @@ fn decode_coeff_level(
     }
 
     // coeff_abs_level_remaining (bypass, Exp-Golomb with Rice parameter)
-    let rice_param = 0u32; // Simplified — real decoder adapts this
+    let rice_param = 0u32; // Simplified — real decoder adapts per sub-block
     let remaining = decode_coeff_abs_level_remaining(cabac, rice_param)?;
 
     Ok((3 + remaining) as i16)
@@ -799,21 +850,22 @@ fn build_scan_order(n: usize) -> Vec<(usize, usize)> {
 // These are simplified context index mappings. A full implementation would
 // use the complete HEVC context derivation from Tables 9-5 through 9-37.
 
-const SPLIT_CU_CTX_OFFSET: usize = 0;
-const PART_MODE_CTX_OFFSET: usize = 3;
-const PREV_INTRA_PRED_CTX_OFFSET: usize = 4;
-const CHROMA_PRED_CTX_OFFSET: usize = 5;
-const SPLIT_TU_CTX_OFFSET: usize = 6;
-const CBF_LUMA_CTX_OFFSET: usize = 10;
-const SIG_COEFF_CTX_OFFSET: usize = 12;
-const GT1_CTX_OFFSET: usize = 13;
-const GT2_CTX_OFFSET: usize = 14;
-const LAST_SIG_X_CTX_OFFSET: usize = 15;
-const LAST_SIG_Y_CTX_OFFSET: usize = 33;
-const CBF_CHROMA_CTX_OFFSET: usize = 51;
+// Context layout — matches HEVC spec context counts
+const SPLIT_CU_CTX_OFFSET: usize = 0; // 3 contexts
+const PART_MODE_CTX_OFFSET: usize = 3; // 4 contexts
+const PREV_INTRA_PRED_CTX_OFFSET: usize = 7; // 1 context
+const CHROMA_PRED_CTX_OFFSET: usize = 8; // 1 context
+const SPLIT_TU_CTX_OFFSET: usize = 9; // 3 contexts
+const CBF_LUMA_CTX_OFFSET: usize = 12; // 2 contexts
+const SIG_COEFF_CTX_OFFSET: usize = 14; // 42 contexts
+const GT1_CTX_OFFSET: usize = 56; // 24 contexts
+const GT2_CTX_OFFSET: usize = 80; // 6 contexts
+const LAST_SIG_X_CTX_OFFSET: usize = 86; // 18 contexts
+const LAST_SIG_Y_CTX_OFFSET: usize = 104; // 18 contexts
+const CBF_CHROMA_CTX_OFFSET: usize = 122; // 5 contexts
 
 /// Total number of context models needed for syntax parsing.
-pub const NUM_SYNTAX_CONTEXTS: usize = 55; // extended for chroma CBF
+pub const NUM_SYNTAX_CONTEXTS: usize = 127;
 
 /// Initialize syntax context models for an I-slice at the given QP.
 ///
@@ -831,8 +883,10 @@ pub fn init_syntax_contexts(qp: i32) -> Vec<ContextModel> {
     for (i, &v) in cabac::SPLIT_CU_FLAG_INIT[si].iter().enumerate() {
         iv[SPLIT_CU_CTX_OFFSET + i] = v;
     }
-    // PART_MODE: 1 context
-    iv[PART_MODE_CTX_OFFSET] = cabac::PART_MODE_INIT[si][0];
+    // PART_MODE: 4 contexts
+    for (i, &v) in cabac::PART_MODE_INIT[si].iter().enumerate() {
+        iv[PART_MODE_CTX_OFFSET + i] = v;
+    }
     // PREV_INTRA_LUMA_PRED_FLAG: 1 context
     iv[PREV_INTRA_PRED_CTX_OFFSET] = cabac::PREV_INTRA_LUMA_PRED_FLAG_INIT[si][0];
     // INTRA_CHROMA_PRED_MODE: 1 context

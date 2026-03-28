@@ -182,7 +182,12 @@ pub fn decode_frame(
                 ctu_x,
                 ctu_y,
                 &mut depth_map,
-            )?;
+            )
+            .map_err(|e| {
+                HevcError::DecodeFailed(format!(
+                    "CTU({ctu_col},{ctu_row}) at ({ctu_x},{ctu_y}): {e}"
+                ))
+            })?;
 
             // Reconstruct each CU in this CTU
             for cu in &ctu.cus {
