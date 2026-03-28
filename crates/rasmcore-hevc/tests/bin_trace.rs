@@ -20,29 +20,29 @@ const REF_BINS_Q37: &[(u32, bool, u8, u32, u32, u32)] = &[
     (7, true, 13, 0x141, 0x76d8, 0), // cbf_luma
     // CTU(32,0) - note: libde265 shows r=0x162 but due to terminate bin between CTUs,
     // the state may differ slightly. We compare after renormalization.
-    (8, true, 3, 0x162, 0xb60, 0),     // split_cu_flag CTU(32,0)
-    (9, true, 6, 0x198, 0x16c0, 1),    // prev_intra_luma_pred_flag
-    (10, false, 0, 0x100, 0x16c0, 0),  // mpm_idx bypass
-    (11, true, 24, 0x100, 0x2d80, 0),  // intra_chroma_pred_mode
-    (12, true, 12, 0x1ae, 0x5b7a, 0),  // cbf_chroma
-    (13, true, 13, 0x13f, 0x5b7a, 0),  // cbf_chroma
-    (14, true, 11, 0x1ec, 0xb6f4, 0),  // cbf_luma
+    (8, true, 3, 0x162, 0xb60, 0),    // split_cu_flag CTU(32,0)
+    (9, true, 6, 0x198, 0x16c0, 1),   // prev_intra_luma_pred_flag
+    (10, false, 0, 0x100, 0x16c0, 0), // mpm_idx bypass
+    (11, true, 24, 0x100, 0x2d80, 0), // intra_chroma_pred_mode
+    (12, true, 12, 0x1ae, 0x5b7a, 0), // cbf_chroma
+    (13, true, 13, 0x13f, 0x5b7a, 0), // cbf_chroma
+    (14, true, 11, 0x1ec, 0xb6f4, 0), // cbf_luma
     // CTU(0,32)
-    (15, true, 4, 0x10c, 0x8e8, 0),    // split_cu_flag
-    (16, true, 7, 0x130, 0x11d0, 1),   // prev_intra_luma_pred_flag
-    (17, false, 0, 0x198, 0x23a0, 0),  // mpm_idx bypass
-    (18, true, 25, 0x198, 0x4740, 0),  // intra_chroma_pred_mode
-    (19, true, 14, 0x160, 0x4740, 0),  // cbf_chroma
-    (20, true, 15, 0x10b, 0x4740, 0),  // cbf_chroma
-    (21, true, 9, 0x192, 0x8e80, 0),   // cbf_luma
+    (15, true, 4, 0x10c, 0x8e8, 0),   // split_cu_flag
+    (16, true, 7, 0x130, 0x11d0, 1),  // prev_intra_luma_pred_flag
+    (17, false, 0, 0x198, 0x23a0, 0), // mpm_idx bypass
+    (18, true, 25, 0x198, 0x4740, 0), // intra_chroma_pred_mode
+    (19, true, 14, 0x160, 0x4740, 0), // cbf_chroma
+    (20, true, 15, 0x10b, 0x4740, 0), // cbf_chroma
+    (21, true, 9, 0x192, 0x8e80, 0),  // cbf_luma
     // CTU(32,32)
-    (22, true, 5, 0x102, 0xd00, 0),    // split_cu_flag
-    (23, true, 8, 0x126, 0x1a18, 1),   // prev_intra_luma_pred_flag
-    (24, false, 0, 0x18e, 0x3430, 0),  // mpm_idx bypass
-    (25, true, 26, 0x18e, 0x6860, 0),  // intra_chroma_pred_mode
-    (26, true, 16, 0x158, 0x6860, 0),  // cbf_chroma
-    (27, true, 17, 0x10c, 0x6860, 0),  // cbf_chroma
-    (28, true, 7, 0x1a2, 0xd0c0, 0),   // cbf_luma
+    (22, true, 5, 0x102, 0xd00, 0),   // split_cu_flag
+    (23, true, 8, 0x126, 0x1a18, 1),  // prev_intra_luma_pred_flag
+    (24, false, 0, 0x18e, 0x3430, 0), // mpm_idx bypass
+    (25, true, 26, 0x18e, 0x6860, 0), // intra_chroma_pred_mode
+    (26, true, 16, 0x158, 0x6860, 0), // cbf_chroma
+    (27, true, 17, 0x10c, 0x6860, 0), // cbf_chroma
+    (28, true, 7, 0x1a2, 0xd0c0, 0),  // cbf_luma
 ];
 
 /// Decode a test case with tracing enabled and return the bin trace.
@@ -88,13 +88,20 @@ fn decode_with_trace(case: &str) -> (Vec<BinTrace>, bool) {
     let rbsp = slice_rbsp.unwrap();
     let sps = ctx.sps.iter().flatten().next().unwrap().clone();
     let pps = ctx.pps.iter().flatten().next().unwrap().clone();
-    let slice_header =
-        syntax::parse_slice_header(&rbsp, &sps, &pps, slice_nal_type).unwrap();
+    let slice_header = syntax::parse_slice_header(&rbsp, &sps, &pps, slice_nal_type).unwrap();
     let slice_qp = pps.init_qp + slice_header.slice_qp_delta;
 
     let cabac_start = slice_header.data_offset;
-    eprintln!("  slice_qp_delta={}, QP={}, data_offset={}", slice_header.slice_qp_delta, slice_qp, cabac_start);
-    eprintln!("  CABAC bytes: {:02x} {:02x} {:02x}", rbsp[cabac_start], rbsp[cabac_start+1], rbsp.get(cabac_start+2).unwrap_or(&0));
+    eprintln!(
+        "  slice_qp_delta={}, QP={}, data_offset={}",
+        slice_header.slice_qp_delta, slice_qp, cabac_start
+    );
+    eprintln!(
+        "  CABAC bytes: {:02x} {:02x} {:02x}",
+        rbsp[cabac_start],
+        rbsp[cabac_start + 1],
+        rbsp.get(cabac_start + 2).unwrap_or(&0)
+    );
     let mut cabac = CabacDecoder::new(&rbsp[cabac_start..]).unwrap();
     cabac.enable_trace();
 
@@ -102,9 +109,11 @@ fn decode_with_trace(case: &str) -> (Vec<BinTrace>, bool) {
 
     // Print context init values
     eprintln!("  Context init at QP={}:", slice_qp);
-    eprintln!("    ctx[42] (SIG_COEFF[24]): state={}, mps={}", contexts[42].state, contexts[42].mps);
-    let mut depth_map =
-        syntax::CuDepthMap::new(sps.pic_width, sps.pic_height, sps.min_cb_size());
+    eprintln!(
+        "    ctx[42] (SIG_COEFF[24]): state={}, mps={}",
+        contexts[42].state, contexts[42].mps
+    );
+    let mut depth_map = syntax::CuDepthMap::new(sps.pic_width, sps.pic_height, sps.min_cb_size());
 
     let ctu_size = sps.ctu_size();
     let ctus_x = sps.pic_width_in_ctus();
@@ -125,17 +134,15 @@ fn decode_with_trace(case: &str) -> (Vec<BinTrace>, bool) {
                 ctu_y,
                 &mut depth_map,
             ) {
-                Ok(_ctu) => {
-                    match cabac.decode_terminate() {
-                        Ok(1) => break 'ctu_loop,
-                        Ok(_) => {}
-                        Err(e) => {
-                            eprintln!("terminate error at CTU({ctu_col},{ctu_row}): {e}");
-                            decode_ok = false;
-                            break 'ctu_loop;
-                        }
+                Ok(_ctu) => match cabac.decode_terminate() {
+                    Ok(1) => break 'ctu_loop,
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("terminate error at CTU({ctu_col},{ctu_row}): {e}");
+                        decode_ok = false;
+                        break 'ctu_loop;
                     }
-                }
+                },
                 Err(e) => {
                     eprintln!("CTU({ctu_col},{ctu_row}) error: {e}");
                     decode_ok = false;
@@ -260,7 +267,11 @@ fn bin_trace_gradient_128x128_q22() {
         eprintln!(
             "  bin {:2}: {:>3} state={:2} r=0x{:03x} v=0x{:04x} bit={}",
             i + 1,
-            if bin.bin_type == BinType::Context { "ctx" } else { "byp" },
+            if bin.bin_type == BinType::Context {
+                "ctx"
+            } else {
+                "byp"
+            },
             bin.state_before,
             bin.range_before,
             bin.offset_before,
@@ -282,7 +293,11 @@ fn bin_trace_gradient_128x128_q22() {
         let our = &trace[i];
         let our_str = format!(
             "{},{},{:x},{:x},{}",
-            if our.bin_type == BinType::Context { "ctx" } else { "byp" },
+            if our.bin_type == BinType::Context {
+                "ctx"
+            } else {
+                "byp"
+            },
             our.state_before,
             our.range_before,
             our.offset_before,
@@ -293,17 +308,20 @@ fn bin_trace_gradient_128x128_q22() {
         let ref_type = ref_parts[0];
         let ref_bit: u32 = ref_parts[4].parse().unwrap();
         let ref_state: u8 = ref_parts[1].parse().unwrap();
-        let our_type_str = if our.bin_type == BinType::Context { "ctx" } else { "byp" };
+        let our_type_str = if our.bin_type == BinType::Context {
+            "ctx"
+        } else {
+            "byp"
+        };
 
         // Compare type, state (for ctx), and result
         let type_match = our_type_str == ref_type;
         let state_match = ref_type != "ctx" || our.state_before == ref_state;
         let result_match = our.result == ref_bit;
         // Skip range/value comparison for bypass group bins (r=0,v=0)
-        let rv_match = ref_parts[2] == "0" || (
-            format!("{:x}", our.range_before) == ref_parts[2]
-            && format!("{:x}", our.offset_before) == ref_parts[3]
-        );
+        let rv_match = ref_parts[2] == "0"
+            || (format!("{:x}", our.range_before) == ref_parts[2]
+                && format!("{:x}", our.offset_before) == ref_parts[3]);
 
         if !(type_match && state_match && result_match && rv_match) {
             eprintln!("FIRST MISMATCH at bin {}:", i + 1);

@@ -61,7 +61,7 @@ impl<'a> CabacDecoder<'a> {
         let mut bits_needed = 8i32;
 
         // Read first 2 bytes as initial value
-        if data.len() > 0 {
+        if !data.is_empty() {
             value = (data[0] as u32) << 8;
             byte_pos = 1;
             bits_needed -= 8;
@@ -105,11 +105,9 @@ impl<'a> CabacDecoder<'a> {
     #[inline]
     pub fn decode_bin(&mut self, ctx: &mut ContextModel) -> Result<u32, HevcError> {
         #[cfg(feature = "trace")]
-        let (trace_state, trace_range, trace_value) =
-            (ctx.state, self.range, self.value);
+        let (trace_state, trace_range, trace_value) = (ctx.state, self.range, self.value);
 
-        let lps_range = RANGE_TAB_LPS[ctx.state as usize]
-            [((self.range >> 6) & 3) as usize] as u32;
+        let lps_range = RANGE_TAB_LPS[ctx.state as usize][((self.range >> 6) & 3) as usize] as u32;
         self.range -= lps_range;
 
         let scaled_range = self.range << 7;

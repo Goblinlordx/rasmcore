@@ -222,12 +222,11 @@ pub fn parse_slice_header(
     } else {
         false
     };
-    let slice_sao_chroma_flag =
-        if sps.sample_adaptive_offset_enabled && sps.chroma_format_idc > 0 {
-            r.read_flag()?
-        } else {
-            false
-        };
+    let slice_sao_chroma_flag = if sps.sample_adaptive_offset_enabled && sps.chroma_format_idc > 0 {
+        r.read_flag()?
+    } else {
+        false
+    };
 
     // Deblocking filter override
     let mut deblocking_filter_disabled = pps.deblocking_filter_disabled;
