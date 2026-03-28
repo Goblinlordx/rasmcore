@@ -7,7 +7,7 @@ use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
-    "dds", "jxl", "jp2", "heic", "fits",
+    "dds", "jxl", "jp2", "heic", "fits", "svg",
 ];
 
 /// Detect image format from header bytes
@@ -25,6 +25,9 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     }
     if rasmcore_fits::is_fits(header) {
         return Some("fits".to_string());
+    }
+    if is_svg(header) {
+        return Some("svg".to_string());
     }
     image::guess_format(header)
         .ok()
@@ -66,6 +69,99 @@ fn is_jxl(header: &[u8]) -> bool {
     false
 }
 
+/// Check if data starts with SVG content.
+/// Matches XML prolog (`<?xml`) or direct `<svg` element, ignoring leading whitespace/BOM.
+fn is_svg(header: &[u8]) -> bool {
+    // Skip UTF-8 BOM if present
+    let data = if header.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        &header[3..]
+    } else {
+        header
+    };
+    // Skip leading whitespace
+    let trimmed = data
+        .iter()
+        .position(|&b| !b.is_ascii_whitespace())
+        .map(|i| &data[i..])
+        .unwrap_or(data);
+
+    if trimmed.starts_with(b"<svg") || trimmed.starts_with(b"<SVG") {
+        return true;
+    }
+    // XML prolog followed by svg element somewhere in the first 4KB
+    if trimmed.starts_with(b"<?xml") {
+        let check_len = trimmed.len().min(4096);
+        let check = &trimmed[..check_len];
+        // Look for <svg in the header region
+        for w in check.windows(4) {
+            if w == b"<svg" || w == b"<SVG" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Decode SVG to RGBA8 pixels using resvg.
+fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let svg_str = std::str::from_utf8(data)
+        .map_err(|e| ImageError::InvalidInput(format!("SVG: invalid UTF-8: {e}")))?;
+
+    let tree = resvg::usvg::Tree::from_str(svg_str, &resvg::usvg::Options::default())
+        .map_err(|e| ImageError::InvalidInput(format!("SVG parse error: {e}")))?;
+
+    let size = tree.size();
+    let width = size.width().ceil() as u32;
+    let height = size.height().ceil() as u32;
+
+    if width == 0 || height == 0 || width > 16384 || height > 16384 {
+        return Err(ImageError::InvalidInput(format!(
+            "SVG: invalid dimensions {width}x{height}"
+        )));
+    }
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| ImageError::ProcessingFailed("SVG: failed to create pixmap".into()))?;
+
+    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
+
+    // tiny-skia outputs premultiplied RGBA8 — demultiply alpha
+    let pixels = pixmap
+        .pixels()
+        .iter()
+        .flat_map(|px| {
+            let r = px.red();
+            let g = px.green();
+            let b = px.blue();
+            let a = px.alpha();
+            if a == 0 {
+                [0, 0, 0, 0]
+            } else if a == 255 {
+                [r, g, b, a]
+            } else {
+                // Demultiply: original = premultiplied * 255 / alpha
+                [
+                    ((r as u16 * 255 + a as u16 / 2) / a as u16) as u8,
+                    ((g as u16 * 255 + a as u16 / 2) / a as u16) as u8,
+                    ((b as u16 * 255 + a as u16 / 2) / a as u16) as u8,
+                    a,
+                ]
+            }
+        })
+        .collect();
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width,
+            height,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
 /// Decode an image from raw bytes
 pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     // Formats not supported by image crate — handle first
@@ -81,6 +177,9 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     }
     if rasmcore_fits::is_fits(data) {
         return decode_fits(data);
+    }
+    if is_svg(data) {
+        return decode_svg(data);
     }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
@@ -141,6 +240,35 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
             other => {
                 return Err(ImageError::UnsupportedFormat(format!(
                     "conversion to {other:?} not supported"
+                )));
+            }
+        };
+        return Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: decoded.info.width,
+                height: decoded.info.height,
+                format,
+                color_space: decoded.info.color_space,
+            },
+            icc_profile: decoded.icc_profile,
+        });
+    }
+
+    // SVG: decode then convert if needed
+    if is_svg(data) {
+        let decoded = decode_svg(data)?;
+        if decoded.info.format == target_format {
+            return Ok(decoded);
+        }
+        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
+        let (pixels, format) = match target_format {
+            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
+            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
+            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+            other => {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "SVG conversion to {other:?} not supported"
                 )));
             }
         };
@@ -771,5 +899,89 @@ mod tests {
             crate::domain::encoder::jpeg::embed_icc_profile(&jpeg, &fake_icc).unwrap();
         let result = decode_as(&jpeg_with_icc, PixelFormat::Rgba8).unwrap();
         assert_eq!(result.icc_profile, Some(fake_icc));
+    }
+
+    // ─── SVG Tests ─────────────────────────────────────────────────────────
+
+    fn simple_svg() -> Vec<u8> {
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+  <rect width="32" height="32" fill="red"/>
+</svg>"#
+            .to_vec()
+    }
+
+    fn complex_svg() -> Vec<u8> {
+        br##"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff0000"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="48" fill="url(#g1)"/>
+  <circle cx="32" cy="24" r="10" fill="white" opacity="0.8"/>
+  <text x="10" y="40" font-size="8" fill="black">Hello</text>
+</svg>"##
+            .to_vec()
+    }
+
+    #[test]
+    fn detect_format_svg_direct() {
+        let svg = simple_svg();
+        assert_eq!(detect_format(&svg), Some("svg".to_string()));
+    }
+
+    #[test]
+    fn detect_format_svg_xml_prolog() {
+        let svg = complex_svg();
+        assert_eq!(detect_format(&svg), Some("svg".to_string()));
+    }
+
+    #[test]
+    fn detect_format_svg_with_bom() {
+        let mut svg = vec![0xEF, 0xBB, 0xBF]; // UTF-8 BOM
+        svg.extend_from_slice(&simple_svg());
+        assert_eq!(detect_format(&svg), Some("svg".to_string()));
+    }
+
+    #[test]
+    fn decode_svg_simple_icon() {
+        let svg = simple_svg();
+        let result = decode(&svg).unwrap();
+        assert_eq!(result.info.width, 32);
+        assert_eq!(result.info.height, 32);
+        assert_eq!(result.info.format, PixelFormat::Rgba8);
+        assert_eq!(result.pixels.len(), 32 * 32 * 4);
+        // First pixel should be red (R=255, G=0, B=0, A=255)
+        assert_eq!(result.pixels[0], 255); // R
+        assert_eq!(result.pixels[1], 0); // G
+        assert_eq!(result.pixels[2], 0); // B
+        assert_eq!(result.pixels[3], 255); // A
+    }
+
+    #[test]
+    fn decode_svg_complex_gradients_text() {
+        let svg = complex_svg();
+        let result = decode(&svg).unwrap();
+        assert_eq!(result.info.width, 64);
+        assert_eq!(result.info.height, 48);
+        assert_eq!(result.info.format, PixelFormat::Rgba8);
+        assert_eq!(result.pixels.len(), 64 * 48 * 4);
+        // Should have non-zero alpha (not empty)
+        assert!(result.pixels.iter().any(|&b| b > 0));
+    }
+
+    #[test]
+    fn decode_svg_as_rgb8() {
+        let svg = simple_svg();
+        let result = decode_as(&svg, PixelFormat::Rgb8).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgb8);
+        assert_eq!(result.pixels.len(), 32 * 32 * 3);
+    }
+
+    #[test]
+    fn supported_formats_includes_svg() {
+        assert!(SUPPORTED_FORMATS.contains(&"svg"));
     }
 }
