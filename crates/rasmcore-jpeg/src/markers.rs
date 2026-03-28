@@ -10,8 +10,13 @@ const SOI: u16 = 0xFFD8;
 const EOI: u16 = 0xFFD9;
 const APP0: u16 = 0xFFE0;
 const DQT: u16 = 0xFFDB;
-const SOF0: u16 = 0xFFC0;
+const SOF0: u16 = 0xFFC0; // Baseline sequential, Huffman
+const SOF1: u16 = 0xFFC1; // Extended sequential, Huffman
+const SOF2: u16 = 0xFFC2; // Progressive, Huffman
+const SOF9: u16 = 0xFFC9; // Extended sequential, Arithmetic
+const SOF10: u16 = 0xFFCA; // Progressive, Arithmetic
 const DHT: u16 = 0xFFC4;
+const DAC: u16 = 0xFFCC; // Define Arithmetic Conditioning
 const SOS: u16 = 0xFFDA;
 const DRI: u16 = 0xFFDD;
 
@@ -79,10 +84,66 @@ pub fn write_sof0(
     precision: u8,
     components: &[(u8, u8, u8, u8)],
 ) {
-    write_marker(out, SOF0);
+    write_sof(out, SOF0, width, height, precision, components);
+}
+
+/// Write SOF1 (Extended sequential, Huffman) marker. Same format as SOF0.
+pub fn write_sof1(
+    out: &mut Vec<u8>,
+    width: u16,
+    height: u16,
+    precision: u8,
+    components: &[(u8, u8, u8, u8)],
+) {
+    write_sof(out, SOF1, width, height, precision, components);
+}
+
+/// Write SOF2 (Progressive, Huffman) marker.
+pub fn write_sof2(
+    out: &mut Vec<u8>,
+    width: u16,
+    height: u16,
+    precision: u8,
+    components: &[(u8, u8, u8, u8)],
+) {
+    write_sof(out, SOF2, width, height, precision, components);
+}
+
+/// Write SOF9 (Extended sequential, Arithmetic) marker.
+pub fn write_sof9(
+    out: &mut Vec<u8>,
+    width: u16,
+    height: u16,
+    precision: u8,
+    components: &[(u8, u8, u8, u8)],
+) {
+    write_sof(out, SOF9, width, height, precision, components);
+}
+
+/// Write SOF10 (Progressive, Arithmetic) marker.
+pub fn write_sof10(
+    out: &mut Vec<u8>,
+    width: u16,
+    height: u16,
+    precision: u8,
+    components: &[(u8, u8, u8, u8)],
+) {
+    write_sof(out, SOF10, width, height, precision, components);
+}
+
+/// Generic SOF writer used by all SOF variants.
+fn write_sof(
+    out: &mut Vec<u8>,
+    marker: u16,
+    width: u16,
+    height: u16,
+    precision: u8,
+    components: &[(u8, u8, u8, u8)],
+) {
+    write_marker(out, marker);
     let len = 2 + 1 + 2 + 2 + 1 + components.len() as u16 * 3;
     out.extend_from_slice(&len.to_be_bytes());
-    out.push(precision); // sample precision (8 or 12)
+    out.push(precision);
     out.extend_from_slice(&height.to_be_bytes());
     out.extend_from_slice(&width.to_be_bytes());
     out.push(components.len() as u8);
@@ -91,6 +152,45 @@ pub fn write_sof0(
         out.push((h << 4) | v);
         out.push(qt);
     }
+}
+
+/// Write SOS for progressive scan with spectral selection and successive approximation.
+///
+/// `components`: (component_id, dc_table, ac_table)
+/// `ss`: spectral selection start (0 = DC, 1-63 = AC bands)
+/// `se`: spectral selection end (0 for DC-only, 63 for full AC)
+/// `ah`: successive approximation high bit (0 for first scan)
+/// `al`: successive approximation low bit
+pub fn write_sos_progressive(
+    out: &mut Vec<u8>,
+    components: &[(u8, u8, u8)],
+    ss: u8,
+    se: u8,
+    ah: u8,
+    al: u8,
+) {
+    write_marker(out, SOS);
+    let len = 2 + 1 + components.len() as u16 * 2 + 3;
+    out.extend_from_slice(&len.to_be_bytes());
+    out.push(components.len() as u8);
+    for &(id, dc_table, ac_table) in components {
+        out.push(id);
+        out.push((dc_table << 4) | ac_table);
+    }
+    out.push(ss);
+    out.push(se);
+    out.push((ah << 4) | al);
+}
+
+/// Write DAC (Define Arithmetic Conditioning) marker.
+///
+/// Sets conditioning values for arithmetic coding contexts.
+pub fn write_dac(out: &mut Vec<u8>, table_class: u8, table_id: u8, value: u8) {
+    write_marker(out, DAC);
+    let len: u16 = 2 + 2; // length field + 1 table spec
+    out.extend_from_slice(&len.to_be_bytes());
+    out.push((table_class << 4) | table_id);
+    out.push(value);
 }
 
 /// Write DHT (Define Huffman Table) marker segment.
