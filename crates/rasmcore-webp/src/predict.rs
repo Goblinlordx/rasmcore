@@ -487,10 +487,89 @@ fn predict_8x8_tm(above: &[u8; 8], left: &[u8; 8], above_left: u8, dst: &mut [u8
 }
 
 // =============================================================================
-// Sum of Absolute Differences
+// SATD (Sum of Absolute Transformed Differences)
 // =============================================================================
 
-/// Sum of absolute differences between two byte slices.
+/// Sum of Absolute Transformed Differences — applies 4x4 Hadamard transform
+/// to residual blocks, then sums absolute values. Better correlates with
+/// actual encoding cost (DCT coefficient energy) than SAD.
+pub fn satd(a: &[u8], b: &[u8]) -> u32 {
+    debug_assert_eq!(a.len(), b.len());
+    debug_assert!(a.len() >= 16);
+
+    let mut total = 0u32;
+    // Process 4x4 blocks
+    let stride = match a.len() {
+        16 => 4,   // 4x4 block
+        64 => 8,   // 8x8 block
+        256 => 16, // 16x16 block
+        n => (n as f64).sqrt() as usize,
+    };
+    let block_rows = stride / 4;
+    let block_cols = stride / 4;
+
+    for by in 0..block_rows {
+        for bx in 0..block_cols {
+            total += satd_4x4_block(a, b, stride, bx * 4, by * 4);
+        }
+    }
+    total
+}
+
+/// SATD for a single 4x4 block within a larger image.
+fn satd_4x4_block(a: &[u8], b: &[u8], stride: usize, x: usize, y: usize) -> u32 {
+    // Compute residual
+    let mut d = [0i16; 16];
+    for row in 0..4 {
+        for col in 0..4 {
+            let idx = (y + row) * stride + (x + col);
+            d[row * 4 + col] = a[idx] as i16 - b[idx] as i16;
+        }
+    }
+
+    // 4x4 Hadamard transform (two passes: rows then columns)
+    let mut tmp = [0i32; 16];
+
+    // Row pass
+    for i in 0..4 {
+        let a0 = d[i * 4] as i32 + d[i * 4 + 3] as i32;
+        let a1 = d[i * 4 + 1] as i32 + d[i * 4 + 2] as i32;
+        let a2 = d[i * 4 + 1] as i32 - d[i * 4 + 2] as i32;
+        let a3 = d[i * 4] as i32 - d[i * 4 + 3] as i32;
+        tmp[i * 4] = a0 + a1;
+        tmp[i * 4 + 1] = a3 + a2;
+        tmp[i * 4 + 2] = a0 - a1;
+        tmp[i * 4 + 3] = a3 - a2;
+    }
+
+    // Column pass + absolute sum
+    let mut sum = 0u32;
+    for i in 0..4 {
+        let b0 = tmp[i] + tmp[12 + i];
+        let b1 = tmp[4 + i] + tmp[8 + i];
+        let b2 = tmp[4 + i] - tmp[8 + i];
+        let b3 = tmp[i] - tmp[12 + i];
+        sum += (b0 + b1).unsigned_abs();
+        sum += (b3 + b2).unsigned_abs();
+        sum += (b0 - b1).unsigned_abs();
+        sum += (b3 - b2).unsigned_abs();
+    }
+
+    // Normalize: divide by 2 to keep scale comparable to SAD
+    (sum + 1) >> 1
+}
+
+#[cfg(target_arch = "wasm32")]
+fn satd_4x4_simd128(a: &[u8], b: &[u8], stride: usize, x: usize, y: usize) -> u32 {
+    // For now, use scalar implementation on WASM too.
+    // The SIMD overhead for 4x4 blocks is minimal.
+    satd_4x4_block(a, b, stride, x, y)
+}
+
+// =============================================================================
+// Sum of Absolute Differences (retained for chroma selection)
+// =============================================================================
+
 /// Sum of absolute differences between two byte slices.
 ///
 /// On WASM, processes 16 bytes at a time using u8x16 SIMD.
@@ -565,7 +644,9 @@ fn sad_simd128(a: &[u8], b: &[u8]) -> u32 {
 
 /// Select the best 16×16 prediction mode by minimizing SAD.
 ///
-/// Tries all 4 modes and returns the one with the lowest SAD against `actual`.
+/// For 16x16 mode selection (only 4 modes), SAD is a good enough proxy
+/// for encoding quality. SATD is reserved for 4x4 B_PRED mode selection
+/// where it better predicts cost across 10 directional modes.
 pub fn select_best_16x16(
     actual: &[u8],
     above: &[u8; 16],
@@ -575,7 +656,7 @@ pub fn select_best_16x16(
     has_left: bool,
 ) -> Intra16Mode {
     let mut best_mode = Intra16Mode::DC;
-    let mut best_sad = u32::MAX;
+    let mut best_cost = u32::MAX;
     let mut pred = [0u8; 256];
 
     for &mode in &ALL_INTRA16 {
@@ -583,15 +664,15 @@ pub fn select_best_16x16(
             mode, above, left, above_left, has_above, has_left, &mut pred,
         );
         let cost = sad(&actual[..256], &pred);
-        if cost < best_sad {
-            best_sad = cost;
+        if cost < best_cost {
+            best_cost = cost;
             best_mode = mode;
         }
     }
     best_mode
 }
 
-/// Select the best 4×4 prediction mode by minimizing SAD.
+/// Select the best 4×4 prediction mode by minimizing SATD.
 pub fn select_best_4x4(
     actual: &[u8],
     above: &[u8; 4],
@@ -600,14 +681,14 @@ pub fn select_best_4x4(
     above_right: &[u8; 4],
 ) -> Intra4Mode {
     let mut best_mode = Intra4Mode::DC;
-    let mut best_sad = u32::MAX;
+    let mut best_cost = u32::MAX;
     let mut pred = [0u8; 16];
 
     for &mode in &ALL_INTRA4 {
         predict_4x4(mode, above, left, above_left, above_right, &mut pred);
-        let cost = sad(&actual[..16], &pred);
-        if cost < best_sad {
-            best_sad = cost;
+        let cost = satd(&actual[..16], &pred);
+        if cost < best_cost {
+            best_cost = cost;
             best_mode = mode;
         }
     }
@@ -624,7 +705,7 @@ pub fn select_best_8x8(
     has_left: bool,
 ) -> ChromaMode {
     let mut best_mode = ChromaMode::DC;
-    let mut best_sad = u32::MAX;
+    let mut best_cost = u32::MAX;
     let mut pred = [0u8; 64];
 
     for &mode in &ALL_CHROMA {
@@ -632,8 +713,8 @@ pub fn select_best_8x8(
             mode, above, left, above_left, has_above, has_left, &mut pred,
         );
         let cost = sad(&actual[..64], &pred);
-        if cost < best_sad {
-            best_sad = cost;
+        if cost < best_cost {
+            best_cost = cost;
             best_mode = mode;
         }
     }
@@ -966,5 +1047,62 @@ mod tests {
         }
         let mode = select_best_8x8(&actual, &above, &left, 128, true, true);
         assert_eq!(mode, ChromaMode::H);
+    }
+}
+
+#[cfg(test)]
+mod satd_tests {
+    use super::*;
+
+    #[test]
+    fn satd_identical_blocks_is_zero() {
+        let a = [128u8; 16];
+        let b = [128u8; 16];
+        assert_eq!(satd(&a, &b), 0);
+    }
+
+    #[test]
+    fn satd_constant_diff() {
+        // All pixels differ by 1: SAD=16, SATD should be ~8 (DC only)
+        let a = [128u8; 16];
+        let b = [129u8; 16];
+        let s = satd(&a, &b);
+        assert!(s > 0, "satd should be non-zero for different blocks");
+        assert!(s <= 16, "satd should not exceed sad for constant diff: {s}");
+    }
+
+    #[test]
+    fn satd_16x16_block() {
+        let a = [100u8; 256];
+        let b = [110u8; 256];
+        let s = satd(&a, &b);
+        assert!(s > 0);
+        // 16 blocks of 4x4, each with constant diff 10
+        // Each: DC=40, AC=0, sum_abs=40, >>1 = 20. Total = 16*20 = 320
+        assert_eq!(s, 1280);
+    }
+
+    #[test]
+    fn satd_8x8_block() {
+        let a = [100u8; 64];
+        let b = [110u8; 64];
+        let s = satd(&a, &b);
+        // 4 blocks of 4x4, each: DC=40, >>1=20. Total = 80
+        assert_eq!(s, 320);
+    }
+
+    #[test]
+    fn hadamard_transform_basic() {
+        // Test the transform with a known pattern
+        let a = [0u8; 16];
+        let mut b = [0u8; 16];
+        // Set a diagonal pattern
+        b[0] = 10;
+        b[5] = 10;
+        b[10] = 10;
+        b[15] = 10;
+        let s = satd_4x4_block(&a, &b, 4, 0, 0);
+        // Non-zero AC energy for diagonal pattern
+        assert!(s > 0);
     }
 }
