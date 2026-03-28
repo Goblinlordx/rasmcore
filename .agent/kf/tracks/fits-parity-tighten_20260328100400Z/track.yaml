@@ -1,0 +1,61 @@
+id: fits-parity-tighten_20260328100400Z
+title: FITS Parity — Tighten to Bit-Exact for Integer Types
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: FITS parity tests use epsilon tolerance for ALL types including integers.
+    Integer roundtrips (u8, i16, i32) through f64 should be bit-exact (0.0 epsilon).
+    Only f32→f64 needs epsilon. f64 roundtrip should also be bit-exact.
+  context: "Current FITS self-consistency tests use generous epsilon tolerances:\n\
+    \  u8:  0.01 — should be 0.0 (u8→f64 is exact)\n  i16: 0.01 — should be 0.0 (i16→f64\
+    \ is exact)\n  f32: 1e-5 — legitimate (f32→f64 has representational noise)\n \
+    \ f64: 1e-10 — should be 0.0 (f64→bytes→f64 is IEEE 754 lossless)\n\nThe loose\
+    \ epsilons could mask real bugs — an off-by-one in integer encoding would pass\
+    \ silently."
+  codebase_analysis: ''
+  acceptance_criteria:
+  - 'FITS u8 roundtrip: epsilon = 0.0 (bit-exact)'
+  - 'FITS i16 roundtrip: epsilon = 0.0 (bit-exact)'
+  - 'FITS f64 roundtrip: epsilon = 0.0 (bit-exact)'
+  - 'FITS f32 roundtrip: epsilon appropriate for f32→f64 precision (keep 1e-5 or derive
+    from actual f32 precision)'
+  - Add i32 BITPIX=32 parity test (currently missing from parity suite)
+  - All tests pass — any failure indicates a real encoding/decoding bug that must
+    be fixed
+  out_of_scope: ''
+  technical_notes: 'Changes needed:
+
+    1. tests/codec-parity/tests/lossy_parity.rs: change epsilon for fits_u8, fits_i16,
+    fits_f64 to 0.0
+
+    2. Add fits_i32 test (BITPIX=32, currently untested in parity suite)
+
+    3. If any test fails at 0.0 epsilon, the bug is in rasmcore-fits encode/decode,
+    not in the test
+
+    4. f32 epsilon: the true precision limit is that f32 values like 0.1 become 0.10000000149...
+    in f64. Keep 1e-5 or compute dynamically as f64::EPSILON * max_value.'
+plan:
+- phase: Tighten Epsilons
+  tasks:
+  - text: Change fits_u8 epsilon from 0.01 to 0.0 (bit-exact)
+    done: false
+  - text: Change fits_i16 epsilon from 0.01 to 0.0 (bit-exact)
+    done: false
+  - text: Change fits_f64 epsilon from 1e-10 to 0.0 (bit-exact)
+    done: false
+  - text: Document f32 epsilon rationale (f32 to f64 precision loss)
+    done: false
+- phase: Add Missing Coverage
+  tasks:
+  - text: Add fits_i32 parity test (BITPIX=32, bit-exact)
+    done: false
+- phase: Validate
+  tasks:
+  - text: All FITS parity tests pass with tightened thresholds
+    done: false
+  - text: If any fail, fix the bug in rasmcore-fits before marking complete
+    done: false
+extra: {}
