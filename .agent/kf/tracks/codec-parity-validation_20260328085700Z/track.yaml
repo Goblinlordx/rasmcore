@@ -1,0 +1,83 @@
+id: codec-parity-validation_20260328085700Z
+title: Codec Parity Validation — Three-Way Reference Cross-Check
+type: chore
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Three-way validation for all native codecs: A (our encode→our decode), B (our encode→ref decode), C (ref encode→ref
+    decode). Assert A==B (bit-exact for lossless), A≈C and B≈C (quality parity). Covers every format variant.'
+  context: "Current codec tests verify encode+decode roundtrip internally but do NOT compare against reference implementations.\
+    \ An encoder could produce structurally valid but semantically wrong output. The three-way comparison catches encoder\
+    \ bugs, decoder bugs, and quality regressions simultaneously.\n\nTest matrix per codec:\n  A = original → our_encode →\
+    \ our_decode\n  B = original → our_encode → ref_decode (image crate / ImageMagick)\n  C = original → ref_encode → ref_decode\n\
+    \  \nLossless codecs (QOI, PNM, BMP, TGA, FITS): A must == B bit-exact. A and B must == C bit-exact.\nLossy codecs (JPEG,\
+    \ WebP): A must == B within strict tolerance. A and B must be close to C (PSNR > 30dB, MAE < 5)."
+  codebase_analysis: 'Native codec crates: rasmcore-qoi, rasmcore-pnm, rasmcore-bmp, rasmcore-tga, rasmcore-fits, rasmcore-webp,
+    rasmcore-jpeg.
+
+    Reference decoder: image crate (dev-dependency, already in workspace).
+
+    Reference encoder: image crate''s encode functions.
+
+    FITS has no image-crate support — use our own encode+decode as self-consistency check.
+
+    JPEG decode not yet implemented — B test only (our encode → ref decode pixel check).
+
+    WebP has known multi-MB limitations — test within working sizes.'
+  acceptance_criteria:
+  - A==B bit-exact for all lossless codecs (QOI, PNM binary, BMP, TGA)
+  - A==C and B==C bit-exact for lossless codecs where ref encoder exists
+  - 'JPEG: A==B within PSNR > 30dB; B vs C within PSNR > 25dB'
+  - 'WebP: A==B within MAE < 5; B vs C within MAE < 30'
+  - Every encode variant (bit depth, subsampling, RLE, palette) has a parity test
+  - 'Test images include: solid color, gradient, photo-like pattern, 1x1, odd dimensions'
+  - All tests in a single parity test crate with shared comparison helpers
+  out_of_scope: Decoder implementation (separate tracks). Performance benchmarking. Visual quality metrics beyond PSNR/MAE.
+  technical_notes: "Validation methodology (ground truth = original input pixels):\n\nFor lossless codecs (QOI, PNM, BMP,\
+    \ TGA):\n  C = ref_encode(original) → ref_decode → must == original (bit-exact)\n  B = our_encode(original) → ref_decode\
+    \ → must == original (bit-exact)\n  A = our_encode(original) → our_decode → must == B (bit-exact)\n  All three recover\
+    \ original perfectly — any deviation is a bug.\n\nFor lossy codecs (JPEG, WebP):\n  C = ref_encode(original) → ref_decode\
+    \ → C_similarity = psnr(C, original)\n  B = our_encode(original) → ref_decode → B_similarity = psnr(B, original)\n  A\
+    \ = our_encode(original) → our_decode → must == B (strict, same bytes decoded)\n  Assert: B_similarity >= C_similarity\
+    \ * 0.9 (our quality within 90% of reference)\n  This proves our encoder is at least as good as the reference at the same\
+    \ quality setting.\n\nComparison helpers:\n  - bit_exact(a, b): assert byte-for-byte identical\n  - psnr(a, b): peak signal-to-noise\
+    \ ratio\n  - mae(a, b): mean absolute error per channel\n\nTest image generators:\n  - solid_rgb(w, h, r, g, b): uniform\
+    \ color\n  - gradient_rgb(w, h): horizontal R, vertical G, constant B\n  - checker_rgb(w, h, size): checkerboard pattern\n\
+    \  - photo_pattern(w, h): deterministic pseudo-random"
+plan:
+- phase: Test Infrastructure
+  tasks:
+  - text: Create tests/codec-parity/ test crate with shared comparison helpers (bit_exact, psnr, mae)
+    done: false
+  - text: Create test image generators (solid, gradient, checker, photo_pattern) as shared fixtures
+    done: false
+  - text: Add reference encode/decode wrappers using image crate for QOI, BMP, TGA, PNM, JPEG
+    done: false
+- phase: Lossless Codec Parity (A==B==C bit-exact)
+  tasks:
+  - text: 'QOI: three-way test for RGB and RGBA (solid + gradient + checker)'
+    done: false
+  - text: 'PNM: three-way for PPM binary, PGM binary, PBM binary, PPM ASCII'
+    done: false
+  - text: 'BMP: three-way for 24-bit RGB, 32-bit RGBA, 8-bit grayscale palette'
+    done: false
+  - text: 'TGA: three-way for 24-bit RGB, 32-bit RGBA, grayscale, RLE variants'
+    done: false
+- phase: Lossy Codec Parity (A==B strict, A≈C quality)
+  tasks:
+  - text: 'JPEG: A==B (our encode → ref decode vs our encode → our decode) within PSNR > 30dB'
+    done: false
+  - text: 'JPEG: B≈C (our encode vs ref encode, both ref-decoded) PSNR > 25dB at same quality'
+    done: false
+  - text: 'WebP: A==B (our encode → image decode) MAE < 5 for working sizes'
+    done: false
+  - text: 'WebP: B≈C (our encode vs image-crate encode, same quality) MAE < 30'
+    done: false
+- phase: FITS + Edge Cases
+  tasks:
+  - text: 'FITS: self-consistency A==B for all BITPIX types (no ref encoder available)'
+    done: false
+  - text: 'All codecs: odd dimensions (1x1, 3x7, 17x1) three-way parity'
+    done: false
+extra: {}
