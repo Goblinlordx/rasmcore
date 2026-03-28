@@ -116,7 +116,8 @@ pub fn embed_icc_profile(png_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>,
     if 8 + 12 > png_data.len() {
         return Err(ImageError::InvalidInput("PNG too short".into()));
     }
-    let ihdr_len = u32::from_be_bytes([png_data[8], png_data[9], png_data[10], png_data[11]]) as usize;
+    let ihdr_len =
+        u32::from_be_bytes([png_data[8], png_data[9], png_data[10], png_data[11]]) as usize;
     let after_ihdr = 8 + 12 + ihdr_len; // sig(8) + length(4) + type(4) + data(ihdr_len) + crc(4)
 
     let mut result = Vec::with_capacity(png_data.len() + iccp_chunk.len());

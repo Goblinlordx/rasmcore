@@ -131,18 +131,14 @@ impl GuestImagePipeline for PipelineResource {
         Err(RasmcoreError::NotImplemented)
     }
 
-    fn icc_to_srgb(
-        &self,
-        source: NodeId,
-        icc_profile: Vec<u8>,
-    ) -> Result<NodeId, RasmcoreError> {
+    fn icc_to_srgb(&self, source: NodeId, icc_profile: Vec<u8>) -> Result<NodeId, RasmcoreError> {
         let src_info = self
             .graph
             .borrow()
             .node_info(source)
             .map_err(to_wit_error)?;
-        let node = color::IccToSrgbNode::new(source, src_info, icc_profile)
-            .map_err(to_wit_error)?;
+        let node =
+            color::IccToSrgbNode::new(source, src_info, icc_profile).map_err(to_wit_error)?;
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 

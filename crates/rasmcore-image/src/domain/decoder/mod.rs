@@ -294,8 +294,7 @@ mod tests {
         let png = make_png(8, 8);
         // Embed a fake ICC profile into the PNG
         let fake_icc = vec![99u8; 200];
-        let png_with_icc =
-            crate::domain::encoder::png::embed_icc_profile(&png, &fake_icc).unwrap();
+        let png_with_icc = crate::domain::encoder::png::embed_icc_profile(&png, &fake_icc).unwrap();
         let result = decode(&png_with_icc).unwrap();
         assert_eq!(result.icc_profile, Some(fake_icc));
     }

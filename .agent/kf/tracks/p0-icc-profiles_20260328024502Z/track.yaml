@@ -113,5 +113,5 @@ plan:
   - text: Embed ICC profile in PNG output
     done: true
   - text: WASM integration test for ICC roundtrip
-    done: false
+    done: true
 extra: {}

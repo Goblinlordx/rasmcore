@@ -61,7 +61,8 @@ pub fn extract_icc_from_jpeg(data: &[u8]) -> Option<Vec<u8>> {
 
         // Check for APP2 marker (0xE2) with ICC_PROFILE signature
         if marker == 0xE2 && segment_len > ICC_HEADER_LEN {
-            let segment_data = &data[segment_start..segment_start + segment_len.min(data.len() - segment_start)];
+            let segment_data =
+                &data[segment_start..segment_start + segment_len.min(data.len() - segment_start)];
             if segment_data.starts_with(ICC_SIG) {
                 let seq_no = segment_data[12];
                 let icc_data = segment_data[ICC_HEADER_LEN..].to_vec();
@@ -104,7 +105,8 @@ pub fn extract_icc_from_png(data: &[u8]) -> Option<Vec<u8>> {
     let mut pos = 8; // Skip PNG signature
 
     while pos + 12 <= data.len() {
-        let chunk_len = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let chunk_len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         let chunk_type = &data[pos + 4..pos + 8];
         let chunk_data_start = pos + 8;
 
@@ -268,7 +270,9 @@ impl<'a> DeflateReader<'a> {
         let hclen = self.read_bits(4)? as usize + 4;
 
         // Code length alphabet order
-        const CL_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+        const CL_ORDER: [usize; 19] = [
+            16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+        ];
 
         let mut cl_lens = [0u8; 19];
         for i in 0..hclen {
@@ -391,12 +395,11 @@ impl<'a> DeflateReader<'a> {
 
     fn decode_length(&mut self, sym: u32) -> Option<usize> {
         const LEN_BASE: [usize; 29] = [
-            3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
-            35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258,
+            3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99,
+            115, 131, 163, 195, 227, 258,
         ];
         const LEN_EXTRA: [u8; 29] = [
-            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
-            3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
         ];
 
         let idx = (sym - 257) as usize;
@@ -409,12 +412,12 @@ impl<'a> DeflateReader<'a> {
 
     fn decode_distance(&mut self, code: u32) -> Option<usize> {
         const DIST_BASE: [usize; 30] = [
-            1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
-            257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+            1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
+            1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
         ];
         const DIST_EXTRA: [u8; 30] = [
-            0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
-            7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
+            0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
+            12, 13, 13,
         ];
 
         let idx = code as usize;
@@ -503,8 +506,15 @@ pub fn icc_to_srgb(
     };
 
     let transform = src_profile
-        .create_transform_8bit(src_layout, &dst_profile, dst_layout, TransformOptions::default())
-        .map_err(|e| ImageError::ProcessingFailed(format!("ICC transform creation failed: {e:?}")))?;
+        .create_transform_8bit(
+            src_layout,
+            &dst_profile,
+            dst_layout,
+            TransformOptions::default(),
+        )
+        .map_err(|e| {
+            ImageError::ProcessingFailed(format!("ICC transform creation failed: {e:?}"))
+        })?;
 
     let mut result = vec![0u8; pixels.len()];
     transform
@@ -585,7 +595,8 @@ mod tests {
         // Display P3 red (255,0,0) mapped to sRGB should change —
         // the transform should produce different values since P3 has a wider gamut.
         // The result should still be valid RGB values.
-        assert!(result.iter().all(|&v| v <= 255));
+        // Verify output is valid (non-empty, correct length)
+        assert_eq!(result.len(), pixels.len());
     }
 
     #[test]
@@ -603,14 +614,19 @@ mod tests {
         };
 
         // RGBA pixels with alpha
-        let pixels = vec![128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200];
+        let pixels = vec![
+            128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200,
+        ];
 
         let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Alpha channel should be preserved (check every 4th byte)
         for i in (3..result.len()).step_by(4) {
-            assert_eq!(result[i], pixels[i], "alpha channel was modified at index {i}");
+            assert_eq!(
+                result[i], pixels[i],
+                "alpha channel was modified at index {i}"
+            );
         }
     }
 
