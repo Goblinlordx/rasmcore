@@ -1,0 +1,48 @@
+id: webp-satd-metric_20260328162403Z
+title: VP8 SATD Metric — Hadamard Transform for Mode Selection
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Replace SAD with SATD (Sum of Absolute Transformed Differences) for I16x16 and B_PRED mode selection. SATD better
+    predicts actual encoding cost, improving quality by 0.5-1.5 dB.
+  context: Current mode selection uses SAD (sum of absolute differences), which only measures pixel-domain distortion. SATD
+    applies a 4x4 Hadamard transform before summing, which better correlates with DCT coefficient energy and actual encoding
+    cost. All production VP8 encoders (cwebp, libvpx) use SATD. This is the single highest-impact quality improvement available.
+  codebase_analysis: 'predict.rs: sad() function (lines 480-543) with WASM SIMD. select_best_16x16() and select_best_4x4()
+    both call sad(). Replace with satd(): apply 4x4 Hadamard transform to residual block, then sum absolute values. Hadamard
+    is butterfly: H = [[1,1,1,1],[1,1,-1,-1],[1,-1,-1,1],[1,-1,1,-1]]. Can reuse WASM SIMD infrastructure.'
+  acceptance_criteria:
+  - 4x4 Hadamard transform function implemented
+  - satd() function replaces sad() in select_best_16x16 and select_best_4x4
+  - PSNR improves by at least 0.5 dB for 256x256 gradient at Q75 vs pre-SATD
+  - All sizes decode with image-webp and dwebp
+  - WASM SIMD path for Hadamard transform
+  - Parity tests updated with improved thresholds
+  out_of_scope: Full RDO with encoding cost model. Segmentation.
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Implement 4x4 Hadamard transform (butterfly H4x4)
+        done: false
+      - text: Implement satd() using Hadamard transform on residual block
+        done: false
+      - text: Add WASM SIMD path for Hadamard + satd
+        done: false
+      - text: Replace sad() calls in select_best_16x16 with satd()
+        done: false
+      - text: Replace sad() calls in select_best_4x4 with satd()
+        done: false
+  - phase: Validation
+    tasks:
+      - text: PSNR for 256x256 gradient improves >= 0.5 dB
+        done: false
+      - text: All existing tests pass
+        done: false
+      - text: Parity test thresholds tightened
+        done: false
+extra: {}

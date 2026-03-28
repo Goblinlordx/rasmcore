@@ -1,0 +1,43 @@
+id: webp-skip-flag_20260328162402Z
+title: VP8 mb_no_coeff_skip — Skip All-Zero Macroblocks
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Enable mb_no_coeff_skip flag to signal all-zero MBs in the first partition, avoiding redundant token encoding.
+    Saves 5-10 bits per all-zero MB.
+  context: Currently disabled (bitstream.rs line 217) with comment 'simpler and avoids skip signaling bugs'. Now that the
+    encoder is conformant and tested at all sizes, this optimization can be safely enabled. cwebp enables it by default.
+  codebase_analysis: 'bitstream.rs: bw.put_bit(128, false) at line 217 disables skip. MacroblockInfo.skip field exists and
+    is computed. Need to: (1) set mb_no_coeff_skip=true in first partition, (2) encode per-MB skip bit before mode for each
+    MB, (3) skip token encoding for all-zero MBs.'
+  acceptance_criteria:
+  - mb_no_coeff_skip enabled in first partition header
+  - Per-MB skip bit encoded when all coefficients are zero
+  - Token encoding skipped for all-zero MBs
+  - All sizes decode with image-webp and dwebp
+  - File size decreases for images with flat regions
+  - Parity tests still pass
+  out_of_scope: RDO, segmentation, SATD metric
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Set mb_no_coeff_skip = true in first partition header
+        done: false
+      - text: Encode per-MB skip bit (prob=128) in encode_mb_header when skip=true
+        done: false
+      - text: Skip token partition encoding for MBs where skip=true
+        done: false
+  - phase: Validation
+    tasks:
+      - text: All existing tests pass (lib + encode_decode + parity)
+        done: false
+      - text: File size for solid 1024x1024 decreases
+        done: false
+      - text: All sizes decode with dwebp and image-webp
+        done: false
+extra: {}

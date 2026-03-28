@@ -1,0 +1,52 @@
+id: webp-segmentation_20260328162404Z
+title: VP8 Encoder Segmentation — Adaptive Per-MB QP via 4-Segment Map
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Enable VP8 segmentation: classify MBs into up to 4 segments by activity level, assign different QP per segment.
+    Preserves detail in high-activity regions, saves bits in flat regions.'
+  context: 'VP8 supports up to 4 segments, each with independent QP. cwebp classifies MBs by spatial activity (edge/texture
+    energy) and assigns segments: high-detail gets lower QP (better quality), smooth gets higher QP. This is the main mechanism
+    for adaptive quality. Structure exists (SegmentQuant, MacroblockInfo.segment) but encoding is disabled.'
+  codebase_analysis: 'quant.rs: SegmentQuant struct supports 4 segments. block.rs: MacroblockInfo.segment field exists. bitstream.rs
+    line 179: segmentation_enabled = false. Need: (1) MB activity analysis (variance or AC energy), (2) K-means or threshold-based
+    segment assignment, (3) Segment header encoding in first partition, (4) Per-segment QP with delta from base.'
+  acceptance_criteria:
+  - Segmentation enabled in first partition header
+  - 2-4 segments assigned based on MB spatial activity
+  - Per-segment QP deltas applied
+  - All sizes decode with image-webp and dwebp
+  - PSNR parity ratio vs cwebp improves to >= 0.6 for gradient
+  - File size decreases for mixed-content images
+  out_of_scope: Full RDO with encoding cost model. Multi-pass encoding.
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Activity Analysis
+    tasks:
+      - text: Implement per-MB spatial activity metric (variance or AC energy)
+        done: false
+      - text: Classify MBs into 2-4 segments by activity threshold
+        done: false
+  - phase: Segment Encoding
+    tasks:
+      - text: Enable segmentation in first partition header
+        done: false
+      - text: Encode segment map (per-MB segment ID)
+        done: false
+      - text: Compute per-segment QP deltas from base QP
+        done: false
+      - text: Apply segment-specific quantization in encode_macroblock
+        done: false
+  - phase: Validation
+    tasks:
+      - text: All existing tests pass
+        done: false
+      - text: Parity ratio vs cwebp improves for gradient and mixed content
+        done: false
+      - text: File size decreases for images with mixed flat/textured regions
+        done: false
+extra: {}
