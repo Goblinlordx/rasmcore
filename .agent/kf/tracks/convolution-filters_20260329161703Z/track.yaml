@@ -3,83 +3,101 @@ title: Convolution Filters — Custom Kernel, Median, Edge Detect (Sobel/Canny)
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: Neighborhood-based filters — arbitrary convolution with custom kernels,
-    median filter for noise reduction, and edge detection (Sobel gradient, Canny multi-stage).
-    Matches libvips vips_conv()/vips_median()/vips_sobel()/vips_canny().
-  context: |
-    libvips provides vips_conv() for arbitrary kernels, vips_median() for rank filtering,
+  summary: Neighborhood-based filters — arbitrary convolution with custom kernels, median filter for noise reduction, and
+    edge detection (Sobel gradient, Canny multi-stage). Matches libvips vips_conv()/vips_median()/vips_sobel()/vips_canny().
+  context: 'libvips provides vips_conv() for arbitrary kernels, vips_median() for rank filtering,
+
     vips_sobel() and vips_canny() for edge detection. ImageMagick provides -convolve,
+
     -median, -edge, -canny. Custom convolution is the foundation for emboss, edge sharpen,
+
     and many other effects. Median filter is the standard non-linear noise reducer.
-  codebase_analysis: |
-    blur() in filters.rs uses libblur for separable gaussian — a special case of
+
+    '
+  codebase_analysis: 'blur() in filters.rs uses libblur for separable gaussian — a special case of
+
     convolution. No general convolution exists. The existing pattern allocates a new
+
     output buffer and iterates over pixels. For generic convolution, use a sliding
+
     window with border handling (reflect/clamp). Median filter uses a sorting network
+
     or histogram-based approach for the window. Sobel uses fixed 3x3 kernels. Canny
+
     adds gaussian pre-blur, non-maximum suppression, and hysteresis thresholding.
+
+    '
   acceptance_criteria:
-    - convolve(pixels, info, kernel, kernel_size) applies arbitrary NxN convolution
-    - median(pixels, info, radius) applies median filter with given window radius
-    - sobel(pixels, info) produces gradient magnitude image (grayscale output)
-    - canny(pixels, info, low_threshold, high_threshold) produces binary edge map
-    - Convolution supports 3x3, 5x5, 7x7 and arbitrary odd-sized kernels
-    - Built-in kernel presets for emboss, edge-enhance, box-blur
-    - Median output matches ImageMagick -median reference within MAE < 0.5
-    - Sobel output matches ImageMagick -edge reference within MAE < 2.0
-    - Performance within 3x of ImageMagick for 3x3 convolution on 4K images
-  out_of_scope: |
-    Frequency domain (FFT) convolution. Bilateral filter (edge-preserving blur).
+  - convolve(pixels, info, kernel, kernel_size) applies arbitrary NxN convolution
+  - median(pixels, info, radius) applies median filter with given window radius
+  - sobel(pixels, info) produces gradient magnitude image (grayscale output)
+  - canny(pixels, info, low_threshold, high_threshold) produces binary edge map
+  - Convolution supports 3x3, 5x5, 7x7 and arbitrary odd-sized kernels
+  - Built-in kernel presets for emboss, edge-enhance, box-blur
+  - Median output matches ImageMagick -median reference within MAE < 0.5
+  - Sobel output matches ImageMagick -edge reference within MAE < 2.0
+  - Performance within 3x of ImageMagick for 3x3 convolution on 4K images
+  out_of_scope: 'Frequency domain (FFT) convolution. Bilateral filter (edge-preserving blur).
+
     Motion blur. Morphological operations (dilate/erode).
-  technical_notes: |
-    Convolution: output[x,y] = sum(kernel[i,j] * input[x+i-r, y+j-r]) / divisor.
+
+    '
+  technical_notes: 'Convolution: output[x,y] = sum(kernel[i,j] * input[x+i-r, y+j-r]) / divisor.
+
     Border handling: reflect edges (mirror padding). Median: for radius R, window is
+
     (2R+1)x(2R+1). Use histogram-based O(1) per-pixel update for large radii, sorting
+
     network for small (radius <= 2). Sobel: Gx = [[-1,0,1],[-2,0,2],[-1,0,1]],
+
     Gy = Gx transposed, magnitude = sqrt(Gx^2 + Gy^2). Canny: 1) gaussian blur,
+
     2) Sobel gradient, 3) non-max suppression, 4) hysteresis threshold.
-    Reference: magick input.png -convolve '3x3: 0,-1,0,-1,5,-1,0,-1,0' ref.png
+
+    Reference: magick input.png -convolve ''3x3: 0,-1,0,-1,5,-1,0,-1,0'' ref.png
+
+    '
 plan:
-  - phase: Core Convolution
-    tasks:
-      - text: Implement generic convolve(pixels, info, kernel, width, height, divisor) with reflect-edge border
-        done: false
-      - text: Add built-in kernel presets (emboss, edge_enhance, sharpen_3x3, box_blur)
-        done: false
-      - text: Implement median(pixels, info, radius) — histogram-based for large, sorting for small
-        done: false
-  - phase: Edge Detection
-    tasks:
-      - text: Implement sobel(pixels, info) — 3x3 gradient magnitude, grayscale output
-        done: false
-      - text: Implement canny(pixels, info, low, high) — blur + gradient + NMS + hysteresis
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Add ConvolveNode, MedianNode, SobelNode, CannyNode pipeline nodes
-        done: false
-      - text: Add WIT interface declarations for convolve, median, sobel, canny
-        done: false
-      - text: Wire WIT adapters to domain functions
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit tests for convolution with identity kernel, known 3x3 sharpen kernel
-        done: false
-      - text: Unit tests for median filter correctness (salt-and-pepper noise removal)
-        done: false
-      - text: Generate ImageMagick references for median, edge, convolve
-        done: false
-      - text: Parity tests — median output vs magick -median (MAE < 0.5)
-        done: false
-      - text: Parity tests — sobel output vs magick -edge (MAE < 2.0)
-        done: false
-      - text: Perf benchmark vs ImageMagick on 4K image for 3x3 convolve and median
-        done: false
-      - text: WASM build check and existing test regression
-        done: false
-      - text: Pipeline graph tests with new nodes
-        done: false
+- phase: Core Convolution
+  tasks:
+  - text: Implement generic convolve(pixels, info, kernel, width, height, divisor) with reflect-edge border
+    done: true
+  - text: Add built-in kernel presets (emboss, edge_enhance, sharpen_3x3, box_blur)
+    done: true
+  - text: Implement median(pixels, info, radius) — histogram-based for large, sorting for small
+    done: true
+- phase: Edge Detection
+  tasks:
+  - text: Implement sobel(pixels, info) — 3x3 gradient magnitude, grayscale output
+    done: true
+  - text: Implement canny(pixels, info, low, high) — blur + gradient + NMS + hysteresis
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add ConvolveNode, MedianNode, SobelNode, CannyNode pipeline nodes
+    done: true
+  - text: Add WIT interface declarations for convolve, median, sobel, canny
+    done: true
+  - text: Wire WIT adapters to domain functions
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for convolution with identity kernel, known 3x3 sharpen kernel
+    done: true
+  - text: Unit tests for median filter correctness (salt-and-pepper noise removal)
+    done: true
+  - text: Generate ImageMagick references for median, edge, convolve
+    done: true
+  - text: Parity tests — median output vs magick -median (MAE < 0.5)
+    done: true
+  - text: Parity tests — sobel output vs magick -edge (MAE < 2.0)
+    done: true
+  - text: Perf benchmark vs ImageMagick on 4K image for 3x3 convolve and median
+    done: true
+  - text: WASM build check and existing test regression
+    done: true
+  - text: Pipeline graph tests with new nodes
+    done: true
 extra: {}
