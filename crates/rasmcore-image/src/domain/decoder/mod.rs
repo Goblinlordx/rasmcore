@@ -7,7 +7,7 @@ use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
-    "dds", "jxl", "jp2",
+    "dds", "jxl", "jp2", "heic",
 ];
 
 /// Detect image format from header bytes
@@ -19,10 +19,20 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     if is_jp2(header) {
         return Some("jp2".to_string());
     }
+    #[cfg(feature = "native-heif")]
+    if is_heif(header) {
+        return Some("heic".to_string());
+    }
     image::guess_format(header)
         .ok()
         .and_then(|fmt| format_to_str(fmt))
         .map(String::from)
+}
+
+/// Check if data starts with a HEIF/HEIC/AVIF ftyp box with a recognized brand.
+#[cfg(feature = "native-heif")]
+fn is_heif(header: &[u8]) -> bool {
+    rasmcore_isobmff::detect(header).is_some()
 }
 
 /// Check if data starts with JPEG 2000 magic bytes.
@@ -61,6 +71,10 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     }
     if is_jp2(data) {
         return decode_jp2(data);
+    }
+    #[cfg(feature = "native-heif")]
+    if is_heif(data) {
+        return decode_heif(data);
     }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
@@ -337,6 +351,34 @@ fn decode_jxl(data: &[u8]) -> Result<DecodedImage, ImageError> {
         },
         icc_profile,
     })
+}
+
+/// Decode a HEIF/HEIC file using rasmcore-isobmff container parser.
+///
+/// Currently parses the container and extracts metadata. Pixel decoding requires
+/// the HEVC decoder (nonfree-hevc feature) which is not yet implemented.
+/// Returns metadata-only result with dimensions and codec info.
+#[cfg(feature = "native-heif")]
+fn decode_heif(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let file = rasmcore_isobmff::parse(data)
+        .map_err(|e| ImageError::InvalidInput(format!("HEIF parse: {e}")))?;
+
+    let img = &file.primary_image;
+    let codec_name = match img.codec {
+        rasmcore_isobmff::CodecType::Hevc => "HEVC",
+        rasmcore_isobmff::CodecType::Av1 => "AV1",
+        rasmcore_isobmff::CodecType::Jpeg => "JPEG",
+        rasmcore_isobmff::CodecType::Unknown(_) => "unknown",
+    };
+
+    // Until the HEVC decoder is implemented, return an error with metadata
+    Err(ImageError::UnsupportedFormat(format!(
+        "HEIF container parsed ({}x{}, codec: {codec_name}, bitstream: {} bytes) \
+         but {codec_name} pixel decode is not yet implemented",
+        img.width,
+        img.height,
+        img.bitstream.len()
+    )))
 }
 
 fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {

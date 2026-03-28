@@ -3,6 +3,7 @@
 //! Parses HEIF/HEIC and AVIF container formats (ISO 14496-12 + ISO 23008-12).
 //! Scoped to still-image use cases — not a full MP4 video parser.
 
+mod assembly;
 mod boxreader;
 pub mod error;
 mod ftyp;
@@ -10,6 +11,7 @@ mod meta;
 mod properties;
 pub mod types;
 
+pub use assembly::{CodecConfig, GridDescriptor, ImageItem, IsobmffFile, parse};
 pub use error::IsobmffError;
 pub use types::{
     Av1Config, BoxHeader, Brand, CodecType, ColorInfo, Extent, Ftyp, FullBoxHeader, HevcConfig,

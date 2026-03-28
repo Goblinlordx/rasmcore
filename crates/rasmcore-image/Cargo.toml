@@ -28,6 +28,7 @@ rasmcore-qoi = { path = "../rasmcore-qoi", optional = true }
 rasmcore-pnm = { path = "../rasmcore-pnm", optional = true }
 rasmcore-bmp = { path = "../rasmcore-bmp", optional = true }
 rasmcore-tga = { path = "../rasmcore-tga", optional = true }
+rasmcore-isobmff = { path = "../rasmcore-isobmff", optional = true }
 
 [features]
 default = []
@@ -36,6 +37,7 @@ native-pnm = ["dep:rasmcore-pnm"]
 native-bmp = ["dep:rasmcore-bmp"]
 native-tga = ["dep:rasmcore-tga"]
 native-trivial = ["native-qoi", "native-pnm", "native-bmp", "native-tga"]
+native-heif = ["dep:rasmcore-isobmff"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

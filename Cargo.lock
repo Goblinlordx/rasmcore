@@ -2197,6 +2197,7 @@ dependencies = [
  "moxcms",
  "quick-xml",
  "rasmcore-bmp",
+ "rasmcore-isobmff",
  "rasmcore-jpeg",
  "rasmcore-pipeline",
  "rasmcore-pnm",
