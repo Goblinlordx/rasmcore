@@ -6,6 +6,7 @@
 //! This crate is part of the "nonfree" distribution due to HEVC patent encumbrance.
 
 pub mod bitread;
+pub mod cabac;
 pub mod error;
 pub mod nal;
 pub mod params;
