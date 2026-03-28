@@ -6,8 +6,12 @@
 /// Prerequisites: run `tests/fixtures/generate.sh` first.
 use std::path::Path;
 
+use butteraugli::{butteraugli, ButteraugliParams};
+use dssim_core::Dssim;
+use imgref::Img;
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::{decoder, encoder, filters, transform};
+use rgb::RGB8;
 
 fn fixtures_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/generated")
@@ -438,4 +442,338 @@ fn parity_png_encode_vs_imagemagick_pixel_exact() {
             ref_data.len(),
         );
     }
+}
+
+// =============================================================================
+// JPEG encoder parity (zenjpeg vs ImageMagick/libjpeg-turbo)
+// =============================================================================
+
+/// Decode JPEG and return RGB8 pixels + dimensions.
+fn decode_jpeg_rgb(data: &[u8]) -> (Vec<u8>, u32, u32) {
+    let decoded = decoder::decode_as(data, PixelFormat::Rgb8).unwrap();
+    (decoded.pixels, decoded.info.width, decoded.info.height)
+}
+
+/// Convert RGB8 byte slice to Vec<RGB8> for butteraugli/dssim.
+fn bytes_to_rgb8(pixels: &[u8]) -> Vec<RGB8> {
+    pixels
+        .chunks_exact(3)
+        .map(|c| RGB8::new(c[0], c[1], c[2]))
+        .collect()
+}
+
+/// Compute butteraugli score between two RGB8 images.
+fn butteraugli_score(a: &[u8], b: &[u8], width: usize, height: usize) -> f64 {
+    let img_a = Img::new(bytes_to_rgb8(a), width, height);
+    let img_b = Img::new(bytes_to_rgb8(b), width, height);
+    let result = butteraugli(
+        img_a.as_ref(),
+        img_b.as_ref(),
+        &ButteraugliParams::default(),
+    )
+    .unwrap();
+    result.score
+}
+
+/// Compute DSSIM score between two RGB8 images.
+fn dssim_score(a: &[u8], b: &[u8], width: usize, height: usize) -> f64 {
+    let attr = Dssim::new();
+    let rgb_a = bytes_to_rgb8(a);
+    let rgb_b = bytes_to_rgb8(b);
+    let img_a = attr.create_image_rgb(&rgb_a, width, height).unwrap();
+    let img_b = attr.create_image_rgb(&rgb_b, width, height).unwrap();
+    let (val, _) = attr.compare(&img_a, img_b);
+    f64::from(val)
+}
+
+#[test]
+fn parity_jpeg_determinism() {
+    // Encode the same input twice — output must be byte-identical.
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+    let config = encoder::jpeg::JpegEncodeConfig {
+        quality: 85,
+        progressive: false,
+    };
+    let out1 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
+    let out2 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
+    assert_eq!(out1, out2, "JPEG encoding is not deterministic");
+}
+
+#[test]
+fn parity_jpeg_determinism_progressive() {
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+    let config = encoder::jpeg::JpegEncodeConfig {
+        quality: 85,
+        progressive: true,
+    };
+    let out1 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
+    let out2 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
+    assert_eq!(out1, out2, "Progressive JPEG encoding is not deterministic");
+}
+
+#[test]
+fn parity_jpeg_quality_per_byte_butteraugli() {
+    // Quality-per-byte comparison: zenjpeg (jpegli quality scale) vs ImageMagick
+    // (libjpeg-turbo). Since quality scales differ between encoders, we compare
+    // the Butteraugli-distance-per-kilobyte ratio. zenjpeg should achieve equal
+    // or better quality for a given file size across the quality range.
+    let source_data = load_fixture("photo_256x256.png");
+    let source = decoder::decode_as(&source_data, PixelFormat::Rgb8).unwrap();
+    let (w, h) = (source.info.width as usize, source.info.height as usize);
+
+    let mut zen_wins = 0usize;
+    let mut total = 0usize;
+
+    for q in [10u8, 30, 50, 70, 85, 95] {
+        let config = encoder::jpeg::JpegEncodeConfig {
+            quality: q,
+            progressive: false,
+        };
+        let zen_jpeg =
+            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+        let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
+
+        let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
+        let (im_pixels, _, _) = decode_jpeg_rgb(&im_jpeg);
+
+        let zen_ba = butteraugli_score(&source.pixels, &zen_pixels, w, h);
+        let im_ba = butteraugli_score(&source.pixels, &im_pixels, w, h);
+
+        // Quality-per-byte: distortion * bytes (lower = better quality/byte)
+        let zen_cost = zen_ba * zen_jpeg.len() as f64;
+        let im_cost = im_ba * im_jpeg.len() as f64;
+
+        if zen_cost <= im_cost {
+            zen_wins += 1;
+        }
+        total += 1;
+
+        eprintln!(
+            "q{q:>2}: zen={zen_ba:.3} ({} B), im={im_ba:.3} ({} B) | cost: zen={zen_cost:.0} im={im_cost:.0} {}",
+            zen_jpeg.len(),
+            im_jpeg.len(),
+            if zen_cost <= im_cost { "✓" } else { "✗" }
+        );
+    }
+
+    // zenjpeg must win quality-per-byte on majority of quality levels
+    assert!(
+        zen_wins > total / 2,
+        "Butteraugli quality-per-byte: zenjpeg won {zen_wins}/{total} quality levels (need majority)"
+    );
+}
+
+#[test]
+fn parity_jpeg_quality_per_byte_dssim() {
+    let source_data = load_fixture("photo_256x256.png");
+    let source = decoder::decode_as(&source_data, PixelFormat::Rgb8).unwrap();
+    let (w, h) = (source.info.width as usize, source.info.height as usize);
+
+    let mut zen_wins = 0usize;
+    let mut total = 0usize;
+
+    for q in [10u8, 30, 50, 70, 85, 95] {
+        let config = encoder::jpeg::JpegEncodeConfig {
+            quality: q,
+            progressive: false,
+        };
+        let zen_jpeg =
+            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+        let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
+
+        let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
+        let (im_pixels, _, _) = decode_jpeg_rgb(&im_jpeg);
+
+        let zen_ds = dssim_score(&source.pixels, &zen_pixels, w, h);
+        let im_ds = dssim_score(&source.pixels, &im_pixels, w, h);
+
+        let zen_cost = zen_ds * zen_jpeg.len() as f64;
+        let im_cost = im_ds * im_jpeg.len() as f64;
+
+        if zen_cost <= im_cost {
+            zen_wins += 1;
+        }
+        total += 1;
+
+        eprintln!(
+            "q{q:>2}: zen={zen_ds:.6} ({} B), im={im_ds:.6} ({} B) | cost: zen={zen_cost:.2} im={im_cost:.2} {}",
+            zen_jpeg.len(),
+            im_jpeg.len(),
+            if zen_cost <= im_cost { "✓" } else { "✗" }
+        );
+    }
+
+    assert!(
+        zen_wins > total / 2,
+        "DSSIM quality-per-byte: zenjpeg won {zen_wins}/{total} quality levels (need majority)"
+    );
+}
+
+#[test]
+fn parity_jpeg_quality_curve_filesize() {
+    // Verify that at higher quality levels (where trellis quantization shines),
+    // zenjpeg produces competitive file sizes.
+    let source_data = load_fixture("photo_256x256.png");
+    let source = decoder::decode(&source_data).unwrap();
+
+    for q in [10u8, 30, 50, 70, 85, 95] {
+        let config = encoder::jpeg::JpegEncodeConfig {
+            quality: q,
+            progressive: false,
+        };
+        let zen_jpeg =
+            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+        let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
+
+        // Allow up to 60% larger at same quality number (quality scales differ).
+        // The quality-per-byte tests above validate actual encoding efficiency.
+        assert!(
+            zen_jpeg.len() <= (im_jpeg.len() as f64 * 1.6) as usize,
+            "File size: zenjpeg ({} bytes) much larger than ImageMagick ({} bytes) at q{q}",
+            zen_jpeg.len(),
+            im_jpeg.len()
+        );
+    }
+}
+
+#[test]
+fn parity_jpeg_quality_monotonic() {
+    // Higher quality must produce larger files.
+    let source_data = load_fixture("photo_256x256.png");
+    let source = decoder::decode(&source_data).unwrap();
+
+    let qualities = [10u8, 30, 50, 70, 85, 95];
+    let sizes: Vec<usize> = qualities
+        .iter()
+        .map(|&q| {
+            let config = encoder::jpeg::JpegEncodeConfig {
+                quality: q,
+                progressive: false,
+            };
+            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config)
+                .unwrap()
+                .len()
+        })
+        .collect();
+
+    for i in 1..sizes.len() {
+        assert!(
+            sizes[i] >= sizes[i - 1],
+            "Quality curve not monotonic: q{} ({} bytes) < q{} ({} bytes)",
+            qualities[i],
+            sizes[i],
+            qualities[i - 1],
+            sizes[i - 1]
+        );
+    }
+}
+
+#[test]
+fn parity_jpeg_progressive_structure() {
+    // Progressive JPEG must contain SOS markers (multiple scans).
+    let source_data = load_fixture("photo_256x256.png");
+    let source = decoder::decode(&source_data).unwrap();
+
+    let config = encoder::jpeg::JpegEncodeConfig {
+        quality: 85,
+        progressive: true,
+    };
+    let jpeg_data =
+        encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+
+    // Count SOS (Start of Scan) markers: 0xFF 0xDA
+    // Progressive JPEG has multiple scans; baseline has exactly 1.
+    let sos_count = jpeg_data
+        .windows(2)
+        .filter(|w| w[0] == 0xFF && w[1] == 0xDA)
+        .count();
+    assert!(
+        sos_count > 1,
+        "Progressive JPEG should have multiple SOS markers, found {sos_count}"
+    );
+
+    // Baseline should have exactly 1 SOS
+    let baseline_config = encoder::jpeg::JpegEncodeConfig {
+        quality: 85,
+        progressive: false,
+    };
+    let baseline_data =
+        encoder::jpeg::encode_pixels(&source.pixels, &source.info, &baseline_config).unwrap();
+    let baseline_sos = baseline_data
+        .windows(2)
+        .filter(|w| w[0] == 0xFF && w[1] == 0xDA)
+        .count();
+    assert_eq!(
+        baseline_sos, 1,
+        "Baseline JPEG should have exactly 1 SOS marker, found {baseline_sos}"
+    );
+}
+
+#[test]
+fn parity_jpeg_edge_quality_1() {
+    let pixels: Vec<u8> = (0..(32 * 32 * 3)).map(|i| (i % 256) as u8).collect();
+    let info = ImageInfo {
+        width: 32,
+        height: 32,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = encoder::jpeg::JpegEncodeConfig {
+        quality: 1,
+        progressive: false,
+    };
+    let result = encoder::jpeg::encode_pixels(&pixels, &info, &config);
+    assert!(result.is_ok(), "Quality 1 should succeed");
+    assert_eq!(&result.unwrap()[..2], &[0xFF, 0xD8]);
+}
+
+#[test]
+fn parity_jpeg_edge_quality_100() {
+    let pixels: Vec<u8> = (0..(32 * 32 * 3)).map(|i| (i % 256) as u8).collect();
+    let info = ImageInfo {
+        width: 32,
+        height: 32,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = encoder::jpeg::JpegEncodeConfig {
+        quality: 100,
+        progressive: false,
+    };
+    let result = encoder::jpeg::encode_pixels(&pixels, &info, &config);
+    assert!(result.is_ok(), "Quality 100 should succeed");
+    assert_eq!(&result.unwrap()[..2], &[0xFF, 0xD8]);
+}
+
+#[test]
+fn parity_jpeg_edge_1x1() {
+    let pixels = vec![128u8, 64, 32];
+    let info = ImageInfo {
+        width: 1,
+        height: 1,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = encoder::jpeg::JpegEncodeConfig::default();
+    let result = encoder::jpeg::encode_pixels(&pixels, &info, &config);
+    assert!(result.is_ok(), "1x1 image should encode");
+    assert_eq!(&result.unwrap()[..2], &[0xFF, 0xD8]);
+}
+
+#[test]
+fn parity_jpeg_rgba8_input() {
+    // RGBA8 input — alpha channel is ignored, JPEG produced.
+    let pixels: Vec<u8> = (0..(32 * 32 * 4)).map(|i| (i % 256) as u8).collect();
+    let info = ImageInfo {
+        width: 32,
+        height: 32,
+        format: PixelFormat::Rgba8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = encoder::jpeg::JpegEncodeConfig::default();
+    let result = encoder::jpeg::encode_pixels(&pixels, &info, &config);
+    assert!(result.is_ok(), "RGBA8 input should produce valid JPEG");
+    assert_eq!(&result.unwrap()[..2], &[0xFF, 0xD8]);
 }

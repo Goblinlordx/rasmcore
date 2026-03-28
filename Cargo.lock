@@ -1886,8 +1886,10 @@ dependencies = [
  "dssim-core",
  "fast_image_resize",
  "image",
+ "imgref",
  "libblur",
  "rasmcore-pipeline",
+ "rgb",
  "wit-bindgen-rt",
  "zenjpeg",
 ]
