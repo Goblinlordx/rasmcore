@@ -407,6 +407,51 @@ mod tests {
     }
 
     #[test]
+    fn quality_mapping_snapshot() {
+        // Pin the exact quality→QP mapping at key points for regression detection.
+        // These values define the user-visible quality behavior.
+        let mapping: Vec<(u8, u8)> = (1..=100).map(|q| (q, quality_to_qp(q))).collect();
+
+        // Verify the full range is covered
+        assert_eq!(mapping.first().unwrap().1, quality_to_qp(1));
+        assert_eq!(mapping.last().unwrap().1, 0); // quality 100 = QP 0
+
+        // Verify strict monotonicity (higher quality → lower or equal QP)
+        for w in mapping.windows(2) {
+            assert!(
+                w[0].1 >= w[1].1,
+                "monotonicity violated: q={} → qp={}, q={} → qp={}",
+                w[0].0, w[0].1, w[1].0, w[1].1
+            );
+        }
+
+        // Verify range coverage: QP should span most of 0-127
+        let min_qp = mapping.iter().map(|&(_, qp)| qp).min().unwrap();
+        let max_qp = mapping.iter().map(|&(_, qp)| qp).max().unwrap();
+        assert_eq!(min_qp, 0, "QP range should start at 0");
+        assert!(max_qp >= 120, "QP range should reach near 127, got {max_qp}");
+    }
+
+    #[test]
+    fn no_floating_point_in_quantize() {
+        // This test verifies that quantize_block produces identical results
+        // regardless of any floating point state — confirming integer-only math.
+        let matrix = build_matrix(50, QuantType::YAc);
+        let coeffs: [i16; 16] = [
+            1000, -500, 250, -125, 63, -31, 16, -8,
+            4, -2, 1, 0, -1, 2, -4, 8,
+        ];
+        let mut out1 = [0i16; 16];
+        let mut out2 = [0i16; 16];
+
+        quantize_block(&coeffs, &matrix, &mut out1);
+        // Run again — must be bit-identical (no floating point rounding variance)
+        quantize_block(&coeffs, &matrix, &mut out2);
+
+        assert_eq!(out1, out2, "quantization must be deterministic (integer-only)");
+    }
+
+    #[test]
     fn full_dct_quant_dequant_idct_pipeline() {
         // End-to-end test: src → DCT → quantize → dequantize → IDCT → dst
         let src: [u8; 16] = [

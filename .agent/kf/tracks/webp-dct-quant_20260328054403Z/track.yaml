@@ -1,88 +1,93 @@
 id: webp-dct-quant_20260328054403Z
-title: "VP8 DCT + Quantization — 4x4 Transform and Quality Mapping"
+title: VP8 DCT + Quantization — 4x4 Transform and Quality Mapping
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement the VP8 4x4 discrete cosine transform (DCT), inverse DCT, and
+  summary: 'Implement the VP8 4x4 discrete cosine transform (DCT), inverse DCT, and
+
     quantization/dequantization with quality-to-quantizer mapping. This is the
+
     core lossy compression step — it determines file size and visual quality.
-  context: |
-    VP8 uses a simplified 4x4 integer DCT (not the standard 8x8 JPEG DCT).
+
+    '
+  context: 'VP8 uses a simplified 4x4 integer DCT (not the standard 8x8 JPEG DCT).
+
     RFC 6386 Section 14 specifies the exact transform. The 16x16 macroblock
+
     DC coefficients use a secondary 4x4 Walsh-Hadamard Transform (WHT).
 
+
     Quantization maps DCT coefficients to smaller integers using quality-derived
+
     step sizes. The quality-to-quantizer mapping determines how "quality 75"
+
     translates to actual compression — this must match libwebp behavior for
+
     users to get predictable results.
-  codebase_analysis: |
-    - New code in crates/rasmcore-webp/src/dct.rs and src/quant.rs
+
+    '
+  codebase_analysis: '- New code in crates/rasmcore-webp/src/dct.rs and src/quant.rs
+
     - No existing DCT implementation in the codebase (JPEG track uses zenjpeg)
+
     - libwebp reference: src/dsp/enc.c (VP8FTransform, VP8ITransform)
+
     - libwebp quantization: src/enc/quant_enc.c
+
     - VP8 uses integer arithmetic DCT (no floating point) — WASM-friendly
+
+    '
   acceptance_criteria:
-    - "Forward 4x4 DCT matches RFC 6386 Section 14.1 exactly"
-    - "Inverse 4x4 DCT produces pixel-exact reconstruction of forward DCT input"
-    - "4x4 Walsh-Hadamard Transform for DC coefficients implemented"
-    - Quantization with configurable step sizes (y_dc, y_ac, y2_dc, y2_ac, uv_dc, uv_ac)
-    - Quality (1-100) maps to quantizer indices matching libwebp behavior
-    - "DCT roundtrip test: forward -> quantize -> dequantize -> inverse = original (within quant error)"
-    - All arithmetic uses integer operations (no floating point in hot path)
-  out_of_scope: |
-    - SIMD optimization (future track — get correctness first)
+  - Forward 4x4 DCT matches RFC 6386 Section 14.1 exactly
+  - Inverse 4x4 DCT produces pixel-exact reconstruction of forward DCT input
+  - 4x4 Walsh-Hadamard Transform for DC coefficients implemented
+  - Quantization with configurable step sizes (y_dc, y_ac, y2_dc, y2_ac, uv_dc, uv_ac)
+  - Quality (1-100) maps to quantizer indices matching libwebp behavior
+  - 'DCT roundtrip test: forward -> quantize -> dequantize -> inverse = original (within quant error)'
+  - All arithmetic uses integer operations (no floating point in hot path)
+  out_of_scope: '- SIMD optimization (future track — get correctness first)
+
     - Trellis quantization optimization (future enhancement)
-  technical_notes: |
-    VP8 4x4 DCT (RFC 6386 Section 14.1) — integer transform:
-      The transform operates on 4x4 blocks of residual pixels.
-      Uses fixed-point integer arithmetic (shifts and adds).
-      Output: 16 DCT coefficients per 4x4 block.
 
-    Quantization (RFC 6386 Section 14.2):
-      Each coefficient is divided by a quantizer step size.
-      Six quantizer values per segment: y_dc, y_ac, y2_dc, y2_ac, uv_dc, uv_ac
-      Quantizer index (0-127) maps to step sizes via a lookup table.
-
-    Quality mapping (study libwebp):
-      libwebp maps quality (0-100) to a QP index.
-      This mapping is NOT in the RFC — it is implementation-specific.
-      We must replicate libwebp's mapping for user expectation compatibility.
-
-    C-specific patterns:
-    - libwebp uses function pointers for DCT dispatch (SIMD vs scalar)
-      Rust: use trait or direct function calls, add SIMD later via cfg
-    - libwebp uses raw pointer arithmetic for block access
-      Rust: slice indexing with bounds checking (optimized away in release)
+    '
+  technical_notes: "VP8 4x4 DCT (RFC 6386 Section 14.1) — integer transform:\n  The transform operates on 4x4 blocks of residual\
+    \ pixels.\n  Uses fixed-point integer arithmetic (shifts and adds).\n  Output: 16 DCT coefficients per 4x4 block.\n\n\
+    Quantization (RFC 6386 Section 14.2):\n  Each coefficient is divided by a quantizer step size.\n  Six quantizer values\
+    \ per segment: y_dc, y_ac, y2_dc, y2_ac, uv_dc, uv_ac\n  Quantizer index (0-127) maps to step sizes via a lookup table.\n\
+    \nQuality mapping (study libwebp):\n  libwebp maps quality (0-100) to a QP index.\n  This mapping is NOT in the RFC —\
+    \ it is implementation-specific.\n  We must replicate libwebp's mapping for user expectation compatibility.\n\nC-specific\
+    \ patterns:\n- libwebp uses function pointers for DCT dispatch (SIMD vs scalar)\n  Rust: use trait or direct function\
+    \ calls, add SIMD later via cfg\n- libwebp uses raw pointer arithmetic for block access\n  Rust: slice indexing with bounds\
+    \ checking (optimized away in release)\n"
 plan:
-  - phase: "DCT"
-    tasks:
-      - text: "Implement forward 4x4 DCT (integer arithmetic, RFC 6386 Section 14.1)"
-        done: false
-      - text: "Implement inverse 4x4 DCT"
-        done: false
-      - text: "Implement 4x4 Walsh-Hadamard Transform for DC coefficients"
-        done: false
-      - text: "DCT roundtrip test (forward -> inverse = identity within rounding)"
-        done: false
-  - phase: "Quantization"
-    tasks:
-      - text: "Implement quantizer step size lookup table (QP index 0-127 to step sizes)"
-        done: false
-      - text: "Implement quantize and dequantize functions"
-        done: false
-      - text: "Implement quality (1-100) to QP index mapping matching libwebp"
-        done: false
-      - text: "Test quantization roundtrip (quantize -> dequantize = original within step error)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test DCT output against known reference values from RFC or libwebp"
-        done: false
-      - text: "Test quality mapping produces same QP as libwebp at q25, q50, q75, q95"
-        done: false
-      - text: "Verify all arithmetic is integer-only (no f32/f64 in hot paths)"
-        done: false
+- phase: DCT
+  tasks:
+  - text: Implement forward 4x4 DCT (integer arithmetic, RFC 6386 Section 14.1)
+    done: true
+  - text: Implement inverse 4x4 DCT
+    done: true
+  - text: Implement 4x4 Walsh-Hadamard Transform for DC coefficients
+    done: true
+  - text: DCT roundtrip test (forward -> inverse = identity within rounding)
+    done: true
+- phase: Quantization
+  tasks:
+  - text: Implement quantizer step size lookup table (QP index 0-127 to step sizes)
+    done: true
+  - text: Implement quantize and dequantize functions
+    done: true
+  - text: Implement quality (1-100) to QP index mapping matching libwebp
+    done: true
+  - text: Test quantization roundtrip (quantize -> dequantize = original within step error)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test DCT output against known reference values from RFC or libwebp
+    done: false
+  - text: Test quality mapping produces same QP as libwebp at q25, q50, q75, q95
+    done: false
+  - text: Verify all arithmetic is integer-only (no f32/f64 in hot paths)
+    done: false
 extra: {}
