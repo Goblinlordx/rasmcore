@@ -1,5 +1,5 @@
-title: "HEVC Syntax Parsing \u2014 Slice Header + CTU/CU/PU/TU"
-status: pending
+title: HEVC Syntax Parsing — Slice Header + CTU/CU/PU/TU
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'
