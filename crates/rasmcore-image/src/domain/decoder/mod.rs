@@ -7,7 +7,7 @@ use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
-    "dds", "jxl", "jp2", "heic",
+    "dds", "jxl", "jp2", "heic", "fits",
 ];
 
 /// Detect image format from header bytes
@@ -22,6 +22,9 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     #[cfg(feature = "native-heif")]
     if is_heif(header) {
         return Some("heic".to_string());
+    }
+    if rasmcore_fits::is_fits(header) {
+        return Some("fits".to_string());
     }
     image::guess_format(header)
         .ok()
@@ -76,6 +79,9 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if is_heif(data) {
         return decode_heif(data);
     }
+    if rasmcore_fits::is_fits(data) {
+        return decode_fits(data);
+    }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
@@ -124,6 +130,35 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
     // JP2/J2K: decode then convert if needed
     if is_jp2(data) {
         let decoded = decode_jp2(data)?;
+        if decoded.info.format == target_format {
+            return Ok(decoded);
+        }
+        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
+        let (pixels, format) = match target_format {
+            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
+            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
+            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+            other => {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "conversion to {other:?} not supported"
+                )));
+            }
+        };
+        return Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: decoded.info.width,
+                height: decoded.info.height,
+                format,
+                color_space: decoded.info.color_space,
+            },
+            icc_profile: decoded.icc_profile,
+        });
+    }
+
+    // FITS: decode then convert
+    if rasmcore_fits::is_fits(data) {
+        let decoded = decode_fits(data)?;
         if decoded.info.format == target_format {
             return Ok(decoded);
         }
@@ -483,6 +518,25 @@ fn decode_heif_grid(
             color_space: ColorSpace::Srgb,
         },
         icc_profile: img.icc_profile.clone(),
+    })
+}
+
+/// Decode a FITS image using rasmcore-fits.
+fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let (header, float_pixels) =
+        rasmcore_fits::decode(data).map_err(|e| ImageError::InvalidInput(format!("FITS: {e}")))?;
+
+    let pixels = rasmcore_fits::to_gray8(&float_pixels);
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: header.width,
+            height: header.height,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
     })
 }
 

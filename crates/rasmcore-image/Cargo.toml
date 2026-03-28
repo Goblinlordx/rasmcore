@@ -15,6 +15,7 @@ image = { workspace = true, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
     "tga", "hdr", "pnm", "exr", "dds",
 ] }
+rasmcore-fits = { path = "../rasmcore-fits" }
 rasmcore-jpeg = { path = "../rasmcore-jpeg" }
 exif = { version = "0.6.1", package = "kamadak-exif" }
 xmp-writer = "0.3.2"

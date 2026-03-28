@@ -1,6 +1,7 @@
 pub mod avif;
 pub mod bmp;
 pub mod dds;
+pub mod fits;
 pub mod gif;
 pub mod ico;
 pub mod jp2;
@@ -17,7 +18,7 @@ use super::types::{ImageInfo, PixelFormat};
 
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
-    "dds", "jp2",
+    "dds", "jp2", "fits",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -101,6 +102,7 @@ pub fn encode(
             let config = jp2::Jp2EncodeConfig::default();
             jp2::encode(pixels, info, &config)
         }
+        "fits" | "fit" => fits::encode_pixels(pixels, info),
         other => Err(ImageError::UnsupportedFormat(format!(
             "encode format '{other}' not supported"
         ))),
