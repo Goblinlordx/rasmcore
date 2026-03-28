@@ -8,6 +8,7 @@
 pub mod bitread;
 pub mod cabac;
 pub mod error;
+pub mod filter;
 pub mod nal;
 pub mod params;
 pub mod predict;
