@@ -258,8 +258,8 @@ pub const LAST_SIG_COEFF_Y_PREFIX_INIT: [[u8; 18]; 3] = [
 /// Table 9-32: coded_sub_block_flag (4 contexts: 2 luma + 2 chroma).
 pub const CODED_SUB_BLOCK_FLAG_INIT: [[u8; 4]; 3] = [
     [91, 171, 134, 141], // I (initType 0)
-    [121, 140, 61, 154],  // P
-    [121, 140, 61, 154],  // B
+    [121, 140, 61, 154], // P
+    [121, 140, 61, 154], // B
 ];
 
 /// Table 9-33: sig_coeff_flag (42 contexts: 27 luma + 15 chroma, Main profile).
