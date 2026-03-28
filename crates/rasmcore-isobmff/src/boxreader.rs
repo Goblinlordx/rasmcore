@@ -89,7 +89,12 @@ pub fn read_full_box_header(data: &[u8], offset: usize) -> Result<FullBoxHeader,
     }
 
     let version = data[vf_offset];
-    let flags = u32::from_be_bytes([0, data[vf_offset + 1], data[vf_offset + 2], data[vf_offset + 3]]);
+    let flags = u32::from_be_bytes([
+        0,
+        data[vf_offset + 1],
+        data[vf_offset + 2],
+        data[vf_offset + 3],
+    ]);
 
     // Adjust the box header to reflect that content starts after version+flags
     let adjusted = BoxHeader {
@@ -223,7 +228,13 @@ mod tests {
     fn truncated_header() {
         let data = [0u8; 5];
         let err = read_box_header(&data, 0).unwrap_err();
-        assert!(matches!(err, IsobmffError::Truncated { expected: 8, available: 5 }));
+        assert!(matches!(
+            err,
+            IsobmffError::Truncated {
+                expected: 8,
+                available: 5
+            }
+        ));
     }
 
     #[test]

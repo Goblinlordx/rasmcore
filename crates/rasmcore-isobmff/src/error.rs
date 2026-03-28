@@ -6,24 +6,13 @@ use core::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IsobmffError {
     /// Data is too short to contain the expected structure.
-    Truncated {
-        expected: usize,
-        available: usize,
-    },
+    Truncated { expected: usize, available: usize },
     /// Box header has an invalid size (e.g., size < 8 for a normal box).
-    InvalidBoxSize {
-        box_type: [u8; 4],
-        size: u64,
-    },
+    InvalidBoxSize { box_type: [u8; 4], size: u64 },
     /// Required box is missing from the file.
-    MissingBox {
-        box_type: [u8; 4],
-    },
+    MissingBox { box_type: [u8; 4] },
     /// Box version is not supported by this parser.
-    UnsupportedVersion {
-        box_type: [u8; 4],
-        version: u8,
-    },
+    UnsupportedVersion { box_type: [u8; 4], version: u8 },
     /// The file does not start with an ftyp box or has no recognized brand.
     NotIsobmff,
     /// A box nesting or structure constraint was violated.
@@ -47,10 +36,7 @@ impl fmt::Display for IsobmffError {
                 let name = fourcc_str(box_type);
                 write!(f, "missing required box: '{name}'")
             }
-            Self::UnsupportedVersion {
-                box_type,
-                version,
-            } => {
+            Self::UnsupportedVersion { box_type, version } => {
                 let name = fourcc_str(box_type);
                 write!(f, "unsupported version {version} for box '{name}'")
             }
