@@ -22,27 +22,25 @@ spec:
   - Parity tests updated with improved thresholds
   out_of_scope: Full RDO with encoding cost model. Segmentation.
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Implement 4x4 Hadamard transform (butterfly H4x4)
-        done: false
-      - text: Implement satd() using Hadamard transform on residual block
-        done: false
-      - text: Add WASM SIMD path for Hadamard + satd
-        done: false
-      - text: Replace sad() calls in select_best_16x16 with satd()
-        done: false
-      - text: Replace sad() calls in select_best_4x4 with satd()
-        done: false
-  - phase: Validation
-    tasks:
-      - text: PSNR for 256x256 gradient improves >= 0.5 dB
-        done: false
-      - text: All existing tests pass
-        done: false
-      - text: Parity test thresholds tightened
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement 4x4 Hadamard transform (butterfly H4x4)
+    done: true
+  - text: Implement satd() using Hadamard transform on residual block
+    done: true
+  - text: Add WASM SIMD path for Hadamard + satd
+    done: true
+  - text: Replace sad() calls in select_best_16x16 with satd()
+    done: true
+  - text: Replace sad() calls in select_best_4x4 with satd()
+    done: true
+- phase: Validation
+  tasks:
+  - text: PSNR for 256x256 gradient improves >= 0.5 dB
+    done: true
+  - text: All existing tests pass
+    done: true
+  - text: Parity test thresholds tightened
+    done: true
 extra: {}
