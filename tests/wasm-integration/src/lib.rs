@@ -61,11 +61,12 @@ pub fn instantiate_image_component() -> (Store<HostState>, ImageProcessor) {
 /// Locate the built rasmcore_image.wasm component.
 fn find_component_wasm() -> PathBuf {
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Prefer release builds (optimized + SIMD) over debug
     let candidates = [
-        project_root.join("target/wasm32-wasip1/debug/rasmcore_image.wasm"),
         project_root.join("target/wasm32-wasip1/release/rasmcore_image.wasm"),
-        project_root.join("target/wasm32-wasip2/debug/rasmcore_image.wasm"),
         project_root.join("target/wasm32-wasip2/release/rasmcore_image.wasm"),
+        project_root.join("target/wasm32-wasip1/debug/rasmcore_image.wasm"),
+        project_root.join("target/wasm32-wasip2/debug/rasmcore_image.wasm"),
     ];
     for path in &candidates {
         if path.exists() {

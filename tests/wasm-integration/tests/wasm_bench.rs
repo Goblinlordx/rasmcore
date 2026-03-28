@@ -87,29 +87,40 @@ fn perf_1080p() {
     let dec = decoder::decode(&data).unwrap();
     let na = "N/A".to_string();
 
+    // WASM component (built with SIMD128)
+    let (mut st, bi) = instantiate_image_component();
+    let wd = bi
+        .rasmcore_image_decoder()
+        .call_decode(&mut st, &data)
+        .unwrap()
+        .unwrap();
+    let wtr = bi.rasmcore_image_transform();
+    let wfl = bi.rasmcore_image_filters();
+
     println!();
-    println!("============================================================================================");
+    println!("================================================================================================");
     println!("  1920x1080 Performance ({N} iter, {} warmup)", W);
-    println!("============================================================================================");
+    println!("================================================================================================");
     println!();
     println!(
-        "  {:<28} {:>9} {:>9} {:>9} {:>9}",
-        "", "magick", "vips", "Natv/SL", "Natv/PL"
+        "  {:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
+        "", "magick", "vips", "Natv/SL", "Natv/PL", "WASM/SL"
     );
     println!(
-        "  {:<28} {:>9} {:>9} {:>9} {:>9}",
-        "", "------", "----", "-------", "-------"
+        "  {:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
+        "", "------", "----", "-------", "-------", "-------"
     );
 
     macro_rules! row {
-        ($n:expr, $im:expr, $vp:expr, $ns:expr, $np:expr) => {
+        ($n:expr, $im:expr, $vp:expr, $ns:expr, $np:expr, $ws:expr) => {
             println!(
-                "  {:<28} {:>9} {:>9} {:>9} {:>9}",
+                "  {:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
                 $n,
                 if hm { fmt($im) } else { na.clone() },
                 if hv { fmt($vp) } else { na.clone() },
                 fmt($ns),
                 fmt($np),
+                fmt($ws),
             );
         };
     }
@@ -142,7 +153,20 @@ fn perf_1080p() {
         )));
         let _ = sink::write(&mut g, r, "png", None).unwrap();
     });
-    row!("resize 960x540 (lanczos3)", im, vp, ns, np);
+    let ws = bench(|| {
+        let _ = wtr
+            .call_resize(
+                &mut st,
+                &wd.pixels,
+                wd.info,
+                960,
+                540,
+                wasm_integration::exports::rasmcore::image::transform::ResizeFilter::Lanczos3,
+            )
+            .unwrap()
+            .unwrap();
+    });
+    row!("resize 960x540 (lanczos3)", im, vp, ns, np, ws);
 
     // ── Per-op: Blur ──
     let im = if hm {
@@ -165,7 +189,13 @@ fn perf_1080p() {
         let b = g.add_node(Box::new(pf::BlurNode::new(s, si, 2.0)));
         let _ = sink::write(&mut g, b, "png", None).unwrap();
     });
-    row!("blur (gaussian r=2)", im, vp, ns, np);
+    let ws = bench(|| {
+        let _ = wfl
+            .call_blur(&mut st, &wd.pixels, wd.info, 2.0)
+            .unwrap()
+            .unwrap();
+    });
+    row!("blur (gaussian r=2)", im, vp, ns, np, ws);
 
     // ── Per-op: Sharpen ──
     let im = if hm {
@@ -176,7 +206,10 @@ fn perf_1080p() {
     let ns = bench(|| {
         let _ = filters::sharpen(&dec.pixels, &dec.info, 1.0).unwrap();
     });
-    row!("sharpen", im, Duration::ZERO, ns, Duration::ZERO);
+    let ws = bench(|| {
+        let _ = wfl.call_sharpen(&mut st, &wd.pixels, wd.info, 1.0).unwrap().unwrap();
+    });
+    row!("sharpen", im, Duration::ZERO, ns, Duration::ZERO, ws);
 
     // ── Per-op: Brightness ──
     let im = if hm {
@@ -187,13 +220,19 @@ fn perf_1080p() {
     let ns = bench(|| {
         let _ = filters::brightness(&dec.pixels, &dec.info, 0.2).unwrap();
     });
-    row!("brightness +0.2", im, Duration::ZERO, ns, Duration::ZERO);
+    let ws = bench(|| {
+        let _ = wfl.call_brightness(&mut st, &wd.pixels, wd.info, 0.2).unwrap().unwrap();
+    });
+    row!("brightness +0.2", im, Duration::ZERO, ns, Duration::ZERO, ws);
 
     // ── Per-op: Contrast ──
     let ns = bench(|| {
         let _ = filters::contrast(&dec.pixels, &dec.info, 0.5).unwrap();
     });
-    row!("contrast +0.5 (LUT)", Duration::ZERO, Duration::ZERO, ns, Duration::ZERO);
+    let ws = bench(|| {
+        let _ = wfl.call_contrast(&mut st, &wd.pixels, wd.info, 0.5).unwrap().unwrap();
+    });
+    row!("contrast +0.5 (LUT)", Duration::ZERO, Duration::ZERO, ns, Duration::ZERO, ws);
 
     // ── Per-op: Grayscale ──
     let im = if hm {
@@ -204,17 +243,20 @@ fn perf_1080p() {
     let ns = bench(|| {
         let _ = filters::grayscale(&dec.pixels, &dec.info).unwrap();
     });
-    row!("grayscale", im, Duration::ZERO, ns, Duration::ZERO);
+    let ws = bench(|| {
+        let _ = wfl.call_grayscale(&mut st, &wd.pixels, wd.info).unwrap().unwrap();
+    });
+    row!("grayscale", im, Duration::ZERO, ns, Duration::ZERO, ws);
 
     println!();
-    println!("  Pipeline chains (rasmcore internal — no boundary crossing):");
+    println!("  Pipeline chains:");
     println!(
-        "  {:<28} {:>9} {:>9} {:>9} {:>9}",
-        "", "magick", "vips", "Natv/SL", "Natv/PL"
+        "  {:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
+        "", "magick", "vips", "Natv/SL", "Natv/PL", "WASM/SL"
     );
     println!(
-        "  {:<28} {:>9} {:>9} {:>9} {:>9}",
-        "", "------", "----", "-------", "-------"
+        "  {:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
+        "", "------", "----", "-------", "-------", "-------"
     );
 
     // ── Chain: resize → blur → sharpen → write JPEG ──
@@ -279,7 +321,14 @@ fn perf_1080p() {
         )
         .unwrap();
     });
-    row!("resize+blur+sharpen→JPEG", im, vp, ns, np);
+    let ws = bench(|| {
+        use wasm_integration::exports::rasmcore::image::transform::ResizeFilter as WRF;
+        let d = bi.rasmcore_image_decoder().call_decode(&mut st, &data).unwrap().unwrap();
+        let (rp, ri) = wtr.call_resize(&mut st, &d.pixels, d.info, 960, 540, WRF::Lanczos3).unwrap().unwrap();
+        let bp = wfl.call_blur(&mut st, &rp, ri, 2.0).unwrap().unwrap();
+        let _ = wfl.call_sharpen(&mut st, &bp, ri, 1.0).unwrap().unwrap();
+    });
+    row!("resize+blur+sharpen→JPEG", im, vp, ns, np, ws);
 
     // ── Chain: resize → brightness → contrast → grayscale → write PNG ──
     let im = if hm {
@@ -331,7 +380,15 @@ fn perf_1080p() {
         )
         .unwrap();
     });
-    row!("resize+brt+ctr+gray→PNG", im, Duration::ZERO, ns, np);
+    let ws = bench(|| {
+        use wasm_integration::exports::rasmcore::image::transform::ResizeFilter as WRF;
+        let d = bi.rasmcore_image_decoder().call_decode(&mut st, &data).unwrap().unwrap();
+        let (rp, ri) = wtr.call_resize(&mut st, &d.pixels, d.info, 960, 540, WRF::Lanczos3).unwrap().unwrap();
+        let bp = wfl.call_brightness(&mut st, &rp, ri, 0.2).unwrap().unwrap();
+        let cp = wfl.call_contrast(&mut st, &bp, ri, 0.3).unwrap().unwrap();
+        let _ = wfl.call_grayscale(&mut st, &cp, ri).unwrap().unwrap();
+    });
+    row!("resize+brt+ctr+gray→PNG", im, Duration::ZERO, ns, np, ws);
 
     println!();
     println!("  SL = Stateless (separate alloc per op, pre-decoded input)");
