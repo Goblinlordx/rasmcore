@@ -1,0 +1,57 @@
+id: fix-grayscale-bt709_20260328051145Z
+title: Fix grayscale to use BT.709 weights (ImageMagick parity)
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Switch grayscale from BT.601 to BT.709 weights to match ImageMagick reference and fix parity tests (MAE 15.86 →
+    <5.0)
+  context: 'The grayscale filter in domain/filters.rs uses BT.601 weights (0.299R + 0.587G + 0.114B) while ImageMagick''s
+    -colorspace Gray uses BT.709 (0.2126R + 0.7152G + 0.0722B). On a red-blue gradient this produces ~15-22 unit per-pixel
+    differences, causing MAE 15.86 against the ImageMagick reference (threshold: 5.0). This fails both the domain parity test
+    and the WASM integration test, blocking all track verifications.'
+  codebase_analysis: '- domain/filters.rs lines 132-175: grayscale() uses BT.601 weights for RGB8 and RGBA8
+
+    - image crate''s to_luma8() uses BT.709 internally — switching aligns with the Rust ecosystem
+
+    - Tests: crates/rasmcore-image/tests/parity.rs parity_grayscale (domain), tests/wasm-integration/tests/wasm_parity.rs
+    wasm_filters_grayscale (WASM)
+
+    - Fixture: tests/fixtures/generate.sh line 73 creates reference via ImageMagick -colorspace Gray (BT.709)
+
+    - No other code depends on the specific BT.601 constants — the change is isolated'
+  acceptance_criteria:
+  - 'Grayscale uses BT.709 weights: 0.2126R + 0.7152G + 0.0722B'
+  - Domain parity test parity_grayscale passes (MAE < 5.0)
+  - WASM integration test wasm_filters_grayscale passes (MAE < 5.0)
+  - All existing grayscale domain unit tests still pass
+  - Comment/docstring updated to reflect BT.709
+  out_of_scope: '- Configurable grayscale formula (BT.601 vs BT.709 selection)
+
+    - Gamma-aware grayscale (linearize-before-weight)
+
+    - Regenerating test fixtures (existing ImageMagick references are correct)'
+  technical_notes: "Change three float constants in domain/filters.rs grayscale():\n  RGB8 arm (line 148):  0.299/0.587/0.114\
+    \ → 0.2126/0.7152/0.0722\n  RGBA8 arm (line 158): same change\n  Docstring (line 133): BT.601 → BT.709\nNo test threshold\
+    \ changes needed — the fix brings MAE well under 5.0."
+plan:
+- phase: Fix Implementation
+  tasks:
+  - text: Update BT.601 weights to BT.709 in domain/filters.rs grayscale() for RGB8 arm
+    done: false
+  - text: Update BT.601 weights to BT.709 in domain/filters.rs grayscale() for RGBA8 arm
+    done: false
+  - text: Update docstring from BT.601 to BT.709
+    done: false
+- phase: Verification
+  tasks:
+  - text: Run domain unit tests (cargo test --lib -p rasmcore-image -- filters)
+    done: false
+  - text: Run parity tests (cargo test -p rasmcore-image --test parity -- grayscale)
+    done: false
+  - text: Build WASM component and run wasm_filters_grayscale integration test
+    done: false
+  - text: Run full validation suite (./scripts/validate.sh)
+    done: false
+extra: {}
