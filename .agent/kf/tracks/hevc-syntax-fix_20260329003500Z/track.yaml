@@ -7,10 +7,17 @@ updated: '2026-03-28'
 spec:
   summary: Fix CABAC syntax parsing to correctly decode HEVC I-frames. Current implementation exhausts the CABAC stream prematurely
     — context model indices, quad-tree depth handling, and residual coefficient coding need debugging against reference bitstreams.
-  context: 'Parity tests fail with ''unexpected end of CABAC stream'' after fixing the slice data offset. The CABAC byte position
-    is now correct (verified by manual bit trace), but the syntax parser reads too many bins from the CABAC stream. Root causes:
-    incorrect context model index mapping, quad-tree split logic not matching x265 encoder decisions, and residual coefficient
-    coding consuming wrong number of bins.'
+  context: "Investigation complete. Root cause identified:\n\nFIXED so far:\n1. Slice data offset: now uses exact bit position\
+    \ from HevcBitReader (was hardcoded heuristic)\n2. Context initialization: now uses CABAC module's HEVC spec tables (was\
+    \ hardcoded approximations)  \n3. Chroma CBF: now decoded via CABAC (was hardcoded false)\n4. CTU loop: now includes end_of_slice_segment_flag\
+    \ via decode_terminate()\n5. Slice header: now handles no_output_of_prior_pics_flag for IRAP slices\n\nROOT CAUSE of remaining\
+    \ failures:\nThe split_cu_flag CABAC context index depends on neighboring CU depths (left CU and above CU), per HEVC Section\
+    \ 9.3.4.2.2 Table 9-38. Current code uses only current depth (get_split_cu_ctx(depth)). This causes the wrong context\
+    \ model to be selected, which produces wrong bin values, which cascades into all subsequent syntax elements being wrong.\n\
+    \nWHAT NEEDS TO BE DONE:\n1. Implement CU depth map (frame-wide array tracking decoded CU depths)\n2. Implement availability\
+    \ check for left/above CUs (Section 6.4)  \n3. Fix split_cu_flag context: ctxInc = cqtDepth of left CU + cqtDepth of above\
+    \ CU (when available)\n4. Fix all other context derivations that depend on neighbors (pred_mode availability etc.)\n5.\
+    \ Run parity tests until all 9 pass"
   codebase_analysis: '- frame.rs: correct CABAC offset (2 bytes for test bitstreams, verified)
 
     - syntax.rs: coding_quadtree/coding_unit/decode_transform_tree use simplified context indices
@@ -26,7 +33,12 @@ spec:
   - Gradient 128x128 HEIC decodes with PSNR > 25dB
   - Checker 256x256 HEIC decodes with PSNR > 25dB
   out_of_scope: ''
-  technical_notes: ''
+  technical_notes: "Approach for CU depth map:\n1. Allocate Vec<u8> of size (pic_width_in_min_cb * pic_height_in_min_cb) in\
+    \ FrameBuffer\n2. After decoding each CU, write its depth to all covered min-CB positions\n3. For split_cu_flag context:\
+    \ look up left neighbor at (x-1, y) and above at (x, y-1)\n4. ctxInc = depth_left + depth_above - 2 * current_depth (clamped\
+    \ to 0-2)\n5. Context index = SPLIT_CU_CTX_OFFSET + ctxInc\n\nHEVC Section 9.3.4.2.2 Table 9-38:\n  condL = depthLeft\
+    \ > cqtDepth (1 if left is deeper)\n  condA = depthAbove > cqtDepth (1 if above is deeper)\n  ctxInc = condL + condA (0,\
+    \ 1, or 2)\n\nThis is the same pattern used by H.264 for mb_skip_flag context derivation."
 plan:
 - phase: Debug + Trace
   tasks:
