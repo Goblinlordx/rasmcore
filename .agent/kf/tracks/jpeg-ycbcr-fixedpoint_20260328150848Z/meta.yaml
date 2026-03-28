@@ -1,5 +1,5 @@
 title: JPEG YCbCr→RGB — Integer Fixed-Point Conversion (libjpeg-compatible)
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'

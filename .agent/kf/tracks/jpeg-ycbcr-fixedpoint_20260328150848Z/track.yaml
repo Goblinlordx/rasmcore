@@ -26,29 +26,27 @@ spec:
     Conversion: r = (y_fixed + FIX_1_402 * cr_shifted + ONE_HALF) >> 16, where y_fixed = y << 16, cr_shifted = cr - 128, ONE_HALF
     = 1 << 15 = 32768. Clamp to [0, 255]. Check image-rs jpeg-decoder source to confirm if their SCALEBITS=20 produces different
     output than SCALEBITS=16; if so, match theirs since they are our parity reference.'
-plan: []
-extra: {}
 plan:
-  - phase: Implementation
-    tasks:
-      - text: "Implement ycbcr_to_rgb_fixed() with i32 fixed-point BT.601"
-        done: false
-      - text: "Determine optimal SCALEBITS (16 vs 20) by testing against image-rs output"
-        done: false
-      - text: "Unit test: fixed-point matches f64 reference within ±1 for full value range"
-        done: false
-  - phase: Integration
-    tasks:
-      - text: "Replace f64 color conversion in baseline decode_scan"
-        done: false
-      - text: "Replace f64 color conversion in progressive decode_progressive"
-        done: false
-      - text: "Verify grayscale path unchanged"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "All existing JPEG tests pass"
-        done: false
-      - text: "Parity tests: A vs B MAE < 0.5 for all patterns (with all 3 tracks applied)"
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement ycbcr_to_rgb_fixed() with i32 fixed-point BT.601
+    done: true
+  - text: Determine optimal SCALEBITS (16 vs 20) by testing against image-rs output
+    done: true
+  - text: 'Unit test: fixed-point matches f64 reference within ±1 for full value range'
+    done: true
+- phase: Integration
+  tasks:
+  - text: Replace f64 color conversion in baseline decode_scan
+    done: true
+  - text: Replace f64 color conversion in progressive decode_progressive
+    done: true
+  - text: Verify grayscale path unchanged
+    done: true
+- phase: Validation
+  tasks:
+  - text: All existing JPEG tests pass
+    done: true
+  - text: 'Parity tests: A vs B MAE < 0.5 for all patterns (with all 3 tracks applied)'
+    done: true
 extra: {}
