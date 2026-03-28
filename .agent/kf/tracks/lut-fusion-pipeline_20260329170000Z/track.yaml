@@ -3,155 +3,157 @@ title: Pipeline LUT Fusion — 1D + 3D LUT Composition with Shaper-CLUT-Shaper O
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: |
-    Unified LUT fusion optimizer for the image pipeline. Classifies operations as
+  summary: 'Unified LUT fusion optimizer for the image pipeline. Classifies operations as
+
     1D (per-channel) or 3D (channel-mixing), composes them into minimal LUT passes,
+
     and absorbs 1D ops into adjacent 3D LUTs. Uses the LittleCMS Shaper-CLUT-Shaper
+
     pattern: 1D pre-curves + 33x33x33 3D CLUT + 1D post-curves collapsed into a
+
     single evaluation per pixel. Tetrahedral interpolation for 3D LUT application.
-  context: |
-    The pixel-point-ops track introduced 1D LUT fusion for per-channel ops (gamma,
+
+    '
+  context: 'The pixel-point-ops track introduced 1D LUT fusion for per-channel ops (gamma,
+
     contrast, etc.). But channel-mixing ops (hue/saturation, sepia, colorize, color
+
     balance) cannot be expressed as 1D LUTs — they need 3D LUTs mapping (R,G,B) to
-    (R',G',B').
+
+    (R'',G'',B'').
+
 
     libvips achieves fusion-like performance through demand-driven region evaluation
+
     (keeping intermediates in L2 cache). We already have this via our tile pipeline.
+
     But LittleCMS does true algebraic fusion: it collapses multi-stage ICC transforms
+
     into a canonical Shaper-CLUT-Shaper structure — 1D input curves + 3D CLUT + 1D
+
     output curves — with a precomputed fast path for 8-bit inputs.
 
+
     This track brings both fusion strategies together: 1D LUT composition (already
+
     done) + 3D CLUT generation from arbitrary color transforms + cross-type absorption
+
     (1D ops absorbed into adjacent 3D CLUTs).
-  codebase_analysis: |
-    point_ops.rs provides PointOp enum, build_lut(), compose_luts(), apply_lut() for
+
+    '
+  codebase_analysis: 'point_ops.rs provides PointOp enum, build_lut(), compose_luts(), apply_lut() for
+
     1D fusion. FusedLutNode in pipeline/nodes/filters.rs composes consecutive 1D ops.
+
     filters.rs has hue_rotate(), saturate(), sepia(), colorize() — all (R,G,B)->(R,G,B)
+
     transforms that are 3D LUT candidates.
 
+
     The pipeline graph (pipeline/graph.rs) has ImageNode trait with compute_region().
+
     The optimizer needs to walk the graph, detect fusible runs, and replace them with
+
     fused nodes. Currently there is no optimization pass — nodes execute independently.
 
+
     Memory budget: 33x33x33 x 3 channels x f32 = 431 KB per 3D LUT. Acceptable for
+
     WASM (typical linear memory budget is 256MB+). Tetrahedral interpolation needs
+
     6 tetrahedra per cell — Sakamoto algorithm from LittleCMS is ~12 lookups + 9 muls
+
     per pixel, faster than trilinear (24 lookups + 21 muls).
+
+    '
   acceptance_criteria:
-    - ColorLut3D struct — 33x33x33 sampled cube with f32 RGB entries
-    - build_clut(transform_fn) generates a 3D CLUT by sampling a color transform
-    - compose_cluts(a, b) fuses two 3D CLUTs by sampling through both
-    - absorb_1d_into_clut(lut_1d, clut_3d, position) absorbs 1D LUT into 3D (pre or post)
-    - apply_clut() with tetrahedral interpolation (Sakamoto algorithm)
-    - Pipeline optimizer classifies nodes as 1D-fusible, 3D-fusible, or barrier
-    - Consecutive 1D ops fuse to single 1D LUT (existing behavior preserved)
-    - Consecutive 3D ops (hue_rotate, saturate, sepia, colorize) fuse to single 3D CLUT
-    - 1D ops adjacent to 3D ops get absorbed into the CLUT (pre-curves or post-curves)
-    - Full chain like gamma -> hue_rotate -> contrast -> saturate produces one 3D CLUT pass
-    - Output matches sequential (unfused) application within MAE < 0.5 per channel
-    - Tetrahedral interpolation error < 1.0 MAE vs exact computation at 33x33x33
-    - Performance improvement measurable for chains of 3+ color ops on 4K images
-  out_of_scope: |
-    .cube file format I/O (separate track). HDR / 10-bit LUTs (future). Automatic
+  - ColorLut3D struct — 33x33x33 sampled cube with f32 RGB entries
+  - build_clut(transform_fn) generates a 3D CLUT by sampling a color transform
+  - compose_cluts(a, b) fuses two 3D CLUTs by sampling through both
+  - absorb_1d_into_clut(lut_1d, clut_3d, position) absorbs 1D LUT into 3D (pre or post)
+  - apply_clut() with tetrahedral interpolation (Sakamoto algorithm)
+  - Pipeline optimizer classifies nodes as 1D-fusible, 3D-fusible, or barrier
+  - Consecutive 1D ops fuse to single 1D LUT (existing behavior preserved)
+  - Consecutive 3D ops (hue_rotate, saturate, sepia, colorize) fuse to single 3D CLUT
+  - 1D ops adjacent to 3D ops get absorbed into the CLUT (pre-curves or post-curves)
+  - Full chain like gamma -> hue_rotate -> contrast -> saturate produces one 3D CLUT pass
+  - Output matches sequential (unfused) application within MAE < 0.5 per channel
+  - Tetrahedral interpolation error < 1.0 MAE vs exact computation at 33x33x33
+  - Performance improvement measurable for chains of 3+ color ops on 4K images
+  out_of_scope: '.cube file format I/O (separate track). HDR / 10-bit LUTs (future). Automatic
+
     profiling to choose grid size. GPU-accelerated LUT application. N-dimensional
+
     LUTs (>3 channels). ICC profile integration (already handled by moxcms).
-  technical_notes: |
-    Architecture: Shaper-CLUT-Shaper (from LittleCMS cmsopt.c)
 
-    The canonical fused form for any chain of color operations is:
-      1D pre-curves -> 3D CLUT -> 1D post-curves
-    This can represent any combination of 1D and 3D ops:
-      - Pure 1D chain: degenerate (identity CLUT, or just use 1D fusion)
-      - Pure 3D chain: identity pre/post curves
-      - Mixed: pre-curves from leading 1D ops, CLUT from 3D ops, post-curves from trailing 1D ops
-      - 1D between two 3D ops: absorb into second CLUT as pre-curve
-
-    3D CLUT structure:
-      struct ColorLut3D {
-          grid_size: u8,              // 33 (default)
-          data: Vec<[f32; 3]>,        // grid_size^3 RGB triplets
-      }
-
-    Sampling: iterate all (r,g,b) in 0..grid_size, map to [0.0, 1.0],
-    evaluate transform_fn(r,g,b) -> (r',g',b'), store result.
-
-    Tetrahedral interpolation (Sakamoto):
-      For input (r,g,b), find enclosing cube cell and fractional residuals (fr,fg,fb).
-      Sort residuals to determine which of 6 tetrahedra contains the point.
-      Interpolate using 4 cube vertices (not 8 as in trilinear).
-      Per output channel: 4 lookups, 3 multiplies, 3 adds.
-
-    Composition: compose_cluts(a, b) samples b through a — for each grid point
-    in the output, evaluate a at that point, then evaluate b at a's output.
-    This is O(grid_size^3) — 35,937 evaluations for 33^3, trivial at plan time.
-
-    Pipeline optimizer pass:
-      1. Walk graph from sinks to sources
-      2. Classify each node: 1D_FUSIBLE, 3D_FUSIBLE, BARRIER
-      3. Detect maximal runs of fusible nodes
-      4. For each run:
-         a. Separate into segments: [1D...] [3D...] [1D...] [3D...] ...
-         b. Compose each 1D segment into single 1D LUT
-         c. Compose each 3D segment into single 3D CLUT
-         d. Absorb adjacent 1D LUTs into 3D CLUTs (pre/post curves)
-         e. Replace run with minimal FusedNode(s)
-      5. Result: at most one 3D CLUT pass between any two barriers
-
-    Classification:
-      1D_FUSIBLE: gamma, invert, threshold, posterize, clamp, brightness, contrast,
-                  curves, levels — any PointOp
-      3D_FUSIBLE: hue_rotate, saturate, sepia, colorize, color_balance, icc_transform,
-                  any (R,G,B)->(R,G,B) operation
-      BARRIER: blur, sharpen, median, resize, crop, rotate, grayscale (format change),
-               composite, any spatial or structural operation
+    '
+  technical_notes: "Architecture: Shaper-CLUT-Shaper (from LittleCMS cmsopt.c)\n\nThe canonical fused form for any chain of\
+    \ color operations is:\n  1D pre-curves -> 3D CLUT -> 1D post-curves\nThis can represent any combination of 1D and 3D\
+    \ ops:\n  - Pure 1D chain: degenerate (identity CLUT, or just use 1D fusion)\n  - Pure 3D chain: identity pre/post curves\n\
+    \  - Mixed: pre-curves from leading 1D ops, CLUT from 3D ops, post-curves from trailing 1D ops\n  - 1D between two 3D\
+    \ ops: absorb into second CLUT as pre-curve\n\n3D CLUT structure:\n  struct ColorLut3D {\n      grid_size: u8,       \
+    \       // 33 (default)\n      data: Vec<[f32; 3]>,        // grid_size^3 RGB triplets\n  }\n\nSampling: iterate all (r,g,b)\
+    \ in 0..grid_size, map to [0.0, 1.0],\nevaluate transform_fn(r,g,b) -> (r',g',b'), store result.\n\nTetrahedral interpolation\
+    \ (Sakamoto):\n  For input (r,g,b), find enclosing cube cell and fractional residuals (fr,fg,fb).\n  Sort residuals to\
+    \ determine which of 6 tetrahedra contains the point.\n  Interpolate using 4 cube vertices (not 8 as in trilinear).\n\
+    \  Per output channel: 4 lookups, 3 multiplies, 3 adds.\n\nComposition: compose_cluts(a, b) samples b through a — for\
+    \ each grid point\nin the output, evaluate a at that point, then evaluate b at a's output.\nThis is O(grid_size^3) — 35,937\
+    \ evaluations for 33^3, trivial at plan time.\n\nPipeline optimizer pass:\n  1. Walk graph from sinks to sources\n  2.\
+    \ Classify each node: 1D_FUSIBLE, 3D_FUSIBLE, BARRIER\n  3. Detect maximal runs of fusible nodes\n  4. For each run:\n\
+    \     a. Separate into segments: [1D...] [3D...] [1D...] [3D...] ...\n     b. Compose each 1D segment into single 1D LUT\n\
+    \     c. Compose each 3D segment into single 3D CLUT\n     d. Absorb adjacent 1D LUTs into 3D CLUTs (pre/post curves)\n\
+    \     e. Replace run with minimal FusedNode(s)\n  5. Result: at most one 3D CLUT pass between any two barriers\n\nClassification:\n\
+    \  1D_FUSIBLE: gamma, invert, threshold, posterize, clamp, brightness, contrast,\n              curves, levels — any PointOp\n\
+    \  3D_FUSIBLE: hue_rotate, saturate, sepia, colorize, color_balance, icc_transform,\n              any (R,G,B)->(R,G,B)\
+    \ operation\n  BARRIER: blur, sharpen, median, resize, crop, rotate, grayscale (format change),\n           composite,\
+    \ any spatial or structural operation\n"
 plan:
-  - phase: 3D LUT Core
-    tasks:
-      - text: Define ColorLut3D struct (grid_size, Vec<[f32; 3]>)
-        done: false
-      - text: Implement ColorLut3D::from_fn(grid_size, transform_fn) — sample any color transform into a 3D CLUT
-        done: false
-      - text: Implement tetrahedral interpolation (Sakamoto algorithm) for apply_clut()
-        done: false
-      - text: Implement compose_cluts(a, b) — compose two 3D CLUTs by sampling through both
-        done: false
-      - text: Implement absorb_1d_pre(lut_1d, clut_3d) — bake 1D LUT into CLUT input axes
-        done: false
-      - text: Implement absorb_1d_post(clut_3d, lut_1d) — bake 1D LUT into CLUT output values
-        done: false
-  - phase: Node Classification
-    tasks:
-      - text: Define FusionClass enum (OneDim, ThreeDim, Barrier) and classify all existing pipeline nodes
-        done: false
-      - text: Tag hue_rotate, saturate, sepia, colorize as 3D_FUSIBLE with their transform functions
-        done: false
-      - text: Add ColorOpNode — wraps any (R,G,B)->(R,G,B) function, tagged as 3D_FUSIBLE
-        done: false
-      - text: Add FusedClutNode — holds a pre-composed ColorLut3D, applies tetrahedral interp at execution
-        done: false
-  - phase: Pipeline Optimizer
-    tasks:
-      - text: Implement fusion_pass(graph) — walk graph, detect maximal fusible runs, replace with fused nodes
-        done: false
-      - text: Handle mixed 1D+3D runs — absorb 1D segments into adjacent 3D CLUTs
-        done: false
-      - text: Preserve correctness — fused output must match sequential within MAE < 0.5
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit tests for tetrahedral interpolation accuracy vs exact evaluation
-        done: false
-      - text: Unit tests for compose_cluts — fused hue_rotate+saturate matches sequential
-        done: false
-      - text: Unit tests for 1D absorption — gamma absorbed into hue_rotate CLUT matches gamma then hue_rotate
-        done: false
-      - text: Unit test for full mixed chain — gamma -> hue_rotate -> contrast -> saturate = one CLUT pass
-        done: false
-      - text: Perf benchmark — fused 4-op chain vs unfused on 4K image
-        done: false
-      - text: WASM build check, memory budget verification (33^3 CLUT < 500KB)
-        done: false
+- phase: 3D LUT Core
+  tasks:
+  - text: Define ColorLut3D struct (grid_size, Vec<[f32; 3]>)
+    done: true
+  - text: Implement ColorLut3D::from_fn(grid_size, transform_fn) — sample any color transform into a 3D CLUT
+    done: true
+  - text: Implement tetrahedral interpolation (Sakamoto algorithm) for apply_clut()
+    done: true
+  - text: Implement compose_cluts(a, b) — compose two 3D CLUTs by sampling through both
+    done: true
+  - text: Implement absorb_1d_pre(lut_1d, clut_3d) — bake 1D LUT into CLUT input axes
+    done: true
+  - text: Implement absorb_1d_post(clut_3d, lut_1d) — bake 1D LUT into CLUT output values
+    done: true
+- phase: Node Classification
+  tasks:
+  - text: Define FusionClass enum (OneDim, ThreeDim, Barrier) and classify all existing pipeline nodes
+    done: true
+  - text: Tag hue_rotate, saturate, sepia, colorize as 3D_FUSIBLE with their transform functions
+    done: true
+  - text: Add ColorOpNode — wraps any (R,G,B)->(R,G,B) function, tagged as 3D_FUSIBLE
+    done: true
+  - text: Add FusedClutNode — holds a pre-composed ColorLut3D, applies tetrahedral interp at execution
+    done: true
+- phase: Pipeline Optimizer
+  tasks:
+  - text: Implement fusion_pass(graph) — walk graph, detect maximal fusible runs, replace with fused nodes
+    done: true
+  - text: Handle mixed 1D+3D runs — absorb 1D segments into adjacent 3D CLUTs
+    done: true
+  - text: Preserve correctness — fused output must match sequential within MAE < 0.5
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for tetrahedral interpolation accuracy vs exact evaluation
+    done: true
+  - text: Unit tests for compose_cluts — fused hue_rotate+saturate matches sequential
+    done: true
+  - text: Unit tests for 1D absorption — gamma absorbed into hue_rotate CLUT matches gamma then hue_rotate
+    done: true
+  - text: Unit test for full mixed chain — gamma -> hue_rotate -> contrast -> saturate = one CLUT pass
+    done: true
+  - text: Perf benchmark — fused 4-op chain vs unfused on 4K image
+    done: true
+  - text: WASM build check, memory budget verification (33^3 CLUT < 500KB)
+    done: true
 extra: {}
