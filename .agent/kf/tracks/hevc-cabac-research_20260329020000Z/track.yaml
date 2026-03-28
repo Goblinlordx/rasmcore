@@ -43,35 +43,35 @@ plan:
 - phase: Spec Study
   tasks:
   - text: Read HEVC spec Section 7.3.8.11 (residual_coding syntax) — document the exact sub-block processing flow
-    done: false
+    done: true
   - text: Read HEVC spec Section 9.3.4.2.5 — extract sig_coeff_flag context derivation formula with all input variables
-    done: false
+    done: true
   - text: Read HEVC spec Section 9.3.4.2.6 — extract coeff_abs_level_greater1/2 context derivation
-    done: false
+    done: true
   - text: Read HEVC spec Table 9-39 — document coded_sub_block_flag context derivation
-    done: false
+    done: true
 - phase: Reference Implementation Analysis
   tasks:
   - text: Clone libde265 source and locate residual_coding() in slice.cc
-    done: false
+    done: true
   - text: Trace the context derivation code in libde265 for sig_coeff_flag — map C code to spec formulas
-    done: false
+    done: true
   - text: Trace coeff_abs_level context derivation in libde265 — verify c1/c2/ctxSet logic
-    done: false
+    done: true
   - text: Build libde265 debug tool that dumps CABAC bin trace (context index + bin value) per CTU
-    done: false
+    done: true
 - phase: Known-Good Data Extraction
   tasks:
   - text: Run bin trace tool on flat_64x64_q37.hevc — capture complete bin sequence for all 4 CTUs
-    done: false
+    done: true
   - text: Run bin trace on flat_64x64_q22.hevc — capture for comparison (this case already works)
-    done: false
+    done: true
   - text: Run bin trace on gradient_128x128_q22.hevc and checker_256x256_q22.hevc
-    done: false
+    done: true
 - phase: Documentation
   tasks:
   - text: Write research.md with spec formulas, libde265 code mapping, and known-good bin sequences
-    done: false
+    done: true
   - text: Create mapping table showing exactly which context index our code uses vs the correct one for each syntax element
-    done: false
+    done: true
 extra: {}
