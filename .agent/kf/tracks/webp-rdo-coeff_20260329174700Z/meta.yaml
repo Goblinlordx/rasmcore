@@ -1,5 +1,5 @@
 title: VP8 RDO Coefficient Pruning — Trellis Quantization with Lambda-Weighted Cost
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'

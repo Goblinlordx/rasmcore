@@ -3,103 +3,116 @@ title: VP8 RDO Coefficient Pruning — Trellis Quantization with Lambda-Weighted
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement rate-distortion optimized coefficient pruning for the VP8 encoder.
+  summary: 'Implement rate-distortion optimized coefficient pruning for the VP8 encoder.
+
     After standard quantization, evaluate each non-zero coefficient against its
+
     bitstream cost using lambda-weighted RD cost. Zero out coefficients where the
+
     bit cost exceeds the quality benefit. This is the single biggest quality
+
     improvement available — closes most of the gap vs cwebp.
-  context: |
-    Current encoder quantizes coefficients then keeps all non-zero values. cwebp uses
+
+    '
+  context: 'Current encoder quantizes coefficients then keeps all non-zero values. cwebp uses
+
     full trellis quantization to decide which coefficients to keep. Our checkerboard
-    test scores 13 dB vs cwebp's 51 dB — the gap is almost entirely from keeping
+
+    test scores 13 dB vs cwebp''s 51 dB — the gap is almost entirely from keeping
+
     costly coefficients that add bits without meaningful quality improvement.
 
+
     The VP8 token probability tables (DEFAULT_COEFF_PROBS in token.rs) provide the
+
     information needed to estimate bitstream cost per coefficient. Combined with a
+
     QP-derived lambda, we can compute RD cost = distortion + lambda * rate and prune
+
     coefficients that fail this test.
-  codebase_analysis: |
-    quant.rs: quantize_block() returns last_nz index. QuantMatrix has q[], iq[], bias[],
+
+    '
+  codebase_analysis: 'quant.rs: quantize_block() returns last_nz index. QuantMatrix has q[], iq[], bias[],
+
     zthresh[]. Step sizes from RFC 6386 DC_TABLE/AC_TABLE.
 
+
     token.rs: DEFAULT_COEFF_PROBS[1056] laid out as [4 block_types][8 bands][3 contexts][11 nodes].
+
     Access: offset = type*264 + band*33 + ctx*11. Token encoding in encode_block() uses
+
     these probabilities for the boolean coder.
 
+
     bitstream.rs: encode_macroblock() calls quantize_block() at lines 580, 601, 607, 669.
+
     The quantized coefficients go directly to token encoding — no pruning pass exists.
 
+
     predict.rs: sad() and satd() compute distortion metrics. dequantize_block() in
+
     quant.rs reconstructs coefficients for distortion measurement.
+
+    '
   acceptance_criteria:
-    - Lambda derivation from QP (standard VP8 formula)
-    - Bitrate estimation function using VP8 token probability tree
-    - RDO pruning pass after quantize_block — evaluate each non-zero coeff
-    - Coefficient zeroed when distortion_delta < lambda * bitrate_delta
-    - Parity test quality ratio vs cwebp improves from 0.4 to >= 0.7 for gradient
-    - Checkerboard PSNR improves from 13 dB to >= 25 dB
-    - File size decreases for all test patterns (fewer non-zero coefficients)
-    - All existing tests pass with updated thresholds
-    - Perf benchmark shows RDO overhead < 3x encode time (acceptable tradeoff)
-  out_of_scope: |
-    Full trellis quantization (Viterbi path search through quantization levels).
+  - Lambda derivation from QP (standard VP8 formula)
+  - Bitrate estimation function using VP8 token probability tree
+  - RDO pruning pass after quantize_block — evaluate each non-zero coeff
+  - Coefficient zeroed when distortion_delta < lambda * bitrate_delta
+  - Parity test quality ratio vs cwebp improves from 0.4 to >= 0.7 for gradient
+  - Checkerboard PSNR improves from 13 dB to >= 25 dB
+  - File size decreases for all test patterns (fewer non-zero coefficients)
+  - All existing tests pass with updated thresholds
+  - Perf benchmark shows RDO overhead < 3x encode time (acceptable tradeoff)
+  out_of_scope: 'Full trellis quantization (Viterbi path search through quantization levels).
+
     RDO mode selection (separate track). Multi-pass encoding.
-  technical_notes: |
-    Lambda derivation (matches libvpx):
-      lambda_distortion = 0.85 * pow(2.0, qp as f64 / 3.0 - 3.0)
-      lambda_rate = lambda_distortion  (for simplicity; libvpx uses separate lambdas)
 
-    Bitrate estimation using token probability tree:
-      For each coefficient, walk the VP8 binary tree and sum -log2(prob) at each node.
-      The tree encodes: is_nonzero? -> token_category -> extra_bits.
-      Use fixed-point log2 approximation: cost_bits = 256 - prob (good enough for RDO).
-
-    RDO pruning algorithm (per block, after quantize_block):
-      1. Start from last non-zero coefficient, working backward
-      2. For each non-zero coeff at position i:
-         a. distortion_if_zeroed = (coeff_original - 0)^2 - (coeff_original - dequant(quantized))^2
-            = dequant(quantized)^2 - 2*coeff_original*dequant(quantized)  ... simplified
-            Actually: delta_distortion = dequant_value^2 (SSD increase from zeroing)
-         b. rate_saved = estimate_token_bits(quantized[i], context) - estimate_token_bits(0, context)
-         c. If lambda * rate_saved > delta_distortion: zero it out
-      3. Update last_nz index after pruning
-
-    Integration point: add rdo_prune_block() call after each quantize_block() in
-    bitstream.rs encode_macroblock() (lines 580, 601, 607, 669).
+    '
+  technical_notes: "Lambda derivation (matches libvpx):\n  lambda_distortion = 0.85 * pow(2.0, qp as f64 / 3.0 - 3.0)\n  lambda_rate\
+    \ = lambda_distortion  (for simplicity; libvpx uses separate lambdas)\n\nBitrate estimation using token probability tree:\n\
+    \  For each coefficient, walk the VP8 binary tree and sum -log2(prob) at each node.\n  The tree encodes: is_nonzero? ->\
+    \ token_category -> extra_bits.\n  Use fixed-point log2 approximation: cost_bits = 256 - prob (good enough for RDO).\n\
+    \nRDO pruning algorithm (per block, after quantize_block):\n  1. Start from last non-zero coefficient, working backward\n\
+    \  2. For each non-zero coeff at position i:\n     a. distortion_if_zeroed = (coeff_original - 0)^2 - (coeff_original\
+    \ - dequant(quantized))^2\n        = dequant(quantized)^2 - 2*coeff_original*dequant(quantized)  ... simplified\n    \
+    \    Actually: delta_distortion = dequant_value^2 (SSD increase from zeroing)\n     b. rate_saved = estimate_token_bits(quantized[i],\
+    \ context) - estimate_token_bits(0, context)\n     c. If lambda * rate_saved > delta_distortion: zero it out\n  3. Update\
+    \ last_nz index after pruning\n\nIntegration point: add rdo_prune_block() call after each quantize_block() in\nbitstream.rs\
+    \ encode_macroblock() (lines 580, 601, 607, 669).\n"
 plan:
-  - phase: RDO Infrastructure
-    tasks:
-      - text: Implement lambda_from_qp(qp) — derive Lagrangian multiplier from quantizer index
-        done: false
-      - text: Implement estimate_token_bits(coeff, block_type, band, context) — bitrate estimate using VP8 probability tree
-        done: false
-      - text: Implement compute_distortion_delta(original_coeff, dequant_value) — SSD cost of zeroing a coefficient
-        done: false
-  - phase: RDO Pruning
-    tasks:
-      - text: Implement rdo_prune_block(quantized, original, matrix, block_type, lambda) — prune non-zero coefficients
-        done: false
-      - text: Wire rdo_prune_block into encode_macroblock after each quantize_block call
-        done: false
-      - text: Pass lambda through encode_frame to encode_macroblock (derive from segment QP)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit test — rdo_prune_block zeros high-cost coefficients on synthetic blocks
-        done: false
-      - text: Unit test — estimate_token_bits produces reasonable bit counts for known coefficients
-        done: false
-      - text: Update parity test thresholds — quality ratio >= 0.7 for gradient
-        done: false
-      - text: Verify checkerboard PSNR improves significantly (>= 25 dB target)
-        done: false
-      - text: Verify file size decreases for all test patterns
-        done: false
-      - text: Perf benchmark — encode time overhead < 3x
-        done: false
-      - text: All existing encode/decode tests still pass
-        done: false
+- phase: RDO Infrastructure
+  tasks:
+  - text: Implement lambda_from_qp(qp) — derive Lagrangian multiplier from quantizer index
+    done: true
+  - text: Implement estimate_token_bits(coeff, block_type, band, context) — bitrate estimate using VP8 probability tree
+    done: true
+  - text: Implement compute_distortion_delta(original_coeff, dequant_value) — SSD cost of zeroing a coefficient
+    done: true
+- phase: RDO Pruning
+  tasks:
+  - text: Implement rdo_prune_block(quantized, original, matrix, block_type, lambda) — prune non-zero coefficients
+    done: true
+  - text: Wire rdo_prune_block into encode_macroblock after each quantize_block call
+    done: true
+  - text: Pass lambda through encode_frame to encode_macroblock (derive from segment QP)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit test — rdo_prune_block zeros high-cost coefficients on synthetic blocks
+    done: true
+  - text: Unit test — estimate_token_bits produces reasonable bit counts for known coefficients
+    done: true
+  - text: Update parity test thresholds — quality ratio >= 0.7 for gradient
+    done: true
+  - text: Verify checkerboard PSNR improves significantly (>= 25 dB target)
+    done: true
+  - text: Verify file size decreases for all test patterns
+    done: true
+  - text: Perf benchmark — encode time overhead < 3x
+    done: true
+  - text: All existing encode/decode tests still pass
+    done: true
 extra: {}
