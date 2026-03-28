@@ -1,90 +1,125 @@
 id: jpeg-baseline_20260328080504Z
-title: "JPEG Baseline Sequential Encoder — JFIF Container, MCU Assembly"
+title: JPEG Baseline Sequential Encoder — JFIF Container, MCU Assembly
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Assemble the baseline sequential JPEG encoder: color conversion, chroma
+  summary: 'Assemble the baseline sequential JPEG encoder: color conversion, chroma
+
     subsampling, MCU structure, JFIF container with all marker segments, and
+
     restart marker support. Produces valid JPEG files decodable by any viewer.
-  context: |
-    This track connects DCT, quantization, and Huffman coding into a complete
+
+    '
+  context: 'This track connects DCT, quantization, and Huffman coding into a complete
+
     baseline JPEG encoder. It handles:
+
     - MCU (Minimum Coded Unit) structure for all subsampling modes
+
     - JFIF marker assembly (SOI, APP0, DQT, SOF0, DHT, SOS, RST, EOI)
+
     - All chroma subsampling modes (4:4:4, 4:2:2, 4:2:0, 4:1:1)
+
     - Restart markers for error resilience
+
     - 1-4 component configurations
+
     - Custom quantization table support
-  codebase_analysis: |
-    - rasmcore-color provides RGB-to-YCbCr conversion (BT.601)
+
+    '
+  codebase_analysis: '- rasmcore-color provides RGB-to-YCbCr conversion (BT.601)
+
     - DCT and quantization from jpeg-dct-quant track
+
     - Huffman coding from jpeg-huffman track
+
     - Output must be valid JFIF that any JPEG decoder can read
+
+    '
   acceptance_criteria:
-    - Valid JFIF output (SOI, APP0, DQT, SOF0, DHT, SOS, data, EOI)
-    - All subsampling modes produce valid output (4:4:4, 4:2:2, 4:2:0, 4:1:1)
-    - Restart markers inserted at configured intervals
-    - 1-component (grayscale) and 3-component (YCbCr) modes
-    - Custom quantization tables can be provided
-    - Output decodable by image crate, Chrome, and ImageMagick
-    - Deterministic output (byte-identical on same input)
-    - Encode 1x1, 8x8, 16x16, and 256x256 test images successfully
-  out_of_scope: |
-    - Progressive mode (separate track)
+  - Valid JFIF output (SOI, APP0, DQT, SOF0, DHT, SOS, data, EOI)
+  - All subsampling modes produce valid output (4:4:4, 4:2:2, 4:2:0, 4:1:1)
+  - Restart markers inserted at configured intervals
+  - 1-component (grayscale) and 3-component (YCbCr) modes
+  - Custom quantization tables can be provided
+  - Output decodable by image crate, Chrome, and ImageMagick
+  - Deterministic output (byte-identical on same input)
+  - Encode 1x1, 8x8, 16x16, and 256x256 test images successfully
+  out_of_scope: '- Progressive mode (separate track)
+
     - Arithmetic coding mode (handled in Huffman track, wired here later)
+
     - Trellis quantization (separate track)
+
     - Metadata embedding (stays in rasmcore-image)
-  technical_notes: |
-    MCU structure by subsampling mode:
+
+    '
+  technical_notes: 'MCU structure by subsampling mode:
+
     - 4:4:4: 1Y + 1Cb + 1Cr per MCU (8x8 pixels)
+
     - 4:2:2: 2Y + 1Cb + 1Cr per MCU (16x8 pixels)
+
     - 4:2:0: 4Y + 1Cb + 1Cr per MCU (16x16 pixels)
+
     - 4:1:1: 4Y + 1Cb + 1Cr per MCU (32x8 pixels)
 
+
     JFIF marker sequence:
+
     SOI (0xFFD8)
+
     APP0 (0xFFE0) — JFIF header
+
     DQT (0xFFDB) — quantization tables
+
     SOF0 (0xFFC0) — start of frame (baseline)
+
     DHT (0xFFC4) — Huffman tables
+
     SOS (0xFFDA) — start of scan + entropy-coded data
+
     [RST0-RST7 if restart enabled]
+
     EOI (0xFFD9)
 
+
     Restart markers: insert RST marker every N MCUs. Resets DC prediction
+
     and Huffman state. Enables parallel decoding and error recovery.
+
+    '
 plan:
-  - phase: "MCU + Subsampling"
-    tasks:
-      - text: "Implement MCU partitioning for all 4 subsampling modes"
-        done: false
-      - text: "Implement chroma subsampling (downsample CbCr planes)"
-        done: false
-      - text: "Implement block extraction from MCUs (8x8 block iterator)"
-        done: false
-      - text: "Test MCU structure for 4:2:0 and 4:4:4 modes"
-        done: false
-  - phase: "Container Assembly"
-    tasks:
-      - text: "Implement JFIF marker writing (SOI, APP0, DQT, SOF0, DHT, SOS, EOI)"
-        done: false
-      - text: "Implement restart marker insertion (RST0-RST7 cycling)"
-        done: false
-      - text: "Implement byte stuffing (0xFF 0x00) in entropy-coded data"
-        done: false
-      - text: "Implement custom quantization table DQT segment"
-        done: false
-  - phase: "Encode Pipeline"
-    tasks:
-      - text: "Wire full pipeline: color convert → subsample → DCT → quant → Huffman → JFIF"
-        done: false
-      - text: "Implement grayscale mode (1-component)"
-        done: false
-      - text: "Test encode produces valid JPEG decodable by image crate"
-        done: false
-      - text: "Determinism test (same input → byte-identical output)"
-        done: false
+- phase: MCU + Subsampling
+  tasks:
+  - text: Implement MCU partitioning for all 4 subsampling modes
+    done: true
+  - text: Implement chroma subsampling (downsample CbCr planes)
+    done: true
+  - text: Implement block extraction from MCUs (8x8 block iterator)
+    done: true
+  - text: Test MCU structure for 4:2:0 and 4:4:4 modes
+    done: true
+- phase: Container Assembly
+  tasks:
+  - text: Implement JFIF marker writing (SOI, APP0, DQT, SOF0, DHT, SOS, EOI)
+    done: true
+  - text: Implement restart marker insertion (RST0-RST7 cycling)
+    done: true
+  - text: Implement byte stuffing (0xFF 0x00) in entropy-coded data
+    done: true
+  - text: Implement custom quantization table DQT segment
+    done: true
+- phase: Encode Pipeline
+  tasks:
+  - text: 'Wire full pipeline: color convert → subsample → DCT → quant → Huffman → JFIF'
+    done: true
+  - text: Implement grayscale mode (1-component)
+    done: true
+  - text: Test encode produces valid JPEG decodable by image crate
+    done: true
+  - text: Determinism test (same input → byte-identical output)
+    done: true
 extra: {}
