@@ -71,13 +71,19 @@ interface pipeline {
     }
 
     /// BMP write configuration. No meaningful parameters.
-    record bmp-write-config {}
+    record bmp-write-config {
+        reserved: option<bool>,
+    }
 
     /// ICO write configuration. No meaningful parameters.
-    record ico-write-config {}
+    record ico-write-config {
+        reserved: option<bool>,
+    }
 
     /// QOI write configuration. No meaningful parameters.
-    record qoi-write-config {}
+    record qoi-write-config {
+        reserved: option<bool>,
+    }
 
     /// GIF write configuration.
     record gif-write-config {

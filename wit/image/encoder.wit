@@ -99,13 +99,19 @@ interface encoder {
     encode-avif: func(pixels: buffer, info: image-info, config: avif-encode-config) -> result<buffer, rasmcore-error>;
 
     /// BMP encode configuration. BMP has no meaningful encode parameters.
-    record bmp-encode-config {}
+    record bmp-encode-config {
+        reserved: option<bool>,
+    }
 
     /// ICO encode configuration. ICO embeds PNG entries.
-    record ico-encode-config {}
+    record ico-encode-config {
+        reserved: option<bool>,
+    }
 
     /// QOI encode configuration. QOI is a fixed lossless format.
-    record qoi-encode-config {}
+    record qoi-encode-config {
+        reserved: option<bool>,
+    }
 
     /// Encode pixel data to BMP
     encode-bmp: func(pixels: buffer, info: image-info, config: bmp-encode-config) -> result<buffer, rasmcore-error>;
