@@ -1,0 +1,168 @@
+id: jpeg-encoder-own_20260328064600Z
+title: "Pure Rust JPEG Encoder — Replace AGPL zenjpeg with Own Implementation"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Replace the AGPL-licensed zenjpeg dependency with a purpose-built pure Rust
+    JPEG encoder (rasmcore-jpeg). Uses zenjpeg and libjpeg-turbo as reference
+    implementations for parity testing only (dev-dependencies). Eliminates the
+    AGPL license constraint from the runtime dependency tree.
+  context: |
+    zenjpeg is AGPL-3.0-or-later licensed. AGPL requires that any network
+    service using the software must provide source code to its users. This is
+    incompatible with rasmcore's vision as a reusable component ecosystem —
+    downstream users deploying rasmcore in a SaaS product would inherit the
+    AGPL obligation, which most commercial users will not accept.
+
+    The JPEG standard (ITU-T T.81) is well-documented and patent-free.
+    The core algorithm (DCT + quantization + Huffman coding) is simpler than
+    VP8 (which we are already implementing from scratch in rasmcore-webp).
+
+    zenjpeg remains available as a dev-dependency for parity testing — its
+    AGPL license does not apply to test-only usage since tests are not
+    distributed. The same pattern rasmcore-webp already uses with the image
+    crate.
+  codebase_analysis: |
+    Current integration points (crates/rasmcore-image/src/domain/encoder/jpeg.rs):
+    - EncoderConfig::ycbcr(quality, subsampling).progressive(bool)
+    - config.request().encode_bytes(pixels, width, height, layout)
+    - Input: PixelLayout::Rgb8Srgb, Rgba8Srgb, Gray8Srgb
+    - Output: Vec<u8> (complete JPEG file)
+    - Chroma subsampling: 4:2:0 for color, none for grayscale
+
+    Features currently used from zenjpeg:
+    - Baseline JPEG encoding
+    - Progressive JPEG encoding
+    - Trellis quantization (features = ["trellis"])
+    - Quality 1-100 mapping
+    - Deterministic output
+
+    Metadata embedding (ICC, EXIF, XMP, IPTC) is handled post-encoding
+    by our own code in jpeg.rs — not by zenjpeg. This stays unchanged.
+
+    rasmcore-webp provides a proven architecture template:
+    - Same crate structure (lib.rs + module-per-stage)
+    - Same zero-runtime-dependency approach
+    - Same dev-dependency pattern for parity testing
+    - Same RFC-based implementation methodology
+
+    JPEG encoding pipeline (simpler than VP8):
+    1. RGB to YCbCr color conversion (BT.601)
+    2. Chroma subsampling (4:2:0)
+    3. 8x8 DCT (standard Type-II, not VP8's simplified 4x4)
+    4. Quantization with standard JPEG quantization tables
+    5. Zigzag scan + run-length encoding
+    6. Huffman entropy coding (baseline) or arithmetic coding
+    7. JFIF container assembly
+  acceptance_criteria:
+    - New rasmcore-jpeg crate with zero runtime dependencies
+    - Baseline JPEG encoding (ITU-T T.81 compliant)
+    - Progressive JPEG encoding
+    - RGB8, RGBA8, Gray8 input formats
+    - Quality 1-100 with chroma subsampling (4:2:0 and 4:4:4)
+    - Deterministic output (byte-identical on same input)
+    - "Quality-per-byte parity: equal or better than libjpeg-turbo at q50/q75/q85/q95"
+    - Trellis quantization for compression efficiency
+    - Optimized Huffman tables
+    - All existing parity tests pass against the new encoder
+    - WASM build succeeds (pure Rust, no C dependencies)
+    - zenjpeg moved to dev-dependencies only (parity reference)
+    - No AGPL code in the runtime dependency tree
+  out_of_scope: |
+    - Arithmetic coding (rarely used, patent history)
+    - JPEG 2000 or JPEG XL (separate codecs)
+    - Lossless JPEG (separate mode, low priority)
+    - Multi-threaded encoding (future optimization)
+    - SIMD intrinsics (rely on auto-vectorization initially, SIMD track later)
+    - Decoder (image crate handles decode)
+    - XYB perceptual color space (zenjpeg-specific feature)
+    - UltraHDR / gain maps
+  technical_notes: |
+    Architecture follows rasmcore-webp pattern:
+
+    crates/rasmcore-jpeg/src/
+      lib.rs          — Public encode() API
+      color.rs        — RGB to YCbCr (BT.601 matrix)
+      dct.rs          — 8x8 Type-II DCT (integer arithmetic)
+      quant.rs        — Quantization tables + trellis optimization
+      huffman.rs      — Huffman table generation + entropy coding
+      scan.rs         — Zigzag scan + run-length encoding
+      progressive.rs  — Multi-scan progressive mode
+      container.rs    — JFIF/JPEG marker assembly
+      tables.rs       — Standard quantization and Huffman tables
+      config.rs       — EncodeConfig (quality, progressive, subsampling)
+      error.rs        — EncodeError type
+
+    Key differences from VP8 (rasmcore-webp):
+    - 8x8 DCT instead of 4x4 (standard Type-II cosine transform)
+    - Huffman coding instead of boolean arithmetic coding
+    - Fixed JPEG quantization tables (scaled by quality factor)
+    - Simpler container format (JFIF markers vs RIFF/VP8)
+
+    Trellis quantization is the main quality differentiator vs naive JPEG.
+    It uses dynamic programming to find the optimal set of quantized DCT
+    coefficients that minimizes distortion for a given bit budget. This is
+    what makes mozjpeg and zenjpeg produce smaller files than libjpeg-turbo.
+
+    Reference implementations for parity testing (dev-dependencies only):
+    - zenjpeg: primary quality/compression reference
+    - image crate: baseline JPEG reference
+    - ImageMagick: external reference (via fixture generation)
+
+    Integration: replace zenjpeg import in rasmcore-image/encoder/jpeg.rs
+    with rasmcore-jpeg. The encode function signature stays identical.
+    Metadata embedding code is untouched.
+
+    Priority: Low now, HIGH before any public release or distribution.
+    The AGPL constraint must be resolved before rasmcore is distributed.
+plan:
+  - phase: Crate Scaffold
+    tasks:
+      - text: "Create rasmcore-jpeg crate with workspace integration, zero runtime deps"
+        done: false
+      - text: "Define public API: encode(pixels, width, height, format, config) matching current interface"
+        done: false
+      - text: "Define EncodeConfig, EncodeError, PixelFormat types"
+        done: false
+  - phase: Core Codec
+    tasks:
+      - text: "Implement RGB to YCbCr color conversion (BT.601 coefficients)"
+        done: false
+      - text: "Implement chroma subsampling (4:2:0 and 4:4:4)"
+        done: false
+      - text: "Implement 8x8 forward DCT (integer arithmetic, AAN or LLM algorithm)"
+        done: false
+      - text: "Implement quantization with standard JPEG luminance/chrominance tables"
+        done: false
+      - text: "Implement zigzag scan and run-length encoding of AC coefficients"
+        done: false
+      - text: "Implement Huffman entropy coding (baseline sequential)"
+        done: false
+      - text: "Implement JFIF container assembly (SOI, APP0, DQT, SOF0, DHT, SOS, EOI)"
+        done: false
+  - phase: Quality Optimization
+    tasks:
+      - text: "Implement optimized Huffman table generation (two-pass or counting)"
+        done: false
+      - text: "Implement trellis quantization (rate-distortion optimized coefficient selection)"
+        done: false
+      - text: "Implement progressive JPEG (multi-scan spectral selection and successive approximation)"
+        done: false
+  - phase: Integration & Verification
+    tasks:
+      - text: "Wire rasmcore-jpeg into rasmcore-image encoder/jpeg.rs replacing zenjpeg"
+        done: false
+      - text: "Move zenjpeg to dev-dependencies for parity testing only"
+        done: false
+      - text: "Parity test: quality-per-byte vs zenjpeg at q50/q75/q85/q95 (Butteraugli + DSSIM)"
+        done: false
+      - text: "Parity test: quality-per-byte vs libjpeg-turbo (ImageMagick reference)"
+        done: false
+      - text: "Determinism test: byte-identical output on repeated encoding"
+        done: false
+      - text: "WASM build verification"
+        done: false
+extra: {}
