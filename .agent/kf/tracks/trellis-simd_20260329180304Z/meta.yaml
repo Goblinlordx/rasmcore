@@ -1,0 +1,8 @@
+title: Trellis SIMD Optimization — Vectorized Candidate Evaluation + DP Inner Loop
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- trellis-core_20260329180300Z

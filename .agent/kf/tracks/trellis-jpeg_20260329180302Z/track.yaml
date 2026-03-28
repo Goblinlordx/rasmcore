@@ -1,0 +1,100 @@
+id: trellis-jpeg_20260329180302Z
+title: JPEG Trellis Integration — Optimal Coefficient Quantization (mozjpeg-Style)
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Implement TrellisContext for JPEG Huffman coding and wire into the JPEG encoder.
+    JPEG trellis optimizes the 64 DCT coefficients per 8x8 block against Huffman
+    encoding cost. This is the core optimization that makes mozjpeg produce 10-15%
+    smaller files than libjpeg at the same quality.
+  context: |
+    JPEG uses Huffman coding for coefficient entropy. The token cost model is simpler
+    than VP8 — each non-zero coefficient costs a Huffman category code + extra bits,
+    and runs of zeros before it cost a run-length code. Trellis optimizes the tradeoff
+    between coefficient precision and Huffman encoding efficiency.
+
+    mozjpeg's trellis quantization is the gold standard for JPEG quality optimization.
+    It considers that zeroing a coefficient extends the zero-run for the next non-zero
+    coefficient, which may have a cheaper Huffman code at a longer run length.
+  codebase_analysis: |
+    rasmcore-jpeg/src/quantize.rs: quantize() maps 64 i32 DCT coefficients to i16
+    quantized values using division by quantization table entries. No trellis.
+
+    rasmcore-jpeg/src/entropy.rs: Huffman encoding uses magnitude categories (0-11)
+    and zero run-length encoding (run, category) pairs. The cost model for trellis
+    needs to compute bits per (run, level) combination.
+
+    The JPEG context model is different from VP8:
+    - State = current zero run length (0-15)
+    - Token = (run_length, category) Huffman code + extra bits
+    - EOB = special (0,0) symbol
+  acceptance_criteria:
+    - JpegTrellisContext implements TrellisContext using Huffman code costs
+    - Context state tracks zero run length for run-length encoding
+    - Wire trellis into JPEG encode path (quantize.rs or lib.rs encode pipeline)
+    - File size reduction >= 5% vs non-trellis at same PSNR
+    - Three-way parity vs image crate maintains or improves
+    - All existing JPEG tests pass
+  out_of_scope: |
+    Progressive JPEG trellis (spectral selection bands). DC coefficient trellis
+    (DC is DPCM-coded, different model). Optimized Huffman table generation
+    (orthogonal optimization). Custom quantization table design.
+  technical_notes: |
+    JPEG Huffman cost model:
+      For a coefficient at position pos with zero_run preceding zeros:
+        if level == 0: extends the run (no immediate cost, but affects next coeff)
+        if level != 0:
+          category = magnitude_category(level)  // 0-11
+          run_category_code = huffman_code_length(run, category)  // from AC Huffman table
+          extra_bits = category  // bits to encode exact value within category
+          total_bits = run_category_code + extra_bits
+        if run >= 16: emit ZRL (15,0) symbol, cost = huffman_code_length(15, 0)
+
+    JpegTrellisContext:
+      const NUM_STATES: usize = 16;  // zero run length 0-15
+
+      fn token_cost(&self, level, position, state) -> u32 {
+          // state = current zero run length
+          if level == 0: return 0  // just extends the run (state transitions)
+          let cat = magnitude_category(level);
+          huffman_bits(state, cat) * 256 + cat * 256  // code + extra bits
+      }
+
+      fn next_state(&self, level, state) -> usize {
+          if level == 0 { (state + 1).min(15) } else { 0 }  // reset run on non-zero
+      }
+plan:
+  - phase: JPEG Trellis Context
+    tasks:
+      - text: Add rasmcore-trellis dependency to rasmcore-jpeg Cargo.toml
+        done: false
+      - text: Implement JpegTrellisContext with Huffman code cost model
+        done: false
+      - text: Implement magnitude_category and Huffman code length estimation
+        done: false
+      - text: Handle zero run-length state (0-15) and ZRL (15,0) overflow
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Wire trellis_optimize into JPEG encode pipeline after DCT
+        done: false
+      - text: Derive lambda from JPEG quality parameter
+        done: false
+      - text: Support both baseline and progressive encode paths
+        done: false
+  - phase: Verification
+    tasks:
+      - text: File size comparison at Q75 and Q85 vs non-trellis (expect >= 5% reduction)
+        done: false
+      - text: Three-way parity vs image crate (A vs B MAE < 0.5)
+        done: false
+      - text: Visual quality at same file size is better than non-trellis
+        done: false
+      - text: All existing JPEG encode/decode tests pass
+        done: false
+      - text: Encode time benchmark (< 3x overhead)
+        done: false
+extra: {}

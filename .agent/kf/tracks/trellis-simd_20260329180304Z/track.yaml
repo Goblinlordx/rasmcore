@@ -1,0 +1,98 @@
+id: trellis-simd_20260329180304Z
+title: Trellis SIMD Optimization — Vectorized Candidate Evaluation + DP Inner Loop
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    SIMD-optimize the trellis quantization hot paths. The Viterbi DP inner loop
+    evaluates 3 candidate levels x N context states per coefficient position —
+    the distortion + cost computation is embarrassingly parallel across candidates.
+    Vectorize with WASM SIMD128 for the primary target, scalar fallback for native.
+  context: |
+    Trellis quantization runs for every block in every macroblock — it's the
+    innermost hot loop of the encoder. The DP inner loop computes:
+      cost[candidate][state] = distortion(level) + lambda * token_cost(level, state) + prev_cost[prev_state]
+    For 3 candidates x 3 states = 9 cost evaluations per position.
+
+    The distortion computation (original - dequant(level))^2 is identical across
+    states — compute once, reuse. The token_cost varies by state but candidates
+    are independent — process all 3 candidates in parallel via SIMD.
+  codebase_analysis: |
+    The trellis engine (rasmcore-trellis) processes coefficients sequentially
+    (position 0, 1, ..., N-1) but within each position, candidate evaluation is
+    parallel. For 3 candidates with i32 costs, this maps to i32x4 SIMD (3 lanes
+    active + 1 padding).
+
+    Distortion per candidate: (original - level * step)^2 — pure arithmetic on
+    i32, vectorizable as i32x4_mul + i32x4_sub.
+
+    State transition min-cost: for each new state, find minimum cost across all
+    (prev_state, candidate) combinations. This is a reduction operation.
+  acceptance_criteria:
+    - Distortion computation vectorized across 3 candidates using i32x4
+    - Cost accumulation (distortion + lambda*rate) vectorized
+    - WASM SIMD128 path with i32x4 intrinsics
+    - Scalar fallback for non-WASM targets (LLVM auto-vectorizes)
+    - Benchmark showing >= 1.5x speedup over scalar for 16-coeff VP8 blocks
+    - Benchmark showing >= 2x speedup for 64-coeff JPEG blocks
+    - Output bit-identical to scalar path
+    - WASM binary contains i32x4 SIMD instructions (verified)
+  out_of_scope: |
+    AVX2/NEON explicit intrinsics (rely on LLVM for native). Multi-threaded
+    trellis (blocks are independent — parallelism at the block level, not within).
+  technical_notes: |
+    SIMD strategy for the DP inner loop:
+
+    Per position, for 3 candidates [c0, c1, c2]:
+      1. Compute distortion: d[k] = (original - dequant(c[k]))^2
+         → i32x4 with lanes [d0, d1, d2, 0]
+         → i32x4_sub, i32x4_mul (element-wise squaring)
+
+      2. For each prev_state S:
+         rate[k] = token_cost(c[k], pos, S)
+         → Can pre-compute rate table for all (candidate, state) pairs
+         → 3x3 = 9 values, process as 3x i32x4
+
+      3. total[k] = distortion[k] + lambda_fixed * rate[k] + prev_cost[S]
+         → i32x4_add chain
+
+      4. For each new_state: find min across candidates
+         → i32x4 horizontal min (extract + compare)
+
+    Fixed-point lambda: multiply lambda * 256 to stay in i32 integer domain,
+    avoiding f64 in the hot loop entirely.
+
+    Memory layout: DP table as [position][state] = (cost: i32, backtrack: u8).
+    Candidates stored as [i16; 4] (padded to 4 for SIMD alignment).
+plan:
+  - phase: Hot Loop Vectorization
+    tasks:
+      - text: Restructure candidate distortion to compute all 3 as [i32; 4] array
+        done: false
+      - text: Convert lambda to fixed-point i32 to eliminate f64 from inner loop
+        done: false
+      - text: Vectorize cost accumulation (distortion + lambda*rate + prev_cost) as i32x4
+        done: false
+      - text: Add WASM SIMD128 path with explicit i32x4 intrinsics
+        done: false
+  - phase: Memory Optimization
+    tasks:
+      - text: Pre-compute rate cost table for all (candidate, state) pairs per position
+        done: false
+      - text: Pack DP state as (cost_i32, backtrack_u8) for cache-friendly access
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Output matches scalar path bit-for-bit on VP8 test blocks
+        done: false
+      - text: Output matches scalar path on JPEG 64-coeff test blocks
+        done: false
+      - text: Benchmark 16-coeff trellis (VP8) — SIMD vs scalar
+        done: false
+      - text: Benchmark 64-coeff trellis (JPEG) — SIMD vs scalar
+        done: false
+      - text: WASM binary inspection confirms i32x4 instructions emitted
+        done: false
+extra: {}

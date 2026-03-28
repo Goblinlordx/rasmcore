@@ -1,0 +1,92 @@
+id: trellis-hevc_20260329180303Z
+title: HEVC Trellis Integration — CABAC-Aware Coefficient Optimization
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Implement TrellisContext for HEVC CABAC coding and prepare integration hooks
+    for a future HEVC encoder. CABAC's context-adaptive binary arithmetic coding
+    has a richer state model than VP8 or JPEG, with context indices depending on
+    coefficient position, significance map, and neighboring blocks.
+  context: |
+    HEVC uses CABAC for entropy coding. Each coefficient's encoding cost depends on:
+    significance flag (is it non-zero?), greater-than-1 flag, greater-than-2 flag,
+    remaining absolute value, and sign. The context model indices are determined by
+    the coefficient position within the TU, the sub-block position, and the values
+    of previously coded coefficients.
+
+    While rasmcore-hevc currently only has a decoder, the trellis infrastructure
+    enables future encoding. The CABAC cost model is also useful for decoder-side
+    quality estimation and adaptive processing decisions.
+  codebase_analysis: |
+    rasmcore-hevc/src/cabac/: CABAC decoder with context models, state transitions,
+    and init_value tables (Tables 9-5 through 9-37). The context model infrastructure
+    (ContextModel with state/mps) provides the probability information needed for
+    bit cost estimation.
+
+    rasmcore-hevc/src/transform/: dequantize_block with QP-derived scale factors.
+    The forward quantization path would use trellis.
+
+    HEVC CABAC context model for trellis:
+    - sig_coeff_flag: 42 contexts (27 luma + 15 chroma)
+    - coeff_abs_level_greater1_flag: 24 contexts
+    - coeff_abs_level_greater2_flag: 6 contexts
+    - Context index depends on position, sub-block, and coefficient group
+  acceptance_criteria:
+    - HevcTrellisContext implements TrellisContext with CABAC bit cost estimation
+    - Context states model the HEVC significance/level flags
+    - CABAC bit cost uses context model probabilities from cabac module
+    - Unit tests with known CABAC contexts verify cost estimation accuracy
+    - Integration hooks documented for future HEVC encoder
+  out_of_scope: |
+    Full HEVC encoder implementation. Transform skip trellis. Cross-component
+    prediction cost. Rate-distortion optimization for CU/PU/TU partitioning.
+  technical_notes: |
+    HEVC CABAC cost model is more complex than VP8/JPEG:
+
+    For each coefficient, the encoder signals:
+    1. sig_coeff_flag (is it non-zero?) — 1 CABAC bin, context from position + neighbor
+    2. coeff_abs_level_greater1_flag — 1 bin if non-zero, context from position group
+    3. coeff_abs_level_greater2_flag — 1 bin if > 1, context from position group
+    4. Remaining level — Exp-Golomb bypass bins
+    5. Sign — 1 bypass bin (or sign data hiding)
+
+    The bit cost per coefficient = sum of CABAC bin costs where:
+      bin_cost(state) = -log2(prob[state])
+      prob[state] = CABAC_LPS_RANGE[state] / range
+
+    HevcTrellisContext:
+      const NUM_STATES: usize = 5;  // none, sig_only, gt1, gt2, large
+
+    The coefficient scanning order (diagonal, horizontal, vertical) affects context
+    derivation — the trellis must process coefficients in scan order.
+plan:
+  - phase: CABAC Cost Model
+    tasks:
+      - text: Implement CABAC bin cost estimation from context model probability state
+        done: false
+      - text: Implement sig_coeff_flag cost with position-dependent context index
+        done: false
+      - text: Implement coeff_abs_level_greater1/greater2 flag costs
+        done: false
+      - text: Implement remaining level (Exp-Golomb) bit cost estimation
+        done: false
+  - phase: HEVC Trellis Context
+    tasks:
+      - text: Implement HevcTrellisContext with CABAC-derived state transitions
+        done: false
+      - text: Handle coefficient group (sub-block) context dependencies
+        done: false
+      - text: Support both luma and chroma context index sets
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit test CABAC bin costs match decoder probability tables
+        done: false
+      - text: Unit test context state transitions for known coefficient sequences
+        done: false
+      - text: Document integration points for future HEVC encoder
+        done: false
+extra: {}
