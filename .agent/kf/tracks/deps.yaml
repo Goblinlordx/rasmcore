@@ -25,3 +25,10 @@ p0-gif-exif-orient_20260328024500Z: []
 p0-alpha-composite_20260328024501Z: []
 
 p0-icc-profiles_20260328024502Z: []
+
+# Color crate — shared prereq
+color-crate_20260328070200Z: []
+
+# JPEG encoder depends on shared color crate
+jpeg-encoder-own_20260328064600Z:
+  - color-crate_20260328070200Z
