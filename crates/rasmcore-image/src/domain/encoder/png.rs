@@ -1,5 +1,5 @@
-use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::DynamicImage;
+use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 
 use crate::domain::error::ImageError;
 use crate::domain::types::ImageInfo;
@@ -130,22 +130,35 @@ mod tests {
 
     #[test]
     fn default_filter_type_is_adaptive() {
-        assert_eq!(PngEncodeConfig::default().filter_type, PngFilterType::Adaptive);
+        assert_eq!(
+            PngEncodeConfig::default().filter_type,
+            PngFilterType::Adaptive
+        );
     }
 
     #[test]
     fn compression_level_affects_output_size() {
         let (img, info) = make_larger_test_image();
 
-        let fast = encode(&img, &info, &PngEncodeConfig {
-            compression_level: 0,
-            filter_type: PngFilterType::NoFilter,
-        }).unwrap();
+        let fast = encode(
+            &img,
+            &info,
+            &PngEncodeConfig {
+                compression_level: 0,
+                filter_type: PngFilterType::NoFilter,
+            },
+        )
+        .unwrap();
 
-        let best = encode(&img, &info, &PngEncodeConfig {
-            compression_level: 9,
-            filter_type: PngFilterType::NoFilter,
-        }).unwrap();
+        let best = encode(
+            &img,
+            &info,
+            &PngEncodeConfig {
+                compression_level: 9,
+                filter_type: PngFilterType::NoFilter,
+            },
+        )
+        .unwrap();
 
         // Higher compression should produce smaller output (or equal)
         assert!(
@@ -216,6 +229,9 @@ mod tests {
         };
         let result1 = encode(&img, &info, &config).unwrap();
         let result2 = encode(&img, &info, &config).unwrap();
-        assert_eq!(result1, result2, "encoding same input twice must produce byte-identical output");
+        assert_eq!(
+            result1, result2,
+            "encoding same input twice must produce byte-identical output"
+        );
     }
 }

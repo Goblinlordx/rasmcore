@@ -19,12 +19,16 @@ fn to_domain_png_filter_pipeline(
 ) -> crate::domain::encoder::png::PngFilterType {
     match f {
         None => crate::domain::encoder::png::PngFilterType::Adaptive,
-        Some(pipeline::PngFilterType::NoFilter) => crate::domain::encoder::png::PngFilterType::NoFilter,
+        Some(pipeline::PngFilterType::NoFilter) => {
+            crate::domain::encoder::png::PngFilterType::NoFilter
+        }
         Some(pipeline::PngFilterType::Sub) => crate::domain::encoder::png::PngFilterType::Sub,
         Some(pipeline::PngFilterType::Up) => crate::domain::encoder::png::PngFilterType::Up,
         Some(pipeline::PngFilterType::Avg) => crate::domain::encoder::png::PngFilterType::Avg,
         Some(pipeline::PngFilterType::Paeth) => crate::domain::encoder::png::PngFilterType::Paeth,
-        Some(pipeline::PngFilterType::Adaptive) => crate::domain::encoder::png::PngFilterType::Adaptive,
+        Some(pipeline::PngFilterType::Adaptive) => {
+            crate::domain::encoder::png::PngFilterType::Adaptive
+        }
     }
 }
 

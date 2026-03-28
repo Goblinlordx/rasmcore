@@ -286,7 +286,10 @@ fn parity_png_encode_determinism() {
     let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
     let result1 = encoder::png::encode(&img, &decoded.info, &config).unwrap();
     let result2 = encoder::png::encode(&img, &decoded.info, &config).unwrap();
-    assert_eq!(result1, result2, "PNG encode must be deterministic (byte-identical)");
+    assert_eq!(
+        result1, result2,
+        "PNG encode must be deterministic (byte-identical)"
+    );
 }
 
 #[test]

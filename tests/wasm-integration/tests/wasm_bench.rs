@@ -98,9 +98,13 @@ fn perf_1080p() {
     let wfl = bi.rasmcore_image_filters();
 
     println!();
-    println!("================================================================================================");
+    println!(
+        "================================================================================================"
+    );
     println!("  1920x1080 Performance ({N} iter, {} warmup)", W);
-    println!("================================================================================================");
+    println!(
+        "================================================================================================"
+    );
     println!();
     println!(
         "  {:<28} {:>9} {:>9} {:>9} {:>9} {:>9}",
@@ -132,13 +136,15 @@ fn perf_1080p() {
         Duration::ZERO
     };
     let vp = if hv {
-        bench(|| { run_vips(&["thumbnail", &ff, "/dev/null", "960", "--height", "540"]); })
+        bench(|| {
+            run_vips(&["thumbnail", &ff, "/dev/null", "960", "--height", "540"]);
+        })
     } else {
         Duration::ZERO
     };
     let ns = bench(|| {
-        let _ = transform::resize(&dec.pixels, &dec.info, 960, 540, ResizeFilter::Lanczos3)
-            .unwrap();
+        let _ =
+            transform::resize(&dec.pixels, &dec.info, 960, 540, ResizeFilter::Lanczos3).unwrap();
     });
     let np = bench(|| {
         let mut g = NodeGraph::new(32 << 20);
@@ -175,7 +181,9 @@ fn perf_1080p() {
         Duration::ZERO
     };
     let vp = if hv {
-        bench(|| { run_vips(&["gaussblur", &ff, "/dev/null", "2"]); })
+        bench(|| {
+            run_vips(&["gaussblur", &ff, "/dev/null", "2"]);
+        })
     } else {
         Duration::ZERO
     };
@@ -207,7 +215,10 @@ fn perf_1080p() {
         let _ = filters::sharpen(&dec.pixels, &dec.info, 1.0).unwrap();
     });
     let ws = bench(|| {
-        let _ = wfl.call_sharpen(&mut st, &wd.pixels, wd.info, 1.0).unwrap().unwrap();
+        let _ = wfl
+            .call_sharpen(&mut st, &wd.pixels, wd.info, 1.0)
+            .unwrap()
+            .unwrap();
     });
     row!("sharpen", im, Duration::ZERO, ns, Duration::ZERO, ws);
 
@@ -221,18 +232,38 @@ fn perf_1080p() {
         let _ = filters::brightness(&dec.pixels, &dec.info, 0.2).unwrap();
     });
     let ws = bench(|| {
-        let _ = wfl.call_brightness(&mut st, &wd.pixels, wd.info, 0.2).unwrap().unwrap();
+        let _ = wfl
+            .call_brightness(&mut st, &wd.pixels, wd.info, 0.2)
+            .unwrap()
+            .unwrap();
     });
-    row!("brightness +0.2", im, Duration::ZERO, ns, Duration::ZERO, ws);
+    row!(
+        "brightness +0.2",
+        im,
+        Duration::ZERO,
+        ns,
+        Duration::ZERO,
+        ws
+    );
 
     // ── Per-op: Contrast ──
     let ns = bench(|| {
         let _ = filters::contrast(&dec.pixels, &dec.info, 0.5).unwrap();
     });
     let ws = bench(|| {
-        let _ = wfl.call_contrast(&mut st, &wd.pixels, wd.info, 0.5).unwrap().unwrap();
+        let _ = wfl
+            .call_contrast(&mut st, &wd.pixels, wd.info, 0.5)
+            .unwrap()
+            .unwrap();
     });
-    row!("contrast +0.5 (LUT)", Duration::ZERO, Duration::ZERO, ns, Duration::ZERO, ws);
+    row!(
+        "contrast +0.5 (LUT)",
+        Duration::ZERO,
+        Duration::ZERO,
+        ns,
+        Duration::ZERO,
+        ws
+    );
 
     // ── Per-op: Grayscale ──
     let im = if hm {
@@ -244,7 +275,10 @@ fn perf_1080p() {
         let _ = filters::grayscale(&dec.pixels, &dec.info).unwrap();
     });
     let ws = bench(|| {
-        let _ = wfl.call_grayscale(&mut st, &wd.pixels, wd.info).unwrap().unwrap();
+        let _ = wfl
+            .call_grayscale(&mut st, &wd.pixels, wd.info)
+            .unwrap()
+            .unwrap();
     });
     row!("grayscale", im, Duration::ZERO, ns, Duration::ZERO, ws);
 
@@ -263,14 +297,7 @@ fn perf_1080p() {
     let im = if hm {
         bench(|| {
             run_magick(&[
-                &ff,
-                "-resize",
-                "960x540!",
-                "-blur",
-                "0x2",
-                "-sharpen",
-                "0x1",
-                "null:",
+                &ff, "-resize", "960x540!", "-blur", "0x2", "-sharpen", "0x1", "null:",
             ])
         })
     } else {
@@ -295,8 +322,8 @@ fn perf_1080p() {
         Duration::ZERO
     };
     let ns = bench(|| {
-        let r = transform::resize(&dec.pixels, &dec.info, 960, 540, ResizeFilter::Lanczos3)
-            .unwrap();
+        let r =
+            transform::resize(&dec.pixels, &dec.info, 960, 540, ResizeFilter::Lanczos3).unwrap();
         let b = filters::blur(&r.pixels, &r.info, 2.0).unwrap();
         let _ = filters::sharpen(&b, &r.info, 1.0).unwrap();
     });
@@ -323,8 +350,15 @@ fn perf_1080p() {
     });
     let ws = bench(|| {
         use wasm_integration::exports::rasmcore::image::transform::ResizeFilter as WRF;
-        let d = bi.rasmcore_image_decoder().call_decode(&mut st, &data).unwrap().unwrap();
-        let (rp, ri) = wtr.call_resize(&mut st, &d.pixels, d.info, 960, 540, WRF::Lanczos3).unwrap().unwrap();
+        let d = bi
+            .rasmcore_image_decoder()
+            .call_decode(&mut st, &data)
+            .unwrap()
+            .unwrap();
+        let (rp, ri) = wtr
+            .call_resize(&mut st, &d.pixels, d.info, 960, 540, WRF::Lanczos3)
+            .unwrap()
+            .unwrap();
         let bp = wfl.call_blur(&mut st, &rp, ri, 2.0).unwrap().unwrap();
         let _ = wfl.call_sharpen(&mut st, &bp, ri, 1.0).unwrap().unwrap();
     });
@@ -350,8 +384,8 @@ fn perf_1080p() {
         Duration::ZERO
     };
     let ns = bench(|| {
-        let r = transform::resize(&dec.pixels, &dec.info, 960, 540, ResizeFilter::Lanczos3)
-            .unwrap();
+        let r =
+            transform::resize(&dec.pixels, &dec.info, 960, 540, ResizeFilter::Lanczos3).unwrap();
         let b = filters::brightness(&r.pixels, &r.info, 0.2).unwrap();
         let c = filters::contrast(&b, &r.info, 0.3).unwrap();
         let _ = filters::grayscale(&c, &r.info).unwrap();
@@ -382,8 +416,15 @@ fn perf_1080p() {
     });
     let ws = bench(|| {
         use wasm_integration::exports::rasmcore::image::transform::ResizeFilter as WRF;
-        let d = bi.rasmcore_image_decoder().call_decode(&mut st, &data).unwrap().unwrap();
-        let (rp, ri) = wtr.call_resize(&mut st, &d.pixels, d.info, 960, 540, WRF::Lanczos3).unwrap().unwrap();
+        let d = bi
+            .rasmcore_image_decoder()
+            .call_decode(&mut st, &data)
+            .unwrap()
+            .unwrap();
+        let (rp, ri) = wtr
+            .call_resize(&mut st, &d.pixels, d.info, 960, 540, WRF::Lanczos3)
+            .unwrap()
+            .unwrap();
         let bp = wfl.call_brightness(&mut st, &rp, ri, 0.2).unwrap().unwrap();
         let cp = wfl.call_contrast(&mut st, &bp, ri, 0.3).unwrap().unwrap();
         let _ = wfl.call_grayscale(&mut st, &cp, ri).unwrap().unwrap();
