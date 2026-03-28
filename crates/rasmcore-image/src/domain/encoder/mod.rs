@@ -3,6 +3,7 @@ pub mod bmp;
 pub mod dds;
 pub mod gif;
 pub mod ico;
+pub mod jp2;
 pub mod jpeg;
 pub mod png;
 pub mod qoi;
@@ -16,7 +17,7 @@ use super::types::{ImageInfo, PixelFormat};
 
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
-    "dds",
+    "dds", "jp2",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -96,6 +97,10 @@ pub fn encode(
             encode_via_image_format(&rgba32f, image::ImageFormat::OpenExr)
         }
         "dds" => dds::encode_dds(pixels, info),
+        "jp2" | "j2k" | "jpeg2000" => {
+            let config = jp2::Jp2EncodeConfig::default();
+            jp2::encode(pixels, info, &config)
+        }
         other => Err(ImageError::UnsupportedFormat(format!(
             "encode format '{other}' not supported"
         ))),
@@ -351,7 +356,7 @@ mod tests {
         let fmts = supported_formats();
         for f in [
             "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm",
-            "exr", "dds",
+            "exr", "dds", "jp2",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing format: {f}");
         }
