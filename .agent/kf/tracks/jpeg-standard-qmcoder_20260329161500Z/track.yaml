@@ -1,0 +1,117 @@
+id: jpeg-standard-qmcoder_20260329161500Z
+title: JPEG Standard QM-Coder — ITU-T T.81 Compatible Arithmetic Encode/Decode
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Replace the custom bit-level arithmetic coder with a standard QM-coder
+    implementation (ITU-T T.81 Annex D/F) so our SOF9/SOF10 JPEGs are
+    interoperable with libjpeg-turbo, mozjpeg, and ImageMagick.
+  context: |
+    The current ArithmeticEncoder/ArithmeticDecoder use a textbook interval
+    coder with underflow counters. While it roundtrips correctly, the byte
+    format is proprietary — not the standard QM-coder byte stream from
+    ITU-T T.81 Annex D. This means:
+    - External tools CANNOT decode our SOF9 files
+    - We CANNOT decode SOF9 files from cjpeg -arithmetic or ImageMagick
+    - Our SOF9 marker is effectively a lie — it claims arithmetic coding
+      but uses an incompatible format
+
+    This is a correctness bug, not a feature request. Shipping SOF9 markers
+    with non-standard entropy data violates the JPEG specification.
+  codebase_analysis: |
+    Current implementation (entropy.rs):
+    - ArithmeticEncoder: 18-bit interval coder with emit_bit_plus_pending
+    - ArithmeticDecoder: matching bit-level reader with read_bit
+    - ARITH_PREC=18, ARITH_WHOLE=0x40000, ARITH_HALF=0x20000
+    - Uses QE_TABLE for probability estimation (47-entry table)
+    - arithmetic_encode_block / arithmetic_decode_block: DC DPCM + AC RLE
+      via binary decision trees (custom context model, not ITU-T F.1)
+
+    What standard QM-coder looks like (studied from zenjpeg which ports
+    libjpeg-turbo jdarith.c/jcarith.c, both IJG/BSD licensed algorithm):
+    - Decoder init: c=0, a=0, ct=-16 (reads 2 bytes during first renorm)
+    - Core decode: a-=qe, compare c >= ((a-qe) << ct), shift-based renorm
+    - ARITAB: 114-entry packed table (Qe + next_MPS + next_LPS + switch)
+    - DC context: 64 stats bins per table (ITU-T T.81 Figure F.19-F.24)
+    - AC context: 256 stats bins per table (ITU-T T.81 Figure F.20)
+    - Byte I/O: get_byte with 0xFF stuffing and marker detection
+    - Encoder: mirror of decoder with carry-propagating byte output
+
+    Files to modify:
+    - crates/rasmcore-jpeg/src/entropy.rs (replace ArithmeticEncoder/Decoder)
+    - crates/rasmcore-jpeg/src/decode_arith.rs (update block decode calls)
+    - crates/rasmcore-jpeg/src/lib.rs (update encode_mcus_arithmetic)
+  acceptance_criteria:
+    - Decode SOF9 JPEG files produced by cjpeg -arithmetic (libjpeg-turbo)
+    - Decode SOF9 JPEG files produced by ImageMagick
+    - Our SOF9 encode produces files decodable by djpeg and ImageMagick
+    - Three-way parity test passes for arithmetic mode
+    - All existing JPEG tests still pass
+    - Roundtrip PSNR > 25dB for arithmetic mode
+  out_of_scope: |
+    Progressive arithmetic (SOF10) decode of external files.
+    SIMD optimization of the QM-coder.
+    Arithmetic coding optimization (trellis, etc).
+  technical_notes: |
+    Implementation approach:
+    1. Port the ITU-T T.81 Annex D QM-coder as a new QmEncoder/QmDecoder
+       (algorithm from the public standard, not from any copyleft codebase)
+    2. Implement ITU-T T.81 Annex F DC/AC context modeling:
+       - DC: 64 stats bins, context categories from DAC conditioning values
+       - AC: 256 stats bins, EOB/zero-run/magnitude per Figure F.20
+    3. Replace ArithmeticEncoder/ArithmeticDecoder in entropy.rs
+    4. Update decode_arith.rs to use the standard DC/AC decode
+    5. Update encode path to use the standard QM-coder encoder
+    6. Validate against cjpeg -arithmetic reference fixtures
+
+    Key decoder algorithm (ITU-T T.81 D.2):
+    - Init: c=0, a=0, ct=-16
+    - Renorm loop: while a < 0x8000 { ct--; if ct<0 { c=(c<<8)|byte; ct+=8 }; a<<=1 }
+    - Decode: temp=a-qe; a=temp; if c >= temp<<ct { LPS } else { MPS }
+    - Byte input: handle 0xFF stuffing (0xFF00 -> 0xFF), detect markers
+
+    Key encoder algorithm (ITU-T T.81 D.1):
+    - Init: a=0x10000, c=0, ct=11, buffer=0, sc=0
+    - Encode: a-=qe; if MPS { maybe c+=a,a=qe } else { c+=a or a=qe }; renorm
+    - Renorm: while a<0x8000 { a<<=1; c<<=1; ct--; if ct==0 byte_out; ct=8 }
+    - byte_out: carry-propagating output with sc (stacked 0xFF) counter
+    - Finish: round c to interval boundary, shift by ct, emit final bytes
+plan:
+  - phase: QM-Coder Core
+    tasks:
+      - text: Implement QmDecoder with standard init (c=0,a=0,ct=-16) and decode per ITU-T T.81 D.2
+        done: false
+      - text: Implement QmEncoder with standard byte_out carry propagation per ITU-T T.81 D.1
+        done: false
+      - text: Use 114-entry ARITAB (packed Qe+next_MPS+next_LPS+switch)
+        done: false
+      - text: Unit test QmEncoder/QmDecoder roundtrip with known bit sequences
+        done: false
+  - phase: JPEG DC/AC Context Modeling
+    tasks:
+      - text: Implement standard DC decode per ITU-T T.81 Figure F.19-F.24 (64 stats bins, DAC conditioning)
+        done: false
+      - text: Implement standard AC decode per ITU-T T.81 Figure F.20 (256 stats bins, EOB/zero-run/magnitude)
+        done: false
+      - text: Implement standard DC/AC encode (mirror of decode context model)
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Replace ArithmeticEncoder/ArithmeticDecoder in entropy.rs with QmEncoder/QmDecoder
+        done: false
+      - text: Update decode_arith.rs to use standard DC/AC decode
+        done: false
+      - text: Update encode_mcus_arithmetic in lib.rs to use standard DC/AC encode
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Decode cjpeg -arithmetic fixture (from generate-reference.sh) — compare against djpeg reference
+        done: false
+      - text: Our encode produces files djpeg can decode — three-way parity
+        done: false
+      - text: All existing JPEG tests still pass
+        done: false
+extra: {}
