@@ -428,12 +428,72 @@ fn predict_8x8_tm(above: &[u8; 8], left: &[u8; 8], above_left: u8, dst: &mut [u8
 // =============================================================================
 
 /// Sum of absolute differences between two byte slices.
+/// Sum of absolute differences between two byte slices.
+///
+/// On WASM, processes 16 bytes at a time using u8x16 SIMD.
 pub fn sad(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        sad_simd128(a, b)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        sad_scalar(a, b)
+    }
+}
+
+fn sad_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x as i32 - y as i32).unsigned_abs())
         .sum()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn sad_simd128(a: &[u8], b: &[u8]) -> u32 {
+    use std::arch::wasm32::*;
+    let len = a.len();
+    let mut sum = 0u32;
+    let mut i = 0;
+
+    // Process 16 bytes at a time
+    while i + 16 <= len {
+        // SAFETY: i + 16 <= len is checked, so a[i..i+16] and b[i..i+16] are in bounds.
+        let (va, vb) = unsafe {
+            (
+                v128_load(a[i..].as_ptr() as *const v128),
+                v128_load(b[i..].as_ptr() as *const v128),
+            )
+        };
+        // |a - b| = max(a, b) - min(a, b) for unsigned bytes
+        let abs_diff = u8x16_sub_sat(u8x16_max(va, vb), u8x16_min(va, vb));
+
+        // Horizontal sum: widen to i16x8, then i32x4, then extract
+        let lo = u16x8_extend_low_u8x16(abs_diff);
+        let hi = u16x8_extend_high_u8x16(abs_diff);
+        let sum16 = i16x8_add(lo, hi); // 8 partial sums
+
+        let lo32 = u32x4_extend_low_u16x8(sum16);
+        let hi32 = u32x4_extend_high_u16x8(sum16);
+        let sum32 = i32x4_add(lo32, hi32); // 4 partial sums
+
+        sum += i32x4_extract_lane::<0>(sum32) as u32
+            + i32x4_extract_lane::<1>(sum32) as u32
+            + i32x4_extract_lane::<2>(sum32) as u32
+            + i32x4_extract_lane::<3>(sum32) as u32;
+
+        i += 16;
+    }
+
+    // Handle remainder
+    while i < len {
+        sum += (a[i] as i32 - b[i] as i32).unsigned_abs();
+        i += 1;
+    }
+
+    sum
 }
 
 // =============================================================================

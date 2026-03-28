@@ -3,20 +3,71 @@
 //! Reusable integer transforms for VP8 and similar codecs.
 //! All arithmetic is integer-only — no floating point.
 //!
-//! Implementation matches libwebp exactly:
-//! - Forward DCT: `FTransform_C` in `src/dsp/enc.c`
-//! - Inverse DCT: `TransformOne_C` in `src/dsp/dec.c`
-//! - Forward WHT: `FTransformWHT_C` in `src/dsp/enc.c`
-//! - Inverse WHT: `TransformWHT_C` in `src/dsp/dec.c`
+//! On WASM targets with SIMD128, uses `std::arch::wasm32` intrinsics to
+//! process all 4 columns simultaneously via i32x4 vectors.
+//! On native targets, uses scalar code (LLVM auto-vectorizes in release builds).
+
+// ─── Public dispatch functions ───────────────────────────────────────────────
 
 /// Forward 4×4 DCT on residual pixels (source - reference).
 ///
 /// Matches libwebp `FTransform_C`. Uses constants 2217, 5352 with
 /// carefully tuned rounding biases for each coefficient.
 pub fn forward_dct(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        forward_dct_simd128(src, reference, out);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        forward_dct_scalar(src, reference, out);
+    }
+}
+
+/// Inverse 4×4 DCT — reconstruct pixels from DCT coefficients + reference.
+///
+/// Matches libwebp `TransformOne_C`. Uses MUL1/MUL2 macros.
+/// Pass order: vertical first, then horizontal (matching libwebp).
+pub fn inverse_dct(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        inverse_dct_simd128(coeffs, reference, dst);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        inverse_dct_scalar(coeffs, reference, dst);
+    }
+}
+
+/// Forward 4×4 Walsh-Hadamard Transform for DC coefficients.
+pub fn forward_wht(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        forward_wht_simd128(dc_coeffs, out);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        forward_wht_scalar(dc_coeffs, out);
+    }
+}
+
+/// Inverse 4×4 Walsh-Hadamard Transform.
+pub fn inverse_wht(coeffs: &[i16; 16], out: &mut [i16; 16]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        inverse_wht_simd128(coeffs, out);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        inverse_wht_scalar(coeffs, out);
+    }
+}
+
+// ─── Scalar implementations ─────────────────────────────────────────────────
+
+fn forward_dct_scalar(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
-    // Horizontal pass: transform rows of (src - reference)
     for i in 0..4 {
         let base = i * 4;
         let d0 = src[base] as i32 - reference[base] as i32;
@@ -24,21 +75,17 @@ pub fn forward_dct(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
         let d2 = src[base + 2] as i32 - reference[base + 2] as i32;
         let d3 = src[base + 3] as i32 - reference[base + 3] as i32;
 
-        // Butterfly
         let a0 = d0 + d3;
         let a1 = d1 + d2;
         let a2 = d1 - d2;
         let a3 = d0 - d3;
 
-        // DC and AC2 are scaled by 8 (<<3)
         tmp[base] = (a0 + a1) * 8;
         tmp[base + 2] = (a0 - a1) * 8;
-        // Rotation with fixed-point constants
         tmp[base + 1] = (a2 * 2217 + a3 * 5352 + 1812) >> 9;
         tmp[base + 3] = (a3 * 2217 - a2 * 5352 + 937) >> 9;
     }
 
-    // Vertical pass: transform columns of tmp
     for i in 0..4 {
         let a0 = tmp[i] + tmp[12 + i];
         let a1 = tmp[4 + i] + tmp[8 + i];
@@ -52,17 +99,9 @@ pub fn forward_dct(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
     }
 }
 
-/// Inverse 4×4 DCT — reconstruct pixels from DCT coefficients + reference.
-///
-/// Matches libwebp `TransformOne_C`. Uses MUL1/MUL2 macros:
-/// - `MUL1(a) = ((a * 20091) >> 16) + a`
-/// - `MUL2(a) = (a * 35468) >> 16`
-///
-/// Pass order: vertical first, then horizontal (matching libwebp).
-pub fn inverse_dct(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16]) {
+fn inverse_dct_scalar(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16]) {
     let mut tmp = [0i32; 16];
 
-    // Vertical pass (columns) — first pass
     for i in 0..4 {
         let c0 = coeffs[i] as i32;
         let c1 = coeffs[4 + i] as i32;
@@ -80,10 +119,9 @@ pub fn inverse_dct(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16])
         tmp[12 + i] = a - d;
     }
 
-    // Horizontal pass (rows) — second pass, adds reference and clamps
     for i in 0..4 {
         let base = i * 4;
-        let dc = tmp[base] + 4; // rounding bias for >>3
+        let dc = tmp[base] + 4;
 
         let a = dc + tmp[base + 2];
         let b = dc - tmp[base + 2];
@@ -97,14 +135,9 @@ pub fn inverse_dct(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16])
     }
 }
 
-/// Forward 4×4 Walsh-Hadamard Transform for DC coefficients.
-///
-/// Pure Hadamard — no trig constants.
-/// Matches libwebp `FTransformWHT_C`. Final shift: >> 1.
-pub fn forward_wht(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
+fn forward_wht_scalar(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
-    // Horizontal pass
     for i in 0..4 {
         let base = i * 4;
         let a0 = dc_coeffs[base] as i32 + dc_coeffs[base + 2] as i32;
@@ -118,33 +151,22 @@ pub fn forward_wht(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
         tmp[base + 3] = a0 - a1;
     }
 
-    // Vertical pass
     for i in 0..4 {
         let a0 = tmp[i] + tmp[8 + i];
         let a1 = tmp[4 + i] + tmp[12 + i];
         let a2 = tmp[4 + i] - tmp[12 + i];
         let a3 = tmp[i] - tmp[8 + i];
 
-        let b0 = a0 + a1;
-        let b1 = a3 + a2;
-        let b2 = a3 - a2;
-        let b3 = a0 - a1;
-
-        out[i] = (b0 >> 1) as i16;
-        out[4 + i] = (b1 >> 1) as i16;
-        out[8 + i] = (b2 >> 1) as i16;
-        out[12 + i] = (b3 >> 1) as i16;
+        out[i] = ((a0 + a1) >> 1) as i16;
+        out[4 + i] = ((a3 + a2) >> 1) as i16;
+        out[8 + i] = ((a3 - a2) >> 1) as i16;
+        out[12 + i] = ((a0 - a1) >> 1) as i16;
     }
 }
 
-/// Inverse 4×4 Walsh-Hadamard Transform.
-///
-/// Matches libwebp `TransformWHT_C`.
-/// Pass order: vertical first, then horizontal with +3 rounding and >>3.
-pub fn inverse_wht(coeffs: &[i16; 16], out: &mut [i16; 16]) {
+fn inverse_wht_scalar(coeffs: &[i16; 16], out: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
-    // Vertical pass (columns) — first pass
     for i in 0..4 {
         let a0 = coeffs[i] as i32 + coeffs[12 + i] as i32;
         let a1 = coeffs[4 + i] as i32 + coeffs[8 + i] as i32;
@@ -157,10 +179,9 @@ pub fn inverse_wht(coeffs: &[i16; 16], out: &mut [i16; 16]) {
         tmp[12 + i] = a3 - a2;
     }
 
-    // Horizontal pass (rows) — second pass
     for i in 0..4 {
         let base = i * 4;
-        let dc = tmp[base] + 3; // rounding bias for >>3
+        let dc = tmp[base] + 3;
         let a0 = dc + tmp[base + 3];
         let a1 = tmp[base + 1] + tmp[base + 2];
         let a2 = tmp[base + 1] - tmp[base + 2];
@@ -173,25 +194,315 @@ pub fn inverse_wht(coeffs: &[i16; 16], out: &mut [i16; 16]) {
     }
 }
 
-/// MUL1: approximates `a * cos(π/8) * √2` in fixed-point.
-/// `((a * 20091) >> 16) + a`
 #[inline(always)]
 fn mul1(a: i32) -> i32 {
     ((a * 20091) >> 16) + a
 }
 
-/// MUL2: approximates `a * sin(π/8) * √2` in fixed-point.
-/// `(a * 35468) >> 16`
 #[inline(always)]
 fn mul2(a: i32) -> i32 {
     (a * 35468) >> 16
 }
 
-/// Clamp an i32 value to the [0, 255] range.
 #[inline(always)]
 fn clamp_u8(v: i32) -> u8 {
     v.clamp(0, 255) as u8
 }
+
+// ─── WASM SIMD128 implementations ──────────────────────────────────────────
+
+#[cfg(target_arch = "wasm32")]
+mod simd128 {
+    use std::arch::wasm32::*;
+
+    /// Load row i of a 4x4 u8 block as i32x4.
+    #[inline(always)]
+    fn load_row_u8_as_i32x4(block: &[u8; 16], row: usize) -> v128 {
+        let base = row * 4;
+        i32x4(
+            block[base] as i32,
+            block[base + 1] as i32,
+            block[base + 2] as i32,
+            block[base + 3] as i32,
+        )
+    }
+
+    /// Load row i of a 4x4 i16 block as i32x4.
+    #[inline(always)]
+    fn load_row_i16_as_i32x4(block: &[i16; 16], row: usize) -> v128 {
+        let base = row * 4;
+        i32x4(
+            block[base] as i32,
+            block[base + 1] as i32,
+            block[base + 2] as i32,
+            block[base + 3] as i32,
+        )
+    }
+
+    /// Store i32x4 to row of i16 output.
+    #[inline(always)]
+    fn store_row_i32x4_as_i16(out: &mut [i16; 16], row: usize, v: v128) {
+        let base = row * 4;
+        out[base] = i32x4_extract_lane::<0>(v) as i16;
+        out[base + 1] = i32x4_extract_lane::<1>(v) as i16;
+        out[base + 2] = i32x4_extract_lane::<2>(v) as i16;
+        out[base + 3] = i32x4_extract_lane::<3>(v) as i16;
+    }
+
+    /// Transpose a 4x4 matrix stored as 4 i32x4 row vectors.
+    #[inline(always)]
+    fn transpose4x4(r0: v128, r1: v128, r2: v128, r3: v128) -> (v128, v128, v128, v128) {
+        // Interleave low/high pairs
+        let t0 = i32x4_shuffle::<0, 4, 1, 5>(r0, r1); // r0[0] r1[0] r0[1] r1[1]
+        let t1 = i32x4_shuffle::<2, 6, 3, 7>(r0, r1); // r0[2] r1[2] r0[3] r1[3]
+        let t2 = i32x4_shuffle::<0, 4, 1, 5>(r2, r3); // r2[0] r3[0] r2[1] r3[1]
+        let t3 = i32x4_shuffle::<2, 6, 3, 7>(r2, r3); // r2[2] r3[2] r2[3] r3[3]
+        // Final interleave
+        let o0 = i32x4_shuffle::<0, 1, 4, 5>(t0, t2); // col 0
+        let o1 = i32x4_shuffle::<2, 3, 6, 7>(t0, t2); // col 1
+        let o2 = i32x4_shuffle::<0, 1, 4, 5>(t1, t3); // col 2
+        let o3 = i32x4_shuffle::<2, 3, 6, 7>(t1, t3); // col 3
+        (o0, o1, o2, o3)
+    }
+
+    pub fn forward_dct_simd128(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
+        // Load all 4 rows as i32x4 and compute residuals
+        let mut rows = [i32x4_splat(0); 4];
+        for i in 0..4 {
+            let s = load_row_u8_as_i32x4(src, i);
+            let r = load_row_u8_as_i32x4(reference, i);
+            rows[i] = i32x4_sub(s, r);
+        }
+
+        // Horizontal pass on each row (scalar per-row, vectorized would need lane shuffles)
+        let mut tmp = [i32x4_splat(0); 4]; // tmp[row] = [t0, t1, t2, t3]
+        for i in 0..4 {
+            let d0 = i32x4_extract_lane::<0>(rows[i]);
+            let d1 = i32x4_extract_lane::<1>(rows[i]);
+            let d2 = i32x4_extract_lane::<2>(rows[i]);
+            let d3 = i32x4_extract_lane::<3>(rows[i]);
+
+            let a0 = d0 + d3;
+            let a1 = d1 + d2;
+            let a2 = d1 - d2;
+            let a3 = d0 - d3;
+
+            tmp[i] = i32x4(
+                (a0 + a1) * 8,
+                (a2 * 2217 + a3 * 5352 + 1812) >> 9,
+                (a0 - a1) * 8,
+                (a3 * 2217 - a2 * 5352 + 937) >> 9,
+            );
+        }
+
+        // Transpose so we can process columns as SIMD vectors
+        let (c0, c1, c2, c3) = transpose4x4(tmp[0], tmp[1], tmp[2], tmp[3]);
+
+        // Vertical pass: all 4 columns in parallel
+        let a0 = i32x4_add(c0, c3);
+        let a1 = i32x4_add(c1, c2);
+        let a2 = i32x4_sub(c1, c2);
+        let a3 = i32x4_sub(c0, c3);
+
+        let seven = i32x4_splat(7);
+        let c2217 = i32x4_splat(2217);
+        let c5352 = i32x4_splat(5352);
+        let c12000 = i32x4_splat(12000);
+        let c51000 = i32x4_splat(51000);
+
+        let o0 = i32x4_shr(i32x4_add(i32x4_add(a0, a1), seven), 4);
+        let o2 = i32x4_shr(i32x4_add(i32x4_sub(a0, a1), seven), 4);
+
+        let rot1 = i32x4_shr(
+            i32x4_add(
+                i32x4_add(i32x4_mul(a2, c2217), i32x4_mul(a3, c5352)),
+                c12000,
+            ),
+            16,
+        );
+        // Add (a3 != 0) bias — check each lane
+        let a3_nonzero = v128_not(i32x4_eq(a3, i32x4_splat(0)));
+        let bias = v128_and(a3_nonzero, i32x4_splat(1));
+        let o1 = i32x4_add(rot1, bias);
+
+        let o3 = i32x4_shr(
+            i32x4_add(
+                i32x4_sub(i32x4_mul(a3, c2217), i32x4_mul(a2, c5352)),
+                c51000,
+            ),
+            16,
+        );
+
+        // Store: out[row] = [o_row[0], o_row[1], o_row[2], o_row[3]]
+        // But our outputs are organized as out[0..4]=row0, out[4..8]=row1, etc.
+        // o0 has all 4 values for output row 0, o1 for row 1, etc.
+        store_row_i32x4_as_i16(out, 0, o0);
+        store_row_i32x4_as_i16(out, 1, o1);
+        store_row_i32x4_as_i16(out, 2, o2);
+        store_row_i32x4_as_i16(out, 3, o3);
+    }
+
+    pub fn inverse_dct_simd128(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16]) {
+        let c_kc2: v128 = i32x4_splat(35468);
+        let c_kc1: v128 = i32x4_splat(20091);
+
+        // Load rows as i32x4
+        let r0 = load_row_i16_as_i32x4(coeffs, 0);
+        let r1 = load_row_i16_as_i32x4(coeffs, 1);
+        let r2 = load_row_i16_as_i32x4(coeffs, 2);
+        let r3 = load_row_i16_as_i32x4(coeffs, 3);
+
+        // Transpose to get columns
+        let (c0, c1, c2, c3) = transpose4x4(r0, r1, r2, r3);
+
+        // Vertical pass (on columns, now stored as row vectors)
+        let a = i32x4_add(c0, c2);
+        let b = i32x4_sub(c0, c2);
+        // MUL2(c1) - MUL1(c3)
+        let mul2_c1 = i32x4_shr(i32x4_mul(c1, c_kc2), 16);
+        let mul1_c3 = i32x4_add(i32x4_shr(i32x4_mul(c3, c_kc1), 16), c3);
+        let c = i32x4_sub(mul2_c1, mul1_c3);
+        // MUL1(c1) + MUL2(c3)
+        let mul1_c1 = i32x4_add(i32x4_shr(i32x4_mul(c1, c_kc1), 16), c1);
+        let mul2_c3 = i32x4_shr(i32x4_mul(c3, c_kc2), 16);
+        let d = i32x4_add(mul1_c1, mul2_c3);
+
+        let t0 = i32x4_add(a, d);
+        let t1 = i32x4_add(b, c);
+        let t2 = i32x4_sub(b, c);
+        let t3 = i32x4_sub(a, d);
+
+        // Transpose back for horizontal pass
+        let (h0, h1, h2, h3) = transpose4x4(t0, t1, t2, t3);
+
+        // Horizontal pass (on rows) with rounding and reference addition
+        let four = i32x4_splat(4);
+        // Add rounding bias to the DC column (element 0 of each row)
+        let h0b = i32x4_add(h0, four);
+
+        let a2 = i32x4_add(h0b, h2);
+        let b2 = i32x4_sub(h0b, h2);
+        let mul2_h1 = i32x4_shr(i32x4_mul(h1, c_kc2), 16);
+        let mul1_h3 = i32x4_add(i32x4_shr(i32x4_mul(h3, c_kc1), 16), h3);
+        let c2 = i32x4_sub(mul2_h1, mul1_h3);
+        let mul1_h1 = i32x4_add(i32x4_shr(i32x4_mul(h1, c_kc1), 16), h1);
+        let mul2_h3 = i32x4_shr(i32x4_mul(h3, c_kc2), 16);
+        let d2 = i32x4_add(mul1_h1, mul2_h3);
+
+        let v0 = i32x4_shr(i32x4_add(a2, d2), 3);
+        let v1 = i32x4_shr(i32x4_add(b2, c2), 3);
+        let v2 = i32x4_shr(i32x4_sub(b2, c2), 3);
+        let v3 = i32x4_shr(i32x4_sub(a2, d2), 3);
+
+        // Add reference and clamp — each v is a row of 4 values
+        let zero = i32x4_splat(0);
+        let max_val = i32x4_splat(255);
+        for (row, v) in [(0, v0), (1, v1), (2, v2), (3, v3)] {
+            let ref_row = load_row_u8_as_i32x4(reference, row);
+            let sum = i32x4_add(v, ref_row);
+            let clamped = i32x4_max(i32x4_min(sum, max_val), zero);
+            let base = row * 4;
+            dst[base] = i32x4_extract_lane::<0>(clamped) as u8;
+            dst[base + 1] = i32x4_extract_lane::<1>(clamped) as u8;
+            dst[base + 2] = i32x4_extract_lane::<2>(clamped) as u8;
+            dst[base + 3] = i32x4_extract_lane::<3>(clamped) as u8;
+        }
+    }
+
+    pub fn forward_wht_simd128(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
+        // Load rows
+        let r0 = load_row_i16_as_i32x4(dc_coeffs, 0);
+        let r1 = load_row_i16_as_i32x4(dc_coeffs, 1);
+        let r2 = load_row_i16_as_i32x4(dc_coeffs, 2);
+        let r3 = load_row_i16_as_i32x4(dc_coeffs, 3);
+
+        // Horizontal pass per row (scalar — each row is independent)
+        let mut tmp_rows = [i32x4_splat(0); 4];
+        for (i, row) in [r0, r1, r2, r3].iter().enumerate() {
+            let v0 = i32x4_extract_lane::<0>(*row);
+            let v1 = i32x4_extract_lane::<1>(*row);
+            let v2 = i32x4_extract_lane::<2>(*row);
+            let v3 = i32x4_extract_lane::<3>(*row);
+
+            let a0 = v0 + v2;
+            let a1 = v1 + v3;
+            let a2 = v1 - v3;
+            let a3 = v0 - v2;
+
+            tmp_rows[i] = i32x4(a0 + a1, a3 + a2, a3 - a2, a0 - a1);
+        }
+
+        // Transpose for vertical pass
+        let (c0, c1, c2, c3) = transpose4x4(tmp_rows[0], tmp_rows[1], tmp_rows[2], tmp_rows[3]);
+
+        // Vertical pass: pure add/sub, all columns in parallel
+        let a0 = i32x4_add(c0, c2);
+        let a1 = i32x4_add(c1, c3);
+        let a2 = i32x4_sub(c1, c3);
+        let a3 = i32x4_sub(c0, c2);
+
+        let o0 = i32x4_shr(i32x4_add(a0, a1), 1);
+        let o1 = i32x4_shr(i32x4_add(a3, a2), 1);
+        let o2 = i32x4_shr(i32x4_sub(a3, a2), 1);
+        let o3 = i32x4_shr(i32x4_sub(a0, a1), 1);
+
+        store_row_i32x4_as_i16(out, 0, o0);
+        store_row_i32x4_as_i16(out, 1, o1);
+        store_row_i32x4_as_i16(out, 2, o2);
+        store_row_i32x4_as_i16(out, 3, o3);
+    }
+
+    pub fn inverse_wht_simd128(coeffs: &[i16; 16], out: &mut [i16; 16]) {
+        // Load rows
+        let r0 = load_row_i16_as_i32x4(coeffs, 0);
+        let r1 = load_row_i16_as_i32x4(coeffs, 1);
+        let r2 = load_row_i16_as_i32x4(coeffs, 2);
+        let r3 = load_row_i16_as_i32x4(coeffs, 3);
+
+        // Transpose for vertical pass (columns)
+        let (c0, c1, c2, c3) = transpose4x4(r0, r1, r2, r3);
+
+        // Vertical pass
+        let a0 = i32x4_add(c0, c3);
+        let a1 = i32x4_add(c1, c2);
+        let a2 = i32x4_sub(c1, c2);
+        let a3 = i32x4_sub(c0, c3);
+
+        let t0 = i32x4_add(a0, a1);
+        let t1 = i32x4_add(a3, a2);
+        let t2 = i32x4_sub(a0, a1);
+        let t3 = i32x4_sub(a3, a2);
+
+        // Transpose back for horizontal pass
+        let (h0, h1, h2, h3) = transpose4x4(t0, t1, t2, t3);
+
+        // Horizontal pass with +3 rounding and >>3
+        let three = i32x4_splat(3);
+        for (row, h) in [(0, h0), (1, h1), (2, h2), (3, h3)] {
+            let v0 = i32x4_extract_lane::<0>(h);
+            let v1 = i32x4_extract_lane::<1>(h);
+            let v2 = i32x4_extract_lane::<2>(h);
+            let v3 = i32x4_extract_lane::<3>(h);
+
+            let dc = v0 + 3;
+            let a0 = dc + v3;
+            let a1 = v1 + v2;
+            let a2 = v1 - v2;
+            let a3 = dc - v3;
+
+            let base = row * 4;
+            out[base] = ((a0 + a1) >> 3) as i16;
+            out[base + 1] = ((a3 + a2) >> 3) as i16;
+            out[base + 2] = ((a0 - a1) >> 3) as i16;
+            out[base + 3] = ((a3 - a2) >> 3) as i16;
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+use simd128::*;
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -230,8 +541,6 @@ mod tests {
 
         let mut coeffs = [0i16; 16];
         forward_dct(&src, &reference, &mut coeffs);
-
-        // Flat residual (all 8s) → only DC should be nonzero
         assert_ne!(coeffs[0], 0);
 
         let mut reconstructed = [0u8; 16];
@@ -239,12 +548,7 @@ mod tests {
 
         for i in 0..16 {
             let diff = (src[i] as i32 - reconstructed[i] as i32).abs();
-            assert!(
-                diff <= 1,
-                "pixel {i}: src={}, reconstructed={}, diff={diff}",
-                src[i],
-                reconstructed[i]
-            );
+            assert!(diff <= 1, "pixel {i}: diff={diff}");
         }
     }
 
@@ -253,11 +557,7 @@ mod tests {
         let src = [100u8; 16];
         let reference = [0u8; 16];
         let mut coeffs = [0i16; 16];
-
         forward_dct(&src, &reference, &mut coeffs);
-
-        // For flat input of 100 with scaling: horizontal *8, vertical >>4
-        // DC = 100*8*4/16 = 200? Let's just check it's reasonable.
         assert!(coeffs[0] > 50, "DC coeff {} seems too low", coeffs[0]);
     }
 
@@ -266,10 +566,8 @@ mod tests {
         let mut coeffs = [0i16; 16];
         coeffs[0] = 2000;
         let reference = [128u8; 16];
-
         let mut dst = [0u8; 16];
         inverse_dct(&coeffs, &reference, &mut dst);
-
         for (i, &v) in dst.iter().enumerate() {
             assert!(v <= 255, "pixel {i} out of range: {v}");
         }
@@ -280,20 +578,10 @@ mod tests {
         let pixels = [100u8; 16];
         let reference = [100u8; 16];
         let mut coeffs = [0i16; 16];
-
         forward_dct(&pixels, &reference, &mut coeffs);
-
-        // DC should be exactly 0
         assert_eq!(coeffs[0], 0, "DC should be 0 for zero residual");
-        // AC coefficients may have tiny rounding artifacts (≤1) from the
-        // fixed-point rounding biases. This is correct libwebp behavior —
-        // quantization zeros these out in practice.
         for i in 1..16 {
-            assert!(
-                coeffs[i].abs() <= 1,
-                "coeff [{i}]={} too large for zero residual",
-                coeffs[i]
-            );
+            assert!(coeffs[i].abs() <= 1, "coeff [{i}]={} too large", coeffs[i]);
         }
     }
 
@@ -302,21 +590,13 @@ mod tests {
         let dc_coeffs: [i16; 16] = [
             100, -20, 30, -40, 50, -60, 70, -80, 15, -25, 35, -45, 55, -65, 75, -85,
         ];
-
         let mut transformed = [0i16; 16];
         forward_wht(&dc_coeffs, &mut transformed);
-
         let mut reconstructed = [0i16; 16];
         inverse_wht(&transformed, &mut reconstructed);
-
         for i in 0..16 {
             let diff = (dc_coeffs[i] as i32 - reconstructed[i] as i32).abs();
-            assert!(
-                diff <= 1,
-                "coeff {i}: original={}, reconstructed={}, diff={diff}",
-                dc_coeffs[i],
-                reconstructed[i]
-            );
+            assert!(diff <= 1, "coeff {i}: diff={diff}");
         }
     }
 
@@ -325,69 +605,40 @@ mod tests {
         let dc_coeffs = [42i16; 16];
         let mut transformed = [0i16; 16];
         forward_wht(&dc_coeffs, &mut transformed);
-
-        assert_ne!(transformed[0], 0, "DC should be non-zero for flat input");
+        assert_ne!(transformed[0], 0);
         for i in 1..16 {
-            assert_eq!(transformed[i], 0, "AC [{i}] should be 0 for flat WHT input");
+            assert_eq!(transformed[i], 0, "AC [{i}] should be 0");
         }
     }
 
-    /// Reference test: known DCT output for a specific input.
-    /// This pins the exact transform behavior — if the constants or rounding
-    /// change, this test will catch it.
     #[test]
     fn forward_dct_reference_values() {
-        // All-128 block with zero reference should give DC ≈ 128, AC = 0
         let src = [128u8; 16];
         let reference = [0u8; 16];
         let mut coeffs = [0i16; 16];
         forward_dct(&src, &reference, &mut coeffs);
-
-        // DC coefficient for flat-128 input: 128*8*4 >> 4 = 128*2 = 256? No.
-        // Horizontal: tmp[0] = (128+128)*8 = 2048 for each row
-        // Vertical: a0 = 2048+2048 = 4096, a1 = 2048+2048 = 4096
-        // out[0] = (4096+4096+7) >> 4 = 8103>>4 = 506
-        // Let's just record the actual values and assert them.
         let dc = coeffs[0];
-        assert!(dc > 400, "DC should be > 400 for flat-128 block, got {dc}");
-
-        // Record snapshot of exact coefficients for regression detection
-        let snapshot_dc = dc;
-        let snapshot_ac: Vec<i16> = coeffs[1..].to_vec();
-
-        // Re-run and verify deterministic
+        assert!(dc > 400, "DC should be > 400, got {dc}");
         let mut coeffs2 = [0i16; 16];
         forward_dct(&src, &reference, &mut coeffs2);
-        assert_eq!(coeffs2[0], snapshot_dc, "DCT must be deterministic");
-        assert_eq!(&coeffs2[1..], &snapshot_ac[..], "DCT must be deterministic");
+        assert_eq!(coeffs, coeffs2, "DCT must be deterministic");
     }
 
-    /// Verify inverse DCT is the exact inverse (not an approximation) within
-    /// the integer rounding constraints. Test with 1000 random-ish blocks.
     #[test]
     fn dct_roundtrip_exhaustive() {
         for seed in 0..100u32 {
             let mut src = [0u8; 16];
             for i in 0..16 {
-                // Pseudo-random using simple hash
                 src[i] = ((seed.wrapping_mul(7919) + (i as u32).wrapping_mul(6271)) % 256) as u8;
             }
             let reference = [0u8; 16];
-
             let mut coeffs = [0i16; 16];
             forward_dct(&src, &reference, &mut coeffs);
-
             let mut reconstructed = [0u8; 16];
             inverse_dct(&coeffs, &reference, &mut reconstructed);
-
             for i in 0..16 {
                 let diff = (src[i] as i32 - reconstructed[i] as i32).abs();
-                assert!(
-                    diff <= 1,
-                    "seed={seed}, pixel {i}: src={}, recon={}, diff={diff}",
-                    src[i],
-                    reconstructed[i]
-                );
+                assert!(diff <= 1, "seed={seed}, pixel {i}: diff={diff}");
             }
         }
     }
@@ -399,45 +650,34 @@ mod tests {
         ];
         let reference = [0u8; 16];
         let mut coeffs = [0i16; 16];
-
         forward_dct(&src, &reference, &mut coeffs);
-
         let ac_energy: i32 = coeffs[1..].iter().map(|&c| (c as i32).pow(2)).sum();
         assert!(ac_energy > 0, "gradient input should have AC energy");
     }
 
     #[test]
     fn dct_roundtrip_many_patterns() {
-        // Test with many different patterns to ensure robustness
         let patterns: Vec<[u8; 16]> = vec![
             [
                 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
-            ], // half black/white
+            ],
             [
                 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
-            ], // checkerboard
+            ],
             [
                 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
-            ], // ramp
-            [255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // single pixel
+            ],
+            [255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         ];
-
         for (pi, pattern) in patterns.iter().enumerate() {
             let reference = [0u8; 16];
             let mut coeffs = [0i16; 16];
             forward_dct(pattern, &reference, &mut coeffs);
-
             let mut reconstructed = [0u8; 16];
             inverse_dct(&coeffs, &reference, &mut reconstructed);
-
             for i in 0..16 {
                 let diff = (pattern[i] as i32 - reconstructed[i] as i32).abs();
-                assert!(
-                    diff <= 1,
-                    "pattern {pi}, pixel {i}: src={}, reconstructed={}, diff={diff}",
-                    pattern[i],
-                    reconstructed[i]
-                );
+                assert!(diff <= 1, "pattern {pi}, pixel {i}: diff={diff}");
             }
         }
     }

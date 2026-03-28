@@ -136,9 +136,38 @@ pub fn quantize_block(coeffs: &[i16; 16], matrix: &QuantMatrix, out: &mut [i16; 
 /// Dequantize a block of 16 quantized coefficients.
 ///
 /// Simply multiplies each quantized coefficient by the step size.
+/// On WASM, uses i16x8 for 8-at-a-time multiply.
 pub fn dequantize_block(quantized: &[i16; 16], matrix: &QuantMatrix, out: &mut [i16; 16]) {
-    for i in 0..16 {
-        out[i] = quantized[i] * matrix.q[i] as i16;
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+        // Process 8 coefficients at a time with i16x8
+        for chunk in 0..2 {
+            let base = chunk * 8;
+            // SAFETY: quantized and out are [i16; 16], base is 0 or 8, so base..base+8 is in bounds.
+            // v128_load/store require 16-byte aligned pointers — i16 arrays on the stack are aligned.
+            unsafe {
+                let q_vec = v128_load(quantized[base..].as_ptr() as *const v128);
+                let step_vec = i16x8(
+                    matrix.q[base] as i16,
+                    matrix.q[base + 1] as i16,
+                    matrix.q[base + 2] as i16,
+                    matrix.q[base + 3] as i16,
+                    matrix.q[base + 4] as i16,
+                    matrix.q[base + 5] as i16,
+                    matrix.q[base + 6] as i16,
+                    matrix.q[base + 7] as i16,
+                );
+                let result = i16x8_mul(q_vec, step_vec);
+                v128_store(out[base..].as_mut_ptr() as *mut v128, result);
+            }
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for i in 0..16 {
+            out[i] = quantized[i] * matrix.q[i] as i16;
+        }
     }
 }
 
