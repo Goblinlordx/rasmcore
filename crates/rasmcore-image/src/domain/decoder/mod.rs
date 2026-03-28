@@ -263,4 +263,50 @@ mod tests {
         let result = decode(&data).unwrap();
         assert_eq!(result.info.color_space, ColorSpace::Srgb);
     }
+
+    #[test]
+    fn decode_png_no_icc_profile() {
+        let data = make_png(8, 8);
+        let result = decode(&data).unwrap();
+        assert!(result.icc_profile.is_none());
+    }
+
+    #[test]
+    fn decode_jpeg_no_icc_profile() {
+        let data = make_jpeg(8, 8);
+        let result = decode(&data).unwrap();
+        assert!(result.icc_profile.is_none());
+    }
+
+    #[test]
+    fn decode_jpeg_with_icc_extracts_profile() {
+        let jpeg = make_jpeg(8, 8);
+        // Embed a fake ICC profile into the JPEG
+        let fake_icc = vec![42u8; 128];
+        let jpeg_with_icc =
+            crate::domain::encoder::jpeg::embed_icc_profile(&jpeg, &fake_icc).unwrap();
+        let result = decode(&jpeg_with_icc).unwrap();
+        assert_eq!(result.icc_profile, Some(fake_icc));
+    }
+
+    #[test]
+    fn decode_png_with_icc_extracts_profile() {
+        let png = make_png(8, 8);
+        // Embed a fake ICC profile into the PNG
+        let fake_icc = vec![99u8; 200];
+        let png_with_icc =
+            crate::domain::encoder::png::embed_icc_profile(&png, &fake_icc).unwrap();
+        let result = decode(&png_with_icc).unwrap();
+        assert_eq!(result.icc_profile, Some(fake_icc));
+    }
+
+    #[test]
+    fn decode_as_preserves_icc_profile() {
+        let jpeg = make_jpeg(8, 8);
+        let fake_icc = vec![55u8; 64];
+        let jpeg_with_icc =
+            crate::domain::encoder::jpeg::embed_icc_profile(&jpeg, &fake_icc).unwrap();
+        let result = decode_as(&jpeg_with_icc, PixelFormat::Rgba8).unwrap();
+        assert_eq!(result.icc_profile, Some(fake_icc));
+    }
 }

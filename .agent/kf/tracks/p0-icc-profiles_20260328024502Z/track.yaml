@@ -93,9 +93,9 @@ plan:
 - phase: Profile Extraction
   tasks:
   - text: Extract ICC profile from JPEG during decode (APP2 markers)
-    done: false
+    done: true
   - text: Extract ICC profile from PNG during decode (iCCP chunk)
-    done: false
+    done: true
   - text: Domain tests for ICC profile extraction
     done: false
 - phase: Color Conversion
