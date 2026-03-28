@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 rasmcore-pipeline = { path = "../rasmcore-pipeline" }
+fast_image_resize = "5"
 wit-bindgen-rt = "0.41.0"
 image = { workspace = true, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
