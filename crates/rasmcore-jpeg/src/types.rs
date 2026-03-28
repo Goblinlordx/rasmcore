@@ -98,7 +98,11 @@ pub struct EncodeConfig {
     /// Default: Eight.
     pub sample_precision: SamplePrecision,
 
-    /// Custom quantization tables. None = derive from quality parameter.
+    /// Quantization table preset. Default: Robidoux (mozjpeg/ImageMagick).
+    /// Use `QuantPreset::AnnexK` for standard libjpeg compatibility.
+    pub quant_preset: crate::quantize::QuantPreset,
+
+    /// Custom quantization tables override. When set, overrides quant_preset.
     pub custom_quant_tables: Option<CustomQuantTables>,
 }
 
@@ -113,6 +117,7 @@ impl Default for EncodeConfig {
             optimize_huffman: false,
             trellis: false,
             sample_precision: SamplePrecision::Eight,
+            quant_preset: crate::quantize::QuantPreset::default(),
             custom_quant_tables: None,
         }
     }

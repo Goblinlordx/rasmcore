@@ -53,24 +53,20 @@ impl BitWriter {
         let mask = if n == 32 { !0u32 } else { (1u32 << n) - 1 };
         let masked = value & mask;
 
+        // Flush if accumulator doesn't have enough room
+        if self.nbits + n > 56 {
+            self.flush_bytes();
+        }
+
         match self.order {
             BitOrder::MsbFirst => {
-                // Pack bits left-aligned in accumulator, MSB first.
-                // Accumulator layout: [MSB ... bits ... LSB ... free space]
                 self.acc |= (masked as u64) << (64 - self.nbits as u32 - n as u32);
             }
             BitOrder::LsbFirst => {
-                // Pack bits right-aligned, LSB first.
-                // Accumulator layout: [free space ... bits ... LSB]
                 self.acc |= (masked as u64) << self.nbits;
             }
         }
         self.nbits += n;
-
-        // Flush whole bytes when accumulator has >= 8 bytes
-        if self.nbits >= 56 {
-            self.flush_bytes();
-        }
     }
 
     /// Write a single bit.

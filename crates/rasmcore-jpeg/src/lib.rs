@@ -88,12 +88,12 @@ pub fn encode(
     let luma_qt = if let Some(ref custom) = config.custom_quant_tables {
         custom.luminance.values
     } else {
-        quantize::luma_quant_table(quality, twelve_bit)
+        quantize::luma_quant_table(quality, config.quant_preset, twelve_bit)
     };
     let chroma_qt = if let Some(ref custom) = config.custom_quant_tables {
         custom.chrominance.values
     } else {
-        quantize::chroma_quant_table(quality, twelve_bit)
+        quantize::chroma_quant_table(quality, config.quant_preset, twelve_bit)
     };
 
     // Zigzag-ordered tables for DQT marker
@@ -415,6 +415,13 @@ mod tests {
         assert_eq!(config.quality, 85);
         assert!(!config.progressive);
         assert_eq!(config.subsampling, ChromaSubsampling::Quarter420);
+        assert!(!config.arithmetic_coding);
+        assert!(config.restart_interval.is_none());
+        assert!(!config.optimize_huffman);
+        assert!(!config.trellis);
+        assert_eq!(config.sample_precision, SamplePrecision::Eight);
+        assert_eq!(config.quant_preset, crate::quantize::QuantPreset::Robidoux);
+        assert!(config.custom_quant_tables.is_none());
     }
 
     #[test]
@@ -430,7 +437,6 @@ mod tests {
         let config = EncodeConfig::default();
         let jpeg = encode(&pixels, 32, 32, PixelFormat::Rgb8, &config).unwrap();
 
-        // Try decoding with the image crate
         let result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
         assert!(
             result.is_ok(),
