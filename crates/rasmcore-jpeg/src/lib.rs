@@ -286,7 +286,11 @@ fn compute_all_dct_coefficients(
 ) -> std::collections::HashMap<u8, Vec<[i16; 64]>> {
     let mut result = std::collections::HashMap::new();
 
-    let (mcu_w, mcu_h) = color::mcu_dimensions(subsampling);
+    let (mcu_w, mcu_h) = if is_gray {
+        (8u32, 8u32)
+    } else {
+        color::mcu_dimensions(subsampling)
+    };
     let mcu_cols = ycbcr.width.div_ceil(mcu_w) as usize;
     let mcu_rows = ycbcr.height.div_ceil(mcu_h) as usize;
 
@@ -469,7 +473,13 @@ fn encode_mcus(
     chroma_qt: &[u16; 64],
     restart_interval: Option<u16>,
 ) -> Vec<u8> {
-    let (mcu_w, mcu_h) = color::mcu_dimensions(subsampling);
+    // For grayscale, MCU is always 8x8 (single component, 1x1 sampling).
+    // For color, MCU depends on chroma subsampling.
+    let (mcu_w, mcu_h) = if is_gray {
+        (8u32, 8u32)
+    } else {
+        color::mcu_dimensions(subsampling)
+    };
     let mcu_cols = ycbcr.width.div_ceil(mcu_w) as usize;
     let mcu_rows = ycbcr.height.div_ceil(mcu_h) as usize;
 

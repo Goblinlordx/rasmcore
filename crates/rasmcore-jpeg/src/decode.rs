@@ -814,7 +814,7 @@ mod debug_tests {
     /// Our encoder output is valid (image crate decodes it).
     /// Decoder multi-MCU Huffman alignment issue under investigation.
     #[test]
-    #[ignore = "decoder multi-MCU alignment — encoder output valid but our decoder misaligns"]
+
     fn decode_gray_gradient_reasonable_psnr() {
         let mut pixels = vec![0u8; 16 * 16];
         for y in 0..16 {
@@ -851,61 +851,6 @@ mod debug_tests {
         );
     }
 }
-
-#[cfg(test)]
-mod debug_tests2 {
-    use super::*;
-
-    #[test]
-    fn debug_gray_8x8_only() {
-        // Minimal: exactly one 8x8 MCU, grayscale
-        let pixels = vec![100u8; 8 * 8];
-        let config = crate::EncodeConfig {
-            quality: 50,
-            ..Default::default()
-        };
-        let jpeg = crate::encode(&pixels, 8, 8, crate::PixelFormat::Gray8, &config).unwrap();
-
-        // Try to decode
-        let result = jpeg_decode(&jpeg);
-        assert!(result.is_ok(), "8x8 gray decode failed: {:?}", result.err());
-        let (decoded, w, h, _) = result.unwrap();
-        assert_eq!(w, 8);
-        assert_eq!(h, 8);
-        assert_eq!(decoded.len(), 64);
-
-        // Check quality
-        let mae: f64 = pixels
-            .iter()
-            .zip(decoded.iter())
-            .map(|(&a, &b)| (a as f64 - b as f64).abs())
-            .sum::<f64>()
-            / 64.0;
-        eprintln!("8x8 gray MAE: {mae:.2}");
-    }
-
-    #[test]
-    fn debug_entropy_data_size() {
-        let pixels = vec![100u8; 16 * 16];
-        let config = crate::EncodeConfig {
-            quality: 50,
-            ..Default::default()
-        };
-        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Gray8, &config).unwrap();
-
-        // Find SOS marker and measure entropy data
-        let mut pos = 0;
-        while pos + 1 < jpeg.len() {
-            if jpeg[pos] == 0xFF && jpeg[pos + 1] == 0xDA {
-                eprintln!("SOS at offset {pos}");
-                break;
-            }
-            pos += 1;
-        }
-        eprintln!("JPEG total size: {} bytes", jpeg.len());
-    }
-}
-
 #[cfg(test)]
 mod interop_tests {
     use super::*;
@@ -1022,37 +967,4 @@ mod quality_tests {
         );
     }
 }
-
-#[cfg(test)]
-mod mcu_debug_tests {
-    use super::*;
-
-    #[test]
-    fn our_16x16_gray_decodable_by_image_crate() {
-        let mut pixels = vec![0u8; 16 * 16];
-        for y in 0..16 {
-            for x in 0..16 {
-                pixels[y * 16 + x] = (x * 16) as u8;
-            }
-        }
-        let config = crate::EncodeConfig {
-            quality: 95,
-            ..Default::default()
-        };
-        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Gray8, &config).unwrap();
-
-        // Can the image crate decode it?
-        let result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
-        match &result {
-            Ok(img) => {
-                let gray = img.to_luma8();
-                assert_eq!(gray.dimensions(), (16, 16));
-                eprintln!("image crate decoded our 16x16 gray OK");
-            }
-            Err(e) => {
-                eprintln!("image crate FAILED to decode our 16x16 gray: {e}");
-                panic!("Our encoder produces invalid JPEG for 16x16 gray");
-            }
-        }
-    }
-}
+// Systematic trace test — to be added to decode.rs
