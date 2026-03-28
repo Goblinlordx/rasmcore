@@ -773,3 +773,78 @@ fn parity_jpeg_rgba8_input() {
     assert!(result.is_ok(), "RGBA8 input should produce valid JPEG");
     assert_eq!(&result.unwrap()[..2], &[0xFF, 0xD8]);
 }
+
+// =============================================================================
+// TIFF encode parity (lossless, compression curve, file size)
+// =============================================================================
+
+#[test]
+fn parity_tiff_encode_determinism() {
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+
+    let config = encoder::tiff::TiffEncodeConfig::default();
+    let r1 = encoder::tiff::encode(&decoded.pixels, &decoded.info, &config).unwrap();
+    let r2 = encoder::tiff::encode(&decoded.pixels, &decoded.info, &config).unwrap();
+    assert_eq!(r1, r2, "TIFF encode must be deterministic");
+}
+
+#[test]
+fn parity_tiff_encode_roundtrip_pixel_exact() {
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+
+    for comp in [
+        encoder::tiff::TiffCompression::None,
+        encoder::tiff::TiffCompression::Lzw,
+        encoder::tiff::TiffCompression::Deflate,
+        encoder::tiff::TiffCompression::PackBits,
+    ] {
+        let config = encoder::tiff::TiffEncodeConfig { compression: comp };
+        let encoded = encoder::tiff::encode(&decoded.pixels, &decoded.info, &config).unwrap();
+        let re_decoded = decoder::decode(&encoded).unwrap();
+        assert_eq!(
+            re_decoded.pixels, decoded.pixels,
+            "TIFF roundtrip with {comp:?} must be pixel-exact"
+        );
+    }
+}
+
+#[test]
+fn parity_tiff_encode_vs_imagemagick() {
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+
+    for (comp, ref_name) in [
+        (encoder::tiff::TiffCompression::None, "tiff_none.tiff"),
+        (encoder::tiff::TiffCompression::Lzw, "tiff_lzw.tiff"),
+        (encoder::tiff::TiffCompression::Deflate, "tiff_deflate.tiff"),
+    ] {
+        let ref_data = load_reference(ref_name);
+        let ref_decoded = decoder::decode(&ref_data).unwrap();
+
+        // Lossless: decoded pixels must match
+        assert_eq!(
+            decoded.pixels, ref_decoded.pixels,
+            "TIFF {comp:?}: rasmcore and ImageMagick decoded pixels must be identical"
+        );
+
+        // Compare file sizes
+        let config = encoder::tiff::TiffEncodeConfig { compression: comp };
+        let our_encoded = encoder::tiff::encode(&decoded.pixels, &decoded.info, &config).unwrap();
+        let ratio = our_encoded.len() as f64 / ref_data.len() as f64;
+        eprintln!(
+            "TIFF {comp:?}: rasmcore={} bytes, ImageMagick={} bytes, ratio={ratio:.2}x",
+            our_encoded.len(),
+            ref_data.len(),
+        );
+
+        // File size within 1.5x (different TIFF implementations may vary due to metadata)
+        assert!(
+            ratio <= 1.5,
+            "TIFF {comp:?}: rasmcore ({}) is {ratio:.2}x of ImageMagick ({}) — exceeds 1.5x",
+            our_encoded.len(),
+            ref_data.len(),
+        );
+    }
+}

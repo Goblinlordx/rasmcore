@@ -92,6 +92,15 @@ for q in 10 30 50 70 85 95; do
   $IM /out/inputs/photo_256x256.png -quality $q /out/reference/jpeg_q${q}.jpeg
 done
 
+# --- TIFF compression references (for encoder parity tests) ---
+echo "  Creating TIFF compression references..."
+# TIFF uncompressed
+$IM /out/inputs/photo_256x256.png -compress None /out/reference/tiff_none.tiff
+# TIFF LZW
+$IM /out/inputs/photo_256x256.png -compress LZW /out/reference/tiff_lzw.tiff
+# TIFF Deflate/Zip
+$IM /out/inputs/photo_256x256.png -compress Zip /out/reference/tiff_deflate.tiff
+
 # --- Verify reproducibility (hash all outputs) -------------------------------
 echo "  Verifying output hashes..."
 OUTPUT_HASH=$(cd "$OUT_DIR" && find . \( -name '*.png' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' -o -name '*.bmp' -o -name '*.tiff' -o -name '*.qoi' \) | sort | xargs shasum -a 256 | shasum -a 256 | awk '{print $1}')
