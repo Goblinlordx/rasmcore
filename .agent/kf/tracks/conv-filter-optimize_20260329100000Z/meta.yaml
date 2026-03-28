@@ -1,5 +1,5 @@
 title: Convolution Filter Optimization — Separable Kernels, Histogram Median, SIMD
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-28'
