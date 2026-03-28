@@ -1,159 +1,136 @@
 id: webp-conformance_20260328084300Z
-title: "VP8 Encoder Conformance — Golden Reference Validation and Reconstruction Fix"
+title: VP8 Encoder Conformance — Golden Reference Validation and Reconstruction Fix
 type: bug
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Fix the VP8 encoder to produce decoder-conformant bitstreams. The primary
+  summary: 'Fix the VP8 encoder to produce decoder-conformant bitstreams. The primary
+
     bug is a stub reconstruction function that breaks multi-macroblock encoding.
+
     Add systematic golden-reference testing against cwebp/dwebp (libwebp).
-  context: |
-    The rasmcore-webp encoder produces VP8 bitstreams that external decoders
+
+    '
+  context: 'The rasmcore-webp encoder produces VP8 bitstreams that external decoders
+
     (image-webp, dwebp, Chrome) reject as "Corrupt bitstream". Individual
+
     components (DCT, quantization, prediction, boolean coder) pass their unit
+
     tests, but the assembled bitstream fails end-to-end.
 
+
     Root cause: bitstream.rs reconstruct_macroblock() is a stub that copies
+
     source pixels instead of doing dequantize + inverse DCT + add prediction.
+
     This breaks prediction state for all macroblocks after the first one.
 
+
     cwebp and dwebp are available at /opt/homebrew/bin/ for generating and
+
     validating reference outputs. The systematic approach:
+
     1. Fix the reconstruction function
+
     2. Generate golden input/output pairs using cwebp/dwebp
+
     3. Validate our encoder output against these references
+
     4. Test at multiple sizes and quality levels
-  codebase_analysis: |
-    Known issues in crates/rasmcore-webp/src/:
 
-    CRITICAL - bitstream.rs line 416-429:
-      reconstruct_macroblock() copies source pixels instead of reconstructing.
-      Comment says "For simplicity in initial implementation". This must be
-      replaced with: dequantize → inverse WHT (for Y2) → inverse DCT → add
-      prediction → store to recon planes.
-
-    VALIDATED COMPONENTS:
-    - container.rs: RIFF/WebP wrapping correct (verified against cwebp output)
-    - boolcoder.rs: Boolean arithmetic coder roundtrip tested (12 tests)
-    - dct.rs: Forward/inverse DCT/WHT correct (12 tests, WASM SIMD validated)
-    - quant.rs: Quantization tables and operations correct (14 tests)
-    - predict.rs: Intra-prediction modes implemented (all modes + SAD)
-    - token.rs: Coefficient token tree per RFC 6386 Section 13
-    - ratecontrol.rs: Quality-to-QP mapping
-
-    NEEDS INVESTIGATION:
-    - token.rs coefficient encoding may have context probability issues
-    - first_partition_size calculation in frame tag
-    - bool coder flush/padding alignment at partition boundaries
-    - Entropy probability update flags (currently all false = defaults)
-
-    REFERENCE TOOLS:
-    - cwebp: encode reference WebP files from raw/PNG input
-    - dwebp: decode WebP to raw pixels for comparison
-    - Both at /opt/homebrew/bin/ (libwebp 1.x)
+    '
+  codebase_analysis: "Known issues in crates/rasmcore-webp/src/:\n\nCRITICAL - bitstream.rs line 416-429:\n  reconstruct_macroblock()\
+    \ copies source pixels instead of reconstructing.\n  Comment says \"For simplicity in initial implementation\". This must\
+    \ be\n  replaced with: dequantize → inverse WHT (for Y2) → inverse DCT → add\n  prediction → store to recon planes.\n\n\
+    VALIDATED COMPONENTS:\n- container.rs: RIFF/WebP wrapping correct (verified against cwebp output)\n- boolcoder.rs: Boolean\
+    \ arithmetic coder roundtrip tested (12 tests)\n- dct.rs: Forward/inverse DCT/WHT correct (12 tests, WASM SIMD validated)\n\
+    - quant.rs: Quantization tables and operations correct (14 tests)\n- predict.rs: Intra-prediction modes implemented (all\
+    \ modes + SAD)\n- token.rs: Coefficient token tree per RFC 6386 Section 13\n- ratecontrol.rs: Quality-to-QP mapping\n\n\
+    NEEDS INVESTIGATION:\n- token.rs coefficient encoding may have context probability issues\n- first_partition_size calculation\
+    \ in frame tag\n- bool coder flush/padding alignment at partition boundaries\n- Entropy probability update flags (currently\
+    \ all false = defaults)\n\nREFERENCE TOOLS:\n- cwebp: encode reference WebP files from raw/PNG input\n- dwebp: decode\
+    \ WebP to raw pixels for comparison\n- Both at /opt/homebrew/bin/ (libwebp 1.x)\n"
   acceptance_criteria:
-    - reconstruct_macroblock() properly dequantizes, inverse-DCTs, and adds prediction
-    - "cwebp -q 75 input.png -o ref.webp" generates reference files for test images
-    - "dwebp ref.webp -o ref.ppm" decodes reference output for pixel comparison
-    - Our encoder output is decodable by image-webp (image crate) at all test sizes
-    - Our encoder output is decodable by dwebp at all test sizes
-    - "Golden test: 16x16 solid color — our output matches cwebp decode within PSNR 30dB"
-    - "Golden test: 32x32 gradient — decodable and PSNR > 25dB"
-    - "Golden test: 64x64 photo-like content — decodable and PSNR > 25dB"
-    - "Golden test: 256x256 (multi-macroblock) — decodable, proves reconstruction works"
-    - Quality curve test at q25/q50/q75/q95 produces monotonically increasing PSNR
-    - File sizes are within 3x of cwebp at equivalent quality
-    - All existing rasmcore-webp unit tests continue to pass
-    - WASM component build succeeds and encode is functional
-  out_of_scope: |
-    - Matching cwebp output byte-for-byte (different encoders make different mode choices)
+  - reconstruct_macroblock() properly dequantizes, inverse-DCTs, and adds prediction
+  - cwebp generates reference WebP files from test PNGs at configurable quality
+  - dwebp decodes reference output to raw pixels for PSNR comparison
+  - Our encoder output is decodable by image-webp (image crate) at all test sizes
+  - Our encoder output is decodable by dwebp at all test sizes
+  - Golden test 16x16 solid color — output matches cwebp decode within PSNR 30dB
+  - Golden test 32x32 gradient — decodable and PSNR > 25dB
+  - Golden test 64x64 photo-like content — decodable and PSNR > 25dB
+  - Golden test 256x256 multi-macroblock — decodable, proves reconstruction works
+  - Quality curve test at q25/q50/q75/q95 produces monotonically increasing PSNR
+  - File sizes are within 3x of cwebp at equivalent quality
+  - All existing rasmcore-webp unit tests continue to pass
+  - WASM component build succeeds and encode is functional
+  out_of_scope: '- Matching cwebp output byte-for-byte (different encoders make different mode choices)
+
     - Trellis quantization or other quality optimizations
+
     - Loop filter tuning
+
     - Multi-partition encoding
+
     - Alpha channel support
-  technical_notes: |
-    Systematic approach — fix, then validate layer by layer:
 
-    Phase 1: Fix Reconstruction
-      Replace the stub in bitstream.rs reconstruct_macroblock():
-      For each Y sub-block (16 of them):
-        1. Dequantize the quantized coefficients (quant::dequantize_block)
-        2. Inverse WHT on DC coefficients (dct::inverse_wht for Y2 block)
-        3. Restore DC coefficient from WHT output
-        4. Inverse DCT (dct::inverse_dct) adding prediction
-        5. Store reconstructed pixels to recon_y plane
-      Same for U/V sub-blocks (4 each, no WHT)
-
-    Phase 2: Generate Golden References
-      Use cwebp to create reference WebP files:
-        cwebp -q 75 -preset default -noalpha test_16x16.png -o ref_16x16_q75.webp
-        dwebp ref_16x16_q75.webp -ppm -o ref_16x16_q75.ppm
-      Store as test fixtures in crates/rasmcore-webp/tests/fixtures/
-
-      Test images (generate programmatically as PNG):
-      - 16x16 solid gray (single macroblock, simplest case)
-      - 32x32 horizontal gradient (2x2 macroblocks, tests reconstruction)
-      - 64x64 checkerboard (high AC energy, stress-tests DCT)
-      - 256x256 gradient (16x16 macroblocks, full pipeline)
-
-    Phase 3: Validate Component-Level
-      For a known 16x16 input, compare:
-      - Our DCT coefficients vs what a correct encoder should produce
-      - Our quantized coefficients vs reference
-      - Our token encoding vs what image-webp decoder expects
-      Use single-macroblock images to isolate issues (no reconstruction dependency)
-
-    Phase 4: End-to-End Conformance
-      For each test image at each quality level:
-      1. Encode with our encoder
-      2. Decode with image-webp AND with dwebp
-      3. Compare decoded pixels to original (PSNR)
-      4. Compare file size to cwebp output
-
-    Debugging strategy if decode still fails after reconstruction fix:
-      1. Hex dump first 100 bytes of our output vs cwebp output
-      2. Compare frame header field by field
-      3. Use the bool coder to decode our own first partition
-      4. Check if coefficients decode correctly from our token stream
+    '
+  technical_notes: "Systematic approach — fix, then validate layer by layer:\n\nPhase 1: Fix Reconstruction\n  Replace the\
+    \ stub in bitstream.rs reconstruct_macroblock():\n  For each Y sub-block (16 of them):\n    1. Dequantize the quantized\
+    \ coefficients (quant::dequantize_block)\n    2. Inverse WHT on DC coefficients (dct::inverse_wht for Y2 block)\n    3.\
+    \ Restore DC coefficient from WHT output\n    4. Inverse DCT (dct::inverse_dct) adding prediction\n    5. Store reconstructed\
+    \ pixels to recon_y plane\n  Same for U/V sub-blocks (4 each, no WHT)\n\nPhase 2: Generate Golden References\n  Use cwebp\
+    \ to create reference WebP files:\n    cwebp -q 75 -preset default -noalpha test_16x16.png -o ref_16x16_q75.webp\n   \
+    \ dwebp ref_16x16_q75.webp -ppm -o ref_16x16_q75.ppm\n  Store as test fixtures in crates/rasmcore-webp/tests/fixtures/\n\
+    \n  Test images (generate programmatically as PNG):\n  - 16x16 solid gray (single macroblock, simplest case)\n  - 32x32\
+    \ horizontal gradient (2x2 macroblocks, tests reconstruction)\n  - 64x64 checkerboard (high AC energy, stress-tests DCT)\n\
+    \  - 256x256 gradient (16x16 macroblocks, full pipeline)\n\nPhase 3: Validate Component-Level\n  For a known 16x16 input,\
+    \ compare:\n  - Our DCT coefficients vs what a correct encoder should produce\n  - Our quantized coefficients vs reference\n\
+    \  - Our token encoding vs what image-webp decoder expects\n  Use single-macroblock images to isolate issues (no reconstruction\
+    \ dependency)\n\nPhase 4: End-to-End Conformance\n  For each test image at each quality level:\n  1. Encode with our encoder\n\
+    \  2. Decode with image-webp AND with dwebp\n  3. Compare decoded pixels to original (PSNR)\n  4. Compare file size to\
+    \ cwebp output\n\nDebugging strategy if decode still fails after reconstruction fix:\n  1. Hex dump first 100 bytes of\
+    \ our output vs cwebp output\n  2. Compare frame header field by field\n  3. Use the bool coder to decode our own first\
+    \ partition\n  4. Check if coefficients decode correctly from our token stream\n"
 plan:
-  - phase: Fix Reconstruction
-    tasks:
-      - text: "Implement proper reconstruct_macroblock: dequantize + inverse WHT + inverse DCT + add prediction"
-        done: false
-      - text: "Test: 2x2 macroblock image (32x32) encode/decode roundtrip via image crate"
-        done: false
-      - text: "Test: 4x4 macroblock image (64x64) encode/decode roundtrip"
-        done: false
-  - phase: Golden Reference Generation
-    tasks:
-      - text: "Create test image generator (solid, gradient, checkerboard, noise) as PNG files"
-        done: false
-      - text: "Generate cwebp reference outputs at q25/q50/q75/q95 for each test image"
-        done: false
-      - text: "Generate dwebp decoded pixels for each reference (ground truth for PSNR)"
-        done: false
-      - text: "Store golden references as test fixtures in crates/rasmcore-webp/tests/fixtures/"
-        done: false
-  - phase: Conformance Validation
-    tasks:
-      - text: "Single-MB (16x16) conformance: our output decodable by image-webp and dwebp"
-        done: false
-      - text: "Multi-MB (64x64, 256x256) conformance: decodable at all quality levels"
-        done: false
-      - text: "Quality curve: PSNR monotonically increases with quality setting"
-        done: false
-      - text: "File size: within 3x of cwebp at equivalent quality"
-        done: false
-      - text: "WASM component encode functional (cargo component build + wasmtime test)"
-        done: false
-  - phase: Debug Fallback
-    tasks:
-      - text: "If decode fails: hex-compare frame headers (our output vs cwebp reference)"
-        done: false
-      - text: "If decode fails: isolate to first-partition or token-partition error"
-        done: false
-      - text: "If decode fails: verify bool-coder flush produces decodable stream"
-        done: false
+- phase: Fix Reconstruction
+  tasks:
+  - text: 'Implement proper reconstruct_macroblock: dequantize + inverse WHT + inverse DCT + add prediction'
+    done: true
+  - text: 'Test: 2x2 macroblock image (32x32) encode/decode roundtrip via image crate'
+    done: true
+  - text: 'Test: 4x4 macroblock image (64x64) encode/decode roundtrip'
+    done: true
+- phase: Golden Reference Generation
+  tasks:
+  - text: Create test image generator (solid, gradient, checkerboard, noise) as PNG files
+    done: false
+  - text: Generate cwebp reference outputs at q25/q50/q75/q95 for each test image
+    done: false
+  - text: Generate dwebp decoded pixels for each reference (ground truth for PSNR)
+    done: false
+  - text: Store golden references as test fixtures in crates/rasmcore-webp/tests/fixtures/
+    done: false
+- phase: Conformance Validation
+  tasks:
+  - text: 'Single-MB (16x16) conformance: our output decodable by image-webp and dwebp'
+    done: false
+  - text: 'Multi-MB (64x64, 256x256) conformance: decodable at all quality levels'
+    done: false
+  - text: 'Quality curve: PSNR monotonically increases with quality setting'
+    done: false
+  - text: 'File size: within 3x of cwebp at equivalent quality'
+    done: false
+  - text: WASM component encode functional (cargo component build + wasmtime test)
+    done: false
+- phase: Debug Fallback
+  tasks:
+  - text: 'If decode fails: hex-compare frame headers (our output vs cwebp reference)'
+    done: false
+  - text: 'If decode fails: isolate to first-partition or token-partition error'
+    done: false
+  - text: 'If decode fails: verify bool-coder flush produces decodable stream'
+    done: false
 extra: {}
