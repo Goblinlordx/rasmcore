@@ -1,0 +1,8 @@
+[package]
+name = "rasmcore-jxl"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust JPEG XL encoder (ISO/IEC 18181) — scaffold for future implementation"
+
+[dependencies]
+# No external dependencies — all algorithms will be implemented from spec

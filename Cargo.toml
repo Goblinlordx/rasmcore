@@ -4,6 +4,7 @@ members = [
     "crates/rasmcore-pipeline",
     "crates/rasmcore-image",
     "crates/rasmcore-webp",
+    "crates/rasmcore-jxl",
     "tests/wasm-integration",
 ]
 
