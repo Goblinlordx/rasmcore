@@ -602,24 +602,22 @@ fn decode_scan(
         }
         Ok(output)
     } else {
-        // YCbCr → RGB with chroma upsampling
-        let mut output = vec![0u8; w * h * 3];
-        let y_pw = plane_widths[0];
-        let cb_pw = plane_widths[1];
-        let cr_pw = plane_widths[2];
-
+        // Upsample chroma planes to full resolution, then convert YCbCr → RGB
         let y_comp = &frame.components[0];
         let cb_comp = &frame.components[1];
+        let h_ratio = y_comp.h_sampling as usize / cb_comp.h_sampling as usize;
+        let v_ratio = y_comp.v_sampling as usize / cb_comp.v_sampling as usize;
 
+        let cb_up = upsample_plane(&planes[1], plane_widths[1], w, h, h_ratio, v_ratio);
+        let cr_up = upsample_plane(&planes[2], plane_widths[2], w, h, h_ratio, v_ratio);
+
+        let mut output = vec![0u8; w * h * 3];
+        let y_pw = plane_widths[0];
         for py in 0..h {
             for px in 0..w {
                 let y_val = planes[0][py * y_pw + px] as f64;
-
-                // Chroma upsampling (nearest neighbor)
-                let cb_x = px * cb_comp.h_sampling as usize / y_comp.h_sampling as usize;
-                let cb_y = py * cb_comp.v_sampling as usize / y_comp.v_sampling as usize;
-                let cb_val = planes[1][cb_y * cb_pw + cb_x] as f64;
-                let cr_val = planes[2][cb_y * cr_pw + cb_x] as f64;
+                let cb_val = cb_up[py * w + px] as f64;
+                let cr_val = cr_up[py * w + px] as f64;
 
                 // YCbCr → RGB (BT.601)
                 let r = y_val + 1.402 * (cr_val - 128.0);
@@ -633,6 +631,110 @@ fn decode_scan(
             }
         }
         Ok(output)
+    }
+}
+
+// ─── Chroma Upsampling ─────────────────────────────────────────────────────
+
+/// Upsample a chroma plane to full luma resolution using triangle/bilinear
+/// interpolation. Matches libjpeg-turbo's "fancy upsampling" and image-rs's
+/// weighted interpolation.
+///
+/// For H2V1 (4:2:2): horizontal 3:1 filter
+/// For H2V2 (4:2:0): horizontal 3:1 then vertical 3:1 (equivalent to 9:3:3:1)
+/// For H1V1 (4:4:4): no upsampling needed (direct copy/crop)
+fn upsample_plane(
+    input: &[i16],
+    input_stride: usize,
+    out_w: usize,
+    out_h: usize,
+    h_ratio: usize,
+    v_ratio: usize,
+) -> Vec<i16> {
+    if h_ratio == 1 && v_ratio == 1 {
+        // No upsampling — just crop to output dimensions
+        let mut out = vec![0i16; out_w * out_h];
+        for y in 0..out_h {
+            for x in 0..out_w {
+                out[y * out_w + x] = input[y * input_stride + x];
+            }
+        }
+        return out;
+    }
+
+    let in_w = input_stride;
+    let in_h = (out_h + v_ratio - 1) / v_ratio;
+
+    // Step 1: Horizontal upsample (if needed)
+    let (h_buf, h_stride, h_h) = if h_ratio == 2 {
+        let hw = out_w;
+        let mut buf = vec![0i16; hw * in_h];
+        for y in 0..in_h {
+            for x in 0..hw {
+                // Map output x to input sample: center of the 2-pixel output pair
+                let src = x / 2;
+                let src_left = if src > 0 { src - 1 } else { src };
+                let src_right = if src + 1 < in_w { src + 1 } else { src };
+
+                let near = input[y * in_w + src] as i32;
+                let far = if x % 2 == 0 {
+                    input[y * in_w + src_left] as i32
+                } else {
+                    input[y * in_w + src_right] as i32
+                };
+                // Triangle filter: (3*near + far + 2) >> 2
+                buf[y * hw + x] = ((3 * near + far + 2) >> 2) as i16;
+            }
+        }
+        (buf, hw, in_h)
+    } else {
+        // No horizontal upsampling — copy input
+        let mut buf = vec![0i16; in_w * in_h];
+        buf[..in_w * in_h].copy_from_slice(&input[..in_w * in_h]);
+        (buf, in_w, in_h)
+    };
+
+    // Step 2: Vertical upsample (if needed)
+    if v_ratio == 2 {
+        let mut out = vec![0i16; h_stride * out_h];
+        for y in 0..out_h {
+            let src = y / 2;
+            let src_above = if src > 0 { src - 1 } else { src };
+            let src_below = if src + 1 < h_h { src + 1 } else { src };
+
+            let near_row = src;
+            let far_row = if y % 2 == 0 { src_above } else { src_below };
+
+            for x in 0..h_stride.min(out_w) {
+                let near = h_buf[near_row * h_stride + x] as i32;
+                let far = h_buf[far_row * h_stride + x] as i32;
+                out[y * h_stride + x] = ((3 * near + far + 2) >> 2) as i16;
+            }
+        }
+        // Crop to out_w if h_stride > out_w
+        if h_stride == out_w {
+            out
+        } else {
+            let mut cropped = vec![0i16; out_w * out_h];
+            for y in 0..out_h {
+                cropped[y * out_w..y * out_w + out_w]
+                    .copy_from_slice(&out[y * h_stride..y * h_stride + out_w]);
+            }
+            cropped
+        }
+    } else {
+        // No vertical upsampling — just return horizontal result, cropped
+        if h_stride == out_w && h_h == out_h {
+            h_buf
+        } else {
+            let mut out = vec![0i16; out_w * out_h];
+            for y in 0..out_h.min(h_h) {
+                for x in 0..out_w.min(h_stride) {
+                    out[y * out_w + x] = h_buf[y * h_stride + x];
+                }
+            }
+            out
+        }
     }
 }
 
@@ -879,21 +981,21 @@ fn decode_progressive(
         }
         Ok((output, frame.width as u32, frame.height as u32, true))
     } else {
-        let mut output = vec![0u8; w * h * 3];
-        let y_pw = plane_widths[0];
-        let cb_pw = plane_widths[1];
-        let cr_pw = plane_widths[2];
-
         let y_comp = &frame.components[0];
         let cb_comp = &frame.components[1];
+        let h_ratio = y_comp.h_sampling as usize / cb_comp.h_sampling as usize;
+        let v_ratio = y_comp.v_sampling as usize / cb_comp.v_sampling as usize;
 
+        let cb_up = upsample_plane(&planes[1], plane_widths[1], w, h, h_ratio, v_ratio);
+        let cr_up = upsample_plane(&planes[2], plane_widths[2], w, h, h_ratio, v_ratio);
+
+        let mut output = vec![0u8; w * h * 3];
+        let y_pw = plane_widths[0];
         for py in 0..h {
             for px in 0..w {
                 let y_val = planes[0][py * y_pw + px] as f64;
-                let cb_x = px * cb_comp.h_sampling as usize / y_comp.h_sampling as usize;
-                let cb_y = py * cb_comp.v_sampling as usize / y_comp.v_sampling as usize;
-                let cb_val = planes[1][cb_y * cb_pw + cb_x] as f64;
-                let cr_val = planes[2][cb_y * cr_pw + cb_x] as f64;
+                let cb_val = cb_up[py * w + px] as f64;
+                let cr_val = cr_up[py * w + px] as f64;
 
                 let r = y_val + 1.402 * (cr_val - 128.0);
                 let g = y_val - 0.344136 * (cb_val - 128.0) - 0.714136 * (cr_val - 128.0);
