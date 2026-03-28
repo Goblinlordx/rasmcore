@@ -16,6 +16,10 @@ zenjpeg = { version = "0.6", features = ["trellis"] }
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[dev-dependencies]
+butteraugli = "0.9"
+dssim-core = "3.4"
+
 [package.metadata.component]
 package = "rasmcore:image"
 target.path = "../../wit/image"

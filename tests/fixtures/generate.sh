@@ -86,6 +86,12 @@ $IM /out/inputs/photo_256x256.png -quality 60 /out/reference/png_compress_6.png
 # PNG at compression quality 90 (max compression)
 $IM /out/inputs/photo_256x256.png -quality 90 /out/reference/png_compress_9.png
 
+# --- JPEG quality curve references (ImageMagick / libjpeg-turbo) -------------
+echo "  Creating JPEG quality curve references..."
+for q in 10 30 50 70 85 95; do
+  $IM /out/inputs/photo_256x256.png -quality $q /out/reference/jpeg_q${q}.jpeg
+done
+
 # --- Verify reproducibility (hash all outputs) -------------------------------
 echo "  Verifying output hashes..."
 OUTPUT_HASH=$(cd "$OUT_DIR" && find . \( -name '*.png' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' -o -name '*.bmp' -o -name '*.tiff' -o -name '*.qoi' \) | sort | xargs shasum -a 256 | shasum -a 256 | awk '{print $1}')
