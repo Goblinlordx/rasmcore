@@ -1,71 +1,138 @@
 id: encoder-webp_20260327101003Z
-title: "WebP Codec — Typed Encode/Decode Config (Google WebP Container / RIFF)"
+title: "WebP Codec — Wire Config, Evaluate Backend, Parity Tests"
 type: feature
 status: pending
 created: 2026-03-27
-updated: "2026-03-27"
+updated: "2026-03-28"
 spec:
   summary: |
-    WebP codec with typed config records for encoding (quality, lossless mode)
-    and decoding. Standards-aligned with the WebP container specification.
+    Fix the WebP encoder to apply quality/lossless config (currently ignored),
+    evaluate whether the image crate's pure-Rust WebP encoder produces
+    acceptable quality-per-byte vs libwebp, and determine if a backend swap
+    is needed. Enforce determinism and validate against ImageMagick.
   context: |
-    WebP supports both lossy (VP8-based) and lossless encoding with quality and
-    method controls. The current implementation uses image crate defaults. This
-    track adds full WebP configuration including the critical lossy vs lossless
-    mode selection.
+    WebP encoder landscape:
+    1. libwebp (Google C reference) — gold standard for lossy WebP
+    2. webpx (safe Rust bindings to libwebp) — same quality, Rust API
+    3. image crate image-webp — pure Rust, but lossless-only for quality work;
+       lossy encoder is basic and may not match libwebp quality-per-byte
 
-    Standards references:
-    - WebP Container Specification (Google, 2024) — RIFF-based container format
-    - VP8 Data Format and Decoding Guide (RFC 6386) — Lossy compression basis
-    - WebP Lossless Bitstream Specification (Google) — Lossless mode
-    - RIFF (Resource Interchange File Format) — Container basis
+    The challenge: no pure Rust lossy WebP encoder matches libwebp quality.
+    Options:
+    a) Use image crate encoder, validate it is "good enough" (within 1.5x)
+    b) If not good enough, evaluate webpx (libwebp bindings) — but this
+       introduces a C dependency that will NOT compile to wasm32-wasip2
+       without Emscripten
+    c) Accept documented limitation for lossy WebP, use pure Rust lossless
+
+    This track must empirically determine which path is right by running
+    the quality curve comparison FIRST, then deciding.
+
+    BUG — config not applied:
+    - webp.rs line 28: encode uses _config (underscore = unused!)
+    - quality and lossless have zero effect on output
+
+    Standards: WebP Container Spec, VP8 (RFC 6386), WebP Lossless Bitstream
+
+    Determinism: pure Rust VP8/VP8L encoder, no randomness.
   codebase_analysis: |
-    - Foundation track creates domain/encoder/webp.rs and domain/decoder/webp.rs
-    - image crate WebPEncoder supports quality parameter
-    - Lossy vs lossless mode selection is the key differentiator
-    - Lossless WebP should produce pixel-exact roundtrip
-    - WebP decoding currently uses generic image::load_from_memory
+    - webp.rs line 28: uses img.write_to(&mut cursor, ImageFormat::WebP) — ignores config
+    - image crate WebPEncoder:
+      - WebPEncoder::new_lossless(&mut writer) for lossless
+      - WebPEncoder::new_with_quality(&mut writer, quality) for lossy
+    - Fix: branch on config.lossless, use appropriate constructor
+    - After wiring, run quality curve to determine if quality-per-byte is
+      acceptable vs ImageMagick (libwebp)
+    - If quality-per-byte is poor: evaluate alternatives
+    - Perceptual metrics (dev-dependencies):
+      - butteraugli 0.9.0 for quality comparison
+      - dssim-core 3.4.0 for regression checks
   acceptance_criteria:
-    - WIT webp-encode-config has quality (option<u8>), lossless (bool)
-    - Domain WebpEncodeConfig struct mirrors WIT record
-    - encode_webp produces valid WebP with configurable parameters
+    - WebP encode function uses config (quality and lossless both applied)
+    - Determinism test: encode same input twice, output is byte-identical
     - Lossless mode produces pixel-exact roundtrip
-    - Quality parameter controls lossy output size
-    - Default config produces output identical to current behavior
-    - Domain unit tests cover lossy, lossless, quality variations
-    - WASM integration test for encode-webp with typed config
-    - TS SDK test for encodeWebp with typed config
-    - Standards references in module doc comments
+    - Quality curve test: encode at q10/q30/q50/q70/q85/q95
+    - Quality curve compared against ImageMagick using Butteraugli and DSSIM
+    - File size at each quality compared against ImageMagick
+    - DECISION GATE: if file sizes exceed 1.5x of ImageMagick at any quality,
+      or Butteraugli shows meaningfully worse perceptual quality, document
+      the limitation and create a follow-up track for backend evaluation
+    - If quality is acceptable: validate curve is monotonic, edge cases pass
+    - If quality is not acceptable: document findings with data, recommend path
+    - All existing tests continue to pass
   out_of_scope: |
     - Animated WebP
-    - WebP alpha channel quality (separate from main quality)
+    - WebP alpha channel quality
     - Near-lossless mode
-    - Extended file format (XMP, EXIF metadata in WebP)
+    - Extended file format (XMP, EXIF in WebP)
+    - Actually swapping to libwebp bindings (follow-up track if needed)
   technical_notes: |
-    The lossless flag is the most important addition — it changes the encoding
-    algorithm entirely (VP8L vs VP8). When lossless is true, quality is ignored.
-    Document this in the WIT interface comments.
+    This track has a decision gate. The approach is:
+
+    Phase 1: Wire the config (straightforward fix)
+    Phase 2: Run quality curve and compare
+    Phase 3: Based on results, either validate or document limitation
+
+    Fix approach for webp.rs encode():
+      if config.lossless {
+          let encoder = WebPEncoder::new_lossless(&mut cursor);
+          img.write_with_encoder(encoder)?;
+      } else {
+          let encoder = WebPEncoder::new_with_quality(&mut cursor, config.quality as f32);
+          img.write_with_encoder(encoder)?;
+      }
+
+    The pure-Rust image-webp encoder may be significantly worse than libwebp
+    for lossy encoding. This is a known limitation of the ecosystem — there
+    is no pure-Rust VP8 encoder that matches Google's reference implementation.
+
+    If backend swap is needed in future:
+    - webpx (safe libwebp bindings) works on native but NOT on wasm32-wasip2
+    - Could use conditional compilation: webpx on native, image-webp on WASM
+    - Or accept that WebP lossy quality will be inferior in pure WASM context
+
+    Testing strategy:
+    1. Determinism: encode twice = identical bytes
+    2. Wire config: quality and lossless actually applied
+    3. Quality curve: at q10/q30/q50/q70/q85/q95 vs ImageMagick
+       - Butteraugli distance comparison
+       - DSSIM comparison
+       - File size comparison
+    4. Decision: pass/fail against 1.5x threshold
+    5. Lossless: pixel-exact roundtrip, file size vs ImageMagick within 2x
 plan:
-  - phase: "Config & Domain"
+  - phase: "Fix Config Wiring"
     tasks:
-      - text: "Expand WIT webp-encode-config with quality (option<u8>), lossless (bool, default false)"
+      - text: "Fix webp.rs encode to branch on lossless and apply quality via WebPEncoder"
         done: false
-      - text: "Update domain WebpEncodeConfig, implement encode_webp with full config"
+      - text: "Domain test: quality 50 produces smaller output than quality 95 (lossy)"
         done: false
-      - text: "Domain unit tests for lossy vs lossless, quality variations, default config"
+      - text: "Domain test: lossless roundtrip is pixel-exact"
         done: false
-  - phase: "Adapter & SDK"
+  - phase: "Quality Curve Evaluation"
     tasks:
-      - text: "Update adapter for encode-webp WIT function"
+      - text: "Add butteraugli and dssim-core as dev-dependencies (if not already added by JPEG track)"
         done: false
-      - text: "WASM integration test for encode-webp with typed config"
+      - text: "Determinism test: encode same photo twice (lossy and lossless), assert byte-identical"
         done: false
-      - text: "TS SDK test for encodeWebp with typed config"
+      - text: "Add ImageMagick WebP references to generate.sh at q10/q30/q50/q70/q85/q95 and lossless"
         done: false
-  - phase: "Verification"
+      - text: "Quality curve: Butteraugli distance at each quality vs ImageMagick"
+        done: false
+      - text: "Quality curve: DSSIM at each quality vs ImageMagick"
+        done: false
+      - text: "Quality curve: file sizes at each quality vs ImageMagick"
+        done: false
+  - phase: "Decision Gate"
     tasks:
-      - text: "WebP lossless roundtrip pixel-exact through WASM"
+      - text: "If within 1.5x: validate monotonic curve, edge cases, mark track complete"
         done: false
-      - text: "Verify quality param affects lossy output size"
+      - text: "If exceeds 1.5x: document data, create follow-up track for backend evaluation (webpx or conditional compilation)"
+        done: false
+      - text: "Lossless cross-validation: pixel-exact decode, file size within 2x"
+        done: false
+      - text: "Domain test: edge cases — 1x1 image, RGBA8 with alpha, quality 1 and 100"
+        done: false
+      - text: "Verify all existing encoder and pipeline tests pass"
         done: false
 extra: {}

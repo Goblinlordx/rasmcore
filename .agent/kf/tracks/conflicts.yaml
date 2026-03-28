@@ -1,0 +1,41 @@
+# Track Conflict Pairs
+#
+# PROTOCOL:
+#   Records pairs of tracks with overlapping file/package scope.
+#   Key format: <lower-id>/<higher-id> (alphabetical order).
+#   Risk levels: high, medium, low.
+#   Auto-cleaned when either track completes or is archived.
+#
+# UPDATED: 2026-03-28T03:10:00Z
+
+# Encoder tracks all modify encoder.wit and adapter/mod.rs encoder::Guest impl
+encoder-jpeg_20260327101001Z/encoder-png_20260327101002Z:
+  risk: medium
+  note: "Both modify encoder.wit config records and adapter/mod.rs encoder::Guest impl"
+  added: "2026-03-28"
+
+encoder-jpeg_20260327101001Z/encoder-webp_20260327101003Z:
+  risk: medium
+  note: "Both modify encoder.wit config records and adapter/mod.rs encoder::Guest impl"
+  added: "2026-03-28"
+
+encoder-png_20260327101002Z/encoder-webp_20260327101003Z:
+  risk: medium
+  note: "Both modify encoder.wit config records and adapter/mod.rs encoder::Guest impl"
+  added: "2026-03-28"
+
+# GIF track adds new entries to encoder.wit — different sections from encoder config tracks
+encoder-jpeg_20260327101001Z/p0-gif-exif-orient_20260328024500Z:
+  risk: low
+  note: "GIF adds new entries to encoder.wit and adapter/mod.rs — different sections"
+  added: "2026-03-28"
+
+encoder-png_20260327101002Z/p0-gif-exif-orient_20260328024500Z:
+  risk: low
+  note: "GIF adds new entries to encoder.wit — different sections"
+  added: "2026-03-28"
+
+encoder-webp_20260327101003Z/p0-gif-exif-orient_20260328024500Z:
+  risk: low
+  note: "GIF adds new entries to encoder.wit — different sections"
+  added: "2026-03-28"

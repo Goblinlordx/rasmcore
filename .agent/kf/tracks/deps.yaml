@@ -10,29 +10,16 @@
 #   - Developer checks deps before claiming: all deps must be completed.
 #   - Cycles are forbidden.
 #
-# UPDATED: 2026-03-28T01:22:00Z
+# UPDATED: 2026-03-28T03:10:00Z
 
-# Old codec tracks — ON HOLD until pipeline-wit completes (high conflict)
-encoder-jpeg_20260327101001Z:
-  - pipeline-wit_20260328012201Z
+# Encoder tracks — no deps (pipeline-wit completed, dependency satisfied)
+encoder-jpeg_20260327101001Z: []
 
-encoder-png_20260327101002Z:
-  - pipeline-wit_20260328012201Z
+encoder-png_20260327101002Z: []
 
-encoder-webp_20260327101003Z:
-  - pipeline-wit_20260328012201Z
+encoder-webp_20260327101003Z: []
 
-# Pipeline implementation (critical path)
-pipeline-core_20260328012200Z: []
-
-pipeline-wit_20260328012201Z:
-  - pipeline-core_20260328012200Z
-
-simd-resize_20260328020200Z: []
-
-simd-filters_20260328020201Z:
-  - simd-resize_20260328020200Z
-
+# P0 feature tracks — all independent
 p0-gif-exif-orient_20260328024500Z: []
 
 p0-alpha-composite_20260328024501Z: []

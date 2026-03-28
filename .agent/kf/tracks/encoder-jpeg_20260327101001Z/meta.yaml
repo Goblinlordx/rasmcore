@@ -1,8 +1,7 @@
-title: JPEG Codec — Typed Encode/Decode Config (ITU-T T.81 / T.871)
+title: "JPEG Codec — zenjpeg Backend, Progressive, Parity Tests"
 status: pending
 type: feature
 approved: false
 created: '2026-03-27'
-updated: '2026-03-27'
-deps:
-- encoder-refactor-foundation_20260327101000Z
+updated: '2026-03-28'
+deps: []

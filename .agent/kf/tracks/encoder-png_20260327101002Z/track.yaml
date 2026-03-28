@@ -1,71 +1,120 @@
 id: encoder-png_20260327101002Z
-title: "PNG Codec — Typed Encode/Decode Config (ISO/IEC 15948 / W3C PNG 1.2)"
+title: "PNG Codec — Wire Compression Config, Add Filter Type, Parity Tests"
 type: feature
 status: pending
 created: 2026-03-27
-updated: "2026-03-27"
+updated: "2026-03-28"
 spec:
   summary: |
-    PNG codec with typed config records for encoding (compression level, filter
-    strategy) and decoding. Standards-aligned with ISO/IEC 15948 and W3C PNG
-    Third Edition.
+    Fix the PNG encoder to actually apply compression_level (currently ignored),
+    add filter-type enum, enforce determinism, and validate against ImageMagick.
+    The image crate's PNG encoder with fdeflate is already a good backend —
+    it is faster AND produces better compression than libpng. No backend swap
+    needed, just wire up the config and test thoroughly.
   context: |
-    PNG is lossless but has tunable compression affecting size and speed. The
-    current implementation uses image crate defaults with no configuration.
-    This track adds compression level and filter strategy controls.
+    PNG encoder landscape:
+    1. image crate with fdeflate — faster AND better than libpng (current)
+    2. Standard zlib/libpng — baseline
+    3. Zopfli — 3-8% smaller, 80x slower (not worth it for default)
+    4. oxipng — optimizer, good but overkill for encode-time
 
-    Standards references:
-    - ISO/IEC 15948:2004 — PNG specification (same as W3C)
-    - W3C PNG Specification, Third Edition (2024-01-18)
-    - RFC 2083 — PNG 1.0 (historic, superseded by ISO/IEC 15948)
-    - RFC 1950/1951 — zlib/DEFLATE compression used by PNG
+    The image crate is already the right choice for PNG. The problem is
+    not the backend — it is that the config is not wired up.
+
+    BUG — config not applied:
+    - png.rs line 26: encode uses _config (underscore = unused!)
+    - Calls img.write_to with ImageFormat::Png and NO config
+    - compression_level has zero effect on output
+
+    What is missing:
+    - Wire compression_level to image::codecs::png::PngEncoder
+    - Add filter-type enum (NoFilter, Sub, Up, Avg, Paeth, Adaptive)
+    - Compression curve validation against ImageMagick
+    - Determinism assertion
+
+    Standards: ISO/IEC 15948 (PNG), RFC 1950/1951 (zlib/DEFLATE)
+
+    Determinism: PNG encoding is fully deterministic. DEFLATE with fdeflate
+    is deterministic for given settings. No PRNG involved.
   codebase_analysis: |
-    - Foundation track creates domain/encoder/png.rs and domain/decoder/png.rs
+    - png.rs line 29: uses img.write_to(&mut cursor, ImageFormat::Png) — ignores config
     - image crate PngEncoder supports CompressionType and FilterType
     - CompressionType: Default, Fast, Best, Huffman, Rle
     - FilterType: NoFilter, Sub, Up, Avg, Paeth, Adaptive
-    - PNG decoding currently uses generic image::load_from_memory
+    - Fix: replace write_to with PngEncoder::new_with_quality(compression, filter)
+    - image crate fdeflate already provides better compression than libpng
+    - We expect to match or beat ImageMagick on file size since fdeflate is superior
+    - Perceptual metrics not needed for PNG (lossless) — pixel-exact + file size
   acceptance_criteria:
-    - WIT png-encode-config has compression-level (option<u8>), filter-type enum
-    - Domain PngEncodeConfig struct mirrors WIT record
-    - encode_png produces valid PNG with configurable compression
-    - Compression level affects output size (higher = smaller but slower)
-    - Default config produces output identical to current behavior
-    - Domain unit tests cover compression levels and filter types
-    - WASM integration test for encode-png with typed config
-    - TS SDK test for encodePng with typed config
-    - Standards references in module doc comments
+    - PNG encode function uses PngEncoder with compression and filter settings
+    - compression_level (u8) actually affects output file size
+    - WIT png-encode-config adds filter-type enum
+    - WIT png-write-config adds filter-type field
+    - Domain PngEncodeConfig adds filter_type field
+    - Adapter and pipeline adapter updated for filter-type
+    - Determinism test: encode same input twice, output is byte-identical
+    - All PNG roundtrips are pixel-exact (lossless — no exceptions)
+    - Compression curve: file sizes decrease monotonically with higher compression
+    - File sizes equal to or smaller than ImageMagick at each compression level
+    - Decoded pixels from both rasmcore and ImageMagick are identical (lossless)
+    - All existing tests continue to pass
   out_of_scope: |
-    - APNG (animated PNG) — separate format concern
-    - PNG interlacing config (Adam7)
-    - ICC color profile embedding
+    - APNG (animated PNG)
+    - PNG interlacing (Adam7)
+    - ICC profile embedding — covered by p0-icc-profiles track
     - PNG text/metadata chunks
+    - Zopfli optimization (80x slower for 3-8% gain — not default)
   technical_notes: |
-    PNG filter-type maps directly to image crate FilterType enum. Compression
-    level can either map to the named CompressionType variants or to a numeric
-    zlib level (0-9). Prefer the numeric level for precision, mapping to
-    CompressionType internally.
+    Fix approach for png.rs encode():
+      let compression = match config.compression_level {
+          0 => CompressionType::Default,
+          1..=3 => CompressionType::Fast,
+          4..=6 => CompressionType::Default,
+          7..=9 => CompressionType::Best,
+          _ => CompressionType::Default,
+      };
+      let filter = match config.filter_type { ... };
+      let encoder = PngEncoder::new_with_quality(&mut cursor, compression, filter);
+      img.write_with_encoder(encoder)?;
+
+    No backend swap needed. The image crate fdeflate implementation is already
+    best-in-class for PNG. We just need to wire the config through.
+
+    Testing strategy:
+    1. Determinism: encode(input, config) twice = identical bytes
+    2. Pixel-exact roundtrip at every compression and filter setting
+    3. File sizes vs ImageMagick (expect equal or better due to fdeflate)
+    4. If compression mapping is wrong (e.g., level 9 not smaller than 0),
+       adjust the CompressionType mapping
 plan:
-  - phase: "Config & Domain"
+  - phase: "Fix Config Wiring"
     tasks:
-      - text: "Expand WIT png-encode-config with compression-level (option<u8>), filter-type enum"
+      - text: "Fix png.rs encode to use PngEncoder::new_with_quality with compression_level"
         done: false
-      - text: "Update domain PngEncodeConfig, implement encode_png with full config"
+      - text: "Domain test: compression 0 output larger than compression 9 output"
         done: false
-      - text: "Domain unit tests for compression levels, filter types, default config"
-        done: false
-  - phase: "Adapter & SDK"
+  - phase: "Add Filter Type"
     tasks:
-      - text: "Update adapter for encode-png WIT function"
+      - text: "Add filter-type enum to WIT png-encode-config and png-write-config"
         done: false
-      - text: "WASM integration test for encode-png with typed config"
+      - text: "Add filter_type to domain PngEncodeConfig (default Adaptive)"
         done: false
-      - text: "TS SDK test for encodePng with typed config"
+      - text: "Wire filter_type in encode function"
         done: false
-  - phase: "Verification"
+      - text: "Update adapter encode_png and pipeline write_png for filter_type"
+        done: false
+  - phase: "Determinism & Parity Tests"
     tasks:
-      - text: "PNG roundtrip pixel-exact through WASM with all config variations"
+      - text: "Determinism test: encode same photo twice at each compression, assert byte-identical"
         done: false
-      - text: "Verify compression level affects output size"
+      - text: "Add ImageMagick PNG encode references to generate.sh at compression 0, 3, 6, 9"
+        done: false
+      - text: "Pixel-exact roundtrip test at every compression level and filter type"
+        done: false
+      - text: "File size comparison: rasmcore equal to or smaller than ImageMagick at each level"
+        done: false
+      - text: "Decoded pixel comparison: rasmcore and ImageMagick both pixel-identical (lossless)"
+        done: false
+      - text: "Verify all existing encoder and pipeline tests pass"
         done: false
 extra: {}
