@@ -806,7 +806,11 @@ mod tests {
                 assert_eq!(sps.pic_width, 64);
                 assert_eq!(sps.pic_height, 64);
                 // x265 ultrafast uses 32x32 CTU, so 64x64 frame = 4 CTUs
-                assert!(sps.ctu_size() >= 16, "CTU size should be >= 16, got {}", sps.ctu_size());
+                assert!(
+                    sps.ctu_size() >= 16,
+                    "CTU size should be >= 16, got {}",
+                    sps.ctu_size()
+                );
                 return;
             }
         }
