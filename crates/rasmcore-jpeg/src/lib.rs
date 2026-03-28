@@ -203,6 +203,7 @@ pub fn encode(
             &luma_qt,
             &chroma_qt,
             config.restart_interval,
+            config.trellis,
         );
     } else {
         // Sequential mode: single SOS with full spectral range
@@ -245,9 +246,11 @@ fn encode_progressive(
     luma_qt: &[u16; 64],
     chroma_qt: &[u16; 64],
     restart_interval: Option<u16>,
+    use_trellis: bool,
 ) {
     // First, compute all DCT coefficients for all blocks
-    let all_coeffs = compute_all_dct_coefficients(ycbcr, is_gray, subsampling, luma_qt, chroma_qt);
+    let all_coeffs =
+        compute_all_dct_coefficients(ycbcr, is_gray, subsampling, luma_qt, chroma_qt, use_trellis);
 
     // Progressive scan definitions: (component_ids, ss, se, ah, al)
     let scans: Vec<(Vec<u8>, u8, u8, u8, u8)> = if is_gray {
@@ -312,6 +315,7 @@ fn compute_all_dct_coefficients(
     subsampling: ChromaSubsampling,
     luma_qt: &[u16; 64],
     chroma_qt: &[u16; 64],
+    use_trellis: bool,
 ) -> std::collections::HashMap<u8, Vec<[i16; 64]>> {
     let mut result = std::collections::HashMap::new();
 
@@ -346,9 +350,15 @@ fn compute_all_dct_coefficients(
                     );
                     let mut dct_out = [0i32; 64];
                     dct::forward_dct(&block, &mut dct_out);
-                    let mut quantized = [0i16; 64];
-                    quantize::quantize(&dct_out, luma_qt, &mut quantized);
-                    y_blocks.push(zigzag_reorder(&quantized));
+                    let zz = if use_trellis {
+                        let lambda = trellis::default_lambda(luma_qt);
+                        trellis::trellis_quantize(&dct_out, luma_qt, lambda, true)
+                    } else {
+                        let mut quantized = [0i16; 64];
+                        quantize::quantize(&dct_out, luma_qt, &mut quantized);
+                        zigzag_reorder(&quantized)
+                    };
+                    y_blocks.push(zz);
                 }
             }
 
@@ -366,9 +376,15 @@ fn compute_all_dct_coefficients(
                     );
                     let mut dct_out = [0i32; 64];
                     dct::forward_dct(&block, &mut dct_out);
-                    let mut quantized = [0i16; 64];
-                    quantize::quantize(&dct_out, qt, &mut quantized);
-                    blocks.push(zigzag_reorder(&quantized));
+                    let zz = if use_trellis {
+                        let lambda = trellis::default_lambda(qt);
+                        trellis::trellis_quantize(&dct_out, qt, lambda, false)
+                    } else {
+                        let mut quantized = [0i16; 64];
+                        quantize::quantize(&dct_out, qt, &mut quantized);
+                        zigzag_reorder(&quantized)
+                    };
+                    blocks.push(zz);
                 }
             }
         }

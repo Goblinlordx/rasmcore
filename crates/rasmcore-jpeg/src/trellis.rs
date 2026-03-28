@@ -15,7 +15,9 @@
 //!
 //! Reference: mozjpeg trellis quantization (BSD-licensed algorithm).
 
-use crate::entropy::{AC_CHROMA_CODE_LENGTHS, AC_LUMA_CODE_LENGTHS};
+use crate::entropy::{
+    AC_CHROMA_CODE_LENGTHS, AC_LUMA_CODE_LENGTHS, DC_CHROMA_CODE_LENGTHS, DC_LUMA_CODE_LENGTHS,
+};
 use crate::quantize::ZIGZAG;
 
 /// Maximum number of candidate values per coefficient position.
@@ -363,6 +365,139 @@ fn trellis_optimize_ac(
     }
 }
 
+// ─── DC Trellis ─────────────────────────────────────────────────────────────
+//
+// Optimizes DC coefficient values across all blocks in raster order,
+// considering DPCM differential encoding cost. Runs as a post-pass after
+// per-block AC trellis optimization.
+
+/// Optimize DC coefficients across a sequence of blocks using DPCM-aware DP.
+///
+/// For each block, evaluates 3 candidate DC values (round-down, round-exact, round-up)
+/// and selects the combination that minimizes total `distortion + lambda * DPCM_bits`
+/// across all blocks in sequence.
+///
+/// `blocks` are modified in-place (only position 0 = DC coefficient changes).
+/// `dct_coeffs` are the original unquantized DCT blocks (for distortion computation).
+/// `quant_table` provides the DC quantizer step.
+pub fn dc_trellis_pass(
+    blocks: &mut [[i16; 64]],
+    dct_coeffs: &[[i32; 64]],
+    quant_table: &[u16; 64],
+    lambda: f64,
+    is_luma: bool,
+) {
+    if blocks.is_empty() {
+        return;
+    }
+
+    let dc_code_lengths = if is_luma {
+        &DC_LUMA_CODE_LENGTHS
+    } else {
+        &DC_CHROMA_CODE_LENGTHS
+    };
+    let q0 = quant_table[ZIGZAG[0]] as i32;
+    if q0 == 0 {
+        return;
+    }
+
+    let n = blocks.len();
+
+    // Generate DC candidates for each block
+    let mut candidates: Vec<Vec<i16>> = Vec::with_capacity(n);
+    for i in 0..n {
+        let orig_dc = dct_coeffs[i][ZIGZAG[0]];
+        let rounded = if orig_dc >= 0 {
+            (orig_dc + q0 / 2) / q0
+        } else {
+            (orig_dc - q0 / 2) / q0
+        } as i16;
+
+        let mut cands = vec![rounded];
+        if rounded > i16::MIN + 1 {
+            cands.push(rounded - 1);
+        }
+        if rounded < i16::MAX {
+            cands.push(rounded + 1);
+        }
+        candidates.push(cands);
+    }
+
+    // DP: dp[candidate_idx] = (cost, backtrack_candidate_idx_for_prev_block)
+    // We track the best cost for each candidate of the current block
+    let max_cands = 3;
+
+    let mut prev_costs: Vec<f64> = vec![INF; max_cands];
+    let mut backtrack: Vec<Vec<usize>> = Vec::with_capacity(n); // [block][candidate] -> prev_candidate
+
+    // Initialize first block (DPCM predictor = 0)
+    let mut first_bt = vec![0usize; candidates[0].len()];
+    for (ci, &cand) in candidates[0].iter().enumerate() {
+        let orig_dc = dct_coeffs[0][ZIGZAG[0]];
+        let dequant = cand as i32 * q0;
+        let dist = ((orig_dc - dequant) as f64).powi(2);
+        let diff = cand as i32; // DPCM with predictor 0
+        let cat = magnitude_category(diff);
+        let rate = dc_code_lengths[cat as usize] as f64 + cat as f64;
+        prev_costs[ci] = dist + lambda * rate;
+        first_bt[ci] = 0;
+    }
+    backtrack.push(first_bt);
+
+    // Forward pass
+    for block_idx in 1..n {
+        let mut curr_costs = vec![INF; candidates[block_idx].len()];
+        let mut curr_bt = vec![0usize; candidates[block_idx].len()];
+
+        for (ci, &cand) in candidates[block_idx].iter().enumerate() {
+            let orig_dc = dct_coeffs[block_idx][ZIGZAG[0]];
+            let dequant = cand as i32 * q0;
+            let dist = ((orig_dc - dequant) as f64).powi(2);
+
+            // Try each previous candidate
+            for (pi, &prev_cand) in candidates[block_idx - 1].iter().enumerate() {
+                if prev_costs[pi] >= INF {
+                    continue;
+                }
+                let diff = cand as i32 - prev_cand as i32;
+                let cat = magnitude_category(diff);
+                let rate = dc_code_lengths[cat as usize] as f64 + cat as f64;
+                let total = prev_costs[pi] + dist + lambda * rate;
+
+                if total < curr_costs[ci] {
+                    curr_costs[ci] = total;
+                    curr_bt[ci] = pi;
+                }
+            }
+        }
+
+        prev_costs = curr_costs;
+        backtrack.push(curr_bt);
+    }
+
+    // Find best final candidate
+    let mut best_ci = 0;
+    let mut best_cost = INF;
+    for (ci, &cost) in prev_costs.iter().enumerate() {
+        if ci < candidates[n - 1].len() && cost < best_cost {
+            best_cost = cost;
+            best_ci = ci;
+        }
+    }
+
+    // Backtrack to extract optimal DC values
+    let mut chosen = vec![0usize; n];
+    chosen[n - 1] = best_ci;
+    for i in (1..n).rev() {
+        chosen[i - 1] = backtrack[i][chosen[i]];
+    }
+
+    // Apply optimized DC values
+    for i in 0..n {
+        blocks[i][0] = candidates[i][chosen[i]];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn trellis_dc_matches_simple() {
+    fn trellis_dc_matches_simple_before_dc_pass() {
         let dct = make_test_block();
         let qt = quantize::luma_quant_table(75, QuantPreset::AnnexK, false);
         let lambda = default_lambda(&qt);
@@ -430,8 +565,39 @@ mod tests {
 
         let trellis = trellis_quantize(&dct, &qt, lambda, true);
 
-        // DC should match (trellis only optimizes AC)
+        // DC should match before DC trellis pass (AC trellis doesn't touch DC)
         assert_eq!(trellis[0], simple[0], "DC should match simple quantization");
+    }
+
+    #[test]
+    fn dc_trellis_produces_valid_output() {
+        let qt = quantize::luma_quant_table(50, QuantPreset::Robidoux, false);
+        let lambda = default_lambda(&qt);
+
+        // Create 4 blocks with varied DC values
+        let mut dct_blocks = Vec::new();
+        let mut quant_blocks = Vec::new();
+        for i in 0..4 {
+            let mut dct = [0i32; 64];
+            dct[ZIGZAG[0]] = (i as i32 * 100) + 50; // DC values: 50, 150, 250, 350
+            dct_blocks.push(dct);
+            let zz = trellis_quantize(&dct, &qt, lambda, true);
+            quant_blocks.push(zz);
+        }
+
+        let dc_before: Vec<i16> = quant_blocks.iter().map(|b| b[0]).collect();
+        dc_trellis_pass(&mut quant_blocks, &dct_blocks, &qt, lambda, true);
+        let dc_after: Vec<i16> = quant_blocks.iter().map(|b| b[0]).collect();
+
+        // DC values should be within ±1 of original (candidates are round±1)
+        for i in 0..4 {
+            assert!(
+                (dc_after[i] - dc_before[i]).abs() <= 1,
+                "block {i}: DC changed from {} to {} (max ±1 allowed)",
+                dc_before[i],
+                dc_after[i]
+            );
+        }
     }
 
     #[test]
