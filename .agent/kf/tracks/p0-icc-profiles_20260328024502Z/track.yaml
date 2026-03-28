@@ -1,0 +1,94 @@
+id: p0-icc-profiles_20260328024502Z
+title: "P0: ICC Color Profile Read/Embed"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Add ICC color profile extraction from images, embedding in output, and
+    basic profile-to-sRGB transform. Uses moxcms (pure Rust, WASM-compatible)
+    for color management. Covers P0 item 3.
+  context: |
+    ICC profiles define how pixel values map to actual colors. Without ICC
+    support, images from cameras and design tools display with incorrect
+    colors — reds look orange, blues look purple, prints don't match screens.
+
+    P0 scope is deliberately minimal:
+    - Read embedded ICC profile from decoded images
+    - Embed ICC profile when encoding output
+    - Convert image from embedded profile to sRGB (the web standard)
+
+    Full ICC transform (arbitrary profile-to-profile) is P1.
+  codebase_analysis: |
+    - moxcms 0.8.1 is pure Rust color management, likely WASM-compatible
+    - lcms2 6.1.1 wraps Little CMS (C library) — not pure Rust, won't compile
+      to WASM without Emscripten
+    - kamadak-exif can read ICC profile data from EXIF
+    - image crate decoders can extract ICC chunks (PNG iCCP, JPEG APP2)
+    - Current ColorSpace enum has sRGB, LinearSrgb, DisplayP3, BT.709, BT.2020
+    - Need to add ICC profile as an opaque binary blob alongside ColorSpace
+  acceptance_criteria:
+    - Extract ICC profile binary from JPEG (APP2 marker) and PNG (iCCP chunk)
+    - ICC profile available as opaque bytes in decoded image metadata
+    - Embed ICC profile in JPEG and PNG output
+    - Convert image from embedded ICC profile to sRGB via moxcms
+    - New WIT types for ICC profile (opaque buffer)
+    - Pipeline node for ICC-to-sRGB conversion
+    - Domain tests for ICC extraction and sRGB conversion
+    - WASM build succeeds with moxcms (verify pure Rust, no C deps)
+  out_of_scope: |
+    - Arbitrary profile-to-profile transform (P1)
+    - CMYK color space handling (P1)
+    - Color difference metrics (P3)
+    - ICC profile creation/editing
+  technical_notes: |
+    moxcms provides:
+    - ICC profile parsing
+    - Color transform creation (profile A -> profile B)
+    - Per-pixel transform application
+
+    If moxcms doesn't compile to WASM, fallback to:
+    - Manual ICC profile parsing (the spec is public)
+    - Simplified sRGB conversion using profile TRC (tone response curve)
+
+    ICC profile storage: add optional icc_profile: Option<Vec<u8>> to ImageInfo
+    or a separate metadata struct. The profile bytes are opaque — we parse them
+    only when color conversion is needed.
+
+    For encoding: JPEG embeds ICC in APP2 markers, PNG in iCCP chunk. The image
+    crate encoders may support this via their config options.
+plan:
+  - phase: "Dependencies & Types"
+    tasks:
+      - text: "Add moxcms dependency, verify WASM compilation"
+        done: false
+      - text: "Add ICC profile field to image metadata types"
+        done: false
+      - text: "Add ICC-related WIT types (profile as opaque buffer)"
+        done: false
+  - phase: "Profile Extraction"
+    tasks:
+      - text: "Extract ICC profile from JPEG during decode (APP2 markers)"
+        done: false
+      - text: "Extract ICC profile from PNG during decode (iCCP chunk)"
+        done: false
+      - text: "Domain tests for ICC profile extraction"
+        done: false
+  - phase: "Color Conversion"
+    tasks:
+      - text: "Implement ICC-to-sRGB conversion using moxcms"
+        done: false
+      - text: "Add ICC-to-sRGB pipeline node"
+        done: false
+      - text: "Domain tests for color conversion correctness"
+        done: false
+  - phase: "Profile Embedding & Verification"
+    tasks:
+      - text: "Embed ICC profile in JPEG output"
+        done: false
+      - text: "Embed ICC profile in PNG output"
+        done: false
+      - text: "WASM integration test for ICC roundtrip"
+        done: false
+extra: {}

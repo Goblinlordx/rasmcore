@@ -1,0 +1,96 @@
+id: p0-alpha-composite_20260328024501Z
+title: "P0: Alpha Compositing (Porter-Duff Over)"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement alpha compositing (Porter-Duff "over" blend) as a raw-pixel
+    operation and pipeline node. This is the foundation for all layer-based
+    image editing — watermarks, overlays, collages.
+  context: |
+    Alpha compositing is P0 item 4. Without it, rasmcore cannot layer one
+    image on top of another — the most basic composition operation. Every
+    image editor, web renderer, and design tool uses Porter-Duff "over" as
+    the default blend mode.
+
+    The operation is per-pixel math:
+      out.rgb = fg.rgb * fg.a + bg.rgb * (1 - fg.a)
+      out.a   = fg.a + bg.a * (1 - fg.a)
+
+    This is SIMD-friendly (4 channels, independent per pixel) and works
+    naturally as a pipeline node with two upstream sources (DAG topology).
+  codebase_analysis: |
+    - Pipeline already supports DAG topology (multiple nodes can reference
+      same upstream, but compositing needs two DIFFERENT upstream nodes)
+    - ImageNode trait compute_region uses upstream_fn(node_id, rect) which
+      supports multiple upstream queries
+    - fast_image_resize has WASM SIMD alpha premultiply/divide operations
+    - WIT pipeline interface accepts node-id for each operation — composite
+      would take two node-ids (foreground, background)
+    - No existing compositing code
+  acceptance_criteria:
+    - Porter-Duff "over" composite operation on raw RGBA8 pixel buffers
+    - Handles premultiplied and straight alpha correctly
+    - Works as pipeline node (CompositeNode) with two upstream sources
+    - WIT pipeline method composite(fg, bg, x, y) returning new node-id
+    - Stateless function composite(fg_pixels, fg_info, bg_pixels, bg_info, x, y)
+    - Foreground positioned at (x, y) offset on background
+    - SIMD-friendly implementation (auto-vectorizable inner loop)
+    - Domain tests for opaque overlay, semi-transparent blend, full transparent
+    - WASM integration test
+  out_of_scope: |
+    - Other blend modes (multiply, screen, overlay — P1)
+    - Multiple-layer compositing (chain of composite operations handles this)
+    - Gradient masks or per-pixel blend mode selection
+  technical_notes: |
+    Porter-Duff "over" (straight alpha):
+      out_a = fg_a + bg_a * (1 - fg_a)
+      out_r = (fg_r * fg_a + bg_r * bg_a * (1 - fg_a)) / out_a
+      out_g = (fg_g * fg_a + bg_g * bg_a * (1 - fg_a)) / out_a
+      out_b = (fg_b * fg_a + bg_b * bg_a * (1 - fg_a)) / out_a
+
+    Premultiplied alpha (faster, no division):
+      out_r = fg_r + bg_r * (1 - fg_a)
+      out_g = fg_g + bg_g * (1 - fg_a)
+      out_b = fg_b + bg_b * (1 - fg_a)
+      out_a = fg_a + bg_a * (1 - fg_a)
+
+    Use premultiplied internally for SIMD efficiency. Convert at boundaries.
+
+    The pipeline CompositeNode takes two upstream node-ids and an (x, y) offset.
+    On get_tile, it requests the background tile at the output coordinates and
+    the foreground tile at (output_x - offset_x, output_y - offset_y).
+plan:
+  - phase: "Core Implementation"
+    tasks:
+      - text: "Implement raw-pixel alpha_composite_over(fg, bg, offset) for RGBA8"
+        done: false
+      - text: "Implement premultiplied alpha conversion helpers"
+        done: false
+      - text: "Handle edge cases (fg smaller than bg, offset positioning, clipping)"
+        done: false
+      - text: "Domain tests for opaque, semi-transparent, fully transparent compositing"
+        done: false
+  - phase: "Pipeline Integration"
+    tasks:
+      - text: "Create CompositeNode with two upstream sources and offset"
+        done: false
+      - text: "Add composite method to WIT pipeline resource"
+        done: false
+      - text: "Add stateless composite function to WIT"
+        done: false
+      - text: "Adapter implementation for composite"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Pipeline test compositing two images (watermark overlay)"
+        done: false
+      - text: "Verify pixel correctness against known reference values"
+        done: false
+      - text: "WASM integration test for composite"
+        done: false
+      - text: "TS SDK test for composite"
+        done: false
+extra: {}

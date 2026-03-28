@@ -1,0 +1,98 @@
+id: p0-gif-exif-orient_20260328024500Z
+title: "P0: GIF Encode, EXIF Metadata Read, Auto-Orient"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Add GIF write support, EXIF metadata reading, and auto-orient. These three
+    features cover P0 items 1, 2, and 5 from the parity matrix — the most basic
+    gaps that block real-world adoption.
+  context: |
+    GIF is the most common animated/static image format on the web — users cannot
+    produce GIF output today. EXIF metadata is embedded in virtually every camera
+    photo — without reading it, we cannot report orientation, dimensions from
+    header, or camera info. Auto-orient (applying the EXIF rotation tag) is
+    essential — without it, smartphone photos display sideways or upside-down.
+  codebase_analysis: |
+    - image crate already has GifEncoder (feature "gif" is enabled in Cargo.toml)
+    - domain/encoder/ has per-format module pattern (jpeg.rs, png.rs, webp.rs)
+    - GIF encode fits the same pattern: domain/encoder/gif.rs + GifEncodeConfig
+    - kamadak-exif 0.6.1 is pure Rust, reads EXIF from JPEG/TIFF/WebP
+    - Auto-orient uses EXIF orientation tag (1-8) mapped to rotate/flip operations
+    - Existing transform functions (rotate, flip) handle all 8 EXIF orientations
+    - WIT encoder.wit already has per-format encode functions pattern
+  acceptance_criteria:
+    - GIF encode produces valid GIF output from pixel data
+    - GIF encode config record in WIT (e.g., repeat count for animation)
+    - domain/encoder/gif.rs with GifEncodeConfig following per-format pattern
+    - EXIF metadata read returns orientation, dimensions, camera make/model, date
+    - New WIT interface for metadata reading (or extend pipeline)
+    - Auto-orient function reads EXIF orientation and applies correct transform
+    - Auto-orient works as both stateless function and pipeline node
+    - Pipeline write-gif sink function
+    - All existing tests pass
+    - Parity test for GIF roundtrip
+    - WASM integration test for GIF encode
+  out_of_scope: |
+    - Animated GIF encoding (multi-frame — future track)
+    - EXIF write/strip (P1 item)
+    - XMP/IPTC metadata (P3)
+  technical_notes: |
+    GIF encode via image crate:
+      let encoder = GifEncoder::new(&mut writer);
+      encoder.encode(pixels, width, height, color_type)?;
+
+    EXIF read via kamadak-exif:
+      let reader = exif::Reader::new();
+      let exif = reader.read_from_container(&mut cursor)?;
+      let orientation = exif.get_field(Tag::Orientation, In::PRIMARY);
+
+    EXIF orientation values (1-8) map to:
+      1: no transform
+      2: flip horizontal
+      3: rotate 180
+      4: flip vertical
+      5: transpose (rotate 270 + flip horizontal)
+      6: rotate 90
+      7: transverse (rotate 90 + flip horizontal)
+      8: rotate 270
+plan:
+  - phase: "GIF Encode"
+    tasks:
+      - text: "Create domain/encoder/gif.rs with GifEncodeConfig and encode function"
+        done: false
+      - text: "Add GIF to encoder/mod.rs dispatch and supported_formats list"
+        done: false
+      - text: "Add encode-gif to WIT encoder.wit with gif-encode-config record"
+        done: false
+      - text: "Add pipeline write-gif sink function"
+        done: false
+      - text: "Domain tests for GIF encode (valid output, roundtrip)"
+        done: false
+  - phase: "EXIF Metadata"
+    tasks:
+      - text: "Add kamadak-exif dependency to rasmcore-image"
+        done: false
+      - text: "Create domain/metadata.rs with read_exif function returning structured metadata"
+        done: false
+      - text: "Add metadata WIT types (orientation, dimensions, camera info)"
+        done: false
+      - text: "Domain tests for EXIF read from JPEG fixture"
+        done: false
+  - phase: "Auto-Orient"
+    tasks:
+      - text: "Implement auto_orient in domain/transform.rs (reads EXIF, applies rotation/flip)"
+        done: false
+      - text: "Add auto-orient to pipeline as a node (AutoOrientNode)"
+        done: false
+      - text: "Add auto-orient to WIT transform/pipeline interfaces"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "WASM integration tests for GIF encode and auto-orient"
+        done: false
+      - text: "TS SDK tests for GIF encode"
+        done: false
+extra: {}
