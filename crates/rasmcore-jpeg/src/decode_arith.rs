@@ -5,8 +5,8 @@
 
 use crate::dct;
 use crate::decode::JpegFrame;
-use crate::entropy;
 use crate::error::EncodeError;
+use crate::qm_coder::JpegArithDecoder;
 use crate::quantize;
 
 /// Decode scan using arithmetic coding (SOF9/SOF10).
@@ -42,10 +42,8 @@ pub(crate) fn decode_scan_arithmetic(
     let mcu_cols = (w + mcu_w - 1) / mcu_w;
     let mcu_rows = (h + mcu_h - 1) / mcu_h;
 
-    let num_components = frame.components.len();
-    let num_contexts = entropy::arithmetic_context_count(num_components);
-    let mut decoder = entropy::ArithmeticDecoder::new(entropy_data, num_contexts);
-    let mut dc_pred = vec![0i32; num_components];
+    // QM-coder handles byte stuffing internally
+    let mut decoder = JpegArithDecoder::new(entropy_data);
 
     let mut planes: Vec<Vec<i16>> = frame
         .components
@@ -75,19 +73,16 @@ pub(crate) fn decode_scan_arithmetic(
                         ))
                     })?;
 
-                let ctx_off = entropy::arithmetic_ctx_offset(ci);
-
                 for v_block in 0..comp.v_sampling as usize {
                     for h_block in 0..comp.h_sampling as usize {
+                        // Standard QM-coder: coefficients are in zigzag order
                         let mut zz_coeffs = [0i16; 64];
-                        entropy::arithmetic_decode_block(
-                            &mut decoder,
-                            ctx_off,
-                            &mut dc_pred[ci],
-                            &mut zz_coeffs,
-                        );
+                        // Use component index for DC table, luma=0 chroma=1
+                        let dc_tbl = if ci == 0 { 0 } else { 1 };
+                        let ac_tbl = dc_tbl;
+                        decoder.decode_block(&mut zz_coeffs, ci, dc_tbl, ac_tbl);
 
-                        // De-zigzag: encoder encoded in zigzag order
+                        // De-zigzag
                         let mut coeffs = [0i16; 64];
                         coeffs[0] = zz_coeffs[0];
                         for k in 1..64 {

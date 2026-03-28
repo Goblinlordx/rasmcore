@@ -23,6 +23,7 @@ mod decode_arith;
 pub mod entropy;
 mod error;
 mod markers;
+pub mod qm_coder;
 mod quantize;
 pub mod trellis;
 mod types;
@@ -190,8 +191,8 @@ pub fn encode(
 
         let mcu_data =
             encode_mcus_arithmetic(&ycbcr, is_gray, config.subsampling, &luma_qt, &chroma_qt);
-        let stuffed = markers::byte_stuff(&mcu_data);
-        out.extend_from_slice(&stuffed);
+        // QmEncoder already produces byte-stuffed output — no double stuffing
+        out.extend_from_slice(&mcu_data);
     } else if config.progressive {
         // Progressive mode: multiple scans with spectral selection
         encode_progressive(
@@ -729,14 +730,11 @@ fn encode_mcus_arithmetic(
         color::subsampling_factors(subsampling)
     };
 
-    let num_components = if is_gray { 1 } else { 3 };
-    let num_contexts = entropy::arithmetic_context_count(num_components);
-    let mut enc = entropy::ArithmeticEncoder::new(num_contexts);
-    let mut dc_pred = vec![0i32; num_components];
+    let mut enc = qm_coder::JpegArithEncoder::new();
 
     for mcu_row in 0..mcu_rows {
         for mcu_col in 0..mcu_cols {
-            // Y blocks
+            // Y blocks (DC table 0, AC table 0)
             for vb in 0..v_blocks {
                 for hb in 0..h_blocks {
                     let block = extract_block(
@@ -751,12 +749,11 @@ fn encode_mcus_arithmetic(
                     let mut quantized = [0i16; 64];
                     quantize::quantize(&dct_out, luma_qt, &mut quantized);
                     let zz = zigzag_reorder(&quantized);
-                    let ctx_off = entropy::arithmetic_ctx_offset(0);
-                    entropy::arithmetic_encode_block(&mut enc, ctx_off, &mut dc_pred[0], &zz);
+                    enc.encode_block(&zz, 0, 0, 0); // ci=0, dc_tbl=0, ac_tbl=0
                 }
             }
 
-            // Cb and Cr blocks
+            // Cb and Cr blocks (DC table 1, AC table 1)
             if !is_gray {
                 for (comp_idx, plane) in [(1usize, &ycbcr.cb), (2, &ycbcr.cr)] {
                     let block = extract_block(
@@ -771,13 +768,7 @@ fn encode_mcus_arithmetic(
                     let mut quantized = [0i16; 64];
                     quantize::quantize(&dct_out, chroma_qt, &mut quantized);
                     let zz = zigzag_reorder(&quantized);
-                    let ctx_off = entropy::arithmetic_ctx_offset(comp_idx);
-                    entropy::arithmetic_encode_block(
-                        &mut enc,
-                        ctx_off,
-                        &mut dc_pred[comp_idx],
-                        &zz,
-                    );
+                    enc.encode_block(&zz, comp_idx, 1, 1); // dc_tbl=1, ac_tbl=1
                 }
             }
         }

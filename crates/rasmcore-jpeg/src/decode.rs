@@ -209,12 +209,12 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                     );
                 }
 
-                // Baseline: single scan decode
-                let entropy_data = extract_entropy_data(data, &mut pos);
-
                 let pixels = if frm.is_arithmetic {
-                    crate::decode_arith::decode_scan_arithmetic(&entropy_data, frm, &quant_tables)?
+                    // QmDecoder handles byte-stuffing internally — pass raw bytes
+                    let raw_data = extract_raw_entropy_data(data, &mut pos);
+                    crate::decode_arith::decode_scan_arithmetic(&raw_data, frm, &quant_tables)?
                 } else {
+                    let entropy_data = extract_entropy_data(data, &mut pos);
                     decode_scan(
                         &entropy_data,
                         frm,
@@ -445,6 +445,42 @@ fn extract_entropy_data(data: &[u8], pos: &mut usize) -> Vec<u8> {
             } else {
                 // Real marker — end of entropy data
                 *pos -= 1; // back up to the 0xFF
+                break;
+            }
+        } else {
+            result.push(byte);
+        }
+    }
+    result
+}
+
+/// Extract raw entropy data WITHOUT unstuffing.
+/// Used for arithmetic coding where the QM-coder handles stuffing internally.
+fn extract_raw_entropy_data(data: &[u8], pos: &mut usize) -> Vec<u8> {
+    let mut result = Vec::new();
+    while *pos < data.len() {
+        let byte = data[*pos];
+        *pos += 1;
+
+        if byte == 0xFF {
+            if *pos >= data.len() {
+                result.push(0xFF);
+                break;
+            }
+            let next = data[*pos];
+            if next == 0x00 {
+                // Byte stuffing — keep BOTH bytes (QmDecoder handles)
+                result.push(0xFF);
+                result.push(0x00);
+                *pos += 1;
+            } else if next >= M_RST0 && next <= M_RST0 + 7 {
+                // Restart marker — keep for QmDecoder
+                result.push(0xFF);
+                result.push(next);
+                *pos += 1;
+            } else {
+                // Real marker — end of entropy data
+                *pos -= 1;
                 break;
             }
         } else {
