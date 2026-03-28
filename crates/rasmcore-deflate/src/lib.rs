@@ -1,4 +1,3 @@
-#![allow(clippy::needless_range_loop)]
 //! Pure Rust deflate/inflate implementation with shared Huffman coding.
 //!
 //! Provides:
@@ -30,7 +29,6 @@ pub enum CompressionLevel {
     /// Best compression — exhaustive LZ77 matching, optimal Huffman.
     Best,
 }
-
 
 /// Errors from inflate/deflate operations.
 #[derive(Debug, Clone)]

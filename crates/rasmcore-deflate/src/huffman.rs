@@ -378,18 +378,10 @@ mod tests {
     fn tree_from_deflate_fixed_lengths() {
         // RFC 1951 fixed Huffman: 0-143 = 8 bits, 144-255 = 9 bits, 256-279 = 7 bits, 280-287 = 8 bits
         let mut lengths = vec![0u8; 288];
-        for i in 0..=143 {
-            lengths[i] = 8;
-        }
-        for i in 144..=255 {
-            lengths[i] = 9;
-        }
-        for i in 256..=279 {
-            lengths[i] = 7;
-        }
-        for i in 280..=287 {
-            lengths[i] = 8;
-        }
+        lengths[0..=143].fill(8);
+        lengths[144..=255].fill(9);
+        lengths[256..=279].fill(7);
+        lengths[280..=287].fill(8);
         let tree = HuffmanTree::from_code_lengths(&lengths);
         assert!(tree.is_ok());
     }

@@ -281,18 +281,10 @@ fn decode_distance(reader: &mut BitReader, sym: u16) -> Result<usize, DeflateErr
 /// Build the fixed literal/length Huffman tree (RFC 1951 Section 3.2.6).
 fn build_fixed_litlen_tree() -> Result<HuffmanTree, DeflateError> {
     let mut lengths = vec![0u8; 288];
-    for i in 0..=143 {
-        lengths[i] = 8;
-    }
-    for i in 144..=255 {
-        lengths[i] = 9;
-    }
-    for i in 256..=279 {
-        lengths[i] = 7;
-    }
-    for i in 280..=287 {
-        lengths[i] = 8;
-    }
+    lengths[0..=143].fill(8);
+    lengths[144..=255].fill(9);
+    lengths[256..=279].fill(7);
+    lengths[280..=287].fill(8);
     HuffmanTree::from_code_lengths(&lengths)
 }
 
