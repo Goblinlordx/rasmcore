@@ -1,0 +1,75 @@
+id: jpeg-optimized-huffman_20260328184446Z
+title: JPEG Optimized Huffman Tables — Two-Pass Frequency Counting
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Two-pass JPEG encoder: first pass collects symbol frequencies, second pass generates optimal Huffman tables. 2-5%
+    additional file size savings over standard Annex K tables.'
+  context: JPEG uses Huffman coding for entropy compression. The ITU-T T.81 Annex K provides standard tables, but these are
+    generic averages. An optimized encoder can produce custom tables tailored to the actual image content by counting symbol
+    frequencies in a first pass, then generating optimal codes. mozjpeg, libjpeg-turbo (with optimize_coding=TRUE), and all
+    modern JPEG encoders support this. Our encoder currently only uses static Annex K tables.
+  codebase_analysis: 'Current encoder in lib.rs uses HuffmanEntropyEncoder/InterleavedMcuEncoder from entropy.rs with static
+    code length tables (AC_LUMA_CODE_LENGTHS, AC_CHROMA_CODE_LENGTHS, DC_LUMA_CODE_LENGTHS, DC_CHROMA_CODE_LENGTHS). The EncodeConfig
+    has an optimize_huffman field but it is not implemented. The encoder writes DHT markers with standard tables. Two-pass
+    approach: (1) quantize all blocks, count (run,size) frequencies for each table slot; (2) build optimal Huffman trees from
+    frequencies using the JPEG code-length-limiting algorithm (max 16 bits); (3) encode with custom tables and write custom
+    DHT markers.'
+  acceptance_criteria:
+  - Two-pass Huffman optimization produces custom DHT markers
+  - Output is decodable by image crate and ImageMagick
+  - File size reduction of 2-5% over standard Annex K tables on photo content at Q75-Q85
+  - Zero PSNR regression vs non-optimized (same quantized coefficients, just better entropy coding)
+  - EncodeConfig optimize_huffman flag wired and functional
+  - Three-way parity test for optimized Huffman mode
+  out_of_scope: Arithmetic coding optimization (already separate). Progressive scan optimization (separate track). Trellis
+    rate estimation update (handled in trellis-adaptive track).
+  technical_notes: 'Algorithm: (1) First pass - quantize all blocks identically to final encoding, accumulate frequency[symbol]
+    for DC categories and AC (run,size) pairs per component class. (2) Build Huffman tree per table using the package-merge
+    or simple greedy algorithm, constrained to max 16-bit codes per JPEG spec. (3) Generate BITS (code counts per length)
+    and HUFFVAL (symbol values) arrays for DHT marker. (4) Second pass - encode using the custom tables. The trellis rate
+    estimation should also use the optimized code lengths when both trellis and optimize_huffman are enabled - this creates
+    a chicken-and-egg problem solved by: first pass with standard tables for trellis, then recount with trellis results, then
+    final encode.'
+plan:
+  - phase: Foundation
+    tasks:
+      - text: Add frequency counting data structure - per-table symbol frequency arrays (DC luma/chroma, AC luma/chroma)
+        done: false
+      - text: Implement first-pass quantization loop that counts symbol frequencies without emitting bits
+        done: false
+      - text: Verify frequency counting matches actual encoding symbol distribution
+        done: false
+  - phase: Huffman Tree Generation
+    tasks:
+      - text: Implement optimal Huffman code generation from frequency tables (code-length-limited to 16 bits per JPEG spec)
+        done: false
+      - text: Generate BITS and HUFFVAL arrays from the optimal tree for DHT marker writing
+        done: false
+      - text: Add DHT marker writer that emits custom tables instead of standard Annex K
+        done: false
+      - text: Unit test - verify generated tables produce valid JPEG-compliant DHT markers
+        done: false
+  - phase: Two-Pass Encoder Integration
+    tasks:
+      - text: Wire optimize_huffman flag in EncodeConfig to trigger two-pass path
+        done: false
+      - text: Implement two-pass encode - first pass counts frequencies, second pass encodes with optimal tables
+        done: false
+      - text: Ensure trellis quantization results from first pass are reused in second pass (no re-quantization)
+        done: false
+      - text: Handle progressive mode - count frequencies across all scans, generate tables, re-encode all scans
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Add parity test - optimized Huffman output decodable by image crate
+        done: false
+      - text: Measure file size savings vs standard tables across quality levels and content types
+        done: false
+      - text: Verify PSNR is identical (same coefficients, different entropy coding)
+        done: false
+      - text: Run full existing test suite to verify no regressions
+        done: false
+extra: {}

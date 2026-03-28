@@ -1,0 +1,67 @@
+id: jpeg-trellis-dc-progressive_20260328184448Z
+title: JPEG DC Trellis + Progressive Trellis — Full Coefficient Optimization
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Extend trellis to DC coefficients (DPCM-aware DP) and wire trellis into progressive JPEG encoder. Completes mozjpeg-level
+    trellis coverage.
+  context: Our trellis currently only optimizes AC coefficients (positions 1-63). mozjpeg also optimizes DC coefficients via
+    a separate DP pass that considers DPCM prediction between adjacent blocks - choosing DC values that minimize the differential
+    coding cost. Additionally, our progressive JPEG encoder does not use trellis at all, missing optimization opportunities
+    across spectral bands. mozjpeg applies trellis in progressive mode per spectral band.
+  codebase_analysis: In trellis.rs, DC uses simple rounding (lines 49-56). The DC coefficient is quantized independently of
+    adjacent blocks. In lib.rs, the progressive encoder pre-computes all DCT blocks in a flat loop (line ~800-850) using standard
+    quantize::quantize(), never calling trellis. The progressive scan encoding (encode_progressive_scan) iterates over pre-quantized
+    coefficient buffers. To add trellis, the pre-quantization step needs to call trellis_quantize for each block, and DC trellis
+    needs a separate pass after all blocks are quantized (since DC DPCM depends on neighboring block DC values).
+  acceptance_criteria:
+  - DC trellis produces DPCM-aware DC coefficient values
+  - Progressive encoder uses trellis when config.trellis is true
+  - Additional 1-3% file size savings from DC optimization on 256x256+ images
+  - Progressive+trellis output decodable by image crate
+  - Three-way parity test for progressive trellis mode
+  out_of_scope: Successive approximation refinement optimization. Scan order optimization. Adaptive lambda (Track 2).
+  technical_notes: 'DC Trellis: After AC trellis, run a second DP pass over DC values in raster order. States represent candidate
+    DC quantized values. Transitions consider the DPCM differential coding cost: rate = Huffman_bits(category(DC[i] - DC[i-1])).
+    For each DC position, evaluate candidates (round_down, round_exact, round_up) and accumulate cost = SSD + lambda * DPCM_rate.
+    Progressive Trellis: In the progressive encode path, replace quantize::quantize() with trellis::trellis_quantize() when
+    config.trellis is true. The spectral selection (Ss/Se) means trellis operates on coefficient subsets - the existing AC
+    trellis handles this naturally since it processes positions 1-63 in zigzag order.'
+plan:
+  - phase: DC Trellis
+    tasks:
+      - text: Add DC candidate generation (round_down, round_exact, round_up for DC coefficient)
+        done: false
+      - text: Implement DC trellis DP pass over blocks in raster order with DPCM-aware cost
+        done: false
+      - text: Wire DC trellis as post-pass after AC trellis in trellis_quantize
+        done: false
+      - text: Unit test - DC trellis produces different values than simple rounding on varied content
+        done: false
+  - phase: Progressive Trellis
+    tasks:
+      - text: Wire trellis_quantize into progressive encoder pre-quantization loop
+        done: false
+      - text: Verify trellis output works with spectral selection (Ss/Se band encoding)
+        done: false
+      - text: Unit test - progressive+trellis produces smaller files than progressive alone
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Expose DC trellis via a dc_trellis flag (default true when trellis enabled)
+        done: false
+      - text: Ensure DC trellis respects restart intervals (reset DPCM predictor at restart boundaries)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Measure DC trellis savings on 256x256+ images across quality levels
+        done: false
+      - text: Add three-way parity test for progressive+trellis
+        done: false
+      - text: Add three-way parity test for DC trellis (baseline sequential)
+        done: false
+      - text: Run full existing test suite to verify no regressions
+        done: false
+extra: {}

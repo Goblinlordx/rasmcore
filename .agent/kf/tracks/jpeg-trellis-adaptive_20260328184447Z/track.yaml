@@ -1,0 +1,69 @@
+id: jpeg-trellis-adaptive_20260328184447Z
+title: JPEG Trellis Adaptive Lambda — Per-Block Energy + Per-Coefficient Weighting
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'mozjpeg-aligned trellis lambda: per-block energy adaptation (flat blocks get more zeros, textured blocks preserve
+    detail) and per-coefficient 1/Q^2 weighting. Replaces fixed lambda=1.0.'
+  context: 'mozjpeg trellis uses content-adaptive lambda with two key features our implementation lacks: (1) Per-block energy
+    adaptation - lambda = 2^14.75 / (2^16.5 + block_energy) where block_energy is the mean squared AC coefficient. Flat blocks
+    get higher lambda (more zeros), textured blocks get lower lambda (preserve detail). (2) Per-coefficient weighting - each
+    coefficient''s distortion is weighted by 1/Q[i]^2, normalizing distortion relative to quantization step. Our current implementation
+    uses a fixed lambda=1.0 for all blocks and coefficients.'
+  codebase_analysis: 'In trellis.rs, default_lambda() returns 1.0 constant. The trellis_optimize_ac() function uses uniform
+    lambda for all coefficients. The distortion computation is: dist = (original - dequant)^2, with no per-coefficient normalization.
+    Rate estimation uses static Huffman code lengths from entropy.rs. The encoder calls default_lambda(qt) per block in lib.rs
+    lines 679/703 but the qt argument is unused. When optimized Huffman tables are available (from Track 1), rate estimation
+    should use those code lengths instead of static tables.'
+  acceptance_criteria:
+  - Per-block lambda varies by block energy (flat vs textured)
+  - Per-coefficient 1/Q^2 weighting applied to distortion
+  - PSNR drop < 0.1dB vs baseline (no trellis) on smooth gradient content
+  - File size savings 5-15% on photo-like content at Q75-Q85
+  - Accepts optional custom AC code lengths for rate estimation (when optimized Huffman available)
+  - Three-way parity test with adaptive lambda
+  out_of_scope: DC trellis optimization (separate track). Optimized Huffman table generation (Track 1). Progressive mode trellis
+    (separate track).
+  technical_notes: 'Implementation: (1) Replace fixed lambda with per-block computation: compute block_energy = sum(ac_coeff^2)/63,
+    then lambda = 27554.0 / (92682.0 + block_energy). (2) Add per-coefficient lambda table: lambda_tbl[i] = 1.0 / (Q[i]^2)
+    where Q[i] is the quantization table value. Modify distortion to: dist = (original - dequant)^2 * lambda * lambda_tbl[zigzag_pos].
+    (3) When optimized Huffman code lengths are available, accept them as a parameter to trellis_quantize() for more accurate
+    rate estimation. (4) Expose lambda scaling factor in EncodeConfig for user-controllable quality-size tradeoff.'
+plan:
+  - phase: Per-Block Lambda
+    tasks:
+      - text: Add block_energy computation (mean squared AC coefficient) to trellis_quantize
+        done: false
+      - text: Replace fixed lambda=1.0 with mozjpeg formula - lambda = 2^14.75 / (2^16.5 + block_energy)
+        done: false
+      - text: Unit test - verify lambda varies between flat and textured blocks
+        done: false
+  - phase: Per-Coefficient Weighting
+    tasks:
+      - text: Add lambda_tbl[64] array computed as 1.0/Q[i]^2 for each coefficient position
+        done: false
+      - text: Modify distortion computation in trellis_optimize_ac to apply per-coefficient weight
+        done: false
+      - text: Unit test - verify high-frequency coefficients (large Q) are more aggressively zeroed than low-frequency
+        done: false
+  - phase: Rate Estimation Improvement
+    tasks:
+      - text: Add optional custom_ac_code_lengths parameter to trellis_quantize signature
+        done: false
+      - text: When custom code lengths provided, use them for rate estimation instead of static tables
+        done: false
+      - text: Wire through encoder - pass optimized code lengths when optimize_huffman is enabled
+        done: false
+  - phase: Verification
+    tasks:
+      - text: PSNR benchmark - compare fixed lambda vs adaptive across content types (gradient, checker, photo)
+        done: false
+      - text: Verify PSNR drop < 0.1dB on smooth gradient content vs no-trellis baseline
+        done: false
+      - text: Add three-way parity test for adaptive trellis mode
+        done: false
+      - text: Run full existing test suite to verify no regressions
+        done: false
+extra: {}
