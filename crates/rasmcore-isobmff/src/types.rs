@@ -205,3 +205,110 @@ pub struct MetaBox {
     /// Item references (from iref box).
     pub references: Vec<ItemReference>,
 }
+
+// ─── Item Properties ────────────────────────────────────────────────────────
+
+/// Association of a property to an item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PropertyAssociation {
+    /// Item ID this property is associated with.
+    pub item_id: u32,
+    /// 1-based index into the ipco property list.
+    pub property_index: u16,
+    /// Whether the property is essential for correct rendering.
+    pub essential: bool,
+}
+
+/// Image spatial extents (ispe property).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageSpatialExtents {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Color information (colr property).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ColorInfo {
+    /// ICC profile (type = "prof" or "rICC").
+    Icc(Vec<u8>),
+    /// NCLX color parameters (type = "nclx").
+    Nclx {
+        colour_primaries: u16,
+        transfer_characteristics: u16,
+        matrix_coefficients: u16,
+        full_range: bool,
+    },
+}
+
+/// Pixel information (pixi property).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PixelInfo {
+    /// Bits per channel for each channel.
+    pub bits_per_channel: Vec<u8>,
+}
+
+/// HEVC decoder configuration record (hvcC property).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HevcConfig {
+    pub configuration_version: u8,
+    pub general_profile_space: u8,
+    pub general_tier_flag: bool,
+    pub general_profile_idc: u8,
+    pub general_level_idc: u8,
+    pub chroma_format_idc: u8,
+    pub bit_depth_luma: u8,
+    pub bit_depth_chroma: u8,
+    /// NAL unit arrays (VPS, SPS, PPS, SEI, etc.).
+    pub nal_arrays: Vec<NalArray>,
+}
+
+/// A NAL unit array within hvcC.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NalArray {
+    /// Whether the NAL units are complete (array_completeness flag).
+    pub completeness: bool,
+    /// NAL unit type (e.g., 32=VPS, 33=SPS, 34=PPS).
+    pub nal_type: u8,
+    /// Raw NAL unit data (each entry is one NAL unit).
+    pub nal_units: Vec<Vec<u8>>,
+}
+
+/// AV1 codec configuration record (av1C property).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Av1Config {
+    pub seq_profile: u8,
+    pub seq_level_idx_0: u8,
+    pub seq_tier_0: bool,
+    pub high_bitdepth: bool,
+    pub twelve_bit: bool,
+    pub monochrome: bool,
+    pub chroma_subsampling_x: bool,
+    pub chroma_subsampling_y: bool,
+    pub chroma_sample_position: u8,
+    /// Raw config OBUs (if any follow the fixed fields).
+    pub config_obus: Vec<u8>,
+}
+
+/// A parsed property from ipco.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Property {
+    ImageSpatialExtents(ImageSpatialExtents),
+    Color(ColorInfo),
+    Pixel(PixelInfo),
+    HevcConfig(HevcConfig),
+    Av1Config(Av1Config),
+    /// Unknown property — stores FourCC and raw data.
+    Unknown {
+        box_type: [u8; 4],
+        data: Vec<u8>,
+    },
+}
+
+/// Collected item properties from iprp box.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemProperties {
+    /// Ordered list of properties from ipco (1-based indexing for ipma).
+    pub properties: Vec<Property>,
+    /// Associations mapping properties to items.
+    pub associations: Vec<PropertyAssociation>,
+}

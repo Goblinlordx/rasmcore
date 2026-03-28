@@ -7,14 +7,17 @@ mod boxreader;
 pub mod error;
 mod ftyp;
 mod meta;
+mod properties;
 pub mod types;
 
 pub use error::IsobmffError;
 pub use types::{
-    BoxHeader, Brand, CodecType, Extent, Ftyp, FullBoxHeader, ItemInfo, ItemLocation,
-    ItemReference, MetaBox, ReferenceType,
+    Av1Config, BoxHeader, Brand, CodecType, ColorInfo, Extent, Ftyp, FullBoxHeader, HevcConfig,
+    ImageSpatialExtents, ItemInfo, ItemLocation, ItemProperties, ItemReference, MetaBox, NalArray,
+    PixelInfo, Property, PropertyAssociation, ReferenceType,
 };
 
 pub use boxreader::{BoxIterator, read_box_header, read_full_box_header};
 pub use ftyp::{detect, parse_ftyp};
 pub use meta::parse_meta;
+pub use properties::{parse_iprp, resolve_properties};
