@@ -43,8 +43,7 @@ pub fn parse_iptc(data: &[u8]) -> Result<IptcMetadata, ImageError> {
 
         let record = iptc_data[pos + 1];
         let dataset = iptc_data[pos + 2];
-        let length =
-            u16::from_be_bytes([iptc_data[pos + 3], iptc_data[pos + 4]]) as usize;
+        let length = u16::from_be_bytes([iptc_data[pos + 3], iptc_data[pos + 4]]) as usize;
         let data_start = pos + 5;
         let data_end = data_start + length;
 
@@ -58,13 +57,13 @@ pub fn parse_iptc(data: &[u8]) -> Result<IptcMetadata, ImageError> {
         if record == 2 {
             let text = String::from_utf8_lossy(value).to_string();
             match dataset {
-                5 => meta.title = Some(text),                // Object Name
-                10 => meta.urgency = text.parse().ok(),      // Urgency
-                15 => meta.category = Some(text),            // Category
-                25 => meta.keywords.push(text),              // Keywords (repeatable)
-                80 => meta.byline = Some(text),              // By-line
-                116 => meta.copyright = Some(text),          // Copyright Notice
-                120 => meta.caption = Some(text),            // Caption/Abstract
+                5 => meta.title = Some(text),           // Object Name
+                10 => meta.urgency = text.parse().ok(), // Urgency
+                15 => meta.category = Some(text),       // Category
+                25 => meta.keywords.push(text),         // Keywords (repeatable)
+                80 => meta.byline = Some(text),         // By-line
+                116 => meta.copyright = Some(text),     // Copyright Notice
+                120 => meta.caption = Some(text),       // Caption/Abstract
                 _ => {}
             }
         }
@@ -137,7 +136,7 @@ fn find_iptc_in_photoshop_irb(data: &[u8]) -> Option<&[u8]> {
             break;
         }
         let pascal_len = data[pos] as usize;
-        let padded_pascal = if (pascal_len + 1) % 2 == 0 {
+        let padded_pascal = if (pascal_len + 1).is_multiple_of(2) {
             pascal_len + 1
         } else {
             pascal_len + 2
@@ -148,7 +147,8 @@ fn find_iptc_in_photoshop_irb(data: &[u8]) -> Option<&[u8]> {
             break;
         }
 
-        let block_size = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let block_size =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         if resource_type == 0x0404 && pos + block_size <= data.len() {

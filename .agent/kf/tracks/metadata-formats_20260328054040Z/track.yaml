@@ -147,7 +147,7 @@ plan:
 - phase: Verification
   tasks:
   - text: Verify kamadak-exif fully removed, all EXIF tests pass with little_exif
-    done: false
+    done: true
   - text: Run full validation suite including WASM build with new dependencies
-    done: false
+    done: true
 extra: {}
