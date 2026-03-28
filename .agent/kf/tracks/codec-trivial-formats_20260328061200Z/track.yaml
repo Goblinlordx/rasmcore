@@ -1,100 +1,97 @@
 id: codec-trivial-formats_20260328061200Z
-title: "Trivial Codec Formats — TGA, HDR, PNM, EXR, DDS via image crate"
+title: Trivial Codec Formats — TGA, HDR, PNM, EXR, DDS via image crate
 type: feature
 status: pending
 created: 2026-03-28
 updated: '2026-03-28'
 spec:
-  summary: |
-    Enable 5 image crate feature flags (tga, hdr, pnm, exr, dds) and wire
+  summary: 'Enable 5 image crate feature flags (tga, hdr, pnm, exr, dds) and wire
+
     decode+encode dispatch for all 5. DDS encode requires a minimal custom
+
     writer (uncompressed RGBA DDS) since the image crate has no DDS encoder.
-  context: |
-    The image crate already supports these formats behind feature flags.
+
+    '
+  context: 'The image crate already supports these formats behind feature flags.
+
     rasmcore currently enables png, jpeg, gif, webp, bmp, tiff, avif, ico, qoi.
+
     Adding tga, hdr, pnm, exr, dds requires only enabling the feature and
+
     adding format strings to the decoder/encoder dispatch tables.
 
+
     These formats use the generic encode() path — no per-format WIT config
-    records needed. They go through DynamicImage and the image crate's built-in
+
+    records needed. They go through DynamicImage and the image crate''s built-in
+
     encoders.
-  codebase_analysis: |
-    - Cargo.toml: add feature flags to image dependency
-    - domain/decoder/mod.rs: add format strings to SUPPORTED_FORMATS and detect_format()
-    - domain/encoder/mod.rs: add format strings to SUPPORTED_FORMATS and encode() match
-    - No new files needed — these formats use the generic encode/decode path
-    - image crate codecs confirmed: TGA (encode+decode), HDR (encode+decode),
-      PNM (encode+decode), EXR (encode+decode via openexr), DDS (decode only)
+
+    '
+  codebase_analysis: "- Cargo.toml: add feature flags to image dependency\n- domain/decoder/mod.rs: add format strings to\
+    \ SUPPORTED_FORMATS and detect_format()\n- domain/encoder/mod.rs: add format strings to SUPPORTED_FORMATS and encode()\
+    \ match\n- No new files needed — these formats use the generic encode/decode path\n- image crate codecs confirmed: TGA\
+    \ (encode+decode), HDR (encode+decode),\n  PNM (encode+decode), EXR (encode+decode via openexr), DDS (decode only)\n"
   acceptance_criteria:
-    - TGA decode and encode works via generic encode path
-    - HDR (Radiance RGBE) decode and encode works
-    - PNM (PPM/PGM/PBM) decode and encode works
-    - EXR (OpenEXR) decode and encode works
-    - DDS decode and encode works (custom uncompressed RGBA DDS writer)
-    - All 5 formats detected by detect_format()
-    - supported_formats() lists all new formats
-    - Roundtrip tests for all 5 formats
-    - cargo test passes, cargo component build succeeds
-  out_of_scope: |
-    - Per-format WIT config records (use generic encode path)
+  - TGA decode and encode works via generic encode path
+  - HDR (Radiance RGBE) decode and encode works
+  - PNM (PPM/PGM/PBM) decode and encode works
+  - EXR (OpenEXR) decode and encode works
+  - DDS decode and encode works (custom uncompressed RGBA DDS writer)
+  - All 5 formats detected by detect_format()
+  - supported_formats() lists all new formats
+  - Roundtrip tests for all 5 formats
+  - cargo test passes, cargo component build succeeds
+  out_of_scope: '- Per-format WIT config records (use generic encode path)
+
     - Per-format pipeline write sinks (use generic write path)
+
     - DDS BC1-7 block compression encode (only uncompressed RGBA)
+
     - Animation support for any of these formats
-  technical_notes: |
-    Feature flags to enable in Cargo.toml:
-      image = { ..., features = [..., "tga", "hdr", "pnm", "exr", "dds"] }
 
-    Decoder changes (domain/decoder/mod.rs):
-      - Add "tga", "hdr", "pnm", "exr", "dds" to SUPPORTED_FORMATS
-      - detect_format() already delegates to image crate — auto-detection works
-
-    Encoder changes (domain/encoder/mod.rs):
-      - Add "tga", "hdr", "pnm", "exr", "dds" to SUPPORTED_FORMATS
-      - Add cases in encode() match for each format using image crate encoders
-      - TGA: image::codecs::tga::TgaEncoder
-      - HDR: image::codecs::hdr::HdrEncoder (requires Rgb<f32>, may need conversion)
-      - PNM: image::codecs::pnm::PnmEncoder (PPM subformat for RGB8)
-      - EXR: image::codecs::openexr::OpenExrEncoder
-
-    HDR encoding note: The HDR encoder works with Rgb<f32> float data.
-    For u8 input, convert via sample / 255.0. This is lossy for LDR content
-    but correct for the format.
-
-    DDS encoding note: The image crate has no DDS encoder. Write a minimal
-    DDS writer that outputs uncompressed RGBA (DXT10 header + raw pixels).
-    The DDS format is simple: 128-byte header + pixel data. BC1-7 block
-    compression is out of scope — just uncompressed RGBA for now.
+    '
+  technical_notes: "Feature flags to enable in Cargo.toml:\n  image = { ..., features = [..., \"tga\", \"hdr\", \"pnm\", \"\
+    exr\", \"dds\"] }\n\nDecoder changes (domain/decoder/mod.rs):\n  - Add \"tga\", \"hdr\", \"pnm\", \"exr\", \"dds\" to\
+    \ SUPPORTED_FORMATS\n  - detect_format() already delegates to image crate — auto-detection works\n\nEncoder changes (domain/encoder/mod.rs):\n\
+    \  - Add \"tga\", \"hdr\", \"pnm\", \"exr\", \"dds\" to SUPPORTED_FORMATS\n  - Add cases in encode() match for each format\
+    \ using image crate encoders\n  - TGA: image::codecs::tga::TgaEncoder\n  - HDR: image::codecs::hdr::HdrEncoder (requires\
+    \ Rgb<f32>, may need conversion)\n  - PNM: image::codecs::pnm::PnmEncoder (PPM subformat for RGB8)\n  - EXR: image::codecs::openexr::OpenExrEncoder\n\
+    \nHDR encoding note: The HDR encoder works with Rgb<f32> float data.\nFor u8 input, convert via sample / 255.0. This is\
+    \ lossy for LDR content\nbut correct for the format.\n\nDDS encoding note: The image crate has no DDS encoder. Write a\
+    \ minimal\nDDS writer that outputs uncompressed RGBA (DXT10 header + raw pixels).\nThe DDS format is simple: 128-byte\
+    \ header + pixel data. BC1-7 block\ncompression is out of scope — just uncompressed RGBA for now.\n"
 plan:
-  - phase: Feature Flags + Decode
-    tasks:
-      - text: Enable tga, hdr, pnm, exr, dds feature flags in Cargo.toml
-        done: false
-      - text: Add all 5 formats to decoder SUPPORTED_FORMATS and verify detect_format works
-        done: false
-      - text: Test decode for each format using image crate test images
-        done: false
-  - phase: Encode Dispatch
-    tasks:
-      - text: Add TGA encode case to encoder dispatch (TgaEncoder)
-        done: false
-      - text: Add HDR encode case (HdrEncoder, handle u8-to-f32 conversion)
-        done: false
-      - text: Add PNM encode case (PnmEncoder, PPM subformat)
-        done: false
-      - text: Add EXR encode case (OpenExrEncoder)
-        done: false
-      - text: Add DDS encode case (custom uncompressed RGBA DDS writer, 128-byte header + raw pixels)
-        done: false
-      - text: Update encoder supported_formats() to include all 5 new formats
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Roundtrip tests for TGA, PNM, EXR (encode then decode, verify dimensions)
-        done: false
-      - text: HDR roundtrip test (verify encode produces valid .hdr, decode back)
-        done: false
-      - text: DDS roundtrip test (encode uncompressed RGBA, decode back, verify pixels)
-        done: false
-      - text: Verify cargo test passes and cargo component build succeeds
-        done: false
+- phase: Feature Flags + Decode
+  tasks:
+  - text: Enable tga, hdr, pnm, exr, dds feature flags in Cargo.toml
+    done: true
+  - text: Add all 5 formats to decoder SUPPORTED_FORMATS and verify detect_format works
+    done: true
+  - text: Test decode for each format using image crate test images
+    done: true
+- phase: Encode Dispatch
+  tasks:
+  - text: Add TGA encode case to encoder dispatch (TgaEncoder)
+    done: true
+  - text: Add HDR encode case (HdrEncoder, handle u8-to-f32 conversion)
+    done: true
+  - text: Add PNM encode case (PnmEncoder, PPM subformat)
+    done: true
+  - text: Add EXR encode case (OpenExrEncoder)
+    done: true
+  - text: Add DDS encode case (custom uncompressed RGBA DDS writer, 128-byte header + raw pixels)
+    done: true
+  - text: Update encoder supported_formats() to include all 5 new formats
+    done: true
+- phase: Verification
+  tasks:
+  - text: Roundtrip tests for TGA, PNM, EXR (encode then decode, verify dimensions)
+    done: true
+  - text: HDR roundtrip test (verify encode produces valid .hdr, decode back)
+    done: true
+  - text: DDS roundtrip test (encode uncompressed RGBA, decode back, verify pixels)
+    done: true
+  - text: Verify cargo test passes and cargo component build succeeds
+    done: true
 extra: {}

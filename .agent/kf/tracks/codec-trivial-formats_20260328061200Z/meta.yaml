@@ -1,5 +1,5 @@
 title: Trivial Codec Formats — TGA, HDR, PNM, EXR, DDS via image crate
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'
