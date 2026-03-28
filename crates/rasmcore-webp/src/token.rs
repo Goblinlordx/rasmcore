@@ -177,13 +177,24 @@ fn get_probs(block_type: usize, band: usize, ctx: usize) -> &'static [u8] {
 /// Uses band-indexed, context-aware probabilities matching the VP8 decoder.
 ///
 /// `plane_type`: 0=Y (AC only, after Y2), 1=Y2, 2=UV
-pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
-    // Map plane_type to VP8 block type for probability lookup
-    // Type 0 = Y-AC (after Y2), Type 1 = Y2, Type 2 = UV
-    // (Type 3 = Y-with-DC is for non-I16x16 modes, not used in our encoder)
+/// Encode a block of 16 quantized coefficients into the token partition.
+///
+/// Uses the decoder's exact skip optimization: after a ZERO token, the next
+/// token starts at tree node 1 (skipping EOB). EOB can only follow a non-zero
+/// token or be the first token in the block.
+///
+/// `plane_type`: 0=Y (AC only, after Y2), 1=Y2, 2=UV
+/// `complexity`: inter-MB context (0, 1, or 2) from neighboring blocks
+///
+/// Returns `true` if any non-zero coefficient was encoded (for context tracking).
+pub fn encode_block(
+    bw: &mut BoolWriter,
+    coeffs: &[i16; 16],
+    plane_type: u8,
+    complexity: usize,
+) -> bool {
     let block_type = plane_type as usize;
-
-    let start = if plane_type == 0 { 1 } else { 0 }; // Y AC starts at index 1
+    let start = if plane_type == 0 { 1 } else { 0 };
 
     // Find last non-zero coefficient
     let mut last_nz = -1i32;
@@ -194,8 +205,9 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
         }
     }
 
-    // Context starts at 0 (beginning of block)
-    let mut ctx: usize = 0;
+    let mut ctx: usize = complexity;
+    let mut skip = false; // true after encoding a ZERO token
+    let mut has_nonzero = false;
 
     for i in start..16 {
         let coeff = coeffs[ZIGZAG[i]];
@@ -204,96 +216,105 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
         let past_last = i as i32 > last_nz;
 
         if past_last && coeff == 0 {
-            // EOB
-            bw.put_bit(probs[0], false);
-            return;
+            if skip {
+                // After ZERO, decoder starts at node 1 — cannot encode EOB.
+                // Encode ZERO for remaining positions instead.
+                bw.put_bit(probs[1], false); // ZERO at node 1
+                ctx = TOKEN_TO_CONTEXT[TOKEN_ZERO] as usize;
+                // skip stays true
+                continue;
+            } else {
+                // Can encode EOB (at node 0)
+                bw.put_bit(probs[0], false); // EOB
+                return has_nonzero;
+            }
         }
 
         if coeff == 0 {
-            // ZERO token
-            bw.put_bit(probs[0], true); // not EOB
-            bw.put_bit(probs[1], false); // ZERO
+            if skip {
+                // Already at node 1, encode ZERO directly
+                bw.put_bit(probs[1], false); // ZERO at node 1
+            } else {
+                // At node 0, skip EOB then encode ZERO
+                bw.put_bit(probs[0], true); // not EOB (node 0 → node 1)
+                bw.put_bit(probs[1], false); // ZERO at node 1
+            }
+            skip = true;
             ctx = TOKEN_TO_CONTEXT[TOKEN_ZERO] as usize;
         } else {
             let abs_val = coeff.unsigned_abs() as u32;
             let sign = coeff < 0;
+            has_nonzero = true;
 
-            // Determine token type for context tracking
+            // When skip=false, we start at node 0 (encode not-EOB first)
+            // When skip=true, we start at node 1 (skip EOB check)
+            if !skip {
+                bw.put_bit(probs[0], true); // not EOB (node 0 → node 1)
+            }
+
             let token_type;
 
             if abs_val == 1 {
-                bw.put_bit(probs[0], true);
-                bw.put_bit(probs[1], true);
-                bw.put_bit(probs[2], false); // ONE
+                bw.put_bit(probs[1], true); // not ZERO (node 1 → node 2)
+                bw.put_bit(probs[2], false); // ONE (node 2 left)
                 token_type = TOKEN_ONE;
             } else if abs_val == 2 {
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
-                bw.put_bit(probs[3], false);
+                bw.put_bit(probs[3], false); // node 3 left → node 4
                 bw.put_bit(probs[4], false); // TWO
                 token_type = TOKEN_TWO;
             } else if abs_val == 3 {
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], false);
                 bw.put_bit(probs[4], true);
-                bw.put_bit(probs[5], false); // THREE
+                bw.put_bit(probs[5], false);
                 token_type = TOKEN_THREE;
             } else if abs_val == 4 {
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], false);
                 bw.put_bit(probs[4], true);
-                bw.put_bit(probs[5], true); // FOUR
+                bw.put_bit(probs[5], true);
                 token_type = TOKEN_FOUR;
             } else if abs_val <= 6 {
-                // CAT1 (5-6): node3→right, node6→left(=CAT1 leaf)
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
-                bw.put_bit(probs[3], true); // right at node3 → categories
-                bw.put_bit(probs[6], false); // left at node6 → CAT1
-                bw.put_bit(159, (abs_val - 5) != 0); // 1 extra bit
+                bw.put_bit(probs[3], true);
+                bw.put_bit(probs[6], false);
+                bw.put_bit(159, (abs_val - 5) != 0);
                 token_type = TOKEN_CAT1;
             } else if abs_val <= 10 {
-                // CAT2 (7-10): node3→right, node6→right(→node7), node7→left(=CAT2 leaf)
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
-                bw.put_bit(probs[3], true); // right → categories
-                bw.put_bit(probs[6], true); // right at node6 → node7
-                bw.put_bit(probs[7], false); // left at node7 → CAT2
+                bw.put_bit(probs[3], true);
+                bw.put_bit(probs[6], true);
+                bw.put_bit(probs[7], false);
                 let extra = abs_val - 7;
                 bw.put_bit(165, (extra >> 1) & 1 != 0);
                 bw.put_bit(145, extra & 1 != 0);
                 token_type = TOKEN_CAT2;
             } else if abs_val <= 18 {
-                // CAT3 (11-18): node3→right, node6→right(→node7), node7→right(→node8), node8→left(=CAT3 leaf)
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true); // right → node7
-                bw.put_bit(probs[7], true); // right → node8
-                bw.put_bit(probs[8], false); // left → CAT3
+                bw.put_bit(probs[6], true);
+                bw.put_bit(probs[7], true);
+                bw.put_bit(probs[8], false);
                 let extra = abs_val - 11;
                 bw.put_bit(173, (extra >> 2) & 1 != 0);
                 bw.put_bit(148, (extra >> 1) & 1 != 0);
                 bw.put_bit(140, extra & 1 != 0);
                 token_type = TOKEN_CAT3;
             } else if abs_val <= 34 {
-                // CAT4 (19-34): ...→node8→right(→node9), node9→left(=CAT4 leaf)
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true); // → node7
-                bw.put_bit(probs[7], true); // → node8
-                bw.put_bit(probs[8], true); // → node9
-                bw.put_bit(probs[9], false); // left → CAT4
+                bw.put_bit(probs[6], true);
+                bw.put_bit(probs[7], true);
+                bw.put_bit(probs[8], true);
+                bw.put_bit(probs[9], false);
                 let extra = abs_val - 19;
                 bw.put_bit(176, (extra >> 3) & 1 != 0);
                 bw.put_bit(155, (extra >> 2) & 1 != 0);
@@ -301,16 +322,14 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
                 bw.put_bit(135, extra & 1 != 0);
                 token_type = TOKEN_CAT4;
             } else if abs_val <= 66 {
-                // CAT5 (35-66): ...→node9→right(→node10), node10→left(=CAT5 leaf)
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true); // → node7
-                bw.put_bit(probs[7], true); // → node8
-                bw.put_bit(probs[8], true); // → node9
-                bw.put_bit(probs[9], true); // → node10
-                bw.put_bit(probs[10], false); // left → CAT5
+                bw.put_bit(probs[6], true);
+                bw.put_bit(probs[7], true);
+                bw.put_bit(probs[8], true);
+                bw.put_bit(probs[9], true);
+                bw.put_bit(probs[10], false);
                 let extra = abs_val - 35;
                 bw.put_bit(180, (extra >> 4) & 1 != 0);
                 bw.put_bit(157, (extra >> 3) & 1 != 0);
@@ -319,16 +338,14 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
                 bw.put_bit(130, extra & 1 != 0);
                 token_type = TOKEN_CAT5;
             } else {
-                // CAT6 (67+): ...→node10→right(=CAT6 leaf)
-                bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true); // → node7
-                bw.put_bit(probs[7], true); // → node8
-                bw.put_bit(probs[8], true); // → node9
-                bw.put_bit(probs[9], true); // → node10
-                bw.put_bit(probs[10], true); // right → CAT6
+                bw.put_bit(probs[6], true);
+                bw.put_bit(probs[7], true);
+                bw.put_bit(probs[8], true);
+                bw.put_bit(probs[9], true);
+                bw.put_bit(probs[10], true);
                 let extra = abs_val - 67;
                 let cat6_probs = [254u8, 254, 243, 230, 196, 177, 153, 140, 133, 130, 129];
                 for (j, &p) in cat6_probs.iter().enumerate() {
@@ -337,13 +354,12 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
                 token_type = TOKEN_CAT6;
             }
 
-            // Sign bit (always 50/50)
             bw.put_bit(128, sign);
-
+            skip = false;
             ctx = TOKEN_TO_CONTEXT[token_type] as usize;
         }
     }
-    // If we encoded all 16 coefficients without EOB, decoder stops at 16.
+    has_nonzero
 }
 
 #[cfg(test)]
@@ -354,7 +370,7 @@ mod tests {
     fn encode_all_zero_block_is_eob() {
         let mut bw = BoolWriter::new();
         let coeffs = [0i16; 16];
-        encode_block(&mut bw, &coeffs, 1);
+        encode_block(&mut bw, &coeffs, 1, 0);
         let bytes = bw.finish();
         assert!(!bytes.is_empty());
     }
@@ -364,7 +380,7 @@ mod tests {
         let mut bw = BoolWriter::new();
         let mut coeffs = [0i16; 16];
         coeffs[0] = 5;
-        encode_block(&mut bw, &coeffs, 1);
+        encode_block(&mut bw, &coeffs, 1, 0);
         let bytes = bw.finish();
         assert!(!bytes.is_empty());
     }
@@ -376,7 +392,7 @@ mod tests {
         coeffs[0] = 10;
         coeffs[1] = -3;
         coeffs[4] = 1;
-        encode_block(&mut bw, &coeffs, 2);
+        encode_block(&mut bw, &coeffs, 2, 0);
         let bytes = bw.finish();
         assert!(bytes.len() > 1);
     }

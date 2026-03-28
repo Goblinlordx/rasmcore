@@ -44,7 +44,13 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let mut recon_u = vec![128u8; uv_pad_w * uv_pad_h];
     let mut recon_v = vec![128u8; uv_pad_w * uv_pad_h];
 
+    // Complexity context tracking (matches decoder's top[]/left[] arrays)
+    // 9 entries per MB: [0]=Y2, [1..5]=Y cols, [5..7]=U cols, [7..9]=V cols
+    let mut top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
+    let mut left_ctx: [u8; 9] = [0u8; 9];
+
     for mb_row in 0..mb_h as usize {
+        left_ctx = [0u8; 9]; // reset left context at start of each row
         for mb_col in 0..mb_w as usize {
             let mb = encode_macroblock(
                 &y_padded,
@@ -59,6 +65,8 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 mb_row,
                 &seg_quant,
                 &mut token_writer,
+                &mut top_ctx[mb_col],
+                &mut left_ctx,
             );
             mb_infos.push(mb);
 
@@ -298,6 +306,8 @@ fn encode_macroblock(
     mb_row: usize,
     seg_quant: &SegmentQuant,
     token_bw: &mut BoolWriter,
+    top_ctx: &mut [u8; 9],
+    left_ctx: &mut [u8; 9],
 ) -> MacroblockInfo {
     let y_off = mb_row * 16 * y_stride + mb_col * 16;
     let uv_off = mb_row * 8 * uv_stride + mb_col * 8;
@@ -390,13 +400,58 @@ fn encode_macroblock(
         }
     }
 
-    // Always encode all tokens (mb_no_coeff_skip = false)
-    token::encode_block(token_bw, &y2_quantized, 1);
-    for coeffs in &y_coeffs {
-        token::encode_block(token_bw, coeffs, 0);
+    // Encode tokens with inter-MB complexity context tracking.
+    // Matches decoder's read_residual_data (vp8.rs lines 1575-1650).
+
+    // Y2 block: plane=1, complexity from top[0] + left[0]
+    let y2_complexity = (top_ctx[0] + left_ctx[0]).min(2) as usize;
+    let y2_has = token::encode_block(token_bw, &y2_quantized, 1, y2_complexity);
+    top_ctx[0] = if y2_has { 1 } else { 0 };
+    left_ctx[0] = if y2_has { 1 } else { 0 };
+
+    // Y blocks: plane=0, y=0..3 (outer), x=0..3 (inner)
+    // complexity from top[x+1] + left[y+1]
+    for y in 0..4 {
+        let mut left = left_ctx[y + 1];
+        for x in 0..4 {
+            let sb = y * 4 + x;
+            let complexity = (top_ctx[x + 1] + left).min(2) as usize;
+            let has = token::encode_block(token_bw, &y_coeffs[sb], 0, complexity);
+            let ctx_val = if has { 1 } else { 0 };
+            left = ctx_val;
+            top_ctx[x + 1] = ctx_val;
+        }
+        left_ctx[y + 1] = left;
     }
-    for coeffs in &uv_quantized {
-        token::encode_block(token_bw, coeffs, 2);
+
+    // U blocks: plane=2, y=0..1 (outer), x=0..1 (inner)
+    // complexity from top[x+5] + left[y+5]
+    for y in 0..2 {
+        let mut left = left_ctx[y + 5];
+        for x in 0..2 {
+            let sb = y * 2 + x;
+            let complexity = (top_ctx[x + 5] + left).min(2) as usize;
+            let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
+            let ctx_val = if has { 1 } else { 0 };
+            left = ctx_val;
+            top_ctx[x + 5] = ctx_val;
+        }
+        left_ctx[y + 5] = left;
+    }
+
+    // V blocks: plane=2, y=0..1 (outer), x=0..1 (inner)
+    // complexity from top[x+7] + left[y+7]
+    for y in 0..2 {
+        let mut left = left_ctx[y + 7];
+        for x in 0..2 {
+            let sb = 4 + y * 2 + x; // V blocks are indices 4-7 in uv_quantized
+            let complexity = (top_ctx[x + 7] + left).min(2) as usize;
+            let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
+            let ctx_val = if has { 1 } else { 0 };
+            left = ctx_val;
+            top_ctx[x + 7] = ctx_val;
+        }
+        left_ctx[y + 7] = left;
     }
 
     let all_zero = y2_quantized.iter().all(|&c| c == 0)
