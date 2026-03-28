@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/rasmcore-pipeline",
+    "crates/rasmcore-color",
     "crates/rasmcore-image",
     "crates/rasmcore-webp",
     "crates/rasmcore-jxl",
