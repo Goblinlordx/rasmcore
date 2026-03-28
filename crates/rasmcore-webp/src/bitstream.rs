@@ -324,11 +324,26 @@ fn encode_macroblock(
     let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
 
     // Select best 16×16 Y mode
-    let y_mode = predict::select_best_16x16(&y_block, &above_y, &left_y, above_left_y);
+    let y_mode = predict::select_best_16x16(
+        &y_block,
+        &above_y,
+        &left_y,
+        above_left_y,
+        mb_row > 0,
+        mb_col > 0,
+    );
 
     // Generate prediction
     let mut pred_y = [0u8; 256];
-    predict::predict_16x16(y_mode, &above_y, &left_y, above_left_y, &mut pred_y);
+    predict::predict_16x16(
+        y_mode,
+        &above_y,
+        &left_y,
+        above_left_y,
+        mb_row > 0,
+        mb_col > 0,
+        &mut pred_y,
+    );
 
     // Compute residual, DCT, quantize for all 16 Y sub-blocks
     let mut y_coeffs = [[0i16; 16]; 16];
@@ -346,10 +361,10 @@ fn encode_macroblock(
         }
         let mut coeffs = [0i16; 16];
         dct::forward_dct(&src_block, &ref_block, &mut coeffs);
+        y_dc_coeffs[sb] = coeffs[0]; // Raw DC for WHT path (NOT quantized)
         let mut quantized = [0i16; 16];
         quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
-        y_dc_coeffs[sb] = quantized[0];
-        quantized[0] = 0; // DC goes to Y2 block
+        quantized[0] = 0; // DC goes to Y2 block, not Y-AC
         y_coeffs[sb] = quantized;
     }
 
@@ -372,12 +387,35 @@ fn encode_macroblock(
             .copy_from_slice(&v_plane[uv_off + r * uv_stride..uv_off + r * uv_stride + 8]);
     }
 
-    let uv_mode = predict::select_best_8x8(&u_block, &above_u, &left_u, above_left_u);
+    let uv_mode = predict::select_best_8x8(
+        &u_block,
+        &above_u,
+        &left_u,
+        above_left_u,
+        mb_row > 0,
+        mb_col > 0,
+    );
 
     let mut pred_u = [0u8; 64];
     let mut pred_v = [0u8; 64];
-    predict::predict_8x8(uv_mode, &above_u, &left_u, above_left_u, &mut pred_u);
-    predict::predict_8x8(uv_mode, &above_v, &left_v, above_left_v, &mut pred_v);
+    predict::predict_8x8(
+        uv_mode,
+        &above_u,
+        &left_u,
+        above_left_u,
+        mb_row > 0,
+        mb_col > 0,
+        &mut pred_u,
+    );
+    predict::predict_8x8(
+        uv_mode,
+        &above_v,
+        &left_v,
+        above_left_v,
+        mb_row > 0,
+        mb_col > 0,
+        &mut pred_v,
+    );
 
     // Compute all 8 chroma sub-block coefficients
     let mut uv_quantized = [[0i16; 16]; 8];
@@ -512,7 +550,15 @@ fn reconstruct_macroblock(
         2 => predict::Intra16Mode::H,
         _ => predict::Intra16Mode::TM,
     };
-    predict::predict_16x16(y_mode_enum, &above_y, &left_y, above_left_y, &mut pred_y);
+    predict::predict_16x16(
+        y_mode_enum,
+        &above_y,
+        &left_y,
+        above_left_y,
+        mb_row > 0,
+        mb_col > 0,
+        &mut pred_y,
+    );
 
     // Forward DCT + quantize each Y sub-block (re-encode to get quantized coeffs)
     let mut y_quantized = [[0i16; 16]; 16];
@@ -530,14 +576,14 @@ fn reconstruct_macroblock(
         }
         let mut coeffs = [0i16; 16];
         dct::forward_dct(&src_block, &ref_block, &mut coeffs);
+        y_dc_coeffs[sb] = coeffs[0]; // Raw DC for WHT path (NOT quantized)
         let mut quantized = [0i16; 16];
         quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
-        y_dc_coeffs[sb] = quantized[0];
         quantized[0] = 0; // DC goes to Y2
         y_quantized[sb] = quantized;
     }
 
-    // WHT on DC coefficients, quantize, then dequantize + inverse WHT
+    // WHT on raw DC coefficients, quantize, then dequantize + inverse WHT
     let mut y2_coeffs = [0i16; 16];
     dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
     let mut y2_quantized = [0i16; 16];
@@ -594,8 +640,24 @@ fn reconstruct_macroblock(
         2 => predict::ChromaMode::H,
         _ => predict::ChromaMode::TM,
     };
-    predict::predict_8x8(uv_mode_enum, &above_u, &left_u, above_left_u, &mut pred_u);
-    predict::predict_8x8(uv_mode_enum, &above_v, &left_v, above_left_v, &mut pred_v);
+    predict::predict_8x8(
+        uv_mode_enum,
+        &above_u,
+        &left_u,
+        above_left_u,
+        mb_row > 0,
+        mb_col > 0,
+        &mut pred_u,
+    );
+    predict::predict_8x8(
+        uv_mode_enum,
+        &above_v,
+        &left_v,
+        above_left_v,
+        mb_row > 0,
+        mb_col > 0,
+        &mut pred_v,
+    );
 
     let mut u_block = [0u8; 64];
     let mut v_block = [0u8; 64];
@@ -650,9 +712,10 @@ fn get_y_neighbors(
     mb_col: usize,
     mb_row: usize,
 ) -> ([u8; 16], [u8; 16], u8) {
-    let mut above = [128u8; 16];
-    let mut left = [128u8; 16];
-    let mut above_left = 128u8;
+    // VP8 spec: default top=127, left=129 (matching image-webp decoder)
+    let mut above = [127u8; 16];
+    let mut left = [129u8; 16];
+    let mut above_left = if mb_row == 0 { 127u8 } else { 129u8 };
 
     if mb_row > 0 {
         let row_above = (mb_row * 16 - 1) * stride + mb_col * 16;
@@ -677,9 +740,10 @@ fn get_uv_neighbors(
     mb_col: usize,
     mb_row: usize,
 ) -> ([u8; 8], [u8; 8], u8) {
-    let mut above = [128u8; 8];
-    let mut left = [128u8; 8];
-    let mut above_left = 128u8;
+    // VP8 spec: default top=127, left=129 (matching image-webp decoder)
+    let mut above = [127u8; 8];
+    let mut left = [129u8; 8];
+    let mut above_left = if mb_row == 0 { 127u8 } else { 129u8 };
 
     if mb_row > 0 {
         let row_above = (mb_row * 8 - 1) * stride + mb_col * 8;

@@ -110,21 +110,46 @@ pub fn predict_16x16(
     above: &[u8; 16],
     left: &[u8; 16],
     above_left: u8,
+    has_above: bool,
+    has_left: bool,
     dst: &mut [u8],
 ) {
     debug_assert!(dst.len() >= 256);
     match mode {
-        Intra16Mode::DC => predict_16x16_dc(above, left, dst),
+        Intra16Mode::DC => predict_16x16_dc(above, left, has_above, has_left, dst),
         Intra16Mode::V => predict_16x16_v(above, dst),
         Intra16Mode::H => predict_16x16_h(left, dst),
         Intra16Mode::TM => predict_16x16_tm(above, left, above_left, dst),
     }
 }
 
-fn predict_16x16_dc(above: &[u8; 16], left: &[u8; 16], dst: &mut [u8]) {
-    let sum: u32 =
-        above.iter().map(|&v| v as u32).sum::<u32>() + left.iter().map(|&v| v as u32).sum::<u32>();
-    let dc = ((sum + 16) >> 5) as u8; // (sum + 16) / 32
+/// DC prediction matching VP8 spec / image-webp decoder:
+/// - Both neighbors: average all 32 samples
+/// - Only above or only left: average 16 samples from available neighbor
+/// - Neither: use constant 128
+fn predict_16x16_dc(
+    above: &[u8; 16],
+    left: &[u8; 16],
+    has_above: bool,
+    has_left: bool,
+    dst: &mut [u8],
+) {
+    let dc = match (has_above, has_left) {
+        (true, true) => {
+            let sum: u32 = above.iter().map(|&v| v as u32).sum::<u32>()
+                + left.iter().map(|&v| v as u32).sum::<u32>();
+            ((sum + 16) >> 5) as u8
+        }
+        (true, false) => {
+            let sum: u32 = above.iter().map(|&v| v as u32).sum();
+            ((sum + 8) >> 4) as u8
+        }
+        (false, true) => {
+            let sum: u32 = left.iter().map(|&v| v as u32).sum();
+            ((sum + 8) >> 4) as u8
+        }
+        (false, false) => 128,
+    };
     dst[..256].fill(dc);
 }
 
@@ -383,21 +408,42 @@ pub fn predict_8x8(
     above: &[u8; 8],
     left: &[u8; 8],
     above_left: u8,
+    has_above: bool,
+    has_left: bool,
     dst: &mut [u8],
 ) {
     debug_assert!(dst.len() >= 64);
     match mode {
-        ChromaMode::DC => predict_8x8_dc(above, left, dst),
+        ChromaMode::DC => predict_8x8_dc(above, left, has_above, has_left, dst),
         ChromaMode::V => predict_8x8_v(above, dst),
         ChromaMode::H => predict_8x8_h(left, dst),
         ChromaMode::TM => predict_8x8_tm(above, left, above_left, dst),
     }
 }
 
-fn predict_8x8_dc(above: &[u8; 8], left: &[u8; 8], dst: &mut [u8]) {
-    let sum: u32 =
-        above.iter().map(|&v| v as u32).sum::<u32>() + left.iter().map(|&v| v as u32).sum::<u32>();
-    let dc = ((sum + 8) >> 4) as u8; // (sum + 8) / 16
+fn predict_8x8_dc(
+    above: &[u8; 8],
+    left: &[u8; 8],
+    has_above: bool,
+    has_left: bool,
+    dst: &mut [u8],
+) {
+    let dc = match (has_above, has_left) {
+        (true, true) => {
+            let sum: u32 = above.iter().map(|&v| v as u32).sum::<u32>()
+                + left.iter().map(|&v| v as u32).sum::<u32>();
+            ((sum + 8) >> 4) as u8
+        }
+        (true, false) => {
+            let sum: u32 = above.iter().map(|&v| v as u32).sum();
+            ((sum + 4) >> 3) as u8
+        }
+        (false, true) => {
+            let sum: u32 = left.iter().map(|&v| v as u32).sum();
+            ((sum + 4) >> 3) as u8
+        }
+        (false, false) => 128,
+    };
     dst[..64].fill(dc);
 }
 
@@ -508,13 +554,17 @@ pub fn select_best_16x16(
     above: &[u8; 16],
     left: &[u8; 16],
     above_left: u8,
+    has_above: bool,
+    has_left: bool,
 ) -> Intra16Mode {
     let mut best_mode = Intra16Mode::DC;
     let mut best_sad = u32::MAX;
     let mut pred = [0u8; 256];
 
     for &mode in &ALL_INTRA16 {
-        predict_16x16(mode, above, left, above_left, &mut pred);
+        predict_16x16(
+            mode, above, left, above_left, has_above, has_left, &mut pred,
+        );
         let cost = sad(&actual[..256], &pred);
         if cost < best_sad {
             best_sad = cost;
@@ -553,13 +603,17 @@ pub fn select_best_8x8(
     above: &[u8; 8],
     left: &[u8; 8],
     above_left: u8,
+    has_above: bool,
+    has_left: bool,
 ) -> ChromaMode {
     let mut best_mode = ChromaMode::DC;
     let mut best_sad = u32::MAX;
     let mut pred = [0u8; 64];
 
     for &mode in &ALL_CHROMA {
-        predict_8x8(mode, above, left, above_left, &mut pred);
+        predict_8x8(
+            mode, above, left, above_left, has_above, has_left, &mut pred,
+        );
         let cost = sad(&actual[..64], &pred);
         if cost < best_sad {
             best_sad = cost;
@@ -585,7 +639,7 @@ mod tests {
         let above = [100u8; 16];
         let left = [200u8; 16];
         let mut dst = [0u8; 256];
-        predict_16x16(Intra16Mode::DC, &above, &left, 0, &mut dst);
+        predict_16x16(Intra16Mode::DC, &above, &left, 0, true, true, &mut dst);
         assert!(dst.iter().all(|&v| v == 150));
     }
 
@@ -594,7 +648,7 @@ mod tests {
         let above: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
         let left = [0u8; 16];
         let mut dst = [0u8; 256];
-        predict_16x16(Intra16Mode::V, &above, &left, 0, &mut dst);
+        predict_16x16(Intra16Mode::V, &above, &left, 0, true, true, &mut dst);
         for row in 0..16 {
             assert_eq!(&dst[row * 16..row * 16 + 16], &above);
         }
@@ -607,7 +661,7 @@ mod tests {
             10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
         ];
         let mut dst = [0u8; 256];
-        predict_16x16(Intra16Mode::H, &above, &left, 0, &mut dst);
+        predict_16x16(Intra16Mode::H, &above, &left, 0, true, true, &mut dst);
         for row in 0..16 {
             assert!(dst[row * 16..row * 16 + 16].iter().all(|&v| v == left[row]));
         }
@@ -620,7 +674,15 @@ mod tests {
         let left = [50u8; 16];
         let above_left = 75u8;
         let mut dst = [0u8; 256];
-        predict_16x16(Intra16Mode::TM, &above, &left, above_left, &mut dst);
+        predict_16x16(
+            Intra16Mode::TM,
+            &above,
+            &left,
+            above_left,
+            true,
+            true,
+            &mut dst,
+        );
         // Expected: 50 + 100 - 75 = 75
         assert!(dst.iter().all(|&v| v == 75));
     }
@@ -631,7 +693,15 @@ mod tests {
         let left = [250u8; 16];
         let above_left = 10u8;
         let mut dst = [0u8; 256];
-        predict_16x16(Intra16Mode::TM, &above, &left, above_left, &mut dst);
+        predict_16x16(
+            Intra16Mode::TM,
+            &above,
+            &left,
+            above_left,
+            true,
+            true,
+            &mut dst,
+        );
         // 250 + 250 - 10 = 490 → clipped to 255
         assert!(dst.iter().all(|&v| v == 255));
     }
@@ -746,7 +816,7 @@ mod tests {
         let above = [100u8; 8];
         let left = [200u8; 8];
         let mut dst = [0u8; 64];
-        predict_8x8(ChromaMode::DC, &above, &left, 0, &mut dst);
+        predict_8x8(ChromaMode::DC, &above, &left, 0, true, true, &mut dst);
         // (8*100 + 8*200 + 8) / 16 = 2408/16 = 150
         assert!(dst.iter().all(|&v| v == 150));
     }
@@ -755,7 +825,7 @@ mod tests {
     fn predict_8x8_v_copies_above_row() {
         let above = [0, 10, 20, 30, 40, 50, 60, 70];
         let mut dst = [0u8; 64];
-        predict_8x8(ChromaMode::V, &above, &[0; 8], 0, &mut dst);
+        predict_8x8(ChromaMode::V, &above, &[0; 8], 0, true, true, &mut dst);
         for row in 0..8 {
             assert_eq!(&dst[row * 8..row * 8 + 8], &above);
         }
@@ -765,7 +835,7 @@ mod tests {
     fn predict_8x8_h_copies_left_column() {
         let left = [10, 20, 30, 40, 50, 60, 70, 80];
         let mut dst = [0u8; 64];
-        predict_8x8(ChromaMode::H, &[0; 8], &left, 0, &mut dst);
+        predict_8x8(ChromaMode::H, &[0; 8], &left, 0, true, true, &mut dst);
         for row in 0..8 {
             assert!(dst[row * 8..row * 8 + 8].iter().all(|&v| v == left[row]));
         }
@@ -776,7 +846,7 @@ mod tests {
         let above = [100u8; 8];
         let left = [50u8; 8];
         let mut dst = [0u8; 64];
-        predict_8x8(ChromaMode::TM, &above, &left, 75, &mut dst);
+        predict_8x8(ChromaMode::TM, &above, &left, 75, true, true, &mut dst);
         assert!(dst.iter().all(|&v| v == 75));
     }
 
@@ -803,7 +873,7 @@ mod tests {
         let actual = [128u8; 256];
         let above = [128u8; 16];
         let left = [128u8; 16];
-        let mode = select_best_16x16(&actual, &above, &left, 128);
+        let mode = select_best_16x16(&actual, &above, &left, 128, true, true);
         // All modes produce 128 for uniform input, DC should win (or tie at 0 SAD).
         // DC is tried first, so it should be selected.
         assert_eq!(mode, Intra16Mode::DC);
@@ -821,7 +891,7 @@ mod tests {
         for row in 0..16 {
             actual[row * 16..row * 16 + 16].copy_from_slice(&above);
         }
-        let mode = select_best_16x16(&actual, &above, &left, 128);
+        let mode = select_best_16x16(&actual, &above, &left, 128, true, true);
         assert_eq!(mode, Intra16Mode::V);
     }
 
@@ -835,7 +905,7 @@ mod tests {
         for row in 0..16 {
             actual[row * 16..row * 16 + 16].fill(left[row]);
         }
-        let mode = select_best_16x16(&actual, &above, &left, 128);
+        let mode = select_best_16x16(&actual, &above, &left, 128, true, true);
         assert_eq!(mode, Intra16Mode::H);
     }
 
@@ -865,7 +935,7 @@ mod tests {
         let actual = [100u8; 64];
         let above = [100u8; 8];
         let left = [100u8; 8];
-        let mode = select_best_8x8(&actual, &above, &left, 100);
+        let mode = select_best_8x8(&actual, &above, &left, 100, true, true);
         assert_eq!(mode, ChromaMode::DC);
     }
 
@@ -877,7 +947,7 @@ mod tests {
         for row in 0..8 {
             actual[row * 8..row * 8 + 8].fill(left[row]);
         }
-        let mode = select_best_8x8(&actual, &above, &left, 128);
+        let mode = select_best_8x8(&actual, &above, &left, 128, true, true);
         assert_eq!(mode, ChromaMode::H);
     }
 }
