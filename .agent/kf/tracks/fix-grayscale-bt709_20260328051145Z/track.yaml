@@ -39,11 +39,11 @@ plan:
 - phase: Fix Implementation
   tasks:
   - text: Update BT.601 weights to BT.709 in domain/filters.rs grayscale() for RGB8 arm
-    done: false
+    done: true
   - text: Update BT.601 weights to BT.709 in domain/filters.rs grayscale() for RGBA8 arm
-    done: false
+    done: true
   - text: Update docstring from BT.601 to BT.709
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Run domain unit tests (cargo test --lib -p rasmcore-image -- filters)

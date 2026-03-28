@@ -131,7 +131,7 @@ pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
 
 /// Convert to grayscale using weighted channel sum.
 ///
-/// Uses ITU-R BT.601 weights: 0.299R + 0.587G + 0.114B
+/// Uses ITU-R BT.709 weights: 0.2126R + 0.7152G + 0.0722B
 pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageError> {
     validate_format(info.format)?;
 
@@ -145,7 +145,7 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
                 let r = chunk[0] as f32;
                 let g = chunk[1] as f32;
                 let b = chunk[2] as f32;
-                gray.push((0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8);
+                gray.push((0.2126 * r + 0.7152 * g + 0.0722 * b).clamp(0.0, 255.0) as u8);
             }
             gray
         }
@@ -155,7 +155,7 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
                 let r = chunk[0] as f32;
                 let g = chunk[1] as f32;
                 let b = chunk[2] as f32;
-                gray.push((0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8);
+                gray.push((0.2126 * r + 0.7152 * g + 0.0722 * b).clamp(0.0, 255.0) as u8);
             }
             gray
         }
