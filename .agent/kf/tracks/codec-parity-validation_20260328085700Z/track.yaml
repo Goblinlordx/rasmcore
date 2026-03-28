@@ -49,35 +49,35 @@ plan:
 - phase: Test Infrastructure
   tasks:
   - text: Create tests/codec-parity/ test crate with shared comparison helpers (bit_exact, psnr, mae)
-    done: false
+    done: true
   - text: Create test image generators (solid, gradient, checker, photo_pattern) as shared fixtures
-    done: false
+    done: true
   - text: Add reference encode/decode wrappers using image crate for QOI, BMP, TGA, PNM, JPEG
-    done: false
+    done: true
 - phase: Lossless Codec Parity (A==B==C bit-exact)
   tasks:
   - text: 'QOI: three-way test for RGB and RGBA (solid + gradient + checker)'
-    done: false
+    done: true
   - text: 'PNM: three-way for PPM binary, PGM binary, PBM binary, PPM ASCII'
-    done: false
+    done: true
   - text: 'BMP: three-way for 24-bit RGB, 32-bit RGBA, 8-bit grayscale palette'
-    done: false
+    done: true
   - text: 'TGA: three-way for 24-bit RGB, 32-bit RGBA, grayscale, RLE variants'
-    done: false
+    done: true
 - phase: Lossy Codec Parity (A==B strict, A≈C quality)
   tasks:
   - text: 'JPEG: A==B (our encode → ref decode vs our encode → our decode) within PSNR > 30dB'
-    done: false
+    done: true
   - text: 'JPEG: B≈C (our encode vs ref encode, both ref-decoded) PSNR > 25dB at same quality'
-    done: false
+    done: true
   - text: 'WebP: A==B (our encode → image decode) MAE < 5 for working sizes'
-    done: false
+    done: true
   - text: 'WebP: B≈C (our encode vs image-crate encode, same quality) MAE < 30'
-    done: false
+    done: true
 - phase: FITS + Edge Cases
   tasks:
   - text: 'FITS: self-consistency A==B for all BITPIX types (no ref encoder available)'
-    done: false
+    done: true
   - text: 'All codecs: odd dimensions (1x1, 3x7, 17x1) three-way parity'
-    done: false
+    done: true
 extra: {}

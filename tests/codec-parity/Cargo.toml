@@ -1,0 +1,19 @@
+[package]
+name = "codec-parity"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+# Native codec crates under test
+rasmcore-qoi = { path = "../../crates/rasmcore-qoi" }
+rasmcore-pnm = { path = "../../crates/rasmcore-pnm" }
+rasmcore-bmp = { path = "../../crates/rasmcore-bmp" }
+rasmcore-tga = { path = "../../crates/rasmcore-tga" }
+rasmcore-fits = { path = "../../crates/rasmcore-fits" }
+rasmcore-jpeg = { path = "../../crates/rasmcore-jpeg" }
+
+# Reference implementation
+image = { workspace = true, features = [
+    "qoi", "pnm", "bmp", "tga", "jpeg",
+] }

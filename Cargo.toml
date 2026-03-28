@@ -16,6 +16,7 @@ members = [
     "crates/rasmcore-tga",
     "crates/rasmcore-fits",
     "tests/wasm-integration",
+    "tests/codec-parity",
 ]
 
 [workspace.package]
