@@ -17,7 +17,10 @@ goals:
   - Seamless cross-platform, cross-language portability via WASM Component Model
   - Security-first design — eliminate C/C++ parser vulnerabilities
   - Modular plugin architecture with WIT interface governance
-  - Support for large file streaming via WASI-IO (no full-file memory loading)
+  - Demand-driven tile pipeline with spatial cache (no full-image memory loading)
+  - Dual-level API — pipeline resource + stateless compute kernels for host-driven parallelism
+  - Deployment-portable orchestrator — same Rust code runs native (host) or WASM (wasi-threads)
+  - Feature parity with libvips and ImageMagick for image operations
   - GPU acceleration via wgpu/WebGPU where available
   - Patent-encumbered codec support via sidecar plugin distribution
 
@@ -50,6 +53,28 @@ technical_requirements:
         Domain layer defines its own explicit error types. The adapter layer
         translates domain errors to WIT rasmcore-error at the boundary.
         Domain errors are never leaked through the interface layer untranslated.
+    - name: demand-driven-tile-pipeline
+      description: |
+        Image processing uses a pull-based pipeline. write() drives execution by
+        requesting tiles backward through a node graph. Each node requests
+        dynamically-sized regions from upstream with appropriate kernel overlap.
+        A spatial cache with ref-counted borrowing ensures overlap regions are
+        computed once and reused. No fixed tile grid — write sink format determines
+        output chunk geometry (JPEG MCU rows, PNG scanlines, TIFF native tiles).
+        Design doc: .agent/kf/_reports/pipeline-architecture.md
+    - name: dual-level-api
+      description: |
+        Level 1: Pipeline resource — component owns graph, cache, execution.
+        Single-threaded, works everywhere. User-facing API uses read/write naming.
+        Level 2: Stateless compute kernels — pure functions (pixels in, pixels out).
+        Host can dispatch to N WASM instances in parallel with shared native cache.
+        The orchestrator (graph + cache + dispatch) is pure Rust that compiles to
+        both native (host-driven Phase 2) and WASM (wasi-threads Phase 3).
+    - name: per-format-codec-modules
+      description: |
+        Each image format (JPEG, PNG, WebP, etc.) is its own module with precisely
+        defined typed config records. No stringly-typed params. Each codec covers
+        both read (decode) and write (encode) with standards-aligned behavior.
 
   development_process:
     - name: tdd-at-domain-boundaries
