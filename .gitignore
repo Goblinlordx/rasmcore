@@ -25,6 +25,9 @@ node_modules/
 # Generated test fixtures (regenerated from generate.sh, cached by hash)
 tests/fixtures/generated/
 
+# HEVC test fixtures (generated from reference encoder/decoder, cached locally)
+tests/fixtures/hevc/generated/
+
 # Environment
 .env
 .env.local

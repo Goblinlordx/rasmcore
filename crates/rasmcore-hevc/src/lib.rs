@@ -10,6 +10,8 @@ pub mod cabac;
 pub mod error;
 pub mod nal;
 pub mod params;
+#[cfg(test)]
+pub mod testutil;
 pub mod types;
 
 pub use error::HevcError;

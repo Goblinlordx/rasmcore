@@ -1,0 +1,21 @@
+# HEVC test vector generation — pinned tool versions
+#
+# These tools are used to generate golden reference data for HEVC decoder validation.
+# The generation script checks these versions and warns on mismatch.
+# Fixtures generated with different versions may produce different bitstreams.
+
+[tools.x265]
+version = "4.1"
+description = "HEVC/H.265 encoder — generates I-frame bitstreams"
+install = "brew install x265  # or: apt install x265"
+
+[tools.ffmpeg]
+version = "7.1"
+description = "Media framework — generates raw YUV input, verifies decode, extracts intermediates"
+install = "brew install ffmpeg  # or: apt install ffmpeg"
+
+[tools.libde265]
+version = "1.0.15"
+description = "HEVC reference decoder — used for per-stage intermediate extraction"
+install = "brew install libde265  # or: apt install libde265-dev"
+notes = "dec265 CLI tool used for reference decode verification"
