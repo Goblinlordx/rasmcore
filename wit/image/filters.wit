@@ -24,4 +24,16 @@ interface filters {
     /// Places fg at (x, y) offset on bg. Both must be RGBA8.
     /// Output has bg dimensions, bg pixel format, and bg color space.
     composite: func(fg-pixels: buffer, fg-info: image-info, bg-pixels: buffer, bg-info: image-info, x: s32, y: s32) -> result<buffer, rasmcore-error>;
+
+    /// Rotate hue by degrees (0-360)
+    hue-rotate: func(pixels: buffer, info: image-info, degrees: f32) -> result<buffer, rasmcore-error>;
+
+    /// Adjust saturation (0=grayscale, 1=unchanged, 2=double)
+    saturate: func(pixels: buffer, info: image-info, factor: f32) -> result<buffer, rasmcore-error>;
+
+    /// Apply sepia tone (0=none, 1=full sepia)
+    sepia: func(pixels: buffer, info: image-info, intensity: f32) -> result<buffer, rasmcore-error>;
+
+    /// Tint image toward target color (0=none, 1=full tint)
+    colorize: func(pixels: buffer, info: image-info, target-r: u8, target-g: u8, target-b: u8, amount: f32) -> result<buffer, rasmcore-error>;
 }
