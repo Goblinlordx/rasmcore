@@ -24,18 +24,18 @@ spec:
     (not tested).
   technical_notes: 'One-line fix: change CODED_SUB_BLOCK_FLAG_INIT[0] from [153, 111, 153, 111] to [91, 171, 134, 141]. Then
     run bin trace test to verify the coded_sub_block_flag context state matches the libde265 reference at bin 31 of gradient_128x128_q22.'
-plan: []
-extra: {}
 plan:
-  - phase: Fix Init Table
-    tasks:
-      - text: "Change CODED_SUB_BLOCK_FLAG_INIT I-slice values from [153,111,153,111] to [91,171,134,141]"
-        done: false
-      - text: "Run bin_trace test for gradient_128x128_q22 with --features trace and verify coded_sub_block_flag context matches reference"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "Run all parity tests — flat cases must still pass at 48.1dB"
-        done: false
-      - text: "clippy clean, fmt clean, cargo test -p rasmcore-hevc passes"
-        done: false
+- phase: Fix Init Table
+  tasks:
+  - text: Change CODED_SUB_BLOCK_FLAG_INIT I-slice values from [153,111,153,111] to [91,171,134,141]
+    done: true
+  - text: Run bin_trace test for gradient_128x128_q22 with --features trace and verify coded_sub_block_flag context matches
+      reference
+    done: true
+- phase: Validation
+  tasks:
+  - text: Run all parity tests — flat cases must still pass at 48.1dB
+    done: true
+  - text: clippy clean, fmt clean, cargo test -p rasmcore-hevc passes
+    done: true
+extra: {}
