@@ -261,6 +261,14 @@ fn encode_progressive(
         markers::write_sos_progressive(out, &sos_components, *ss, *se, *ah, *al);
 
         // Encode coefficients for this scan's spectral band
+        let (mcu_w, mcu_h) = if is_gray {
+            (8u32, 8u32)
+        } else {
+            color::mcu_dimensions(subsampling)
+        };
+        let mcu_cols = ycbcr.width.div_ceil(mcu_w) as usize;
+        let mcu_rows = ycbcr.height.div_ceil(mcu_h) as usize;
+
         let scan_data = encode_progressive_scan(
             &all_coeffs,
             comp_ids,
@@ -269,6 +277,10 @@ fn encode_progressive(
             is_gray,
             subsampling,
             restart_interval,
+            mcu_cols,
+            mcu_rows,
+            ycbcr.width,
+            ycbcr.height,
         );
         let stuffed = markers::byte_stuff(&scan_data);
         out.extend_from_slice(&stuffed);
@@ -357,8 +369,8 @@ fn compute_all_dct_coefficients(
 /// Encode a single progressive scan (subset of spectral coefficients).
 ///
 /// For interleaved scans (multiple components), encodes in MCU-interleaved
-/// order per ITU-T T.81: for each MCU, encode all blocks of each component
-/// before moving to the next MCU.
+/// order per ITU-T T.81. For non-interleaved scans (single component),
+/// encodes in component raster order per ITU-T T.81 A.2.3.
 fn encode_progressive_scan(
     all_coeffs: &std::collections::HashMap<u8, Vec<[i16; 64]>>,
     comp_ids: &[u8],
@@ -367,6 +379,10 @@ fn encode_progressive_scan(
     is_gray: bool,
     subsampling: ChromaSubsampling,
     _restart_interval: Option<u16>,
+    mcu_cols: usize,
+    mcu_rows: usize,
+    img_width: u32,
+    img_height: u32,
 ) -> Vec<u8> {
     use rasmcore_bitio::{BitOrder, BitWriter};
 
@@ -376,7 +392,8 @@ fn encode_progressive_scan(
     let encoders = ProgressiveHuffmanEncoders::new();
 
     if comp_ids.len() == 1 {
-        // Non-interleaved: single component, iterate all blocks
+        // Non-interleaved: component raster order (left-to-right, top-to-bottom
+        // in the component's own block grid). Per ITU-T T.81 A.2.3.
         let comp_id = comp_ids[0];
         let blocks = match all_coeffs.get(&comp_id) {
             Some(b) => b,
@@ -384,16 +401,42 @@ fn encode_progressive_scan(
         };
         let is_luma = comp_id == 1;
 
-        for block in blocks {
-            encode_progressive_block(
-                &mut writer,
-                block,
-                ss,
-                se,
-                is_luma,
-                prev_dc.get_mut(&comp_id).unwrap(),
-                &encoders,
-            );
+        let (h_samp, v_samp) = if comp_id == 1 && !is_gray {
+            color::subsampling_factors(subsampling)
+        } else {
+            (1, 1)
+        };
+
+        let (h_max, v_max) = if is_gray {
+            (1usize, 1usize)
+        } else {
+            color::subsampling_factors(subsampling)
+        };
+
+        // Xi, Yi per ITU-T T.81 A.1.1 — actual block count, not padded
+        let xi = (img_width as usize * h_samp + h_max * 8 - 1) / (h_max * 8);
+        let yi = (img_height as usize * v_samp + v_max * 8 - 1) / (v_max * 8);
+        let blocks_per_mcu = h_samp * v_samp;
+
+        for block_row in 0..yi {
+            for block_col in 0..xi {
+                // Map raster position to MCU-order buffer index
+                let mc = block_col / h_samp;
+                let mr = block_row / v_samp;
+                let hb = block_col % h_samp;
+                let vb = block_row % v_samp;
+                let idx = (mr * mcu_cols + mc) * blocks_per_mcu + vb * h_samp + hb;
+
+                encode_progressive_block(
+                    &mut writer,
+                    &blocks[idx],
+                    ss,
+                    se,
+                    is_luma,
+                    prev_dc.get_mut(&comp_id).unwrap(),
+                    &encoders,
+                );
+            }
         }
     } else {
         // Interleaved: iterate per MCU (ITU-T T.81 compliant ordering)

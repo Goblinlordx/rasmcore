@@ -694,6 +694,7 @@ fn decode_progressive(
 
     // EOB run counter per scan (reset for each new scan)
     let mut eob_run: u32 = 0;
+    let mut scan_idx: u32 = 0;
 
     // Process first scan
     {
@@ -709,7 +710,14 @@ fn decode_progressive(
             mcu_rows,
             &mut eob_run,
             restart_interval,
-        )?;
+        )
+        .map_err(|e| {
+            EncodeError::DecodeFailed(format!(
+                "scan {scan_idx} (Ss={} Se={} Ah={} Al={}): {e}",
+                first_scan.ss, first_scan.se, first_scan.ah, first_scan.al
+            ))
+        })?;
+        scan_idx += 1;
     }
 
     // Continue parsing markers for remaining scans
@@ -764,7 +772,14 @@ fn decode_progressive(
                     mcu_rows,
                     &mut eob_run,
                     restart_interval,
-                )?;
+                )
+                .map_err(|e| {
+                    EncodeError::DecodeFailed(format!(
+                        "scan {scan_idx} (Ss={} Se={} Ah={} Al={}): {e}",
+                        scan.ss, scan.se, scan.ah, scan.al
+                    ))
+                })?;
+                scan_idx += 1;
             }
             0xE0..=0xEF | 0xFE | 0xC1 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF => {
                 if *pos + 2 > data.len() {
@@ -993,26 +1008,59 @@ fn decode_progressive_scan(
             }
         }
     } else {
-        // Non-interleaved: single component, iterate all blocks
+        // Non-interleaved: single component. Per ITU-T T.81 A.2.3, each MCU
+        // contains exactly one data unit. The number of MCUs is Xi × Yi where:
+        //   Xi = ceil(width × Hi / (8 × Hmax))
+        //   Yi = ceil(height × Vi / (8 × Vmax))
         let (ci, sel) = scan_comps[0];
         let comp = &frame.components[ci];
-        let blocks_per_mcu = comp.h_sampling as usize * comp.v_sampling as usize;
-        let total_blocks = mcu_cols * mcu_rows * blocks_per_mcu;
+        let h_samp = comp.h_sampling as usize;
+        let v_samp = comp.v_sampling as usize;
 
-        for block_idx in 0..total_blocks {
-            decode_progressive_block(
-                &mut reader,
-                &coeff_bufs[ci][block_idx],
-                ss,
-                se,
-                ah,
-                al,
-                &dc_tables[sel.dc_table_id as usize],
-                &ac_tables[sel.ac_table_id as usize],
-                &mut dc_pred[ci],
-                eob_run,
-            )?;
-            coeff_bufs[ci][block_idx] = BLOCK_OUT.with(|b| *b.borrow());
+        let h_max = frame
+            .components
+            .iter()
+            .map(|c| c.h_sampling as usize)
+            .max()
+            .unwrap_or(1);
+        let v_max = frame
+            .components
+            .iter()
+            .map(|c| c.v_sampling as usize)
+            .max()
+            .unwrap_or(1);
+
+        // Component block dimensions per spec (A.1.1)
+        let xi = (frame.width as usize * h_samp + h_max * 8 - 1) / (h_max * 8);
+        let yi = (frame.height as usize * v_samp + v_max * 8 - 1) / (v_max * 8);
+        // Buffer dimensions (may be larger due to MCU padding)
+        let buf_block_cols = mcu_cols * h_samp;
+        let blocks_per_mcu = h_samp * v_samp;
+
+        for block_row in 0..yi {
+            for block_col in 0..xi {
+                // Map component raster position to MCU-order buffer index
+                let mcu_col = block_col / h_samp;
+                let mcu_row = block_row / v_samp;
+                let h_block = block_col % h_samp;
+                let v_block = block_row % v_samp;
+                let block_idx =
+                    (mcu_row * mcu_cols + mcu_col) * blocks_per_mcu + v_block * h_samp + h_block;
+
+                decode_progressive_block(
+                    &mut reader,
+                    &coeff_bufs[ci][block_idx],
+                    ss,
+                    se,
+                    ah,
+                    al,
+                    &dc_tables[sel.dc_table_id as usize],
+                    &ac_tables[sel.ac_table_id as usize],
+                    &mut dc_pred[ci],
+                    eob_run,
+                )?;
+                coeff_bufs[ci][block_idx] = BLOCK_OUT.with(|b| *b.borrow());
+            }
         }
     }
 
