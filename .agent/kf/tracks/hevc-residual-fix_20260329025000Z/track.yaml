@@ -1,0 +1,88 @@
+id: hevc-residual-fix_20260329025000Z
+title: HEVC Residual Coding Fix — Spec-Compliant Context Derivation
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Implement all 8 CABAC context derivation fixes identified in the research track. Applies exact formulas from libde265/HEVC
+    spec to achieve 9/9 parity tests passing.
+  context: Research track (hevc-cabac-research_20260329020000Z) identified 8 specific context derivation issues in residual
+    coding. Currently 6/9 parity tests pass; the 3 failures are all caused by wrong CABAC context indices in decode_residual_coeffs().
+    The exact correct formulas have been extracted from libde265 source code (slice.cc lines 1887-3400) and documented in
+    research.md.
+  codebase_analysis: 'All changes are in crates/rasmcore-hevc/src/syntax.rs, specifically in decode_residual_coeffs() and
+    its helpers. Reference: .agent/kf/tracks/hevc-cabac-research_20260329020000Z/research.md contains the exact formulas from
+    libde265. The context layout (127 contexts) is already correct — only the derivation logic within decode_residual_coeffs
+    needs to change.'
+  acceptance_criteria:
+  - All 9 parity tests pass (0 failures)
+  - flat_64x64_q22 PSNR > 40dB
+  - flat_64x64_q37 PSNR > 30dB
+  - gradient_128x128_q22 PSNR > 25dB
+  - checker_256x256_q22 PSNR > 25dB
+  - CABAC read_bit does NOT use zero-padding (errors on stream exhaustion)
+  - 'No test uses #[ignore]'
+  - clippy clean, fmt clean
+  out_of_scope: Chroma residual coding (only luma is tested). Inter prediction residual (HEIC is I-frame only). Transform
+    skip mode.
+  technical_notes: 'Implementation order (each fix is independently testable):
+
+    1. Add coded_sub_block_neighbors tracking (enables all prevCsbf-dependent fixes)
+
+    2. Fix coded_sub_block_flag context (4 contexts from neighbor flags)
+
+    3. Fix sig_coeff_flag context (prevCsbf switch/case from libde265 lines 2083-2096)
+
+    4. Fix gt1 context (ctxSet + greater1Ctx from libde265 lines 2407-2444)
+
+    5. Fix gt2 context (uses ctxSet from gt1)
+
+    6. Add signHidden (skip last sign when scan distance > 3)
+
+    7. Fix Rice parameter adaptation (increment when level > 3 << ricePar)
+
+    8. Remove CABAC zero-padding hack (tests should pass without it)
+
+
+    Acceptance: all 9 parity tests pass with PSNR > 25dB. No #[ignore], no zero-padding.'
+plan:
+- phase: Sub-block Neighbor Tracking
+  tasks:
+  - text: Add coded_sub_block_neighbors array (sbWidth * sbWidth) to decode_residual_coeffs
+    done: false
+  - text: After decoding each coded sub-block, update neighbors with |= 1 (right) and |= 2 (below)
+    done: false
+  - text: Pass prevCsbf (coded_sub_block_neighbors[S.x + S.y * sbWidth]) to context derivation
+    done: false
+- phase: Context Derivation Fixes
+  tasks:
+  - text: 'Fix coded_sub_block_flag: add CODED_SUB_BLOCK_FLAG contexts (4), derive csbfCtx from (neighbors & 1) | (neighbors
+      >> 1)'
+    done: false
+  - text: 'Fix sig_coeff_flag: implement prevCsbf switch/case (libde265 lines 2083-2096) with sub-block position offset'
+    done: false
+  - text: 'Fix gt1 context: implement ctxSet from sub-block position + c1, greater1Ctx starting at 1 with per-coefficient
+      adaptation'
+    done: false
+  - text: 'Fix gt2 context: use ctxSet from gt1 derivation (not fixed offset)'
+    done: false
+- phase: Coefficient Level Fixes
+  tasks:
+  - text: 'Implement signHidden: skip last coefficient sign when scan distance > 3 (infer from parity)'
+    done: false
+  - text: 'Fix Rice parameter adaptation: increment ricePar when baseLevel + remaining > 3 * (1 << ricePar)'
+    done: false
+  - text: Revert CABAC zero-padding hack (read_bit should error on stream exhaustion again)
+    done: false
+- phase: Validation
+  tasks:
+  - text: Run all 9 parity tests — all must pass
+    done: false
+  - text: Verify PSNR thresholds met for each test case
+    done: false
+  - text: Run clippy and fmt checks
+    done: false
+  - text: Run full workspace cargo test to verify no regressions
+    done: false
+extra: {}
