@@ -1,0 +1,73 @@
+id: webp-skip-research_20260328165930Z
+title: 'Research: VP8 mb_no_coeff_skip — libvpx Reference Analysis'
+type: research
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Study libvpx encoder source to understand the correct mb_no_coeff_skip implementation, specifically how it interacts
+    with segmentation, context tracking, and the coefficient probability state machine. Produce implementation spec for webp-skip-flag
+    track.
+  context: The webp-skip-flag track attempted to enable mb_no_coeff_skip but discovered a 26.9→13.3 dB quality regression
+    when combined with segmentation. With segmentation, ~50% of gradient MBs have all-zero coefficients (high QP segment).
+    Enabling skip for these MBs is structurally correct (decode succeeds) but causes a quality regression because the decoder's
+    context handling for skipped vs non-skipped all-zero MBs differs. Need to study libvpx's exact implementation to understand
+    the correct approach.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - Document libvpx encoder's mb_no_coeff_skip implementation in vp8/encoder/bitstream.c
+  - Document how libvpx computes prob_skip_false (skip probability)
+  - Document context state transitions for skipped vs non-skipped zero MBs
+  - Document interaction between segmentation QP deltas and skip decisions
+  - Produce actionable implementation spec for webp-skip-flag track
+  out_of_scope: Code changes. Only research output.
+  technical_notes: 'Key libvpx source files to study (BSD-3-Clause, GitHub chromium/libvpx):
+
+    - vp8/encoder/bitstream.c: pack_mb_row_tokens(), write_mb_features()
+
+    - vp8/encoder/encodeframe.c: encode_mb_row(), vp8_encode_frame()
+
+    - vp8/encoder/tokenize.c: vp8_tokenize_mb()
+
+    - vp8/common/entropy.h: probability tables
+
+    - vp8/decoder/decodemv.c: context tracking for comparison
+
+
+    Specific questions to answer:
+
+    1. Does libvpx write tokens for skipped MBs? Or only the skip flag?
+
+    2. How does libvpx compute mb_skip_coeff per MB?
+
+    3. How does libvpx handle Y2 context for skipped I16x16 MBs?
+
+    4. Does libvpx ever mark non-zero Y2 MBs as skip=true?
+
+    5. What is the relationship between segment QP and skip decision?
+
+
+    The image-webp decoder (our parity reference) was derived from libvpx, so matching libvpx''s encoder behavior should produce
+    correct decode.'
+plan: []
+extra: {}
+plan:
+  - phase: Source Analysis
+    tasks:
+      - text: Fetch and study libvpx vp8/encoder/bitstream.c mb_skip_coeff handling
+        done: false
+      - text: Study vp8/encoder/encodeframe.c skip decision per MB
+        done: false
+      - text: Study vp8/encoder/tokenize.c — token generation vs skip interaction
+        done: false
+      - text: Study vp8/decoder/decodemv.c — decoder context for comparison
+        done: false
+  - phase: Analysis Report
+    tasks:
+      - text: Document skip + segmentation interaction
+        done: false
+      - text: Document context state machine differences
+        done: false
+      - text: Produce implementation spec for webp-skip-flag track
+        done: false
+extra: {}
