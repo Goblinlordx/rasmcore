@@ -632,10 +632,11 @@ impl Default for FrequencyCounter {
     }
 }
 
-// ─── QM-Coder Arithmetic Encoder (ITU-T T.81 Annex D) ─────────────────────
+// ─── Arithmetic Coder (Adaptive Binary, QM-coder probability estimation) ──
 
 /// QM-coder probability estimation table (ITU-T T.81 Table D.3).
 /// Each entry: (Qe, next_MPS_state, next_LPS_state, switch_MPS_sense)
+/// Used for adaptive probability estimation in both encoder and decoder.
 const QE_TABLE: [(u16, u8, u8, bool); 47] = [
     (0x5A1D, 1, 1, true),
     (0x2586, 2, 6, false),
@@ -686,27 +687,36 @@ const QE_TABLE: [(u16, u8, u8, bool); 47] = [
     (0x5601, 46, 46, false), // uniform
 ];
 
-/// QM-coder binary arithmetic encoder.
+/// Adaptive binary arithmetic encoder with QM-coder probability estimation.
+///
+/// Uses a textbook interval-based approach with bit-level output.
+/// Precision: 18-bit interval with underflow counter.
 pub struct ArithmeticEncoder {
-    a: u32,
-    c: u32,
-    ct: u8,
-    buffer: u8,
-    sc: u32,
-    buf: Vec<u8>,
+    low: u32,
+    high: u32,
+    pending: u32,
+    output: Vec<u8>,
+    bit_buf: u8,
+    bit_count: u8,
     contexts: Vec<(u8, bool)>,
 }
+
+/// Precision constants for the arithmetic coder.
+const ARITH_PREC: u32 = 18;
+const ARITH_WHOLE: u32 = 1 << ARITH_PREC; // 0x40000
+const ARITH_HALF: u32 = 1 << (ARITH_PREC - 1); // 0x20000
+const ARITH_QTR: u32 = 1 << (ARITH_PREC - 2); // 0x10000
 
 impl ArithmeticEncoder {
     /// Create with `num_contexts` conditioning contexts.
     pub fn new(num_contexts: usize) -> Self {
         Self {
-            a: 0x10000,
-            c: 0,
-            ct: 11,
-            buffer: 0,
-            sc: 0,
-            buf: Vec::with_capacity(4096),
+            low: 0,
+            high: ARITH_WHOLE - 1,
+            pending: 0,
+            output: Vec::with_capacity(4096),
+            bit_buf: 0,
+            bit_count: 0,
             contexts: vec![(0, false); num_contexts],
         }
     }
@@ -715,80 +725,425 @@ impl ArithmeticEncoder {
     pub fn encode(&mut self, ctx_id: usize, bit: bool) {
         let (state_idx, mps) = self.contexts[ctx_id];
         let (qe, nmps, nlps, switch) = QE_TABLE[state_idx as usize];
-        let qe = qe as u32;
-        self.a -= qe;
+
+        // Scale qe (16-bit) to the current interval range
+        let range = self.high - self.low + 1;
+        let lps_size = ((range as u64 * qe as u64) >> 16).max(1) as u32;
+        let split = self.high - lps_size + 1; // MPS: [low, split), LPS: [split, high]
 
         if bit == mps {
-            if self.a < 0x8000 {
-                if self.a < qe {
-                    self.c += self.a;
-                    self.a = qe;
-                }
-                self.contexts[ctx_id].0 = nmps;
-                self.renormalize();
+            // MPS sub-interval: [low, split)
+            self.high = split - 1;
+            if self.high < self.low + 1 {
+                self.high = self.low;
             }
+            self.contexts[ctx_id].0 = nmps;
         } else {
-            if self.a >= qe {
-                self.c += self.a;
-                self.a = qe;
-            }
+            // LPS sub-interval: [split, high]
+            self.low = split;
             if switch {
                 self.contexts[ctx_id].1 = !mps;
             }
             self.contexts[ctx_id].0 = nlps;
-            self.renormalize();
         }
+
+        self.renormalize();
+    }
+
+    fn emit_bit(&mut self, bit: bool) {
+        self.bit_buf = (self.bit_buf << 1) | (bit as u8);
+        self.bit_count += 1;
+        if self.bit_count == 8 {
+            self.output.push(self.bit_buf);
+            self.bit_buf = 0;
+            self.bit_count = 0;
+        }
+    }
+
+    fn emit_bit_plus_pending(&mut self, bit: bool) {
+        self.emit_bit(bit);
+        for _ in 0..self.pending {
+            self.emit_bit(!bit);
+        }
+        self.pending = 0;
     }
 
     fn renormalize(&mut self) {
-        while self.a < 0x8000 {
-            self.a <<= 1;
-            self.c <<= 1;
-            self.ct -= 1;
-            if self.ct == 0 {
-                self.byte_out();
-                self.ct = 8;
+        loop {
+            if self.high < ARITH_HALF {
+                // Both in lower half → emit 0
+                self.emit_bit_plus_pending(false);
+            } else if self.low >= ARITH_HALF {
+                // Both in upper half → emit 1
+                self.emit_bit_plus_pending(true);
+                self.low -= ARITH_HALF;
+                self.high -= ARITH_HALF;
+            } else if self.low >= ARITH_QTR && self.high < 3 * ARITH_QTR {
+                // Middle region → underflow
+                self.pending += 1;
+                self.low -= ARITH_QTR;
+                self.high -= ARITH_QTR;
+            } else {
+                break;
             }
+            self.low <<= 1;
+            self.high = (self.high << 1) | 1;
         }
-    }
-
-    fn byte_out(&mut self) {
-        let temp = self.c >> 19;
-        if temp > 0xFF {
-            self.buf.push(self.buffer + 1);
-            for _ in 0..self.sc {
-                self.buf.push(0x00);
-            }
-            self.sc = 0;
-            self.buffer = (temp & 0xFF) as u8;
-        } else if temp == 0xFF {
-            self.sc += 1;
-        } else {
-            self.buf.push(self.buffer);
-            for _ in 0..self.sc {
-                self.buf.push(0xFF);
-            }
-            self.sc = 0;
-            self.buffer = temp as u8;
-        }
-        self.c &= 0x7FFFF;
     }
 
     /// Flush and return encoded bytes.
     pub fn finish(mut self) -> Vec<u8> {
-        let temp = (self.c + self.a - 1) & 0xFFFF0000;
-        self.c = temp;
-        self.byte_out();
-        self.c <<= 8;
-        self.byte_out();
-        self.buf.push(self.buffer);
-        self.buf
+        // Emit enough bits to disambiguate the final interval
+        self.pending += 1;
+        if self.low < ARITH_QTR {
+            self.emit_bit_plus_pending(false);
+        } else {
+            self.emit_bit_plus_pending(true);
+        }
+        // Pad remaining bits in the last byte
+        if self.bit_count > 0 {
+            self.bit_buf <<= 8 - self.bit_count;
+            self.output.push(self.bit_buf);
+        }
+        self.output
     }
 
     /// Reset a context to initial state.
     pub fn reset_context(&mut self, ctx_id: usize) {
         self.contexts[ctx_id] = (0, false);
     }
+}
+
+// ─── Arithmetic Decoder ──────────────────────────────────────────────────
+
+/// Adaptive binary arithmetic decoder — matched to [`ArithmeticEncoder`].
+///
+/// Uses the same interval-based approach with bit-level input.
+pub struct ArithmeticDecoder<'a> {
+    low: u32,
+    high: u32,
+    code: u32,
+    data: &'a [u8],
+    byte_pos: usize,
+    bit_pos: u8,
+    contexts: Vec<(u8, bool)>,
+}
+
+impl<'a> ArithmeticDecoder<'a> {
+    /// Create decoder from encoded data with `num_contexts` contexts.
+    pub fn new(data: &'a [u8], num_contexts: usize) -> Self {
+        let mut dec = Self {
+            low: 0,
+            high: ARITH_WHOLE - 1,
+            code: 0,
+            data,
+            byte_pos: 0,
+            bit_pos: 0,
+            contexts: vec![(0, false); num_contexts],
+        };
+        // Pre-fill code register with ARITH_PREC bits
+        for _ in 0..ARITH_PREC {
+            dec.code = (dec.code << 1) | dec.read_bit() as u32;
+        }
+        dec
+    }
+
+    fn read_bit(&mut self) -> bool {
+        if self.byte_pos >= self.data.len() {
+            return false; // padding zeros
+        }
+        let bit = (self.data[self.byte_pos] >> (7 - self.bit_pos)) & 1 != 0;
+        self.bit_pos += 1;
+        if self.bit_pos == 8 {
+            self.bit_pos = 0;
+            self.byte_pos += 1;
+        }
+        bit
+    }
+
+    /// Decode one binary decision using the given context.
+    pub fn decode(&mut self, ctx_id: usize) -> bool {
+        let (state_idx, mps) = self.contexts[ctx_id];
+        let (qe, nmps, nlps, switch) = QE_TABLE[state_idx as usize];
+
+        let range = self.high - self.low + 1;
+        let lps_size = ((range as u64 * qe as u64) >> 16).max(1) as u32;
+        let split = self.high - lps_size + 1;
+
+        let bit;
+        if self.code < split {
+            // MPS sub-interval
+            self.high = split - 1;
+            if self.high < self.low + 1 {
+                self.high = self.low;
+            }
+            self.contexts[ctx_id].0 = nmps;
+            bit = mps;
+        } else {
+            // LPS sub-interval
+            self.low = split;
+            if switch {
+                self.contexts[ctx_id].1 = !mps;
+            }
+            self.contexts[ctx_id].0 = nlps;
+            bit = !mps;
+        }
+
+        self.renormalize();
+        bit
+    }
+
+    fn renormalize(&mut self) {
+        loop {
+            if self.high < ARITH_HALF {
+                // Lower half — do nothing to code, low, high
+            } else if self.low >= ARITH_HALF {
+                self.code -= ARITH_HALF;
+                self.low -= ARITH_HALF;
+                self.high -= ARITH_HALF;
+            } else if self.low >= ARITH_QTR && self.high < 3 * ARITH_QTR {
+                self.code -= ARITH_QTR;
+                self.low -= ARITH_QTR;
+                self.high -= ARITH_QTR;
+            } else {
+                break;
+            }
+            self.low <<= 1;
+            self.high = (self.high << 1) | 1;
+            self.code = (self.code << 1) | self.read_bit() as u32;
+        }
+    }
+
+    /// Reset a context to initial state.
+    pub fn reset_context(&mut self, ctx_id: usize) {
+        self.contexts[ctx_id] = (0, false);
+    }
+}
+
+// ─── JPEG Arithmetic Encode/Decode Helpers ──────────────────────────────
+
+/// Context layout for JPEG arithmetic coding (ITU-T T.81 Annex F).
+///
+/// Per component:
+///   DC: 5 contexts (zero, sign, magnitude categories)
+///   AC: 64 contexts (63 positions + 1 EOB)
+/// Total per component: 69
+const DC_CTX_ZERO: usize = 0;
+const DC_CTX_SIGN: usize = 1;
+const DC_CTX_MAG_LO: usize = 2;
+const DC_CTX_MAG_HI: usize = 3;
+const DC_CTX_BITS: usize = 4;
+const AC_CTX_BASE: usize = 5;
+const AC_CTX_EOB: usize = 68;
+const CONTEXTS_PER_COMPONENT: usize = 69;
+
+/// Encode one 8x8 block using arithmetic coding.
+pub fn arithmetic_encode_block(
+    encoder: &mut ArithmeticEncoder,
+    comp_ctx_offset: usize,
+    dc_pred: &mut i32,
+    coeffs: &[i16; 64],
+) {
+    // DC
+    let dc_diff = coeffs[0] as i32 - *dc_pred;
+    *dc_pred = coeffs[0] as i32;
+    arithmetic_encode_dc(encoder, comp_ctx_offset, dc_diff);
+
+    // AC (zigzag positions 1-63)
+    arithmetic_encode_ac(encoder, comp_ctx_offset, &coeffs[1..]);
+}
+
+fn arithmetic_encode_dc(encoder: &mut ArithmeticEncoder, ctx_off: usize, diff: i32) {
+    if diff == 0 {
+        encoder.encode(ctx_off + DC_CTX_ZERO, false); // zero
+        return;
+    }
+    encoder.encode(ctx_off + DC_CTX_ZERO, true); // non-zero
+    encoder.encode(ctx_off + DC_CTX_SIGN, diff < 0); // sign
+
+    let abs_val = diff.unsigned_abs();
+    let category = 32 - abs_val.leading_zeros() as u8; // magnitude_category
+
+    // Unary code for category (1-based)
+    for i in 1..category {
+        let ctx = ctx_off + if i < 3 { DC_CTX_MAG_LO } else { DC_CTX_MAG_HI };
+        encoder.encode(ctx, true); // more bits
+    }
+    encoder.encode(
+        ctx_off
+            + if category < 3 {
+                DC_CTX_MAG_LO
+            } else {
+                DC_CTX_MAG_HI
+            },
+        false,
+    ); // stop
+
+    // Magnitude bits (MSB to LSB) using fixed context
+    if category > 1 {
+        let mantissa = abs_val - (1 << (category - 1));
+        for bit_pos in (0..category - 1).rev() {
+            encoder.encode(ctx_off + DC_CTX_BITS, (mantissa >> bit_pos) & 1 != 0);
+        }
+    }
+}
+
+fn arithmetic_encode_ac(encoder: &mut ArithmeticEncoder, ctx_off: usize, ac: &[i16]) {
+    let eob_ctx = ctx_off + AC_CTX_EOB;
+    let mut last_nonzero = 62; // last non-zero position in ac[0..63]
+    while last_nonzero > 0 && ac[last_nonzero] == 0 {
+        last_nonzero -= 1;
+    }
+    if ac[last_nonzero] == 0 {
+        // All zeros — emit EOB immediately
+        encoder.encode(eob_ctx, true);
+        return;
+    }
+
+    for k in 0..63usize {
+        if k > last_nonzero {
+            encoder.encode(eob_ctx, true); // EOB
+            return;
+        }
+        encoder.encode(eob_ctx, false); // not EOB
+
+        let coeff = ac[k];
+        let ac_ctx = ctx_off + AC_CTX_BASE + k;
+
+        if coeff == 0 {
+            encoder.encode(ac_ctx, false); // zero
+            continue;
+        }
+
+        encoder.encode(ac_ctx, true); // non-zero
+        encoder.encode(ac_ctx, coeff < 0); // sign
+
+        let abs_val = (coeff as i32).unsigned_abs();
+        let category = 32 - abs_val.leading_zeros() as u8;
+
+        // Unary magnitude category
+        for _ in 1..category {
+            encoder.encode(ac_ctx, true);
+        }
+        encoder.encode(ac_ctx, false);
+
+        // Magnitude bits
+        if category > 1 {
+            let mantissa = abs_val - (1 << (category - 1));
+            for bit_pos in (0..category - 1).rev() {
+                encoder.encode(ac_ctx, (mantissa >> bit_pos) & 1 != 0);
+            }
+        }
+    }
+    // No trailing EOB — after all 63 AC positions, the block is implicitly done.
+    // The decoder's loop also processes exactly 63 positions.
+}
+
+/// Decode one 8x8 block using arithmetic coding.
+pub fn arithmetic_decode_block(
+    decoder: &mut ArithmeticDecoder,
+    comp_ctx_offset: usize,
+    dc_pred: &mut i32,
+    coeffs: &mut [i16; 64],
+) {
+    // DC
+    let dc_diff = arithmetic_decode_dc(decoder, comp_ctx_offset);
+    *dc_pred += dc_diff;
+    coeffs[0] = *dc_pred as i16;
+
+    // AC
+    arithmetic_decode_ac(decoder, comp_ctx_offset, &mut coeffs[1..]);
+}
+
+fn arithmetic_decode_dc(decoder: &mut ArithmeticDecoder, ctx_off: usize) -> i32 {
+    if !decoder.decode(ctx_off + DC_CTX_ZERO) {
+        return 0;
+    }
+    let negative = decoder.decode(ctx_off + DC_CTX_SIGN);
+
+    // Unary category decode
+    let mut category = 1u8;
+    while decoder.decode(
+        ctx_off
+            + if category < 3 {
+                DC_CTX_MAG_LO
+            } else {
+                DC_CTX_MAG_HI
+            },
+    ) {
+        category += 1;
+        if category >= 15 {
+            break;
+        }
+    }
+
+    let mut value: i32 = if category > 1 {
+        let mut mantissa: u32 = 0;
+        for _ in 0..category - 1 {
+            mantissa = (mantissa << 1) | decoder.decode(ctx_off + DC_CTX_BITS) as u32;
+        }
+        (mantissa + (1 << (category - 1))) as i32
+    } else {
+        1
+    };
+
+    if negative {
+        value = -value;
+    }
+    value
+}
+
+fn arithmetic_decode_ac(decoder: &mut ArithmeticDecoder, ctx_off: usize, ac: &mut [i16]) {
+    let eob_ctx = ctx_off + AC_CTX_EOB;
+
+    for k in 0..63usize {
+        if decoder.decode(eob_ctx) {
+            return; // EOB
+        }
+
+        let ac_ctx = ctx_off + AC_CTX_BASE + k;
+        if !decoder.decode(ac_ctx) {
+            // zero coefficient
+            continue;
+        }
+
+        // Non-zero
+        let negative = decoder.decode(ac_ctx);
+
+        let mut category = 1u8;
+        while decoder.decode(ac_ctx) {
+            category += 1;
+            if category >= 15 {
+                break;
+            }
+        }
+
+        let abs_val: i32 = if category > 1 {
+            let mut mantissa: u32 = 0;
+            for _ in 0..category - 1 {
+                mantissa = (mantissa << 1) | decoder.decode(ac_ctx) as u32;
+            }
+            (mantissa + (1 << (category - 1))) as i32
+        } else {
+            1
+        };
+
+        ac[k] = if negative {
+            -abs_val as i16
+        } else {
+            abs_val as i16
+        };
+    }
+}
+
+/// Total number of arithmetic contexts needed for a JPEG image.
+pub fn arithmetic_context_count(num_components: usize) -> usize {
+    num_components * CONTEXTS_PER_COMPONENT
+}
+
+/// Get the context offset for a given component index.
+pub fn arithmetic_ctx_offset(component_index: usize) -> usize {
+    component_index * CONTEXTS_PER_COMPONENT
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -940,6 +1295,182 @@ mod tests {
         }
         let bytes = enc.finish();
         assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn arithmetic_single_bit_roundtrip() {
+        // Single true bit
+        let mut enc = ArithmeticEncoder::new(1);
+        enc.encode(0, true);
+        let encoded = enc.finish();
+        eprintln!("encoded (true): {:?}", encoded);
+
+        let mut dec = ArithmeticDecoder::new(&encoded, 1);
+        let got = dec.decode(0);
+        assert_eq!(got, true, "single true bit failed");
+
+        // Single false bit
+        let mut enc = ArithmeticEncoder::new(1);
+        enc.encode(0, false);
+        let encoded = enc.finish();
+        eprintln!("encoded (false): {:?}", encoded);
+
+        let mut dec = ArithmeticDecoder::new(&encoded, 1);
+        let got = dec.decode(0);
+        assert_eq!(got, false, "single false bit failed");
+    }
+
+    #[test]
+    fn arithmetic_two_bits_roundtrip() {
+        let mut enc = ArithmeticEncoder::new(1);
+        enc.encode(0, true);
+        enc.encode(0, true);
+        let encoded = enc.finish();
+        eprintln!("encoded (true, true): {:?}", encoded);
+
+        let mut dec = ArithmeticDecoder::new(&encoded, 1);
+        assert_eq!(dec.decode(0), true, "first bit");
+        assert_eq!(dec.decode(0), true, "second bit");
+    }
+
+    #[test]
+    fn arithmetic_encode_decode_roundtrip() {
+        // Encode a sequence of binary decisions, then decode and verify
+        let mut enc = ArithmeticEncoder::new(4);
+        let decisions: Vec<(usize, bool)> = (0..200).map(|i| (i % 4, i % 3 == 0)).collect();
+
+        for &(ctx, bit) in &decisions {
+            enc.encode(ctx, bit);
+        }
+        let encoded = enc.finish();
+
+        // Decode
+        let mut dec = ArithmeticDecoder::new(&encoded, 4);
+        for (idx, &(ctx, expected)) in decisions.iter().enumerate() {
+            let got = dec.decode(ctx);
+            assert_eq!(got, expected, "mismatch at decision {idx} ctx={ctx}");
+        }
+    }
+
+    #[test]
+    fn arithmetic_block_roundtrip() {
+        // Encode and decode a single block with known coefficients
+        let num_ctx = arithmetic_context_count(1);
+        let mut enc = ArithmeticEncoder::new(num_ctx);
+        let mut dc_pred = 0i32;
+
+        let mut coeffs = [0i16; 64];
+        coeffs[0] = 42; // DC
+        coeffs[1] = 10; // AC[0] in zigzag
+        coeffs[2] = -5; // AC[1]
+        coeffs[5] = 3; // AC[4]
+
+        let ctx_off = arithmetic_ctx_offset(0);
+        arithmetic_encode_block(&mut enc, ctx_off, &mut dc_pred, &coeffs);
+        let encoded = enc.finish();
+
+        // Decode
+        let mut dec = ArithmeticDecoder::new(&encoded, num_ctx);
+        let mut dec_dc_pred = 0i32;
+        let mut decoded = [0i16; 64];
+        arithmetic_decode_block(&mut dec, ctx_off, &mut dec_dc_pred, &mut decoded);
+
+        assert_eq!(decoded, coeffs, "single block roundtrip mismatch");
+    }
+
+    #[test]
+    fn arithmetic_multi_block_roundtrip() {
+        // Two blocks to test DC prediction
+        let num_ctx = arithmetic_context_count(1);
+        let mut enc = ArithmeticEncoder::new(num_ctx);
+        let mut dc_pred = 0i32;
+        let ctx_off = arithmetic_ctx_offset(0);
+
+        let mut block1 = [0i16; 64];
+        block1[0] = 100;
+        block1[1] = 20;
+        let mut block2 = [0i16; 64];
+        block2[0] = 105;
+        block2[3] = -7;
+
+        arithmetic_encode_block(&mut enc, ctx_off, &mut dc_pred, &block1);
+        arithmetic_encode_block(&mut enc, ctx_off, &mut dc_pred, &block2);
+        let encoded = enc.finish();
+
+        let mut dec = ArithmeticDecoder::new(&encoded, num_ctx);
+        let mut dec_dc_pred = 0i32;
+        let mut decoded1 = [0i16; 64];
+        let mut decoded2 = [0i16; 64];
+        arithmetic_decode_block(&mut dec, ctx_off, &mut dec_dc_pred, &mut decoded1);
+        arithmetic_decode_block(&mut dec, ctx_off, &mut dec_dc_pred, &mut decoded2);
+
+        assert_eq!(decoded1, block1, "block 1 mismatch");
+        assert_eq!(decoded2, block2, "block 2 mismatch");
+    }
+
+    #[test]
+    fn arithmetic_multi_component_roundtrip() {
+        // 3 components like color JPEG
+        let num_ctx = arithmetic_context_count(3);
+        let mut enc = ArithmeticEncoder::new(num_ctx);
+        let mut dc_pred = [0i32; 3];
+
+        let mut y_block = [0i16; 64];
+        y_block[0] = 50;
+        y_block[1] = 10;
+        let mut cb_block = [0i16; 64];
+        cb_block[0] = 0;
+        cb_block[1] = -3;
+        let mut cr_block = [0i16; 64];
+        cr_block[0] = 5;
+
+        arithmetic_encode_block(
+            &mut enc,
+            arithmetic_ctx_offset(0),
+            &mut dc_pred[0],
+            &y_block,
+        );
+        arithmetic_encode_block(
+            &mut enc,
+            arithmetic_ctx_offset(1),
+            &mut dc_pred[1],
+            &cb_block,
+        );
+        arithmetic_encode_block(
+            &mut enc,
+            arithmetic_ctx_offset(2),
+            &mut dc_pred[2],
+            &cr_block,
+        );
+        let encoded = enc.finish();
+
+        let mut dec = ArithmeticDecoder::new(&encoded, num_ctx);
+        let mut dec_dc_pred = [0i32; 3];
+        let mut dec_y = [0i16; 64];
+        let mut dec_cb = [0i16; 64];
+        let mut dec_cr = [0i16; 64];
+        arithmetic_decode_block(
+            &mut dec,
+            arithmetic_ctx_offset(0),
+            &mut dec_dc_pred[0],
+            &mut dec_y,
+        );
+        arithmetic_decode_block(
+            &mut dec,
+            arithmetic_ctx_offset(1),
+            &mut dec_dc_pred[1],
+            &mut dec_cb,
+        );
+        arithmetic_decode_block(
+            &mut dec,
+            arithmetic_ctx_offset(2),
+            &mut dec_dc_pred[2],
+            &mut dec_cr,
+        );
+
+        assert_eq!(dec_y, y_block, "Y mismatch");
+        assert_eq!(dec_cb, cb_block, "Cb mismatch");
+        assert_eq!(dec_cr, cr_block, "Cr mismatch");
     }
 
     #[test]

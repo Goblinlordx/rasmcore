@@ -15,8 +15,12 @@ use crate::quantize;
 const M_SOI: u8 = 0xD8;
 const M_EOI: u8 = 0xD9;
 const M_SOF0: u8 = 0xC0; // Baseline sequential
+const M_SOF1: u8 = 0xC1; // Extended sequential (12-bit)
 const M_SOF2: u8 = 0xC2; // Progressive
+const M_SOF9: u8 = 0xC9; // Extended sequential, arithmetic
+const M_SOF10: u8 = 0xCA; // Progressive, arithmetic
 const M_DHT: u8 = 0xC4;
+const M_DAC: u8 = 0xCC; // Define Arithmetic Conditioning
 const M_DQT: u8 = 0xDB;
 const M_SOS: u8 = 0xDA;
 const M_DRI: u8 = 0xDD;
@@ -24,19 +28,20 @@ const M_RST0: u8 = 0xD0;
 
 // ─── Parsed JPEG Structures ─────────────────────────────────────────────────
 
-struct JpegFrame {
-    width: u16,
-    height: u16,
-    precision: u8,
-    components: Vec<FrameComponent>,
+pub(crate) struct JpegFrame {
+    pub(crate) width: u16,
+    pub(crate) height: u16,
+    pub(crate) precision: u8,
+    pub(crate) components: Vec<FrameComponent>,
+    pub(crate) is_arithmetic: bool,
 }
 
 #[derive(Clone)]
-struct FrameComponent {
-    id: u8,
-    h_sampling: u8,
-    v_sampling: u8,
-    quant_table_id: u8,
+pub(crate) struct FrameComponent {
+    pub(crate) id: u8,
+    pub(crate) h_sampling: u8,
+    pub(crate) v_sampling: u8,
+    pub(crate) quant_table_id: u8,
 }
 
 struct ScanHeader {
@@ -158,8 +163,13 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
 
         match marker {
             M_EOI => break,
-            M_SOF0 => {
+            M_SOF0 | M_SOF1 => {
                 frame = Some(parse_sof(data, &mut pos)?);
+            }
+            M_SOF9 | M_SOF10 => {
+                let mut frm = parse_sof(data, &mut pos)?;
+                frm.is_arithmetic = true;
+                frame = Some(frm);
             }
             M_SOF2 => {
                 frame = Some(parse_sof(data, &mut pos)?);
@@ -167,6 +177,11 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
             }
             M_DHT => {
                 parse_dht(data, &mut pos, &mut dc_tables, &mut ac_tables)?;
+            }
+            M_DAC => {
+                // Skip arithmetic conditioning — we use defaults
+                let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                pos += len;
             }
             M_DQT => {
                 parse_dqt(data, &mut pos, &mut quant_tables)?;
@@ -197,21 +212,25 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                 // Baseline: single scan decode
                 let entropy_data = extract_entropy_data(data, &mut pos);
 
-                let pixels = decode_scan(
-                    &entropy_data,
-                    frm,
-                    &scan,
-                    &quant_tables,
-                    &dc_tables,
-                    &ac_tables,
-                    restart_interval,
-                )?;
+                let pixels = if frm.is_arithmetic {
+                    crate::decode_arith::decode_scan_arithmetic(&entropy_data, frm, &quant_tables)?
+                } else {
+                    decode_scan(
+                        &entropy_data,
+                        frm,
+                        &scan,
+                        &quant_tables,
+                        &dc_tables,
+                        &ac_tables,
+                        restart_interval,
+                    )?
+                };
 
                 let is_gray = frm.components.len() == 1;
                 return Ok((pixels, frm.width as u32, frm.height as u32, is_gray));
             }
             // Skip APP markers and other non-essential markers
-            0xE0..=0xEF | 0xFE | 0xC1 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF => {
+            0xE0..=0xEF | 0xFE | 0xC5..=0xC7 | 0xCB | 0xCD..=0xCF => {
                 if pos + 2 > data.len() {
                     break;
                 }
@@ -272,6 +291,7 @@ fn parse_sof(data: &[u8], pos: &mut usize) -> Result<JpegFrame, EncodeError> {
         height,
         precision,
         components,
+        is_arithmetic: false, // caller overrides for SOF9/SOF10
     })
 }
 

@@ -5,11 +5,9 @@ status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: Decode SOF9/SOF10 (arithmetic coding) and 12-bit sample precision. QM-coder
-    state machine for entropy decode.
-  context: Encoder supports arithmetic coding (SOF9/SOF10) and 12-bit precision (SOF1).
-    Decoder currently only handles Huffman (SOF0). Need QM-coder arithmetic decoder
-    (ITU-T T.81 Annex D) and extended 12-bit sample range.
+  summary: Decode SOF9/SOF10 (arithmetic coding) and 12-bit sample precision. QM-coder state machine for entropy decode.
+  context: Encoder supports arithmetic coding (SOF9/SOF10) and 12-bit precision (SOF1). Decoder currently only handles Huffman
+    (SOF0). Need QM-coder arithmetic decoder (ITU-T T.81 Annex D) and extended 12-bit sample range.
   codebase_analysis: ''
   acceptance_criteria:
   - Decode SOF9 (sequential arithmetic) and SOF10 (progressive arithmetic)
@@ -18,32 +16,29 @@ spec:
   - Roundtrip for arithmetic mode at PSNR > 25dB
   - Roundtrip for 12-bit mode
   out_of_scope: Lossless JPEG (SOF3/SOF7). JPEG-LS.
-  technical_notes: 'QM-coder: binary arithmetic decoder with probability estimation
-    table (113 entries). Each DC/AC category uses a separate context. 12-bit: extend
-    level shift to +2048, widen coefficient range, parse 12-bit DQT entries.'
+  technical_notes: 'QM-coder: binary arithmetic decoder with probability estimation table (113 entries). Each DC/AC category
+    uses a separate context. 12-bit: extend level shift to +2048, widen coefficient range, parse 12-bit DQT entries.'
 plan:
 - phase: QM-Coder Arithmetic Decoder
   tasks:
-  - text: Implement QM-coder state machine (ITU-T T.81 Annex D, Table D.3 probability
-      estimation)
-    done: false
+  - text: Implement QM-coder state machine (ITU-T T.81 Annex D, Table D.3 probability estimation)
+    done: true
   - text: Implement arithmetic DC decode with DPCM context
-    done: false
+    done: true
   - text: Implement arithmetic AC decode with run-length context
-    done: false
+    done: true
 - phase: 12-bit Precision
   tasks:
-  - text: 'Extend decoder for 12-bit precision: level shift +2048, wider coefficient
-      range'
-    done: false
+  - text: 'Extend decoder for 12-bit precision: level shift +2048, wider coefficient range'
+    done: true
   - text: Parse 16-bit DQT entries for 12-bit mode
-    done: false
+    done: true
 - phase: Validation
   tasks:
   - text: Roundtrip for arithmetic sequential (SOF9) mode
-    done: false
+    done: true
   - text: Roundtrip for arithmetic progressive (SOF10) mode
-    done: false
+    done: true
   - text: Roundtrip for 12-bit precision mode
-    done: false
+    done: true
 extra: {}

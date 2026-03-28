@@ -19,6 +19,7 @@
 mod color;
 mod dct;
 pub mod decode;
+mod decode_arith;
 pub mod entropy;
 mod error;
 mod markers;
@@ -179,7 +180,19 @@ pub fn encode(
         markers::write_dri(&mut out, interval);
     }
 
-    if config.progressive {
+    if config.arithmetic_coding && !config.progressive {
+        // Sequential arithmetic mode: single SOS with arithmetic entropy data
+        if is_gray {
+            markers::write_sos(&mut out, &[(1, 0, 0)]);
+        } else {
+            markers::write_sos(&mut out, &[(1, 0, 0), (2, 1, 1), (3, 1, 1)]);
+        }
+
+        let mcu_data =
+            encode_mcus_arithmetic(&ycbcr, is_gray, config.subsampling, &luma_qt, &chroma_qt);
+        let stuffed = markers::byte_stuff(&mcu_data);
+        out.extend_from_slice(&stuffed);
+    } else if config.progressive {
         // Progressive mode: multiple scans with spectral selection
         encode_progressive(
             &mut out,
@@ -692,6 +705,85 @@ fn encode_mcus(
     // Finalize single bitstream
     all_data.extend_from_slice(&enc.finish());
     all_data
+}
+
+/// Encode all MCUs using arithmetic coding and return the raw entropy data.
+fn encode_mcus_arithmetic(
+    ycbcr: &color::YcbcrImage,
+    is_gray: bool,
+    subsampling: ChromaSubsampling,
+    luma_qt: &[u16; 64],
+    chroma_qt: &[u16; 64],
+) -> Vec<u8> {
+    let (mcu_w, mcu_h) = if is_gray {
+        (8u32, 8u32)
+    } else {
+        color::mcu_dimensions(subsampling)
+    };
+    let mcu_cols = ycbcr.width.div_ceil(mcu_w) as usize;
+    let mcu_rows = ycbcr.height.div_ceil(mcu_h) as usize;
+
+    let (h_blocks, v_blocks) = if is_gray {
+        (1usize, 1usize)
+    } else {
+        color::subsampling_factors(subsampling)
+    };
+
+    let num_components = if is_gray { 1 } else { 3 };
+    let num_contexts = entropy::arithmetic_context_count(num_components);
+    let mut enc = entropy::ArithmeticEncoder::new(num_contexts);
+    let mut dc_pred = vec![0i32; num_components];
+
+    for mcu_row in 0..mcu_rows {
+        for mcu_col in 0..mcu_cols {
+            // Y blocks
+            for vb in 0..v_blocks {
+                for hb in 0..h_blocks {
+                    let block = extract_block(
+                        &ycbcr.y,
+                        ycbcr.width as usize,
+                        ycbcr.height as usize,
+                        mcu_col * mcu_w as usize + hb * 8,
+                        mcu_row * mcu_h as usize + vb * 8,
+                    );
+                    let mut dct_out = [0i32; 64];
+                    dct::forward_dct(&block, &mut dct_out);
+                    let mut quantized = [0i16; 64];
+                    quantize::quantize(&dct_out, luma_qt, &mut quantized);
+                    let zz = zigzag_reorder(&quantized);
+                    let ctx_off = entropy::arithmetic_ctx_offset(0);
+                    entropy::arithmetic_encode_block(&mut enc, ctx_off, &mut dc_pred[0], &zz);
+                }
+            }
+
+            // Cb and Cr blocks
+            if !is_gray {
+                for (comp_idx, plane) in [(1usize, &ycbcr.cb), (2, &ycbcr.cr)] {
+                    let block = extract_block(
+                        plane,
+                        ycbcr.chroma_width as usize,
+                        ycbcr.chroma_height as usize,
+                        mcu_col * 8,
+                        mcu_row * 8,
+                    );
+                    let mut dct_out = [0i32; 64];
+                    dct::forward_dct(&block, &mut dct_out);
+                    let mut quantized = [0i16; 64];
+                    quantize::quantize(&dct_out, chroma_qt, &mut quantized);
+                    let zz = zigzag_reorder(&quantized);
+                    let ctx_off = entropy::arithmetic_ctx_offset(comp_idx);
+                    entropy::arithmetic_encode_block(
+                        &mut enc,
+                        ctx_off,
+                        &mut dc_pred[comp_idx],
+                        &zz,
+                    );
+                }
+            }
+        }
+    }
+
+    enc.finish()
 }
 
 /// Extract an 8x8 block from a plane, level-shifted (subtract 128 for JPEG).
