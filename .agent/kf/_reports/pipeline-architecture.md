@@ -842,10 +842,58 @@ simultaneously during the stats pass. See Tier 4 in operation validation.
 Node chain is built without computation. First `write()` call triggers execution.
 This enables fusion detection before any pixels are computed.
 
-### REMAINING: Q5 — Thread-safe parallel tile computation?
-**Recommendation: Defer.** Single-threaded for v1. The host could create multiple
-pipeline instances for parallelism. Internal rayon usage possible for future
-within-tile parallelism (e.g., parallel scanlines within a strip).
+### RESOLVED: Q5 — Parallelism strategy (dual-level API + portable orchestrator)
+
+**Decision: Dual-level API with deployment-portable orchestrator.**
+
+The component exposes two API levels:
+
+**Level 1 — Pipeline resource (single-threaded, works today):**
+The component owns graph, cache, execution. Simple. Works everywhere.
+```wit
+resource pipeline {
+    read: func(data: buffer) -> result<node-id, rasmcore-error>;
+    resize: func(source: node-id, ...) -> node-id;
+    write-jpeg: func(source: node-id, ...) -> result<buffer, rasmcore-error>;
+}
+```
+
+**Level 2 — Stateless compute kernels (host-parallelizable):**
+Pure functions: pixels in, pixels out. No graph, no cache, no state.
+```wit
+interface compute {
+    apply-blur: func(pixels: buffer, info: image-info, radius: f32) -> result<buffer, rasmcore-error>;
+    apply-resize: func(pixels: buffer, info: image-info, w: u32, h: u32, filter: resize-filter) -> result<buffer, rasmcore-error>;
+}
+```
+
+**Parallelism phases:**
+
+| Phase | Mechanism | Where | Prerequisite |
+|-------|-----------|-------|-------------|
+| 1 | Single-threaded pipeline | Inside WASM component | None (current) |
+| 2 | Host-driven parallelism | Host manages graph+cache+thread pool, dispatches to N WASM instances via Level 2 compute kernels | None — works today |
+| 3 | Internal parallelism | Same orchestrator code compiled to WASM, uses wasi-threads internally | wasi-threads stabilization |
+| 4 | SIMD | WASM SIMD intrinsics in compute kernels | Available now |
+
+**Key principle: the orchestrator (graph + spatial cache + dispatch) is pure
+Rust that compiles to both native and WASM.** In Phase 2, it runs on the host.
+In Phase 3, the exact same code compiles into the WASM component via
+`cargo component build`. Zero code changes — just a different compile target.
+
+**Host-driven parallelism (Phase 2) flow:**
+1. Host builds node graph (mirrors pipeline structure)
+2. Host manages spatial cache in native memory (RwLock for thread safety)
+3. Host dispatches tile computations to thread pool
+4. Each thread calls a WASM instance's Level 2 compute kernel (pixels in → pixels out)
+5. Host stores results in shared cache
+6. No WASM shared memory needed — the host IS the shared memory layer
+
+**Why this is better than wasi-threads alone:**
+- Works TODAY without waiting for wasi-threads
+- Host-side cache is in native memory (no WASM linear memory constraints)
+- WASM instances are stateless — no shared mutable state, no data races by construction
+- When wasi-threads arrives, the same architecture moves inside the component seamlessly
 
 ### REMAINING: Q6 — Pool size heuristics
 How should the pool auto-size? Options:
