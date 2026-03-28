@@ -371,7 +371,8 @@ fn encode_progressive_scan(
     use rasmcore_bitio::{BitOrder, BitWriter};
 
     let mut writer = BitWriter::new(BitOrder::MsbFirst);
-    let mut prev_dc: std::collections::HashMap<u8, i16> = comp_ids.iter().map(|&id| (id, 0i16)).collect();
+    let mut prev_dc: std::collections::HashMap<u8, i16> =
+        comp_ids.iter().map(|&id| (id, 0i16)).collect();
     let encoders = ProgressiveHuffmanEncoders::new();
 
     if comp_ids.len() == 1 {

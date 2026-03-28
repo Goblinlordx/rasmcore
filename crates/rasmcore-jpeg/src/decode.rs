@@ -41,10 +41,10 @@ struct FrameComponent {
 
 struct ScanHeader {
     component_selectors: Vec<ScanComponentSelector>,
-    ss: u8,  // Spectral selection start
-    se: u8,  // Spectral selection end
-    ah: u8,  // Successive approximation high bit
-    al: u8,  // Successive approximation low bit
+    ss: u8, // Spectral selection start
+    se: u8, // Spectral selection end
+    ah: u8, // Successive approximation high bit
+    al: u8, // Successive approximation low bit
 }
 
 struct ScanComponentSelector {
@@ -662,8 +662,18 @@ fn decode_progressive(
     let (h_max, v_max) = if is_gray {
         (1u8, 1u8)
     } else {
-        let hm = frame.components.iter().map(|c| c.h_sampling).max().unwrap_or(1);
-        let vm = frame.components.iter().map(|c| c.v_sampling).max().unwrap_or(1);
+        let hm = frame
+            .components
+            .iter()
+            .map(|c| c.h_sampling)
+            .max()
+            .unwrap_or(1);
+        let vm = frame
+            .components
+            .iter()
+            .map(|c| c.v_sampling)
+            .max()
+            .unwrap_or(1);
         (hm, vm)
     };
     let mcu_w = (h_max as usize) * 8;
@@ -956,15 +966,13 @@ fn decode_progressive_scan(
             for mcu_col in 0..mcu_cols {
                 for &(ci, sel) in &scan_comps {
                     let comp = &frame.components[ci];
-                    let blocks_per_mcu =
-                        comp.h_sampling as usize * comp.v_sampling as usize;
+                    let blocks_per_mcu = comp.h_sampling as usize * comp.v_sampling as usize;
 
                     for v_block in 0..comp.v_sampling as usize {
                         for h_block in 0..comp.h_sampling as usize {
-                            let block_idx =
-                                (mcu_row * mcu_cols + mcu_col) * blocks_per_mcu
-                                    + v_block * comp.h_sampling as usize
-                                    + h_block;
+                            let block_idx = (mcu_row * mcu_cols + mcu_col) * blocks_per_mcu
+                                + v_block * comp.h_sampling as usize
+                                + h_block;
 
                             decode_progressive_block(
                                 &mut reader,
@@ -1086,14 +1094,9 @@ fn decode_progressive_block(
                             // EOBn: end of band with run of blocks
                             *eob_run = (1u32 << run) - 1;
                             if run > 0 {
-                                let extra = reader
-                                    .read_bits(run as u8)
-                                    .ok_or_else(|| {
-                                        EncodeError::DecodeFailed(
-                                            "truncated EOBn bits".into(),
-                                        )
-                                    })?
-                                    as u32;
+                                let extra = reader.read_bits(run as u8).ok_or_else(|| {
+                                    EncodeError::DecodeFailed("truncated EOBn bits".into())
+                                })?;
                                 *eob_run += extra;
                             }
                             break;
@@ -1144,23 +1147,16 @@ fn decode_progressive_block(
                             // EOBn
                             *eob_run = (1u32 << run) - 1;
                             if run > 0 {
-                                let extra = reader
-                                    .read_bits(run as u8)
-                                    .ok_or_else(|| {
-                                        EncodeError::DecodeFailed(
-                                            "truncated EOBn refine bits".into(),
-                                        )
-                                    })?
-                                    as u32;
+                                let extra = reader.read_bits(run as u8).ok_or_else(|| {
+                                    EncodeError::DecodeFailed("truncated EOBn refine bits".into())
+                                })?;
                                 *eob_run += extra;
                             }
                             // Refine remaining non-zero coefficients in this block
                             while k <= se as usize {
                                 if block[k] != 0 {
                                     let bit = reader.read_bit().ok_or_else(|| {
-                                        EncodeError::DecodeFailed(
-                                            "truncated AC refine bit".into(),
-                                        )
+                                        EncodeError::DecodeFailed("truncated AC refine bit".into())
                                     })?;
                                     if bit {
                                         if block[k] > 0 {
@@ -1181,9 +1177,7 @@ fn decode_progressive_block(
                             if block[k] != 0 {
                                 // Existing non-zero: read refinement bit
                                 let bit = reader.read_bit().ok_or_else(|| {
-                                    EncodeError::DecodeFailed(
-                                        "truncated AC refine bit".into(),
-                                    )
+                                    EncodeError::DecodeFailed("truncated AC refine bit".into())
                                 })?;
                                 if bit {
                                     if block[k] > 0 {
@@ -1685,8 +1679,7 @@ mod progressive_tests {
         assert_eq!(h, 32);
 
         // Reference decoder (image crate)
-        let ref_img =
-            image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        let ref_img = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
         let ref_pixels = ref_img.to_rgb8().into_raw();
 
         // A == B: our decode should match reference decode
@@ -1719,10 +1712,18 @@ mod progressive_tests {
 
         // Both decoders should succeed
         let our_result = jpeg_decode(&jpeg);
-        assert!(our_result.is_ok(), "our decoder failed: {:?}", our_result.err());
+        assert!(
+            our_result.is_ok(),
+            "our decoder failed: {:?}",
+            our_result.err()
+        );
 
         let ref_result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
-        assert!(ref_result.is_ok(), "ref decoder failed: {:?}", ref_result.err());
+        assert!(
+            ref_result.is_ok(),
+            "ref decoder failed: {:?}",
+            ref_result.err()
+        );
     }
 
     /// Progressive with 4:4:4 subsampling.
@@ -1756,4 +1757,3 @@ mod progressive_tests {
         assert_eq!(decoded.len(), 17 * 13 * 3);
     }
 }
-
