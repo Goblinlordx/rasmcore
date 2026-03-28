@@ -5,12 +5,15 @@
 //!
 //! This crate is part of the "nonfree" distribution due to HEVC patent encumbrance.
 
+pub mod bitread;
 pub mod error;
 pub mod nal;
+pub mod params;
 pub mod types;
 
 pub use error::HevcError;
 pub use nal::{NalIterator, parse_nal_unit};
+pub use params::{DecoderContext, Pps, Sps, Vps};
 pub use types::{DecodedFrame, NalUnit, NalUnitType};
 
 /// Decode an HEVC I-frame from raw NAL unit data.
