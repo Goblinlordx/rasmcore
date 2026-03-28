@@ -181,7 +181,6 @@ pub fn decompress(data: &[u8], min_code_size: u8, mode: LzwMode) -> Result<Vec<u
 
     // Main decompression loop
     while let Some(code) = reader.read_bits(code_size) {
-
         if code == eoi_code {
             break;
         }

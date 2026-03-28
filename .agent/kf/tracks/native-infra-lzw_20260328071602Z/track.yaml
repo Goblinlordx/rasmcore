@@ -5,12 +5,11 @@ status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: 'Pure Rust LZW compress/decompress (rasmcore-lzw) with variable-width codes.
-    Unlocks native GIF and TIFF LZW mode. Perf target: match or beat weezl.'
-  context: 'LZW compression needed by GIF and TIFF (LZW mode). Current backend: weezl
-    crate (pure Rust, safe, no SIMD — LZW is inherently sequential). Own implementation
-    for full control. Perf target: match or beat weezl. Key: hash table sizing, dictionary
-    reset strategy, variable-width code packing.'
+  summary: 'Pure Rust LZW compress/decompress (rasmcore-lzw) with variable-width codes. Unlocks native GIF and TIFF LZW mode.
+    Perf target: match or beat weezl.'
+  context: 'LZW compression needed by GIF and TIFF (LZW mode). Current backend: weezl crate (pure Rust, safe, no SIMD — LZW
+    is inherently sequential). Own implementation for full control. Perf target: match or beat weezl. Key: hash table sizing,
+    dictionary reset strategy, variable-width code packing.'
   codebase_analysis: ''
   acceptance_criteria:
   - rasmcore-lzw crate with rasmcore-bitio dependency only
@@ -20,34 +19,30 @@ spec:
   - TIFF-compatible mode (old-style and new-style byte ordering)
   - Roundtrip tests and Criterion benchmarks vs weezl baseline
   out_of_scope: ''
-  technical_notes: 'LZW is inherently sequential — no SIMD benefit. Perf comes from:
-    efficient hash table (open addressing or chained), fast dictionary lookup, minimal
-    allocation. GIF variant packs variable-width codes into byte sub-blocks (255 bytes
-    max). TIFF variant has different byte ordering (old-style vs new-style). Both
-    share the core LZW engine.'
+  technical_notes: 'LZW is inherently sequential — no SIMD benefit. Perf comes from: efficient hash table (open addressing
+    or chained), fast dictionary lookup, minimal allocation. GIF variant packs variable-width codes into byte sub-blocks (255
+    bytes max). TIFF variant has different byte ordering (old-style vs new-style). Both share the core LZW engine.'
 plan:
 - phase: Core LZW Engine
   tasks:
   - text: Create crates/rasmcore-lzw/ with rasmcore-bitio dependency
-    done: false
-  - text: Implement LZW compress with variable-width codes (2-12 bits), hash table
-      dictionary
-    done: false
+    done: true
+  - text: Implement LZW compress with variable-width codes (2-12 bits), hash table dictionary
+    done: true
   - text: Implement LZW decompress with clear code and EOI handling
-    done: false
+    done: true
 - phase: Format Modes
   tasks:
-  - text: 'GIF mode: sub-block streaming (255-byte chunks), configurable min code
-      size'
-    done: false
+  - text: 'GIF mode: sub-block streaming (255-byte chunks), configurable min code size'
+    done: true
   - text: 'TIFF mode: old-style and new-style byte ordering support'
-    done: false
+    done: true
 - phase: Testing
   tasks:
   - text: Roundtrip tests for both GIF and TIFF modes
-    done: false
+    done: true
   - text: Criterion benchmarks vs weezl baseline
-    done: false
+    done: true
   - text: WASM build verification
-    done: false
+    done: true
 extra: {}
