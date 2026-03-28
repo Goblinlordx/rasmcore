@@ -29,33 +29,33 @@ plan:
 - phase: Meta Box Framework
   tasks:
   - text: Implement meta box parser — full-box container, iterate and dispatch child boxes
-    done: false
+    done: true
   - text: Implement pitm (primary item ID) parser — extract primary item u16
-    done: false
+    done: true
 - phase: Item Info
   tasks:
   - text: Implement iinf parser — read item count, iterate infe entries
-    done: false
+    done: true
   - text: Implement infe parser — extract item_id, item_type (FourCC), item_name, content_type
-    done: false
+    done: true
 - phase: Item Location
   tasks:
   - text: Implement iloc parser — handle version 0/1/2 differences in field sizes
-    done: false
+    done: true
   - text: Parse per-item location descriptors — construction_method, data_offset, base_offset, extent_list (offset + length)
-    done: false
+    done: true
 - phase: Item References
   tasks:
   - text: Implement iref parser — read reference type (FourCC), from_item_id, list of to_item_ids
-    done: false
+    done: true
   - text: Build reference map (item_id -> list of typed refs) for downstream query
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for meta/pitm/iinf/infe with hand-crafted bytes
-    done: false
+    done: true
   - text: Unit tests for iloc with multiple items, different construction methods
-    done: false
+    done: true
   - text: Unit tests for iref with dimg, thmb, auxl reference types
-    done: false
+    done: true
 extra: {}
