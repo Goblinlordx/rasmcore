@@ -121,7 +121,7 @@ plan:
 - phase: Verification
   tasks:
   - text: Domain tests for metadata roundtrip (read JPEG metadata, write to PNG, verify ICC preserved)
-    done: false
+    done: true
   - text: Run full validation suite (./scripts/validate.sh) including WASM build
-    done: false
+    done: true
 extra: {}

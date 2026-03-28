@@ -467,7 +467,9 @@ mod tests {
         ];
         append_png_chunk(&mut buf, b"IHDR", &ihdr_data);
         // Minimal IDAT (empty compressed)
-        let idat_data = [0x08, 0xD7, 0x63, 0x60, 0x60, 0x60, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01];
+        let idat_data = [
+            0x08, 0xD7, 0x63, 0x60, 0x60, 0x60, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01,
+        ];
         append_png_chunk(&mut buf, b"IDAT", &idat_data);
         // IEND
         append_png_chunk(&mut buf, b"IEND", &[]);

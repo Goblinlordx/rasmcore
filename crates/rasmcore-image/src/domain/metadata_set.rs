@@ -1,16 +1,11 @@
-/// Unified metadata container for all metadata types across image formats.
-///
-/// Carries raw bytes per metadata kind — parsed on the host side (SDK),
-/// opaque to the pixel pipeline. The pipeline receives a finalized,
-/// immutable MetadataSet and embeds it during the write sink phase.
-///
-/// Design:
-/// - Passthrough by default: if provided to write, all present metadata is embedded
-/// - Host-side mapping: transform logic (include/exclude/set) runs on host, not WASM
-/// - Sequential phase separation: all metadata ops complete before pipeline executes
-/// - Same-format raw byte splice: when input/output format match, can copy raw segments
+//! Unified metadata container for all metadata types across image formats.
+//!
+//! Carries raw bytes per metadata kind — parsed on the host side (SDK),
+//! opaque to the pixel pipeline. The pipeline receives a finalized,
+//! immutable MetadataSet and embeds it during the write sink phase.
 
 /// A single metadata chunk with a key and raw byte value.
+///
 /// Used for format-specific metadata (PNG text chunks, GIF comments, etc.).
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetadataChunk {
