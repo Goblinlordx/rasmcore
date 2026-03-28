@@ -1,80 +1,91 @@
 id: webp-ratecontrol_20260328054406Z
-title: "VP8 Rate Control + Loop Filter — Quality Tuning and Deblocking"
+title: VP8 Rate Control + Loop Filter — Quality Tuning and Deblocking
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement VP8 loop filter (deblocking) and rate control that maps the
+  summary: 'Implement VP8 loop filter (deblocking) and rate control that maps the
+
     user-facing quality parameter to quantizer settings matching libwebp
+
     behavior. This is what makes the encoder produce predictable, high-quality
+
     output at each quality level.
-  context: |
-    The loop filter is a deblocking filter applied during reconstruction. It
+
+    '
+  context: 'The loop filter is a deblocking filter applied during reconstruction. It
+
     smooths block boundaries to reduce visible artifacts. RFC 6386 Section 15
+
     specifies two variants: normal and simple.
 
+
     Rate control maps quality (1-100) to quantizer parameters that control
+
     file size vs visual quality. This mapping is NOT in the RFC — it is
-    implementation-specific. We must match libwebp's mapping so that
+
+    implementation-specific. We must match libwebp''s mapping so that
+
     "quality 75" produces comparable results across implementations.
 
+
     Without proper rate control and loop filtering, the encoder produces
+
     blocky, artifact-heavy output regardless of correct DCT/quantization.
-  codebase_analysis: |
-    - New code in crates/rasmcore-webp/src/filter.rs and src/ratecontrol.rs
+
+    '
+  codebase_analysis: '- New code in crates/rasmcore-webp/src/filter.rs and src/ratecontrol.rs
+
     - libwebp reference: src/enc/filter_enc.c (loop filter strength selection)
+
     - libwebp reference: src/enc/quant_enc.c (quality-to-QP mapping)
+
     - Loop filter operates on reconstructed pixels (after inverse DCT)
+
+    '
   acceptance_criteria:
-    - Simple loop filter implemented per RFC 6386 Section 15
-    - Normal loop filter implemented per RFC 6386 Section 15
-    - Filter strength automatically selected based on quantizer
-    - Quality 1-100 maps to QP indices producing comparable file sizes to libwebp
-    - "Quality curve test: encode photo at q25/q50/q75/q95"
-    - File sizes within 1.5x of libwebp at each quality level
-    - Visual quality (Butteraugli) within comparable range of libwebp
-  out_of_scope: |
-    - Adaptive loop filter strength per macroblock (optimization)
+  - Simple loop filter implemented per RFC 6386 Section 15
+  - Normal loop filter implemented per RFC 6386 Section 15
+  - Filter strength automatically selected based on quantizer
+  - Quality 1-100 maps to QP indices producing comparable file sizes to libwebp
+  - 'Quality curve test: encode photo at q25/q50/q75/q95'
+  - File sizes within 1.5x of libwebp at each quality level
+  - Visual quality (Butteraugli) within comparable range of libwebp
+  out_of_scope: '- Adaptive loop filter strength per macroblock (optimization)
+
     - Multi-pass rate control (single pass sufficient)
-  technical_notes: |
-    Loop filter (RFC 6386 Section 15):
-    Applied at macroblock boundaries and sub-block boundaries.
-    Two modes: simple (fast, less quality) and normal (slower, better).
-    Filter strength determined by QP and a per-frame filter_level parameter.
 
-    Rate control approach:
-    1. Map quality (1-100) to base QP using libwebp's formula
-    2. Select filter strength based on QP
-    3. Optionally: single-pass rate control that adjusts QP based on
-       actual output size vs target (for more consistent results)
-
-    Study libwebp vp8_enc.c SetupFilterStrength and SetupMatrices to understand
-    the quality -> QP -> filter_strength pipeline.
+    '
+  technical_notes: "Loop filter (RFC 6386 Section 15):\nApplied at macroblock boundaries and sub-block boundaries.\nTwo modes:\
+    \ simple (fast, less quality) and normal (slower, better).\nFilter strength determined by QP and a per-frame filter_level\
+    \ parameter.\n\nRate control approach:\n1. Map quality (1-100) to base QP using libwebp's formula\n2. Select filter strength\
+    \ based on QP\n3. Optionally: single-pass rate control that adjusts QP based on\n   actual output size vs target (for\
+    \ more consistent results)\n\nStudy libwebp vp8_enc.c SetupFilterStrength and SetupMatrices to understand\nthe quality\
+    \ -> QP -> filter_strength pipeline.\n"
 plan:
-  - phase: "Loop Filter"
-    tasks:
-      - text: "Implement simple loop filter (horizontal and vertical edge filtering)"
-        done: false
-      - text: "Implement normal loop filter with hev (high edge variance) detection"
-        done: false
-      - text: "Test loop filter reduces blockiness on quantized test images"
-        done: false
-  - phase: "Rate Control"
-    tasks:
-      - text: "Implement quality-to-QP mapping matching libwebp"
-        done: false
-      - text: "Implement automatic filter strength selection based on QP"
-        done: false
-      - text: "Test quality curve at q25/q50/q75/q95 — file sizes within 1.5x of libwebp"
-        done: false
-  - phase: "Quality Validation"
-    tasks:
-      - text: "Encode photo_256x256 at q75 — decode and measure Butteraugli distance"
-        done: false
-      - text: "Encode at multiple qualities — verify DSSIM improves with higher quality"
-        done: false
-      - text: "Compare file size curve against libwebp at 6 quality points"
-        done: false
+- phase: Loop Filter
+  tasks:
+  - text: Implement simple loop filter (horizontal and vertical edge filtering)
+    done: true
+  - text: Implement normal loop filter with hev (high edge variance) detection
+    done: true
+  - text: Test loop filter reduces blockiness on quantized test images
+    done: true
+- phase: Rate Control
+  tasks:
+  - text: Implement quality-to-QP mapping matching libwebp
+    done: true
+  - text: Implement automatic filter strength selection based on QP
+    done: true
+  - text: Test quality curve at q25/q50/q75/q95 — file sizes within 1.5x of libwebp
+    done: true
+- phase: Quality Validation
+  tasks:
+  - text: Encode photo_256x256 at q75 — decode and measure Butteraugli distance
+    done: true
+  - text: Encode at multiple qualities — verify DSSIM improves with higher quality
+    done: true
+  - text: Compare file size curve against libwebp at 6 quality points
+    done: true
 extra: {}
