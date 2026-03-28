@@ -1,5 +1,5 @@
 title: SIMD Image Filters — LUT Apply, Sharpen, Separable Convolve
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-28'

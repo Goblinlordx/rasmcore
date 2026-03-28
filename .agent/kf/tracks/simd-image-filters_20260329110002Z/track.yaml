@@ -3,112 +3,142 @@ title: SIMD Image Filters — LUT Apply, Sharpen, Separable Convolve
 type: refactor
 status: pending
 created: 2026-03-29
-updated: "2026-03-29"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Vectorize the per-pixel inner loops in rasmcore-image filters: apply_lut
+  summary: 'Vectorize the per-pixel inner loops in rasmcore-image filters: apply_lut
+
     (u8x16), sharpen blend (f32x4), and separable convolution horizontal pass
+
     (f32x4 accumulate). These process every pixel in the pipeline.
-  context: |
-    The image processing pipeline routes every pixel through filter operations.
+
+    '
+  context: 'The image processing pipeline routes every pixel through filter operations.
+
     apply_lut is the backbone of all point operations (gamma, invert, threshold,
+
     posterize, clamp, brightness, contrast) — it processes the entire image with
+
     a 256-entry lookup table. sharpen applies a per-pixel blend. convolve_separable
+
     does two linear passes. All are currently scalar loops.
 
+
     The existing blur filter already uses libblur with built-in SIMD, so blur
+
     is already fast. But sharpen calls blur then applies a scalar blend loop,
+
     losing the SIMD benefit on the second pass.
-  codebase_analysis: |
-    rasmcore-image/src/domain/point_ops.rs:
-    - apply_lut() line 105: currently unrolled 12-byte (4 RGB pixel) batches
-    - LUT lookup is inherently scalar (random access), but we can still batch
-      loads and stores with u8x16 and use lane extraction for lookups
-    - The alpha-preserving path skips every 4th byte — needs special handling
 
-    rasmcore-image/src/domain/filters.rs:
-    - sharpen() line 67: per-pixel `orig + amount * (orig - blur)` on u8
-    - convolve_separable() horizontal pass: f32 accumulation loop
-    - convolve_separable() vertical pass: same pattern
-
-    Pattern for sharpen SIMD:
-    - Load 16 original bytes as i16x8 (2 passes)
-    - Load 16 blurred bytes as i16x8
-    - Subtract: diff = orig - blur
-    - Scale: diff * amount (fixed-point or f32x4)
-    - Add: result = orig + scaled_diff
-    - Clamp and pack to u8x16
+    '
+  codebase_analysis: "rasmcore-image/src/domain/point_ops.rs:\n- apply_lut() line 105: currently unrolled 12-byte (4 RGB pixel)\
+    \ batches\n- LUT lookup is inherently scalar (random access), but we can still batch\n  loads and stores with u8x16 and\
+    \ use lane extraction for lookups\n- The alpha-preserving path skips every 4th byte — needs special handling\n\nrasmcore-image/src/domain/filters.rs:\n\
+    - sharpen() line 67: per-pixel `orig + amount * (orig - blur)` on u8\n- convolve_separable() horizontal pass: f32 accumulation\
+    \ loop\n- convolve_separable() vertical pass: same pattern\n\nPattern for sharpen SIMD:\n- Load 16 original bytes as i16x8\
+    \ (2 passes)\n- Load 16 blurred bytes as i16x8\n- Subtract: diff = orig - blur\n- Scale: diff * amount (fixed-point or\
+    \ f32x4)\n- Add: result = orig + scaled_diff\n- Clamp and pack to u8x16\n"
   acceptance_criteria:
-    - apply_lut has SIMD128 path that batches u8x16 loads/stores
-    - sharpen has SIMD128 path for the blend loop (f32x4 or i16x8)
-    - convolve_separable horizontal pass uses f32x4 accumulation
-    - All scalar fallbacks retained
-    - All existing filter tests pass
-    - Point operation fusion (FusedLutNode) still works
-    - WASM build succeeds
-    - Benchmark shows measurable speedup for sharpen and LUT apply on 1024x1024
-  out_of_scope: |
-    - Median filter SIMD (histogram-based is already O(1), SIMD overhead not worth it)
+  - apply_lut has SIMD128 path that batches u8x16 loads/stores
+  - sharpen has SIMD128 path for the blend loop (f32x4 or i16x8)
+  - convolve_separable horizontal pass uses f32x4 accumulation
+  - All scalar fallbacks retained
+  - All existing filter tests pass
+  - Point operation fusion (FusedLutNode) still works
+  - WASM build succeeds
+  - Benchmark shows measurable speedup for sharpen and LUT apply on 1024x1024
+  out_of_scope: '- Median filter SIMD (histogram-based is already O(1), SIMD overhead not worth it)
+
     - Sobel SIMD (already unrolled, 8 loads per pixel is memory-bound)
+
     - Canny SIMD (calls blur + sobel internally, already optimized)
+
     - x86 SSE/AVX paths
-  technical_notes: |
-    apply_lut SIMD approach:
+
+    '
+  technical_notes: 'apply_lut SIMD approach:
+
     LUT lookup is inherently scalar (table[byte]) but we can optimize the
+
     surrounding code:
+
     1. Load u8x16 source pixels
+
     2. Extract each lane, lookup in LUT table (16 scalar lookups)
+
     3. Reconstruct u8x16 result from looked-up values
+
     4. Store u8x16
 
+
     This is a gather pattern — on WASM SIMD128, no hardware gather exists,
+
     so the SIMD benefit is mainly in load/store batching and reduced loop
+
     overhead. For RGB8, process 5 pixels (15 bytes) per iteration with
+
     alpha channel skipping for RGBA8.
 
+
     Alternative: for common LUTs (gamma curves), use piecewise linear
+
     approximation with i16x8 interpolation instead of table lookup.
 
+
     sharpen SIMD approach:
+
     Convert amount to fixed-point (amount * 256). Then:
+
     1. Load 8 orig bytes → i16x8 via u16x8_extend_low
+
     2. Load 8 blur bytes → i16x8
+
     3. diff = i16x8_sub(orig, blur)
+
     4. scaled = i16x8_mul(diff, amount_vec) >> 8
+
     5. result = i16x8_add(orig, scaled)
+
     6. Narrow to u8x16 with saturation
 
+
     convolve_separable SIMD approach:
+
     Horizontal pass: for each output pixel, accumulate kernel_width f32 products.
+
     1. Load 4 consecutive f32 intermediates as f32x4
+
     2. Multiply by splatted kernel coefficient
+
     3. Accumulate across kernel width
+
     4. Store 4 f32 results
+
+    '
 plan:
-  - phase: LUT Apply SIMD
-    tasks:
-      - text: Add u8x16 batched load/store path to apply_lut for RGB8
-        done: false
-      - text: Handle RGBA8 alpha-skip path
-        done: false
-      - text: Verify point operation fusion still works
-        done: false
-  - phase: Sharpen + Convolve SIMD
-    tasks:
-      - text: Add i16x8 SIMD path for sharpen blend loop
-        done: false
-      - text: Add f32x4 SIMD path for convolve_separable horizontal pass
-        done: false
-      - text: Add f32x4 SIMD path for convolve_separable vertical pass
-        done: false
-  - phase: Validation
-    tasks:
-      - text: All existing filter and point_ops tests pass
-        done: false
-      - text: Benchmark sharpen and apply_lut speedup on 1024x1024
-        done: false
-      - text: WASM build succeeds
-        done: false
-      - text: Pipeline graph tests with new SIMD paths
-        done: false
+- phase: LUT Apply SIMD
+  tasks:
+  - text: Add u8x16 batched load/store path to apply_lut for RGB8
+    done: true
+  - text: Handle RGBA8 alpha-skip path
+    done: true
+  - text: Verify point operation fusion still works
+    done: true
+- phase: Sharpen + Convolve SIMD
+  tasks:
+  - text: Add i16x8 SIMD path for sharpen blend loop
+    done: true
+  - text: Add f32x4 SIMD path for convolve_separable horizontal pass
+    done: true
+  - text: Add f32x4 SIMD path for convolve_separable vertical pass
+    done: true
+- phase: Validation
+  tasks:
+  - text: All existing filter and point_ops tests pass
+    done: true
+  - text: Benchmark sharpen and apply_lut speedup on 1024x1024
+    done: true
+  - text: WASM build succeeds
+    done: true
+  - text: Pipeline graph tests with new SIMD paths
+    done: true
 extra: {}
