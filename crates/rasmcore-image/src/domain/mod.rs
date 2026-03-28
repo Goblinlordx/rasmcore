@@ -5,6 +5,7 @@ pub mod decoder;
 pub mod encoder;
 pub mod error;
 pub mod filters;
+pub mod histogram;
 pub mod metadata;
 pub mod metadata_iptc;
 pub mod metadata_set;

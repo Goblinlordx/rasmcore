@@ -544,3 +544,103 @@ impl ImageNode for GrayscaleNode {
         AccessPattern::Sequential
     }
 }
+
+// ─── Histogram-based nodes (whole-image analysis + LUT application) ─────────
+
+macro_rules! histogram_node {
+    ($name:ident, $fn_name:ident, $doc:expr) => {
+        #[doc = $doc]
+        pub struct $name {
+            upstream: u32,
+            source_info: ImageInfo,
+        }
+
+        impl $name {
+            pub fn new(upstream: u32, source_info: ImageInfo) -> Self {
+                Self {
+                    upstream,
+                    source_info,
+                }
+            }
+        }
+
+        impl ImageNode for $name {
+            fn info(&self) -> ImageInfo {
+                self.source_info.clone()
+            }
+
+            fn compute_region(
+                &self,
+                _request: Rect,
+                upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+            ) -> Result<Vec<u8>, ImageError> {
+                let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+                let src_pixels = upstream_fn(self.upstream, full_src)?;
+                crate::domain::histogram::$fn_name(&src_pixels, &self.source_info)
+            }
+
+            fn overlap(&self) -> Overlap {
+                // Needs entire image for histogram computation
+                Overlap::uniform(u32::MAX)
+            }
+            fn access_pattern(&self) -> AccessPattern {
+                AccessPattern::RandomAccess
+            }
+        }
+    };
+}
+
+histogram_node!(EqualizeNode, equalize, "Histogram equalization node.");
+histogram_node!(NormalizeNode, normalize, "Histogram normalization node.");
+histogram_node!(
+    AutoLevelNode,
+    auto_level,
+    "Auto-level (min/max stretch) node."
+);
+
+/// Contrast stretch node with configurable black/white point percentiles.
+pub struct ContrastStretchNode {
+    upstream: u32,
+    source_info: ImageInfo,
+    black_pct: f64,
+    white_pct: f64,
+}
+
+impl ContrastStretchNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, black_pct: f64, white_pct: f64) -> Self {
+        Self {
+            upstream,
+            source_info,
+            black_pct,
+            white_pct,
+        }
+    }
+}
+
+impl ImageNode for ContrastStretchNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        crate::domain::histogram::contrast_stretch(
+            &src_pixels,
+            &self.source_info,
+            self.black_pct,
+            self.white_pct,
+        )
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::uniform(u32::MAX)
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::RandomAccess
+    }
+}
