@@ -167,7 +167,7 @@ pub fn decode_frame(
     let ctus_x = sps.pic_width_in_ctus();
     let ctus_y = sps.pic_height_in_ctus();
 
-    for ctu_row in 0..ctus_y {
+    'ctu_loop: for ctu_row in 0..ctus_y {
         for ctu_col in 0..ctus_x {
             let ctu_x = ctu_col * ctu_size;
             let ctu_y = ctu_row * ctu_size;
@@ -178,6 +178,12 @@ pub fn decode_frame(
             // Reconstruct each CU in this CTU
             for cu in &ctu.cus {
                 reconstruct_cu(cu, &sps, &pps, slice_qp, &mut fb)?;
+            }
+
+            // end_of_slice_segment_flag — decoded via CABAC terminate
+            let end_of_slice = cabac.decode_terminate()?;
+            if end_of_slice != 0 {
+                break 'ctu_loop;
             }
         }
     }

@@ -354,11 +354,11 @@ fn decode_coding_unit(
         (b0 * 2 + b1) as u8
     };
 
-    // Decode transform tree (residuals)
-    let tu = decode_transform_tree(
-        cabac, contexts, sps, x, y, size, 0, true,
-        true, // cbf_cb and cbf_cr initially assumed present
-    )?;
+    // rqt_root_cbf — for intra CUs, signals whether any residual exists
+    // Per HEVC spec, rqt_root_cbf is NOT signaled for intra CUs — it's implicitly 1.
+    // Instead, cbf flags are signaled per-TU in the transform tree.
+    // However, for the simplest case (flat image), all cbf will be 0.
+    let tu = decode_transform_tree(cabac, contexts, sps, x, y, size, 0, true, true)?;
 
     Ok(CuSyntax {
         x,
@@ -424,12 +424,38 @@ fn decode_transform_tree(
         })
     } else {
         // Leaf TU: decode CBF flags and residual coefficients
-        let cbf_luma_ctx = CBF_LUMA_CTX_OFFSET + depth.min(1) as usize;
-        let cbf_luma = cabac.decode_bin(&mut contexts[cbf_luma_ctx])? != 0;
+        // HEVC Section 7.3.8.7: cbf_cb and cbf_cr decoded before cbf_luma
 
-        // Simplified chroma CBF (for 4:2:0)
-        let cbf_cb = false; // Will be decoded properly when chroma residual coding is wired
-        let cbf_cr = false;
+        // Chroma CBF (4:2:0: decoded when chroma is present and depth allows)
+        let cbf_cb = if sps.chroma_format_idc > 0 && _parent_cbf_cb {
+            let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
+            if ctx_idx < contexts.len() {
+                cabac.decode_bin(&mut contexts[ctx_idx])? != 0
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let cbf_cr = if sps.chroma_format_idc > 0 && _parent_cbf_cr {
+            let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
+            if ctx_idx < contexts.len() {
+                cabac.decode_bin(&mut contexts[ctx_idx])? != 0
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // cbf_luma: always decoded for leaf TU
+        let cbf_luma_ctx = CBF_LUMA_CTX_OFFSET + if depth > 0 { 1 } else { 0 };
+        let cbf_luma = if cbf_luma_ctx < contexts.len() {
+            cabac.decode_bin(&mut contexts[cbf_luma_ctx])? != 0
+        } else {
+            false
+        };
 
         let luma_coeffs = if cbf_luma {
             decode_residual_coeffs(cabac, contexts, size)?
@@ -698,50 +724,86 @@ const GT1_CTX_OFFSET: usize = 13;
 const GT2_CTX_OFFSET: usize = 14;
 const LAST_SIG_X_CTX_OFFSET: usize = 15;
 const LAST_SIG_Y_CTX_OFFSET: usize = 33;
+const CBF_CHROMA_CTX_OFFSET: usize = 51;
 
 /// Total number of context models needed for syntax parsing.
-pub const NUM_SYNTAX_CONTEXTS: usize = 51;
+pub const NUM_SYNTAX_CONTEXTS: usize = 55; // extended for chroma CBF
 
 /// Initialize syntax context models for an I-slice at the given QP.
+///
+/// Uses the CABAC module's init tables from the HEVC spec (Tables 9-5 through 9-37).
 pub fn init_syntax_contexts(qp: i32) -> Vec<ContextModel> {
-    let mut contexts = vec![ContextModel::new(0, qp); NUM_SYNTAX_CONTEXTS];
+    use crate::cabac;
 
-    // Initialize from HEVC init tables
-    // This is a simplified initialization — a full decoder uses the complete tables
-    let init_values = [
-        // SPLIT_CU_FLAG (3 contexts)
-        139, 141, 157, // PART_MODE (1)
-        184, // PREV_INTRA_LUMA_PRED_FLAG (1)
-        184, // INTRA_CHROMA_PRED_MODE (1)
-        152, // SPLIT_TRANSFORM_FLAG (4)
-        153, 138, 138, 138, // CBF_LUMA (2)
-        111, 141, // SIG_COEFF_FLAG (1, simplified)
-        111, // GT1 (1)
-        140, // GT2 (1)
-        140, // LAST_SIG_X (18)
-        110, 110, 124, 125, 140, 153, 125, 127, 140, 109, 111, 143, 127, 111, 79, 108, 123, 63,
-        // LAST_SIG_Y (18)
-        110, 110, 124, 125, 140, 153, 125, 127, 140, 109, 111, 143, 127, 111, 79, 108, 123, 63,
-    ];
+    // I-slice init table index = 2
+    let si = 2usize;
 
-    for (i, &init_val) in init_values.iter().enumerate() {
-        if i < contexts.len() {
-            let slope = (init_val >> 4) * 5 - 45;
-            let offset = ((init_val & 15) << 3) - 16;
-            let init_state = ((slope * qp.clamp(0, 51)) >> 4) + offset;
-            let init_state = init_state.clamp(1, 126);
+    // Build flat init value array matching our context layout
+    let mut iv = vec![154u8; NUM_SYNTAX_CONTEXTS]; // CNU default
 
-            if init_state >= 64 {
-                contexts[i].state = (init_state - 64) as u8;
-                contexts[i].mps = 1;
-            } else {
-                contexts[i].state = (63 - init_state) as u8;
-                contexts[i].mps = 0;
-            }
+    // SPLIT_CU_FLAG: 3 contexts
+    for (i, &v) in cabac::SPLIT_CU_FLAG_INIT[si].iter().enumerate() {
+        iv[SPLIT_CU_CTX_OFFSET + i] = v;
+    }
+    // PART_MODE: 1 context
+    iv[PART_MODE_CTX_OFFSET] = cabac::PART_MODE_INIT[si][0];
+    // PREV_INTRA_LUMA_PRED_FLAG: 1 context
+    iv[PREV_INTRA_PRED_CTX_OFFSET] = cabac::PREV_INTRA_LUMA_PRED_FLAG_INIT[si][0];
+    // INTRA_CHROMA_PRED_MODE: 1 context
+    iv[CHROMA_PRED_CTX_OFFSET] = cabac::INTRA_CHROMA_PRED_MODE_INIT[si][0];
+    // SPLIT_TRANSFORM_FLAG: 3 contexts
+    for (i, &v) in cabac::SPLIT_TRANSFORM_FLAG_INIT[si].iter().enumerate() {
+        if SPLIT_TU_CTX_OFFSET + i < iv.len() {
+            iv[SPLIT_TU_CTX_OFFSET + i] = v;
+        }
+    }
+    // CBF_LUMA: 2 contexts
+    for (i, &v) in cabac::CBF_LUMA_INIT[si].iter().enumerate() {
+        if CBF_LUMA_CTX_OFFSET + i < iv.len() {
+            iv[CBF_LUMA_CTX_OFFSET + i] = v;
+        }
+    }
+    // SIG_COEFF_FLAG, GT1, GT2, LAST_SIG_X/Y: use spec init values for I-slice
+    // These use the CODED_SUB_BLOCK_FLAG, SIG_COEFF_FLAG, etc. tables
+    for (i, &v) in cabac::SIG_COEFF_FLAG_INIT[si].iter().enumerate() {
+        if SIG_COEFF_CTX_OFFSET + i < iv.len() {
+            iv[SIG_COEFF_CTX_OFFSET + i] = v;
+        }
+    }
+    for (i, &v) in cabac::COEFF_ABS_LEVEL_GREATER1_FLAG_INIT[si]
+        .iter()
+        .enumerate()
+    {
+        if GT1_CTX_OFFSET + i < iv.len() {
+            iv[GT1_CTX_OFFSET + i] = v;
+        }
+    }
+    for (i, &v) in cabac::COEFF_ABS_LEVEL_GREATER2_FLAG_INIT[si]
+        .iter()
+        .enumerate()
+    {
+        if GT2_CTX_OFFSET + i < iv.len() {
+            iv[GT2_CTX_OFFSET + i] = v;
+        }
+    }
+    for (i, &v) in cabac::LAST_SIG_COEFF_X_PREFIX_INIT[si].iter().enumerate() {
+        if LAST_SIG_X_CTX_OFFSET + i < iv.len() {
+            iv[LAST_SIG_X_CTX_OFFSET + i] = v;
+        }
+    }
+    for (i, &v) in cabac::LAST_SIG_COEFF_Y_PREFIX_INIT[si].iter().enumerate() {
+        if LAST_SIG_Y_CTX_OFFSET + i < iv.len() {
+            iv[LAST_SIG_Y_CTX_OFFSET + i] = v;
+        }
+    }
+    // CBF_CHROMA: 5 contexts
+    for (i, &v) in cabac::CBF_CHROMA_INIT[si].iter().enumerate() {
+        if CBF_CHROMA_CTX_OFFSET + i < iv.len() {
+            iv[CBF_CHROMA_CTX_OFFSET + i] = v;
         }
     }
 
-    contexts
+    cabac::init_contexts(&iv, qp)
 }
 
 #[cfg(test)]
