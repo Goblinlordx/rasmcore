@@ -135,4 +135,92 @@ fn performance_comparison() {
     r!("  chain (5 ops)", im_c, vp_c, ns_c, np_c, ws_c);
     println!("\n  SL=Stateless (separate alloc per op)  PL=Pipeline (NodeGraph + SpatialCache)");
     println!("============================================================================================\n");
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1080p (1920x1080) — shows pipeline advantage on real images
+    // ═══════════════════════════════════════════════════════════════
+
+    let hd_path = fixtures_dir().join("inputs/gradient_1920x1080.png");
+    if !hd_path.exists() {
+        println!("  (skipping 1080p bench — gradient_1920x1080.png not found)\n");
+        return;
+    }
+    let hd_file = std::fs::canonicalize(&hd_path).unwrap().to_str().unwrap().to_string();
+    let hd_data = std::fs::read(&hd_path).unwrap();
+    let hd_dec = decoder::decode(&hd_data).unwrap();
+    let hd_wd = bi.rasmcore_image_decoder().call_decode(&mut st, &hd_data).unwrap().unwrap();
+
+    // ── 1080p resize to 960x540 ──
+    let hd_im_r = if hm { bench(|| { Command::new("magick").args([&hd_file, "-resize", "960x540!", "null:"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap(); }) } else { Duration::ZERO };
+    let hd_vp_r = if hv { bench(|| { Command::new("vips").args(["thumbnail", &hd_file, "/dev/null", "960", "--height", "540"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap(); }) } else { Duration::ZERO };
+    let hd_ns_r = bench(|| { let _ = transform::resize(&hd_dec.pixels, &hd_dec.info, 960, 540, rasmcore_image::domain::types::ResizeFilter::Lanczos3).unwrap(); });
+    let hd_np_r = bench(|| {
+        let mut g = NodeGraph::new(32 << 20);
+        let s = g.add_node(Box::new(source::SourceNode::new(hd_data.clone()).unwrap()));
+        let si = g.node_info(s).unwrap();
+        let r = g.add_node(Box::new(pt::ResizeNode::new(s, si, 960, 540, rasmcore_image::domain::types::ResizeFilter::Lanczos3)));
+        let _ = sink::write(&mut g, r, "png", None).unwrap();
+    });
+    let hd_ws_r = bench(|| { let _ = tr.call_resize(&mut st, &hd_wd.pixels, hd_wd.info, 960, 540, ResizeFilter::Lanczos3).unwrap().unwrap(); });
+
+    // ── 1080p blur ──
+    let hd_im_b = if hm { bench(|| { Command::new("magick").args([&hd_file, "-blur", "0x2", "null:"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap(); }) } else { Duration::ZERO };
+    let hd_vp_b = if hv { bench(|| { Command::new("vips").args(["gaussblur", &hd_file, "/dev/null", "2"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap(); }) } else { Duration::ZERO };
+    let hd_ns_b = bench(|| { let _ = filters::blur(&hd_dec.pixels, &hd_dec.info, 2.0).unwrap(); });
+    let hd_np_b = bench(|| {
+        let mut g = NodeGraph::new(32 << 20);
+        let s = g.add_node(Box::new(source::SourceNode::new(hd_data.clone()).unwrap()));
+        let si = g.node_info(s).unwrap();
+        let b = g.add_node(Box::new(pf::BlurNode::new(s, si, 2.0)));
+        let _ = sink::write(&mut g, b, "png", None).unwrap();
+    });
+    let hd_ws_b = bench(|| { let _ = fl.call_blur(&mut st, &hd_wd.pixels, hd_wd.info, 2.0).unwrap().unwrap(); });
+
+    // ── 1080p chain: read → resize 960x540 → blur → sharpen → brightness → write JPEG ──
+    let hd_im_c = if hm { bench(|| { Command::new("magick").args([&hd_file, "-resize", "960x540!", "-blur", "0x2", "-sharpen", "0x1", "-brightness-contrast", "10", "null:"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap(); }) } else { Duration::ZERO };
+    let hd_vp_c = if hv { bench(|| {
+        Command::new("sh").args(["-c", &format!(
+            "vips thumbnail '{}' /tmp/_rb.v 960 --height 540 && vips gaussblur /tmp/_rb.v /tmp/_rb2.v 2 && vips sharpen /tmp/_rb2.v /tmp/_rb3.v && vips linear /tmp/_rb3.v /dev/null 1.0 25.5", hd_file
+        )]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap();
+    }) } else { Duration::ZERO };
+    let hd_ns_c = bench(|| {
+        let d = decoder::decode(&hd_data).unwrap();
+        let r = transform::resize(&d.pixels, &d.info, 960, 540, rasmcore_image::domain::types::ResizeFilter::Lanczos3).unwrap();
+        let b = filters::blur(&r.pixels, &r.info, 2.0).unwrap();
+        let s = filters::sharpen(&b, &r.info, 1.0).unwrap();
+        let _ = filters::brightness(&s, &r.info, 0.1).unwrap();
+    });
+    let hd_np_c = bench(|| {
+        let mut g = NodeGraph::new(32 << 20);
+        let s = g.add_node(Box::new(source::SourceNode::new(hd_data.clone()).unwrap()));
+        let si = g.node_info(s).unwrap();
+        let r = g.add_node(Box::new(pt::ResizeNode::new(s, si, 960, 540, rasmcore_image::domain::types::ResizeFilter::Lanczos3)));
+        let ri = g.node_info(r).unwrap();
+        let b = g.add_node(Box::new(pf::BlurNode::new(r, ri.clone(), 2.0)));
+        let sh = g.add_node(Box::new(pf::SharpenNode::new(b, ri.clone(), 1.0)));
+        let br = g.add_node(Box::new(pf::BrightnessNode::new(sh, ri, 0.1)));
+        let _ = sink::write(&mut g, br, "jpeg", Some(85)).unwrap();
+    });
+    let hd_ws_c = bench(|| {
+        let d = bi.rasmcore_image_decoder().call_decode(&mut st, &hd_data).unwrap().unwrap();
+        let (rp, ri) = tr.call_resize(&mut st, &d.pixels, d.info, 960, 540, ResizeFilter::Lanczos3).unwrap().unwrap();
+        let bp = fl.call_blur(&mut st, &rp, ri, 2.0).unwrap().unwrap();
+        let sp = fl.call_sharpen(&mut st, &bp, ri, 1.0).unwrap().unwrap();
+        let _ = fl.call_brightness(&mut st, &sp, ri, 0.1).unwrap().unwrap();
+    });
+
+    println!("============================================================================================");
+    println!("        Performance Comparison (1920x1080 PNG, {N} iterations)");
+    println!("============================================================================================\n");
+    println!("  {:<25} {:>9} {:>9} {:>9} {:>9} {:>9}", "", "magick", "vips", "Natv/SL", "Natv/PL", "WASM/SL");
+    println!("  {:<25} {:>9} {:>9} {:>9} {:>9} {:>9}", "", "------", "----", "-------", "-------", "-------");
+    println!("  Single operations:");
+    r!("  resize 960x540", hd_im_r, hd_vp_r, hd_ns_r, hd_np_r, hd_ws_r);
+    r!("  blur r=2", hd_im_b, hd_vp_b, hd_ns_b, hd_np_b, hd_ws_b);
+    println!();
+    println!("  Chain: read -> resize 960x540 -> blur -> sharpen -> brightness -> write JPEG");
+    r!("  chain (5 ops)", hd_im_c, hd_vp_c, hd_ns_c, hd_np_c, hd_ws_c);
+    println!("\n  SL=Stateless (separate alloc per op)  PL=Pipeline (NodeGraph + SpatialCache)");
+    println!("  1080p image: 1920x1080 RGB = 6.2 MB decoded pixels");
+    println!("============================================================================================\n");
 }
