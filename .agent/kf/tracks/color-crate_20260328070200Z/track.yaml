@@ -138,5 +138,5 @@ plan:
   - text: Odd dimensions and edge cases (1x1, 1x2, 3x5)
     done: true
   - text: Full workspace builds and all tests pass
-    done: false
+    done: true
 extra: {}
