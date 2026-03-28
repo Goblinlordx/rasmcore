@@ -364,21 +364,126 @@ fn decode_heif(data: &[u8]) -> Result<DecodedImage, ImageError> {
         .map_err(|e| ImageError::InvalidInput(format!("HEIF parse: {e}")))?;
 
     let img = &file.primary_image;
-    let codec_name = match img.codec {
-        rasmcore_isobmff::CodecType::Hevc => "HEVC",
-        rasmcore_isobmff::CodecType::Av1 => "AV1",
-        rasmcore_isobmff::CodecType::Jpeg => "JPEG",
-        rasmcore_isobmff::CodecType::Unknown(_) => "unknown",
-    };
 
-    // Until the HEVC decoder is implemented, return an error with metadata
-    Err(ImageError::UnsupportedFormat(format!(
-        "HEIF container parsed ({}x{}, codec: {codec_name}, bitstream: {} bytes) \
-         but {codec_name} pixel decode is not yet implemented",
-        img.width,
-        img.height,
-        img.bitstream.len()
-    )))
+    // Attempt pixel decode based on codec type
+    match img.codec {
+        #[cfg(feature = "nonfree-hevc")]
+        rasmcore_isobmff::CodecType::Hevc => decode_heif_hevc(&file),
+
+        rasmcore_isobmff::CodecType::Av1 => {
+            // AVIF-in-HEIF: delegate to existing AVIF decode path via image crate
+            Err(ImageError::UnsupportedFormat(
+                "AVIF-in-HEIF: use native AVIF decode path instead".into(),
+            ))
+        }
+
+        _ => {
+            let codec_name = match img.codec {
+                rasmcore_isobmff::CodecType::Hevc => "HEVC",
+                rasmcore_isobmff::CodecType::Av1 => "AV1",
+                rasmcore_isobmff::CodecType::Jpeg => "JPEG",
+                rasmcore_isobmff::CodecType::Unknown(_) => "unknown",
+            };
+
+            #[cfg(not(feature = "nonfree-hevc"))]
+            if matches!(img.codec, rasmcore_isobmff::CodecType::Hevc) {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "HEIF container parsed ({}x{}, codec: HEVC, {} bytes) — \
+                     enable the 'nonfree-hevc' feature to decode HEVC content",
+                    img.width,
+                    img.height,
+                    img.bitstream.len()
+                )));
+            }
+
+            Err(ImageError::UnsupportedFormat(format!(
+                "HEIF codec {codec_name} not supported",
+            )))
+        }
+    }
+}
+
+/// Decode HEIC file using rasmcore-hevc (nonfree).
+#[cfg(all(feature = "native-heif", feature = "nonfree-hevc"))]
+fn decode_heif_hevc(file: &rasmcore_isobmff::IsobmffFile) -> Result<DecodedImage, ImageError> {
+    let img = &file.primary_image;
+
+    // Handle grid images (multiple tiles composited)
+    if let Some(grid) = &img.grid {
+        return decode_heif_grid(grid, img);
+    }
+
+    // Single image decode
+    let frame = rasmcore_hevc::decode_frame(&img.bitstream, None)
+        .map_err(|e| ImageError::ProcessingFailed(format!("HEVC decode: {e}")))?;
+
+    let icc_profile = img.icc_profile.clone();
+
+    Ok(DecodedImage {
+        pixels: frame.pixels,
+        info: ImageInfo {
+            width: frame.width,
+            height: frame.height,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile,
+    })
+}
+
+/// Decode a grid HEIC image (multiple tiles composited into one output).
+#[cfg(all(feature = "native-heif", feature = "nonfree-hevc"))]
+fn decode_heif_grid(
+    grid: &rasmcore_isobmff::GridDescriptor,
+    img: &rasmcore_isobmff::ImageItem,
+) -> Result<DecodedImage, ImageError> {
+    let out_w = grid.output_width as usize;
+    let out_h = grid.output_height as usize;
+    let mut output = vec![0u8; out_w * out_h * 3];
+
+    let cols = grid.cols as usize;
+
+    for (tile_idx, tile) in grid.tiles.iter().enumerate() {
+        let tile_row = tile_idx / cols;
+        let tile_col = tile_idx % cols;
+
+        // Decode this tile
+        let frame = rasmcore_hevc::decode_frame(&tile.bitstream, None).map_err(|e| {
+            ImageError::ProcessingFailed(format!("HEVC tile {tile_idx} decode: {e}"))
+        })?;
+
+        let tw = frame.width as usize;
+        let th = frame.height as usize;
+        let tile_x = tile_col * tw;
+        let tile_y = tile_row * th;
+
+        // Blit tile into output buffer
+        for row in 0..th {
+            let out_y = tile_y + row;
+            if out_y >= out_h {
+                break;
+            }
+            let src_start = row * tw * 3;
+            let src_end = src_start + tw.min(out_w - tile_x) * 3;
+            let dst_start = (out_y * out_w + tile_x) * 3;
+            let copy_len = src_end - src_start;
+            if dst_start + copy_len <= output.len() {
+                output[dst_start..dst_start + copy_len]
+                    .copy_from_slice(&frame.pixels[src_start..src_end]);
+            }
+        }
+    }
+
+    Ok(DecodedImage {
+        pixels: output,
+        info: ImageInfo {
+            width: grid.output_width,
+            height: grid.output_height,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: img.icc_profile.clone(),
+    })
 }
 
 fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {
