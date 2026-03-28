@@ -64,6 +64,10 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
         for mb_col in 0..mb_w as usize {
             let seg_id = seg_map.get(mb_col, mb_row);
             let seg_quant = seg_map.quant(seg_id);
+            // Derive RDO lambda from segment QP
+            let seg_qp = (params.qp_y as i16 + seg_map.qp_deltas[seg_id as usize] as i16)
+                .clamp(0, 127) as u8;
+            let lambda = crate::rdo::lambda_from_qp(seg_qp);
 
             let mut mb = encode_macroblock(
                 &y_padded,
@@ -77,6 +81,7 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 mb_col,
                 mb_row,
                 seg_quant,
+                lambda,
                 &mut token_writer,
                 &mut top_ctx[mb_col],
                 &mut left_ctx,
@@ -531,7 +536,7 @@ fn encode_intra_uv_mode(bw: &mut BoolWriter, mode: u8) {
     }
 }
 
-/// Encode a single macroblock: choose prediction, compute residual, DCT, quantize.
+/// Encode a single macroblock: choose prediction, compute residual, DCT, quantize + RDO prune.
 fn encode_macroblock(
     y_plane: &[u8],
     u_plane: &[u8],
@@ -544,6 +549,7 @@ fn encode_macroblock(
     mb_col: usize,
     mb_row: usize,
     seg_quant: &SegmentQuant,
+    lambda: f64,
     token_bw: &mut BoolWriter,
     top_ctx: &mut [u8; 9],
     left_ctx: &mut [u8; 9],
@@ -653,6 +659,8 @@ fn encode_macroblock(
             dct::forward_dct(&src_block, &bpred_preds[sb], &mut coeffs);
             // B_PRED: DC at pos 0 uses y_dc quantizer (DC_TABLE), AC uses AC_TABLE
             quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut y_coeffs[sb]);
+            // RDO: prune costly coefficients (block_type 3 = Y-with-DC for B_PRED)
+            crate::rdo::rdo_prune_block(&mut y_coeffs[sb], &coeffs, &seg_quant.y_dc, 3, lambda);
         }
         // No Y2 block for B_PRED
     } else {
@@ -674,12 +682,16 @@ fn encode_macroblock(
             y_dc_coeffs[sb] = coeffs[0];
             let mut quantized = [0i16; 16];
             quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+            // RDO: prune costly AC coefficients (block_type 0 = Y-AC after Y2)
+            crate::rdo::rdo_prune_block(&mut quantized, &coeffs, &seg_quant.y_ac, 0, lambda);
             quantized[0] = 0; // DC goes to Y2
             y_coeffs[sb] = quantized;
         }
         let mut y2_coeffs = [0i16; 16];
         dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
         quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
+        // RDO: prune costly Y2 coefficients (block_type 1 = Y2)
+        crate::rdo::rdo_prune_block(&mut y2_quantized, &y2_coeffs, &seg_quant.y2_dc, 1, lambda);
     }
 
     // ─── Chroma (same for both modes) ───────────────────────────────────
@@ -742,6 +754,14 @@ fn encode_macroblock(
             let mut coeffs = [0i16; 16];
             dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
             quant::quantize_block(&coeffs, &seg_quant.uv_ac, &mut uv_quantized[uv_idx]);
+            // RDO: prune costly UV coefficients (block_type 2 = UV)
+            crate::rdo::rdo_prune_block(
+                &mut uv_quantized[uv_idx],
+                &coeffs,
+                &seg_quant.uv_ac,
+                2,
+                lambda,
+            );
             uv_idx += 1;
         }
     }

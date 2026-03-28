@@ -5,6 +5,11 @@
 
 use crate::tables::{AC_TABLE, DC_TABLE};
 
+/// Get the AC quantizer step size for a given QP index.
+pub fn ac_table_value(qp: u8) -> u16 {
+    AC_TABLE[qp as usize]
+}
+
 /// Quantizer type — six distinct quantizer channels in VP8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuantType {

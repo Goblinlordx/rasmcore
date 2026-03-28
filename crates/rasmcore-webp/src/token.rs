@@ -153,8 +153,10 @@ pub const COEFF_UPDATE_PROBS: [u8; COEFF_PROB_UPDATE_COUNT] = [
 ];
 
 /// Look up the 11-element probability slice for a given block type, band, and context.
+///
+/// Public for use by the RDO module's bitrate estimation.
 #[inline]
-fn get_probs(block_type: usize, band: usize, ctx: usize) -> &'static [u8] {
+pub fn get_coeff_probs(block_type: usize, band: usize, ctx: usize) -> &'static [u8] {
     let offset = block_type * 264 + band * 33 + ctx * 11;
     &DEFAULT_COEFF_PROBS[offset..offset + 11]
 }
@@ -199,7 +201,7 @@ pub fn encode_block(
     for i in start..16 {
         let coeff = coeffs[ZIGZAG[i]];
         let band = BANDS[i] as usize;
-        let probs = get_probs(block_type, band, ctx);
+        let probs = get_coeff_probs(block_type, band, ctx);
         let past_last = i as i32 > last_nz;
 
         if past_last && coeff == 0 {
@@ -387,7 +389,7 @@ mod tests {
         for bt in 0..4 {
             for band in 0..8 {
                 for ctx in 0..3 {
-                    let probs = get_probs(bt, band, ctx);
+                    let probs = get_coeff_probs(bt, band, ctx);
                     assert_eq!(probs.len(), 11);
                     // All probabilities should be in [1, 255]
                     // (128 is valid as a "don't care" sentinel)
