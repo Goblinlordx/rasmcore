@@ -1,0 +1,161 @@
+id: webp-quality-fix_20260329060000Z
+title: VP8 Encoder Quality Fix — DC Double-Quantization + Prediction Border Mismatch
+type: bug
+status: pending
+created: 2026-03-29
+updated: "2026-03-29"
+spec:
+  summary: |
+    Fix two root causes of poor PSNR (~13 dB) in the VP8 encoder for non-solid
+    content: DC coefficient double-quantization and prediction border initialization
+    mismatch with the decoder.
+  context: |
+    The VP8 encoder produces spec-conformant bitstreams decodable at all sizes
+    (fixed in webp-self-decode track). However, PSNR is only 13.6 dB for a
+    256x256 gradient at q75 (target: >25 dB). Solid gray achieves 42.1 dB,
+    proving the issue is specifically with non-zero coefficient handling.
+
+    Even at q100 (minimum quantization), gradient PSNR is only 18 dB —
+    far below the expected 40+ dB. This rules out quantization aggressiveness
+    and points to a structural encoding error.
+  codebase_analysis: |
+    Root cause analysis identified two bugs via comparison with the image-webp
+    decoder (vp8.rs) and RFC 6386:
+
+    BUG 1 — DC DOUBLE-QUANTIZATION (bitstream.rs lines 347-353):
+
+    The encoder quantizes ALL 16 DCT coefficients (including DC at position 0)
+    with the Y_AC quantizer, THEN extracts the quantized DC for the WHT path:
+      ```
+      quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+      y_dc_coeffs[sb] = quantized[0];  // BUG: uses quantized DC
+      ```
+    The WHT path then quantizes AGAIN with the Y2 quantizer. This is double
+    quantization of the DC coefficient.
+
+    Correct VP8 flow (RFC 6386 Section 14.3):
+      1. Forward DCT → raw coefficients
+      2. Extract RAW DC (coefficients[0]) for WHT — NOT quantized
+      3. Quantize only AC (positions 1-15) with Y_AC quantizer
+      4. Forward WHT on raw DCs → quantize with Y2 quantizer
+
+    At QP=32: Y_AC DC step = 29, Y2 DC step = 58. The DC gets quantized
+    by step 29 first, THEN the quantized values go through WHT and get
+    quantized by step 58 again. Effective DC precision loss is catastrophic
+    for non-constant blocks.
+
+    This same bug exists in reconstruct_macroblock (lines 517-536) — the
+    reconstruction also double-quantizes DCs, so the encoder's prediction
+    reference matches its own buggy encoding but NOT what the decoder produces.
+
+    BUG 2 — PREDICTION BORDER MISMATCH (bitstream.rs lines 653-655):
+
+    The encoder initializes default prediction neighbors as [128, 128, 128]
+    for the first macroblock (above, left, above_left). The image-webp decoder
+    uses [127, 129, 127/129] per VP8 spec:
+      - top_border_y = 127 (above default)
+      - left_border_y = 129 (left default)
+      - above_left = 127 (when mby=0), 129 (when mbx=0)
+
+    For DC prediction: (127+129)/2 = 128, so DC mode happens to match.
+    For V/H/TM modes: 1-pixel mismatch that compounds across macroblocks.
+
+    Additional finding from image-webp decoder analysis:
+    The encoder uses recon_y/u/v initialized to 128, but the decoder
+    reconstructs from scratch using border values 127/129. This means
+    the first MB's non-DC predictions differ by 1 pixel, which propagates
+    through the prediction chain.
+  acceptance_criteria:
+    - PSNR above 25 dB at q75 for 256x256 gradient
+    - PSNR above 30 dB at q95 for 256x256 gradient
+    - PSNR above 40 dB for 256x256 solid gray at q75 (no regression)
+    - All sizes 16x16 through 4096x4096 still decode with dwebp and image-webp
+    - Gradient images 16x16 through 2048x2048 still decode
+    - All quality levels q10 through q95 produce decodable output at 512x512
+    - Deterministic encoding (same input = same bytes)
+    - WASM SIMD path validated via wasmtime
+    - All existing unit tests pass
+  out_of_scope: |
+    - File size optimization or parity with cwebp
+    - Loop filter implementation (filter_level stays 0)
+    - B_PRED mode support
+    - Multi-partition encoding
+    - Reconstruction optimization (reusing stored coefficients vs re-encoding)
+  technical_notes: |
+    Fix 1 — DC coefficient path (encode_macroblock + reconstruct_macroblock):
+
+    In encode_macroblock, change the DC extraction to use raw coefficients:
+      ```rust
+      let mut coeffs = [0i16; 16];
+      dct::forward_dct(&src_block, &ref_block, &mut coeffs);
+      y_dc_coeffs[sb] = coeffs[0];  // RAW DC for WHT path
+      let mut quantized = [0i16; 16];
+      quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+      quantized[0] = 0; // DC goes to Y2 block, not written in Y-AC
+      y_coeffs[sb] = quantized;
+      ```
+
+    Apply the same fix in reconstruct_macroblock — extract raw DC before
+    quantization.
+
+    Fix 2 — Prediction border initialization (get_y_neighbors, get_uv_neighbors):
+
+    Change default initialization to match VP8 spec and image-webp decoder:
+      ```rust
+      fn get_y_neighbors(...) -> ([u8; 16], [u8; 16], u8) {
+          let mut above = [127u8; 16];  // was 128
+          let mut left = [129u8; 16];   // was 128
+          let mut above_left = if mb_row == 0 { 127u8 } else { 129u8 };
+          // ...same neighbor extraction logic...
+      }
+      ```
+
+    Same for get_uv_neighbors. Also change recon_y/u/v initialization:
+    recon_y, recon_u, recon_v should NOT be initialized to 128 — they should
+    be initialized to match what the decoder's border initialization produces.
+    However, since we overwrite them during reconstruction, the init value only
+    matters for the first MB's prediction via get_y_neighbors (which we're fixing).
+
+    Verification approach:
+    1. Fix DC path → re-run PSNR test → expect major improvement
+    2. Fix borders → re-run → expect marginal additional improvement
+    3. Validate all sizes still decode
+    4. Run WASM SIMD tests
+plan:
+  - phase: DC Coefficient Fix
+    tasks:
+      - text: Fix encode_macroblock to extract raw DC before quantization for Y2 WHT path
+        done: false
+      - text: Fix reconstruct_macroblock to use raw DC in the same way
+        done: false
+      - text: Verify PSNR improves above 25 dB for 256x256 gradient at q75
+        done: false
+      - text: Verify solid gray PSNR is not regressed (should stay above 40 dB)
+        done: false
+  - phase: Prediction Border Fix
+    tasks:
+      - text: Change get_y_neighbors default above from 128 to 127, left from 128 to 129
+        done: false
+      - text: Change get_uv_neighbors similarly
+        done: false
+      - text: Set above_left to 127 for mb_row==0, 129 for mb_col==0
+        done: false
+      - text: Verify PSNR for gradient and solid content
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Solid images 16x16 through 4096x4096 decode with dwebp and image-webp
+        done: false
+      - text: Gradient images 16x16 through 2048x2048 decode
+        done: false
+      - text: Quality levels q10/q25/q50/q75/q95 at 512x512 all decode
+        done: false
+      - text: PSNR above 30 dB at q95 for 256x256 gradient
+        done: false
+      - text: Determinism test (encode twice = identical bytes)
+        done: false
+      - text: WASM SIMD validation via wasmtime
+        done: false
+      - text: All existing unit tests pass
+        done: false
+extra: {}

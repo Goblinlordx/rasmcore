@@ -1,0 +1,8 @@
+title: VP8 Encoder Quality Fix — DC Double-Quantization + Prediction Border Mismatch
+status: pending
+type: bug
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- webp-self-decode_20260328130200Z
