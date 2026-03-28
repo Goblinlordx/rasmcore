@@ -7,6 +7,7 @@ description = "Pure Rust VP8 lossy encoder for WebP images (RFC 6386)"
 
 [dependencies]
 rasmcore-color = { path = "../rasmcore-color" }
+rasmcore-trellis = { path = "../rasmcore-trellis" }
 
 [dev-dependencies]
 # For parity testing against reference implementations

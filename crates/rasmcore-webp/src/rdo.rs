@@ -184,6 +184,92 @@ pub fn rdo_prune_block(
     new_last_nz
 }
 
+// ─── VP8 Trellis Context ─────────────────────────────────────────────────
+
+use rasmcore_trellis::TrellisContext;
+
+/// VP8-specific trellis context for the shared trellis engine.
+///
+/// Maps VP8's 3 coefficient context states (zero/one/large) and 4 block types
+/// to the TrellisContext trait. Uses the same VP8 token probability tables
+/// as `estimate_token_cost` for bit-exact rate estimation.
+pub struct Vp8TrellisContext {
+    pub block_type: u8, // 0=Y-AC, 1=Y2, 2=UV, 3=Y-with-DC
+}
+
+impl TrellisContext for Vp8TrellisContext {
+    const NUM_STATES: usize = 3; // 0=zero/eob, 1=one, 2=large
+
+    fn token_cost(&self, level: i16, position: usize, state: usize) -> u32 {
+        let band = BANDS[position.min(15)];
+        estimate_token_cost(level, self.block_type, band, state as u8)
+    }
+
+    fn next_state(&self, level: i16, _state: usize) -> usize {
+        match level.unsigned_abs() {
+            0 => 0, // zero
+            1 => 1, // one
+            _ => 2, // large
+        }
+    }
+
+    fn eob_cost(&self, position: usize, state: usize) -> u32 {
+        // EOB is signaled as a zero at the is_nonzero node
+        // Use the next position's band (EOB context uses the position where it appears)
+        let band = BANDS[position.min(16)];
+        let probs = token::get_coeff_probs(self.block_type as usize, band as usize, state);
+        // Cost of encoding zero (EOB): prob_cost at is_nonzero = false
+        prob_cost(probs[0] as u32)
+    }
+}
+
+/// Run trellis optimization on a 16-coefficient VP8 block.
+///
+/// Replaces the greedy `rdo_prune_block` with globally optimal Viterbi search.
+/// Takes original (unquantized) coefficients and produces optimized quantized levels.
+pub fn trellis_optimize_block(
+    original_coeffs: &[i16; 16],
+    matrix: &QuantMatrix,
+    block_type: u8,
+    lambda: f64,
+    output: &mut [i16; 16],
+) -> i32 {
+    let ctx = Vp8TrellisContext { block_type };
+    let config = rasmcore_trellis::TrellisConfig { lambda };
+
+    // Build quant/dequant step arrays from the QuantMatrix
+    let mut quant_steps = [0u16; 16];
+    let mut dequant_steps = [0u16; 16];
+    for i in 0..16 {
+        // VP8 quantization: level = (|coeff| + bias) * iq >> 16
+        // For trellis candidate generation, we need the effective step size.
+        // q[] is the step size for dequantization: dequant = level * q[i]
+        // For quantization: level ≈ coeff / q[i] (approximately)
+        quant_steps[i] = matrix.q[i] as u16;
+        dequant_steps[i] = matrix.q[i] as u16;
+    }
+
+    rasmcore_trellis::trellis_optimize(
+        original_coeffs,
+        &quant_steps,
+        &dequant_steps,
+        16,
+        &ctx,
+        &config,
+        output,
+    );
+
+    // Find last non-zero
+    let mut last_nz: i32 = -1;
+    for i in (0..16).rev() {
+        if output[i] != 0 {
+            last_nz = i as i32;
+            break;
+        }
+    }
+    last_nz
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
