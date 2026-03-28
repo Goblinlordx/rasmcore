@@ -217,31 +217,39 @@ fn encode_mb_header(bw: &mut BoolWriter, mb: &MacroblockInfo) {
 }
 
 /// Encode luma 16x16 prediction mode for key frame.
-/// Tree: DC=0, V=1, H=2, TM=3
-/// Probabilities from RFC 6386 Section 11.2 (key frame defaults).
+///
+/// Key-frame Y mode tree (vp8_kf_ymode_tree from libvpx):
+///   Node 0: B_PRED(4) vs rest     [prob = 145]
+///   Node 1: DC_PRED(0) vs rest    [prob = 156]
+///   Node 2: V_PRED(1) vs rest     [prob = 163]
+///   Node 3: H_PRED(2) vs TM(3)    [prob = 128]
+///
+/// We only use DC(0), V(1), H(2), TM(3) — never B_PRED(4).
 fn encode_intra_y_mode(bw: &mut BoolWriter, mode: u8) {
-    // Key frame intra mode probabilities (RFC 6386 Section 11.2.1)
-    // Tree structure: if bit0 → {if bit1 → TM else V} else {if bit1 → H else DC}
+    // Node 0: skip B_PRED (we never use it)
+    bw.put_bit(145, true); // not B_PRED → continue to node 1
+
     match mode {
         0 => {
-            // DC: 0, 0
-            bw.put_bit(145, false);
+            // DC_PRED: node1 left
             bw.put_bit(156, false);
         }
         1 => {
-            // V: 0, 1
-            bw.put_bit(145, true);
+            // V_PRED: node1 right → node2 left
+            bw.put_bit(156, true);
             bw.put_bit(163, false);
         }
         2 => {
-            // H: 1, 0
-            bw.put_bit(145, false);
+            // H_PRED: node1 right → node2 right → node3 left
             bw.put_bit(156, true);
+            bw.put_bit(163, true);
+            bw.put_bit(128, false);
         }
         3 => {
-            // TM: 1, 1
-            bw.put_bit(145, true);
+            // TM_PRED: node1 right → node2 right → node3 right
+            bw.put_bit(156, true);
             bw.put_bit(163, true);
+            bw.put_bit(128, true);
         }
         _ => unreachable!("invalid y_mode: {mode}"),
     }
