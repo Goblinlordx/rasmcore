@@ -49,25 +49,23 @@ spec:
 
     The image-webp decoder (our parity reference) was derived from libvpx, so matching libvpx''s encoder behavior should produce
     correct decode.'
-plan: []
-extra: {}
 plan:
-  - phase: Source Analysis
-    tasks:
-      - text: Fetch and study libvpx vp8/encoder/bitstream.c mb_skip_coeff handling
-        done: false
-      - text: Study vp8/encoder/encodeframe.c skip decision per MB
-        done: false
-      - text: Study vp8/encoder/tokenize.c — token generation vs skip interaction
-        done: false
-      - text: Study vp8/decoder/decodemv.c — decoder context for comparison
-        done: false
-  - phase: Analysis Report
-    tasks:
-      - text: Document skip + segmentation interaction
-        done: false
-      - text: Document context state machine differences
-        done: false
-      - text: Produce implementation spec for webp-skip-flag track
-        done: false
+- phase: Source Analysis
+  tasks:
+  - text: Fetch and study libvpx vp8/encoder/bitstream.c mb_skip_coeff handling
+    done: true
+  - text: Study vp8/encoder/encodeframe.c skip decision per MB
+    done: true
+  - text: Study vp8/encoder/tokenize.c — token generation vs skip interaction
+    done: true
+  - text: Study vp8/decoder/decodemv.c — decoder context for comparison
+    done: true
+- phase: Analysis Report
+  tasks:
+  - text: Document skip + segmentation interaction
+    done: true
+  - text: Document context state machine differences
+    done: true
+  - text: Produce implementation spec for webp-skip-flag track
+    done: true
 extra: {}
