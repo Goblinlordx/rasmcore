@@ -2133,6 +2133,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-bmp"
+version = "0.1.0"
+
+[[package]]
 name = "rasmcore-color"
 version = "0.1.0"
 
@@ -2150,7 +2154,11 @@ dependencies = [
  "libblur",
  "moxcms",
  "quick-xml",
+ "rasmcore-bmp",
  "rasmcore-pipeline",
+ "rasmcore-pnm",
+ "rasmcore-qoi",
+ "rasmcore-tga",
  "rgb",
  "tiff",
  "wit-bindgen-rt",
@@ -2164,6 +2172,18 @@ version = "0.1.0"
 
 [[package]]
 name = "rasmcore-pipeline"
+version = "0.1.0"
+
+[[package]]
+name = "rasmcore-pnm"
+version = "0.1.0"
+
+[[package]]
+name = "rasmcore-qoi"
+version = "0.1.0"
+
+[[package]]
+name = "rasmcore-tga"
 version = "0.1.0"
 
 [[package]]

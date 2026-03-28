@@ -21,6 +21,20 @@ quick-xml = "0.39.2"
 tiff = "0.11"
 jxl-oxide = "0.12"
 
+# Native codec crates (optional, feature-gated)
+rasmcore-qoi = { path = "../rasmcore-qoi", optional = true }
+rasmcore-pnm = { path = "../rasmcore-pnm", optional = true }
+rasmcore-bmp = { path = "../rasmcore-bmp", optional = true }
+rasmcore-tga = { path = "../rasmcore-tga", optional = true }
+
+[features]
+default = []
+native-qoi = ["dep:rasmcore-qoi"]
+native-pnm = ["dep:rasmcore-pnm"]
+native-bmp = ["dep:rasmcore-bmp"]
+native-tga = ["dep:rasmcore-tga"]
+native-trivial = ["native-qoi", "native-pnm", "native-bmp", "native-tga"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

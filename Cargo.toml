@@ -7,6 +7,10 @@ members = [
     "crates/rasmcore-image",
     "crates/rasmcore-webp",
     "crates/rasmcore-jxl",
+    "crates/rasmcore-qoi",
+    "crates/rasmcore-pnm",
+    "crates/rasmcore-bmp",
+    "crates/rasmcore-tga",
     "tests/wasm-integration",
 ]
 

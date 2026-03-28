@@ -1,0 +1,9 @@
+[package]
+name = "rasmcore-bmp"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust BMP encoder/decoder — zero dependencies"
+
+[dependencies]
+
+[dev-dependencies]

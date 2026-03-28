@@ -1,0 +1,10 @@
+[package]
+name = "rasmcore-pnm"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust PNM (PBM/PGM/PPM/PAM) encoder/decoder — zero dependencies"
+
+[dependencies]
+# No external dependencies
+
+[dev-dependencies]

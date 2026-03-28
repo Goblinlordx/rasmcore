@@ -1,0 +1,10 @@
+[package]
+name = "rasmcore-qoi"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust QOI (Quite OK Image) encoder/decoder — zero dependencies"
+
+[dependencies]
+# No external dependencies — implemented from spec
+
+[dev-dependencies]

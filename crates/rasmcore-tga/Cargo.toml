@@ -1,0 +1,9 @@
+[package]
+name = "rasmcore-tga"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust TGA encoder/decoder — zero dependencies"
+
+[dependencies]
+
+[dev-dependencies]
