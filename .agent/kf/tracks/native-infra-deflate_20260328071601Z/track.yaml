@@ -1,0 +1,70 @@
+id: native-infra-deflate_20260328071601Z
+title: Shared Deflate Crate — Compress/Decompress for PNG + TIFF
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Pure Rust deflate/inflate (rasmcore-deflate) with Huffman coding. Unlocks
+    native PNG and TIFF. Perf target: match fdeflate decode speed, beat miniz_oxide
+    encode via PNG-specialized fast path.'
+  context: 'Deflate is the highest-reuse shared algorithm — needed by PNG and TIFF.
+    Current backend: fdeflate (PNG-specialized, single fixed Huffman tree, SIMD CRC32)
+    + miniz_oxide (general-purpose). Own implementation should match fdeflate decode
+    speed and beat miniz_oxide encode for PNG data via PNG-specialized fast path.
+    Includes shared Huffman module that JPEG encoder will also use.'
+  codebase_analysis: 'fdeflate perf: single pre-trained Huffman tree, 12-bit max codes,
+    one block per stream, SIMD CRC32/Adler32. miniz_oxide: ~237-272 MB/s decode vs
+    libdeflate 497-499 MB/s. Our target: match fdeflate on PNG data, general deflate
+    for TIFF. Shared Huffman module extracted for JPEG reuse.'
+  acceptance_criteria:
+  - rasmcore-deflate crate with rasmcore-bitio dependency only
+  - Inflate (decompress) passing RFC 1951 compliance tests
+  - Deflate (compress) with configurable compression level
+  - Shared Huffman encode/decode module (pub mod huffman) reusable by JPEG
+  - PNG fast-path mode (single Huffman tree, no LZ77 match search)
+  - CRC32 and Adler32 checksum implementations
+  - Criterion benchmarks showing decode within 2x of fdeflate
+  - WASM build succeeds
+  out_of_scope: ''
+  technical_notes: 'Architecture: rasmcore-deflate exposes inflate(), deflate(), and
+    pub mod huffman. Huffman module provides HuffmanTree build/encode/decode used
+    by both deflate and (later) JPEG. PNG fast-path: pre-computed single Huffman tree
+    (fdeflate approach) for encode speed. General path: dynamic Huffman trees with
+    LZ77 hash-chain matching. Perf techniques from fdeflate: 12-bit max codes for
+    single-table lookup, 8-byte reads, batch flushes.'
+plan:
+- phase: Shared Huffman Module
+  tasks:
+  - text: Create crates/rasmcore-deflate/ with rasmcore-bitio dependency
+    done: false
+  - text: 'Implement pub mod huffman: HuffmanTree build from frequency table'
+    done: false
+  - text: Implement Huffman encode (symbol to bits) and decode (bits to symbol)
+    done: false
+  - text: 'Perf analysis: document fdeflate 12-bit max code single-table lookup technique'
+    done: false
+- phase: Inflate (Decompress)
+  tasks:
+  - text: 'Implement inflate: stored blocks, fixed Huffman, dynamic Huffman (RFC 1951)'
+    done: false
+  - text: Implement zlib wrapper (RFC 1950) with Adler32 checksum
+    done: false
+  - text: Compliance tests against known deflate test vectors
+    done: false
+- phase: Deflate (Compress)
+  tasks:
+  - text: Implement LZ77 hash-chain string matching for general deflate
+    done: false
+  - text: 'Implement PNG fast-path: single pre-trained Huffman tree (fdeflate approach)'
+    done: false
+  - text: Implement CRC32 (for PNG chunks) and Adler32 (for zlib)
+    done: false
+- phase: Verification
+  tasks:
+  - text: 'Roundtrip tests: deflate(inflate(data)) == data for various inputs'
+    done: false
+  - text: 'Criterion benchmarks: decode vs fdeflate baseline, encode vs miniz_oxide
+      baseline'
+    done: false
+extra: {}

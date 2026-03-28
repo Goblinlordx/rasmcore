@@ -1,0 +1,8 @@
+title: Shared Deflate Crate — Compress/Decompress for PNG + TIFF
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- native-infra-bitio_20260328071600Z

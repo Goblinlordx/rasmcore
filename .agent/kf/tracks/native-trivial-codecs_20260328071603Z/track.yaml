@@ -1,0 +1,62 @@
+id: native-trivial-codecs_20260328071603Z
+title: Native Trivial Codecs — PNM, QOI, BMP, TGA Encode/Decode
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Pure Rust implementations of 4 simple formats as separate crates. Replace
+    image crate backends with feature-flag migration path.
+  context: 'PNM, QOI, BMP, TGA are simple enough to own entirely. Total ~2,500 LOC.
+    These are the lowest-risk native codec replacements — mostly raw pixel I/O with
+    optional simple RLE. Performance is memory-bandwidth limited, not algorithmically
+    bound. Feature-flag migration: default to image crate, opt-in native, eventual
+    flip.'
+  codebase_analysis: ''
+  acceptance_criteria:
+  - 'rasmcore-pnm crate: PBM/PGM/PPM/PAM read+write, ASCII and binary modes (~400
+    LOC)'
+  - 'rasmcore-qoi crate: QOI encode+decode per qoiformat.org spec (~500 LOC)'
+  - 'rasmcore-bmp crate: BMP read+write with RLE4/RLE8, header V1-V5 (~1000 LOC)'
+  - 'rasmcore-tga crate: TGA read+write with optional RLE (~600 LOC)'
+  - 'All crates: zero external deps, WASM-ready, comprehensive roundtrip tests'
+  - Feature flag wiring in rasmcore-image (native-pnm, native-qoi, etc.)
+  - 'Parity tests: native output matches image crate output for test images'
+  out_of_scope: ''
+  technical_notes: 'Each format gets its own crate under crates/rasmcore-{format}/.
+    Implementation approach: read the spec, implement from scratch, test against image
+    crate output. No complex algorithms — these are header parsing + raw pixel I/O
+    + optional simple RLE. BMP is the most complex due to header version variants
+    (V1-V5) and BI_BITFIELDS masking.'
+plan:
+- phase: PNM and QOI
+  tasks:
+  - text: Create crates/rasmcore-pnm/ — PBM/PGM/PPM/PAM read+write, ASCII and binary
+    done: false
+  - text: Create crates/rasmcore-qoi/ — QOI encode+decode per qoiformat.org spec
+    done: false
+  - text: Unit tests and parity tests vs image crate for both
+    done: false
+- phase: BMP and TGA
+  tasks:
+  - text: Create crates/rasmcore-bmp/ — BMP read+write, header V1-V5, RLE4/RLE8, BI_BITFIELDS
+    done: false
+  - text: Create crates/rasmcore-tga/ — TGA read+write, optional RLE, v1/v2 scanline
+      handling
+    done: false
+  - text: Unit tests and parity tests vs image crate for both
+    done: false
+- phase: Integration
+  tasks:
+  - text: Wire native crates into rasmcore-image encoder/decoder behind feature flags
+    done: false
+  - text: 'Parity tests: native encode == image crate encode for test fixtures'
+    done: false
+- phase: Verification
+  tasks:
+  - text: All existing rasmcore-image tests pass with both native and image-crate
+      backends
+    done: false
+  - text: WASM build succeeds for all 4 native crates
+    done: false
+extra: {}
