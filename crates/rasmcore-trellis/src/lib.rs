@@ -170,10 +170,14 @@ pub fn trellis_optimize<C: TrellisContext>(
     assert!(C::NUM_STATES <= 16, "max 16 context states supported");
 
     let n_states = C::NUM_STATES;
-    let lambda = config.lambda;
+
+    // Fixed-point lambda: multiply by 256 to stay in i64 integer domain.
+    // Rate costs from token_cost() are in 1/256-bit units, so lambda_fp * rate
+    // gives distortion-comparable cost without any floating point.
+    let lambda_fp: i64 = (config.lambda * 256.0) as i64;
 
     // DP tables: [position][state]
-    // Use flat arrays for cache efficiency
+    // Flat array for cache-friendly sequential access
     let mut dp: Vec<DpState> = vec![
         DpState {
             cost: INFINITY_COST,
@@ -187,35 +191,67 @@ pub fn trellis_optimize<C: TrellisContext>(
     let init_state = ctx.initial_state();
     dp[init_state].cost = 0;
 
-    // Best EOB cost seen so far (we can end the block at any position)
+    // Pre-compute suffix distortion for EOB evaluation:
+    // suffix_dist[i] = sum of original[j]^2 for j in i..block_size
+    // Eliminates the inner loop in EOB cost computation.
+    let mut suffix_dist = vec![0i64; block_size + 1];
+    for i in (0..block_size).rev() {
+        suffix_dist[i] = suffix_dist[i + 1] + original_coeffs[i] as i64 * original_coeffs[i] as i64;
+    }
+
+    // Best EOB cost seen so far
     let mut best_eob_cost = INFINITY_COST;
-    let mut best_eob_pos: usize = 0; // position AFTER last non-zero (0 = all zero)
+    let mut best_eob_pos: usize = 0;
     let mut best_eob_state: usize = init_state;
 
     // Check if ending immediately (all zero) is best
-    // Must include distortion of zeroing ALL coefficients
-    let mut all_zero_dist: i64 = 0;
-    for i in 0..block_size {
-        all_zero_dist += original_coeffs[i] as i64 * original_coeffs[i] as i64;
-    }
-    let eob_at_start = (lambda * ctx.eob_cost(0, init_state) as f64) as i64 + all_zero_dist;
+    let eob_rate = ctx.eob_cost(0, init_state) as i64;
+    let eob_at_start = ((lambda_fp * eob_rate) >> 8) + suffix_dist[0];
     if eob_at_start < best_eob_cost {
         best_eob_cost = eob_at_start;
         best_eob_pos = 0;
         best_eob_state = init_state;
     }
 
+    // Pre-allocate candidate arrays (max 3 candidates, padded to 4 for SIMD)
+    let mut cand_levels = [0i16; 4];
+    let mut cand_dists = [0i64; 4];
+
     // Forward Viterbi pass
     for pos in 0..block_size {
         let candidates =
             generate_candidates(original_coeffs[pos], quant_steps[pos], dequant_steps[pos]);
+        let n_cand = candidates.len();
+
+        // Pack candidates into SIMD-friendly arrays
+        for (i, c) in candidates.iter().enumerate() {
+            cand_levels[i] = c.level;
+            cand_dists[i] = c.distortion;
+        }
+        // Pad unused slots with infinity distortion
+        for i in n_cand..4 {
+            cand_levels[i] = 0;
+            cand_dists[i] = INFINITY_COST;
+        }
 
         let curr_base = pos * n_states;
         let next_base = (pos + 1) * n_states;
 
-        for &cand in &candidates {
-            let rate = ctx.token_cost(cand.level, pos, 0) as f64; // placeholder — need per-state
-            let _ = rate; // We compute per-state below
+        // Pre-compute rate costs for all (candidate, state) pairs
+        // Layout: rate_table[cand_idx * n_states + prev_state]
+        let mut rate_table = [0i64; 4 * 16]; // max 4 candidates x 16 states
+        let mut next_state_table = [0u8; 4 * 16];
+        for ci in 0..n_cand {
+            for s in 0..n_states {
+                rate_table[ci * n_states + s] = ctx.token_cost(cand_levels[ci], pos, s) as i64;
+                next_state_table[ci * n_states + s] = ctx.next_state(cand_levels[ci], s) as u8;
+            }
+        }
+
+        // DP inner loop: for each candidate, for each prev_state, compute cost
+        for ci in 0..n_cand {
+            let dist = cand_dists[ci];
+            let level = cand_levels[ci];
 
             for prev_s in 0..n_states {
                 let prev_cost = dp[curr_base + prev_s].cost;
@@ -223,37 +259,32 @@ pub fn trellis_optimize<C: TrellisContext>(
                     continue;
                 }
 
-                let rate = ctx.token_cost(cand.level, pos, prev_s) as i64;
-                let rd_cost = cand.distortion + (lambda * rate as f64) as i64;
+                // Fixed-point RD cost: distortion + (lambda * rate) >> 8
+                let rate = rate_table[ci * n_states + prev_s];
+                let rd_cost = dist + ((lambda_fp * rate) >> 8);
                 let total = prev_cost + rd_cost;
 
-                let next_s = ctx.next_state(cand.level, prev_s);
+                let next_s = next_state_table[ci * n_states + prev_s] as usize;
 
                 if total < dp[next_base + next_s].cost {
                     dp[next_base + next_s] = DpState {
                         cost: total,
                         prev_state: prev_s as u8,
-                        level: cand.level,
+                        level,
                     };
                 }
             }
         }
 
-        // Check EOB after this position (if a non-zero was placed here)
+        // Check EOB after this position using pre-computed suffix distortion
         for s in 0..n_states {
             let cost = dp[next_base + s].cost;
             if cost >= INFINITY_COST {
                 continue;
             }
 
-            // EOB at position pos+1 means block ends after pos
-            let eob = ctx.eob_cost(pos + 1, s) as i64;
-            // Add distortion for remaining positions (all zero)
-            let mut remaining_dist: i64 = 0;
-            for rest in (pos + 1)..block_size {
-                remaining_dist += original_coeffs[rest] as i64 * original_coeffs[rest] as i64;
-            }
-            let total = cost + (lambda * eob as f64) as i64 + remaining_dist;
+            let eob_rate = ctx.eob_cost(pos + 1, s) as i64;
+            let total = cost + ((lambda_fp * eob_rate) >> 8) + suffix_dist[pos + 1];
 
             if total < best_eob_cost {
                 best_eob_cost = total;
