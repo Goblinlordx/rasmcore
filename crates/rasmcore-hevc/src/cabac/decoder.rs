@@ -131,6 +131,11 @@ impl<'a> CabacDecoder<'a> {
         }
     }
 
+    /// Get the current byte position and bits remaining (for debugging).
+    pub fn position(&self) -> (usize, u8) {
+        (self.byte_pos, self.bits_left)
+    }
+
     // -----------------------------------------------------------------------
     // Binarization decoders (Section 9.3.2.6)
     // -----------------------------------------------------------------------

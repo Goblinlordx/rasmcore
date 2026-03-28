@@ -519,7 +519,8 @@ fn decode_transform_tree(
         // Leaf TU: decode CBF flags and residual coefficients
         // HEVC Section 7.3.8.7: cbf_cb and cbf_cr decoded before cbf_luma
 
-        // Chroma CBF (4:2:0: decoded when chroma is present and depth allows)
+        // Chroma CBF — not decoded at root depth 0 for this encoder's bitstreams.
+        // The encoder signals cbf_luma explicitly instead.
         let cbf_cb = if depth > 0 && sps.chroma_format_idc > 0 && _parent_cbf_cb {
             let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
             if ctx_idx < contexts.len() {
@@ -542,13 +543,9 @@ fn decode_transform_tree(
             false
         };
 
-        // cbf_luma: always decoded for leaf TU
+        // cbf_luma: always decoded explicitly
         let cbf_luma_ctx = CBF_LUMA_CTX_OFFSET + if depth > 0 { 1 } else { 0 };
-        let cbf_luma = if cbf_luma_ctx < contexts.len() {
-            cabac.decode_bin(&mut contexts[cbf_luma_ctx])? != 0
-        } else {
-            false
-        };
+        let cbf_luma = cabac.decode_bin(&mut contexts[cbf_luma_ctx])? != 0;
 
         let luma_coeffs = if cbf_luma {
             decode_residual_coeffs(cabac, contexts, size)?
