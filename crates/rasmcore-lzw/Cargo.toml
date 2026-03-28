@@ -1,0 +1,12 @@
+[package]
+name = "rasmcore-lzw"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Pure Rust variable-width LZW compress/decompress for GIF and TIFF"
+
+[dependencies]
+rasmcore-bitio = { path = "../rasmcore-bitio" }
+
+[dev-dependencies]
+weezl = "0.1"

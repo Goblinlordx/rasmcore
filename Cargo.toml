@@ -8,6 +8,7 @@ members = [
     "crates/rasmcore-image",
     "crates/rasmcore-webp",
     "crates/rasmcore-jxl",
+    "crates/rasmcore-lzw",
     "crates/rasmcore-qoi",
     "crates/rasmcore-pnm",
     "crates/rasmcore-bmp",
