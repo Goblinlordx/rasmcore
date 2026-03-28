@@ -11,7 +11,22 @@ use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
 use crate::domain::pipeline::nodes::{filters, sink, source, transform};
 
-use super::{to_wit_error, to_wit_image_info};
+use super::to_wit_error;
+use super::to_wit_image_info;
+
+fn to_domain_png_filter_pipeline(
+    f: Option<pipeline::PngFilterType>,
+) -> crate::domain::encoder::png::PngFilterType {
+    match f {
+        None => crate::domain::encoder::png::PngFilterType::Adaptive,
+        Some(pipeline::PngFilterType::NoFilter) => crate::domain::encoder::png::PngFilterType::NoFilter,
+        Some(pipeline::PngFilterType::Sub) => crate::domain::encoder::png::PngFilterType::Sub,
+        Some(pipeline::PngFilterType::Up) => crate::domain::encoder::png::PngFilterType::Up,
+        Some(pipeline::PngFilterType::Avg) => crate::domain::encoder::png::PngFilterType::Avg,
+        Some(pipeline::PngFilterType::Paeth) => crate::domain::encoder::png::PngFilterType::Paeth,
+        Some(pipeline::PngFilterType::Adaptive) => crate::domain::encoder::png::PngFilterType::Adaptive,
+    }
+}
 
 /// Pipeline resource implementation wrapping the domain NodeGraph.
 pub struct PipelineResource {
@@ -180,6 +195,7 @@ impl GuestImagePipeline for PipelineResource {
     ) -> Result<Vec<u8>, RasmcoreError> {
         let cfg = domain::encoder::png::PngEncodeConfig {
             compression_level: config.compression_level.unwrap_or(6),
+            filter_type: to_domain_png_filter_pipeline(config.filter_type),
         };
         sink::write_png(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
     }

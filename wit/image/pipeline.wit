@@ -26,9 +26,20 @@ interface pipeline {
         quality: option<u8>,
     }
 
+    /// PNG filter type (mirrors encoder png-filter-type).
+    enum png-filter-type {
+        no-filter,
+        sub,
+        up,
+        avg,
+        paeth,
+        adaptive,
+    }
+
     /// PNG write configuration.
     record png-write-config {
         compression-level: option<u8>,
+        filter-type: option<png-filter-type>,
     }
 
     /// WebP write configuration.

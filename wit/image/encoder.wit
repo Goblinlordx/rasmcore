@@ -11,10 +11,28 @@ interface encoder {
         quality: option<u8>,
     }
 
+    /// PNG filter type for pre-compression filtering (ISO/IEC 15948 Section 9).
+    enum png-filter-type {
+        /// No filtering.
+        no-filter,
+        /// Byte difference from left neighbor.
+        sub,
+        /// Byte difference from above neighbor.
+        up,
+        /// Average of left and above neighbors.
+        avg,
+        /// Paeth predictor.
+        paeth,
+        /// Encoder selects optimal filter per row (best compression, default).
+        adaptive,
+    }
+
     /// PNG encode configuration
     record png-encode-config {
         /// Compression level 0-9 where 0=none, 9=max (default: 6)
         compression-level: option<u8>,
+        /// Filter type selection (default: adaptive)
+        filter-type: option<png-filter-type>,
     }
 
     /// WebP encode configuration

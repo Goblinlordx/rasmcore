@@ -83,6 +83,18 @@ fn to_domain_image_info(info: &types::ImageInfo) -> domain::types::ImageInfo {
     }
 }
 
+fn to_domain_png_filter(f: Option<encoder::PngFilterType>) -> domain::encoder::png::PngFilterType {
+    match f {
+        None => domain::encoder::png::PngFilterType::Adaptive,
+        Some(encoder::PngFilterType::NoFilter) => domain::encoder::png::PngFilterType::NoFilter,
+        Some(encoder::PngFilterType::Sub) => domain::encoder::png::PngFilterType::Sub,
+        Some(encoder::PngFilterType::Up) => domain::encoder::png::PngFilterType::Up,
+        Some(encoder::PngFilterType::Avg) => domain::encoder::png::PngFilterType::Avg,
+        Some(encoder::PngFilterType::Paeth) => domain::encoder::png::PngFilterType::Paeth,
+        Some(encoder::PngFilterType::Adaptive) => domain::encoder::png::PngFilterType::Adaptive,
+    }
+}
+
 struct Component;
 
 bindings::export!(Component with_types_in bindings);
@@ -158,6 +170,7 @@ impl encoder::Guest for Component {
             .map_err(to_wit_error)?;
         let domain_config = domain::encoder::png::PngEncodeConfig {
             compression_level: config.compression_level.unwrap_or(6),
+            filter_type: to_domain_png_filter(config.filter_type),
         };
         domain::encoder::png::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
     }
