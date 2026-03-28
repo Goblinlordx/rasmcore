@@ -3,100 +3,143 @@ title: SIMD Codec Hot Paths — WebP Quantize, JPEG 8x8 DCT (Loeffler)
 type: refactor
 status: pending
 created: 2026-03-29
-updated: "2026-03-29"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Add SIMD128 to WebP quantize_block. Replace JPEG naive f64 forward DCT and
+  summary: 'Add SIMD128 to WebP quantize_block. Replace JPEG naive f64 forward DCT and
+
     scalar i32 inverse DCT with Loeffler algorithm using i32x4/i16x8. These are
+
     per-block operations called thousands of times per frame.
-  context: |
-    WebP quantize_block is the only remaining scalar hot path in the WebP
+
+    '
+  context: 'WebP quantize_block is the only remaining scalar hot path in the WebP
+
     encoder — DCT, WHT, dequantize, and SAD all have SIMD. The 16-element
+
     loop with threshold check + bias + fixed-point multiply is a natural fit
+
     for two i16x8 passes.
 
+
     JPEG uses a naive f64 forward DCT (dct.rs:16) and a scalar i32 inverse DCT
+
     (dct.rs:62). The 8x8 DCT is the most compute-intensive part of JPEG
+
     encoding. The Loeffler algorithm (used by libjpeg-turbo) reduces the 8x8
+
     DCT from 64 multiplies to 11 multiplies + 29 adds, and maps naturally to
+
     i32x4 SIMD processing 4 columns at a time.
-  codebase_analysis: |
-    rasmcore-webp/src/quant.rs:
+
+    '
+  codebase_analysis: 'rasmcore-webp/src/quant.rs:
+
     - quantize_block() lines 111-134: scalar loop over 16 coefficients
+
     - dequantize_block() already has SIMD (i16x8_mul, lines 141-165)
+
     - Pattern: threshold test → bias add → fixed-point multiply → sign restore
+
     - i16x8 natural fit: 2 passes of 8 coefficients
 
+
     rasmcore-jpeg/src/dct.rs:
+
     - forward_dct() line 16: f64 arithmetic, cos() calls, O(N^3) naive
+
     - inverse_dct() line 62: i32 fixed-point, column-then-row, scalar
+
     - Constants: 2217/5352 (forward), 20091/35468 (inverse) — same as WebP
-    - 8x8 block = 2x the work of WebP's 4x4
+
+    - 8x8 block = 2x the work of WebP''s 4x4
+
 
     Loeffler 8x8 DCT: 4 stages of butterflies, each processable with i32x4.
+
     libjpeg-turbo uses this exact approach for SIMD (jfdctint-neon.c).
+
+    '
   acceptance_criteria:
-    - WebP quantize_block has SIMD128 path with i16x8 threshold + multiply
-    - WebP quantize produces identical output to scalar (bit-exact)
-    - JPEG forward DCT replaced with Loeffler algorithm (integer, not f64)
-    - JPEG inverse DCT has SIMD128 path processing 4 columns per iteration
-    - JPEG encode/decode parity tests unchanged
-    - WebP PSNR unchanged
-    - All existing tests pass
-    - WASM build succeeds
-    - Benchmark shows measurable speedup for WebP encode and JPEG decode
-  out_of_scope: |
-    - x86 SSE/AVX paths
+  - WebP quantize_block has SIMD128 path with i16x8 threshold + multiply
+  - WebP quantize produces identical output to scalar (bit-exact)
+  - JPEG forward DCT replaced with Loeffler algorithm (integer, not f64)
+  - JPEG inverse DCT has SIMD128 path processing 4 columns per iteration
+  - JPEG encode/decode parity tests unchanged
+  - WebP PSNR unchanged
+  - All existing tests pass
+  - WASM build succeeds
+  - Benchmark shows measurable speedup for WebP encode and JPEG decode
+  out_of_scope: '- x86 SSE/AVX paths
+
     - JPEG progressive scan optimization
+
     - WebP B_PRED mode (separate track)
-  technical_notes: |
-    WebP quantize_block SIMD approach:
+
+    '
+  technical_notes: 'WebP quantize_block SIMD approach:
+
     1. Load 8 coefficients as i16x8
+
     2. Compute abs: i16x8_abs (or manual via xor + sub)
+
     3. Compare against zthresh: i16x8_gt_u → mask
+
     4. Apply bias: i16x8_add(abs, bias_vec)
+
     5. Fixed-point multiply: i32x4_mul on widened halves, shift right 16
+
     6. Apply sign: i16x8_neg where original was negative
+
     7. Store result
 
+
     JPEG Loeffler 8x8 DCT:
+
     Process 4 columns simultaneously with i32x4.
+
     Stage 1: butterfly additions (4 adds)
+
     Stage 2: rotation by cos/sin (2 multiplies per rotation, 3 rotations)
+
     Stage 3: butterfly additions (4 adds)
+
     Stage 4: final reorder
 
+
     Constants for 8x8: use scaled integer coefficients matching libjpeg-turbo
+
     (FIX_0_382683433, FIX_0_541196100, FIX_0_707106781, etc.)
+
+    '
 plan:
-  - phase: WebP Quantize SIMD
-    tasks:
-      - text: Add i16x8 SIMD path to quantize_block with threshold + bias + multiply
-        done: false
-      - text: Verify bit-exact output against scalar quantize_block
-        done: false
-      - text: Benchmark WebP encode speedup
-        done: false
-  - phase: JPEG DCT Optimization
-    tasks:
-      - text: Implement Loeffler 8x8 forward DCT with integer arithmetic (replace f64)
-        done: false
-      - text: Add SIMD128 path for JPEG forward DCT processing 4 columns per i32x4
-        done: false
-      - text: Add SIMD128 path for JPEG inverse DCT processing 4 columns per i32x4
-        done: false
-      - text: Validate against reference DCT output (golden vectors from libjpeg)
-        done: false
-  - phase: Validation
-    tasks:
-      - text: All WebP tests pass with SIMD quantize
-        done: false
-      - text: JPEG encode/decode parity tests unchanged
-        done: false
-      - text: WASM build succeeds
-        done: false
-      - text: Benchmark JPEG decode speedup on 4K image
-        done: false
-      - text: WebP PSNR unchanged for gradient content
-        done: false
+- phase: WebP Quantize SIMD
+  tasks:
+  - text: Add i16x8 SIMD path to quantize_block with threshold + bias + multiply
+    done: true
+  - text: Verify bit-exact output against scalar quantize_block
+    done: true
+  - text: Benchmark WebP encode speedup
+    done: true
+- phase: JPEG DCT Optimization
+  tasks:
+  - text: Implement Loeffler 8x8 forward DCT with integer arithmetic (replace f64)
+    done: true
+  - text: Add SIMD128 path for JPEG forward DCT processing 4 columns per i32x4
+    done: true
+  - text: Add SIMD128 path for JPEG inverse DCT processing 4 columns per i32x4
+    done: true
+  - text: Validate against reference DCT output (golden vectors from libjpeg)
+    done: true
+- phase: Validation
+  tasks:
+  - text: All WebP tests pass with SIMD quantize
+    done: true
+  - text: JPEG encode/decode parity tests unchanged
+    done: true
+  - text: WASM build succeeds
+    done: true
+  - text: Benchmark JPEG decode speedup on 4K image
+    done: true
+  - text: WebP PSNR unchanged for gradient content
+    done: true
 extra: {}
