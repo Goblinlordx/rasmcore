@@ -245,6 +245,19 @@ impl encoder::Guest for Component {
         domain::encoder::webp::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
     }
 
+    fn encode_avif(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::AvifEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let domain_config = domain::encoder::avif::AvifEncodeConfig {
+            quality: config.quality.unwrap_or(75),
+            speed: config.speed.unwrap_or(6),
+        };
+        domain::encoder::avif::encode(&pixels, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
     fn encode_tiff(
         pixels: Vec<u8>,
         info: types::ImageInfo,

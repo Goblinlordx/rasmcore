@@ -88,6 +88,24 @@ pub fn write_jpeg(
     }
 }
 
+/// Write a node's output as AVIF with typed config and optional metadata.
+pub fn write_avif(
+    graph: &mut NodeGraph,
+    node_id: u32,
+    config: &encoder::avif::AvifEncodeConfig,
+    metadata: Option<&MetadataSet>,
+) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = graph.request_region(node_id, full)?;
+    let encoded = encoder::avif::encode(&pixels, &info, config)?;
+
+    match metadata {
+        Some(ms) if !ms.is_empty() => embed_metadata(encoded, "avif", ms),
+        _ => Ok(encoded),
+    }
+}
+
 /// Write a node's output as PNG with typed config and optional metadata.
 pub fn write_png(
     graph: &mut NodeGraph,

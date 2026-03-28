@@ -64,6 +64,12 @@ interface pipeline {
         compression: option<tiff-compression>,
     }
 
+    /// AVIF write configuration.
+    record avif-write-config {
+        quality: option<u8>,
+        speed: option<u8>,
+    }
+
     /// GIF write configuration.
     record gif-write-config {
         repeat: option<u16>,
@@ -143,6 +149,9 @@ interface pipeline {
 
         /// Write as WebP. If metadata is provided, it is embedded.
         write-webp: func(source: node-id, config: webp-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
+
+        /// Write as AVIF.
+        write-avif: func(source: node-id, config: avif-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
 
         /// Write as TIFF.
         write-tiff: func(source: node-id, config: tiff-write-config) -> result<buffer, rasmcore-error>;

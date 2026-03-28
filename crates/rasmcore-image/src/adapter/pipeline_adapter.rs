@@ -322,6 +322,26 @@ impl GuestImagePipeline for PipelineResource {
         .map_err(to_wit_error)
     }
 
+    fn write_avif(
+        &self,
+        source: NodeId,
+        config: pipeline::AvifWriteConfig,
+        metadata: Option<pipeline::MetadataSet>,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let cfg = domain::encoder::avif::AvifEncodeConfig {
+            quality: config.quality.unwrap_or(75),
+            speed: config.speed.unwrap_or(6),
+        };
+        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
+        sink::write_avif(
+            &mut self.graph.borrow_mut(),
+            source,
+            &cfg,
+            domain_meta.as_ref(),
+        )
+        .map_err(to_wit_error)
+    }
+
     fn write_tiff(
         &self,
         source: NodeId,

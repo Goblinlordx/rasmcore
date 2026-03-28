@@ -63,6 +63,14 @@ interface encoder {
         compression: option<tiff-compression>,
     }
 
+    /// AVIF encode configuration
+    record avif-encode-config {
+        /// Quality level 1-100 (default: 75)
+        quality: option<u8>,
+        /// Speed preset 1-10, higher = faster/lower quality (default: 6)
+        speed: option<u8>,
+    }
+
     /// GIF encode configuration
     record gif-encode-config {
         /// Repeat count: 0 = infinite loop, n = repeat n times (default: 0)
@@ -86,6 +94,9 @@ interface encoder {
 
     /// Encode pixel data to TIFF with typed configuration
     encode-tiff: func(pixels: buffer, info: image-info, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to AVIF with typed configuration
+    encode-avif: func(pixels: buffer, info: image-info, config: avif-encode-config) -> result<buffer, rasmcore-error>;
 
     /// Encode pixel data to GIF with typed configuration
     encode-gif: func(pixels: buffer, info: image-info, config: gif-encode-config) -> result<buffer, rasmcore-error>;

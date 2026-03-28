@@ -72,11 +72,11 @@ plan:
 - phase: WIT + Adapter + Pipeline
   tasks:
   - text: Add avif-encode-config and avif-write-config to WIT interfaces
-    done: false
+    done: true
   - text: Add encode_avif to adapter encoder impl
-    done: false
+    done: true
   - text: Add write_avif to pipeline adapter and sink
-    done: false
+    done: true
 - phase: Parity Tests
   tasks:
   - text: Add AVIF references to generate.sh at q50/q75/q90
