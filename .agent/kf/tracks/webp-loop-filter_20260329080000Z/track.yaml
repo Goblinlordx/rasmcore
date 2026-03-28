@@ -3,105 +3,87 @@ title: VP8 Encoder Loop Filter — Enable Deblocking in Reconstruction
 type: feature
 status: pending
 created: 2026-03-29
-updated: "2026-03-29"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Enable the VP8 loop filter in the encoder by fixing header signaling and
+  summary: 'Enable the VP8 loop filter in the encoder by fixing header signaling and
+
     reconstruction timing. The filter implementation already exists in filter.rs.
-  context: |
-    The VP8 loop filter (deblocking filter) reduces blocking artifacts at
+
+    '
+  context: 'The VP8 loop filter (deblocking filter) reduces blocking artifacts at
+
     macroblock and sub-block boundaries. Our filter.rs has a complete, tested
+
     implementation matching RFC 6386 Section 15, but it is currently disabled:
+
     the header hardcodes filter_level=0 and the filter is applied AFTER all
+
     MBs instead of during per-MB reconstruction.
 
+
     cwebp with loop filter enabled gets ~3 dB better PSNR than without
+
     (42.4 → 44.9 dB at q75). Enabling our filter should close this gap.
-  codebase_analysis: |
-    Existing infrastructure (all COMPLETE):
-    - filter.rs: apply_loop_filter(), filter_simple/normal_vertical/horizontal
-    - ratecontrol.rs: quality_to_params() already computes filter_level (0-63),
-      filter_sharpness (0-7), and filter_type (Simple/Normal) per quality
-    - EncodeParams struct has filter_level, filter_sharpness, filter_type fields
 
-    What is BROKEN:
-    1. bitstream.rs encode_first_partition() line 171: hardcodes filter_level=0
-       instead of using params.filter_level. Also hardcodes filter_type and sharpness.
-    2. bitstream.rs encode_frame() line 93: applies loop filter AFTER all MBs are
-       encoded. The decoder applies it per-MB-row during reconstruction. This means
-       our encoder's prediction references are unfiltered while the decoder's are
-       filtered, causing prediction mismatch.
-
-    Fix approach:
-    1. Write params.filter_level/type/sharpness to the header instead of zeros
-    2. Move filter application to after each MB ROW's reconstruction, before
-       the next row uses those pixels as prediction reference
-    3. The filter must be applied to the recon_y plane only (matching current
-       filter.rs which processes Y plane)
+    '
+  codebase_analysis: "Existing infrastructure (all COMPLETE):\n- filter.rs: apply_loop_filter(), filter_simple/normal_vertical/horizontal\n\
+    - ratecontrol.rs: quality_to_params() already computes filter_level (0-63),\n  filter_sharpness (0-7), and filter_type\
+    \ (Simple/Normal) per quality\n- EncodeParams struct has filter_level, filter_sharpness, filter_type fields\n\nWhat is\
+    \ BROKEN:\n1. bitstream.rs encode_first_partition() line 171: hardcodes filter_level=0\n   instead of using params.filter_level.\
+    \ Also hardcodes filter_type and sharpness.\n2. bitstream.rs encode_frame() line 93: applies loop filter AFTER all MBs\
+    \ are\n   encoded. The decoder applies it per-MB-row during reconstruction. This means\n   our encoder's prediction references\
+    \ are unfiltered while the decoder's are\n   filtered, causing prediction mismatch.\n\nFix approach:\n1. Write params.filter_level/type/sharpness\
+    \ to the header instead of zeros\n2. Move filter application to after each MB ROW's reconstruction, before\n   the next\
+    \ row uses those pixels as prediction reference\n3. The filter must be applied to the recon_y plane only (matching current\n\
+    \   filter.rs which processes Y plane)\n"
   acceptance_criteria:
-    - filter_level written to header matches ratecontrol params (not hardcoded 0)
-    - Loop filter applied per-MB-row during reconstruction, not after-all
-    - PSNR improves by at least 2 dB for 256x256 gradient at q75
-    - All sizes 16x16 through 4096x4096 still decode with dwebp and image-webp
-    - Gradient 16x16 through 2048x2048 still decode
-    - Deterministic encoding
-    - WASM SIMD tests pass
-    - All existing unit tests pass
-  out_of_scope: |
-    - UV plane filtering (Y-only for now, matches current filter.rs)
+  - filter_level written to header matches ratecontrol params (not hardcoded 0)
+  - Loop filter applied per-MB-row during reconstruction, not after-all
+  - PSNR improves by at least 2 dB for 256x256 gradient at q75
+  - All sizes 16x16 through 4096x4096 still decode with dwebp and image-webp
+  - Gradient 16x16 through 2048x2048 still decode
+  - Deterministic encoding
+  - WASM SIMD tests pass
+  - All existing unit tests pass
+  out_of_scope: '- UV plane filtering (Y-only for now, matches current filter.rs)
+
     - Loop filter adjustment flags (mode_ref_lf_delta)
+
     - Adaptive filter strength per segment
-  technical_notes: |
-    Fix 1 — Header signaling (encode_first_partition):
 
-    Change lines 170-172 from:
-      bw.put_bit(128, false); // filter_type hardcoded
-      bw.put_literal(6, 0);  // filter_level hardcoded to 0
-      bw.put_literal(3, 0);  // sharpness hardcoded to 0
-    To:
-      bw.put_bit(128, params.filter_type == FilterType::Simple);
-      bw.put_literal(6, params.filter_level as u32);
-      bw.put_literal(3, params.filter_sharpness as u32);
-
-    Fix 2 — Reconstruction timing (encode_frame):
-
-    Move the apply_loop_filter call from after-all to inside the MB row loop.
-    After each row of MBs is reconstructed (line 88), apply the filter to the
-    just-completed 16-pixel band of recon_y:
-      for mb_row in 0..mb_h {
-          // ... encode + reconstruct all MBs in this row ...
-          // Apply loop filter to this row's reconstructed pixels
-          filter::apply_loop_filter_row(&mut recon_y, padded_w, mb_row, ...);
-      }
-
-    May need to add a per-row variant of apply_loop_filter, or call the
-    existing function with appropriate row bounds. The key constraint: only
-    filter pixels from the current and previous rows (the decoder filters
-    after decoding each row, before using those pixels for the next row).
-
-    The existing apply_loop_filter processes the entire frame. For per-row
-    application, we need to restrict it to the current MB row's boundaries.
+    '
+  technical_notes: "Fix 1 — Header signaling (encode_first_partition):\n\nChange lines 170-172 from:\n  bw.put_bit(128, false);\
+    \ // filter_type hardcoded\n  bw.put_literal(6, 0);  // filter_level hardcoded to 0\n  bw.put_literal(3, 0);  // sharpness\
+    \ hardcoded to 0\nTo:\n  bw.put_bit(128, params.filter_type == FilterType::Simple);\n  bw.put_literal(6, params.filter_level\
+    \ as u32);\n  bw.put_literal(3, params.filter_sharpness as u32);\n\nFix 2 — Reconstruction timing (encode_frame):\n\n\
+    Move the apply_loop_filter call from after-all to inside the MB row loop.\nAfter each row of MBs is reconstructed (line\
+    \ 88), apply the filter to the\njust-completed 16-pixel band of recon_y:\n  for mb_row in 0..mb_h {\n      // ... encode\
+    \ + reconstruct all MBs in this row ...\n      // Apply loop filter to this row's reconstructed pixels\n      filter::apply_loop_filter_row(&mut\
+    \ recon_y, padded_w, mb_row, ...);\n  }\n\nMay need to add a per-row variant of apply_loop_filter, or call the\nexisting\
+    \ function with appropriate row bounds. The key constraint: only\nfilter pixels from the current and previous rows (the\
+    \ decoder filters\nafter decoding each row, before using those pixels for the next row).\n\nThe existing apply_loop_filter\
+    \ processes the entire frame. For per-row\napplication, we need to restrict it to the current MB row's boundaries.\n"
 plan:
-  - phase: Header Signaling
-    tasks:
-      - text: Change encode_first_partition to write params.filter_level instead of 0
-        done: false
-      - text: Write correct filter_type and sharpness from params
-        done: false
-      - text: Verify header values match what dwebp reports
-        done: false
-  - phase: Reconstruction Timing
-    tasks:
-      - text: Move loop filter application to per-MB-row timing in encode_frame
-        done: false
-      - text: Verify encoder reconstruction matches decoder output at filter_level > 0
-        done: false
-  - phase: Validation
-    tasks:
-      - text: PSNR improves by at least 2 dB for gradient at q75
-        done: false
-      - text: All sizes and content types still decode with both decoders
-        done: false
-      - text: WASM SIMD + determinism + all unit tests pass
-        done: false
+- phase: Header Signaling
+  tasks:
+  - text: Change encode_first_partition to write params.filter_level instead of 0
+    done: true
+  - text: Write correct filter_type and sharpness from params
+    done: true
+  - text: Verify header values match what dwebp reports
+    done: true
+- phase: Reconstruction Timing
+  tasks:
+  - text: Move loop filter application to per-MB-row timing in encode_frame
+    done: true
+  - text: Verify encoder reconstruction matches decoder output at filter_level > 0
+    done: true
+- phase: Validation
+  tasks:
+  - text: PSNR improves by at least 2 dB for gradient at q75
+    done: true
+  - text: All sizes and content types still decode with both decoders
+    done: true
+  - text: WASM SIMD + determinism + all unit tests pass
+    done: true
 extra: {}
