@@ -1,5 +1,5 @@
-title: "HEVC Transform + Dequantization \u2014 Inverse DCT/DST + Scaling Lists"
-status: pending
+title: HEVC Transform + Dequantization — Inverse DCT/DST + Scaling Lists
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'

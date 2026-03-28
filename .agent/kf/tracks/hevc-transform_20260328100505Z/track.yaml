@@ -27,27 +27,27 @@ plan:
 - phase: Dequantization
   tasks:
   - text: Implement QP to scale/shift mapping (scale factors 40,45,51,57,64,72 for qp%6, shift from qp/6)
-    done: false
+    done: true
   - text: Implement coefficient dequantization — level * scale * scaling_list_factor >> shift
-    done: false
+    done: true
   - text: Implement default scaling list matrices for 4x4, 8x8, 16x16, 32x32
-    done: false
+    done: true
   - text: Implement custom scaling list parsing from SPS scaling_list_data()
-    done: false
+    done: true
 - phase: Transform Dispatch
   tasks:
   - text: Implement transform dispatch — select DST for 4x4 intra luma, DCT for all other TU sizes
-    done: false
+    done: true
   - text: Wire rasmcore-dct inverse_dct_4x4/8x8/16x16/32x32 and inverse_dst_4x4 into pipeline
-    done: false
+    done: true
   - text: Implement residual reconstruction — dequant -> inverse transform -> clip to valid range
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for dequantization at QP 0, 22, 37, 51 with known coefficient values
-    done: false
+    done: true
   - text: Unit tests for transform dispatch (DST vs DCT selection)
-    done: false
+    done: true
   - text: Unit tests for full residual pipeline (dequant -> transform -> spatial)
-    done: false
+    done: true
 extra: {}
