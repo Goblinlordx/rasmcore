@@ -11,6 +11,7 @@ wit-bindgen-rt = "0.41.0"
 image = { workspace = true, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
 ] }
+zenjpeg = { version = "0.6", features = ["trellis"] }
 
 [lib]
 crate-type = ["cdylib", "rlib"]

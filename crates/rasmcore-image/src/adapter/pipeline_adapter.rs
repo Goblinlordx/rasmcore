@@ -197,6 +197,7 @@ impl GuestImagePipeline for PipelineResource {
     ) -> Result<Vec<u8>, RasmcoreError> {
         let cfg = domain::encoder::jpeg::JpegEncodeConfig {
             quality: config.quality.unwrap_or(85),
+            progressive: config.progressive.unwrap_or(false),
         };
         sink::write_jpeg(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
     }

@@ -156,6 +156,7 @@ impl encoder::Guest for Component {
             .map_err(to_wit_error)?;
         let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
             quality: config.quality.unwrap_or(85),
+            progressive: config.progressive.unwrap_or(false),
         };
         domain::encoder::jpeg::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
     }

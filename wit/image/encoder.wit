@@ -9,6 +9,8 @@ interface encoder {
     record jpeg-encode-config {
         /// Quality level 1-100 (default: 85)
         quality: option<u8>,
+        /// Emit progressive JPEG (default: false)
+        progressive: option<bool>,
     }
 
     /// PNG filter type for pre-compression filtering (ISO/IEC 15948 Section 9).

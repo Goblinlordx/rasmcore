@@ -30,8 +30,7 @@ pub fn write_jpeg(
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
-    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
-    encoder::jpeg::encode(&img, &info, config)
+    encoder::jpeg::encode_pixels(&pixels, &info, config)
 }
 
 /// Write a node's output as PNG with typed config.

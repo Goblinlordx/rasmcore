@@ -19,20 +19,21 @@ pub fn encode(
     format: &str,
     quality: Option<u8>,
 ) -> Result<Vec<u8>, ImageError> {
-    let img = pixels_to_dynamic_image(pixels, info)?;
-
     match format {
         "jpeg" | "jpg" => {
             let config = jpeg::JpegEncodeConfig {
                 quality: quality.unwrap_or(85),
+                progressive: false,
             };
-            jpeg::encode(&img, info, &config)
+            jpeg::encode_pixels(pixels, info, &config)
         }
         "png" => {
+            let img = pixels_to_dynamic_image(pixels, info)?;
             let config = png::PngEncodeConfig::default();
             png::encode(&img, info, &config)
         }
         "webp" => {
+            let img = pixels_to_dynamic_image(pixels, info)?;
             let config = webp::WebpEncodeConfig::default();
             webp::encode(&img, info, &config)
         }

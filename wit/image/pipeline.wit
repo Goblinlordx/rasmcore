@@ -24,6 +24,8 @@ interface pipeline {
     /// JPEG write configuration.
     record jpeg-write-config {
         quality: option<u8>,
+        /// Emit progressive JPEG (default: false)
+        progressive: option<bool>,
     }
 
     /// PNG filter type (mirrors encoder png-filter-type).
