@@ -1,0 +1,60 @@
+id: hevc-frame_20260328100507Z
+title: HEVC Frame Assembly — Wire Syntax to Predict+Transform+Filter
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Wire all HEVC decoder subsystems into a complete frame decode pipeline: parse slice -> decode CTUs -> predict
+    -> add residual -> deblock -> SAO -> output pixels.'
+  context: Integration track that wires syntax, prediction, transform, and filtering into a working frame decoder. This is
+    where the individual subsystems come together to produce actual decoded pixels from HEVC bitstream.
+  codebase_analysis: 'Depends on all HEVC subsystem tracks: syntax (CTU/CU parsing), predict (intra modes), transform (dequant+IDCT),
+    filter (deblock+SAO). Frame buffer management: allocate YCbCr planes, reconstruct CTU by CTU, apply loop filters, convert
+    to RGB output.'
+  acceptance_criteria:
+  - Frame buffer allocation for YCbCr 4:2:0 with correct chroma dimensions
+  - CTU decode loop in raster scan order
+  - 'Per-CU pipeline: predict -> add residual -> store in frame buffer'
+  - Loop filter application after full frame reconstruction
+  - YCbCr to RGB conversion via rasmcore-color
+  - Public decode() function produces DecodedFrame from HEVC bitstream + hvcC config
+  out_of_scope: Multi-frame decoding, DPB management, inter prediction — HEIC is single I-frame.
+  technical_notes: 'Frame decode flow: 1) Parse slice header. 2) For each CTU in raster order: decode quad-tree, for each
+    CU: get intra mode from syntax, generate prediction, decode residual via CABAC, dequantize, inverse transform, add to
+    prediction, store in frame buffer. 3) Apply deblocking filter. 4) Apply SAO. 5) Convert YCbCr to RGB via rasmcore-color.'
+plan:
+- phase: Frame Buffer
+  tasks:
+  - text: Implement frame buffer — YCbCr 4:2:0 plane allocation with correct chroma subsampling dimensions
+    done: false
+  - text: Implement CTU grid — compute CTU positions from frame dimensions and CTU size (from SPS)
+    done: false
+- phase: Decode Pipeline
+  tasks:
+  - text: Implement top-level decode() — parse hvcC config, extract parameter sets, parse slice, decode all CTUs
+    done: false
+  - text: Implement per-CTU decode — walk quad-tree from syntax, for each leaf CU call predict+residual+reconstruct
+    done: false
+  - text: Implement per-CU reconstruct — get intra prediction, add dequantized+transformed residual, clip, store in frame
+      buffer
+    done: false
+  - text: Implement chroma reconstruction — intra predict chroma, add chroma residual
+    done: false
+- phase: Post-Processing
+  tasks:
+  - text: Wire deblocking filter pass over reconstructed frame
+    done: false
+  - text: Wire SAO pass over deblocked frame
+    done: false
+  - text: Implement YCbCr 4:2:0 to RGB8 conversion using rasmcore-color BT.601/709 matrices
+    done: false
+  - text: Package into DecodedFrame (pixels, width, height, bit_depth)
+    done: false
+- phase: Verification
+  tasks:
+  - text: Decode a minimal synthetic HEVC I-frame (single CTU, flat prediction, zero residual)
+    done: false
+  - text: Verify frame dimensions and pixel format in output
+    done: false
+extra: {}

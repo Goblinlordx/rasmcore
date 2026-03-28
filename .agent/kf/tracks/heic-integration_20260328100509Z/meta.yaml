@@ -1,0 +1,8 @@
+title: HEIC Full Integration — Wire HEVC Decoder into rasmcore-image
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- hevc-parity_20260328100508Z

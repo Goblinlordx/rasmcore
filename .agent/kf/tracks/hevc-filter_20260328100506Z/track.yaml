@@ -1,0 +1,59 @@
+id: hevc-filter_20260328100506Z
+title: HEVC Loop Filtering — Deblocking + SAO
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Implement HEVC in-loop filters: deblocking filter (edge strength, boundary smoothing) and Sample Adaptive Offset
+    (band offset and edge offset modes).'
+  context: Loop filters are applied after reconstruction (prediction + residual) to reduce blocking artifacts. Deblocking
+    smooths block boundaries, SAO applies per-CTU adaptive offsets. Both improve visual quality significantly.
+  codebase_analysis: Similar to rasmcore-webp filter.rs (VP8 deblocking, 153 LOC). HEVC deblocking is more complex (variable
+    block sizes, separate luma/chroma, edge strength from QP and prediction mode). SAO is unique to HEVC. Depends on hevc-params
+    for deblocking/SAO enable flags and QP.
+  acceptance_criteria:
+  - Deblocking filter with boundary strength (Bs) calculation from prediction mode and coded coefficients
+  - Strong and weak deblocking filter selection based on tc/beta thresholds
+  - Deblocking applied to both vertical and horizontal edges, luma and chroma
+  - SAO band offset mode — 4 offsets applied to sample value bands
+  - SAO edge offset mode — 4 offsets based on edge classification (0-degree, 45, 90, 135)
+  - SAO merge flags (left/up CTU reuse)
+  out_of_scope: Adaptive Loop Filter (ALF) — that is VVC/H.266, not HEVC.
+  technical_notes: 'ITU-T H.265 Sections 8.7.2 (deblocking) and 8.7.3 (SAO). Deblocking: edge strength (Bs) from 0-2 based
+    on prediction mode and QP. Strong/weak filter selection based on threshold. Applied to vertical then horizontal edges.
+    SAO: per-CTU parameters (type: band offset or edge offset, offsets[4], band position or edge class). SAO merge flags (left/up)
+    reduce signaling overhead.'
+plan:
+- phase: Deblocking Filter
+  tasks:
+  - text: Implement boundary strength (Bs) derivation — based on prediction mode, coded block flags, and motion vectors (Bs=2
+      for intra boundary)
+    done: false
+  - text: Implement tc and beta threshold tables from QP (HEVC Table 8-15, 8-16)
+    done: false
+  - text: Implement strong filter decision and strong/weak filter application for luma
+    done: false
+  - text: Implement chroma deblocking (always strong when Bs>1)
+    done: false
+  - text: Implement deblocking edge iteration — vertical then horizontal, respecting tile/slice boundaries
+    done: false
+- phase: Sample Adaptive Offset
+  tasks:
+  - text: Implement SAO parameter parsing from slice data (sao_type_idx, offsets, band_position, eo_class)
+    done: false
+  - text: Implement band offset mode — classify samples into 32 bands, apply offsets to 4 consecutive bands
+    done: false
+  - text: Implement edge offset mode — classify edge direction (0/45/90/135 degree), apply offsets based on edge category
+    done: false
+  - text: Implement SAO merge (left/up) — copy parameters from neighboring CTU
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for deblocking with known edge pixels and Bs values
+    done: false
+  - text: Unit tests for SAO band offset with known sample values
+    done: false
+  - text: Unit tests for SAO edge offset with known edge patterns
+    done: false
+extra: {}

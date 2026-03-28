@@ -1,0 +1,63 @@
+id: hevc-scaffold_20260328100500Z
+title: HEVC Crate Scaffold — NAL Parser + RBSP Extraction
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Create rasmcore-hevc crate with NAL unit parser, RBSP byte stream extraction, and public decode API stub. Foundation
+    for all HEVC decoder subsystems.
+  context: First track in the HEVC decoder chain (nonfree). Creates the crate structure, NAL unit layer, and public API. All
+    subsequent HEVC tracks depend on this. Gated behind nonfree-hevc feature flag in rasmcore-image.
+  codebase_analysis: rasmcore-bitio provides BitReader for NAL/CABAC parsing. rasmcore-color provides YCbCr conversion. rasmcore-dct
+    provides inverse transforms. rasmcore-isobmff extracts hvcC config with NAL arrays. Follows same crate pattern as rasmcore-isobmff
+    (zero external deps, workspace member).
+  acceptance_criteria:
+  - rasmcore-hevc crate added to workspace, compiles with deps on rasmcore-bitio, rasmcore-color, rasmcore-dct
+  - NAL unit parser extracts type, layer_id, temporal_id from 2-byte header
+  - RBSP extraction removes emulation prevention bytes correctly
+  - NAL unit iterator walks a byte stream splitting on start codes (0x000001)
+  - Public decode() API stub defined with DecodedFrame return type
+  - Unit tests for NAL parsing and RBSP extraction
+  out_of_scope: Parameter set parsing (VPS/SPS/PPS), CABAC, prediction, transform, filtering — handled by dependent tracks.
+  technical_notes: 'NAL unit structure (ITU-T H.265 Section 7.3.1): 2-byte header with forbidden_zero_bit(1), nal_unit_type(6),
+    nuh_layer_id(6), nuh_temporal_id_plus1(3). RBSP extraction removes emulation prevention bytes (0x000003 -> 0x0000). Key
+    NAL types: VPS=32, SPS=33, PPS=34, IDR_W_RADL=19, IDR_N_LP=20, CRA=21, TRAIL_R=1.'
+plan:
+- phase: Crate Setup
+  tasks:
+  - text: Create crates/rasmcore-hevc/ with Cargo.toml (deps on rasmcore-bitio, rasmcore-color, rasmcore-dct), add to workspace
+    done: false
+  - text: Define error.rs with HevcError enum (InvalidNal, Truncated, UnsupportedProfile, etc.)
+    done: false
+  - text: Define types.rs with NalUnitType enum, DecodedFrame struct, public API types
+    done: false
+- phase: NAL Unit Layer
+  tasks:
+  - text: Implement NAL unit header parser — extract nal_unit_type(6), nuh_layer_id(6), nuh_temporal_id_plus1(3) from 2-byte
+      header
+    done: false
+  - text: Implement RBSP extraction — remove emulation prevention bytes (0x00 0x00 0x03 -> 0x00 0x00)
+    done: false
+  - text: Implement NAL unit iterator — split byte stream on start codes (0x000001 and 0x00000001), yield NAL units
+    done: false
+  - text: Implement hvcC NAL extraction — parse hvcC config record to get VPS/SPS/PPS NAL units (reuse rasmcore-isobmff HevcConfig
+      type)
+    done: false
+- phase: Public API Stub
+  tasks:
+  - text: Define pub fn decode(bitstream, codec_config) -> Result<DecodedFrame, HevcError> stub
+    done: false
+  - text: Wire lib.rs exports — NalUnit, NalUnitType, DecodedFrame, HevcError, decode
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for NAL header parsing (VPS, SPS, PPS, IDR, CRA types)
+    done: false
+  - text: Unit tests for RBSP extraction (with and without emulation prevention bytes)
+    done: false
+  - text: Unit tests for NAL iterator with multiple NAL units separated by start codes
+    done: false
+  - text: Verify crate compiles (cargo check -p rasmcore-hevc)
+    done: false
+extra: {}

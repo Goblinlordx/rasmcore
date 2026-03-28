@@ -1,0 +1,62 @@
+id: hevc-cabac_20260328100502Z
+title: HEVC CABAC Engine — Arithmetic Decoder + Context Models
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Context-Adaptive Binary Arithmetic Coding engine for HEVC. Binary arithmetic decoder, context model initialization/adaptation,
+    and binarization schemes (TR, EGk, FL).
+  context: CABAC is the entropy coding engine for HEVC. Every syntax element in the slice data is decoded through CABAC. This
+    track implements the core engine; the syntax track uses it to decode CTU/CU/PU/TU elements.
+  codebase_analysis: Depends on hevc-scaffold for NAL/RBSP bitstream access and rasmcore-bitio for byte-level reading. CABAC
+    operates on the RBSP byte stream after start code removal. The engine maintains a range/offset state and ~200 context
+    models with adaptive probability.
+  acceptance_criteria:
+  - Binary arithmetic decoder with 9-bit range and renormalization
+  - Context model with 8-bit state, initialization from slice QP, and LPS/MPS adaptation
+  - Bypass decoding mode for equiprobable bins
+  - 'Binarization schemes: truncated Rice, Exp-Golomb, fixed-length, truncated unary'
+  - decode_bin(), decode_bypass(), decode_terminate() public API
+  - Unit tests for arithmetic engine with known bit sequences
+  out_of_scope: Syntax element semantics — handled by hevc-syntax track. Context model index derivation for specific elements
+    — partially here (tables), partially in syntax.
+  technical_notes: 'ITU-T H.265 Section 9.3. Arithmetic engine: 9-bit range, 32-bit offset. Context: 8-bit state (6-bit probability
+    + 1-bit MPS). Init from slice QP. Binarization: truncated Rice (TR), k-th order Exp-Golomb (EGk), fixed-length (FL), truncated
+    unary (TU). Bypass mode for equiprobable bins.'
+plan:
+- phase: Arithmetic Engine
+  tasks:
+  - text: Implement CABAC arithmetic decoder state (range, offset) with initialization from byte stream
+    done: false
+  - text: Implement decode_bin() — context-coded bin decoding with range subdivision and renormalization
+    done: false
+  - text: Implement decode_bypass() — equiprobable bin decoding (no context)
+    done: false
+  - text: Implement decode_terminate() — end-of-slice detection
+    done: false
+- phase: Context Models
+  tasks:
+  - text: Define context model struct (state, MPS) with init_value to state mapping
+    done: false
+  - text: Implement context initialization from slice QP and init_value tables (HEVC Table 9-5 through 9-37)
+    done: false
+  - text: Implement LPS/MPS state transition tables (HEVC Table 9-3, 9-4)
+    done: false
+- phase: Binarization
+  tasks:
+  - text: Implement truncated Rice (TR) binarization decoder
+    done: false
+  - text: Implement k-th order Exp-Golomb (EGk) binarization decoder
+    done: false
+  - text: Implement fixed-length (FL) and truncated unary (TU) decoders
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for arithmetic decoder with hand-crafted byte streams
+    done: false
+  - text: Unit tests for context model initialization and state transitions
+    done: false
+  - text: Unit tests for each binarization scheme with known values
+    done: false
+extra: {}

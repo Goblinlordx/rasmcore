@@ -1,0 +1,60 @@
+id: hevc-params_20260328100501Z
+title: HEVC Parameter Sets — VPS/SPS/PPS Parsing
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Parse Video/Sequence/Picture Parameter Sets from HEVC NAL units. Extracts dimensions, bit depth, chroma format,
+    tile layout, QP, and loop filter config needed by all decoder subsystems.
+  context: Second track in HEVC chain. VPS/SPS/PPS are parsed from hvcC config or in-band NAL units. All other decoder subsystems
+    (CABAC, prediction, transform, filter) depend on parameter set values.
+  codebase_analysis: Depends on hevc-scaffold NAL parser and rasmcore-bitio BitReader. SPS contains dimensions, bit depth,
+    chroma format, log2 CTU size, max CU depth. PPS contains tile layout, QP, deblocking params, entropy coding mode. Exp-Golomb
+    coding used for many fields.
+  acceptance_criteria:
+  - VPS parsed — profile, tier, level, max layers, max sub-layers
+  - SPS parsed — dimensions, bit depth, chroma format, CTU config, conformance window, scaling list presence
+  - PPS parsed — QP, tile layout, deblocking control, entropy coding sync, sign data hiding
+  - Exp-Golomb (ue/se) decoding implemented via BitReader
+  - Parameter set storage — active VPS/SPS/PPS can be looked up by ID
+  - Unit tests with hand-crafted binary SPS/PPS matching known HEIC files
+  out_of_scope: Interpreting parameter values for decoding — that happens in syntax/predict/transform tracks.
+  technical_notes: 'ITU-T H.265 Sections 7.3.2 (VPS), 7.3.2.2 (SPS), 7.3.2.3 (PPS). SPS parsing is the most complex (~80 fields).
+    Key fields: pic_width_in_luma_samples, pic_height_in_luma_samples, bit_depth_luma_minus8, chroma_format_idc, log2_min_luma_coding_block_size_minus3,
+    log2_diff_max_min_luma_coding_block_size. Exp-Golomb: ue(v) and se(v) need BitReader extension.'
+plan:
+- phase: Exp-Golomb + BitReader
+  tasks:
+  - text: Implement ue(v) unsigned Exp-Golomb decoding via BitReader
+    done: false
+  - text: Implement se(v) signed Exp-Golomb decoding
+    done: false
+  - text: Implement u(n) fixed-length and u(1) flag reading helpers
+    done: false
+- phase: Parameter Set Parsing
+  tasks:
+  - text: Implement VPS parser — profile_tier_level, max_layers, max_sub_layers, timing_info
+    done: false
+  - text: Implement profile_tier_level() sub-parser — used by VPS and SPS
+    done: false
+  - text: Implement SPS parser — pic dimensions, chroma_format, bit_depth, log2 CTU/CU sizes, conformance window, scaling
+      list, short-term ref pic sets
+    done: false
+  - text: Implement PPS parser — init_qp, tile config (rows/cols/uniform), deblocking control, entropy_coding_sync, sign_data_hiding
+    done: false
+- phase: Storage + Lookup
+  tasks:
+  - text: Implement DecoderContext storing active VPS/SPS/PPS by ID
+    done: false
+  - text: Parse parameter sets from hvcC NAL arrays into DecoderContext
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for Exp-Golomb edge cases (0, 1, large values)
+    done: false
+  - text: Unit tests for SPS with known binary data from a real HEIC file
+    done: false
+  - text: Unit tests for PPS with tile config and deblocking params
+    done: false
+extra: {}

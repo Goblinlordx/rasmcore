@@ -1,0 +1,57 @@
+id: hevc-parity_20260328100508Z
+title: HEVC Parity Tests — Validate Against libde265 Reference
+type: chore
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Parity test suite comparing rasmcore-hevc decode output against libde265 (C reference). Pixel-exact comparison
+    on Nokia HEIF conformance suite and real iPhone HEIC samples.
+  context: Validation track ensuring rasmcore-hevc produces correct output. Uses libde265 as dev-dependency only (never in
+    WASM build). Tests decode the same HEIC files with both decoders and compare pixel output.
+  codebase_analysis: 'Follows the same parity test pattern as rasmcore-webp and rasmcore-jpeg: dev-dependency on reference
+    decoder, tests in tests/ directory, compare output pixel-by-pixel. libde265 crate (libde265-sys) provides C FFI bindings
+    for the reference decoder.'
+  acceptance_criteria:
+  - libde265 added as dev-dependency with cfg(not(target_arch = wasm32)) guard
+  - Parity test decoding small synthetic HEIC file — pixel-exact match with libde265
+  - Parity test with real iPhone HEIC photo (grid image)
+  - Metadata comparison — dimensions, bit depth, color space match
+  - PSNR calculation for any non-exact matches (must be > 60dB)
+  out_of_scope: Performance benchmarks (separate track). Fuzzing (separate track). Testing inter prediction (not needed for
+    HEIC).
+  technical_notes: 'Test corpus: 1) Nokia HEIF conformance test files (single image, grid image, thumbnail). 2) Real iPhone
+    HEIC photos (4032x3024, grid of 8 tiles). 3) Synthetic I-frames from x265 (controlled QP, small dimensions for fast tests).
+    Comparison: pixel-exact match preferred, PSNR > 60dB acceptable if rounding differs.'
+plan:
+- phase: Test Infrastructure
+  tasks:
+  - text: Add libde265 (or libde265-sys) as dev-dependency with cfg guard for non-WASM
+    done: false
+  - text: Create test helper to decode HEIC via rasmcore-isobmff + rasmcore-hevc
+    done: false
+  - text: Create test helper to decode HEVC bitstream via libde265
+    done: false
+  - text: Create pixel comparison helper (exact match + PSNR fallback)
+    done: false
+- phase: Synthetic Tests
+  tasks:
+  - text: Generate minimal HEIC test file (small frame, single CTU, known content) using x265
+    done: false
+  - text: Parity test on synthetic file — pixel-exact comparison
+    done: false
+- phase: Real-World Tests
+  tasks:
+  - text: Parity test on Nokia HEIF conformance single-image file
+    done: false
+  - text: Parity test on Nokia HEIF grid-image file
+    done: false
+  - text: Parity test on real iPhone HEIC photo
+    done: false
+- phase: Edge Cases
+  tasks:
+  - text: Test various QP values (low quality, high quality)
+    done: false
+  - text: Test non-standard dimensions (odd width/height, not multiple of CTU size)
+    done: false
+extra: {}

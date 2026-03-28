@@ -1,0 +1,53 @@
+id: hevc-transform_20260328100505Z
+title: HEVC Transform + Dequantization — Inverse DCT/DST + Scaling Lists
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Wire rasmcore-dct inverse transforms into the HEVC decode pipeline. Implement dequantization with QP-derived scaling
+    and optional scaling lists.
+  context: Transform track wires the shared rasmcore-dct module into the HEVC decoder. After CABAC decodes residual coefficients,
+    this track dequantizes them and applies inverse DCT/DST to produce spatial residuals that are added to the prediction.
+  codebase_analysis: rasmcore-dct already provides inverse_dct_4x4/8x8/16x16/32x32 and inverse_dst_4x4. This track wraps them
+    with HEVC-specific dequantization (QP to scale/shift mapping) and adds scaling list support. Depends on hevc-params for
+    QP and scaling list configuration.
+  acceptance_criteria:
+  - Dequantization from QP with correct scale factors and bit-shift
+  - Default scaling lists for all TU sizes
+  - Custom scaling list parsing from SPS/PPS
+  - 'Transform dispatch: DST for 4x4 intra luma, DCT for all other sizes'
+  - 'Residual reconstruction: dequant coefficients -> inverse transform -> spatial residuals'
+  - Unit tests for dequantization at various QP values
+  out_of_scope: Forward transforms (encoding). Transform skip mode (rare in HEIC). Cross-component prediction.
+  technical_notes: 'ITU-T H.265 Section 8.6.3 (scaling) and 8.6.4 (transform). Dequant: level * scale[qp%6] << (qp/6 + shift).
+    Scale factors: [40,45,51,57,64,72]. Scaling lists: 4x4, 8x8, 16x16, 32x32 with default and custom matrices. Transform
+    selection: DST for 4x4 intra luma, DCT for everything else.'
+plan:
+- phase: Dequantization
+  tasks:
+  - text: Implement QP to scale/shift mapping (scale factors 40,45,51,57,64,72 for qp%6, shift from qp/6)
+    done: false
+  - text: Implement coefficient dequantization — level * scale * scaling_list_factor >> shift
+    done: false
+  - text: Implement default scaling list matrices for 4x4, 8x8, 16x16, 32x32
+    done: false
+  - text: Implement custom scaling list parsing from SPS scaling_list_data()
+    done: false
+- phase: Transform Dispatch
+  tasks:
+  - text: Implement transform dispatch — select DST for 4x4 intra luma, DCT for all other TU sizes
+    done: false
+  - text: Wire rasmcore-dct inverse_dct_4x4/8x8/16x16/32x32 and inverse_dst_4x4 into pipeline
+    done: false
+  - text: Implement residual reconstruction — dequant -> inverse transform -> clip to valid range
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for dequantization at QP 0, 22, 37, 51 with known coefficient values
+    done: false
+  - text: Unit tests for transform dispatch (DST vs DCT selection)
+    done: false
+  - text: Unit tests for full residual pipeline (dequant -> transform -> spatial)
+    done: false
+extra: {}

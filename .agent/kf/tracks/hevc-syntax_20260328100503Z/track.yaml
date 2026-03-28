@@ -1,0 +1,61 @@
+id: hevc-syntax_20260328100503Z
+title: HEVC Syntax Parsing — Slice Header + CTU/CU/PU/TU
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Parse HEVC slice data using CABAC: slice header, coding tree unit quad-tree split, coding units, prediction units,
+    and transform units. Drives the decode pipeline.'
+  context: Central syntax parsing track. Reads slice data via CABAC engine and parameter sets to decode the CTU/CU/PU/TU hierarchy.
+    Outputs decoded syntax elements that prediction, transform, and filter subsystems consume.
+  codebase_analysis: Depends on hevc-params (SPS/PPS config) and hevc-cabac (entropy decoding). CTU size from SPS log2_min_coding_block_size
+    + log2_diff. Quad-tree split flags decoded via CABAC. CU contains prediction mode (intra/inter), PU contains intra mode
+    index, TU contains residual coefficients.
+  acceptance_criteria:
+  - Slice header parsed — slice_type, QP delta, deblocking overrides, entry point offsets
+  - CTU quad-tree split decoded — recursive split_cu_flag via CABAC
+  - CU prediction mode and part mode decoded for intra slices
+  - PU intra prediction mode decoded (MPM list + rem_intra_pred_mode)
+  - TU residual coding — coefficient levels via CABAC (last_sig_coeff, sig_coeff_flag, coeff_abs_level)
+  - Syntax elements stored in per-CTU data structure for downstream consumption
+  out_of_scope: Inter prediction syntax (P/B slices) — HEIC is I-frame only. Actual prediction/transform computation — handled
+    by predict/transform tracks.
+  technical_notes: 'ITU-T H.265 Sections 7.3.6-7.3.8. Slice header: slice_type, slice_qp_delta, deblocking params. CTU: coding_quadtree()
+    recursion. CU: cu_skip_flag, pred_mode_flag, part_mode. PU: intra_pred_mode (prev_intra_pred_flag + rem_intra_pred_mode
+    or mpm_idx). TU: transform_tree() recursion, cbf flags, residual_coding() for coefficient levels.'
+plan:
+- phase: Slice Header
+  tasks:
+  - text: Implement slice_header() parser — slice_type, slice_qp_delta, pic_order_cnt_lsb, deblocking filter overrides
+    done: false
+  - text: Implement slice_data() entry — CTU address iteration, entry point offsets for tiles/WPP
+    done: false
+- phase: CTU/CU Parsing
+  tasks:
+  - text: Implement coding_quadtree() — recursive quad-tree split with split_cu_flag via CABAC
+    done: false
+  - text: Implement coding_unit() — pred_mode_flag, part_mode for intra CUs
+    done: false
+  - text: Implement prediction_unit() for intra — prev_intra_luma_pred_flag, mpm_idx, rem_intra_luma_pred_mode
+    done: false
+  - text: Implement intra chroma pred mode decoding
+    done: false
+- phase: Transform Unit + Residual Coding
+  tasks:
+  - text: Implement transform_tree() — recursive TU split with split_transform_flag
+    done: false
+  - text: Implement cbf (coded block flag) decoding for luma and chroma
+    done: false
+  - text: Implement residual_coding() — last_sig_coeff position, significance map, coeff_abs_level_greater1/2, coeff_sign_flag,
+      coeff_abs_level_remaining
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for slice header parsing with crafted CABAC bitstream
+    done: false
+  - text: Unit tests for CTU quad-tree split at various depths
+    done: false
+  - text: Integration test parsing residual coefficients from a minimal coded block
+    done: false
+extra: {}

@@ -1,0 +1,11 @@
+title: HEVC Frame Assembly — Wire Syntax to Predict+Transform+Filter
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- hevc-syntax_20260328100503Z
+- hevc-predict_20260328100504Z
+- hevc-transform_20260328100505Z
+- hevc-filter_20260328100506Z
