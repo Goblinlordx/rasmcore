@@ -199,6 +199,124 @@ pub fn filter_normal_horizontal(
     }
 }
 
+/// Apply loop filter to a single macroblock row (Y plane only).
+///
+/// Filters both macroblock boundaries (every 16 pixels) and sub-block
+/// boundaries (every 4 pixels within each MB). Called after each MB row
+/// is reconstructed, matching decoder timing.
+pub fn apply_loop_filter_row(
+    pixels: &mut [u8],
+    width: usize,
+    mb_row: usize,
+    mb_w: usize,
+    filter_level: u8,
+    sharpness: u8,
+    filter_type: FilterType,
+) {
+    if filter_level == 0 {
+        return;
+    }
+
+    let (filter_limit, inner_limit, hev_threshold) = compute_filter_params(filter_level, sharpness);
+    let stride = width;
+    let y = mb_row * 16;
+    let rows_in_row = 16.min(pixels.len() / stride - y);
+
+    for mb_col in 0..mb_w {
+        let x = mb_col * 16;
+        let cols_available = 16.min(width - x);
+
+        // --- Macroblock boundary edges (stronger filter) ---
+        match filter_type {
+            FilterType::Simple => {
+                if mb_col > 0 {
+                    filter_simple_vertical(pixels, stride, x, rows_in_row, filter_limit);
+                }
+                if mb_row > 0 {
+                    filter_simple_horizontal(pixels, stride, y, x, cols_available, filter_limit);
+                }
+                // Sub-block vertical edges at x+4, x+8, x+12
+                for sb in 1..4 {
+                    let sx = x + sb * 4;
+                    if sx < width {
+                        filter_simple_vertical(pixels, stride, sx, rows_in_row, filter_limit);
+                    }
+                }
+                // Sub-block horizontal edges at y+4, y+8, y+12
+                for sb in 1..4 {
+                    let sy = y + sb * 4;
+                    if sy > 0 && sy < pixels.len() / stride {
+                        filter_simple_horizontal(
+                            pixels,
+                            stride,
+                            sy,
+                            x,
+                            cols_available,
+                            filter_limit,
+                        );
+                    }
+                }
+            }
+            FilterType::Normal => {
+                if mb_col > 0 {
+                    filter_normal_vertical(
+                        pixels,
+                        stride,
+                        x,
+                        rows_in_row,
+                        filter_limit,
+                        inner_limit,
+                        hev_threshold,
+                    );
+                }
+                if mb_row > 0 {
+                    filter_normal_horizontal(
+                        pixels,
+                        stride,
+                        y,
+                        x,
+                        cols_available,
+                        filter_limit,
+                        inner_limit,
+                        hev_threshold,
+                    );
+                }
+                // Sub-block vertical edges
+                for sb in 1..4 {
+                    let sx = x + sb * 4;
+                    if sx < width {
+                        filter_normal_vertical(
+                            pixels,
+                            stride,
+                            sx,
+                            rows_in_row,
+                            filter_limit,
+                            inner_limit,
+                            hev_threshold,
+                        );
+                    }
+                }
+                // Sub-block horizontal edges
+                for sb in 1..4 {
+                    let sy = y + sb * 4;
+                    if sy > 0 && sy < pixels.len() / stride {
+                        filter_normal_horizontal(
+                            pixels,
+                            stride,
+                            sy,
+                            x,
+                            cols_available,
+                            filter_limit,
+                            inner_limit,
+                            hev_threshold,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Apply loop filter to a full frame (Y plane only for now).
 ///
 /// Filters macroblock and sub-block boundaries to reduce blocking artifacts.

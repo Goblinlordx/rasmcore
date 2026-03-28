@@ -86,19 +86,22 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 mb_infos.last().unwrap(),
             );
         }
+
+        // Apply loop filter to this MB row after all MBs in the row are
+        // reconstructed. This matches the decoder's timing: filter runs after
+        // each row, before the next row uses these pixels as prediction ref.
+        filter::apply_loop_filter_row(
+            &mut recon_y,
+            padded_w,
+            mb_row,
+            mb_w as usize,
+            params.filter_level,
+            params.filter_sharpness,
+            params.filter_type,
+        );
     }
 
     let token_data = token_writer.finish();
-
-    // Apply loop filter to reconstructed Y plane
-    filter::apply_loop_filter(
-        &mut recon_y,
-        padded_w,
-        padded_h,
-        params.filter_level,
-        params.filter_sharpness,
-        params.filter_type,
-    );
 
     // Build first partition (macroblock modes)
     let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, params);
@@ -164,12 +167,9 @@ fn encode_first_partition(
     bw.put_bit(128, false); // segmentation_enabled = false
 
     // Loop filter (RFC 6386 Section 9.4)
-    // Disable loop filter for now — our encoder doesn't apply the loop filter
-    // during reconstruction, so the decoder must not filter either.
-    // Enabling filter_level > 0 causes encoder/decoder prediction mismatch.
-    bw.put_bit(128, false); // filter_type = normal
-    bw.put_literal(6, 0); // filter_level = 0 (disabled)
-    bw.put_literal(3, 0); // filter_sharpness = 0
+    bw.put_bit(128, params.filter_type == crate::filter::FilterType::Simple); // filter_type: false=normal, true=simple
+    bw.put_literal(6, params.filter_level as u32);
+    bw.put_literal(3, params.filter_sharpness as u32);
 
     // Loop filter adjustments — disabled
     bw.put_bit(128, false); // mode_ref_lf_delta_enabled = false
