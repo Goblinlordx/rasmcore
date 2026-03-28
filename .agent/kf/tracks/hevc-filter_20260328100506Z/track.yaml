@@ -29,31 +29,31 @@ plan:
   tasks:
   - text: Implement boundary strength (Bs) derivation — based on prediction mode, coded block flags, and motion vectors (Bs=2
       for intra boundary)
-    done: false
+    done: true
   - text: Implement tc and beta threshold tables from QP (HEVC Table 8-15, 8-16)
-    done: false
+    done: true
   - text: Implement strong filter decision and strong/weak filter application for luma
-    done: false
+    done: true
   - text: Implement chroma deblocking (always strong when Bs>1)
-    done: false
+    done: true
   - text: Implement deblocking edge iteration — vertical then horizontal, respecting tile/slice boundaries
-    done: false
+    done: true
 - phase: Sample Adaptive Offset
   tasks:
   - text: Implement SAO parameter parsing from slice data (sao_type_idx, offsets, band_position, eo_class)
-    done: false
+    done: true
   - text: Implement band offset mode — classify samples into 32 bands, apply offsets to 4 consecutive bands
-    done: false
+    done: true
   - text: Implement edge offset mode — classify edge direction (0/45/90/135 degree), apply offsets based on edge category
-    done: false
+    done: true
   - text: Implement SAO merge (left/up) — copy parameters from neighboring CTU
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for deblocking with known edge pixels and Bs values
-    done: false
+    done: true
   - text: Unit tests for SAO band offset with known sample values
-    done: false
+    done: true
   - text: Unit tests for SAO edge offset with known edge patterns
-    done: false
+    done: true
 extra: {}
