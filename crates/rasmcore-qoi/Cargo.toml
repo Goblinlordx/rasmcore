@@ -2,6 +2,7 @@
 name = "rasmcore-qoi"
 version.workspace = true
 edition.workspace = true
+publish.workspace = true
 description = "Pure Rust QOI (Quite OK Image) encoder/decoder — zero dependencies"
 
 [dependencies]
