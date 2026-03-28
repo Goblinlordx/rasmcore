@@ -1,0 +1,8 @@
+title: LUT SIMD Optimization — Vectorized 1D + 3D LUT Application with Benchmarks
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- lut-fusion-pipeline_20260329170000Z
