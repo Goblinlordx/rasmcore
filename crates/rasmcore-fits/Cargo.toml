@@ -2,6 +2,7 @@
 name = "rasmcore-fits"
 version.workspace = true
 edition.workspace = true
+publish.workspace = true
 description = "Pure Rust FITS (Flexible Image Transport System) codec — astronomy images"
 
 [dependencies]
