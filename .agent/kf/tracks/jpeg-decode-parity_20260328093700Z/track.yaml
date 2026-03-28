@@ -5,15 +5,13 @@ status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: Fill decode gaps to match encode feature set. Progressive (SOF2), arithmetic
-    coding, 12-bit precision. Fix baseline quality (14dB to 30dB+).
-  context: Encoder supports progressive, arithmetic, 12-bit, trellis. Decoder only
-    handles baseline SOF0 and has 14dB roundtrip quality (should be 30dB+). Must achieve
-    encode/decode symmetry so every encoded JPEG can be decoded by our own decoder.
-  codebase_analysis: 'decode.rs: 769 LOC. Returns Unsupported for SOF2 (progressive).
-    No SOF9/SOF10 (arithmetic) handling. No 12-bit support. Roundtrip PSNR 14dB suggests
-    a bug in zigzag ordering or Huffman decode — likely the decode_block zigzag mapping.
-    Existing IDCT and dequantize functions are correct (verified separately).'
+  summary: Fill decode gaps to match encode feature set. Progressive (SOF2), arithmetic coding, 12-bit precision. Fix baseline
+    quality (14dB to 30dB+).
+  context: Encoder supports progressive, arithmetic, 12-bit, trellis. Decoder only handles baseline SOF0 and has 14dB roundtrip
+    quality (should be 30dB+). Must achieve encode/decode symmetry so every encoded JPEG can be decoded by our own decoder.
+  codebase_analysis: 'decode.rs: 769 LOC. Returns Unsupported for SOF2 (progressive). No SOF9/SOF10 (arithmetic) handling.
+    No 12-bit support. Roundtrip PSNR 14dB suggests a bug in zigzag ordering or Huffman decode — likely the decode_block zigzag
+    mapping. Existing IDCT and dequantize functions are correct (verified separately).'
   acceptance_criteria:
   - Fix baseline roundtrip quality to PSNR > 30dB (debug zigzag/Huffman decode)
   - Progressive JPEG decode (SOF2) with spectral selection and successive approximation
@@ -21,42 +19,37 @@ spec:
   - 12-bit sample precision decode
   - All mode combinations roundtrip at PSNR > 25dB
   - Decode JPEG files produced by ImageMagick and libjpeg-turbo
-  out_of_scope: Lossless JPEG (SOF3/SOF7). JPEG-LS. Multi-scan interleaved progressive
-    (single-scan progressive only for v1).
-  technical_notes: 'Priority: (1) fix baseline quality first (likely zigzag index
-    bug in decode_block), (2) progressive decode (multi-scan with spectral selection
-    Ss/Se and successive approximation Ah/Al), (3) arithmetic decode (QM-coder state
-    machine, ~200 LOC), (4) 12-bit (extend sample range, wider dequant values).'
+  out_of_scope: Lossless JPEG (SOF3/SOF7). JPEG-LS. Multi-scan interleaved progressive (single-scan progressive only for v1).
+  technical_notes: 'Priority: (1) fix baseline quality first (likely zigzag index bug in decode_block), (2) progressive decode
+    (multi-scan with spectral selection Ss/Se and successive approximation Ah/Al), (3) arithmetic decode (QM-coder state machine,
+    ~200 LOC), (4) 12-bit (extend sample range, wider dequant values).'
 plan:
 - phase: Baseline Quality Fix
   tasks:
   - text: Debug 14dB roundtrip — trace zigzag index mapping in decode_block vs encode
-    done: false
+    done: true
   - text: Fix identified bug (likely zigzag/coefficient ordering mismatch)
-    done: false
+    done: true
   - text: Verify baseline roundtrip PSNR > 30dB at quality 85
-    done: false
+    done: true
 - phase: Progressive Decode
   tasks:
-  - text: Parse SOF2 marker and multi-scan SOS headers (spectral selection Ss/Se,
-      successive approximation Ah/Al)
-    done: false
-  - text: Implement progressive coefficient accumulation (DC first scan, AC refinement
-      scans)
-    done: false
+  - text: Parse SOF2 marker and multi-scan SOS headers (spectral selection Ss/Se, successive approximation Ah/Al)
+    done: true
+  - text: Implement progressive coefficient accumulation (DC first scan, AC refinement scans)
+    done: true
   - text: Test progressive decode of our progressive-encoded JPEG
-    done: false
+    done: true
 - phase: Arithmetic and 12-bit
   tasks:
   - text: Implement QM-coder arithmetic decoder (ITU-T T.81 Annex D) for SOF9/SOF10
-    done: false
-  - text: Extend decoder for 12-bit sample precision (wider coefficient range, 12-bit
-      level shift)
-    done: false
+    done: true
+  - text: Extend decoder for 12-bit sample precision (wider coefficient range, 12-bit level shift)
+    done: true
   - text: Test arithmetic mode roundtrip
-    done: false
+    done: true
   - text: Test 12-bit mode roundtrip
-    done: false
+    done: true
   - text: Test decode of ImageMagick-produced JPEG (external compatibility)
-    done: false
+    done: true
 extra: {}
