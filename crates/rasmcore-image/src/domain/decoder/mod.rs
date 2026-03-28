@@ -7,19 +7,37 @@ use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
-    "dds", "jxl",
+    "dds", "jxl", "jp2",
 ];
 
 /// Detect image format from header bytes
 pub fn detect_format(header: &[u8]) -> Option<String> {
-    // Check JXL first (not supported by image crate)
+    // Check formats not supported by image crate first
     if is_jxl(header) {
         return Some("jxl".to_string());
+    }
+    if is_jp2(header) {
+        return Some("jp2".to_string());
     }
     image::guess_format(header)
         .ok()
         .and_then(|fmt| format_to_str(fmt))
         .map(String::from)
+}
+
+/// Check if data starts with JPEG 2000 magic bytes.
+/// JP2 container: 0x00 0x00 0x00 0x0C 0x6A 0x50 0x20 0x20 (JP2 signature box)
+/// J2K codestream: 0xFF 0x4F (SOC marker)
+fn is_jp2(header: &[u8]) -> bool {
+    // JP2 container signature
+    if header.len() >= 12 && header[..4] == [0x00, 0x00, 0x00, 0x0C] && &header[4..8] == b"jP  " {
+        return true;
+    }
+    // Raw J2K codestream (SOC marker)
+    if header.len() >= 2 && header[0] == 0xFF && header[1] == 0x4F {
+        return true;
+    }
+    false
 }
 
 /// Check if data starts with JPEG XL magic bytes.
@@ -37,9 +55,12 @@ fn is_jxl(header: &[u8]) -> bool {
 
 /// Decode an image from raw bytes
 pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
-    // JXL: handle via jxl-oxide (not supported by image crate)
+    // Formats not supported by image crate — handle first
     if is_jxl(data) {
         return decode_jxl(data);
+    }
+    if is_jp2(data) {
+        return decode_jp2(data);
     }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
@@ -86,6 +107,35 @@ fn extract_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
 
 /// Decode and convert to a specific pixel format
 pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage, ImageError> {
+    // JP2/J2K: decode then convert if needed
+    if is_jp2(data) {
+        let decoded = decode_jp2(data)?;
+        if decoded.info.format == target_format {
+            return Ok(decoded);
+        }
+        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
+        let (pixels, format) = match target_format {
+            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
+            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
+            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+            other => {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "conversion to {other:?} not supported"
+                )));
+            }
+        };
+        return Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: decoded.info.width,
+                height: decoded.info.height,
+                format,
+                color_space: decoded.info.color_space,
+            },
+            icc_profile: decoded.icc_profile,
+        });
+    }
+
     // JXL: decode then convert
     if is_jxl(data) {
         let decoded = decode_jxl(data)?;
@@ -165,6 +215,82 @@ fn detect_pixel_format(img: &image::DynamicImage) -> PixelFormat {
         image::ColorType::L8 => PixelFormat::Gray8,
         image::ColorType::L16 => PixelFormat::Gray16,
         _ => PixelFormat::Rgba8,
+    }
+}
+
+/// Decode a JPEG 2000 image using justjp2.
+fn decode_jp2(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let image =
+        justjp2::decode(data).map_err(|e| ImageError::InvalidInput(format!("JP2 decode: {e}")))?;
+
+    let width = image.width;
+    let height = image.height;
+    let num_components = image.components.len();
+    let num_pixels = (width * height) as usize;
+
+    // justjp2 returns separate i32 component planes — interleave to u8
+    let (pixels, format) = match num_components {
+        1 => {
+            // Grayscale
+            let comp = &image.components[0];
+            let precision = comp.precision;
+            let pixels: Vec<u8> = comp
+                .data
+                .iter()
+                .map(|&v| clamp_to_u8(v, precision))
+                .collect();
+            (pixels, PixelFormat::Gray8)
+        }
+        3 => {
+            // RGB (or YCbCr already converted by justjp2)
+            let mut pixels = Vec::with_capacity(num_pixels * 3);
+            let precision = image.components[0].precision;
+            for i in 0..num_pixels {
+                pixels.push(clamp_to_u8(image.components[0].data[i], precision));
+                pixels.push(clamp_to_u8(image.components[1].data[i], precision));
+                pixels.push(clamp_to_u8(image.components[2].data[i], precision));
+            }
+            (pixels, PixelFormat::Rgb8)
+        }
+        4 => {
+            // RGBA
+            let mut pixels = Vec::with_capacity(num_pixels * 4);
+            let precision = image.components[0].precision;
+            for i in 0..num_pixels {
+                pixels.push(clamp_to_u8(image.components[0].data[i], precision));
+                pixels.push(clamp_to_u8(image.components[1].data[i], precision));
+                pixels.push(clamp_to_u8(image.components[2].data[i], precision));
+                pixels.push(clamp_to_u8(image.components[3].data[i], precision));
+            }
+            (pixels, PixelFormat::Rgba8)
+        }
+        _ => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "JP2 with {num_components} components not supported"
+            )));
+        }
+    };
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width,
+            height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+/// Clamp an i32 sample to u8 range, handling different bit precisions.
+fn clamp_to_u8(value: i32, precision: u32) -> u8 {
+    if precision <= 8 {
+        value.clamp(0, 255) as u8
+    } else {
+        // Scale down from higher precision (e.g., 12-bit → 8-bit)
+        let max = (1i32 << precision) - 1;
+        ((value.clamp(0, max) as u64 * 255 / max as u64) as u8)
     }
 }
 
@@ -352,10 +478,28 @@ mod tests {
         let fmts = supported_formats();
         for f in [
             "png", "jpeg", "webp", "gif", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm",
-            "exr", "dds", "jxl",
+            "exr", "dds", "jxl", "jp2",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing decode format: {f}");
         }
+    }
+
+    #[test]
+    fn detect_format_jp2_container() {
+        // JP2 signature: 0x00 0x00 0x00 0x0C "jP  " (with trailing spaces)
+        let header = [
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A,
+        ];
+        assert_eq!(detect_format(&header), Some("jp2".to_string()));
+    }
+
+    #[test]
+    fn detect_format_j2k_codestream() {
+        // J2K SOC marker: 0xFF 0x4F
+        assert_eq!(
+            detect_format(&[0xFF, 0x4F, 0xFF, 0x51]),
+            Some("jp2".to_string())
+        );
     }
 
     #[test]

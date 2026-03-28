@@ -21,6 +21,7 @@ xmp-writer = "0.3.2"
 quick-xml = "0.39.2"
 tiff = "0.11"
 jxl-oxide = "0.12"
+justjp2 = { version = "0.1", default-features = false }
 
 # Native codec crates (optional, feature-gated)
 rasmcore-qoi = { path = "../rasmcore-qoi", optional = true }
