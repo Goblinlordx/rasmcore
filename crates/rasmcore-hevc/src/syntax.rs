@@ -82,6 +82,73 @@ pub struct CtuSyntax {
     pub cus: Vec<CuSyntax>,
 }
 
+/// Map of CU split depths across the picture, used for deriving the
+/// `split_cu_flag` CABAC context index from left and above neighbors.
+pub struct CuDepthMap {
+    depths: Vec<u8>,
+    width_in_min_cb: u32,
+    min_cb_size: u32,
+}
+
+impl CuDepthMap {
+    /// Create a new depth map covering the full picture.
+    pub fn new(pic_width: u32, pic_height: u32, min_cb_size: u32) -> Self {
+        let width_in_min_cb = pic_width.div_ceil(min_cb_size);
+        let height_in_min_cb = pic_height.div_ceil(min_cb_size);
+        Self {
+            depths: vec![0u8; (width_in_min_cb * height_in_min_cb) as usize],
+            width_in_min_cb,
+            min_cb_size,
+        }
+    }
+
+    /// Record the depth for all min-CB positions covered by a CU at (x, y) with
+    /// the given size.
+    pub fn set_depth(&mut self, x: u32, y: u32, size: u32, depth: u8) {
+        let x0 = x / self.min_cb_size;
+        let y0 = y / self.min_cb_size;
+        let n = size / self.min_cb_size;
+        for dy in 0..n {
+            for dx in 0..n {
+                let idx = ((y0 + dy) * self.width_in_min_cb + (x0 + dx)) as usize;
+                if idx < self.depths.len() {
+                    self.depths[idx] = depth;
+                }
+            }
+        }
+    }
+
+    /// Look up the depth of the min-CB at pixel position (x, y).
+    /// Returns `None` if the position is outside the picture.
+    pub fn get_depth(&self, x: u32, y: u32) -> Option<u8> {
+        let cx = x / self.min_cb_size;
+        let cy = y / self.min_cb_size;
+        if cx >= self.width_in_min_cb {
+            return None;
+        }
+        let idx = (cy * self.width_in_min_cb + cx) as usize;
+        self.depths.get(idx).copied()
+    }
+
+    /// Derive the CABAC context index for `split_cu_flag` using the depths of
+    /// the left (L) and above (A) neighbors (ITU-T H.265 Section 9.3.4.2.2).
+    pub fn split_cu_ctx(&self, x: u32, y: u32, depth: u32) -> usize {
+        let cond_l = if x > 0 {
+            self.get_depth(x - 1, y)
+                .map_or(0, |d| if (d as u32) > depth { 1 } else { 0 })
+        } else {
+            0
+        };
+        let cond_a = if y > 0 {
+            self.get_depth(x, y - 1)
+                .map_or(0, |d| if (d as u32) > depth { 1 } else { 0 })
+        } else {
+            0
+        };
+        SPLIT_CU_CTX_OFFSET + cond_l + cond_a
+    }
+}
+
 /// Parse slice header from RBSP data (for I-slices).
 ///
 /// ITU-T H.265 Section 7.3.6.1.
@@ -213,11 +280,14 @@ pub fn decode_ctu(
     _pps: &Pps,
     ctu_x: u32,
     ctu_y: u32,
+    depth_map: &mut CuDepthMap,
 ) -> Result<CtuSyntax, HevcError> {
     let ctu_size = sps.ctu_size();
     let mut cus = Vec::new();
 
-    coding_quadtree(cabac, contexts, sps, ctu_x, ctu_y, ctu_size, 0, &mut cus)?;
+    coding_quadtree(
+        cabac, contexts, sps, ctu_x, ctu_y, ctu_size, 0, &mut cus, depth_map,
+    )?;
 
     Ok(CtuSyntax {
         x: ctu_x,
@@ -237,6 +307,7 @@ fn coding_quadtree(
     size: u32,
     depth: u32,
     cus: &mut Vec<CuSyntax>,
+    depth_map: &mut CuDepthMap,
 ) -> Result<(), HevcError> {
     // Check if we should split
     let min_cb_size = sps.min_cb_size();
@@ -244,7 +315,7 @@ fn coding_quadtree(
 
     let split = if size > min_cb_size && depth < max_depth {
         // Decode split_cu_flag
-        let ctx_idx = get_split_cu_ctx(depth);
+        let ctx_idx = depth_map.split_cu_ctx(x, y, depth);
         cabac.decode_bin(&mut contexts[ctx_idx])? != 0
     } else {
         false // At max depth or min size, can't split
@@ -252,12 +323,32 @@ fn coding_quadtree(
 
     if split {
         let half = size / 2;
-        coding_quadtree(cabac, contexts, sps, x, y, half, depth + 1, cus)?;
+        coding_quadtree(cabac, contexts, sps, x, y, half, depth + 1, cus, depth_map)?;
         if x + half < sps.pic_width {
-            coding_quadtree(cabac, contexts, sps, x + half, y, half, depth + 1, cus)?;
+            coding_quadtree(
+                cabac,
+                contexts,
+                sps,
+                x + half,
+                y,
+                half,
+                depth + 1,
+                cus,
+                depth_map,
+            )?;
         }
         if y + half < sps.pic_height {
-            coding_quadtree(cabac, contexts, sps, x, y + half, half, depth + 1, cus)?;
+            coding_quadtree(
+                cabac,
+                contexts,
+                sps,
+                x,
+                y + half,
+                half,
+                depth + 1,
+                cus,
+                depth_map,
+            )?;
         }
         if x + half < sps.pic_width && y + half < sps.pic_height {
             coding_quadtree(
@@ -269,11 +360,13 @@ fn coding_quadtree(
                 half,
                 depth + 1,
                 cus,
+                depth_map,
             )?;
         }
     } else {
         // Leaf: decode coding unit
         let cu = decode_coding_unit(cabac, contexts, sps, x, y, size, depth)?;
+        depth_map.set_depth(x, y, size, depth as u8);
         cus.push(cu);
     }
 
@@ -427,7 +520,7 @@ fn decode_transform_tree(
         // HEVC Section 7.3.8.7: cbf_cb and cbf_cr decoded before cbf_luma
 
         // Chroma CBF (4:2:0: decoded when chroma is present and depth allows)
-        let cbf_cb = if sps.chroma_format_idc > 0 && _parent_cbf_cb {
+        let cbf_cb = if depth > 0 && sps.chroma_format_idc > 0 && _parent_cbf_cb {
             let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
             if ctx_idx < contexts.len() {
                 cabac.decode_bin(&mut contexts[ctx_idx])? != 0
@@ -438,7 +531,7 @@ fn decode_transform_tree(
             false
         };
 
-        let cbf_cr = if sps.chroma_format_idc > 0 && _parent_cbf_cr {
+        let cbf_cr = if depth > 0 && sps.chroma_format_idc > 0 && _parent_cbf_cr {
             let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
             if ctx_idx < contexts.len() {
                 cabac.decode_bin(&mut contexts[ctx_idx])? != 0
@@ -709,10 +802,6 @@ fn build_scan_order(n: usize) -> Vec<(usize, usize)> {
 // These are simplified context index mappings. A full implementation would
 // use the complete HEVC context derivation from Tables 9-5 through 9-37.
 
-fn get_split_cu_ctx(depth: u32) -> usize {
-    SPLIT_CU_CTX_OFFSET + depth.min(2) as usize
-}
-
 const SPLIT_CU_CTX_OFFSET: usize = 0;
 const PART_MODE_CTX_OFFSET: usize = 3;
 const PREV_INTRA_PRED_CTX_OFFSET: usize = 4;
@@ -736,7 +825,7 @@ pub fn init_syntax_contexts(qp: i32) -> Vec<ContextModel> {
     use crate::cabac;
 
     // I-slice init table index = 2
-    let si = 2usize;
+    let si = 0usize;
 
     // Build flat init value array matching our context layout
     let mut iv = vec![154u8; NUM_SYNTAX_CONTEXTS]; // CNU default

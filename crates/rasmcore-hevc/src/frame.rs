@@ -161,6 +161,7 @@ pub fn decode_frame(
 
     let mut cabac = CabacDecoder::new(&rbsp[cabac_start..])?;
     let mut contexts = syntax::init_syntax_contexts(slice_qp);
+    let mut depth_map = syntax::CuDepthMap::new(sps.pic_width, sps.pic_height, sps.min_cb_size());
 
     // Decode CTUs in raster scan order
     let ctu_size = sps.ctu_size();
@@ -173,7 +174,15 @@ pub fn decode_frame(
             let ctu_y = ctu_row * ctu_size;
 
             // Decode CTU syntax
-            let ctu = syntax::decode_ctu(&mut cabac, &mut contexts, &sps, &pps, ctu_x, ctu_y)?;
+            let ctu = syntax::decode_ctu(
+                &mut cabac,
+                &mut contexts,
+                &sps,
+                &pps,
+                ctu_x,
+                ctu_y,
+                &mut depth_map,
+            )?;
 
             // Reconstruct each CU in this CTU
             for cu in &ctu.cus {
