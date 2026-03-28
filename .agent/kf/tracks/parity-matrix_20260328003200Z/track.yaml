@@ -1,104 +1,145 @@
 id: parity-matrix_20260328003200Z
-title: "Research: Feature Parity Matrix — rasmcore vs libvips vs ImageMagick"
+title: 'Research: Feature Parity Matrix — rasmcore vs libvips vs ImageMagick'
 type: research
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Produce a comprehensive parity matrix document comparing rasmcore's current
+  summary: 'Produce a comprehensive parity matrix document comparing rasmcore''s current
+
     capabilities against libvips and ImageMagick across formats, transforms,
+
     filters, color management, compositing, and architecture. Includes progress
+
     tracking and priority recommendations for closing gaps.
-  context: |
-    rasmcore currently covers ~10-20% of competitor operation surface. The
+
+    '
+  context: 'rasmcore currently covers ~10-20% of competitor operation surface. The
+
     architectural advantages (component model, multi-language, small footprint,
+
     pure Rust, composable) are clear, but operation coverage gaps block adoption.
 
+
     This research produces a living document that serves as the master checklist
+
     for all future image processing work. Each row becomes a potential track.
 
+
     Competitive landscape (WASM-specific):
+
     - wasm-vips (~15MB, JS-only, streaming pipeline, SharedArrayBuffer+SIMD required)
+
     - @imagemagick/magick-wasm (~15MB, JS-only, callback-based)
+
     - rasmcore (small components, any language via WIT, standard WASM, composable)
 
+
     Key gaps identified:
+
     - Encode formats (3 vs 15-50+)
+
     - Compositing (none vs full Porter-Duff)
+
     - Color management (sRGB only vs full ICC)
+
     - Advanced filters (no edge detection, convolution, histogram, morphology)
+
     - Smart resize (no content-aware cropping)
+
     - Streaming/pipeline architecture (full image in memory vs scanline)
-  codebase_analysis: |
-    Current rasmcore-image capabilities:
+
+    '
+  codebase_analysis: 'Current rasmcore-image capabilities:
+
     - Decode: 9 formats (png, jpeg, gif, webp, bmp, tiff, avif, qoi, ico)
+
     - Encode: 3 formats (png, jpeg, webp) — per-format module structure ready
+
     - Transforms: 4 (resize with 4 filters, crop, rotate 90/180/270, flip h/v)
+
     - Filters: 5 (blur, sharpen, brightness, contrast, grayscale)
+
     - Color: sRGB only, no ICC
+
     - Compositing: none
+
     - Drawing: none
+
     - Pixel formats: RGB8, RGBA8, Gray8 operational; Gray16 decode-only
+
+    '
   acceptance_criteria:
-    - Parity matrix document at .agent/kf/_reports/parity-matrix.md
-    - Every libvips and ImageMagick operation categorized and listed
-    - Each operation marked with rasmcore status (done/partial/planned/not-planned)
-    - Priority tiers assigned (P0 critical, P1 high, P2 medium, P3 low)
-    - Architecture/performance section covering streaming, SIMD, shrink-on-load
-    - Chainable pipeline API section with design considerations
-    - Document is structured so individual rows can become track specs
-  out_of_scope: |
-    - Implementation of any operations (this is research only)
+  - Parity matrix document at .agent/kf/_reports/parity-matrix.md
+  - Every libvips and ImageMagick operation categorized and listed
+  - Each operation marked with rasmcore status (done/partial/planned/not-planned)
+  - Priority tiers assigned (P0 critical, P1 high, P2 medium, P3 low)
+  - Architecture/performance section covering streaming, SIMD, shrink-on-load
+  - Chainable pipeline API section with design considerations
+  - Document is structured so individual rows can become track specs
+  out_of_scope: '- Implementation of any operations (this is research only)
+
     - Video/audio codec parity (separate domain)
+
     - Creating actual implementation tracks (that comes after review)
-  technical_notes: |
-    The parity matrix should be organized by category with columns for:
+
+    '
+  technical_notes: 'The parity matrix should be organized by category with columns for:
+
     rasmcore status, libvips equivalent, ImageMagick equivalent, priority, notes.
 
+
     Priority tiers:
+
     - P0 (Critical): Operations that block basic adoption (encode formats, ICC)
+
     - P1 (High): Operations most users expect (compositing, edge detect, histogram)
+
     - P2 (Medium): Advanced operations (morphology, FFT, drawing)
+
     - P3 (Low): Niche operations (liquid rescale, charcoal effect)
 
+
     Architecture improvements (streaming, SIMD, pipeline API) get their own
+
     section since they cross-cut all operations.
+
+    '
 plan:
-  - phase: "Format Parity Catalog"
-    tasks:
-      - text: "Catalog all decode formats across libvips, ImageMagick, and rasmcore with read/write status"
-        done: false
-      - text: "Catalog all encode formats with per-format config parameters available in each tool"
-        done: false
-      - text: "Assign priority tiers to format gaps"
-        done: false
-  - phase: "Operation Parity Catalog"
-    tasks:
-      - text: "Catalog all transform/geometric operations across all three tools"
-        done: false
-      - text: "Catalog all filter/effects operations across all three tools"
-        done: false
-      - text: "Catalog color management operations (ICC, color spaces, channel ops)"
-        done: false
-      - text: "Catalog compositing/blending operations"
-        done: false
-      - text: "Catalog drawing operations"
-        done: false
-      - text: "Assign priority tiers to all operation gaps"
-        done: false
-  - phase: "Architecture & Performance"
-    tasks:
-      - text: "Document streaming/pipeline architecture comparison and rasmcore path forward"
-        done: false
-      - text: "Document SIMD, shrink-on-load, and other perf optimization opportunities"
-        done: false
-      - text: "Document chainable pipeline API design considerations for WIT + host SDKs"
-        done: false
-  - phase: "Synthesis"
-    tasks:
-      - text: "Compile full parity matrix document at .agent/kf/_reports/parity-matrix.md"
-        done: false
-      - text: "Write executive summary with recommended implementation order"
-        done: false
+- phase: Format Parity Catalog
+  tasks:
+  - text: Catalog all decode formats across libvips, ImageMagick, and rasmcore with read/write status
+    done: true
+  - text: Catalog all encode formats with per-format config parameters available in each tool
+    done: true
+  - text: Assign priority tiers to format gaps
+    done: true
+- phase: Operation Parity Catalog
+  tasks:
+  - text: Catalog all transform/geometric operations across all three tools
+    done: true
+  - text: Catalog all filter/effects operations across all three tools
+    done: true
+  - text: Catalog color management operations (ICC, color spaces, channel ops)
+    done: true
+  - text: Catalog compositing/blending operations
+    done: true
+  - text: Catalog drawing operations
+    done: true
+  - text: Assign priority tiers to all operation gaps
+    done: true
+- phase: Architecture & Performance
+  tasks:
+  - text: Document streaming/pipeline architecture comparison and rasmcore path forward
+    done: true
+  - text: Document SIMD, shrink-on-load, and other perf optimization opportunities
+    done: true
+  - text: Document chainable pipeline API design considerations for WIT + host SDKs
+    done: true
+- phase: Synthesis
+  tasks:
+  - text: Compile full parity matrix document at .agent/kf/_reports/parity-matrix.md
+    done: true
+  - text: Write executive summary with recommended implementation order
+    done: true
 extra: {}
