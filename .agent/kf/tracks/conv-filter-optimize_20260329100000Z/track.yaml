@@ -1,0 +1,142 @@
+id: conv-filter-optimize_20260329100000Z
+title: Convolution Filter Optimization — Separable Kernels, Histogram Median, SIMD
+type: refactor
+status: pending
+created: 2026-03-29
+updated: "2026-03-29"
+spec:
+  summary: |
+    Replace naive O(n*k^2) scalar loops with production-grade algorithms:
+    separable kernel detection, histogram sliding-window median, WASM SIMD128
+    inner loops, and row-buffer caching.
+  context: |
+    The convolution-filters track implemented correct convolve(), median(),
+    sobel(), and canny() functions using naive approaches:
+    - convolve: triple-nested loop O(W*H*K^2) per channel, reflect() per sample
+    - median: per-pixel sort O(K^2 log K^2), rebuilds window from scratch
+    - sobel: per-pixel 3x3 loop with match-based weight lookup
+    - canny: calls sobel internally (same inefficiency)
+
+    libvips and ImageMagick use significantly faster approaches:
+    - Separable convolution: detect rank-1 kernels, apply as two 1D passes
+    - Huang histogram median: sliding window updates O(1) amortized per pixel
+    - SIMD inner loops: process 4-16 pixels simultaneously
+    - Row caching: avoid re-reading rows that are still in the kernel window
+  codebase_analysis: |
+    Target file: crates/rasmcore-image/src/domain/filters.rs (lines 387-640)
+
+    Existing SIMD patterns in the codebase:
+    - WebP predict.rs: sad_simd128 uses u8x16, i16x8, i32x4 for SAD computation
+    - WebP dct.rs: forward/inverse DCT with v128 intrinsics
+    - blur uses libblur crate which has its own SIMD (separate approach)
+    - All SIMD gated on #[cfg(target_arch = "wasm32")] with std::arch::wasm32::*
+
+    Key functions to optimize:
+    1. convolve() at line 407 — 6-deep nested loop
+    2. median() at line 463 — per-pixel window sort
+    3. sobel() at line 502 — 3x3 with match-based weights
+    4. reflect() at line 450 — called per sample, should be eliminated via padding
+
+    The reflect() function is called millions of times. For interior pixels
+    (not near borders), it's a no-op. The optimization: pad the input with
+    reflected borders, then use unchecked indexing for the main loop.
+  acceptance_criteria:
+    - Separable kernel detection for rank-1 kernels (box blur, gaussian)
+    - Separable convolution path uses two 1D passes instead of 2D
+    - Histogram sliding-window median for radius > 2 (O(1) amortized per pixel)
+    - Sorting-based median retained for radius <= 2 (faster for tiny windows)
+    - Sobel uses direct coefficient access instead of match-based lookup
+    - Input padding eliminates reflect() calls for interior pixels
+    - WASM SIMD128 inner loop for 1D horizontal convolution pass
+    - Performance within 3x of ImageMagick for 3x3 convolve on 4K grayscale
+    - Performance within 5x of ImageMagick for median radius=3 on 4K grayscale
+    - All existing filter tests still pass (correctness preserved)
+    - WASM build succeeds
+  out_of_scope: |
+    - FFT-based convolution (for very large kernels)
+    - Bilateral filter
+    - GPU/compute shader acceleration
+    - Multi-threaded parallelism (WASM is single-threaded)
+  technical_notes: |
+    Optimization 1 — Separable kernel detection:
+    A kernel K is separable if K = col_vec * row_vec (rank 1 matrix).
+    Detection: compute SVD or simply try K[0,j]/K[0,0] == K[i,j]/K[i,0]
+    for all i,j. If separable, apply row_vec horizontally then col_vec
+    vertically — reduces O(K^2) to O(2K) per pixel.
+
+    Implementation: add is_separable(kernel, kw, kh) -> Option<(Vec<f32>, Vec<f32>)>
+    that returns (row_kernel, col_kernel) if separable. Then convolve()
+    checks this first and dispatches to convolve_separable() if possible.
+
+    Optimization 2 — Histogram median (Huang algorithm):
+    Maintain a 256-bin histogram for the current window. When sliding right:
+    - Remove the leftmost column of the old window (subtract from histogram)
+    - Add the rightmost column of the new window (add to histogram)
+    - Find median by scanning histogram from bin 0 until cumulative count
+      reaches window_size/2
+
+    For moving to the next row: reset and rebuild (or use column histograms).
+    This gives O(1) per pixel (amortized) vs O(K^2 log K^2) for sorting.
+
+    Optimization 3 — Input padding:
+    Pad the input image with reflected borders (radius pixels on each side).
+    Then the main convolution loop can use direct indexing without boundary
+    checks. Only the padding setup touches reflect().
+
+    Optimization 4 — Sobel unrolling:
+    Replace the 3x3 loop + match with 6 direct multiplies:
+      gx = -p[y-1][x-1] + p[y-1][x+1] - 2*p[y][x-1] + 2*p[y][x+1]
+           - p[y+1][x-1] + p[y+1][x+1]
+    This eliminates the inner loop, match arms, and reflect() calls entirely.
+
+    Optimization 5 — WASM SIMD128 for horizontal 1D convolution:
+    Process 16 pixels at a time using f32x4 multiply-accumulate:
+    - Load 4 pixels as f32x4
+    - Multiply by kernel coefficient (splatted)
+    - Accumulate across kernel width
+    - Clamp and store as u8x16
+    Gate behind #[cfg(target_arch = "wasm32")].
+
+    Performance validation:
+    Use ImageMagick as reference:
+      magick input.png -convolve '3x3: 0,-1,0,-1,5,-1,0,-1,0' out.png
+      magick input.png -median 3 out.png
+    Compare wall-clock time on a 3840x2160 grayscale image.
+plan:
+  - phase: Input Padding
+    tasks:
+      - text: Add pad_reflect(pixels, w, h, channels, radius) that creates a padded buffer with reflected borders
+        done: false
+      - text: Refactor convolve() to pad input then use direct indexing for interior pixels
+        done: false
+      - text: Refactor sobel() to use padded input, eliminate reflect() calls
+        done: false
+  - phase: Separable Convolution
+    tasks:
+      - text: Implement is_separable(kernel, kw, kh) detection (rank-1 check)
+        done: false
+      - text: Implement convolve_separable() with two 1D passes (horizontal then vertical)
+        done: false
+      - text: Add WASM SIMD128 path for horizontal 1D convolution inner loop
+        done: false
+      - text: Verify box_blur and gaussian kernels detected as separable
+        done: false
+  - phase: Histogram Median
+    tasks:
+      - text: Implement histogram sliding-window median for radius > 2
+        done: false
+      - text: Keep sorting-based path for radius <= 2
+        done: false
+      - text: Verify median output unchanged (same results as before)
+        done: false
+  - phase: Sobel + Verification
+    tasks:
+      - text: Unroll sobel 3x3 loop into direct coefficient access on padded buffer
+        done: false
+      - text: All existing filter tests pass (correctness preserved)
+        done: false
+      - text: Add performance benchmark comparing before/after for 3x3 convolve and median on 1024x1024
+        done: false
+      - text: WASM build succeeds
+        done: false
+extra: {}
