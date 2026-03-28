@@ -102,5 +102,5 @@ plan:
   - text: 'Edge cases: 1x1, RGBA8, quality 1, quality 100'
     done: true
   - text: Verify all existing encoder and pipeline tests pass
-    done: false
+    done: true
 extra: {}
