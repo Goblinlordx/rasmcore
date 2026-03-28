@@ -57,6 +57,20 @@ pub trait TrellisContext {
     /// `position` in context `state`. The encoder signals EOB after the
     /// last non-zero coefficient.
     fn eob_cost(&self, position: usize, state: usize) -> u32;
+
+    /// Generate candidate quantization levels for a coefficient at `position`.
+    ///
+    /// Override this for codec-specific quantization formulas (e.g., VP8's
+    /// bias+iq approach). Default uses generic integer division.
+    fn candidates(
+        &self,
+        original_coeff: i16,
+        quant_step: u16,
+        dequant_step: u16,
+        _position: usize,
+    ) -> Vec<Candidate> {
+        generate_candidates(original_coeff, quant_step, dequant_step)
+    }
 }
 
 /// Configuration for the trellis optimizer.
@@ -70,11 +84,11 @@ pub struct TrellisConfig {
 
 /// A candidate quantization level for a single coefficient position.
 #[derive(Debug, Clone, Copy)]
-struct Candidate {
+pub struct Candidate {
     /// Quantized level.
-    level: i16,
+    pub level: i16,
     /// Distortion (SSD) from choosing this level: (original - dequant(level))^2
-    distortion: i64,
+    pub distortion: i64,
 }
 
 /// Generate candidate quantization levels for a coefficient.
@@ -219,8 +233,12 @@ pub fn trellis_optimize<C: TrellisContext>(
 
     // Forward Viterbi pass
     for pos in 0..block_size {
-        let candidates =
-            generate_candidates(original_coeffs[pos], quant_steps[pos], dequant_steps[pos]);
+        let candidates = ctx.candidates(
+            original_coeffs[pos],
+            quant_steps[pos],
+            dequant_steps[pos],
+            pos,
+        );
         let n_cand = candidates.len();
 
         // Pack candidates into SIMD-friendly arrays

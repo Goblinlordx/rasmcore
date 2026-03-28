@@ -186,18 +186,22 @@ pub fn rdo_prune_block(
 
 // ─── VP8 Trellis Context ─────────────────────────────────────────────────
 
-use rasmcore_trellis::TrellisContext;
+use rasmcore_trellis::{Candidate, TrellisContext};
 
 /// VP8-specific trellis context for the shared trellis engine.
 ///
 /// Maps VP8's 3 coefficient context states (zero/one/large) and 4 block types
 /// to the TrellisContext trait. Uses the same VP8 token probability tables
 /// as `estimate_token_cost` for bit-exact rate estimation.
-pub struct Vp8TrellisContext {
-    pub block_type: u8, // 0=Y-AC, 1=Y2, 2=UV, 3=Y-with-DC
+///
+/// Overrides `candidates()` to use VP8's actual quantization formula:
+/// `level = (|coeff| + bias[i]) * iq[i] >> 16` instead of generic `coeff / step`.
+pub struct Vp8TrellisContext<'a> {
+    pub block_type: u8,
+    pub matrix: &'a QuantMatrix,
 }
 
-impl TrellisContext for Vp8TrellisContext {
+impl TrellisContext for Vp8TrellisContext<'_> {
     const NUM_STATES: usize = 3; // 0=zero/eob, 1=one, 2=large
 
     fn token_cost(&self, level: i16, position: usize, state: usize) -> u32 {
@@ -214,12 +218,59 @@ impl TrellisContext for Vp8TrellisContext {
     }
 
     fn eob_cost(&self, position: usize, state: usize) -> u32 {
-        // EOB is signaled as a zero at the is_nonzero node
-        // Use the next position's band (EOB context uses the position where it appears)
         let band = BANDS[position.min(16)];
         let probs = token::get_coeff_probs(self.block_type as usize, band as usize, state);
-        // Cost of encoding zero (EOB): prob_cost at is_nonzero = false
         prob_cost(probs[0] as u32)
+    }
+
+    fn candidates(
+        &self,
+        original_coeff: i16,
+        _quant_step: u16,
+        _dequant_step: u16,
+        position: usize,
+    ) -> Vec<Candidate> {
+        let mut candidates = Vec::with_capacity(3);
+        let orig = original_coeff as i64;
+
+        // Candidate 0: zero (always an option)
+        candidates.push(Candidate {
+            level: 0,
+            distortion: orig * orig,
+        });
+
+        if original_coeff == 0 {
+            return candidates;
+        }
+
+        let sign: i64 = if orig < 0 { -1 } else { 1 };
+        let abs_c = original_coeff.unsigned_abs() as u32;
+        let m = self.matrix;
+
+        // VP8 round-to-nearest: (|c| + bias) * iq >> 16
+        let rtn = ((abs_c + m.bias[position]) * m.iq[position]) >> 16;
+
+        if rtn > 0 {
+            let level = (sign * rtn as i64) as i16;
+            let recon = level as i64 * m.q[position] as i64;
+            candidates.push(Candidate {
+                level,
+                distortion: (orig - recon) * (orig - recon),
+            });
+        }
+
+        // Round-down: one level less (more aggressive zeroing)
+        if rtn > 1 {
+            let rd = rtn - 1;
+            let level = (sign * rd as i64) as i16;
+            let recon = level as i64 * m.q[position] as i64;
+            candidates.push(Candidate {
+                level,
+                distortion: (orig - recon) * (orig - recon),
+            });
+        }
+
+        candidates
     }
 }
 
@@ -234,30 +285,23 @@ pub fn trellis_optimize_block(
     lambda: f64,
     output: &mut [i16; 16],
 ) -> i32 {
-    let ctx = Vp8TrellisContext { block_type };
-    let config = rasmcore_trellis::TrellisConfig { lambda };
+    let ctx = Vp8TrellisContext { block_type, matrix };
+    // Trellis finds globally optimal zeroing — needs lower lambda than greedy RDO
+    // (the Viterbi search already accounts for context dependencies, so the
+    // per-coefficient rate penalty should be gentler).
+    let config = rasmcore_trellis::TrellisConfig {
+        lambda: lambda * 0.05, // very low: almost pure distortion minimization
+    };
 
-    // Build quant/dequant step arrays from the QuantMatrix
-    let mut quant_steps = [0u16; 16];
-    let mut dequant_steps = [0u16; 16];
+    // quant_steps and dequant_steps are passed to the engine but
+    // our candidates() override uses the QuantMatrix directly.
+    // We still need valid step arrays for the generic fallback.
+    let mut steps = [0u16; 16];
     for i in 0..16 {
-        // VP8 quantization: level = (|coeff| + bias) * iq >> 16
-        // For trellis candidate generation, we need the effective step size.
-        // q[] is the step size for dequantization: dequant = level * q[i]
-        // For quantization: level ≈ coeff / q[i] (approximately)
-        quant_steps[i] = matrix.q[i] as u16;
-        dequant_steps[i] = matrix.q[i] as u16;
+        steps[i] = matrix.q[i] as u16;
     }
 
-    rasmcore_trellis::trellis_optimize(
-        original_coeffs,
-        &quant_steps,
-        &dequant_steps,
-        16,
-        &ctx,
-        &config,
-        output,
-    );
+    rasmcore_trellis::trellis_optimize(original_coeffs, &steps, &steps, 16, &ctx, &config, output);
 
     // Find last non-zero
     let mut last_nz: i32 = -1;
