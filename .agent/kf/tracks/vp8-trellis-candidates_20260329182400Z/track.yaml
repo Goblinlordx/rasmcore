@@ -1,0 +1,92 @@
+id: vp8-trellis-candidates_20260329182400Z
+title: VP8 Trellis Candidate Fix — Codec-Aware Quantize + Wire Integration
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Fix the trellis candidate generation to use VP8's actual quantization formula
+    ((|c| + bias) * iq >> 16) instead of the generic (c / step). Then wire
+    trellis_optimize into encode_macroblock, completing the trellis-webp track.
+  context: |
+    The trellis-webp track implemented Vp8TrellisContext (rate estimation) but
+    the integration failed because rasmcore-trellis::generate_candidates uses
+    generic integer division (coeff / quant_step) which doesn't match VP8's
+    quantization formula. VP8 uses: level = (|coeff| + bias[i]) * iq[i] >> 16
+    with per-position bias and inverse-quantizer tables. The mismatch caused
+    quality to DROP from 19dB to 14dB on photo content when trellis was wired in.
+  codebase_analysis: |
+    rasmcore-trellis/src/lib.rs generate_candidates():
+      - Uses round_down = abs_orig / q, round_up = round_down + 1
+      - Distortion = (orig - level * dq)^2
+      - This produces WRONG candidates for VP8 (different levels than quantize_block)
+
+    rasmcore-webp/src/quant.rs:
+      - QuantMatrix has iq[] (inverse quantizer), bias[] (rounding bias), q[] (step)
+      - quantize_block: level = (|c| + bias[i]) * iq[i] >> 16
+      - dequantize_block: recon = level * q[i]
+      - The bias is ~half the step size, tuned per VP8 spec
+
+    rasmcore-trellis needs either:
+      a) A codec-specific candidate generation callback, OR
+      b) Accept pre-generated candidates as input
+
+    Option (a) is cleaner: add a CandidateGenerator trait or closure parameter.
+  acceptance_criteria:
+    - Trellis candidates match VP8 quantize_block output for round-to-nearest
+    - Trellis produces equal or better quality than greedy rdo_prune_block
+    - Quality ratio vs cwebp >= 0.65 for gradient Q75 (at least matches greedy RDO)
+    - Photo content PSNR does not regress from pre-trellis baseline
+    - All existing WebP tests pass
+    - File sizes reasonable (within 2x of cwebp)
+  out_of_scope: |
+    Trellis-aware intra mode selection. Adaptive lambda per macroblock.
+    SIMD optimization of trellis inner loop.
+  technical_notes: |
+    Approach: add a generate_candidates closure parameter to trellis_optimize
+    so the codec controls candidate level generation.
+
+    VP8 candidate generator:
+      fn vp8_candidates(orig: i16, matrix: &QuantMatrix, pos: usize) -> Vec<Candidate> {
+          let abs_c = orig.unsigned_abs() as u32;
+          let sign = if orig < 0 { -1 } else { 1 };
+          // Round-to-nearest (same as quantize_block)
+          let level_rtn = ((abs_c + matrix.bias[pos]) * matrix.iq[pos]) >> 16;
+          // Dequantized reconstruction
+          let recon_rtn = level_rtn as i32 * matrix.q[pos] as i32;
+          candidates.push(Candidate { level: sign * level_rtn, distortion: (orig - recon)^2 });
+          // Round-down (one less)
+          if level_rtn > 1: push level_rtn - 1
+          // Zero
+          push zero candidate
+      }
+
+    Then wire trellis_optimize with the VP8 candidate generator into
+    encode_macroblock, replacing all 4 rdo_prune_block call sites.
+plan:
+  - phase: Candidate Generation
+    tasks:
+      - text: Add candidate generator callback to trellis_optimize (closure or trait)
+        done: false
+      - text: Implement vp8_generate_candidates using QuantMatrix bias/iq fields
+        done: false
+      - text: Unit test that VP8 candidates include the quantize_block round-to-nearest level
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Wire trellis_optimize with VP8 candidates into all 4 encode_macroblock call sites
+        done: false
+      - text: Verify trellis output decodes correctly (image-webp can decode our output)
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Quality does not regress vs greedy RDO baseline on gradient content
+        done: false
+      - text: Photo content PSNR at least matches pre-trellis baseline
+        done: false
+      - text: All parity tests pass
+        done: false
+      - text: File sizes within 2x of cwebp
+        done: false
+extra: {}
