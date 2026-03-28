@@ -85,13 +85,20 @@ pub struct CtuSyntax {
 /// Parse slice header from RBSP data (for I-slices).
 ///
 /// ITU-T H.265 Section 7.3.6.1.
-pub fn parse_slice_header(rbsp: &[u8], sps: &Sps, pps: &Pps) -> Result<SliceHeader, HevcError> {
+pub fn parse_slice_header(
+    rbsp: &[u8],
+    sps: &Sps,
+    pps: &Pps,
+    nal_unit_type: crate::types::NalUnitType,
+) -> Result<SliceHeader, HevcError> {
     let mut r = HevcBitReader::new(rbsp);
 
     let first_slice_segment_in_pic = r.read_flag()?;
 
-    // nal_unit_type was already parsed — skip rap_pic_flag handling
-    // For I-frames, no_output_of_prior_pics_flag is not present
+    // no_output_of_prior_pics_flag — present for IRAP (BLA, IDR, CRA)
+    if nal_unit_type.is_irap() {
+        let _no_output_of_prior_pics_flag = r.read_flag()?;
+    }
 
     let slice_pic_parameter_set_id = r.read_ue()? as u8;
 
@@ -169,9 +176,14 @@ pub fn parse_slice_header(rbsp: &[u8], sps: &Sps, pps: &Pps) -> Result<SliceHead
         false
     };
 
-    // Record data offset for CABAC initialization
-    // This is approximate — in a real decoder we'd track the exact bit position
-    let data_offset = 0; // Will be set by caller based on NAL structure
+    // byte_alignment() — HEVC spec Section 7.3.2.11
+    // Read alignment_bit_equal_to_one (1) then alignment_bit_equal_to_zero (0..7)
+    // This aligns to the next byte boundary where CABAC data starts.
+    let _alignment_bit = r.read_flag()?; // should be 1
+    r.align_to_byte();
+
+    // Record the exact byte position where CABAC slice data begins
+    let data_offset = r.byte_position();
 
     Ok(SliceHeader {
         first_slice_segment_in_pic,

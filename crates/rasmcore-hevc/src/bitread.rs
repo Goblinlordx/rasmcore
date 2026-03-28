@@ -95,6 +95,22 @@ impl<'a> HevcBitReader<'a> {
     pub fn inner_mut(&mut self) -> &mut BitReader<'a> {
         &mut self.inner
     }
+
+    /// Get the number of bits read so far.
+    pub fn bits_read(&self) -> u64 {
+        self.inner.bits_read()
+    }
+
+    /// Get the byte-aligned position (rounds up to next byte boundary).
+    /// This is the byte offset where CABAC data starts after the slice header.
+    pub fn byte_position(&self) -> usize {
+        self.inner.bits_read().div_ceil(8) as usize
+    }
+
+    /// Align to the next byte boundary (skip remaining bits in current byte).
+    pub fn align_to_byte(&mut self) {
+        self.inner.align_to_byte();
+    }
 }
 
 #[cfg(test)]

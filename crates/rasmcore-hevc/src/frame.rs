@@ -86,6 +86,7 @@ pub fn decode_frame(
 
     // Parse in-band NAL units
     let mut slice_rbsp: Option<Vec<u8>> = None;
+    let mut slice_nal_type = NalUnitType::IdrWRadl;
 
     for nal_data in NalIterator::new(bitstream) {
         let nal_unit = nal::parse_nal_unit(nal_data)?;
@@ -112,6 +113,7 @@ pub fn decode_frame(
                 }
             }
             nt if nt.is_vcl() => {
+                slice_nal_type = nt;
                 slice_rbsp = Some(nal_unit.rbsp);
             }
             _ => {} // Skip SEI, AUD, etc.
@@ -138,8 +140,8 @@ pub fn decode_frame(
         .ok_or(HevcError::InvalidParameterSet("no PPS found".into()))?
         .clone();
 
-    // Parse slice header
-    let _slice_header = syntax::parse_slice_header(&rbsp, &sps, &pps)?;
+    // Parse slice header (needs NAL unit type to handle IDR vs non-IDR conditionals)
+    let _slice_header = syntax::parse_slice_header(&rbsp, &sps, &pps, slice_nal_type)?;
 
     // Initialize frame buffer
     let mut fb = FrameBuffer::new(sps.pic_width, sps.pic_height);
@@ -147,14 +149,14 @@ pub fn decode_frame(
     // Compute slice QP
     let slice_qp = pps.init_qp + _slice_header.slice_qp_delta;
 
-    // Initialize CABAC decoder on slice data
-    // The slice data starts after the slice header — for simplicity, we skip
-    // a fixed offset. A real decoder would track the exact bit position.
-    let cabac_start = find_slice_data_start(&rbsp);
+    // CABAC data starts at the byte-aligned position after the slice header.
+    // parse_slice_header tracks the exact bit position and aligns to byte boundary.
+    let cabac_start = _slice_header.data_offset;
     if cabac_start >= rbsp.len() {
-        return Err(HevcError::DecodeFailed(
-            "slice data start beyond RBSP length".into(),
-        ));
+        return Err(HevcError::DecodeFailed(format!(
+            "slice data offset ({cabac_start}) beyond RBSP length ({})",
+            rbsp.len()
+        )));
     }
 
     let mut cabac = CabacDecoder::new(&rbsp[cabac_start..])?;
@@ -342,21 +344,6 @@ fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32) {
     }
 
     let _ = ctu_size;
-}
-
-/// Find approximate start of slice data (CABAC) in the RBSP.
-///
-/// Heuristic: skip past the slice header by finding the byte alignment point
-/// after the header fields. A real decoder would track exact bit position.
-fn find_slice_data_start(rbsp: &[u8]) -> usize {
-    // Simplified: assume slice header is relatively short for I-frames
-    // In practice this needs to come from the slice header parser's bit position
-    // For now, scan for the first byte after what looks like header data
-    // A common heuristic: the header is typically 3-20 bytes for simple I-slices
-    // Use a simple heuristic: skip first few bytes as header
-    // The actual offset should come from HevcBitReader's position after slice header parsing
-    let min_header = 3;
-    min_header.min(rbsp.len())
 }
 
 #[cfg(test)]

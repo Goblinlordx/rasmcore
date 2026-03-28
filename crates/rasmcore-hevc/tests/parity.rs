@@ -7,11 +7,8 @@
 //! Run `tests/fixtures/hevc/generate.sh` to generate fixtures.
 //!
 //! ## Test categories:
-//! - **Metadata tests** (always run): verify SPS parsing, fixture sizes
-//! - **Pixel parity tests** (#[ignore]): full decode + pixel comparison
-//!   These are ignored by default because the CABAC slice data offset
-//!   heuristic in frame.rs is approximate and causes decode failures.
-//!   Run with `cargo test --ignored` to execute them.
+//! - **Metadata tests**: verify SPS parsing, NAL structure, fixture sizes
+//! - **Pixel parity tests**: full decode + pixel comparison against ffmpeg reference
 
 use rasmcore_hevc::testutil::{
     TEST_CASES, compare_pixels, fixtures_available, load_fixture, load_reference_rgb,
@@ -24,19 +21,10 @@ fn decode_test_case(case: &str) -> Result<rasmcore_hevc::DecodedFrame, rasmcore_
     rasmcore_hevc::decode(&hevc_data, &[])
 }
 
-// ─── Pixel Parity Tests (require working CABAC decode) ─────────────────────
-//
-// These are #[ignore] because the CABAC slice data offset heuristic
-// (frame.rs find_slice_data_start) is approximate. The slice header parser
-// doesn't yet track its exact bit position, so CABAC initialization starts
-// at the wrong byte, causing decode failures.
-//
-// To run: cargo test -p rasmcore-hevc --test parity -- --ignored
-// Once the CABAC offset is fixed, remove #[ignore] and these become
-// hard regression tests.
+// ─── Pixel Parity Tests ────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "CABAC slice data offset heuristic causes decode failure — fix find_slice_data_start"]
+
 fn parity_flat_64x64_q22_pixels() {
     if !fixtures_available() {
         return;
@@ -67,7 +55,7 @@ fn parity_flat_64x64_q22_pixels() {
 }
 
 #[test]
-#[ignore = "CABAC slice data offset heuristic causes decode failure — fix find_slice_data_start"]
+
 fn parity_flat_64x64_q37_pixels() {
     if !fixtures_available() {
         return;
@@ -91,7 +79,7 @@ fn parity_flat_64x64_q37_pixels() {
 }
 
 #[test]
-#[ignore = "CABAC slice data offset heuristic causes decode failure — fix find_slice_data_start"]
+
 fn parity_gradient_128x128_q22_pixels() {
     if !fixtures_available() {
         return;
@@ -113,7 +101,7 @@ fn parity_gradient_128x128_q22_pixels() {
 }
 
 #[test]
-#[ignore = "CABAC slice data offset heuristic causes decode failure — fix find_slice_data_start"]
+
 fn parity_checker_256x256_q22_pixels() {
     if !fixtures_available() {
         return;
@@ -135,7 +123,7 @@ fn parity_checker_256x256_q22_pixels() {
 }
 
 #[test]
-#[ignore = "CABAC slice data offset heuristic causes decode failure — fix find_slice_data_start"]
+
 fn parity_all_cases_decode() {
     if !fixtures_available() {
         return;

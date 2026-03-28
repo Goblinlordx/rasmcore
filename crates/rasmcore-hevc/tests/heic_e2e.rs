@@ -195,7 +195,7 @@ fn heif_ftyp_detection_all_brands() {
 }
 
 #[test]
-#[ignore = "CABAC slice data offset heuristic — decode_frame may fail"]
+
 fn heif_end_to_end_decode() {
     if !fixtures_available() {
         return;
