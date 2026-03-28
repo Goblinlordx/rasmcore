@@ -34,42 +34,42 @@ spec:
     a chicken-and-egg problem solved by: first pass with standard tables for trellis, then recount with trellis results, then
     final encode.'
 plan:
-  - phase: Foundation
-    tasks:
-      - text: Add frequency counting data structure - per-table symbol frequency arrays (DC luma/chroma, AC luma/chroma)
-        done: false
-      - text: Implement first-pass quantization loop that counts symbol frequencies without emitting bits
-        done: false
-      - text: Verify frequency counting matches actual encoding symbol distribution
-        done: false
-  - phase: Huffman Tree Generation
-    tasks:
-      - text: Implement optimal Huffman code generation from frequency tables (code-length-limited to 16 bits per JPEG spec)
-        done: false
-      - text: Generate BITS and HUFFVAL arrays from the optimal tree for DHT marker writing
-        done: false
-      - text: Add DHT marker writer that emits custom tables instead of standard Annex K
-        done: false
-      - text: Unit test - verify generated tables produce valid JPEG-compliant DHT markers
-        done: false
-  - phase: Two-Pass Encoder Integration
-    tasks:
-      - text: Wire optimize_huffman flag in EncodeConfig to trigger two-pass path
-        done: false
-      - text: Implement two-pass encode - first pass counts frequencies, second pass encodes with optimal tables
-        done: false
-      - text: Ensure trellis quantization results from first pass are reused in second pass (no re-quantization)
-        done: false
-      - text: Handle progressive mode - count frequencies across all scans, generate tables, re-encode all scans
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Add parity test - optimized Huffman output decodable by image crate
-        done: false
-      - text: Measure file size savings vs standard tables across quality levels and content types
-        done: false
-      - text: Verify PSNR is identical (same coefficients, different entropy coding)
-        done: false
-      - text: Run full existing test suite to verify no regressions
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Add frequency counting data structure - per-table symbol frequency arrays (DC luma/chroma, AC luma/chroma)
+    done: true
+  - text: Implement first-pass quantization loop that counts symbol frequencies without emitting bits
+    done: true
+  - text: Verify frequency counting matches actual encoding symbol distribution
+    done: true
+- phase: Huffman Tree Generation
+  tasks:
+  - text: Implement optimal Huffman code generation from frequency tables (code-length-limited to 16 bits per JPEG spec)
+    done: true
+  - text: Generate BITS and HUFFVAL arrays from the optimal tree for DHT marker writing
+    done: true
+  - text: Add DHT marker writer that emits custom tables instead of standard Annex K
+    done: true
+  - text: Unit test - verify generated tables produce valid JPEG-compliant DHT markers
+    done: true
+- phase: Two-Pass Encoder Integration
+  tasks:
+  - text: Wire optimize_huffman flag in EncodeConfig to trigger two-pass path
+    done: true
+  - text: Implement two-pass encode - first pass counts frequencies, second pass encodes with optimal tables
+    done: true
+  - text: Ensure trellis quantization results from first pass are reused in second pass (no re-quantization)
+    done: true
+  - text: Handle progressive mode - count frequencies across all scans, generate tables, re-encode all scans
+    done: true
+- phase: Verification
+  tasks:
+  - text: Add parity test - optimized Huffman output decodable by image crate
+    done: true
+  - text: Measure file size savings vs standard tables across quality levels and content types
+    done: true
+  - text: Verify PSNR is identical (same coefficients, different entropy coding)
+    done: true
+  - text: Run full existing test suite to verify no regressions
+    done: true
 extra: {}
