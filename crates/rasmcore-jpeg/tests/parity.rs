@@ -929,12 +929,21 @@ fn encode_and_measure(
 fn trellis_quality_sweep_256() {
     let (w, h) = (256, 256);
     let original = gradient_pixels(w, h);
+    let has_magick = magick_available();
 
     eprintln!("\n=== JPEG Trellis Quality Sweep (256x256 gradient) ===");
-    eprintln!(
-        "{:<6} {:>10} {:>10} {:>8} {:>10}",
-        "Q", "NoTrellis", "Trellis", "Savings", "PSNR_diff"
-    );
+    if has_magick {
+        eprintln!(
+            "{:<6} {:>10} {:>10} {:>10} {:>8} {:>12} {:>12}",
+            "Q", "NoTrellis", "Trellis", "Magick", "Savings", "vs_Magick_sz", "vs_Magick_q"
+        );
+    } else {
+        eprintln!(
+            "{:<6} {:>10} {:>10} {:>8} {:>10}",
+            "Q", "NoTrellis", "Trellis", "Savings", "PSNR_diff"
+        );
+        eprintln!("  (ImageMagick not available — skipping reference comparison)");
+    }
 
     for quality in [25, 50, 75, 85, 95] {
         let config_base = rasmcore_jpeg::EncodeConfig {
@@ -954,10 +963,40 @@ fn trellis_quality_sweep_256() {
         let savings_pct = (1.0 - size_trellis as f64 / size_base as f64) * 100.0;
         let psnr_diff = psnr_trellis - psnr_base;
 
-        eprintln!(
-            "Q{:<5} {:>10} {:>10} {:>7.1}% {:>+9.2}dB",
-            quality, size_base, size_trellis, savings_pct, psnr_diff
-        );
+        // Reference comparison against ImageMagick
+        if has_magick {
+            if let Some(magick_jpeg) = magick_encode(&original, w, h, quality as u32, &[]) {
+                let magick_decoded =
+                    image::load_from_memory_with_format(&magick_jpeg, image::ImageFormat::Jpeg)
+                        .unwrap()
+                        .to_rgb8();
+                let magick_psnr = psnr(&original, magick_decoded.as_raw());
+                let magick_size = magick_jpeg.len();
+                let size_ratio = size_trellis as f64 / magick_size as f64;
+                let quality_ratio = psnr_trellis / magick_psnr;
+
+                eprintln!(
+                    "Q{:<5} {:>10} {:>10} {:>10} {:>7.1}% {:>11.2}x {:>11.2}x",
+                    quality,
+                    size_base,
+                    size_trellis,
+                    magick_size,
+                    savings_pct,
+                    size_ratio,
+                    quality_ratio
+                );
+            } else {
+                eprintln!(
+                    "Q{:<5} {:>10} {:>10} {:>10} {:>7.1}% {:>12} {:>12}",
+                    quality, size_base, size_trellis, "N/A", savings_pct, "N/A", "N/A"
+                );
+            }
+        } else {
+            eprintln!(
+                "Q{:<5} {:>10} {:>10} {:>7.1}% {:>+9.2}dB",
+                quality, size_base, size_trellis, savings_pct, psnr_diff
+            );
+        }
 
         // Trellis should produce smaller or equal files
         assert!(
@@ -965,13 +1004,68 @@ fn trellis_quality_sweep_256() {
             "Q{quality}: trellis ({size_trellis}) should not be much larger than base ({size_base})"
         );
 
-        // PSNR should not degrade significantly (within 0.5dB)
+        // PSNR should not degrade more than 3.5dB
         assert!(
             psnr_diff > -3.5,
             "Q{quality}: trellis PSNR ({psnr_trellis:.1}dB) too far below base ({psnr_base:.1}dB)"
         );
+    }
+}
 
-        // Both must be decodable (already verified by encode_and_measure)
+/// Compare our trellis output directly against ImageMagick across multiple patterns.
+#[test]
+fn trellis_vs_magick_reference() {
+    if !magick_available() {
+        eprintln!("SKIP: ImageMagick not available for reference comparison");
+        return;
+    }
+
+    let patterns: Vec<(&str, Vec<u8>, u32, u32)> = vec![
+        ("gradient_256", gradient_pixels(256, 256), 256, 256),
+        ("checker_128", checkerboard_pixels(128, 128, 8), 128, 128),
+        ("gradient_64", gradient_pixels(64, 64), 64, 64),
+    ];
+
+    eprintln!("\n=== Trellis vs ImageMagick Reference (Q85) ===");
+    eprintln!(
+        "{:<20} {:>10} {:>10} {:>10} {:>10} {:>12}",
+        "Pattern", "Ours_sz", "Magick_sz", "Size_ratio", "Ours_dB", "Quality_ratio"
+    );
+
+    for (name, original, w, h) in &patterns {
+        let config = rasmcore_jpeg::EncodeConfig {
+            quality: 85,
+            trellis: true,
+            optimize_huffman: true,
+            ..Default::default()
+        };
+        let (_, our_psnr, our_size) = encode_and_measure(original, *w, *h, &config);
+
+        if let Some(magick_jpeg) = magick_encode(original, *w, *h, 85, &[]) {
+            let magick_decoded =
+                image::load_from_memory_with_format(&magick_jpeg, image::ImageFormat::Jpeg)
+                    .unwrap()
+                    .to_rgb8();
+            let magick_psnr = psnr(original, magick_decoded.as_raw());
+            let magick_size = magick_jpeg.len();
+            let size_ratio = our_size as f64 / magick_size as f64;
+            let quality_ratio = if magick_psnr.is_infinite() {
+                1.0
+            } else {
+                our_psnr / magick_psnr
+            };
+
+            eprintln!(
+                "{:<20} {:>10} {:>10} {:>9.2}x {:>9.1}dB {:>11.2}x",
+                name, our_size, magick_size, size_ratio, our_psnr, quality_ratio
+            );
+
+            // Our trellis should achieve at least 85% of ImageMagick quality
+            assert!(
+                quality_ratio > 0.85 || our_psnr > 35.0,
+                "{name}: quality ratio {quality_ratio:.2} below 0.85"
+            );
+        }
     }
 }
 
