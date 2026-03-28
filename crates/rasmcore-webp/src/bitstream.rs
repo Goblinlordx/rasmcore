@@ -12,6 +12,7 @@ use crate::filter;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};
 use crate::ratecontrol::EncodeParams;
+use crate::segment::{self, SegmentMap};
 use crate::tables;
 use crate::token;
 use rasmcore_color::YuvImage;
@@ -23,7 +24,6 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let width = yuv.width;
     let height = yuv.height;
     let (mb_w, mb_h) = block::mb_dimensions(width, height);
-    let seg_quant = quant::build_segment_quant(params.qp_y);
 
     // Pad YUV planes to macroblock boundaries
     let padded_w = mb_w as usize * 16;
@@ -35,6 +35,15 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let uv_h = (height as usize).div_ceil(2);
     let u_padded = pad_plane(&yuv.u, uv_w, uv_h, uv_pad_w, uv_pad_h);
     let v_padded = pad_plane(&yuv.v, uv_w, uv_h, uv_pad_w, uv_pad_h);
+
+    // Compute per-MB segment map (adaptive QP via activity analysis)
+    let seg_map = segment::compute_segment_map(
+        &y_padded,
+        padded_w,
+        mb_w as usize,
+        mb_h as usize,
+        params.qp_y,
+    );
 
     // Encode all macroblocks — collect modes and token data
     let mut mb_infos = Vec::with_capacity((mb_w * mb_h) as usize);
@@ -53,7 +62,10 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     for mb_row in 0..mb_h as usize {
         left_ctx = [0u8; 9]; // reset left context at start of each row
         for mb_col in 0..mb_w as usize {
-            let mb = encode_macroblock(
+            let seg_id = seg_map.get(mb_col, mb_row);
+            let seg_quant = seg_map.quant(seg_id);
+
+            let mut mb = encode_macroblock(
                 &y_padded,
                 &u_padded,
                 &v_padded,
@@ -64,11 +76,12 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 uv_pad_w,
                 mb_col,
                 mb_row,
-                &seg_quant,
+                seg_quant,
                 &mut token_writer,
                 &mut top_ctx[mb_col],
                 &mut left_ctx,
             );
+            mb.segment = seg_id;
             mb_infos.push(mb);
 
             // Update reconstructed planes (for next macroblock's prediction)
@@ -83,7 +96,7 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 &y_padded,
                 &u_padded,
                 &v_padded,
-                &seg_quant,
+                seg_quant,
                 mb_infos.last().unwrap(),
             );
         }
@@ -115,8 +128,8 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
             params.filter_type,
         );
     }
-    // Build first partition (macroblock modes)
-    let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, params);
+    // Build first partition (macroblock modes + segmentation header)
+    let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, params, &seg_map);
 
     // Assemble frame
     assemble_frame(width, height, &first_partition, &token_data)
@@ -168,6 +181,7 @@ fn encode_first_partition(
     _mb_w: u32,
     _mb_h: u32,
     params: &EncodeParams,
+    seg_map: &SegmentMap,
 ) -> Vec<u8> {
     let mut bw = BoolWriter::with_capacity(1024);
 
@@ -175,8 +189,44 @@ fn encode_first_partition(
     bw.put_bit(128, false); // color_space = 0 (YUV)
     bw.put_bit(128, false); // clamping_type = 0
 
-    // Segmentation (RFC 6386 Section 9.3) — disabled
-    bw.put_bit(128, false); // segmentation_enabled = false
+    // Segmentation (RFC 6386 Section 9.3)
+    if seg_map.enabled {
+        bw.put_bit(128, true); // segmentation_enabled = true
+
+        // segment_update_map = true (we're sending the full segment map)
+        bw.put_bit(128, true);
+        // segment_update_data = true (we're sending QP deltas)
+        bw.put_bit(128, true);
+
+        // segment_feature_mode: 0 = delta mode (deltas from base QP)
+        bw.put_bit(128, false);
+
+        // Per-segment quantizer deltas (4 segments)
+        for i in 0..segment::NUM_SEGMENTS {
+            let delta = seg_map.qp_deltas[i];
+            if delta != 0 {
+                bw.put_bit(128, true); // quantizer_update = true
+                bw.put_literal(7, delta.unsigned_abs() as u32);
+                bw.put_bit(128, delta < 0); // sign bit: true = negative
+            } else {
+                bw.put_bit(128, false); // quantizer_update = false
+            }
+        }
+
+        // Per-segment loop filter deltas (4 segments) — all zero
+        for _ in 0..segment::NUM_SEGMENTS {
+            bw.put_bit(128, false); // lf_update = false
+        }
+
+        // Segment map probabilities (3 tree probs for 4-way classification)
+        // Use uniform probability (128) for all tree nodes
+        for _ in 0..3 {
+            bw.put_bit(128, true); // prob_present = true
+            bw.put_literal(8, 128); // uniform probability
+        }
+    } else {
+        bw.put_bit(128, false); // segmentation_enabled = false
+    }
 
     // Loop filter (RFC 6386 Section 9.4)
     bw.put_bit(128, params.filter_type == crate::filter::FilterType::Simple); // filter_type: false=normal, true=simple
@@ -226,6 +276,17 @@ fn encode_first_partition(
     for mb in mb_infos {
         if mb.mb_x == 0 {
             left_bmode_ctx = [0u8; 4]; // Reset at row start
+        }
+
+        // Encode segment ID when segmentation is enabled (RFC 6386 Section 10.2)
+        if seg_map.enabled {
+            let seg = mb.segment;
+            bw.put_bit(128, seg >= 2); // tree node 0: {0,1} vs {2,3}
+            if seg >= 2 {
+                bw.put_bit(128, seg == 3); // tree node 2
+            } else {
+                bw.put_bit(128, seg == 1); // tree node 1
+            }
         }
 
         encode_mb_header(

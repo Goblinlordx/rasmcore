@@ -37,6 +37,7 @@ pub mod container;
 pub mod error;
 pub mod filter;
 pub mod ratecontrol;
+pub mod segment;
 pub mod token;
 
 // Re-export public API
