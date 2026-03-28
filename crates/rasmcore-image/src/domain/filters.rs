@@ -70,13 +70,61 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
     // Blur with a small radius for the unsharp mask
     let blurred = blur(pixels, info, 1.0)?;
 
-    let mut result = Vec::with_capacity(pixels.len());
-    for i in 0..pixels.len() {
-        let orig = pixels[i] as f32;
-        let blur_val = blurred[i] as f32;
-        let sharp = orig + amount * (orig - blur_val);
-        result.push(sharp.clamp(0.0, 255.0) as u8);
+    let mut result = vec![0u8; pixels.len()];
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+        let amount_vec = f32x4_splat(amount);
+        let zero = f32x4_splat(0.0);
+        let max_val = f32x4_splat(255.0);
+        let len = pixels.len();
+        let chunks = len / 4;
+
+        for i in 0..chunks {
+            let base = i * 4;
+            // Load 4 bytes, widen to f32x4
+            let orig = f32x4(
+                pixels[base] as f32,
+                pixels[base + 1] as f32,
+                pixels[base + 2] as f32,
+                pixels[base + 3] as f32,
+            );
+            let blur_v = f32x4(
+                blurred[base] as f32,
+                blurred[base + 1] as f32,
+                blurred[base + 2] as f32,
+                blurred[base + 3] as f32,
+            );
+            let diff = f32x4_sub(orig, blur_v);
+            let scaled = f32x4_mul(diff, amount_vec);
+            let sharp = f32x4_add(orig, scaled);
+            let clamped = f32x4_max(zero, f32x4_min(max_val, sharp));
+
+            result[base] = f32x4_extract_lane::<0>(clamped) as u8;
+            result[base + 1] = f32x4_extract_lane::<1>(clamped) as u8;
+            result[base + 2] = f32x4_extract_lane::<2>(clamped) as u8;
+            result[base + 3] = f32x4_extract_lane::<3>(clamped) as u8;
+        }
+        // Remainder
+        for i in chunks * 4..len {
+            let orig = pixels[i] as f32;
+            let blur_val = blurred[i] as f32;
+            let sharp = orig + amount * (orig - blur_val);
+            result[i] = sharp.clamp(0.0, 255.0) as u8;
+        }
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for i in 0..pixels.len() {
+            let orig = pixels[i] as f32;
+            let blur_val = blurred[i] as f32;
+            let sharp = orig + amount * (orig - blur_val);
+            result[i] = sharp.clamp(0.0, 255.0) as u8;
+        }
+    }
+
     Ok(result)
 }
 
@@ -357,28 +405,136 @@ fn convolve_separable(
 
     // Pass 1: horizontal convolution → intermediate f32 buffer
     let mut tmp = vec![0.0f32; ph * w * channels];
-    for y in 0..ph {
-        for x in 0..w {
-            for c in 0..channels {
-                let mut sum = 0.0f32;
-                for kx in 0..row_k.len() {
-                    sum += row_k[kx] * padded[(y * pw + x + pad - rw + kx) * channels + c] as f32;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+        // Process 4 output values at a time with f32x4
+        let total_out = ph * w * channels;
+        let simd_chunks = total_out / 4;
+
+        for chunk in 0..simd_chunks {
+            let out_base = chunk * 4;
+            // Determine y, x, c for each of the 4 outputs
+            // Since channels is typically 1, 3, or 4, batch across x*channels
+            let mut accum = f32x4_splat(0.0);
+
+            for kx in 0..row_k.len() {
+                let k_val = f32x4_splat(row_k[kx]);
+                // Compute source indices for each of the 4 outputs
+                let mut vals = [0.0f32; 4];
+                for lane in 0..4 {
+                    let idx = out_base + lane;
+                    let y = idx / (w * channels);
+                    let rem = idx % (w * channels);
+                    let x = rem / channels;
+                    let c = rem % channels;
+                    let src_idx = (y * pw + x + pad - rw + kx) * channels + c;
+                    vals[lane] = padded[src_idx] as f32;
                 }
-                tmp[(y * w + x) * channels + c] = sum;
+                let src_vec = f32x4(vals[0], vals[1], vals[2], vals[3]);
+                accum = f32x4_add(accum, f32x4_mul(k_val, src_vec));
+            }
+
+            tmp[out_base] = f32x4_extract_lane::<0>(accum);
+            tmp[out_base + 1] = f32x4_extract_lane::<1>(accum);
+            tmp[out_base + 2] = f32x4_extract_lane::<2>(accum);
+            tmp[out_base + 3] = f32x4_extract_lane::<3>(accum);
+        }
+        // Remainder
+        for idx in simd_chunks * 4..total_out {
+            let y = idx / (w * channels);
+            let rem = idx % (w * channels);
+            let x = rem / channels;
+            let c = rem % channels;
+            let mut sum = 0.0f32;
+            for kx in 0..row_k.len() {
+                sum += row_k[kx] * padded[(y * pw + x + pad - rw + kx) * channels + c] as f32;
+            }
+            tmp[idx] = sum;
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..ph {
+            for x in 0..w {
+                for c in 0..channels {
+                    let mut sum = 0.0f32;
+                    for kx in 0..row_k.len() {
+                        sum +=
+                            row_k[kx] * padded[(y * pw + x + pad - rw + kx) * channels + c] as f32;
+                    }
+                    tmp[(y * w + x) * channels + c] = sum;
+                }
             }
         }
     }
 
     // Pass 2: vertical convolution on intermediate buffer
     let mut out = vec![0u8; w * h * channels];
-    for y in 0..h {
-        for x in 0..w {
-            for c in 0..channels {
-                let mut sum = 0.0f32;
-                for ky in 0..col_k.len() {
-                    sum += col_k[ky] * tmp[((y + pad - rh + ky) * w + x) * channels + c];
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+        let inv_div_vec = f32x4_splat(inv_div);
+        let zero = f32x4_splat(0.0);
+        let max_val = f32x4_splat(255.0);
+        let total_out = w * h * channels;
+        let simd_chunks = total_out / 4;
+
+        for chunk in 0..simd_chunks {
+            let out_base = chunk * 4;
+            let mut accum = f32x4_splat(0.0);
+
+            for ky in 0..col_k.len() {
+                let k_val = f32x4_splat(col_k[ky]);
+                let mut vals = [0.0f32; 4];
+                for lane in 0..4 {
+                    let idx = out_base + lane;
+                    let y = idx / (w * channels);
+                    let rem = idx % (w * channels);
+                    let x = rem / channels;
+                    let c = rem % channels;
+                    let src_idx = ((y + pad - rh + ky) * w + x) * channels + c;
+                    vals[lane] = tmp[src_idx];
                 }
-                out[(y * w + x) * channels + c] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+                let src_vec = f32x4(vals[0], vals[1], vals[2], vals[3]);
+                accum = f32x4_add(accum, f32x4_mul(k_val, src_vec));
+            }
+
+            let scaled = f32x4_mul(accum, inv_div_vec);
+            let clamped = f32x4_max(zero, f32x4_min(max_val, scaled));
+            out[out_base] = f32x4_extract_lane::<0>(clamped) as u8;
+            out[out_base + 1] = f32x4_extract_lane::<1>(clamped) as u8;
+            out[out_base + 2] = f32x4_extract_lane::<2>(clamped) as u8;
+            out[out_base + 3] = f32x4_extract_lane::<3>(clamped) as u8;
+        }
+        // Remainder
+        for idx in simd_chunks * 4..total_out {
+            let y = idx / (w * channels);
+            let rem = idx % (w * channels);
+            let x = rem / channels;
+            let c = rem % channels;
+            let mut sum = 0.0f32;
+            for ky in 0..col_k.len() {
+                sum += col_k[ky] * tmp[((y + pad - rh + ky) * w + x) * channels + c];
+            }
+            out[idx] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..h {
+            for x in 0..w {
+                for c in 0..channels {
+                    let mut sum = 0.0f32;
+                    for ky in 0..col_k.len() {
+                        sum += col_k[ky] * tmp[((y + pad - rh + ky) * w + x) * channels + c];
+                    }
+                    out[(y * w + x) * channels + c] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+                }
             }
         }
     }
