@@ -3,141 +3,146 @@ title: VP8 Golden Reference Debug — Byte-Level Comparison Against cwebp
 type: bug
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Generate golden VP8 bitstream references from cwebp, compare byte-by-byte
+  summary: 'Generate golden VP8 bitstream references from cwebp, compare byte-by-byte
+
     against our encoder output, identify the exact divergence point, and fix
+
     the root cause of 64x64+ decode failures.
-  context: |
-    The VP8 encoder works for images up to ~32x32 but fails at 64x64+.
+
+    '
+  context: 'The VP8 encoder works for images up to ~32x32 but fails at 64x64+.
+
     Previous fixes addressed reconstruction, mb_no_coeff_skip, loop filter,
+
     coefficient probabilities, and token tree structure. The remaining issue
+
     is cumulative bool coder stream divergence that corrupts the decoder state
+
     after enough macroblocks.
 
+
     Approach: instead of guessing, generate known-good VP8 bitstreams from
+
     cwebp and compare them byte-by-byte against our output for the SAME
+
     input image. The first divergent byte reveals the exact bug.
 
+
     cwebp and dwebp are available at /opt/homebrew/bin/. cwebp can encode
+
     raw YUV input to control the exact pixels being encoded.
-  codebase_analysis: |
-    Our BoolWriter (boolcoder.rs) implements the VP8 boolean arithmetic coder.
+
+    '
+  codebase_analysis: 'Our BoolWriter (boolcoder.rs) implements the VP8 boolean arithmetic coder.
+
     It passes all roundtrip tests but has never been validated against the
+
     libvpx bool coder output byte-by-byte. The most likely divergence:
 
+
     1. BoolWriter carry propagation logic differs from vp8_encode_bool in libvpx
+
     2. BoolWriter finish() flush differs from vp8_stop_encode
+
     3. Token partition bool coder state drifts after many put_bit calls
+
     4. The first partition and token partition boundary may be misaligned
 
+
     Strategy: use cwebp with carefully controlled inputs (solid color,
+
     single known pixel values) so we can predict the exact YUV values,
+
     prediction modes, DCT coefficients, and token stream. Then compare
+
     our encoded bytes against cwebp output at each layer.
 
+
     Tools:
+
     - cwebp at /opt/homebrew/bin/cwebp
+
     - dwebp at /opt/homebrew/bin/dwebp
+
     - Python for generating test PNGs and hex comparison
+
     - hexdump/xxd for byte-level inspection
+
+    '
   acceptance_criteria:
-    - Golden reference test fixtures generated from cwebp for 5+ test images
-    - Byte-level hex comparison identifies the first divergent byte
-    - Root cause identified and documented (which function, which line)
-    - Fix implemented that makes 64x64 and 128x128 decodable by both dwebp and image-webp
-    - Fix validated at 256x256 and 512x512
-    - All existing unit tests still pass
-    - WASM build succeeds
-    - Regression test added that encodes 256x256 and verifies dwebp can decode
-  out_of_scope: |
-    - Matching cwebp output byte-for-byte (different mode choices are fine)
+  - Golden reference test fixtures generated from cwebp for 5+ test images
+  - Byte-level hex comparison identifies the first divergent byte
+  - Root cause identified and documented (which function, which line)
+  - Fix implemented that makes 64x64 and 128x128 decodable by both dwebp and image-webp
+  - Fix validated at 256x256 and 512x512
+  - All existing unit tests still pass
+  - WASM build succeeds
+  - Regression test added that encodes 256x256 and verifies dwebp can decode
+  out_of_scope: '- Matching cwebp output byte-for-byte (different mode choices are fine)
+
     - Quality optimization or file size parity
+
     - Loop filter re-enablement
+
     - mb_no_coeff_skip re-enablement
-  technical_notes: |
-    Debugging methodology:
 
-    Phase 1: Generate Controlled Golden References
-      Use cwebp with specific options to minimize encoder differences:
-        cwebp -q 75 -preset none -noalpha -segments 1 -partition_limit 0 input.png -o ref.webp
-      Generate for:
-      - 64x64 solid gray (simplest failing case)
-      - 64x64 horizontal gradient
-      - 128x128 solid gray
-      - 256x256 solid gray
-
-    Phase 2: Layer-by-Layer Byte Comparison
-      For each reference:
-      1. Parse RIFF container sizes (should match)
-      2. Compare frame tag (3 bytes) — keyframe, version, show, part0_size
-      3. Compare key frame header (7 bytes) — start code, width, height
-      4. Compare first partition byte-by-byte until divergence
-      5. Compare token partition byte-by-byte until divergence
-
-      The first divergent byte pins the bug to a specific encoding step.
-
-    Phase 3: Isolate to Component
-      Based on where the divergence occurs:
-      - First partition bytes 0-2 (color space, clamping, segmentation)
-        → frame header encoding bug
-      - First partition bytes 3-6 (filter, quantizer, token update loop)
-        → update probability or quantizer encoding bug
-      - First partition after update loop (macroblock modes)
-        → mode encoding bug
-      - Token partition first bytes (first macroblock coefficients)
-        → token encoding or bool coder bug
-      - Token partition after N bytes (later macroblocks)
-        → cumulative bool coder state drift
-
-    Phase 4: Fix the Root Cause
-      Based on the identified divergence:
-      - If bool coder: compare put_bit implementation against libvpx
-        vp8_encode_bool line by line, fix the arithmetic
-      - If token stream: compare coefficient encoding order, band indexing
-      - If frame header: fix the specific field encoding
-
-    Phase 5: Validate at Scale
-      After fix, test at 64, 128, 256, 512, 1024, 2048 with both decoders.
-      Add regression test that encodes 256x256 and asserts dwebp succeeds.
+    '
+  technical_notes: "Debugging methodology:\n\nPhase 1: Generate Controlled Golden References\n  Use cwebp with specific options\
+    \ to minimize encoder differences:\n    cwebp -q 75 -preset none -noalpha -segments 1 -partition_limit 0 input.png -o\
+    \ ref.webp\n  Generate for:\n  - 64x64 solid gray (simplest failing case)\n  - 64x64 horizontal gradient\n  - 128x128\
+    \ solid gray\n  - 256x256 solid gray\n\nPhase 2: Layer-by-Layer Byte Comparison\n  For each reference:\n  1. Parse RIFF\
+    \ container sizes (should match)\n  2. Compare frame tag (3 bytes) — keyframe, version, show, part0_size\n  3. Compare\
+    \ key frame header (7 bytes) — start code, width, height\n  4. Compare first partition byte-by-byte until divergence\n\
+    \  5. Compare token partition byte-by-byte until divergence\n\n  The first divergent byte pins the bug to a specific encoding\
+    \ step.\n\nPhase 3: Isolate to Component\n  Based on where the divergence occurs:\n  - First partition bytes 0-2 (color\
+    \ space, clamping, segmentation)\n    → frame header encoding bug\n  - First partition bytes 3-6 (filter, quantizer, token\
+    \ update loop)\n    → update probability or quantizer encoding bug\n  - First partition after update loop (macroblock\
+    \ modes)\n    → mode encoding bug\n  - Token partition first bytes (first macroblock coefficients)\n    → token encoding\
+    \ or bool coder bug\n  - Token partition after N bytes (later macroblocks)\n    → cumulative bool coder state drift\n\n\
+    Phase 4: Fix the Root Cause\n  Based on the identified divergence:\n  - If bool coder: compare put_bit implementation\
+    \ against libvpx\n    vp8_encode_bool line by line, fix the arithmetic\n  - If token stream: compare coefficient encoding\
+    \ order, band indexing\n  - If frame header: fix the specific field encoding\n\nPhase 5: Validate at Scale\n  After fix,\
+    \ test at 64, 128, 256, 512, 1024, 2048 with both decoders.\n  Add regression test that encodes 256x256 and asserts dwebp\
+    \ succeeds.\n"
 plan:
-  - phase: Golden Reference Generation
-    tasks:
-      - text: Generate 64x64 solid gray PNG and encode with cwebp at q75
-        done: false
-      - text: Generate 64x64 gradient PNG and encode with cwebp at q75
-        done: false
-      - text: Generate 128x128 and 256x256 solid gray cwebp references
-        done: false
-      - text: Encode same images with our encoder, save both outputs
-        done: false
-  - phase: Byte-Level Comparison
-    tasks:
-      - text: Compare RIFF container and frame header fields for 64x64 solid
-        done: false
-      - text: Compare first partition bytes until first divergence
-        done: false
-      - text: Compare token partition bytes until first divergence
-        done: false
-      - text: Document exact byte offset and encoding step of divergence
-        done: false
-  - phase: Root Cause Fix
-    tasks:
-      - text: Identify and fix the specific function/line causing the divergence
-        done: false
-      - text: Verify 64x64 solid decodes after fix
-        done: false
-      - text: Verify 128x128 and 256x256 decode after fix
-        done: false
-  - phase: Scale Validation
-    tasks:
-      - text: Test at 512x512 and 1024x1024 with both dwebp and image-webp
-        done: false
-      - text: Test gradient and ramp content at 256x256
-        done: false
-      - text: Add regression test that encodes 256x256 and asserts decode success
-        done: false
-      - text: Run WASM SIMD test via wasmtime
-        done: false
+- phase: Golden Reference Generation
+  tasks:
+  - text: Generate 64x64 solid gray PNG and encode with cwebp at q75
+    done: true
+  - text: Generate 64x64 gradient PNG and encode with cwebp at q75
+    done: true
+  - text: Generate 128x128 and 256x256 solid gray cwebp references
+    done: true
+  - text: Encode same images with our encoder, save both outputs
+    done: true
+- phase: Byte-Level Comparison
+  tasks:
+  - text: Compare RIFF container and frame header fields for 64x64 solid
+    done: true
+  - text: Compare first partition bytes until first divergence
+    done: true
+  - text: Compare token partition bytes until first divergence
+    done: true
+  - text: Document exact byte offset and encoding step of divergence
+    done: true
+- phase: Root Cause Fix
+  tasks:
+  - text: Identify and fix the specific function/line causing the divergence
+    done: true
+  - text: Verify 64x64 solid decodes after fix
+    done: false
+  - text: Verify 128x128 and 256x256 decode after fix
+    done: false
+- phase: Scale Validation
+  tasks:
+  - text: Test at 512x512 and 1024x1024 with both dwebp and image-webp
+    done: false
+  - text: Test gradient and ramp content at 256x256
+    done: false
+  - text: Add regression test that encodes 256x256 and asserts decode success
+    done: false
+  - text: Run WASM SIMD test via wasmtime
+    done: false
 extra: {}
