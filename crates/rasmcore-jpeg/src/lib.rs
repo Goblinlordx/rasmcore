@@ -27,7 +27,9 @@ pub mod trellis;
 mod types;
 
 pub use error::EncodeError;
+pub use quantize::QuantPreset;
 pub use types::*;
+// QuantPreset is re-exported for external consumers to set quant_preset on EncodeConfig.
 
 /// Encode raw pixels to baseline JPEG.
 ///

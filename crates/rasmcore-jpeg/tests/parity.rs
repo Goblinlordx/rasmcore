@@ -14,6 +14,25 @@
 
 use std::process::Command;
 
+/// Build an EncodeConfig for parity testing: progressive + specified quality/subsampling.
+///
+/// Uses the default Robidoux quantization tables (our default). ImageMagick uses
+/// libjpeg's Annex K tables which have different frequency weighting — our decoder
+/// has a known Huffman table bug with AnnexK on high-AC-energy patterns (tracked
+/// separately). Robidoux tables are psychovisually optimized, producing different
+/// but valid quality tradeoffs vs Annex K.
+fn parity_config(
+    quality: u8,
+    subsampling: rasmcore_jpeg::ChromaSubsampling,
+) -> rasmcore_jpeg::EncodeConfig {
+    rasmcore_jpeg::EncodeConfig {
+        progressive: true,
+        quality,
+        subsampling,
+        ..Default::default()
+    }
+}
+
 fn magick_available() -> bool {
     Command::new("magick")
         .arg("--version")
@@ -165,11 +184,7 @@ fn three_way_progressive_420_gradient() {
         w,
         h,
         rasmcore_jpeg::PixelFormat::Rgb8,
-        &rasmcore_jpeg::EncodeConfig {
-            progressive: true,
-            quality: quality as u8,
-            ..Default::default()
-        },
+        &parity_config(quality as u8, rasmcore_jpeg::ChromaSubsampling::Quarter420),
     )
     .unwrap();
     assert!(has_sof2(&our_jpeg), "our output must be SOF2");
@@ -227,12 +242,7 @@ fn three_way_progressive_444_gradient() {
         w,
         h,
         rasmcore_jpeg::PixelFormat::Rgb8,
-        &rasmcore_jpeg::EncodeConfig {
-            progressive: true,
-            quality: quality as u8,
-            subsampling: rasmcore_jpeg::ChromaSubsampling::None444,
-            ..Default::default()
-        },
+        &parity_config(quality as u8, rasmcore_jpeg::ChromaSubsampling::None444),
     )
     .unwrap();
 
@@ -300,11 +310,7 @@ fn three_way_progressive_420_checkerboard() {
         w,
         h,
         rasmcore_jpeg::PixelFormat::Rgb8,
-        &rasmcore_jpeg::EncodeConfig {
-            progressive: true,
-            quality: quality as u8,
-            ..Default::default()
-        },
+        &parity_config(quality as u8, rasmcore_jpeg::ChromaSubsampling::Quarter420),
     )
     .unwrap();
 
@@ -329,11 +335,9 @@ fn three_way_progressive_420_checkerboard() {
     eprintln!("  C_quality: {c_quality:.1} dB");
     eprintln!("  A vs B MAE: {a_vs_b:.2}");
 
-    // Checkerboard with 4:2:0: our Robidoux quant tables produce lower quality
-    // than magick's default tables for high-frequency achromatic patterns.
-    // The 4:2:0 subsampling aliases the checkerboard's spatial frequency,
-    // which interacts poorly with our luma table's high-frequency attenuation.
-    // Use 0.75 ratio (instead of 0.9) to account for this known encoder gap.
+    // Robidoux tables aggressively attenuate high frequencies; Annex K (magick) does not.
+    // For checkerboard + 4:2:0, this creates a genuine quality gap.
+    // Use 0.75 ratio to account for the different quant table philosophy.
     assert!(
         b_quality >= c_quality * 0.75,
         "checkerboard quality ({b_quality:.1}dB) should be >= 75% of magick ({c_quality:.1}dB)"
@@ -358,11 +362,7 @@ fn three_way_progressive_odd_dimensions() {
         w,
         h,
         rasmcore_jpeg::PixelFormat::Rgb8,
-        &rasmcore_jpeg::EncodeConfig {
-            progressive: true,
-            quality: quality as u8,
-            ..Default::default()
-        },
+        &parity_config(quality as u8, rasmcore_jpeg::ChromaSubsampling::Quarter420),
     )
     .unwrap();
 
@@ -389,8 +389,7 @@ fn three_way_progressive_odd_dimensions() {
     eprintln!("  C_quality: {c_quality:.1} dB");
     eprintln!("  A vs B MAE: {a_vs_b:.2}");
 
-    // Odd dimensions + 4:2:0: MCU padding handling differs between encoders,
-    // causing a quality gap. Use 0.85 ratio to account for edge effects.
+    // Robidoux vs Annex K gap + MCU padding at odd dimensions.
     assert!(
         b_quality >= c_quality * 0.85,
         "odd dims quality ({b_quality:.1}dB) should be >= 85% of magick ({c_quality:.1}dB)"
@@ -570,11 +569,7 @@ fn three_way_progressive_grayscale() {
         w,
         h,
         rasmcore_jpeg::PixelFormat::Gray8,
-        &rasmcore_jpeg::EncodeConfig {
-            progressive: true,
-            quality: quality as u8,
-            ..Default::default()
-        },
+        &parity_config(quality as u8, rasmcore_jpeg::ChromaSubsampling::Quarter420),
     )
     .unwrap();
 
