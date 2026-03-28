@@ -10,19 +10,20 @@
 #   - Developer checks deps before claiming: all deps must be completed.
 #   - Cycles are forbidden.
 #
-# UPDATED: 2026-03-27T10:06:00Z
+# UPDATED: 2026-03-28T01:22:00Z
 
-encoder-refactor-foundation_20260327101000Z: []
-
+# Old codec tracks — ON HOLD until pipeline-wit completes (high conflict)
 encoder-jpeg_20260327101001Z:
-  - encoder-refactor-foundation_20260327101000Z
+  - pipeline-wit_20260328012201Z
 
 encoder-png_20260327101002Z:
-  - encoder-refactor-foundation_20260327101000Z
+  - pipeline-wit_20260328012201Z
 
 encoder-webp_20260327101003Z:
-  - encoder-refactor-foundation_20260327101000Z
+  - pipeline-wit_20260328012201Z
 
-parity-matrix_20260328003200Z: []
+# Pipeline implementation (critical path)
+pipeline-core_20260328012200Z: []
 
-pipeline-arch-design_20260328005500Z: []
+pipeline-wit_20260328012201Z:
+  - pipeline-core_20260328012200Z

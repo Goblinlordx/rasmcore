@@ -1,0 +1,124 @@
+id: pipeline-wit_20260328012201Z
+title: "Pipeline WIT Interface — Resource, Read/Write API, Adapter Layer"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Add the WIT pipeline resource with node-id based API, read/write public naming,
+    per-format write configs. Adapter maps WIT pipeline resource to domain NodeGraph.
+    Legacy stateless interfaces become wrappers. WASM + TS SDK tests.
+  context: |
+    The pipeline core engine (Track 1) provides the domain-level node graph and
+    spatial cache. This track exposes it via the WIT Component Model as a pipeline
+    resource, adds the read/write public API naming, and updates the adapter layer.
+
+    Design reference: .agent/kf/_reports/pipeline-architecture.md (Section 2)
+
+    The pipeline resource owns all nodes internally. Transform functions accept and
+    return node-id (u32). The host never sees internal pixel data until write().
+
+    Also exposes Level 2 stateless compute kernels for host-driven parallelism.
+  codebase_analysis: |
+    Current WIT interfaces:
+    - wit/image/decoder.wit: decode, detect-format, decode-as, supported-formats
+    - wit/image/encoder.wit: encode, encode-jpeg/png/webp, supported-formats
+    - wit/image/transform.wit: resize, crop, rotate, flip, convert-format
+    - wit/image/filters.wit: blur, sharpen, brightness, contrast, grayscale
+    - wit/image/world.wit: exports decoder, encoder, transform, filters
+
+    Current adapter (adapter/mod.rs):
+    - Maps WIT types to domain types
+    - Calls domain functions directly
+
+    New pipeline WIT adds:
+    - pipeline resource with node-id based methods
+    - read/write naming (public API)
+    - Level 2 compute interface (stateless kernels)
+    - Legacy interfaces preserved as wrappers
+  acceptance_criteria:
+    - New wit/image/pipeline.wit with pipeline resource definition
+    - Pipeline resource methods use read/write naming (not decode/encode)
+    - Per-format write configs (jpeg-write-config, png-write-config, webp-write-config)
+    - node-id type (u32) for node references in pipeline
+    - Adapter layer implements pipeline resource using domain NodeGraph
+    - Level 2 compute interface (stateless kernel functions)
+    - Legacy decoder/encoder/transform/filters interfaces preserved as backward-compatible wrappers
+    - World updated to export pipeline + legacy interfaces
+    - cargo component build succeeds
+    - wasmtime integration tests for pipeline resource (read -> resize -> write-jpeg)
+    - TS SDK tests for pipeline resource via jco
+    - Existing WASM integration tests still pass (legacy interface backward compat)
+    - Existing TS SDK tests still pass
+  out_of_scope: |
+    - Operation fusion (future track)
+    - Seek cache (future track)
+    - WASI-IO stream integration (future track)
+    - New format support (separate codec tracks)
+    - Host-side parallel orchestrator (host concern, not component)
+  technical_notes: |
+    WIT pipeline resource (from design doc):
+    ```
+    resource pipeline {
+        constructor();
+        read: func(data: buffer) -> result<node-id, rasmcore-error>;
+        resize: func(source: node-id, w: u32, h: u32, filter: resize-filter) -> node-id;
+        crop: func(source: node-id, x: u32, y: u32, w: u32, h: u32) -> result<node-id, rasmcore-error>;
+        rotate: func(source: node-id, angle: rotation) -> node-id;
+        // ... all transforms and filters
+        write-jpeg: func(source: node-id, config: jpeg-write-config) -> result<buffer, rasmcore-error>;
+        write-png: func(source: node-id, config: png-write-config) -> result<buffer, rasmcore-error>;
+        write-webp: func(source: node-id, config: webp-write-config) -> result<buffer, rasmcore-error>;
+        write: func(source: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
+    }
+    type node-id = u32;
+    ```
+
+    Adapter implementation:
+    - Pipeline resource maps to domain NodeGraph + SpatialCache
+    - Each pipeline method call adds a node to the internal graph
+    - write() triggers execution: iterates output regions, pulls through graph
+    - RefCell for interior mutability (WIT resource methods receive &self)
+
+    Level 2 compute interface reuses existing stateless domain functions directly.
+    These are the same functions that currently exist, just exposed under a
+    separate WIT interface name for host-driven parallelism.
+plan:
+  - phase: "WIT Definition"
+    tasks:
+      - text: "Create wit/image/pipeline.wit with pipeline resource, node-id, read/write API"
+        done: false
+      - text: "Add per-format write config records (jpeg-write-config, png-write-config, webp-write-config)"
+        done: false
+      - text: "Create wit/image/compute.wit with Level 2 stateless kernel functions"
+        done: false
+      - text: "Update wit/image/world.wit to export pipeline, compute, and legacy interfaces"
+        done: false
+  - phase: "Adapter Implementation"
+    tasks:
+      - text: "Implement pipeline resource adapter (maps to domain NodeGraph + SpatialCache)"
+        done: false
+      - text: "Implement all pipeline methods (read, transforms, filters, write variants)"
+        done: false
+      - text: "Implement Level 2 compute adapter (thin wrappers around domain functions)"
+        done: false
+      - text: "Refactor legacy interfaces to be wrappers around pipeline internally"
+        done: false
+      - text: "Verify cargo component build succeeds"
+        done: false
+  - phase: "WASM Integration Tests"
+    tasks:
+      - text: "wasmtime tests for pipeline resource (read -> resize -> write-jpeg roundtrip)"
+        done: false
+      - text: "wasmtime tests for pipeline DAG (same source, two different outputs)"
+        done: false
+      - text: "Verify all existing wasmtime parity tests pass (legacy interface compat)"
+        done: false
+  - phase: "TS SDK Tests"
+    tasks:
+      - text: "Regenerate TS SDK via jco, verify pipeline resource generates JS class"
+        done: false
+      - text: "TS SDK tests for pipeline (read -> resize -> writeJpeg)"
+        done: false
+extra: {}

@@ -1,0 +1,8 @@
+title: Pipeline WIT Interface — Resource, Read/Write API, Adapter Layer
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- pipeline-core_20260328012200Z
