@@ -12,6 +12,7 @@ use crate::filter;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};
 use crate::ratecontrol::EncodeParams;
+use crate::tables;
 use crate::token;
 use rasmcore_color::YuvImage;
 
@@ -103,6 +104,17 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
 
     let token_data = token_writer.finish();
 
+    // Apply loop filter to reconstructed Y plane
+    if params.filter_level > 0 {
+        filter::apply_loop_filter(
+            &mut recon_y,
+            padded_w,
+            padded_h,
+            params.filter_level,
+            params.filter_sharpness,
+            params.filter_type,
+        );
+    }
     // Build first partition (macroblock modes)
     let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, params);
 
@@ -204,21 +216,65 @@ fn encode_first_partition(
     // This is simpler and avoids skip signaling bugs. Less efficient but correct.
     bw.put_bit(128, false); // mb_no_coeff_skip = false
 
-    // Encode macroblock modes
+    // Encode macroblock modes with B_PRED context tracking.
+    // For B_PRED MBs, we need context from neighboring MBs' sub-block modes.
+    let mb_w = mb_infos.last().map(|m| m.mb_x as usize + 1).unwrap_or(0);
+    // Track bottom row modes of each MB column (for top context of next row)
+    let mut top_bmode_ctx: Vec<[u8; 4]> = vec![[0u8; 4]; mb_w];
+    let mut left_bmode_ctx: [u8; 4] = [0u8; 4];
+
     for mb in mb_infos {
-        encode_mb_header(&mut bw, mb);
+        if mb.mb_x == 0 {
+            left_bmode_ctx = [0u8; 4]; // Reset at row start
+        }
+
+        encode_mb_header(
+            &mut bw,
+            mb,
+            &top_bmode_ctx[mb.mb_x as usize],
+            &left_bmode_ctx,
+        );
+
+        if mb.y_mode == 4 {
+            // Update context: bottom row of this MB's sub-block modes
+            for col in 0..4 {
+                top_bmode_ctx[mb.mb_x as usize][col] = mb.b_modes[12 + col]; // row 3
+            }
+            // Right column of this MB's sub-block modes
+            for row in 0..4 {
+                left_bmode_ctx[row] = mb.b_modes[row * 4 + 3]; // col 3
+            }
+        } else {
+            // I16x16 mode: use the I16x16 mode as context for all positions
+            // Per VP8 spec: DC_PRED maps to B_DC_PRED context
+            let ctx_mode = match mb.y_mode {
+                1 => 2, // V → B_VE
+                2 => 3, // H → B_HE
+                3 => 1, // TM → B_TM
+                _ => 0, // DC → B_DC
+            };
+            top_bmode_ctx[mb.mb_x as usize] = [ctx_mode; 4];
+            left_bmode_ctx = [ctx_mode; 4];
+        }
     }
 
     bw.finish()
 }
 
 /// Encode a single macroblock header in the first partition.
-fn encode_mb_header(bw: &mut BoolWriter, mb: &MacroblockInfo) {
-    // No skip flag when mb_no_coeff_skip = false
-
+fn encode_mb_header(
+    bw: &mut BoolWriter,
+    mb: &MacroblockInfo,
+    above_bpred_modes: &[u8; 4],
+    left_bpred_modes: &[u8; 4],
+) {
     // Luma prediction mode (RFC 6386 Section 11.2)
-    // Key frame Y mode is coded with a fixed tree
     encode_intra_y_mode(bw, mb.y_mode);
+
+    // If B_PRED, encode 16 sub-block modes with context
+    if mb.y_mode == 4 {
+        encode_bpred_modes(bw, &mb.b_modes, above_bpred_modes, left_bpred_modes);
+    }
 
     // Chroma prediction mode
     encode_intra_uv_mode(bw, mb.uv_mode);
@@ -234,33 +290,140 @@ fn encode_mb_header(bw: &mut BoolWriter, mb: &MacroblockInfo) {
 ///   Node 2: DC vs V                [prob = 163]
 ///   Node 3: H vs TM               [prob = 128]
 ///
-/// We only use DC(0), V(1), H(2), TM(3) — never B_PRED(4).
 fn encode_intra_y_mode(bw: &mut BoolWriter, mode: u8) {
-    // Node 0: skip B_PRED (we never use it)
-    bw.put_bit(145, true); // not B_PRED → node 1
+    if mode == 4 {
+        // B_PRED: node 0 → false (B_PRED is left child)
+        bw.put_bit(145, false);
+    } else {
+        // Not B_PRED: node 0 → true, then tree for I16x16 modes
+        bw.put_bit(145, true);
+        match mode {
+            0 => {
+                bw.put_bit(156, false);
+                bw.put_bit(163, false);
+            }
+            1 => {
+                bw.put_bit(156, false);
+                bw.put_bit(163, true);
+            }
+            2 => {
+                bw.put_bit(156, true);
+                bw.put_bit(128, false);
+            }
+            3 => {
+                bw.put_bit(156, true);
+                bw.put_bit(128, true);
+            }
+            _ => unreachable!("invalid y_mode: {mode}"),
+        }
+    }
+}
 
-    match mode {
-        0 => {
-            // DC_PRED: node1 left → node2 left
-            bw.put_bit(156, false); // → node 2
-            bw.put_bit(163, false); // → DC
+/// Encode a single 4x4 intra prediction mode using the B_PRED mode tree.
+///
+/// Uses context-dependent probabilities from KF_BMODE_PROB[top_mode][left_mode].
+/// Tree format matches image-webp/libvpx: leaves are <= 0 (mode = -leaf),
+/// positive values are jump indices.
+fn encode_intra_4x4_mode(bw: &mut BoolWriter, mode: u8, top_mode: u8, left_mode: u8) {
+    let probs = &tables::KF_BMODE_PROB[top_mode as usize][left_mode as usize];
+
+    // Exact tree from image-webp vp8.rs KEYFRAME_BPRED_MODE_TREE.
+    // Leaves: val <= 0, mode = -val. Internal: val > 0, jump to that index.
+    // Pairs: [false_branch, true_branch] at each even index.
+    const TREE: [i8; 18] = [
+        0, 2, // idx 0: false→DC(0), true→jump[2]
+        -1, 4, // idx 2: false→TM(1), true→jump[4]
+        -2, 6, // idx 4: false→V(2), true→jump[6]
+        8, 12, // idx 6: false→jump[8], true→jump[12]
+        -3, 10, // idx 8: false→H(3), true→jump[10]
+        -5, -6, // idx 10: false→RD(5), true→VR(6)
+        -4, 14, // idx 12: false→LD(4), true→jump[14]
+        -7, 16, // idx 14: false→VL(7), true→jump[16]
+        -8, -9, // idx 16: false→HD(8), true→HU(9)
+    ];
+
+    let target_leaf = -(mode as i8); // leaf encoding: mode = -leaf_value
+    let mut idx = 0usize;
+
+    loop {
+        let false_val = TREE[idx];
+        let true_val = TREE[idx + 1];
+        let prob = probs[idx / 2];
+
+        // Check if target is in the FALSE branch (immediate leaf)
+        if false_val <= 0 && false_val == target_leaf {
+            bw.put_bit(prob, false);
+            return;
         }
-        1 => {
-            // V_PRED: node1 left → node2 right
-            bw.put_bit(156, false); // → node 2
-            bw.put_bit(163, true); // → V
+        // Check if target is in the TRUE branch (immediate leaf)
+        if true_val <= 0 && true_val == target_leaf {
+            bw.put_bit(prob, true);
+            return;
         }
-        2 => {
-            // H_PRED: node1 right → node3 left
-            bw.put_bit(156, true); // → node 3
-            bw.put_bit(128, false); // → H
+
+        // Neither is the target directly. Determine which subtree to enter.
+        if false_val <= 0 {
+            // FALSE is a different leaf — target must be in TRUE subtree
+            bw.put_bit(prob, true);
+            idx = true_val as usize;
+        } else if true_val <= 0 {
+            // TRUE is a different leaf — target must be in FALSE subtree
+            bw.put_bit(prob, false);
+            idx = false_val as usize;
+        } else {
+            // Both are internal nodes — search to determine which subtree
+            if leaf_in_subtree(&TREE, false_val as usize, target_leaf) {
+                bw.put_bit(prob, false);
+                idx = false_val as usize;
+            } else {
+                bw.put_bit(prob, true);
+                idx = true_val as usize;
+            }
         }
-        3 => {
-            // TM_PRED: node1 right → node3 right
-            bw.put_bit(156, true); // → node 3
-            bw.put_bit(128, true); // → TM
+    }
+}
+
+/// Check if a leaf value exists in a binary tree subtree.
+fn leaf_in_subtree(tree: &[i8; 18], root: usize, target: i8) -> bool {
+    let false_val = tree[root];
+    let true_val = tree[root + 1];
+    if (false_val <= 0 && false_val == target) || (true_val <= 0 && true_val == target) {
+        return true;
+    }
+    if false_val > 0 && leaf_in_subtree(tree, false_val as usize, target) {
+        return true;
+    }
+    if true_val > 0 && leaf_in_subtree(tree, true_val as usize, target) {
+        return true;
+    }
+    false
+}
+
+/// Encode 16 sub-block modes for a B_PRED macroblock.
+///
+/// Each mode is encoded using context from the top and left neighbor modes.
+/// For the first row, top context comes from the bottom row of the MB above.
+/// For the first column, left context comes from the right column of the MB to the left.
+fn encode_bpred_modes(
+    bw: &mut BoolWriter,
+    b_modes: &[u8; 16],
+    above_modes: &[u8; 4], // top context: bottom row modes of MB above
+    left_modes: &[u8; 4],  // left context: right column modes of MB to the left
+) {
+    // Track context within the macroblock.
+    // top_ctx[col] = mode of the block above in this column
+    // left_mode = mode of the block to the left in this row
+    let mut top_ctx = *above_modes;
+
+    for row in 0..4 {
+        let mut left_mode = left_modes[row];
+        for col in 0..4 {
+            let sb = row * 4 + col;
+            let mode = b_modes[sb];
+            encode_intra_4x4_mode(bw, mode, top_ctx[col], left_mode);
+            top_ctx[col] = mode;
+            left_mode = mode;
         }
-        _ => unreachable!("invalid y_mode: {mode}"),
     }
 }
 
@@ -323,8 +486,8 @@ fn encode_macroblock(
     // Get prediction neighbors from reconstructed frame
     let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
 
-    // Select best 16×16 Y mode
-    let y_mode = predict::select_best_16x16(
+    // ─── I16x16 mode evaluation ─────────────────────────────────────────
+    let i16_mode = predict::select_best_16x16(
         &y_block,
         &above_y,
         &left_y,
@@ -333,48 +496,118 @@ fn encode_macroblock(
         mb_col > 0,
     );
 
-    // Generate prediction
-    let mut pred_y = [0u8; 256];
+    let mut i16_pred = [0u8; 256];
     predict::predict_16x16(
-        y_mode,
+        i16_mode,
         &above_y,
         &left_y,
         above_left_y,
         mb_row > 0,
         mb_col > 0,
-        &mut pred_y,
+        &mut i16_pred,
     );
 
-    // Compute residual, DCT, quantize for all 16 Y sub-blocks
-    let mut y_coeffs = [[0i16; 16]; 16];
-    let mut y_dc_coeffs = [0i16; 16];
+    // I16x16 SAD
+    let i16_sad: u32 = y_block
+        .iter()
+        .zip(i16_pred.iter())
+        .map(|(&a, &b)| (a as i32 - b as i32).unsigned_abs())
+        .sum();
+
+    // ─── B_PRED mode evaluation ─────────────────────────────────────────
+    let mut b_modes = [0u8; 16];
+    let mut bpred_sad: u32 = 0;
+    let mut bpred_preds = [[0u8; 16]; 16]; // per-block prediction
+
     for sb in 0..16 {
         let sb_row = sb / 4;
         let sb_col = sb % 4;
-        let mut src_block = [0u8; 16];
-        let mut ref_block = [0u8; 16];
+
+        // Extract 4x4 source block
+        let mut src_4x4 = [0u8; 16];
         for r in 0..4 {
             for c in 0..4 {
-                src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-                ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                src_4x4[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
             }
         }
-        let mut coeffs = [0i16; 16];
-        dct::forward_dct(&src_block, &ref_block, &mut coeffs);
-        y_dc_coeffs[sb] = coeffs[0]; // Raw DC for WHT path (NOT quantized)
-        let mut quantized = [0i16; 16];
-        quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
-        quantized[0] = 0; // DC goes to Y2 block, not Y-AC
-        y_coeffs[sb] = quantized;
+
+        // Get 4x4 prediction neighbors from the reconstructed frame.
+        // For sub-blocks within the MB, use the recon frame which has
+        // previously encoded blocks. The very first MB uses default values.
+        let (above_4, left_4, al, ar) =
+            get_4x4_neighbors(recon_y, y_stride, mb_col, mb_row, sb_row, sb_col);
+
+        let mode = predict::select_best_4x4(&src_4x4, &above_4, &left_4, al, &ar);
+        b_modes[sb] = mode as u8;
+
+        let mut pred = [0u8; 16];
+        predict::predict_4x4(mode, &above_4, &left_4, al, &ar, &mut pred);
+        bpred_preds[sb] = pred;
+
+        let sad: u32 = src_4x4
+            .iter()
+            .zip(pred.iter())
+            .map(|(&a, &b)| (a as i32 - b as i32).unsigned_abs())
+            .sum();
+        bpred_sad += sad;
     }
 
-    // WHT on DC coefficients (Y2 block)
-    let mut y2_coeffs = [0i16; 16];
-    dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
-    let mut y2_quantized = [0i16; 16];
-    quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
+    // ─── Mode decision ──────────────────────────────────────────────────
+    // B_PRED has a mode signaling overhead (~12-15 bits per MB for 16 modes).
+    // Apply a small bias (~128 SAD units) to prefer simpler I16x16 mode
+    // when the quality difference is marginal.
+    let use_bpred = bpred_sad + 128 < i16_sad;
+    let final_y_mode: u8 = if use_bpred { 4 } else { i16_mode as u8 };
 
-    // Chroma: select mode, predict, compute coefficients
+    // ─── Coefficient encoding ───────────────────────────────────────────
+    let mut y_coeffs = [[0i16; 16]; 16];
+    let mut y2_quantized = [0i16; 16];
+
+    if use_bpred {
+        // B_PRED: each block encodes all 16 coefficients (DC at pos 0, no Y2)
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
+            let mut src_block = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            let mut coeffs = [0i16; 16];
+            dct::forward_dct(&src_block, &bpred_preds[sb], &mut coeffs);
+            // B_PRED: DC at pos 0 uses y_dc quantizer (DC_TABLE), AC uses AC_TABLE
+            quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut y_coeffs[sb]);
+        }
+        // No Y2 block for B_PRED
+    } else {
+        // I16x16: DC goes to Y2 block
+        let mut y_dc_coeffs = [0i16; 16];
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
+            let mut src_block = [0u8; 16];
+            let mut ref_block = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                    ref_block[r * 4 + c] = i16_pred[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            let mut coeffs = [0i16; 16];
+            dct::forward_dct(&src_block, &ref_block, &mut coeffs);
+            y_dc_coeffs[sb] = coeffs[0];
+            let mut quantized = [0i16; 16];
+            quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+            quantized[0] = 0; // DC goes to Y2
+            y_coeffs[sb] = quantized;
+        }
+        let mut y2_coeffs = [0i16; 16];
+        dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
+        quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
+    }
+
+    // ─── Chroma (same for both modes) ───────────────────────────────────
     let (above_u, left_u, above_left_u) = get_uv_neighbors(recon_u, uv_stride, mb_col, mb_row);
     let (above_v, left_v, above_left_v) = get_uv_neighbors(recon_v, uv_stride, mb_col, mb_row);
 
@@ -417,7 +650,6 @@ fn encode_macroblock(
         &mut pred_v,
     );
 
-    // Compute all 8 chroma sub-block coefficients
     let mut uv_quantized = [[0i16; 16]; 8];
     let mut uv_idx = 0;
     for (plane_block, pred_block) in [(&u_block, &pred_u), (&v_block, &pred_v)] {
@@ -439,32 +671,47 @@ fn encode_macroblock(
         }
     }
 
-    // Encode tokens with inter-MB complexity context tracking.
-    // Matches decoder's read_residual_data (vp8.rs lines 1575-1650).
+    // ─── Token encoding ─────────────────────────────────────────────────
+    if use_bpred {
+        // B_PRED: no Y2 block. Leave Y2 context UNCHANGED — the decoder
+        // does not touch complexity[0] for B_PRED MBs, so the encoder must
+        // preserve whatever the previous MB set.
 
-    // Y2 block: plane=1, complexity from top[0] + left[0]
-    let y2_complexity = (top_ctx[0] + left_ctx[0]).min(2) as usize;
-    let y2_has = token::encode_block(token_bw, &y2_quantized, 1, y2_complexity);
-    top_ctx[0] = if y2_has { 1 } else { 0 };
-    left_ctx[0] = if y2_has { 1 } else { 0 };
-
-    // Y blocks: plane=0, y=0..3 (outer), x=0..3 (inner)
-    // complexity from top[x+1] + left[y+1]
-    for y in 0..4 {
-        let mut left = left_ctx[y + 1];
-        for x in 0..4 {
-            let sb = y * 4 + x;
-            let complexity = (top_ctx[x + 1] + left).min(2) as usize;
-            let has = token::encode_block(token_bw, &y_coeffs[sb], 0, complexity);
-            let ctx_val = if has { 1 } else { 0 };
-            left = ctx_val;
-            top_ctx[x + 1] = ctx_val;
+        // Y blocks: plane=3 (Y-with-DC), all 16 coefficients including DC
+        for y in 0..4 {
+            let mut left = left_ctx[y + 1];
+            for x in 0..4 {
+                let sb = y * 4 + x;
+                let complexity = (top_ctx[x + 1] + left).min(2) as usize;
+                let has = token::encode_block(token_bw, &y_coeffs[sb], 3, complexity);
+                let ctx_val = if has { 1 } else { 0 };
+                left = ctx_val;
+                top_ctx[x + 1] = ctx_val;
+            }
+            left_ctx[y + 1] = left;
         }
-        left_ctx[y + 1] = left;
+    } else {
+        // I16x16: Y2 block + Y-AC blocks
+        let y2_complexity = (top_ctx[0] + left_ctx[0]).min(2) as usize;
+        let y2_has = token::encode_block(token_bw, &y2_quantized, 1, y2_complexity);
+        top_ctx[0] = if y2_has { 1 } else { 0 };
+        left_ctx[0] = if y2_has { 1 } else { 0 };
+
+        for y in 0..4 {
+            let mut left = left_ctx[y + 1];
+            for x in 0..4 {
+                let sb = y * 4 + x;
+                let complexity = (top_ctx[x + 1] + left).min(2) as usize;
+                let has = token::encode_block(token_bw, &y_coeffs[sb], 0, complexity);
+                let ctx_val = if has { 1 } else { 0 };
+                left = ctx_val;
+                top_ctx[x + 1] = ctx_val;
+            }
+            left_ctx[y + 1] = left;
+        }
     }
 
-    // U blocks: plane=2, y=0..1 (outer), x=0..1 (inner)
-    // complexity from top[x+5] + left[y+5]
+    // Chroma (same for both modes)
     for y in 0..2 {
         let mut left = left_ctx[y + 5];
         for x in 0..2 {
@@ -477,13 +724,10 @@ fn encode_macroblock(
         }
         left_ctx[y + 5] = left;
     }
-
-    // V blocks: plane=2, y=0..1 (outer), x=0..1 (inner)
-    // complexity from top[x+7] + left[y+7]
     for y in 0..2 {
         let mut left = left_ctx[y + 7];
         for x in 0..2 {
-            let sb = 4 + y * 2 + x; // V blocks are indices 4-7 in uv_quantized
+            let sb = 4 + y * 2 + x;
             let complexity = (top_ctx[x + 7] + left).min(2) as usize;
             let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
             let ctx_val = if has { 1 } else { 0 };
@@ -502,12 +746,68 @@ fn encode_macroblock(
     MacroblockInfo {
         mb_x: mb_col as u32,
         mb_y: mb_row as u32,
-        y_mode: y_mode as u8,
-        b_modes: [0; 16],
+        y_mode: final_y_mode,
+        b_modes,
         uv_mode: uv_mode as u8,
         segment: 0,
         skip: all_zero,
     }
+}
+
+/// Get 4x4 prediction neighbors for a sub-block within a macroblock.
+///
+/// Returns (above[4], left[4], above_left, above_right[4]) from the
+/// reconstructed frame for the sub-block at (sb_row, sb_col) within
+/// the MB at (mb_col, mb_row).
+fn get_4x4_neighbors(
+    recon: &[u8],
+    stride: usize,
+    mb_col: usize,
+    mb_row: usize,
+    sb_row: usize,
+    sb_col: usize,
+) -> ([u8; 4], [u8; 4], u8, [u8; 4]) {
+    let base_y = mb_row * 16 + sb_row * 4;
+    let base_x = mb_col * 16 + sb_col * 4;
+
+    // Above 4 pixels
+    let mut above = [127u8; 4];
+    if base_y > 0 {
+        for i in 0..4 {
+            above[i] = recon[(base_y - 1) * stride + base_x + i];
+        }
+    }
+
+    // Left 4 pixels
+    let mut left = [129u8; 4];
+    if base_x > 0 {
+        for i in 0..4 {
+            left[i] = recon[(base_y + i) * stride + base_x - 1];
+        }
+    }
+
+    // Above-left pixel
+    let above_left = if base_y > 0 && base_x > 0 {
+        recon[(base_y - 1) * stride + base_x - 1]
+    } else if base_y > 0 {
+        129
+    } else {
+        127
+    };
+
+    // Above-right 4 pixels (needed for LD, VL modes)
+    let mut above_right = [127u8; 4];
+    if base_y > 0 && base_x + 4 + 4 <= stride {
+        for i in 0..4 {
+            above_right[i] = recon[(base_y - 1) * stride + base_x + 4 + i];
+        }
+    } else if base_y > 0 {
+        // Replicate last above pixel
+        let last = recon[(base_y - 1) * stride + (base_x + 3).min(stride - 1)];
+        above_right = [last; 4];
+    }
+
+    (above, left, above_left, above_right)
 }
 
 /// Reconstruct a macroblock for prediction reference by future MBs.
@@ -539,91 +839,121 @@ fn reconstruct_macroblock(
             .copy_from_slice(&y_plane[y_off + r * y_stride..y_off + r * y_stride + 16]);
     }
 
-    // Get prediction neighbors (same as encode path)
-    let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
+    if mb.y_mode == 4 {
+        // ─── B_PRED reconstruction ──────────────────────────────────────
+        // Per-4x4 prediction, no Y2 WHT. Process blocks in raster order
+        // so each block can use previously reconstructed neighbors.
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
 
-    // Generate prediction (same mode as encode)
-    let mut pred_y = [0u8; 256];
-    let y_mode_enum = match mb.y_mode {
-        0 => predict::Intra16Mode::DC,
-        1 => predict::Intra16Mode::V,
-        2 => predict::Intra16Mode::H,
-        _ => predict::Intra16Mode::TM,
-    };
-    predict::predict_16x16(
-        y_mode_enum,
-        &above_y,
-        &left_y,
-        above_left_y,
-        mb_row > 0,
-        mb_col > 0,
-        &mut pred_y,
-    );
+            // Get 4x4 prediction from reconstructed frame (already has prior blocks)
+            let (above_4, left_4, al, ar) =
+                get_4x4_neighbors(recon_y, y_stride, mb_col, mb_row, sb_row, sb_col);
 
-    // Forward DCT + quantize each Y sub-block (re-encode to get quantized coeffs)
-    let mut y_quantized = [[0i16; 16]; 16];
-    let mut y_dc_coeffs = [0i16; 16];
-    for sb in 0..16 {
-        let sb_row = sb / 4;
-        let sb_col = sb % 4;
-        let mut src_block = [0u8; 16];
-        let mut ref_block = [0u8; 16];
-        for r in 0..4 {
-            for c in 0..4 {
-                src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-                ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+            let mode = predict::Intra4Mode::from_u8(mb.b_modes[sb]);
+            let mut pred = [0u8; 16];
+            predict::predict_4x4(mode, &above_4, &left_4, al, &ar, &mut pred);
+
+            // Forward DCT + quantize (full 16 coefficients including DC)
+            let mut src_block = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            let mut coeffs = [0i16; 16];
+            dct::forward_dct(&src_block, &pred, &mut coeffs);
+            let mut quantized = [0i16; 16];
+            quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut quantized);
+
+            // Dequantize + inverse DCT (DC at position 0, no Y2 path)
+            let mut dequant = [0i16; 16];
+            quant::dequantize_block(&quantized, &seg_quant.y_dc, &mut dequant);
+            let mut recon_block = [0u8; 16];
+            dct::inverse_dct(&dequant, &pred, &mut recon_block);
+
+            // Write to recon_y (MUST happen before next block uses this as neighbor)
+            for r in 0..4 {
+                for c in 0..4 {
+                    let row = mb_row * 16 + sb_row * 4 + r;
+                    let col = mb_col * 16 + sb_col * 4 + c;
+                    recon_y[row * y_stride + col] = recon_block[r * 4 + c];
+                }
             }
         }
-        let mut coeffs = [0i16; 16];
-        dct::forward_dct(&src_block, &ref_block, &mut coeffs);
-        y_dc_coeffs[sb] = coeffs[0]; // Raw DC for WHT path (NOT quantized)
-        let mut quantized = [0i16; 16];
-        quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
-        quantized[0] = 0; // DC goes to Y2
-        y_quantized[sb] = quantized;
-    }
+    } else {
+        // ─── I16x16 reconstruction (original path) ──────────────────────
+        let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
 
-    // WHT on raw DC coefficients, quantize, then dequantize + inverse WHT
-    let mut y2_coeffs = [0i16; 16];
-    dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
-    let mut y2_quantized = [0i16; 16];
-    quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
+        let mut pred_y = [0u8; 256];
+        let y_mode_enum = match mb.y_mode {
+            0 => predict::Intra16Mode::DC,
+            1 => predict::Intra16Mode::V,
+            2 => predict::Intra16Mode::H,
+            _ => predict::Intra16Mode::TM,
+        };
+        predict::predict_16x16(
+            y_mode_enum,
+            &above_y,
+            &left_y,
+            above_left_y,
+            mb_row > 0,
+            mb_col > 0,
+            &mut pred_y,
+        );
 
-    // Dequantize Y2 and inverse WHT to get reconstructed DC coefficients
-    let mut y2_dequant = [0i16; 16];
-    quant::dequantize_block(&y2_quantized, &seg_quant.y2_dc, &mut y2_dequant);
-    let mut recon_dc = [0i16; 16];
-    dct::inverse_wht(&y2_dequant, &mut recon_dc);
-
-    // Reconstruct each Y sub-block: dequantize AC + restored DC → inverse DCT
-    for sb in 0..16 {
-        let sb_row = sb / 4;
-        let sb_col = sb % 4;
-
-        // Dequantize AC coefficients
-        let mut dequant = [0i16; 16];
-        quant::dequantize_block(&y_quantized[sb], &seg_quant.y_ac, &mut dequant);
-        // Restore DC from inverse WHT output
-        dequant[0] = recon_dc[sb];
-
-        // Get prediction block for this sub-block
-        let mut ref_block = [0u8; 16];
-        for r in 0..4 {
-            for c in 0..4 {
-                ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+        let mut y_quantized = [[0i16; 16]; 16];
+        let mut y_dc_coeffs = [0i16; 16];
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
+            let mut src_block = [0u8; 16];
+            let mut ref_block = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                    ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
             }
+            let mut coeffs = [0i16; 16];
+            dct::forward_dct(&src_block, &ref_block, &mut coeffs);
+            y_dc_coeffs[sb] = coeffs[0];
+            let mut quantized = [0i16; 16];
+            quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+            quantized[0] = 0;
+            y_quantized[sb] = quantized;
         }
 
-        // Inverse DCT: adds dequantized residual to prediction
-        let mut recon_block = [0u8; 16];
-        dct::inverse_dct(&dequant, &ref_block, &mut recon_block);
+        let mut y2_coeffs = [0i16; 16];
+        dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
+        let mut y2_quantized = [0i16; 16];
+        quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
+        let mut y2_dequant = [0i16; 16];
+        quant::dequantize_block(&y2_quantized, &seg_quant.y2_dc, &mut y2_dequant);
+        let mut recon_dc = [0i16; 16];
+        dct::inverse_wht(&y2_dequant, &mut recon_dc);
 
-        // Write reconstructed pixels to recon_y
-        for r in 0..4 {
-            for c in 0..4 {
-                let row = mb_row * 16 + sb_row * 4 + r;
-                let col = mb_col * 16 + sb_col * 4 + c;
-                recon_y[row * y_stride + col] = recon_block[r * 4 + c];
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
+            let mut dequant = [0i16; 16];
+            quant::dequantize_block(&y_quantized[sb], &seg_quant.y_ac, &mut dequant);
+            dequant[0] = recon_dc[sb];
+            let mut ref_block = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            let mut recon_block = [0u8; 16];
+            dct::inverse_dct(&dequant, &ref_block, &mut recon_block);
+            for r in 0..4 {
+                for c in 0..4 {
+                    let row = mb_row * 16 + sb_row * 4 + r;
+                    let col = mb_col * 16 + sb_col * 4 + c;
+                    recon_y[row * y_stride + col] = recon_block[r * 4 + c];
+                }
             }
         }
     }
@@ -820,5 +1150,71 @@ mod tests {
         let params = ratecontrol::quality_to_params(75);
         let frame = encode_frame(&yuv, &params);
         assert!(frame.len() > 10, "frame should have header + data");
+    }
+}
+
+#[cfg(test)]
+mod bpred_tests {
+    #[test]
+    fn bpred_gradient_decodes() {
+        // Test B_PRED with gradient content that triggers per-4x4 mode selection
+        for &size in &[32u32, 256, 512] {
+            let s = size as usize;
+            let mut pixels = vec![0u8; s * s * 3];
+            for y in 0..s {
+                for x in 0..s {
+                    let i = (y * s + x) * 3;
+                    pixels[i] = (x * 255 / s) as u8;
+                    pixels[i + 1] = (y * 255 / s) as u8;
+                    pixels[i + 2] = 128;
+                }
+            }
+            let config = crate::EncodeConfig {
+                quality: 75,
+                ..Default::default()
+            };
+            let webp =
+                crate::encode(&pixels, size, size, crate::PixelFormat::Rgb8, &config).unwrap();
+            let decoded = image::load_from_memory_with_format(&webp, image::ImageFormat::WebP);
+            assert!(
+                decoded.is_ok(),
+                "{size}x{size} gradient failed: {:?}",
+                decoded.err()
+            );
+        }
+    }
+
+    #[test]
+    fn bpred_wrapping_gradient_decodes() {
+        // Wrapping gradient — sharp 255→0 transition triggers B_PRED
+        for &size in &[328u32, 512] {
+            let s = size as usize;
+            let mut pixels = vec![0u8; s * s * 3];
+            for y in 0..s {
+                for x in 0..s {
+                    let i = (y * s + x) * 3;
+                    pixels[i] = (x % 256) as u8;
+                    pixels[i + 1] = (y % 256) as u8;
+                    pixels[i + 2] = 128;
+                }
+            }
+            let webp = crate::encode(
+                &pixels,
+                size,
+                size,
+                crate::PixelFormat::Rgb8,
+                &crate::EncodeConfig {
+                    quality: 75,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let decoded = image::load_from_memory_with_format(&webp, image::ImageFormat::WebP);
+            assert!(
+                decoded.is_ok(),
+                "{size}x{size} wrap gradient failed: {:?}",
+                decoded.err()
+            );
+        }
     }
 }

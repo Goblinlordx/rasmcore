@@ -46,6 +46,23 @@ pub enum Intra4Mode {
     HU = 9,
 }
 
+impl Intra4Mode {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::DC,
+            1 => Self::TM,
+            2 => Self::V,
+            3 => Self::H,
+            4 => Self::LD,
+            5 => Self::RD,
+            6 => Self::VR,
+            7 => Self::VL,
+            8 => Self::HD,
+            _ => Self::HU,
+        }
+    }
+}
+
 /// 8×8 chroma prediction mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChromaMode {
