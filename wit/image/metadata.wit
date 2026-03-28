@@ -28,9 +28,36 @@ interface metadata {
         software: option<string>,
     }
 
+    /// A format-specific metadata chunk (PNG text, GIF comment, etc.)
+    record metadata-chunk {
+        key: string,
+        value: buffer,
+    }
+
+    /// Unified metadata container covering all metadata kinds.
+    /// Each field carries raw bytes — parsed on the host/SDK side.
+    /// The pipeline receives this as an immutable blob to embed at write time.
+    record metadata-set {
+        /// Raw EXIF bytes
+        exif: option<buffer>,
+        /// Raw XMP bytes (XML)
+        xmp: option<buffer>,
+        /// Raw IPTC-IIM bytes
+        iptc: option<buffer>,
+        /// ICC color profile bytes
+        icc-profile: option<buffer>,
+        /// Format-specific chunks (PNG text, GIF comment, etc.)
+        format-specific: list<metadata-chunk>,
+    }
+
     /// Read EXIF metadata from encoded image data (JPEG, TIFF, WebP)
     read-exif: func(data: buffer) -> result<exif-metadata, rasmcore-error>;
 
     /// Check if encoded data contains EXIF metadata
     has-exif: func(data: buffer) -> bool;
+
+    /// Read all metadata from encoded image data without decoding pixels.
+    /// Streaming header-only parse — extracts EXIF, XMP, IPTC, ICC, and
+    /// format-specific chunks by scanning container structure.
+    read-metadata: func(data: buffer) -> result<metadata-set, rasmcore-error>;
 }
