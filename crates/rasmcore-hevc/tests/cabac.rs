@@ -1,7 +1,7 @@
 //! Unit tests for HEVC CABAC engine.
 
-use rasmcore_hevc::cabac::{CabacDecoder, ContextModel, SliceType, init_contexts};
 use rasmcore_hevc::cabac::tables::{RANGE_TAB_LPS, TRANS_IDX_LPS, TRANS_IDX_MPS};
+use rasmcore_hevc::cabac::{CabacDecoder, ContextModel, SliceType, init_contexts};
 
 // ============================================================================
 // Context model tests
@@ -288,8 +288,10 @@ fn decoder_bypass_alternating() {
     // Carefully construct data so bypass alternates 1, 0, 1, 0, ...
     // This is harder to construct analytically, so we just test that
     // the decoder produces consistent results with known data.
-    let data = vec![0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF,
-                    0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF];
+    let data = vec![
+        0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF,
+        0xFF,
+    ];
     let mut dec = CabacDecoder::new(&data).unwrap();
     // With offset=0, first bypass reads bit 0 → offset=0, result=0
     // Then reads more 0-bits → result stays 0 for a while
@@ -520,7 +522,7 @@ fn slice_type_init_type() {
 #[test]
 fn integration_i_slice_init_and_decode() {
     // Simulate: initialize contexts for I-slice at QP 26, decode several bins
-    use rasmcore_hevc::cabac::{SPLIT_CU_FLAG_INIT, CBF_LUMA_INIT};
+    use rasmcore_hevc::cabac::{CBF_LUMA_INIT, SPLIT_CU_FLAG_INIT};
 
     let qp = 26;
     let init_type = SliceType::I.init_type(false);

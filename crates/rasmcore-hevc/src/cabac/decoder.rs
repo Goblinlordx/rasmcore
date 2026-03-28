@@ -1,8 +1,8 @@
 //! CABAC arithmetic decoder engine (ITU-T H.265 Section 9.3.3).
 
-use crate::error::HevcError;
 use super::context::ContextModel;
 use super::tables::RANGE_TAB_LPS;
+use crate::error::HevcError;
 
 /// CABAC binary arithmetic decoder.
 ///
