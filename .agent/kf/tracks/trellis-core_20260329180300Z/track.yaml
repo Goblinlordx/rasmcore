@@ -3,105 +3,111 @@ title: Shared Trellis Quantization Engine — Codec-Agnostic Viterbi DP
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement a shared trellis quantization engine as a new rasmcore-trellis crate.
+  summary: 'Implement a shared trellis quantization engine as a new rasmcore-trellis crate.
+
     Uses Viterbi dynamic programming to find globally optimal quantization levels
+
     across all coefficients in a block, considering inter-coefficient context
+
     dependencies. Codec-specific token costs plugged in via TrellisContext trait.
-  context: |
-    Trellis quantization is the standard algorithm for optimal lossy coefficient
+
+    '
+  context: 'Trellis quantization is the standard algorithm for optimal lossy coefficient
+
     selection in every major codec: JPEG (mozjpeg), VP8 (cwebp), H.264 (x264),
+
     H.265 (x265), AV1 (rav1e/libaom). The core algorithm is identical — Viterbi
+
     DP over quantization levels with context-dependent bit costs. Only the token
+
     probability tables and context models differ per codec.
 
+
     Our VP8 encoder currently uses greedy per-coefficient pruning (rdo.rs) which
+
     treats each coefficient independently. Trellis considers that zeroing coefficient
+
     N changes the context for coefficient N+1, finding the globally optimal
+
     combination. This closes the remaining quality gap vs cwebp.
-  codebase_analysis: |
-    No shared trellis infrastructure exists. Each codec has its own quantization:
+
+    '
+  codebase_analysis: 'No shared trellis infrastructure exists. Each codec has its own quantization:
+
     - rasmcore-webp/src/quant.rs: quantize_block() with QuantMatrix (16 coefficients)
+
     - rasmcore-jpeg/src/quantize.rs: quantize() with 64-coeff blocks
+
     - rasmcore-hevc/src/transform/dequant.rs: dequantize_block() (4x4 to 32x32)
 
+
     The trellis engine needs to be generic over block size (16 for VP8, 64 for JPEG,
+
     variable for HEVC) and context model (3 states for VP8, different for CABAC).
+
     The Viterbi search runs forward through coefficient positions, tracking optimal
+
     cost+path for each context state.
+
+    '
   acceptance_criteria:
-    - New rasmcore-trellis crate with no codec-specific dependencies
-    - TrellisContext trait defining token_cost, next_state, eob_cost
-    - TrellisConfig struct (max_block_size, candidate_levels, lambda)
-    - trellis_optimize(coeffs, quant_steps, ctx, lambda) -> optimized quantized coefficients
-    - Viterbi forward pass with backtracking for optimal path
-    - Candidate levels per coefficient include round-down, round-up, and zero
-    - Unit tests with a mock TrellisContext proving optimal path selection
-    - Benchmark showing trellis overhead is bounded (< 10us per 4x4 block)
-  out_of_scope: |
-    Codec-specific integration (separate tracks per codec). SIMD optimization of
+  - New rasmcore-trellis crate with no codec-specific dependencies
+  - TrellisContext trait defining token_cost, next_state, eob_cost
+  - TrellisConfig struct (max_block_size, candidate_levels, lambda)
+  - trellis_optimize(coeffs, quant_steps, ctx, lambda) -> optimized quantized coefficients
+  - Viterbi forward pass with backtracking for optimal path
+  - Candidate levels per coefficient include round-down, round-up, and zero
+  - Unit tests with a mock TrellisContext proving optimal path selection
+  - Benchmark showing trellis overhead is bounded (< 10us per 4x4 block)
+  out_of_scope: 'Codec-specific integration (separate tracks per codec). SIMD optimization of
+
     the DP inner loop. Multi-pass trellis with adaptive lambda.
-  technical_notes: |
-    TrellisContext trait:
-      trait TrellisContext {
-          const NUM_STATES: usize;  // e.g., 3 for VP8, 4 for CABAC
-          fn token_cost(&self, level: i16, position: usize, state: usize) -> u32;
-          fn next_state(&self, level: i16, state: usize) -> usize;
-          fn eob_cost(&self, position: usize, state: usize) -> u32;
-      }
 
-    Viterbi algorithm:
-      For each position i in 0..block_size:
-        For each candidate level L in candidates(i):  // [0, round_down, round_up]
-          For each prev_state S in 0..NUM_STATES:
-            cost = prev_cost[S] + distortion(original[i], dequant(L)) + lambda * token_cost(L, i, S)
-            new_state = next_state(L, S)
-            if cost < best_cost[new_state]:
-              best_cost[new_state] = cost
-              backtrack[i][new_state] = (S, L)
-      // Add EOB costs at each position
-      // Backtrack from minimum-cost terminal state
-
-    Candidate generation per coefficient:
-      original_coeff → quantize → round_down, round_up
-      candidates = [0, round_down, round_up]  (3 candidates)
-      If round_down == 0: candidates = [0, round_up] (skip duplicate)
-
-    Memory: O(block_size * NUM_STATES) for DP table + backtrack.
-    For 64 coefficients * 4 states = 256 entries. Trivial.
+    '
+  technical_notes: "TrellisContext trait:\n  trait TrellisContext {\n      const NUM_STATES: usize;  // e.g., 3 for VP8, 4\
+    \ for CABAC\n      fn token_cost(&self, level: i16, position: usize, state: usize) -> u32;\n      fn next_state(&self,\
+    \ level: i16, state: usize) -> usize;\n      fn eob_cost(&self, position: usize, state: usize) -> u32;\n  }\n\nViterbi\
+    \ algorithm:\n  For each position i in 0..block_size:\n    For each candidate level L in candidates(i):  // [0, round_down,\
+    \ round_up]\n      For each prev_state S in 0..NUM_STATES:\n        cost = prev_cost[S] + distortion(original[i], dequant(L))\
+    \ + lambda * token_cost(L, i, S)\n        new_state = next_state(L, S)\n        if cost < best_cost[new_state]:\n    \
+    \      best_cost[new_state] = cost\n          backtrack[i][new_state] = (S, L)\n  // Add EOB costs at each position\n\
+    \  // Backtrack from minimum-cost terminal state\n\nCandidate generation per coefficient:\n  original_coeff → quantize\
+    \ → round_down, round_up\n  candidates = [0, round_down, round_up]  (3 candidates)\n  If round_down == 0: candidates =\
+    \ [0, round_up] (skip duplicate)\n\nMemory: O(block_size * NUM_STATES) for DP table + backtrack.\nFor 64 coefficients\
+    \ * 4 states = 256 entries. Trivial.\n"
 plan:
-  - phase: Crate Setup
-    tasks:
-      - text: Create rasmcore-trellis crate with Cargo.toml (no external deps, WASM-compatible)
-        done: false
-      - text: Define TrellisContext trait with token_cost, next_state, eob_cost
-        done: false
-      - text: Define TrellisConfig (lambda, max_candidates_per_position)
-        done: false
-  - phase: Viterbi Engine
-    tasks:
-      - text: Implement candidate_levels(original, quant_step) -> generate round-down, round-up, zero
-        done: false
-      - text: Implement forward Viterbi pass with DP table (cost per state at each position)
-        done: false
-      - text: Implement EOB cost injection at each position
-        done: false
-      - text: Implement backtracking to extract optimal level sequence
-        done: false
-      - text: Public API trellis_optimize(coeffs, quant_steps, dequant_steps, ctx, config) -> Vec of i16
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Mock TrellisContext with known costs — verify Viterbi finds provably optimal path
-        done: false
-      - text: Test that trellis with identity costs (all equal) matches round-to-nearest
-        done: false
-      - text: Test that trellis zeros more coefficients than greedy when context rewards runs of zeros
-        done: false
-      - text: Benchmark trellis_optimize for 16-coeff and 64-coeff blocks
-        done: false
-      - text: WASM build check (cargo check --target wasm32-wasip1)
-        done: false
+- phase: Crate Setup
+  tasks:
+  - text: Create rasmcore-trellis crate with Cargo.toml (no external deps, WASM-compatible)
+    done: true
+  - text: Define TrellisContext trait with token_cost, next_state, eob_cost
+    done: true
+  - text: Define TrellisConfig (lambda, max_candidates_per_position)
+    done: true
+- phase: Viterbi Engine
+  tasks:
+  - text: Implement candidate_levels(original, quant_step) -> generate round-down, round-up, zero
+    done: true
+  - text: Implement forward Viterbi pass with DP table (cost per state at each position)
+    done: true
+  - text: Implement EOB cost injection at each position
+    done: true
+  - text: Implement backtracking to extract optimal level sequence
+    done: true
+  - text: Public API trellis_optimize(coeffs, quant_steps, dequant_steps, ctx, config) -> Vec of i16
+    done: true
+- phase: Verification
+  tasks:
+  - text: Mock TrellisContext with known costs — verify Viterbi finds provably optimal path
+    done: true
+  - text: Test that trellis with identity costs (all equal) matches round-to-nearest
+    done: true
+  - text: Test that trellis zeros more coefficients than greedy when context rewards runs of zeros
+    done: true
+  - text: Benchmark trellis_optimize for 16-coeff and 64-coeff blocks
+    done: true
+  - text: WASM build check (cargo check --target wasm32-wasip1)
+    done: true
 extra: {}
