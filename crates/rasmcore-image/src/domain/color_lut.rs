@@ -18,6 +18,33 @@ use super::types::{ImageInfo, PixelFormat};
 /// Default grid size — 33 is the industry standard for 8-bit SDR.
 pub const DEFAULT_GRID_SIZE: usize = 33;
 
+/// Vectorized tetrahedral interpolation on `[f32; 4]` arrays.
+///
+/// Computes: `v0 + (v1 - v0) * f1 + (v2 - v1) * f2 + (v3 - v2) * f3`
+/// for all 4 lanes simultaneously. LLVM maps this to f32x4 SIMD instructions
+/// (SSE on x86, NEON on ARM, SIMD128 on WASM with +simd128).
+///
+/// The caller selects vertices v0-v3 and reorders f1-f3 based on the tetrahedron.
+#[inline(always)]
+fn vec4_tetrahedral(
+    v0: &[f32; 4],
+    v1: &[f32; 4],
+    v2: &[f32; 4],
+    v3: &[f32; 4],
+    f1: f32,
+    f2: f32,
+    f3: f32,
+) -> [f32; 4] {
+    // This multiply-accumulate chain on [f32; 4] compiles to f32x4 SIMD ops
+    // when targeting wasm32 with +simd128 or native with SSE/NEON.
+    [
+        v0[0] + (v1[0] - v0[0]) * f1 + (v2[0] - v1[0]) * f2 + (v3[0] - v2[0]) * f3,
+        v0[1] + (v1[1] - v0[1]) * f1 + (v2[1] - v1[1]) * f2 + (v3[1] - v2[1]) * f3,
+        v0[2] + (v1[2] - v0[2]) * f1 + (v2[2] - v1[2]) * f2 + (v3[2] - v2[2]) * f3,
+        0.0,
+    ]
+}
+
 /// A 3D color lookup table mapping (R,G,B) → (R',G',B').
 ///
 /// Grid points are stored in row-major order with R varying fastest:
@@ -66,13 +93,14 @@ impl ColorLut3D {
         Self { grid_size, data }
     }
 
-    /// Look up a color using tetrahedral interpolation (Sakamoto algorithm).
+    /// Look up a color using vectorized tetrahedral interpolation (Sakamoto algorithm).
     ///
     /// Input: (r, g, b) each in [0.0, 1.0].
     /// Output: (r', g', b') in [0.0, 1.0].
     ///
     /// Divides each cube cell into 6 tetrahedra and interpolates using 4 vertices.
-    /// Faster than trilinear (4 lookups vs 8) and produces less banding.
+    /// Computes all 3 output channels simultaneously using `[f32; 4]` arrays
+    /// that LLVM auto-vectorizes to SIMD (SSE/NEON on native, f32x4 on WASM SIMD128).
     #[inline]
     pub fn lookup(&self, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
         let n = self.grid_size;
@@ -93,63 +121,54 @@ impl ColorLut3D {
         let fg = gf - gi as f32;
         let fb = bf - bi as f32;
 
-        // 8 corner vertices of the enclosing cube
-        let idx = |r: usize, g: usize, b: usize| -> &[f32; 3] { &self.data[b * n * n + g * n + r] };
-
-        let c000 = idx(ri, gi, bi);
-        let c001 = idx(ri, gi, bi + 1);
-        let c010 = idx(ri, gi + 1, bi);
-        let c011 = idx(ri, gi + 1, bi + 1);
-        let c100 = idx(ri + 1, gi, bi);
-        let c101 = idx(ri + 1, gi, bi + 1);
-        let c110 = idx(ri + 1, gi + 1, bi);
-        let c111 = idx(ri + 1, gi + 1, bi + 1);
-
-        // Tetrahedral interpolation: select tetrahedron by sorting residuals
-        // 6 tetrahedra based on ordering of fr, fg, fb
-        let interp = |ch: usize| -> f32 {
-            if fr > fg {
-                if fg > fb {
-                    // fr > fg > fb — tetrahedron 1
-                    c000[ch]
-                        + (c100[ch] - c000[ch]) * fr
-                        + (c110[ch] - c100[ch]) * fg
-                        + (c111[ch] - c110[ch]) * fb
-                } else if fr > fb {
-                    // fr > fb > fg — tetrahedron 2
-                    c000[ch]
-                        + (c100[ch] - c000[ch]) * fr
-                        + (c101[ch] - c100[ch]) * fb
-                        + (c111[ch] - c101[ch]) * fg
-                } else {
-                    // fb > fr > fg — tetrahedron 3
-                    c000[ch]
-                        + (c001[ch] - c000[ch]) * fb
-                        + (c101[ch] - c001[ch]) * fr
-                        + (c111[ch] - c101[ch]) * fg
-                }
-            } else if fr > fb {
-                // fg > fr > fb — tetrahedron 4
-                c000[ch]
-                    + (c010[ch] - c000[ch]) * fg
-                    + (c110[ch] - c010[ch]) * fr
-                    + (c111[ch] - c110[ch]) * fb
-            } else if fg > fb {
-                // fg > fb > fr — tetrahedron 5
-                c000[ch]
-                    + (c010[ch] - c000[ch]) * fg
-                    + (c011[ch] - c010[ch]) * fb
-                    + (c111[ch] - c011[ch]) * fr
-            } else {
-                // fb > fg > fr — tetrahedron 6
-                c000[ch]
-                    + (c001[ch] - c000[ch]) * fb
-                    + (c011[ch] - c001[ch]) * fg
-                    + (c111[ch] - c011[ch]) * fr
-            }
+        // Load vertices as [f32; 4] for SIMD-friendly 3-channel simultaneous computation.
+        // Channel 3 is padding (0.0) — LLVM maps this to f32x4 operations.
+        let load = |r: usize, g: usize, b: usize| -> [f32; 4] {
+            let v = &self.data[b * n * n + g * n + r];
+            [v[0], v[1], v[2], 0.0]
         };
 
-        (interp(0), interp(1), interp(2))
+        let v000 = load(ri, gi, bi);
+        let v111 = load(ri + 1, gi + 1, bi + 1);
+
+        // Select tetrahedron by sorting residuals and compute interpolation.
+        // Each branch loads only 2 additional vertices (4 total, not 8).
+        // The multiply-accumulate chain on [f32; 4] compiles to f32x4 SIMD ops.
+        let result = if fr > fg {
+            if fg > fb {
+                // fr > fg > fb — tetrahedron 1
+                let v100 = load(ri + 1, gi, bi);
+                let v110 = load(ri + 1, gi + 1, bi);
+                vec4_tetrahedral(&v000, &v100, &v110, &v111, fr, fg, fb)
+            } else if fr > fb {
+                // fr > fb > fg — tetrahedron 2
+                let v100 = load(ri + 1, gi, bi);
+                let v101 = load(ri + 1, gi, bi + 1);
+                vec4_tetrahedral(&v000, &v100, &v101, &v111, fr, fb, fg)
+            } else {
+                // fb > fr > fg — tetrahedron 3
+                let v001 = load(ri, gi, bi + 1);
+                let v101 = load(ri + 1, gi, bi + 1);
+                vec4_tetrahedral(&v000, &v001, &v101, &v111, fb, fr, fg)
+            }
+        } else if fr > fb {
+            // fg > fr > fb — tetrahedron 4
+            let v010 = load(ri, gi + 1, bi);
+            let v110 = load(ri + 1, gi + 1, bi);
+            vec4_tetrahedral(&v000, &v010, &v110, &v111, fg, fr, fb)
+        } else if fg > fb {
+            // fg > fb > fr — tetrahedron 5
+            let v010 = load(ri, gi + 1, bi);
+            let v011 = load(ri, gi + 1, bi + 1);
+            vec4_tetrahedral(&v000, &v010, &v011, &v111, fg, fb, fr)
+        } else {
+            // fb > fg > fr — tetrahedron 6
+            let v001 = load(ri, gi, bi + 1);
+            let v011 = load(ri, gi + 1, bi + 1);
+            vec4_tetrahedral(&v000, &v001, &v011, &v111, fb, fg, fr)
+        };
+
+        (result[0], result[1], result[2])
     }
 
     /// Apply this 3D LUT to a pixel buffer.

@@ -99,20 +99,81 @@ pub fn compose_luts(first: &[u8; 256], second: &[u8; 256]) -> [u8; 256] {
 /// Apply a LUT to all color channels of a pixel buffer, preserving alpha.
 ///
 /// For RGB8: applies LUT to all 3 channels.
-/// For RGBA8: applies LUT to R, G, B; copies A unchanged.
+/// For RGBA8: applies LUT to R, G, B; copies A unchanged. Uses batch unrolling
+/// (4 pixels = 16 bytes per iteration) for better throughput.
 /// For Gray8: applies LUT to the single channel.
 pub fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Result<Vec<u8>, ImageError> {
     match info.format {
-        PixelFormat::Rgb8 | PixelFormat::Gray8 => {
-            Ok(pixels.iter().map(|&p| lut[p as usize]).collect())
+        PixelFormat::Rgb8 => {
+            // Process 4 pixels (12 bytes) per iteration for better pipelining
+            let mut result = vec![0u8; pixels.len()];
+            let chunks = pixels.len() / 12;
+            let remainder = pixels.len() % 12;
+            for i in 0..chunks {
+                let base = i * 12;
+                result[base] = lut[pixels[base] as usize];
+                result[base + 1] = lut[pixels[base + 1] as usize];
+                result[base + 2] = lut[pixels[base + 2] as usize];
+                result[base + 3] = lut[pixels[base + 3] as usize];
+                result[base + 4] = lut[pixels[base + 4] as usize];
+                result[base + 5] = lut[pixels[base + 5] as usize];
+                result[base + 6] = lut[pixels[base + 6] as usize];
+                result[base + 7] = lut[pixels[base + 7] as usize];
+                result[base + 8] = lut[pixels[base + 8] as usize];
+                result[base + 9] = lut[pixels[base + 9] as usize];
+                result[base + 10] = lut[pixels[base + 10] as usize];
+                result[base + 11] = lut[pixels[base + 11] as usize];
+            }
+            let tail = chunks * 12;
+            for i in 0..remainder {
+                result[tail + i] = lut[pixels[tail + i] as usize];
+            }
+            Ok(result)
+        }
+        PixelFormat::Gray8 => {
+            let mut result = vec![0u8; pixels.len()];
+            for (out, &inp) in result.iter_mut().zip(pixels.iter()) {
+                *out = lut[inp as usize];
+            }
+            Ok(result)
         }
         PixelFormat::Rgba8 => {
-            let mut result = Vec::with_capacity(pixels.len());
-            for chunk in pixels.chunks_exact(4) {
-                result.push(lut[chunk[0] as usize]); // R
-                result.push(lut[chunk[1] as usize]); // G
-                result.push(lut[chunk[2] as usize]); // B
-                result.push(chunk[3]); // A unchanged
+            // Batch 4 pixels (16 bytes) per iteration: 4x(R,G,B lookup + A copy)
+            let mut result = vec![0u8; pixels.len()];
+            let pixel_count = pixels.len() / 4;
+            let batches = pixel_count / 4;
+            let remainder = pixel_count % 4;
+
+            for i in 0..batches {
+                let base = i * 16;
+                // Pixel 0
+                result[base] = lut[pixels[base] as usize];
+                result[base + 1] = lut[pixels[base + 1] as usize];
+                result[base + 2] = lut[pixels[base + 2] as usize];
+                result[base + 3] = pixels[base + 3]; // alpha
+                // Pixel 1
+                result[base + 4] = lut[pixels[base + 4] as usize];
+                result[base + 5] = lut[pixels[base + 5] as usize];
+                result[base + 6] = lut[pixels[base + 6] as usize];
+                result[base + 7] = pixels[base + 7];
+                // Pixel 2
+                result[base + 8] = lut[pixels[base + 8] as usize];
+                result[base + 9] = lut[pixels[base + 9] as usize];
+                result[base + 10] = lut[pixels[base + 10] as usize];
+                result[base + 11] = pixels[base + 11];
+                // Pixel 3
+                result[base + 12] = lut[pixels[base + 12] as usize];
+                result[base + 13] = lut[pixels[base + 13] as usize];
+                result[base + 14] = lut[pixels[base + 14] as usize];
+                result[base + 15] = pixels[base + 15];
+            }
+            let tail = batches * 16;
+            for i in 0..remainder {
+                let base = tail + i * 4;
+                result[base] = lut[pixels[base] as usize];
+                result[base + 1] = lut[pixels[base + 1] as usize];
+                result[base + 2] = lut[pixels[base + 2] as usize];
+                result[base + 3] = pixels[base + 3];
             }
             Ok(result)
         }
