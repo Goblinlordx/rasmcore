@@ -1380,6 +1380,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "justjp2"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ac40df17c8b973a06a93d07994ec15d4b0f72245864fcfb8eeef6711d7a403b"
+dependencies = [
+ "bitflags",
+ "rayon",
+]
+
+[[package]]
 name = "jxl-bitstream"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2167,6 +2177,7 @@ dependencies = [
  "fast_image_resize",
  "image",
  "imgref",
+ "justjp2",
  "jxl-oxide",
  "kamadak-exif",
  "libblur",
@@ -2183,6 +2194,15 @@ dependencies = [
  "wit-bindgen-rt",
  "xmp-writer",
  "zenjpeg",
+]
+
+[[package]]
+name = "rasmcore-jpeg"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-bitio",
+ "rasmcore-color",
+ "rasmcore-deflate",
 ]
 
 [[package]]

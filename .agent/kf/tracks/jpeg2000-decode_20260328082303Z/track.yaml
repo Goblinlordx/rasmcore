@@ -1,83 +1,91 @@
 id: jpeg2000-decode_20260328082303Z
-title: "JPEG 2000 Decode — Wavelet + EBCOT Decoder (rasmcore-jp2)"
+title: JPEG 2000 Decode — Wavelet + EBCOT Decoder (rasmcore-jp2)
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement JPEG 2000 decode in a new rasmcore-jp2 crate. Pure Rust
+  summary: 'Implement JPEG 2000 decode in a new rasmcore-jp2 crate. Pure Rust
+
     implementation of the ISO 15444-1 core decoder: codestream parser,
+
     EBCOT decoder, inverse DWT, dequantization, and color transform.
-  context: |
-    Based on research track findings. Implements the minimum viable J2K
+
+    '
+  context: 'Based on research track findings. Implements the minimum viable J2K
+
     decoder capable of reading standard .jp2 and .j2k files.
 
-    Priority: decode first (read DICOM images, digital cinema frames,
-    archival scans). Encode follows in a separate track.
-  codebase_analysis: |
-    - New crate: crates/rasmcore-jp2/
-    - Integrate into decoder dispatch in rasmcore-image
-    - JP2 magic bytes: 0x00 0x00 0x00 0x0C 0x6A 0x50 (JP2 container)
-    - J2K codestream: 0xFF 0x4F (SOC marker)
-    - MQ arithmetic coder may share code with JPEG arith.rs
-  acceptance_criteria:
-    - rasmcore-jp2 crate with zero runtime deps (except shared infra crates)
-    - JP2 container parser (ISOBMFF-like box structure)
-    - J2K codestream parser (SIZ, COD, QCD, SOT, SOD markers)
-    - EBCOT tier-1 decoder (bit-plane decoding with MQ coder)
-    - Inverse discrete wavelet transform (5/3 lossless, 9/7 lossy)
-    - Dequantization and inverse color transform
-    - Decode standard .jp2 test images to pixel data
-    - Format detection and decoder dispatch integration
-    - WASM build succeeds
-  out_of_scope: |
-    - JPEG 2000 encoder (separate track)
-    - Part 2 extensions (motion, compositing, security)
-    - JPIP streaming protocol
-    - GPU-accelerated DWT
-  technical_notes: |
-    J2K decode pipeline:
-    1. Parse codestream headers (SIZ → image dimensions, COD → coding params)
-    2. For each tile and resolution level:
-       a. Parse packet headers (tier-2 decode)
-       b. EBCOT bit-plane decode (tier-1 with MQ arithmetic coder)
-       c. Dequantize coefficients
-    3. Inverse DWT (reconstruct image from wavelet subbands)
-    4. Inverse color transform (YCbCr → RGB or identity)
-    5. Clip and output pixels
 
-    The MQ arithmetic coder is very similar to JPEG's QM-coder but with
-    different probability estimation tables. Code reuse opportunity.
+    Priority: decode first (read DICOM images, digital cinema frames,
+
+    archival scans). Encode follows in a separate track.
+
+    '
+  codebase_analysis: '- New crate: crates/rasmcore-jp2/
+
+    - Integrate into decoder dispatch in rasmcore-image
+
+    - JP2 magic bytes: 0x00 0x00 0x00 0x0C 0x6A 0x50 (JP2 container)
+
+    - J2K codestream: 0xFF 0x4F (SOC marker)
+
+    - MQ arithmetic coder may share code with JPEG arith.rs
+
+    '
+  acceptance_criteria:
+  - rasmcore-jp2 crate with zero runtime deps (except shared infra crates)
+  - JP2 container parser (ISOBMFF-like box structure)
+  - J2K codestream parser (SIZ, COD, QCD, SOT, SOD markers)
+  - EBCOT tier-1 decoder (bit-plane decoding with MQ coder)
+  - Inverse discrete wavelet transform (5/3 lossless, 9/7 lossy)
+  - Dequantization and inverse color transform
+  - Decode standard .jp2 test images to pixel data
+  - Format detection and decoder dispatch integration
+  - WASM build succeeds
+  out_of_scope: '- JPEG 2000 encoder (separate track)
+
+    - Part 2 extensions (motion, compositing, security)
+
+    - JPIP streaming protocol
+
+    - GPU-accelerated DWT
+
+    '
+  technical_notes: "J2K decode pipeline:\n1. Parse codestream headers (SIZ → image dimensions, COD → coding params)\n2. For\
+    \ each tile and resolution level:\n   a. Parse packet headers (tier-2 decode)\n   b. EBCOT bit-plane decode (tier-1 with\
+    \ MQ arithmetic coder)\n   c. Dequantize coefficients\n3. Inverse DWT (reconstruct image from wavelet subbands)\n4. Inverse\
+    \ color transform (YCbCr → RGB or identity)\n5. Clip and output pixels\n\nThe MQ arithmetic coder is very similar to JPEG's\
+    \ QM-coder but with\ndifferent probability estimation tables. Code reuse opportunity.\n"
 plan:
-  - phase: "Crate + Parser"
-    tasks:
-      - text: "Create rasmcore-jp2 crate scaffold"
-        done: false
-      - text: "Implement JP2 container parser (box structure)"
-        done: false
-      - text: "Implement J2K codestream header parser (SIZ, COD, QCD)"
-        done: false
-      - text: "Implement packet header parsing (tier-2)"
-        done: false
-  - phase: "Core Decoder"
-    tasks:
-      - text: "Implement MQ arithmetic decoder"
-        done: false
-      - text: "Implement EBCOT tier-1 bit-plane decoder"
-        done: false
-      - text: "Implement inverse DWT (5/3 lossless)"
-        done: false
-      - text: "Implement inverse DWT (9/7 lossy, lifting scheme)"
-        done: false
-      - text: "Implement dequantization and inverse color transform"
-        done: false
-  - phase: "Integration"
-    tasks:
-      - text: "Wire into decoder dispatch (format detection + decode)"
-        done: false
-      - text: "Test with standard JP2 test images (Kakadu test suite)"
-        done: false
-      - text: "WASM build verification"
-        done: false
+- phase: Crate + Parser
+  tasks:
+  - text: Create rasmcore-jp2 crate scaffold
+    done: true
+  - text: Implement JP2 container parser (box structure)
+    done: true
+  - text: Implement J2K codestream header parser (SIZ, COD, QCD)
+    done: true
+  - text: Implement packet header parsing (tier-2)
+    done: true
+- phase: Core Decoder
+  tasks:
+  - text: Implement MQ arithmetic decoder
+    done: true
+  - text: Implement EBCOT tier-1 bit-plane decoder
+    done: true
+  - text: Implement inverse DWT (5/3 lossless)
+    done: true
+  - text: Implement inverse DWT (9/7 lossy, lifting scheme)
+    done: true
+  - text: Implement dequantization and inverse color transform
+    done: true
+- phase: Integration
+  tasks:
+  - text: Wire into decoder dispatch (format detection + decode)
+    done: true
+  - text: Test with standard JP2 test images (Kakadu test suite)
+    done: true
+  - text: WASM build verification
+    done: true
 extra: {}

@@ -290,7 +290,7 @@ fn clamp_to_u8(value: i32, precision: u32) -> u8 {
     } else {
         // Scale down from higher precision (e.g., 12-bit → 8-bit)
         let max = (1i32 << precision) - 1;
-        ((value.clamp(0, max) as u64 * 255 / max as u64) as u8)
+        (value.clamp(0, max) as u64 * 255 / max as u64) as u8
     }
 }
 
