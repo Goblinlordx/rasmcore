@@ -44,6 +44,7 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
             format,
             color_space: ColorSpace::Srgb,
         },
+        icc_profile: None,
     })
 }
 
@@ -79,6 +80,7 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
             format,
             color_space: ColorSpace::Srgb,
         },
+        icc_profile: None,
     })
 }
 

@@ -40,6 +40,9 @@ pub struct ImageInfo {
 pub struct DecodedImage {
     pub pixels: Vec<u8>,
     pub info: ImageInfo,
+    /// Embedded ICC color profile (opaque binary blob).
+    /// Present when the source image contains an ICC profile (e.g., JPEG APP2, PNG iCCP).
+    pub icc_profile: Option<Vec<u8>>,
 }
 
 /// Resize algorithm

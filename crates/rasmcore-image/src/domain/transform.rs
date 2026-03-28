@@ -68,6 +68,7 @@ pub fn resize(
             format: info.format,
             color_space: info.color_space,
         },
+        icc_profile: None,
     })
 }
 
@@ -150,6 +151,7 @@ pub fn convert_format(
             format: new_format,
             color_space: info.color_space,
         },
+        icc_profile: None,
     })
 }
 
@@ -189,6 +191,7 @@ fn image_to_decoded(
             format,
             color_space,
         },
+        icc_profile: None,
     })
 }
 

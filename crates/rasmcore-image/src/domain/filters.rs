@@ -170,6 +170,7 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
             format: PixelFormat::Gray8,
             color_space: info.color_space,
         },
+        icc_profile: None,
     })
 }
 
