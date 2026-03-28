@@ -1,0 +1,8 @@
+title: VP8 Encoder B_PRED — Per-4x4 Block Intra Prediction
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- webp-quality-fix_20260329060000Z

@@ -1,0 +1,160 @@
+id: webp-bpred-mode_20260329080001Z
+title: VP8 Encoder B_PRED — Per-4x4 Block Intra Prediction
+type: feature
+status: pending
+created: 2026-03-29
+updated: "2026-03-29"
+spec:
+  summary: |
+    Add B_PRED (4x4 intra prediction) mode to the VP8 encoder. This is the
+    dominant quality gap vs cwebp, worth ~10-15 dB for gradient/texture content.
+  context: |
+    The VP8 spec defines two luma prediction approaches for keyframes:
+    1. I16x16 modes (DC, V, H, TM) — one mode for the entire 16x16 macroblock
+    2. B_PRED mode — each of the 16 4x4 sub-blocks gets its own prediction
+       mode from 10 options (DC, TM, V, H, LD, RD, VR, VL, HD, HU)
+
+    Our encoder only uses I16x16 modes. cwebp uses B_PRED extensively for
+    non-uniform content like gradients and textures. For a 256x256 gradient,
+    cwebp without segmentation or loop filter achieves 42.4 dB vs our 27.4 dB.
+    The 15 dB gap is primarily from B_PRED enabling per-block adaptation.
+
+    B_PRED allows diagonal modes (LD, RD, VR, VL, HD, HU) that can track
+    local gradient directions within each 4x4 block. I16x16 modes apply a
+    single direction to all 256 pixels, losing within-MB variation.
+  codebase_analysis: |
+    ALREADY IMPLEMENTED (predict.rs):
+    - Intra4Mode enum with all 10 modes (lines 30-47)
+    - predict_4x4() function with all 10 mode implementations (lines 190-375)
+    - select_best_4x4() SAD-based mode selection (lines 578-598)
+    - MacroblockInfo.b_modes: [u8; 16] storage (block.rs line 19)
+    - Token encode_block() supports plane_type=3 (Y-with-DC) (token.rs)
+
+    NEEDS IMPLEMENTATION:
+    1. KF_BMODE_PROB context table — 10x10x9 probability array for encoding
+       sub-block modes. Each mode is encoded via a 9-node tree, with
+       probabilities depending on the top and left neighbor modes.
+       Source: libvpx vp8/common/entropy.c kf_bmode_prob[10][10][9]
+
+    2. encode_bpred_modes() in bitstream.rs — encode 16 sub-block modes
+       into the first partition using context-dependent tree traversal.
+       Tree: [-B_DC_PRED, 2, -B_TM_PRED, 4, -B_VE_PRED, 6, 8, 12,
+              -B_HE_PRED, 10, -B_RD_PRED, -B_VR_PRED, -B_LD_PRED, 14,
+              -B_VL_PRED, 16, -B_HD_PRED, -B_HU_PRED]
+
+    3. B_PRED path in encode_macroblock():
+       - Select best mode per 4x4 block using select_best_4x4()
+       - Compare total B_PRED SAD vs best I16x16 SAD to decide
+       - If B_PRED wins: encode with plane_type=3 (DC stays in block)
+       - No Y2 WHT block for B_PRED MBs
+       - Chroma still uses 8x8 prediction (unchanged)
+
+    4. B_PRED path in reconstruct_macroblock():
+       - Per-4x4 prediction using stored b_modes
+       - Forward DCT + quantize all 16 coefficients (including DC at pos 0)
+       - No WHT path
+       - Dequantize + inverse DCT per block
+
+    5. Complexity context for B_PRED:
+       - Y2 context (top[0], left[0]) is NOT updated for B_PRED MBs
+       - Y block contexts use the same top[1..5]/left[1..5] tracking
+       - Decoder check (vp8.rs read_residual_data): plane=3 when luma_mode==B
+
+    Key decoder reference (image-webp vp8.rs):
+    - read_macroblock_header: when luma=B, reads 16 sub-block modes from
+      KEYFRAME_BPRED_MODE_NODES[top][left] (context-dependent)
+    - read_residual_data: when luma=B, uses plane=3 and skips Y2 block
+  acceptance_criteria:
+    - B_PRED mode selectable per macroblock (compared against I16x16 SAD)
+    - 16 sub-block modes encoded with context-dependent probabilities
+    - Coefficients use plane_type=3 (Y-with-DC, DC at position 0)
+    - No Y2 WHT block for B_PRED macroblocks
+    - PSNR improves by at least 8 dB for 256x256 gradient at q75
+    - Gradient PSNR at q75 exceeds 35 dB
+    - All sizes decode with dwebp and image-webp
+    - B_PRED selected for gradient content, I16x16 for solid content
+    - Deterministic encoding
+    - WASM SIMD tests pass
+    - All existing unit tests pass
+  out_of_scope: |
+    - Rate-distortion optimized mode selection (use SAD for now)
+    - Segmentation / adaptive QP
+    - Loop filter integration (separate track)
+    - 4x4 sub-block transform size optimization
+  technical_notes: |
+    Implementation phases:
+
+    Phase 1 — Mode encoding infrastructure:
+    Add KF_BMODE_PROB[10][10][9] table to tables.rs. This is the context-
+    dependent probability table indexed by [top_mode][left_mode][tree_node].
+    Source: libvpx vp8/common/entropy.c, BSD-3-Clause.
+
+    Add the B_PRED sub-mode tree: 9 internal nodes mapping to 10 leaf modes.
+    Add encode_bpred_modes() to bitstream.rs that encodes 16 modes using
+    the tree with context from top/left neighbor modes.
+
+    Phase 2 — Encode path:
+    Modify encode_macroblock to support B_PRED:
+    1. Try I16x16 modes (existing) — compute best SAD
+    2. Try B_PRED: for each 4x4 block, select_best_4x4() with neighbors
+       from reconstructed frame. Sum all 16 per-block SADs.
+    3. If B_PRED total SAD < I16x16 best SAD: use B_PRED
+    4. For B_PRED: encode each block with plane_type=3, no Y2 block
+
+    For getting 4x4 block neighbors: need above-right pixels (from recon
+    frame or from previously reconstructed blocks within the same MB).
+    Process blocks in raster order: blocks in row 0 use top MB's bottom
+    pixels; blocks in column 0 use left MB's right pixels.
+
+    Phase 3 — Reconstruct path:
+    Add B_PRED variant to reconstruct_macroblock:
+    - For each 4x4 block: predict_4x4() with stored mode
+    - Forward DCT of full 16 coefficients
+    - Quantize with Y_AC quantizer (DC at pos 0 uses DC step, not Y2)
+    - Dequantize + inverse DCT
+    - No WHT path
+
+    Phase 4 — Context tracking:
+    For B_PRED MBs in the token partition:
+    - Skip Y2 block (top[0] and left[0] contexts set to 0)
+    - Y blocks use plane=3, context from top[1..5]/left[1..5] as before
+    - Sub-block mode context: track last mode per column (top) and row (left)
+      for the FIRST PARTITION mode encoding (not token partition)
+plan:
+  - phase: Mode Encoding Infrastructure
+    tasks:
+      - text: Add KF_BMODE_PROB[10][10][9] probability table to tables.rs
+        done: false
+      - text: Add B_PRED sub-mode tree structure and encoding function
+        done: false
+      - text: Add encode_bpred_modes() to encode 16 sub-block modes with context
+        done: false
+  - phase: Encode Path
+    tasks:
+      - text: Add B_PRED SAD evaluation to encode_macroblock (compare vs I16x16)
+        done: false
+      - text: Extract 4x4 prediction neighbors from reconstructed frame
+        done: false
+      - text: Implement B_PRED coefficient path (plane=3, no Y2, DC in block)
+        done: false
+      - text: Update encode_intra_y_mode to handle mode=4 (B_PRED)
+        done: false
+      - text: Test that B_PRED is selected for gradient, I16x16 for solid
+        done: false
+  - phase: Reconstruct Path
+    tasks:
+      - text: Add B_PRED variant to reconstruct_macroblock (per-4x4 prediction)
+        done: false
+      - text: Update complexity context for B_PRED MBs (skip Y2, use plane=3)
+        done: false
+  - phase: Validation
+    tasks:
+      - text: PSNR exceeds 35 dB for 256x256 gradient at q75
+        done: false
+      - text: All sizes decode with dwebp and image-webp
+        done: false
+      - text: Determinism + WASM SIMD + all unit tests pass
+        done: false
+      - text: B_PRED selected for gradient, I16x16 for solid (verify mode choices)
+        done: false
+extra: {}
