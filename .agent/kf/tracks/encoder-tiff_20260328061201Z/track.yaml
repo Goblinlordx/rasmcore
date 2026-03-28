@@ -73,9 +73,9 @@ plan:
 - phase: Parity Tests
   tasks:
   - text: Add TIFF references to generate.sh (LZW, Deflate, uncompressed)
-    done: false
+    done: true
   - text: Roundtrip pixel-exact test (TIFF is lossless)
-    done: false
+    done: true
   - text: File size parity vs ImageMagick at each compression level
-    done: false
+    done: true
 extra: {}
