@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rasmcore-pipeline",
     "crates/rasmcore-image",
+    "crates/rasmcore-webp",
     "tests/wasm-integration",
 ]
 

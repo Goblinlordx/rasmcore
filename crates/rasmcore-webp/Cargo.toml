@@ -1,0 +1,12 @@
+[package]
+name = "rasmcore-webp"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust VP8 lossy encoder for WebP images (RFC 6386)"
+
+[dependencies]
+# No external dependencies — all algorithms implemented from spec
+
+[dev-dependencies]
+# For parity testing against reference implementations
+image = { workspace = true, features = ["webp", "png"] }
