@@ -195,7 +195,14 @@ mod tests {
     #[test]
     fn encode_with_custom_quality() {
         let (pixels, info) = make_test_pixels();
-        let result = encode_pixels(&pixels, &info, &JpegEncodeConfig { quality: 50, progressive: false });
+        let result = encode_pixels(
+            &pixels,
+            &info,
+            &JpegEncodeConfig {
+                quality: 50,
+                progressive: false,
+            },
+        );
         assert!(result.is_ok());
     }
 
@@ -245,7 +252,11 @@ mod tests {
         let jpeg = encode_pixels(&pixels, &info, &config).unwrap();
 
         let result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
-        assert!(result.is_ok(), "JPEG should be decodable: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "JPEG should be decodable: {:?}",
+            result.err()
+        );
         let img = result.unwrap().to_rgb8();
         assert_eq!(img.dimensions(), (32, 32));
     }
