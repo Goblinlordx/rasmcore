@@ -5,20 +5,15 @@ use crate::domain::error::ImageError;
 use crate::domain::types::ImageInfo;
 
 /// PNG filter type selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PngFilterType {
     NoFilter,
     Sub,
     Up,
     Avg,
     Paeth,
+    #[default]
     Adaptive,
-}
-
-impl Default for PngFilterType {
-    fn default() -> Self {
-        Self::Adaptive
-    }
 }
 
 /// PNG encode configuration.
