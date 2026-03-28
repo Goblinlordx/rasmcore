@@ -718,18 +718,93 @@ pub fn canny(
 }
 
 /// Convert multi-channel pixels to single-channel grayscale.
+/// Convert multi-channel pixels to single-channel grayscale.
+///
+/// Uses BT.601 fixed-point: (77*R + 150*G + 29*B + 128) >> 8.
+/// Integer-only arithmetic — no floating point in the hot path.
 fn to_grayscale(pixels: &[u8], channels: usize) -> Vec<u8> {
     if channels == 1 {
         return pixels.to_vec();
     }
     let pixel_count = pixels.len() / channels;
-    let mut gray = Vec::with_capacity(pixel_count);
-    for i in 0..pixel_count {
-        let r = pixels[i * channels] as f32;
-        let g = pixels[i * channels + 1] as f32;
-        let b = pixels[i * channels + 2] as f32;
-        gray.push((0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        to_grayscale_simd128(pixels, channels, pixel_count)
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        to_grayscale_scalar(pixels, channels, pixel_count)
+    }
+}
+
+fn to_grayscale_scalar(pixels: &[u8], channels: usize, pixel_count: usize) -> Vec<u8> {
+    let mut gray = Vec::with_capacity(pixel_count);
+    // BT.601 fixed-point: 77/256 ≈ 0.3008, 150/256 ≈ 0.5859, 29/256 ≈ 0.1133
+    for i in 0..pixel_count {
+        let r = pixels[i * channels] as u32;
+        let g = pixels[i * channels + 1] as u32;
+        let b = pixels[i * channels + 2] as u32;
+        gray.push(((77 * r + 150 * g + 29 * b + 128) >> 8) as u8);
+    }
+    gray
+}
+
+#[cfg(target_arch = "wasm32")]
+fn to_grayscale_simd128(pixels: &[u8], channels: usize, pixel_count: usize) -> Vec<u8> {
+    use std::arch::wasm32::*;
+
+    let mut gray = vec![0u8; pixel_count];
+
+    // Process 4 pixels at a time using i32x4 multiply-accumulate
+    let chunks = pixel_count / 4;
+    let coeff_r = i32x4_splat(77);
+    let coeff_g = i32x4_splat(150);
+    let coeff_b = i32x4_splat(29);
+    let round = i32x4_splat(128);
+
+    for chunk in 0..chunks {
+        let out_base = chunk * 4;
+
+        // Load 4 pixels, extract R/G/B channels
+        let mut rv = [0i32; 4];
+        let mut gv = [0i32; 4];
+        let mut bv = [0i32; 4];
+        for p in 0..4 {
+            let base = (out_base + p) * channels;
+            rv[p] = pixels[base] as i32;
+            gv[p] = pixels[base + 1] as i32;
+            bv[p] = pixels[base + 2] as i32;
+        }
+
+        // SAFETY: rv/gv/bv are [i32; 4] on stack, properly aligned for v128_load
+        unsafe {
+            let r = v128_load(rv.as_ptr() as *const v128);
+            let g = v128_load(gv.as_ptr() as *const v128);
+            let b = v128_load(bv.as_ptr() as *const v128);
+
+            // Y = (77*R + 150*G + 29*B + 128) >> 8
+            let sum = i32x4_add(
+                i32x4_add(i32x4_mul(coeff_r, r), i32x4_mul(coeff_g, g)),
+                i32x4_add(i32x4_mul(coeff_b, b), round),
+            );
+            let shifted = i32x4_shr(sum, 8);
+
+            gray[out_base] = i32x4_extract_lane::<0>(shifted) as u8;
+            gray[out_base + 1] = i32x4_extract_lane::<1>(shifted) as u8;
+            gray[out_base + 2] = i32x4_extract_lane::<2>(shifted) as u8;
+            gray[out_base + 3] = i32x4_extract_lane::<3>(shifted) as u8;
+        }
+    }
+
+    // Handle remaining pixels
+    for i in (chunks * 4)..pixel_count {
+        let r = pixels[i * channels] as u32;
+        let g = pixels[i * channels + 1] as u32;
+        let b = pixels[i * channels + 2] as u32;
+        gray[i] = ((77 * r + 150 * g + 29 * b + 128) >> 8) as u8;
+    }
+
     gray
 }
 
