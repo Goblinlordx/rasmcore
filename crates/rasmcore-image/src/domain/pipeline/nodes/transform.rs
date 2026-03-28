@@ -2,9 +2,9 @@
 
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
-use crate::domain::pipeline::rect::{Overlap, Rect};
 use crate::domain::transform;
 use crate::domain::types::*;
+use rasmcore_pipeline::{Overlap, Rect};
 
 /// Resize node.
 pub struct ResizeNode {

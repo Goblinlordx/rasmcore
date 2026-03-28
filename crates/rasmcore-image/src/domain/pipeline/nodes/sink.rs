@@ -3,7 +3,7 @@
 use crate::domain::encoder;
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::NodeGraph;
-use crate::domain::pipeline::rect::Rect;
+use rasmcore_pipeline::Rect;
 
 /// Write a node's output as the given format. Drives the entire pipeline.
 pub fn write(

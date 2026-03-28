@@ -1,14 +1,12 @@
-//! Demand-driven tile pipeline engine.
+//! Demand-driven tile pipeline engine for image processing.
 //!
-//! The pipeline is a graph of image nodes, each producing pixel regions on demand.
-//! `write()` drives execution by pulling regions backward through the graph.
-//! A spatial cache with ref-counted borrowing ensures overlap regions are
-//! computed once and reused.
-//!
-//! Design reference: .agent/kf/_reports/pipeline-architecture.md
+//! Core primitives (Rect, SpatialCache) come from rasmcore-pipeline.
+//! Image-specific node trait and implementations live here.
 
-pub mod cache;
+// Re-export shared primitives
+pub use rasmcore_pipeline::{Overlap, Rect, SpatialCache};
+pub use rasmcore_pipeline::{cache, rect};
+
 pub mod graph;
 pub mod nodes;
-pub mod rect;
 mod tests;

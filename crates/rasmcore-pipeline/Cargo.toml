@@ -1,0 +1,6 @@
+[package]
+name = "rasmcore-pipeline"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

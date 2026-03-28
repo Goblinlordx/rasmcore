@@ -5,8 +5,8 @@ use std::cell::RefCell;
 use crate::domain::decoder;
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel};
-use crate::domain::pipeline::rect::{Overlap, Rect};
 use crate::domain::types::{DecodedImage, ImageInfo};
+use rasmcore_pipeline::{Overlap, Rect};
 
 /// Source node that decodes an image lazily on first region request.
 pub struct SourceNode {

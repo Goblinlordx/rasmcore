@@ -1,9 +1,8 @@
 //! Node graph — holds all nodes and dispatches region requests.
 
-use super::cache::SpatialCache;
-use super::rect::{Overlap, Rect};
 use crate::domain::error::ImageError;
 use crate::domain::types::ImageInfo;
+use rasmcore_pipeline::{Overlap, Rect, SpatialCache};
 
 /// Access pattern hint for cache optimization.
 #[derive(Debug, Clone, Copy)]

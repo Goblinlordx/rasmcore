@@ -1669,8 +1669,13 @@ name = "rasmcore-image"
 version = "0.1.0"
 dependencies = [
  "image",
+ "rasmcore-pipeline",
  "wit-bindgen-rt",
 ]
+
+[[package]]
+name = "rasmcore-pipeline"
+version = "0.1.0"
 
 [[package]]
 name = "rav1e"

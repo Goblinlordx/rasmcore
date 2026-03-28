@@ -3,8 +3,8 @@
 use crate::domain::error::ImageError;
 use crate::domain::filters;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
-use crate::domain::pipeline::rect::{Overlap, Rect};
 use crate::domain::types::*;
+use rasmcore_pipeline::{Overlap, Rect};
 
 macro_rules! simple_filter_node {
     ($name:ident, $param_type:ty, $fn_name:ident, $overlap_val:expr, $doc:expr) => {

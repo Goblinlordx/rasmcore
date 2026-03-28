@@ -7,8 +7,8 @@ mod tests {
     use crate::domain::pipeline::nodes::sink;
     use crate::domain::pipeline::nodes::source::SourceNode;
     use crate::domain::pipeline::nodes::transform::{CropNode, FlipNode, ResizeNode, RotateNode};
-    use crate::domain::pipeline::rect::Rect;
     use crate::domain::types::*;
+    use rasmcore_pipeline::Rect;
 
     fn make_test_png() -> Vec<u8> {
         let img = image::RgbImage::from_fn(64, 64, |x, y| {
