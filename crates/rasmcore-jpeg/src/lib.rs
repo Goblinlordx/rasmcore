@@ -219,6 +219,7 @@ pub fn encode(
             &luma_qt,
             &chroma_qt,
             config.restart_interval,
+            config.trellis,
         );
         let stuffed = markers::byte_stuff(&mcu_data);
         out.extend_from_slice(&stuffed);
@@ -614,6 +615,7 @@ fn encode_mcus(
     luma_qt: &[u16; 64],
     chroma_qt: &[u16; 64],
     restart_interval: Option<u16>,
+    use_trellis: bool,
 ) -> Vec<u8> {
     // For grayscale, MCU is always 8x8 (single component, 1x1 sampling).
     // For color, MCU depends on chroma subsampling.
@@ -673,9 +675,14 @@ fn encode_mcus(
                     );
                     let mut dct_out = [0i32; 64];
                     dct::forward_dct(&block, &mut dct_out);
-                    let mut quantized = [0i16; 64];
-                    quantize::quantize(&dct_out, luma_qt, &mut quantized);
-                    let zz = zigzag_reorder(&quantized);
+                    let zz = if use_trellis {
+                        let lambda = trellis::default_lambda(luma_qt);
+                        trellis::trellis_quantize(&dct_out, luma_qt, lambda, true)
+                    } else {
+                        let mut quantized = [0i16; 64];
+                        quantize::quantize(&dct_out, luma_qt, &mut quantized);
+                        zigzag_reorder(&quantized)
+                    };
                     enc.encode_block(0, &zz); // component 0 = Y
                 }
             }
@@ -692,9 +699,14 @@ fn encode_mcus(
                     );
                     let mut dct_out = [0i32; 64];
                     dct::forward_dct(&block, &mut dct_out);
-                    let mut quantized = [0i16; 64];
-                    quantize::quantize(&dct_out, chroma_qt, &mut quantized);
-                    let zz = zigzag_reorder(&quantized);
+                    let zz = if use_trellis {
+                        let lambda = trellis::default_lambda(chroma_qt);
+                        trellis::trellis_quantize(&dct_out, chroma_qt, lambda, false)
+                    } else {
+                        let mut quantized = [0i16; 64];
+                        quantize::quantize(&dct_out, chroma_qt, &mut quantized);
+                        zigzag_reorder(&quantized)
+                    };
                     enc.encode_block(comp_idx, &zz);
                 }
             }
@@ -1072,5 +1084,198 @@ mod advanced_tests {
                 "mode prog={prog} arith={arith} prec={prec:?} must be deterministic"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod trellis_integration_tests {
+    use super::*;
+
+    #[test]
+    fn trellis_reduces_file_size() {
+        let mut pixels = Vec::with_capacity(32 * 32 * 3);
+        for y in 0..32u8 {
+            for x in 0..32u8 {
+                pixels.push(x.wrapping_mul(8));
+                pixels.push(y.wrapping_mul(8));
+                pixels.push(128);
+            }
+        }
+
+        let baseline = encode(
+            &pixels,
+            32,
+            32,
+            PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality: 75,
+                trellis: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let with_trellis = encode(
+            &pixels,
+            32,
+            32,
+            PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality: 75,
+                trellis: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        eprintln!(
+            "Trellis: baseline={} trellis={} bytes (savings={:.1}%)",
+            baseline.len(),
+            with_trellis.len(),
+            (1.0 - with_trellis.len() as f64 / baseline.len() as f64) * 100.0
+        );
+
+        // Trellis should produce equal or smaller files
+        assert!(
+            with_trellis.len() <= baseline.len(),
+            "trellis ({}) should be <= baseline ({})",
+            with_trellis.len(),
+            baseline.len()
+        );
+
+        // Both should be decodable
+        let ref_baseline = image::load_from_memory_with_format(&baseline, image::ImageFormat::Jpeg);
+        assert!(ref_baseline.is_ok(), "baseline decode failed");
+
+        let ref_trellis =
+            image::load_from_memory_with_format(&with_trellis, image::ImageFormat::Jpeg);
+        assert!(ref_trellis.is_ok(), "trellis decode failed");
+    }
+
+    #[test]
+    fn trellis_deterministic() {
+        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i * 7 % 256) as u8).collect();
+        let config = EncodeConfig {
+            quality: 85,
+            trellis: true,
+            ..Default::default()
+        };
+        let a = encode(&pixels, 16, 16, PixelFormat::Rgb8, &config).unwrap();
+        let b = encode(&pixels, 16, 16, PixelFormat::Rgb8, &config).unwrap();
+        assert_eq!(a, b, "trellis encoding should be deterministic");
+    }
+}
+
+#[test]
+fn trellis_savings_complex_content() {
+    // Create complex content: checkerboard + noise
+    let mut pixels = Vec::with_capacity(64 * 64 * 3);
+    for y in 0..64u16 {
+        for x in 0..64u16 {
+            let checker = if ((x / 8) + (y / 8)) % 2 == 0 {
+                200u8
+            } else {
+                50u8
+            };
+            let noise = ((x.wrapping_mul(17).wrapping_add(y.wrapping_mul(31))) % 20) as u8;
+            pixels.push(checker.wrapping_add(noise));
+            pixels.push(checker.wrapping_sub(noise.min(checker)));
+            pixels.push(128);
+        }
+    }
+
+    for &quality in &[50u8, 75, 85] {
+        let baseline = encode(
+            &pixels,
+            64,
+            64,
+            PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality,
+                trellis: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let with_trellis = encode(
+            &pixels,
+            64,
+            64,
+            PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality,
+                trellis: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let savings = (1.0 - with_trellis.len() as f64 / baseline.len() as f64) * 100.0;
+        eprintln!(
+            "Q{quality}: baseline={} trellis={} savings={savings:.1}%",
+            baseline.len(),
+            with_trellis.len()
+        );
+
+        // Both decodable
+        assert!(
+            image::load_from_memory_with_format(&with_trellis, image::ImageFormat::Jpeg).is_ok()
+        );
+    }
+}
+
+#[test]
+fn trellis_savings_256x256() {
+    let mut pixels = Vec::with_capacity(256 * 256 * 3);
+    for y in 0..256u16 {
+        for x in 0..256u16 {
+            let checker = if ((x / 8) + (y / 8)) % 2 == 0 {
+                200u8
+            } else {
+                50u8
+            };
+            let noise = ((x.wrapping_mul(17).wrapping_add(y.wrapping_mul(31))) % 30) as u8;
+            pixels.push(checker.wrapping_add(noise));
+            pixels.push(checker.wrapping_sub(noise.min(checker)));
+            pixels.push(128);
+        }
+    }
+
+    for &quality in &[50u8, 75, 85] {
+        let baseline = encode(
+            &pixels,
+            256,
+            256,
+            PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality,
+                trellis: false,
+                quant_preset: quantize::QuantPreset::AnnexK,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let with_trellis = encode(
+            &pixels,
+            256,
+            256,
+            PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality,
+                trellis: true,
+                quant_preset: quantize::QuantPreset::AnnexK,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let savings = (1.0 - with_trellis.len() as f64 / baseline.len() as f64) * 100.0;
+        eprintln!(
+            "256x256 Q{quality}: baseline={} trellis={} savings={savings:.1}%",
+            baseline.len(),
+            with_trellis.len()
+        );
+        assert!(
+            image::load_from_memory_with_format(&with_trellis, image::ImageFormat::Jpeg).is_ok(),
+            "Q{quality}: trellis output not decodable"
+        );
     }
 }

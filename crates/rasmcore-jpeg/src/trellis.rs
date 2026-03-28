@@ -72,8 +72,12 @@ pub fn trellis_quantize(
 ///
 /// Uses the mozjpeg formula: lambda = (avg_quant_step / 2)^2
 pub fn default_lambda(quant_table: &[u16; 64]) -> f64 {
+    // Scale factor calibrated to match mozjpeg's trellis aggressiveness.
+    // The Huffman rate cost is in whole bits, while SSD is per-pixel squared error.
+    // Without scaling, the rate penalty is too low to zero out small coefficients.
+    // mozjpeg uses lambda ≈ (avg_step)^2, not (avg_step/2)^2.
     let avg_step: f64 = quant_table.iter().map(|&q| q as f64).sum::<f64>() / 64.0;
-    (avg_step / 2.0) * (avg_step / 2.0)
+    avg_step * avg_step
 }
 
 /// Estimate Huffman bits for an AC (run, size) symbol pair.
