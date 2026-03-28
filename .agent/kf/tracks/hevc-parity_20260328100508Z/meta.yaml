@@ -1,5 +1,5 @@
-title: HEVC Parity Tests — Validate Against libde265 Reference
-status: pending
+title: "HEVC Parity Tests \u2014 Validate Against libde265 Reference"
+status: completed
 type: chore
 approved: false
 created: '2026-03-28'
