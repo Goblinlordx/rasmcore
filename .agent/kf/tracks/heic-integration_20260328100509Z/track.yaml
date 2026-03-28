@@ -27,31 +27,31 @@ plan:
 - phase: Feature Flag + Dependency
   tasks:
   - text: Add nonfree-hevc feature flag to rasmcore-image Cargo.toml (implies native-heif, adds dep on rasmcore-hevc)
-    done: false
+    done: true
   - text: Update decode_heif() to call rasmcore_hevc::decode() when nonfree-hevc is enabled
-    done: false
+    done: true
 - phase: Single Image Decode
   tasks:
   - text: Wire HEVC decode for single-image HEIC (extract hvcC config NALs, prepend to bitstream, decode)
-    done: false
+    done: true
   - text: Handle ICC profile from rasmcore-isobmff colr property
-    done: false
+    done: true
   - text: Handle color space signaling (nclx -> ColorSpace mapping)
-    done: false
+    done: true
 - phase: Grid Image Decode
   tasks:
   - text: Implement grid image decode — decode each tile via rasmcore-hevc, composite into output buffer at grid positions
-    done: false
+    done: true
   - text: Handle partial tiles at image edges (last row/column may be smaller than tile dimensions)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: End-to-end test with real HEIC file (single image, verify dimensions and non-zero pixels)
-    done: false
+    done: true
   - text: End-to-end test with grid HEIC file (verify composited output dimensions)
-    done: false
+    done: true
   - text: Verify WASM build with nonfree-hevc (cargo component check)
-    done: false
+    done: true
   - text: Verify free build (without nonfree-hevc) still returns metadata-only error for HEIC
-    done: false
+    done: true
 extra: {}
