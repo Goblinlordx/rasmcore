@@ -28,34 +28,34 @@ plan:
 - phase: Slice Header
   tasks:
   - text: Implement slice_header() parser — slice_type, slice_qp_delta, pic_order_cnt_lsb, deblocking filter overrides
-    done: false
+    done: true
   - text: Implement slice_data() entry — CTU address iteration, entry point offsets for tiles/WPP
-    done: false
+    done: true
 - phase: CTU/CU Parsing
   tasks:
   - text: Implement coding_quadtree() — recursive quad-tree split with split_cu_flag via CABAC
-    done: false
+    done: true
   - text: Implement coding_unit() — pred_mode_flag, part_mode for intra CUs
-    done: false
+    done: true
   - text: Implement prediction_unit() for intra — prev_intra_luma_pred_flag, mpm_idx, rem_intra_luma_pred_mode
-    done: false
+    done: true
   - text: Implement intra chroma pred mode decoding
-    done: false
+    done: true
 - phase: Transform Unit + Residual Coding
   tasks:
   - text: Implement transform_tree() — recursive TU split with split_transform_flag
-    done: false
+    done: true
   - text: Implement cbf (coded block flag) decoding for luma and chroma
-    done: false
+    done: true
   - text: Implement residual_coding() — last_sig_coeff position, significance map, coeff_abs_level_greater1/2, coeff_sign_flag,
       coeff_abs_level_remaining
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for slice header parsing with crafted CABAC bitstream
-    done: false
+    done: true
   - text: Unit tests for CTU quad-tree split at various depths
-    done: false
+    done: true
   - text: Integration test parsing residual coefficients from a minimal coded block
-    done: false
+    done: true
 extra: {}
