@@ -696,3 +696,246 @@ fn encoding_deterministic() {
 
     assert_eq!(a, b, "encoding should be deterministic");
 }
+
+// ─── CI cwebp Enforcement ──────────────────────────────────────────────────
+
+/// Check cwebp availability with env var enforcement.
+/// When RASMCORE_REQUIRE_CWEBP=1, panics instead of skipping.
+fn require_cwebp() -> bool {
+    if cwebp_available() {
+        return true;
+    }
+    if std::env::var("RASMCORE_REQUIRE_CWEBP").unwrap_or_default() == "1" {
+        panic!("cwebp is REQUIRED (RASMCORE_REQUIRE_CWEBP=1) but not found in PATH");
+    }
+    eprintln!("SKIP: cwebp not available (set RASMCORE_REQUIRE_CWEBP=1 to enforce)");
+    false
+}
+
+// ─── Large Image Parity ────────────────────────────────────────────────────
+
+#[test]
+fn large_1024_quality_sweep() {
+    if !require_cwebp() {
+        return;
+    }
+    let (w, h) = (1024, 1024);
+    let original = gradient_pixels(w, h);
+
+    for quality in [25u8, 50, 75, 95] {
+        let start = std::time::Instant::now();
+        let our = rasmcore_webp::encode(
+            &original,
+            w,
+            h,
+            rasmcore_webp::PixelFormat::Rgb8,
+            &rasmcore_webp::EncodeConfig {
+                quality,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let our_time = start.elapsed();
+
+        let start = std::time::Instant::now();
+        let cwebp = cwebp_encode(&original, w, h, quality as u32)
+            .expect(&format!("cwebp Q{quality} failed"));
+        let cwebp_time = start.elapsed();
+
+        let (_, _, a_pixels) = ref_decode(&our).expect("our decode failed");
+        let (_, _, c_pixels) = ref_decode(&cwebp).expect("cwebp decode failed");
+        let a_q = psnr(&a_pixels, &original);
+        let c_q = psnr(&c_pixels, &original);
+
+        eprintln!(
+            "1024x1024 Q{quality}: A={a_q:.1}dB C={c_q:.1}dB | ours={} cwebp={} bytes | time: ours={:.0}ms cwebp={:.0}ms",
+            our.len(),
+            cwebp.len(),
+            our_time.as_millis(),
+            cwebp_time.as_millis()
+        );
+
+        assert!(a_q > 15.0, "Q{quality}: quality too low: {a_q:.1}dB");
+        assert!(
+            a_q >= c_q * 0.4,
+            "Q{quality}: A ({a_q:.1}dB) should be >= 40% of C ({c_q:.1}dB)"
+        );
+    }
+}
+
+#[test]
+#[ignore] // Large — run with --include-ignored in CI
+fn large_2048_parity() {
+    if !require_cwebp() {
+        return;
+    }
+    let (w, h) = (2048, 2048);
+    let original = gradient_pixels(w, h);
+
+    let start = std::time::Instant::now();
+    let our = rasmcore_webp::encode(
+        &original,
+        w,
+        h,
+        rasmcore_webp::PixelFormat::Rgb8,
+        &rasmcore_webp::EncodeConfig {
+            quality: 75,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let our_time = start.elapsed();
+
+    let cwebp = cwebp_encode(&original, w, h, 75).expect("cwebp failed");
+
+    let (_, _, a_px) = ref_decode(&our).expect("our decode failed");
+    let (_, _, c_px) = ref_decode(&cwebp).expect("cwebp decode failed");
+    let a_q = psnr(&a_px, &original);
+    let c_q = psnr(&c_px, &original);
+
+    eprintln!(
+        "2048x2048 Q75: A={a_q:.1}dB C={c_q:.1}dB | ours={} cwebp={} bytes | time={:.0}ms",
+        our.len(),
+        cwebp.len(),
+        our_time.as_millis()
+    );
+
+    assert!(a_q > 20.0, "2048 quality too low: {a_q:.1}dB");
+    assert!(
+        a_q >= c_q * 0.4,
+        "2048: A ({a_q:.1}dB) < 40% of C ({c_q:.1}dB)"
+    );
+}
+
+#[test]
+#[ignore] // Very large — run with --include-ignored in CI
+fn large_4k_parity() {
+    if !require_cwebp() {
+        return;
+    }
+    let (w, h) = (3840, 2160);
+    let original = gradient_pixels(w, h);
+
+    let start = std::time::Instant::now();
+    let our = rasmcore_webp::encode(
+        &original,
+        w,
+        h,
+        rasmcore_webp::PixelFormat::Rgb8,
+        &rasmcore_webp::EncodeConfig {
+            quality: 75,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let our_time = start.elapsed();
+
+    let cwebp = cwebp_encode(&original, w, h, 75).expect("cwebp 4K failed");
+
+    let (dw, dh, a_px) = ref_decode(&our).expect("our 4K decode failed");
+    assert_eq!((dw, dh), (w, h), "4K dimension mismatch");
+    let (_, _, c_px) = ref_decode(&cwebp).expect("cwebp 4K decode failed");
+    let a_q = psnr(&a_px, &original);
+    let c_q = psnr(&c_px, &original);
+
+    eprintln!(
+        "4K (3840x2160) Q75: A={a_q:.1}dB C={c_q:.1}dB | ours={} cwebp={} bytes | time={:.0}ms",
+        our.len(),
+        cwebp.len(),
+        our_time.as_millis()
+    );
+
+    assert!(a_q > 18.0, "4K quality too low: {a_q:.1}dB");
+}
+
+// ─── Extreme Dimensions ────────────────────────────────────────────────────
+
+#[test]
+fn extreme_dimensions() {
+    if !require_cwebp() {
+        return;
+    }
+
+    let cases: Vec<(&str, u32, u32)> = vec![
+        ("1x1", 1, 1),
+        ("3x3", 3, 3),
+        ("1x1000", 1, 1000),
+        ("1000x1", 1000, 1),
+        ("7x13", 7, 13),
+    ];
+
+    for (label, w, h) in cases {
+        let original = gradient_pixels(w, h);
+        let our = rasmcore_webp::encode(
+            &original,
+            w,
+            h,
+            rasmcore_webp::PixelFormat::Rgb8,
+            &rasmcore_webp::EncodeConfig {
+                quality: 75,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let cwebp = cwebp_encode(&original, w, h, 75).expect(&format!("{label}: cwebp failed"));
+
+        // Both must decode
+        let our_dec = ref_decode(&our);
+        assert!(our_dec.is_some(), "{label}: our decode failed");
+        let (dw, dh, _) = our_dec.unwrap();
+        assert_eq!((dw, dh), (w, h), "{label}: dimension mismatch");
+
+        let cwebp_dec = ref_decode(&cwebp);
+        assert!(cwebp_dec.is_some(), "{label}: cwebp decode failed");
+
+        eprintln!("{label}: ours={} cwebp={} bytes", our.len(), cwebp.len());
+    }
+}
+
+// ─── File Size Scaling ─────────────────────────────────────────────────────
+
+#[test]
+fn file_size_scales_with_pixels() {
+    // Verify file size grows roughly linearly with pixel count
+    let mut sizes: Vec<(u64, usize)> = Vec::new();
+
+    for &dim in &[64u32, 128, 256, 512] {
+        let pixels = gradient_pixels(dim, dim);
+        let webp = rasmcore_webp::encode(
+            &pixels,
+            dim,
+            dim,
+            rasmcore_webp::PixelFormat::Rgb8,
+            &rasmcore_webp::EncodeConfig {
+                quality: 75,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let pixel_count = (dim as u64) * (dim as u64);
+        sizes.push((pixel_count, webp.len()));
+        eprintln!(
+            "{dim}x{dim}: {pixel_count} pixels → {} bytes ({:.3} bytes/px)",
+            webp.len(),
+            webp.len() as f64 / pixel_count as f64
+        );
+    }
+
+    // File size should increase with pixel count (not necessarily linearly due to
+    // compression, but 512x512 should be larger than 64x64)
+    assert!(
+        sizes.last().unwrap().1 > sizes.first().unwrap().1,
+        "512x512 should be larger than 64x64"
+    );
+
+    // Bytes per pixel should be relatively stable (within 10x range)
+    let bpp_first = sizes.first().unwrap().1 as f64 / sizes.first().unwrap().0 as f64;
+    let bpp_last = sizes.last().unwrap().1 as f64 / sizes.last().unwrap().0 as f64;
+    let ratio = bpp_first / bpp_last;
+    eprintln!("BPP ratio (64 vs 512): {ratio:.2}");
+    assert!(
+        ratio < 20.0,
+        "file size scaling too inconsistent: {ratio:.1}x"
+    );
+}
