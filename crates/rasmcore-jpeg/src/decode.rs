@@ -562,14 +562,13 @@ fn decode_scan(
                         let mut dequant = [0i32; 64];
                         quantize::dequantize(&coeffs, qt, &mut dequant);
 
-                        // Inverse DCT
+                        // Inverse DCT (includes +128 level shift and 0-255 clamp)
                         let mut spatial = [0i16; 64];
                         dct::inverse_dct(&dequant, &mut spatial);
 
-                        // Level shift (+128) and clamp to [0, 255]
                         let mut pixels = [0u8; 64];
                         for i in 0..64 {
-                            pixels[i] = (spatial[i] + 128).clamp(0, 255) as u8;
+                            pixels[i] = spatial[i] as u8;
                         }
 
                         // Write block to plane
@@ -947,11 +946,10 @@ fn decode_progressive(
                         let mut dequant = [0i32; 64];
                         quantize::dequantize(&coeffs, qt, &mut dequant);
 
-                        // Inverse DCT
+                        // Inverse DCT (includes +128 level shift and 0-255 clamp)
                         let mut spatial = [0i16; 64];
                         dct::inverse_dct(&dequant, &mut spatial);
 
-                        // Level shift (+128) and clamp
                         let block_x = mcu_col * comp.h_sampling as usize * 8 + h_block * 8;
                         let block_y = mcu_row * comp.v_sampling as usize * 8 + v_block * 8;
                         for row in 0..8 {
@@ -959,8 +957,7 @@ fn decode_progressive(
                                 let py = block_y + row;
                                 let px = block_x + col;
                                 if py < planes[ci].len() / pw && px < pw {
-                                    planes[ci][py * pw + px] =
-                                        (spatial[row * 8 + col] + 128).clamp(0, 255);
+                                    planes[ci][py * pw + px] = spatial[row * 8 + col];
                                 }
                             }
                         }

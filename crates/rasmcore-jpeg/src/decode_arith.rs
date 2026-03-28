@@ -97,12 +97,13 @@ pub(crate) fn decode_scan_arithmetic(
                         let mut dequant = [0i32; 64];
                         quantize::dequantize(&coeffs, qt, &mut dequant);
 
+                        // Inverse DCT (includes +128 level shift and 0-255 clamp)
                         let mut spatial = [0i16; 64];
                         dct::inverse_dct(&dequant, &mut spatial);
 
                         let mut pixels = [0u8; 64];
                         for i in 0..64 {
-                            pixels[i] = (spatial[i] + 128).clamp(0, 255) as u8;
+                            pixels[i] = spatial[i] as u8;
                         }
 
                         let block_x = mcu_col * comp.h_sampling as usize * 8 + h_block * 8;
