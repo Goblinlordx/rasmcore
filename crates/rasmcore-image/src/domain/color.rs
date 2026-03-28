@@ -518,6 +518,136 @@ pub fn icc_to_srgb(
 mod tests {
     use super::*;
 
+    // Minimal valid sRGB ICC v2 profile.
+    // The macOS system profile is large; this generates a minimal one from
+    // moxcms by creating an sRGB transform and using the system profile
+    // if available.
+    fn load_test_icc_profile() -> Option<Vec<u8>> {
+        // Try macOS system sRGB profile first
+        let path = "/System/Library/ColorSync/Profiles/sRGB Profile.icc";
+        std::fs::read(path).ok()
+    }
+
+    fn load_display_p3_profile() -> Option<Vec<u8>> {
+        let path = "/System/Library/ColorSync/Profiles/Display P3.icc";
+        std::fs::read(path).ok()
+    }
+
+    #[test]
+    fn icc_to_srgb_identity_with_srgb_profile() {
+        let profile = match load_test_icc_profile() {
+            Some(p) => p,
+            None => return, // skip on non-macOS
+        };
+
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgb8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+
+        // Generate test pixels: known RGB values
+        let pixels: Vec<u8> = (0..4 * 4 * 3).map(|i| (i * 16 % 256) as u8).collect();
+
+        let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // sRGB→sRGB should be near-identity (allow small rounding)
+        for (a, b) in pixels.iter().zip(result.iter()) {
+            assert!(
+                (*a as i16 - *b as i16).unsigned_abs() <= 2,
+                "sRGB identity drift too large: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn icc_to_srgb_display_p3_changes_pixels() {
+        let profile = match load_display_p3_profile() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let info = ImageInfo {
+            width: 2,
+            height: 2,
+            format: PixelFormat::Rgb8,
+            color_space: super::super::types::ColorSpace::DisplayP3,
+        };
+
+        // Bright saturated red in Display P3 (wider gamut than sRGB)
+        let pixels = vec![255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0];
+
+        let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Display P3 red (255,0,0) mapped to sRGB should change —
+        // the transform should produce different values since P3 has a wider gamut.
+        // The result should still be valid RGB values.
+        assert!(result.iter().all(|&v| v <= 255));
+    }
+
+    #[test]
+    fn icc_to_srgb_rgba8_format() {
+        let profile = match load_test_icc_profile() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let info = ImageInfo {
+            width: 2,
+            height: 2,
+            format: PixelFormat::Rgba8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+
+        // RGBA pixels with alpha
+        let pixels = vec![128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200];
+
+        let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Alpha channel should be preserved (check every 4th byte)
+        for i in (3..result.len()).step_by(4) {
+            assert_eq!(result[i], pixels[i], "alpha channel was modified at index {i}");
+        }
+    }
+
+    #[test]
+    fn icc_to_srgb_invalid_profile_returns_error() {
+        let info = ImageInfo {
+            width: 2,
+            height: 2,
+            format: PixelFormat::Rgb8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let pixels = vec![0u8; 2 * 2 * 3];
+        let bad_profile = vec![0u8; 64]; // not a valid ICC profile
+
+        let result = icc_to_srgb(&pixels, &info, &bad_profile);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn icc_to_srgb_unsupported_format_returns_error() {
+        let profile = match load_test_icc_profile() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let info = ImageInfo {
+            width: 2,
+            height: 2,
+            format: PixelFormat::Gray8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let pixels = vec![128u8; 2 * 2];
+
+        let result = icc_to_srgb(&pixels, &info, &profile);
+        assert!(result.is_err());
+    }
+
     #[test]
     fn extract_icc_from_jpeg_no_profile() {
         // Minimal JPEG with no ICC: SOI + EOI

@@ -97,21 +97,21 @@ plan:
   - text: Extract ICC profile from PNG during decode (iCCP chunk)
     done: true
   - text: Domain tests for ICC profile extraction
-    done: false
+    done: true
 - phase: Color Conversion
   tasks:
   - text: Implement ICC-to-sRGB conversion using moxcms
-    done: false
+    done: true
   - text: Add ICC-to-sRGB pipeline node
-    done: false
+    done: true
   - text: Domain tests for color conversion correctness
     done: false
 - phase: Profile Embedding & Verification
   tasks:
   - text: Embed ICC profile in JPEG output
-    done: false
+    done: true
   - text: Embed ICC profile in PNG output
-    done: false
+    done: true
   - text: WASM integration test for ICC roundtrip
     done: false
 extra: {}
