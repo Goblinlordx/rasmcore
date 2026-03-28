@@ -1,0 +1,80 @@
+id: heic-decode_20260328082301Z
+title: "HEIC/HEIF Decode — Container Parser + Sidecar HEVC Interface"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement HEIF container parsing (ISOBMFF) and define the sidecar plugin
+    interface for HEVC decode. Core rasmcore handles the container; HEVC
+    decoding is delegated to an optional sidecar component.
+  context: |
+    Based on research track findings. The HEIF container (ISOBMFF boxes) is
+    royalty-free and can be parsed natively. The HEVC codec decode is delegated
+    to a sidecar plugin that users provide separately.
+
+    This gives rasmcore the ability to read HEIC files when the HEVC sidecar
+    is present, without shipping patent-encumbered code.
+  codebase_analysis: |
+    - Decoder dispatch in domain/decoder/mod.rs needs HEIC format detection
+    - HEIF magic bytes: ftyp box with 'heic', 'heix', 'heim', 'heis' brands
+    - WIT interface needed for sidecar HEVC decoder plugin
+    - AVIF already works (same container, different codec)
+  acceptance_criteria:
+    - HEIF container parser reads ISOBMFF boxes (pure Rust)
+    - Extracts HEVC bitstream from HEIF container
+    - WIT interface defined for sidecar HEVC decoder
+    - Format detection recognizes HEIC magic bytes
+    - When sidecar is present, HEIC decode produces pixels
+    - When sidecar is absent, returns clear error (not crash)
+    - HEIF metadata extraction (EXIF, ICC from container)
+    - Added to supported_formats() when sidecar available
+  out_of_scope: |
+    - HEVC encoder (patent risk)
+    - The sidecar HEVC decoder implementation itself
+    - HEIF-based AVIF (already supported via image crate)
+  technical_notes: |
+    HEIF container structure (ISOBMFF):
+    - ftyp box: identifies file type and compatible brands
+    - meta box: contains item references and properties
+    - iloc box: item locations within the file
+    - iprp box: item properties (dimensions, codec config)
+    - mdat box: media data (raw HEVC bitstream)
+
+    The parser extracts the HEVC bitstream from mdat and passes it to
+    the sidecar decoder via WIT interface. The sidecar returns decoded
+    pixel data which rasmcore wraps into DecodedImage.
+
+    Sidecar WIT interface:
+      interface hevc-decoder {
+        decode-frame: func(hevc-data: buffer, width: u32, height: u32) -> result<buffer, error>;
+      }
+plan:
+  - phase: "Container Parser"
+    tasks:
+      - text: "Implement ISOBMFF box parser (ftyp, meta, iloc, iprp, mdat)"
+        done: false
+      - text: "Extract HEVC bitstream from HEIF container"
+        done: false
+      - text: "Extract HEIF metadata (EXIF from meta box, ICC profile)"
+        done: false
+      - text: "HEIC format detection (ftyp brands)"
+        done: false
+  - phase: "Sidecar Interface"
+    tasks:
+      - text: "Define WIT interface for sidecar HEVC decoder"
+        done: false
+      - text: "Implement sidecar discovery and invocation"
+        done: false
+      - text: "Implement graceful fallback when sidecar is absent"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Wire HEIC decode into decoder dispatch"
+        done: false
+      - text: "Test with real HEIC files (when sidecar present)"
+        done: false
+      - text: "Test graceful error when sidecar absent"
+        done: false
+extra: {}

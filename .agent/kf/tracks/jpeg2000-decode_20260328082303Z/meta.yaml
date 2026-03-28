@@ -1,0 +1,8 @@
+title: JPEG 2000 Decode — Wavelet + EBCOT Decoder (rasmcore-jp2)
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg2000-research_20260328082302Z

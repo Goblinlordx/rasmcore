@@ -1,0 +1,8 @@
+title: HEIC/HEIF Decode — Container Parser + Sidecar HEVC Interface
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- heic-research_20260328082300Z

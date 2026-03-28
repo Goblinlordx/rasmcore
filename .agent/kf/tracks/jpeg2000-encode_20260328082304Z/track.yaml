@@ -1,0 +1,82 @@
+id: jpeg2000-encode_20260328082304Z
+title: "JPEG 2000 Encode — Forward DWT + EBCOT Encoder"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Add JPEG 2000 encode to rasmcore-jp2: forward DWT, EBCOT encoder,
+    quantization, rate allocation, and JP2/J2K codestream assembly.
+    Completes full RW support for JPEG 2000.
+  context: |
+    With decode working, this track adds encode. JPEG 2000 encoding is
+    important for medical imaging (DICOM), digital cinema (DCP), and
+    archival workflows.
+  codebase_analysis: |
+    - Extends rasmcore-jp2 from decode track
+    - MQ encoder shares implementation with MQ decoder (bidirectional)
+    - Forward DWT is inverse of decoder's inverse DWT
+    - Rate allocation (PCRD — Post Compression Rate Distortion) is the
+      key quality-controlling algorithm
+  acceptance_criteria:
+    - Forward DWT (5/3 lossless, 9/7 lossy)
+    - EBCOT tier-1 encoder (bit-plane coding)
+    - Quantization (dead-zone scalar)
+    - Tier-2 packet assembly
+    - Rate allocation (PCRD optimization)
+    - JP2 container and J2K codestream assembly
+    - Quality parameter maps to target bitrate
+    - Lossless mode produces pixel-exact roundtrip
+    - Lossy mode quality comparable to OpenJPEG at same bitrate
+    - Wire into encoder dispatch + WIT interface
+    - Parity test vs OpenJPEG reference output
+  out_of_scope: |
+    - Part 2 extensions
+    - Multi-tile optimization
+    - ROI (region of interest) encoding
+  technical_notes: |
+    J2K encode pipeline:
+    1. Color transform (RCT for lossless, ICT for lossy)
+    2. Forward DWT (multi-level decomposition)
+    3. Quantization (dead-zone scalar for lossy, identity for lossless)
+    4. EBCOT tier-1 encoding (bit-plane coding with MQ encoder)
+    5. Rate allocation (PCRD — find optimal truncation points)
+    6. Tier-2 packet assembly
+    7. Codestream and container assembly
+
+    Rate allocation is the most complex part — it uses Lagrangian
+    optimization to find the optimal set of truncation points across
+    all code-blocks that minimizes distortion for a target bitrate.
+plan:
+  - phase: "Forward Transform"
+    tasks:
+      - text: "Implement forward DWT (5/3 lossless, lifting scheme)"
+        done: false
+      - text: "Implement forward DWT (9/7 lossy, lifting scheme)"
+        done: false
+      - text: "Implement quantization (dead-zone scalar)"
+        done: false
+      - text: "Implement color transform (RCT, ICT)"
+        done: false
+  - phase: "EBCOT + Assembly"
+    tasks:
+      - text: "Implement EBCOT tier-1 encoder (bit-plane coding)"
+        done: false
+      - text: "Implement tier-2 packet assembly"
+        done: false
+      - text: "Implement rate allocation (PCRD)"
+        done: false
+      - text: "Implement codestream and JP2 container assembly"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Wire into encoder dispatch + WIT interface"
+        done: false
+      - text: "Lossless roundtrip test (encode then decode = pixel-exact)"
+        done: false
+      - text: "Lossy quality parity vs OpenJPEG at same bitrate"
+        done: false
+      - text: "WASM build verification"
+        done: false
+extra: {}

@@ -1,0 +1,78 @@
+id: svg-render_20260328082305Z
+title: "SVG Render — resvg Integration for SVG-to-Raster Decode"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Integrate resvg (pure Rust SVG renderer) for SVG-to-raster decode.
+    Read-only: converts SVG input to pixel buffer. Writing SVG is a
+    different domain (vector graphics) and is out of scope.
+  context: |
+    SVG is supported by both ImageMagick (read+write via librsvg) and
+    libvips (read via librsvg). For rasmcore, SVG is decode-only —
+    we rasterize SVG to pixels for image processing pipeline input.
+
+    resvg is a production-quality pure Rust SVG renderer (used by Firefox,
+    MIT/Apache-2.0). It handles static SVG 1.1 and SVG 2 subsets without
+    JavaScript execution or animation.
+  codebase_analysis: |
+    - No SVG code exists in rasmcore
+    - resvg outputs to a pixel buffer (tiny-skia backend)
+    - Integration is straightforward: parse SVG, render to RGBA8 pixels
+    - SVG detection: starts with '<?xml' or '<svg' or has .svg extension
+    - resvg is ~500KB compiled, pure Rust, no C deps
+  acceptance_criteria:
+    - resvg added as dependency to rasmcore-image
+    - SVG format detection (XML prolog or svg element)
+    - SVG decode produces RGBA8 pixel buffer at default or specified DPI
+    - Configurable render dimensions (scale to target width/height)
+    - Added to supported_formats() decode list
+    - Test with common SVG files (icons, diagrams, logos)
+    - WASM build succeeds (resvg is WASM-compatible)
+  out_of_scope: |
+    - SVG write/generation (vector graphics domain)
+    - SVG animation
+    - SVG scripting (JavaScript)
+    - SVG editing or DOM manipulation
+  technical_notes: |
+    resvg API:
+      let tree = usvg::Tree::from_str(&svg_string, &options);
+      let pixmap = tiny_skia::Pixmap::new(width, height);
+      resvg::render(&tree, transform, &mut pixmap.as_mut());
+      // pixmap.data() → &[u8] RGBA8 pixels
+
+    DPI handling: SVG dimensions are in CSS pixels. Default 96 DPI.
+    User can request specific pixel dimensions for the output.
+
+    Integration point: decoder dispatch recognizes SVG format,
+    renders to RGBA8 pixel buffer, wraps in DecodedImage.
+plan:
+  - phase: "Integration"
+    tasks:
+      - text: "Add resvg and usvg dependencies to rasmcore-image"
+        done: false
+      - text: "Implement SVG format detection (XML/svg header check)"
+        done: false
+      - text: "Implement SVG decode via resvg render to RGBA8 pixmap"
+        done: false
+      - text: "Support configurable render dimensions (default 96 DPI)"
+        done: false
+  - phase: "Wiring"
+    tasks:
+      - text: "Wire into decoder dispatch"
+        done: false
+      - text: "Add svg to supported_formats() decode list"
+        done: false
+      - text: "WIT interface for SVG decode with dimension config"
+        done: false
+  - phase: "Testing"
+    tasks:
+      - text: "Test with icon SVGs (simple paths)"
+        done: false
+      - text: "Test with complex SVGs (gradients, text, transforms)"
+        done: false
+      - text: "WASM build verification"
+        done: false
+extra: {}

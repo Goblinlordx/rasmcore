@@ -1,0 +1,88 @@
+id: heic-research_20260328082300Z
+title: "Research: HEIC/HEIF — Patent Landscape, Pure Rust Options, Sidecar Strategy"
+type: research
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Research HEIC/HEIF format support options given HEVC patent constraints.
+    Evaluate pure Rust decode paths, sidecar plugin pattern for patent-encumbered
+    codec, and document the recommended implementation strategy.
+  context: |
+    HEIC (High Efficiency Image Container) uses HEIF container (ISO/IEC 23008-12)
+    with HEVC codec (ISO/IEC 23008-2). HEVC has active patent pools from MPEG LA,
+    Access Advance, and Velos Media — commercial use requires licensing.
+
+    This is a critical gap: Apple's default camera format since iOS 11. Any image
+    processing service handling user uploads must be able to read HEIC.
+
+    rasmcore's product.yaml describes a sidecar plugin pattern specifically for
+    patent-encumbered codecs — HEIC decode is a prime candidate.
+
+    Key questions this research must answer:
+    1. Can we decode HEIC without HEVC patents? (HEIF container is royalty-free,
+       only the HEVC codec layer has patents)
+    2. What pure Rust HEIC/HEIF decode options exist?
+    3. Should we implement as a sidecar plugin or core module?
+    4. Can we recommend AVIF as the royalty-free alternative for encode?
+    5. What is the minimum viable decode-only implementation?
+  codebase_analysis: |
+    - rasmcore already supports AVIF (same HEIF container, royalty-free AV1 codec)
+    - Product.yaml describes sidecar pattern for patent-encumbered codecs
+    - No existing HEIC code in the codebase
+    - image crate does NOT support HEIC
+  acceptance_criteria:
+    - Patent landscape documented (which patents, which pools, expiry dates)
+    - Pure Rust decode options evaluated (libheif-rs, heif-parser, etc.)
+    - Sidecar vs core module recommendation with rationale
+    - WASM compatibility assessment for each option
+    - Minimum viable decode-only spec
+    - AVIF-as-alternative strategy documented
+  out_of_scope: |
+    - HEVC encoder implementation (patent risk too high)
+    - Writing any code
+  technical_notes: |
+    HEIF container structure:
+    - ISOBMFF (ISO Base Media File Format) boxes
+    - Can contain multiple codecs: HEVC, AV1, VVC, JPEG
+    - Container itself is royalty-free
+    - The codec layer (HEVC) is where patents apply
+
+    Options to evaluate:
+    1. libheif-rs (wraps C libheif) — full HEIC support but C dependency
+    2. HEIF container parser (pure Rust, parse boxes) + delegate HEVC decode
+    3. mp4parse-rust (Mozilla, for ISOBMFF parsing) + HEVC decode
+    4. isobmff crate (pure Rust ISOBMFF parser)
+
+    Sidecar plugin pattern from product.yaml:
+    - Separate WASM component for patent-encumbered codec
+    - Distributed separately from core rasmcore
+    - Users who need HEIC provide their own HEVC decoder
+    - Core rasmcore handles the HEIF container, sidecar handles HEVC
+plan:
+  - phase: "Patent Analysis"
+    tasks:
+      - text: "Document HEVC patent pools (MPEG LA, Access Advance, Velos Media)"
+        done: false
+      - text: "Document patent expiry timeline and royalty-free options"
+        done: false
+      - text: "Assess legal risk for decode-only vs encode"
+        done: false
+  - phase: "Technical Evaluation"
+    tasks:
+      - text: "Evaluate libheif-rs (C wrapper) for WASM compatibility"
+        done: false
+      - text: "Evaluate pure Rust HEIF container parsers (isobmff, mp4parse)"
+        done: false
+      - text: "Evaluate sidecar plugin architecture for HEVC decode delegation"
+        done: false
+      - text: "Assess AVIF as recommended royalty-free alternative for encode"
+        done: false
+  - phase: "Design Document"
+    tasks:
+      - text: "Write HEIC support strategy document"
+        done: false
+      - text: "Recommend implementation path (sidecar vs core, decode-only scope)"
+        done: false
+extra: {}
