@@ -1,6 +1,7 @@
 title: HEVC Syntax Decoder Fix — CTU/CU CABAC Correctness
-status: pending
+status: archived
 type: bug
 approved: false
 created: '2026-03-28'
 updated: '2026-03-28'
+archived_at: '2026-03-28'
