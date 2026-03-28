@@ -1,0 +1,97 @@
+id: hevc-bin-trace-audit_20260329030000Z
+title: HEVC CABAC Bin Trace Audit — Step-by-Step Validation Against libde265
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Build a libde265 debug decoder that dumps every CABAC bin (context index + value) per CTU. Compare our decoder's
+    bin trace against it, identify each divergence, fix it, and mark it accepted.
+  context: 6/9 parity tests pass but the remaining 3 fail on PSNR. The research identified 8 fixes which were applied, but
+    quality didn't improve — indicating the implementation has subtle errors. Rather than guessing, this track builds instrumentation
+    to compare CABAC bin-by-bin against a reference decoder (libde265), identify every divergence, and fix each one.
+  codebase_analysis: '- libde265 1.0.18 installed at /opt/homebrew with headers and library
+
+    - libde265 source at github.com/strukturag/libde265 has logtrace() with LogSlice/LogSymbols
+
+    - Building libde265 from source with DE265_LOG_TRACE defined enables per-bin logging
+
+    - Our decoder in syntax.rs has decode_residual_coeffs with sub-block structure
+
+    - Test bitstreams in tests/fixtures/hevc/generated/ ready for comparison
+
+    - Key failing case: flat_64x64_q37 (5 bytes CABAC data, 4 CTUs, simplest non-trivial case)'
+  acceptance_criteria:
+  - libde265 built from source with bin trace output enabled
+  - Our decoder instrumented with matching bin trace output
+  - Bin traces for flat_64x64_q37 match between our decoder and libde265
+  - Each syntax element marked ACCEPTED or REJECTED with evidence
+  - 'All 9 parity tests pass (no zero-padding, no #[ignore])'
+  - CABAC read_bit errors on stream exhaustion (no zero-padding)
+  out_of_scope: Chroma decode, inter prediction, advanced HEVC features.
+  technical_notes: 'Approach:
+
+    1. Build libde265 from source with DE265_LOG_TRACE to get bin-level logging
+
+    2. Add bin trace to our Rust decoder (log each decode_bin call with context index + result)
+
+    3. Run both on flat_64x64_q37.hevc, capture output
+
+    4. Diff the bin traces line by line
+
+    5. At first divergence: identify which context index is wrong, fix it
+
+    6. Repeat until traces match completely
+
+    7. Once traces match, PSNR should be pixel-perfect
+
+
+    This is the systematic approach: no more guessing at context indices.
+
+    Each fix is validated by checking the bin trace matches the reference.
+
+    Mark each syntax element as ACCEPTED or REJECTED with the specific
+
+    bin values from both decoders.'
+plan:
+- phase: Build Reference Bin Tracer
+  tasks:
+  - text: Clone libde265 source and build with DE265_LOG_TRACE defined
+    done: false
+  - text: Write wrapper that runs libde265 on a test bitstream and captures LogSlice/LogSymbols output
+    done: false
+  - text: Run on flat_64x64_q37.hevc and capture complete bin trace (context_index, bin_value per syntax element)
+    done: false
+  - text: Parse trace into structured format (JSON or CSV) for diffing
+    done: false
+- phase: Instrument Our Decoder
+  tasks:
+  - text: Add bin trace mode to CabacDecoder (log each decode_bin/bypass/terminate call with context index and result)
+    done: false
+  - text: Add syntax element labels to trace (split_cu, prev_intra, sig_coeff, gt1, etc.)
+    done: false
+  - text: Run our decoder on flat_64x64_q37.hevc with tracing enabled
+    done: false
+  - text: Parse our trace into same structured format as reference
+    done: false
+- phase: Diff and Fix
+  tasks:
+  - text: Diff bin traces line by line — identify first divergence point
+    done: false
+  - text: For each divergence, identify which context index is wrong and fix it
+    done: false
+  - text: Re-run and re-diff after each fix until traces match completely
+    done: false
+  - text: Mark each syntax element as ACCEPTED (traces match) or REJECTED (traces differ) with evidence
+    done: false
+- phase: Validation
+  tasks:
+  - text: Revert CABAC zero-padding (read_bit errors on exhaustion)
+    done: false
+  - text: Run all 9 parity tests — all must pass
+    done: false
+  - text: Verify PSNR thresholds (q22 > 40dB, q37 > 30dB, gradient > 25dB, checker > 25dB)
+    done: false
+  - text: clippy clean, fmt clean, full workspace cargo test
+    done: false
+extra: {}
