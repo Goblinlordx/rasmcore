@@ -1,5 +1,5 @@
 title: WebP SIMD128 — WASM-Targeted Vectorization of VP8 Hot Paths
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'
