@@ -676,7 +676,7 @@ fn encode_mcus(
                     let mut dct_out = [0i32; 64];
                     dct::forward_dct(&block, &mut dct_out);
                     let zz = if use_trellis {
-                        let lambda = trellis::default_lambda(luma_qt);
+                        let lambda = trellis::adaptive_lambda(&dct_out, 1.0);
                         trellis::trellis_quantize(&dct_out, luma_qt, lambda, true)
                     } else {
                         let mut quantized = [0i16; 64];
@@ -700,7 +700,7 @@ fn encode_mcus(
                     let mut dct_out = [0i32; 64];
                     dct::forward_dct(&block, &mut dct_out);
                     let zz = if use_trellis {
-                        let lambda = trellis::default_lambda(chroma_qt);
+                        let lambda = trellis::adaptive_lambda(&dct_out, 1.0);
                         trellis::trellis_quantize(&dct_out, chroma_qt, lambda, false)
                     } else {
                         let mut quantized = [0i16; 64];

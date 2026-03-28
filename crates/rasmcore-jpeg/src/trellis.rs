@@ -38,11 +38,38 @@ pub fn trellis_quantize(
     lambda: f64,
     is_luma: bool,
 ) -> [i16; 64] {
-    let ac_code_lengths = if is_luma {
-        &AC_LUMA_CODE_LENGTHS
-    } else {
-        &AC_CHROMA_CODE_LENGTHS
+    trellis_quantize_with_codes(dct_coeffs, quant_table, lambda, is_luma, None)
+}
+
+/// Trellis quantize with optional custom AC code lengths for rate estimation.
+///
+/// When `custom_ac_codes` is provided, uses those code lengths instead of the
+/// static ITU-T Annex K tables. This enables more accurate rate estimation
+/// when optimized Huffman tables are available.
+pub fn trellis_quantize_with_codes(
+    dct_coeffs: &[i32; 64],
+    quant_table: &[u16; 64],
+    lambda: f64,
+    is_luma: bool,
+    custom_ac_codes: Option<&[u8; 256]>,
+) -> [i16; 64] {
+    let ac_code_lengths = match custom_ac_codes {
+        Some(codes) => codes,
+        None => {
+            if is_luma {
+                &AC_LUMA_CODE_LENGTHS
+            } else {
+                &AC_CHROMA_CODE_LENGTHS
+            }
+        }
     };
+
+    // Pre-compute per-coefficient weight: 1/Q[i]^2 (normalized distortion)
+    let mut coeff_weight = [0.0f64; 64];
+    for i in 0..64 {
+        let q = quant_table[i] as f64;
+        coeff_weight[i] = if q > 0.0 { 1.0 / (q * q) } else { 1.0 };
+    }
 
     let mut output = [0i16; 64];
 
@@ -56,24 +83,51 @@ pub fn trellis_quantize(
     };
 
     // AC coefficients: trellis optimization
-    // Process in zigzag order (positions 1-63)
     trellis_optimize_ac(
         dct_coeffs,
         quant_table,
         lambda,
         ac_code_lengths,
+        &coeff_weight,
         &mut output,
     );
 
     output
 }
 
-/// Compute the default lambda parameter from the quantization table.
+/// Compute content-adaptive lambda from DCT coefficients and quantization table.
 ///
-/// Matches mozjpeg's default: lambda = 1.0. This balances SSD distortion
-/// (squared DCT coefficient errors) against Huffman rate (in bits),
-/// producing 5-15% file size savings with < 0.05dB PSNR loss at typical
-/// quality levels (Q75-Q85).
+/// Uses mozjpeg-aligned formula:
+///   block_energy = mean_squared_AC = sum(ac_coeff^2) / 63
+///   lambda = 2^14.75 / (2^16.5 + block_energy)
+///
+/// Flat blocks → high lambda → more zeros → smaller files.
+/// Textured blocks → low lambda → preserve detail → better quality.
+///
+/// The `scale` parameter allows user-adjustable quality-size tradeoff:
+/// - scale = 1.0 matches mozjpeg default
+/// - scale > 1.0 more aggressive (smaller files)
+/// - scale < 1.0 less aggressive (higher quality)
+pub fn adaptive_lambda(dct_coeffs: &[i32; 64], scale: f64) -> f64 {
+    // Compute block energy: mean squared AC coefficient
+    let mut energy: f64 = 0.0;
+    for pos in 1..64 {
+        let c = dct_coeffs[ZIGZAG[pos]] as f64;
+        energy += c * c;
+    }
+    let mean_sq = energy / 63.0;
+
+    // mozjpeg formula: 2^14.75 / (2^16.5 + block_energy)
+    // 2^14.75 ≈ 27554.5, 2^16.5 ≈ 92681.9
+    let lambda = 27554.5 / (92681.9 + mean_sq);
+
+    lambda * scale
+}
+
+/// Compute the default lambda parameter.
+///
+/// Returns fixed 1.0 for backwards compatibility. Use [`adaptive_lambda`]
+/// for content-adaptive trellis quantization.
 pub fn default_lambda(_quant_table: &[u16; 64]) -> f64 {
     1.0
 }
@@ -135,6 +189,7 @@ fn trellis_optimize_ac(
     quant_table: &[u16; 64],
     lambda: f64,
     ac_code_lengths: &[u8; 256],
+    coeff_weight: &[f64; 64],
     output: &mut [i16; 64],
 ) {
     const NUM_AC: usize = 63;
@@ -188,7 +243,8 @@ fn trellis_optimize_ac(
 
         for &cand in &candidates[0] {
             let dequant = cand as i32 * q;
-            let dist = ((original - dequant) as f64).powi(2);
+            // Per-coefficient weighted distortion: SSD * weight[zigzag_pos]
+            let dist = ((original - dequant) as f64).powi(2) * coeff_weight[zigzag_pos];
 
             if cand == 0 {
                 let total = dist;
@@ -222,7 +278,8 @@ fn trellis_optimize_ac(
 
         for &cand in &candidates[pos] {
             let dequant = cand as i32 * q;
-            let dist = ((original - dequant) as f64).powi(2);
+            // Per-coefficient weighted distortion: SSD * weight[zigzag_pos]
+            let dist = ((original - dequant) as f64).powi(2) * coeff_weight[zigzag_pos];
 
             if cand == 0 {
                 // Zero: extend run from any previous state
@@ -417,5 +474,97 @@ mod tests {
         assert_eq!(magnitude_category(7), 3);
         assert_eq!(magnitude_category(255), 8);
         assert_eq!(magnitude_category(-255), 8);
+    }
+
+    #[test]
+    fn adaptive_lambda_flat_vs_textured() {
+        // Flat block: all AC = 0 → high lambda (aggressive zeroing OK)
+        let mut flat = [0i32; 64];
+        flat[0] = 1000; // DC only
+        let lambda_flat = adaptive_lambda(&flat, 1.0);
+
+        // Textured block: AC energy everywhere → low lambda (preserve detail)
+        let mut textured = [0i32; 64];
+        textured[0] = 1000;
+        for i in 1..64 {
+            textured[i] = 200;
+        }
+        let lambda_textured = adaptive_lambda(&textured, 1.0);
+
+        assert!(
+            lambda_flat > lambda_textured,
+            "flat block lambda ({lambda_flat:.6}) should be > textured ({lambda_textured:.6})"
+        );
+    }
+
+    #[test]
+    fn adaptive_lambda_scale_factor() {
+        let block = make_test_block();
+        let l1 = adaptive_lambda(&block, 1.0);
+        let l2 = adaptive_lambda(&block, 2.0);
+        assert!(
+            (l2 - 2.0 * l1).abs() < 1e-10,
+            "scale=2.0 should double lambda"
+        );
+    }
+
+    #[test]
+    fn adaptive_lambda_positive_range() {
+        // Lambda should always be positive for any block content
+        let mut block = [0i32; 64];
+        assert!(
+            adaptive_lambda(&block, 1.0) > 0.0,
+            "zero block lambda should be positive"
+        );
+
+        for i in 0..64 {
+            block[i] = i32::MAX / 100;
+        }
+        assert!(
+            adaptive_lambda(&block, 1.0) > 0.0,
+            "huge block lambda should be positive"
+        );
+    }
+
+    #[test]
+    fn trellis_with_custom_codes() {
+        let block = make_test_block();
+        let qt = quantize::luma_quant_table(75, QuantPreset::Robidoux, false);
+
+        // Standard trellis
+        let std_result = trellis_quantize(&block, &qt, 1.0, true);
+
+        // Trellis with same codes as static (should give identical result)
+        let custom_result =
+            trellis_quantize_with_codes(&block, &qt, 1.0, true, Some(&AC_LUMA_CODE_LENGTHS));
+
+        assert_eq!(
+            std_result, custom_result,
+            "same codes should give same result"
+        );
+    }
+
+    #[test]
+    fn per_coeff_weighting_zeros_high_frequency() {
+        // With per-coefficient 1/Q^2 weighting, high-frequency positions
+        // (large Q values) should be more aggressively zeroed
+        let mut block = [0i32; 64];
+        // Put moderate energy in all positions
+        for i in 0..64 {
+            block[i] = 100;
+        }
+        let qt = quantize::luma_quant_table(50, QuantPreset::Robidoux, false);
+        let lambda = adaptive_lambda(&block, 1.0);
+        let result = trellis_quantize(&block, &qt, lambda, true);
+
+        // Count non-zero coefficients in low-freq (pos 1-10) vs high-freq (pos 50-63)
+        let low_nz: usize = result[1..=10].iter().filter(|&&c| c != 0).count();
+        let high_nz: usize = result[50..64].iter().filter(|&&c| c != 0).count();
+
+        // High-frequency should have fewer non-zeros (larger Q → more zeroing)
+        assert!(
+            low_nz >= high_nz,
+            "low-freq non-zeros ({low_nz}) should be >= high-freq ({high_nz})"
+        );
     }
 }
