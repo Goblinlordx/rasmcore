@@ -348,8 +348,8 @@ mod tests {
     fn supported_formats_lists_expected() {
         let fmts = supported_formats();
         for f in [
-            "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr",
-            "pnm", "exr", "dds",
+            "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm",
+            "exr", "dds",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing format: {f}");
         }

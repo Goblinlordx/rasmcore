@@ -1,98 +1,103 @@
 id: decoder-jxl_20260328061204Z
-title: "JPEG XL Decode + Encode — jxl-oxide Decode, Scaffold Pure-Rust Encoder"
+title: JPEG XL Decode + Encode — jxl-oxide Decode, Scaffold Pure-Rust Encoder
 type: feature
 status: pending
 created: 2026-03-28
 updated: '2026-03-28'
 spec:
-  summary: |
-    Add JPEG XL decode via jxl-oxide crate and scaffold a rasmcore-jxl crate
+  summary: 'Add JPEG XL decode via jxl-oxide crate and scaffold a rasmcore-jxl crate
+
     for a future pure-Rust JXL encoder (similar to the rasmcore-webp approach).
+
     Decode is fully functional; encode is scaffolded with config types and
+
     error handling but returns not-yet-implemented until the encoder is built.
-  context: |
-    JPEG XL (ISO/IEC 18181) is the modern replacement for JPEG with superior
+
+    '
+  context: 'JPEG XL (ISO/IEC 18181) is the modern replacement for JPEG with superior
+
     compression, progressive decode, lossless and lossy modes, and wide gamut
-    support. It's supported by Safari, Chrome (behind flag), and most image tools.
+
+    support. It''s supported by Safari, Chrome (behind flag), and most image tools.
+
 
     Decode: jxl-oxide is a high-quality pure-Rust JXL decoder (MIT/Apache-2.0,
+
     WASM-compatible, 48K downloads/month).
 
+
     Encode: The only pure-Rust JXL encoder (jxl-encoder) is AGPL-3.0, which is
+
     incompatible with proprietary use. Rather than waiting for a permissive
+
     alternative, we scaffold a rasmcore-jxl crate following the same pattern
+
     as rasmcore-webp — a pure-Rust implementation built from the ISO spec.
+
     The encoder scaffold defines the module structure and config types so that
+
     future encoder tracks can implement incrementally.
 
+
     Patent status: royalty-free (Google/Cloudinary RF patent grant, Apache-2.0
+
     reference implementation).
-  codebase_analysis: |
-    - jxl-oxide 0.12.5: pure Rust, WASM-compatible, MIT/Apache-2.0
-    - Decode path: add jxl-oxide as dependency to rasmcore-image, integrate
-      into decoder dispatch (detect JPEG XL magic bytes, decode via jxl-oxide)
-    - JXL magic bytes: 0xFF 0x0A (bare codestream) or ISOBMFF box
-    - Encoder scaffold: new crate crates/rasmcore-jxl/ with module structure
-      parallel to rasmcore-webp (config, error, lib with encode() stub)
-    - The image crate does NOT support JPEG XL — we need direct jxl-oxide use
+
+    '
+  codebase_analysis: "- jxl-oxide 0.12.5: pure Rust, WASM-compatible, MIT/Apache-2.0\n- Decode path: add jxl-oxide as dependency\
+    \ to rasmcore-image, integrate\n  into decoder dispatch (detect JPEG XL magic bytes, decode via jxl-oxide)\n- JXL magic\
+    \ bytes: 0xFF 0x0A (bare codestream) or ISOBMFF box\n- Encoder scaffold: new crate crates/rasmcore-jxl/ with module structure\n\
+    \  parallel to rasmcore-webp (config, error, lib with encode() stub)\n- The image crate does NOT support JPEG XL — we\
+    \ need direct jxl-oxide use\n"
   acceptance_criteria:
-    - JPEG XL decode works for both bare codestream and container formats
-    - Format detection recognizes JXL magic bytes
-    - supported_formats() includes jxl
-    - Decode parity test against reference JXL images
-    - rasmcore-jxl crate scaffolded with EncodeConfig, EncodeError, encode() stub
-    - encode() returns EncodeError::NotYetImplemented
-    - cargo test passes, cargo component build succeeds
-  out_of_scope: |
-    - Full JXL encoder implementation (future tracks, like rasmcore-webp pipeline)
+  - JPEG XL decode works for both bare codestream and container formats
+  - Format detection recognizes JXL magic bytes
+  - supported_formats() includes jxl
+  - Decode parity test against reference JXL images
+  - rasmcore-jxl crate scaffolded with EncodeConfig, EncodeError, encode() stub
+  - encode() returns EncodeError::NotYetImplemented
+  - cargo test passes, cargo component build succeeds
+  out_of_scope: '- Full JXL encoder implementation (future tracks, like rasmcore-webp pipeline)
+
     - JXL animation decode
+
     - JXL progressive decode streaming
+
     - JXL lossless transcode from JPEG
-  technical_notes: |
-    Decode integration:
-      - Add jxl-oxide as dependency to rasmcore-image
-      - In decoder, detect JXL format via magic bytes
-      - Use jxl-oxide to decode to pixel buffer
-      - Map jxl-oxide pixel types to rasmcore PixelFormat
 
-    jxl-oxide API:
-      let decoder = JxlImage::builder().read(data)?;
-      let frame = decoder.render_frame(0)?;
-      // frame.image() gives the pixel data
-
-    Encoder scaffold (crates/rasmcore-jxl/):
-      - src/lib.rs: encode() stub, PixelFormat, EncodeConfig, EncodeError
-      - src/config.rs: JxlEncodeConfig (quality, effort, lossless)
-      - src/error.rs: EncodeError enum
-      - Cargo.toml: no dependencies (pure Rust scaffold)
-
-    Future encoder tracks would follow the rasmcore-webp pattern:
-      ANS entropy coding, modular encoding, VarDCT, etc.
+    '
+  technical_notes: "Decode integration:\n  - Add jxl-oxide as dependency to rasmcore-image\n  - In decoder, detect JXL format\
+    \ via magic bytes\n  - Use jxl-oxide to decode to pixel buffer\n  - Map jxl-oxide pixel types to rasmcore PixelFormat\n\
+    \njxl-oxide API:\n  let decoder = JxlImage::builder().read(data)?;\n  let frame = decoder.render_frame(0)?;\n  // frame.image()\
+    \ gives the pixel data\n\nEncoder scaffold (crates/rasmcore-jxl/):\n  - src/lib.rs: encode() stub, PixelFormat, EncodeConfig,\
+    \ EncodeError\n  - src/config.rs: JxlEncodeConfig (quality, effort, lossless)\n  - src/error.rs: EncodeError enum\n  -\
+    \ Cargo.toml: no dependencies (pure Rust scaffold)\n\nFuture encoder tracks would follow the rasmcore-webp pattern:\n\
+    \  ANS entropy coding, modular encoding, VarDCT, etc.\n"
 plan:
-  - phase: JXL Decode
-    tasks:
-      - text: Add jxl-oxide dependency to rasmcore-image Cargo.toml
-        done: false
-      - text: Add JXL format detection (magic bytes 0xFF 0x0A and ISOBMFF container)
-        done: false
-      - text: Integrate jxl-oxide decode into decoder dispatch
-        done: false
-      - text: Add jxl to supported_formats() list
-        done: false
-      - text: Decode tests with reference JXL images
-        done: false
-  - phase: Encoder Scaffold
-    tasks:
-      - text: Create crates/rasmcore-jxl/ with Cargo.toml and module structure
-        done: false
-      - text: Define JxlEncodeConfig (quality, effort, lossless mode)
-        done: false
-      - text: Define EncodeError and encode() stub returning NotYetImplemented
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify JXL decode produces correct dimensions and pixel data
-        done: false
-      - text: Verify cargo test passes and cargo component build succeeds
-        done: false
+- phase: JXL Decode
+  tasks:
+  - text: Add jxl-oxide dependency to rasmcore-image Cargo.toml
+    done: true
+  - text: Add JXL format detection (magic bytes 0xFF 0x0A and ISOBMFF container)
+    done: true
+  - text: Integrate jxl-oxide decode into decoder dispatch
+    done: true
+  - text: Add jxl to supported_formats() list
+    done: true
+  - text: Decode tests with reference JXL images
+    done: true
+- phase: Encoder Scaffold
+  tasks:
+  - text: Create crates/rasmcore-jxl/ with Cargo.toml and module structure
+    done: true
+  - text: Define JxlEncodeConfig (quality, effort, lossless mode)
+    done: true
+  - text: Define EncodeError and encode() stub returning NotYetImplemented
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify JXL decode produces correct dimensions and pixel data
+    done: true
+  - text: Verify cargo test passes and cargo component build succeeds
+    done: true
 extra: {}
