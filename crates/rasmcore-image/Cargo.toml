@@ -11,6 +11,7 @@ moxcms = "0.8"
 wit-bindgen-rt = "0.41.0"
 image = { workspace = true, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
+    "tga", "hdr", "pnm", "exr", "dds",
 ] }
 zenjpeg = { version = "0.6", features = ["trellis"] }
 exif = { version = "0.6.1", package = "kamadak-exif" }

@@ -6,7 +6,8 @@ use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico",
+    "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
+    "dds",
 ];
 
 /// Detect image format from header bytes
@@ -125,6 +126,11 @@ fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {
         ImageFormat::Avif => Some("avif"),
         ImageFormat::Qoi => Some("qoi"),
         ImageFormat::Ico => Some("ico"),
+        ImageFormat::Tga => Some("tga"),
+        ImageFormat::Hdr => Some("hdr"),
+        ImageFormat::Pnm => Some("pnm"),
+        ImageFormat::OpenExr => Some("exr"),
+        ImageFormat::Dds => Some("dds"),
         _ => None,
     }
 }
@@ -246,15 +252,12 @@ mod tests {
     #[test]
     fn supported_formats_includes_common_formats() {
         let fmts = supported_formats();
-        assert!(fmts.contains(&"png".to_string()));
-        assert!(fmts.contains(&"jpeg".to_string()));
-        assert!(fmts.contains(&"webp".to_string()));
-        assert!(fmts.contains(&"gif".to_string()));
-        assert!(fmts.contains(&"bmp".to_string()));
-        assert!(fmts.contains(&"tiff".to_string()));
-        assert!(fmts.contains(&"avif".to_string()));
-        assert!(fmts.contains(&"qoi".to_string()));
-        assert!(fmts.contains(&"ico".to_string()));
+        for f in [
+            "png", "jpeg", "webp", "gif", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm",
+            "exr", "dds",
+        ] {
+            assert!(fmts.contains(&f.to_string()), "missing decode format: {f}");
+        }
     }
 
     #[test]
