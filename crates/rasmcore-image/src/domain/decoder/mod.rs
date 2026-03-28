@@ -123,7 +123,11 @@ fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| ImageError::ProcessingFailed("SVG: failed to create pixmap".into()))?;
 
-    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
 
     // tiny-skia outputs premultiplied RGBA8 — demultiply alpha
     let pixels = pixmap
@@ -181,6 +185,22 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if is_svg(data) {
         return decode_svg(data);
     }
+
+    // Native trivial codecs — opt-in via feature flags, bypass image crate
+    #[cfg(feature = "native-qoi")]
+    if data.len() >= 4 && &data[..4] == b"qoif" {
+        return decode_native_qoi(data);
+    }
+    #[cfg(feature = "native-bmp")]
+    if data.len() >= 2 && &data[..2] == b"BM" {
+        return decode_native_bmp(data);
+    }
+    #[cfg(feature = "native-pnm")]
+    if data.len() >= 2 && (data[0] == b'P' && data[1].is_ascii_digit()) {
+        return decode_native_pnm(data);
+    }
+    // TGA has no magic bytes — detect via image crate first, then native decode
+    // (TGA native decode is only used for encode roundtrip, not format detection)
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
@@ -646,6 +666,81 @@ fn decode_heif_grid(
             color_space: ColorSpace::Srgb,
         },
         icc_profile: img.icc_profile.clone(),
+    })
+}
+
+// ─── Native Trivial Codec Decoders ─────────────────────────────────────────
+
+#[cfg(feature = "native-qoi")]
+fn decode_native_qoi(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let (hdr, pixels) =
+        rasmcore_qoi::decode(data).map_err(|e| ImageError::InvalidInput(format!("QOI: {e}")))?;
+    let format = match hdr.channels {
+        rasmcore_qoi::Channels::Rgba => PixelFormat::Rgba8,
+        rasmcore_qoi::Channels::Rgb => PixelFormat::Rgb8,
+    };
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: hdr.width,
+            height: hdr.height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+#[cfg(feature = "native-bmp")]
+fn decode_native_bmp(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let (hdr, mut pixels) =
+        rasmcore_bmp::decode(data).map_err(|e| ImageError::InvalidInput(format!("BMP: {e}")))?;
+    // Native BMP decoder may output RGBA8 even for 24-bit BMP (padding alpha).
+    // Detect actual format from data size and strip alpha if BMP was 24-bit.
+    let npixels = (hdr.width * hdr.height) as usize;
+    let format = if pixels.len() == npixels * 4 && hdr.bits_per_pixel <= 24 {
+        // Strip alpha channel — convert RGBA8 to RGB8
+        let mut rgb = Vec::with_capacity(npixels * 3);
+        for chunk in pixels.chunks_exact(4) {
+            rgb.extend_from_slice(&chunk[..3]);
+        }
+        pixels = rgb;
+        PixelFormat::Rgb8
+    } else if pixels.len() == npixels * 4 {
+        PixelFormat::Rgba8
+    } else {
+        PixelFormat::Rgb8
+    };
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: hdr.width,
+            height: hdr.height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+#[cfg(feature = "native-pnm")]
+fn decode_native_pnm(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let (hdr, pixels) =
+        rasmcore_pnm::decode(data).map_err(|e| ImageError::InvalidInput(format!("PNM: {e}")))?;
+    let format = match hdr.depth {
+        4 => PixelFormat::Rgba8,
+        3 => PixelFormat::Rgb8,
+        _ => PixelFormat::Gray8,
+    };
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: hdr.width,
+            height: hdr.height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
     })
 }
 

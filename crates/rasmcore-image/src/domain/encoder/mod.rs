@@ -6,6 +6,7 @@ pub mod gif;
 pub mod ico;
 pub mod jp2;
 pub mod jpeg;
+pub mod native_trivial;
 pub mod png;
 pub mod qoi;
 pub mod tiff;
@@ -67,6 +68,9 @@ pub fn encode(
             let config = tiff::TiffEncodeConfig::default();
             tiff::encode(pixels, info, &config)
         }
+        #[cfg(feature = "native-bmp")]
+        "bmp" => native_trivial::encode_bmp(pixels, info),
+        #[cfg(not(feature = "native-bmp"))]
         "bmp" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
             bmp::encode(&img, info, &bmp::BmpEncodeConfig)
@@ -75,10 +79,16 @@ pub fn encode(
             let img = pixels_to_dynamic_image(pixels, info)?;
             ico::encode(&img, info, &ico::IcoEncodeConfig)
         }
+        #[cfg(feature = "native-qoi")]
+        "qoi" => native_trivial::encode_qoi(pixels, info),
+        #[cfg(not(feature = "native-qoi"))]
         "qoi" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
             qoi::encode(&img, info, &qoi::QoiEncodeConfig)
         }
+        #[cfg(feature = "native-tga")]
+        "tga" => native_trivial::encode_tga(pixels, info),
+        #[cfg(not(feature = "native-tga"))]
         "tga" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
             encode_via_image_format(&img, image::ImageFormat::Tga)
@@ -88,6 +98,9 @@ pub fn encode(
             let rgb32f = DynamicImage::ImageRgb32F(img.to_rgb32f());
             encode_via_image_format(&rgb32f, image::ImageFormat::Hdr)
         }
+        #[cfg(feature = "native-pnm")]
+        "pnm" | "ppm" | "pgm" | "pbm" => native_trivial::encode_pnm(pixels, info),
+        #[cfg(not(feature = "native-pnm"))]
         "pnm" | "ppm" | "pgm" | "pbm" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
             encode_via_image_format(&img, image::ImageFormat::Pnm)
