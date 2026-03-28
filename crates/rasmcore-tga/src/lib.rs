@@ -56,6 +56,109 @@ pub struct TgaHeader {
     pub has_alpha: bool,
 }
 
+/// Encode RGB pixels to 16-bit true-color TGA (A1R5G5B5).
+///
+/// Input is RGB8 (3 bytes/pixel), downsampled to 5 bits per channel.
+pub fn encode_rgb16(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, TgaError> {
+    let expected = width as usize * height as usize * 3;
+    if pixels.len() < expected {
+        return Err(TgaError::BufferTooSmall);
+    }
+    let pixel_count = width as usize * height as usize;
+    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + pixel_count * 2);
+    write_header(&mut out, width, height, 16, TgaImageType::RawTrueColor, 0);
+    for i in 0..pixel_count {
+        let off = i * 3;
+        let r = (pixels[off] >> 3) as u16;
+        let g = (pixels[off + 1] >> 3) as u16;
+        let b = (pixels[off + 2] >> 3) as u16;
+        let val = (r << 10) | (g << 5) | b;
+        out.extend_from_slice(&val.to_le_bytes());
+    }
+    Ok(out)
+}
+
+/// Encode color-mapped (indexed) TGA.
+///
+/// `indices`: one byte per pixel (palette index). `palette`: RGBA entries.
+pub fn encode_colormapped(
+    indices: &[u8],
+    width: u16,
+    height: u16,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, TgaError> {
+    let pixel_count = width as usize * height as usize;
+    if indices.len() < pixel_count {
+        return Err(TgaError::BufferTooSmall);
+    }
+    let cm_length = palette.len().min(256);
+    let cm_entry_bpp: u8 = 24; // BGR entries
+    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + cm_length * 3 + pixel_count);
+
+    // Header
+    out.push(0); // id_length
+    out.push(1); // color_map_type = present
+    out.push(TgaImageType::RawColorMapped as u8);
+    out.extend_from_slice(&0u16.to_le_bytes()); // cm_first
+    out.extend_from_slice(&(cm_length as u16).to_le_bytes());
+    out.push(cm_entry_bpp);
+    out.extend_from_slice(&0u16.to_le_bytes()); // x_origin
+    out.extend_from_slice(&0u16.to_le_bytes()); // y_origin
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    out.push(8); // bpp (index size)
+    out.push(0x20); // top-down
+
+    // Color map (BGR order)
+    for color in palette.iter().take(cm_length) {
+        out.push(color[2]); // B
+        out.push(color[1]); // G
+        out.push(color[0]); // R
+    }
+
+    // Pixel indices
+    out.extend_from_slice(&indices[..pixel_count]);
+    Ok(out)
+}
+
+/// Encode color-mapped TGA with RLE compression.
+pub fn encode_colormapped_rle(
+    indices: &[u8],
+    width: u16,
+    height: u16,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, TgaError> {
+    let pixel_count = width as usize * height as usize;
+    if indices.len() < pixel_count {
+        return Err(TgaError::BufferTooSmall);
+    }
+    let cm_length = palette.len().min(256);
+    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + cm_length * 3 + pixel_count);
+
+    out.push(0);
+    out.push(1); // color map present
+    out.push(TgaImageType::RleColorMapped as u8);
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&(cm_length as u16).to_le_bytes());
+    out.push(24); // entry bpp
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    out.push(8);
+    out.push(0x20);
+
+    for color in palette.iter().take(cm_length) {
+        out.push(color[2]);
+        out.push(color[1]);
+        out.push(color[0]);
+    }
+
+    // RLE encode the indices
+    rle_encode_bytes(&mut out, indices, pixel_count);
+    Ok(out)
+}
+
 /// Encode RGB pixels to uncompressed true-color TGA.
 pub fn encode_rgb(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, TgaError> {
     let expected = width as usize * height as usize * 3;
@@ -454,6 +557,34 @@ fn decode_rle(
     Ok(out)
 }
 
+/// RLE encode a flat byte slice (1 byte per element) into `out`.
+fn rle_encode_bytes(out: &mut Vec<u8>, data: &[u8], count: usize) {
+    let mut i = 0;
+    while i < count {
+        let val = data[i];
+        let mut run = 1;
+        while i + run < count && data[i + run] == val && run < 128 {
+            run += 1;
+        }
+        if run > 1 {
+            out.push(0x80 | (run as u8 - 1));
+            out.push(val);
+            i += run;
+        } else {
+            let mut raw = 1;
+            while i + raw < count
+                && raw < 128
+                && (i + raw + 1 >= count || data[i + raw] != data[i + raw + 1])
+            {
+                raw += 1;
+            }
+            out.push(raw as u8 - 1);
+            out.extend_from_slice(&data[i..i + raw]);
+            i += raw;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,5 +760,53 @@ mod tests {
         assert_eq!(&decoded[0..4], &[200, 200, 200, 255]);
         // Pixel 1: gray=100, alpha=128
         assert_eq!(&decoded[4..8], &[100, 100, 100, 128]);
+    }
+
+    #[test]
+    fn roundtrip_rgb16() {
+        let pixels: Vec<u8> = (0..4 * 4 * 3).map(|i| (i * 8 % 256) as u8).collect();
+        let encoded = encode_rgb16(&pixels, 4, 4).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 16);
+        assert_eq!(decoded.len(), 4 * 4 * 4); // RGBA output
+        // 5-bit precision: values should be approximately correct (±4)
+        for (i, chunk) in decoded.chunks_exact(4).enumerate() {
+            let orig_r = pixels[i * 3];
+            assert!(
+                (chunk[0] as i16 - orig_r as i16).unsigned_abs() <= 8,
+                "R at {i}: {} vs {}",
+                chunk[0],
+                orig_r
+            );
+        }
+    }
+
+    #[test]
+    fn roundtrip_colormapped_encode() {
+        let palette = [
+            [255, 0, 0, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+            [255, 255, 255, 255],
+        ];
+        let indices = vec![0, 1, 2, 3]; // 2x2
+        let encoded = encode_colormapped(&indices, 2, 2, &palette).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.image_type, TgaImageType::RawColorMapped);
+        assert_eq!(&decoded[0..4], &[255, 0, 0, 255]); // red
+        assert_eq!(&decoded[4..8], &[0, 255, 0, 255]); // green
+    }
+
+    #[test]
+    fn roundtrip_colormapped_rle() {
+        let palette = [[255, 0, 0, 255], [0, 255, 0, 255]];
+        let indices = vec![0u8; 16]; // 4x4 all red
+        let encoded = encode_colormapped_rle(&indices, 4, 4, &palette).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.image_type, TgaImageType::RleColorMapped);
+        for chunk in decoded.chunks_exact(4) {
+            assert_eq!(chunk[0], 255); // R
+            assert_eq!(chunk[1], 0);
+        }
     }
 }

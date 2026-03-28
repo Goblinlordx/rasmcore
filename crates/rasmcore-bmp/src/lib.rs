@@ -10,7 +10,7 @@
 //!
 //! Uses rasmcore-bitio for sub-byte pixel unpacking.
 
-use rasmcore_bitio::{BitOrder, BitReader};
+use rasmcore_bitio::{BitOrder, BitReader, BitWriter};
 use std::fmt;
 
 const BMP_MAGIC: [u8; 2] = *b"BM";
@@ -191,6 +191,154 @@ pub fn encode_rle8(
     Ok(out)
 }
 
+/// Encode 8-bit indexed pixels (uncompressed) with arbitrary palette.
+///
+/// `indices`: one byte per pixel. `palette`: up to 256 RGBA entries.
+pub fn encode_indexed8(
+    indices: &[u8],
+    width: u32,
+    height: u32,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize;
+    if indices.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+    encode_indexed_uncompressed(indices, width, height, 8, palette)
+}
+
+/// Encode 4-bit indexed pixels (uncompressed) with up to 16 palette colors.
+///
+/// `indices`: one byte per pixel (only low nibble used). `palette`: up to 16 RGBA entries.
+pub fn encode_indexed4(
+    indices: &[u8],
+    width: u32,
+    height: u32,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize;
+    if indices.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+    encode_indexed_uncompressed(indices, width, height, 4, palette)
+}
+
+/// Encode 1-bit monochrome pixels (uncompressed) with 2-color palette.
+///
+/// `indices`: one byte per pixel (0 or 1). `palette`: exactly 2 RGBA entries.
+pub fn encode_indexed1(
+    indices: &[u8],
+    width: u32,
+    height: u32,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize;
+    if indices.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+    encode_indexed_uncompressed(indices, width, height, 1, palette)
+}
+
+/// Encode 16-bit RGB pixels (5-5-5 format, X1R5G5B5).
+///
+/// `pixels`: RGB8 (3 bytes per pixel), downsampled to 5 bits per channel.
+pub fn encode_rgb16(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize * 3;
+    if pixels.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+
+    let row_size = (width as usize * 2 + 3) & !3;
+    let pixel_data_size = row_size * height as usize;
+    let data_offset = (BMP_FILE_HEADER_SIZE + BMP_INFO_HEADER_SIZE as usize) as u32;
+    let file_size = data_offset as usize + pixel_data_size;
+
+    let mut out = Vec::with_capacity(file_size);
+    write_file_header(&mut out, file_size as u32, data_offset);
+    write_info_header(
+        &mut out,
+        width,
+        height,
+        16,
+        BI_RGB,
+        pixel_data_size as u32,
+        0,
+    );
+
+    let w = width as usize;
+    let padding = row_size - w * 2;
+    for row in (0..height as usize).rev() {
+        for col in 0..w {
+            let src = (row * w + col) * 3;
+            let r = (pixels[src] >> 3) as u16;
+            let g = (pixels[src + 1] >> 3) as u16;
+            let b = (pixels[src + 2] >> 3) as u16;
+            let val = (r << 10) | (g << 5) | b;
+            out.extend_from_slice(&val.to_le_bytes());
+        }
+        out.extend(std::iter::repeat_n(0u8, padding));
+    }
+    Ok(out)
+}
+
+/// Encode 4-bit indexed pixels with RLE4 compression.
+///
+/// `indices`: one byte per pixel (only low nibble used). `palette`: up to 16 RGBA entries.
+pub fn encode_rle4(
+    indices: &[u8],
+    width: u32,
+    height: u32,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize;
+    if indices.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+
+    let mut rle_data = Vec::with_capacity(expected);
+    let w = width as usize;
+    for row in (0..height as usize).rev() {
+        let row_start = row * w;
+        let mut col = 0;
+        while col < w {
+            let idx = indices[row_start + col] & 0x0F;
+            let mut run = 1;
+            while col + run < w && (indices[row_start + col + run] & 0x0F) == idx && run < 255 {
+                run += 1;
+            }
+            // RLE4: packed byte has high nibble = first pixel, low nibble = second pixel
+            // For a run of identical pixels, both nibbles are the same
+            rle_data.push(run as u8);
+            rle_data.push((idx << 4) | idx);
+            col += run;
+        }
+        rle_data.push(0);
+        rle_data.push(RLE_ESCAPE_EOL);
+    }
+    let len = rle_data.len();
+    rle_data[len - 1] = RLE_ESCAPE_EOF;
+
+    let num_colors = palette.len().min(16);
+    let palette_bytes = num_colors * 4;
+    let data_offset = BMP_FILE_HEADER_SIZE + BMP_INFO_HEADER_SIZE as usize + palette_bytes;
+    let file_size = data_offset + rle_data.len();
+
+    let mut out = Vec::with_capacity(file_size);
+    write_file_header(&mut out, file_size as u32, data_offset as u32);
+    write_info_header(
+        &mut out,
+        width,
+        height,
+        4,
+        BI_RLE4,
+        rle_data.len() as u32,
+        num_colors as u32,
+    );
+    write_palette(&mut out, palette, num_colors);
+    out.extend_from_slice(&rle_data);
+    Ok(out)
+}
+
 /// Encode RGB pixels to 24-bit uncompressed BMP.
 pub fn encode_rgb(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, BmpError> {
     let expected = width as usize * height as usize * 3;
@@ -256,6 +404,87 @@ fn encode_bmp_uncompressed(
             }
         }
         out.extend(std::iter::repeat_n(0u8, padding));
+    }
+
+    Ok(out)
+}
+
+fn write_file_header(out: &mut Vec<u8>, file_size: u32, data_offset: u32) {
+    out.extend_from_slice(&BMP_MAGIC);
+    out.extend_from_slice(&file_size.to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]);
+    out.extend_from_slice(&data_offset.to_le_bytes());
+}
+
+fn write_info_header(
+    out: &mut Vec<u8>,
+    width: u32,
+    height: u32,
+    bpp: u16,
+    compression: u32,
+    image_size: u32,
+    colors_used: u32,
+) {
+    out.extend_from_slice(&BMP_INFO_HEADER_SIZE.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&bpp.to_le_bytes());
+    out.extend_from_slice(&compression.to_le_bytes());
+    out.extend_from_slice(&image_size.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes()); // 72 DPI
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&colors_used.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // important colors
+}
+
+fn write_palette(out: &mut Vec<u8>, palette: &[[u8; 4]], count: usize) {
+    for color in palette.iter().take(count) {
+        out.extend_from_slice(&[color[2], color[1], color[0], 0]); // RGBA→BGRA
+    }
+}
+
+fn encode_indexed_uncompressed(
+    indices: &[u8],
+    width: u32,
+    height: u32,
+    bpp: u16,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, BmpError> {
+    let w = width as usize;
+    let row_bits = w * bpp as usize;
+    let row_size = row_bits.div_ceil(32) * 4; // 4-byte aligned
+    let pixel_data_size = row_size * height as usize;
+    let num_colors = palette.len().min(1 << bpp);
+    let palette_bytes = num_colors * 4;
+    let data_offset = BMP_FILE_HEADER_SIZE + BMP_INFO_HEADER_SIZE as usize + palette_bytes;
+    let file_size = data_offset + pixel_data_size;
+
+    let mut out = Vec::with_capacity(file_size);
+    write_file_header(&mut out, file_size as u32, data_offset as u32);
+    write_info_header(
+        &mut out,
+        width,
+        height,
+        bpp,
+        BI_RGB,
+        pixel_data_size as u32,
+        num_colors as u32,
+    );
+    write_palette(&mut out, palette, num_colors);
+
+    // Pixel data: bottom-up, packed bits
+    for row in (0..height as usize).rev() {
+        let mut bw = BitWriter::new(BitOrder::MsbFirst);
+        for col in 0..w {
+            bw.write_bits(bpp as u8, indices[row * w + col] as u32);
+        }
+        bw.align_to_byte();
+        let row_data = bw.finish();
+        out.extend_from_slice(&row_data);
+        // Pad to 4-byte alignment
+        let pad = row_size - row_data.len();
+        out.extend(std::iter::repeat_n(0u8, pad));
     }
 
     Ok(out)
@@ -946,6 +1175,70 @@ mod tests {
             assert_eq!(chunk[1], expected, "G mismatch at {i}");
             assert_eq!(chunk[2], expected, "B mismatch at {i}");
             assert_eq!(chunk[3], 255);
+        }
+    }
+
+    #[test]
+    fn roundtrip_indexed8_encode() {
+        let palette: Vec<[u8; 4]> = (0..256).map(|i| [i as u8, 0, 255 - i as u8, 255]).collect();
+        let indices: Vec<u8> = (0..4 * 4).map(|i| (i % 256) as u8).collect();
+        let encoded = encode_indexed8(&indices, 4, 4, &palette).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 8);
+        // Pixel 0 = palette[0] = [0, 0, 255, 255]
+        assert_eq!(&decoded[0..4], &[0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn roundtrip_indexed4_encode() {
+        let palette = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
+        let indices = vec![0, 1, 2, 0]; // 2x2
+        let encoded = encode_indexed4(&indices, 2, 2, &palette).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 4);
+        assert_eq!(&decoded[0..4], &[255, 0, 0, 255]); // red
+        assert_eq!(&decoded[4..8], &[0, 255, 0, 255]); // green
+    }
+
+    #[test]
+    fn roundtrip_indexed1_encode() {
+        let palette = [[0, 0, 0, 255], [255, 255, 255, 255]];
+        let indices = vec![1, 0, 0, 1, 0, 1, 1, 0]; // 8x1
+        let encoded = encode_indexed1(&indices, 8, 1, &palette).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 1);
+        assert_eq!(&decoded[0..4], &[255, 255, 255, 255]); // white
+        assert_eq!(&decoded[4..8], &[0, 0, 0, 255]); // black
+    }
+
+    #[test]
+    fn roundtrip_rgb16_encode() {
+        let pixels: Vec<u8> = (0..4 * 4 * 3).map(|i| (i * 8 % 256) as u8).collect();
+        let encoded = encode_rgb16(&pixels, 4, 4).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 16);
+        // 5-bit precision: values within ±8
+        for (i, chunk) in decoded.chunks_exact(4).enumerate() {
+            let orig_r = pixels[i * 3];
+            assert!(
+                (chunk[0] as i16 - orig_r as i16).unsigned_abs() <= 8,
+                "R at {i}: {} vs {}",
+                chunk[0],
+                orig_r
+            );
+        }
+    }
+
+    #[test]
+    fn roundtrip_rle4_encode() {
+        let palette = [[255, 0, 0, 255], [0, 255, 0, 255]];
+        let indices = vec![0u8; 4 * 2]; // all red
+        let encoded = encode_rle4(&indices, 4, 2, &palette).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.compression, BI_RLE4);
+        for chunk in decoded.chunks_exact(4) {
+            assert_eq!(chunk[0], 255); // R
+            assert_eq!(chunk[1], 0); // G
         }
     }
 
