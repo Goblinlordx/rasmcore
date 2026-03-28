@@ -1,96 +1,96 @@
 id: fits-codec_20260328082306Z
-title: "FITS Codec — Astronomy Image Format Read/Write"
+title: FITS Codec — Astronomy Image Format Read/Write
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement FITS (Flexible Image Transport System) read and write for
+  summary: 'Implement FITS (Flexible Image Transport System) read and write for
+
     scientific/astronomy image support. Pure Rust implementation of the
+
     FITS 4.0 standard for image HDUs.
-  context: |
-    FITS is the standard format in astronomy, supported by both ImageMagick
+
+    '
+  context: 'FITS is the standard format in astronomy, supported by both ImageMagick
+
     and libvips. It stores multi-dimensional arrays with extensive metadata
+
     (headers). Used by NASA, ESA, and virtually all observatories.
 
+
     The format is simple: ASCII header keywords followed by binary data.
+
     Supports 8/16/32/64-bit integers and 32/64-bit floats.
-  codebase_analysis: |
-    - No FITS code in rasmcore
-    - FITS magic bytes: 'SIMPLE  =' at offset 0 (ASCII)
+
+    '
+  codebase_analysis: '- No FITS code in rasmcore
+
+    - FITS magic bytes: ''SIMPLE  ='' at offset 0 (ASCII)
+
     - Header: 80-character keyword=value cards, 2880-byte blocks
+
     - Data: binary array in row-major order
+
     - No existing pure Rust FITS library suitable for our needs
+
     - cfitsio (C) is the reference but we want pure Rust
+
+    '
   acceptance_criteria:
-    - FITS format detection (SIMPLE keyword)
-    - Read image HDU (Primary HDU with NAXIS=2)
-    - Support data types BITPIX 8, 16, 32, -32, -64 (int and float)
-    - Write FITS with standard header keywords
-    - BZERO/BSCALE scaling applied on read
-    - Map FITS pixels to rasmcore pixel formats (Gray8, Gray16, Rgb8)
-    - Multi-extension FITS reads first image HDU
-    - Parity test against cfitsio reference
-    - Wire into decoder/encoder dispatch
-  out_of_scope: |
-    - FITS tables (binary and ASCII table extensions)
+  - FITS format detection (SIMPLE keyword)
+  - Read image HDU (Primary HDU with NAXIS=2)
+  - Support data types BITPIX 8, 16, 32, -32, -64 (int and float)
+  - Write FITS with standard header keywords
+  - BZERO/BSCALE scaling applied on read
+  - Map FITS pixels to rasmcore pixel formats (Gray8, Gray16, Rgb8)
+  - Multi-extension FITS reads first image HDU
+  - Parity test against cfitsio reference
+  - Wire into decoder/encoder dispatch
+  out_of_scope: '- FITS tables (binary and ASCII table extensions)
+
     - FITS compression (tile-compressed FITS)
+
     - World Coordinate System (WCS) interpretation
+
     - Multi-HDU compositing
-  technical_notes: |
-    FITS structure:
-    - Header: 80-char cards in 2880-byte blocks
-      SIMPLE  = T            / Standard FITS
-      BITPIX  = 16           / Bits per pixel
-      NAXIS   = 2            / Number of axes
-      NAXIS1  = 1024         / Width
-      NAXIS2  = 1024         / Height
-      BZERO   = 32768.0      / Zero point
-      BSCALE  = 1.0          / Scale factor
-      END
 
-    - Data: NAXIS1 * NAXIS2 * |BITPIX|/8 bytes, big-endian
-    - Padded to 2880-byte boundary
-
-    BITPIX values:
-      8  → u8
-      16 → i16 (apply BZERO/BSCALE for unsigned)
-      32 → i32
-      -32 → f32 (IEEE 754)
-      -64 → f64 (IEEE 754)
-
-    For display: normalize float data to 0-255 range using
-    DATAMIN/DATAMAX or computed min/max.
+    '
+  technical_notes: "FITS structure:\n- Header: 80-char cards in 2880-byte blocks\n  SIMPLE  = T            / Standard FITS\n\
+    \  BITPIX  = 16           / Bits per pixel\n  NAXIS   = 2            / Number of axes\n  NAXIS1  = 1024         / Width\n\
+    \  NAXIS2  = 1024         / Height\n  BZERO   = 32768.0      / Zero point\n  BSCALE  = 1.0          / Scale factor\n \
+    \ END\n\n- Data: NAXIS1 * NAXIS2 * |BITPIX|/8 bytes, big-endian\n- Padded to 2880-byte boundary\n\nBITPIX values:\n  8\
+    \  → u8\n  16 → i16 (apply BZERO/BSCALE for unsigned)\n  32 → i32\n  -32 → f32 (IEEE 754)\n  -64 → f64 (IEEE 754)\n\n\
+    For display: normalize float data to 0-255 range using\nDATAMIN/DATAMAX or computed min/max.\n"
 plan:
-  - phase: "Reader"
-    tasks:
-      - text: "Implement FITS header parser (keyword=value cards, 2880-byte blocks)"
-        done: false
-      - text: "Implement image data reader (BITPIX 8, 16, 32, -32, -64)"
-        done: false
-      - text: "Implement BZERO/BSCALE scaling"
-        done: false
-      - text: "Map FITS data to rasmcore pixel formats"
-        done: false
-      - text: "FITS format detection and decoder dispatch integration"
-        done: false
-  - phase: "Writer"
-    tasks:
-      - text: "Implement FITS header writer (standard keywords)"
-        done: false
-      - text: "Implement image data writer (BITPIX 8, 16, -32)"
-        done: false
-      - text: "Pad to 2880-byte boundaries"
-        done: false
-      - text: "Wire into encoder dispatch"
-        done: false
-  - phase: "Testing"
-    tasks:
-      - text: "Roundtrip test (write then read, pixel-exact for integer types)"
-        done: false
-      - text: "Test with real FITS files from NASA archives"
-        done: false
-      - text: "WASM build verification"
-        done: false
+- phase: Reader
+  tasks:
+  - text: Implement FITS header parser (keyword=value cards, 2880-byte blocks)
+    done: true
+  - text: Implement image data reader (BITPIX 8, 16, 32, -32, -64)
+    done: true
+  - text: Implement BZERO/BSCALE scaling
+    done: true
+  - text: Map FITS data to rasmcore pixel formats
+    done: true
+  - text: FITS format detection and decoder dispatch integration
+    done: true
+- phase: Writer
+  tasks:
+  - text: Implement FITS header writer (standard keywords)
+    done: true
+  - text: Implement image data writer (BITPIX 8, 16, -32)
+    done: true
+  - text: Pad to 2880-byte boundaries
+    done: true
+  - text: Wire into encoder dispatch
+    done: true
+- phase: Testing
+  tasks:
+  - text: Roundtrip test (write then read, pixel-exact for integer types)
+    done: true
+  - text: Test with real FITS files from NASA archives
+    done: true
+  - text: WASM build verification
+    done: true
 extra: {}
