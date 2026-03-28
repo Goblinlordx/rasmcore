@@ -1,0 +1,61 @@
+id: isobmff-scaffold_20260328092700Z
+title: ISOBMFF Crate Scaffold + Box Parser Framework
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Create rasmcore-isobmff crate with generic ISOBMFF box reader, box iterator, ftyp brand detection, and public types.
+    Foundation for all HEIF/AVIF container parsing.
+  context: The native-codec-architecture doc identifies rasmcore-isobmff as shared infrastructure serving both AVIF and HEIF
+    containers (ISO 14496-12). This is the first track in a chain that builds up the complete ISOBMFF parser. It establishes
+    the crate, the generic box reader, and ftyp-based format detection.
+  codebase_analysis: No ISOBMFF parser exists in rasmcore. rasmcore-bitio provides bit-level I/O. Follows the same crate scaffold
+    pattern as rasmcore-qoi, rasmcore-bmp (zero deps, workspace member).
+  acceptance_criteria:
+  - rasmcore-isobmff crate added to workspace, compiles with zero external deps
+  - Generic box reader parses box header (size + type), handles extended 64-bit sizes and full-box version+flags
+  - Box iterator walks top-level and nested boxes, yields (type, size, data slice)
+  - IsobmffError enum and public types (Brand, CodecType) defined
+  - ftyp parser extracts major brand, minor version, compatible brands
+  - detect(header) function identifies HEIC, AVIF, and generic HEIF brands
+  - Unit tests for box reader (normal, extended-size, truncated, nested) and ftyp detection
+  out_of_scope: Meta box parsing, item properties, metadata extraction, grid support — handled by dependent tracks.
+  technical_notes: 'ISOBMFF boxes: 4-byte size + 4-byte type. Extended size (8-byte) when size==1. Full-box adds version(1)
+    + flags(3). Box reader must handle nested containers (meta, iprp contain child boxes). ftyp brands: heic/heix/heim/heis
+    (HEIC), avif (AVIF), mif1 (generic HEIF).'
+plan:
+- phase: Crate Setup
+  tasks:
+  - text: Create crates/rasmcore-isobmff/ with Cargo.toml (zero deps), add to workspace Cargo.toml members
+    done: false
+  - text: Define error.rs with IsobmffError enum (InvalidBox, Truncated, UnsupportedVersion, etc.)
+    done: false
+  - text: Define types.rs with Brand, CodecType, BoxHeader public types
+    done: false
+- phase: Box Reader
+  tasks:
+  - text: Implement box header parser — read 4-byte size + 4-byte FourCC type, handle size==1 (extended 64-bit), size==0 (box
+      extends to EOF)
+    done: false
+  - text: Implement full-box header parser — extends box header with version (u8) + flags (u24)
+    done: false
+  - text: Implement box iterator — walk sibling boxes at a given nesting level, yield BoxHeader + data slice
+    done: false
+- phase: Ftyp + Detection
+  tasks:
+  - text: Implement ftyp box parser — extract major brand, minor version, list of compatible brands
+    done: false
+  - text: Implement detect(header) — check first box is ftyp, match brand against heic/heix/heim/heis/avif/mif1
+    done: false
+  - text: Wire lib.rs public API — re-export detect(), BoxReader, types
+    done: false
+- phase: Verification
+  tasks:
+  - text: 'Unit tests for box reader: normal box, extended-size box, truncated data, nested container'
+    done: false
+  - text: 'Unit tests for ftyp: HEIC brand, AVIF brand, unknown brand, multiple compatible brands'
+    done: false
+  - text: Verify crate compiles as part of workspace (cargo check -p rasmcore-isobmff)
+    done: false
+extra: {}

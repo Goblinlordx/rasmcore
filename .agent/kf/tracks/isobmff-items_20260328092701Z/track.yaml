@@ -1,0 +1,61 @@
+id: isobmff-items_20260328092701Z
+title: ISOBMFF Item Infrastructure — meta/iinf/iloc/iref Parsing
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Parse the meta box tree in rasmcore-isobmff: item info (iinf/infe), item locations (iloc), item references (iref),
+    and primary item (pitm). Foundation for extracting items from HEIF/AVIF files.'
+  context: 'Second track in the ISOBMFF chain. After the box reader framework (isobmff-scaffold), this track parses the meta
+    box and its children to build the item map: what items exist, where they are, and how they relate.'
+  codebase_analysis: Depends on isobmff-scaffold box reader and types. The meta box is a full-box container holding iinf,
+    iloc, iref, pitm, and iprp as children. Item locations use construction_method (file offset, idat, or item) with base_offset
+    and extent lists.
+  acceptance_criteria:
+  - Parses meta box as full-box container, dispatches to child box parsers
+  - Parses iinf/infe — extracts item IDs and item types (hvc1, av01, jpeg, grid, Exif)
+  - Parses iloc — extracts construction method, base offset, and extent list per item
+  - Parses iref — extracts typed references (dimg, thmb, auxl, cdsc) between items
+  - Parses pitm — identifies primary item ID
+  - Unit tests for each sub-box with hand-crafted byte sequences
+  out_of_scope: Item properties (iprp/ipco/ipma) — handled by isobmff-properties track. Grid image assembly — handled by isobmff-assembly
+    track.
+  technical_notes: 'meta box (full-box): container for iinf, iloc, iref, pitm, iprp. iinf: item count + list of infe entries
+    (item_id, item_type as FourCC: hvc1/av01/jpeg/grid/Exif). iloc: per-item location descriptors (construction_method, data_offset,
+    base_offset, extent_list with offset+length). iref: typed references between items (dimg=derived, thmb=thumbnail, auxl=auxiliary,
+    cdsc=content-describes). pitm: single u16 identifying the primary item.'
+plan:
+- phase: Meta Box Framework
+  tasks:
+  - text: Implement meta box parser — full-box container, iterate and dispatch child boxes
+    done: false
+  - text: Implement pitm (primary item ID) parser — extract primary item u16
+    done: false
+- phase: Item Info
+  tasks:
+  - text: Implement iinf parser — read item count, iterate infe entries
+    done: false
+  - text: Implement infe parser — extract item_id, item_type (FourCC), item_name, content_type
+    done: false
+- phase: Item Location
+  tasks:
+  - text: Implement iloc parser — handle version 0/1/2 differences in field sizes
+    done: false
+  - text: Parse per-item location descriptors — construction_method, data_offset, base_offset, extent_list (offset + length)
+    done: false
+- phase: Item References
+  tasks:
+  - text: Implement iref parser — read reference type (FourCC), from_item_id, list of to_item_ids
+    done: false
+  - text: Build reference map (item_id -> list of typed refs) for downstream query
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for meta/pitm/iinf/infe with hand-crafted bytes
+    done: false
+  - text: Unit tests for iloc with multiple items, different construction methods
+    done: false
+  - text: Unit tests for iref with dimg, thmb, auxl reference types
+    done: false
+extra: {}

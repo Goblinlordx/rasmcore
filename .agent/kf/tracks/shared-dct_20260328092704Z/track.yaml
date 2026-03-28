@@ -1,0 +1,94 @@
+id: shared-dct_20260328092704Z
+title: Shared Integer DCT/DST Module (rasmcore-dct)
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Pure Rust parameterized integer DCT/DST transforms (4x4 through 32x32) serving JPEG, WebP, and HEVC codecs. Consolidates
+    per-codec DCT implementations into a shared, tested, SIMD-optimized module.
+  context: 'The native-codec-architecture doc identifies rasmcore-dct as shared infrastructure. DCT is currently duplicated:
+    rasmcore-webp has a 4x4 integer DCT (663 LOC with WASM SIMD128), rasmcore-jpeg has a reference 8x8 f64 DCT (210 LOC).
+    HEVC needs 4x4/8x8/16x16/32x32 integer DCT plus a 4x4 DST. A shared crate consolidates these into one tested, optimized
+    module.'
+  codebase_analysis: '- rasmcore-webp/src/dct.rs (663 LOC): 4x4 integer DCT with WASM SIMD128. Uses constants 2217/5352 matching
+    libwebp.
+
+    - rasmcore-jpeg/src/dct.rs (210 LOC): 8x8 f64 reference DCT. Needs integer replacement.
+
+    - rasmcore-bitio pattern (shared infra crate, zero deps) is the model to follow.
+
+    - HEVC spec (ITU-T H.265 Section 8.6.4.2) defines integer butterfly DCT for sizes 4/8/16/32 and DST for 4x4 intra luma.'
+  acceptance_criteria:
+  - rasmcore-dct crate compiles to wasm32-wasip2 with zero external dependencies
+  - Inverse DCT for 4x4, 8x8, 16x16, 32x32 block sizes using integer arithmetic
+  - Inverse DST for 4x4 blocks (HEVC intra luma)
+  - Forward DCT for 4x4 and 8x8 (encode path for WebP and JPEG)
+  - WASM SIMD128 acceleration for 4x4 transforms (port from rasmcore-webp)
+  - 'Roundtrip tests: forward(inverse(x)) == x for all supported sizes'
+  - Reference value tests against known DCT outputs from HEVC/JPEG spec test vectors
+  - 'Performance: 4x4 DCT matches or beats rasmcore-webp existing implementation'
+  out_of_scope: '- Migrating rasmcore-webp to use this crate (separate follow-up)
+
+    - Migrating rasmcore-jpeg to use this crate (separate follow-up)
+
+    - GPU/WebGPU acceleration'
+  technical_notes: 'HEVC integer DCT uses butterfly decomposition (not matrix multiply). All transforms are separable (row
+    pass + column pass). Integer arithmetic with defined rounding/shift per spec.
+
+
+    Sizes and consumers:
+
+    - 4x4 DCT: WebP (existing), JPEG (future), HEVC
+
+    - 4x4 DST: HEVC intra luma only (different basis functions from DCT)
+
+    - 8x8 DCT: JPEG, HEVC
+
+    - 16x16 DCT: HEVC
+
+    - 32x32 DCT: HEVC
+
+
+    API: per-size functions (inverse_dct_4x4, forward_dct_8x8, etc.) rather than generic dispatch — allows size-specific SIMD
+    optimization and compile-time specialization.'
+plan:
+- phase: Crate Setup
+  tasks:
+  - text: Create crates/rasmcore-dct/ with Cargo.toml (zero deps), add to workspace
+    done: false
+  - text: Define module structure — lib.rs, dct4.rs, dct8.rs, dct16.rs, dct32.rs, dst4.rs
+    done: false
+- phase: Core Transforms (Scalar)
+  tasks:
+  - text: Implement inverse_dct_4x4 — integer butterfly from HEVC spec (scalar)
+    done: false
+  - text: Implement forward_dct_4x4 — integer forward transform (scalar)
+    done: false
+  - text: Implement inverse_dst_4x4 — HEVC intra luma DST (different basis from DCT)
+    done: false
+  - text: Implement inverse_dct_8x8 — integer butterfly, matches JPEG IDCT spec (scalar)
+    done: false
+  - text: Implement forward_dct_8x8 — integer forward 8x8 for JPEG encoding
+    done: false
+  - text: Implement inverse_dct_16x16 — HEVC 16x16 butterfly (scalar)
+    done: false
+  - text: Implement inverse_dct_32x32 — HEVC 32x32 butterfly (scalar)
+    done: false
+- phase: SIMD Acceleration
+  tasks:
+  - text: Port WASM SIMD128 4x4 DCT from rasmcore-webp — forward and inverse
+    done: false
+  - text: Add cfg(target_arch) dispatch for WASM vs scalar fallback (all sizes)
+    done: false
+- phase: Verification
+  tasks:
+  - text: 'Roundtrip tests: forward(inverse(x)) == x for 4x4, 8x8, 16x16, 32x32'
+    done: false
+  - text: Reference value tests — known inputs/outputs from HEVC conformance and JPEG spec
+    done: false
+  - text: Determinism tests — same input always produces same output
+    done: false
+  - text: Performance test — 4x4 DCT throughput matches or beats rasmcore-webp
+    done: false
+extra: {}

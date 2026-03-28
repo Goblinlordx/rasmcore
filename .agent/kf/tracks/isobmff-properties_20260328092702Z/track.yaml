@@ -1,0 +1,71 @@
+id: isobmff-properties_20260328092702Z
+title: ISOBMFF Item Properties — iprp/colr/hvcC/av1C/Exif Parsing
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Parse item properties (iprp/ipco/ipma) and metadata in rasmcore-isobmff: image dimensions (ispe), color info (colr/ICC/nclx),
+    codec config (hvcC, av1C), pixel info (pixi), and Exif metadata extraction.'
+  context: Third track in the ISOBMFF chain. After item infrastructure (isobmff-items), this track parses the property system
+    that attaches dimensions, codec configuration, color profiles, and metadata to each item.
+  codebase_analysis: Depends on isobmff-items for meta box parsing and item map. iprp contains ipco (property container with
+    typed property boxes) and ipma (association table mapping properties to items). hvcC and av1C are codec-specific config
+    records containing parameter sets (VPS/SPS/PPS for HEVC, sequence header for AV1).
+  acceptance_criteria:
+  - Parses iprp container — ipco property list and ipma association table
+  - Parses ispe property — extracts image width and height
+  - Parses colr property — extracts ICC profile bytes or nclx color parameters
+  - Parses hvcC property — extracts HEVC config with NAL unit arrays (VPS/SPS/PPS)
+  - Parses av1C property — extracts AV1 codec config record
+  - Parses pixi property — extracts bit depth per channel
+  - Extracts Exif metadata from Exif-typed items
+  - Resolves property-to-item associations via ipma index mapping
+  - Unit tests for each property type with hand-crafted byte sequences
+  out_of_scope: Interpreting codec config internals (SPS/PPS parsing) — that is the codec crate's job. Grid image assembly
+    — handled by isobmff-assembly track.
+  technical_notes: 'iprp container: ipco holds property boxes in sequence (ispe, colr, hvcC, av1C, pixi, etc.). ipma maps
+    (item_id, property_index, essential_flag) associations. ispe: width(u32) + height(u32). colr: type=nclx (colour_primaries,
+    transfer, matrix, full_range) or type=prof (embedded ICC profile bytes). hvcC: configurationVersion, profile, level, arrays
+    of NAL units (VPS/SPS/PPS). av1C: seq_profile, seq_level, OBU sequence header bytes. pixi: num_channels + bits_per_channel
+    array. Exif: item type Exif in iinf, data in mdat/idat, starts with 4-byte Exif header offset then TIFF header.'
+plan:
+- phase: Property Container
+  tasks:
+  - text: Implement iprp container parser — dispatch to ipco and ipma children
+    done: false
+  - text: Implement ipco parser — iterate property boxes, store in indexed list
+    done: false
+  - text: Implement ipma parser — read (item_id, property_index, essential) associations
+    done: false
+  - text: Build property resolver — given item_id, return list of associated properties
+    done: false
+- phase: Core Properties
+  tasks:
+  - text: Implement ispe (image spatial extents) — extract width, height
+    done: false
+  - text: Implement colr property — ICC profile extraction (type=prof) and nclx color info (type=nclx)
+    done: false
+  - text: Implement pixi property — num_channels and bits_per_channel array
+    done: false
+- phase: Codec Config Properties
+  tasks:
+  - text: Implement hvcC parser — configurationVersion, profile/tier/level, arrays of NAL units (VPS, SPS, PPS)
+    done: false
+  - text: Implement av1C parser — seq_profile, seq_level_idx, OBU sequence header bytes
+    done: false
+- phase: Metadata
+  tasks:
+  - text: Implement Exif item extraction — locate Exif items via iinf, read data from mdat/idat, skip 4-byte Exif header offset
+    done: false
+- phase: Verification
+  tasks:
+  - text: Unit tests for ipco/ipma with multiple properties associated to multiple items
+    done: false
+  - text: Unit tests for ispe, colr (both ICC and nclx variants), pixi
+    done: false
+  - text: Unit tests for hvcC and av1C with realistic config records
+    done: false
+  - text: Unit test for Exif extraction from a crafted item
+    done: false
+extra: {}

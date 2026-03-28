@@ -1,0 +1,64 @@
+id: isobmff-assembly_20260328092703Z
+title: ISOBMFF Image Assembly — Grid Support + parse() API + Integration
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Top-level parse() API for rasmcore-isobmff: primary image extraction, grid image support (tile composition), thumbnail
+    extraction, and integration into rasmcore-image decoder dispatch.'
+  context: Final track in the ISOBMFF chain. Combines item infrastructure + properties into the public parse() API. Adds grid
+    image support (critical for iPhone HEIC photos which use tile grids). Wires format detection into rasmcore-image decoder
+    dispatch.
+  codebase_analysis: Depends on isobmff-scaffold, isobmff-items, isobmff-properties. Decoder dispatch in rasmcore-image/src/domain/decoder/mod.rs
+    needs HEIC/AVIF detection added (follows JXL pattern with is_jxl). Feature flag native-heif in rasmcore-image/Cargo.toml.
+    Grid images use iref(dimg) to reference tiles, with a grid descriptor item containing rows/cols/tile dimensions.
+  acceptance_criteria:
+  - Top-level parse(data) -> Result<IsobmffFile, IsobmffError> API works end-to-end
+  - Primary image correctly identified via pitm and fully populated (dimensions, codec, bitstream, config, metadata)
+  - Grid images detected and resolved — grid descriptor + list of tile items with their bitstreams
+  - Thumbnail items extracted via thmb references
+  - native-heif feature flag added to rasmcore-image with optional dep on rasmcore-isobmff
+  - HEIC format detection added to decoder dispatch (detect_format returns heic)
+  - Integration test with real HEIC file — verify parsed brand, dimensions, codec type, metadata match known values
+  - Integration test with real AVIF file — verify brand and item extraction
+  - WASM build verification (cargo component check with native-heif feature)
+  out_of_scope: Actual codec decoding (HEVC, AV1) — handled by codec crates. AVIF decode path replacement (keep image crate
+    for now).
+  technical_notes: 'Grid images: a grid item (type=grid) has a grid descriptor (output_width, output_height, rows, cols).
+    It references tile items via iref(dimg). Each tile is a separate codec-encoded image. The assembler extracts all tiles
+    and provides the grid layout for the caller to composite after decoding. Integration: add native-heif feature flag to
+    rasmcore-image, add detect_heif() to decoder/mod.rs, dispatch HEIC/AVIF to rasmcore-isobmff parser.'
+plan:
+- phase: Image Assembly
+  tasks:
+  - text: Implement primary image extraction — resolve pitm, gather properties via ipma, extract bitstream from mdat via iloc
+    done: false
+  - text: Implement grid image support — detect grid items (type=grid), parse grid descriptor (rows, cols, output dimensions),
+      resolve dimg references to tile items
+    done: false
+  - text: Implement thumbnail extraction — resolve thmb references, extract thumbnail items
+    done: false
+  - text: Assemble top-level parse() API returning IsobmffFile (primary_item, items, thumbnails, metadata)
+    done: false
+- phase: Integration
+  tasks:
+  - text: Add native-heif feature flag to rasmcore-image Cargo.toml with optional dep on rasmcore-isobmff
+    done: false
+  - text: Add detect_heif() to decoder/mod.rs — check ftyp for HEIC/AVIF brands before image crate fallback
+    done: false
+  - text: Add decode_heif() stub in decoder — parse container, return metadata-only result (no codec decode yet)
+    done: false
+- phase: Validation
+  tasks:
+  - text: Integration test with real HEIC file — verify parsed brand, dimensions, codec type, Exif, ICC
+    done: false
+  - text: Integration test with real AVIF file — verify brand and item extraction
+    done: false
+  - text: Integration test with grid HEIC file (iPhone photo) — verify grid descriptor and tile count
+    done: false
+  - text: Edge case tests — empty mdat, zero-length extents, unknown box types (skip gracefully)
+    done: false
+  - text: WASM build verification (cargo component check with native-heif feature)
+    done: false
+extra: {}

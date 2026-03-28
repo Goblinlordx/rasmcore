@@ -1,0 +1,8 @@
+title: ISOBMFF Image Assembly — Grid Support + parse() API + Integration
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- isobmff-properties_20260328092702Z
