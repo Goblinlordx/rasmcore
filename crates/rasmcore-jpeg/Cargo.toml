@@ -9,3 +9,6 @@ description = "Pure Rust JPEG encoder/decoder — ITU-T T.81 baseline, progressi
 rasmcore-bitio = { path = "../rasmcore-bitio" }
 rasmcore-deflate = { path = "../rasmcore-deflate" }  # shared Huffman module
 rasmcore-color = { path = "../rasmcore-color" }
+
+[dev-dependencies]
+image = { workspace = true, features = ["jpeg"] }
