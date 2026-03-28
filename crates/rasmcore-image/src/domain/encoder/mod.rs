@@ -2,6 +2,7 @@ pub mod dds;
 pub mod gif;
 pub mod jpeg;
 pub mod png;
+pub mod tiff;
 pub mod webp;
 
 use image::DynamicImage;
@@ -10,7 +11,7 @@ use super::error::ImageError;
 use super::types::{ImageInfo, PixelFormat};
 
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tga", "hdr", "pnm", "exr", "dds",
+    "png", "jpeg", "webp", "gif", "tiff", "tga", "hdr", "pnm", "exr", "dds",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -46,13 +47,16 @@ pub fn encode(
             let config = gif::GifEncodeConfig::default();
             gif::encode(&img, info, &config)
         }
+        "tiff" | "tif" => {
+            let config = tiff::TiffEncodeConfig::default();
+            tiff::encode(pixels, info, &config)
+        }
         "tga" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
             encode_via_image_format(&img, image::ImageFormat::Tga)
         }
         "hdr" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
-            // HDR encoder requires Rgb32F — DynamicImage::write_to handles conversion
             let rgb32f = DynamicImage::ImageRgb32F(img.to_rgb32f());
             encode_via_image_format(&rgb32f, image::ImageFormat::Hdr)
         }
@@ -62,7 +66,6 @@ pub fn encode(
         }
         "exr" | "openexr" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
-            // EXR encoder requires Rgba32F — DynamicImage::write_to handles conversion
             let rgba32f = DynamicImage::ImageRgba32F(img.to_rgba32f());
             encode_via_image_format(&rgba32f, image::ImageFormat::OpenExr)
         }
