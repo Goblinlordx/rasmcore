@@ -119,12 +119,9 @@ fn blend_row_over(fg: &[u8], bg_out: &mut [u8]) {
         // We use (x * 255 + 128) >> 8 ≈ x for the final division, but to keep
         // precision we compute in 0..65025 then divide by 255.
         // Simpler: (fg_c * fg_a + bg_c * inv_a + 127) / 255
-        bg_px[0] =
-            ((fg_px[0] as u32 * fg_a + bg_px[0] as u32 * inv_a + 127) / 255) as u8;
-        bg_px[1] =
-            ((fg_px[1] as u32 * fg_a + bg_px[1] as u32 * inv_a + 127) / 255) as u8;
-        bg_px[2] =
-            ((fg_px[2] as u32 * fg_a + bg_px[2] as u32 * inv_a + 127) / 255) as u8;
+        bg_px[0] = ((fg_px[0] as u32 * fg_a + bg_px[0] as u32 * inv_a + 127) / 255) as u8;
+        bg_px[1] = ((fg_px[1] as u32 * fg_a + bg_px[1] as u32 * inv_a + 127) / 255) as u8;
+        bg_px[2] = ((fg_px[2] as u32 * fg_a + bg_px[2] as u32 * inv_a + 127) / 255) as u8;
         bg_px[3] = ((fg_a * 255 + bg_a * inv_a + 127) / 255) as u8;
     }
 }
@@ -231,7 +228,7 @@ mod tests {
             10, 20, 30, 255, // (0,0) — clipped
             40, 50, 60, 255, // (1,0) — clipped
             70, 80, 90, 255, // (0,1) — clipped
-            255, 0, 0, 255,  // (1,1) — visible at bg (0,0)
+            255, 0, 0, 255, // (1,1) — visible at bg (0,0)
         ];
         let bg = solid(0, 0, 255, 255, 9);
         let fg_info = rgba_info(2, 2);
