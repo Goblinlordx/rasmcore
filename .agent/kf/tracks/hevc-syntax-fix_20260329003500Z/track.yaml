@@ -1,0 +1,63 @@
+id: hevc-syntax-fix_20260329003500Z
+title: HEVC Syntax Decoder Fix — CTU/CU CABAC Correctness
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Fix CABAC syntax parsing to correctly decode HEVC I-frames. Current implementation exhausts the CABAC stream prematurely
+    — context model indices, quad-tree depth handling, and residual coefficient coding need debugging against reference bitstreams.
+  context: 'Parity tests fail with ''unexpected end of CABAC stream'' after fixing the slice data offset. The CABAC byte position
+    is now correct (verified by manual bit trace), but the syntax parser reads too many bins from the CABAC stream. Root causes:
+    incorrect context model index mapping, quad-tree split logic not matching x265 encoder decisions, and residual coefficient
+    coding consuming wrong number of bins.'
+  codebase_analysis: '- frame.rs: correct CABAC offset (2 bytes for test bitstreams, verified)
+
+    - syntax.rs: coding_quadtree/coding_unit/decode_transform_tree use simplified context indices
+
+    - Context index offsets (SPLIT_CU_CTX_OFFSET etc.) are hardcoded approximations
+
+    - Need to match actual HEVC Table 9-5 through 9-37 context model assignments
+
+    - The checker_256x256 test partially decodes (5.6dB PSNR) suggesting some CUs parse correctly'
+  acceptance_criteria:
+  - 'All parity tests pass (no #[ignore], no silent failures)'
+  - Flat 64x64 HEIC decodes with PSNR > 30dB vs ffmpeg reference
+  - Gradient 128x128 HEIC decodes with PSNR > 25dB
+  - Checker 256x256 HEIC decodes with PSNR > 25dB
+  out_of_scope: ''
+  technical_notes: ''
+plan:
+- phase: Debug + Trace
+  tasks:
+  - text: Add CABAC bin trace mode that logs every decoded bin with context index and value
+    done: false
+  - text: Compare bin trace against libde265 debug output for flat_64x64_q22
+    done: false
+  - text: Identify first divergence point in CABAC decode sequence
+    done: false
+- phase: Context Model Fixes
+  tasks:
+  - text: Fix SPLIT_CU_FLAG context derivation (depends on left/above CU depth)
+    done: false
+  - text: Fix PART_MODE context derivation for intra CUs
+    done: false
+  - text: Fix CBF_LUMA context derivation (depends on transform depth)
+    done: false
+  - text: Align all context indices with HEVC Tables 9-5 through 9-37
+    done: false
+- phase: Syntax Element Fixes
+  tasks:
+  - text: Fix coding_quadtree split logic for boundary CTUs (partial CTU at frame edge)
+    done: false
+  - text: Fix intra prediction mode MPM list construction (depends on neighbor modes)
+    done: false
+  - text: Fix residual_coding significance flag context derivation
+    done: false
+- phase: Validation
+  tasks:
+  - text: All parity tests pass without
+    done: false
+  - text: End-to-end HEIC container decode test passes
+    done: false
+extra: {}
