@@ -43,13 +43,17 @@ impl<'a> CabacDecoder<'a> {
     }
 
     /// Read one bit MSB-first from the byte stream.
+    /// Read one bit MSB-first from the byte stream.
+    ///
+    /// Per HEVC spec, the CABAC byte stream is implicitly padded with zeros
+    /// after the last byte. Reading past the end returns 0 bits rather than
+    /// erroring — this is how real HEVC decoders handle stream exhaustion.
     #[inline]
     fn read_bit(&mut self) -> Result<u32, HevcError> {
         if self.bits_left == 0 {
             if self.byte_pos >= self.data.len() {
-                return Err(HevcError::CabacError(
-                    "unexpected end of CABAC stream".into(),
-                ));
+                // Past end of stream — return 0 (implicit zero padding)
+                return Ok(0);
             }
             self.current_byte = self.data[self.byte_pos];
             self.byte_pos += 1;

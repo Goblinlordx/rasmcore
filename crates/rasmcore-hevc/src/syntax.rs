@@ -586,8 +586,8 @@ fn decode_residual_coeffs(
 
     if last_x == 0 && last_y == 0 {
         // Only DC coefficient
-        let mut num_gt1 = 0u32;
-        let level = decode_coeff_level(cabac, contexts, &mut num_gt1, log2_size)?;
+        let mut c1 = 1u32; // c1 starts at 1 per HEVC spec
+        let level = decode_coeff_level(cabac, contexts, &mut c1, log2_size)?;
         let sign = cabac.decode_bypass()?;
         coeffs[0] = if sign != 0 { -level } else { level };
         return Ok(coeffs);
@@ -605,14 +605,14 @@ fn decode_residual_coeffs(
 
     // Decode significance flags and levels for each position
     // Use sub-block-based context derivation (HEVC Section 9.3.4.2.5)
-    let mut num_greater1 = 0u32;
+    let mut c1 = 1u32; // c1 counter starts at 1 per HEVC spec
     for scan_idx in (0..=last_scan_pos).rev() {
         let (sx, sy) = scan[scan_idx];
         let pos = sy * size as usize + sx;
 
         if scan_idx == last_scan_pos {
             // Last position is always significant
-            let level = decode_coeff_level(cabac, contexts, &mut num_greater1, log2_size)?;
+            let level = decode_coeff_level(cabac, contexts, &mut c1, log2_size)?;
             let sign = cabac.decode_bypass()?;
             coeffs[pos] = if sign != 0 { -level } else { level };
         } else {
@@ -650,7 +650,7 @@ fn decode_residual_coeffs(
 
             let sig = cabac.decode_bin(&mut contexts[sig_ctx])? != 0;
             if sig {
-                let level = decode_coeff_level(cabac, contexts, &mut num_greater1, log2_size)?;
+                let level = decode_coeff_level(cabac, contexts, &mut c1, log2_size)?;
                 let sign = cabac.decode_bypass()?;
                 coeffs[pos] = if sign != 0 { -level } else { level };
             }
@@ -736,29 +736,38 @@ fn decode_last_sig_coeff_pos(
 
 /// Decode a single coefficient absolute level.
 ///
-/// Uses sub-block-based context derivation for gt1/gt2 flags.
+/// HEVC Section 9.3.4.2.6 — gt1/gt2 context derivation.
+/// c1 counter tracks consecutive greater1=0 results. Resets on greater1=1.
 fn decode_coeff_level(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
-    num_greater1: &mut u32,
+    c1: &mut u32,
     _log2_size: usize,
 ) -> Result<i16, HevcError> {
     // coeff_abs_level_greater1_flag
-    // Context set depends on position and previously decoded gt1 flags
-    // HEVC Table 9-40: ctxSet = (num_greater1 > 0) ? 0..3 based on sub-block
-    // Simplified: use first context set, advance through contexts
-    let gt1_ctx_base = GT1_CTX_OFFSET + (*num_greater1 as usize).min(3) * 4;
-    let gt1_ctx = gt1_ctx_base.min(GT1_CTX_OFFSET + 23);
+    // HEVC Table 9-40: ctxInc = ctxSet * 4 + min(c1, 3)
+    // For first sub-block of luma: ctxSet = 0
+    // c1 starts at 1, increments on greater1=0, resets to 0 on greater1=1
+    let ctx_set = 0u32; // First sub-block, luma
+    let gt1_ctx = GT1_CTX_OFFSET + (ctx_set * 4 + (*c1).min(3)) as usize;
+    let gt1_ctx = gt1_ctx.min(GT1_CTX_OFFSET + 23);
     let greater1 = cabac.decode_bin(&mut contexts[gt1_ctx])? != 0;
 
     if !greater1 {
+        // c1 increments (stays non-zero, meaning "still in base level" mode)
+        if *c1 < 3 {
+            *c1 += 1;
+        }
         return Ok(1); // Level = 1
     }
-    *num_greater1 += 1;
+
+    // greater1 = 1: c1 resets to 0 for subsequent coefficients
+    *c1 = 0;
 
     // coeff_abs_level_greater2_flag
-    // Context depends on which context set was used for gt1
-    let gt2_ctx = GT2_CTX_OFFSET + (*num_greater1 as usize - 1).min(5);
+    // ctxInc = ctxSet (0 for first sub-block)
+    let gt2_ctx = GT2_CTX_OFFSET + ctx_set as usize;
+    let gt2_ctx = gt2_ctx.min(GT2_CTX_OFFSET + 5);
     let greater2 = cabac.decode_bin(&mut contexts[gt2_ctx])? != 0;
 
     if !greater2 {
