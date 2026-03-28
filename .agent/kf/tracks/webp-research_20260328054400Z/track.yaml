@@ -1,106 +1,113 @@
 id: webp-research_20260328054400Z
-title: "Research: VP8 Encoder Architecture — RFC 6386, libwebp, Rust Design"
+title: 'Research: VP8 Encoder Architecture — RFC 6386, libwebp, Rust Design'
 type: research
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Deep-read RFC 6386 (VP8 bitstream), WebP container spec, and VP8L lossless
+  summary: 'Deep-read RFC 6386 (VP8 bitstream), WebP container spec, and VP8L lossless
+
     spec. Study libwebp reference implementation (C, BSD-licensed). Produce a
+
     design document mapping spec sections to Rust modules, identifying C-specific
+
     patterns that need Rust-native alternatives.
-  context: |
-    No pure Rust VP8 lossy encoder exists. The image crate only supports lossless
+
+    '
+  context: 'No pure Rust VP8 lossy encoder exists. The image crate only supports lossless
+
     WebP (VP8L). To achieve full WebP support in rasmcore without C dependencies,
+
     we need to implement a VP8 encoder from the specification.
 
+
     This research track produces the architectural blueprint that all subsequent
+
     implementation tracks depend on. It maps the VP8 encoding pipeline to Rust
+
     modules, identifies data structures, and flags C-specific patterns (pointer
+
     arithmetic, manual memory management, global state, inline assembly) that
+
     need Rust-native redesigns.
 
+
     Standards and references:
+
     - RFC 6386: VP8 Data Format and Decoding Guide (the normative spec)
+
     - WebP Container Specification (Google): RIFF-based container wrapping VP8
+
     - VP8L Lossless Bitstream Specification (Google): for understanding lossless
-    - libwebp source (BSD): Google's reference C implementation
+
+    - libwebp source (BSD): Google''s reference C implementation
+
     - libwebp source structure: src/enc/ directory contains encoder modules
-  codebase_analysis: |
-    - Current WebP encode in domain/encoder/webp.rs uses image-webp (lossless only)
-    - New crate rasmcore-webp will be created as a separate workspace member
-    - Must integrate via domain/encoder/webp.rs (replace image-webp for lossy,
-      keep image-webp for lossless or implement both)
-    - butteraugli 0.9 and dssim-core 3.4 already available as dev-dependencies
-    - The architecture must follow hexagonal pattern: pure encoder logic with
-      no WIT dependencies, thin adapter at rasmcore-image boundary
+
+    '
+  codebase_analysis: "- Current WebP encode in domain/encoder/webp.rs uses image-webp (lossless only)\n- New crate rasmcore-webp\
+    \ will be created as a separate workspace member\n- Must integrate via domain/encoder/webp.rs (replace image-webp for\
+    \ lossy,\n  keep image-webp for lossless or implement both)\n- butteraugli 0.9 and dssim-core 3.4 already available as\
+    \ dev-dependencies\n- The architecture must follow hexagonal pattern: pure encoder logic with\n  no WIT dependencies,\
+    \ thin adapter at rasmcore-image boundary\n"
   acceptance_criteria:
-    - Design document produced at .agent/kf/_reports/vp8-encoder-design.md
-    - Document maps RFC 6386 sections to proposed Rust module structure
-    - Document identifies VP8 encoding pipeline stages with data flow
-    - Document catalogs C-specific patterns in libwebp that need Rust alternatives
-    - Document specifies Rust-native designs for each identified C pattern
-    - Document defines the rasmcore-webp crate public API surface
-    - Document includes dependency analysis (what other crates are needed)
-    - Document estimates relative complexity per module
-  out_of_scope: |
-    - Writing any Rust code (this is research only)
+  - Design document produced at .agent/kf/_reports/vp8-encoder-design.md
+  - Document maps RFC 6386 sections to proposed Rust module structure
+  - Document identifies VP8 encoding pipeline stages with data flow
+  - Document catalogs C-specific patterns in libwebp that need Rust alternatives
+  - Document specifies Rust-native designs for each identified C pattern
+  - Document defines the rasmcore-webp crate public API surface
+  - Document includes dependency analysis (what other crates are needed)
+  - Document estimates relative complexity per module
+  out_of_scope: '- Writing any Rust code (this is research only)
+
     - VP8 inter-frame prediction (video only, not needed for still images)
+
     - Animation support
+
     - Alpha channel encoding details (separate from VP8 lossy)
-  technical_notes: |
-    VP8 encoder pipeline (from RFC 6386, encoder perspective):
-    1. Input: raw pixels (YUV420 or RGB converted to YUV420)
-    2. Macroblock partitioning: 16x16 macroblocks, each split into 4x4 sub-blocks
-    3. Intra-prediction: predict each block from neighbors (DC, V, H, TM, plus
-       10 sub-block modes for 4x4)
-    4. Residual computation: actual - predicted
-    5. DCT: 4x4 Walsh-Hadamard transform on residuals
-    6. Quantization: scale DCT coefficients by quality-derived quantizer
-    7. Boolean arithmetic coding: entropy-encode quantized coefficients
-    8. Loop filter: deblocking filter applied during reconstruction
-    9. Rate control: adjust quantizer to hit target quality/size
 
-    Key C-specific patterns to identify in libwebp:
-    - Pointer arithmetic for pixel access (Rust: slices with bounds)
-    - Global mutable state (Rust: pass state explicitly or use RefCell)
-    - Manual memory management (Rust: ownership system)
-    - Platform-specific SIMD intrinsics (Rust: safe SIMD via wide or std::simd)
-    - Macro-heavy code generation (Rust: generics or const generics)
-    - Goto-based error handling (Rust: Result/? operator)
-
-    The design document should be detailed enough that a developer can pick up
-    any subsequent track and implement it without re-reading the full RFC.
+    '
+  technical_notes: "VP8 encoder pipeline (from RFC 6386, encoder perspective):\n1. Input: raw pixels (YUV420 or RGB converted\
+    \ to YUV420)\n2. Macroblock partitioning: 16x16 macroblocks, each split into 4x4 sub-blocks\n3. Intra-prediction: predict\
+    \ each block from neighbors (DC, V, H, TM, plus\n   10 sub-block modes for 4x4)\n4. Residual computation: actual - predicted\n\
+    5. DCT: 4x4 Walsh-Hadamard transform on residuals\n6. Quantization: scale DCT coefficients by quality-derived quantizer\n\
+    7. Boolean arithmetic coding: entropy-encode quantized coefficients\n8. Loop filter: deblocking filter applied during\
+    \ reconstruction\n9. Rate control: adjust quantizer to hit target quality/size\n\nKey C-specific patterns to identify\
+    \ in libwebp:\n- Pointer arithmetic for pixel access (Rust: slices with bounds)\n- Global mutable state (Rust: pass state\
+    \ explicitly or use RefCell)\n- Manual memory management (Rust: ownership system)\n- Platform-specific SIMD intrinsics\
+    \ (Rust: safe SIMD via wide or std::simd)\n- Macro-heavy code generation (Rust: generics or const generics)\n- Goto-based\
+    \ error handling (Rust: Result/? operator)\n\nThe design document should be detailed enough that a developer can pick\
+    \ up\nany subsequent track and implement it without re-reading the full RFC.\n"
 plan:
-  - phase: "Specification Study"
-    tasks:
-      - text: "Read RFC 6386 sections 1-8 (format overview, frame header, macroblock structure)"
-        done: false
-      - text: "Read RFC 6386 sections 9-14 (prediction modes, DCT, quantization)"
-        done: false
-      - text: "Read RFC 6386 sections 15-20 (boolean coder, token partitions, loop filter)"
-        done: false
-      - text: "Read WebP container spec (RIFF structure, VP8 chunk, VP8L chunk)"
-        done: false
-  - phase: "Reference Implementation Study"
-    tasks:
-      - text: "Map libwebp src/enc/ source files to VP8 pipeline stages"
-        done: false
-      - text: "Catalog C-specific patterns and propose Rust alternatives for each"
-        done: false
-      - text: "Document the quality-to-quantizer mapping in libwebp (vp8l_enc.c, quant.c)"
-        done: false
-      - text: "Document SIMD usage in libwebp encoder and identify Rust SIMD strategy"
-        done: false
-  - phase: "Design Document"
-    tasks:
-      - text: "Write module structure mapping RFC sections to rasmcore-webp Rust modules"
-        done: false
-      - text: "Define rasmcore-webp public API (encode function signatures, config struct)"
-        done: false
-      - text: "Define data flow between modules (pipeline diagram)"
-        done: false
-      - text: "Write complexity estimates and dependency analysis per module"
-        done: false
+- phase: Specification Study
+  tasks:
+  - text: Read RFC 6386 sections 1-8 (format overview, frame header, macroblock structure)
+    done: true
+  - text: Read RFC 6386 sections 9-14 (prediction modes, DCT, quantization)
+    done: true
+  - text: Read RFC 6386 sections 15-20 (boolean coder, token partitions, loop filter)
+    done: true
+  - text: Read WebP container spec (RIFF structure, VP8 chunk, VP8L chunk)
+    done: true
+- phase: Reference Implementation Study
+  tasks:
+  - text: Map libwebp src/enc/ source files to VP8 pipeline stages
+    done: true
+  - text: Catalog C-specific patterns and propose Rust alternatives for each
+    done: true
+  - text: Document the quality-to-quantizer mapping in libwebp (vp8l_enc.c, quant.c)
+    done: true
+  - text: Document SIMD usage in libwebp encoder and identify Rust SIMD strategy
+    done: true
+- phase: Design Document
+  tasks:
+  - text: Write module structure mapping RFC sections to rasmcore-webp Rust modules
+    done: true
+  - text: Define rasmcore-webp public API (encode function signatures, config struct)
+    done: true
+  - text: Define data flow between modules (pipeline diagram)
+    done: true
+  - text: Write complexity estimates and dependency analysis per module
+    done: true
 extra: {}
