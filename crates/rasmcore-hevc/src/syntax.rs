@@ -632,6 +632,10 @@ fn decode_residual_coeffs(
     let log2_size = (size as f32).log2() as usize;
     let log2_traf_size = log2_size;
 
+    #[cfg(feature = "trace")]
+    eprintln!("  RESIDUAL: size={}, log2={}, sb_width={}", size, log2_traf_size,
+        if log2_traf_size <= 2 { 1 } else { size as usize / 4 });
+
     // Step 1: Decode last significant coefficient position
     // cIdx = 0 (luma only for now)
     let c_idx: usize = 0;
@@ -797,6 +801,22 @@ fn decode_residual_coeffs(
             );
             let sig_ctx_idx = SIG_COEFF_CTX_OFFSET + sig_ctx.min(41);
 
+            #[cfg(feature = "trace")]
+            if sub_idx == last_sub_scan_pos && ci == coeff_end - 1 {
+                eprintln!(
+                    "  SIG_CTX: ci={}, cx={}, cy={}, sub=({},{}), prev_csbf={}, sig_ctx={}, idx={}, ctx_state={}",
+                    ci, cx, cy, sub_x, sub_y, prev_csbf, sig_ctx, sig_ctx_idx,
+                    contexts[sig_ctx_idx].state,
+                );
+            }
+
+            #[cfg(feature = "trace")]
+            if sub_idx == last_sub_scan_pos && ci == coeff_end - 1 {
+                eprintln!(
+                    "  BEFORE_DECODE: idx={}, state={}, mps={}",
+                    sig_ctx_idx, contexts[sig_ctx_idx].state, contexts[sig_ctx_idx].mps,
+                );
+            }
             let sig = cabac.decode_bin(&mut contexts[sig_ctx_idx])? != 0;
             sig_flags[ci] = sig;
             if sig {
@@ -1134,26 +1154,25 @@ fn decode_last_sig_coeff_pos(
     }
 
     // Decode suffixes (bypass) if prefix > 3
+    // HEVC Section 7.4.9.11: LastSigCoeff = ((2 + (prefix & 1)) << ((prefix >> 1) - 1)) + suffix
     let last_x = if last_x_prefix > 3 {
-        let suffix_len = (last_x_prefix - 2) >> 1;
+        let suffix_len = (last_x_prefix >> 1) - 1;
         let mut suffix = 0u32;
         for _ in 0..suffix_len {
             suffix = (suffix << 1) | cabac.decode_bypass()?;
         }
-        let base = ((2 + (last_x_prefix & 1)) << suffix_len) - 2;
-        base + suffix
+        ((2 + (last_x_prefix & 1)) << suffix_len) + suffix
     } else {
         last_x_prefix
     };
 
     let last_y = if last_y_prefix > 3 {
-        let suffix_len = (last_y_prefix - 2) >> 1;
+        let suffix_len = (last_y_prefix >> 1) - 1;
         let mut suffix = 0u32;
         for _ in 0..suffix_len {
             suffix = (suffix << 1) | cabac.decode_bypass()?;
         }
-        let base = ((2 + (last_y_prefix & 1)) << suffix_len) - 2;
-        base + suffix
+        ((2 + (last_y_prefix & 1)) << suffix_len) + suffix
     } else {
         last_y_prefix
     };

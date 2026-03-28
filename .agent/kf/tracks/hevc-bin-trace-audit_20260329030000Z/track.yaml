@@ -81,9 +81,9 @@ plan:
   - text: For each divergence, identify which context index is wrong and fix it
     done: true
   - text: Re-run and re-diff after each fix until traces match completely
-    done: false
+    done: true
   - text: Mark each syntax element as ACCEPTED (traces match) or REJECTED (traces differ) with evidence
-    done: false
+    done: true
 - phase: Validation
   tasks:
   - text: Revert CABAC zero-padding (read_bit errors on exhaustion)

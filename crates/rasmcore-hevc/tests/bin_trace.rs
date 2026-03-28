@@ -99,11 +99,9 @@ fn decode_with_trace(case: &str) -> (Vec<BinTrace>, bool) {
 
     let mut contexts = syntax::init_syntax_contexts(slice_qp);
 
-    // Print context init values for the first few contexts
+    // Print context init values
     eprintln!("  Context init at QP={}:", slice_qp);
-    for (i, ctx) in contexts.iter().take(15).enumerate() {
-        eprintln!("    ctx[{:2}]: state={:2}, mps={}", i, ctx.state, ctx.mps);
-    }
+    eprintln!("    ctx[42] (SIG_COEFF[24]): state={}, mps={}", contexts[42].state, contexts[42].mps);
     let mut depth_map =
         syntax::CuDepthMap::new(sps.pic_width, sps.pic_height, sps.min_cb_size());
 
@@ -270,9 +268,64 @@ fn bin_trace_gradient_128x128_q22() {
     }
 
     assert!(decode_ok, "gradient q22 decode should succeed");
-    // Reference has 550 bins. Our decoder should produce the same count.
-    // For now, just report the difference.
-    if trace.len() != 550 {
-        eprintln!("WARNING: expected ~550 bins from reference, got {}", trace.len());
+
+    // Load reference bins
+    let ref_data = std::fs::read_to_string("/tmp/ref_gradient_bins.txt")
+        .expect("reference bins file not found — run the python script first");
+    let ref_bins: Vec<&str> = ref_data.lines().collect();
+
+    // Compare
+    let max_compare = ref_bins.len().min(trace.len());
+    let mut first_mismatch = None;
+    for i in 0..max_compare {
+        let our = &trace[i];
+        let our_str = format!(
+            "{},{},{:x},{:x},{}",
+            if our.bin_type == BinType::Context { "ctx" } else { "byp" },
+            our.state_before,
+            our.range_before,
+            our.offset_before,
+            our.result,
+        );
+        // Parse reference bin
+        let ref_parts: Vec<&str> = ref_bins[i].split(',').collect();
+        let ref_type = ref_parts[0];
+        let ref_bit: u32 = ref_parts[4].parse().unwrap();
+        let ref_state: u8 = ref_parts[1].parse().unwrap();
+        let our_type_str = if our.bin_type == BinType::Context { "ctx" } else { "byp" };
+
+        // Compare type, state (for ctx), and result
+        let type_match = our_type_str == ref_type;
+        let state_match = ref_type != "ctx" || our.state_before == ref_state;
+        let result_match = our.result == ref_bit;
+        // Skip range/value comparison for bypass group bins (r=0,v=0)
+        let rv_match = ref_parts[2] == "0" || (
+            format!("{:x}", our.range_before) == ref_parts[2]
+            && format!("{:x}", our.offset_before) == ref_parts[3]
+        );
+
+        if !(type_match && state_match && result_match && rv_match) {
+            eprintln!("FIRST MISMATCH at bin {}:", i + 1);
+            eprintln!("  ref: {}", ref_bins[i]);
+            eprintln!("  our: {}", our_str);
+            first_mismatch = Some(i);
+            // Also show a few bins before for context
+            if i > 0 {
+                eprintln!("  prev ref: {}", ref_bins[i - 1]);
+            }
+            break;
+        }
+    }
+
+    if first_mismatch.is_none() && trace.len() != ref_bins.len() {
+        eprintln!(
+            "Bin count mismatch: ref={}, ours={}",
+            ref_bins.len(),
+            trace.len()
+        );
+    }
+
+    if let Some(idx) = first_mismatch {
+        panic!("First gradient bin mismatch at bin {} (0-indexed)", idx);
     }
 }
