@@ -1,5 +1,5 @@
 title: VP8 Encoder B_PRED — Per-4x4 Block Intra Prediction
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'
