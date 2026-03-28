@@ -22,31 +22,29 @@ spec:
   - File size decreases for mixed-content images
   out_of_scope: Full RDO with encoding cost model. Multi-pass encoding.
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Activity Analysis
-    tasks:
-      - text: Implement per-MB spatial activity metric (variance or AC energy)
-        done: false
-      - text: Classify MBs into 2-4 segments by activity threshold
-        done: false
-  - phase: Segment Encoding
-    tasks:
-      - text: Enable segmentation in first partition header
-        done: false
-      - text: Encode segment map (per-MB segment ID)
-        done: false
-      - text: Compute per-segment QP deltas from base QP
-        done: false
-      - text: Apply segment-specific quantization in encode_macroblock
-        done: false
-  - phase: Validation
-    tasks:
-      - text: All existing tests pass
-        done: false
-      - text: Parity ratio vs cwebp improves for gradient and mixed content
-        done: false
-      - text: File size decreases for images with mixed flat/textured regions
-        done: false
+- phase: Activity Analysis
+  tasks:
+  - text: Implement per-MB spatial activity metric (variance or AC energy)
+    done: true
+  - text: Classify MBs into 2-4 segments by activity threshold
+    done: true
+- phase: Segment Encoding
+  tasks:
+  - text: Enable segmentation in first partition header
+    done: true
+  - text: Encode segment map (per-MB segment ID)
+    done: true
+  - text: Compute per-segment QP deltas from base QP
+    done: true
+  - text: Apply segment-specific quantization in encode_macroblock
+    done: true
+- phase: Validation
+  tasks:
+  - text: All existing tests pass
+    done: true
+  - text: Parity ratio vs cwebp improves for gradient and mixed content
+    done: true
+  - text: File size decreases for images with mixed flat/textured regions
+    done: true
 extra: {}
