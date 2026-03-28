@@ -5,16 +5,16 @@ use crate::error::HevcError;
 
 /// Default 8x8 intra scaling list (Table 7-4).
 const DEFAULT_8X8_INTRA: [u8; 64] = [
-    16, 16, 16, 16, 17, 18, 21, 24, 16, 16, 16, 16, 17, 19, 22, 25, 16, 16, 17, 18, 20, 22, 25,
-    29, 16, 16, 18, 21, 24, 27, 31, 36, 17, 17, 20, 24, 30, 35, 41, 47, 18, 19, 22, 27, 35, 44,
-    54, 65, 21, 22, 25, 31, 41, 54, 70, 88, 24, 25, 29, 36, 47, 65, 88, 115,
+    16, 16, 16, 16, 17, 18, 21, 24, 16, 16, 16, 16, 17, 19, 22, 25, 16, 16, 17, 18, 20, 22, 25, 29,
+    16, 16, 18, 21, 24, 27, 31, 36, 17, 17, 20, 24, 30, 35, 41, 47, 18, 19, 22, 27, 35, 44, 54, 65,
+    21, 22, 25, 31, 41, 54, 70, 88, 24, 25, 29, 36, 47, 65, 88, 115,
 ];
 
 /// Default 8x8 inter scaling list (Table 7-4).
 const DEFAULT_8X8_INTER: [u8; 64] = [
-    16, 16, 16, 16, 17, 18, 20, 24, 16, 16, 16, 17, 18, 20, 24, 25, 16, 16, 17, 18, 20, 24, 25,
-    28, 16, 17, 18, 20, 24, 25, 28, 33, 17, 18, 20, 24, 25, 28, 33, 41, 18, 20, 24, 25, 28, 33,
-    41, 54, 20, 24, 25, 28, 33, 41, 54, 71, 24, 25, 28, 33, 41, 54, 71, 91,
+    16, 16, 16, 16, 17, 18, 20, 24, 16, 16, 16, 17, 18, 20, 24, 25, 16, 16, 17, 18, 20, 24, 25, 28,
+    16, 17, 18, 20, 24, 25, 28, 33, 17, 18, 20, 24, 25, 28, 33, 41, 18, 20, 24, 25, 28, 33, 41, 54,
+    20, 24, 25, 28, 33, 41, 54, 71, 24, 25, 28, 33, 41, 54, 71, 91,
 ];
 
 /// Up-right diagonal scan order for 4x4 blocks (Table 6-5).
@@ -22,9 +22,9 @@ const DIAG_SCAN_4X4: [u8; 16] = [0, 4, 1, 8, 5, 2, 12, 9, 6, 3, 13, 10, 7, 14, 1
 
 /// Up-right diagonal scan order for 8x8 blocks.
 const DIAG_SCAN_8X8: [u8; 64] = [
-    0, 8, 1, 16, 9, 2, 24, 17, 10, 3, 32, 25, 18, 11, 4, 40, 33, 26, 19, 12, 5, 48, 41, 34, 27,
-    20, 13, 6, 56, 49, 42, 35, 28, 21, 14, 7, 57, 50, 43, 36, 29, 22, 15, 58, 51, 44, 37, 30, 23,
-    59, 52, 45, 38, 31, 60, 53, 46, 39, 61, 54, 47, 62, 55, 63,
+    0, 8, 1, 16, 9, 2, 24, 17, 10, 3, 32, 25, 18, 11, 4, 40, 33, 26, 19, 12, 5, 48, 41, 34, 27, 20,
+    13, 6, 56, 49, 42, 35, 28, 21, 14, 7, 57, 50, 43, 36, 29, 22, 15, 58, 51, 44, 37, 30, 23, 59,
+    52, 45, 38, 31, 60, 53, 46, 39, 61, 54, 47, 62, 55, 63,
 ];
 
 /// HEVC Scaling List data for all transform sizes.
@@ -123,7 +123,7 @@ pub fn parse_scaling_list_data(r: &mut HevcBitReader) -> Result<ScalingList, Hev
                 }
             } else {
                 // Parse DPCM-coded scaling list
-                let coeff_num = std::cmp::min(64u32, 1 << (4 + (size_id as u32) << 1));
+                let coeff_num = std::cmp::min(64u32, 1 << ((4 + (size_id as u32)) << 1));
 
                 // DC coefficient for 16x16 and 32x32
                 if size_id > 1 {
@@ -145,10 +145,10 @@ pub fn parse_scaling_list_data(r: &mut HevcBitReader) -> Result<ScalingList, Hev
                 };
                 let num = coeff_num as usize;
 
-                for i in 0..num {
+                for &scan_pos in scan.iter().take(num) {
                     let delta = r.read_se()?;
                     next_coeff = (next_coeff + delta + 256) % 256;
-                    let pos = scan[i] as usize;
+                    let pos = scan_pos as usize;
 
                     match size_id {
                         0 => sl.list_4x4[matrix_id as usize][pos] = next_coeff as u8,
@@ -170,17 +170,26 @@ fn set_default_matrix(sl: &mut ScalingList, size_id: u8, matrix_id: u8) {
     match size_id {
         0 => sl.list_4x4[matrix_id as usize] = [16; 16],
         1 => {
-            sl.list_8x8[matrix_id as usize] =
-                if is_intra { DEFAULT_8X8_INTRA } else { DEFAULT_8X8_INTER };
+            sl.list_8x8[matrix_id as usize] = if is_intra {
+                DEFAULT_8X8_INTRA
+            } else {
+                DEFAULT_8X8_INTER
+            };
         }
         2 => {
-            sl.list_16x16[matrix_id as usize] =
-                if is_intra { DEFAULT_8X8_INTRA } else { DEFAULT_8X8_INTER };
+            sl.list_16x16[matrix_id as usize] = if is_intra {
+                DEFAULT_8X8_INTRA
+            } else {
+                DEFAULT_8X8_INTER
+            };
             sl.dc_16x16[matrix_id as usize] = 16;
         }
         3 => {
-            sl.list_32x32[matrix_id as usize] =
-                if is_intra { DEFAULT_8X8_INTRA } else { DEFAULT_8X8_INTER };
+            sl.list_32x32[matrix_id as usize] = if is_intra {
+                DEFAULT_8X8_INTRA
+            } else {
+                DEFAULT_8X8_INTER
+            };
             sl.dc_32x32[matrix_id as usize] = 16;
         }
         _ => {}

@@ -26,6 +26,7 @@ use crate::error::HevcError;
 /// * `is_intra_4x4_luma` — use DST instead of DCT for 4x4 intra luma
 /// * `scaling_list` — optional scaling list (None = flat default)
 /// * `matrix_id` — scaling list matrix ID (0–5)
+#[allow(clippy::too_many_arguments)]
 pub fn reconstruct_residual(
     coeffs: &[i16],
     output: &mut [i16],
