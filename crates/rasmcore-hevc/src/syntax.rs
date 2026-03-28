@@ -215,7 +215,21 @@ pub fn parse_slice_header(
         slice_cr_qp_offset = r.read_se()?;
     }
 
-    // Deblocking filter
+    // SAO flags — per HEVC spec Section 7.3.6.1, SAO flags come before
+    // inter-prediction stuff (which is skipped for I-slices).
+    let slice_sao_luma_flag = if sps.sample_adaptive_offset_enabled {
+        r.read_flag()?
+    } else {
+        false
+    };
+    let slice_sao_chroma_flag =
+        if sps.sample_adaptive_offset_enabled && sps.chroma_format_idc > 0 {
+            r.read_flag()?
+        } else {
+            false
+        };
+
+    // Deblocking filter override
     let mut deblocking_filter_disabled = pps.deblocking_filter_disabled;
     let mut slice_beta_offset = pps.beta_offset;
     let mut slice_tc_offset = pps.tc_offset;
@@ -231,17 +245,12 @@ pub fn parse_slice_header(
         }
     }
 
-    // SAO flags
-    let slice_sao_luma_flag = if sps.sample_adaptive_offset_enabled {
-        r.read_flag()?
-    } else {
-        false
-    };
-    let slice_sao_chroma_flag = if sps.sample_adaptive_offset_enabled && sps.chroma_format_idc > 0 {
-        r.read_flag()?
-    } else {
-        false
-    };
+    // slice_loop_filter_across_slices_enabled_flag (Section 7.3.6.1)
+    if pps.loop_filter_across_slices_enabled
+        && (slice_sao_luma_flag || slice_sao_chroma_flag || !deblocking_filter_disabled)
+    {
+        let _slice_loop_filter_across_slices = r.read_flag()?;
+    }
 
     // byte_alignment() — HEVC spec Section 7.3.2.11
     // Read alignment_bit_equal_to_one (1) then alignment_bit_equal_to_zero (0..7)
@@ -496,6 +505,31 @@ fn decode_transform_tree(
 ) -> Result<TuSyntax, HevcError> {
     let min_tu_size = 1u32 << sps.log2_min_luma_transform_block_size;
     let max_tu_depth = sps.max_transform_hierarchy_depth_intra as u32;
+    let log2_trafo_size = (size as f32).log2() as u32;
+
+    // HEVC Section 7.3.8.7: cbf_cb and cbf_cr are decoded at this level
+    // (before the split decision) when log2TrafoSize > 2 and parent flags are set.
+    let cbf_cb = if log2_trafo_size > 2 && sps.chroma_format_idc > 0 && _parent_cbf_cb {
+        let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
+        if ctx_idx < contexts.len() {
+            cabac.decode_bin(&mut contexts[ctx_idx])? != 0
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let cbf_cr = if log2_trafo_size > 2 && sps.chroma_format_idc > 0 && _parent_cbf_cr {
+        let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
+        if ctx_idx < contexts.len() {
+            cabac.decode_bin(&mut contexts[ctx_idx])? != 0
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     // Decide whether to split the TU
     let split = if size > min_tu_size && depth < max_tu_depth {
@@ -518,8 +552,8 @@ fn decode_transform_tree(
                 y + dy * half,
                 half,
                 depth + 1,
-                true,
-                true,
+                cbf_cb,
+                cbf_cr,
             )?;
             children.push(child);
         }
@@ -534,35 +568,11 @@ fn decode_transform_tree(
             children,
         })
     } else {
-        // Leaf TU: decode CBF flags and residual coefficients
-        // HEVC Section 7.3.8.7: cbf_cb and cbf_cr decoded before cbf_luma
+        // Leaf TU: decode cbf_luma and residual coefficients
+        // cbf_cb/cbf_cr were already decoded above (before split decision)
 
-        // Chroma CBF — not decoded at root depth 0 for this encoder's bitstreams.
-        // The encoder signals cbf_luma explicitly instead.
-        let cbf_cb = if depth > 0 && sps.chroma_format_idc > 0 && _parent_cbf_cb {
-            let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
-            if ctx_idx < contexts.len() {
-                cabac.decode_bin(&mut contexts[ctx_idx])? != 0
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        let cbf_cr = if depth > 0 && sps.chroma_format_idc > 0 && _parent_cbf_cr {
-            let ctx_idx = CBF_CHROMA_CTX_OFFSET + depth.min(3) as usize;
-            if ctx_idx < contexts.len() {
-                cabac.decode_bin(&mut contexts[ctx_idx])? != 0
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        // cbf_luma: always decoded explicitly
-        let cbf_luma_ctx = CBF_LUMA_CTX_OFFSET + if depth > 0 { 1 } else { 0 };
+        // cbf_luma: ctxInc = (trafoDepth == 0) ? 1 : 0  (HEVC Table 9-33)
+        let cbf_luma_ctx = CBF_LUMA_CTX_OFFSET + if depth == 0 { 1 } else { 0 };
         let cbf_luma = cabac.decode_bin(&mut contexts[cbf_luma_ctx])? != 0;
 
         let luma_coeffs = if cbf_luma {

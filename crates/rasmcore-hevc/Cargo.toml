@@ -14,5 +14,6 @@ rasmcore-isobmff = { path = "../rasmcore-isobmff" }
 [features]
 default = []
 test-utils = []
+trace = []
 
 [dev-dependencies]

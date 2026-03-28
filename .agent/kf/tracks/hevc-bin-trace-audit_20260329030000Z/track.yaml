@@ -57,29 +57,29 @@ plan:
 - phase: Build Reference Bin Tracer
   tasks:
   - text: Clone libde265 source and build with DE265_LOG_TRACE defined
-    done: false
+    done: true
   - text: Write wrapper that runs libde265 on a test bitstream and captures LogSlice/LogSymbols output
-    done: false
+    done: true
   - text: Run on flat_64x64_q37.hevc and capture complete bin trace (context_index, bin_value per syntax element)
-    done: false
+    done: true
   - text: Parse trace into structured format (JSON or CSV) for diffing
-    done: false
+    done: true
 - phase: Instrument Our Decoder
   tasks:
   - text: Add bin trace mode to CabacDecoder (log each decode_bin/bypass/terminate call with context index and result)
-    done: false
+    done: true
   - text: Add syntax element labels to trace (split_cu, prev_intra, sig_coeff, gt1, etc.)
-    done: false
+    done: true
   - text: Run our decoder on flat_64x64_q37.hevc with tracing enabled
-    done: false
+    done: true
   - text: Parse our trace into same structured format as reference
-    done: false
+    done: true
 - phase: Diff and Fix
   tasks:
   - text: Diff bin traces line by line — identify first divergence point
-    done: false
+    done: true
   - text: For each divergence, identify which context index is wrong and fix it
-    done: false
+    done: true
   - text: Re-run and re-diff after each fix until traces match completely
     done: false
   - text: Mark each syntax element as ACCEPTED (traces match) or REJECTED (traces differ) with evidence

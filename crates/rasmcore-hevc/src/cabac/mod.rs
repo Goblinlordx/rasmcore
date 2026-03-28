@@ -46,3 +46,5 @@ pub use context::{
     init_contexts,
 };
 pub use decoder::CabacDecoder;
+#[cfg(feature = "trace")]
+pub use decoder::{BinTrace, BinType};
