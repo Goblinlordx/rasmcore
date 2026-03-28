@@ -2171,6 +2171,10 @@ name = "rasmcore-color"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-dct"
+version = "0.1.0"
+
+[[package]]
 name = "rasmcore-deflate"
 version = "0.1.0"
 dependencies = [
