@@ -1,0 +1,10 @@
+[package]
+name = "rasmcore-fits"
+version.workspace = true
+edition.workspace = true
+description = "Pure Rust FITS (Flexible Image Transport System) codec — astronomy images"
+
+[dependencies]
+# No external dependencies — implemented from FITS 4.0 standard
+
+[dev-dependencies]

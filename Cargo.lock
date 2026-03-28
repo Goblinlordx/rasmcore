@@ -2155,6 +2155,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-fits"
+version = "0.1.0"
+
+[[package]]
 name = "rasmcore-image"
 version = "0.1.0"
 dependencies = [
