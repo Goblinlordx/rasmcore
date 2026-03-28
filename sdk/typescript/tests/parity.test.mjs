@@ -144,10 +144,24 @@ describe("encoder", () => {
     assert.ok(quality > 30, `JPEG roundtrip PSNR too low: ${quality.toFixed(1)}dB`);
   });
 
-  it("lists supported formats", () => {
+  it("GIF roundtrip preserves dimensions", () => {
+    const data = loadFixture("gradient_64x64.png");
+    const decoded = decoder.decode(data);
+    const encoded = encoder.encode(decoded.pixels, decoded.info, "gif", undefined);
+    // Verify GIF magic bytes
+    assert.equal(encoded[0], 0x47); // 'G'
+    assert.equal(encoded[1], 0x49); // 'I'
+    assert.equal(encoded[2], 0x46); // 'F'
+    const reDecoded = decoder.decode(encoded);
+    assert.equal(reDecoded.info.width, 64);
+    assert.equal(reDecoded.info.height, 64);
+  });
+
+  it("lists supported formats including gif", () => {
     const formats = encoder.supportedFormats();
     assert.ok(formats.includes("png"));
     assert.ok(formats.includes("jpeg"));
+    assert.ok(formats.includes("gif"));
   });
 });
 

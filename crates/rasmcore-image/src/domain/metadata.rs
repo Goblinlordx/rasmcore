@@ -76,38 +76,62 @@ pub fn read_exif(data: &[u8]) -> Result<ExifMetadata, ImageError> {
 
     let mut meta = ExifMetadata::default();
 
-    if let Some(field) = exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
-        if let Some(v) = field.value.get_uint(0) {
-            meta.orientation = Some(ExifOrientation::from_tag(v));
-        }
+    if let Some(field) = exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+        && let Some(v) = field.value.get_uint(0)
+    {
+        meta.orientation = Some(ExifOrientation::from_tag(v));
     }
 
-    if let Some(field) = exif_data.get_field(exif::Tag::PixelXDimension, exif::In::PRIMARY) {
-        if let Some(v) = field.value.get_uint(0) {
-            meta.width = Some(v);
-        }
+    if let Some(field) = exif_data.get_field(exif::Tag::PixelXDimension, exif::In::PRIMARY)
+        && let Some(v) = field.value.get_uint(0)
+    {
+        meta.width = Some(v);
     }
 
-    if let Some(field) = exif_data.get_field(exif::Tag::PixelYDimension, exif::In::PRIMARY) {
-        if let Some(v) = field.value.get_uint(0) {
-            meta.height = Some(v);
-        }
+    if let Some(field) = exif_data.get_field(exif::Tag::PixelYDimension, exif::In::PRIMARY)
+        && let Some(v) = field.value.get_uint(0)
+    {
+        meta.height = Some(v);
     }
 
     if let Some(field) = exif_data.get_field(exif::Tag::Make, exif::In::PRIMARY) {
-        meta.camera_make = Some(field.display_value().to_string().trim_matches('"').to_string());
+        meta.camera_make = Some(
+            field
+                .display_value()
+                .to_string()
+                .trim_matches('"')
+                .to_string(),
+        );
     }
 
     if let Some(field) = exif_data.get_field(exif::Tag::Model, exif::In::PRIMARY) {
-        meta.camera_model = Some(field.display_value().to_string().trim_matches('"').to_string());
+        meta.camera_model = Some(
+            field
+                .display_value()
+                .to_string()
+                .trim_matches('"')
+                .to_string(),
+        );
     }
 
     if let Some(field) = exif_data.get_field(exif::Tag::DateTime, exif::In::PRIMARY) {
-        meta.date_time = Some(field.display_value().to_string().trim_matches('"').to_string());
+        meta.date_time = Some(
+            field
+                .display_value()
+                .to_string()
+                .trim_matches('"')
+                .to_string(),
+        );
     }
 
     if let Some(field) = exif_data.get_field(exif::Tag::Software, exif::In::PRIMARY) {
-        meta.software = Some(field.display_value().to_string().trim_matches('"').to_string());
+        meta.software = Some(
+            field
+                .display_value()
+                .to_string()
+                .trim_matches('"')
+                .to_string(),
+        );
     }
 
     Ok(meta)
@@ -125,7 +149,10 @@ mod tests {
     #[test]
     fn orientation_from_tag_all_values() {
         assert_eq!(ExifOrientation::from_tag(1), ExifOrientation::Normal);
-        assert_eq!(ExifOrientation::from_tag(2), ExifOrientation::FlipHorizontal);
+        assert_eq!(
+            ExifOrientation::from_tag(2),
+            ExifOrientation::FlipHorizontal
+        );
         assert_eq!(ExifOrientation::from_tag(3), ExifOrientation::Rotate180);
         assert_eq!(ExifOrientation::from_tag(4), ExifOrientation::FlipVertical);
         assert_eq!(ExifOrientation::from_tag(5), ExifOrientation::Transpose);

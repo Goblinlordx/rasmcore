@@ -4,16 +4,10 @@ use crate::domain::error::ImageError;
 use crate::domain::types::ImageInfo;
 
 /// GIF encode configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct GifEncodeConfig {
     /// Repeat count: 0 = infinite loop, n = repeat n times (default: 0 = infinite).
     pub repeat: u16,
-}
-
-impl Default for GifEncodeConfig {
-    fn default() -> Self {
-        Self { repeat: 0 }
-    }
 }
 
 /// Encode pixel data to GIF with the given configuration.

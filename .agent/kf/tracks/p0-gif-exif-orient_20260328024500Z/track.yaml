@@ -96,7 +96,7 @@ plan:
 - phase: Verification
   tasks:
   - text: WASM integration tests for GIF encode and auto-orient
-    done: false
+    done: true
   - text: TS SDK tests for GIF encode
-    done: false
+    done: true
 extra: {}

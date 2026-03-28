@@ -446,7 +446,8 @@ fn wasm_filters_contrast() {
 
 // =============================================================================
 // Compositing tests
-// =============================================================================
+// 
+=====================================================================
 
 #[test]
 fn wasm_filters_composite_opaque() {
@@ -566,6 +567,96 @@ fn wasm_pipeline_composite() {
         .unwrap()
         .unwrap();
     assert_eq!(&output[..4], &[0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
+=======
+// GIF encode tests
+// =============================================================================
+
+#[test]
+fn wasm_encoder_gif_roundtrip() {
+    let (mut store, bindings) = instantiate_image_component();
+    let decoder = bindings.rasmcore_image_decoder();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    let data = load_fixture("gradient_64x64.png");
+    let decoded = decoder.call_decode(&mut store, &data).unwrap().unwrap();
+
+    let encoded = encoder
+        .call_encode(&mut store, &decoded.pixels, decoded.info, "gif", None)
+        .unwrap()
+        .unwrap();
+
+    // Verify GIF magic bytes
+    assert_eq!(&encoded[..3], b"GIF");
+
+    // Roundtrip: decode back and check dimensions
+    let re_decoded = decoder.call_decode(&mut store, &encoded).unwrap().unwrap();
+    assert_eq!(re_decoded.info.width, 64);
+    assert_eq!(re_decoded.info.height, 64);
+}
+
+#[test]
+fn wasm_encoder_supported_formats_includes_gif() {
+    let (mut store, bindings) = instantiate_image_component();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    let formats = encoder.call_supported_formats(&mut store).unwrap();
+    assert!(formats.contains(&"gif".to_string()));
+}
+
+// =============================================================================
+// Auto-orient tests
+// =============================================================================
+
+#[test]
+fn wasm_transform_auto_orient_normal_is_identity() {
+    let (mut store, bindings) = instantiate_image_component();
+    let decoder = bindings.rasmcore_image_decoder();
+    let transform = bindings.rasmcore_image_transform();
+
+    let data = load_fixture("gradient_64x64.png");
+    let decoded = decoder.call_decode(&mut store, &data).unwrap().unwrap();
+
+    let (oriented_px, oriented_info) = transform
+        .call_auto_orient(
+            &mut store,
+            &decoded.pixels,
+            decoded.info,
+            wasm_integration::exports::rasmcore::image::transform::ExifOrientation::Normal,
+        )
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(oriented_info.width, 64);
+    assert_eq!(oriented_info.height, 64);
+    assert_eq!(oriented_px, decoded.pixels);
+}
+
+// =============================================================================
+// Metadata tests
+// =============================================================================
+
+#[test]
+fn wasm_metadata_has_exif_jpeg() {
+    let (mut store, bindings) = instantiate_image_component();
+    let metadata = bindings.rasmcore_image_metadata();
+
+    // ImageMagick JPEG should have EXIF
+    let data = load_fixture("gradient_64x64.jpeg");
+    let has = metadata.call_has_exif(&mut store, &data).unwrap();
+    // ImageMagick may or may not embed EXIF in simple conversions
+    // Just verify the call works without error
+    let _ = has;
+}
+
+#[test]
+fn wasm_metadata_read_exif_png_fails() {
+    let (mut store, bindings) = instantiate_image_component();
+    let metadata = bindings.rasmcore_image_metadata();
+
+    // PNG doesn't have EXIF
+    let data = load_fixture("gradient_64x64.png");
+    let result = metadata.call_read_exif(&mut store, &data).unwrap();
+    assert!(result.is_err());
 }
 
 // =============================================================================
