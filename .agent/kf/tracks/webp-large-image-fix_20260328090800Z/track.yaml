@@ -1,0 +1,145 @@
+id: webp-large-image-fix_20260328090800Z
+title: VP8 Large-Image Conformance — Token Stream Fix + Golden References
+type: bug
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Fix VP8 encoder output for images 64x64+ that fail with NOT_ENOUGH_DATA.
+    Debug the bool coder token partition, fix mb_no_coeff_skip signaling,
+    and add golden-reference validation using cwebp/dwebp.
+  context: |
+    After the reconstruction and coeff-update-probability fixes in
+    webp-conformance_20260328084300Z, small/medium images decode correctly
+    but larger images still fail.
+
+    Current status (both dwebp and image-webp agree):
+    - 1x1 to 48x48: OK (all content types)
+    - 64x64 gradient: OK
+    - 64x64 solid: FAIL (NOT_ENOUGH_DATA)
+    - 96x96+: FAIL (all content types)
+
+    The failure threshold correlates with macroblock grid size, not content
+    complexity. Solid images fail earlier (64x64 = 4x4 MBs) than gradient
+    images (fail at 96x96 = 6x6 MBs), suggesting the issue is worse when
+    many blocks have zero coefficients (all-skip macroblocks).
+
+    Likely root causes to investigate:
+    1. mb_no_coeff_skip signaling - the skip flag per-MB may be wrong
+    2. Bool coder carry propagation - may corrupt stream at certain lengths
+    3. Token partition data insufficiency - not enough trailing bytes
+    4. First partition size vs actual partition boundary mismatch
+  codebase_analysis: |
+    Key files in crates/rasmcore-webp/src/:
+
+    bitstream.rs (encode_mb_header, line ~200):
+      - mb_no_coeff_skip = true is set globally
+      - Per-MB skip flag: put_bit(128, y_mode==0 && uv_mode==0)
+      - This logic is wrong: skip should be based on whether ALL
+        coefficients in the MB are zero, not just the prediction mode
+
+    token.rs (encode_block):
+      - Encodes EOB token when block is all-zero
+      - Uses DEFAULT_COEFF_PROBS [128; 11] flat probabilities
+      - Should use the proper 4D default probability table from RFC 6386
+
+    boolcoder.rs (BoolWriter):
+      - finish() writes 32 false bits + 4 zero bytes
+      - Carry propagation in put_bit looks correct but untested at scale
+      - The VP8 spec requires specific end-of-stream padding
+
+    container.rs:
+      - VP8 chunk size is vp8_data.len() - correct
+
+    Tools available:
+      - cwebp at /opt/homebrew/bin/cwebp
+      - dwebp at /opt/homebrew/bin/dwebp
+  acceptance_criteria:
+    - All images 1x1 through 512x512 decodable by dwebp (solid, gradient, checkerboard)
+    - All images 1x1 through 512x512 decodable by image-webp crate
+    - Golden reference test images generated via cwebp at q25/q50/q75/q95
+    - PSNR comparison between our output and original at each quality level
+    - Quality curve is monotonically increasing (higher quality = higher PSNR)
+    - File sizes within 3x of cwebp at equivalent quality
+    - Determinism verified at all sizes (encode twice = identical bytes)
+    - WASM SIMD path produces decodable output (wasmtime test)
+  out_of_scope: |
+    - Byte-exact match with cwebp output
+    - Trellis quantization or compression optimization
+    - Loop filter tuning
+    - Multi-partition encoding
+    - Alpha channel
+  technical_notes: |
+    Debugging approach - bisect the failure:
+
+    Phase 1: Identify exact failure point
+      - Binary search MB count where decode first fails
+      - Compare hex dumps of working (48x48) vs failing (64x64) output
+      - Check if first partition ends at correct offset
+      - Verify token partition has correct structure
+
+    Phase 2: Fix mb_no_coeff_skip signaling
+      The current code signals skip based on prediction mode (y_mode==0).
+      VP8 spec says skip means ALL quantized coefficients are zero.
+      Need to track whether each MB has non-zero coefficients and signal
+      accordingly. When skip=true, the decoder skips token decoding entirely.
+
+    Phase 3: Fix default coefficient probabilities
+      token.rs uses flat [128; 11] for all probability contexts.
+      RFC 6386 Section 13.5 specifies a 4D default probability table.
+      Wrong probabilities cause the bool decoder to read wrong bit counts,
+      corrupting the stream for subsequent macroblocks.
+
+    Phase 4: Validate bool coder at scale
+      - Encode 1000+ bools and verify roundtrip at large stream sizes
+      - Test carry propagation with many consecutive high-value bits
+      - Verify finish() padding is sufficient for VP8 decoder lookahead
+
+    Phase 5: Golden reference generation + PSNR validation
+      - Generate test PNGs programmatically (solid, gradient, checker, noise)
+      - Encode with cwebp at q25/q50/q75/q95 as golden references
+      - Decode both our output and cwebp output, compare PSNR to original
+      - Verify file size ratio is reasonable
+plan:
+  - phase: Diagnose
+    tasks:
+      - text: Binary search exact MB grid size where decode fails for solid and gradient
+        done: false
+      - text: Hex-compare first 64 bytes of working (48x48) vs failing (64x64 solid) output
+        done: false
+      - text: Verify first_partition_size field matches actual partition boundary
+        done: false
+  - phase: Fix Token Encoding
+    tasks:
+      - text: Fix mb_no_coeff_skip logic to check actual zero-coefficient count per MB
+        done: false
+      - text: Add proper RFC 6386 Section 13.5 default coefficient probability table (4D array)
+        done: false
+      - text: Fix token encoding to use band/context-aware probabilities
+        done: false
+      - text: Test decode at 64x64 solid after fix
+        done: false
+  - phase: Fix Bool Coder (if needed)
+    tasks:
+      - text: Stress-test bool coder roundtrip at 10K+ bools with varied probabilities
+        done: false
+      - text: Verify carry propagation correctness at stream boundaries
+        done: false
+      - text: Test decode at 256x256 and 512x512 after all fixes
+        done: false
+  - phase: Golden References + Validation
+    tasks:
+      - text: Generate test PNG fixtures (solid, gradient, checkerboard at 16/64/256)
+        done: false
+      - text: Generate cwebp reference WebP at q25/q50/q75/q95 for each fixture
+        done: false
+      - text: End-to-end conformance test at all sizes and quality levels
+        done: false
+      - text: PSNR quality curve validation (monotonically increasing)
+        done: false
+      - text: File size comparison (within 3x of cwebp)
+        done: false
+      - text: WASM SIMD decode validation via wasmtime
+        done: false
+extra: {}
