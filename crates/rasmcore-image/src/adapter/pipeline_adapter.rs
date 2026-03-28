@@ -9,7 +9,7 @@ use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
 use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
-use crate::domain::pipeline::nodes::{composite, filters, sink, source, transform};
+use crate::domain::pipeline::nodes::{color, composite, filters, sink, source, transform};
 
 use super::to_wit_error;
 use super::to_wit_image_info;
@@ -129,6 +129,21 @@ impl GuestImagePipeline for PipelineResource {
         _target: types::PixelFormat,
     ) -> Result<NodeId, RasmcoreError> {
         Err(RasmcoreError::NotImplemented)
+    }
+
+    fn icc_to_srgb(
+        &self,
+        source: NodeId,
+        icc_profile: Vec<u8>,
+    ) -> Result<NodeId, RasmcoreError> {
+        let src_info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
+        let node = color::IccToSrgbNode::new(source, src_info, icc_profile)
+            .map_err(to_wit_error)?;
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 
     fn blur(&self, source: NodeId, radius: f32) -> Result<NodeId, RasmcoreError> {

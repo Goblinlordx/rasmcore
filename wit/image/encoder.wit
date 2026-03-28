@@ -48,8 +48,14 @@ interface encoder {
     /// Encode pixel data to JPEG with typed configuration
     encode-jpeg: func(pixels: buffer, info: image-info, config: jpeg-encode-config) -> result<buffer, rasmcore-error>;
 
+    /// Encode pixel data to JPEG with an embedded ICC profile
+    encode-jpeg-with-icc: func(pixels: buffer, info: image-info, config: jpeg-encode-config, icc-profile: buffer) -> result<buffer, rasmcore-error>;
+
     /// Encode pixel data to PNG with typed configuration
     encode-png: func(pixels: buffer, info: image-info, config: png-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to PNG with an embedded ICC profile
+    encode-png-with-icc: func(pixels: buffer, info: image-info, config: png-encode-config, icc-profile: buffer) -> result<buffer, rasmcore-error>;
 
     /// Encode pixel data to WebP with typed configuration
     encode-webp: func(pixels: buffer, info: image-info, config: webp-encode-config) -> result<buffer, rasmcore-error>;

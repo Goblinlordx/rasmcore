@@ -125,6 +125,7 @@ impl decoder::Guest for Component {
         Ok(decoder::DecodedImage {
             pixels: result.pixels,
             info: to_wit_image_info(&result.info),
+            icc_profile: result.icc_profile,
         })
     }
 
@@ -137,6 +138,7 @@ impl decoder::Guest for Component {
         Ok(decoder::DecodedImage {
             pixels: result.pixels,
             info: to_wit_image_info(&result.info),
+            icc_profile: result.icc_profile,
         })
     }
 
@@ -161,6 +163,23 @@ impl encoder::Guest for Component {
         domain::encoder::jpeg::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
     }
 
+    fn encode_jpeg_with_icc(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::JpegEncodeConfig,
+        icc_profile: Vec<u8>,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
+            quality: config.quality.unwrap_or(85),
+        };
+        let encoded = domain::encoder::jpeg::encode(&img, &domain_info, &domain_config)
+            .map_err(to_wit_error)?;
+        domain::encoder::jpeg::embed_icc_profile(&encoded, &icc_profile).map_err(to_wit_error)
+    }
+
     fn encode_png(
         pixels: Vec<u8>,
         info: types::ImageInfo,
@@ -174,6 +193,23 @@ impl encoder::Guest for Component {
             filter_type: to_domain_png_filter(config.filter_type),
         };
         domain::encoder::png::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
+    fn encode_png_with_icc(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::PngEncodeConfig,
+        icc_profile: Vec<u8>,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        let domain_config = domain::encoder::png::PngEncodeConfig {
+            compression_level: config.compression_level.unwrap_or(6),
+        };
+        let encoded = domain::encoder::png::encode(&img, &domain_info, &domain_config)
+            .map_err(to_wit_error)?;
+        domain::encoder::png::embed_icc_profile(&encoded, &icc_profile).map_err(to_wit_error)
     }
 
     fn encode_webp(

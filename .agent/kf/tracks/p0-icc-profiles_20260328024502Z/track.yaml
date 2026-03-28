@@ -87,7 +87,7 @@ plan:
   - text: Add moxcms dependency, verify WASM compilation
     done: true
   - text: Add ICC profile field to image metadata types
-    done: false
+    done: true
   - text: Add ICC-related WIT types (profile as opaque buffer)
     done: false
 - phase: Profile Extraction

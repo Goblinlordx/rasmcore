@@ -1,3 +1,4 @@
+pub mod color;
 pub mod composite;
 pub mod decoder;
 pub mod encoder;

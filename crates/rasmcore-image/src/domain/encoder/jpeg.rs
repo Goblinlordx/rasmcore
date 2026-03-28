@@ -86,6 +86,38 @@ pub fn encode(
     encode_pixels(pixels, &adjusted_info, config)
 }
 
+/// Embed an ICC profile into already-encoded JPEG data.
+///
+/// Inserts APP2 markers with "ICC_PROFILE\0" signature after SOI.
+/// Large profiles are split into 64KB chunks per JPEG spec.
+pub fn embed_icc_profile(jpeg_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, ImageError> {
+    if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+        return Err(ImageError::InvalidInput("not a valid JPEG".into()));
+    }
+
+    // Max payload per APP2 segment: 65535 - 2 (length) - 14 (ICC header) = 65519
+    const MAX_CHUNK: usize = 65519;
+    let chunks: Vec<&[u8]> = icc_profile.chunks(MAX_CHUNK).collect();
+    let num_chunks = chunks.len().min(255) as u8;
+
+    let mut result = Vec::with_capacity(jpeg_data.len() + icc_profile.len() + chunks.len() * 18);
+    result.extend_from_slice(&jpeg_data[..2]); // SOI
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let seg_len = (2 + 14 + chunk.len()) as u16;
+        result.push(0xFF);
+        result.push(0xE2); // APP2
+        result.extend_from_slice(&seg_len.to_be_bytes());
+        result.extend_from_slice(b"ICC_PROFILE\0");
+        result.push((i + 1) as u8); // sequence (1-based)
+        result.push(num_chunks);
+        result.extend_from_slice(chunk);
+    }
+
+    result.extend_from_slice(&jpeg_data[2..]); // rest of JPEG
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

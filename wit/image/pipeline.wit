@@ -81,6 +81,11 @@ interface pipeline {
         /// Convert pixel format.
         convert-format: func(source: node-id, target: pixel-format) -> result<node-id, rasmcore-error>;
 
+        /// Convert from embedded ICC color profile to sRGB.
+        /// The ICC profile is an opaque binary blob extracted during decode.
+        /// No-op if the source node has no ICC profile or is already sRGB.
+        icc-to-srgb: func(source: node-id, icc-profile: buffer) -> result<node-id, rasmcore-error>;
+
         // ─── Filters ───
 
         /// Gaussian blur.

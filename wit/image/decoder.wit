@@ -9,6 +9,8 @@ interface decoder {
     record decoded-image {
         pixels: buffer,
         info: image-info,
+        /// Embedded ICC color profile (opaque binary), if present in source image
+        icc-profile: option<buffer>,
     }
 
     /// Detect image format from header bytes

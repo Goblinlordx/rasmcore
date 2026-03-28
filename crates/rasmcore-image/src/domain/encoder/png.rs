@@ -80,6 +80,127 @@ pub fn encode(
     Ok(buf)
 }
 
+/// Embed an ICC profile into already-encoded PNG data as an iCCP chunk.
+///
+/// Inserts the iCCP chunk after IHDR (before IDAT). The profile is
+/// compressed with deflate (zlib wrapper) as required by the PNG spec.
+pub fn embed_icc_profile(png_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, ImageError> {
+    const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if !png_data.starts_with(PNG_SIG) {
+        return Err(ImageError::InvalidInput("not a valid PNG".into()));
+    }
+
+    // Compress ICC data with zlib (uncompressed deflate blocks for simplicity)
+    let compressed = zlib_compress_store(icc_profile);
+
+    // Build iCCP chunk data: profile_name + null + compression_method + compressed_data
+    let mut chunk_data = Vec::new();
+    chunk_data.extend_from_slice(b"icc"); // profile name (short, valid)
+    chunk_data.push(0); // null terminator
+    chunk_data.push(0); // compression method (0 = deflate)
+    chunk_data.extend_from_slice(&compressed);
+
+    // Build iCCP chunk: length(4) + "iCCP"(4) + data + CRC(4)
+    let chunk_len = chunk_data.len() as u32;
+    let mut iccp_chunk = Vec::new();
+    iccp_chunk.extend_from_slice(&chunk_len.to_be_bytes());
+    iccp_chunk.extend_from_slice(b"iCCP");
+    iccp_chunk.extend_from_slice(&chunk_data);
+
+    // CRC covers type + data
+    let crc = png_crc32(b"iCCP", &chunk_data);
+    iccp_chunk.extend_from_slice(&crc.to_be_bytes());
+
+    // Find insertion point: after IHDR chunk (first chunk after PNG signature)
+    if 8 + 12 > png_data.len() {
+        return Err(ImageError::InvalidInput("PNG too short".into()));
+    }
+    let ihdr_len = u32::from_be_bytes([png_data[8], png_data[9], png_data[10], png_data[11]]) as usize;
+    let after_ihdr = 8 + 12 + ihdr_len; // sig(8) + length(4) + type(4) + data(ihdr_len) + crc(4)
+
+    let mut result = Vec::with_capacity(png_data.len() + iccp_chunk.len());
+    result.extend_from_slice(&png_data[..after_ihdr]);
+    result.extend_from_slice(&iccp_chunk);
+    result.extend_from_slice(&png_data[after_ihdr..]);
+
+    Ok(result)
+}
+
+/// Compress data using zlib with store (no compression) deflate blocks.
+/// Simple, correct, and avoids needing a deflate compression library.
+fn zlib_compress_store(data: &[u8]) -> Vec<u8> {
+    let mut output = Vec::new();
+
+    // zlib header: CMF=0x78 (deflate, window=32K), FLG=0x01 (FCHECK=1)
+    output.push(0x78);
+    output.push(0x01);
+
+    // Emit uncompressed deflate blocks (max 65535 bytes each)
+    let chunks: Vec<&[u8]> = data.chunks(65535).collect();
+    for (i, chunk) in chunks.iter().enumerate() {
+        let is_last = i == chunks.len() - 1;
+        output.push(if is_last { 0x01 } else { 0x00 }); // BFINAL + BTYPE=00
+        let len = chunk.len() as u16;
+        output.extend_from_slice(&len.to_le_bytes());
+        let nlen = !len;
+        output.extend_from_slice(&nlen.to_le_bytes());
+        output.extend_from_slice(chunk);
+    }
+
+    // Handle empty data
+    if data.is_empty() {
+        output.push(0x01); // BFINAL=1, BTYPE=00
+        output.extend_from_slice(&[0x00, 0x00, 0xFF, 0xFF]); // LEN=0, NLEN=0xFFFF
+    }
+
+    // ADLER-32 checksum
+    let adler = adler32(data);
+    output.extend_from_slice(&adler.to_be_bytes());
+
+    output
+}
+
+fn adler32(data: &[u8]) -> u32 {
+    let mut a: u32 = 1;
+    let mut b: u32 = 0;
+    for &byte in data {
+        a = (a + byte as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    (b << 16) | a
+}
+
+/// Compute CRC32 for a PNG chunk (type + data).
+fn png_crc32(chunk_type: &[u8], chunk_data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFFFFFF;
+    for &byte in chunk_type.iter().chain(chunk_data.iter()) {
+        let index = ((crc ^ byte as u32) & 0xFF) as usize;
+        crc = CRC_TABLE[index] ^ (crc >> 8);
+    }
+    crc ^ 0xFFFFFFFF
+}
+
+const CRC_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut n = 0;
+    while n < 256 {
+        let mut c = n as u32;
+        let mut k = 0;
+        while k < 8 {
+            if c & 1 != 0 {
+                c = 0xEDB88320 ^ (c >> 1);
+            } else {
+                c >>= 1;
+            }
+            k += 1;
+        }
+        table[n] = c;
+        n += 1;
+    }
+    table
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
