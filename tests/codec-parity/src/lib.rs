@@ -179,3 +179,150 @@ pub fn ref_encode_gray(pixels: &[u8], w: u32, h: u32, format: image::ImageFormat
 
 // Re-export image format enum for convenience
 pub use image::ImageFormat;
+
+// ─── Three-Way Harness ─────────────────────────────────────────────────────
+
+/// Three-way parity test for **lossless** RGB codecs.
+///
+/// Provide your encode and decode functions + the reference format.
+/// Asserts: B == original (bit-exact), A == B (bit-exact), C == original.
+///
+/// ```ignore
+/// three_way_lossless_rgb(
+///     "QOI 16x16 gradient", &gradient_rgb(16, 16), 16, 16,
+///     |px, w, h| rasmcore_qoi::encode(px, w, h, Rgb, Srgb).unwrap(),
+///     |data| rasmcore_qoi::decode(data).unwrap().1,
+///     ImageFormat::Qoi,
+/// );
+/// ```
+pub fn three_way_lossless_rgb(
+    label: &str,
+    original: &[u8],
+    w: u32,
+    h: u32,
+    our_encode: impl FnOnce(&[u8], u32, u32) -> Vec<u8>,
+    our_decode: impl FnOnce(&[u8]) -> Vec<u8>,
+    ref_format: ImageFormat,
+) {
+    let our_encoded = our_encode(original, w, h);
+    let a = our_decode(&our_encoded);
+    let b = ref_decode_to_rgb(&our_encoded, ref_format);
+    let ref_encoded = ref_encode_rgb(original, w, h, ref_format);
+    let c = ref_decode_to_rgb(&ref_encoded, ref_format);
+
+    assert_bit_exact(&format!("{label}: A==B (our decode == ref decode)"), &a, &b);
+    assert_bit_exact(&format!("{label}: B==original"), &b, original);
+    assert_bit_exact(&format!("{label}: C==original (ref sanity)"), &c, original);
+}
+
+/// Three-way parity test for **lossless** RGBA codecs.
+pub fn three_way_lossless_rgba(
+    label: &str,
+    original: &[u8],
+    w: u32,
+    h: u32,
+    our_encode: impl FnOnce(&[u8], u32, u32) -> Vec<u8>,
+    our_decode: impl FnOnce(&[u8]) -> Vec<u8>,
+    ref_format: ImageFormat,
+) {
+    let our_encoded = our_encode(original, w, h);
+    let a = our_decode(&our_encoded);
+    let b = ref_decode_to_rgba(&our_encoded, ref_format);
+    let ref_encoded = ref_encode_rgba(original, w, h, ref_format);
+    let c = ref_decode_to_rgba(&ref_encoded, ref_format);
+
+    assert_bit_exact(&format!("{label}: A==B"), &a, &b);
+    assert_bit_exact(&format!("{label}: B==original"), &b, original);
+    assert_bit_exact(&format!("{label}: C==original"), &c, original);
+}
+
+/// Three-way parity for lossless codec where our decoder outputs RGBA
+/// but comparison is in RGB (decoder adds alpha=255).
+pub fn three_way_lossless_rgb_with_rgba_decoder(
+    label: &str,
+    original: &[u8],
+    w: u32,
+    h: u32,
+    our_encode: impl FnOnce(&[u8], u32, u32) -> Vec<u8>,
+    our_decode_rgba: impl FnOnce(&[u8]) -> Vec<u8>,
+    ref_format: ImageFormat,
+) {
+    let our_encoded = our_encode(original, w, h);
+    let a_rgba = our_decode_rgba(&our_encoded);
+    let a: Vec<u8> = a_rgba
+        .chunks_exact(4)
+        .flat_map(|c| &c[..3])
+        .copied()
+        .collect();
+    let b = ref_decode_to_rgb(&our_encoded, ref_format);
+    let ref_encoded = ref_encode_rgb(original, w, h, ref_format);
+    let c = ref_decode_to_rgb(&ref_encoded, ref_format);
+
+    assert_bit_exact(&format!("{label}: A==B"), &a, &b);
+    assert_bit_exact(&format!("{label}: B==original"), &b, original);
+    assert_bit_exact(&format!("{label}: C==original"), &c, original);
+}
+
+/// Three-way parity for **lossy** RGB codecs.
+///
+/// Asserts:
+/// - B (our encode → ref decode) produces a decodable image
+/// - B quality (PSNR vs original) exceeds `min_psnr`
+/// - B quality is at least 70% of C quality (ref encode → ref decode)
+///
+/// Returns (b_psnr, c_psnr) for logging.
+pub fn three_way_lossy_rgb(
+    label: &str,
+    original: &[u8],
+    w: u32,
+    h: u32,
+    our_encode: impl FnOnce(&[u8], u32, u32) -> Vec<u8>,
+    ref_format: ImageFormat,
+    min_psnr: f64,
+) -> (f64, f64) {
+    let our_encoded = our_encode(original, w, h);
+    let b = ref_decode_to_rgb(&our_encoded, ref_format);
+    let b_quality = psnr(&b, original);
+
+    let ref_encoded = ref_encode_rgb(original, w, h, ref_format);
+    let c = ref_decode_to_rgb(&ref_encoded, ref_format);
+    let c_quality = psnr(&c, original);
+
+    assert_eq!(b.len(), original.len(), "{label}: decoded size mismatch");
+    assert!(
+        b_quality > min_psnr,
+        "{label}: B_quality={b_quality:.1}dB < min {min_psnr}dB"
+    );
+
+    if c_quality.is_finite() && b_quality.is_finite() {
+        let ratio = b_quality / c_quality;
+        eprintln!("{label}: B={b_quality:.1}dB, C={c_quality:.1}dB, ratio={ratio:.2}");
+    }
+
+    (b_quality, c_quality)
+}
+
+/// Self-consistency test for codecs without a reference encoder.
+///
+/// Asserts: encode → decode recovers original within `epsilon` per sample.
+pub fn self_consistency_f64(
+    label: &str,
+    original: &[f64],
+    encode: impl FnOnce() -> Vec<u8>,
+    decode: impl FnOnce(&[u8]) -> Vec<f64>,
+    epsilon: f64,
+) {
+    let encoded = encode();
+    let decoded = decode(&encoded);
+    assert_eq!(
+        original.len(),
+        decoded.len(),
+        "{label}: sample count mismatch"
+    );
+    for (i, (&expected, &got)) in original.iter().zip(decoded.iter()).enumerate() {
+        assert!(
+            (got - expected).abs() < epsilon,
+            "{label}: sample {i}: expected {expected}, got {got} (epsilon={epsilon})"
+        );
+    }
+}
