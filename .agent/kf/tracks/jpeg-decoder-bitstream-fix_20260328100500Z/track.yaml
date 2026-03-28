@@ -1,0 +1,74 @@
+id: jpeg-decoder-bitstream-fix_20260328100500Z
+title: JPEG Decoder Bitstream Fix — Reference-Guided Systematic Debug
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Fix multi-MCU decoder by studying zune-jpeg reference. Trace exact divergence
+    point byte-by-byte. No guessing.
+  context: Our decoder produces MAE 0.04 for image-crate-encoded JPEGs (single MCU
+    works perfectly) but fails with invalid Huffman code on multi-MCU JPEGs from our
+    encoder. The encoder output is valid (image crate decodes it). The root cause
+    is an architectural mismatch between our pre-processed byte-stuffing approach
+    and how JPEG bitstreams actually work.
+  codebase_analysis: 'Reference: zune-jpeg-0.5.15/src/bitstream.rs handles byte-stuffing
+    INLINE during bit refill (not pre-processed). Key differences: (1) zune-jpeg uses
+    a u64 buffer with MSB alignment and byte-at-a-time refill, (2) on 0xFF it reads
+    next byte — if 0x00 it keeps the 0xFF, otherwise it undoes the read and stores
+    the marker, (3) our approach pre-strips 0xFF00 to 0xFF then feeds to BitReader
+    which has no concept of markers. The pre-processing may lose byte boundaries or
+    miscount bits at stream end.'
+  acceptance_criteria:
+  - Study zune-jpeg bitstream.rs refill mechanism and document how it handles 0xFF
+    byte stuffing
+  - Study zune-jpeg huffman.rs table build and compare to our HuffmanTable::from_lengths_and_symbols
+  - 'Create byte-level trace test: encode 16x16 gray, decode with both decoders, compare
+    coefficient values at each MCU'
+  - Identify the EXACT first divergence point (byte offset, bit position, decoded
+    symbol)
+  - Fix decoder to match reference behavior at the divergence point
+  - 16x16 and 32x32 grayscale roundtrip at PSNR > 30dB
+  - Previously ignored multi-MCU test re-enabled and passing
+  - No ignored JPEG tests remaining
+  out_of_scope: Progressive decode. Arithmetic coding. Performance optimization. Rewriting
+    the entire decoder — fix the specific bug only.
+  technical_notes: 'Systematic approach: (1) Read zune-jpeg bitstream.rs refill macro
+    lines 188-230 — it handles 0xFF inline by reading next byte, if 0x00 keeps the
+    0xFF data, if marker undoes the read. (2) Read zune-jpeg huffman.rs for table
+    structure (lookahead table + maxcode/offset arrays). (3) Create test that encodes
+    16x16 gray, then instruments both decode paths to print decoded DC/AC values per
+    block. (4) First block that disagrees reveals the bug location. (5) Most likely
+    fix: replace pre-processed extract_entropy_data + generic BitReader with a JPEG-specific
+    bitstream reader that handles 0xFF stuffing inline, matching zune-jpeg approach.'
+plan:
+- phase: Reference Study
+  tasks:
+  - text: Read zune-jpeg bitstream.rs refill mechanism (lines 179-230) — document
+      exactly how it handles 0xFF byte stuffing inline
+    done: false
+  - text: Read zune-jpeg huffman.rs — document table structure (lookahead + maxcode
+      arrays) and compare to our HuffmanTable
+    done: false
+  - text: 'Document the architectural difference: zune-jpeg inline stuffing vs our
+      pre-processed extract_entropy_data'
+    done: false
+- phase: Systematic Trace
+  tasks:
+  - text: 'Create instrumented test: encode 16x16 gray, dump raw entropy bytes, decode
+      block-by-block printing DC/AC values'
+    done: false
+  - text: Decode same JPEG with image crate, extract decoded coefficient values for
+      comparison
+    done: false
+  - text: 'Identify the EXACT first divergence: which block, which coefficient, which
+      bit position'
+    done: false
+- phase: Fix and Validate
+  tasks:
+  - text: 'Implement the fix based on identified root cause (likely: JPEG-specific
+      bitstream reader with inline 0xFF handling)'
+    done: false
+  - text: Re-enable all ignored JPEG tests — zero ignored tests remaining
+    done: false
+extra: {}
