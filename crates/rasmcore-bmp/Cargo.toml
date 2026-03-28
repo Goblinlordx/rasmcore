@@ -2,8 +2,9 @@
 name = "rasmcore-bmp"
 version.workspace = true
 edition.workspace = true
-description = "Pure Rust BMP encoder/decoder — zero dependencies"
+description = "Pure Rust BMP encoder/decoder — palette, RLE4/RLE8, bitfields"
 
 [dependencies]
+rasmcore-bitio = { path = "../rasmcore-bitio" }
 
 [dev-dependencies]
