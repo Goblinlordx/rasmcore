@@ -1,0 +1,133 @@
+id: codec-native-architecture_20260328070000Z
+title: "Research: Native codec architecture — unified trait, migration plan, test philosophy"
+type: research
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: >
+    Design the rasmcore native codec architecture and produce a phased migration roadmap
+    from image crate backends to rasmcore-owned implementations. Define common Codec trait,
+    streaming interface, testing philosophy, and feasibility classification per format.
+  context: |
+    rasmcore currently delegates all codec work to third-party crates (image crate, zenjpeg,
+    ravif). The long-term vision is to own all codec implementations to align with rasmcore's
+    architecture, testing philosophy, and WASM-first design. This requires a careful migration
+    path that preserves existing APIs while swapping backends incrementally.
+
+    The WebP encoder (rasmcore-webp crate) is already being built from scratch as a proof of
+    concept for this approach. This research track generalizes the WebP experience into a
+    reusable architecture pattern for all codecs.
+
+    Key constraint: some codecs (AV1, HEVC, JPEG XL) are massive engineering efforts. The
+    architecture must distinguish between owning the container format (AVIF, HEIF, JXL file
+    structure) vs owning the underlying codec algorithm (AV1 encoder, HEVC encoder). Owning
+    containers is feasible; owning codec algorithms varies by complexity.
+  codebase_analysis: |
+    Current codec backend map:
+    - JPEG encode: zenjpeg (pure Rust, rav1e-derived trellis optimization)
+    - JPEG decode: image crate (libjpeg-compatible pure Rust decoder)
+    - PNG encode/decode: image crate (png sub-crate, fdeflate for compression)
+    - GIF encode/decode: image crate (gif sub-crate)
+    - AVIF encode: image crate -> ravif -> rav1e (pure Rust AV1 encoder)
+    - WebP encode: rasmcore-webp (own, in progress — bool coder, DCT, predict, quant done)
+    - TIFF encode/decode: image crate (tiff sub-crate)
+    - BMP/ICO/QOI: image crate built-in
+    - Trivial formats (TGA, HDR, PNM, EXR, DDS): image crate
+
+    Architecture pattern from rasmcore-webp (reference for new codecs):
+    - Separate crate per codec (crates/rasmcore-webp/)
+    - Domain modules: boolcoder, dct, predict, quant, bitstream
+    - Each module independently testable with property-based tests
+    - No dependency on image crate for encode path
+    - Decode can still delegate to image crate initially
+
+    Existing domain encoder interface (domain/encoder/):
+    - Per-format module with typed config (e.g., JpegEncodeConfig)
+    - encode(pixels, info, config) -> Result<Vec<u8>>
+    - This interface is stable and can be preserved during backend swap
+  acceptance_criteria:
+    - Common Codec trait design (streaming encode/decode, chunk-based I/O, error model)
+    - Feasibility classification per format (trivial/moderate/complex/massive)
+    - Migration strategy from image crate to own backends (per-format, behind feature flags)
+    - Testing philosophy document (spec compliance vectors, property-based testing, fuzzing, parity against reference implementations)
+    - Dependency analysis showing which codecs can be owned independently vs which share infrastructure (deflate for PNG/TIFF/ZIP, Huffman for JPEG/TIFF/etc.)
+    - Architecture decision on container vs codec ownership (own AVIF container, wrap rav1e codec)
+    - Shared infrastructure identification (deflate, Huffman, arithmetic coding, color space conversion, bit I/O)
+    - Phased implementation roadmap with effort estimates
+    - Report written to .agent/kf/_reports/native-codec-architecture.md
+  out_of_scope: |
+    - Actual codec implementation (this is research/architecture only)
+    - Modifying existing encoder/decoder code
+    - Performance benchmarking (deferred to implementation tracks)
+    - WASM-specific optimizations (SIMD128, etc. — separate concern)
+  technical_notes: |
+    Research approach:
+
+    1. Analyze rasmcore-webp as the reference native codec implementation:
+       - What worked well in the crate structure?
+       - What shared infrastructure would benefit other codecs?
+       - How does testing work (unit tests, property tests, parity tests)?
+
+    2. Design the common Codec trait hierarchy:
+       - Encoder trait: config -> pixel input -> encoded bytes output
+       - Decoder trait: encoded bytes input -> pixel output + metadata
+       - Streaming variant: chunk-based I/O for large images
+       - Error model: per-codec error types that map to domain ImageError
+
+    3. Classify each codec by implementation complexity:
+       - Trivial (< 1K LOC, days): BMP, QOI, PNM, TGA, DDS, ICO
+       - Moderate (1K-5K LOC, weeks): GIF (LZW), PNG (deflate + filtering)
+       - Complex (5K-15K LOC, months): JPEG (DCT + Huffman), TIFF (multi-compression)
+       - Massive (50K+ LOC, years): AV1, HEVC, JPEG XL codec algorithms
+         For massive codecs: own the container (AVIF/HEIF/JXL file format) but wrap
+         the codec algorithm (rav1e, x265, libjxl) as a pluggable backend
+
+    4. Identify shared infrastructure that benefits multiple codecs:
+       - Deflate/inflate (PNG, TIFF, ZIP): own implementation or use miniz_oxide
+       - Huffman coding (JPEG, TIFF, DEFLATE): shared module
+       - Arithmetic coding (JPEG2000, WebP VP8): already have bool coder
+       - Color space conversion (YCbCr, YUV, CMYK): shared module
+       - Bit reader/writer: shared module for bitstream parsing
+       - LZW (GIF, TIFF): shared module
+
+    5. Define testing philosophy:
+       - Spec compliance: test vectors from format specifications (PNG test suite, JPEG conformance)
+       - Property-based: encode(decode(x)) == x (lossless), PSNR(encode(x)) > threshold (lossy)
+       - Fuzzing: AFL/cargo-fuzz on decoder inputs (security-critical)
+       - Parity: compare output against ImageMagick/libvips references
+       - Performance: benchmark against image crate backends (must not regress)
+
+    6. Define migration path:
+       - Feature flags: rasmcore-native-png, rasmcore-native-gif, etc.
+       - Default: use image crate (backward compat)
+       - Opt-in: enable native backend per codec
+       - Eventually: flip defaults, deprecate image crate dependency
+plan:
+  - phase: Architecture Analysis
+    tasks:
+      - text: Analyze rasmcore-webp crate structure as reference native codec (modules, traits, test patterns)
+        done: false
+      - text: Analyze current domain encoder/decoder interface and identify stable API surface for backend swaps
+        done: false
+      - text: Identify shared infrastructure across codecs (deflate, Huffman, LZW, color space, bit I/O)
+        done: false
+  - phase: Codec Classification
+    tasks:
+      - text: Classify each format by implementation complexity (trivial/moderate/complex/massive)
+        done: false
+      - text: For each format, document the core algorithms, LOC estimate, and key spec references
+        done: false
+      - text: Determine container-vs-codec ownership strategy for AV1/AVIF, HEVC/HEIF, and JPEG XL
+        done: false
+  - phase: Design and Roadmap
+    tasks:
+      - text: Design common Codec trait (Encoder/Decoder with streaming and whole-image variants)
+        done: false
+      - text: Design migration strategy with feature flags (image crate default, native opt-in, eventual flip)
+        done: false
+      - text: Define testing philosophy (spec vectors, property-based, fuzzing, parity, performance)
+        done: false
+      - text: Write final report to .agent/kf/_reports/native-codec-architecture.md
+        done: false
+extra: {}
