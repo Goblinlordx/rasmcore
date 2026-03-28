@@ -8,6 +8,7 @@ package rasmcore:image@0.1.0;
 interface pipeline {
     use rasmcore:core/types.{buffer, image-info, pixel-format};
     use rasmcore:core/errors.{rasmcore-error};
+    use metadata.{exif-orientation};
 
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
@@ -90,6 +91,9 @@ interface pipeline {
         /// The ICC profile is an opaque binary blob extracted during decode.
         /// No-op if the source node has no ICC profile or is already sRGB.
         icc-to-srgb: func(source: node-id, icc-profile: buffer) -> result<node-id, rasmcore-error>;
+
+        /// Auto-orient using EXIF orientation value.
+        auto-orient: func(source: node-id, orientation: exif-orientation) -> result<node-id, rasmcore-error>;
 
         // ─── Filters ───
 

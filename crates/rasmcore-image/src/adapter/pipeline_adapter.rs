@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 
 use crate::bindings::exports::rasmcore::image::pipeline::{
-    self, FlipDirection, GuestImagePipeline, NodeId, ResizeFilter, Rotation,
+    self, ExifOrientation, FlipDirection, GuestImagePipeline, NodeId, ResizeFilter, Rotation,
 };
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
@@ -139,6 +139,30 @@ impl GuestImagePipeline for PipelineResource {
             .map_err(to_wit_error)?;
         let node =
             color::IccToSrgbNode::new(source, src_info, icc_profile).map_err(to_wit_error)?;
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+    }
+
+    fn auto_orient(
+        &self,
+        source: NodeId,
+        orientation: ExifOrientation,
+    ) -> Result<NodeId, RasmcoreError> {
+        let src_info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
+        let domain_orient = match orientation {
+            ExifOrientation::Normal => domain::metadata::ExifOrientation::Normal,
+            ExifOrientation::FlipHorizontal => domain::metadata::ExifOrientation::FlipHorizontal,
+            ExifOrientation::Rotate180 => domain::metadata::ExifOrientation::Rotate180,
+            ExifOrientation::FlipVertical => domain::metadata::ExifOrientation::FlipVertical,
+            ExifOrientation::Transpose => domain::metadata::ExifOrientation::Transpose,
+            ExifOrientation::Rotate90 => domain::metadata::ExifOrientation::Rotate90,
+            ExifOrientation::Transverse => domain::metadata::ExifOrientation::Transverse,
+            ExifOrientation::Rotate270 => domain::metadata::ExifOrientation::Rotate270,
+        };
+        let node = transform::AutoOrientNode::new(source, src_info, domain_orient);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 

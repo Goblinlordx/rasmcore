@@ -88,11 +88,11 @@ plan:
 - phase: Auto-Orient
   tasks:
   - text: Implement auto_orient in domain/transform.rs (reads EXIF, applies rotation/flip)
-    done: false
+    done: true
   - text: Add auto-orient to pipeline as a node (AutoOrientNode)
-    done: false
+    done: true
   - text: Add auto-orient to WIT transform/pipeline interfaces
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: WASM integration tests for GIF encode and auto-orient

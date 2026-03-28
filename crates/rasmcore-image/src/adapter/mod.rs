@@ -335,6 +335,30 @@ impl transform::Guest for Component {
             .map_err(to_wit_error)?;
         Ok((result.pixels, to_wit_image_info(&result.info)))
     }
+
+    fn auto_orient(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        orientation: transform::ExifOrientation,
+    ) -> Result<(Vec<u8>, types::ImageInfo), RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let domain_orient = to_domain_exif_orientation(orientation);
+        let result = domain::transform::auto_orient(&pixels, &domain_info, domain_orient)
+            .map_err(to_wit_error)?;
+        Ok((result.pixels, to_wit_image_info(&result.info)))
+    }
+
+    fn auto_orient_from_exif(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        encoded_data: Vec<u8>,
+    ) -> Result<(Vec<u8>, types::ImageInfo), RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let result =
+            domain::transform::auto_orient_from_exif(&pixels, &domain_info, &encoded_data)
+                .map_err(to_wit_error)?;
+        Ok((result.pixels, to_wit_image_info(&result.info)))
+    }
 }
 
 impl filters::Guest for Component {
@@ -402,6 +426,25 @@ impl filters::Guest for Component {
             y,
         )
         .map_err(to_wit_error)
+    }
+}
+
+fn to_domain_exif_orientation(
+    o: metadata::ExifOrientation,
+) -> domain::metadata::ExifOrientation {
+    match o {
+        metadata::ExifOrientation::Normal => domain::metadata::ExifOrientation::Normal,
+        metadata::ExifOrientation::FlipHorizontal => {
+            domain::metadata::ExifOrientation::FlipHorizontal
+        }
+        metadata::ExifOrientation::Rotate180 => domain::metadata::ExifOrientation::Rotate180,
+        metadata::ExifOrientation::FlipVertical => {
+            domain::metadata::ExifOrientation::FlipVertical
+        }
+        metadata::ExifOrientation::Transpose => domain::metadata::ExifOrientation::Transpose,
+        metadata::ExifOrientation::Rotate90 => domain::metadata::ExifOrientation::Rotate90,
+        metadata::ExifOrientation::Transverse => domain::metadata::ExifOrientation::Transverse,
+        metadata::ExifOrientation::Rotate270 => domain::metadata::ExifOrientation::Rotate270,
     }
 }
 

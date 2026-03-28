@@ -1,6 +1,7 @@
 use image::DynamicImage;
 
 use super::error::ImageError;
+use super::metadata::ExifOrientation;
 use super::types::{
     ColorSpace, DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation,
 };
@@ -153,6 +154,53 @@ pub fn convert_format(
         },
         icc_profile: None,
     })
+}
+
+/// Auto-orient an image by applying the EXIF orientation transform.
+///
+/// Maps EXIF orientation values (1-8) to the correct sequence of
+/// rotation and flip operations.
+pub fn auto_orient(
+    pixels: &[u8],
+    info: &ImageInfo,
+    orientation: ExifOrientation,
+) -> Result<DecodedImage, ImageError> {
+    match orientation {
+        ExifOrientation::Normal => Ok(DecodedImage {
+            pixels: pixels.to_vec(),
+            info: info.clone(),
+        }),
+        ExifOrientation::FlipHorizontal => flip(pixels, info, FlipDirection::Horizontal),
+        ExifOrientation::Rotate180 => rotate(pixels, info, Rotation::R180),
+        ExifOrientation::FlipVertical => flip(pixels, info, FlipDirection::Vertical),
+        ExifOrientation::Transpose => {
+            let rotated = rotate(pixels, info, Rotation::R270)?;
+            flip(&rotated.pixels, &rotated.info, FlipDirection::Horizontal)
+        }
+        ExifOrientation::Rotate90 => rotate(pixels, info, Rotation::R90),
+        ExifOrientation::Transverse => {
+            let rotated = rotate(pixels, info, Rotation::R90)?;
+            flip(&rotated.pixels, &rotated.info, FlipDirection::Horizontal)
+        }
+        ExifOrientation::Rotate270 => rotate(pixels, info, Rotation::R270),
+    }
+}
+
+/// Auto-orient using EXIF metadata from encoded data.
+///
+/// Reads EXIF orientation from the encoded data and applies the correct
+/// transform to the pixel data. If no EXIF is found or orientation is
+/// normal, returns the pixels unchanged.
+pub fn auto_orient_from_exif(
+    pixels: &[u8],
+    info: &ImageInfo,
+    encoded_data: &[u8],
+) -> Result<DecodedImage, ImageError> {
+    let orientation = match super::metadata::read_exif(encoded_data) {
+        Ok(meta) => meta.orientation.unwrap_or(ExifOrientation::Normal),
+        Err(_) => ExifOrientation::Normal,
+    };
+    auto_orient(pixels, info, orientation)
 }
 
 fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, ImageError> {
@@ -335,5 +383,88 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let result = convert_format(&px, &info, PixelFormat::Nv12);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn auto_orient_normal_is_identity() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::Normal).unwrap();
+        assert_eq!(result.pixels, px);
+        assert_eq!(result.info.width, 16);
+        assert_eq!(result.info.height, 8);
+    }
+
+    #[test]
+    fn auto_orient_rotate90_swaps_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::Rotate90).unwrap();
+        assert_eq!(result.info.width, 8);
+        assert_eq!(result.info.height, 16);
+    }
+
+    #[test]
+    fn auto_orient_rotate180_preserves_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::Rotate180).unwrap();
+        assert_eq!(result.info.width, 16);
+        assert_eq!(result.info.height, 8);
+    }
+
+    #[test]
+    fn auto_orient_rotate270_swaps_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::Rotate270).unwrap();
+        assert_eq!(result.info.width, 8);
+        assert_eq!(result.info.height, 16);
+    }
+
+    #[test]
+    fn auto_orient_flip_horizontal_preserves_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::FlipHorizontal).unwrap();
+        assert_eq!(result.info.width, 16);
+        assert_eq!(result.info.height, 8);
+    }
+
+    #[test]
+    fn auto_orient_flip_vertical_preserves_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::FlipVertical).unwrap();
+        assert_eq!(result.info.width, 16);
+        assert_eq!(result.info.height, 8);
+    }
+
+    #[test]
+    fn auto_orient_transpose_swaps_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::Transpose).unwrap();
+        assert_eq!(result.info.width, 8);
+        assert_eq!(result.info.height, 16);
+    }
+
+    #[test]
+    fn auto_orient_transverse_swaps_dimensions() {
+        let (px, info) = make_image(16, 8);
+        let result = auto_orient(&px, &info, ExifOrientation::Transverse).unwrap();
+        assert_eq!(result.info.width, 8);
+        assert_eq!(result.info.height, 16);
+    }
+
+    #[test]
+    fn auto_orient_all_8_orientations_work() {
+        let (px, info) = make_image(16, 8);
+        for tag in 1..=8 {
+            let orient = ExifOrientation::from_tag(tag);
+            let result = auto_orient(&px, &info, orient);
+            assert!(result.is_ok(), "orientation {tag} failed");
+        }
+    }
+
+    #[test]
+    fn auto_orient_from_exif_with_no_exif_is_identity() {
+        let (px, info) = make_image(16, 8);
+        // Non-JPEG data — no EXIF, should return unchanged
+        let result = auto_orient_from_exif(&px, &info, &[0x89, 0x50]).unwrap();
+        assert_eq!(result.pixels, px);
     }
 }
