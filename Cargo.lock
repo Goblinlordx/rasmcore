@@ -1888,6 +1888,7 @@ dependencies = [
  "image",
  "imgref",
  "libblur",
+ "moxcms",
  "rasmcore-pipeline",
  "rgb",
  "wit-bindgen-rt",
