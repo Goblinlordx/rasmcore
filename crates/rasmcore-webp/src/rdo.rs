@@ -184,6 +184,138 @@ pub fn rdo_prune_block(
     new_last_nz
 }
 
+// ─── RD Mode Selection Helpers ───────────────────────────────────────────
+
+/// Compute SSD (Sum of Squared Differences) between original and prediction.
+pub fn ssd(original: &[u8], prediction: &[u8]) -> u64 {
+    original
+        .iter()
+        .zip(prediction.iter())
+        .map(|(&a, &b)| {
+            let d = a as i32 - b as i32;
+            (d * d) as u64
+        })
+        .sum()
+}
+
+/// Estimate total encoding bits for a quantized 4x4 block.
+///
+/// Walks all non-zero coefficients and sums token costs.
+/// Returns cost in 256-scaled units (256 = 1 bit).
+pub fn estimate_block_bits(quantized: &[i16; 16], block_type: u8) -> u32 {
+    let mut total_cost = 0u32;
+    let mut ctx: u8 = 0; // initial context: zero/eob
+
+    for i in 0..16 {
+        let band = BANDS[i];
+        let cost = estimate_token_cost(quantized[i], block_type, band, ctx);
+        total_cost += cost;
+
+        // Update context for next coefficient
+        ctx = match quantized[i].unsigned_abs() {
+            0 => 0,
+            1 => 1,
+            _ => 2,
+        };
+
+        // If all remaining are zero, add EOB cost and stop
+        if quantized[i] != 0 && quantized[i + 1..].iter().all(|&c| c == 0) {
+            // EOB at next position
+            if i + 1 < 16 {
+                let eob_band = BANDS[i + 1];
+                total_cost += estimate_token_cost(0, block_type, eob_band, ctx);
+            }
+            break;
+        }
+    }
+
+    total_cost
+}
+
+/// RD cost: distortion (SSD) + lambda * rate (bits in 256-scale).
+///
+/// Lower is better. Lambda balances quality vs compression.
+#[inline]
+pub fn rd_cost(ssd: u64, bits_256: u32, lambda: f64) -> f64 {
+    ssd as f64 + lambda * bits_256 as f64
+}
+
+/// VP8 I16x16 mode header cost (from RFC 6386 Section 11.2).
+/// Approximate costs based on default probabilities.
+/// Returns cost in 256-scaled units.
+pub fn mode_header_cost_16x16(mode: u8) -> u32 {
+    // RFC 6386 Table 11.1: I16x16 mode probabilities (default)
+    // DC=145, V=156, H=140, TM=161 (out of 256)
+    // Cost ≈ -log2(prob/256) * 256
+    match mode {
+        0 => 200, // DC (most probable, cheapest)
+        1 => 180, // V
+        2 => 210, // H
+        3 => 170, // TM
+        _ => 256, // B_PRED header
+    }
+}
+
+/// VP8 B_PRED 4x4 mode header cost (from RFC 6386 Section 11.3).
+/// Returns cost in 256-scaled units.
+pub fn mode_header_cost_4x4(mode: u8) -> u32 {
+    // Approximate: B_PRED modes have ~10 options, each costs ~3-4 bits
+    // DC mode is most common (cheapest), diagonal modes are rare (expensive)
+    match mode {
+        0 => 200, // B_DC
+        1 => 250, // B_TM
+        2 => 280, // B_VE
+        3 => 280, // B_HE
+        4 => 350, // B_RD
+        5 => 350, // B_VR
+        6 => 380, // B_LD
+        7 => 350, // B_VL
+        8 => 380, // B_HD
+        9 => 380, // B_HU
+        _ => 400,
+    }
+}
+
+/// Evaluate RD cost for a 16x16 intra mode.
+///
+/// Computes: SSD(original, prediction) + lambda * (mode_header_bits + coeff_bits)
+/// The block type for I16x16 AC is 0 (Y-AC).
+pub fn evaluate_16x16_mode_rd(
+    original: &[u8; 256],
+    prediction: &[u8; 256],
+    mode: u8,
+    matrix: &QuantMatrix,
+    lambda: f64,
+) -> f64 {
+    // SSD in pixel domain
+    let dist = ssd(original, prediction);
+
+    // Encode: DCT + quantize + estimate bits for all 16 sub-blocks
+    let mut total_bits = mode_header_cost_16x16(mode);
+
+    for sb_row in 0..4 {
+        for sb_col in 0..4 {
+            let mut src_4x4 = [0u8; 16];
+            let mut ref_4x4 = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    src_4x4[r * 4 + c] = original[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                    ref_4x4[r * 4 + c] = prediction[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            let mut coeffs = [0i16; 16];
+            crate::dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
+            let mut quantized = [0i16; 16];
+            crate::quant::quantize_block(&coeffs, matrix, &mut quantized);
+            rdo_prune_block(&mut quantized, &coeffs, matrix, 0, lambda);
+            quantized[0] = 0; // DC goes to Y2
+            total_bits += estimate_block_bits(&quantized, 0);
+        }
+    }
+
+    rd_cost(dist, total_bits, lambda)
+}
+
 // ─── VP8 Trellis Context ─────────────────────────────────────────────────
 
 use rasmcore_trellis::{Candidate, TrellisContext};

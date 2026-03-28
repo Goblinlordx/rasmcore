@@ -650,7 +650,7 @@ pub fn select_best_16x16(
     above_left: u8,
     has_above: bool,
     has_left: bool,
-) -> Intra16Mode {
+) -> (Intra16Mode, u32) {
     let mut best_mode = Intra16Mode::DC;
     let mut best_cost = u32::MAX;
     let mut pred = [0u8; 256];
@@ -665,7 +665,51 @@ pub fn select_best_16x16(
             best_mode = mode;
         }
     }
-    best_mode
+    (best_mode, best_cost)
+}
+
+/// Select best 16x16 mode using RD cost (SSD + lambda * bits).
+pub fn select_best_16x16_rd(
+    actual: &[u8],
+    above: &[u8; 16],
+    left: &[u8; 16],
+    above_left: u8,
+    has_above: bool,
+    has_left: bool,
+    matrix: &crate::quant::QuantMatrix,
+    lambda: f64,
+) -> (Intra16Mode, f64) {
+    let mut best_mode = Intra16Mode::DC;
+    let mut best_cost = f64::MAX;
+    let mut pred = [0u8; 256];
+
+    // Use SAD for early termination: skip modes 2x worse than best SAD
+    let (sad_best_mode, sad_best_cost) =
+        select_best_16x16(actual, above, left, above_left, has_above, has_left);
+    let sad_threshold = sad_best_cost.saturating_mul(2);
+
+    for &mode in &ALL_INTRA16 {
+        predict_16x16(
+            mode, above, left, above_left, has_above, has_left, &mut pred,
+        );
+
+        // Early termination: skip if SAD is way worse than best
+        let mode_sad = sad(&actual[..256], &pred);
+        if mode_sad > sad_threshold && mode != sad_best_mode {
+            continue;
+        }
+
+        let actual_arr: &[u8; 256] = actual[..256].try_into().unwrap();
+        let pred_arr: &[u8; 256] = pred[..256].try_into().unwrap();
+        let cost =
+            crate::rdo::evaluate_16x16_mode_rd(actual_arr, pred_arr, mode as u8, matrix, lambda);
+
+        if cost < best_cost {
+            best_cost = cost;
+            best_mode = mode;
+        }
+    }
+    (best_mode, best_cost)
 }
 
 /// Select the best 4×4 prediction mode by minimizing SATD.
@@ -967,7 +1011,7 @@ mod tests {
         let actual = [128u8; 256];
         let above = [128u8; 16];
         let left = [128u8; 16];
-        let mode = select_best_16x16(&actual, &above, &left, 128, true, true);
+        let (mode, _) = select_best_16x16(&actual, &above, &left, 128, true, true);
         // All modes produce 128 for uniform input, DC should win (or tie at 0 SAD).
         // DC is tried first, so it should be selected.
         assert_eq!(mode, Intra16Mode::DC);
@@ -985,7 +1029,7 @@ mod tests {
         for row in 0..16 {
             actual[row * 16..row * 16 + 16].copy_from_slice(&above);
         }
-        let mode = select_best_16x16(&actual, &above, &left, 128, true, true);
+        let (mode, _) = select_best_16x16(&actual, &above, &left, 128, true, true);
         assert_eq!(mode, Intra16Mode::V);
     }
 
@@ -999,7 +1043,7 @@ mod tests {
         for row in 0..16 {
             actual[row * 16..row * 16 + 16].fill(left[row]);
         }
-        let mode = select_best_16x16(&actual, &above, &left, 128, true, true);
+        let (mode, _) = select_best_16x16(&actual, &above, &left, 128, true, true);
         assert_eq!(mode, Intra16Mode::H);
     }
 

@@ -567,14 +567,16 @@ fn encode_macroblock(
     // Get prediction neighbors from reconstructed frame
     let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
 
-    // ─── I16x16 mode evaluation ─────────────────────────────────────────
-    let i16_mode = predict::select_best_16x16(
+    // ─── I16x16 mode evaluation (RD cost) ────────────────────────────────
+    let (i16_mode, i16_rd_cost) = predict::select_best_16x16_rd(
         &y_block,
         &above_y,
         &left_y,
         above_left_y,
         mb_row > 0,
         mb_col > 0,
+        &seg_quant.y_ac,
+        lambda,
     );
 
     let mut i16_pred = [0u8; 256];
@@ -588,7 +590,7 @@ fn encode_macroblock(
         &mut i16_pred,
     );
 
-    // I16x16 SAD
+    // I16x16 SAD (still needed for B_PRED comparison)
     let i16_sad: u32 = y_block
         .iter()
         .zip(i16_pred.iter())
