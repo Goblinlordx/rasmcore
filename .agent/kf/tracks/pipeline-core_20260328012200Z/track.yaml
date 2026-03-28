@@ -1,117 +1,163 @@
 id: pipeline-core_20260328012200Z
-title: "Pipeline Core Engine — Node Graph, Spatial Cache, Region Dispatch"
+title: Pipeline Core Engine — Node Graph, Spatial Cache, Region Dispatch
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Build the internal demand-driven pipeline engine in the domain layer.
+  summary: 'Build the internal demand-driven pipeline engine in the domain layer.
+
     ImageNode trait, SpatialCache with ref-counted region borrowing and sub-region
+
     reuse, NodeGraph with dynamic region request propagation. Refactor all existing
+
     operations as node implementations. Pure domain Rust — no WIT changes yet.
-  context: |
-    rasmcore-image is shifting from stateless buffer-in/buffer-out functions to a
+
+    '
+  context: 'rasmcore-image is shifting from stateless buffer-in/buffer-out functions to a
+
     demand-driven tile pipeline. This track builds the core engine that all future
+
     operations and the WIT interface will be built on.
+
 
     Design reference: .agent/kf/_reports/pipeline-architecture.md
 
+
     Key principles:
+
     - Pipeline resource owns all nodes internally (node-id is u32 index)
+
     - Nodes request dynamically-sized regions from upstream (no fixed tile grid)
+
     - SpatialCache does region intersection, computes only missing sub-regions
+
     - Ref-counted borrowing with memory budget and LRU eviction
+
     - Write sink format determines output chunk geometry
+
     - Existing stateless functions become thin wrappers around pipeline internally
-  codebase_analysis: |
-    Current domain layer:
+
+    '
+  codebase_analysis: 'Current domain layer:
+
     - domain/encoder/{mod,jpeg,png,webp}.rs — per-format encode with typed configs
+
     - domain/decoder/mod.rs — decode with format detection
+
     - domain/transform.rs — resize, crop, rotate, flip, convert_format
+
     - domain/filters.rs — blur, sharpen, brightness, contrast, grayscale
+
     - domain/types.rs — ImageInfo, PixelFormat, etc.
+
     - domain/error.rs — ImageError enum
+
     - All operations take &[u8] pixels + &ImageInfo, return new pixels
 
+
     Every operation internally converts to image::DynamicImage, operates, converts back.
+
     The pipeline replaces this with nodes that produce regions on demand.
+
+    '
   acceptance_criteria:
-    - ImageNode trait defined with compute_region, info, overlap, access_pattern methods
-    - SpatialCache with region-level caching, ref-counted acquire/release, sub-region reuse
-    - Rect type with intersection, difference, contains operations
-    - NodeGraph holds Vec of nodes, dispatches region requests through the chain
-    - Source node wraps current decoder (decode on first region request, cache decoded pixels)
-    - Transform nodes for resize, crop, rotate, flip, convert_format
-    - Filter nodes for blur, sharpen, brightness, contrast, grayscale
-    - Sink (write) function that drives region requests through the graph
-    - Generic pipeline convenience functions that create single-node pipelines
-    - All existing domain tests pass (behavior identical to current stateless functions)
-    - New unit tests for SpatialCache (hit, miss, partial hit, eviction, ref counting)
-    - New unit tests for region request propagation through multi-node chains
-  out_of_scope: |
-    - WIT interface changes (Track 2: pipeline-wit)
+  - ImageNode trait defined with compute_region, info, overlap, access_pattern methods
+  - SpatialCache with region-level caching, ref-counted acquire/release, sub-region reuse
+  - Rect type with intersection, difference, contains operations
+  - NodeGraph holds Vec of nodes, dispatches region requests through the chain
+  - Source node wraps current decoder (decode on first region request, cache decoded pixels)
+  - Transform nodes for resize, crop, rotate, flip, convert_format
+  - Filter nodes for blur, sharpen, brightness, contrast, grayscale
+  - Sink (write) function that drives region requests through the graph
+  - Generic pipeline convenience functions that create single-node pipelines
+  - All existing domain tests pass (behavior identical to current stateless functions)
+  - New unit tests for SpatialCache (hit, miss, partial hit, eviction, ref counting)
+  - New unit tests for region request propagation through multi-node chains
+  out_of_scope: '- WIT interface changes (Track 2: pipeline-wit)
+
     - Adapter layer changes (Track 2)
+
     - WASM integration tests (Track 2)
+
     - Operation fusion optimization (future track)
+
     - Seek cache for sequential formats (future track)
+
     - WASI-IO stream integration (future track)
-  technical_notes: |
-    Implementation approach:
+
+    '
+  technical_notes: 'Implementation approach:
+
 
     1. Build SpatialCache + Rect first (independent, fully testable)
+
     2. Define ImageNode trait and NodeGraph
+
     3. Implement source node (wraps decoder)
+
     4. Implement transform/filter nodes (wrap existing operations)
+
     5. Implement write sink (drives region iteration)
+
     6. Refactor existing stateless functions to create pipelines internally
+
     7. Verify all existing tests still pass
 
+
     The refactored stateless functions (encode, decode, resize, etc.) should
+
     produce identical output. This is a pure internal refactor — the public
+
     domain API stays the same. The WIT/adapter changes come in Track 2.
 
+
     SpatialCache spatial_query algorithm for sub-region reuse:
+
     - For 1D (sequential strip access): simple range difference on y-coordinates
+
     - For 2D: axis-aligned rectangle clipping producing non-overlapping fragments
+
     - Start with 1D (covers 90% of cases), add 2D later if needed
+
+    '
 plan:
-  - phase: "Foundation Types"
-    tasks:
-      - text: "Implement Rect type with intersection, difference, contains, union operations"
-        done: false
-      - text: "Implement SpatialCache with region storage, acquire (cache hit/miss/partial), release (rc decrement)"
-        done: false
-      - text: "Implement sub-region reuse in SpatialCache (spatial_query returns covered + missing rects)"
-        done: false
-      - text: "Unit tests for SpatialCache: exact hit, full miss, partial hit, ref counting, eviction"
-        done: false
-  - phase: "Node Graph Engine"
-    tasks:
-      - text: "Define ImageNode trait (compute_region, info, overlap, access_pattern)"
-        done: false
-      - text: "Implement NodeGraph that holds Vec of Box dyn ImageNode and dispatches region requests"
-        done: false
-      - text: "Implement source node that wraps current decoder (lazy decode on first region request)"
-        done: false
-      - text: "Implement write sink that iterates output chunks and drives region requests through graph"
-        done: false
-  - phase: "Operation Nodes"
-    tasks:
-      - text: "Implement transform nodes: resize, crop, rotate, flip, convert_format"
-        done: false
-      - text: "Implement filter nodes: blur, sharpen, brightness, contrast, grayscale"
-        done: false
-      - text: "Implement encode sink nodes: jpeg, png, webp (wrap existing per-format encoders)"
-        done: false
-  - phase: "Integration & Verification"
-    tasks:
-      - text: "Refactor existing stateless domain functions to create pipelines internally"
-        done: false
-      - text: "Verify ALL existing domain unit tests pass (zero behavior change)"
-        done: false
-      - text: "New tests for multi-node pipeline (read -> resize -> blur -> write roundtrip)"
-        done: false
-      - text: "New tests for region overlap reuse (verify cache hits on adjacent region requests)"
-        done: false
+- phase: Foundation Types
+  tasks:
+  - text: Implement Rect type with intersection, difference, contains, union operations
+    done: true
+  - text: Implement SpatialCache with region storage, acquire (cache hit/miss/partial), release (rc decrement)
+    done: true
+  - text: Implement sub-region reuse in SpatialCache (spatial_query returns covered + missing rects)
+    done: true
+  - text: 'Unit tests for SpatialCache: exact hit, full miss, partial hit, ref counting, eviction'
+    done: true
+- phase: Node Graph Engine
+  tasks:
+  - text: Define ImageNode trait (compute_region, info, overlap, access_pattern)
+    done: true
+  - text: Implement NodeGraph that holds Vec of Box dyn ImageNode and dispatches region requests
+    done: true
+  - text: Implement source node that wraps current decoder (lazy decode on first region request)
+    done: true
+  - text: Implement write sink that iterates output chunks and drives region requests through graph
+    done: true
+- phase: Operation Nodes
+  tasks:
+  - text: 'Implement transform nodes: resize, crop, rotate, flip, convert_format'
+    done: true
+  - text: 'Implement filter nodes: blur, sharpen, brightness, contrast, grayscale'
+    done: true
+  - text: 'Implement encode sink nodes: jpeg, png, webp (wrap existing per-format encoders)'
+    done: true
+- phase: Integration & Verification
+  tasks:
+  - text: Refactor existing stateless domain functions to create pipelines internally
+    done: true
+  - text: Verify ALL existing domain unit tests pass (zero behavior change)
+    done: true
+  - text: New tests for multi-node pipeline (read -> resize -> blur -> write roundtrip)
+    done: true
+  - text: New tests for region overlap reuse (verify cache hits on adjacent region requests)
+    done: true
 extra: {}
