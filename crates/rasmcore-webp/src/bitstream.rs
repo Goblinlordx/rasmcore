@@ -182,10 +182,11 @@ fn encode_first_partition(
     // For key frames, refresh_last is implicit (always true)
 
     // Token probability updates (RFC 6386 Section 13.4)
-    // Write false for all 11×3×8×4 = 1056 probability update flags
-    // (use default probabilities, no updates)
-    for _ in 0..token::COEFF_PROB_UPDATE_COUNT {
-        bw.put_bit(128, false);
+    // Write false for each flag using the proper update probabilities.
+    // High probability values (near 255) mean "update is very unlikely",
+    // which lets the bool coder compress "false" flags into very few bits.
+    for &prob in &token::COEFF_UPDATE_PROBS {
+        bw.put_bit(prob, false);
     }
 
     // Macroblock header: mb_no_coeff_skip flag
@@ -398,7 +399,11 @@ fn encode_macroblock(
     }
 }
 
-/// Reconstruct a macroblock (for prediction reference by future MBs).
+/// Reconstruct a macroblock for prediction reference by future MBs.
+///
+/// This mirrors what the decoder does: dequantize → inverse WHT (Y2) →
+/// inverse DCT → add prediction. The reconstructed pixels must match exactly
+/// what a decoder would produce, so the next macroblock's prediction is correct.
 fn reconstruct_macroblock(
     recon_y: &mut [u8],
     recon_u: &mut [u8],
@@ -410,22 +415,158 @@ fn reconstruct_macroblock(
     y_plane: &[u8],
     u_plane: &[u8],
     v_plane: &[u8],
-    _seg_quant: &SegmentQuant,
-    _mb: &MacroblockInfo,
+    seg_quant: &SegmentQuant,
+    mb: &MacroblockInfo,
 ) {
-    // For simplicity in the initial implementation, use the source pixels
-    // as the reconstruction. A full encoder would dequantize+IDCT+add prediction.
     let y_off = mb_row * 16 * y_stride + mb_col * 16;
-    for r in 0..16 {
-        let src_start = y_off + r * y_stride;
-        let dst_start = y_off + r * y_stride;
-        recon_y[dst_start..dst_start + 16].copy_from_slice(&y_plane[src_start..src_start + 16]);
-    }
     let uv_off = mb_row * 8 * uv_stride + mb_col * 8;
+
+    // Extract 16x16 luma source block
+    let mut y_block = [0u8; 256];
+    for r in 0..16 {
+        y_block[r * 16..r * 16 + 16]
+            .copy_from_slice(&y_plane[y_off + r * y_stride..y_off + r * y_stride + 16]);
+    }
+
+    // Get prediction neighbors (same as encode path)
+    let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
+
+    // Generate prediction (same mode as encode)
+    let mut pred_y = [0u8; 256];
+    let y_mode_enum = match mb.y_mode {
+        0 => predict::Intra16Mode::DC,
+        1 => predict::Intra16Mode::V,
+        2 => predict::Intra16Mode::H,
+        _ => predict::Intra16Mode::TM,
+    };
+    predict::predict_16x16(y_mode_enum, &above_y, &left_y, above_left_y, &mut pred_y);
+
+    // Forward DCT + quantize each Y sub-block (re-encode to get quantized coeffs)
+    let mut y_quantized = [[0i16; 16]; 16];
+    let mut y_dc_coeffs = [0i16; 16];
+    for sb in 0..16 {
+        let sb_row = sb / 4;
+        let sb_col = sb % 4;
+        let mut src_block = [0u8; 16];
+        let mut ref_block = [0u8; 16];
+        for r in 0..4 {
+            for c in 0..4 {
+                src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+            }
+        }
+        let mut coeffs = [0i16; 16];
+        dct::forward_dct(&src_block, &ref_block, &mut coeffs);
+        let mut quantized = [0i16; 16];
+        quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+        y_dc_coeffs[sb] = quantized[0];
+        quantized[0] = 0; // DC goes to Y2
+        y_quantized[sb] = quantized;
+    }
+
+    // WHT on DC coefficients, quantize, then dequantize + inverse WHT
+    let mut y2_coeffs = [0i16; 16];
+    dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
+    let mut y2_quantized = [0i16; 16];
+    quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
+
+    // Dequantize Y2 and inverse WHT to get reconstructed DC coefficients
+    let mut y2_dequant = [0i16; 16];
+    quant::dequantize_block(&y2_quantized, &seg_quant.y2_dc, &mut y2_dequant);
+    let mut recon_dc = [0i16; 16];
+    dct::inverse_wht(&y2_dequant, &mut recon_dc);
+
+    // Reconstruct each Y sub-block: dequantize AC + restored DC → inverse DCT
+    for sb in 0..16 {
+        let sb_row = sb / 4;
+        let sb_col = sb % 4;
+
+        // Dequantize AC coefficients
+        let mut dequant = [0i16; 16];
+        quant::dequantize_block(&y_quantized[sb], &seg_quant.y_ac, &mut dequant);
+        // Restore DC from inverse WHT output
+        dequant[0] = recon_dc[sb];
+
+        // Get prediction block for this sub-block
+        let mut ref_block = [0u8; 16];
+        for r in 0..4 {
+            for c in 0..4 {
+                ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+            }
+        }
+
+        // Inverse DCT: adds dequantized residual to prediction
+        let mut recon_block = [0u8; 16];
+        dct::inverse_dct(&dequant, &ref_block, &mut recon_block);
+
+        // Write reconstructed pixels to recon_y
+        for r in 0..4 {
+            for c in 0..4 {
+                let row = mb_row * 16 + sb_row * 4 + r;
+                let col = mb_col * 16 + sb_col * 4 + c;
+                recon_y[row * y_stride + col] = recon_block[r * 4 + c];
+            }
+        }
+    }
+
+    // Reconstruct chroma (U and V)
+    let (above_u, left_u, above_left_u) = get_uv_neighbors(recon_u, uv_stride, mb_col, mb_row);
+    let (above_v, left_v, above_left_v) = get_uv_neighbors(recon_v, uv_stride, mb_col, mb_row);
+
+    let mut pred_u = [0u8; 64];
+    let mut pred_v = [0u8; 64];
+    let uv_mode_enum = match mb.uv_mode {
+        0 => predict::ChromaMode::DC,
+        1 => predict::ChromaMode::V,
+        2 => predict::ChromaMode::H,
+        _ => predict::ChromaMode::TM,
+    };
+    predict::predict_8x8(uv_mode_enum, &above_u, &left_u, above_left_u, &mut pred_u);
+    predict::predict_8x8(uv_mode_enum, &above_v, &left_v, above_left_v, &mut pred_v);
+
+    let mut u_block = [0u8; 64];
+    let mut v_block = [0u8; 64];
     for r in 0..8 {
-        let src_start = uv_off + r * uv_stride;
-        recon_u[src_start..src_start + 8].copy_from_slice(&u_plane[src_start..src_start + 8]);
-        recon_v[src_start..src_start + 8].copy_from_slice(&v_plane[src_start..src_start + 8]);
+        u_block[r * 8..r * 8 + 8]
+            .copy_from_slice(&u_plane[uv_off + r * uv_stride..uv_off + r * uv_stride + 8]);
+        v_block[r * 8..r * 8 + 8]
+            .copy_from_slice(&v_plane[uv_off + r * uv_stride..uv_off + r * uv_stride + 8]);
+    }
+
+    for (plane_block, pred_block, recon_plane, stride) in [
+        (&u_block, &pred_u, &mut *recon_u, uv_stride),
+        (&v_block, &pred_v, &mut *recon_v, uv_stride),
+    ] {
+        for sb in 0..4 {
+            let sb_row = sb / 2;
+            let sb_col = sb % 2;
+            let mut src_4x4 = [0u8; 16];
+            let mut ref_4x4 = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    src_4x4[r * 4 + c] = plane_block[(sb_row * 4 + r) * 8 + sb_col * 4 + c];
+                    ref_4x4[r * 4 + c] = pred_block[(sb_row * 4 + r) * 8 + sb_col * 4 + c];
+                }
+            }
+            let mut coeffs = [0i16; 16];
+            dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
+            let mut quantized = [0i16; 16];
+            quant::quantize_block(&coeffs, &seg_quant.uv_ac, &mut quantized);
+
+            // Dequantize + inverse DCT for reconstruction
+            let mut dequant = [0i16; 16];
+            quant::dequantize_block(&quantized, &seg_quant.uv_ac, &mut dequant);
+            let mut recon_block = [0u8; 16];
+            dct::inverse_dct(&dequant, &ref_4x4, &mut recon_block);
+
+            for r in 0..4 {
+                for c in 0..4 {
+                    let row = mb_row * 8 + sb_row * 4 + r;
+                    let col = mb_col * 8 + sb_col * 4 + c;
+                    recon_plane[row * stride + col] = recon_block[r * 4 + c];
+                }
+            }
+        }
     }
 }
 
