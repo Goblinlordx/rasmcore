@@ -1,80 +1,82 @@
 id: webp-crate-scaffold_20260328054401Z
-title: "rasmcore-webp Crate Scaffold — Workspace, Types, Public API"
+title: rasmcore-webp Crate Scaffold — Workspace, Types, Public API
 type: chore
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Create the rasmcore-webp crate as a new workspace member with the module
+  summary: 'Create the rasmcore-webp crate as a new workspace member with the module
+
     structure, public API, core types, and error handling defined by the research
+
     track. No encoding logic yet — just the skeleton.
-  context: |
-    This crate follows the per-format codec module pattern from product.yaml.
+
+    '
+  context: 'This crate follows the per-format codec module pattern from product.yaml.
+
     It will be a standalone pure Rust VP8 encoder with no WIT dependencies.
+
     rasmcore-image will depend on it for WebP lossy encoding.
 
+
     The crate structure comes from the research track design document.
-  codebase_analysis: |
-    - Workspace at Cargo.toml already has rasmcore-pipeline and rasmcore-image
+
+    '
+  codebase_analysis: '- Workspace at Cargo.toml already has rasmcore-pipeline and rasmcore-image
+
     - New member: crates/rasmcore-webp
+
     - Must follow same edition/version workspace settings
+
     - No image crate dependency — this is a standalone VP8 encoder
+
     - Public API: encode(pixels, width, height, config) -> Result<Vec<u8>, Error>
+
+    '
   acceptance_criteria:
-    - "crates/rasmcore-webp/ directory created with Cargo.toml"
-    - Crate added to workspace members in root Cargo.toml
-    - Module structure matches research design document
-    - Core types defined (WebpEncodeConfig, PixelFormat, Error)
-    - Public API function signatures defined (encode, returning stub errors)
-    - "cargo check -p rasmcore-webp compiles successfully"
-    - "cargo test -p rasmcore-webp runs (even if tests are trivial)"
-  out_of_scope: |
-    - Any actual encoding logic
+  - crates/rasmcore-webp/ directory created with Cargo.toml
+  - Crate added to workspace members in root Cargo.toml
+  - Module structure matches research design document
+  - Core types defined (WebpEncodeConfig, PixelFormat, Error)
+  - Public API function signatures defined (encode, returning stub errors)
+  - cargo check -p rasmcore-webp compiles successfully
+  - cargo test -p rasmcore-webp runs (even if tests are trivial)
+  out_of_scope: '- Any actual encoding logic
+
     - WIT integration (that is in the integration track)
+
     - Lossless encoding (kept in image-webp)
-  technical_notes: |
-    The crate should expose a minimal public API:
 
-      pub fn encode(pixels: &[u8], width: u32, height: u32, config: &EncodeConfig)
-        -> Result<Vec<u8>, EncodeError>;
-
-    EncodeConfig contains: quality (u8), method (encoding speed preset).
-    EncodeError is a domain error enum.
-
-    Internal modules (from research design):
-    - color: RGB to YUV420 conversion
-    - block: macroblock structure and partitioning
-    - predict: intra-prediction modes
-    - dct: 4x4 DCT and inverse DCT
-    - quant: quantization tables and quality mapping
-    - boolcoder: VP8 boolean arithmetic encoder
-    - bitstream: VP8 bitstream assembly and RIFF container
-    - filter: loop filter
-    - ratecontrol: quality-to-quantizer mapping
+    '
+  technical_notes: "The crate should expose a minimal public API:\n\n  pub fn encode(pixels: &[u8], width: u32, height: u32,\
+    \ config: &EncodeConfig)\n    -> Result<Vec<u8>, EncodeError>;\n\nEncodeConfig contains: quality (u8), method (encoding\
+    \ speed preset).\nEncodeError is a domain error enum.\n\nInternal modules (from research design):\n- color: RGB to YUV420\
+    \ conversion\n- block: macroblock structure and partitioning\n- predict: intra-prediction modes\n- dct: 4x4 DCT and inverse\
+    \ DCT\n- quant: quantization tables and quality mapping\n- boolcoder: VP8 boolean arithmetic encoder\n- bitstream: VP8\
+    \ bitstream assembly and RIFF container\n- filter: loop filter\n- ratecontrol: quality-to-quantizer mapping\n"
 plan:
-  - phase: "Crate Setup"
-    tasks:
-      - text: "Create crates/rasmcore-webp/ with Cargo.toml (no external deps initially)"
-        done: false
-      - text: "Add rasmcore-webp to workspace members in root Cargo.toml"
-        done: false
-      - text: "Create src/lib.rs with module declarations and public API stubs"
-        done: false
-  - phase: "Types & API"
-    tasks:
-      - text: "Define EncodeConfig struct (quality, method) in src/config.rs"
-        done: false
-      - text: "Define EncodeError enum in src/error.rs"
-        done: false
-      - text: "Define internal pixel types and YUV buffer in src/color.rs (stubs)"
-        done: false
-      - text: "Create stub module files for each encoder stage"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "cargo check -p rasmcore-webp compiles"
-        done: false
-      - text: "cargo test -p rasmcore-webp runs (stub test)"
-        done: false
+- phase: Crate Setup
+  tasks:
+  - text: Create crates/rasmcore-webp/ with Cargo.toml (no external deps initially)
+    done: true
+  - text: Add rasmcore-webp to workspace members in root Cargo.toml
+    done: true
+  - text: Create src/lib.rs with module declarations and public API stubs
+    done: true
+- phase: Types & API
+  tasks:
+  - text: Define EncodeConfig struct (quality, method) in src/config.rs
+    done: true
+  - text: Define EncodeError enum in src/error.rs
+    done: true
+  - text: Define internal pixel types and YUV buffer in src/color.rs (stubs)
+    done: true
+  - text: Create stub module files for each encoder stage
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo check -p rasmcore-webp compiles
+    done: true
+  - text: cargo test -p rasmcore-webp runs (stub test)
+    done: true
 extra: {}
