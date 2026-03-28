@@ -10,6 +10,7 @@ pub mod cabac;
 pub mod error;
 pub mod nal;
 pub mod params;
+pub mod predict;
 #[cfg(test)]
 pub mod testutil;
 pub mod types;
