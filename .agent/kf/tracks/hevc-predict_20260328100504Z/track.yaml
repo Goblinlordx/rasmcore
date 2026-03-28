@@ -32,30 +32,30 @@ plan:
   tasks:
   - text: Implement reference sample construction — gather top, left, top-left, top-right, bottom-left neighbors from reconstructed
       frame buffer
-    done: false
+    done: true
   - text: Implement reference sample substitution for unavailable neighbors (edge/corner blocks)
-    done: false
+    done: true
   - text: Implement reference sample filtering (3-tap filter for applicable modes, strong intra smoothing for large blocks)
-    done: false
+    done: true
 - phase: Prediction Modes
   tasks:
   - text: Implement Planar mode (mode 0) — bilinear interpolation using top-right and bottom-left endpoints
-    done: false
+    done: true
   - text: Implement DC mode (mode 1) — average of reference samples with boundary filter
-    done: false
+    done: true
   - text: Implement Angular modes (2-34) — angle table lookup, reference index/fraction computation, projection with linear
       interpolation
-    done: false
+    done: true
   - text: Implement chroma intra prediction mode derivation (DM mode, angular mapping from luma)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for reference sample construction (interior block, edge block, corner block)
-    done: false
+    done: true
   - text: Unit tests for Planar and DC modes with known 4x4 and 8x8 blocks
-    done: false
+    done: true
   - text: Unit tests for angular modes at key angles (horizontal, vertical, diagonal)
-    done: false
+    done: true
   - text: Determinism test — same input always produces same prediction
-    done: false
+    done: true
 extra: {}

@@ -1,5 +1,5 @@
-title: "HEVC Intra Prediction \u2014 35 Angular Modes + DC + Planar"
-status: pending
+title: HEVC Intra Prediction — 35 Angular Modes + DC + Planar
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'
