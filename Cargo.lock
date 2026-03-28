@@ -2197,6 +2197,7 @@ dependencies = [
  "moxcms",
  "quick-xml",
  "rasmcore-bmp",
+ "rasmcore-jpeg",
  "rasmcore-pipeline",
  "rasmcore-pnm",
  "rasmcore-qoi",
@@ -2208,6 +2209,10 @@ dependencies = [
  "xmp-writer",
  "zenjpeg",
 ]
+
+[[package]]
+name = "rasmcore-isobmff"
+version = "0.1.0"
 
 [[package]]
 name = "rasmcore-jpeg"

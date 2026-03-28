@@ -1,0 +1,11 @@
+[package]
+name = "rasmcore-isobmff"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Pure Rust ISO Base Media File Format parser for HEIF/HEIC and AVIF containers"
+
+[dependencies]
+# Zero external dependencies — pure Rust, WASM-ready
+
+[dev-dependencies]
