@@ -1,92 +1,98 @@
 id: webp-bitstream_20260328054405Z
-title: "VP8 Bitstream Assembly — Frame Header, Partitions, RIFF Container"
+title: VP8 Bitstream Assembly — Frame Header, Partitions, RIFF Container
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Implement VP8 frame header construction, token partition assembly,
+  summary: 'Implement VP8 frame header construction, token partition assembly,
+
     coefficient encoding, and RIFF/WebP container wrapping. This track connects
+
     the boolean coder, DCT, quantization, and prediction into a complete
+
     encoded VP8 bitstream.
-  context: |
-    A VP8 frame consists of:
+
+    '
+  context: 'A VP8 frame consists of:
+
     1. Frame header (uncompressed, 10 bytes): frame type, version, dimensions
+
     2. First partition (bool-coded): macroblock modes, segment info, loop filter params
+
     3. Token partitions (1-8, bool-coded): DCT coefficients for all macroblocks
 
+
     The RIFF container wraps the VP8 bitstream in a WebP file:
+
     RIFF header + VP8 chunk header + VP8 frame data
 
+
     This track assembles all the pieces from previous tracks into a working
+
     encoder that produces valid WebP files.
-  codebase_analysis: |
-    - New code in crates/rasmcore-webp/src/bitstream.rs and src/frame.rs
+
+    '
+  codebase_analysis: '- New code in crates/rasmcore-webp/src/bitstream.rs and src/frame.rs
+
     - Depends on boolcoder, dct, quant, and predict modules
+
     - libwebp reference: src/enc/frame_enc.c, src/enc/syntax_enc.c
+
     - WebP container: src/enc/webpenc.c (RIFF wrapping)
+
     - Coefficient token encoding uses context-dependent probability tables
+
+    '
   acceptance_criteria:
-    - VP8 frame header correctly encodes dimensions, version, partition count
-    - First partition encodes macroblock prediction modes via boolean coder
-    - Token partitions encode DCT coefficients with correct probability context
-    - Coefficient token tree encoding matches RFC 6386 Section 13
-    - RIFF/WebP container wrapping produces valid WebP files
-    - Output files can be decoded by libwebp, Chrome, and image-webp decoder
-    - "Encode a 1x1, 16x16, and 64x64 solid-color image — output is valid WebP"
-  out_of_scope: |
-    - Multiple segments (single segment sufficient for initial implementation)
+  - VP8 frame header correctly encodes dimensions, version, partition count
+  - First partition encodes macroblock prediction modes via boolean coder
+  - Token partitions encode DCT coefficients with correct probability context
+  - Coefficient token tree encoding matches RFC 6386 Section 13
+  - RIFF/WebP container wrapping produces valid WebP files
+  - Output files can be decoded by libwebp, Chrome, and image-webp decoder
+  - Encode a 1x1, 16x16, and 64x64 solid-color image — output is valid WebP
+  out_of_scope: '- Multiple segments (single segment sufficient for initial implementation)
+
     - Multiple token partitions (single partition sufficient initially)
+
     - Alpha channel encoding
-  technical_notes: |
-    VP8 coefficient encoding (RFC 6386 Section 13):
-    Coefficients are encoded in a specific scan order using a token tree.
-    Each coefficient uses context from its band position and whether the
-    previous coefficient was zero.
 
-    The probability tables are predefined (default tables in the RFC).
-    Advanced encoders optimize these tables per-frame, but defaults work
-    for initial implementation.
-
-    Frame structure:
-    [frame_tag: 3 bytes] [key_frame_header: 7 bytes] [first_partition] [token_partitions]
-
-    RIFF container:
-    [RIFF] [file_size] [WEBP] [VP8 ] [chunk_size] [vp8_data]
-
-    C-specific patterns:
-    - libwebp uses separate writer objects for each partition
-      Rust: Vec<BoolWriter>, one per partition
-    - Complex state machine for coefficient encoding context
-      Rust: explicit enum for context state
+    '
+  technical_notes: "VP8 coefficient encoding (RFC 6386 Section 13):\nCoefficients are encoded in a specific scan order using\
+    \ a token tree.\nEach coefficient uses context from its band position and whether the\nprevious coefficient was zero.\n\
+    \nThe probability tables are predefined (default tables in the RFC).\nAdvanced encoders optimize these tables per-frame,\
+    \ but defaults work\nfor initial implementation.\n\nFrame structure:\n[frame_tag: 3 bytes] [key_frame_header: 7 bytes]\
+    \ [first_partition] [token_partitions]\n\nRIFF container:\n[RIFF] [file_size] [WEBP] [VP8 ] [chunk_size] [vp8_data]\n\n\
+    C-specific patterns:\n- libwebp uses separate writer objects for each partition\n  Rust: Vec<BoolWriter>, one per partition\n\
+    - Complex state machine for coefficient encoding context\n  Rust: explicit enum for context state\n"
 plan:
-  - phase: "Frame Structure"
-    tasks:
-      - text: "Implement VP8 frame header encoding (frame tag + key frame header)"
-        done: false
-      - text: "Implement first partition encoding (macroblock modes, filter params)"
-        done: false
-      - text: "Test frame header produces correct bytes for known dimensions"
-        done: false
-  - phase: "Coefficient Encoding"
-    tasks:
-      - text: "Implement coefficient token tree encoding (RFC 6386 Section 13)"
-        done: false
-      - text: "Implement scan order and band-based probability context"
-        done: false
-      - text: "Implement token partition assembly"
-        done: false
-      - text: "Test coefficient encoding roundtrip against VP8 decoder"
-        done: false
-  - phase: "Container + Validation"
-    tasks:
-      - text: "Implement RIFF/WebP container wrapping"
-        done: false
-      - text: "Encode solid-color test images (1x1, 16x16, 64x64) — validate with external decoder"
-        done: false
-      - text: "Encode gradient test image — validate with external decoder"
-        done: false
-      - text: "Encode photo_256x256 fixture — validate decodable by image crate decoder"
-        done: false
+- phase: Frame Structure
+  tasks:
+  - text: Implement VP8 frame header encoding (frame tag + key frame header)
+    done: true
+  - text: Implement first partition encoding (macroblock modes, filter params)
+    done: true
+  - text: Test frame header produces correct bytes for known dimensions
+    done: true
+- phase: Coefficient Encoding
+  tasks:
+  - text: Implement coefficient token tree encoding (RFC 6386 Section 13)
+    done: true
+  - text: Implement scan order and band-based probability context
+    done: true
+  - text: Implement token partition assembly
+    done: true
+  - text: Test coefficient encoding roundtrip against VP8 decoder
+    done: true
+- phase: Container + Validation
+  tasks:
+  - text: Implement RIFF/WebP container wrapping
+    done: true
+  - text: Encode solid-color test images (1x1, 16x16, 64x64) — validate with external decoder
+    done: true
+  - text: Encode gradient test image — validate with external decoder
+    done: true
+  - text: Encode photo_256x256 fixture — validate decodable by image crate decoder
+    done: true
 extra: {}
