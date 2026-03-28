@@ -1,0 +1,67 @@
+id: webp-stress-parity_20260329174703Z
+title: VP8 Encoder Stress + Large Image Parity — Edge Cases and Scale Validation
+type: chore
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Add stress tests and large image validation to the WebP encoder. Current tests
+    max out at 512x512. Validate behavior at 4K resolution, extreme dimensions
+    (1x1, 1x1000, 4096x4096), and ensure cwebp is required in CI (not silently skipped).
+  context: |
+    Current parity tests skip silently if cwebp is not installed — CI may never
+    actually run reference validation. Max tested dimension is 512x512. Production
+    images can be 4K+ (3840x2160). Edge cases like 1x1 and non-multiple-of-16
+    dimensions need explicit cwebp comparison, not just decodability.
+  codebase_analysis: |
+    parity.rs cwebp_available() returns false if cwebp not in PATH — tests skip.
+    No CI configuration enforces cwebp presence. Max tested: 512x512 in gradient_512.
+    Odd dimensions tested at 17x13 but only at Q75.
+
+    encode_decode.rs tests 1x1 and small images for decodability but NOT vs cwebp.
+  acceptance_criteria:
+    - Large image parity test at 2048x2048 and 3840x2160 (4K) vs cwebp
+    - Extreme dimension tests (1x1, 1x1000, 1000x1, 3x3) with cwebp comparison
+    - Quality sweep at large sizes (Q25, Q50, Q75, Q95 at 1024x1024)
+    - cwebp requirement flag — test prints clear FAIL (not skip) when cwebp missing in CI
+    - File size scaling validation (size should scale roughly linearly with pixel count)
+    - Encode time measurement at each scale (documented, not asserted)
+  out_of_scope: |
+    Images larger than 4K. Animated WebP. Lossless mode.
+    Making tests pass without cwebp (reference is mandatory for parity).
+  technical_notes: |
+    Large image generation: use gradient_pixels(w, h) for deterministic large images.
+    4K test may take several seconds — mark with #[ignore] for default cargo test,
+    run explicitly in CI with --include-ignored.
+
+    cwebp requirement: add env var RASMCORE_REQUIRE_CWEBP=1 that turns skip into panic.
+    CI sets this var. Local dev still gets skip behavior by default.
+plan:
+  - phase: Large Image Tests
+    tasks:
+      - text: Add parity test at 2048x2048 gradient vs cwebp (Q75)
+        done: false
+      - text: Add parity test at 3840x2160 (4K) gradient vs cwebp (Q75)
+        done: false
+      - text: Add quality sweep at 1024x1024 (Q25, Q50, Q75, Q95) vs cwebp
+        done: false
+  - phase: Extreme Dimensions
+    tasks:
+      - text: Add cwebp parity for 1x1, 3x3, 1x1000, 1000x1 images
+        done: false
+      - text: Verify file size scales roughly linearly with pixel count
+        done: false
+  - phase: CI Enforcement
+    tasks:
+      - text: Add RASMCORE_REQUIRE_CWEBP env var — panic instead of skip when set
+        done: false
+      - text: Document CI configuration for requiring cwebp
+        done: false
+  - phase: Reporting
+    tasks:
+      - text: Encode time measurements at each scale (log to stdout, not asserted)
+        done: false
+      - text: Document file size and quality ratios at all tested scales
+        done: false
+extra: {}

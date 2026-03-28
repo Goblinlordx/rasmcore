@@ -1,0 +1,8 @@
+title: VP8 RDO Mode Selection — Lambda-Weighted Distortion+Rate for Intra Modes
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- webp-rdo-coeff_20260329174700Z

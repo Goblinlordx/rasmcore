@@ -1,0 +1,69 @@
+id: webp-photo-parity_20260329174702Z
+title: VP8 Encoder Photo Image Parity — Natural Image Validation vs cwebp
+type: chore
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Add natural/photo image parity tests to the WebP encoder. Current tests only
+    use synthetic patterns (gradients, solid, checkerboard). Real-world photo
+    encoding quality is untested. Generate realistic test images procedurally
+    and validate PSNR/file-size against cwebp reference.
+  context: |
+    All existing WebP parity tests use synthetic patterns. The encoder may perform
+    well on gradients but poorly on natural images with complex textures, edges,
+    and mixed-frequency content. Photo-realistic test coverage is essential for
+    confidence in production use.
+  codebase_analysis: |
+    tests/parity.rs has gradient_pixels(), checkerboard_pixels(), solid_pixels()
+    generators but no photo-realistic generator. The three_way_check() harness
+    already supports arbitrary pixel buffers — just needs new image generators.
+
+    A procedural photo generator can create realistic test images without external
+    files: Perlin-noise based textures, simulated camera noise, edge structures,
+    and mixed-frequency regions.
+  acceptance_criteria:
+    - Procedural photo-realistic image generator (no external file dependencies)
+    - At least 3 photo-style test patterns (texture, edge-heavy, mixed-frequency)
+    - Three-way parity check vs cwebp for each pattern at Q50 and Q75
+    - Quality ratio vs cwebp documented for photo content
+    - Test images at 256x256 and 1024x1024 dimensions
+    - All tests deterministic and reproducible
+  out_of_scope: |
+    Downloading real photos from the internet. Using ICC-profiled test images.
+    Testing alpha/lossless WebP.
+  technical_notes: |
+    Procedural photo generators:
+      1. Perlin noise texture — simulate natural surface (wood grain, fabric)
+      2. Edge structure — simulate architectural photo (sharp edges + smooth regions)
+      3. Mixed frequency — simulate portrait (smooth skin + detailed hair/eyes)
+
+    Each generator produces RGB8 pixels deterministically from a seed.
+    Use LCG PRNG (existing pattern in parity.rs) for reproducibility.
+plan:
+  - phase: Image Generators
+    tasks:
+      - text: Implement perlin_noise_texture(w, h, seed) — multi-octave Perlin noise RGB image
+        done: false
+      - text: Implement edge_structure(w, h) — sharp geometric edges with smooth regions
+        done: false
+      - text: Implement mixed_frequency(w, h, seed) — varying detail density across image
+        done: false
+  - phase: Parity Tests
+    tasks:
+      - text: Add three_way parity test for perlin texture at 256x256 and 1024x1024
+        done: false
+      - text: Add three_way parity test for edge structure at 256x256 and 1024x1024
+        done: false
+      - text: Add three_way parity test for mixed frequency at 256x256 and 1024x1024
+        done: false
+      - text: Test at Q50 and Q75 for each pattern
+        done: false
+  - phase: Reporting
+    tasks:
+      - text: Document quality ratios and file size ratios for all photo patterns
+        done: false
+      - text: Identify any patterns where encoder performs significantly worse than synthetic tests
+        done: false
+extra: {}

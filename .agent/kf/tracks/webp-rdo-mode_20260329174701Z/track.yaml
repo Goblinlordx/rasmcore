@@ -1,0 +1,102 @@
+id: webp-rdo-mode_20260329174701Z
+title: VP8 RDO Mode Selection — Lambda-Weighted Distortion+Rate for Intra Modes
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Replace SAD/SATD-based mode selection with full RD cost evaluation. For each
+    candidate prediction mode, compute distortion + lambda * estimated_bitrate
+    and select the mode with minimum RD cost. Builds on the RDO coefficient
+    pruning track for lambda and bitrate estimation infrastructure.
+  context: |
+    Current mode selection uses SAD (16x16) and SATD (4x4) — pure distortion
+    metrics with no consideration of encoding cost. This means the encoder picks
+    modes that minimize prediction error but may produce expensive-to-encode
+    residuals. cwebp evaluates the full encode cost for each candidate mode.
+
+    The B_PRED vs I16x16 decision currently uses a hard-coded 128 SAD bias
+    (bitstream.rs line 634). RDO replaces this with actual lambda-weighted
+    mode cost + header cost + coefficient cost.
+  codebase_analysis: |
+    predict.rs: select_best_16x16() evaluates 4 modes via SAD. select_best_4x4()
+    evaluates 10 modes via SATD. Both return the min-distortion mode.
+
+    bitstream.rs line 634: use_bpred = bpred_sad + 128 < i16_sad — static bias.
+
+    The RDO coefficient track provides lambda_from_qp() and estimate_token_bits()
+    which this track needs. The mode cost includes:
+      - Header bits: mode signaling cost (fixed per mode, from RFC 6386 Table 11.1)
+      - Coefficient bits: estimated bitrate of encoded residual
+      - Distortion: SSD between original and reconstructed pixels
+  acceptance_criteria:
+    - RD cost function: cost = ssd_distortion + lambda * (header_bits + coeff_bits)
+    - 16x16 mode selection uses RD cost instead of SAD
+    - 4x4 mode selection uses RD cost instead of SATD
+    - B_PRED vs I16x16 decision uses full RD cost (no static bias)
+    - Chroma mode selection uses RD cost instead of SAD
+    - Quality ratio vs cwebp improves to >= 0.8 for gradient at Q75
+    - Checkerboard quality improves further beyond RDO coefficient track
+    - File size competitive with cwebp (within 1.5x for gradients)
+    - Encode time overhead acceptable (< 5x total with both RDO tracks)
+  out_of_scope: |
+    Inter-frame prediction (P-frames). Multi-reference RDO. Sub-pixel motion estimation.
+    Adaptive lambda per MB (use frame-level lambda).
+  technical_notes: |
+    Mode header cost (fixed bits per mode from RFC 6386):
+      I16x16 modes: DC=~1.5 bits, V=~3.5, H=~3.5, TM=~3.5 (from kf_ymode_tree probs)
+      B_PRED sub-block modes: 3-7 bits each (10 modes with context-dependent probs)
+      Chroma modes: DC=~1.5, V=~3.5, H=~3.5, TM=~3.5
+
+    RD mode evaluation for 16x16 (replacing select_best_16x16):
+      for each mode in [DC, V, H, TM]:
+        predict pixels
+        compute residual
+        quantize + RDO prune coefficients
+        ssd = sum((original - reconstructed)^2)
+        bits = header_bits[mode] + estimate_all_block_bits(quantized)
+        cost = ssd + lambda * bits
+      select min cost mode
+
+    RD B_PRED evaluation:
+      i16_cost = ssd_i16 + lambda * (header_bits_i16 + coeff_bits_i16)
+      bpred_cost = sum(ssd_4x4[i] + lambda * (mode_bits_4x4[i] + coeff_bits_4x4[i]))
+      use_bpred = bpred_cost < i16_cost
+
+    Performance note: RDO mode selection is expensive (encode-decode loop per mode).
+    Optimization: skip modes where SAD is > 2x best SAD (early termination).
+plan:
+  - phase: Mode Cost Estimation
+    tasks:
+      - text: Implement mode_header_cost(mode, context) for 16x16, 4x4, and chroma modes
+        done: false
+      - text: Implement estimate_block_bits(quantized, block_type) — total bits for a quantized block
+        done: false
+      - text: Implement rd_cost(ssd, bits, lambda) — the RD cost function
+        done: false
+  - phase: RD Mode Selection
+    tasks:
+      - text: Replace select_best_16x16 SAD evaluation with full RD cost per mode
+        done: false
+      - text: Replace select_best_4x4 SATD evaluation with full RD cost per mode
+        done: false
+      - text: Replace static 128 bias for B_PRED vs I16x16 with RD cost comparison
+        done: false
+      - text: Replace chroma mode selection with RD cost evaluation
+        done: false
+      - text: Add early termination — skip modes where SAD > 2x current best
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit test — RD mode selection picks correct mode on synthetic patterns
+        done: false
+      - text: Update parity test thresholds — quality ratio >= 0.8 for gradient
+        done: false
+      - text: Verify file size competitive with cwebp (within 1.5x for gradients)
+        done: false
+      - text: Perf benchmark — total encode time with both RDO tracks < 5x baseline
+        done: false
+      - text: All existing tests pass with updated thresholds
+        done: false
+extra: {}
