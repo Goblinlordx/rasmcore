@@ -683,7 +683,7 @@ fn wasm_decoder_extracts_icc_from_jpeg() {
     // Embed a fake ICC profile and verify roundtrip
     let fake_icc = vec![42u8; 128];
     let config =
-        wasm_integration::exports::rasmcore::image::encoder::JpegEncodeConfig { quality: Some(95) };
+        wasm_integration::exports::rasmcore::image::encoder::JpegEncodeConfig { quality: Some(95), progressive: None };
     let encoded_with_icc = encoder
         .call_encode_jpeg_with_icc(&mut store, &decoded.pixels, decoded.info, config, &fake_icc)
         .unwrap()

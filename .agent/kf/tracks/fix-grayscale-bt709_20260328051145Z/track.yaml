@@ -47,11 +47,11 @@ plan:
 - phase: Verification
   tasks:
   - text: Run domain unit tests (cargo test --lib -p rasmcore-image -- filters)
-    done: false
+    done: true
   - text: Run parity tests (cargo test -p rasmcore-image --test parity -- grayscale)
-    done: false
+    done: true
   - text: Build WASM component and run wasm_filters_grayscale integration test
-    done: false
+    done: true
   - text: Run full validation suite (./scripts/validate.sh)
     done: false
 extra: {}
