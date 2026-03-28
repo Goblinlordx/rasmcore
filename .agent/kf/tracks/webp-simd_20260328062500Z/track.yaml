@@ -1,0 +1,164 @@
+id: webp-simd_20260328062500Z
+title: "WebP SIMD128 — WASM-Targeted Vectorization of VP8 Hot Paths"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Add WASM SIMD128 vectorization to the VP8 encoder's critical hot paths:
+    DCT/IDCT, quantization, color conversion, and SAD. Uses std::arch::wasm32
+    intrinsics behind #[cfg(target_arch = "wasm32")] gates. No new dependencies.
+  context: |
+    The rasmcore-webp encoder is pure scalar Rust — correct but unoptimized.
+    WASM is the primary deployment target and SIMD128 is universally supported
+    in all modern WASM runtimes (wasmtime, V8, SpiderMonkey, JavaScriptCore).
+
+    The .cargo/config.toml already enables target-feature=+simd128 for WASM
+    builds, so LLVM auto-vectorization is active. However, auto-vec is unreliable
+    for the specific patterns in VP8 (butterfly DCT, fixed-point multiply-shift,
+    conditional zero thresholding). Explicit SIMD intrinsics guarantee vectorization
+    and let us express the exact operations libwebp's hand-tuned SSE2 code uses,
+    adapted for 128-bit WASM SIMD.
+
+    WASM SIMD128 constraint: 128-bit registers only (no 256-bit like AVX2).
+    This matches libwebp's SSE2 codepath which also uses 128-bit XMM registers,
+    so the same algorithmic structure applies directly.
+  codebase_analysis: |
+    Hot-path functions in rasmcore-webp/src/ and their SIMD potential:
+
+    CRITICAL (40% of encode time):
+    - dct::forward_dct() — 4x4 butterfly, 4-wide i32 vectors, 2 passes
+    - dct::inverse_dct() — MUL1/MUL2 fixed-point rotation, 4-wide i32
+    - dct::forward_wht() — pure add/sub butterfly, trivially vectorizable
+    - dct::inverse_wht() — same
+
+    HIGH (20% of encode time):
+    - quant::quantize_block() — 16 independent multiply-shift-threshold ops
+    - quant::dequantize_block() — 16 independent multiplications
+
+    HIGH (30% of encode time, when implemented):
+    - color::rgb_to_yuv420() — per-pixel matrix multiply, embarrassingly parallel
+
+    MEDIUM:
+    - predict::sad() — sum of absolute differences, classic SIMD pattern
+    - predict::predict_16x16_tm() — per-row clip(left + above - corner)
+    - predict::predict_8x8_tm() — same for chroma
+
+    LOW (not worth explicit SIMD):
+    - predict::predict_4x4_*() — too small (16 pixels), overhead > benefit
+    - boolcoder — serial bit operations, inherently sequential
+
+    All functions operate on fixed-size arrays ([u8; 16], [i16; 16], [u8; 256])
+    which map naturally to WASM v128 operations (i32x4, i16x8, u8x16).
+
+    WASM SIMD128 available types:
+    - v128: generic 128-bit type
+    - i32x4: 4 lanes of i32 (ideal for DCT butterfly)
+    - i16x8: 8 lanes of i16 (ideal for coefficient operations)
+    - u8x16: 16 lanes of u8 (ideal for pixel operations, SAD)
+    - i32x4_mul: available (unlike some SIMD ISAs, WASM has i32 multiply)
+
+    Rust access: std::arch::wasm32 module provides all SIMD128 intrinsics.
+    Gated behind #[cfg(target_arch = "wasm32")] with scalar fallback for
+    native builds (cargo test runs natively, not under WASM).
+  acceptance_criteria:
+    - DCT forward/inverse use WASM SIMD128 intrinsics (i32x4 butterfly operations)
+    - WHT forward/inverse use WASM SIMD128 intrinsics
+    - quantize_block uses SIMD128 for parallel coefficient processing
+    - dequantize_block uses SIMD128 (i16x8 multiply)
+    - SAD function uses SIMD128 (u8x16 absolute differences with horizontal sum)
+    - Color conversion (rgb_to_yuv420) uses SIMD128 when implemented (or stub ready)
+    - All SIMD functions gated behind #[cfg(target_arch = "wasm32")] with scalar fallback
+    - Existing tests pass identically — SIMD produces bit-exact same results as scalar
+    - WASM component builds and validates with SIMD128 enabled
+    - Benchmark comparing scalar vs SIMD on a reference 1080p encode (document speedup)
+  out_of_scope: |
+    - x86 SSE/AVX intrinsics (WASM is our target, native uses auto-vec)
+    - ARM NEON intrinsics (same reason)
+    - std::simd portable SIMD (nightly-only, not stable yet)
+    - Trellis quantization or other quality optimizations
+    - Boolean coder SIMD (serial algorithm, not vectorizable)
+    - 4x4 prediction modes (too small for SIMD benefit)
+  technical_notes: |
+    Implementation pattern — dual-path with cfg gate:
+
+    ```rust
+    #[cfg(target_arch = "wasm32")]
+    use std::arch::wasm32::*;
+
+    pub fn forward_dct(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
+        #[cfg(target_arch = "wasm32")]
+        { forward_dct_simd128(src, reference, out) }
+        #[cfg(not(target_arch = "wasm32"))]
+        { forward_dct_scalar(src, reference, out) }
+    }
+    ```
+
+    The scalar implementations stay as-is (renamed with _scalar suffix).
+    SIMD implementations use std::arch::wasm32 intrinsics directly.
+    No new crate dependencies — std::arch is part of the standard library.
+
+    Key WASM SIMD128 operations for VP8 DCT:
+    - i32x4_add / i32x4_sub: butterfly add/subtract
+    - i32x4_mul: fixed-point coefficient multiply (2217, 5352, 20091, 35468)
+    - i32x4_shr: arithmetic right shift for fixed-point scaling
+    - i32x4_splat: broadcast constant to all lanes
+    - v128_load / v128_store: aligned 128-bit load/store
+
+    For quantization:
+    - u32x4_shr: unsigned shift for (abs + bias) * iq >> 16
+    - i32x4_abs: absolute value for sign extraction
+    - v128_and / v128_or: bitwise ops for sign restoration
+
+    For SAD:
+    - u8x16_sub_sat / u8x16_max: compute |a-b| without overflow
+    - i32x4_add: accumulate partial sums
+    - i32x4_extract_lane: horizontal reduction
+
+    Testing: All existing tests run natively (scalar path). Add WASM-specific
+    tests via the existing wasm-integration test harness to verify SIMD path
+    produces identical results. Cross-check: encode same image with scalar
+    and SIMD, assert byte-identical output.
+
+    Benchmark approach: Use the existing benchmark infrastructure. Encode a
+    1080p test image 100 times, measure wall-clock time for scalar vs SIMD
+    WASM builds. Document the speedup factor per function and overall.
+plan:
+  - phase: SIMD Infrastructure
+    tasks:
+      - text: "Refactor DCT functions: rename current impls to _scalar suffix, add dispatch wrapper with cfg gate"
+        done: false
+      - text: "Refactor quant functions: same _scalar/_simd128 dispatch pattern"
+        done: false
+      - text: "Refactor predict::sad(): same pattern"
+        done: false
+      - text: "Verify all existing tests still pass after refactor (no behavior change)"
+        done: false
+  - phase: DCT SIMD128
+    tasks:
+      - text: "Implement forward_dct_simd128 using i32x4 butterfly operations"
+        done: false
+      - text: "Implement inverse_dct_simd128 using i32x4 MUL1/MUL2 operations"
+        done: false
+      - text: "Implement forward_wht_simd128 and inverse_wht_simd128"
+        done: false
+      - text: "WASM build test: cargo component check compiles with SIMD128 intrinsics"
+        done: false
+  - phase: Quantization & SAD SIMD128
+    tasks:
+      - text: "Implement quantize_block_simd128 using i32x4 multiply-shift-threshold"
+        done: false
+      - text: "Implement dequantize_block_simd128 using i16x8 multiply"
+        done: false
+      - text: "Implement sad_simd128 using u8x16 absolute difference with horizontal sum"
+        done: false
+  - phase: Verification & Benchmark
+    tasks:
+      - text: "Bit-exactness test: scalar and SIMD128 produce identical DCT/quant output for all test vectors"
+        done: false
+      - text: "WASM component builds and validates with SIMD128 functions"
+        done: false
+      - text: "Benchmark: measure per-function and overall encode speedup, document results"
+        done: false
+extra: {}
