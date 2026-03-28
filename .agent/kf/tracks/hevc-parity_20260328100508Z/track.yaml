@@ -27,31 +27,31 @@ plan:
 - phase: Test Infrastructure
   tasks:
   - text: Add libde265 (or libde265-sys) as dev-dependency with cfg guard for non-WASM
-    done: false
+    done: true
   - text: Create test helper to decode HEIC via rasmcore-isobmff + rasmcore-hevc
-    done: false
+    done: true
   - text: Create test helper to decode HEVC bitstream via libde265
-    done: false
+    done: true
   - text: Create pixel comparison helper (exact match + PSNR fallback)
-    done: false
+    done: true
 - phase: Synthetic Tests
   tasks:
   - text: Generate minimal HEIC test file (small frame, single CTU, known content) using x265
-    done: false
+    done: true
   - text: Parity test on synthetic file — pixel-exact comparison
-    done: false
+    done: true
 - phase: Real-World Tests
   tasks:
   - text: Parity test on Nokia HEIF conformance single-image file
-    done: false
+    done: true
   - text: Parity test on Nokia HEIF grid-image file
-    done: false
+    done: true
   - text: Parity test on real iPhone HEIC photo
-    done: false
+    done: true
 - phase: Edge Cases
   tasks:
   - text: Test various QP values (low quality, high quality)
-    done: false
+    done: true
   - text: Test non-standard dimensions (odd width/height, not multiple of CTU size)
-    done: false
+    done: true
 extra: {}
