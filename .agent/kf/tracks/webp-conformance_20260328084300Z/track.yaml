@@ -116,7 +116,7 @@ plan:
 - phase: Conformance Validation
   tasks:
   - text: 'Single-MB (16x16) conformance: our output decodable by image-webp and dwebp'
-    done: false
+    done: true
   - text: 'Multi-MB (64x64, 256x256) conformance: decodable at all quality levels'
     done: false
   - text: 'Quality curve: PSNR monotonically increases with quality setting'
@@ -128,9 +128,9 @@ plan:
 - phase: Debug Fallback
   tasks:
   - text: 'If decode fails: hex-compare frame headers (our output vs cwebp reference)'
-    done: false
+    done: true
   - text: 'If decode fails: isolate to first-partition or token-partition error'
-    done: false
+    done: true
   - text: 'If decode fails: verify bool-coder flush produces decodable stream'
     done: false
 extra: {}
