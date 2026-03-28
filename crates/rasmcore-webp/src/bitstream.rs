@@ -261,10 +261,21 @@ fn encode_first_partition(
         bw.put_bit(prob, false);
     }
 
-    // Macroblock header: mb_no_coeff_skip flag
-    // Disable mb_no_coeff_skip — always encode all tokens for every MB.
-    // This is simpler and avoids skip signaling bugs. Less efficient but correct.
-    bw.put_bit(128, false); // mb_no_coeff_skip = false
+    // mb_no_coeff_skip (RFC 6386 Section 9.10, verified against libvpx)
+    let skip_count = mb_infos.iter().filter(|m| m.skip).count();
+    let total_mbs = mb_infos.len().max(1);
+    let enable_skip = skip_count > 0;
+    let prob_skip = if enable_skip {
+        ((total_mbs - skip_count) * 256 / total_mbs).clamp(1, 255) as u8
+    } else {
+        128
+    };
+    if enable_skip {
+        bw.put_literal(1, 1);
+        bw.put_literal(8, prob_skip as u32);
+    } else {
+        bw.put_literal(1, 0);
+    }
 
     // Encode macroblock modes with B_PRED context tracking.
     // For B_PRED MBs, we need context from neighboring MBs' sub-block modes.
@@ -289,6 +300,9 @@ fn encode_first_partition(
             }
         }
 
+        if enable_skip {
+            bw.put_bit(prob_skip, mb.skip);
+        }
         encode_mb_header(
             &mut bw,
             mb,
@@ -732,8 +746,23 @@ fn encode_macroblock(
         }
     }
 
+    let all_zero = y2_quantized.iter().all(|&c| c == 0)
+        && y_coeffs.iter().all(|block| block.iter().all(|&c| c == 0))
+        && uv_quantized
+            .iter()
+            .all(|block| block.iter().all(|&c| c == 0));
+
     // ─── Token encoding ─────────────────────────────────────────────────
-    if use_bpred {
+    if all_zero {
+        if !use_bpred {
+            top_ctx[0] = 0;
+            left_ctx[0] = 0;
+        }
+        for i in 1..9 {
+            top_ctx[i] = 0;
+            left_ctx[i] = 0;
+        }
+    } else if use_bpred {
         // B_PRED: no Y2 block. Leave Y2 context UNCHANGED — the decoder
         // does not touch complexity[0] for B_PRED MBs, so the encoder must
         // preserve whatever the previous MB set.
@@ -772,37 +801,33 @@ fn encode_macroblock(
         }
     }
 
-    // Chroma (same for both modes)
-    for y in 0..2 {
-        let mut left = left_ctx[y + 5];
-        for x in 0..2 {
-            let sb = y * 2 + x;
-            let complexity = (top_ctx[x + 5] + left).min(2) as usize;
-            let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
-            let ctx_val = if has { 1 } else { 0 };
-            left = ctx_val;
-            top_ctx[x + 5] = ctx_val;
+    // Chroma (same for both modes, but skipped when all_zero)
+    if !all_zero {
+        for y in 0..2 {
+            let mut left = left_ctx[y + 5];
+            for x in 0..2 {
+                let sb = y * 2 + x;
+                let complexity = (top_ctx[x + 5] + left).min(2) as usize;
+                let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
+                let ctx_val = if has { 1 } else { 0 };
+                left = ctx_val;
+                top_ctx[x + 5] = ctx_val;
+            }
+            left_ctx[y + 5] = left;
         }
-        left_ctx[y + 5] = left;
-    }
-    for y in 0..2 {
-        let mut left = left_ctx[y + 7];
-        for x in 0..2 {
-            let sb = 4 + y * 2 + x;
-            let complexity = (top_ctx[x + 7] + left).min(2) as usize;
-            let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
-            let ctx_val = if has { 1 } else { 0 };
-            left = ctx_val;
-            top_ctx[x + 7] = ctx_val;
+        for y in 0..2 {
+            let mut left = left_ctx[y + 7];
+            for x in 0..2 {
+                let sb = 4 + y * 2 + x;
+                let complexity = (top_ctx[x + 7] + left).min(2) as usize;
+                let has = token::encode_block(token_bw, &uv_quantized[sb], 2, complexity);
+                let ctx_val = if has { 1 } else { 0 };
+                left = ctx_val;
+                top_ctx[x + 7] = ctx_val;
+            }
+            left_ctx[y + 7] = left;
         }
-        left_ctx[y + 7] = left;
     }
-
-    let all_zero = y2_quantized.iter().all(|&c| c == 0)
-        && y_coeffs.iter().all(|block| block.iter().all(|&c| c == 0))
-        && uv_quantized
-            .iter()
-            .all(|block| block.iter().all(|&c| c == 0));
 
     MacroblockInfo {
         mb_x: mb_col as u32,
