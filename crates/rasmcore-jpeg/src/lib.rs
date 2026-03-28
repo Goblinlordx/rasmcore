@@ -16,6 +16,7 @@ pub mod entropy;
 mod error;
 mod markers;
 mod quantize;
+pub mod trellis;
 mod types;
 
 pub use error::EncodeError;
