@@ -42,6 +42,9 @@ spec:
     - HEIF/HEIC patent isolation strategy (sidecar plugin architecture)
     - Per-format metadata support matrix (EXIF, XMP, IPTC, ICC, PNG text, GIF comment, TIFF IFD, etc.)
     - Metadata crate evaluation (kamadak-exif coverage, xmp-toolkit, iptc-rs, or alternatives)
+    - Unified metadata API design sketch — consistent read/write interface across all formats
+    - Streaming metadata read design — parse container headers without loading pixel data
+    - Pipeline metadata write design — attach metadata during pipeline write/encode sink phase
     - Prioritized implementation roadmap with effort estimates per format
     - Report written to .agent/kf/_reports/codec-audit.md
   out_of_scope: |
@@ -63,7 +66,12 @@ spec:
        - Tier 5 (patent-encumbered): Sidecar distribution required (HEIF/HEIC)
     5. Metadata audit: for each supported format, map which metadata types it can carry
        (EXIF, XMP, IPTC, ICC, format-specific chunks) and what rasmcore currently reads/writes
-    6. Produce actionable roadmap that can be fed directly into /kf-architect
+    6. Metadata API design: sketch a unified domain model and WIT interface for metadata that
+       supports (a) consistent read/write across formats, (b) streaming header-only reads without
+       pixel decode, and (c) pipeline-integrated writes where metadata is attached to nodes and
+       embedded during the encode sink phase. Current ad-hoc approach (read_exif, extract_icc)
+       should be replaced with a generalized metadata layer.
+    7. Produce actionable roadmap that can be fed directly into /kf-architect
 plan:
   - phase: Format Inventory
     tasks:
@@ -88,6 +96,16 @@ plan:
       - text: Audit current rasmcore metadata support (kamadak-exif for EXIF, manual ICC extraction) and identify gaps
         done: false
       - text: Evaluate Rust crates for missing metadata formats (xmp-toolkit, iptc, png-chunk parsing, etc.)
+        done: false
+  - phase: Metadata API Design
+    tasks:
+      - text: Design unified ImageMetadata domain type covering all metadata kinds (EXIF, XMP, IPTC, ICC, format-specific) with consistent read/write trait
+        done: false
+      - text: Design streaming metadata read — container-level parsing to extract metadata segments without decoding pixels (per-format header scanning)
+        done: false
+      - text: Design pipeline metadata write — how metadata attaches to pipeline nodes and gets embedded during write sink (encode-time injection vs post-encode patching)
+        done: false
+      - text: Sketch WIT interface for metadata read/write that generalizes beyond current per-function approach (read_exif, extract_icc)
         done: false
   - phase: Implementation Roadmap
     tasks:
