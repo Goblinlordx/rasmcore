@@ -21,23 +21,21 @@ spec:
   - Parity tests still pass
   out_of_scope: RDO, segmentation, SATD metric
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Set mb_no_coeff_skip = true in first partition header
-        done: false
-      - text: Encode per-MB skip bit (prob=128) in encode_mb_header when skip=true
-        done: false
-      - text: Skip token partition encoding for MBs where skip=true
-        done: false
-  - phase: Validation
-    tasks:
-      - text: All existing tests pass (lib + encode_decode + parity)
-        done: false
-      - text: File size for solid 1024x1024 decreases
-        done: false
-      - text: All sizes decode with dwebp and image-webp
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Set mb_no_coeff_skip = true in first partition header
+    done: true
+  - text: Encode per-MB skip bit (prob=128) in encode_mb_header when skip=true
+    done: true
+  - text: Skip token partition encoding for MBs where skip=true
+    done: true
+- phase: Validation
+  tasks:
+  - text: All existing tests pass (lib + encode_decode + parity)
+    done: true
+  - text: File size for solid 1024x1024 decreases
+    done: true
+  - text: All sizes decode with dwebp and image-webp
+    done: true
 extra: {}
