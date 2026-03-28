@@ -61,9 +61,16 @@ spec:
       Brightness: LUT[i] = (i as i16 + offset).clamp(0, 255) as u8
       Contrast:  LUT[i] = ((factor * (i as f32 - 128.0)) + 128.0).clamp(0, 255) as u8
 
-    Pipeline fusion: walk node graph, detect runs of PointOpNode, replace with
-    single FusedLutNode holding the composed LUT. O(256) composition cost per node,
-    then O(1) per pixel at runtime regardless of chain length.
+    Pipeline fusion: walk node graph, detect maximal runs of consecutive
+    PointOpNode nodes. Any non-point-op node (blur, sharpen, resize, median,
+    crop, etc.) acts as a fusion barrier — it breaks the chain because it
+    needs spatial context, not just the current pixel value. Example:
+      brightness -> blur -> contrast -> invert -> posterize
+    becomes:
+      FusedLut1 -> blur -> FusedLut2
+    Two LUT passes + one blur pass instead of four point-op passes + one blur.
+    Each fused run collapses to one FusedLutNode with a pre-composed [u8; 256].
+    O(256) composition cost per node at plan time, O(1) per pixel at runtime.
 
     For RGBA: apply LUT to R, G, B channels only; copy alpha unchanged.
     Reference: ImageMagick CLI for output parity, libvips for perf target.
