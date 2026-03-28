@@ -1,116 +1,139 @@
 id: codec-audit-patents_20260328052209Z
-title: "Research: Codec parity audit — format matrix, license/patent assessment, implementation roadmap"
+title: 'Research: Codec parity audit — format matrix, license/patent assessment, implementation roadmap'
 type: research
 status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: >
-    Produce a comprehensive codec matrix (rasmcore vs ImageMagick vs libvips) with
-    per-format license/patent assessment and Rust crate evaluation. Output a prioritized
-    implementation roadmap that feeds into future codec tracks.
-  context: |
-    rasmcore currently decodes 9 formats and encodes 4 (JPEG, PNG, WebP, GIF). The project
+  summary: 'Produce a comprehensive codec matrix (rasmcore vs ImageMagick vs libvips) with per-format license/patent assessment
+    and Rust crate evaluation. Output a prioritized implementation roadmap that feeds into future codec tracks.
+
+    '
+  context: 'rasmcore currently decodes 9 formats and encodes 4 (JPEG, PNG, WebP, GIF). The project
+
     goal is feature parity with ImageMagick and libvips for image operations. Many formats
+
     are trivially addable (image crate feature flags), while others require external crates
+
     or have patent encumbrance (HEIF/HEIC). The product.yaml already anticipates patent-
+
     encumbered codecs via "sidecar plugin distribution."
 
+
     User priorities:
+
     - Patent-free simple formats first (TIFF, BMP, ICO, PNM, TGA, HDR, EXR, QOI encode)
+
     - RAW camera decode (read-only) — via rawloader or similar pure-Rust crate
+
     - SVG rasterization (read-only) — investigate resvg feasibility, no bitmap-to-SVG write
+
     - HEIF/HEIC deferred to separate sidecar track due to MPEG-LA/Nokia patents
+
     - JPEG XL and AVIF encode as P1 (royalty-free modern formats)
-  codebase_analysis: |
-    Current state (as of 2026-03-28):
+
+    '
+  codebase_analysis: 'Current state (as of 2026-03-28):
+
     - Decode: JPEG, PNG, GIF, WebP, BMP, TIFF, AVIF, ICO, QOI (9 formats via image crate)
+
     - Encode: JPEG (zenjpeg), PNG, WebP (in-progress), GIF (4 formats with per-format config)
+
     - image crate features enabled: png, jpeg, gif, webp, bmp, tiff, avif, ico, qoi
+
     - image crate features NOT enabled: pnm, tga, dds, exr, hdr, ff (all trivial to add)
+
     - External crates in tech-stack.yaml: resvg (SVG rendering, optional)
+
     - Confirmed crates: image (default-features=false, WASM-ready)
+
     - Architecture: per-format encoder modules with typed config records
+
     - Pipeline: write-{format} sink functions for each encoder
+
     - WIT: per-format encode-{format} functions + generic encode() dispatcher
+
+    '
   acceptance_criteria:
-    - Complete format matrix covering all raster formats in ImageMagick and libvips
-    - Per-format license assessment (crate license, spec patent status, expiry dates)
-    - Per-format Rust crate evaluation (pure-Rust vs sys bindings, WASM compatibility, maturity)
-    - RAW decode feasibility (rawloader vs libraw-rs, supported camera models, WASM compat)
-    - SVG rasterize feasibility (resvg evaluation, font handling, WASM compat, common use cases)
-    - HEIF/HEIC patent isolation strategy (sidecar plugin architecture)
-    - Per-format metadata support matrix (EXIF, XMP, IPTC, ICC, PNG text, GIF comment, TIFF IFD, etc.)
-    - Metadata crate evaluation (kamadak-exif coverage, xmp-toolkit, iptc-rs, or alternatives)
-    - Unified metadata API design sketch — consistent read/write interface across all formats
-    - Streaming metadata read design — parse container headers without loading pixel data
-    - Pipeline metadata write design — attach metadata during pipeline write/encode sink phase
-    - Prioritized implementation roadmap with effort estimates per format
-    - Report written to .agent/kf/_reports/codec-audit.md
-  out_of_scope: |
-    - Actual codec implementation (this is research only)
+  - Complete format matrix covering all raster formats in ImageMagick and libvips
+  - Per-format license assessment (crate license, spec patent status, expiry dates)
+  - Per-format Rust crate evaluation (pure-Rust vs sys bindings, WASM compatibility, maturity)
+  - RAW decode feasibility (rawloader vs libraw-rs, supported camera models, WASM compat)
+  - SVG rasterize feasibility (resvg evaluation, font handling, WASM compat, common use cases)
+  - HEIF/HEIC patent isolation strategy (sidecar plugin architecture)
+  - Per-format metadata support matrix (EXIF, XMP, IPTC, ICC, PNG text, GIF comment, TIFF IFD, etc.)
+  - Metadata crate evaluation (kamadak-exif coverage, xmp-toolkit, iptc-rs, or alternatives)
+  - Unified metadata API design sketch — consistent read/write interface across all formats
+  - Streaming metadata read design — parse container headers without loading pixel data
+  - Pipeline metadata write design — attach metadata during pipeline write/encode sink phase
+  - Prioritized implementation roadmap with effort estimates per format
+  - Report written to .agent/kf/_reports/codec-audit.md
+  out_of_scope: '- Actual codec implementation (this is research only)
+
     - SVG write/render-to (bitmap-to-vector tracing)
+
     - Video codecs (AV1, H.264, H.265)
+
     - Animated format support (multi-frame GIF/WebP/APNG)
+
     - Non-raster formats (PDF, PostScript, raw vector)
-  technical_notes: |
-    Research approach:
-    1. Enumerate all raster formats supported by ImageMagick 7.x and libvips 8.x
-    2. For each format, check: image crate support, alternative Rust crates, WASM compatibility
-    3. Patent research: MPEG-LA pools, AOM license, individual codec specs
-    4. Classify into tiers:
-       - Tier 1 (trivial): Enable image crate feature flag, add to decoder list
-       - Tier 2 (simple encoder): New encoder module following existing pattern
-       - Tier 3 (external crate): Integrate pure-Rust crate (resvg, rawloader, jxl-oxide)
-       - Tier 4 (sys bindings): Requires C library bindings (libheif, libraw)
-       - Tier 5 (patent-encumbered): Sidecar distribution required (HEIF/HEIC)
-    5. Metadata audit: for each supported format, map which metadata types it can carry
-       (EXIF, XMP, IPTC, ICC, format-specific chunks) and what rasmcore currently reads/writes
-    6. Metadata API design: sketch a unified domain model and WIT interface for metadata that
-       supports (a) consistent read/write across formats, (b) streaming header-only reads without
-       pixel decode, and (c) pipeline-integrated writes where metadata is attached to nodes and
-       embedded during the encode sink phase. Current ad-hoc approach (read_exif, extract_icc)
-       should be replaced with a generalized metadata layer.
-    7. Produce actionable roadmap that can be fed directly into /kf-architect
+
+    '
+  technical_notes: "Research approach:\n1. Enumerate all raster formats supported by ImageMagick 7.x and libvips 8.x\n2. For\
+    \ each format, check: image crate support, alternative Rust crates, WASM compatibility\n3. Patent research: MPEG-LA pools,\
+    \ AOM license, individual codec specs\n4. Classify into tiers:\n   - Tier 1 (trivial): Enable image crate feature flag,\
+    \ add to decoder list\n   - Tier 2 (simple encoder): New encoder module following existing pattern\n   - Tier 3 (external\
+    \ crate): Integrate pure-Rust crate (resvg, rawloader, jxl-oxide)\n   - Tier 4 (sys bindings): Requires C library bindings\
+    \ (libheif, libraw)\n   - Tier 5 (patent-encumbered): Sidecar distribution required (HEIF/HEIC)\n5. Metadata audit: for\
+    \ each supported format, map which metadata types it can carry\n   (EXIF, XMP, IPTC, ICC, format-specific chunks) and\
+    \ what rasmcore currently reads/writes\n6. Metadata API design: sketch a unified domain model and WIT interface for metadata\
+    \ that\n   supports (a) consistent read/write across formats, (b) streaming header-only reads without\n   pixel decode,\
+    \ and (c) pipeline-integrated writes where metadata is attached to nodes and\n   embedded during the encode sink phase.\
+    \ Current ad-hoc approach (read_exif, extract_icc)\n   should be replaced with a generalized metadata layer.\n7. Produce\
+    \ actionable roadmap that can be fed directly into /kf-architect\n"
 plan:
-  - phase: Format Inventory
-    tasks:
-      - text: Enumerate all raster formats in ImageMagick 7.x (magick -list format)
-        done: false
-      - text: Enumerate all raster formats in libvips 8.x (vips --list classes)
-        done: false
-      - text: Map current rasmcore decode/encode support against both reference lists
-        done: false
-  - phase: License and Patent Assessment
-    tasks:
-      - text: Research patent status for each format spec (JPEG, HEIF, AVIF, JXL, JP2, WebP, etc.)
-        done: false
-      - text: Document Rust crate licenses for each candidate implementation crate
-        done: false
-      - text: Identify HEIF/HEIC patent pool holders and sidecar isolation requirements
-        done: false
-  - phase: Metadata Support Audit
-    tasks:
-      - text: Map metadata types per supported format (EXIF, XMP, IPTC, ICC, PNG tEXt/iTXt/zTXt, GIF comment, TIFF IFD tags, WebP EXIF/XMP chunks)
-        done: false
-      - text: Audit current rasmcore metadata support (kamadak-exif for EXIF, manual ICC extraction) and identify gaps
-        done: false
-      - text: Evaluate Rust crates for missing metadata formats (xmp-toolkit, iptc, png-chunk parsing, etc.)
-        done: false
-  - phase: Metadata API Design
-    tasks:
-      - text: Design unified ImageMetadata domain type covering all metadata kinds (EXIF, XMP, IPTC, ICC, format-specific) with consistent read/write trait
-        done: false
-      - text: Design streaming metadata read — container-level parsing to extract metadata segments without decoding pixels (per-format header scanning)
-        done: false
-      - text: Design pipeline metadata write — how metadata attaches to pipeline nodes and gets embedded during write sink (encode-time injection vs post-encode patching)
-        done: false
-      - text: Sketch WIT interface for metadata read/write that generalizes beyond current per-function approach (read_exif, extract_icc)
-        done: false
-  - phase: Implementation Roadmap
-    tasks:
-      - text: Evaluate Rust crates for each missing format (pure-Rust, WASM compat, maturity, maintenance)
-        done: false
-      - text: Write final report to .agent/kf/_reports/codec-audit.md with matrix, licenses, metadata, and roadmap
-        done: false
+- phase: Format Inventory
+  tasks:
+  - text: Enumerate all raster formats in ImageMagick 7.x (magick -list format)
+    done: true
+  - text: Enumerate all raster formats in libvips 8.x (vips --list classes)
+    done: true
+  - text: Map current rasmcore decode/encode support against both reference lists
+    done: true
+- phase: License and Patent Assessment
+  tasks:
+  - text: Research patent status for each format spec (JPEG, HEIF, AVIF, JXL, JP2, WebP, etc.)
+    done: true
+  - text: Document Rust crate licenses for each candidate implementation crate
+    done: true
+  - text: Identify HEIF/HEIC patent pool holders and sidecar isolation requirements
+    done: true
+- phase: Metadata Support Audit
+  tasks:
+  - text: Map metadata types per supported format (EXIF, XMP, IPTC, ICC, PNG tEXt/iTXt/zTXt, GIF comment, TIFF IFD tags, WebP
+      EXIF/XMP chunks)
+    done: true
+  - text: Audit current rasmcore metadata support (kamadak-exif for EXIF, manual ICC extraction) and identify gaps
+    done: true
+  - text: Evaluate Rust crates for missing metadata formats (xmp-toolkit, iptc, png-chunk parsing, etc.)
+    done: true
+- phase: Metadata API Design
+  tasks:
+  - text: Design unified ImageMetadata domain type covering all metadata kinds (EXIF, XMP, IPTC, ICC, format-specific) with
+      consistent read/write trait
+    done: true
+  - text: Design streaming metadata read — container-level parsing to extract metadata segments without decoding pixels (per-format
+      header scanning)
+    done: true
+  - text: Design pipeline metadata write — how metadata attaches to pipeline nodes and gets embedded during write sink (encode-time
+      injection vs post-encode patching)
+    done: true
+  - text: Sketch WIT interface for metadata read/write that generalizes beyond current per-function approach (read_exif, extract_icc)
+    done: true
+- phase: Implementation Roadmap
+  tasks:
+  - text: Evaluate Rust crates for each missing format (pure-Rust, WASM compat, maturity, maintenance)
+    done: true
+  - text: Write final report to .agent/kf/_reports/codec-audit.md with matrix, licenses, metadata, and roadmap
+    done: true
 extra: {}
