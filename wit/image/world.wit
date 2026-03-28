@@ -2,6 +2,10 @@ package rasmcore:image@0.1.0;
 
 /// World for a complete image processing component
 world image-processor {
+    // Pipeline API (primary — demand-driven node graph)
+    export pipeline;
+
+    // Legacy stateless APIs (backward compatible)
     export decoder;
     export encoder;
     export transform;

@@ -1,0 +1,111 @@
+package rasmcore:image@0.1.0;
+
+/// Demand-driven image processing pipeline.
+///
+/// Build a graph of operations, then execute via write(). The pipeline
+/// owns all nodes internally — node-id values are opaque handles.
+/// Pixels are computed on demand, cached, and reused automatically.
+interface pipeline {
+    use rasmcore:core/types.{buffer, image-info, pixel-format};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// Opaque handle to a node in the pipeline's internal graph.
+    type node-id = u32;
+
+    /// Resize filter algorithms.
+    enum resize-filter { nearest, bilinear, bicubic, lanczos3 }
+
+    /// Rotation amounts.
+    enum rotation { r90, r180, r270 }
+
+    /// Flip direction.
+    enum flip-direction { horizontal, vertical }
+
+    /// JPEG write configuration.
+    record jpeg-write-config {
+        quality: option<u8>,
+    }
+
+    /// PNG write configuration.
+    record png-write-config {
+        compression-level: option<u8>,
+    }
+
+    /// WebP write configuration.
+    record webp-write-config {
+        quality: option<u8>,
+        lossless: option<bool>,
+    }
+
+    /// The pipeline resource — owns the node graph and spatial cache.
+    resource image-pipeline {
+        /// Create a new empty pipeline.
+        constructor();
+
+        // ─── Source ───
+
+        /// Read encoded image data into the pipeline. Returns a source node.
+        /// Does NOT decode pixels until a downstream write() requests them.
+        read: func(data: buffer) -> result<node-id, rasmcore-error>;
+
+        /// Get image info for a node (dimensions, format — no pixel computation).
+        node-info: func(node: node-id) -> result<image-info, rasmcore-error>;
+
+        // ─── Transforms ───
+
+        /// Resize to exact dimensions.
+        resize: func(source: node-id, width: u32, height: u32, filter: resize-filter) -> result<node-id, rasmcore-error>;
+
+        /// Crop a rectangular region.
+        crop: func(source: node-id, x: u32, y: u32, width: u32, height: u32) -> result<node-id, rasmcore-error>;
+
+        /// Rotate by fixed angle.
+        rotate: func(source: node-id, angle: rotation) -> result<node-id, rasmcore-error>;
+
+        /// Flip horizontally or vertically.
+        flip: func(source: node-id, direction: flip-direction) -> result<node-id, rasmcore-error>;
+
+        /// Convert pixel format.
+        convert-format: func(source: node-id, target: pixel-format) -> result<node-id, rasmcore-error>;
+
+        // ─── Filters ───
+
+        /// Gaussian blur.
+        blur: func(source: node-id, radius: f32) -> result<node-id, rasmcore-error>;
+
+        /// Sharpen (unsharp mask).
+        sharpen: func(source: node-id, amount: f32) -> result<node-id, rasmcore-error>;
+
+        /// Brightness adjustment (-1.0 to 1.0).
+        brightness: func(source: node-id, amount: f32) -> result<node-id, rasmcore-error>;
+
+        /// Contrast adjustment (-1.0 to 1.0).
+        contrast: func(source: node-id, amount: f32) -> result<node-id, rasmcore-error>;
+
+        /// Convert to grayscale.
+        grayscale: func(source: node-id) -> result<node-id, rasmcore-error>;
+
+        // ─── Write (drives execution) ───
+
+        /// Write as JPEG. Pulls all regions through the graph.
+        write-jpeg: func(source: node-id, config: jpeg-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write as PNG.
+        write-png: func(source: node-id, config: png-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write as WebP.
+        write-webp: func(source: node-id, config: webp-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write to any format (convenience).
+        write: func(source: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
+    }
+
+    /// Detect image format from header bytes.
+    detect-format: func(header: buffer) -> option<string>;
+
+    /// List supported read formats.
+    supported-read-formats: func() -> list<string>;
+
+    /// List supported write formats.
+    supported-write-formats: func() -> list<string>;
+}

@@ -1,8 +1,10 @@
 //! WASM adapter layer — thin WIT binding glue.
 //! Only compiled for wasm32 targets.
 
+mod pipeline_adapter;
+
 use crate::bindings;
-use crate::bindings::exports::rasmcore::image::{decoder, encoder, filters, transform};
+use crate::bindings::exports::rasmcore::image::{decoder, encoder, filters, pipeline, transform};
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
 use crate::domain;
@@ -84,6 +86,22 @@ fn to_domain_image_info(info: &types::ImageInfo) -> domain::types::ImageInfo {
 struct Component;
 
 bindings::export!(Component with_types_in bindings);
+
+impl pipeline::Guest for Component {
+    type ImagePipeline = pipeline_adapter::PipelineResource;
+
+    fn detect_format(header: Vec<u8>) -> Option<String> {
+        domain::decoder::detect_format(&header)
+    }
+
+    fn supported_read_formats() -> Vec<String> {
+        domain::decoder::supported_formats()
+    }
+
+    fn supported_write_formats() -> Vec<String> {
+        domain::encoder::supported_formats()
+    }
+}
 
 impl decoder::Guest for Component {
     fn detect_format(header: Vec<u8>) -> Option<String> {
