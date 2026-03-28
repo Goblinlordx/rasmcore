@@ -614,19 +614,17 @@ fn decode_scan(
         let y_pw = plane_widths[0];
         for py in 0..h {
             for px in 0..w {
-                let y_val = planes[0][py * y_pw + px] as f64;
-                let cb_val = cb_up[py * w + px] as f64;
-                let cr_val = cr_up[py * w + px] as f64;
+                let y_val = planes[0][py * y_pw + px] as i32;
+                let cb_val = cb_up[py * w + px] as i32;
+                let cr_val = cr_up[py * w + px] as i32;
 
-                // YCbCr → RGB (BT.601)
-                let r = y_val + 1.402 * (cr_val - 128.0);
-                let g = y_val - 0.344136 * (cb_val - 128.0) - 0.714136 * (cr_val - 128.0);
-                let b = y_val + 1.772 * (cb_val - 128.0);
+                // YCbCr → RGB (BT.601, i32 fixed-point)
+                let (r, g, b) = crate::color::ycbcr_to_rgb_fixed(y_val, cb_val, cr_val);
 
                 let idx = (py * w + px) * 3;
-                output[idx] = r.round().clamp(0.0, 255.0) as u8;
-                output[idx + 1] = g.round().clamp(0.0, 255.0) as u8;
-                output[idx + 2] = b.round().clamp(0.0, 255.0) as u8;
+                output[idx] = r;
+                output[idx + 1] = g;
+                output[idx + 2] = b;
             }
         }
         Ok(output)
@@ -990,18 +988,17 @@ fn decode_progressive(
         let y_pw = plane_widths[0];
         for py in 0..h {
             for px in 0..w {
-                let y_val = planes[0][py * y_pw + px] as f64;
-                let cb_val = cb_up[py * w + px] as f64;
-                let cr_val = cr_up[py * w + px] as f64;
+                let y_val = planes[0][py * y_pw + px] as i32;
+                let cb_val = cb_up[py * w + px] as i32;
+                let cr_val = cr_up[py * w + px] as i32;
 
-                let r = y_val + 1.402 * (cr_val - 128.0);
-                let g = y_val - 0.344136 * (cb_val - 128.0) - 0.714136 * (cr_val - 128.0);
-                let b = y_val + 1.772 * (cb_val - 128.0);
+                // YCbCr → RGB (BT.601, i32 fixed-point)
+                let (r, g, b) = crate::color::ycbcr_to_rgb_fixed(y_val, cb_val, cr_val);
 
                 let idx = (py * w + px) * 3;
-                output[idx] = r.round().clamp(0.0, 255.0) as u8;
-                output[idx + 1] = g.round().clamp(0.0, 255.0) as u8;
-                output[idx + 2] = b.round().clamp(0.0, 255.0) as u8;
+                output[idx] = r;
+                output[idx + 1] = g;
+                output[idx + 2] = b;
             }
         }
         Ok((output, frame.width as u32, frame.height as u32, false))

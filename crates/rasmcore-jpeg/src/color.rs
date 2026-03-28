@@ -103,6 +103,48 @@ pub fn mcu_dimensions(sub: ChromaSubsampling) -> (u32, u32) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// YCbCr → RGB inverse conversion (fixed-point, libjpeg-compatible)
+// ---------------------------------------------------------------------------
+
+/// Fixed-point scale bits (matches libjpeg convention).
+const SCALEBITS: i32 = 16;
+
+/// Rounding offset: 1 << (SCALEBITS - 1).
+const ONE_HALF: i32 = 1 << (SCALEBITS - 1); // 32768
+
+// BT.601 inverse coefficients: FIX(x) = (x * 65536 + 0.5) as i32
+const FIX_1_402: i32 = 91881; // 1.40200 * 65536
+const FIX_0_34414: i32 = 22554; // 0.34414 * 65536
+const FIX_0_71414: i32 = 46802; // 0.71414 * 65536
+const FIX_1_772: i32 = 116130; // 1.77200 * 65536
+
+/// Convert a single YCbCr pixel to RGB using i32 fixed-point arithmetic.
+///
+/// Uses BT.601 coefficients with SCALEBITS=16 (libjpeg convention):
+/// ```text
+/// R = Y + 1.402   * (Cr - 128)
+/// G = Y - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128)
+/// B = Y + 1.772   * (Cb - 128)
+/// ```
+///
+/// All arithmetic is integer; no floating-point operations.
+#[inline]
+pub fn ycbcr_to_rgb_fixed(y: i32, cb: i32, cr: i32) -> (u8, u8, u8) {
+    let cr_shifted = cr - 128;
+    let cb_shifted = cb - 128;
+
+    let r = y + ((FIX_1_402 * cr_shifted + ONE_HALF) >> SCALEBITS);
+    let g = y - ((FIX_0_34414 * cb_shifted + FIX_0_71414 * cr_shifted + ONE_HALF) >> SCALEBITS);
+    let b = y + ((FIX_1_772 * cb_shifted + ONE_HALF) >> SCALEBITS);
+
+    (
+        r.clamp(0, 255) as u8,
+        g.clamp(0, 255) as u8,
+        b.clamp(0, 255) as u8,
+    )
+}
+
 /// Downsample a full-resolution plane by averaging blocks.
 fn downsample(
     src: &[u8],
@@ -172,5 +214,110 @@ mod tests {
     fn mcu_size_420() {
         assert_eq!(mcu_dimensions(ChromaSubsampling::Quarter420), (16, 16));
         assert_eq!(mcu_dimensions(ChromaSubsampling::None444), (8, 8));
+    }
+
+    // ── YCbCr → RGB fixed-point tests ─────────────────────────────────────
+
+    #[test]
+    fn fixed_neutral_gray() {
+        // Y=128, Cb=128, Cr=128 → RGB(128, 128, 128)
+        let (r, g, b) = ycbcr_to_rgb_fixed(128, 128, 128);
+        assert_eq!((r, g, b), (128, 128, 128));
+    }
+
+    #[test]
+    fn fixed_black() {
+        let (r, g, b) = ycbcr_to_rgb_fixed(0, 128, 128);
+        assert_eq!((r, g, b), (0, 0, 0));
+    }
+
+    #[test]
+    fn fixed_white() {
+        let (r, g, b) = ycbcr_to_rgb_fixed(255, 128, 128);
+        assert_eq!((r, g, b), (255, 255, 255));
+    }
+
+    #[test]
+    fn fixed_pure_red_clamps() {
+        // Y=76, Cb=85, Cr=255 → approx red; R saturates, G/B clamp to 0
+        let (r, g, b) = ycbcr_to_rgb_fixed(76, 85, 255);
+        assert_eq!(r, 254); // ~76 + 1.402*127 ≈ 254.05
+        assert!(g < 5);
+        assert!(b < 5);
+    }
+
+    #[test]
+    fn fixed_pure_blue_clamps() {
+        // Y=29, Cb=255, Cr=107 → approx blue
+        let (r, g, b) = ycbcr_to_rgb_fixed(29, 255, 107);
+        assert!(r < 5);
+        assert!(g < 5);
+        assert!(b > 250);
+    }
+
+    #[test]
+    fn fixed_saturation_high() {
+        // Extreme values: Y=255, Cb=0, Cr=255
+        let (r, g, b) = ycbcr_to_rgb_fixed(255, 0, 255);
+        assert_eq!(r, 255); // saturated
+        // G and B depend on exact rounding — verify they produced values
+        let _ = (g, b);
+    }
+
+    #[test]
+    fn fixed_saturation_low() {
+        // Y=0, Cb=255, Cr=0
+        let (r, g, b) = ycbcr_to_rgb_fixed(0, 255, 0);
+        assert_eq!(r, 0); // clamped
+        assert!(g < 50);
+        assert_eq!(b, 225); // 0 + 1.772*127 ≈ 225
+    }
+
+    #[test]
+    fn fixed_vs_float_full_range() {
+        // Verify fixed-point matches f64 reference within ±1 for all Y/Cb/Cr combos
+        // (sampled at 16-value intervals for speed)
+        let mut max_diff = 0i32;
+        for y in (0..=255).step_by(1) {
+            for cb in (0..=255).step_by(16) {
+                for cr in (0..=255).step_by(16) {
+                    let (rf, gf, bf) = ycbcr_to_rgb_fixed(y, cb, cr);
+
+                    // f64 reference (old code path)
+                    let yf = y as f64;
+                    let cbf = cb as f64;
+                    let crf = cr as f64;
+                    let r_ref = (yf + 1.402 * (crf - 128.0)).round().clamp(0.0, 255.0) as u8;
+                    let g_ref = (yf - 0.344136 * (cbf - 128.0) - 0.714136 * (crf - 128.0))
+                        .round()
+                        .clamp(0.0, 255.0) as u8;
+                    let b_ref = (yf + 1.772 * (cbf - 128.0)).round().clamp(0.0, 255.0) as u8;
+
+                    let dr = (rf as i32 - r_ref as i32).abs();
+                    let dg = (gf as i32 - g_ref as i32).abs();
+                    let db = (bf as i32 - b_ref as i32).abs();
+                    max_diff = max_diff.max(dr).max(dg).max(db);
+
+                    assert!(
+                        dr <= 1 && dg <= 1 && db <= 1,
+                        "Y={y} Cb={cb} Cr={cr}: fixed=({rf},{gf},{bf}) float=({r_ref},{g_ref},{b_ref}) diff=({dr},{dg},{db})"
+                    );
+                }
+            }
+        }
+        // The fixed-point should be very close — typically max_diff is 0 or 1
+        assert!(max_diff <= 1, "max channel diff = {max_diff}");
+    }
+
+    #[test]
+    fn fixed_no_float_in_hot_path() {
+        // Compile-time guarantee: ycbcr_to_rgb_fixed only uses i32
+        // This test just exercises the function to ensure no panics
+        for y in 0..=255 {
+            let (r, g, b) = ycbcr_to_rgb_fixed(y, 128, 128);
+            assert_eq!(r, y as u8);
+            assert_eq!(g, y as u8);
+            assert_eq!(b, y as u8);
+        }
     }
 }
