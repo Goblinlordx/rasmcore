@@ -1,80 +1,109 @@
 id: jpeg2000-research_20260328082302Z
-title: "Research: JPEG 2000 — ISO 15444, Pure Rust Feasibility, Wavelet Architecture"
+title: 'Research: JPEG 2000 — ISO 15444, Pure Rust Feasibility, Wavelet Architecture'
 type: research
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Research JPEG 2000 (ISO/IEC 15444) implementation options. Evaluate pure Rust
+  summary: 'Research JPEG 2000 (ISO/IEC 15444) implementation options. Evaluate pure Rust
+
     wavelet transform feasibility, study OpenJPEG reference, and design a
+
     rasmcore-jp2 crate architecture for decode and encode.
-  context: |
-    JPEG 2000 is required for medical imaging (DICOM mandates it), digital cinema
+
+    '
+  context: 'JPEG 2000 is required for medical imaging (DICOM mandates it), digital cinema
+
     (DCP), archival, and GIS. Both ImageMagick and libvips support it.
+
 
     Core codec is royalty-free. Some Part 2 extensions have patents.
 
+
     JPEG 2000 is fundamentally different from JPEG — uses wavelet transform
+
     (DWT) instead of DCT, embedded block coding (EBCOT) instead of Huffman,
+
     and supports features like regions of interest and progressive by resolution.
 
+
     No production-ready pure Rust J2K implementation exists. This research
+
     determines whether to build from spec or wrap OpenJPEG initially.
-  codebase_analysis: |
-    - No JPEG 2000 code exists in rasmcore
+
+    '
+  codebase_analysis: '- No JPEG 2000 code exists in rasmcore
+
     - image crate does not support JPEG 2000
+
     - OpenJPEG (BSD) is the reference C implementation
+
     - Wavelet transforms are well-studied (Daubechies 9/7 for lossy, 5/3 for lossless)
+
+    '
   acceptance_criteria:
-    - ISO 15444 core specification studied and summarized
-    - Pure Rust wavelet transform feasibility assessed
-    - EBCOT (Embedded Block Coding with Optimized Truncation) complexity estimated
-    - OpenJPEG architecture mapped to potential Rust modules
-    - Decode-first vs full RW strategy recommended
-    - WASM compilation assessment
-    - Design document for rasmcore-jp2 crate
-  out_of_scope: |
-    - Writing any code
+  - ISO 15444 core specification studied and summarized
+  - Pure Rust wavelet transform feasibility assessed
+  - EBCOT (Embedded Block Coding with Optimized Truncation) complexity estimated
+  - OpenJPEG architecture mapped to potential Rust modules
+  - Decode-first vs full RW strategy recommended
+  - WASM compilation assessment
+  - Design document for rasmcore-jp2 crate
+  out_of_scope: '- Writing any code
+
     - Part 2 extensions (motion JPEG 2000, etc.)
-  technical_notes: |
-    JPEG 2000 encoding pipeline:
+
+    '
+  technical_notes: 'JPEG 2000 encoding pipeline:
+
     1. Color transform (ICT for lossy, RCT for lossless)
+
     2. Discrete Wavelet Transform (DWT) — multi-level decomposition
+
     3. Quantization (dead-zone scalar for lossy)
+
     4. Tier-1 coding: EBCOT (bit-plane coding with MQ arithmetic coder)
+
     5. Tier-2 coding: packet assembly and rate allocation
+
     6. Codestream assembly (SIZ, COD, QCD, SOT, SOD markers)
 
+
     Key difference from JPEG/VP8: wavelet transform operates on the entire
+
     image (not 8x8 blocks), giving better quality at low bitrates and no
+
     blocking artifacts.
 
+
     MQ arithmetic coder is similar to QM-coder (JPEG arithmetic) — the
+
     rasmcore-jpeg arith.rs module may be reusable.
+
+    '
 plan:
-  - phase: "Specification Study"
-    tasks:
-      - text: "Study ISO 15444-1 core (DWT, EBCOT, codestream syntax)"
-        done: false
-      - text: "Study wavelet transforms (Daubechies 9/7 lossy, 5/3 lossless)"
-        done: false
-      - text: "Study EBCOT bit-plane coding and MQ arithmetic coder"
-        done: false
-  - phase: "Feasibility Assessment"
-    tasks:
-      - text: "Evaluate pure Rust implementation complexity vs OpenJPEG wrapper"
-        done: false
-      - text: "Assess existing Rust crates (jpeg2k, openjp2)"
-        done: false
-      - text: "Assess WASM compilation path for each option"
-        done: false
-  - phase: "Design"
-    tasks:
-      - text: "Write rasmcore-jp2 module architecture"
-        done: false
-      - text: "Recommend phased approach (decode first, then encode)"
-        done: false
-      - text: "Estimate complexity and LOC per module"
-        done: false
+- phase: Specification Study
+  tasks:
+  - text: Study ISO 15444-1 core (DWT, EBCOT, codestream syntax)
+    done: true
+  - text: Study wavelet transforms (Daubechies 9/7 lossy, 5/3 lossless)
+    done: true
+  - text: Study EBCOT bit-plane coding and MQ arithmetic coder
+    done: true
+- phase: Feasibility Assessment
+  tasks:
+  - text: Evaluate pure Rust implementation complexity vs OpenJPEG wrapper
+    done: true
+  - text: Assess existing Rust crates (jpeg2k, openjp2)
+    done: true
+  - text: Assess WASM compilation path for each option
+    done: true
+- phase: Design
+  tasks:
+  - text: Write rasmcore-jp2 module architecture
+    done: true
+  - text: Recommend phased approach (decode first, then encode)
+    done: true
+  - text: Estimate complexity and LOC per module
+    done: true
 extra: {}
