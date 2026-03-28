@@ -169,6 +169,7 @@ pub fn auto_orient(
         ExifOrientation::Normal => Ok(DecodedImage {
             pixels: pixels.to_vec(),
             info: info.clone(),
+            icc_profile: None,
         }),
         ExifOrientation::FlipHorizontal => flip(pixels, info, FlipDirection::Horizontal),
         ExifOrientation::Rotate180 => rotate(pixels, info, Rotation::R180),
