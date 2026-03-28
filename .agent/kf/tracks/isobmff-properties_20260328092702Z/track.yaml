@@ -33,39 +33,39 @@ plan:
 - phase: Property Container
   tasks:
   - text: Implement iprp container parser — dispatch to ipco and ipma children
-    done: false
+    done: true
   - text: Implement ipco parser — iterate property boxes, store in indexed list
-    done: false
+    done: true
   - text: Implement ipma parser — read (item_id, property_index, essential) associations
-    done: false
+    done: true
   - text: Build property resolver — given item_id, return list of associated properties
-    done: false
+    done: true
 - phase: Core Properties
   tasks:
   - text: Implement ispe (image spatial extents) — extract width, height
-    done: false
+    done: true
   - text: Implement colr property — ICC profile extraction (type=prof) and nclx color info (type=nclx)
-    done: false
+    done: true
   - text: Implement pixi property — num_channels and bits_per_channel array
-    done: false
+    done: true
 - phase: Codec Config Properties
   tasks:
   - text: Implement hvcC parser — configurationVersion, profile/tier/level, arrays of NAL units (VPS, SPS, PPS)
-    done: false
+    done: true
   - text: Implement av1C parser — seq_profile, seq_level_idx, OBU sequence header bytes
-    done: false
+    done: true
 - phase: Metadata
   tasks:
   - text: Implement Exif item extraction — locate Exif items via iinf, read data from mdat/idat, skip 4-byte Exif header offset
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for ipco/ipma with multiple properties associated to multiple items
-    done: false
+    done: true
   - text: Unit tests for ispe, colr (both ICC and nclx variants), pixi
-    done: false
+    done: true
   - text: Unit tests for hvcC and av1C with realistic config records
-    done: false
+    done: true
   - text: Unit test for Exif extraction from a crafted item
-    done: false
+    done: true
 extra: {}
