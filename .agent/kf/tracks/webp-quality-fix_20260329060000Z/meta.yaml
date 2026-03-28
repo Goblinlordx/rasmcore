@@ -1,5 +1,5 @@
 title: VP8 Encoder Quality Fix — DC Double-Quantization + Prediction Border Mismatch
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-03-28'
