@@ -1,88 +1,119 @@
 id: jpeg-advanced_20260328080505Z
-title: "JPEG Advanced Modes — Progressive, 12-bit, Arithmetic Wiring"
+title: JPEG Advanced Modes — Progressive, 12-bit, Arithmetic Wiring
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Add progressive JPEG encoding (spectral selection + successive approximation),
+  summary: 'Add progressive JPEG encoding (spectral selection + successive approximation),
+
     12-bit sample precision support, and wire arithmetic coding into the encoder.
+
     These are the ITU-T T.81 extended modes beyond baseline.
-  context: |
-    Progressive JPEG is critical for web — it enables incremental display during
+
+    '
+  context: 'Progressive JPEG is critical for web — it enables incremental display during
+
     download. The image appears blurry first, then sharpens as more data arrives.
 
+
     Two progressive techniques (can be combined):
+
     - Spectral selection: send low-frequency DCT coefficients first (DC, then AC)
+
     - Successive approximation: send coarse values first, refine with more bits
+
 
     12-bit precision: used in medical imaging and scientific photography.
 
+
     Arithmetic coding: ~5-10% better compression than Huffman. Now patent-free.
-  codebase_analysis: |
-    - Baseline encoder from jpeg-baseline track provides the container assembly
+
+    '
+  codebase_analysis: '- Baseline encoder from jpeg-baseline track provides the container assembly
+
     - Huffman and arithmetic coders from jpeg-huffman track
+
     - Progressive uses SOF2 marker instead of SOF0
+
     - Multiple SOS segments (one per scan)
+
     - 12-bit uses extended sample range (SOF1 marker)
+
+    '
   acceptance_criteria:
-    - Progressive JPEG with spectral selection scans
-    - Progressive JPEG with successive approximation
-    - Combined spectral + successive approximation
-    - SOF2 marker for progressive, SOF1 for extended
-    - 12-bit sample precision produces valid extended JPEG
-    - Arithmetic coding mode produces valid SOF9/SOF10 output
-    - Progressive output displayable in Chrome and Safari
-    - File size comparison: progressive smaller than baseline at same quality
-  out_of_scope: |
-    - Lossless JPEG (SOF3/SOF7 — separate future track if needed)
+  - Progressive JPEG with spectral selection scans
+  - Progressive JPEG with successive approximation
+  - Combined spectral + successive approximation
+  - SOF2 marker for progressive, SOF1 for extended
+  - 12-bit sample precision produces valid extended JPEG
+  - Arithmetic coding mode produces valid SOF9/SOF10 output
+  - Progressive output displayable in Chrome and Safari
+  - File size comparison: progressive smaller than baseline at same quality
+  out_of_scope: '- Lossless JPEG (SOF3/SOF7 — separate future track if needed)
+
     - JPEG 2000 or JPEG XL
-  technical_notes: |
-    Progressive scan ordering (typical for quality):
+
+    '
+  technical_notes: 'Progressive scan ordering (typical for quality):
+
     Scan 1: DC coefficients only (Y, Cb, Cr), SS=0, SE=0, Ah=0, Al=0
+
     Scan 2: Y AC 1-5, Ah=0, Al=0
+
     Scan 3: Cb AC 1-63, Ah=0, Al=0
+
     Scan 4: Cr AC 1-63, Ah=0, Al=0
+
     Scan 5: Y AC 6-63, Ah=0, Al=0
 
+
     Or with successive approximation:
+
     Scan 1: DC all, Ah=0, Al=1 (coarse DC)
+
     Scan 2: DC all, Ah=1, Al=0 (refine DC)
+
     Scan 3-N: AC bands with refinement
 
+
     The SOS marker specifies: component selector(s), spectral start (Ss),
+
     spectral end (Se), successive approximation (Ah, Al).
 
+
     12-bit mode: SOF1 marker, sample precision=12, quantization table
+
     values scaled for 12-bit range.
+
+    '
 plan:
-  - phase: "Progressive Mode"
-    tasks:
-      - text: "Implement multi-scan encoding with spectral selection"
-        done: false
-      - text: "Implement successive approximation (coarse + refinement scans)"
-        done: false
-      - text: "Implement SOF2 marker and multi-SOS container assembly"
-        done: false
-      - text: "Test progressive output decodable by image crate and Chrome"
-        done: false
-  - phase: "Extended Modes"
-    tasks:
-      - text: "Implement 12-bit sample precision (SOF1, extended range)"
-        done: false
-      - text: "Wire arithmetic coding into encoder (SOF9/SOF10 markers)"
-        done: false
-      - text: "Test 12-bit produces valid extended JPEG"
-        done: false
-      - text: "Test arithmetic mode produces smaller file than Huffman"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Progressive file size smaller than baseline at same quality"
-        done: false
-      - text: "Arithmetic file size smaller than Huffman at same quality"
-        done: false
-      - text: "All modes pass determinism test"
-        done: false
+- phase: Progressive Mode
+  tasks:
+  - text: Implement multi-scan encoding with spectral selection
+    done: true
+  - text: Implement successive approximation (coarse + refinement scans)
+    done: true
+  - text: Implement SOF2 marker and multi-SOS container assembly
+    done: true
+  - text: Test progressive output decodable by image crate and Chrome
+    done: true
+- phase: Extended Modes
+  tasks:
+  - text: Implement 12-bit sample precision (SOF1, extended range)
+    done: true
+  - text: Wire arithmetic coding into encoder (SOF9/SOF10 markers)
+    done: true
+  - text: Test 12-bit produces valid extended JPEG
+    done: true
+  - text: Test arithmetic mode produces smaller file than Huffman
+    done: true
+- phase: Verification
+  tasks:
+  - text: Progressive file size smaller than baseline at same quality
+    done: true
+  - text: Arithmetic file size smaller than Huffman at same quality
+    done: true
+  - text: All modes pass determinism test
+    done: true
 extra: {}
