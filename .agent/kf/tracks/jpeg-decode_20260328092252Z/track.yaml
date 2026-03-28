@@ -5,18 +5,15 @@ status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: 'Implement JPEG decoding in rasmcore-jpeg: marker parsing, Huffman decode,
-    IDCT, dequant, YCbCr to RGB, chroma upsampling. Wire into rasmcore-image decoder
-    behind feature flag. Three-way validation.'
-  context: rasmcore-jpeg has encode but decode() returns NotYetImplemented. IDCT,
-    dequantize, and color conversion already exist. Need marker parser, Huffman entropy
-    decoder, and block assembly. Uses rasmcore-deflate::huffman HuffmanTree for decode,
-    rasmcore-bitio BitReader for entropy stream.
-  codebase_analysis: 'Existing in rasmcore-jpeg: inverse_dct (dct.rs), dequantize
-    + zigzag (quantize.rs), markers.rs (stub with write functions, needs read functions).
-    Existing in shared infra: HuffmanTree::decode (rasmcore-deflate), BitReader (rasmcore-bitio),
-    rasmcore-color (YCbCr conversion). Current JPEG decode in rasmcore-image uses
-    image crate (jpeg-decoder sub-crate).'
+  summary: 'Implement JPEG decoding in rasmcore-jpeg: marker parsing, Huffman decode, IDCT, dequant, YCbCr to RGB, chroma
+    upsampling. Wire into rasmcore-image decoder behind feature flag. Three-way validation.'
+  context: rasmcore-jpeg has encode but decode() returns NotYetImplemented. IDCT, dequantize, and color conversion already
+    exist. Need marker parser, Huffman entropy decoder, and block assembly. Uses rasmcore-deflate::huffman HuffmanTree for
+    decode, rasmcore-bitio BitReader for entropy stream.
+  codebase_analysis: 'Existing in rasmcore-jpeg: inverse_dct (dct.rs), dequantize + zigzag (quantize.rs), markers.rs (stub
+    with write functions, needs read functions). Existing in shared infra: HuffmanTree::decode (rasmcore-deflate), BitReader
+    (rasmcore-bitio), rasmcore-color (YCbCr conversion). Current JPEG decode in rasmcore-image uses image crate (jpeg-decoder
+    sub-crate).'
   acceptance_criteria:
   - Decode baseline sequential JPEG (SOF0) to RGB8/RGBA8/Gray8 pixels
   - Support 4:2:0, 4:2:2, and 4:4:4 chroma subsampling
@@ -26,50 +23,43 @@ spec:
   - Wire into rasmcore-image decoder behind native-jpeg feature flag
   - Decode ITU-T T.83 conformance test vectors
   - Graceful error on progressive JPEG (return Unsupported, not panic)
-  out_of_scope: Progressive JPEG decode (SOF2) — separate future track. Arithmetic
-    coding decode. 12-bit precision decode.
-  technical_notes: 'Decode pipeline: read markers (SOI, DQT, DHT, SOF0, SOS) -> for
-    each MCU: Huffman decode DC/AC coefficients -> dequantize -> inverse DCT -> assemble
-    block -> chroma upsample -> YCbCr to RGB. Marker parser reads from byte slice
-    (no streaming needed for v1). Huffman tables from DHT marker built into HuffmanTree.
-    Restart markers reset DC prediction.'
+  out_of_scope: Progressive JPEG decode (SOF2) — separate future track. Arithmetic coding decode. 12-bit precision decode.
+  technical_notes: 'Decode pipeline: read markers (SOI, DQT, DHT, SOF0, SOS) -> for each MCU: Huffman decode DC/AC coefficients
+    -> dequantize -> inverse DCT -> assemble block -> chroma upsample -> YCbCr to RGB. Marker parser reads from byte slice
+    (no streaming needed for v1). Huffman tables from DHT marker built into HuffmanTree. Restart markers reset DC prediction.'
 plan:
 - phase: Marker Parser
   tasks:
   - text: 'Implement marker reader: scan for 0xFF markers, dispatch by type'
-    done: false
+    done: true
   - text: Parse DQT (Define Quantization Table) — extract up to 4 tables
-    done: false
+    done: true
   - text: Parse DHT (Define Huffman Table) — build HuffmanTree for DC/AC luma/chroma
-    done: false
+    done: true
   - text: Parse SOF0 (Start of Frame) — extract dimensions, components, sampling factors
-    done: false
+    done: true
   - text: Parse SOS (Start of Scan) — extract component selectors, begin entropy data
-    done: false
+    done: true
 - phase: Entropy Decode
   tasks:
-  - text: 'Implement Huffman entropy decoder: DC DPCM + AC run-length using BitReader
-      + HuffmanTree'
-    done: false
-  - text: 'Implement MCU decode loop: iterate blocks per MCU, handle restart markers
-      (DRI/RST)'
-    done: false
+  - text: 'Implement Huffman entropy decoder: DC DPCM + AC run-length using BitReader + HuffmanTree'
+    done: true
+  - text: 'Implement MCU decode loop: iterate blocks per MCU, handle restart markers (DRI/RST)'
+    done: true
 - phase: Reconstruction
   tasks:
   - text: Wire dequantize + inverse_dct + level shift (+128) for each 8x8 block
-    done: false
+    done: true
   - text: Implement chroma upsampling (nearest-neighbor for 4:2:0 and 4:2:2)
-    done: false
+    done: true
   - text: Implement YCbCr to RGB conversion using rasmcore-color
-    done: false
+    done: true
 - phase: Integration and Validation
   tasks:
   - text: Wire decode() in rasmcore-jpeg lib.rs (replace NotYetImplemented stub)
-    done: false
-  - text: Add native-jpeg feature flag to rasmcore-image decoder with fallback to
-      image crate
-    done: false
-  - text: 'Three-way validation: our encode->our decode vs our encode->image crate
-      decode vs image crate roundtrip'
-    done: false
+    done: true
+  - text: Add native-jpeg feature flag to rasmcore-image decoder with fallback to image crate
+    done: true
+  - text: 'Three-way validation: our encode->our decode vs our encode->image crate decode vs image crate roundtrip'
+    done: true
 extra: {}

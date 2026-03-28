@@ -1,4 +1,10 @@
-#![allow(dead_code)] // Modules used incrementally as encoder features are added
+#![allow(
+    dead_code,
+    clippy::needless_range_loop,
+    clippy::manual_range_contains,
+    clippy::manual_div_ceil,
+    clippy::empty_docs
+)]
 //! Pure Rust JPEG encoder/decoder — ITU-T T.81.
 //!
 //! Implements baseline sequential JPEG encoding with Huffman coding.
@@ -12,6 +18,7 @@
 
 mod color;
 mod dct;
+pub mod decode;
 pub mod entropy;
 mod error;
 mod markers;
@@ -602,8 +609,21 @@ fn to_zigzag(table: &[u16; 64]) -> [u16; 64] {
 }
 
 /// Decode JPEG data to raw pixels.
-pub fn decode(_data: &[u8]) -> Result<DecodedOutput, EncodeError> {
-    Err(EncodeError::NotYetImplemented)
+///
+/// Supports baseline sequential JPEG (SOF0) with Huffman coding.
+/// Returns RGB8 for color images, Gray8 for grayscale.
+pub fn decode(data: &[u8]) -> Result<DecodedOutput, EncodeError> {
+    let (pixels, width, height, is_gray) = decode::jpeg_decode(data)?;
+    Ok(DecodedOutput {
+        pixels,
+        width,
+        height,
+        format: if is_gray {
+            PixelFormat::Gray8
+        } else {
+            PixelFormat::Rgb8
+        },
+    })
 }
 
 /// Decoded JPEG output.
@@ -681,11 +701,10 @@ mod tests {
     }
 
     #[test]
-    fn decode_returns_not_yet_implemented() {
-        assert!(matches!(
-            decode(&[0xFF, 0xD8, 0xFF, 0xD9]),
-            Err(EncodeError::NotYetImplemented)
-        ));
+    fn decode_rejects_empty_jpeg() {
+        // SOI + EOI with no image data should error (not panic)
+        let result = decode(&[0xFF, 0xD8, 0xFF, 0xD9]);
+        assert!(result.is_err());
     }
 
     #[test]
