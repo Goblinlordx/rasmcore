@@ -3,148 +3,138 @@ title: VP8 Self-Decode Verification — Trace, Replay, Find, Fix
 type: bug
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Find the VP8 encoder bug by recording every bool operation during encoding,
+  summary: 'Find the VP8 encoder bug by recording every bool operation during encoding,
+
     then replaying the output with BoolReader to find the exact divergence point.
+
     Fix the root cause. Validate at all sizes up to 4096x4096. MUST result in
+
     a fully working encoder.
-  context: |
-    Seven previous conformance tracks have fixed reconstruction, probabilities,
+
+    '
+  context: 'Seven previous conformance tracks have fixed reconstruction, probabilities,
+
     token trees, skip optimization, context tracking, and mode encoding. The
+
     encoder works at up to 32x32 but fails at 64x64+ with a non-monotonic,
+
     content-dependent pattern. Every individual component has been verified
+
     correct in isolation, but the assembled encoder still produces invalid
+
     bitstreams for larger images.
 
+
     The fundamental problem with all previous debugging: we guessed at what
+
     was wrong. This track takes a deterministic approach — record what the
+
     encoder writes, replay what the decoder reads, find the first mismatch.
 
+
     Key insight: we have BOTH a BoolWriter and BoolReader in boolcoder.rs.
+
     They roundtrip correctly for arbitrary sequences. If we record the exact
+
     sequence of (probability, value) pairs that the encoder writes during
+
     a FULL encode, then decode the output bytes with BoolReader using the
+
     SAME probability sequence, any mismatch means the encoder and decoder
+
     disagree on what to write/read at that point.
 
+
     The encoder writes two partitions: first partition (frame header + MB modes)
+
     and token partition (coefficients). We must trace BOTH separately since
+
     the decoder reads them from two separate bool decoders.
-  codebase_analysis: |
-    Key files:
-    - boolcoder.rs: BoolWriter + BoolReader, verified correct
-    - bitstream.rs: encode_frame, encode_first_partition, encode_macroblock
-    - token.rs: encode_block (coefficient token encoding)
 
-    The trace approach:
-    1. Add a Vec<(u8, bool)> trace log to encode_first_partition and
-       encode_macroblock/encode_block
-    2. Encode a 64x64 solid gray image (smallest failing case)
-    3. Take the output bytes for each partition
-    4. Use BoolReader to read each (probability, value) pair from the trace
-    5. If BoolReader reads a different value than what was traced,
-       print the position and stop — that is the bug location
-
-    This approach is 100% deterministic. The BoolWriter and BoolReader
-    are verified to be inverses of each other. If the encoder produces
-    bytes that the decoder (using the same probability sequence) reads
-    differently, it means the probability sequence the encoder THOUGHT
-    it was using differs from what the decoder expects.
-
-    The most likely finding: the encoder and decoder use DIFFERENT
-    probability sequences for the same data. This could be because:
-    - The first partition and token partition boundaries are wrong
-    - The MB mode encoding sequence differs from what the decoder reads
-    - The token partition has blocks in a different order
-    - Some header field is a different size than expected
+    '
+  codebase_analysis: "Key files:\n- boolcoder.rs: BoolWriter + BoolReader, verified correct\n- bitstream.rs: encode_frame,\
+    \ encode_first_partition, encode_macroblock\n- token.rs: encode_block (coefficient token encoding)\n\nThe trace approach:\n\
+    1. Add a Vec<(u8, bool)> trace log to encode_first_partition and\n   encode_macroblock/encode_block\n2. Encode a 64x64\
+    \ solid gray image (smallest failing case)\n3. Take the output bytes for each partition\n4. Use BoolReader to read each\
+    \ (probability, value) pair from the trace\n5. If BoolReader reads a different value than what was traced,\n   print the\
+    \ position and stop — that is the bug location\n\nThis approach is 100% deterministic. The BoolWriter and BoolReader\n\
+    are verified to be inverses of each other. If the encoder produces\nbytes that the decoder (using the same probability\
+    \ sequence) reads\ndifferently, it means the probability sequence the encoder THOUGHT\nit was using differs from what\
+    \ the decoder expects.\n\nThe most likely finding: the encoder and decoder use DIFFERENT\nprobability sequences for the\
+    \ same data. This could be because:\n- The first partition and token partition boundaries are wrong\n- The MB mode encoding\
+    \ sequence differs from what the decoder reads\n- The token partition has blocks in a different order\n- Some header field\
+    \ is a different size than expected\n"
   acceptance_criteria:
-    - Self-decode trace identifies the exact first divergence point
-    - Root cause identified and documented
-    - Fix implemented
-    - Solid images 16x16 through 4096x4096 decodable by both dwebp and image-webp
-    - Gradient images 16x16 through 2048x2048 decodable
-    - Ramp content 16x16 through 1024x1024 decodable
-    - Quality levels q10/q25/q50/q75/q95 all produce decodable output at 512x512
-    - PSNR above 25dB at q75 for 256x256 gradient
-    - Determinism verified (encode twice = identical bytes)
-    - WASM SIMD path validated via wasmtime
-    - Regression test added encoding 1024x1024 and asserting decode
-    - All existing unit tests pass
-    - Full validate.sh passes
-  out_of_scope: |
-    - File size optimization
+  - Self-decode trace identifies the exact first divergence point
+  - Root cause identified and documented
+  - Fix implemented
+  - Solid images 16x16 through 4096x4096 decodable by both dwebp and image-webp
+  - Gradient images 16x16 through 2048x2048 decodable
+  - Ramp content 16x16 through 1024x1024 decodable
+  - Quality levels q10/q25/q50/q75/q95 all produce decodable output at 512x512
+  - PSNR above 25dB at q75 for 256x256 gradient
+  - Determinism verified (encode twice = identical bytes)
+  - WASM SIMD path validated via wasmtime
+  - Regression test added encoding 1024x1024 and asserting decode
+  - All existing unit tests pass
+  - Full validate.sh passes
+  out_of_scope: '- File size optimization
+
     - Loop filter re-enablement
+
     - mb_no_coeff_skip re-enablement
+
     - B_PRED mode support
-  technical_notes: |
-    Implementation:
 
-    Phase 1: Build the tracing infrastructure
-      Add a debug_trace feature flag to rasmcore-webp:
-      ```rust
-      #[cfg(feature = "debug_trace")]
-      thread_local! { static TRACE: RefCell<Vec<(u8, bool)>> = ... }
-      ```
-      Or simpler: just add a trace parameter to the test.
-
-      For each partition, collect Vec<(u8, bool)> — every put_bit(prob, val)
-      call during encoding. Then after encoding, create a BoolReader from
-      the output bytes and replay the trace, asserting each read matches.
-
-    Phase 2: Run the trace on the smallest failing image
-      Encode 64x64 solid gray (16 MBs, first failing size for solid).
-      The trace will have ~thousands of entries. The first mismatch
-      reveals exactly which encoding step is wrong.
-
-    Phase 3: Analyze and fix
-      The mismatch will be at a specific position in the trace. Map that
-      position back to the encoding function:
-      - If in the first partition: which header field or MB mode?
-      - If in the token partition: which block, which coefficient,
-        which tree node?
-
-      Fix the specific encoding step that produces the wrong bit.
-
-    Phase 4: Validate exhaustively
-      After the fix, test at all sizes and content types.
-      Add regression tests. Run WASM validation.
+    '
+  technical_notes: "Implementation:\n\nPhase 1: Build the tracing infrastructure\n  Add a debug_trace feature flag to rasmcore-webp:\n\
+    \  ```rust\n  #[cfg(feature = \"debug_trace\")]\n  thread_local! { static TRACE: RefCell<Vec<(u8, bool)>> = ... }\n  ```\n\
+    \  Or simpler: just add a trace parameter to the test.\n\n  For each partition, collect Vec<(u8, bool)> — every put_bit(prob,\
+    \ val)\n  call during encoding. Then after encoding, create a BoolReader from\n  the output bytes and replay the trace,\
+    \ asserting each read matches.\n\nPhase 2: Run the trace on the smallest failing image\n  Encode 64x64 solid gray (16\
+    \ MBs, first failing size for solid).\n  The trace will have ~thousands of entries. The first mismatch\n  reveals exactly\
+    \ which encoding step is wrong.\n\nPhase 3: Analyze and fix\n  The mismatch will be at a specific position in the trace.\
+    \ Map that\n  position back to the encoding function:\n  - If in the first partition: which header field or MB mode?\n\
+    \  - If in the token partition: which block, which coefficient,\n    which tree node?\n\n  Fix the specific encoding step\
+    \ that produces the wrong bit.\n\nPhase 4: Validate exhaustively\n  After the fix, test at all sizes and content types.\n\
+    \  Add regression tests. Run WASM validation.\n"
 plan:
-  - phase: Tracing Infrastructure
-    tasks:
-      - text: Add trace-and-verify function that encodes an image, records all put_bit calls, then replays with BoolReader
-        done: false
-      - text: Verify trace-and-verify passes for 16x16 solid (known working case)
-        done: false
-      - text: Run trace-and-verify on 64x64 solid — identify first divergence
-        done: false
-  - phase: Root Cause Analysis
-    tasks:
-      - text: Map the divergence position to the specific encoding function and line
-        done: false
-      - text: Determine why encoder and decoder disagree at that point
-        done: false
-      - text: Implement the fix
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Solid images 16x16 through 4096x4096 decode with both dwebp and image-webp
-        done: false
-      - text: Gradient images 16x16 through 2048x2048 decode
-        done: false
-      - text: Ramp content through 1024x1024 decodes
-        done: false
-      - text: Multiple quality levels at 512x512 all decode
-        done: false
-      - text: PSNR above 25dB at q75 for 256x256 gradient
-        done: false
-      - text: Determinism test (encode twice = identical bytes)
-        done: false
-      - text: WASM SIMD validation via wasmtime
-        done: false
-      - text: Add regression test for 1024x1024 encode+decode
-        done: false
-      - text: Full validate.sh passes
-        done: false
+- phase: Tracing Infrastructure
+  tasks:
+  - text: Add trace-and-verify function that encodes an image, records all put_bit calls, then replays with BoolReader
+    done: true
+  - text: Verify trace-and-verify passes for 16x16 solid (known working case)
+    done: true
+  - text: Run trace-and-verify on 64x64 solid — identify first divergence
+    done: true
+- phase: Root Cause Analysis
+  tasks:
+  - text: Map the divergence position to the specific encoding function and line
+    done: true
+  - text: Determine why encoder and decoder disagree at that point
+    done: true
+  - text: Implement the fix
+    done: true
+- phase: Validation
+  tasks:
+  - text: Solid images 16x16 through 4096x4096 decode with both dwebp and image-webp
+    done: true
+  - text: Gradient images 16x16 through 2048x2048 decode
+    done: true
+  - text: Ramp content through 1024x1024 decodes
+    done: true
+  - text: Multiple quality levels at 512x512 all decode
+    done: true
+  - text: PSNR above 25dB at q75 for 256x256 gradient
+    done: false
+  - text: Determinism test (encode twice = identical bytes)
+    done: true
+  - text: WASM SIMD validation via wasmtime
+    done: true
+  - text: Add regression test for 1024x1024 encode+decode
+    done: true
+  - text: Full validate.sh passes
+    done: true
 extra: {}
