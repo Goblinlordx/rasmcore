@@ -514,6 +514,40 @@ impl InterleavedMcuEncoder {
         }
     }
 
+    /// Create for grayscale with custom (optimized) Huffman tables.
+    pub fn new_gray_custom(dc_lengths: &[u8], ac_lengths: &[u8]) -> Self {
+        Self {
+            writer: BitWriter::new(BitOrder::MsbFirst),
+            dc_encoders: vec![HuffmanEncoder::from_code_lengths(dc_lengths)],
+            ac_encoders: vec![HuffmanEncoder::from_code_lengths(ac_lengths)],
+            dc_pred: vec![0],
+        }
+    }
+
+    /// Create for YCbCr with custom (optimized) Huffman tables.
+    /// Takes separate luma and chroma tables.
+    pub fn new_ycbcr_custom(
+        dc_luma_lengths: &[u8],
+        ac_luma_lengths: &[u8],
+        dc_chroma_lengths: &[u8],
+        ac_chroma_lengths: &[u8],
+    ) -> Self {
+        Self {
+            writer: BitWriter::new(BitOrder::MsbFirst),
+            dc_encoders: vec![
+                HuffmanEncoder::from_code_lengths(dc_luma_lengths),
+                HuffmanEncoder::from_code_lengths(dc_chroma_lengths),
+                HuffmanEncoder::from_code_lengths(dc_chroma_lengths),
+            ],
+            ac_encoders: vec![
+                HuffmanEncoder::from_code_lengths(ac_luma_lengths),
+                HuffmanEncoder::from_code_lengths(ac_chroma_lengths),
+                HuffmanEncoder::from_code_lengths(ac_chroma_lengths),
+            ],
+            dc_pred: vec![0, 0, 0],
+        }
+    }
+
     /// Encode one 8x8 block for a specific component (0=Y, 1=Cb, 2=Cr).
     pub fn encode_block(&mut self, component: usize, coeffs: &[i16; 64]) {
         let dc_diff = coeffs[0] as i32 - self.dc_pred[component];
@@ -619,10 +653,14 @@ impl FrequencyCounter {
 
     /// Build optimal code lengths from frequencies.
     /// Returns (dc_lengths, ac_lengths) suitable for `HuffmanEntropyEncoder::new_custom`.
+    ///
+    /// Uses the JPEG-specific algorithm (ITU-T T.81 Annex K) which ensures
+    /// the resulting tree is valid for JPEG: no code length level can be full
+    /// (i.e., the all-ones code pattern at any length must be unused).
     pub fn build_optimal_tables(&self) -> (Vec<u8>, Vec<u8>) {
         (
-            build_code_lengths(&self.dc_freq, 16),
-            build_code_lengths(&self.ac_freq, 16),
+            jpeg_build_code_lengths(&self.dc_freq, 16),
+            jpeg_build_code_lengths(&self.ac_freq, 16),
         )
     }
 
@@ -637,6 +675,83 @@ impl Default for FrequencyCounter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ─── JPEG-Compliant Huffman Code Length Generation ─────────────────────────
+
+/// Build optimal Huffman code lengths following JPEG's constraint:
+/// at every code length level, the accumulated code count must be strictly
+/// less than the total code space (ITU-T T.81 Annex C / libjpeg validation).
+///
+/// After building the optimal tree via `build_code_lengths`, we verify
+/// the JPEG constraint and fix violations by pushing symbols to longer
+/// code lengths.
+fn jpeg_build_code_lengths(frequencies: &[u32], max_len: u8) -> Vec<u8> {
+    let mut lengths = build_code_lengths(frequencies, max_len);
+
+    // Count symbols at each code length
+    let mut counts = [0u32; 17];
+    for &len in &lengths {
+        if len > 0 && len <= 16 {
+            counts[len as usize] += 1;
+        }
+    }
+
+    // JPEG constraint check (Figure C.2 / libjpeg jdhuff.c):
+    // After processing all symbols at length si, the running code value
+    // must be < (1 << si). Equivalently: at each level, the cumulative
+    // symbol count must be < (1 << level).
+    //
+    // A complete tree at depth D has exactly 2^D leaves. JPEG requires
+    // the tree to be INCOMPLETE — at least one code pattern at some level
+    // must be unused.
+    //
+    // Fix: if the tree is complete (or overfull at any level), move the
+    // longest-code symbol one level deeper.
+    loop {
+        let mut code = 0u32;
+        let mut needs_fix = false;
+        for si in 1..=max_len as u32 {
+            code += counts[si as usize];
+            if code >= (1 << si) {
+                needs_fix = true;
+                break;
+            }
+            code <<= 1;
+        }
+        if !needs_fix {
+            break;
+        }
+
+        // Find the longest used code length and move one symbol deeper
+        let mut longest = 0usize;
+        for i in (1..=max_len as usize).rev() {
+            if counts[i] > 0 {
+                longest = i;
+                break;
+            }
+        }
+
+        if longest == 0 || longest >= max_len as usize {
+            // Can't fix — only one symbol or at max length already.
+            // For single-symbol case, just use length 1 (JPEG allows this).
+            break;
+        }
+
+        // Move one symbol from `longest` to `longest + 1`
+        counts[longest] -= 1;
+        counts[longest + 1] += 1;
+
+        // Update the actual lengths array
+        for len in lengths.iter_mut().rev() {
+            if *len == longest as u8 {
+                *len = (longest + 1) as u8;
+                break;
+            }
+        }
+    }
+
+    lengths
 }
 
 // ─── Arithmetic Coder (Adaptive Binary, QM-coder probability estimation) ──

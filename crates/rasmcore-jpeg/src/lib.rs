@@ -159,30 +159,17 @@ pub fn encode(
         &components,
     );
 
-    // Entropy coding tables
-    if config.arithmetic_coding {
-        // DAC: define arithmetic conditioning (default values)
-        for comp_id in 0..components.len() {
-            markers::write_dac(&mut out, 0, comp_id as u8, 0); // DC conditioning
-            markers::write_dac(&mut out, 1, comp_id as u8, 1); // AC conditioning
-        }
-    } else {
-        // DHT — standard Huffman tables
-        if is_gray {
-            markers::write_dht(&mut out, 0, 0, &entropy::DC_LUMA_CODE_LENGTHS);
-            markers::write_dht(&mut out, 1, 0, &entropy::AC_LUMA_CODE_LENGTHS);
-        } else {
-            markers::write_standard_huffman_tables(&mut out);
-        }
-    }
-
     // DRI (restart interval)
     if let Some(interval) = config.restart_interval {
         markers::write_dri(&mut out, interval);
     }
 
     if config.arithmetic_coding && !config.progressive {
-        // Sequential arithmetic mode: single SOS with arithmetic entropy data
+        // Arithmetic coding: DAC tables + single SOS
+        for comp_id in 0..components.len() {
+            markers::write_dac(&mut out, 0, comp_id as u8, 0);
+            markers::write_dac(&mut out, 1, comp_id as u8, 1);
+        }
         if is_gray {
             markers::write_sos(&mut out, &[(1, 0, 0)]);
         } else {
@@ -191,10 +178,15 @@ pub fn encode(
 
         let mcu_data =
             encode_mcus_arithmetic(&ycbcr, is_gray, config.subsampling, &luma_qt, &chroma_qt);
-        // QmEncoder already produces byte-stuffed output — no double stuffing
         out.extend_from_slice(&mcu_data);
     } else if config.progressive {
-        // Progressive mode: multiple scans with spectral selection
+        // Progressive mode: DHT + multiple scans
+        if is_gray {
+            markers::write_dht(&mut out, 0, 0, &entropy::DC_LUMA_CODE_LENGTHS);
+            markers::write_dht(&mut out, 1, 0, &entropy::AC_LUMA_CODE_LENGTHS);
+        } else {
+            markers::write_standard_huffman_tables(&mut out);
+        }
         encode_progressive(
             &mut out,
             &ycbcr,
@@ -205,8 +197,78 @@ pub fn encode(
             config.restart_interval,
             config.trellis,
         );
+    } else if config.optimize_huffman {
+        // Two-pass optimized Huffman: collect frequencies → build tables → encode
+        let (luma_freq, chroma_freq, blocks) = collect_frequencies(
+            &ycbcr,
+            is_gray,
+            config.subsampling,
+            &luma_qt,
+            &chroma_qt,
+            config.trellis,
+        );
+
+        let (dc_luma_len, ac_luma_len) = luma_freq.build_optimal_tables();
+        let (dc_chroma_len, ac_chroma_len) = if is_gray {
+            (vec![0u8; 12], vec![0u8; 256])
+        } else {
+            chroma_freq.build_optimal_tables()
+        };
+
+        // Write optimized DHT markers
+        markers::write_dht(&mut out, 0, 0, &dc_luma_len);
+        markers::write_dht(&mut out, 1, 0, &ac_luma_len);
+        if !is_gray {
+            markers::write_dht(&mut out, 0, 1, &dc_chroma_len);
+            markers::write_dht(&mut out, 1, 1, &ac_chroma_len);
+        }
+
+        // SOS
+        if is_gray {
+            markers::write_sos(&mut out, &[(1, 0, 0)]);
+        } else {
+            markers::write_sos(&mut out, &[(1, 0, 0), (2, 1, 1), (3, 1, 1)]);
+        }
+
+        // Second pass: encode pre-quantized blocks with optimal tables
+        let (h_blocks, v_blocks) = if is_gray {
+            (1usize, 1usize)
+        } else {
+            color::subsampling_factors(config.subsampling)
+        };
+        let blocks_per_mcu = if is_gray {
+            h_blocks * v_blocks
+        } else {
+            h_blocks * v_blocks + 2
+        };
+
+        let mcu_data = encode_blocks_with_tables(
+            &blocks,
+            config.restart_interval,
+            blocks_per_mcu,
+            || {
+                if is_gray {
+                    entropy::InterleavedMcuEncoder::new_gray_custom(&dc_luma_len, &ac_luma_len)
+                } else {
+                    entropy::InterleavedMcuEncoder::new_ycbcr_custom(
+                        &dc_luma_len,
+                        &ac_luma_len,
+                        &dc_chroma_len,
+                        &ac_chroma_len,
+                    )
+                }
+            },
+        );
+        let stuffed = markers::byte_stuff(&mcu_data);
+        out.extend_from_slice(&stuffed);
     } else {
-        // Sequential mode: single SOS with full spectral range
+        // Standard Huffman: single-pass with Annex K tables
+        if is_gray {
+            markers::write_dht(&mut out, 0, 0, &entropy::DC_LUMA_CODE_LENGTHS);
+            markers::write_dht(&mut out, 1, 0, &entropy::AC_LUMA_CODE_LENGTHS);
+        } else {
+            markers::write_standard_huffman_tables(&mut out);
+        }
         if is_gray {
             markers::write_sos(&mut out, &[(1, 0, 0)]);
         } else {
@@ -624,6 +686,149 @@ fn encode_coefficient_bits(writer: &mut rasmcore_bitio::BitWriter, value: i32, c
 }
 
 /// Encode all MCUs and return the raw entropy-coded data.
+/// First pass: quantize all blocks and collect Huffman symbol frequencies.
+/// Returns (luma_counter, chroma_counter, all_quantized_blocks).
+/// Each quantized block is stored as (component_index, [i16; 64]) in MCU order.
+fn collect_frequencies(
+    ycbcr: &color::YcbcrImage,
+    is_gray: bool,
+    subsampling: ChromaSubsampling,
+    luma_qt: &[u16; 64],
+    chroma_qt: &[u16; 64],
+    use_trellis: bool,
+) -> (entropy::FrequencyCounter, entropy::FrequencyCounter, Vec<(usize, [i16; 64])>) {
+    let (mcu_w, mcu_h) = if is_gray {
+        (8u32, 8u32)
+    } else {
+        color::mcu_dimensions(subsampling)
+    };
+    let mcu_cols = ycbcr.width.div_ceil(mcu_w) as usize;
+    let mcu_rows = ycbcr.height.div_ceil(mcu_h) as usize;
+
+    let (h_blocks, v_blocks) = if is_gray {
+        (1usize, 1usize)
+    } else {
+        color::subsampling_factors(subsampling)
+    };
+
+    let mut luma_freq = entropy::FrequencyCounter::new();
+    let mut cb_freq = entropy::FrequencyCounter::new();
+    let mut cr_freq = entropy::FrequencyCounter::new();
+    let mut blocks = Vec::with_capacity(mcu_rows * mcu_cols * (h_blocks * v_blocks + 2));
+
+    for mcu_row in 0..mcu_rows {
+        for mcu_col in 0..mcu_cols {
+            // Y blocks
+            for vb in 0..v_blocks {
+                for hb in 0..h_blocks {
+                    let block = extract_block(
+                        &ycbcr.y,
+                        ycbcr.width as usize,
+                        ycbcr.height as usize,
+                        mcu_col * mcu_w as usize + hb * 8,
+                        mcu_row * mcu_h as usize + vb * 8,
+                    );
+                    let mut dct_out = [0i32; 64];
+                    dct::forward_dct(&block, &mut dct_out);
+                    let zz = if use_trellis {
+                        let lambda = trellis::default_lambda(luma_qt);
+                        trellis::trellis_quantize(&dct_out, luma_qt, lambda, true)
+                    } else {
+                        let mut quantized = [0i16; 64];
+                        quantize::quantize(&dct_out, luma_qt, &mut quantized);
+                        zigzag_reorder(&quantized)
+                    };
+                    luma_freq.count_block(&zz);
+                    blocks.push((0, zz));
+                }
+            }
+
+            // Cb/Cr blocks — use per-component frequency counters
+            // (DC prediction is per-component in the actual encoder)
+            if !is_gray {
+                for (comp_idx, plane, freq) in [
+                    (1usize, &ycbcr.cb, &mut cb_freq),
+                    (2, &ycbcr.cr, &mut cr_freq),
+                ] {
+                    let block = extract_block(
+                        plane,
+                        ycbcr.chroma_width as usize,
+                        ycbcr.chroma_height as usize,
+                        mcu_col * 8,
+                        mcu_row * 8,
+                    );
+                    let mut dct_out = [0i32; 64];
+                    dct::forward_dct(&block, &mut dct_out);
+                    let zz = if use_trellis {
+                        let lambda = trellis::default_lambda(chroma_qt);
+                        trellis::trellis_quantize(&dct_out, chroma_qt, lambda, false)
+                    } else {
+                        let mut quantized = [0i16; 64];
+                        quantize::quantize(&dct_out, chroma_qt, &mut quantized);
+                        zigzag_reorder(&quantized)
+                    };
+                    freq.count_block(&zz);
+                    blocks.push((comp_idx, zz));
+                }
+            }
+        }
+    }
+
+    // Merge Cb and Cr frequencies into one chroma table
+    // (both components share the same Huffman tables in JPEG)
+    let mut chroma_freq = entropy::FrequencyCounter::new();
+    for i in 0..12 {
+        chroma_freq.dc_freq[i] = cb_freq.dc_freq[i] + cr_freq.dc_freq[i];
+    }
+    for i in 0..256 {
+        chroma_freq.ac_freq[i] = cb_freq.ac_freq[i] + cr_freq.ac_freq[i];
+    }
+
+    (luma_freq, chroma_freq, blocks)
+}
+
+/// Second pass: encode pre-quantized blocks with the given encoder factory.
+fn encode_blocks_with_tables(
+    blocks: &[(usize, [i16; 64])],
+    restart_interval: Option<u16>,
+    blocks_per_mcu: usize,
+    make_encoder: impl Fn() -> entropy::InterleavedMcuEncoder,
+) -> Vec<u8> {
+    let mut enc = make_encoder();
+    let mut all_data = Vec::new();
+    let mut mcu_count = 0u32;
+    let mut block_idx = 0;
+
+    while block_idx < blocks.len() {
+        // Check restart
+        #[allow(clippy::collapsible_if)]
+        if let Some(interval) = restart_interval {
+            if mcu_count > 0 && (mcu_count as u16).is_multiple_of(interval) {
+                all_data.extend_from_slice(&enc.finish());
+                enc = make_encoder();
+                let stuffed = markers::byte_stuff(&all_data);
+                all_data = stuffed;
+                markers::write_rst(&mut all_data, mcu_count / interval as u32 - 1);
+            }
+        }
+
+        // Encode one MCU worth of blocks
+        for _ in 0..blocks_per_mcu {
+            if block_idx >= blocks.len() {
+                break;
+            }
+            let (comp, ref coeffs) = blocks[block_idx];
+            enc.encode_block(comp, coeffs);
+            block_idx += 1;
+        }
+
+        mcu_count += 1;
+    }
+
+    all_data.extend_from_slice(&enc.finish());
+    all_data
+}
+
 fn encode_mcus(
     ycbcr: &color::YcbcrImage,
     is_gray: bool,

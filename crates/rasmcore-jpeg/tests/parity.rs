@@ -734,3 +734,164 @@ fn progressive_quality_sweep() {
         );
     }
 }
+
+// ─── Optimized Huffman Tables ─────────────────────────────────────────────
+
+#[test]
+fn optimized_huffman_420() {
+    let (w, h) = (32, 32);
+    let original = gradient_pixels(w, h);
+
+    let config = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        optimize_huffman: true,
+        quant_preset: rasmcore_jpeg::QuantPreset::AnnexK,
+        ..Default::default()
+    };
+    let our =
+        rasmcore_jpeg::encode(&original, w, h, rasmcore_jpeg::PixelFormat::Rgb8, &config).unwrap();
+
+    // Reference: image crate baseline
+    let ref_jpeg = image_crate_encode(&original, w, h, 85);
+
+    // Optimized Huffman should be decodable and comparable quality
+    three_way_check(
+        "optimized_huffman_420",
+        &our,
+        &ref_jpeg,
+        &original,
+        false,
+        0.9,
+        4.0,
+    );
+}
+
+#[test]
+fn optimized_huffman_reduces_size() {
+    let (w, h) = (64, 64);
+    // Use photo-like content for best savings demonstration
+    let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let base_r = ((x as f64 / w as f64 * std::f64::consts::PI).sin() * 127.0 + 128.0) as u8;
+            let base_g = ((y as f64 / h as f64 * std::f64::consts::PI).cos() * 100.0 + 128.0) as u8;
+            let noise = ((x * 17 + y * 31) % 15) as u8;
+            pixels.push(base_r.wrapping_add(noise));
+            pixels.push(base_g.wrapping_sub(noise.min(base_g)));
+            pixels.push(128u8);
+        }
+    }
+
+    for quality in [50u8, 75, 85] {
+        let standard = rasmcore_jpeg::encode(
+            &pixels,
+            w,
+            h,
+            rasmcore_jpeg::PixelFormat::Rgb8,
+            &rasmcore_jpeg::EncodeConfig {
+                quality,
+                quant_preset: rasmcore_jpeg::QuantPreset::AnnexK,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let optimized = rasmcore_jpeg::encode(
+            &pixels,
+            w,
+            h,
+            rasmcore_jpeg::PixelFormat::Rgb8,
+            &rasmcore_jpeg::EncodeConfig {
+                quality,
+                optimize_huffman: true,
+                quant_preset: rasmcore_jpeg::QuantPreset::AnnexK,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let savings = (1.0 - optimized.len() as f64 / standard.len() as f64) * 100.0;
+        eprintln!(
+            "OptHuff Q{quality}: standard={} optimized={} savings={savings:.1}%",
+            standard.len(),
+            optimized.len()
+        );
+
+        // Optimized should be smaller or equal
+        assert!(
+            optimized.len() <= standard.len(),
+            "Q{quality}: optimized ({}) should be <= standard ({})",
+            optimized.len(),
+            standard.len()
+        );
+
+        // Both should be decodable by image crate
+        assert!(
+            image::load_from_memory_with_format(&optimized, image::ImageFormat::Jpeg).is_ok(),
+            "Q{quality}: optimized output not decodable"
+        );
+
+        // PSNR should be identical (same quantized coefficients)
+        let std_img = image::load_from_memory_with_format(&standard, image::ImageFormat::Jpeg)
+            .unwrap()
+            .to_rgb8();
+        let opt_img = image::load_from_memory_with_format(&optimized, image::ImageFormat::Jpeg)
+            .unwrap()
+            .to_rgb8();
+        let std_psnr = psnr(&pixels, std_img.as_raw());
+        let opt_psnr = psnr(&pixels, opt_img.as_raw());
+
+        eprintln!("  std_psnr={std_psnr:.2}dB opt_psnr={opt_psnr:.2}dB");
+
+        // PSNR should be within 0.1dB (different Huffman tables, same coefficients)
+        assert!(
+            (std_psnr - opt_psnr).abs() < 0.1,
+            "Q{quality}: PSNR divergence {:.2}dB (std={std_psnr:.2} opt={opt_psnr:.2})",
+            (std_psnr - opt_psnr).abs()
+        );
+    }
+}
+
+#[test]
+fn optimized_huffman_with_trellis() {
+    let (w, h) = (32, 32);
+    let original = gradient_pixels(w, h);
+
+    let config = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        optimize_huffman: true,
+        trellis: true,
+        quant_preset: rasmcore_jpeg::QuantPreset::AnnexK,
+        ..Default::default()
+    };
+    let our =
+        rasmcore_jpeg::encode(&original, w, h, rasmcore_jpeg::PixelFormat::Rgb8, &config).unwrap();
+
+    // Must be decodable
+    let img = image::load_from_memory_with_format(&our, image::ImageFormat::Jpeg);
+    assert!(img.is_ok(), "trellis+optimized huffman not decodable");
+
+    let decoded = img.unwrap().to_rgb8();
+    let quality = psnr(&original, decoded.as_raw());
+    eprintln!("trellis+optimized_huffman: PSNR={quality:.1}dB size={}", our.len());
+    assert!(quality > 30.0, "PSNR too low: {quality:.1}dB");
+}
+
+#[test]
+fn optimized_huffman_grayscale() {
+    let (w, h) = (32, 32);
+    let original = gray_gradient(w, h);
+
+    let config = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        optimize_huffman: true,
+        quant_preset: rasmcore_jpeg::QuantPreset::AnnexK,
+        ..Default::default()
+    };
+    let our =
+        rasmcore_jpeg::encode(&original, w, h, rasmcore_jpeg::PixelFormat::Gray8, &config).unwrap();
+
+    // Must be decodable
+    let img = image::load_from_memory_with_format(&our, image::ImageFormat::Jpeg);
+    assert!(img.is_ok(), "grayscale optimized huffman not decodable");
+}
