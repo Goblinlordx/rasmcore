@@ -1,92 +1,131 @@
 id: jpeg-research_20260328080500Z
-title: "Research: JPEG Encoder Architecture — ITU-T T.81, Full Mode Catalog"
+title: 'Research: JPEG Encoder Architecture — ITU-T T.81, Full Mode Catalog'
 type: research
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Deep-read ITU-T T.81 (JPEG standard), catalog ALL modes and parameters,
+  summary: 'Deep-read ITU-T T.81 (JPEG standard), catalog ALL modes and parameters,
+
     study libjpeg-turbo and mozjpeg reference implementations, produce a
+
     design document for rasmcore-jpeg crate with complete mode coverage.
-  context: |
-    ITU-T T.81 defines multiple JPEG modes that must all be supported:
+
+    '
+  context: 'ITU-T T.81 defines multiple JPEG modes that must all be supported:
+
     - Baseline sequential (8-bit, Huffman, DCT)
+
     - Extended sequential (8-bit or 12-bit, Huffman or arithmetic, DCT)
+
     - Progressive (spectral selection + successive approximation)
+
     - Lossless (predictive, not DCT-based — separate from lossy modes)
 
+
     Parameters per mode:
+
     - Chroma subsampling: 4:4:4, 4:2:2, 4:2:0, 4:1:1
+
     - 1-4 component configurations
+
     - Restart markers (RST0-RST7) for error resilience
+
     - Custom quantization tables (up to 4 tables)
+
     - Custom Huffman tables (up to 4 DC + 4 AC)
+
     - Arithmetic coding (patents expired 2007)
 
+
     The research must also catalog C-specific patterns in libjpeg-turbo
+
     that need Rust-native alternatives, same approach as VP8 research.
-  codebase_analysis: |
-    - rasmcore-webp provides the architecture template
+
+    '
+  codebase_analysis: '- rasmcore-webp provides the architecture template
+
     - rasmcore-color provides RGB-to-YCbCr (BT.601/709/2020)
+
     - rasmcore-bitio provides MSB-first bit I/O (JPEG uses MSB-first)
+
     - Current jpeg.rs uses zenjpeg (AGPL) which must be replaced
+
     - Metadata embedding (ICC, EXIF, XMP, IPTC) stays in jpeg.rs — not in rasmcore-jpeg
+
+    '
   acceptance_criteria:
-    - Design document at .agent/kf/_reports/jpeg-encoder-design.md
-    - Complete catalog of ALL ITU-T T.81 modes and parameters
-    - Module structure mapping spec sections to Rust modules
-    - C-specific patterns from libjpeg-turbo with Rust alternatives
-    - Public API design for rasmcore-jpeg crate
-    - Data flow diagram for the encoding pipeline
-    - Complexity estimates per module
-  out_of_scope: |
-    - Writing any Rust code
+  - Design document at .agent/kf/_reports/jpeg-encoder-design.md
+  - Complete catalog of ALL ITU-T T.81 modes and parameters
+  - Module structure mapping spec sections to Rust modules
+  - C-specific patterns from libjpeg-turbo with Rust alternatives
+  - Public API design for rasmcore-jpeg crate
+  - Data flow diagram for the encoding pipeline
+  - Complexity estimates per module
+  out_of_scope: '- Writing any Rust code
+
     - JPEG 2000 or JPEG XL (separate codecs)
-  technical_notes: |
-    JPEG encoding pipeline:
+
+    '
+  technical_notes: 'JPEG encoding pipeline:
+
     1. Color conversion (RGB to YCbCr, BT.601)
+
     2. Chroma subsampling (4:2:0, 4:2:2, 4:4:4, 4:1:1)
+
     3. Block partitioning (8x8 pixel blocks, MCU structure)
+
     4. 8x8 forward DCT (Type-II, integer AAN or LLM algorithm)
+
     5. Quantization (standard tables scaled by quality factor)
+
     6. Zigzag scan + run-length encoding of AC coefficients
+
     7. Entropy coding (Huffman baseline, or arithmetic)
+
     8. JFIF container assembly (marker segments)
+
     9. Progressive: spectral selection + successive approximation scans
 
+
     Key references:
+
     - ITU-T T.81 (1992): JPEG standard
+
     - JFIF 1.02: File interchange format
+
     - libjpeg-turbo: reference C implementation (BSD)
+
     - mozjpeg: optimized fork with trellis quantization
+
+    '
 plan:
-  - phase: "Specification Study"
-    tasks:
-      - text: "Read ITU-T T.81 sections on baseline sequential mode (Sections 4-6)"
-        done: false
-      - text: "Read sections on progressive mode (spectral selection, successive approximation)"
-        done: false
-      - text: "Read sections on arithmetic coding mode"
-        done: false
-      - text: "Catalog ALL parameters: subsampling, components, restart, tables"
-        done: false
-  - phase: "Reference Implementation Study"
-    tasks:
-      - text: "Map libjpeg-turbo source to pipeline stages"
-        done: false
-      - text: "Catalog C-specific patterns and propose Rust alternatives"
-        done: false
-      - text: "Document quality-to-quantization-table scaling formula"
-        done: false
-      - text: "Document trellis quantization algorithm from mozjpeg"
-        done: false
-  - phase: "Design Document"
-    tasks:
-      - text: "Write module structure for rasmcore-jpeg"
-        done: false
-      - text: "Define public API (encode function, config types for ALL modes)"
-        done: false
-      - text: "Write data flow diagram and complexity estimates"
-        done: false
+- phase: Specification Study
+  tasks:
+  - text: Read ITU-T T.81 sections on baseline sequential mode (Sections 4-6)
+    done: true
+  - text: Read sections on progressive mode (spectral selection, successive approximation)
+    done: true
+  - text: Read sections on arithmetic coding mode
+    done: true
+  - text: 'Catalog ALL parameters: subsampling, components, restart, tables'
+    done: true
+- phase: Reference Implementation Study
+  tasks:
+  - text: Map libjpeg-turbo source to pipeline stages
+    done: true
+  - text: Catalog C-specific patterns and propose Rust alternatives
+    done: true
+  - text: Document quality-to-quantization-table scaling formula
+    done: true
+  - text: Document trellis quantization algorithm from mozjpeg
+    done: true
+- phase: Design Document
+  tasks:
+  - text: Write module structure for rasmcore-jpeg
+    done: true
+  - text: Define public API (encode function, config types for ALL modes)
+    done: true
+  - text: Write data flow diagram and complexity estimates
+    done: true
 extra: {}
