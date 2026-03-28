@@ -419,13 +419,28 @@ mod tests {
         let encoded = encode_i16(&pixels, 32, 32).unwrap();
         let (header, decoded) = decode(&encoded).unwrap();
         assert_eq!(header.bitpix, Bitpix::I16);
-        // Verify values match (no BZERO/BSCALE)
+        // i16 → f64 is exact (all i16 values are representable in f64)
         for (i, &expected) in pixels.iter().enumerate() {
-            assert!(
-                (decoded[i] - expected as f64).abs() < 0.01,
+            assert_eq!(
+                decoded[i], expected as f64,
                 "pixel {i}: {} vs {}",
-                decoded[i],
-                expected
+                decoded[i], expected
+            );
+        }
+    }
+
+    #[test]
+    fn roundtrip_i32() {
+        let pixels: Vec<i32> = (0..16 * 16).map(|i| i * 1000 - 128000).collect();
+        let encoded = encode_i32(&pixels, 16, 16).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bitpix, Bitpix::I32);
+        // i32 → f64 is exact (all i32 values are representable in f64)
+        for (i, &expected) in pixels.iter().enumerate() {
+            assert_eq!(
+                decoded[i], expected as f64,
+                "pixel {i}: {} vs {}",
+                decoded[i], expected
             );
         }
     }
@@ -436,6 +451,9 @@ mod tests {
         let encoded = encode_f32(&pixels, 16, 16).unwrap();
         let (header, decoded) = decode(&encoded).unwrap();
         assert_eq!(header.bitpix, Bitpix::F32);
+        // f32 → f64 has representational noise: f32 values like 0.5 are exact,
+        // but values like 0.1 become 0.10000000149... in f64. The epsilon of
+        // 1e-5 accounts for this precision loss in the f32→bytes→f32→f64 chain.
         for (i, &expected) in pixels.iter().enumerate() {
             assert!(
                 (decoded[i] - expected as f64).abs() < 1e-5,
@@ -452,12 +470,16 @@ mod tests {
         let encoded = encode_f64(&pixels, 8, 8).unwrap();
         let (header, decoded) = decode(&encoded).unwrap();
         assert_eq!(header.bitpix, Bitpix::F64);
+        // f64 → bytes → f64 is IEEE 754 lossless — must be bit-exact
         for (i, &expected) in pixels.iter().enumerate() {
-            assert!(
-                (decoded[i] - expected).abs() < 1e-10,
-                "pixel {i}: {} vs {}",
+            assert_eq!(
+                decoded[i].to_bits(),
+                expected.to_bits(),
+                "pixel {i}: {} vs {} (bits: {:016x} vs {:016x})",
                 decoded[i],
-                expected
+                expected,
+                decoded[i].to_bits(),
+                expected.to_bits()
             );
         }
     }
@@ -485,11 +507,11 @@ mod tests {
         let (header, pixels) = decode(&header_data).unwrap();
         assert_eq!(header.bzero, 100.0);
         assert_eq!(header.bscale, 2.0);
-        // physical = BZERO + BSCALE * stored
-        assert!((pixels[0] - 100.0).abs() < 0.01); // 100 + 2*0
-        assert!((pixels[1] - 102.0).abs() < 0.01); // 100 + 2*1
-        assert!((pixels[2] - 120.0).abs() < 0.01); // 100 + 2*10
-        assert!((pixels[3] - 200.0).abs() < 0.01); // 100 + 2*50
+        // physical = BZERO + BSCALE * stored (integer inputs → exact f64)
+        assert_eq!(pixels[0], 100.0); // 100 + 2*0
+        assert_eq!(pixels[1], 102.0); // 100 + 2*1
+        assert_eq!(pixels[2], 120.0); // 100 + 2*10
+        assert_eq!(pixels[3], 200.0); // 100 + 2*50
     }
 
     #[test]
