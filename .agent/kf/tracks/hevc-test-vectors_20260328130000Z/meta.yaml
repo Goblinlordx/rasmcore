@@ -1,9 +1,8 @@
-title: "HEVC Loop Filtering \u2014 Deblocking + SAO"
+title: HEVC Test Vectors — Golden Reference Data from libde265/x265
 status: pending
-type: feature
+type: chore
 approved: false
 created: '2026-03-28'
 updated: '2026-03-28'
 deps:
 - hevc-params_20260328100501Z
-- hevc-test-vectors_20260328130000Z

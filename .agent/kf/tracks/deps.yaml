@@ -32,3 +32,10 @@ color-crate_20260328070200Z: []
 # JPEG encoder depends on shared color crate
 jpeg-encoder-own_20260328064600Z:
   - color-crate_20260328070200Z
+
+# HEVC test vectors — golden reference data
+hevc-test-vectors_20260328130000Z:
+  - hevc-params_20260328100501Z
+
+# Update subsystem tracks to also depend on test vectors
+# (These tracks already have deps in their meta.yaml — adding test-vectors)

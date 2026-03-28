@@ -1,4 +1,4 @@
-title: HEVC Transform + Dequantization — Inverse DCT/DST + Scaling Lists
+title: "HEVC Transform + Dequantization \u2014 Inverse DCT/DST + Scaling Lists"
 status: pending
 type: feature
 approved: false
@@ -6,3 +6,4 @@ created: '2026-03-28'
 updated: '2026-03-28'
 deps:
 - hevc-params_20260328100501Z
+- hevc-test-vectors_20260328130000Z

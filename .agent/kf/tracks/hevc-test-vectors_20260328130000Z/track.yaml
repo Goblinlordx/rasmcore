@@ -1,0 +1,94 @@
+id: hevc-test-vectors_20260328130000Z
+title: HEVC Test Vectors — Golden Reference Data from libde265/x265
+type: chore
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Generate golden test fixtures from reference encoder/decoder for all HEVC subsystems. Encode small HEIC files with
+    x265, decode with libde265 extracting per-stage intermediates, store as test fixtures for subsystem validation.
+  context: Each HEVC subsystem track (predict, transform, filter, syntax, CABAC) needs to validate against known-good reference
+    data, not just hand-crafted inputs. This track generates golden test vectors by encoding small images with x265 and decoding
+    with libde265, capturing intermediate values at each decode stage. All subsystem tracks depend on these fixtures.
+  codebase_analysis: 'rasmcore already has a test fixture pattern: tests/fixtures/ directory with generate.sh script and test
+    images. libde265 provides a C API with hooks for extracting intermediate decode state. x265 CLI can encode with controlled
+    parameters (QP, CTU size, intra-only). The hevc-parity track was planned for end-to-end comparison, but per-stage validation
+    catches errors earlier.'
+  acceptance_criteria:
+  - x265 encoding script generates HEVC I-frame bitstreams at multiple QP values
+  - libde265 extraction tool captures per-stage intermediate values
+  - 'At least 3 test cases: flat 8x8 (simplest), gradient 16x16 (AC content), checkerboard 64x64 (complex prediction)'
+  - Parameter set fixtures with verified SPS/PPS field values
+  - Per-CTU syntax element fixtures (prediction modes, coefficient levels)
+  - Prediction block fixtures (reference samples + predicted output for each CU)
+  - Transform coefficient fixtures (dequantized coefficients + spatial residuals)
+  - Loop filter fixtures (pre/post deblocking, pre/post SAO pixel values)
+  - Final output fixtures (YCbCr planes + RGB conversion)
+  - Generation script is reproducible (deterministic output from same input)
+  - Binary fixture data is gitignored — only scripts and version manifest are committed
+  - Tool versions pinned in TOOLS.toml with exact version and hash
+  - Tests skip gracefully when fixtures are not yet generated
+  out_of_scope: Writing the subsystem implementations — this track only generates test data. End-to-end parity testing (hevc-parity
+    track handles that). Performance benchmarking.
+  technical_notes: "Test vector generation pipeline:\n1. Pin exact versions of tools in a manifest (e.g., x265 3.6, libde265\
+    \ 1.0.15, ffmpeg 7.x)\n2. Create small test images (8x8, 16x16, 64x64) with known pixel patterns as raw YUV\n3. Encode\
+    \ with x265 at controlled settings (--preset ultrafast --keyint 1 --qp {22,37})\n4. Decode with libde265 debug tool, capturing\
+    \ per-stage intermediates\n5. Store generated fixtures in tests/fixtures/hevc/ (GITIGNORED — never committed)\n6. Commit\
+    \ only: generation script, tool version manifest, .gitignore entry\n7. CI/developer runs generate.sh once, fixtures are\
+    \ cached locally\n8. Tests skip gracefully if fixtures are not generated (like existing parity test pattern)\n\nFixture\
+    \ format: one directory per test case, containing:\n  - input.hevc (Annex B bitstream)\n  - params.json (SPS/PPS field\
+    \ values)\n  - syntax.json (per-CTU decoded syntax elements)\n  - prediction_{ctu}_{cu}.bin (predicted block pixels)\n\
+    \  - residual_{ctu}_{cu}.bin (dequantized residuals)\n  - recon_pre_filter.bin, recon_post_deblock.bin, recon_final.bin\n\
+    \  - output_rgb.bin (final RGB pixels)\n\nTool version pinning: tests/fixtures/hevc/TOOLS.toml\n  [tools]\n  x265 = {\
+    \ version = \"3.6\", sha256 = \"...\" }\n  libde265 = { version = \"1.0.15\", sha256 = \"...\" }\n\nThis follows the same\
+    \ pattern as tests/fixtures/generate.sh — binary data is generated, not committed."
+plan:
+- phase: Tool Pinning + Infrastructure
+  tasks:
+  - text: Create tests/fixtures/hevc/ directory, add to .gitignore (binary data never committed)
+    done: false
+  - text: Create TOOLS.toml manifest pinning exact versions of x265 and libde265 with SHA256 hashes
+    done: false
+  - text: Create generate_hevc_fixtures.sh that checks tool versions, downloads/builds if needed, and generates all fixtures
+    done: false
+- phase: Test Image Encoding
+  tasks:
+  - text: Generate small test images as raw YUV (8x8 flat gray, 16x16 gradient, 64x64 checkerboard)
+    done: false
+  - text: Encode each with x265 --preset ultrafast --keyint 1 at QP 22 and QP 37 to Annex B bitstreams
+    done: false
+  - text: Verify encoded bitstreams decode correctly with ffmpeg
+    done: false
+- phase: Reference Decoder Extraction
+  tasks:
+  - text: Write C extraction tool (or Python script using libde265 bindings) to hook decode pipeline and dump intermediates
+    done: false
+  - text: Extract parsed parameter sets (SPS/PPS field values as JSON)
+    done: false
+  - text: Extract per-CTU syntax elements (split flags, prediction modes, coefficient levels as JSON)
+    done: false
+  - text: Extract prediction stage data (reference samples, predicted blocks as binary)
+    done: false
+  - text: Extract transform stage data (dequantized coefficients, spatial residuals as binary)
+    done: false
+  - text: Extract loop filter stage data (pre/post deblocking, pre/post SAO as binary)
+    done: false
+  - text: Extract final output (YCbCr planes + RGB conversion as binary)
+    done: false
+- phase: Rust Test Helpers
+  tasks:
+  - text: Create fixture loading helpers in rasmcore-hevc (load_fixture, skip_if_no_fixtures macro)
+    done: false
+  - text: Create comparison helpers (assert_params_match, assert_pixels_match with configurable tolerance)
+    done: false
+  - text: Add integration test validating our SPS/PPS parser against golden parameter set data
+    done: false
+- phase: Verification
+  tasks:
+  - text: Verify generation script is idempotent (re-running produces identical fixtures)
+    done: false
+  - text: Verify tests skip gracefully when fixtures are not generated
+    done: false
+  - text: Verify parameter set golden data matches our parser output
+    done: false
+extra: {}
