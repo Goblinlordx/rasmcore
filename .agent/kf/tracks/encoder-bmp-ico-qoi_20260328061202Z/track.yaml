@@ -1,80 +1,81 @@
 id: encoder-bmp-ico-qoi_20260328061202Z
-title: "BMP + ICO + QOI Encode — Simple Formats, WIT, Pipeline Sinks"
+title: BMP + ICO + QOI Encode — Simple Formats, WIT, Pipeline Sinks
 type: feature
 status: pending
 created: 2026-03-28
 updated: '2026-03-28'
 spec:
-  summary: |
-    Add encoder modules for BMP, ICO, and QOI — three simple formats with
+  summary: 'Add encoder modules for BMP, ICO, and QOI — three simple formats with
+
     minimal config. WIT records, adapters, pipeline sinks, and roundtrip tests.
-  context: |
-    BMP, ICO, and QOI are already decoded by rasmcore via the image crate.
+
+    '
+  context: 'BMP, ICO, and QOI are already decoded by rasmcore via the image crate.
+
     All three have encoders in the image crate (features already enabled).
+
     None have meaningful encode parameters — BMP has no quality/compression
+
     options, ICO embeds PNG/BMP sub-images, QOI is a fixed lossless format.
 
-    Bundled because all three follow the identical pattern and are trivial.
-  codebase_analysis: |
-    - All three features already enabled in Cargo.toml (bmp, ico, qoi)
-    - BMP: image::codecs::bmp::BmpEncoder — no config options
-    - ICO: image::codecs::ico::IcoEncoder — embeds PNG entries
-    - QOI: image::codecs::qoi::QoiEncoder — no config options
-    - Pattern: follow gif.rs (minimal config, DynamicImage-based encode)
-    - Files to create: domain/encoder/bmp.rs, ico.rs, qoi.rs
-    - Files to modify: domain/encoder/mod.rs, wit/image/encoder.wit,
-      wit/image/pipeline.wit, adapter/mod.rs, adapter/pipeline_adapter.rs,
-      domain/pipeline/nodes/sink.rs
-  acceptance_criteria:
-    - BMP encode works (no config params)
-    - ICO encode works (no config params)
-    - QOI encode works (no config params)
-    - WIT encode configs defined (empty records or minimal)
-    - Adapter encode functions wired for all three
-    - Pipeline write sinks for all three
-    - Roundtrip tests for each (encode then decode, pixel-exact for BMP/QOI)
-    - cargo test passes, cargo component build succeeds
-  out_of_scope: |
-    - BMP compression (RLE — rarely used, image crate doesn't support it for encode)
-    - ICO multi-size generation (future feature)
-    - QOI animation
-  technical_notes: |
-    BMP: write_with_encoder(BmpEncoder::new(&mut cursor)) — simplest possible
-    ICO: IcoEncoder embeds entries as PNG. Input should be small (256x256 max).
-         Consider validating dimensions or just letting the encoder handle it.
-    QOI: write_with_encoder(QoiEncoder::new(&mut cursor)) — lossless, fast
 
-    All three use the same pattern as gif.rs: take DynamicImage, write to buffer.
-    Config structs can be empty or have a single placeholder field.
+    Bundled because all three follow the identical pattern and are trivial.
+
+    '
+  codebase_analysis: "- All three features already enabled in Cargo.toml (bmp, ico, qoi)\n- BMP: image::codecs::bmp::BmpEncoder\
+    \ — no config options\n- ICO: image::codecs::ico::IcoEncoder — embeds PNG entries\n- QOI: image::codecs::qoi::QoiEncoder\
+    \ — no config options\n- Pattern: follow gif.rs (minimal config, DynamicImage-based encode)\n- Files to create: domain/encoder/bmp.rs,\
+    \ ico.rs, qoi.rs\n- Files to modify: domain/encoder/mod.rs, wit/image/encoder.wit,\n  wit/image/pipeline.wit, adapter/mod.rs,\
+    \ adapter/pipeline_adapter.rs,\n  domain/pipeline/nodes/sink.rs\n"
+  acceptance_criteria:
+  - BMP encode works (no config params)
+  - ICO encode works (no config params)
+  - QOI encode works (no config params)
+  - WIT encode configs defined (empty records or minimal)
+  - Adapter encode functions wired for all three
+  - Pipeline write sinks for all three
+  - Roundtrip tests for each (encode then decode, pixel-exact for BMP/QOI)
+  - cargo test passes, cargo component build succeeds
+  out_of_scope: '- BMP compression (RLE — rarely used, image crate doesn''t support it for encode)
+
+    - ICO multi-size generation (future feature)
+
+    - QOI animation
+
+    '
+  technical_notes: "BMP: write_with_encoder(BmpEncoder::new(&mut cursor)) — simplest possible\nICO: IcoEncoder embeds entries\
+    \ as PNG. Input should be small (256x256 max).\n     Consider validating dimensions or just letting the encoder handle\
+    \ it.\nQOI: write_with_encoder(QoiEncoder::new(&mut cursor)) — lossless, fast\n\nAll three use the same pattern as gif.rs:\
+    \ take DynamicImage, write to buffer.\nConfig structs can be empty or have a single placeholder field.\n"
 plan:
-  - phase: Encoder Modules
-    tasks:
-      - text: Create domain/encoder/bmp.rs with BmpEncodeConfig and encode()
-        done: false
-      - text: Create domain/encoder/ico.rs with IcoEncodeConfig and encode()
-        done: false
-      - text: Create domain/encoder/qoi.rs with QoiEncodeConfig and encode()
-        done: false
-      - text: Add all three to domain/encoder/mod.rs and encode dispatch
-        done: false
-  - phase: WIT + Adapter + Pipeline
-    tasks:
-      - text: Add bmp/ico/qoi encode configs and functions to WIT encoder interface
-        done: false
-      - text: Add bmp/ico/qoi write configs and functions to WIT pipeline interface
-        done: false
-      - text: Wire adapter encode_bmp, encode_ico, encode_qoi
-        done: false
-      - text: Wire pipeline write_bmp, write_ico, write_qoi sinks
-        done: false
-  - phase: Verification
-    tasks:
-      - text: BMP roundtrip test (encode then decode, pixel-exact)
-        done: false
-      - text: QOI roundtrip test (encode then decode, pixel-exact)
-        done: false
-      - text: ICO roundtrip test (encode small image, decode back)
-        done: false
-      - text: Verify cargo test passes and cargo component build succeeds
-        done: false
+- phase: Encoder Modules
+  tasks:
+  - text: Create domain/encoder/bmp.rs with BmpEncodeConfig and encode()
+    done: true
+  - text: Create domain/encoder/ico.rs with IcoEncodeConfig and encode()
+    done: true
+  - text: Create domain/encoder/qoi.rs with QoiEncodeConfig and encode()
+    done: true
+  - text: Add all three to domain/encoder/mod.rs and encode dispatch
+    done: true
+- phase: WIT + Adapter + Pipeline
+  tasks:
+  - text: Add bmp/ico/qoi encode configs and functions to WIT encoder interface
+    done: true
+  - text: Add bmp/ico/qoi write configs and functions to WIT pipeline interface
+    done: true
+  - text: Wire adapter encode_bmp, encode_ico, encode_qoi
+    done: true
+  - text: Wire pipeline write_bmp, write_ico, write_qoi sinks
+    done: true
+- phase: Verification
+  tasks:
+  - text: BMP roundtrip test (encode then decode, pixel-exact)
+    done: true
+  - text: QOI roundtrip test (encode then decode, pixel-exact)
+    done: true
+  - text: ICO roundtrip test (encode small image, decode back)
+    done: true
+  - text: Verify cargo test passes and cargo component build succeeds
+    done: true
 extra: {}
