@@ -1,0 +1,138 @@
+id: pipeline-arch-design_20260328005500Z
+title: "Research: Demand-Driven Tile Pipeline Architecture Design"
+type: research
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Design the demand-driven (pull-based) tile pipeline architecture for
+    rasmcore-image. Produces WIT interface design, internal node architecture,
+    format tile-access analysis, and migration plan from stateless functions.
+  context: |
+    rasmcore is shifting from a stateless buffer-in/buffer-out architecture to
+    a demand-driven tile pipeline modeled after libvips. The key insight is that
+    write() drives execution by requesting tiles backward through an image-node
+    graph. Each operation node requests tiles from upstream with appropriate
+    kernel overlap. Only active tiles occupy memory.
+
+    This architecture enables:
+    - Minimal memory (tiles in flight, not full decoded image)
+    - Streaming I/O (decoders produce tiles on demand, encoders consume them)
+    - Operation fusion (read+resize can use JPEG shrink-on-load)
+    - Chainable API (pipeline().read().resize().write())
+    - Sparse seek cache for sequential formats (checkpoint + re-decode)
+
+    Public API naming shifts from decode/encode to read/write to match user
+    mental model (Pillow, Sharp, ImageMagick all use read/write).
+
+    This is design-only. The output is a design document that implementation
+    tracks will be scoped from.
+  codebase_analysis: |
+    Current architecture:
+    - WIT: stateless functions (decode, encode, resize, etc.) with buffer args
+    - Domain: each function takes &[u8] pixels + ImageInfo, returns new pixels
+    - Adapter: thin passthrough mapping WIT types to domain types
+    - Full image materialized in memory for every operation
+    - Every host<->guest call copies full pixel buffer across boundary
+
+    WIT Component Model resource support:
+    - Resources are supported in WASI 0.2 / wasmtime 33
+    - image-node can be a WIT resource with get-tile method
+    - Pipeline can be a resource that wraps nodes
+    - jco transpiles resources to JS classes with methods
+
+    Pending codec tracks (encoder-jpeg, encoder-png, encoder-webp) add per-format
+    config records within the current architecture. These should complete first.
+    The pipeline migration wraps their per-format logic into nodes.
+  acceptance_criteria:
+    - Design document at .agent/kf/_reports/pipeline-architecture.md
+    - WIT interface design for image-node and pipeline resources
+    - Internal node architecture covering tile request propagation and overlap calculation
+    - Format-level tile access analysis (random vs sequential, seek cache strategy)
+    - Operation fusion catalog (which operation pairs can be fused)
+    - Sparse seek cache design for sequential formats
+    - Migration plan from current stateless functions preserving backward compatibility
+    - Memory model analysis comparing current vs tile-based for various image sizes
+    - Interaction with WASI-IO streams for I/O-level streaming
+  out_of_scope: |
+    - Implementation code (this is design only)
+    - Video pipeline design (image only for now)
+    - GPU/wgpu integration (separate concern)
+  technical_notes: |
+    Key design questions to resolve:
+
+    1. WIT resource design: Should image-node be exposed to hosts, or should
+       only pipeline be the public resource? Exposing nodes gives hosts more
+       control but more complexity.
+
+    2. Tile size: Fixed (e.g., 256x256) or adaptive? libvips uses scanline
+       strips. Fixed tiles are simpler for random access.
+
+    3. Lazy vs eager: Should transform nodes queue operations for fusion
+       (lazy) or execute immediately on get-tile (eager)? Lazy enables
+       fusion but adds complexity.
+
+    4. Error propagation: Tile requests can fail (corrupt data region).
+       How do errors propagate through the node chain?
+
+    5. Backward compatibility: The existing stateless functions (read, write,
+       resize, etc.) become convenience wrappers that create a pipeline
+       internally. Zero breaking changes for current consumers.
+
+    6. Seek cache design: For sequential formats (PNG), cache decoded
+       scanlines at N-row intervals. Backward seek re-decodes from nearest
+       checkpoint. Trade memory (cached rows) for random access.
+
+    7. Thread safety: Can multiple tiles be computed in parallel? WIT
+       resources are single-threaded per instance, but the host could
+       create multiple pipeline instances.
+
+    References:
+    - libvips architecture: demand-driven, tiled, 4 locks per tile
+    - JPEG restart markers: enable partial random access every N MCU rows
+    - TIFF tiles: native random access, configurable tile size
+    - PNG: fully sequential (IDAT stream), requires seek cache
+    - WebP: fully sequential for lossy, random for extended format
+plan:
+  - phase: "WIT Interface Design"
+    tasks:
+      - text: "Design image-node resource interface (get-tile, info, overlap requirements)"
+        done: false
+      - text: "Design pipeline resource interface (read, transforms, filters, write)"
+        done: false
+      - text: "Design read/write API naming and backward-compatible stateless wrappers"
+        done: false
+      - text: "Design per-format read/write config integration with pipeline"
+        done: false
+  - phase: "Internal Node Architecture"
+    tasks:
+      - text: "Design tile request propagation (how get-tile cascades through node chain)"
+        done: false
+      - text: "Design overlap calculation (how each operation declares kernel overlap needs)"
+        done: false
+      - text: "Design operation fusion rules (which pairs can be fused, how fusion is detected)"
+        done: false
+      - text: "Design sparse seek cache for sequential formats (checkpoint interval, eviction)"
+        done: false
+  - phase: "Format Analysis"
+    tasks:
+      - text: "Analyze tile access capabilities per format (JPEG, PNG, WebP, TIFF, GIF, AVIF, etc.)"
+        done: false
+      - text: "Document JPEG restart marker random access and DCT shrink-on-load"
+        done: false
+      - text: "Document seek cache requirements per format (cache interval, memory cost)"
+        done: false
+  - phase: "Migration & Integration"
+    tasks:
+      - text: "Design migration plan from stateless functions to pipeline (phased, backward compat)"
+        done: false
+      - text: "Design WASI-IO stream integration (read-from-stream, write-to-stream)"
+        done: false
+      - text: "Memory model analysis (current full-image vs tile-based for 1MP, 10MP, 100MP images)"
+        done: false
+  - phase: "Synthesis"
+    tasks:
+      - text: "Compile full architecture design document at .agent/kf/_reports/pipeline-architecture.md"
+        done: false
+extra: {}
