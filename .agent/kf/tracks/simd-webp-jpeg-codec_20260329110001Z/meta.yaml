@@ -1,0 +1,6 @@
+title: SIMD Codec Hot Paths — WebP Quantize, JPEG 8x8 DCT (Loeffler)
+status: pending
+type: refactor
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
