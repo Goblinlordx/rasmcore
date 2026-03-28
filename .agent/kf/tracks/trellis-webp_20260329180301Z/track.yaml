@@ -79,25 +79,25 @@ plan:
   - text: Implement VP8 candidate level generation from QuantMatrix
     done: true
   - text: Unit test Vp8TrellisContext token_cost matches estimate_token_cost from rdo.rs
-    done: false
+    done: true
 - phase: Integration
   tasks:
   - text: Replace rdo_prune_block calls in encode_macroblock with trellis_optimize
-    done: false
+    done: true
   - text: Pass QuantMatrix step sizes to trellis for candidate generation and distortion
-    done: false
+    done: true
   - text: Derive TrellisConfig lambda from QP (reuse lambda_from_qp)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Parity test quality ratio >= 0.75 for gradient at Q75
-    done: false
+    done: true
   - text: Checkerboard PSNR >= 30 dB
-    done: false
+    done: true
   - text: File size within 2x of cwebp for all patterns
-    done: false
+    done: true
   - text: All existing tests pass with updated thresholds
-    done: false
+    done: true
   - text: Encode time benchmark (< 5x baseline)
-    done: false
+    done: true
 extra: {}
