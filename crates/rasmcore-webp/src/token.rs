@@ -250,49 +250,50 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
                 bw.put_bit(probs[5], true); // FOUR
                 token_type = TOKEN_FOUR;
             } else if abs_val <= 6 {
-                // CAT1 (5-6)
+                // CAT1 (5-6): node3→right, node6→left(=CAT1 leaf)
                 bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
-                bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], false);
-                bw.put_bit(probs[7], false);
-                bw.put_bit(159, (abs_val - 5) != 0);
+                bw.put_bit(probs[3], true); // right at node3 → categories
+                bw.put_bit(probs[6], false); // left at node6 → CAT1
+                bw.put_bit(159, (abs_val - 5) != 0); // 1 extra bit
                 token_type = TOKEN_CAT1;
             } else if abs_val <= 10 {
-                // CAT2 (7-10)
+                // CAT2 (7-10): node3→right, node6→right(→node7), node7→left(=CAT2 leaf)
                 bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
-                bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], false);
-                bw.put_bit(probs[7], true);
+                bw.put_bit(probs[3], true); // right → categories
+                bw.put_bit(probs[6], true); // right at node6 → node7
+                bw.put_bit(probs[7], false); // left at node7 → CAT2
                 let extra = abs_val - 7;
                 bw.put_bit(165, (extra >> 1) & 1 != 0);
                 bw.put_bit(145, extra & 1 != 0);
                 token_type = TOKEN_CAT2;
             } else if abs_val <= 18 {
-                // CAT3 (11-18)
+                // CAT3 (11-18): node3→right, node6→right(→node7), node7→right(→node8), node8→left(=CAT3 leaf)
                 bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true);
-                bw.put_bit(probs[8], false);
+                bw.put_bit(probs[6], true); // right → node7
+                bw.put_bit(probs[7], true); // right → node8
+                bw.put_bit(probs[8], false); // left → CAT3
                 let extra = abs_val - 11;
                 bw.put_bit(173, (extra >> 2) & 1 != 0);
                 bw.put_bit(148, (extra >> 1) & 1 != 0);
                 bw.put_bit(140, extra & 1 != 0);
                 token_type = TOKEN_CAT3;
             } else if abs_val <= 34 {
-                // CAT4 (19-34)
+                // CAT4 (19-34): ...→node8→right(→node9), node9→left(=CAT4 leaf)
                 bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true);
-                bw.put_bit(probs[8], true);
-                bw.put_bit(probs[9], false);
+                bw.put_bit(probs[6], true); // → node7
+                bw.put_bit(probs[7], true); // → node8
+                bw.put_bit(probs[8], true); // → node9
+                bw.put_bit(probs[9], false); // left → CAT4
                 let extra = abs_val - 19;
                 bw.put_bit(176, (extra >> 3) & 1 != 0);
                 bw.put_bit(155, (extra >> 2) & 1 != 0);
@@ -300,15 +301,16 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
                 bw.put_bit(135, extra & 1 != 0);
                 token_type = TOKEN_CAT4;
             } else if abs_val <= 66 {
-                // CAT5 (35-66)
+                // CAT5 (35-66): ...→node9→right(→node10), node10→left(=CAT5 leaf)
                 bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true);
-                bw.put_bit(probs[8], true);
-                bw.put_bit(probs[9], true);
-                bw.put_bit(probs[10], false);
+                bw.put_bit(probs[6], true); // → node7
+                bw.put_bit(probs[7], true); // → node8
+                bw.put_bit(probs[8], true); // → node9
+                bw.put_bit(probs[9], true); // → node10
+                bw.put_bit(probs[10], false); // left → CAT5
                 let extra = abs_val - 35;
                 bw.put_bit(180, (extra >> 4) & 1 != 0);
                 bw.put_bit(157, (extra >> 3) & 1 != 0);
@@ -317,15 +319,16 @@ pub fn encode_block(bw: &mut BoolWriter, coeffs: &[i16; 16], plane_type: u8) {
                 bw.put_bit(130, extra & 1 != 0);
                 token_type = TOKEN_CAT5;
             } else {
-                // CAT6 (67+)
+                // CAT6 (67+): ...→node10→right(=CAT6 leaf)
                 bw.put_bit(probs[0], true);
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], true);
-                bw.put_bit(probs[6], true);
-                bw.put_bit(probs[8], true);
-                bw.put_bit(probs[9], true);
-                bw.put_bit(probs[10], true);
+                bw.put_bit(probs[6], true); // → node7
+                bw.put_bit(probs[7], true); // → node8
+                bw.put_bit(probs[8], true); // → node9
+                bw.put_bit(probs[9], true); // → node10
+                bw.put_bit(probs[10], true); // right → CAT6
                 let extra = abs_val - 67;
                 let cat6_probs = [254u8, 254, 243, 230, 196, 177, 153, 140, 133, 130, 129];
                 for (j, &p) in cat6_probs.iter().enumerate() {

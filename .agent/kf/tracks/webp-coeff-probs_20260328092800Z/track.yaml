@@ -3,147 +3,104 @@ title: VP8 Coefficient Probability Tables — Reference-Correct Token Encoding
 type: bug
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Replace the placeholder coefficient probability table with the exact
+  summary: 'Replace the placeholder coefficient probability table with the exact
+
     4D table from libvpx (kDefaultCoefProbs), fix the update probability
+
     table, and implement proper band/context-aware token encoding. This is
+
     the root cause of VP8 decode failures at 128x128+.
-  context: |
-    The VP8 encoder produces decodable output up to ~64x64 but fails at
-    larger sizes with NOT_ENOUGH_DATA. The root cause is three related bugs
-    in token.rs:
 
-    1. DEFAULT_COEFF_PROBS is a flat [128; 11] placeholder instead of the
-       proper 1056-entry 4D table from RFC 6386 Section 13.5. Using flat
-       128 (50/50 probability) for every tree node means the bool coder
-       produces a stream that diverges from what the decoder expects. Small
-       images work by luck (few coefficients, errors don't accumulate
-       enough to corrupt the stream). Large images fail because the
-       cumulative probability mismatch makes the decoder read wrong bit
-       counts.
-
-    2. COEFF_UPDATE_PROBS repeats the same 264-byte block 4 times for all
-       block types. The real table has distinct values per block type.
-
-    3. encode_block does not use band indexing or complexity context. It
-       uses the same flat probabilities for every coefficient regardless of
-       position in the block or what the previous coefficient was. The VP8
-       decoder selects probabilities based on [block_type][band][context]
-       so the encoder MUST use the same selection.
-
-    The fix is mechanical: replace the placeholder with the exact values
-    from libvpx (kDefaultCoefProbs in vp8/common/default_coef_probs.h)
-    and implement band/context-aware probability lookup in encode_block.
-  codebase_analysis: |
-    Files to modify in crates/rasmcore-webp/src/:
-
-    token.rs:
-    - Line 86: DEFAULT_COEFF_PROBS = [128; 11] -- replace with 4D table
-    - Lines 17-78: COEFF_UPDATE_PROBS -- fix to have distinct per-type values
-    - encode_block function: add band indexing and context tracking
-
-    Current encode_block logic (simplified):
-      for each coefficient in zigzag order:
-        encode token using DEFAULT_COEFF_PROBS (flat 128s)
-
-    Required encode_block logic:
-      context = 0 (start-of-block)
-      for each coefficient in zigzag order:
-        band = BANDS[position]
-        probs = DEFAULT_COEFF_PROBS[block_type][band][context]
-        encode token using probs
-        context = token_to_context(token)  // 0=EOB, 1=ZERO, 2=nonzero
-
-    Reference tables from libvpx:
-    - kDefaultCoefProbs: 4D [4][8][3][11] = 1056 u8 values
-    - vp8_coef_bands: [0,1,2,3,6,4,5,6,6,6,6,6,6,6,6,7] (already in code as BANDS)
-    - vp8_prev_token_class: [0,1,2,2,2,2,2,2,2,2,2,0] (context from prev token)
-    - vp8_coef_update_probs: 4D [4][8][3][11] = 1056 u8 values
+    '
+  context: "The VP8 encoder produces decodable output up to ~64x64 but fails at\nlarger sizes with NOT_ENOUGH_DATA. The root\
+    \ cause is three related bugs\nin token.rs:\n\n1. DEFAULT_COEFF_PROBS is a flat [128; 11] placeholder instead of the\n\
+    \   proper 1056-entry 4D table from RFC 6386 Section 13.5. Using flat\n   128 (50/50 probability) for every tree node\
+    \ means the bool coder\n   produces a stream that diverges from what the decoder expects. Small\n   images work by luck\
+    \ (few coefficients, errors don't accumulate\n   enough to corrupt the stream). Large images fail because the\n   cumulative\
+    \ probability mismatch makes the decoder read wrong bit\n   counts.\n\n2. COEFF_UPDATE_PROBS repeats the same 264-byte\
+    \ block 4 times for all\n   block types. The real table has distinct values per block type.\n\n3. encode_block does not\
+    \ use band indexing or complexity context. It\n   uses the same flat probabilities for every coefficient regardless of\n\
+    \   position in the block or what the previous coefficient was. The VP8\n   decoder selects probabilities based on [block_type][band][context]\n\
+    \   so the encoder MUST use the same selection.\n\nThe fix is mechanical: replace the placeholder with the exact values\n\
+    from libvpx (kDefaultCoefProbs in vp8/common/default_coef_probs.h)\nand implement band/context-aware probability lookup\
+    \ in encode_block.\n"
+  codebase_analysis: "Files to modify in crates/rasmcore-webp/src/:\n\ntoken.rs:\n- Line 86: DEFAULT_COEFF_PROBS = [128; 11]\
+    \ -- replace with 4D table\n- Lines 17-78: COEFF_UPDATE_PROBS -- fix to have distinct per-type values\n- encode_block\
+    \ function: add band indexing and context tracking\n\nCurrent encode_block logic (simplified):\n  for each coefficient\
+    \ in zigzag order:\n    encode token using DEFAULT_COEFF_PROBS (flat 128s)\n\nRequired encode_block logic:\n  context\
+    \ = 0 (start-of-block)\n  for each coefficient in zigzag order:\n    band = BANDS[position]\n    probs = DEFAULT_COEFF_PROBS[block_type][band][context]\n\
+    \    encode token using probs\n    context = token_to_context(token)  // 0=EOB, 1=ZERO, 2=nonzero\n\nReference tables\
+    \ from libvpx:\n- kDefaultCoefProbs: 4D [4][8][3][11] = 1056 u8 values\n- vp8_coef_bands: [0,1,2,3,6,4,5,6,6,6,6,6,6,6,6,7]\
+    \ (already in code as BANDS)\n- vp8_prev_token_class: [0,1,2,2,2,2,2,2,2,2,2,0] (context from prev token)\n- vp8_coef_update_probs:\
+    \ 4D [4][8][3][11] = 1056 u8 values\n"
   acceptance_criteria:
-    - DEFAULT_COEFF_PROBS replaced with exact 4D table from libvpx kDefaultCoefProbs
-    - COEFF_UPDATE_PROBS replaced with exact 4D table from libvpx vp8_coef_update_probs
-    - encode_block uses band index to select probability set per coefficient position
-    - encode_block tracks complexity context (EOB/ZERO/nonzero) across coefficients
-    - All images 16x16 through 2048x2048 decodable by dwebp
-    - All images 16x16 through 2048x2048 decodable by image-webp crate
-    - Solid, gradient, and checkerboard content all decode correctly
-    - Quality levels q25/q50/q75/q95 all produce decodable output
-    - PSNR at q75 is above 25dB for 256x256 gradient test image
-    - File sizes are within 3x of cwebp at equivalent quality
-    - Existing unit tests continue to pass
-    - WASM build and wasmtime SIMD path produce decodable output
-  out_of_scope: |
-    - Per-frame probability adaptation (use defaults only)
+  - DEFAULT_COEFF_PROBS replaced with exact 4D table from libvpx kDefaultCoefProbs
+  - COEFF_UPDATE_PROBS replaced with exact 4D table from libvpx vp8_coef_update_probs
+  - encode_block uses band index to select probability set per coefficient position
+  - encode_block tracks complexity context (EOB/ZERO/nonzero) across coefficients
+  - All images 16x16 through 2048x2048 decodable by dwebp
+  - All images 16x16 through 2048x2048 decodable by image-webp crate
+  - Solid, gradient, and checkerboard content all decode correctly
+  - Quality levels q25/q50/q75/q95 all produce decodable output
+  - PSNR at q75 is above 25dB for 256x256 gradient test image
+  - File sizes are within 3x of cwebp at equivalent quality
+  - Existing unit tests continue to pass
+  - WASM build and wasmtime SIMD path produce decodable output
+  out_of_scope: '- Per-frame probability adaptation (use defaults only)
+
     - Trellis quantization
+
     - Loop filter integration (filter_level stays 0 for now)
+
     - mb_no_coeff_skip re-enablement (stays disabled for now)
-  technical_notes: |
-    This is the most critical VP8 conformance fix. The probability table
-    is what makes the encoder and decoder agree on how to interpret bits.
-    Without matching probabilities, the bool coder produces garbage.
 
-    Implementation steps:
-
-    1. Add the kDefaultCoefProbs 4D table as a const array in token.rs.
-       Format: DEFAULT_COEFF_PROBS[4][8][3][11] or flattened [u8; 1056].
-       Accessing: probs = table[block_type * 264 + band * 33 + ctx * 11 .. +11]
-
-    2. Fix COEFF_UPDATE_PROBS with the correct per-type values from
-       vp8_coef_update_probs in libvpx.
-
-    3. Rewrite encode_block to:
-       a. Accept block_type parameter (already has plane_type)
-       b. Map plane_type to VP8 block type (0=Y-AC, 1=Y2, 2=UV, 3=Y-with-DC)
-       c. For each coefficient position in zigzag order:
-          - Look up band from BANDS[position]
-          - Look up probability set from DEFAULT_COEFF_PROBS[type][band][ctx]
-          - Encode token (EOB/ZERO/ONE/etc.) using these probabilities
-          - Update context based on token type
-
-    4. The context derivation:
-       - Context 0: previous token was EOB or start of block
-       - Context 1: previous token was ZERO
-       - Context 2: previous token was any nonzero (ONE through CAT6)
-
-    5. Validate at every step by encoding test images and checking
-       dwebp decode success. Start with 128x128, then 512x512, then 2048x2048.
-
-    Verification approach: encode the same test images that currently fail
-    (128x128 solid, 256x256 gradient, 512x512) and verify both dwebp
-    and image-webp can decode them. Then run PSNR comparison.
+    '
+  technical_notes: "This is the most critical VP8 conformance fix. The probability table\nis what makes the encoder and decoder\
+    \ agree on how to interpret bits.\nWithout matching probabilities, the bool coder produces garbage.\n\nImplementation\
+    \ steps:\n\n1. Add the kDefaultCoefProbs 4D table as a const array in token.rs.\n   Format: DEFAULT_COEFF_PROBS[4][8][3][11]\
+    \ or flattened [u8; 1056].\n   Accessing: probs = table[block_type * 264 + band * 33 + ctx * 11 .. +11]\n\n2. Fix COEFF_UPDATE_PROBS\
+    \ with the correct per-type values from\n   vp8_coef_update_probs in libvpx.\n\n3. Rewrite encode_block to:\n   a. Accept\
+    \ block_type parameter (already has plane_type)\n   b. Map plane_type to VP8 block type (0=Y-AC, 1=Y2, 2=UV, 3=Y-with-DC)\n\
+    \   c. For each coefficient position in zigzag order:\n      - Look up band from BANDS[position]\n      - Look up probability\
+    \ set from DEFAULT_COEFF_PROBS[type][band][ctx]\n      - Encode token (EOB/ZERO/ONE/etc.) using these probabilities\n\
+    \      - Update context based on token type\n\n4. The context derivation:\n   - Context 0: previous token was EOB or start\
+    \ of block\n   - Context 1: previous token was ZERO\n   - Context 2: previous token was any nonzero (ONE through CAT6)\n\
+    \n5. Validate at every step by encoding test images and checking\n   dwebp decode success. Start with 128x128, then 512x512,\
+    \ then 2048x2048.\n\nVerification approach: encode the same test images that currently fail\n(128x128 solid, 256x256 gradient,\
+    \ 512x512) and verify both dwebp\nand image-webp can decode them. Then run PSNR comparison.\n"
 plan:
-  - phase: Reference Tables
-    tasks:
-      - text: Add kDefaultCoefProbs 4D table (1056 entries) from libvpx to token.rs
-        done: false
-      - text: Fix COEFF_UPDATE_PROBS with correct per-block-type values from libvpx
-        done: false
-      - text: Add token-to-context mapping array (prev_token_class)
-        done: false
-  - phase: Token Encoding Fix
-    tasks:
-      - text: Rewrite encode_block to use band-indexed probability lookup
-        done: false
-      - text: Add complexity context tracking across coefficients within each block
-        done: false
-      - text: Update bitstream.rs encode_macroblock to pass correct block_type to token encoder
-        done: false
-      - text: Test 128x128 solid image decodes with dwebp
-        done: false
-  - phase: Full Validation
-    tasks:
-      - text: Test all sizes 16 through 2048 with solid, gradient, checkerboard content
-        done: false
-      - text: Test quality levels q25/q50/q75/q95 at 512x512
-        done: false
-      - text: PSNR measurement at q75 for 256x256 gradient (target above 25dB)
-        done: false
-      - text: File size comparison against cwebp at q75 for 256x256 and 512x512
-        done: false
-      - text: WASM SIMD validation via wasmtime (cargo test --target wasm32-wasip1)
-        done: false
-      - text: Run full ./scripts/validate.sh
-        done: false
+- phase: Reference Tables
+  tasks:
+  - text: Add kDefaultCoefProbs 4D table (1056 entries) from libvpx to token.rs
+    done: true
+  - text: Fix COEFF_UPDATE_PROBS with correct per-block-type values from libvpx
+    done: true
+  - text: Add token-to-context mapping array (prev_token_class)
+    done: true
+- phase: Token Encoding Fix
+  tasks:
+  - text: Rewrite encode_block to use band-indexed probability lookup
+    done: true
+  - text: Add complexity context tracking across coefficients within each block
+    done: true
+  - text: Update bitstream.rs encode_macroblock to pass correct block_type to token encoder
+    done: true
+  - text: Test 128x128 solid image decodes with dwebp
+    done: true
+- phase: Full Validation
+  tasks:
+  - text: Test all sizes 16 through 2048 with solid, gradient, checkerboard content
+    done: false
+  - text: Test quality levels q25/q50/q75/q95 at 512x512
+    done: false
+  - text: PSNR measurement at q75 for 256x256 gradient (target above 25dB)
+    done: false
+  - text: File size comparison against cwebp at q75 for 256x256 and 512x512
+    done: false
+  - text: WASM SIMD validation via wasmtime (cargo test --target wasm32-wasip1)
+    done: false
+  - text: Run full ./scripts/validate.sh
+    done: false
 extra: {}
