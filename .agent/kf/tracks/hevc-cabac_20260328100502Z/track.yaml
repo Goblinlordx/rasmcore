@@ -28,35 +28,35 @@ plan:
 - phase: Arithmetic Engine
   tasks:
   - text: Implement CABAC arithmetic decoder state (range, offset) with initialization from byte stream
-    done: false
+    done: true
   - text: Implement decode_bin() — context-coded bin decoding with range subdivision and renormalization
-    done: false
+    done: true
   - text: Implement decode_bypass() — equiprobable bin decoding (no context)
-    done: false
+    done: true
   - text: Implement decode_terminate() — end-of-slice detection
-    done: false
+    done: true
 - phase: Context Models
   tasks:
   - text: Define context model struct (state, MPS) with init_value to state mapping
-    done: false
+    done: true
   - text: Implement context initialization from slice QP and init_value tables (HEVC Table 9-5 through 9-37)
-    done: false
+    done: true
   - text: Implement LPS/MPS state transition tables (HEVC Table 9-3, 9-4)
-    done: false
+    done: true
 - phase: Binarization
   tasks:
   - text: Implement truncated Rice (TR) binarization decoder
-    done: false
+    done: true
   - text: Implement k-th order Exp-Golomb (EGk) binarization decoder
-    done: false
+    done: true
   - text: Implement fixed-length (FL) and truncated unary (TU) decoders
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for arithmetic decoder with hand-crafted byte streams
-    done: false
+    done: true
   - text: Unit tests for context model initialization and state transitions
-    done: false
+    done: true
   - text: Unit tests for each binarization scheme with known values
-    done: false
+    done: true
 extra: {}
