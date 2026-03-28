@@ -1,11 +1,18 @@
-use image::{DynamicImage, ImageFormat};
+pub mod jpeg;
+pub mod png;
+pub mod webp;
+
+use image::DynamicImage;
 
 use super::error::ImageError;
 use super::types::{ImageInfo, PixelFormat};
 
 const SUPPORTED_FORMATS: &[&str] = &["png", "jpeg", "webp"];
 
-/// Encode pixel data to a specific image format
+/// Encode pixel data to a specific image format (convenience wrapper).
+///
+/// Dispatches to per-format encoders with default configs. For fine-grained
+/// control, use the per-format encode functions directly (e.g., `jpeg::encode`).
 pub fn encode(
     pixels: &[u8],
     info: &ImageInfo,
@@ -13,44 +20,38 @@ pub fn encode(
     quality: Option<u8>,
 ) -> Result<Vec<u8>, ImageError> {
     let img = pixels_to_dynamic_image(pixels, info)?;
-    let image_format = str_to_format(format)?;
 
-    let mut buf = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut buf);
-
-    match image_format {
-        ImageFormat::Jpeg => {
-            let q = quality.unwrap_or(85);
-            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, q);
-            img.write_with_encoder(encoder)
-                .map_err(|e| ImageError::ProcessingFailed(e.to_string()))?;
+    match format {
+        "jpeg" | "jpg" => {
+            let config = jpeg::JpegEncodeConfig {
+                quality: quality.unwrap_or(85),
+            };
+            jpeg::encode(&img, info, &config)
         }
-        other => {
-            img.write_to(&mut cursor, other)
-                .map_err(|e| ImageError::ProcessingFailed(e.to_string()))?;
+        "png" => {
+            let config = png::PngEncodeConfig::default();
+            png::encode(&img, info, &config)
         }
-    }
-
-    Ok(buf)
-}
-
-/// List supported encode formats
-pub fn supported_formats() -> Vec<String> {
-    SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
-}
-
-fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
-    match s {
-        "png" => Ok(ImageFormat::Png),
-        "jpeg" | "jpg" => Ok(ImageFormat::Jpeg),
-        "webp" => Ok(ImageFormat::WebP),
+        "webp" => {
+            let config = webp::WebpEncodeConfig::default();
+            webp::encode(&img, info, &config)
+        }
         other => Err(ImageError::UnsupportedFormat(format!(
             "encode format '{other}' not supported"
         ))),
     }
 }
 
-fn pixels_to_dynamic_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, ImageError> {
+/// List supported encode formats.
+pub fn supported_formats() -> Vec<String> {
+    SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
+}
+
+/// Convert raw pixel data to a DynamicImage for encoding.
+pub fn pixels_to_dynamic_image(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<DynamicImage, ImageError> {
     match info.format {
         PixelFormat::Rgb8 => {
             let img = image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
@@ -110,7 +111,6 @@ mod tests {
     fn encode_png_produces_valid_png() {
         let (pixels, info) = make_rgb8_pixels(16, 16);
         let result = encode(&pixels, &info, "png", None).unwrap();
-        // PNG magic bytes
         assert_eq!(&result[..4], &[0x89, 0x50, 0x4E, 0x47]);
     }
 
@@ -118,7 +118,6 @@ mod tests {
     fn encode_jpeg_produces_valid_jpeg() {
         let (pixels, info) = make_rgb8_pixels(16, 16);
         let result = encode(&pixels, &info, "jpeg", Some(90)).unwrap();
-        // JPEG magic bytes
         assert_eq!(&result[..2], &[0xFF, 0xD8]);
     }
 
@@ -163,7 +162,6 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        // Too few pixels
         let result = encode(&[0u8; 10], &info, "png", None);
         assert!(result.is_err());
     }

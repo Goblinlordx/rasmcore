@@ -116,6 +116,49 @@ impl decoder::Guest for Component {
 }
 
 impl encoder::Guest for Component {
+    fn encode_jpeg(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::JpegEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
+            quality: config.quality.unwrap_or(85),
+        };
+        domain::encoder::jpeg::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
+    fn encode_png(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::PngEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        let domain_config = domain::encoder::png::PngEncodeConfig {
+            compression_level: config.compression_level.unwrap_or(6),
+        };
+        domain::encoder::png::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
+    fn encode_webp(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::WebpEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        let domain_config = domain::encoder::webp::WebpEncodeConfig {
+            quality: config.quality.unwrap_or(75),
+            lossless: config.lossless.unwrap_or(false),
+        };
+        domain::encoder::webp::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
     fn encode(
         pixels: Vec<u8>,
         info: types::ImageInfo,

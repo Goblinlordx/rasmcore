@@ -20,7 +20,7 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
 pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
-    let (format, _info) = extract_info(&img);
+    let format = detect_pixel_format(&img);
     let pixels = match format {
         PixelFormat::Rgba8 => img.to_rgba8().into_raw(),
         PixelFormat::Rgb8 => img.to_rgb8().into_raw(),
@@ -87,23 +87,14 @@ pub fn supported_formats() -> Vec<String> {
     SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
 }
 
-fn extract_info(img: &image::DynamicImage) -> (PixelFormat, ImageInfo) {
-    let format = match img.color() {
+fn detect_pixel_format(img: &image::DynamicImage) -> PixelFormat {
+    match img.color() {
         image::ColorType::Rgb8 => PixelFormat::Rgb8,
         image::ColorType::Rgba8 => PixelFormat::Rgba8,
         image::ColorType::L8 => PixelFormat::Gray8,
         image::ColorType::L16 => PixelFormat::Gray16,
-        _ => PixelFormat::Rgba8, // fallback: convert to RGBA8
-    };
-
-    let info = ImageInfo {
-        width: img.width(),
-        height: img.height(),
-        format,
-        color_space: ColorSpace::Srgb,
-    };
-
-    (format, info)
+        _ => PixelFormat::Rgba8,
+    }
 }
 
 fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {
@@ -186,7 +177,7 @@ mod tests {
     fn decode_png_pixel_data_length_matches() {
         let data = make_png(10, 10);
         let result = decode(&data).unwrap();
-        let expected_len = 10 * 10 * 3; // RGB8 = 3 bytes per pixel
+        let expected_len = 10 * 10 * 3;
         assert_eq!(result.pixels.len(), expected_len);
     }
 
@@ -213,7 +204,7 @@ mod tests {
         let data = make_png(8, 8);
         let result = decode_as(&data, PixelFormat::Rgba8).unwrap();
         assert_eq!(result.info.format, PixelFormat::Rgba8);
-        assert_eq!(result.pixels.len(), 8 * 8 * 4); // RGBA = 4 bytes
+        assert_eq!(result.pixels.len(), 8 * 8 * 4);
     }
 
     #[test]

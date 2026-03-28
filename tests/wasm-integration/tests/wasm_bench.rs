@@ -30,8 +30,8 @@ fn fmt_duration(d: Duration) -> String {
 // ─── ImageMagick backend detection ───
 
 enum MagickBackend {
-    Local(String),   // path to magick binary
-    Docker(String),  // docker image name
+    Local(String),  // path to magick binary
+    Docker(String), // docker image name
     None,
 }
 
@@ -183,18 +183,13 @@ fn three_tier_performance_comparison() {
 
     // ── Encode ──
     let magick_encode = if has_magick {
-        bench_magick(
-            &backend,
-            &fixture_dir,
-            &[input_path, "PNG:/dev/null"],
-        )
+        bench_magick(&backend, &fixture_dir, &[input_path, "PNG:/dev/null"])
     } else {
         Duration::ZERO
     };
 
     let native_encode = bench_native(|| {
-        let _ =
-            encoder::encode(&native_decoded.pixels, &native_decoded.info, "png", None).unwrap();
+        let _ = encoder::encode(&native_decoded.pixels, &native_decoded.info, "png", None).unwrap();
     });
 
     let enc = bindings.rasmcore_image_encoder();
@@ -313,9 +308,7 @@ fn three_tier_performance_comparison() {
     let magick_label = backend.label();
     println!();
     println!("================================================================================");
-    println!(
-        "         Three-Tier Performance Comparison (64x64 PNG, {BENCH_ITERS} iterations)"
-    );
+    println!("         Three-Tier Performance Comparison (64x64 PNG, {BENCH_ITERS} iterations)");
     println!("================================================================================");
     println!();
     println!(

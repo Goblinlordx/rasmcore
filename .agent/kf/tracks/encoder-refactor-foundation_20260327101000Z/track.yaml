@@ -1,94 +1,105 @@
 id: encoder-refactor-foundation_20260327101000Z
-title: "Image Codec Per-Format Foundation — Directory Structure & WIT Pattern"
+title: Image Codec Per-Format Foundation — Directory Structure & WIT Pattern
 type: refactor
 status: pending
 created: 2026-03-27
-updated: "2026-03-27"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Split monolithic encoder.rs and decoder.rs into per-format module directories,
+  summary: 'Split monolithic encoder.rs and decoder.rs into per-format module directories,
+
     establish WIT convention for per-format config records and encode/decode
+
     functions. Generic encode()/decode() preserved as convenience wrappers.
-  context: |
-    Both the encoder and decoder currently use monolithic files with match
+
+    '
+  context: 'Both the encoder and decoder currently use monolithic files with match
+
     statements dispatching to different formats. The project decision is to use
+
     precisely defined typed config records per format, with each format in its
+
     own module file. This covers both encoding AND decoding — each codec is a
+
     full encode+decode pair.
 
+
     This foundation track establishes the directory structure and WIT pattern for
+
     both encoder/ and decoder/ directories. Individual codec tracks (JPEG, PNG,
+
     WebP) will add format-specific parameters and standards-aligned behavior.
-  codebase_analysis: |
-    - domain/encoder.rs: 80 lines, 3 formats (PNG/JPEG/WebP), one match statement
+
+    '
+  codebase_analysis: '- domain/encoder.rs: 80 lines, 3 formats (PNG/JPEG/WebP), one match statement
+
     - domain/decoder.rs: 258 lines, 9 formats, match-based dispatch
+
     - wit/image/encoder.wit: single encode(format, quality) function
+
     - wit/image/decoder.wit: generic decode/detect-format/decode-as functions
+
     - adapter/mod.rs: thin passthrough for both encoder and decoder
+
     - 10 domain encoder tests, 15 domain decoder tests
+
     - Parity tests in Rust WASM integration and TS SDK suites
+
+    '
   acceptance_criteria:
-    - domain/encoder.rs replaced by domain/encoder/ directory with mod.rs + per-format files
-    - domain/decoder.rs replaced by domain/decoder/ directory with mod.rs + per-format files
-    - Each existing encode format (jpeg.rs, png.rs, webp.rs) has its own encoder file
-    - Each existing decode format has its own decoder file (or grouped logically)
-    - WIT encoder.wit updated with per-format encode function stubs
-    - WIT decoder.wit updated with per-format decode-config records where relevant
-    - Generic encode() and decode() wrappers preserved for backward compatibility
-    - Adapter layer updated to dispatch per-format WIT calls
-    - All existing tests pass unchanged
-  out_of_scope: |
-    - Adding new format-specific parameters (per-codec track work)
+  - domain/encoder.rs replaced by domain/encoder/ directory with mod.rs + per-format files
+  - domain/decoder.rs replaced by domain/decoder/ directory with mod.rs + per-format files
+  - Each existing encode format (jpeg.rs, png.rs, webp.rs) has its own encoder file
+  - Each existing decode format has its own decoder file (or grouped logically)
+  - WIT encoder.wit updated with per-format encode function stubs
+  - WIT decoder.wit updated with per-format decode-config records where relevant
+  - Generic encode() and decode() wrappers preserved for backward compatibility
+  - Adapter layer updated to dispatch per-format WIT calls
+  - All existing tests pass unchanged
+  out_of_scope: '- Adding new format-specific parameters (per-codec track work)
+
     - Adding new formats beyond existing ones
+
     - Standards alignment (per-codec track work)
-  technical_notes: |
-    The split should be mechanical — move existing code into per-format files
-    without changing behavior.
 
-    Encoder pattern per format:
-    - WIT record: {format}-encode-config
-    - WIT function: encode-{format}(pixels, info, config) -> result<buffer, error>
-    - Domain struct: {Format}EncodeConfig
-    - Domain function: encode(pixels, info, config) -> Result<Vec<u8>, ImageError>
-
-    Decoder pattern per format:
-    - WIT record: {format}-decode-config (where relevant, e.g., JPEG color management)
-    - WIT function: decode-{format}(data, config) -> result<decoded-image, error>
-    - Most formats need no decode config initially — the per-format decode function
-      with default config is still useful for dispatch clarity
-
-    Keep format detection (detect_format) in the decoder mod.rs — it spans all formats.
+    '
+  technical_notes: "The split should be mechanical — move existing code into per-format files\nwithout changing behavior.\n\
+    \nEncoder pattern per format:\n- WIT record: {format}-encode-config\n- WIT function: encode-{format}(pixels, info, config)\
+    \ -> result<buffer, error>\n- Domain struct: {Format}EncodeConfig\n- Domain function: encode(pixels, info, config) ->\
+    \ Result<Vec<u8>, ImageError>\n\nDecoder pattern per format:\n- WIT record: {format}-decode-config (where relevant, e.g.,\
+    \ JPEG color management)\n- WIT function: decode-{format}(data, config) -> result<decoded-image, error>\n- Most formats\
+    \ need no decode config initially — the per-format decode function\n  with default config is still useful for dispatch\
+    \ clarity\n\nKeep format detection (detect_format) in the decoder mod.rs — it spans all formats.\n"
 plan:
-  - phase: "WIT Interface Design"
-    tasks:
-      - text: "Define per-format encode config records in encoder.wit (minimal placeholders for jpeg, png, webp)"
-        done: false
-      - text: "Add per-format encode functions to encoder.wit alongside existing generic encode"
-        done: false
-      - text: "Add per-format decode functions to decoder.wit where config is relevant, keep generic decode"
-        done: false
-      - text: "Verify cargo component build succeeds with new WIT"
-        done: false
-  - phase: "Domain Encoder Split"
-    tasks:
-      - text: "Create domain/encoder/ directory with mod.rs, jpeg.rs, png.rs, webp.rs"
-        done: false
-      - text: "Move existing encode logic into per-format files with typed config structs"
-        done: false
-      - text: "Implement generic encode() in mod.rs dispatching to per-format with default configs"
-        done: false
-  - phase: "Domain Decoder Split"
-    tasks:
-      - text: "Create domain/decoder/ directory with mod.rs and per-format files"
-        done: false
-      - text: "Move existing decode logic into per-format files, keep detect_format in mod.rs"
-        done: false
-  - phase: "Adapter Integration"
-    tasks:
-      - text: "Update adapter to implement new per-format WIT encode/decode functions"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All existing tests pass — domain, parity, WASM integration, TS SDK"
-        done: false
+- phase: WIT Interface Design
+  tasks:
+  - text: Define per-format encode config records in encoder.wit (minimal placeholders for jpeg, png, webp)
+    done: true
+  - text: Add per-format encode functions to encoder.wit alongside existing generic encode
+    done: true
+  - text: Add per-format decode functions to decoder.wit where config is relevant, keep generic decode
+    done: true
+  - text: Verify cargo component build succeeds with new WIT
+    done: true
+- phase: Domain Encoder Split
+  tasks:
+  - text: Create domain/encoder/ directory with mod.rs, jpeg.rs, png.rs, webp.rs
+    done: true
+  - text: Move existing encode logic into per-format files with typed config structs
+    done: true
+  - text: Implement generic encode() in mod.rs dispatching to per-format with default configs
+    done: true
+- phase: Domain Decoder Split
+  tasks:
+  - text: Create domain/decoder/ directory with mod.rs and per-format files
+    done: true
+  - text: Move existing decode logic into per-format files, keep detect_format in mod.rs
+    done: true
+- phase: Adapter Integration
+  tasks:
+  - text: Update adapter to implement new per-format WIT encode/decode functions
+    done: true
+- phase: Verification
+  tasks:
+  - text: All existing tests pass — domain, parity, WASM integration, TS SDK
+    done: true
 extra: {}

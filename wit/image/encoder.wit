@@ -5,7 +5,36 @@ interface encoder {
     use rasmcore:core/types.{buffer, image-info};
     use rasmcore:core/errors.{rasmcore-error};
 
-    /// Encode pixel data to a specific format
+    /// JPEG encode configuration
+    record jpeg-encode-config {
+        /// Quality level 1-100 (default: 85)
+        quality: option<u8>,
+    }
+
+    /// PNG encode configuration
+    record png-encode-config {
+        /// Compression level 0-9 where 0=none, 9=max (default: 6)
+        compression-level: option<u8>,
+    }
+
+    /// WebP encode configuration
+    record webp-encode-config {
+        /// Quality level 1-100 for lossy mode (default: 75)
+        quality: option<u8>,
+        /// Use lossless encoding (default: false)
+        lossless: option<bool>,
+    }
+
+    /// Encode pixel data to JPEG with typed configuration
+    encode-jpeg: func(pixels: buffer, info: image-info, config: jpeg-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to PNG with typed configuration
+    encode-png: func(pixels: buffer, info: image-info, config: png-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to WebP with typed configuration
+    encode-webp: func(pixels: buffer, info: image-info, config: webp-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to a specific format (convenience wrapper)
     encode: func(pixels: buffer, info: image-info, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 
     /// List supported encode formats
