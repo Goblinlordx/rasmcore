@@ -80,11 +80,49 @@ pub fn encode_gray(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, Tg
     if pixels.len() < expected {
         return Err(TgaError::BufferTooSmall);
     }
-    let pixel_count = expected;
-    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + pixel_count);
+    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + expected);
     write_header(&mut out, width, height, 8, TgaImageType::RawGrayscale, 0);
-    out.extend_from_slice(&pixels[..pixel_count]);
+    out.extend_from_slice(&pixels[..expected]);
     Ok(out)
+}
+
+/// Encode gray+alpha pixels to uncompressed grayscale+alpha TGA.
+pub fn encode_gray_alpha(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, TgaError> {
+    let expected = width as usize * height as usize * 2;
+    if pixels.len() < expected {
+        return Err(TgaError::BufferTooSmall);
+    }
+    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + expected);
+    write_header(&mut out, width, height, 16, TgaImageType::RawGrayscale, 8);
+    out.extend_from_slice(&pixels[..expected]);
+    Ok(out)
+}
+
+/// Encode RGB pixels with RLE compression.
+pub fn encode_rgb_rle(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, TgaError> {
+    let expected = width as usize * height as usize * 3;
+    if pixels.len() < expected {
+        return Err(TgaError::BufferTooSmall);
+    }
+    encode_rle(pixels, width, height, 24, TgaImageType::RleTrueColor)
+}
+
+/// Encode RGBA pixels with RLE compression.
+pub fn encode_rgba_rle(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, TgaError> {
+    let expected = width as usize * height as usize * 4;
+    if pixels.len() < expected {
+        return Err(TgaError::BufferTooSmall);
+    }
+    encode_rle(pixels, width, height, 32, TgaImageType::RleTrueColor)
+}
+
+/// Encode grayscale pixels with RLE compression.
+pub fn encode_gray_rle(pixels: &[u8], width: u16, height: u16) -> Result<Vec<u8>, TgaError> {
+    let expected = width as usize * height as usize;
+    if pixels.len() < expected {
+        return Err(TgaError::BufferTooSmall);
+    }
+    encode_rle(pixels, width, height, 8, TgaImageType::RleGrayscale)
 }
 
 fn encode_truecolor(pixels: &[u8], width: u16, height: u16, bpp: u8) -> Result<Vec<u8>, TgaError> {
@@ -109,6 +147,79 @@ fn encode_truecolor(pixels: &[u8], width: u16, height: u16, bpp: u8) -> Result<V
         out.push(pixels[off]); // R
         if channels == 4 {
             out.push(pixels[off + 3]); // A
+        }
+    }
+
+    Ok(out)
+}
+
+fn encode_rle(
+    pixels: &[u8],
+    width: u16,
+    height: u16,
+    bpp: u8,
+    image_type: TgaImageType,
+) -> Result<Vec<u8>, TgaError> {
+    let channels = (bpp / 8) as usize;
+    let pixel_count = width as usize * height as usize;
+    let alpha_bits = if bpp == 32 { 8 } else { 0 };
+    let mut out = Vec::with_capacity(TGA_HEADER_SIZE + pixel_count * channels);
+    write_header(&mut out, width, height, bpp, image_type, alpha_bits);
+
+    // Convert to TGA pixel order (BGR/grayscale) then RLE encode
+    let tga_pixels: Vec<u8> = if channels >= 3 {
+        let mut buf = Vec::with_capacity(pixel_count * channels);
+        for i in 0..pixel_count {
+            let off = i * channels;
+            buf.push(pixels[off + 2]); // B
+            buf.push(pixels[off + 1]); // G
+            buf.push(pixels[off]); // R
+            if channels == 4 {
+                buf.push(pixels[off + 3]); // A
+            }
+        }
+        buf
+    } else {
+        pixels[..pixel_count * channels].to_vec()
+    };
+
+    // RLE encode: scan for runs of identical pixels and raw sequences
+    let mut i = 0;
+    while i < pixel_count {
+        let px = &tga_pixels[i * channels..(i + 1) * channels];
+
+        // Count consecutive identical pixels (run)
+        let mut run_len = 1;
+        while i + run_len < pixel_count
+            && run_len < 128
+            && tga_pixels[(i + run_len) * channels..(i + run_len + 1) * channels] == *px
+        {
+            run_len += 1;
+        }
+
+        if run_len > 1 {
+            // RLE packet: 1xxxxxxx + pixel
+            out.push(0x80 | (run_len as u8 - 1));
+            out.extend_from_slice(px);
+            i += run_len;
+        } else {
+            // Raw packet: count non-repeating pixels
+            let mut raw_len = 1;
+            while i + raw_len < pixel_count && raw_len < 128 {
+                let next = &tga_pixels[(i + raw_len) * channels..(i + raw_len + 1) * channels];
+                // Stop if next pixel starts a run of 2+
+                if i + raw_len + 1 < pixel_count
+                    && tga_pixels[(i + raw_len + 1) * channels..(i + raw_len + 2) * channels]
+                        == *next
+                {
+                    break;
+                }
+                raw_len += 1;
+            }
+            // Raw packet: 0xxxxxxx + pixels
+            out.push(raw_len as u8 - 1);
+            out.extend_from_slice(&tga_pixels[i * channels..(i + raw_len) * channels]);
+            i += raw_len;
         }
     }
 
@@ -450,5 +561,73 @@ mod tests {
         let mut tga = vec![0u8; TGA_HEADER_SIZE];
         tga[2] = 99; // invalid image type
         assert!(decode(&tga).is_err());
+    }
+
+    #[test]
+    fn roundtrip_rgb_rle() {
+        let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
+        let encoded = encode_rgb_rle(&pixels, 8, 8).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.image_type, TgaImageType::RleTrueColor);
+        for (i, chunk) in decoded.chunks_exact(4).enumerate() {
+            assert_eq!(chunk[0], pixels[i * 3], "R mismatch at {i}");
+            assert_eq!(chunk[1], pixels[i * 3 + 1], "G mismatch at {i}");
+            assert_eq!(chunk[2], pixels[i * 3 + 2], "B mismatch at {i}");
+        }
+    }
+
+    #[test]
+    fn roundtrip_rgba_rle() {
+        let pixels: Vec<u8> = (0..4 * 4 * 4).map(|i| (i % 256) as u8).collect();
+        let encoded = encode_rgba_rle(&pixels, 4, 4).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.image_type, TgaImageType::RleTrueColor);
+        assert_eq!(decoded, pixels);
+    }
+
+    #[test]
+    fn rle_compresses_solid_color() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let raw = encode_rgb(&pixels, 64, 64).unwrap();
+        let rle = encode_rgb_rle(&pixels, 64, 64).unwrap();
+        assert!(
+            rle.len() < raw.len() / 2,
+            "RLE should compress solid: {} vs {}",
+            rle.len(),
+            raw.len()
+        );
+        // Verify roundtrip
+        let (_, decoded) = decode(&rle).unwrap();
+        for chunk in decoded.chunks_exact(4) {
+            assert_eq!(chunk[0], 128);
+            assert_eq!(chunk[1], 128);
+            assert_eq!(chunk[2], 128);
+        }
+    }
+
+    #[test]
+    fn roundtrip_gray_rle() {
+        let pixels: Vec<u8> = (0..16).map(|i| (i * 16) as u8).collect();
+        let encoded = encode_gray_rle(&pixels, 4, 4).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.image_type, TgaImageType::RleGrayscale);
+        for (i, chunk) in decoded.chunks_exact(4).enumerate() {
+            assert_eq!(chunk[0], pixels[i]);
+            assert_eq!(chunk[1], pixels[i]);
+            assert_eq!(chunk[2], pixels[i]);
+        }
+    }
+
+    #[test]
+    fn roundtrip_gray_alpha() {
+        // 2x2 gray+alpha
+        let pixels = vec![200, 255, 100, 128, 50, 64, 0, 0];
+        let encoded = encode_gray_alpha(&pixels, 2, 2).unwrap();
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 16);
+        // Pixel 0: gray=200, alpha=255
+        assert_eq!(&decoded[0..4], &[200, 200, 200, 255]);
+        // Pixel 1: gray=100, alpha=128
+        assert_eq!(&decoded[4..8], &[100, 100, 100, 128]);
     }
 }

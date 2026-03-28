@@ -63,6 +63,59 @@ pub struct BmpHeader {
     pub top_down: bool,
 }
 
+/// Encode grayscale pixels to 8-bit palette BMP.
+///
+/// Creates a 256-entry grayscale palette where index N maps to (N, N, N).
+pub fn encode_gray(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize;
+    if pixels.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+
+    let palette_size = 256 * 4; // 256 BGRA entries
+    let row_size = (width as usize + 3) & !3; // 4-byte aligned
+    let pixel_data_size = row_size * height as usize;
+    let data_offset = BMP_FILE_HEADER_SIZE + BMP_INFO_HEADER_SIZE as usize + palette_size;
+    let file_size = data_offset + pixel_data_size;
+
+    let mut out = Vec::with_capacity(file_size);
+
+    // File header
+    out.extend_from_slice(&BMP_MAGIC);
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]);
+    out.extend_from_slice(&(data_offset as u32).to_le_bytes());
+
+    // Info header
+    out.extend_from_slice(&BMP_INFO_HEADER_SIZE.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&8u16.to_le_bytes()); // 8 bpp
+    out.extend_from_slice(&BI_RGB.to_le_bytes());
+    out.extend_from_slice(&(pixel_data_size as u32).to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&256u32.to_le_bytes()); // colors used
+    out.extend_from_slice(&0u32.to_le_bytes());
+
+    // Grayscale palette: 256 entries, each (i, i, i, 0)
+    for i in 0..256u32 {
+        let v = i as u8;
+        out.extend_from_slice(&[v, v, v, 0]); // BGRA
+    }
+
+    // Pixel data: bottom-up, 1 byte per pixel (palette index = gray value)
+    let w = width as usize;
+    let padding = row_size - w;
+    for row in (0..height as usize).rev() {
+        out.extend_from_slice(&pixels[row * w..(row + 1) * w]);
+        out.extend(std::iter::repeat_n(0u8, padding));
+    }
+
+    Ok(out)
+}
+
 /// Encode RGB pixels to 24-bit uncompressed BMP.
 pub fn encode_rgb(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, BmpError> {
     let expected = width as usize * height as usize * 3;
@@ -764,6 +817,23 @@ mod tests {
         assert_eq!(extract_channel(val, 0x7C00), 255); // 31 scaled to 255
         assert_eq!(extract_channel(val, 0x03E0), 0); // G=0
         assert_eq!(extract_channel(val, 0x001F), 0); // B=0
+    }
+
+    #[test]
+    fn roundtrip_grayscale() {
+        let pixels: Vec<u8> = (0..16 * 16).map(|i| (i % 256) as u8).collect();
+        let encoded = encode_gray(&pixels, 16, 16).unwrap();
+        assert_eq!(&encoded[..2], b"BM");
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.bits_per_pixel, 8);
+        // Decoded is RGBA; gray N should map to (N, N, N, 255)
+        for (i, chunk) in decoded.chunks_exact(4).enumerate() {
+            let expected = pixels[i];
+            assert_eq!(chunk[0], expected, "R mismatch at {i}");
+            assert_eq!(chunk[1], expected, "G mismatch at {i}");
+            assert_eq!(chunk[2], expected, "B mismatch at {i}");
+            assert_eq!(chunk[3], 255);
+        }
     }
 
     #[test]
