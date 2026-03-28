@@ -30,38 +30,38 @@ spec:
     config.trellis is true. The spectral selection (Ss/Se) means trellis operates on coefficient subsets - the existing AC
     trellis handles this naturally since it processes positions 1-63 in zigzag order.'
 plan:
-  - phase: DC Trellis
-    tasks:
-      - text: Add DC candidate generation (round_down, round_exact, round_up for DC coefficient)
-        done: false
-      - text: Implement DC trellis DP pass over blocks in raster order with DPCM-aware cost
-        done: false
-      - text: Wire DC trellis as post-pass after AC trellis in trellis_quantize
-        done: false
-      - text: Unit test - DC trellis produces different values than simple rounding on varied content
-        done: false
-  - phase: Progressive Trellis
-    tasks:
-      - text: Wire trellis_quantize into progressive encoder pre-quantization loop
-        done: false
-      - text: Verify trellis output works with spectral selection (Ss/Se band encoding)
-        done: false
-      - text: Unit test - progressive+trellis produces smaller files than progressive alone
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Expose DC trellis via a dc_trellis flag (default true when trellis enabled)
-        done: false
-      - text: Ensure DC trellis respects restart intervals (reset DPCM predictor at restart boundaries)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Measure DC trellis savings on 256x256+ images across quality levels
-        done: false
-      - text: Add three-way parity test for progressive+trellis
-        done: false
-      - text: Add three-way parity test for DC trellis (baseline sequential)
-        done: false
-      - text: Run full existing test suite to verify no regressions
-        done: false
+- phase: DC Trellis
+  tasks:
+  - text: Add DC candidate generation (round_down, round_exact, round_up for DC coefficient)
+    done: true
+  - text: Implement DC trellis DP pass over blocks in raster order with DPCM-aware cost
+    done: true
+  - text: Wire DC trellis as post-pass after AC trellis in trellis_quantize
+    done: true
+  - text: Unit test - DC trellis produces different values than simple rounding on varied content
+    done: true
+- phase: Progressive Trellis
+  tasks:
+  - text: Wire trellis_quantize into progressive encoder pre-quantization loop
+    done: true
+  - text: Verify trellis output works with spectral selection (Ss/Se band encoding)
+    done: true
+  - text: Unit test - progressive+trellis produces smaller files than progressive alone
+    done: true
+- phase: Integration
+  tasks:
+  - text: Expose DC trellis via a dc_trellis flag (default true when trellis enabled)
+    done: true
+  - text: Ensure DC trellis respects restart intervals (reset DPCM predictor at restart boundaries)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Measure DC trellis savings on 256x256+ images across quality levels
+    done: true
+  - text: Add three-way parity test for progressive+trellis
+    done: true
+  - text: Add three-way parity test for DC trellis (baseline sequential)
+    done: true
+  - text: Run full existing test suite to verify no regressions
+    done: true
 extra: {}
