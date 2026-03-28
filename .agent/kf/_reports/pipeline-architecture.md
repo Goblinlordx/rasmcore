@@ -256,117 +256,162 @@ const thumb = p.resize(src, 200, 200); // node 1, refs node 0
 const large = p.resize(src, 2000, 2000); // node 2, also refs node 0
 ```
 
-### 3.2 Tile Pool with Reference-Counted Borrowing
+### 3.2 Spatial Tile Cache with Reference-Counted Borrowing
 
-Tiles are NOT owned by nodes. They're owned by a **pipeline-level tile pool**.
-Nodes borrow tiles via ref-counted handles. Since execution is single-threaded,
-no locks needed.
+Tiles are NOT owned by nodes. They're owned by a **pipeline-level spatial cache**.
+Nodes request arbitrary rectangular regions. The cache:
+1. Checks if the requested region (or parts of it) is already cached
+2. Computes only the missing sub-regions from upstream
+3. Assembles the full requested region from cached + new fragments
+4. Returns a ref-counted handle; slot is reclaimable when rc hits 0
+
+Since execution is single-threaded, no locks needed.
+
+**Key principle: dynamically-sized region queries, not fixed tiles.** Each node
+requests exactly the region it needs — no alignment to fixed grid boundaries.
+The write sink's output format determines the initial chunk geometry (JPEG: MCU
+rows, PNG: scanlines, TIFF: native tiles), and each upstream node expands the
+request by its kernel overlap. Every rectangle in the chain is precisely sized.
 
 ```rust
-/// Unique identity for a cached tile — scoped to a specific node + region.
-#[derive(Hash, Eq, PartialEq, Clone)]
-struct TileKey {
-    node_id: u32,      // which node produced this tile
+/// A rectangular region in pixel coordinates.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct Rect {
     x: u32,
     y: u32,
     width: u32,
     height: u32,
 }
 
-/// A slot in the tile pool.
-struct TileSlot {
-    pixels: Vec<u8>,      // pre-allocated buffer, reused
-    key: Option<TileKey>, // None = free slot
+/// A cached pixel region for a specific node.
+struct CachedRegion {
+    rect: Rect,
+    pixels: Vec<u8>,      // pixel data for this region
     rc: u32,              // reference count (0 = reclaimable)
     generation: u32,      // incremented on reuse, prevents stale handles
-    info: ImageInfo,
+    node_id: u32,         // which node produced this region
 }
 
 /// Handle returned to nodes — lightweight, copyable.
 #[derive(Clone, Copy)]
-struct TileHandle {
-    slot_index: u32,
-    generation: u32,   // must match slot.generation to be valid
+struct RegionHandle {
+    index: u32,
+    generation: u32,
 }
 
-/// Pipeline-owned tile pool.
-struct TilePool {
-    slots: Vec<TileSlot>,
-    index: HashMap<TileKey, usize>,  // fast lookup: key → slot index
-    max_slots: usize,
+/// Pipeline-owned spatial cache.
+struct SpatialCache {
+    /// All cached regions, indexed by slot.
+    regions: Vec<CachedRegion>,
+    /// Spatial index per node: node_id → list of region indices.
+    /// For common sequential access, a simple sorted Vec<(Rect, usize)>
+    /// suffices. R-tree for complex 2D access patterns (future).
+    node_index: HashMap<u32, Vec<usize>>,
+    /// Memory budget (max total pixel bytes across all regions).
+    memory_budget: usize,
+    memory_used: usize,
 }
 
-impl TilePool {
-    /// Acquire a tile. Returns cached if available, otherwise computes.
-    fn acquire(&mut self, key: TileKey, compute: impl FnOnce(&mut Vec<u8>)) -> TileHandle {
-        // 1. Check cache — if key exists and slot is valid, increment rc
-        if let Some(&slot_idx) = self.index.get(&key) {
-            self.slots[slot_idx].rc += 1;
-            return TileHandle {
-                slot_index: slot_idx as u32,
-                generation: self.slots[slot_idx].generation,
-            };
+impl SpatialCache {
+    /// Request a region from a node. Returns cached data if available,
+    /// computing only the missing sub-regions from upstream.
+    fn acquire(
+        &mut self,
+        node_id: u32,
+        request: Rect,
+        compute: impl FnOnce(Rect, &mut Vec<u8>),
+    ) -> RegionHandle {
+        // 1. Find cached regions for this node that intersect the request
+        let (covered, missing) = self.spatial_query(node_id, request);
+
+        if missing.is_empty() {
+            // Full cache hit — find the containing region, increment rc
+            return self.ref_existing(node_id, request);
         }
-        // 2. Find a free slot (rc == 0)
-        let slot_idx = self.find_free_slot();
-        let slot = &mut self.slots[slot_idx];
-        // 3. Evict old key from index if slot was previously used
-        if let Some(old_key) = slot.key.take() {
-            self.index.remove(&old_key);
+
+        if covered.is_empty() {
+            // Full cache miss — compute the entire region
+            let slot = self.alloc_slot(request.pixel_bytes());
+            self.regions[slot].node_id = node_id;
+            self.regions[slot].rect = request;
+            self.regions[slot].rc = 1;
+            compute(request, &mut self.regions[slot].pixels);
+            self.index_region(node_id, slot);
+            return self.handle_for(slot);
         }
-        // 4. Fill the slot
-        slot.generation += 1;
-        slot.rc = 1;
-        slot.key = Some(key.clone());
-        compute(&mut slot.pixels);
-        self.index.insert(key, slot_idx);
-        TileHandle {
-            slot_index: slot_idx as u32,
-            generation: slot.generation,
-        }
+
+        // Partial hit — compute only missing fragments, assemble
+        let slot = self.alloc_slot(request.pixel_bytes());
+        self.assemble_from_cached_and_computed(
+            slot, node_id, request, &covered, &missing, compute
+        );
+        self.handle_for(slot)
     }
 
-    /// Release a tile handle. Decrements rc. Slot is reclaimable when rc hits 0.
-    fn release(&mut self, handle: TileHandle) {
-        let slot = &mut self.slots[handle.slot_index as usize];
-        assert_eq!(slot.generation, handle.generation, "stale tile handle");
-        slot.rc -= 1;
+    /// Compute rectangular difference: request minus cached regions.
+    /// Returns (covered_rects, missing_rects) where missing_rects are
+    /// non-overlapping axis-aligned rectangles covering the uncovered area.
+    fn spatial_query(&self, node_id: u32, request: Rect) -> (Vec<Rect>, Vec<Rect>) {
+        // For sequential (1D) access: simple range difference
+        // For 2D access: axis-aligned rectangle clipping
+        // ...
     }
 
-    /// Read tile pixels (immutable borrow while handle is valid).
-    fn read(&self, handle: TileHandle) -> &[u8] {
-        let slot = &self.slots[handle.slot_index as usize];
-        assert_eq!(slot.generation, handle.generation, "stale tile handle");
-        &slot.pixels
+    /// Release a region handle. Decrements rc.
+    fn release(&mut self, handle: RegionHandle) {
+        let region = &mut self.regions[handle.index as usize];
+        assert_eq!(region.generation, handle.generation);
+        region.rc -= 1;
+        // When rc=0, region is reclaimable but stays in cache for potential reuse.
+        // Evicted only when memory budget is exceeded.
+    }
+
+    /// Read region pixels.
+    fn read(&self, handle: RegionHandle) -> &[u8] {
+        let region = &self.regions[handle.index as usize];
+        assert_eq!(region.generation, handle.generation);
+        &region.pixels
     }
 }
 ```
 
-**Key property: tile identity is (node_id, x, y, w, h).** Tile at (0,0) from
-the source decoder (node 0) is a different cache entry than tile at (0,0) from
-the blur node (node 2). Each node's output tiles are independently cached.
+**Why dynamically-sized queries are better than fixed tiles:**
+- No wasted pixels — each node requests exactly what it needs
+- No alignment constraints — no need to pick tile size a priori
+- Overlap reuse is automatic — adjacent output regions that overlap in their
+  upstream requests share cached pixels without redundant computation
+- Write sink format determines chunk geometry naturally (JPEG MCU rows, PNG
+  scanlines, TIFF native tiles) — no conflict with a fixed tile grid
 
-#### Tile lifecycle during blur processing:
+**Tile identity is (node_id, rect).** Region at (0,0,20,20) from the source
+decoder (node 0) is a different cache entry than (0,0,20,20) from the blur node
+(node 2). Each node's output regions are independently cached.
+
+#### Example: blur pipeline with overlap reuse
 
 ```
-Processing output strip 0 (rows 0-63):
-  blur needs source strips 0-1 (rows 0-127 including overlap):
-    pool.acquire(TileKey{node:0, y:0, h:64})  → compute, rc=1
-    pool.acquire(TileKey{node:0, y:64, h:64}) → compute, rc=1
-  blur produces its output into a new slot:
-    pool.acquire(TileKey{node:1, y:0, h:64})  → compute from source strips
-  blur releases source strip 0:
-    pool.release(source_strip_0)              → rc: 1→0 (reclaimable)
-  blur keeps source strip 1 (needed for next output)
+write_jpeg iterates MCU rows (8 rows each, full width):
 
-Processing output strip 1 (rows 64-127):
-  blur needs source strips 1-2:
-    pool.acquire(TileKey{node:0, y:64, h:64}) → CACHE HIT, rc: 1→2
-    pool.acquire(TileKey{node:0, y:128, h:64}) → compute, rc=1
-  blur produces output strip 1
-  blur releases source strip 1 twice:
-    pool.release(...)                          → rc: 2→1→0 (reclaimable)
-  ...sliding window, only 2-3 source strips cached at any time
+Output row 0 (y=0, h=8):
+  blur (radius=5) needs upstream region (y=-5..13, padded to 0..13)
+    cache.acquire(node:source, rect:(0,0,W,13))
+    → cache miss, compute: decode rows 0-13
+    → cached, rc=1
+  blur produces output (0,0,W,8) from source (0,0,W,13)
+  encoder consumes output
+  blur releases — but source (0,0,W,13) stays cached (rc=0 but not evicted)
+
+Output row 1 (y=8, h=8):
+  blur needs upstream region (y=3..21)
+    cache.acquire(node:source, rect:(0,3,W,18))
+    → spatial query: rows 0-13 cached, rows 14-21 missing
+    → compute ONLY rows 14-21 from decoder
+    → assemble: rows 3-13 from cache + rows 14-21 from new computation
+    → cached, rc=1
+  ...
+
+Each output row reuses ~60% of the previous upstream request.
+Zero redundant decoding.
 ```
 
 ### 3.3 Node Trait (Revised)
@@ -588,17 +633,24 @@ The pipeline can detect optimization opportunities before executing:
 
 **Fusion detection:** After the node chain is built (before first `get_tile`), a fusion pass walks the chain looking for known patterns. Fused nodes replace the original chain segment.
 
-### 3.5 Tile Size Strategy
+### 3.5 Output Chunk Strategy (Write Sink Drives Geometry)
 
-**Default tile size: full-width strips of 64 rows.**
+There is no fixed tile size. The **write sink** determines output chunk geometry
+based on the target format, and each upstream node expands the request by its
+kernel overlap. The geometry flows backward through the graph dynamically.
 
-Rationale:
-- Full-width strips align with JPEG MCU rows and PNG scanline decompression
-- 64 rows is a good balance between cache efficiency and overhead
-- For a 4000px wide RGBA image: 64 * 4000 * 4 = 1MB per strip — fits in L2/L3 cache
-- The write() sink iterates top-to-bottom in strip order
+| Write Format | Output Chunk | Rationale |
+|-------------|-------------|-----------|
+| JPEG | Full-width, 8 or 16 rows (MCU-aligned) | JPEG encodes in MCU blocks |
+| PNG | Full-width, 1 row (scanline) or batch | PNG filters per scanline |
+| TIFF (tiled) | Native tile size (e.g., 256x256) | Direct tile write |
+| TIFF (stripped) | Full-width, N rows per strip | Match strip config |
+| WebP | Full image (materialized) | VP8 encoder needs full image |
+| AVIF (tiled) | AV1 tile grid | Per-tile encoding |
 
-For formats with native tiles (TIFF), use the format's tile size instead.
+The spatial cache ensures that upstream overlap regions computed for one output
+chunk are automatically reused by the next chunk — no redundant computation
+regardless of chunk geometry.
 
 ---
 
