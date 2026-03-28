@@ -153,152 +153,19 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
     })
 }
 
-// ─── HSV/HSL Color Conversion ────────────────────────────────────────────
-
-/// Convert RGB (0-255 each) to HSV (H: 0-360, S: 0-1, V: 0-1).
-#[inline]
-fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let rf = r as f32 / 255.0;
-    let gf = g as f32 / 255.0;
-    let bf = b as f32 / 255.0;
-    let max = rf.max(gf).max(bf);
-    let min = rf.min(gf).min(bf);
-    let delta = max - min;
-
-    let h = if delta == 0.0 {
-        0.0
-    } else if max == rf {
-        60.0 * (((gf - bf) / delta) % 6.0)
-    } else if max == gf {
-        60.0 * ((bf - rf) / delta + 2.0)
-    } else {
-        60.0 * ((rf - gf) / delta + 4.0)
-    };
-    let h = if h < 0.0 { h + 360.0 } else { h };
-    let s = if max == 0.0 { 0.0 } else { delta / max };
-    (h, s, max)
-}
-
-/// Convert HSV (H: 0-360, S: 0-1, V: 0-1) to RGB (0-255 each).
-#[inline]
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
-    let c = v * s;
-    let hp = h / 60.0;
-    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
-    let (r1, g1, b1) = if hp < 1.0 {
-        (c, x, 0.0)
-    } else if hp < 2.0 {
-        (x, c, 0.0)
-    } else if hp < 3.0 {
-        (0.0, c, x)
-    } else if hp < 4.0 {
-        (0.0, x, c)
-    } else if hp < 5.0 {
-        (x, 0.0, c)
-    } else {
-        (c, 0.0, x)
-    };
-    let m = v - c;
-    (
-        ((r1 + m) * 255.0 + 0.5).clamp(0.0, 255.0) as u8,
-        ((g1 + m) * 255.0 + 0.5).clamp(0.0, 255.0) as u8,
-        ((b1 + m) * 255.0 + 0.5).clamp(0.0, 255.0) as u8,
-    )
-}
-
-/// Convert RGB to HSL (H: 0-360, S: 0-1, L: 0-1).
-#[inline]
-fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let rf = r as f32 / 255.0;
-    let gf = g as f32 / 255.0;
-    let bf = b as f32 / 255.0;
-    let max = rf.max(gf).max(bf);
-    let min = rf.min(gf).min(bf);
-    let l = (max + min) / 2.0;
-    let delta = max - min;
-
-    if delta == 0.0 {
-        return (0.0, 0.0, l);
-    }
-
-    let s = if l < 0.5 {
-        delta / (max + min)
-    } else {
-        delta / (2.0 - max - min)
-    };
-
-    let h = if max == rf {
-        60.0 * (((gf - bf) / delta) % 6.0)
-    } else if max == gf {
-        60.0 * ((bf - rf) / delta + 2.0)
-    } else {
-        60.0 * ((rf - gf) / delta + 4.0)
-    };
-    let h = if h < 0.0 { h + 360.0 } else { h };
-    (h, s, l)
-}
-
-/// Convert HSL to RGB.
-#[inline]
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
-    if s == 0.0 {
-        let v = (l * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-        return (v, v, v);
-    }
-    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-    let hp = h / 60.0;
-    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
-    let (r1, g1, b1) = if hp < 1.0 {
-        (c, x, 0.0)
-    } else if hp < 2.0 {
-        (x, c, 0.0)
-    } else if hp < 3.0 {
-        (0.0, c, x)
-    } else if hp < 4.0 {
-        (0.0, x, c)
-    } else if hp < 5.0 {
-        (x, 0.0, c)
-    } else {
-        (c, 0.0, x)
-    };
-    let m = l - c / 2.0;
-    (
-        ((r1 + m) * 255.0 + 0.5).clamp(0.0, 255.0) as u8,
-        ((g1 + m) * 255.0 + 0.5).clamp(0.0, 255.0) as u8,
-        ((b1 + m) * 255.0 + 0.5).clamp(0.0, 255.0) as u8,
-    )
-}
-
 // ─── Color Adjustment Functions ──────────────────────────────────────────
+//
+// All color transforms delegate to color_lut::ColorOp for the math
+// (single source of truth). The direct per-pixel evaluation avoids
+// 3D CLUT allocation overhead for non-pipeline callers.
 
-/// Rotate hue by `degrees` (0-360). Works on RGB8 and RGBA8 images.
-pub fn hue_rotate(pixels: &[u8], info: &ImageInfo, degrees: f32) -> Result<Vec<u8>, ImageError> {
-    validate_format(info.format)?;
-    if info.format == PixelFormat::Gray8 {
-        return Ok(pixels.to_vec()); // no hue in grayscale
-    }
+use super::color_lut::ColorOp;
 
-    let bpp = if info.format == PixelFormat::Rgba8 {
-        4
-    } else {
-        3
-    };
-    let mut result = pixels.to_vec();
-    for chunk in result.chunks_exact_mut(bpp) {
-        let (h, s, v) = rgb_to_hsv(chunk[0], chunk[1], chunk[2]);
-        let new_h = (h + degrees) % 360.0;
-        let new_h = if new_h < 0.0 { new_h + 360.0 } else { new_h };
-        let (r, g, b) = hsv_to_rgb(new_h, s, v);
-        chunk[0] = r;
-        chunk[1] = g;
-        chunk[2] = b;
-    }
-    Ok(result)
-}
-
-/// Adjust saturation by `factor` (0=grayscale, 1=unchanged, 2=double).
-/// Uses HSL conversion.
-pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>, ImageError> {
+/// Apply a ColorOp to a pixel buffer via direct per-pixel evaluation.
+///
+/// No CLUT allocation — evaluates ColorOp::apply() on each pixel's
+/// normalized (R,G,B). For pipeline use, ColorOpNode builds a CLUT instead.
+fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if info.format == PixelFormat::Gray8 {
         return Ok(pixels.to_vec());
@@ -311,43 +178,31 @@ pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>,
     };
     let mut result = pixels.to_vec();
     for chunk in result.chunks_exact_mut(bpp) {
-        let (h, s, l) = rgb_to_hsl(chunk[0], chunk[1], chunk[2]);
-        let new_s = (s * factor).clamp(0.0, 1.0);
-        let (r, g, b) = hsl_to_rgb(h, new_s, l);
-        chunk[0] = r;
-        chunk[1] = g;
-        chunk[2] = b;
+        let (r, g, b) = op.apply(
+            chunk[0] as f32 / 255.0,
+            chunk[1] as f32 / 255.0,
+            chunk[2] as f32 / 255.0,
+        );
+        chunk[0] = (r * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+        chunk[1] = (g * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+        chunk[2] = (b * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
     }
     Ok(result)
+}
+
+/// Rotate hue by `degrees` (0-360). Works on RGB8 and RGBA8 images.
+pub fn hue_rotate(pixels: &[u8], info: &ImageInfo, degrees: f32) -> Result<Vec<u8>, ImageError> {
+    apply_color_op(pixels, info, &ColorOp::HueRotate(degrees))
+}
+
+/// Adjust saturation by `factor` (0=grayscale, 1=unchanged, 2=double).
+pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>, ImageError> {
+    apply_color_op(pixels, info, &ColorOp::Saturate(factor))
 }
 
 /// Apply sepia tone with given `intensity` (0=none, 1=full sepia).
 pub fn sepia(pixels: &[u8], info: &ImageInfo, intensity: f32) -> Result<Vec<u8>, ImageError> {
-    validate_format(info.format)?;
-    let intensity = intensity.clamp(0.0, 1.0);
-    if info.format == PixelFormat::Gray8 {
-        return Ok(pixels.to_vec());
-    }
-
-    let bpp = if info.format == PixelFormat::Rgba8 {
-        4
-    } else {
-        3
-    };
-    let mut result = pixels.to_vec();
-    for chunk in result.chunks_exact_mut(bpp) {
-        let r = chunk[0] as f32;
-        let g = chunk[1] as f32;
-        let b = chunk[2] as f32;
-        // Standard sepia matrix
-        let sr = (r * 0.393 + g * 0.769 + b * 0.189).min(255.0);
-        let sg = (r * 0.349 + g * 0.686 + b * 0.168).min(255.0);
-        let sb = (r * 0.272 + g * 0.534 + b * 0.131).min(255.0);
-        chunk[0] = (r + (sr - r) * intensity).clamp(0.0, 255.0) as u8;
-        chunk[1] = (g + (sg - g) * intensity).clamp(0.0, 255.0) as u8;
-        chunk[2] = (b + (sb - b) * intensity).clamp(0.0, 255.0) as u8;
-    }
-    Ok(result)
+    apply_color_op(pixels, info, &ColorOp::Sepia(intensity.clamp(0.0, 1.0)))
 }
 
 /// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
@@ -357,31 +212,16 @@ pub fn colorize(
     target: [u8; 3],
     amount: f32,
 ) -> Result<Vec<u8>, ImageError> {
-    validate_format(info.format)?;
-    let amount = amount.clamp(0.0, 1.0);
-    if info.format == PixelFormat::Gray8 {
-        return Ok(pixels.to_vec());
-    }
-
-    let bpp = if info.format == PixelFormat::Rgba8 {
-        4
-    } else {
-        3
-    };
-    let mut result = pixels.to_vec();
-    for chunk in result.chunks_exact_mut(bpp) {
-        let luma = 0.2126 * chunk[0] as f32 + 0.7152 * chunk[1] as f32 + 0.0722 * chunk[2] as f32;
-        let tinted_r = luma * (target[0] as f32 / 255.0);
-        let tinted_g = luma * (target[1] as f32 / 255.0);
-        let tinted_b = luma * (target[2] as f32 / 255.0);
-        chunk[0] =
-            (chunk[0] as f32 + (tinted_r - chunk[0] as f32) * amount).clamp(0.0, 255.0) as u8;
-        chunk[1] =
-            (chunk[1] as f32 + (tinted_g - chunk[1] as f32) * amount).clamp(0.0, 255.0) as u8;
-        chunk[2] =
-            (chunk[2] as f32 + (tinted_b - chunk[2] as f32) * amount).clamp(0.0, 255.0) as u8;
-    }
-    Ok(result)
+    let target_norm = [
+        target[0] as f32 / 255.0,
+        target[1] as f32 / 255.0,
+        target[2] as f32 / 255.0,
+    ];
+    apply_color_op(
+        pixels,
+        info,
+        &ColorOp::Colorize(target_norm, amount.clamp(0.0, 1.0)),
+    )
 }
 
 // =============================================================================
@@ -1008,38 +848,28 @@ mod tests {
     }
 
     #[test]
-    fn hsv_roundtrip_full_range() {
-        for r in (0..=255).step_by(17) {
-            for g in (0..=255).step_by(17) {
-                for b in (0..=255).step_by(17) {
-                    let (h, s, v) = rgb_to_hsv(r as u8, g as u8, b as u8);
-                    let (r2, g2, b2) = hsv_to_rgb(h, s, v);
-                    assert!(
-                        (r as i32 - r2 as i32).abs() <= 1
-                            && (g as i32 - g2 as i32).abs() <= 1
-                            && (b as i32 - b2 as i32).abs() <= 1,
-                        "HSV roundtrip: ({r},{g},{b}) -> ({h:.1},{s:.3},{v:.3}) -> ({r2},{g2},{b2})"
-                    );
-                }
-            }
+    fn hue_rotate_zero_is_identity() {
+        // Hue rotate by 0 degrees should preserve pixels (via ColorOp delegation)
+        let (px, info) = make_image(8, 8);
+        let result = hue_rotate(&px, &info, 0.0).unwrap();
+        for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
+            assert!(
+                (orig as i16 - out as i16).abs() <= 1,
+                "pixel {i}: {orig} -> {out}"
+            );
         }
     }
 
     #[test]
-    fn hsl_roundtrip_full_range() {
-        for r in (0..=255).step_by(17) {
-            for g in (0..=255).step_by(17) {
-                for b in (0..=255).step_by(17) {
-                    let (h, s, l) = rgb_to_hsl(r as u8, g as u8, b as u8);
-                    let (r2, g2, b2) = hsl_to_rgb(h, s, l);
-                    assert!(
-                        (r as i32 - r2 as i32).abs() <= 1
-                            && (g as i32 - g2 as i32).abs() <= 1
-                            && (b as i32 - b2 as i32).abs() <= 1,
-                        "HSL roundtrip: ({r},{g},{b}) -> ({h:.1},{s:.3},{l:.3}) -> ({r2},{g2},{b2})"
-                    );
-                }
-            }
+    fn saturate_one_is_identity() {
+        // Saturation factor 1.0 should preserve pixels
+        let (px, info) = make_image(8, 8);
+        let result = saturate(&px, &info, 1.0).unwrap();
+        for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
+            assert!(
+                (orig as i16 - out as i16).abs() <= 1,
+                "pixel {i}: {orig} -> {out}"
+            );
         }
     }
 
