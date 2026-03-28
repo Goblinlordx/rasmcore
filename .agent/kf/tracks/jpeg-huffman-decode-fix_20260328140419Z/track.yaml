@@ -1,0 +1,67 @@
+id: jpeg-huffman-decode-fix_20260328140419Z
+title: JPEG Huffman Decoder — Missing min_code Bounds Check
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: HuffmanTable::decode() only checks max_code upper bound, not min_code lower bound. When code length gaps exist
+    (e.g., AnnexK AC tables), codes below min_code falsely match, causing wrong symbol lookups and 'invalid Huffman code'
+    errors.
+  context: The JPEG Huffman decoder fails with 'invalid Huffman code' when encoding with AnnexK quantization tables (libjpeg-turbo
+    defaults) on high-frequency patterns. The image crate decodes the same files correctly. Discovered during progressive
+    JPEG parity testing against ImageMagick. Affects both baseline (SOF0) and progressive (SOF2) decode paths since both share
+    the same HuffmanTable::decode() method.
+  codebase_analysis: "Root cause: decode.rs HuffmanTable::decode() line ~103 checks only:\n  if (code as i32) <= self.max_code[bits]\n\
+    Missing: code >= self.min_code[bits]\n\nIn canonical Huffman coding, when bit length N has 0 codes, min_code[N+1] can\
+    \ be > 0. A code value below min_code[N+1] should NOT match at length N+1, but the missing lower bound check allows it.\
+    \ This produces wrong val_offset indices, returning incorrect symbols or garbage.\n\nExample: bits=1 has 0 codes, bits=2\
+    \ has 2 codes (min=0,max=1), bits=3 has 1 code (min=4,max=4). Reading code=0b000 at bits=3: check 0<=4 passes (WRONG),\
+    \ but 0 is not in [4,4]. Index becomes 0 + (si-4) = negative.\n\nWith Robidoux tables (default), most high-freq AC coefficients\
+    \ are quantized to zero, so the decoder rarely hits code length gaps. AnnexK preserves more AC coefficients, exercising\
+    \ the sparse regions of the Huffman table where gaps exist."
+  acceptance_criteria:
+  - HuffmanTable::decode checks both min_code and max_code bounds
+  - 'Baseline decode of AnnexK checkerboard 32x32 succeeds (was: ''invalid Huffman code'')'
+  - Progressive decode of AnnexK checkerboard 32x32 succeeds
+  - Parity tests upgraded to AnnexK tables with B >= C * 0.9 for all patterns
+  - A == B (MAE < 2.0) for all patterns with AnnexK tables
+  - All existing JPEG tests still pass (regression check)
+  out_of_scope: Optimized Huffman tables (two-pass frequency counting). Arithmetic coding decoder. IDCT precision improvements.
+  technical_notes: "Fix: Add min_code lower bound check to HuffmanTable::decode() in decode.rs:\n  if code >= self.min_code[bits]\
+    \ && (code as i32) <= self.max_code[bits]\n\nAfter fixing, upgrade parity tests (tests/parity.rs) to use QuantPreset::AnnexK\
+    \ for fair comparison against ImageMagick. This should bring the checkerboard B_quality from 30.8dB (Robidoux) to ~40dB\
+    \ (matching magick's 39.4dB), allowing the standard B >= C * 0.9 threshold everywhere. QuantPreset is already re-exported\
+    \ from the crate root."
+plan: []
+extra: {}
+plan:
+  - phase: Fix
+    tasks:
+      - text: "Add min_code lower bound check to HuffmanTable::decode() in decode.rs"
+        done: false
+      - text: "Add unit test for HuffmanTable::decode with code-length gaps (bits=1 empty, bits=3 sparse)"
+        done: false
+  - phase: AnnexK Validation
+    tasks:
+      - text: "Test baseline decode of AnnexK checkerboard 32x32 (was failing)"
+        done: false
+      - text: "Test progressive decode of AnnexK checkerboard 32x32 (was failing)"
+        done: false
+      - text: "Test AnnexK decode with gradient, grayscale, and odd dimensions"
+        done: false
+  - phase: Parity Upgrade
+    tasks:
+      - text: "Switch parity_config() in tests/parity.rs to use QuantPreset::AnnexK"
+        done: false
+      - text: "Restore B >= C * 0.9 threshold for checkerboard (was 0.75 due to table mismatch)"
+        done: false
+      - text: "Verify all 7 parity tests pass with AnnexK tables and strict thresholds"
+        done: false
+  - phase: Regression
+    tasks:
+      - text: "All 85 existing lib tests still pass"
+        done: false
+      - text: "All parity tests pass with --nocapture to verify PSNR/MAE values"
+        done: false
+extra: {}
