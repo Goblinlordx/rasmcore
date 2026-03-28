@@ -8,6 +8,7 @@
 //!   1. `cargo component build -p rasmcore-image`
 //!   2. `tests/fixtures/generate.sh`
 
+use wasm_integration::exports::rasmcore::image::pipeline::PngWriteConfig;
 use wasm_integration::exports::rasmcore::image::transform::{
     FlipDirection, ResizeFilter, Rotation,
 };
@@ -441,4 +442,127 @@ fn wasm_filters_contrast() {
     assert_eq!(contrasted.len(), decoded.pixels.len());
     let mae = mean_absolute_error(&contrasted, &decoded.pixels);
     assert!(mae > 0.1, "contrast should change pixels, MAE: {mae:.2}");
+}
+
+// =============================================================================
+// Compositing tests
+// =============================================================================
+
+#[test]
+fn wasm_filters_composite_opaque() {
+    let (mut store, bindings) = instantiate_image_component();
+    let decoder = bindings.rasmcore_image_decoder();
+    let filters = bindings.rasmcore_image_filters();
+
+    let bg_data = load_fixture("gradient_64x64.png");
+    let bg = decoder
+        .call_decode_as(&mut store, &bg_data, PixelFormat::Rgba8)
+        .unwrap()
+        .unwrap();
+
+    // Create a solid red 16x16 foreground
+    let fg_pixels: Vec<u8> = [255, 0, 0, 255].repeat(16 * 16);
+    let fg_info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 16,
+        height: 16,
+        format: PixelFormat::Rgba8,
+        color_space: wasm_integration::rasmcore::core::types::ColorSpace::Srgb,
+    };
+
+    let result = filters
+        .call_composite(&mut store, &fg_pixels, fg_info, &bg.pixels, bg.info, 10, 10)
+        .unwrap()
+        .unwrap();
+
+    // Output should be same size as bg
+    assert_eq!(result.len(), bg.pixels.len());
+
+    // Pixel at (10, 10) should be red (opaque overlay)
+    let idx = (10 * 64 + 10) * 4;
+    assert_eq!(result[idx], 255); // R
+    assert_eq!(result[idx + 1], 0); // G
+    assert_eq!(result[idx + 2], 0); // B
+    assert_eq!(result[idx + 3], 255); // A
+
+    // Pixel at (0, 0) should be unchanged from bg
+    assert_eq!(&result[0..4], &bg.pixels[0..4]);
+}
+
+#[test]
+fn wasm_filters_composite_semi_transparent() {
+    let (mut store, bindings) = instantiate_image_component();
+    let filters = bindings.rasmcore_image_filters();
+
+    // 1x1 50% red over 1x1 solid blue
+    let fg_pixels = vec![255u8, 0, 0, 128];
+    let fg_info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 1,
+        height: 1,
+        format: PixelFormat::Rgba8,
+        color_space: wasm_integration::rasmcore::core::types::ColorSpace::Srgb,
+    };
+    let bg_pixels = vec![0u8, 0, 255, 255];
+    let bg_info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 1,
+        height: 1,
+        format: PixelFormat::Rgba8,
+        color_space: wasm_integration::rasmcore::core::types::ColorSpace::Srgb,
+    };
+
+    let result = filters
+        .call_composite(&mut store, &fg_pixels, fg_info, &bg_pixels, bg_info, 0, 0)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result[0], 128); // R
+    assert_eq!(result[1], 0); // G
+    assert_eq!(result[2], 127); // B
+    assert_eq!(result[3], 255); // A
+}
+
+#[test]
+fn wasm_pipeline_composite() {
+    let (mut store, bindings) = instantiate_image_component();
+    let pipeline_guest = bindings.rasmcore_image_pipeline();
+    let pipe_res = pipeline_guest.image_pipeline();
+
+    let pipe = pipe_res.call_constructor(&mut store).unwrap();
+
+    // Read bg
+    let bg_data = load_fixture("gradient_64x64.png");
+    let bg_node = pipe_res
+        .call_read(&mut store, pipe, &bg_data)
+        .unwrap()
+        .unwrap();
+
+    // Read fg (same image — just to test the pipeline composite method)
+    let fg_data = load_fixture("gradient_64x64.png");
+    let fg_node = pipe_res
+        .call_read(&mut store, pipe, &fg_data)
+        .unwrap()
+        .unwrap();
+
+    // Composite fg over bg at offset (10, 10)
+    let comp_node = pipe_res
+        .call_composite(&mut store, pipe, fg_node, bg_node, 10, 10)
+        .unwrap()
+        .unwrap();
+
+    // Get info — should match bg dimensions
+    let info = pipe_res
+        .call_node_info(&mut store, pipe, comp_node)
+        .unwrap()
+        .unwrap();
+    assert_eq!(info.width, 64);
+    assert_eq!(info.height, 64);
+
+    // Write as PNG — should produce valid output
+    let config = PngWriteConfig {
+        compression_level: None,
+    };
+    let output = pipe_res
+        .call_write_png(&mut store, pipe, comp_node, config)
+        .unwrap()
+        .unwrap();
+    assert_eq!(&output[..4], &[0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
 }

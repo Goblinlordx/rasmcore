@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::domain::pipeline::graph::NodeGraph;
+    use crate::domain::pipeline::nodes::composite::CompositeNode;
     use crate::domain::pipeline::nodes::filters::{BlurNode, GrayscaleNode};
     use crate::domain::pipeline::nodes::sink;
     use crate::domain::pipeline::nodes::source::SourceNode;
@@ -194,5 +195,114 @@ mod tests {
             _ => 4,
         };
         assert_eq!(sub.len(), 20 * 20 * bpp);
+    }
+
+    fn make_test_rgba_png(w: u32, h: u32, r: u8, g: u8, b: u8, a: u8) -> Vec<u8> {
+        let img = image::RgbaImage::from_fn(w, h, |_, _| image::Rgba([r, g, b, a]));
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+        buf
+    }
+
+    #[test]
+    fn pipeline_composite_opaque_watermark() {
+        // Composite a small red overlay onto a blue background
+        let bg_png = make_test_rgba_png(64, 64, 0, 0, 255, 255);
+        let fg_png = make_test_rgba_png(16, 16, 255, 0, 0, 255);
+
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let bg = graph.add_node(Box::new(SourceNode::new(bg_png).unwrap()));
+        let fg = graph.add_node(Box::new(SourceNode::new(fg_png).unwrap()));
+
+        let bg_info = graph.node_info(bg).unwrap();
+        let fg_info = graph.node_info(fg).unwrap();
+
+        let comp = graph.add_node(Box::new(CompositeNode::new(
+            fg, bg, fg_info, bg_info, 10, 10,
+        )));
+
+        // Output should have bg dimensions
+        assert_eq!(graph.node_info(comp).unwrap().width, 64);
+        assert_eq!(graph.node_info(comp).unwrap().height, 64);
+
+        let output = sink::write(&mut graph, comp, "png", None).unwrap();
+        let decoded = crate::domain::decoder::decode(&output).unwrap();
+        assert_eq!(decoded.info.width, 64);
+        assert_eq!(decoded.info.height, 64);
+    }
+
+    #[test]
+    fn pipeline_composite_pixel_correctness() {
+        // Verify exact pixel values after compositing
+        let bg_png = make_test_rgba_png(4, 4, 0, 0, 255, 255); // blue
+        let fg_png = make_test_rgba_png(2, 2, 255, 0, 0, 128); // 50% red
+
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let bg = graph.add_node(Box::new(SourceNode::new(bg_png).unwrap()));
+        let fg = graph.add_node(Box::new(SourceNode::new(fg_png).unwrap()));
+
+        let bg_info = graph.node_info(bg).unwrap();
+        let fg_info = graph.node_info(fg).unwrap();
+
+        let comp = graph.add_node(Box::new(CompositeNode::new(
+            fg, bg, fg_info, bg_info, 1, 1,
+        )));
+
+        // Request full region
+        let pixels = graph
+            .request_region(comp, Rect::new(0, 0, 4, 4))
+            .unwrap();
+
+        // Pixel (0,0): should be pure blue (no fg overlay)
+        assert_eq!(&pixels[0..4], [0, 0, 255, 255]);
+
+        // Pixel (1,1): should be blended (50% red over blue)
+        let px = &pixels[(1 * 4 + 1) * 4..(1 * 4 + 1) * 4 + 4];
+        assert_eq!(px[0], 128); // red channel
+        assert_eq!(px[1], 0); // green
+        assert_eq!(px[2], 127); // blue channel
+        assert_eq!(px[3], 255); // alpha
+
+        // Pixel (3,3): should be pure blue (outside fg)
+        let px = &pixels[(3 * 4 + 3) * 4..(3 * 4 + 3) * 4 + 4];
+        assert_eq!(px, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn pipeline_composite_chain() {
+        // read bg → read fg → resize fg → composite → write
+        let bg_png = make_test_rgba_png(64, 64, 0, 0, 255, 255);
+        let fg_png = make_test_rgba_png(32, 32, 255, 0, 0, 255);
+
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let bg = graph.add_node(Box::new(SourceNode::new(bg_png).unwrap()));
+        let fg = graph.add_node(Box::new(SourceNode::new(fg_png).unwrap()));
+
+        let fg_info = graph.node_info(fg).unwrap();
+        let resized_fg = graph.add_node(Box::new(ResizeNode::new(
+            fg,
+            fg_info,
+            16,
+            16,
+            ResizeFilter::Lanczos3,
+        )));
+
+        let bg_info = graph.node_info(bg).unwrap();
+        let resized_fg_info = graph.node_info(resized_fg).unwrap();
+
+        let comp = graph.add_node(Box::new(CompositeNode::new(
+            resized_fg,
+            bg,
+            resized_fg_info,
+            bg_info,
+            24,
+            24,
+        )));
+
+        let output = sink::write(&mut graph, comp, "png", None).unwrap();
+        let decoded = crate::domain::decoder::decode(&output).unwrap();
+        assert_eq!(decoded.info.width, 64);
+        assert_eq!(decoded.info.height, 64);
     }
 }
