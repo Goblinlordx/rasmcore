@@ -15,7 +15,7 @@ image = { workspace = true, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
     "tga", "hdr", "pnm", "exr", "dds",
 ] }
-zenjpeg = { version = "0.6", features = ["trellis"] }
+rasmcore-jpeg = { path = "../rasmcore-jpeg" }
 exif = { version = "0.6.1", package = "kamadak-exif" }
 xmp-writer = "0.3.2"
 quick-xml = "0.39.2"
@@ -41,6 +41,7 @@ native-trivial = ["native-qoi", "native-pnm", "native-bmp", "native-tga"]
 crate-type = ["cdylib", "rlib"]
 
 [dev-dependencies]
+zenjpeg = { version = "0.6", features = ["trellis"] }
 butteraugli = "0.9"
 dssim-core = "3.4"
 imgref = "1.12.0"

@@ -1,86 +1,115 @@
 id: jpeg-integration_20260328080507Z
-title: "JPEG Integration — Wire rasmcore-jpeg, Replace zenjpeg, Parity Tests"
+title: JPEG Integration — Wire rasmcore-jpeg, Replace zenjpeg, Parity Tests
 type: feature
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Wire rasmcore-jpeg into rasmcore-image replacing zenjpeg as the JPEG
+  summary: 'Wire rasmcore-jpeg into rasmcore-image replacing zenjpeg as the JPEG
+
     encoding backend. Move zenjpeg to dev-dependencies for parity testing.
+
     Full quality curve validation using Butteraugli and DSSIM against both
+
     zenjpeg and ImageMagick (libjpeg-turbo).
-  context: |
-    This is the final JPEG track — it delivers the user-facing feature and
+
+    '
+  context: 'This is the final JPEG track — it delivers the user-facing feature and
+
     eliminates the AGPL dependency. After this track:
+
     - No AGPL code in runtime dependency tree
+
     - zenjpeg available only for parity testing (dev-dependency)
+
     - rasmcore-jpeg is MIT/Apache-2.0 compatible
 
+
     The integration is localized to rasmcore-image/encoder/jpeg.rs — the
+
     metadata embedding code (ICC, EXIF, XMP, IPTC) stays unchanged.
-  codebase_analysis: |
-    - encoder/jpeg.rs currently imports zenjpeg types
+
+    '
+  codebase_analysis: '- encoder/jpeg.rs currently imports zenjpeg types
+
     - Metadata functions (embed_icc_profile, embed_exif, etc.) are our code
+
     - WIT interface unchanged (quality + progressive already defined)
+
     - Pipeline adapter already wired
+
     - Butteraugli and DSSIM already dev-dependencies
+
     - generate.sh already produces JPEG reference fixtures
+
+    '
   acceptance_criteria:
-    - rasmcore-image depends on rasmcore-jpeg (not zenjpeg) for encoding
-    - zenjpeg moved to dev-dependencies only
-    - No AGPL code in runtime dependency tree
-    - Quality curve at q10/q30/q50/q70/q85/q95 vs zenjpeg (Butteraugli + DSSIM)
-    - Quality curve vs ImageMagick (libjpeg-turbo) within 1.5x file size
-    - Progressive mode produces valid progressive JPEG
-    - All existing JPEG parity tests pass
-    - Metadata embedding (ICC, EXIF, XMP, IPTC) unchanged and working
-    - WASM build succeeds
-    - Determinism test passes
-  out_of_scope: |
-    - WIT interface changes
+  - rasmcore-image depends on rasmcore-jpeg (not zenjpeg) for encoding
+  - zenjpeg moved to dev-dependencies only
+  - No AGPL code in runtime dependency tree
+  - Quality curve at q10/q30/q50/q70/q85/q95 vs zenjpeg (Butteraugli + DSSIM)
+  - Quality curve vs ImageMagick (libjpeg-turbo) within 1.5x file size
+  - Progressive mode produces valid progressive JPEG
+  - All existing JPEG parity tests pass
+  - Metadata embedding (ICC, EXIF, XMP, IPTC) unchanged and working
+  - WASM build succeeds
+  - Determinism test passes
+  out_of_scope: '- WIT interface changes
+
     - Pipeline adapter changes
-  technical_notes: |
-    Integration approach:
+
+    '
+  technical_notes: 'Integration approach:
+
     1. Add rasmcore-jpeg as dependency to rasmcore-image
+
     2. In encoder/jpeg.rs, replace zenjpeg imports with rasmcore-jpeg
+
     3. Map JpegEncodeConfig fields to rasmcore-jpeg EncodeConfig
+
     4. Move zenjpeg to [dev-dependencies]
+
     5. Run full parity test suite
+
     6. Verify WASM build still works
 
+
     The encode_pixels function signature stays the same.
+
     The DynamicImage encode wrapper stays the same.
+
     Metadata embedding functions are untouched.
+
+    '
 plan:
-  - phase: "Dependency Swap"
-    tasks:
-      - text: "Add rasmcore-jpeg as dependency to rasmcore-image"
-        done: false
-      - text: "Update encoder/jpeg.rs to use rasmcore-jpeg instead of zenjpeg"
-        done: false
-      - text: "Move zenjpeg to dev-dependencies"
-        done: false
-      - text: "Verify no AGPL in runtime dep tree (cargo tree check)"
-        done: false
-  - phase: "Parity Testing"
-    tasks:
-      - text: "Quality curve vs zenjpeg at q10/q30/q50/q70/q85/q95 (Butteraugli)"
-        done: false
-      - text: "Quality curve vs zenjpeg (DSSIM)"
-        done: false
-      - text: "Quality curve vs ImageMagick (file size within 1.5x)"
-        done: false
-      - text: "Progressive mode validation"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All existing JPEG parity tests pass"
-        done: false
-      - text: "Metadata embedding tests pass (ICC, EXIF, XMP, IPTC)"
-        done: false
-      - text: "Determinism test (byte-identical output)"
-        done: false
-      - text: "WASM build succeeds"
-        done: false
+- phase: Dependency Swap
+  tasks:
+  - text: Add rasmcore-jpeg as dependency to rasmcore-image
+    done: true
+  - text: Update encoder/jpeg.rs to use rasmcore-jpeg instead of zenjpeg
+    done: true
+  - text: Move zenjpeg to dev-dependencies
+    done: true
+  - text: Verify no AGPL in runtime dep tree (cargo tree check)
+    done: true
+- phase: Parity Testing
+  tasks:
+  - text: Quality curve vs zenjpeg at q10/q30/q50/q70/q85/q95 (Butteraugli)
+    done: true
+  - text: Quality curve vs zenjpeg (DSSIM)
+    done: true
+  - text: Quality curve vs ImageMagick (file size within 1.5x)
+    done: true
+  - text: Progressive mode validation
+    done: true
+- phase: Verification
+  tasks:
+  - text: All existing JPEG parity tests pass
+    done: true
+  - text: Metadata embedding tests pass (ICC, EXIF, XMP, IPTC)
+    done: true
+  - text: Determinism test (byte-identical output)
+    done: true
+  - text: WASM build succeeds
+    done: true
 extra: {}
