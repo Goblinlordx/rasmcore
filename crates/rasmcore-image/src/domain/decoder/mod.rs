@@ -7,19 +7,41 @@ use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
-    "dds",
+    "dds", "jxl",
 ];
 
 /// Detect image format from header bytes
 pub fn detect_format(header: &[u8]) -> Option<String> {
+    // Check JXL first (not supported by image crate)
+    if is_jxl(header) {
+        return Some("jxl".to_string());
+    }
     image::guess_format(header)
         .ok()
         .and_then(|fmt| format_to_str(fmt))
         .map(String::from)
 }
 
+/// Check if data starts with JPEG XL magic bytes.
+/// Bare codestream: 0xFF 0x0A
+/// ISOBMFF container: 0x00 0x00 0x00 0x0C 0x4A 0x58 0x4C 0x20 ("....JXL ")
+fn is_jxl(header: &[u8]) -> bool {
+    if header.len() >= 2 && header[0] == 0xFF && header[1] == 0x0A {
+        return true;
+    }
+    if header.len() >= 12 && header[..4] == [0x00, 0x00, 0x00, 0x0C] && &header[4..8] == b"JXL " {
+        return true;
+    }
+    false
+}
+
 /// Decode an image from raw bytes
 pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    // JXL: handle via jxl-oxide (not supported by image crate)
+    if is_jxl(data) {
+        return decode_jxl(data);
+    }
+
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
     let format = detect_pixel_format(&img);
@@ -64,6 +86,37 @@ fn extract_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
 
 /// Decode and convert to a specific pixel format
 pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage, ImageError> {
+    // JXL: decode then convert
+    if is_jxl(data) {
+        let decoded = decode_jxl(data)?;
+        // If already in target format, return as-is
+        if decoded.info.format == target_format {
+            return Ok(decoded);
+        }
+        // Otherwise, use image crate for format conversion
+        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
+        let (pixels, format) = match target_format {
+            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
+            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
+            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+            other => {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "conversion to {other:?} not supported"
+                )));
+            }
+        };
+        return Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: decoded.info.width,
+                height: decoded.info.height,
+                format,
+                color_space: decoded.info.color_space,
+            },
+            icc_profile: decoded.icc_profile,
+        });
+    }
+
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
     let (pixels, format) = match target_format {
@@ -113,6 +166,51 @@ fn detect_pixel_format(img: &image::DynamicImage) -> PixelFormat {
         image::ColorType::L16 => PixelFormat::Gray16,
         _ => PixelFormat::Rgba8,
     }
+}
+
+/// Decode a JPEG XL image using jxl-oxide.
+fn decode_jxl(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    use jxl_oxide::JxlImage;
+
+    let image = JxlImage::builder()
+        .read(std::io::Cursor::new(data))
+        .map_err(|e| ImageError::InvalidInput(format!("JXL decode: {e}")))?;
+
+    let width = image.width();
+    let height = image.height();
+    let render = image
+        .render_frame(0)
+        .map_err(|e| ImageError::ProcessingFailed(format!("JXL render: {e}")))?;
+
+    // Get interleaved pixel buffer (f32) and convert to u8
+    let fb = render.image_all_channels();
+    let channels = fb.channels();
+    let float_buf = fb.buf();
+    let pixels: Vec<u8> = float_buf
+        .iter()
+        .map(|&v| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8)
+        .collect();
+
+    let format = match channels {
+        1 => PixelFormat::Gray8,
+        3 => PixelFormat::Rgb8,
+        4 => PixelFormat::Rgba8,
+        _ => PixelFormat::Rgba8,
+    };
+
+    // Extract ICC profile if present
+    let icc_profile = image.original_icc().map(|icc| icc.to_vec());
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width,
+            height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile,
+    })
 }
 
 fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {
@@ -254,10 +352,28 @@ mod tests {
         let fmts = supported_formats();
         for f in [
             "png", "jpeg", "webp", "gif", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm",
-            "exr", "dds",
+            "exr", "dds", "jxl",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing decode format: {f}");
         }
+    }
+
+    #[test]
+    fn detect_format_jxl_bare_codestream() {
+        // JXL bare codestream starts with 0xFF 0x0A
+        assert_eq!(
+            detect_format(&[0xFF, 0x0A, 0x00, 0x00]),
+            Some("jxl".to_string())
+        );
+    }
+
+    #[test]
+    fn detect_format_jxl_container() {
+        // JXL ISOBMFF container: 0x00 0x00 0x00 0x0C "JXL " 0x0D 0x0A 0x87 0x0A
+        let header = [
+            0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A,
+        ];
+        assert_eq!(detect_format(&header), Some("jxl".to_string()));
     }
 
     #[test]
