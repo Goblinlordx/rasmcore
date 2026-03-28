@@ -105,9 +105,9 @@ plan:
 - phase: CI Guard
   tasks:
   - text: Add cargo-deny configuration (deny.toml) with allowed/denied license lists
-    done: false
+    done: true
   - text: Add license check to validate.sh or CI pipeline
-    done: false
+    done: true
   - text: Verify check catches AGPL (should flag zenjpeg until replaced)
-    done: false
+    done: true
 extra: {}
