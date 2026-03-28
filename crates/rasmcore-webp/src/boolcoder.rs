@@ -130,8 +130,13 @@ impl BoolWriter {
         for _ in 0..32 {
             self.put_bit(128, false);
         }
-        // Padding for decoder lookahead
-        self.buf.extend_from_slice(&[0, 0, 0, 0]);
+        // Padding for decoder lookahead.
+        // The image-webp decoder reads data in 4-byte chunks and has strict
+        // EOF detection. Extra padding ensures the decoder never reads past
+        // the end, even for streams with very high-probability (near-free) tokens.
+        // 12 bytes = 3 full chunks of safety margin.
+        self.buf
+            .extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         self.buf
     }
 }
