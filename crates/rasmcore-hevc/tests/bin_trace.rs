@@ -1,4 +1,5 @@
 //! CABAC bin trace audit — compare our decoder bin-by-bin against libde265 reference.
+#![cfg(feature = "trace")]
 
 use rasmcore_hevc::cabac::{BinTrace, BinType, CabacDecoder};
 use rasmcore_hevc::nal::{self, NalIterator};

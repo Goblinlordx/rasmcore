@@ -226,14 +226,6 @@ impl<'a> CabacDecoder<'a> {
                 }
             }
 
-            #[cfg(feature = "trace")]
-            if self.trace_enabled {
-                eprintln!(
-                    "  TERMINATE: range=0x{:x}, value=0x{:x}, bits_needed={}",
-                    self.range, self.value, self.bits_needed
-                );
-            }
-
             Ok(0)
         }
     }

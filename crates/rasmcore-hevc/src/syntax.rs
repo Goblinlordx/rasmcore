@@ -632,10 +632,6 @@ fn decode_residual_coeffs(
     let log2_size = (size as f32).log2() as usize;
     let log2_traf_size = log2_size;
 
-    #[cfg(feature = "trace")]
-    eprintln!("  RESIDUAL: size={}, log2={}, sb_width={}", size, log2_traf_size,
-        if log2_traf_size <= 2 { 1 } else { size as usize / 4 });
-
     // Step 1: Decode last significant coefficient position
     // cIdx = 0 (luma only for now)
     let c_idx: usize = 0;
@@ -801,22 +797,6 @@ fn decode_residual_coeffs(
             );
             let sig_ctx_idx = SIG_COEFF_CTX_OFFSET + sig_ctx.min(41);
 
-            #[cfg(feature = "trace")]
-            if sub_idx == last_sub_scan_pos && ci == coeff_end - 1 {
-                eprintln!(
-                    "  SIG_CTX: ci={}, cx={}, cy={}, sub=({},{}), prev_csbf={}, sig_ctx={}, idx={}, ctx_state={}",
-                    ci, cx, cy, sub_x, sub_y, prev_csbf, sig_ctx, sig_ctx_idx,
-                    contexts[sig_ctx_idx].state,
-                );
-            }
-
-            #[cfg(feature = "trace")]
-            if sub_idx == last_sub_scan_pos && ci == coeff_end - 1 {
-                eprintln!(
-                    "  BEFORE_DECODE: idx={}, state={}, mps={}",
-                    sig_ctx_idx, contexts[sig_ctx_idx].state, contexts[sig_ctx_idx].mps,
-                );
-            }
             let sig = cabac.decode_bin(&mut contexts[sig_ctx_idx])? != 0;
             sig_flags[ci] = sig;
             if sig {
