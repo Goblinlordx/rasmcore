@@ -46,49 +46,49 @@ plan:
 - phase: Tool Pinning + Infrastructure
   tasks:
   - text: Create tests/fixtures/hevc/ directory, add to .gitignore (binary data never committed)
-    done: false
+    done: true
   - text: Create TOOLS.toml manifest pinning exact versions of x265 and libde265 with SHA256 hashes
-    done: false
+    done: true
   - text: Create generate_hevc_fixtures.sh that checks tool versions, downloads/builds if needed, and generates all fixtures
-    done: false
+    done: true
 - phase: Test Image Encoding
   tasks:
   - text: Generate small test images as raw YUV (8x8 flat gray, 16x16 gradient, 64x64 checkerboard)
-    done: false
+    done: true
   - text: Encode each with x265 --preset ultrafast --keyint 1 at QP 22 and QP 37 to Annex B bitstreams
-    done: false
+    done: true
   - text: Verify encoded bitstreams decode correctly with ffmpeg
-    done: false
+    done: true
 - phase: Reference Decoder Extraction
   tasks:
   - text: Write C extraction tool (or Python script using libde265 bindings) to hook decode pipeline and dump intermediates
-    done: false
+    done: true
   - text: Extract parsed parameter sets (SPS/PPS field values as JSON)
-    done: false
+    done: true
   - text: Extract per-CTU syntax elements (split flags, prediction modes, coefficient levels as JSON)
-    done: false
+    done: true
   - text: Extract prediction stage data (reference samples, predicted blocks as binary)
-    done: false
+    done: true
   - text: Extract transform stage data (dequantized coefficients, spatial residuals as binary)
-    done: false
+    done: true
   - text: Extract loop filter stage data (pre/post deblocking, pre/post SAO as binary)
-    done: false
+    done: true
   - text: Extract final output (YCbCr planes + RGB conversion as binary)
-    done: false
+    done: true
 - phase: Rust Test Helpers
   tasks:
   - text: Create fixture loading helpers in rasmcore-hevc (load_fixture, skip_if_no_fixtures macro)
-    done: false
+    done: true
   - text: Create comparison helpers (assert_params_match, assert_pixels_match with configurable tolerance)
-    done: false
+    done: true
   - text: Add integration test validating our SPS/PPS parser against golden parameter set data
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Verify generation script is idempotent (re-running produces identical fixtures)
-    done: false
+    done: true
   - text: Verify tests skip gracefully when fixtures are not generated
-    done: false
+    done: true
   - text: Verify parameter set golden data matches our parser output
-    done: false
+    done: true
 extra: {}
