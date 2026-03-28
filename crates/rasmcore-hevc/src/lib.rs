@@ -13,6 +13,7 @@ pub mod params;
 pub mod predict;
 #[cfg(test)]
 pub mod testutil;
+pub mod transform;
 pub mod types;
 
 pub use error::HevcError;

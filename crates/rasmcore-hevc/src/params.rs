@@ -4,6 +4,7 @@
 
 use crate::bitread::HevcBitReader;
 use crate::error::HevcError;
+use crate::transform::ScalingList;
 
 /// Video Parameter Set (VPS).
 #[derive(Debug, Clone)]
@@ -47,6 +48,7 @@ pub struct Sps {
     pub max_transform_hierarchy_depth_inter: u8,
     pub max_transform_hierarchy_depth_intra: u8,
     pub scaling_list_enabled: bool,
+    pub scaling_list: Option<ScalingList>,
     pub amp_enabled: bool,
     pub sample_adaptive_offset_enabled: bool,
     pub pcm_enabled: bool,
@@ -278,10 +280,11 @@ pub fn parse_sps(rbsp: &[u8]) -> Result<Sps, HevcError> {
     let max_transform_hierarchy_depth_intra = r.read_ue()? as u8;
 
     let scaling_list_enabled = r.read_flag()?;
-    if scaling_list_enabled && r.read_flag()? {
-        // scaling_list_data() — skip for now (parsed in transform track)
-        skip_scaling_list_data(&mut r)?;
-    }
+    let scaling_list = if scaling_list_enabled && r.read_flag()? {
+        Some(crate::transform::parse_scaling_list_data(&mut r)?)
+    } else {
+        None
+    };
 
     let amp_enabled = r.read_flag()?;
     let sample_adaptive_offset_enabled = r.read_flag()?;
@@ -333,6 +336,7 @@ pub fn parse_sps(rbsp: &[u8]) -> Result<Sps, HevcError> {
         max_transform_hierarchy_depth_inter,
         max_transform_hierarchy_depth_intra,
         scaling_list_enabled,
+        scaling_list,
         amp_enabled,
         sample_adaptive_offset_enabled,
         pcm_enabled,
@@ -504,28 +508,6 @@ pub fn parse_hvcc_params(
     }
 
     Ok(ctx)
-}
-
-/// Skip scaling_list_data() in the bitstream.
-fn skip_scaling_list_data(r: &mut HevcBitReader) -> Result<(), HevcError> {
-    for size_id in 0..4 {
-        let matrix_count = if size_id == 3 { 2 } else { 6 };
-        for _ in 0..matrix_count {
-            let pred_mode_flag = r.read_flag()?;
-            if !pred_mode_flag {
-                let _delta = r.read_ue()?;
-            } else {
-                let coeff_num = std::cmp::min(64, 1 << (4 + (size_id << 1)));
-                if size_id > 1 {
-                    let _dc_coef = r.read_se()?;
-                }
-                for _ in 0..coeff_num {
-                    let _delta = r.read_se()?;
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Skip short_term_ref_pic_set() in the bitstream.
