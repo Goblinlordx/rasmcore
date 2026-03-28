@@ -20,7 +20,7 @@
 
 mod color;
 mod dct;
-mod entropy;
+pub mod entropy;
 mod error;
 mod markers;
 mod quantize;
