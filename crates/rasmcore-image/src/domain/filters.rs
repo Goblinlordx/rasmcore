@@ -733,6 +733,231 @@ fn to_grayscale(pixels: &[u8], channels: usize) -> Vec<u8> {
     gray
 }
 
+// ─── Alpha Management ────────────────────────────────────────────────────
+
+/// Convert straight alpha to premultiplied alpha (RGBA8 only).
+pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Rgba8 {
+        return Err(ImageError::UnsupportedFormat(
+            "premultiply requires RGBA8".into(),
+        ));
+    }
+    let mut result = pixels.to_vec();
+    for chunk in result.chunks_exact_mut(4) {
+        let a = chunk[3] as u16;
+        chunk[0] = ((chunk[0] as u16 * a + 127) / 255) as u8;
+        chunk[1] = ((chunk[1] as u16 * a + 127) / 255) as u8;
+        chunk[2] = ((chunk[2] as u16 * a + 127) / 255) as u8;
+    }
+    Ok(result)
+}
+
+/// Convert premultiplied alpha to straight alpha (RGBA8 only).
+pub fn unpremultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Rgba8 {
+        return Err(ImageError::UnsupportedFormat(
+            "unpremultiply requires RGBA8".into(),
+        ));
+    }
+    let mut result = pixels.to_vec();
+    for chunk in result.chunks_exact_mut(4) {
+        let a = chunk[3] as u16;
+        if a > 0 {
+            chunk[0] = ((chunk[0] as u16 * 255 + a / 2) / a).min(255) as u8;
+            chunk[1] = ((chunk[1] as u16 * 255 + a / 2) / a).min(255) as u8;
+            chunk[2] = ((chunk[2] as u16 * 255 + a / 2) / a).min(255) as u8;
+        }
+    }
+    Ok(result)
+}
+
+/// Flatten RGBA8 to RGB8 by blending onto a solid background color.
+pub fn flatten(
+    pixels: &[u8],
+    info: &ImageInfo,
+    bg: [u8; 3],
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    if info.format != PixelFormat::Rgba8 {
+        return Err(ImageError::UnsupportedFormat(
+            "flatten requires RGBA8 input".into(),
+        ));
+    }
+    let npixels = (info.width * info.height) as usize;
+    let mut rgb = Vec::with_capacity(npixels * 3);
+    for chunk in pixels.chunks_exact(4) {
+        let a = chunk[3] as f32 / 255.0;
+        let inv_a = 1.0 - a;
+        rgb.push((chunk[0] as f32 * a + bg[0] as f32 * inv_a + 0.5) as u8);
+        rgb.push((chunk[1] as f32 * a + bg[1] as f32 * inv_a + 0.5) as u8);
+        rgb.push((chunk[2] as f32 * a + bg[2] as f32 * inv_a + 0.5) as u8);
+    }
+    Ok((
+        rgb,
+        ImageInfo {
+            width: info.width,
+            height: info.height,
+            format: PixelFormat::Rgb8,
+            color_space: info.color_space,
+        },
+    ))
+}
+
+/// Add alpha channel to RGB8, producing RGBA8 with given alpha value.
+pub fn add_alpha(
+    pixels: &[u8],
+    info: &ImageInfo,
+    alpha: u8,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    if info.format != PixelFormat::Rgb8 {
+        return Err(ImageError::UnsupportedFormat(
+            "add_alpha requires RGB8 input".into(),
+        ));
+    }
+    let npixels = (info.width * info.height) as usize;
+    let mut rgba = Vec::with_capacity(npixels * 4);
+    for chunk in pixels.chunks_exact(3) {
+        rgba.push(chunk[0]);
+        rgba.push(chunk[1]);
+        rgba.push(chunk[2]);
+        rgba.push(alpha);
+    }
+    Ok((
+        rgba,
+        ImageInfo {
+            width: info.width,
+            height: info.height,
+            format: PixelFormat::Rgba8,
+            color_space: info.color_space,
+        },
+    ))
+}
+
+/// Remove alpha channel from RGBA8, producing RGB8.
+pub fn remove_alpha(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    if info.format != PixelFormat::Rgba8 {
+        return Err(ImageError::UnsupportedFormat(
+            "remove_alpha requires RGBA8 input".into(),
+        ));
+    }
+    let npixels = (info.width * info.height) as usize;
+    let mut rgb = Vec::with_capacity(npixels * 3);
+    for chunk in pixels.chunks_exact(4) {
+        rgb.push(chunk[0]);
+        rgb.push(chunk[1]);
+        rgb.push(chunk[2]);
+    }
+    Ok((
+        rgb,
+        ImageInfo {
+            width: info.width,
+            height: info.height,
+            format: PixelFormat::Rgb8,
+            color_space: info.color_space,
+        },
+    ))
+}
+
+// ─── Blend Modes ─────────────────────────────────────────────────────────
+
+/// Supported blend modes for compositing operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlendMode {
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    SoftLight,
+    HardLight,
+    Difference,
+    Exclusion,
+}
+
+/// Apply per-pixel blend formula.
+#[inline]
+fn blend_channel(a: u8, b: u8, mode: BlendMode) -> u8 {
+    let af = a as f32 / 255.0;
+    let bf = b as f32 / 255.0;
+    let result = match mode {
+        BlendMode::Multiply => af * bf,
+        BlendMode::Screen => 1.0 - (1.0 - af) * (1.0 - bf),
+        BlendMode::Overlay => {
+            if bf < 0.5 {
+                2.0 * af * bf
+            } else {
+                1.0 - 2.0 * (1.0 - af) * (1.0 - bf)
+            }
+        }
+        BlendMode::Darken => af.min(bf),
+        BlendMode::Lighten => af.max(bf),
+        BlendMode::SoftLight => {
+            if af < 0.5 {
+                bf - (1.0 - 2.0 * af) * bf * (1.0 - bf)
+            } else {
+                let d = if bf <= 0.25 {
+                    ((16.0 * bf - 12.0) * bf + 4.0) * bf
+                } else {
+                    bf.sqrt()
+                };
+                bf + (2.0 * af - 1.0) * (d - bf)
+            }
+        }
+        BlendMode::HardLight => {
+            if af < 0.5 {
+                2.0 * af * bf
+            } else {
+                1.0 - 2.0 * (1.0 - af) * (1.0 - bf)
+            }
+        }
+        BlendMode::Difference => (af - bf).abs(),
+        BlendMode::Exclusion => af + bf - 2.0 * af * bf,
+    };
+    (result.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+}
+
+/// Blend two same-size RGB8 or RGBA8 images using the given blend mode.
+///
+/// `fg` is the "top" layer, `bg` is the "bottom" layer.
+/// Both must have the same format and dimensions.
+/// For RGBA8, alpha is preserved from `bg` (bottom layer).
+pub fn blend(
+    fg_pixels: &[u8],
+    fg_info: &ImageInfo,
+    bg_pixels: &[u8],
+    bg_info: &ImageInfo,
+    mode: BlendMode,
+) -> Result<Vec<u8>, ImageError> {
+    if fg_info.format != bg_info.format {
+        return Err(ImageError::InvalidInput("format mismatch".into()));
+    }
+    if fg_info.width != bg_info.width || fg_info.height != bg_info.height {
+        return Err(ImageError::InvalidInput("dimension mismatch".into()));
+    }
+    validate_format(fg_info.format)?;
+
+    let bpp = match fg_info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "blend requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+
+    let mut result = bg_pixels.to_vec();
+    for (fg_chunk, bg_chunk) in fg_pixels
+        .chunks_exact(bpp)
+        .zip(result.chunks_exact_mut(bpp))
+    {
+        bg_chunk[0] = blend_channel(fg_chunk[0], bg_chunk[0], mode);
+        bg_chunk[1] = blend_channel(fg_chunk[1], bg_chunk[1], mode);
+        bg_chunk[2] = blend_channel(fg_chunk[2], bg_chunk[2], mode);
+        // Alpha stays from bg (bottom layer) for RGBA8
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1077,6 +1302,134 @@ mod tests {
         assert!(saturate(&pixels, &info, 1.5).is_ok());
         assert!(sepia(&pixels, &info, 0.8).is_ok());
         assert!(colorize(&pixels, &info, [0, 128, 255], 0.5).is_ok());
+    }
+
+    fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
+        let pixels: Vec<u8> = (0..(w * h * 4)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        (pixels, info)
+    }
+
+    #[test]
+    fn premultiply_unpremultiply_roundtrip() {
+        // Use pixels with alpha > 0 (alpha=0 loses info, alpha=1 has high rounding error)
+        let mut pixels = Vec::new();
+        for _ in 0..64 {
+            pixels.extend_from_slice(&[100, 150, 200, 200]); // non-trivial alpha
+        }
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pre = premultiply(&pixels, &info).unwrap();
+        let unpre = unpremultiply(&pre, &info).unwrap();
+        for i in (0..pixels.len()).step_by(4) {
+            for c in 0..3 {
+                assert!(
+                    (pixels[i + c] as i32 - unpre[i + c] as i32).abs() <= 1,
+                    "roundtrip error at pixel {}: ch{c}: {} vs {}",
+                    i / 4,
+                    pixels[i + c],
+                    unpre[i + c]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn flatten_white_bg() {
+        // Fully opaque pixel should pass through unchanged
+        let pixels = vec![100u8, 150, 200, 255, 50, 75, 100, 0];
+        let info = ImageInfo {
+            width: 2,
+            height: 1,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let (rgb, new_info) = flatten(&pixels, &info, [255, 255, 255]).unwrap();
+        assert_eq!(new_info.format, PixelFormat::Rgb8);
+        assert_eq!(rgb.len(), 6);
+        assert_eq!(rgb[0], 100); // opaque pixel unchanged
+        assert_eq!(rgb[1], 150);
+        assert_eq!(rgb[2], 200);
+        assert_eq!(rgb[3], 255); // transparent pixel → white bg
+        assert_eq!(rgb[4], 255);
+        assert_eq!(rgb[5], 255);
+    }
+
+    #[test]
+    fn add_remove_alpha_roundtrip() {
+        let (px, info) = make_image(4, 4); // RGB8
+        let (rgba, rgba_info) = add_alpha(&px, &info, 255).unwrap();
+        assert_eq!(rgba_info.format, PixelFormat::Rgba8);
+        assert_eq!(rgba.len(), 4 * 4 * 4);
+        let (rgb, rgb_info) = remove_alpha(&rgba, &rgba_info).unwrap();
+        assert_eq!(rgb_info.format, PixelFormat::Rgb8);
+        assert_eq!(rgb, px);
+    }
+
+    #[test]
+    fn blend_multiply_identity() {
+        // Multiply with white (255) should be near-identity
+        let (px, info) = make_image(4, 4);
+        let white: Vec<u8> = vec![255; 4 * 4 * 3];
+        let result = blend(&px, &info, &white, &info, BlendMode::Multiply).unwrap();
+        assert_eq!(result, px);
+    }
+
+    #[test]
+    fn blend_screen_with_black() {
+        // Screen with black (0) should be near-identity
+        let (px, info) = make_image(4, 4);
+        let black = vec![0u8; 4 * 4 * 3];
+        let result = blend(&px, &info, &black, &info, BlendMode::Screen).unwrap();
+        let mae: f64 = px
+            .iter()
+            .zip(result.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / px.len() as f64;
+        assert!(
+            mae < 1.0,
+            "screen with black should be near-identity, MAE={mae:.2}"
+        );
+    }
+
+    #[test]
+    fn blend_all_modes_run() {
+        let (px, info) = make_image(4, 4);
+        let px2: Vec<u8> = (0..(4 * 4 * 3)).map(|i| ((i * 3) % 256) as u8).collect();
+        for mode in [
+            BlendMode::Multiply,
+            BlendMode::Screen,
+            BlendMode::Overlay,
+            BlendMode::Darken,
+            BlendMode::Lighten,
+            BlendMode::SoftLight,
+            BlendMode::HardLight,
+            BlendMode::Difference,
+            BlendMode::Exclusion,
+        ] {
+            let result = blend(&px, &info, &px2, &info, mode);
+            assert!(result.is_ok(), "blend mode {mode:?} failed");
+            assert_eq!(result.unwrap().len(), px.len());
+        }
+    }
+
+    #[test]
+    fn blend_difference_self_is_black() {
+        let (px, info) = make_image(4, 4);
+        let result = blend(&px, &info, &px, &info, BlendMode::Difference).unwrap();
+        for &v in &result {
+            assert!(v <= 1, "difference with self should be ~0, got {v}");
+        }
     }
 }
 

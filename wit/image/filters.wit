@@ -49,4 +49,35 @@ interface filters {
 
     /// Canny edge detection — returns binary edge map (0 or 255).
     canny: func(pixels: buffer, info: image-info, low-threshold: f32, high-threshold: f32) -> result<buffer, rasmcore-error>;
+
+    /// Convert straight alpha to premultiplied alpha (RGBA8 only)
+    premultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+
+    /// Convert premultiplied alpha to straight alpha (RGBA8 only)
+    unpremultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+
+    /// Flatten RGBA8 to RGB8 by blending onto solid background color
+    flatten: func(pixels: buffer, info: image-info, bg-r: u8, bg-g: u8, bg-b: u8) -> result<tuple<buffer, image-info>, rasmcore-error>;
+
+    /// Add alpha channel to RGB8, producing RGBA8
+    add-alpha: func(pixels: buffer, info: image-info, alpha: u8) -> result<tuple<buffer, image-info>, rasmcore-error>;
+
+    /// Remove alpha channel from RGBA8, producing RGB8
+    remove-alpha: func(pixels: buffer, info: image-info) -> result<tuple<buffer, image-info>, rasmcore-error>;
+
+    /// Blend two same-size images using the specified blend mode
+    blend: func(fg: buffer, fg-info: image-info, bg: buffer, bg-info: image-info, mode: blend-mode) -> result<buffer, rasmcore-error>;
+}
+
+/// Blend modes for compositing
+enum blend-mode {
+    multiply,
+    screen,
+    overlay,
+    darken,
+    lighten,
+    soft-light,
+    hard-light,
+    difference,
+    exclusion,
 }
