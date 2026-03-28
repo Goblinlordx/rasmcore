@@ -122,21 +122,21 @@ plan:
 - phase: Refactor rasmcore-webp
   tasks:
   - text: Add rasmcore-color dependency to rasmcore-webp/Cargo.toml
-    done: false
+    done: true
   - text: Replace inline color.rs with rasmcore-color imports
-    done: false
+    done: true
   - text: Verify all existing rasmcore-webp tests pass
-    done: false
+    done: true
 - phase: Tests & Verification
   tasks:
   - text: BT.601 reference values test (black=Y16, white=Y235, neutral chroma=128)
-    done: false
+    done: true
   - text: BT.709 reference values test
-    done: false
+    done: true
   - text: Roundtrip test (RGB -> YCbCr -> RGB within 1 of original for all standards)
-    done: false
+    done: true
   - text: Odd dimensions and edge cases (1x1, 1x2, 3x5)
-    done: false
+    done: true
   - text: Full workspace builds and all tests pass
     done: false
 extra: {}

@@ -90,12 +90,18 @@ pub fn encode(
 
     // 1. RGB → YUV420 conversion (BT.601 per VP8/RFC 6386)
     let yuv = match format {
-        PixelFormat::Rgb8 => {
-            rasmcore_color::rgb_to_ycbcr_420(pixels, width, height, &rasmcore_color::ColorMatrix::BT601)
-        }
-        PixelFormat::Rgba8 => {
-            rasmcore_color::rgba_to_ycbcr_420(pixels, width, height, &rasmcore_color::ColorMatrix::BT601)
-        }
+        PixelFormat::Rgb8 => rasmcore_color::rgb_to_ycbcr_420(
+            pixels,
+            width,
+            height,
+            &rasmcore_color::ColorMatrix::BT601,
+        ),
+        PixelFormat::Rgba8 => rasmcore_color::rgba_to_ycbcr_420(
+            pixels,
+            width,
+            height,
+            &rasmcore_color::ColorMatrix::BT601,
+        ),
     };
 
     // 2. Quality → quantizer parameter

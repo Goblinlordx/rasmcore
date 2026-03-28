@@ -18,8 +18,6 @@ mod convert;
 mod matrix;
 mod types;
 
-pub use convert::{
-    gray_to_y, rgb_to_ycbcr, rgb_to_ycbcr_420, rgba_to_ycbcr_420, ycbcr_to_rgb,
-};
+pub use convert::{gray_to_y, rgb_to_ycbcr, rgb_to_ycbcr_420, rgba_to_ycbcr_420, ycbcr_to_rgb};
 pub use matrix::ColorMatrix;
 pub use types::{ChromaSubsampling, YuvImage};

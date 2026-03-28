@@ -22,12 +22,12 @@ pub fn rgb_to_ycbcr(pixels: &[u8], width: u32, height: u32, matrix: &ColorMatrix
         let g = pixels[i * 3 + 1] as i32;
         let b = pixels[i * 3 + 2] as i32;
 
-        y_plane[i] =
-            ((matrix.yr * r + matrix.yg * g + matrix.yb * b + 128) >> 8).wrapping_add(matrix.y_offset) as u8;
-        u_plane[i] =
-            ((matrix.cbr * r + matrix.cbg * g + matrix.cbb * b + 128) >> 8).wrapping_add(matrix.c_offset) as u8;
-        v_plane[i] =
-            ((matrix.crr * r + matrix.crg * g + matrix.crb * b + 128) >> 8).wrapping_add(matrix.c_offset) as u8;
+        y_plane[i] = ((matrix.yr * r + matrix.yg * g + matrix.yb * b + 128) >> 8)
+            .wrapping_add(matrix.y_offset) as u8;
+        u_plane[i] = ((matrix.cbr * r + matrix.cbg * g + matrix.cbb * b + 128) >> 8)
+            .wrapping_add(matrix.c_offset) as u8;
+        v_plane[i] = ((matrix.crr * r + matrix.crg * g + matrix.crb * b + 128) >> 8)
+            .wrapping_add(matrix.c_offset) as u8;
     }
 
     YuvImage {
@@ -60,9 +60,8 @@ pub fn rgb_to_ycbcr_420(pixels: &[u8], width: u32, height: u32, matrix: &ColorMa
             let r = pixels[i] as i32;
             let g = pixels[i + 1] as i32;
             let b = pixels[i + 2] as i32;
-            y_plane[row * w + col] =
-                ((matrix.yr * r + matrix.yg * g + matrix.yb * b + 128) >> 8)
-                    .wrapping_add(matrix.y_offset) as u8;
+            y_plane[row * w + col] = ((matrix.yr * r + matrix.yg * g + matrix.yb * b + 128) >> 8)
+                .wrapping_add(matrix.y_offset) as u8;
         }
     }
 
@@ -97,12 +96,10 @@ pub fn rgb_to_ycbcr_420(pixels: &[u8], width: u32, height: u32, matrix: &ColorMa
             let b = sum_b / count;
 
             let idx = uv_row * uv_w + uv_col;
-            u_plane[idx] =
-                ((matrix.cbr * r + matrix.cbg * g + matrix.cbb * b + 128) >> 8)
-                    .wrapping_add(matrix.c_offset) as u8;
-            v_plane[idx] =
-                ((matrix.crr * r + matrix.crg * g + matrix.crb * b + 128) >> 8)
-                    .wrapping_add(matrix.c_offset) as u8;
+            u_plane[idx] = ((matrix.cbr * r + matrix.cbg * g + matrix.cbb * b + 128) >> 8)
+                .wrapping_add(matrix.c_offset) as u8;
+            v_plane[idx] = ((matrix.crr * r + matrix.crg * g + matrix.crb * b + 128) >> 8)
+                .wrapping_add(matrix.c_offset) as u8;
         }
     }
 
@@ -116,12 +113,7 @@ pub fn rgb_to_ycbcr_420(pixels: &[u8], width: u32, height: u32, matrix: &ColorMa
 }
 
 /// Convert RGBA8 pixels to YCbCr 4:2:0 (alpha discarded).
-pub fn rgba_to_ycbcr_420(
-    pixels: &[u8],
-    width: u32,
-    height: u32,
-    matrix: &ColorMatrix,
-) -> YuvImage {
+pub fn rgba_to_ycbcr_420(pixels: &[u8], width: u32, height: u32, matrix: &ColorMatrix) -> YuvImage {
     let w = width as usize;
     let h = height as usize;
     let mut rgb = Vec::with_capacity(w * h * 3);

@@ -7,11 +7,11 @@
 
 use crate::block::{self, MacroblockInfo};
 use crate::boolcoder::BoolWriter;
-use rasmcore_color::YuvImage;
 use crate::dct;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};
 use crate::token;
+use rasmcore_color::YuvImage;
 
 /// Encode a VP8 key frame from YUV420 data.
 ///
