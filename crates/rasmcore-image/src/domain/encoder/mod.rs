@@ -39,6 +39,7 @@ pub fn encode(
             webp::encode(&img, info, &config)
         }
         "gif" => {
+            let img = pixels_to_dynamic_image(pixels, info)?;
             let config = gif::GifEncodeConfig::default();
             gif::encode(&img, info, &config)
         }

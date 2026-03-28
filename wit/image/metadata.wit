@@ -1,0 +1,36 @@
+package rasmcore:image@0.1.0;
+
+/// EXIF and image metadata reading
+interface metadata {
+    use rasmcore:core/types.{buffer};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// EXIF orientation values (1-8)
+    enum exif-orientation {
+        normal,
+        flip-horizontal,
+        rotate180,
+        flip-vertical,
+        transpose,
+        rotate90,
+        transverse,
+        rotate270,
+    }
+
+    /// Structured EXIF metadata
+    record exif-metadata {
+        orientation: option<exif-orientation>,
+        width: option<u32>,
+        height: option<u32>,
+        camera-make: option<string>,
+        camera-model: option<string>,
+        date-time: option<string>,
+        software: option<string>,
+    }
+
+    /// Read EXIF metadata from encoded image data (JPEG, TIFF, WebP)
+    read-exif: func(data: buffer) -> result<exif-metadata, rasmcore-error>;
+
+    /// Check if encoded data contains EXIF metadata
+    has-exif: func(data: buffer) -> bool;
+}

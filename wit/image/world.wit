@@ -10,4 +10,5 @@ world image-processor {
     export encoder;
     export transform;
     export filters;
+    export metadata;
 }

@@ -4,7 +4,9 @@
 mod pipeline_adapter;
 
 use crate::bindings;
-use crate::bindings::exports::rasmcore::image::{decoder, encoder, filters, pipeline, transform};
+use crate::bindings::exports::rasmcore::image::{
+    decoder, encoder, filters, metadata, pipeline, transform,
+};
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
 use crate::domain;
@@ -400,5 +402,43 @@ impl filters::Guest for Component {
             y,
         )
         .map_err(to_wit_error)
+    }
+}
+
+fn to_wit_exif_orientation(
+    o: domain::metadata::ExifOrientation,
+) -> metadata::ExifOrientation {
+    match o {
+        domain::metadata::ExifOrientation::Normal => metadata::ExifOrientation::Normal,
+        domain::metadata::ExifOrientation::FlipHorizontal => {
+            metadata::ExifOrientation::FlipHorizontal
+        }
+        domain::metadata::ExifOrientation::Rotate180 => metadata::ExifOrientation::Rotate180,
+        domain::metadata::ExifOrientation::FlipVertical => {
+            metadata::ExifOrientation::FlipVertical
+        }
+        domain::metadata::ExifOrientation::Transpose => metadata::ExifOrientation::Transpose,
+        domain::metadata::ExifOrientation::Rotate90 => metadata::ExifOrientation::Rotate90,
+        domain::metadata::ExifOrientation::Transverse => metadata::ExifOrientation::Transverse,
+        domain::metadata::ExifOrientation::Rotate270 => metadata::ExifOrientation::Rotate270,
+    }
+}
+
+impl metadata::Guest for Component {
+    fn read_exif(data: Vec<u8>) -> Result<metadata::ExifMetadata, RasmcoreError> {
+        let meta = domain::metadata::read_exif(&data).map_err(to_wit_error)?;
+        Ok(metadata::ExifMetadata {
+            orientation: meta.orientation.map(to_wit_exif_orientation),
+            width: meta.width,
+            height: meta.height,
+            camera_make: meta.camera_make,
+            camera_model: meta.camera_model,
+            date_time: meta.date_time,
+            software: meta.software,
+        })
+    }
+
+    fn has_exif(data: Vec<u8>) -> bool {
+        domain::metadata::has_exif(&data)
     }
 }

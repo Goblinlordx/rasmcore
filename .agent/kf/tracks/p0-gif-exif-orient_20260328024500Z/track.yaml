@@ -78,13 +78,13 @@ plan:
 - phase: EXIF Metadata
   tasks:
   - text: Add kamadak-exif dependency to rasmcore-image
-    done: false
+    done: true
   - text: Create domain/metadata.rs with read_exif function returning structured metadata
-    done: false
+    done: true
   - text: Add metadata WIT types (orientation, dimensions, camera info)
-    done: false
+    done: true
   - text: Domain tests for EXIF read from JPEG fixture
-    done: false
+    done: true
 - phase: Auto-Orient
   tasks:
   - text: Implement auto_orient in domain/transform.rs (reads EXIF, applies rotation/flip)
