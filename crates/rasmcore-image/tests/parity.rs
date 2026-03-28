@@ -6,7 +6,7 @@
 /// Prerequisites: run `tests/fixtures/generate.sh` first.
 use std::path::Path;
 
-use butteraugli::{butteraugli, ButteraugliParams};
+use butteraugli::{ButteraugliParams, butteraugli};
 use dssim_core::Dssim;
 use imgref::Img;
 use rasmcore_image::domain::types::*;

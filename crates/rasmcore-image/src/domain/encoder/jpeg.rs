@@ -49,8 +49,8 @@ pub fn encode_pixels(
         ChromaSubsampling::Quarter
     };
 
-    let zen_config = EncoderConfig::ycbcr(config.quality as f32, subsampling)
-        .progressive(config.progressive);
+    let zen_config =
+        EncoderConfig::ycbcr(config.quality as f32, subsampling).progressive(config.progressive);
 
     zen_config
         .request()
