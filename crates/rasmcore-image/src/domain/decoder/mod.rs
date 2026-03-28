@@ -1,5 +1,6 @@
 use image::ImageFormat;
 
+use super::color;
 use super::error::ImageError;
 use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
 
@@ -36,6 +37,9 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
         _ => img.to_rgba8().into_raw(),
     };
 
+    // Extract ICC profile from raw bytes (before the image crate strips metadata)
+    let icc_profile = extract_icc_profile(data);
+
     Ok(DecodedImage {
         pixels,
         info: ImageInfo {
@@ -44,8 +48,17 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
             format,
             color_space: ColorSpace::Srgb,
         },
-        icc_profile: None,
+        icc_profile,
     })
+}
+
+/// Extract ICC profile from raw image bytes based on detected format.
+fn extract_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
+    match detect_format(data)?.as_str() {
+        "jpeg" => color::extract_icc_from_jpeg(data),
+        "png" => color::extract_icc_from_png(data),
+        _ => None,
+    }
 }
 
 /// Decode and convert to a specific pixel format
@@ -72,6 +85,8 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
         }
     };
 
+    let icc_profile = extract_icc_profile(data);
+
     Ok(DecodedImage {
         pixels,
         info: ImageInfo {
@@ -80,7 +95,7 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
             format,
             color_space: ColorSpace::Srgb,
         },
-        icc_profile: None,
+        icc_profile,
     })
 }
 

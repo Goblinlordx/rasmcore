@@ -89,7 +89,7 @@ plan:
   - text: Add ICC profile field to image metadata types
     done: true
   - text: Add ICC-related WIT types (profile as opaque buffer)
-    done: false
+    done: true
 - phase: Profile Extraction
   tasks:
   - text: Extract ICC profile from JPEG during decode (APP2 markers)
