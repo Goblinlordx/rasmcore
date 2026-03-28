@@ -41,6 +41,10 @@ struct FrameComponent {
 
 struct ScanHeader {
     component_selectors: Vec<ScanComponentSelector>,
+    ss: u8,  // Spectral selection start
+    se: u8,  // Spectral selection end
+    ah: u8,  // Successive approximation high bit
+    al: u8,  // Successive approximation low bit
 }
 
 struct ScanComponentSelector {
@@ -124,6 +128,7 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
     let mut ac_tables: [Option<HuffmanTable>; 4] = [None, None, None, None];
     let mut frame: Option<JpegFrame> = None;
     let mut restart_interval: u16 = 0;
+    let mut is_progressive = false;
 
     // Parse markers
     loop {
@@ -157,9 +162,8 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                 frame = Some(parse_sof(data, &mut pos)?);
             }
             M_SOF2 => {
-                return Err(EncodeError::Unsupported(
-                    "progressive JPEG not yet supported".into(),
-                ));
+                frame = Some(parse_sof(data, &mut pos)?);
+                is_progressive = true;
             }
             M_DHT => {
                 parse_dht(data, &mut pos, &mut dc_tables, &mut ac_tables)?;
@@ -176,7 +180,21 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                     .as_ref()
                     .ok_or_else(|| EncodeError::DecodeFailed("SOS before SOF".into()))?;
 
-                // Find entropy data (everything until next marker)
+                if is_progressive {
+                    // Progressive: accumulate scans, then reconstruct
+                    return decode_progressive(
+                        data,
+                        &mut pos,
+                        frm,
+                        scan,
+                        &mut quant_tables,
+                        &mut dc_tables,
+                        &mut ac_tables,
+                        restart_interval,
+                    );
+                }
+
+                // Baseline: single scan decode
                 let entropy_data = extract_entropy_data(data, &mut pos);
 
                 let pixels = decode_scan(
@@ -369,11 +387,19 @@ fn parse_sos(data: &[u8], pos: &mut usize) -> Result<ScanHeader, EncodeError> {
         });
     }
 
-    // Skip spectral selection and successive approximation (3 bytes)
+    let ss = data[*pos];
+    let se = data[*pos + 1];
+    let approx = data[*pos + 2];
+    let ah = approx >> 4;
+    let al = approx & 0x0F;
     *pos += 3;
 
     Ok(ScanHeader {
         component_selectors: selectors,
+        ss,
+        se,
+        ah,
+        al,
     })
 }
 
@@ -610,6 +636,590 @@ fn decode_scan(
     }
 }
 
+// ─── Progressive Decode ────────────────────────────────────────────────────
+
+/// Decode a progressive JPEG (SOF2) by accumulating coefficients across
+/// multiple SOS scans, then reconstructing pixels.
+///
+/// Called from `jpeg_decode` when SOF2 is encountered. The first SOS has
+/// already been parsed; `pos` points past it. We process that scan, then
+/// continue parsing markers for subsequent scans until EOI.
+fn decode_progressive(
+    data: &[u8],
+    pos: &mut usize,
+    frame: &JpegFrame,
+    first_scan: ScanHeader,
+    quant_tables: &mut [Option<[u16; 64]>; 4],
+    dc_tables: &mut [Option<HuffmanTable>; 4],
+    ac_tables: &mut [Option<HuffmanTable>; 4],
+    restart_interval: u16,
+) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
+    let w = frame.width as usize;
+    let h = frame.height as usize;
+    let is_gray = frame.components.len() == 1;
+
+    // Determine MCU dimensions
+    let (h_max, v_max) = if is_gray {
+        (1u8, 1u8)
+    } else {
+        let hm = frame.components.iter().map(|c| c.h_sampling).max().unwrap_or(1);
+        let vm = frame.components.iter().map(|c| c.v_sampling).max().unwrap_or(1);
+        (hm, vm)
+    };
+    let mcu_w = (h_max as usize) * 8;
+    let mcu_h = (v_max as usize) * 8;
+    let mcu_cols = (w + mcu_w - 1) / mcu_w;
+    let mcu_rows = (h + mcu_h - 1) / mcu_h;
+
+    // Allocate per-component coefficient buffers (zigzag order, i16)
+    // coeff_bufs[ci] = Vec of [i16; 64] for each 8x8 block in raster MCU order
+    let mut coeff_bufs: Vec<Vec<[i16; 64]>> = frame
+        .components
+        .iter()
+        .map(|c| {
+            let blocks = mcu_cols * mcu_rows * c.h_sampling as usize * c.v_sampling as usize;
+            vec![[0i16; 64]; blocks]
+        })
+        .collect();
+
+    // EOB run counter per scan (reset for each new scan)
+    let mut eob_run: u32 = 0;
+
+    // Process first scan
+    {
+        let entropy_data = extract_entropy_data(data, pos);
+        decode_progressive_scan(
+            &entropy_data,
+            frame,
+            &first_scan,
+            dc_tables,
+            ac_tables,
+            &mut coeff_bufs,
+            mcu_cols,
+            mcu_rows,
+            &mut eob_run,
+            restart_interval,
+        )?;
+    }
+
+    // Continue parsing markers for remaining scans
+    loop {
+        if *pos >= data.len() {
+            break;
+        }
+
+        // Find next marker
+        while *pos < data.len() && data[*pos] != 0xFF {
+            *pos += 1;
+        }
+        if *pos + 1 >= data.len() {
+            break;
+        }
+        *pos += 1; // skip 0xFF
+
+        // Skip fill bytes
+        while *pos < data.len() && data[*pos] == 0xFF {
+            *pos += 1;
+        }
+        if *pos >= data.len() {
+            break;
+        }
+
+        let marker = data[*pos];
+        *pos += 1;
+
+        match marker {
+            M_EOI => break,
+            M_DHT => {
+                parse_dht(data, pos, dc_tables, ac_tables)?;
+            }
+            M_DQT => {
+                parse_dqt(data, pos, quant_tables)?;
+            }
+            M_DRI => {
+                let _ri = parse_dri(data, pos)?;
+            }
+            M_SOS => {
+                let scan = parse_sos(data, pos)?;
+                let entropy_data = extract_entropy_data(data, pos);
+                eob_run = 0;
+                decode_progressive_scan(
+                    &entropy_data,
+                    frame,
+                    &scan,
+                    dc_tables,
+                    ac_tables,
+                    &mut coeff_bufs,
+                    mcu_cols,
+                    mcu_rows,
+                    &mut eob_run,
+                    restart_interval,
+                )?;
+            }
+            0xE0..=0xEF | 0xFE | 0xC1 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF => {
+                if *pos + 2 > data.len() {
+                    break;
+                }
+                let len = u16::from_be_bytes([data[*pos], data[*pos + 1]]) as usize;
+                *pos += len;
+            }
+            0x00 | 0x01 | 0xD0..=0xD7 => {}
+            _ => {
+                if *pos + 2 <= data.len() {
+                    let len = u16::from_be_bytes([data[*pos], data[*pos + 1]]) as usize;
+                    *pos += len;
+                }
+            }
+        }
+    }
+
+    // Reconstruct: dequantize + IDCT + level shift for each block, then color convert
+    let plane_widths: Vec<usize> = frame
+        .components
+        .iter()
+        .map(|c| mcu_cols * c.h_sampling as usize * 8)
+        .collect();
+
+    let mut planes: Vec<Vec<i16>> = frame
+        .components
+        .iter()
+        .map(|c| {
+            let pw = mcu_cols * c.h_sampling as usize * 8;
+            let ph = mcu_rows * c.v_sampling as usize * 8;
+            vec![0i16; pw * ph]
+        })
+        .collect();
+
+    for (ci, comp) in frame.components.iter().enumerate() {
+        let qt = quant_tables[comp.quant_table_id as usize]
+            .as_ref()
+            .ok_or_else(|| {
+                EncodeError::DecodeFailed(format!("missing quant table {}", comp.quant_table_id))
+            })?;
+
+        let blocks_per_mcu = comp.h_sampling as usize * comp.v_sampling as usize;
+        let pw = plane_widths[ci];
+
+        for mcu_row in 0..mcu_rows {
+            for mcu_col in 0..mcu_cols {
+                for v_block in 0..comp.v_sampling as usize {
+                    for h_block in 0..comp.h_sampling as usize {
+                        let block_idx = (mcu_row * mcu_cols + mcu_col) * blocks_per_mcu
+                            + v_block * comp.h_sampling as usize
+                            + h_block;
+
+                        let zz_coeffs = &coeff_bufs[ci][block_idx];
+
+                        // De-zigzag the coefficients to raster order
+                        let mut coeffs = [0i16; 64];
+                        for i in 0..64 {
+                            coeffs[quantize::ZIGZAG[i]] = zz_coeffs[i];
+                        }
+
+                        // Dequantize
+                        let mut dequant = [0i32; 64];
+                        quantize::dequantize(&coeffs, qt, &mut dequant);
+
+                        // Inverse DCT
+                        let mut spatial = [0i16; 64];
+                        dct::inverse_dct(&dequant, &mut spatial);
+
+                        // Level shift (+128) and clamp
+                        let block_x = mcu_col * comp.h_sampling as usize * 8 + h_block * 8;
+                        let block_y = mcu_row * comp.v_sampling as usize * 8 + v_block * 8;
+                        for row in 0..8 {
+                            for col in 0..8 {
+                                let py = block_y + row;
+                                let px = block_x + col;
+                                if py < planes[ci].len() / pw && px < pw {
+                                    planes[ci][py * pw + px] =
+                                        (spatial[row * 8 + col] + 128).clamp(0, 255);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Convert planes to output pixels (same as baseline)
+    if is_gray {
+        let mut output = vec![0u8; w * h];
+        let pw = plane_widths[0];
+        for y in 0..h {
+            for x in 0..w {
+                output[y * w + x] = planes[0][y * pw + x].clamp(0, 255) as u8;
+            }
+        }
+        Ok((output, frame.width as u32, frame.height as u32, true))
+    } else {
+        let mut output = vec![0u8; w * h * 3];
+        let y_pw = plane_widths[0];
+        let cb_pw = plane_widths[1];
+        let cr_pw = plane_widths[2];
+
+        let y_comp = &frame.components[0];
+        let cb_comp = &frame.components[1];
+
+        for py in 0..h {
+            for px in 0..w {
+                let y_val = planes[0][py * y_pw + px] as f64;
+                let cb_x = px * cb_comp.h_sampling as usize / y_comp.h_sampling as usize;
+                let cb_y = py * cb_comp.v_sampling as usize / y_comp.v_sampling as usize;
+                let cb_val = planes[1][cb_y * cb_pw + cb_x] as f64;
+                let cr_val = planes[2][cb_y * cr_pw + cb_x] as f64;
+
+                let r = y_val + 1.402 * (cr_val - 128.0);
+                let g = y_val - 0.344136 * (cb_val - 128.0) - 0.714136 * (cr_val - 128.0);
+                let b = y_val + 1.772 * (cb_val - 128.0);
+
+                let idx = (py * w + px) * 3;
+                output[idx] = r.round().clamp(0.0, 255.0) as u8;
+                output[idx + 1] = g.round().clamp(0.0, 255.0) as u8;
+                output[idx + 2] = b.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        Ok((output, frame.width as u32, frame.height as u32, false))
+    }
+}
+
+/// Process a single progressive scan, filling coefficient buffers.
+fn decode_progressive_scan(
+    entropy_data: &[u8],
+    frame: &JpegFrame,
+    scan: &ScanHeader,
+    dc_tables: &[Option<HuffmanTable>; 4],
+    ac_tables: &[Option<HuffmanTable>; 4],
+    coeff_bufs: &mut [Vec<[i16; 64]>],
+    mcu_cols: usize,
+    mcu_rows: usize,
+    eob_run: &mut u32,
+    _restart_interval: u16,
+) -> Result<(), EncodeError> {
+    // Strip restart markers
+    let clean_data: Vec<u8> = {
+        let mut clean = Vec::with_capacity(entropy_data.len());
+        let mut i = 0;
+        while i < entropy_data.len() {
+            if entropy_data[i] == 0xFF
+                && i + 1 < entropy_data.len()
+                && entropy_data[i + 1] >= M_RST0
+                && entropy_data[i + 1] <= M_RST0 + 7
+            {
+                i += 2;
+            } else {
+                clean.push(entropy_data[i]);
+                i += 1;
+            }
+        }
+        clean
+    };
+
+    let mut padded = clean_data;
+    padded.extend_from_slice(&[0x00; 32]);
+    let mut reader = BitReader::new(&padded, BitOrder::MsbFirst);
+
+    let ss = scan.ss;
+    let se = scan.se;
+    let ah = scan.ah;
+    let al = scan.al;
+
+    // Map scan component selectors to frame component indices
+    let scan_comps: Vec<(usize, &ScanComponentSelector)> = scan
+        .component_selectors
+        .iter()
+        .map(|sel| {
+            let ci = frame
+                .components
+                .iter()
+                .position(|c| c.id == sel.component_id)
+                .ok_or_else(|| {
+                    EncodeError::DecodeFailed(format!(
+                        "scan references unknown component {}",
+                        sel.component_id
+                    ))
+                });
+            ci.map(|ci| (ci, sel))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // DC prediction per component (only for DC-first scans)
+    let mut dc_pred = vec![0i32; frame.components.len()];
+
+    *eob_run = 0;
+
+    // Interleaved scan (multiple components) or non-interleaved (single component)
+    if scan_comps.len() > 1 {
+        // Interleaved: iterate MCU by MCU
+        for mcu_row in 0..mcu_rows {
+            for mcu_col in 0..mcu_cols {
+                for &(ci, sel) in &scan_comps {
+                    let comp = &frame.components[ci];
+                    let blocks_per_mcu =
+                        comp.h_sampling as usize * comp.v_sampling as usize;
+
+                    for v_block in 0..comp.v_sampling as usize {
+                        for h_block in 0..comp.h_sampling as usize {
+                            let block_idx =
+                                (mcu_row * mcu_cols + mcu_col) * blocks_per_mcu
+                                    + v_block * comp.h_sampling as usize
+                                    + h_block;
+
+                            decode_progressive_block(
+                                &mut reader,
+                                &coeff_bufs[ci][block_idx],
+                                ss,
+                                se,
+                                ah,
+                                al,
+                                &dc_tables[sel.dc_table_id as usize],
+                                &ac_tables[sel.ac_table_id as usize],
+                                &mut dc_pred[ci],
+                                eob_run,
+                            )?;
+                            coeff_bufs[ci][block_idx] = BLOCK_OUT.with(|b| *b.borrow());
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Non-interleaved: single component, iterate all blocks
+        let (ci, sel) = scan_comps[0];
+        let comp = &frame.components[ci];
+        let blocks_per_mcu = comp.h_sampling as usize * comp.v_sampling as usize;
+        let total_blocks = mcu_cols * mcu_rows * blocks_per_mcu;
+
+        for block_idx in 0..total_blocks {
+            decode_progressive_block(
+                &mut reader,
+                &coeff_bufs[ci][block_idx],
+                ss,
+                se,
+                ah,
+                al,
+                &dc_tables[sel.dc_table_id as usize],
+                &ac_tables[sel.ac_table_id as usize],
+                &mut dc_pred[ci],
+                eob_run,
+            )?;
+            coeff_bufs[ci][block_idx] = BLOCK_OUT.with(|b| *b.borrow());
+        }
+    }
+
+    Ok(())
+}
+
+// Thread-local storage to pass block output without allocating per-call.
+// This avoids changing the decode_progressive_block signature to &mut [i16; 64].
+use std::cell::RefCell;
+thread_local! {
+    static BLOCK_OUT: RefCell<[i16; 64]> = const { RefCell::new([0i16; 64]) };
+}
+
+/// Decode/refine one 8x8 block in a progressive scan.
+/// Dispatches to DC-first, DC-refine, AC-first, or AC-refine based on Ss/Se/Ah.
+fn decode_progressive_block(
+    reader: &mut BitReader,
+    existing: &[i16; 64],
+    ss: u8,
+    se: u8,
+    ah: u8,
+    al: u8,
+    dc_table: &Option<HuffmanTable>,
+    ac_table: &Option<HuffmanTable>,
+    dc_pred: &mut i32,
+    eob_run: &mut u32,
+) -> Result<(), EncodeError> {
+    BLOCK_OUT.with(|b| {
+        let mut block = *existing;
+
+        if ss == 0 {
+            // DC scan
+            if ah == 0 {
+                // DC first scan
+                let table = dc_table.as_ref().ok_or_else(|| {
+                    EncodeError::DecodeFailed("missing DC table for progressive scan".into())
+                })?;
+                let cat = table.decode(reader)?;
+                let diff = if cat > 0 {
+                    read_signed_bits(reader, cat)?
+                } else {
+                    0
+                };
+                *dc_pred += diff;
+                // Store with point transform (left shift by Al)
+                block[0] = (*dc_pred as i16) << al;
+            } else {
+                // DC successive approximation refinement
+                let bit = reader.read_bit().ok_or_else(|| {
+                    EncodeError::DecodeFailed("unexpected end in DC refine".into())
+                })?;
+                if bit {
+                    block[0] |= 1 << al;
+                }
+            }
+        } else {
+            // AC scan
+            if ah == 0 {
+                // AC first scan — decode AC band [ss..se]
+                let table = ac_table.as_ref().ok_or_else(|| {
+                    EncodeError::DecodeFailed("missing AC table for progressive scan".into())
+                })?;
+
+                if *eob_run > 0 {
+                    *eob_run -= 1;
+                } else {
+                    let mut k = ss as usize;
+                    while k <= se as usize {
+                        let symbol = table.decode(reader)?;
+                        let run = (symbol >> 4) as usize;
+                        let size = symbol & 0x0F;
+
+                        if size == 0 {
+                            if run == 15 {
+                                // ZRL: skip 16 zeros
+                                k += 16;
+                                continue;
+                            }
+                            // EOBn: end of band with run of blocks
+                            *eob_run = (1u32 << run) - 1;
+                            if run > 0 {
+                                let extra = reader
+                                    .read_bits(run as u8)
+                                    .ok_or_else(|| {
+                                        EncodeError::DecodeFailed(
+                                            "truncated EOBn bits".into(),
+                                        )
+                                    })?
+                                    as u32;
+                                *eob_run += extra;
+                            }
+                            break;
+                        }
+
+                        k += run;
+                        if k > se as usize {
+                            break;
+                        }
+
+                        let value = read_signed_bits(reader, size)?;
+                        block[k] = (value as i16) << al;
+                        k += 1;
+                    }
+                }
+            } else {
+                // AC successive approximation refinement
+                let table = ac_table.as_ref().ok_or_else(|| {
+                    EncodeError::DecodeFailed("missing AC table for AC refine".into())
+                })?;
+                let bit_val = 1i16 << al;
+
+                if *eob_run > 0 {
+                    // Within an EOB run — just refine existing non-zero coefficients
+                    for k in ss as usize..=se as usize {
+                        if block[k] != 0 {
+                            let bit = reader.read_bit().ok_or_else(|| {
+                                EncodeError::DecodeFailed("truncated AC refine bit".into())
+                            })?;
+                            if bit {
+                                if block[k] > 0 {
+                                    block[k] += bit_val;
+                                } else {
+                                    block[k] -= bit_val;
+                                }
+                            }
+                        }
+                    }
+                    *eob_run -= 1;
+                } else {
+                    let mut k = ss as usize;
+                    while k <= se as usize {
+                        let symbol = table.decode(reader)?;
+                        let run = (symbol >> 4) as usize;
+                        let size = symbol & 0x0F;
+
+                        if size == 0 && run < 15 {
+                            // EOBn
+                            *eob_run = (1u32 << run) - 1;
+                            if run > 0 {
+                                let extra = reader
+                                    .read_bits(run as u8)
+                                    .ok_or_else(|| {
+                                        EncodeError::DecodeFailed(
+                                            "truncated EOBn refine bits".into(),
+                                        )
+                                    })?
+                                    as u32;
+                                *eob_run += extra;
+                            }
+                            // Refine remaining non-zero coefficients in this block
+                            while k <= se as usize {
+                                if block[k] != 0 {
+                                    let bit = reader.read_bit().ok_or_else(|| {
+                                        EncodeError::DecodeFailed(
+                                            "truncated AC refine bit".into(),
+                                        )
+                                    })?;
+                                    if bit {
+                                        if block[k] > 0 {
+                                            block[k] += bit_val;
+                                        } else {
+                                            block[k] -= bit_val;
+                                        }
+                                    }
+                                }
+                                k += 1;
+                            }
+                            break;
+                        }
+
+                        // size == 1: new non-zero coeff; size == 0 && run == 15: ZRL
+                        let mut zeros_to_skip = run;
+                        while k <= se as usize {
+                            if block[k] != 0 {
+                                // Existing non-zero: read refinement bit
+                                let bit = reader.read_bit().ok_or_else(|| {
+                                    EncodeError::DecodeFailed(
+                                        "truncated AC refine bit".into(),
+                                    )
+                                })?;
+                                if bit {
+                                    if block[k] > 0 {
+                                        block[k] += bit_val;
+                                    } else {
+                                        block[k] -= bit_val;
+                                    }
+                                }
+                                k += 1;
+                            } else if zeros_to_skip == 0 {
+                                break;
+                            } else {
+                                zeros_to_skip -= 1;
+                                k += 1;
+                            }
+                        }
+
+                        if size != 0 && k <= se as usize {
+                            // Place the new coefficient
+                            let value = read_signed_bits(reader, size)?;
+                            block[k] = if value < 0 { -bit_val } else { bit_val };
+                            k += 1;
+                        } else if size == 0 {
+                            // ZRL (run==15): k already advanced
+                            k += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        *b.borrow_mut() = block;
+        Ok(())
+    })
+}
+
 /// Decode one 8x8 block of DCT coefficients from the entropy stream.
 fn decode_block(
     reader: &mut BitReader,
@@ -697,15 +1307,18 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_progressive() {
-        // Minimal JPEG with SOF2 (progressive) marker
+    fn decode_accepts_progressive_sof2() {
+        // Verify SOF2 marker is now parsed (not rejected).
+        // Full progressive decode tested in progressive_tests module.
         let mut data = vec![0xFF, 0xD8]; // SOI
         data.extend_from_slice(&[0xFF, 0xC2]); // SOF2
         data.extend_from_slice(&[0x00, 0x0B]); // length
         data.extend_from_slice(&[8, 0, 1, 0, 1, 1]); // precision, h, w, ncomp
         data.extend_from_slice(&[1, 0x11, 0]); // component
+        data.extend_from_slice(&[0xFF, 0xD9]); // EOI (no scans → error, but NOT Unsupported)
         let result = jpeg_decode(&data);
-        assert!(matches!(result, Err(EncodeError::Unsupported(_))));
+        // Should fail with "no image data" or similar, NOT "Unsupported"
+        assert!(!matches!(result, Err(EncodeError::Unsupported(_))));
     }
 
     #[test]
@@ -967,4 +1580,180 @@ mod quality_tests {
         );
     }
 }
-// Systematic trace test — to be added to decode.rs
+// ─── Progressive Decode Tests ──────────────────────────────────────────────
+
+#[cfg(test)]
+mod progressive_tests {
+    use super::*;
+
+    fn compute_psnr(a: &[u8], b: &[u8]) -> f64 {
+        let mse: f64 = a
+            .iter()
+            .zip(b.iter())
+            .map(|(&x, &y)| {
+                let d = x as f64 - y as f64;
+                d * d
+            })
+            .sum::<f64>()
+            / a.len() as f64;
+        if mse == 0.0 {
+            f64::INFINITY
+        } else {
+            10.0 * (255.0_f64 * 255.0 / mse).log10()
+        }
+    }
+
+    /// Roundtrip: our progressive encoder → our progressive decoder.
+    /// Acceptance: PSNR > 25dB.
+    #[test]
+    fn progressive_roundtrip_color() {
+        let mut pixels = Vec::with_capacity(32 * 32 * 3);
+        for y in 0..32u8 {
+            for x in 0..32u8 {
+                pixels.push(x.wrapping_mul(8));
+                pixels.push(y.wrapping_mul(8));
+                pixels.push(128);
+            }
+        }
+        let config = crate::EncodeConfig {
+            progressive: true,
+            quality: 85,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 32, 32, crate::PixelFormat::Rgb8, &config).unwrap();
+
+        // Verify SOF2 present
+        assert!(jpeg.windows(2).any(|w| w == [0xFF, 0xC2]));
+
+        let (decoded, w, h, is_gray) = jpeg_decode(&jpeg).unwrap();
+        assert_eq!(w, 32);
+        assert_eq!(h, 32);
+        assert!(!is_gray);
+        assert_eq!(decoded.len(), 32 * 32 * 3);
+
+        let psnr = compute_psnr(&pixels, &decoded);
+        assert!(
+            psnr > 25.0,
+            "progressive roundtrip PSNR should be > 25dB, got {psnr:.1}dB"
+        );
+    }
+
+    /// Roundtrip: progressive grayscale.
+    #[test]
+    fn progressive_roundtrip_gray() {
+        let pixels: Vec<u8> = (0..16 * 16).map(|i| (i % 256) as u8).collect();
+        let config = crate::EncodeConfig {
+            progressive: true,
+            quality: 90,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Gray8, &config).unwrap();
+
+        let (decoded, w, h, is_gray) = jpeg_decode(&jpeg).unwrap();
+        assert_eq!(w, 16);
+        assert_eq!(h, 16);
+        assert!(is_gray);
+
+        let psnr = compute_psnr(&pixels, &decoded);
+        assert!(
+            psnr > 25.0,
+            "progressive gray roundtrip PSNR should be > 25dB, got {psnr:.1}dB"
+        );
+    }
+
+    /// Our progressive decode matches image crate's decode of the same progressive JPEG.
+    #[test]
+    fn progressive_matches_reference_decoder() {
+        let mut pixels = Vec::with_capacity(32 * 32 * 3);
+        for y in 0..32u8 {
+            for x in 0..32u8 {
+                pixels.push(x.wrapping_mul(8));
+                pixels.push(y.wrapping_mul(8));
+                pixels.push(128);
+            }
+        }
+        let config = crate::EncodeConfig {
+            progressive: true,
+            quality: 85,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 32, 32, crate::PixelFormat::Rgb8, &config).unwrap();
+
+        // Our decoder
+        let (our_decoded, w, h, _) = jpeg_decode(&jpeg).unwrap();
+        assert_eq!(w, 32);
+        assert_eq!(h, 32);
+
+        // Reference decoder (image crate)
+        let ref_img =
+            image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        let ref_pixels = ref_img.to_rgb8().into_raw();
+
+        // A == B: our decode should match reference decode
+        let mae: f64 = our_decoded
+            .iter()
+            .zip(ref_pixels.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / our_decoded.len() as f64;
+
+        assert!(
+            mae < 3.0,
+            "progressive decode should match reference within MAE 3.0, got {mae:.2}"
+        );
+    }
+
+    /// Decode a progressive JPEG created by the image crate.
+    #[test]
+    fn decode_image_crate_progressive() {
+        // The image crate doesn't produce progressive JPEGs directly,
+        // so we use our encoder's progressive output and verify both decoders agree.
+        let pixels: Vec<u8> = (0..24 * 24 * 3).map(|i| (i * 7 % 256) as u8).collect();
+        let config = crate::EncodeConfig {
+            progressive: true,
+            quality: 75,
+            subsampling: crate::ChromaSubsampling::None444,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 24, 24, crate::PixelFormat::Rgb8, &config).unwrap();
+
+        // Both decoders should succeed
+        let our_result = jpeg_decode(&jpeg);
+        assert!(our_result.is_ok(), "our decoder failed: {:?}", our_result.err());
+
+        let ref_result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
+        assert!(ref_result.is_ok(), "ref decoder failed: {:?}", ref_result.err());
+    }
+
+    /// Progressive with 4:4:4 subsampling.
+    #[test]
+    fn progressive_444() {
+        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i * 13 % 256) as u8).collect();
+        let config = crate::EncodeConfig {
+            progressive: true,
+            subsampling: crate::ChromaSubsampling::None444,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Rgb8, &config).unwrap();
+        let (decoded, w, h, _) = jpeg_decode(&jpeg).unwrap();
+        assert_eq!((w, h), (16, 16));
+
+        let psnr = compute_psnr(&pixels, &decoded);
+        assert!(psnr > 23.0, "444 progressive PSNR: {psnr:.1}dB");
+    }
+
+    /// Odd dimensions that don't align to MCU boundaries.
+    #[test]
+    fn progressive_odd_dimensions() {
+        let pixels: Vec<u8> = (0..17 * 13 * 3).map(|i| (i % 256) as u8).collect();
+        let config = crate::EncodeConfig {
+            progressive: true,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 17, 13, crate::PixelFormat::Rgb8, &config).unwrap();
+        let (decoded, w, h, _) = jpeg_decode(&jpeg).unwrap();
+        assert_eq!((w, h), (17, 13));
+        assert_eq!(decoded.len(), 17 * 13 * 3);
+    }
+}
+

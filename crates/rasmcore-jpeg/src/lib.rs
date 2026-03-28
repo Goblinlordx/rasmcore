@@ -355,75 +355,90 @@ fn compute_all_dct_coefficients(
 }
 
 /// Encode a single progressive scan (subset of spectral coefficients).
+///
+/// For interleaved scans (multiple components), encodes in MCU-interleaved
+/// order per ITU-T T.81: for each MCU, encode all blocks of each component
+/// before moving to the next MCU.
 fn encode_progressive_scan(
     all_coeffs: &std::collections::HashMap<u8, Vec<[i16; 64]>>,
     comp_ids: &[u8],
     ss: u8,
     se: u8,
-    _is_gray: bool,
-    _subsampling: ChromaSubsampling,
+    is_gray: bool,
+    subsampling: ChromaSubsampling,
     _restart_interval: Option<u16>,
 ) -> Vec<u8> {
     use rasmcore_bitio::{BitOrder, BitWriter};
 
     let mut writer = BitWriter::new(BitOrder::MsbFirst);
+    let mut prev_dc: std::collections::HashMap<u8, i16> = comp_ids.iter().map(|&id| (id, 0i16)).collect();
+    let encoders = ProgressiveHuffmanEncoders::new();
 
-    for &comp_id in comp_ids {
+    if comp_ids.len() == 1 {
+        // Non-interleaved: single component, iterate all blocks
+        let comp_id = comp_ids[0];
         let blocks = match all_coeffs.get(&comp_id) {
             Some(b) => b,
-            None => continue,
+            None => return writer.finish(),
         };
-
         let is_luma = comp_id == 1;
-        let mut prev_dc: i16 = 0;
 
         for block in blocks {
-            if ss == 0 {
-                // DC coefficient
-                let dc = block[0];
-                let diff = dc - prev_dc;
-                prev_dc = dc;
-
-                let cat = entropy::magnitude_category(diff as i32);
-                // Encode DC category using default Huffman table
-                let dc_lengths = entropy::standard_dc_lengths(is_luma);
-                encode_huffman_symbol(&mut writer, dc_lengths, cat);
-                if cat > 0 {
-                    encode_coefficient_bits(&mut writer, diff as i32, cat);
+            encode_progressive_block(
+                &mut writer,
+                block,
+                ss,
+                se,
+                is_luma,
+                prev_dc.get_mut(&comp_id).unwrap(),
+                &encoders,
+            );
+        }
+    } else {
+        // Interleaved: iterate per MCU (ITU-T T.81 compliant ordering)
+        let blocks_per_mcu: Vec<(u8, usize)> = comp_ids
+            .iter()
+            .map(|&id| {
+                if id == 1 && !is_gray {
+                    let (h, v) = color::subsampling_factors(subsampling);
+                    (id, h * v)
+                } else {
+                    (id, 1)
                 }
-            }
+            })
+            .collect();
 
-            if se > 0 {
-                // AC coefficients in spectral range [max(ss,1)..=se]
-                let start = if ss == 0 { 1 } else { ss as usize };
-                let end = se as usize;
-                let mut zero_run = 0u8;
+        let num_mcus = if is_gray {
+            all_coeffs.get(&1).map_or(0, |b| b.len())
+        } else {
+            all_coeffs.get(&2).map_or(0, |b| b.len())
+        };
 
-                for coeff_ref in &block[start..=end] {
-                    let coeff = *coeff_ref;
-                    if coeff == 0 {
-                        zero_run += 1;
-                        if zero_run == 16 {
-                            // ZRL (15, 0)
-                            let ac_lengths = entropy::standard_ac_lengths(is_luma);
-                            encode_huffman_symbol(&mut writer, ac_lengths, 0xF0);
-                            zero_run = 0;
-                        }
-                    } else {
-                        let cat = entropy::magnitude_category(coeff as i32);
-                        let symbol = (zero_run << 4) | cat;
-                        let ac_lengths = entropy::standard_ac_lengths(is_luma);
-                        encode_huffman_symbol(&mut writer, ac_lengths, symbol);
-                        encode_coefficient_bits(&mut writer, coeff as i32, cat);
-                        zero_run = 0;
-                    }
+        let mut block_offsets: std::collections::HashMap<u8, usize> =
+            comp_ids.iter().map(|&id| (id, 0usize)).collect();
+
+        for _mcu in 0..num_mcus {
+            for &(comp_id, bpm) in &blocks_per_mcu {
+                let blocks = match all_coeffs.get(&comp_id) {
+                    Some(b) => b,
+                    None => continue,
+                };
+                let is_luma = comp_id == 1;
+                let offset = block_offsets.get_mut(&comp_id).unwrap();
+
+                for bi in 0..bpm {
+                    let block = &blocks[*offset + bi];
+                    encode_progressive_block(
+                        &mut writer,
+                        block,
+                        ss,
+                        se,
+                        is_luma,
+                        prev_dc.get_mut(&comp_id).unwrap(),
+                        &encoders,
+                    );
                 }
-
-                // EOB if we have remaining zeros
-                if zero_run > 0 {
-                    let ac_lengths = entropy::standard_ac_lengths(is_luma);
-                    encode_huffman_symbol(&mut writer, ac_lengths, 0x00); // EOB
-                }
+                *offset += bpm;
             }
         }
     }
@@ -431,24 +446,91 @@ fn encode_progressive_scan(
     writer.finish()
 }
 
-/// Encode a single Huffman symbol using the standard code length table.
-fn encode_huffman_symbol(writer: &mut rasmcore_bitio::BitWriter, lengths: &[u8], symbol: u8) {
-    // Build code from lengths (canonical Huffman)
-    let mut code: u32 = 0;
-    let mut idx = 0;
-    for bit_len in 1..=16u8 {
-        let count = lengths[bit_len as usize - 1] as usize;
-        for _ in 0..count {
-            if idx == symbol as usize {
-                writer.write_bits(bit_len, code);
-                return;
-            }
-            code += 1;
-            idx += 1;
+/// Huffman encoders for progressive scans, built from the standard code lengths.
+struct ProgressiveHuffmanEncoders {
+    dc_luma: rasmcore_deflate::huffman::HuffmanEncoder,
+    dc_chroma: rasmcore_deflate::huffman::HuffmanEncoder,
+    ac_luma: rasmcore_deflate::huffman::HuffmanEncoder,
+    ac_chroma: rasmcore_deflate::huffman::HuffmanEncoder,
+}
+
+impl ProgressiveHuffmanEncoders {
+    fn new() -> Self {
+        Self {
+            dc_luma: rasmcore_deflate::huffman::HuffmanEncoder::from_code_lengths(
+                &entropy::DC_LUMA_CODE_LENGTHS,
+            ),
+            dc_chroma: rasmcore_deflate::huffman::HuffmanEncoder::from_code_lengths(
+                &entropy::DC_CHROMA_CODE_LENGTHS,
+            ),
+            ac_luma: rasmcore_deflate::huffman::HuffmanEncoder::from_code_lengths(
+                &entropy::AC_LUMA_CODE_LENGTHS,
+            ),
+            ac_chroma: rasmcore_deflate::huffman::HuffmanEncoder::from_code_lengths(
+                &entropy::AC_CHROMA_CODE_LENGTHS,
+            ),
         }
-        code <<= 1;
     }
-    // Symbol not found — shouldn't happen with valid tables
+}
+
+/// Encode one block's contribution to a progressive scan.
+fn encode_progressive_block(
+    writer: &mut rasmcore_bitio::BitWriter,
+    block: &[i16; 64],
+    ss: u8,
+    se: u8,
+    is_luma: bool,
+    prev_dc: &mut i16,
+    encoders: &ProgressiveHuffmanEncoders,
+) {
+    if ss == 0 {
+        let dc = block[0];
+        let diff = dc - *prev_dc;
+        *prev_dc = dc;
+
+        let cat = entropy::magnitude_category(diff as i32);
+        let dc_enc = if is_luma {
+            &encoders.dc_luma
+        } else {
+            &encoders.dc_chroma
+        };
+        dc_enc.write_symbol(writer, cat as u16);
+        if cat > 0 {
+            encode_coefficient_bits(writer, diff as i32, cat);
+        }
+    }
+
+    if se > 0 {
+        let start = if ss == 0 { 1 } else { ss as usize };
+        let end = se as usize;
+        let mut zero_run = 0u8;
+        let ac_enc = if is_luma {
+            &encoders.ac_luma
+        } else {
+            &encoders.ac_chroma
+        };
+
+        for coeff_ref in &block[start..=end] {
+            let coeff = *coeff_ref;
+            if coeff == 0 {
+                zero_run += 1;
+                if zero_run == 16 {
+                    ac_enc.write_symbol(writer, 0xF0);
+                    zero_run = 0;
+                }
+            } else {
+                let cat = entropy::magnitude_category(coeff as i32);
+                let symbol = (zero_run << 4) | cat;
+                ac_enc.write_symbol(writer, symbol as u16);
+                encode_coefficient_bits(writer, coeff as i32, cat);
+                zero_run = 0;
+            }
+        }
+
+        if zero_run > 0 {
+            ac_enc.write_symbol(writer, 0x00);
+        }
+    }
 }
 
 /// Encode the raw bits for a coefficient value.
