@@ -87,11 +87,11 @@ plan:
 - phase: Validation
   tasks:
   - text: Revert CABAC zero-padding (read_bit errors on exhaustion)
-    done: false
+    done: true
   - text: Run all 9 parity tests — all must pass
     done: false
   - text: Verify PSNR thresholds (q22 > 40dB, q37 > 30dB, gradient > 25dB, checker > 25dB)
     done: false
   - text: clippy clean, fmt clean, full workspace cargo test
-    done: false
+    done: true
 extra: {}
