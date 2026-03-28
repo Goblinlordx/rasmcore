@@ -129,15 +129,15 @@ plan:
 - phase: Determinism & Parity Tests
   tasks:
   - text: 'Determinism test: encode same photo twice at each compression, assert byte-identical'
-    done: false
+    done: true
   - text: Add ImageMagick PNG encode references to generate.sh at compression 0, 3, 6, 9
-    done: false
+    done: true
   - text: Pixel-exact roundtrip test at every compression level and filter type
-    done: false
+    done: true
   - text: 'File size comparison: rasmcore equal to or smaller than ImageMagick at each level'
-    done: false
+    done: true
   - text: 'Decoded pixel comparison: rasmcore and ImageMagick both pixel-identical (lossless)'
-    done: false
+    done: true
   - text: Verify all existing encoder and pipeline tests pass
-    done: false
+    done: true
 extra: {}
