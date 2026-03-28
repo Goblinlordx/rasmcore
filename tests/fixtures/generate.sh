@@ -75,6 +75,17 @@ $IM /out/inputs/gradient_64x64.png -colorspace Gray /out/reference/grayscale.png
 # Blur (sigma 2.0)
 $IM /out/inputs/gradient_64x64.png -blur 0x2 /out/reference/blur_sigma2.png
 
+# --- PNG compression references (for encoder parity tests) ---
+echo "  Creating PNG compression references..."
+# PNG at compression quality 0 (fastest, least compression)
+$IM /out/inputs/photo_256x256.png -quality 0 /out/reference/png_compress_0.png
+# PNG at compression quality 30 (low compression)
+$IM /out/inputs/photo_256x256.png -quality 30 /out/reference/png_compress_3.png
+# PNG at compression quality 60 (default-like compression)
+$IM /out/inputs/photo_256x256.png -quality 60 /out/reference/png_compress_6.png
+# PNG at compression quality 90 (max compression)
+$IM /out/inputs/photo_256x256.png -quality 90 /out/reference/png_compress_9.png
+
 # --- Verify reproducibility (hash all outputs) -------------------------------
 echo "  Verifying output hashes..."
 OUTPUT_HASH=$(cd "$OUT_DIR" && find . \( -name '*.png' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' -o -name '*.bmp' -o -name '*.tiff' -o -name '*.qoi' \) | sort | xargs shasum -a 256 | shasum -a 256 | awk '{print $1}')

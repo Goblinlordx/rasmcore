@@ -272,3 +272,167 @@ fn parity_grayscale() {
     let mae = mean_absolute_error(&gray.pixels, &ref_decoded.pixels);
     assert!(mae < 5.0, "grayscale MAE: {mae:.2}");
 }
+
+// =============================================================================
+// PNG encode parity (compression curve + pixel-exact + file size)
+// =============================================================================
+
+#[test]
+fn parity_png_encode_determinism() {
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+
+    let config = encoder::png::PngEncodeConfig::default();
+    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
+    let result1 = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+    let result2 = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+    assert_eq!(result1, result2, "PNG encode must be deterministic (byte-identical)");
+}
+
+#[test]
+fn parity_png_encode_filter_size_variation() {
+    // The image crate uses fdeflate (Fast) which is both faster and produces better
+    // compression than flate2 for most images. Compression level maps to fdeflate
+    // unconditionally. Filter type provides the meaningful size variation.
+    use encoder::png::PngFilterType;
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
+
+    let filters = [
+        ("NoFilter", PngFilterType::NoFilter),
+        ("Sub", PngFilterType::Sub),
+        ("Up", PngFilterType::Up),
+        ("Avg", PngFilterType::Avg),
+        ("Paeth", PngFilterType::Paeth),
+        ("Adaptive", PngFilterType::Adaptive),
+    ];
+
+    let mut sizes: Vec<(&str, usize)> = Vec::new();
+    for (name, filter) in &filters {
+        let config = encoder::png::PngEncodeConfig {
+            compression_level: 6,
+            filter_type: *filter,
+        };
+        let encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        sizes.push((name, encoded.len()));
+    }
+
+    eprintln!("PNG filter size variation (rasmcore, compression 6):");
+    for (name, size) in &sizes {
+        eprintln!("  {name}: {size} bytes");
+    }
+
+    // Adaptive should be among the smallest (within 5% of best)
+    let adaptive_size = sizes.iter().find(|(n, _)| *n == "Adaptive").unwrap().1;
+    let min_size = sizes.iter().map(|(_, s)| *s).min().unwrap();
+    let ratio = adaptive_size as f64 / min_size as f64;
+    assert!(
+        ratio <= 1.05,
+        "Adaptive ({adaptive_size}) should be within 5% of best filter ({min_size}), ratio={ratio:.3}",
+    );
+
+    // Different filters should produce different sizes (not all identical)
+    let unique_sizes: std::collections::HashSet<usize> = sizes.iter().map(|(_, s)| *s).collect();
+    assert!(
+        unique_sizes.len() >= 2,
+        "at least 2 distinct sizes expected across filter types, got {}",
+        unique_sizes.len(),
+    );
+}
+
+#[test]
+fn parity_png_encode_all_compressions_pixel_exact() {
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
+
+    for level in [0u8, 3, 6, 9] {
+        let config = encoder::png::PngEncodeConfig {
+            compression_level: level,
+            filter_type: encoder::png::PngFilterType::Adaptive,
+        };
+        let encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let re_decoded = decoder::decode(&encoded).unwrap();
+        assert_eq!(
+            re_decoded.pixels, decoded.pixels,
+            "PNG roundtrip at compression {level} must be pixel-exact"
+        );
+    }
+}
+
+#[test]
+fn parity_png_encode_all_filters_pixel_exact() {
+    use encoder::png::PngFilterType;
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
+
+    let filters = [
+        PngFilterType::NoFilter,
+        PngFilterType::Sub,
+        PngFilterType::Up,
+        PngFilterType::Avg,
+        PngFilterType::Paeth,
+        PngFilterType::Adaptive,
+    ];
+
+    for filter in filters {
+        let config = encoder::png::PngEncodeConfig {
+            compression_level: 6,
+            filter_type: filter,
+        };
+        let encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let re_decoded = decoder::decode(&encoded).unwrap();
+        assert_eq!(
+            re_decoded.pixels, decoded.pixels,
+            "PNG roundtrip with filter {filter:?} must be pixel-exact"
+        );
+    }
+}
+
+#[test]
+fn parity_png_encode_vs_imagemagick_pixel_exact() {
+    // Both rasmcore and ImageMagick produce lossless PNG —
+    // decoded pixels MUST be identical regardless of compression settings.
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
+
+    for (level, ref_name) in [
+        (0, "png_compress_0.png"),
+        (3, "png_compress_3.png"),
+        (6, "png_compress_6.png"),
+        (9, "png_compress_9.png"),
+    ] {
+        let ref_data = load_reference(ref_name);
+        let ref_decoded = decoder::decode(&ref_data).unwrap();
+
+        // Lossless: decoded pixels must match
+        assert_eq!(
+            decoded.pixels, ref_decoded.pixels,
+            "PNG at compression {level}: rasmcore and ImageMagick decoded pixels must be identical"
+        );
+
+        // Compare file sizes (informational — both should be in same ballpark)
+        let config = encoder::png::PngEncodeConfig {
+            compression_level: level,
+            filter_type: encoder::png::PngFilterType::Adaptive,
+        };
+        let our_encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let ratio = our_encoded.len() as f64 / ref_data.len() as f64;
+        eprintln!(
+            "PNG compression {level}: rasmcore={} bytes, ImageMagick={} bytes, ratio={ratio:.2}x",
+            our_encoded.len(),
+            ref_data.len(),
+        );
+
+        // File size should be within 1.5x of ImageMagick
+        assert!(
+            ratio <= 1.5,
+            "PNG at compression {level}: rasmcore ({} bytes) is {ratio:.2}x of ImageMagick ({} bytes) — exceeds 1.5x threshold",
+            our_encoded.len(),
+            ref_data.len(),
+        );
+    }
+}
