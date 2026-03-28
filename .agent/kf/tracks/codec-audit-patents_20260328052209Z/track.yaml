@@ -1,0 +1,86 @@
+id: codec-audit-patents_20260328052209Z
+title: "Research: Codec parity audit — format matrix, license/patent assessment, implementation roadmap"
+type: research
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: >
+    Produce a comprehensive codec matrix (rasmcore vs ImageMagick vs libvips) with
+    per-format license/patent assessment and Rust crate evaluation. Output a prioritized
+    implementation roadmap that feeds into future codec tracks.
+  context: |
+    rasmcore currently decodes 9 formats and encodes 4 (JPEG, PNG, WebP, GIF). The project
+    goal is feature parity with ImageMagick and libvips for image operations. Many formats
+    are trivially addable (image crate feature flags), while others require external crates
+    or have patent encumbrance (HEIF/HEIC). The product.yaml already anticipates patent-
+    encumbered codecs via "sidecar plugin distribution."
+
+    User priorities:
+    - Patent-free simple formats first (TIFF, BMP, ICO, PNM, TGA, HDR, EXR, QOI encode)
+    - RAW camera decode (read-only) — via rawloader or similar pure-Rust crate
+    - SVG rasterization (read-only) — investigate resvg feasibility, no bitmap-to-SVG write
+    - HEIF/HEIC deferred to separate sidecar track due to MPEG-LA/Nokia patents
+    - JPEG XL and AVIF encode as P1 (royalty-free modern formats)
+  codebase_analysis: |
+    Current state (as of 2026-03-28):
+    - Decode: JPEG, PNG, GIF, WebP, BMP, TIFF, AVIF, ICO, QOI (9 formats via image crate)
+    - Encode: JPEG (zenjpeg), PNG, WebP (in-progress), GIF (4 formats with per-format config)
+    - image crate features enabled: png, jpeg, gif, webp, bmp, tiff, avif, ico, qoi
+    - image crate features NOT enabled: pnm, tga, dds, exr, hdr, ff (all trivial to add)
+    - External crates in tech-stack.yaml: resvg (SVG rendering, optional)
+    - Confirmed crates: image (default-features=false, WASM-ready)
+    - Architecture: per-format encoder modules with typed config records
+    - Pipeline: write-{format} sink functions for each encoder
+    - WIT: per-format encode-{format} functions + generic encode() dispatcher
+  acceptance_criteria:
+    - Complete format matrix covering all raster formats in ImageMagick and libvips
+    - Per-format license assessment (crate license, spec patent status, expiry dates)
+    - Per-format Rust crate evaluation (pure-Rust vs sys bindings, WASM compatibility, maturity)
+    - RAW decode feasibility (rawloader vs libraw-rs, supported camera models, WASM compat)
+    - SVG rasterize feasibility (resvg evaluation, font handling, WASM compat, common use cases)
+    - HEIF/HEIC patent isolation strategy (sidecar plugin architecture)
+    - Prioritized implementation roadmap with effort estimates per format
+    - Report written to .agent/kf/_reports/codec-audit.md
+  out_of_scope: |
+    - Actual codec implementation (this is research only)
+    - SVG write/render-to (bitmap-to-vector tracing)
+    - Video codecs (AV1, H.264, H.265)
+    - Animated format support (multi-frame GIF/WebP/APNG)
+    - Non-raster formats (PDF, PostScript, raw vector)
+  technical_notes: |
+    Research approach:
+    1. Enumerate all raster formats supported by ImageMagick 7.x and libvips 8.x
+    2. For each format, check: image crate support, alternative Rust crates, WASM compatibility
+    3. Patent research: MPEG-LA pools, AOM license, individual codec specs
+    4. Classify into tiers:
+       - Tier 1 (trivial): Enable image crate feature flag, add to decoder list
+       - Tier 2 (simple encoder): New encoder module following existing pattern
+       - Tier 3 (external crate): Integrate pure-Rust crate (resvg, rawloader, jxl-oxide)
+       - Tier 4 (sys bindings): Requires C library bindings (libheif, libraw)
+       - Tier 5 (patent-encumbered): Sidecar distribution required (HEIF/HEIC)
+    5. Produce actionable roadmap that can be fed directly into /kf-architect
+plan:
+  - phase: Format Inventory
+    tasks:
+      - text: Enumerate all raster formats in ImageMagick 7.x (magick -list format)
+        done: false
+      - text: Enumerate all raster formats in libvips 8.x (vips --list classes)
+        done: false
+      - text: Map current rasmcore decode/encode support against both reference lists
+        done: false
+  - phase: License and Patent Assessment
+    tasks:
+      - text: Research patent status for each format spec (JPEG, HEIF, AVIF, JXL, JP2, WebP, etc.)
+        done: false
+      - text: Document Rust crate licenses for each candidate implementation crate
+        done: false
+      - text: Identify HEIF/HEIC patent pool holders and sidecar isolation requirements
+        done: false
+  - phase: Implementation Roadmap
+    tasks:
+      - text: Evaluate Rust crates for each missing format (pure-Rust, WASM compat, maturity, maintenance)
+        done: false
+      - text: Write final report to .agent/kf/_reports/codec-audit.md with matrix, licenses, and roadmap
+        done: false
+extra: {}
