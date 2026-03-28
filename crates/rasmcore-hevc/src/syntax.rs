@@ -277,7 +277,7 @@ pub fn decode_ctu(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
     sps: &Sps,
-    _pps: &Pps,
+    pps: &Pps,
     ctu_x: u32,
     ctu_y: u32,
     depth_map: &mut CuDepthMap,
@@ -286,7 +286,7 @@ pub fn decode_ctu(
     let mut cus = Vec::new();
 
     coding_quadtree(
-        cabac, contexts, sps, ctu_x, ctu_y, ctu_size, 0, &mut cus, depth_map,
+        cabac, contexts, sps, pps, ctu_x, ctu_y, ctu_size, 0, &mut cus, depth_map,
     )?;
 
     Ok(CtuSyntax {
@@ -302,6 +302,7 @@ fn coding_quadtree(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
     sps: &Sps,
+    pps: &Pps,
     x: u32,
     y: u32,
     size: u32,
@@ -323,12 +324,24 @@ fn coding_quadtree(
 
     if split {
         let half = size / 2;
-        coding_quadtree(cabac, contexts, sps, x, y, half, depth + 1, cus, depth_map)?;
+        coding_quadtree(
+            cabac,
+            contexts,
+            sps,
+            pps,
+            x,
+            y,
+            half,
+            depth + 1,
+            cus,
+            depth_map,
+        )?;
         if x + half < sps.pic_width {
             coding_quadtree(
                 cabac,
                 contexts,
                 sps,
+                pps,
                 x + half,
                 y,
                 half,
@@ -342,6 +355,7 @@ fn coding_quadtree(
                 cabac,
                 contexts,
                 sps,
+                pps,
                 x,
                 y + half,
                 half,
@@ -355,6 +369,7 @@ fn coding_quadtree(
                 cabac,
                 contexts,
                 sps,
+                pps,
                 x + half,
                 y + half,
                 half,
@@ -365,7 +380,7 @@ fn coding_quadtree(
         }
     } else {
         // Leaf: decode coding unit
-        let cu = decode_coding_unit(cabac, contexts, sps, x, y, size, depth)?;
+        let cu = decode_coding_unit(cabac, contexts, sps, pps, x, y, size, depth)?;
         depth_map.set_depth(x, y, size, depth as u8);
         cus.push(cu);
     }
@@ -378,6 +393,7 @@ fn decode_coding_unit(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
     sps: &Sps,
+    pps: &Pps,
     x: u32,
     y: u32,
     size: u32,
@@ -451,7 +467,7 @@ fn decode_coding_unit(
     // Per HEVC spec, rqt_root_cbf is NOT signaled for intra CUs — it's implicitly 1.
     // Instead, cbf flags are signaled per-TU in the transform tree.
     // However, for the simplest case (flat image), all cbf will be 0.
-    let tu = decode_transform_tree(cabac, contexts, sps, x, y, size, 0, true, true)?;
+    let tu = decode_transform_tree(cabac, contexts, sps, pps, x, y, size, 0, true, true)?;
 
     Ok(CuSyntax {
         x,
@@ -470,6 +486,7 @@ fn decode_transform_tree(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
     sps: &Sps,
+    pps: &Pps,
     x: u32,
     y: u32,
     size: u32,
@@ -496,6 +513,7 @@ fn decode_transform_tree(
                 cabac,
                 contexts,
                 sps,
+                pps,
                 x + dx * half,
                 y + dy * half,
                 half,
@@ -548,7 +566,7 @@ fn decode_transform_tree(
         let cbf_luma = cabac.decode_bin(&mut contexts[cbf_luma_ctx])? != 0;
 
         let luma_coeffs = if cbf_luma {
-            decode_residual_coeffs(cabac, contexts, size)?
+            decode_residual_coeffs(cabac, contexts, size, pps.sign_data_hiding_enabled)?
         } else {
             Vec::new()
         };
@@ -573,83 +591,127 @@ fn decode_transform_tree(
 /// Coefficients are decoded in 4x4 sub-blocks, processing each sub-block in
 /// reverse scan order from the sub-block containing the last significant
 /// coefficient down to the DC sub-block.
+///
+/// Implements spec-compliant CABAC context derivation for:
+/// - coded_sub_block_flag (neighbor-based, 4 contexts)
+/// - sig_coeff_flag (sub-block position + neighbor based, 42 contexts)
+/// - coeff_abs_level_greater1_flag (ctxSet + greater1Ctx)
+/// - coeff_abs_level_greater2_flag (ctxSet)
+/// - signHidden optimization
+/// - Rice parameter adaptation
 fn decode_residual_coeffs(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
     size: u32,
+    sign_data_hiding_enabled: bool,
 ) -> Result<Vec<i16>, HevcError> {
     let num_coeffs = (size * size) as usize;
     let mut coeffs = vec![0i16; num_coeffs];
 
     let log2_size = (size as f32).log2() as usize;
+    let log2_traf_size = log2_size;
 
     // Step 1: Decode last significant coefficient position
+    // cIdx = 0 (luma only for now)
+    let c_idx: usize = 0;
     let (last_x, last_y) = decode_last_sig_coeff_pos(cabac, contexts, log2_size)?;
 
-    // DC-only fast path
-    if last_x == 0 && last_y == 0 {
-        let gt1_ctx = GT1_CTX_OFFSET + 1; // c1=1 for first coeff, min(1,3)=1
-        let gt1_ctx = gt1_ctx.min(GT1_CTX_OFFSET + 23);
-        let greater1 = cabac.decode_bin(&mut contexts[gt1_ctx])? != 0;
-        let abs_level: i16 = if !greater1 {
-            1
-        } else {
-            let gt2_ctx = GT2_CTX_OFFSET;
-            let greater2 = cabac.decode_bin(&mut contexts[gt2_ctx])? != 0;
-            if !greater2 {
-                2
-            } else {
-                let remaining = decode_coeff_abs_level_remaining(cabac, 0)?;
-                (3 + remaining) as i16
-            }
-        };
-        let sign = cabac.decode_bypass()?;
-        coeffs[0] = if sign != 0 { -abs_level } else { abs_level };
-        return Ok(coeffs);
+    if last_x >= size || last_y >= size {
+        return Err(HevcError::CabacError(format!(
+            "last sig coeff pos ({last_x},{last_y}) out of bounds for {size}x{size} TU"
+        )));
     }
 
     // Step 2: Determine sub-block dimensions
-    // Each sub-block is 4x4. For a size x size TU, there are (size/4) sub-blocks
-    // per row/column. For 4x4 TUs, there is exactly 1 sub-block.
-    let subs_per_row = (size as usize).max(4) / 4;
-    let _num_sub_blocks = subs_per_row * subs_per_row;
+    let sb_width = if log2_traf_size <= 2 {
+        1
+    } else {
+        size as usize / 4
+    };
 
     // Step 3: Build sub-block scan order (diagonal scan of sub-blocks)
-    let sub_scan = build_scan_order(subs_per_row);
+    let sub_scan = build_scan_order(sb_width);
 
     // Step 4: Build 4x4 coefficient scan within each sub-block
+    // scanIdx = 0 (diagonal) for now
+    let scan_idx: usize = 0;
     let coeff_scan_4x4 = build_scan_order(4);
 
     // Find which sub-block contains the last significant coefficient
-    let last_sub_x = last_x as usize / 4;
-    let last_sub_y = last_y as usize / 4;
+    let last_sub_x = if log2_traf_size <= 2 {
+        0
+    } else {
+        last_x as usize / 4
+    };
+    let last_sub_y = if log2_traf_size <= 2 {
+        0
+    } else {
+        last_y as usize / 4
+    };
     let last_sub_scan_pos = sub_scan
         .iter()
         .position(|&(sx, sy)| sx == last_sub_x && sy == last_sub_y)
         .unwrap_or(0);
 
     // Find the position within the last sub-block
-    let local_last_x = last_x as usize % 4;
-    let local_last_y = last_y as usize % 4;
+    let local_last_x = if log2_traf_size <= 2 {
+        last_x as usize
+    } else {
+        last_x as usize % 4
+    };
+    let local_last_y = if log2_traf_size <= 2 {
+        last_y as usize
+    } else {
+        last_y as usize % 4
+    };
     let last_coeff_scan_pos = coeff_scan_4x4
         .iter()
         .position(|&(cx, cy)| cx == local_last_x && cy == local_last_y)
         .unwrap_or(0);
 
+    // Sub-block neighbor tracking for coded_sub_block_flag context derivation.
+    // Each element stores: bit 0 = right neighbor coded, bit 1 = below neighbor coded.
+    let mut coded_sub_block_neighbors = vec![0u8; sb_width * sb_width];
+
+    // ctxIdxMap for 4x4 TU sig_coeff_flag (log2TrafoSize == 2)
+    // HEVC Table 9-39
+    #[rustfmt::skip]
+    let ctx_idx_map_4x4: [usize; 16] = [
+        0, 1, 4, 5, 2, 3, 4, 5, 6, 6, 8, 8, 7, 7, 8, 8,
+    ];
+
+    // c1 carries across sub-blocks for ctxSet derivation. Starts at 1.
+    // If any gt1=1 was found in a sub-block, c1 ends at 0 for the next sub-block.
+    let mut prev_c1 = 1u32;
+
     // Step 5: Process each sub-block from last to first in reverse scan order
     for sub_idx in (0..=last_sub_scan_pos).rev() {
         let (sub_x, sub_y) = sub_scan[sub_idx];
         let is_last_sub = sub_idx == last_sub_scan_pos;
-        let is_dc_sub = sub_x == 0 && sub_y == 0;
+        let is_dc_sub = sub_idx == 0;
 
         // Step 5a: Decode coded_sub_block_flag
         // Skip for the last sub-block (always coded) and DC sub-block (always coded)
         let coded = if is_last_sub || is_dc_sub {
             true
         } else {
-            let csb_ctx = SIG_COEFF_CTX_OFFSET; // coded_sub_block_flag context
+            // Context from neighbors: bit0 = right neighbor, bit1 = below neighbor
+            let prev_csbf = coded_sub_block_neighbors[sub_x + sub_y * sb_width];
+            let csbf_ctx = (prev_csbf & 1) | (prev_csbf >> 1);
+            let ctx_idx_inc = csbf_ctx as usize + if c_idx != 0 { 2 } else { 0 };
+            let csb_ctx = CODED_SUB_BLOCK_FLAG_CTX_OFFSET + ctx_idx_inc;
             cabac.decode_bin(&mut contexts[csb_ctx])? != 0
         };
+
+        // Update neighbor tracking
+        if coded {
+            if sub_x > 0 {
+                coded_sub_block_neighbors[(sub_x - 1) + sub_y * sb_width] |= 1;
+            }
+            if sub_y > 0 {
+                coded_sub_block_neighbors[sub_x + (sub_y - 1) * sb_width] |= 2;
+            }
+        }
 
         if !coded {
             continue;
@@ -662,9 +724,14 @@ fn decode_residual_coeffs(
             15 // All 16 positions in a 4x4 sub-block (index 0..=15)
         };
 
+        // Get prevCsbf for sig_coeff_flag context derivation
+        let prev_csbf = coded_sub_block_neighbors[sub_x + sub_y * sb_width];
+
         // Step 5b: Decode sig_coeff_flags for each position within the sub-block
         let mut sig_flags = [false; 16];
         let mut num_sig = 0u32;
+        let mut first_scan_pos: usize = 16; // will be set to first sig position (lowest scan idx)
+        let mut last_scan_pos: usize = 0; // will be set to last sig position (highest scan idx)
 
         for ci in (0..=coeff_end).rev() {
             let (cx, cy) = coeff_scan_4x4[ci];
@@ -673,28 +740,52 @@ fn decode_residual_coeffs(
                 // Last significant position is always significant
                 sig_flags[ci] = true;
                 num_sig += 1;
+                if ci < first_scan_pos {
+                    first_scan_pos = ci;
+                }
+                if ci > last_scan_pos || num_sig == 1 {
+                    last_scan_pos = ci;
+                }
                 continue;
             }
 
-            // sig_coeff_flag context based on diagonal position within 4x4 sub-block
-            let diag = cx + cy;
-            let sig_ctx_inc = if diag == 0 {
-                0
-            } else if diag < 3 {
-                1
-            } else if diag < 6 {
-                2
-            } else {
-                3
-            };
-            let sig_ctx_base = if log2_size > 2 { 21 } else { 0 };
-            let sig_ctx = SIG_COEFF_CTX_OFFSET + sig_ctx_base + sig_ctx_inc;
-            let sig_ctx = sig_ctx.min(SIG_COEFF_CTX_OFFSET + 41);
+            // Infer significance at scan position 0 within a coded sub-block
+            // if no coefficients are significant yet. Per HEVC Section 7.3.8.11,
+            // this inference only applies to sub-blocks where coded_sub_block_flag
+            // was EXPLICITLY decoded (not the DC or last sub-block).
+            if ci == 0 && num_sig == 0 && !is_dc_sub && !is_last_sub {
+                sig_flags[ci] = true;
+                num_sig += 1;
+                first_scan_pos = ci;
+                last_scan_pos = ci;
+                continue;
+            }
 
-            let sig = cabac.decode_bin(&mut contexts[sig_ctx])? != 0;
+            // Derive sig_coeff_flag context
+            let sig_ctx = derive_sig_coeff_ctx(
+                log2_traf_size,
+                c_idx,
+                scan_idx,
+                cx,
+                cy,
+                sub_x,
+                sub_y,
+                prev_csbf,
+                sb_width,
+                &ctx_idx_map_4x4,
+            );
+            let sig_ctx_idx = SIG_COEFF_CTX_OFFSET + sig_ctx.min(41);
+
+            let sig = cabac.decode_bin(&mut contexts[sig_ctx_idx])? != 0;
             sig_flags[ci] = sig;
             if sig {
                 num_sig += 1;
+                if ci < first_scan_pos {
+                    first_scan_pos = ci;
+                }
+                if num_sig == 1 {
+                    last_scan_pos = ci;
+                }
             }
         }
 
@@ -702,13 +793,29 @@ fn decode_residual_coeffs(
             continue;
         }
 
+        // signHidden: only when PPS sign_data_hiding_enabled_flag is set AND
+        // the distance between first and last sig scan positions > 3
+        let sign_hidden =
+            sign_data_hiding_enabled && (last_scan_pos as isize - first_scan_pos as isize) > 3;
+
         // Step 5c: Decode gt1 flags (max 8 per sub-block) and gt2 flag
-        // c1 counter starts at 1 per sub-block; context = ctxSet*4 + min(c1,3)
-        let ctx_set = if sub_x == 0 && sub_y == 0 { 0u32 } else { 2u32 };
-        let mut c1 = 1u32;
+        // Per spec: ctxSet derivation
+        //   if (i == 0 || cIdx > 0) ctxSet = 0 else ctxSet = 2
+        //   if (c1 == 0) ctxSet++
+        // where c1 carries from the previous sub-block (0 if any gt1=1 was found)
+        let mut ctx_set = if sub_idx == 0 || c_idx > 0 {
+            0u32
+        } else {
+            2u32
+        };
+        if prev_c1 == 0 {
+            ctx_set += 1;
+        }
+
+        let mut greater1_ctx = 1u32;
         let mut abs_levels = [0u32; 16];
         let mut gt1_count = 0u32;
-        let mut first_gt1_idx: Option<usize> = None;
+        let mut first_gt1_scan_idx: Option<usize> = None;
 
         for ci in (0..=coeff_end).rev() {
             if !sig_flags[ci] {
@@ -717,119 +824,246 @@ fn decode_residual_coeffs(
             abs_levels[ci] = 1; // At least 1 since significant
 
             if gt1_count < 8 {
-                let gt1_ctx = GT1_CTX_OFFSET + (ctx_set * 4 + c1.min(3)) as usize;
-                let gt1_ctx = gt1_ctx.min(GT1_CTX_OFFSET + 23);
-                let greater1 = cabac.decode_bin(&mut contexts[gt1_ctx])? != 0;
+                let gt1_ctx_idx = GT1_CTX_OFFSET + (ctx_set * 4 + greater1_ctx.min(3)) as usize;
+                let gt1_ctx_idx = gt1_ctx_idx.min(GT1_CTX_OFFSET + 23);
+                let greater1 = cabac.decode_bin(&mut contexts[gt1_ctx_idx])? != 0;
                 if greater1 {
                     abs_levels[ci] = 2;
-                    if first_gt1_idx.is_none() {
-                        first_gt1_idx = Some(ci);
+                    if first_gt1_scan_idx.is_none() {
+                        first_gt1_scan_idx = Some(ci);
                     }
-                    c1 = 0;
-                } else if c1 > 0 && c1 < 3 {
-                    c1 += 1;
+                    greater1_ctx = 0;
+                } else if greater1_ctx > 0 && greater1_ctx < 3 {
+                    greater1_ctx += 1;
                 }
                 gt1_count += 1;
             }
         }
 
+        // Update c1 carry for next sub-block: if greater1_ctx went to 0, c1 is 0
+        prev_c1 = if greater1_ctx == 0 { 0 } else { 1 };
+
         // gt2 flag: only for the first coefficient with gt1=1
-        if let Some(gt2_ci) = first_gt1_idx {
-            let gt2_ctx = GT2_CTX_OFFSET + ctx_set as usize;
-            let gt2_ctx = gt2_ctx.min(GT2_CTX_OFFSET + 5);
-            let greater2 = cabac.decode_bin(&mut contexts[gt2_ctx])? != 0;
+        if let Some(gt2_ci) = first_gt1_scan_idx {
+            let gt2_ctx_idx = GT2_CTX_OFFSET + ctx_set as usize;
+            let gt2_ctx_idx = gt2_ctx_idx.min(GT2_CTX_OFFSET + 5);
+            let greater2 = cabac.decode_bin(&mut contexts[gt2_ctx_idx])? != 0;
             if greater2 {
                 abs_levels[gt2_ci] = 3;
             }
         }
 
-        // Step 5d: Decode sign flags (all bypass) for significant coefficients
+        // Step 5d: Decode sign flags (bypass) for significant coefficients
+        // If signHidden, skip the sign for the LAST coefficient in scan order
+        // (first_scan_pos = lowest scan index = last to be processed in reverse)
         let mut signs = [0u32; 16];
+        let mut sum_abs: i32 = 0;
         for ci in (0..=coeff_end).rev() {
             if sig_flags[ci] {
-                signs[ci] = cabac.decode_bypass()?;
+                if sign_hidden && ci == first_scan_pos {
+                    // Sign will be inferred from parity later
+                    signs[ci] = 0; // placeholder
+                } else {
+                    signs[ci] = cabac.decode_bypass()?;
+                }
             }
         }
 
-        // Step 5e: Decode remaining levels for coefficients with abs_level >= base
-        // The first gt1=1 coefficient has base 3 (if gt2 was decoded); others have
-        // base 2 if gt1=1, or base 1 if only sig.
-        // Only coefficients that reached their cap need remaining level decoding.
-        // Rice parameter adapts within the sub-block
+        // Step 5e: Decode coeff_abs_level_remaining
+        //
+        // Determine which coefficients need remaining level decoding:
+        // - gt1=0 (abs_levels==1) within first 8: level is exactly 1, no remaining
+        // - gt1=1 (abs_levels==2) and IS gt2 candidate: gt2 decoded, if gt2=0 level=2
+        //   no remaining; if gt2=1 (abs_levels==3) decode remaining, level=3+rem
+        // - gt1=1 (abs_levels==2) and NOT gt2 candidate: decode remaining, level=2+rem
+        // - Past first 8 sig coeffs: no gt1 decoded, decode remaining, level=1+rem
+        //
+        // We also need to track which coefficients were within the first 8.
+        // Build a set of the first 8 significant coefficient scan indices.
+        let mut first_8_sig = [false; 16];
+        {
+            let mut count = 0u32;
+            for cj in (0..=coeff_end).rev() {
+                if sig_flags[cj] {
+                    if count < 8 {
+                        first_8_sig[cj] = true;
+                    }
+                    count += 1;
+                }
+            }
+        }
+
         let mut rice_param = 0u32;
         for ci in (0..=coeff_end).rev() {
             if !sig_flags[ci] {
                 continue;
             }
 
-            let needs_remaining = if Some(ci) == first_gt1_idx {
-                // This was the gt2 candidate — needs remaining if gt2=1 (level==3)
-                abs_levels[ci] == 3
-            } else if abs_levels[ci] >= 2 {
-                // gt1=1 but not the gt2 candidate — level is exactly 2, no remaining
-                false
-            } else {
-                // Only sig, gt1 not decoded (past 8 limit) — needs remaining to get
-                // actual level
-                gt1_count > 8 && abs_levels[ci] == 1
-            };
+            let base_level = abs_levels[ci];
+            let needs_remaining;
 
-            // Coefficients past the gt1 limit of 8 need bypass-coded absolute level
-            let past_gt1_limit = if gt1_count > 8 {
-                // Check if this coefficient was beyond the first 8 sig coefficients
-                let mut count = 0u32;
-                let mut past = false;
-                for cj in (0..=coeff_end).rev() {
-                    if sig_flags[cj] {
-                        count += 1;
-                        if cj == ci && count > 8 {
-                            past = true;
-                        }
-                    }
+            if first_8_sig[ci] {
+                // Within first 8 — gt1 was decoded
+                if Some(ci) == first_gt1_scan_idx {
+                    // gt2 candidate: remaining decoded if gt2=1 (base=3)
+                    needs_remaining = abs_levels[ci] >= 3;
+                } else if abs_levels[ci] >= 2 {
+                    // gt1=1 but not gt2 candidate — need remaining for level > 2
+                    needs_remaining = true;
+                } else {
+                    // gt1=0, level is exactly 1
+                    needs_remaining = false;
                 }
-                past
             } else {
-                false
-            };
+                // Past first 8 — no gt1 decoded, need remaining
+                needs_remaining = true;
+            }
 
-            if past_gt1_limit {
-                // Bypass-coded absolute level for coefficients past gt1 limit
-                let remaining = decode_coeff_abs_level_remaining(cabac, rice_param)?;
-                abs_levels[ci] = 1 + remaining;
-                // Rice parameter adaptation
-                if abs_levels[ci] > (3u32 << rice_param) {
-                    rice_param = (rice_param + 1).min(4);
-                }
-            } else if needs_remaining {
+            if needs_remaining {
                 let remaining = decode_coeff_abs_level_remaining(cabac, rice_param)?;
                 abs_levels[ci] += remaining;
-                // Rice parameter adaptation
-                if abs_levels[ci] > (3u32 << rice_param) {
+                // Rice parameter adaptation: baseLevel + remaining > 3*(1<<ricePar)
+                let total = base_level + remaining;
+                if total > 3 * (1u32 << rice_param) {
                     rice_param = (rice_param + 1).min(4);
+                }
+            }
+        }
+
+        // Step 5f: Compute sum for signHidden parity inference
+        if sign_hidden {
+            sum_abs = 0;
+            for ci in 0..=coeff_end {
+                if sig_flags[ci] {
+                    sum_abs += abs_levels[ci] as i32;
                 }
             }
         }
 
         // Step 6: Assemble final coefficients into the output array
-        let base_x = sub_x * 4;
-        let base_y = sub_y * 4;
+        let base_x = sub_x * (if log2_traf_size <= 2 { 1 } else { 4 });
+        let base_y = sub_y * (if log2_traf_size <= 2 { 1 } else { 4 });
+        let scan_4x4_size = if log2_traf_size <= 2 {
+            size as usize
+        } else {
+            4
+        };
         for ci in 0..=coeff_end {
             if !sig_flags[ci] {
                 continue;
             }
             let (cx, cy) = coeff_scan_4x4[ci];
+            if cx >= scan_4x4_size || cy >= scan_4x4_size {
+                continue;
+            }
             let tx = base_x + cx;
             let ty = base_y + cy;
-            // For 4x4 TUs, clamp to actual size
             if tx < size as usize && ty < size as usize {
                 let pos = ty * size as usize + tx;
                 let level = abs_levels[ci] as i16;
-                coeffs[pos] = if signs[ci] != 0 { -level } else { level };
+                let sign = if sign_hidden && ci == first_scan_pos {
+                    // Infer sign from parity of sum of absolute levels
+                    (sum_abs & 1) as u32
+                } else {
+                    signs[ci]
+                };
+                coeffs[pos] = if sign != 0 { -level } else { level };
             }
         }
     }
 
     Ok(coeffs)
+}
+
+/// Derive the sig_coeff_flag context index (relative to SIG_COEFF_CTX_OFFSET).
+///
+/// Implements HEVC Table 9-39 context derivation based on log2TrafoSize,
+/// position within the sub-block, and coded sub-block neighbor flags.
+fn derive_sig_coeff_ctx(
+    log2_traf_size: usize,
+    c_idx: usize,
+    scan_idx: usize,
+    cx: usize,
+    cy: usize,
+    sub_x: usize,
+    sub_y: usize,
+    prev_csbf: u8,
+    sb_width: usize,
+    ctx_idx_map_4x4: &[usize; 16],
+) -> usize {
+    if log2_traf_size == 2 {
+        // 4x4 TU: use ctxIdxMap lookup
+        let scan_pos_in_4x4 = cy * 4 + cx; // raster position within 4x4
+        return ctx_idx_map_4x4[scan_pos_in_4x4.min(15)];
+    }
+
+    // DC position (0,0 in the first sub-block)
+    if cx == 0 && cy == 0 && sub_x == 0 && sub_y == 0 {
+        // DC coefficient: sigCtx = 0
+        return 0;
+    }
+
+    // Position within 4x4 sub-block
+    let x_p = cx & 3;
+    let y_p = cy & 3;
+
+    // Derive sigCtx from neighbor flags
+    let sig_ctx = match prev_csbf & 3 {
+        0 => {
+            // No coded neighbors
+            if x_p + y_p >= 3 {
+                0
+            } else if x_p + y_p > 0 {
+                1
+            } else {
+                2
+            }
+        }
+        1 => {
+            // Right neighbor coded (bit 0)
+            if y_p == 0 {
+                2
+            } else if y_p == 1 {
+                1
+            } else {
+                0
+            }
+        }
+        2 => {
+            // Below neighbor coded (bit 1)
+            if x_p == 0 {
+                2
+            } else if x_p == 1 {
+                1
+            } else {
+                0
+            }
+        }
+        _ => {
+            // Both neighbors coded
+            2
+        }
+    };
+
+    if c_idx == 0 {
+        // Luma
+        let mut ctx = sig_ctx;
+        if sub_x + sub_y > 0 {
+            ctx += 3; // not first sub-block
+        }
+        if sb_width == 2 {
+            // 8x8 TU (log2TrafoSize == 3)
+            ctx += if scan_idx == 0 { 9 } else { 15 };
+        } else {
+            // 16x16 or 32x32 TU
+            ctx += 21;
+        }
+        ctx
+    } else {
+        // Chroma
+        // Chroma contexts start at offset 27 in the sig_coeff table
+        27 + sig_ctx
+    }
 }
 
 /// Decode the last significant coefficient X and Y prefixes.
@@ -973,55 +1207,46 @@ fn decode_coeff_abs_level_remaining(
     }
 
     if prefix < 3 {
-        // Truncated Rice
+        // Truncated Rice: value = prefix * (1 << rice_param) + suffix
         let mut suffix = 0u32;
         for _ in 0..rice_param {
             suffix = (suffix << 1) | cabac.decode_bypass()?;
         }
         Ok((prefix << rice_param) + suffix)
     } else {
-        // Exp-Golomb with offset
-        let suffix_len = prefix - 3 + rice_param;
+        // Exp-Golomb escape: the prefix continues as an EG order indicator
+        // EG order = prefix - 3
+        // suffix has (prefix - 3 + rice_param) bits
+        // value = ((1 << (prefix - 3)) + 2) << rice_param + suffix
+        let eg_order = prefix - 3;
+        let suffix_len = eg_order + rice_param;
         let mut suffix = 0u32;
         for _ in 0..suffix_len {
             suffix = (suffix << 1) | cabac.decode_bypass()?;
         }
-        Ok(((2 + prefix - 3) << rice_param) + suffix)
+        Ok((((1u32 << eg_order) + 2) << rice_param) + suffix)
     }
 }
 
-/// Build a diagonal scan order for an NxN block.
+/// Build an up-right diagonal scan order for an NxN block.
+///
+/// HEVC Table 6-5: each diagonal (where x+y = const) is scanned from
+/// bottom-left to top-right (increasing x, decreasing y).
 fn build_scan_order(n: usize) -> Vec<(usize, usize)> {
     let mut order = Vec::with_capacity(n * n);
     for diag in 0..2 * n - 1 {
-        if diag % 2 == 0 {
-            // Even diagonal: bottom-left to top-right
-            let start_y = diag.min(n - 1);
-            let start_x = diag - start_y;
-            let mut x = start_x;
-            let mut y = start_y;
-            loop {
-                order.push((x, y));
-                if x + 1 >= n || y == 0 {
-                    break;
-                }
-                x += 1;
-                y -= 1;
+        // Start at the bottom-left of this diagonal
+        let start_y = diag.min(n - 1);
+        let start_x = diag - start_y;
+        let mut x = start_x;
+        let mut y = start_y;
+        loop {
+            order.push((x, y));
+            if x + 1 >= n || y == 0 {
+                break;
             }
-        } else {
-            // Odd diagonal: top-right to bottom-left
-            let start_x = diag.min(n - 1);
-            let start_y = diag - start_x;
-            let mut x = start_x;
-            let mut y = start_y;
-            loop {
-                order.push((x, y));
-                if y + 1 >= n || x == 0 {
-                    break;
-                }
-                x -= 1;
-                y += 1;
-            }
+            x += 1;
+            y -= 1;
         }
     }
     order
@@ -1039,15 +1264,16 @@ const PREV_INTRA_PRED_CTX_OFFSET: usize = 7; // 1 context
 const CHROMA_PRED_CTX_OFFSET: usize = 8; // 1 context
 const SPLIT_TU_CTX_OFFSET: usize = 9; // 3 contexts
 const CBF_LUMA_CTX_OFFSET: usize = 12; // 2 contexts
-const SIG_COEFF_CTX_OFFSET: usize = 14; // 42 contexts
-const GT1_CTX_OFFSET: usize = 56; // 24 contexts
-const GT2_CTX_OFFSET: usize = 80; // 6 contexts
-const LAST_SIG_X_CTX_OFFSET: usize = 86; // 18 contexts
-const LAST_SIG_Y_CTX_OFFSET: usize = 104; // 18 contexts
-const CBF_CHROMA_CTX_OFFSET: usize = 122; // 5 contexts
+const CODED_SUB_BLOCK_FLAG_CTX_OFFSET: usize = 14; // 4 contexts
+const SIG_COEFF_CTX_OFFSET: usize = 18; // 42 contexts
+const GT1_CTX_OFFSET: usize = 60; // 24 contexts
+const GT2_CTX_OFFSET: usize = 84; // 6 contexts
+const LAST_SIG_X_CTX_OFFSET: usize = 90; // 18 contexts
+const LAST_SIG_Y_CTX_OFFSET: usize = 108; // 18 contexts
+const CBF_CHROMA_CTX_OFFSET: usize = 126; // 5 contexts
 
 /// Total number of context models needed for syntax parsing.
-pub const NUM_SYNTAX_CONTEXTS: usize = 127;
+pub const NUM_SYNTAX_CONTEXTS: usize = 131;
 
 /// Initialize syntax context models for an I-slice at the given QP.
 ///
@@ -1085,8 +1311,13 @@ pub fn init_syntax_contexts(qp: i32) -> Vec<ContextModel> {
             iv[CBF_LUMA_CTX_OFFSET + i] = v;
         }
     }
+    // CODED_SUB_BLOCK_FLAG: 4 contexts
+    for (i, &v) in cabac::CODED_SUB_BLOCK_FLAG_INIT[si].iter().enumerate() {
+        if CODED_SUB_BLOCK_FLAG_CTX_OFFSET + i < iv.len() {
+            iv[CODED_SUB_BLOCK_FLAG_CTX_OFFSET + i] = v;
+        }
+    }
     // SIG_COEFF_FLAG, GT1, GT2, LAST_SIG_X/Y: use spec init values for I-slice
-    // These use the CODED_SUB_BLOCK_FLAG, SIG_COEFF_FLAG, etc. tables
     for (i, &v) in cabac::SIG_COEFF_FLAG_INIT[si].iter().enumerate() {
         if SIG_COEFF_CTX_OFFSET + i < iv.len() {
             iv[SIG_COEFF_CTX_OFFSET + i] = v;
