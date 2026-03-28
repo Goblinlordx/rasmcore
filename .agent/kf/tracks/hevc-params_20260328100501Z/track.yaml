@@ -27,34 +27,34 @@ plan:
 - phase: Exp-Golomb + BitReader
   tasks:
   - text: Implement ue(v) unsigned Exp-Golomb decoding via BitReader
-    done: false
+    done: true
   - text: Implement se(v) signed Exp-Golomb decoding
-    done: false
+    done: true
   - text: Implement u(n) fixed-length and u(1) flag reading helpers
-    done: false
+    done: true
 - phase: Parameter Set Parsing
   tasks:
   - text: Implement VPS parser — profile_tier_level, max_layers, max_sub_layers, timing_info
-    done: false
+    done: true
   - text: Implement profile_tier_level() sub-parser — used by VPS and SPS
-    done: false
+    done: true
   - text: Implement SPS parser — pic dimensions, chroma_format, bit_depth, log2 CTU/CU sizes, conformance window, scaling
       list, short-term ref pic sets
-    done: false
+    done: true
   - text: Implement PPS parser — init_qp, tile config (rows/cols/uniform), deblocking control, entropy_coding_sync, sign_data_hiding
-    done: false
+    done: true
 - phase: Storage + Lookup
   tasks:
   - text: Implement DecoderContext storing active VPS/SPS/PPS by ID
-    done: false
+    done: true
   - text: Parse parameter sets from hvcC NAL arrays into DecoderContext
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for Exp-Golomb edge cases (0, 1, large values)
-    done: false
+    done: true
   - text: Unit tests for SPS with known binary data from a real HEIC file
-    done: false
+    done: true
   - text: Unit tests for PPS with tile config and deblocking params
-    done: false
+    done: true
 extra: {}
