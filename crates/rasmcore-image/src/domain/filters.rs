@@ -82,7 +82,7 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
 
 /// Adjust brightness (-1.0 to 1.0).
 ///
-/// Written as a simple per-byte loop that LLVM auto-vectorizes to SIMD128.
+/// Uses the composable LUT infrastructure from `point_ops`.
 pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
@@ -90,20 +90,13 @@ pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8
         ));
     }
     validate_format(info.format)?;
-
-    let offset = (amount * 128.0) as i16;
-    let mut result = Vec::with_capacity(pixels.len());
-    for &p in pixels {
-        let v = (p as i16 + offset).clamp(0, 255) as u8;
-        result.push(v);
-    }
-    Ok(result)
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Brightness(amount));
+    super::point_ops::apply_lut(pixels, info, &lut)
 }
 
 /// Adjust contrast (-1.0 to 1.0).
 ///
-/// Uses the formula: output = factor * (pixel - 128) + 128
-/// where factor = (1.0 + amount) for positive, (1.0 / (1.0 - amount)) adjusted.
+/// Uses the composable LUT infrastructure from `point_ops`.
 pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
@@ -111,22 +104,8 @@ pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
         ));
     }
     validate_format(info.format)?;
-
-    // Build a 256-entry LUT for maximum throughput
-    let factor = if amount >= 0.0 {
-        1.0 + amount * 2.0
-    } else {
-        1.0 / (1.0 - amount * 2.0)
-    };
-
-    let mut lut = [0u8; 256];
-    for (i, entry) in lut.iter_mut().enumerate() {
-        let v = factor * (i as f32 - 128.0) + 128.0;
-        *entry = v.clamp(0.0, 255.0) as u8;
-    }
-
-    let result: Vec<u8> = pixels.iter().map(|&p| lut[p as usize]).collect();
-    Ok(result)
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Contrast(amount));
+    super::point_ops::apply_lut(pixels, info, &lut)
 }
 
 /// Convert to grayscale using weighted channel sum.

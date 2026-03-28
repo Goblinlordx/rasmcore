@@ -1,0 +1,368 @@
+//! Composable LUT-based pixel point operations.
+//!
+//! Every point operation is a pure `u8 → u8` per-channel mapping expressed as a
+//! 256-entry lookup table. When multiple point ops are chained, their LUTs can be
+//! composed into a single fused LUT at plan time, reducing N operations to one
+//! memory pass regardless of chain length.
+//!
+//! Non-point-op nodes (blur, resize, etc.) act as fusion barriers — only
+//! consecutive runs of point ops are fused.
+
+use super::error::ImageError;
+use super::types::{ImageInfo, PixelFormat};
+
+/// A pixel point operation — a pure `u8 → u8` per-channel mapping.
+#[derive(Debug, Clone)]
+pub enum PointOp {
+    /// Power-law gamma correction. `LUT[i] = round(255 * (i/255)^(1/gamma))`
+    Gamma(f32),
+    /// Negate all channels. `LUT[i] = 255 - i`
+    Invert,
+    /// Binary threshold. `LUT[i] = if i >= level { 255 } else { 0 }`
+    Threshold(u8),
+    /// Reduce to N discrete levels. `LUT[i] = round(round(i*(n-1)/255) * 255/(n-1))`
+    Posterize(u8),
+    /// Clamp to [min, max] range. `LUT[i] = i.clamp(min, max)`
+    Clamp(u8, u8),
+    /// Brightness offset (-1.0 to 1.0). `LUT[i] = (i + offset).clamp(0, 255)`
+    Brightness(f32),
+    /// Contrast adjustment (-1.0 to 1.0). `LUT[i] = (factor*(i-128)+128).clamp(0,255)`
+    Contrast(f32),
+}
+
+/// Build a 256-entry LUT for a single point operation.
+pub fn build_lut(op: &PointOp) -> [u8; 256] {
+    let mut lut = [0u8; 256];
+    match op {
+        PointOp::Gamma(gamma) => {
+            let inv_gamma = 1.0 / gamma;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (255.0 * (i as f32 / 255.0).powf(inv_gamma) + 0.5) as u8;
+            }
+        }
+        PointOp::Invert => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (255 - i) as u8;
+            }
+        }
+        PointOp::Threshold(level) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = if (i as u8) >= *level { 255 } else { 0 };
+            }
+        }
+        PointOp::Posterize(levels) => {
+            let n = (*levels).max(2) as f32;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let quantized = (i as f32 * (n - 1.0) / 255.0 + 0.5) as u8;
+                *entry = ((quantized as f32) * 255.0 / (n - 1.0) + 0.5) as u8;
+            }
+        }
+        PointOp::Clamp(min, max) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as u8).clamp(*min, *max);
+            }
+        }
+        PointOp::Brightness(amount) => {
+            let offset = (*amount * 128.0) as i16;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as i16 + offset).clamp(0, 255) as u8;
+            }
+        }
+        PointOp::Contrast(amount) => {
+            let factor = if *amount >= 0.0 {
+                1.0 + amount * 2.0
+            } else {
+                1.0 / (1.0 - amount * 2.0)
+            };
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let v = factor * (i as f32 - 128.0) + 128.0;
+                *entry = v.clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+    lut
+}
+
+/// Compose two LUTs: the result applies `first` then `second`.
+///
+/// `fused[i] = second[first[i]]`
+///
+/// O(256) — trivial cost at plan time, saves a full pixel pass at runtime.
+pub fn compose_luts(first: &[u8; 256], second: &[u8; 256]) -> [u8; 256] {
+    let mut fused = [0u8; 256];
+    for (i, entry) in fused.iter_mut().enumerate() {
+        *entry = second[first[i] as usize];
+    }
+    fused
+}
+
+/// Apply a LUT to all color channels of a pixel buffer, preserving alpha.
+///
+/// For RGB8: applies LUT to all 3 channels.
+/// For RGBA8: applies LUT to R, G, B; copies A unchanged.
+/// For Gray8: applies LUT to the single channel.
+pub fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Result<Vec<u8>, ImageError> {
+    match info.format {
+        PixelFormat::Rgb8 | PixelFormat::Gray8 => {
+            Ok(pixels.iter().map(|&p| lut[p as usize]).collect())
+        }
+        PixelFormat::Rgba8 => {
+            let mut result = Vec::with_capacity(pixels.len());
+            for chunk in pixels.chunks_exact(4) {
+                result.push(lut[chunk[0] as usize]); // R
+                result.push(lut[chunk[1] as usize]); // G
+                result.push(lut[chunk[2] as usize]); // B
+                result.push(chunk[3]); // A unchanged
+            }
+            Ok(result)
+        }
+        other => Err(ImageError::UnsupportedFormat(format!(
+            "point op on {other:?} not supported"
+        ))),
+    }
+}
+
+// ─── Public convenience functions ───────────────────────────────────────────
+
+/// Apply gamma correction.
+pub fn gamma(pixels: &[u8], info: &ImageInfo, gamma_value: f32) -> Result<Vec<u8>, ImageError> {
+    if gamma_value <= 0.0 {
+        return Err(ImageError::InvalidParameters("gamma must be > 0".into()));
+    }
+    let lut = build_lut(&PointOp::Gamma(gamma_value));
+    apply_lut(pixels, info, &lut)
+}
+
+/// Invert (negate) all channels.
+pub fn invert(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let lut = build_lut(&PointOp::Invert);
+    apply_lut(pixels, info, &lut)
+}
+
+/// Binary threshold at the given level.
+pub fn threshold(pixels: &[u8], info: &ImageInfo, level: u8) -> Result<Vec<u8>, ImageError> {
+    let lut = build_lut(&PointOp::Threshold(level));
+    apply_lut(pixels, info, &lut)
+}
+
+/// Posterize to N discrete levels per channel.
+pub fn posterize(pixels: &[u8], info: &ImageInfo, levels: u8) -> Result<Vec<u8>, ImageError> {
+    if levels < 2 {
+        return Err(ImageError::InvalidParameters(
+            "posterize levels must be >= 2".into(),
+        ));
+    }
+    let lut = build_lut(&PointOp::Posterize(levels));
+    apply_lut(pixels, info, &lut)
+}
+
+/// Clamp pixel values to [min, max].
+pub fn clamp(pixels: &[u8], info: &ImageInfo, min: u8, max: u8) -> Result<Vec<u8>, ImageError> {
+    let lut = build_lut(&PointOp::Clamp(min, max));
+    apply_lut(pixels, info, &lut)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn test_info(w: u32, h: u32, fmt: PixelFormat) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: fmt,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    // ── build_lut correctness ───────────────────────────────────────────
+
+    #[test]
+    fn lut_gamma_identity() {
+        let lut = build_lut(&PointOp::Gamma(1.0));
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i, "gamma 1.0 should be identity at {i}");
+        }
+    }
+
+    #[test]
+    fn lut_gamma_brightens() {
+        // gamma > 1 brightens: out = in^(1/gamma), 1/gamma < 1 → concave up
+        let lut = build_lut(&PointOp::Gamma(2.2));
+        assert_eq!(lut[0], 0);
+        assert_eq!(lut[255], 255);
+        assert!(lut[128] > 128, "gamma 2.2 should brighten midtones");
+
+        // gamma < 1 darkens: out = in^(1/gamma), 1/gamma > 1 → concave down
+        let lut_dark = build_lut(&PointOp::Gamma(0.5));
+        assert!(lut_dark[128] < 128, "gamma 0.5 should darken midtones");
+    }
+
+    #[test]
+    fn lut_invert() {
+        let lut = build_lut(&PointOp::Invert);
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], 255 - i);
+        }
+    }
+
+    #[test]
+    fn lut_threshold() {
+        let lut = build_lut(&PointOp::Threshold(128));
+        for i in 0..128u8 {
+            assert_eq!(lut[i as usize], 0);
+        }
+        for i in 128..=255u8 {
+            assert_eq!(lut[i as usize], 255);
+        }
+    }
+
+    #[test]
+    fn lut_posterize_2_levels() {
+        let lut = build_lut(&PointOp::Posterize(2));
+        // 2 levels: 0 and 255
+        assert_eq!(lut[0], 0);
+        assert_eq!(lut[127], 0);
+        assert_eq!(lut[128], 255);
+        assert_eq!(lut[255], 255);
+    }
+
+    #[test]
+    fn lut_clamp() {
+        let lut = build_lut(&PointOp::Clamp(50, 200));
+        assert_eq!(lut[0], 50);
+        assert_eq!(lut[49], 50);
+        assert_eq!(lut[50], 50);
+        assert_eq!(lut[100], 100);
+        assert_eq!(lut[200], 200);
+        assert_eq!(lut[201], 200);
+        assert_eq!(lut[255], 200);
+    }
+
+    #[test]
+    fn lut_brightness_positive() {
+        let lut = build_lut(&PointOp::Brightness(0.5));
+        assert_eq!(lut[0], 64); // 0 + 64 = 64
+        assert_eq!(lut[255], 255); // clamped
+    }
+
+    #[test]
+    fn lut_contrast_zero_is_identity() {
+        let lut = build_lut(&PointOp::Contrast(0.0));
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i, "contrast 0.0 should be identity at {i}");
+        }
+    }
+
+    // ── compose_luts ────────────────────────────────────────────────────
+
+    #[test]
+    fn compose_identity() {
+        let identity: [u8; 256] = std::array::from_fn(|i| i as u8);
+        let invert_lut = build_lut(&PointOp::Invert);
+        let fused = compose_luts(&identity, &invert_lut);
+        assert_eq!(fused, invert_lut);
+    }
+
+    #[test]
+    fn compose_invert_twice_is_identity() {
+        let inv = build_lut(&PointOp::Invert);
+        let fused = compose_luts(&inv, &inv);
+        for i in 0..=255u8 {
+            assert_eq!(
+                fused[i as usize], i,
+                "double invert should be identity at {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn compose_matches_sequential_application() {
+        // gamma -> invert -> posterize: fused should equal sequential
+        let g = build_lut(&PointOp::Gamma(2.2));
+        let i = build_lut(&PointOp::Invert);
+        let p = build_lut(&PointOp::Posterize(4));
+
+        let fused = compose_luts(&compose_luts(&g, &i), &p);
+
+        for v in 0..=255u8 {
+            let sequential = p[i[g[v as usize] as usize] as usize];
+            assert_eq!(fused[v as usize], sequential, "mismatch at {v}");
+        }
+    }
+
+    // ── apply_lut ───────────────────────────────────────────────────────
+
+    #[test]
+    fn apply_lut_rgb8() {
+        let pixels = vec![100u8, 150, 200, 50, 100, 150];
+        let info = test_info(2, 1, PixelFormat::Rgb8);
+        let inv = build_lut(&PointOp::Invert);
+        let result = apply_lut(&pixels, &info, &inv).unwrap();
+        assert_eq!(result, vec![155, 105, 55, 205, 155, 105]);
+    }
+
+    #[test]
+    fn apply_lut_rgba8_preserves_alpha() {
+        let pixels = vec![100, 150, 200, 128, 50, 100, 150, 255];
+        let info = test_info(2, 1, PixelFormat::Rgba8);
+        let inv = build_lut(&PointOp::Invert);
+        let result = apply_lut(&pixels, &info, &inv).unwrap();
+        assert_eq!(result, vec![155, 105, 55, 128, 205, 155, 105, 255]);
+    }
+
+    #[test]
+    fn apply_lut_gray8() {
+        let pixels = vec![0, 128, 255];
+        let info = test_info(3, 1, PixelFormat::Gray8);
+        let inv = build_lut(&PointOp::Invert);
+        let result = apply_lut(&pixels, &info, &inv).unwrap();
+        assert_eq!(result, vec![255, 127, 0]);
+    }
+
+    // ── public API ──────────────────────────────────────────────────────
+
+    #[test]
+    fn gamma_invalid_returns_error() {
+        let info = test_info(1, 1, PixelFormat::Rgb8);
+        assert!(gamma(&[128, 128, 128], &info, 0.0).is_err());
+        assert!(gamma(&[128, 128, 128], &info, -1.0).is_err());
+    }
+
+    #[test]
+    fn posterize_invalid_returns_error() {
+        let info = test_info(1, 1, PixelFormat::Rgb8);
+        assert!(posterize(&[128, 128, 128], &info, 1).is_err());
+        assert!(posterize(&[128, 128, 128], &info, 0).is_err());
+    }
+
+    #[test]
+    fn invert_roundtrip() {
+        let pixels = vec![0, 64, 128, 192, 255, 42];
+        let info = test_info(2, 1, PixelFormat::Rgb8);
+        let inv = invert(&pixels, &info).unwrap();
+        let back = invert(&inv, &info).unwrap();
+        assert_eq!(back, pixels);
+    }
+
+    #[test]
+    fn threshold_produces_binary() {
+        let pixels: Vec<u8> = (0..=255).collect();
+        let info = test_info(256, 1, PixelFormat::Gray8);
+        let result = threshold(&pixels, &info, 100).unwrap();
+        for &v in &result {
+            assert!(v == 0 || v == 255);
+        }
+    }
+
+    #[test]
+    fn clamp_constrains_values() {
+        let pixels: Vec<u8> = (0..=255).collect();
+        let info = test_info(256, 1, PixelFormat::Gray8);
+        let result = clamp(&pixels, &info, 30, 220).unwrap();
+        for &v in &result {
+            assert!(v >= 30 && v <= 220);
+        }
+    }
+}
