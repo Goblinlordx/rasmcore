@@ -1,0 +1,98 @@
+id: simd-filters_20260328020201Z
+title: "SIMD-Optimized Filters — Blur, Sharpen, Point Ops"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Replace image crate blur/sharpen/brightness/contrast with SIMD-optimized
+    implementations. Use auto-vectorization with WASM SIMD128 target feature
+    and/or hand-written kernels for the hot path operations.
+  context: |
+    The 1080p benchmark shows blur at 963ms native vs 40ms libvips (24x gap).
+    The image crate blur uses scalar convolution with no SIMD. Point ops
+    (brightness, contrast) are also scalar per-pixel loops.
+
+    Approach options (ranked by effort/impact):
+    1. Auto-vectorization: Write scalar loops that LLVM can vectorize to SIMD128
+       when compiled with target-feature=+simd128. Minimal code change, ~2-4x.
+    2. Separable convolution: Gaussian blur is separable (1D horizontal + 1D
+       vertical). Much faster than 2D convolution. Combined with SIMD ~5-10x.
+    3. Hand-written WASM SIMD intrinsics: Maximum performance, most effort.
+    4. LUT-based point ops: brightness/contrast can use a 256-entry lookup table
+       instead of per-pixel math. Trivially fast.
+
+    After Track 1 (SIMD resize) lands, the blur/sharpen gap becomes the
+    next bottleneck.
+  codebase_analysis: |
+    Current filter path:
+    - domain/filters.rs: Each function converts raw pixels to DynamicImage,
+      calls image crate method (blur/unsharpen/brighten/adjust_contrast),
+      extracts pixels back
+    - img.blur(radius) uses a 2D convolution kernel — O(w*h*r^2)
+    - img.unsharpen() = blur + subtract + scale
+    - img.brighten()/adjust_contrast() = per-pixel arithmetic
+
+    Optimization strategy per operation:
+    - blur: separable gaussian (O(w*h*2r) instead of O(w*h*r^2)) + SIMD
+    - sharpen: computed as original - blur + scale (reuse SIMD blur)
+    - brightness: LUT or SIMD per-pixel add
+    - contrast: LUT or SIMD per-pixel multiply+add
+    - grayscale: SIMD weighted channel sum (0.299R + 0.587G + 0.114B)
+  acceptance_criteria:
+    - Gaussian blur uses separable convolution (horizontal + vertical passes)
+    - All filters work directly on raw pixel buffers (no DynamicImage conversion)
+    - Auto-vectorization verified with WASM SIMD128 target feature
+    - All existing filter tests pass
+    - 1080p blur benchmark shows significant speedup (target under 100ms native)
+    - Point ops (brightness, contrast) under 10ms for 1080p
+  out_of_scope: |
+    - New filter operations (edge detect, median, etc. — separate parity tracks)
+    - Hand-written SIMD intrinsics for initial implementation (auto-vectorize first)
+    - GPU compute (WebGPU — separate future track)
+  technical_notes: |
+    Separable Gaussian blur:
+    1. Compute 1D Gaussian kernel of size 2*ceil(3*sigma)+1
+    2. Horizontal pass: convolve each row with the 1D kernel
+    3. Vertical pass: convolve each column with the same kernel
+    4. Total: O(w*h*k) where k = kernel size, vs O(w*h*k^2) for 2D
+
+    For LLVM auto-vectorization to WASM SIMD128:
+    - Use simple indexed loops over contiguous &[u8] slices
+    - Avoid branches inside the hot loop
+    - Use f32 intermediates for accumulation (maps to f32x4 SIMD lanes)
+    - Compile with -C target-feature=+simd128 -C opt-level=3
+
+    Point ops should operate directly on raw pixel &mut [u8] without any
+    image type conversion — just iterate and transform each byte.
+plan:
+  - phase: "Raw Pixel Operations"
+    tasks:
+      - text: "Implement raw pixel blur with separable gaussian convolution (no DynamicImage)"
+        done: false
+      - text: "Implement raw pixel sharpen (original + scale * (original - blur))"
+        done: false
+      - text: "Implement raw pixel brightness (per-byte add with clamping)"
+        done: false
+      - text: "Implement raw pixel contrast (per-byte multiply+add with clamping)"
+        done: false
+      - text: "Implement raw pixel grayscale (weighted channel sum)"
+        done: false
+  - phase: "SIMD Verification"
+    tasks:
+      - text: "Verify LLVM auto-vectorizes blur hot loop (inspect WASM output or use perf)"
+        done: false
+      - text: "Compile with opt-level=3 and target-feature=+simd128, compare to opt-level=3 without SIMD"
+        done: false
+  - phase: "Testing & Benchmark"
+    tasks:
+      - text: "All domain filter tests pass"
+        done: false
+      - text: "Parity tests pass (blur/grayscale vs ImageMagick)"
+        done: false
+      - text: "WASM integration tests pass"
+        done: false
+      - text: "1080p benchmark comparison (before/after + vs ImageMagick/vips)"
+        done: false
+extra: {}

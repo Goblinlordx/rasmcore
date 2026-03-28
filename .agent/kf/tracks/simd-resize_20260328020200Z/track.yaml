@@ -1,0 +1,98 @@
+id: simd-resize_20260328020200Z
+title: "SIMD-Optimized Resize via fast_image_resize"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Replace image crate resize with fast_image_resize for SIMD-optimized
+    resizing on all platforms including WASM SIMD128. Target 10-25x speedup
+    on 1080p images to reach ImageMagick/libvips parity.
+  context: |
+    The 1080p benchmark shows rasmcore resize at 968ms vs ImageMagick 40ms
+    and libvips 37ms — a 25x gap. The image crate uses scalar Rust with no
+    SIMD. fast_image_resize has hand-written SIMD kernels for:
+    - x86: SSE4.1, AVX2
+    - ARM: NEON
+    - WASM: SIMD128 (24 kernel files verified)
+
+    fast_image_resize v5.5 confirmed to compile to wasm32-wasip1 with
+    target-feature=+simd128. Single binary, runtime CPU detection on native,
+    compile-time feature on WASM. No separate builds needed.
+
+    This is the single highest-impact performance improvement possible.
+  codebase_analysis: |
+    Current resize path:
+    - domain/transform.rs: resize() converts raw pixels to DynamicImage,
+      calls image crate resize_exact(), converts back
+    - Pipeline node: transform::ResizeNode wraps domain::transform::resize()
+    - The DynamicImage round-trip adds overhead on top of scalar computation
+
+    fast_image_resize works directly on raw pixel buffers (no DynamicImage):
+    - Input: raw &[u8] pixels + width + height + pixel type
+    - Output: raw Vec<u8> pixels
+    - Supports all filter types: Box, Bilinear, CatmullRom, Mitchell, Lanczos3
+    - Supports pixel types: U8x1-4, U16x1-4, F32x1-4
+
+    This eliminates the DynamicImage conversion AND uses SIMD kernels.
+  acceptance_criteria:
+    - fast_image_resize added as dependency to rasmcore-image
+    - domain/transform.rs resize() uses fast_image_resize instead of image crate
+    - Cargo.toml enables WASM SIMD128 via .cargo/config.toml or build flag
+    - All resize filter types work (Nearest, Bilinear, Bicubic/CatmullRom, Lanczos3)
+    - All pixel formats work (RGB8, RGBA8, Gray8)
+    - All existing resize tests pass (domain, parity, WASM integration, TS SDK)
+    - 1080p benchmark shows significant speedup vs current (target under 200ms native)
+    - WASM build with SIMD128 validates and runs in wasmtime
+  out_of_scope: |
+    - Blur/sharpen/filter SIMD optimization (Track 2)
+    - Custom SIMD kernels beyond what fast_image_resize provides
+    - Multithreading (separate architectural concern)
+  technical_notes: |
+    Implementation:
+    1. Add fast_image_resize = "5" to rasmcore-image Cargo.toml
+    2. Create .cargo/config.toml with [target.wasm32-wasip1] rustflags = ["-C", "target-feature=+simd128"]
+    3. Replace domain/transform.rs resize() to use fast_image_resize directly on raw pixel buffers
+    4. Map our ResizeFilter enum to fast_image_resize FilterType
+    5. Map our PixelFormat to fast_image_resize PixelType
+    6. Remove DynamicImage conversion for resize path
+    7. Verify WASM component builds and runs with SIMD
+
+    The key win is double: SIMD kernels + no DynamicImage round-trip.
+plan:
+  - phase: "Dependencies & Config"
+    tasks:
+      - text: "Add fast_image_resize dependency to rasmcore-image Cargo.toml"
+        done: false
+      - text: "Create .cargo/config.toml enabling SIMD128 for wasm32-wasip1 target"
+        done: false
+      - text: "Verify cargo component build succeeds with SIMD128 enabled"
+        done: false
+  - phase: "Resize Implementation"
+    tasks:
+      - text: "Replace domain/transform.rs resize() with fast_image_resize (direct raw pixel API)"
+        done: false
+      - text: "Map ResizeFilter enum to fast_image_resize FilterType"
+        done: false
+      - text: "Map PixelFormat to fast_image_resize PixelType for all supported formats"
+        done: false
+      - text: "Update pipeline ResizeNode to use the new resize implementation"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All domain resize tests pass"
+        done: false
+      - text: "Parity tests pass (resize vs ImageMagick MAE thresholds)"
+        done: false
+      - text: "WASM integration tests pass with SIMD-enabled component"
+        done: false
+      - text: "TS SDK tests pass"
+        done: false
+  - phase: "Benchmark"
+    tasks:
+      - text: "Run 1080p benchmark and compare to previous results"
+        done: false
+      - text: "Document speedup in benchmark output"
+        done: false
+extra: {}

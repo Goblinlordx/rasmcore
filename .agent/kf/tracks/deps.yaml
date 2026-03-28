@@ -27,3 +27,8 @@ pipeline-core_20260328012200Z: []
 
 pipeline-wit_20260328012201Z:
   - pipeline-core_20260328012200Z
+
+simd-resize_20260328020200Z: []
+
+simd-filters_20260328020201Z:
+  - simd-resize_20260328020200Z
