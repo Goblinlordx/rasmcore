@@ -1,0 +1,77 @@
+id: hevc-cabac-research_20260329020000Z
+title: 'Research: HEVC CABAC Spec Compliance — Reference Implementation Analysis'
+type: research
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Study the HEVC spec (ITU-T H.265 Sections 7.3.8, 9.3) and libde265 source code to extract exact CABAC context derivation
+    formulas, bin sequences, and known-good input/output pairs for each residual coding syntax element.
+  context: Our HEVC decoder passes 6/9 parity tests. The 3 failures are all in residual coefficient coding where CABAC context
+    indices don't exactly match the encoder. Rather than guessing at fixes, this research track studies the spec and a reference
+    implementation (libde265) to extract the exact requirements before implementing.
+  codebase_analysis: '- libde265 1.0.18 installed at /opt/homebrew/Cellar/libde265/ with headers and library
+
+    - libde265 source is available on GitHub (strukturag/libde265)
+
+    - HEVC spec: ITU-T H.265 defines context derivation in Section 9.3.4.2 (Tables 9-38 through 9-42)
+
+    - Our test bitstreams (flat/gradient/checker at QP 22/37) are already generated
+
+    - Key files to study in libde265: slice.cc, cabac.cc, transform.cc, contextmodel.cc
+
+    - Key sections in HEVC spec: 7.3.8.11 (residual_coding), 9.3.4.2.5 (sig_coeff_flag ctx), 9.3.4.2.6 (coeff_abs_level ctx)'
+  acceptance_criteria:
+  - 'Complete context derivation formulas extracted from HEVC spec for: coded_sub_block_flag, sig_coeff_flag, coeff_abs_level_greater1_flag,
+    coeff_abs_level_greater2_flag'
+  - Known-good CABAC bin sequence for flat_64x64_q37 test bitstream extracted from libde265
+  - Mapping document showing spec formula vs our current code vs what needs to change
+  - C tool (using libde265 API) that dumps per-CTU bin trace for any HEVC bitstream
+  out_of_scope: Actually implementing the fixes — this track only produces the research document. A follow-up implementation
+    track will use the findings.
+  technical_notes: "Approach:\n1. Read HEVC spec Sections 7.3.8.11 and 9.3.4.2 — extract exact formulas\n2. Read libde265\
+    \ source (residual_coding in slice.cc) — map spec to C code\n3. Write a C tool using libde265 that dumps the CABAC bin\
+    \ trace for our test bitstreams\n4. For each syntax element in residual_coding, document:\n   - Exact context index formula\
+    \ from the spec\n   - Input variables (position, sub-block index, neighbors, c1/c2 counters)\n   - Expected bin values\
+    \ for our test bitstreams\n   - Comparison against our current implementation\n5. Produce a mapping document: spec formula\
+    \ -> Rust code needed\n\nReference implementation to study:\n- libde265 GitHub: https://github.com/strukturag/libde265\n\
+    - Key files: libde265/slice.cc (residual_coding function), libde265/cabac.cc\n- Build libde265 with debug output enabled\
+    \ for bin tracing\n\nDeliverables:\n- .agent/kf/tracks/{trackId}/research.md with:\n  - Context derivation formulas for\
+    \ all residual coding elements\n  - Known-good bin sequences for flat_64x64_q37 test bitstream\n  - Mapping table: spec\
+    \ section -> our code location -> what needs to change"
+plan:
+- phase: Spec Study
+  tasks:
+  - text: Read HEVC spec Section 7.3.8.11 (residual_coding syntax) — document the exact sub-block processing flow
+    done: false
+  - text: Read HEVC spec Section 9.3.4.2.5 — extract sig_coeff_flag context derivation formula with all input variables
+    done: false
+  - text: Read HEVC spec Section 9.3.4.2.6 — extract coeff_abs_level_greater1/2 context derivation
+    done: false
+  - text: Read HEVC spec Table 9-39 — document coded_sub_block_flag context derivation
+    done: false
+- phase: Reference Implementation Analysis
+  tasks:
+  - text: Clone libde265 source and locate residual_coding() in slice.cc
+    done: false
+  - text: Trace the context derivation code in libde265 for sig_coeff_flag — map C code to spec formulas
+    done: false
+  - text: Trace coeff_abs_level context derivation in libde265 — verify c1/c2/ctxSet logic
+    done: false
+  - text: Build libde265 debug tool that dumps CABAC bin trace (context index + bin value) per CTU
+    done: false
+- phase: Known-Good Data Extraction
+  tasks:
+  - text: Run bin trace tool on flat_64x64_q37.hevc — capture complete bin sequence for all 4 CTUs
+    done: false
+  - text: Run bin trace on flat_64x64_q22.hevc — capture for comparison (this case already works)
+    done: false
+  - text: Run bin trace on gradient_128x128_q22.hevc and checker_256x256_q22.hevc
+    done: false
+- phase: Documentation
+  tasks:
+  - text: Write research.md with spec formulas, libde265 code mapping, and known-good bin sequences
+    done: false
+  - text: Create mapping table showing exactly which context index our code uses vs the correct one for each syntax element
+    done: false
+extra: {}
