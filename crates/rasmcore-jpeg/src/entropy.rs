@@ -448,7 +448,9 @@ impl HuffmanEntropyEncoder {
             write_magnitude_bits(&mut self.writer, coeff as i32, cat);
             zero_run = 0;
         }
-        self.ac_encoder.write_symbol(&mut self.writer, 0x00); // EOB
+        if zero_run > 0 {
+            self.ac_encoder.write_symbol(&mut self.writer, 0x00); // EOB
+        }
     }
 
     /// Reset DC prediction (for restart markers or new component).
@@ -546,7 +548,12 @@ impl InterleavedMcuEncoder {
             write_magnitude_bits(&mut self.writer, coeff as i32, cat);
             zero_run = 0;
         }
-        self.ac_encoders[component].write_symbol(&mut self.writer, 0x00);
+        // Only write EOB if there are trailing zeros not yet signaled.
+        // If all 63 AC positions were non-zero, the decoder exits naturally
+        // at k=64 without needing EOB.
+        if zero_run > 0 {
+            self.ac_encoders[component].write_symbol(&mut self.writer, 0x00);
+        }
     }
 
     /// Reset all DC predictions (for restart markers).

@@ -14,13 +14,10 @@
 
 use std::process::Command;
 
-/// Build an EncodeConfig for parity testing: progressive + specified quality/subsampling.
+/// Build an EncodeConfig for parity testing: progressive + AnnexK quantization tables.
 ///
-/// Uses the default Robidoux quantization tables (our default). ImageMagick uses
-/// libjpeg's Annex K tables which have different frequency weighting — our decoder
-/// has a known Huffman table bug with AnnexK on high-AC-energy patterns (tracked
-/// separately). Robidoux tables are psychovisually optimized, producing different
-/// but valid quality tradeoffs vs Annex K.
+/// Uses Annex K tables (ITU-T T.81 standard, same as libjpeg-turbo / ImageMagick)
+/// for fair quality comparison against ImageMagick reference output.
 fn parity_config(
     quality: u8,
     subsampling: rasmcore_jpeg::ChromaSubsampling,
@@ -29,6 +26,7 @@ fn parity_config(
         progressive: true,
         quality,
         subsampling,
+        quant_preset: rasmcore_jpeg::QuantPreset::AnnexK,
         ..Default::default()
     }
 }
@@ -335,12 +333,9 @@ fn three_way_progressive_420_checkerboard() {
     eprintln!("  C_quality: {c_quality:.1} dB");
     eprintln!("  A vs B MAE: {a_vs_b:.2}");
 
-    // Robidoux tables aggressively attenuate high frequencies; Annex K (magick) does not.
-    // For checkerboard + 4:2:0, this creates a genuine quality gap.
-    // Use 0.75 ratio to account for the different quant table philosophy.
     assert!(
-        b_quality >= c_quality * 0.75,
-        "checkerboard quality ({b_quality:.1}dB) should be >= 75% of magick ({c_quality:.1}dB)"
+        b_quality >= c_quality * 0.9,
+        "checkerboard quality ({b_quality:.1}dB) should be >= 90% of magick ({c_quality:.1}dB)"
     );
     assert!(a_vs_b < 4.0, "checkerboard A vs B MAE: {a_vs_b:.2}");
 }
@@ -389,13 +384,13 @@ fn three_way_progressive_odd_dimensions() {
     eprintln!("  C_quality: {c_quality:.1} dB");
     eprintln!("  A vs B MAE: {a_vs_b:.2}");
 
-    // Robidoux vs Annex K gap + MCU padding at odd dimensions.
     assert!(
-        b_quality >= c_quality * 0.85,
-        "odd dims quality ({b_quality:.1}dB) should be >= 85% of magick ({c_quality:.1}dB)"
+        b_quality >= c_quality * 0.9,
+        "odd dims quality ({b_quality:.1}dB) should be >= 90% of magick ({c_quality:.1}dB)"
     );
-    // Higher MAE tolerance at odd dims due to IDCT rounding + edge padding
-    assert!(a_vs_b < 8.0, "odd dims A vs B MAE: {a_vs_b:.2}");
+    // Odd dims with 4:2:0: IDCT rounding at MCU padding boundary causes slightly
+    // higher MAE between decoders. 5.0 allows for edge padding differences.
+    assert!(a_vs_b < 5.0, "odd dims A vs B MAE: {a_vs_b:.2}");
 }
 
 // ─── Cross-Decoder: Decode magick progressive JPEG with our decoder ────────
@@ -469,9 +464,7 @@ fn three_way_cross_decode_magick() {
 
         assert!(a_psnr > 15.0, "{label}: A PSNR too low: {a_psnr:.1}dB");
         // Magick uses multi-level successive approximation with custom Huffman
-        // tables. Our SA refinement decoder has a known quality gap vs the
-        // reference — functional but loses ~10dB on complex SA scans.
-        // Use 0.75 ratio; improving SA fidelity tracked separately.
+        // tables. Our SA refinement decoder has a known quality gap (~10dB).
         assert!(
             a_psnr >= b_psnr * 0.75,
             "{label}: our decode ({a_psnr:.1}dB) should be >= 75% of ref ({b_psnr:.1}dB)"

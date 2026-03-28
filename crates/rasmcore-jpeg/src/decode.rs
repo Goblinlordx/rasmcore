@@ -440,9 +440,7 @@ fn extract_entropy_data(data: &[u8], pos: &mut usize) -> Vec<u8> {
                 result.push(0xFF);
                 *pos += 1;
             } else if next >= M_RST0 && next <= M_RST0 + 7 {
-                // Restart marker — skip it, add a sentinel for the decoder
-                result.push(0xFF);
-                result.push(next);
+                // Restart marker — skip entirely (alignment only, no data)
                 *pos += 1;
             } else {
                 // Real marker — end of entropy data
@@ -495,28 +493,10 @@ fn decode_scan(
     let mcu_cols = (w + mcu_w - 1) / mcu_w;
     let mcu_rows = (h + mcu_h - 1) / mcu_h;
 
-    // Strip restart markers from entropy data for simpler BitReader handling
-    let clean_data: Vec<u8> = {
-        let mut clean = Vec::with_capacity(entropy_data.len());
-        let mut i = 0;
-        while i < entropy_data.len() {
-            if entropy_data[i] == 0xFF
-                && i + 1 < entropy_data.len()
-                && entropy_data[i + 1] >= M_RST0
-                && entropy_data[i + 1] <= M_RST0 + 7
-            {
-                i += 2; // skip restart marker
-            } else {
-                clean.push(entropy_data[i]);
-                i += 1;
-            }
-        }
-        clean
-    };
-
     // Add zero-byte padding so BitReader doesn't fail at stream end.
     // Zeros decode as small DC diffs / zero AC — safe for overread.
-    let mut padded_data = clean_data;
+    // Note: restart markers were already stripped in extract_entropy_data.
+    let mut padded_data = entropy_data.to_vec();
     padded_data.extend_from_slice(&[0x00; 32]);
 
     let mut reader = BitReader::new(&padded_data, BitOrder::MsbFirst);
@@ -942,26 +922,8 @@ fn decode_progressive_scan(
     eob_run: &mut u32,
     _restart_interval: u16,
 ) -> Result<(), EncodeError> {
-    // Strip restart markers
-    let clean_data: Vec<u8> = {
-        let mut clean = Vec::with_capacity(entropy_data.len());
-        let mut i = 0;
-        while i < entropy_data.len() {
-            if entropy_data[i] == 0xFF
-                && i + 1 < entropy_data.len()
-                && entropy_data[i + 1] >= M_RST0
-                && entropy_data[i + 1] <= M_RST0 + 7
-            {
-                i += 2;
-            } else {
-                clean.push(entropy_data[i]);
-                i += 1;
-            }
-        }
-        clean
-    };
-
-    let mut padded = clean_data;
+    // Restart markers already stripped in extract_entropy_data.
+    let mut padded = entropy_data.to_vec();
     padded.extend_from_slice(&[0x00; 32]);
     let mut reader = BitReader::new(&padded, BitOrder::MsbFirst);
 
@@ -1480,6 +1442,57 @@ mod tests {
         // Higher PSNR will come with Huffman/zigzag refinement.
         assert!(psnr > 10.0, "roundtrip PSNR too low: {psnr:.1}dB");
     }
+
+    #[test]
+    fn baseline_annexk_checkerboard_decode() {
+        // Checkerboard with AnnexK tables — exercises dense AC Huffman codes.
+        let mut pixels = vec![0u8; 32 * 32 * 3];
+        for y in 0..32usize {
+            for x in 0..32usize {
+                let v = if ((x / 4) + (y / 4)) % 2 == 0 {
+                    240u8
+                } else {
+                    16u8
+                };
+                let idx = (y * 32 + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
+        }
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 32, 32, crate::PixelFormat::Rgb8, &config).unwrap();
+
+        // Must decode without error
+        let result = jpeg_decode(&jpeg);
+        assert!(
+            result.is_ok(),
+            "baseline AnnexK checkerboard decode failed: {:?}",
+            result.err()
+        );
+        let (decoded, w, h, _) = result.unwrap();
+        assert_eq!((w, h), (32, 32));
+
+        // Compare with image crate decode
+        let ref_img = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        let ref_pixels = ref_img.to_rgb8().into_raw();
+
+        let mae: f64 = decoded
+            .iter()
+            .zip(ref_pixels.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / decoded.len() as f64;
+
+        assert!(
+            mae < 2.0,
+            "baseline AnnexK checkerboard: our decode vs ref MAE should be < 2.0, got {mae:.2}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1850,5 +1863,222 @@ mod progressive_tests {
         let (decoded, w, h, _) = jpeg_decode(&jpeg).unwrap();
         assert_eq!((w, h), (17, 13));
         assert_eq!(decoded.len(), 17 * 13 * 3);
+    }
+}
+
+#[cfg(test)]
+mod huffman_roundtrip_tests {
+    use super::*;
+
+    /// Verify that the encoder's Huffman codes match the decoder's table
+    /// when both are built from the same AC_LUMA_CODE_LENGTHS.
+    #[test]
+    fn ac_luma_huffman_encoder_decoder_match() {
+        use rasmcore_deflate::huffman::HuffmanEncoder;
+
+        let code_lengths = &crate::entropy::AC_LUMA_CODE_LENGTHS;
+
+        // Build encoder table (same as the actual JPEG encoder uses)
+        let encoder = HuffmanEncoder::from_code_lengths(code_lengths);
+
+        // Build decoder table (same as what parse_dht would produce)
+        // Simulate write_dht → parse_dht roundtrip
+        let mut counts = [0u8; 16];
+        let mut symbols_sorted: Vec<(u8, u8)> = Vec::new(); // (len, sym)
+        for (sym, &len) in code_lengths.iter().enumerate() {
+            if len > 0 && len <= 16 {
+                counts[len as usize - 1] += 1;
+                symbols_sorted.push((len, sym as u8));
+            }
+        }
+        symbols_sorted.sort();
+        let symbol_bytes: Vec<u8> = symbols_sorted.iter().map(|&(_, s)| s).collect();
+
+        let table = HuffmanTable::from_lengths_and_symbols(&counts, &symbol_bytes);
+
+        // For every active symbol, encode it then decode it
+        let mut mismatches = Vec::new();
+        for (sym, &len) in code_lengths.iter().enumerate() {
+            if len == 0 {
+                continue;
+            }
+
+            // Encode the symbol
+            let mut writer = rasmcore_bitio::BitWriter::new(rasmcore_bitio::BitOrder::MsbFirst);
+            encoder.write_symbol(&mut writer, sym as u16);
+            let bits = writer.finish();
+
+            // Add padding for BitReader
+            let mut padded = bits.clone();
+            padded.extend_from_slice(&[0x00; 4]);
+
+            // Decode the symbol
+            let mut reader =
+                rasmcore_bitio::BitReader::new(&padded, rasmcore_bitio::BitOrder::MsbFirst);
+            match table.decode(&mut reader) {
+                Ok(decoded_sym) => {
+                    if decoded_sym != sym as u8 {
+                        mismatches.push((sym, decoded_sym as usize, len, bits.clone()));
+                    }
+                }
+                Err(e) => {
+                    mismatches.push((sym, 999, len, bits.clone()));
+                    eprintln!("Symbol 0x{sym:02X} (len={len}): encode → decode ERROR: {e}");
+                }
+            }
+        }
+
+        if !mismatches.is_empty() {
+            for (sym, decoded, len, bits) in &mismatches[..mismatches.len().min(10)] {
+                eprintln!(
+                    "MISMATCH: symbol 0x{sym:02X} (len={len}) → decoded 0x{decoded:02X}, bits={bits:?}"
+                );
+            }
+            panic!(
+                "{} of {} symbols mismatched",
+                mismatches.len(),
+                code_lengths.iter().filter(|&&l| l > 0).count()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod annexk_size_tests {
+    use super::*;
+
+    #[test]
+    fn annexk_8x8_solid() {
+        let pixels = vec![128u8; 8 * 8 * 3];
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 8, 8, crate::PixelFormat::Rgb8, &config).unwrap();
+        let result = jpeg_decode(&jpeg);
+        assert!(result.is_ok(), "8x8 solid: {:?}", result.err());
+    }
+
+    #[test]
+    fn annexk_8x8_gradient() {
+        let mut pixels = vec![0u8; 8 * 8 * 3];
+        for i in 0..pixels.len() {
+            pixels[i] = (i * 7 % 256) as u8;
+        }
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 8, 8, crate::PixelFormat::Rgb8, &config).unwrap();
+        let result = jpeg_decode(&jpeg);
+        assert!(result.is_ok(), "8x8 gradient: {:?}", result.err());
+    }
+
+    #[test]
+    fn annexk_16x16_checker() {
+        let mut pixels = vec![0u8; 16 * 16 * 3];
+        for y in 0..16usize {
+            for x in 0..16usize {
+                let v = if ((x / 4) + (y / 4)) % 2 == 0 {
+                    240u8
+                } else {
+                    16u8
+                };
+                let idx = (y * 16 + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
+        }
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Rgb8, &config).unwrap();
+        let result = jpeg_decode(&jpeg);
+        assert!(result.is_ok(), "16x16 checker: {:?}", result.err());
+    }
+
+    #[test]
+    fn annexk_32x32_checker() {
+        let mut pixels = vec![0u8; 32 * 32 * 3];
+        for y in 0..32usize {
+            for x in 0..32usize {
+                let v = if ((x / 4) + (y / 4)) % 2 == 0 {
+                    240u8
+                } else {
+                    16u8
+                };
+                let idx = (y * 32 + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
+        }
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 32, 32, crate::PixelFormat::Rgb8, &config).unwrap();
+        let result = jpeg_decode(&jpeg);
+        assert!(result.is_ok(), "32x32 checker: {:?}", result.err());
+    }
+}
+
+#[cfg(test)]
+mod annexk_subsampling_tests {
+    use super::*;
+
+    #[test]
+    fn annexk_16x16_checker_444() {
+        let mut pixels = vec![0u8; 16 * 16 * 3];
+        for y in 0..16usize {
+            for x in 0..16usize {
+                let v = if ((x / 4) + (y / 4)) % 2 == 0 {
+                    240u8
+                } else {
+                    16u8
+                };
+                let idx = (y * 16 + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
+        }
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            subsampling: crate::ChromaSubsampling::None444,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Rgb8, &config).unwrap();
+        let result = jpeg_decode(&jpeg);
+        assert!(result.is_ok(), "16x16 checker 444: {:?}", result.err());
+    }
+
+    #[test]
+    fn annexk_16x16_checker_gray() {
+        let mut pixels = vec![0u8; 16 * 16];
+        for y in 0..16usize {
+            for x in 0..16usize {
+                pixels[y * 16 + x] = if ((x / 4) + (y / 4)) % 2 == 0 {
+                    240u8
+                } else {
+                    16u8
+                };
+            }
+        }
+        let config = crate::EncodeConfig {
+            quality: 85,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Gray8, &config).unwrap();
+        let result = jpeg_decode(&jpeg);
+        assert!(result.is_ok(), "16x16 checker gray: {:?}", result.err());
     }
 }
