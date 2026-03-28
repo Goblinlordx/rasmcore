@@ -27,37 +27,37 @@ plan:
 - phase: Crate Setup
   tasks:
   - text: Create crates/rasmcore-hevc/ with Cargo.toml (deps on rasmcore-bitio, rasmcore-color, rasmcore-dct), add to workspace
-    done: false
+    done: true
   - text: Define error.rs with HevcError enum (InvalidNal, Truncated, UnsupportedProfile, etc.)
-    done: false
+    done: true
   - text: Define types.rs with NalUnitType enum, DecodedFrame struct, public API types
-    done: false
+    done: true
 - phase: NAL Unit Layer
   tasks:
   - text: Implement NAL unit header parser — extract nal_unit_type(6), nuh_layer_id(6), nuh_temporal_id_plus1(3) from 2-byte
       header
-    done: false
+    done: true
   - text: Implement RBSP extraction — remove emulation prevention bytes (0x00 0x00 0x03 -> 0x00 0x00)
-    done: false
+    done: true
   - text: Implement NAL unit iterator — split byte stream on start codes (0x000001 and 0x00000001), yield NAL units
-    done: false
+    done: true
   - text: Implement hvcC NAL extraction — parse hvcC config record to get VPS/SPS/PPS NAL units (reuse rasmcore-isobmff HevcConfig
       type)
-    done: false
+    done: true
 - phase: Public API Stub
   tasks:
   - text: Define pub fn decode(bitstream, codec_config) -> Result<DecodedFrame, HevcError> stub
-    done: false
+    done: true
   - text: Wire lib.rs exports — NalUnit, NalUnitType, DecodedFrame, HevcError, decode
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Unit tests for NAL header parsing (VPS, SPS, PPS, IDR, CRA types)
-    done: false
+    done: true
   - text: Unit tests for RBSP extraction (with and without emulation prevention bytes)
-    done: false
+    done: true
   - text: Unit tests for NAL iterator with multiple NAL units separated by start codes
-    done: false
+    done: true
   - text: Verify crate compiles (cargo check -p rasmcore-hevc)
-    done: false
+    done: true
 extra: {}

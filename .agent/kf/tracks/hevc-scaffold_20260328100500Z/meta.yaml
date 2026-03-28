@@ -1,5 +1,5 @@
 title: HEVC Crate Scaffold — NAL Parser + RBSP Extraction
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-28'
