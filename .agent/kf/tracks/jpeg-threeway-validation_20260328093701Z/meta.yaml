@@ -1,0 +1,8 @@
+title: JPEG Three-Way Validation — All Modes Cross-Checked
+status: pending
+type: chore
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg-decode-parity_20260328093700Z

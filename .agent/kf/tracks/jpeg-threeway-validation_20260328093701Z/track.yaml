@@ -1,0 +1,55 @@
+id: jpeg-threeway-validation_20260328093701Z
+title: JPEG Three-Way Validation — All Modes Cross-Checked
+type: chore
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Three-way validation for every JPEG mode: A (our encode, our decode),
+    B (our encode, ref decode), C (ref encode, ref decode). PSNR, MAE, Butteraugli.'
+  context: 'With native JPEG encode AND decode, we can now do true three-way validation.
+    Test matrix: baseline 4:2:0, 4:2:2, 4:4:4, grayscale, progressive, trellis, quality
+    curve q25/q50/q75/q95. Each mode gets A/B/C comparison with PSNR and MAE thresholds.'
+  codebase_analysis: ''
+  acceptance_criteria:
+  - 'A vs B (our decode vs ref decode of our encode): PSNR > 35dB for all modes'
+  - 'A vs C (our roundtrip vs ref roundtrip): PSNR > 25dB, file size within 1.5x'
+  - 'Test matrix covers: baseline 420/422/444, gray, progressive, trellis'
+  - Quality curve at q25/q50/q75/q95 for each mode
+  - Butteraugli comparison for visual quality assessment
+  - Decode of ImageMagick-produced JPEG fixtures matches ref within MAE < 2
+  out_of_scope: ''
+  technical_notes: 'Use existing test infrastructure: Butteraugli and DSSIM are dev-dependencies.
+    ImageMagick fixtures from generate.sh. Three-way pattern: A = pixels -> our_encode
+    -> our_decode, B = pixels -> our_encode -> image_crate_decode, C = pixels -> image_crate_encode
+    -> image_crate_decode. Assert A close to B (decoder parity) and B close to C (encoder
+    parity).'
+plan:
+- phase: Test Infrastructure
+  tasks:
+  - text: 'Create three_way_jpeg_test helper: encodes with our/ref, decodes with our/ref,
+      computes PSNR/MAE'
+    done: false
+  - text: 'Create test image fixtures: gradient, photo-like (plasma), solid, high-freq
+      pattern'
+    done: false
+- phase: Mode Validation
+  tasks:
+  - text: Three-way for baseline 4:2:0 at q25/q50/q75/q95
+    done: false
+  - text: Three-way for baseline 4:2:2 and 4:4:4
+    done: false
+  - text: Three-way for grayscale
+    done: false
+  - text: Three-way for progressive mode
+    done: false
+  - text: Three-way for trellis quantization
+    done: false
+  - text: Three-way for arithmetic coding mode
+    done: false
+  - text: Butteraugli visual quality comparison at q75 for all modes
+    done: false
+  - text: Decode external JPEG fixtures (ImageMagick, libjpeg-turbo produced) and
+      compare to ref
+    done: false
+extra: {}
