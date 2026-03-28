@@ -116,3 +116,92 @@ pub struct Ftyp {
     /// List of compatible brands.
     pub compatible_brands: Vec<Brand>,
 }
+
+/// Item info entry (infe box).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemInfo {
+    /// Item ID.
+    pub item_id: u32,
+    /// Item type as FourCC (e.g., hvc1, av01, grid, Exif).
+    pub item_type: [u8; 4],
+    /// Item name (UTF-8, may be empty).
+    pub item_name: String,
+    /// Item protection index (0 = not protected).
+    pub protection_index: u16,
+}
+
+/// Single extent within an item location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Extent {
+    /// Offset of this extent relative to base_offset.
+    pub offset: u64,
+    /// Length of this extent in bytes.
+    pub length: u64,
+}
+
+/// Item location entry (from iloc box).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemLocation {
+    /// Item ID.
+    pub item_id: u32,
+    /// Construction method: 0 = file offset, 1 = idat offset, 2 = item offset.
+    pub construction_method: u8,
+    /// Data reference index (0 = this file).
+    pub data_reference_index: u16,
+    /// Base offset added to each extent offset.
+    pub base_offset: u64,
+    /// List of extents for this item.
+    pub extents: Vec<Extent>,
+}
+
+/// Reference type FourCC constants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceType {
+    /// Derived image (grid tiles).
+    Dimg,
+    /// Thumbnail.
+    Thmb,
+    /// Auxiliary image (e.g., alpha, depth).
+    Auxl,
+    /// Content describes (e.g., Exif describes an image).
+    Cdsc,
+    /// Unknown reference type.
+    Unknown([u8; 4]),
+}
+
+impl ReferenceType {
+    /// Parse from a 4-byte FourCC.
+    pub fn from_fourcc(fourcc: [u8; 4]) -> Self {
+        match &fourcc {
+            b"dimg" => Self::Dimg,
+            b"thmb" => Self::Thmb,
+            b"auxl" => Self::Auxl,
+            b"cdsc" => Self::Cdsc,
+            _ => Self::Unknown(fourcc),
+        }
+    }
+}
+
+/// A single item reference (from iref box).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemReference {
+    /// Reference type.
+    pub ref_type: ReferenceType,
+    /// Source item ID.
+    pub from_item_id: u32,
+    /// Target item IDs.
+    pub to_item_ids: Vec<u32>,
+}
+
+/// Collected results from parsing the meta box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetaBox {
+    /// Primary item ID (from pitm box).
+    pub primary_item_id: u32,
+    /// Item info entries (from iinf box).
+    pub items: Vec<ItemInfo>,
+    /// Item locations (from iloc box).
+    pub locations: Vec<ItemLocation>,
+    /// Item references (from iref box).
+    pub references: Vec<ItemReference>,
+}

@@ -6,10 +6,15 @@
 mod boxreader;
 pub mod error;
 mod ftyp;
+mod meta;
 pub mod types;
 
 pub use error::IsobmffError;
-pub use types::{BoxHeader, Brand, CodecType, Ftyp, FullBoxHeader};
+pub use types::{
+    BoxHeader, Brand, CodecType, Extent, Ftyp, FullBoxHeader, ItemInfo, ItemLocation,
+    ItemReference, MetaBox, ReferenceType,
+};
 
 pub use boxreader::{BoxIterator, read_box_header, read_full_box_header};
 pub use ftyp::{detect, parse_ftyp};
+pub use meta::parse_meta;
