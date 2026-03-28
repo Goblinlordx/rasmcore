@@ -25,27 +25,25 @@ spec:
     W5=1609, W6=1108, W7=565 (scaled by 2^12=4096). Two-pass: rows then columns. Each pass uses 8 butterfly stages. Final
     descale: (val + (1 << 16)) >> 17 to produce i16. The existing f64 version can be retained as inverse_dct_reference() for
     forward DCT encoder validation.'
-plan: []
-extra: {}
 plan:
-  - phase: Implementation
-    tasks:
-      - text: "Implement inverse_dct_int() using LL&M algorithm with CONST_BITS=12, PASS1_BITS=2"
-        done: false
-      - text: "Rename existing inverse_dct to inverse_dct_reference, wire inverse_dct_int as default"
-        done: false
-      - text: "Unit test: inverse_dct_int matches image-rs jpeg-decoder output for known blocks"
-        done: false
-  - phase: Integration
-    tasks:
-      - text: "Wire inverse_dct_int into baseline decode path (decode_scan)"
-        done: false
-      - text: "Wire inverse_dct_int into progressive decode path (decode_progressive)"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "All existing lib tests pass"
-        done: false
-      - text: "Parity test A vs B MAE for gradient drops below 1.0"
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement inverse_dct_int() using LL&M algorithm with CONST_BITS=12, PASS1_BITS=2
+    done: true
+  - text: Rename existing inverse_dct to inverse_dct_reference, wire inverse_dct_int as default
+    done: true
+  - text: 'Unit test: inverse_dct_int matches image-rs jpeg-decoder output for known blocks'
+    done: true
+- phase: Integration
+  tasks:
+  - text: Wire inverse_dct_int into baseline decode path (decode_scan)
+    done: true
+  - text: Wire inverse_dct_int into progressive decode path (decode_progressive)
+    done: true
+- phase: Validation
+  tasks:
+  - text: All existing lib tests pass
+    done: true
+  - text: Parity test A vs B MAE for gradient drops below 1.0
+    done: true
 extra: {}
