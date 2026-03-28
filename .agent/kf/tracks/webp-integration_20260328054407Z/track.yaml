@@ -1,0 +1,95 @@
+id: webp-integration_20260328054407Z
+title: "WebP Integration — Wire rasmcore-webp into rasmcore-image"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Integrate the rasmcore-webp lossy encoder into rasmcore-image, replacing
+    the image-webp lossless-only encoder for lossy mode. Wire config through
+    WIT, adapter, and pipeline. Full parity testing against ImageMagick using
+    Butteraugli and DSSIM.
+  context: |
+    After the rasmcore-webp encoder tracks are complete, this track wires
+    everything together:
+    - rasmcore-image depends on rasmcore-webp
+    - domain/encoder/webp.rs dispatches: lossy -> rasmcore-webp, lossless -> image-webp
+    - WIT config (quality, lossless) actually controls encoding mode
+    - Parity tests validate quality curve against ImageMagick (libwebp)
+
+    This is the final track — it delivers the user-facing feature.
+  codebase_analysis: |
+    - domain/encoder/webp.rs currently uses image-webp (lossless only)
+    - webp.rs needs to branch on config.lossless
+    - rasmcore-webp added as dependency in rasmcore-image Cargo.toml
+    - WIT encoder.wit already has webp-encode-config with quality + lossless
+    - Pipeline pipeline.wit already has webp-write-config with quality + lossless
+    - Adapter already maps WIT config to domain WebpEncodeConfig
+    - butteraugli and dssim-core already available as dev-dependencies
+    - generate.sh needs WebP reference fixtures at multiple quality levels
+  acceptance_criteria:
+    - "rasmcore-image depends on rasmcore-webp for lossy WebP encoding"
+    - "webp.rs dispatches: lossless=true -> image-webp, lossless=false -> rasmcore-webp"
+    - "quality parameter controls lossy output size (lower quality = smaller)"
+    - "lossless mode produces pixel-exact roundtrip"
+    - "Determinism test: encode same input twice = byte-identical"
+    - "Quality curve test at q10/q30/q50/q70/q85/q95 vs ImageMagick"
+    - "Butteraugli distance at each quality comparable to ImageMagick"
+    - "DSSIM at each quality comparable to ImageMagick"
+    - "File sizes at each quality within 1.5x of ImageMagick"
+    - "WASM build: cargo component build succeeds"
+    - All existing tests continue to pass
+  out_of_scope: |
+    - Animated WebP
+    - Alpha channel in lossy mode (lossless handles alpha)
+    - WebP extended format features
+  technical_notes: |
+    Integration approach:
+    1. Add rasmcore-webp dependency to rasmcore-image Cargo.toml
+    2. In webp.rs encode():
+       if config.lossless {
+         // Keep using image-webp for lossless (it works well)
+         WebPEncoder::new_lossless(cursor)...
+       } else {
+         // Use rasmcore-webp for lossy
+         rasmcore_webp::encode(pixels, width, height, &webp_config)?
+       }
+    3. Map WebpEncodeConfig fields to rasmcore-webp EncodeConfig
+    4. Add WebP reference fixtures to generate.sh
+    5. Run full parity test suite
+
+    The WIT interface and adapter wiring already exist — the only change
+    is inside the domain encoder function.
+plan:
+  - phase: "Dependency + Wiring"
+    tasks:
+      - text: "Add rasmcore-webp as dependency in rasmcore-image Cargo.toml"
+        done: false
+      - text: "Update domain/encoder/webp.rs to dispatch lossy vs lossless"
+        done: false
+      - text: "Verify cargo component build succeeds (WASM)"
+        done: false
+  - phase: "Test Fixtures"
+    tasks:
+      - text: "Add ImageMagick WebP lossy references to generate.sh at q10/q30/q50/q70/q85/q95"
+        done: false
+      - text: "Add ImageMagick WebP lossless reference to generate.sh"
+        done: false
+  - phase: "Parity Tests"
+    tasks:
+      - text: "Determinism test (lossy and lossless)"
+        done: false
+      - text: "Lossless pixel-exact roundtrip test"
+        done: false
+      - text: "Lossy quality curve: Butteraugli vs ImageMagick at each quality"
+        done: false
+      - text: "Lossy quality curve: DSSIM vs ImageMagick at each quality"
+        done: false
+      - text: "Lossy quality curve: file sizes within 1.5x of ImageMagick"
+        done: false
+      - text: "Edge cases: 1x1, RGBA8, quality 1, quality 100"
+        done: false
+      - text: "Verify all existing encoder and pipeline tests pass"
+        done: false
+extra: {}

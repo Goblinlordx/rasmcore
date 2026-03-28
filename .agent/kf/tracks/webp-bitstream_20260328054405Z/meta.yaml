@@ -1,0 +1,10 @@
+title: VP8 Bitstream Assembly — Frame Header, Partitions, RIFF Container
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- webp-bool-coder_20260328054402Z
+- webp-dct-quant_20260328054403Z
+- webp-prediction_20260328054404Z

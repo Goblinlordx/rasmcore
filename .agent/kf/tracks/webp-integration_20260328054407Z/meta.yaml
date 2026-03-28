@@ -1,0 +1,8 @@
+title: WebP Integration — Wire rasmcore-webp into rasmcore-image
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- webp-ratecontrol_20260328054406Z

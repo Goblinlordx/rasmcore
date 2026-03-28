@@ -1,0 +1,87 @@
+id: webp-bool-coder_20260328054402Z
+title: "VP8 Boolean Arithmetic Coder — Core Entropy Engine"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement the VP8 boolean arithmetic encoder as specified in RFC 6386
+    Section 7. This is the fundamental entropy coding engine used by every
+    other VP8 encoder component — it must be implemented first.
+  context: |
+    VP8 uses a boolean arithmetic coder (not Huffman) for all entropy coding.
+    Every quantized coefficient, prediction mode, and control flag is encoded
+    through this single mechanism. It is the foundation of the VP8 bitstream.
+
+    RFC 6386 Section 7 fully specifies the algorithm. The encoder is the
+    inverse of the decoder described in the RFC — we write bits where the
+    decoder reads them.
+
+    This is the first encoding component to implement because all other
+    components depend on it.
+  codebase_analysis: |
+    - New code in crates/rasmcore-webp/src/boolcoder.rs
+    - No existing boolean coder in the codebase
+    - libwebp reference: src/utils/bit_writer_utils.c (VP8BitWriter)
+    - The coder maintains a range and value, emitting bytes as range narrows
+    - Must be deterministic (same input = same output, always)
+  acceptance_criteria:
+    - "BoolWriter struct implements VP8 boolean arithmetic encoding"
+    - "write_bit(probability, value) encodes a single boolean"
+    - "write_literal(n_bits, value) encodes a multi-bit literal"
+    - "finish() flushes and returns the encoded byte buffer"
+    - Output matches RFC 6386 Section 7 specification exactly
+    - Roundtrip test with a bool decoder (can use image-webp decoder internals or write minimal decoder)
+    - Determinism test (encode same sequence twice = identical bytes)
+    - Performance test (encode 1M booleans in < 100ms)
+  out_of_scope: |
+    - Token partition management (handled by bitstream track)
+    - Probability table updates (handled by prediction/coefficient tracks)
+  technical_notes: |
+    VP8 boolean coder algorithm (RFC 6386 Section 7):
+
+    State: range (initially 255), value (initially 0), count (bit position)
+
+    To encode bool with probability p (0-255, where 255 = certain true):
+      split = 1 + (((range - 1) * p) >> 8)
+      if bool_value:
+        value += split
+        range -= split
+      else:
+        range = split
+      // Renormalize: while range < 128, shift range and value left
+
+    C-specific patterns in libwebp to avoid:
+    - Uses raw byte pointer manipulation for output buffer
+      Rust: use Vec<u8> with push, or BufWriter
+    - Global state in VP8BitWriter struct
+      Rust: self-contained BoolWriter struct, all state in fields
+    - Manual buffer reallocation
+      Rust: Vec handles this automatically
+
+    This is a compact, self-contained module — ideal for thorough unit testing.
+plan:
+  - phase: "Core Implementation"
+    tasks:
+      - text: "Implement BoolWriter struct with range/value/count state"
+        done: false
+      - text: "Implement write_bit(probability, value) following RFC 6386 Section 7"
+        done: false
+      - text: "Implement write_literal(n_bits, value) for multi-bit values"
+        done: false
+      - text: "Implement finish() — flush remaining bits, return buffer"
+        done: false
+  - phase: "Testing"
+    tasks:
+      - text: "Test known bit sequences produce expected byte output (from RFC examples)"
+        done: false
+      - text: "Roundtrip test with a minimal boolean decoder"
+        done: false
+      - text: "Determinism test (encode identical sequence twice = identical bytes)"
+        done: false
+      - text: "Edge case tests (all-zeros, all-ones, alternating, probability extremes)"
+        done: false
+      - text: "Performance benchmark (1M booleans under 100ms)"
+        done: false
+extra: {}

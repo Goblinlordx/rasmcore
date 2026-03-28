@@ -1,0 +1,8 @@
+title: rasmcore-webp Crate Scaffold — Workspace, Types, Public API
+status: pending
+type: chore
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- webp-research_20260328054400Z

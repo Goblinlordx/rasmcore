@@ -1,0 +1,90 @@
+id: webp-prediction_20260328054404Z
+title: "VP8 Intra-Prediction Modes — Macroblock and Sub-block Prediction"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement VP8 intra-prediction modes for both 16x16 macroblocks and 4x4
+    sub-blocks as specified in RFC 6386 Sections 12-13. Includes mode selection
+    (rate-distortion decision) for choosing the best prediction per block.
+  context: |
+    Intra-prediction exploits spatial redundancy by predicting each block from
+    its already-encoded neighbors (above and left). The residual (actual minus
+    predicted) is what gets DCT-transformed and quantized.
+
+    VP8 has:
+    - 4 modes for 16x16 luma prediction (DC, V, H, TM)
+    - 10 modes for 4x4 luma sub-block prediction (DC, TM, V, H, LD, RD, VR, VL, HD, HU)
+    - 4 modes for 8x8 chroma prediction (DC, V, H, TM)
+
+    Mode selection significantly affects quality — choosing the wrong mode
+    wastes bits encoding large residuals. A simple rate-distortion optimizer
+    tries each mode and picks the one with lowest cost.
+  codebase_analysis: |
+    - New code in crates/rasmcore-webp/src/predict.rs
+    - libwebp reference: src/enc/vp8l_enc.c, src/dsp/enc.c (prediction functions)
+    - Prediction uses pixels from neighboring already-encoded blocks
+    - Mode decision uses sum-of-absolute-differences (SAD) as distortion metric
+  acceptance_criteria:
+    - All 4 modes for 16x16 luma prediction implemented and tested
+    - All 10 modes for 4x4 luma sub-block prediction implemented and tested
+    - All 4 modes for 8x8 chroma prediction implemented and tested
+    - Mode selection function that evaluates each mode and returns best
+    - Prediction output matches libwebp for known input blocks
+    - "SAD (sum of absolute differences) distortion metric implemented"
+  out_of_scope: |
+    - Inter-prediction (video frames, not relevant for still images)
+    - Advanced mode decision (full RDO with entropy cost — future optimization)
+  technical_notes: |
+    Prediction modes (RFC 6386 Section 12):
+
+    16x16 modes:
+    - DC: fill with average of above + left neighbors
+    - V (vertical): copy above row downward
+    - H (horizontal): copy left column rightward
+    - TM (TrueMotion): above + left - above_left per pixel
+
+    4x4 modes (RFC 6386 Section 12.3):
+    - DC, TM, V, H: same as 16x16 but for 4x4 blocks
+    - LD, RD, VR, VL, HD, HU: diagonal prediction directions
+
+    Mode selection (simplified):
+    For each candidate mode:
+      1. Generate predicted block
+      2. Compute residual = actual - predicted
+      3. Compute SAD (or SATD for better correlation with coded size)
+      4. Pick mode with lowest distortion
+
+    C-specific patterns:
+    - libwebp uses function pointer tables for prediction modes
+      Rust: match on enum, or array of function pointers
+    - Heavy use of pointer arithmetic for neighbor access
+      Rust: explicit slice indexing with helper functions
+plan:
+  - phase: "16x16 Prediction"
+    tasks:
+      - text: "Implement DC, V, H, TM prediction for 16x16 luma blocks"
+        done: false
+      - text: "Test each mode against known reference output"
+        done: false
+  - phase: "4x4 Sub-block Prediction"
+    tasks:
+      - text: "Implement DC, TM, V, H prediction for 4x4 sub-blocks"
+        done: false
+      - text: "Implement diagonal modes (LD, RD, VR, VL, HD, HU)"
+        done: false
+      - text: "Test each mode against known reference output"
+        done: false
+  - phase: "Chroma + Mode Selection"
+    tasks:
+      - text: "Implement DC, V, H, TM prediction for 8x8 chroma blocks"
+        done: false
+      - text: "Implement SAD distortion metric"
+        done: false
+      - text: "Implement mode selection (try all modes, pick lowest SAD)"
+        done: false
+      - text: "Test mode selection picks reasonable modes for gradient and flat images"
+        done: false
+extra: {}
