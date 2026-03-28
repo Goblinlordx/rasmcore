@@ -43,13 +43,13 @@ plan:
 - phase: Integration
   tasks:
   - text: Wire native crates into rasmcore-image encoder/decoder behind feature flags
-    done: false
+    done: true
   - text: 'Parity tests: native encode == image crate encode for test fixtures'
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All existing rasmcore-image tests pass with both native and image-crate backends
-    done: false
+    done: true
   - text: WASM build succeeds for all 4 native crates
-    done: false
+    done: true
 extra: {}
