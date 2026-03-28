@@ -3,86 +3,104 @@ title: Alpha Management + Blend Modes — Premultiply, Flatten, Add/Remove Alpha
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: Complete alpha channel management (premultiply, unpremultiply, add, remove, flatten)
-    and PDF/SVG blend modes (multiply, screen, overlay, darken, lighten, soft-light,
-    hard-light, difference, exclusion). Matches libvips vips_composite() blend modes
-    and ImageMagick -compose options.
-  context: |
-    Current composite.rs only supports Porter-Duff "over" compositing. libvips vips_composite()
+  summary: Complete alpha channel management (premultiply, unpremultiply, add, remove, flatten) and PDF/SVG blend modes (multiply,
+    screen, overlay, darken, lighten, soft-light, hard-light, difference, exclusion). Matches libvips vips_composite() blend
+    modes and ImageMagick -compose options.
+  context: 'Current composite.rs only supports Porter-Duff "over" compositing. libvips vips_composite()
+
     supports 20+ blend modes. ImageMagick -compose supports Multiply, Screen, Overlay,
+
     Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion.
+
     These are essential for layer-based image composition (Photoshop-style blending).
+
     Alpha management (premultiply/flatten) is needed for correct blending math.
-  codebase_analysis: |
-    composite.rs has alpha_composite_over() which internally premultiplies, blends, then
+
+    '
+  codebase_analysis: 'composite.rs has alpha_composite_over() which internally premultiplies, blends, then
+
     unpremultiplies. This per-pixel pattern extends to other blend modes — just change the
+
     blend formula. The premultiply/unpremultiply logic is inline; extracting it as public
+
     functions enables the pipeline to operate in premultiplied space (more efficient for
+
     chains of blend operations). Flatten replaces alpha with a background color (common for
+
     JPEG output). Add/remove alpha converts between RGB8 and RGBA8.
+
+    '
   acceptance_criteria:
-    - premultiply(pixels, info) converts straight alpha to premultiplied
-    - unpremultiply(pixels, info) converts premultiplied to straight alpha
-    - flatten(pixels, info, bg_color) composites RGBA onto solid background, outputs RGB8
-    - add_alpha(pixels, info, alpha_value) converts RGB8 to RGBA8
-    - remove_alpha(pixels, info) strips alpha channel (RGB8 output)
-    - blend(fg, fg_info, bg, bg_info, mode, offset_x, offset_y) supports 9+ blend modes
-    - Blend modes include Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion
-    - Blend output matches ImageMagick -compose reference within MAE < 0.5
-    - Performance within 2x of ImageMagick for blend operations on 4K images
-  out_of_scope: |
-    ColorDodge, ColorBurn (complex, niche). Dissolve. Component-based modes (Hue, Saturation,
+  - premultiply(pixels, info) converts straight alpha to premultiplied
+  - unpremultiply(pixels, info) converts premultiplied to straight alpha
+  - flatten(pixels, info, bg_color) composites RGBA onto solid background, outputs RGB8
+  - add_alpha(pixels, info, alpha_value) converts RGB8 to RGBA8
+  - remove_alpha(pixels, info) strips alpha channel (RGB8 output)
+  - blend(fg, fg_info, bg, bg_info, mode, offset_x, offset_y) supports 9+ blend modes
+  - Blend modes include Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion
+  - Blend output matches ImageMagick -compose reference within MAE < 0.5
+  - Performance within 2x of ImageMagick for blend operations on 4K images
+  out_of_scope: 'ColorDodge, ColorBurn (complex, niche). Dissolve. Component-based modes (Hue, Saturation,
+
     Color, Luminosity — need HSL conversion from color-adjust track).
-  technical_notes: |
-    All blend modes operate on premultiplied alpha. Formulas (per channel, normalized 0-1):
+
+    '
+  technical_notes: 'All blend modes operate on premultiplied alpha. Formulas (per channel, normalized 0-1):
+
     Multiply: a*b. Screen: a+b-a*b. Overlay: if b<0.5 then 2ab else 1-2(1-a)(1-b).
+
     Darken: min(a,b). Lighten: max(a,b). SoftLight: Photoshop formula. HardLight: Overlay
+
     with a/b swapped. Difference: abs(a-b). Exclusion: a+b-2ab.
+
     Final composite: result * fg_alpha + bg * (1 - fg_alpha) for each output pixel.
+
     Reference: magick fg.png bg.png -compose Multiply -composite ref.png
+
+    '
 plan:
-  - phase: Alpha Management
-    tasks:
-      - text: Implement premultiply(pixels, info) — straight to premultiplied alpha
-        done: false
-      - text: Implement unpremultiply(pixels, info) — premultiplied to straight alpha
-        done: false
-      - text: Implement flatten(pixels, info, bg_color) — RGBA to RGB with background
-        done: false
-      - text: Implement add_alpha(pixels, info, value) — RGB8 to RGBA8
-        done: false
-      - text: Implement remove_alpha(pixels, info) — RGBA8 to RGB8 (drop alpha)
-        done: false
-  - phase: Blend Modes
-    tasks:
-      - text: Define BlendMode enum (Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion)
-        done: false
-      - text: Implement per-pixel blend formula dispatch for all 9 modes
-        done: false
-      - text: Implement blend(fg, bg, mode, offset) compositing with blend mode selection
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Add PremultiplyNode, FlattenNode, AddAlphaNode, RemoveAlphaNode pipeline nodes
-        done: false
-      - text: Extend CompositeNode to accept BlendMode parameter
-        done: false
-      - text: Add WIT declarations for alpha ops and blend mode enum
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit tests for premultiply/unpremultiply round-trip
-        done: false
-      - text: Unit tests for flatten with white/black/colored backgrounds
-        done: false
-      - text: Generate ImageMagick references for each blend mode (solid color overlays)
-        done: false
-      - text: Parity tests — each blend mode output vs magick -compose (MAE < 0.5)
-        done: false
-      - text: Perf benchmark vs ImageMagick for Multiply blend on 4K images
-        done: false
-      - text: WASM build check, existing composite tests still pass, pipeline graph tests
-        done: false
+- phase: Alpha Management
+  tasks:
+  - text: Implement premultiply(pixels, info) — straight to premultiplied alpha
+    done: true
+  - text: Implement unpremultiply(pixels, info) — premultiplied to straight alpha
+    done: true
+  - text: Implement flatten(pixels, info, bg_color) — RGBA to RGB with background
+    done: true
+  - text: Implement add_alpha(pixels, info, value) — RGB8 to RGBA8
+    done: true
+  - text: Implement remove_alpha(pixels, info) — RGBA8 to RGB8 (drop alpha)
+    done: true
+- phase: Blend Modes
+  tasks:
+  - text: Define BlendMode enum (Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion)
+    done: true
+  - text: Implement per-pixel blend formula dispatch for all 9 modes
+    done: true
+  - text: Implement blend(fg, bg, mode, offset) compositing with blend mode selection
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add PremultiplyNode, FlattenNode, AddAlphaNode, RemoveAlphaNode pipeline nodes
+    done: true
+  - text: Extend CompositeNode to accept BlendMode parameter
+    done: true
+  - text: Add WIT declarations for alpha ops and blend mode enum
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for premultiply/unpremultiply round-trip
+    done: true
+  - text: Unit tests for flatten with white/black/colored backgrounds
+    done: true
+  - text: Generate ImageMagick references for each blend mode (solid color overlays)
+    done: true
+  - text: Parity tests — each blend mode output vs magick -compose (MAE < 0.5)
+    done: true
+  - text: Perf benchmark vs ImageMagick for Multiply blend on 4K images
+    done: true
+  - text: WASM build check, existing composite tests still pass, pipeline graph tests
+    done: true
 extra: {}
