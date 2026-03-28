@@ -1,3 +1,4 @@
+pub mod avif;
 pub mod dds;
 pub mod gif;
 pub mod jpeg;
@@ -11,7 +12,7 @@ use super::error::ImageError;
 use super::types::{ImageInfo, PixelFormat};
 
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tiff", "tga", "hdr", "pnm", "exr", "dds",
+    "png", "jpeg", "webp", "gif", "tiff", "avif", "tga", "hdr", "pnm", "exr", "dds",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -46,6 +47,13 @@ pub fn encode(
             let img = pixels_to_dynamic_image(pixels, info)?;
             let config = gif::GifEncodeConfig::default();
             gif::encode(&img, info, &config)
+        }
+        "avif" => {
+            let config = avif::AvifEncodeConfig {
+                quality: quality.unwrap_or(75),
+                ..Default::default()
+            };
+            avif::encode(pixels, info, &config)
         }
         "tiff" | "tif" => {
             let config = tiff::TiffEncodeConfig::default();

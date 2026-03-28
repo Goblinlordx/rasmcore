@@ -1,90 +1,90 @@
 id: encoder-avif_20260328061203Z
-title: "AVIF Encode — rav1e Backend, Quality/Speed Config, Parity Tests"
+title: AVIF Encode — rav1e Backend, Quality/Speed Config, Parity Tests
 type: feature
 status: pending
 created: 2026-03-28
 updated: '2026-03-28'
 spec:
-  summary: |
-    Wire the image crate's AVIF encoder (backed by rav1e) into rasmcore
+  summary: 'Wire the image crate''s AVIF encoder (backed by rav1e) into rasmcore
+
     with quality and speed config. Full WIT interface, pipeline sink,
+
     and parity tests vs ImageMagick.
-  context: |
-    AVIF is a modern image format based on AV1 video codec, offering
-    superior compression vs JPEG at equivalent quality. It's supported by
+
+    '
+  context: 'AVIF is a modern image format based on AV1 video codec, offering
+
+    superior compression vs JPEG at equivalent quality. It''s supported by
+
     all modern browsers and is the recommended format for web images.
 
+
     The image crate already includes AVIF encode support via the ravif crate
+
     (rav1e backend). The avif feature is already enabled in Cargo.toml.
+
     AVIF decode already works in rasmcore.
 
+
     Patent status: AOM Patent License 1.0 (royalty-free). Safe to ship.
-  codebase_analysis: |
-    - AVIF feature already enabled in Cargo.toml
-    - image crate uses ravif internally for AVIF encoding
-    - AvifEncoder accepts quality (1-100) and speed (1-10) params
-    - AVIF supports alpha channel (RGBA input preserved)
-    - Pattern: follow jpeg.rs encoder module pattern (quality-based config)
-    - WASM note: rav1e WASM support is experimental and slow without SIMD.
-      This is a known limitation — encode will work but be slower than native.
-    - Files to create: domain/encoder/avif.rs
-    - Files to modify: domain/encoder/mod.rs, wit/image/encoder.wit,
-      wit/image/pipeline.wit, adapter/mod.rs, adapter/pipeline_adapter.rs,
-      domain/pipeline/nodes/sink.rs
+
+    '
+  codebase_analysis: "- AVIF feature already enabled in Cargo.toml\n- image crate uses ravif internally for AVIF encoding\n\
+    - AvifEncoder accepts quality (1-100) and speed (1-10) params\n- AVIF supports alpha channel (RGBA input preserved)\n\
+    - Pattern: follow jpeg.rs encoder module pattern (quality-based config)\n- WASM note: rav1e WASM support is experimental\
+    \ and slow without SIMD.\n  This is a known limitation — encode will work but be slower than native.\n- Files to create:\
+    \ domain/encoder/avif.rs\n- Files to modify: domain/encoder/mod.rs, wit/image/encoder.wit,\n  wit/image/pipeline.wit,\
+    \ adapter/mod.rs, adapter/pipeline_adapter.rs,\n  domain/pipeline/nodes/sink.rs\n"
   acceptance_criteria:
-    - AVIF encode works with configurable quality (1-100, default 75)
-    - Speed parameter configurable (1-10, default 6)
-    - WIT avif-encode-config and avif-write-config records defined
-    - Adapter encode_avif and pipeline write_avif wired
-    - RGB8 and RGBA8 input formats supported
-    - Roundtrip test (encode then decode, PSNR > 30dB at quality 80)
-    - File size comparison vs ImageMagick AVIF at same quality
-    - cargo test passes, cargo component build succeeds
-  out_of_scope: |
-    - AVIF animation (future track)
+  - AVIF encode works with configurable quality (1-100, default 75)
+  - Speed parameter configurable (1-10, default 6)
+  - WIT avif-encode-config and avif-write-config records defined
+  - Adapter encode_avif and pipeline write_avif wired
+  - RGB8 and RGBA8 input formats supported
+  - Roundtrip test (encode then decode, PSNR > 30dB at quality 80)
+  - File size comparison vs ImageMagick AVIF at same quality
+  - cargo test passes, cargo component build succeeds
+  out_of_scope: '- AVIF animation (future track)
+
     - Lossless AVIF mode
+
     - 10-bit / HDR AVIF
+
     - AVIF tiling configuration
-  technical_notes: |
-    image crate AVIF API:
-      AvifEncoder::new_with_speed_quality(writer, speed, quality)
-      where speed: 1 (slowest/best) to 10 (fastest/worst)
-      and quality: 1 (worst) to 100 (best)
 
-    The encoder handles YUV conversion internally.
-    Alpha channel is preserved when input is RGBA.
-
-    WASM performance: rav1e is pure Rust and compiles to WASM, but without
-    hardware SIMD it will be significantly slower than native. This is
-    acceptable for initial support — users can encode natively for production
-    workloads. Document this limitation.
+    '
+  technical_notes: "image crate AVIF API:\n  AvifEncoder::new_with_speed_quality(writer, speed, quality)\n  where speed: 1\
+    \ (slowest/best) to 10 (fastest/worst)\n  and quality: 1 (worst) to 100 (best)\n\nThe encoder handles YUV conversion internally.\n\
+    Alpha channel is preserved when input is RGBA.\n\nWASM performance: rav1e is pure Rust and compiles to WASM, but without\n\
+    hardware SIMD it will be significantly slower than native. This is\nacceptable for initial support — users can encode\
+    \ natively for production\nworkloads. Document this limitation.\n"
 plan:
-  - phase: Encoder Module
-    tasks:
-      - text: Create domain/encoder/avif.rs with AvifEncodeConfig (quality, speed)
-        done: false
-      - text: Implement encode() using image crate AvifEncoder
-        done: false
-      - text: Add avif module to encoder/mod.rs and encode dispatch
-        done: false
-      - text: Unit tests for encode at various quality/speed settings
-        done: false
-  - phase: WIT + Adapter + Pipeline
-    tasks:
-      - text: Add avif-encode-config and avif-write-config to WIT interfaces
-        done: false
-      - text: Add encode_avif to adapter encoder impl
-        done: false
-      - text: Add write_avif to pipeline adapter and sink
-        done: false
-  - phase: Parity Tests
-    tasks:
-      - text: Add AVIF references to generate.sh at q50/q75/q90
-        done: false
-      - text: Roundtrip quality test (PSNR > 30dB at quality 80)
-        done: false
-      - text: File size comparison vs ImageMagick AVIF
-        done: false
-      - text: RGBA input test (alpha channel preserved through encode/decode)
-        done: false
+- phase: Encoder Module
+  tasks:
+  - text: Create domain/encoder/avif.rs with AvifEncodeConfig (quality, speed)
+    done: true
+  - text: Implement encode() using image crate AvifEncoder
+    done: true
+  - text: Add avif module to encoder/mod.rs and encode dispatch
+    done: true
+  - text: Unit tests for encode at various quality/speed settings
+    done: true
+- phase: WIT + Adapter + Pipeline
+  tasks:
+  - text: Add avif-encode-config and avif-write-config to WIT interfaces
+    done: false
+  - text: Add encode_avif to adapter encoder impl
+    done: false
+  - text: Add write_avif to pipeline adapter and sink
+    done: false
+- phase: Parity Tests
+  tasks:
+  - text: Add AVIF references to generate.sh at q50/q75/q90
+    done: false
+  - text: Roundtrip quality test (PSNR > 30dB at quality 80)
+    done: false
+  - text: File size comparison vs ImageMagick AVIF
+    done: false
+  - text: RGBA input test (alpha channel preserved through encode/decode)
+    done: false
 extra: {}
