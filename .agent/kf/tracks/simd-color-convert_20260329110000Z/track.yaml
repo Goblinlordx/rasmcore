@@ -3,96 +3,110 @@ title: SIMD Color Conversion — Vectorize RGB/YCbCr Across All Codecs
 type: refactor
 status: pending
 created: 2026-03-29
-updated: "2026-03-29"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Add WASM SIMD128 paths for RGB-to-YCbCr and YCbCr-to-RGB in rasmcore-color
+  summary: 'Add WASM SIMD128 paths for RGB-to-YCbCr and YCbCr-to-RGB in rasmcore-color
+
     and rasmcore-jpeg. Unify duplicate implementations. Vectorize grayscale
+
     conversion. ~3x speedup on full-frame color conversion.
-  context: |
-    Color conversion is the first and last stage of every lossy codec pipeline
+
+    '
+  context: 'Color conversion is the first and last stage of every lossy codec pipeline
+
     (WebP, JPEG). Both rasmcore-color and rasmcore-jpeg have independent scalar
+
     implementations of BT.601 RGB-to-YCbCr. These are full-frame O(W*H)
+
     operations — every pixel passes through the matrix multiply.
 
+
     The WebP encoder already uses SIMD for DCT/quantize/SAD but its color
+
     conversion (via rasmcore-color) is pure scalar. The JPEG codec has its
+
     own scalar rgb_to_ycbcr in color.rs.
-  codebase_analysis: |
-    rasmcore-color/src/convert.rs:
+
+    '
+  codebase_analysis: 'rasmcore-color/src/convert.rs:
+
     - rgb_to_ycbcr() line 12: per-pixel 3x3 matrix multiply (scalar i32)
+
     - rgb_to_ycbcr_420() line 46: same + 2x2 chroma downsampling
+
     - gray_to_y() line 132: per-pixel scale + offset
 
+
     rasmcore-jpeg/src/color.rs:
+
     - rgb_to_ycbcr() line 20: duplicate BT.601 with coefficients (77,150,29)
+
     - downsample() line 149: 2x2/4x1 block averaging
 
+
     rasmcore-image/src/domain/filters.rs:
+
     - to_grayscale(): per-pixel 0.299R + 0.587G + 0.114B (f32, BT.601)
+
     - grayscale(): calls to_grayscale, allocates DecodedImage
 
+
     SIMD pattern: load 4 RGB pixels (12 bytes) as u8, widen to i16x8,
+
     multiply by splatted coefficients, accumulate with i32x4_add, shift,
+
     narrow back to u8.
+
+    '
   acceptance_criteria:
-    - rasmcore-color rgb_to_ycbcr has WASM SIMD128 path processing 4+ pixels per iteration
-    - rasmcore-color rgb_to_ycbcr_420 uses SIMD for both conversion and 2x2 averaging
-    - rasmcore-jpeg rgb_to_ycbcr uses shared SIMD color conversion (or its own SIMD path)
-    - rasmcore-image to_grayscale has SIMD path with fixed-point BT.601 weights
-    - All scalar fallbacks retained behind cfg(not(target_arch = wasm32))
-    - Existing roundtrip tests pass (rasmcore-color MAE <= 2)
-    - JPEG encode/decode parity tests unaffected
-    - WebP encode PSNR unchanged
-    - WASM build succeeds
-  out_of_scope: |
-    - Non-BT.601 color spaces (BT.709/BT.2020 — future work)
+  - rasmcore-color rgb_to_ycbcr has WASM SIMD128 path processing 4+ pixels per iteration
+  - rasmcore-color rgb_to_ycbcr_420 uses SIMD for both conversion and 2x2 averaging
+  - rasmcore-jpeg rgb_to_ycbcr uses shared SIMD color conversion (or its own SIMD path)
+  - rasmcore-image to_grayscale has SIMD path with fixed-point BT.601 weights
+  - All scalar fallbacks retained behind cfg(not(target_arch = wasm32))
+  - Existing roundtrip tests pass (rasmcore-color MAE <= 2)
+  - JPEG encode/decode parity tests unaffected
+  - WebP encode PSNR unchanged
+  - WASM build succeeds
+  out_of_scope: '- Non-BT.601 color spaces (BT.709/BT.2020 — future work)
+
     - Alpha channel handling in conversion
+
     - x86 SSE/AVX paths (WASM SIMD128 only)
-  technical_notes: |
-    SIMD approach for RGB-to-YCbCr (4 pixels per iteration):
 
-    1. Load 12 bytes (4 RGB pixels) into u8x16 (4 bytes unused)
-    2. Deinterleave: extract R, G, B channels into separate i16x8 vectors
-       - R = [r0, r1, r2, r3, 0, 0, 0, 0]
-       - G = [g0, g1, g2, g3, 0, 0, 0, 0]
-       - B = [b0, b1, b2, b3, 0, 0, 0, 0]
-    3. Multiply: Y_raw = yr*R + yg*G + yb*B (using i16x8_mul + i32x4_add)
-    4. Add rounding + offset: Y = (Y_raw + 128) >> 8 + 16
-    5. Pack back to u8 and store to Y plane
-
-    Same pattern for Cb, Cr with different coefficients.
-
-    For 420 downsampling: after computing full-res U/V, use i16x8_add
-    on 2x2 blocks and i16x8_shr for averaging.
-
-    For grayscale: same multiply pattern but only Y output.
-    Use fixed-point: (77*R + 150*G + 29*B + 128) >> 8 (BT.601).
+    '
+  technical_notes: "SIMD approach for RGB-to-YCbCr (4 pixels per iteration):\n\n1. Load 12 bytes (4 RGB pixels) into u8x16\
+    \ (4 bytes unused)\n2. Deinterleave: extract R, G, B channels into separate i16x8 vectors\n   - R = [r0, r1, r2, r3, 0,\
+    \ 0, 0, 0]\n   - G = [g0, g1, g2, g3, 0, 0, 0, 0]\n   - B = [b0, b1, b2, b3, 0, 0, 0, 0]\n3. Multiply: Y_raw = yr*R +\
+    \ yg*G + yb*B (using i16x8_mul + i32x4_add)\n4. Add rounding + offset: Y = (Y_raw + 128) >> 8 + 16\n5. Pack back to u8\
+    \ and store to Y plane\n\nSame pattern for Cb, Cr with different coefficients.\n\nFor 420 downsampling: after computing\
+    \ full-res U/V, use i16x8_add\non 2x2 blocks and i16x8_shr for averaging.\n\nFor grayscale: same multiply pattern but\
+    \ only Y output.\nUse fixed-point: (77*R + 150*G + 29*B + 128) >> 8 (BT.601).\n"
 plan:
-  - phase: Core SIMD Color Conversion
-    tasks:
-      - text: Add SIMD128 rgb_to_ycbcr path in rasmcore-color processing 4 pixels per iteration
-        done: false
-      - text: Add SIMD128 420 chroma downsampling in rgb_to_ycbcr_420
-        done: false
-      - text: Add SIMD128 to_grayscale in rasmcore-image using fixed-point BT.601
-        done: false
-  - phase: JPEG Color Unification
-    tasks:
-      - text: Add SIMD128 path to rasmcore-jpeg rgb_to_ycbcr (or delegate to rasmcore-color)
-        done: false
-      - text: Add SIMD128 path to rasmcore-jpeg downsample for 2x2 averaging
-        done: false
-      - text: Verify JPEG encode roundtrip unchanged
-        done: false
-  - phase: Validation
-    tasks:
-      - text: rasmcore-color roundtrip tests pass (MAE <= 2)
-        done: false
-      - text: WebP encode PSNR unchanged for gradient and solid images
-        done: false
-      - text: WASM build + all existing tests pass
-        done: false
-      - text: Benchmark color conversion speedup on 1024x1024 image
-        done: false
+- phase: Core SIMD Color Conversion
+  tasks:
+  - text: Add SIMD128 rgb_to_ycbcr path in rasmcore-color processing 4 pixels per iteration
+    done: true
+  - text: Add SIMD128 420 chroma downsampling in rgb_to_ycbcr_420
+    done: true
+  - text: Add SIMD128 to_grayscale in rasmcore-image using fixed-point BT.601
+    done: true
+- phase: JPEG Color Unification
+  tasks:
+  - text: Add SIMD128 path to rasmcore-jpeg rgb_to_ycbcr (or delegate to rasmcore-color)
+    done: true
+  - text: Add SIMD128 path to rasmcore-jpeg downsample for 2x2 averaging
+    done: true
+  - text: Verify JPEG encode roundtrip unchanged
+    done: true
+- phase: Validation
+  tasks:
+  - text: rasmcore-color roundtrip tests pass (MAE <= 2)
+    done: true
+  - text: WebP encode PSNR unchanged for gradient and solid images
+    done: true
+  - text: WASM build + all existing tests pass
+    done: true
+  - text: Benchmark color conversion speedup on 1024x1024 image
+    done: true
 extra: {}

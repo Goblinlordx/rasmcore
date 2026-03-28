@@ -1,5 +1,5 @@
 title: SIMD Color Conversion — Vectorize RGB/YCbCr Across All Codecs
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-28'
