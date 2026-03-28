@@ -1,5 +1,5 @@
 title: Wire Color Ops into Pipeline Graph + Deduplicate with ColorOp
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-28'

@@ -3,85 +3,97 @@ title: Wire Color Ops into Pipeline Graph + Deduplicate with ColorOp
 type: refactor
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: |
-    Wire hue_rotate, saturate, sepia, and colorize into the pipeline graph builder
+  summary: 'Wire hue_rotate, saturate, sepia, and colorize into the pipeline graph builder
+
     as ColorOpNode (3D-fusible). Refactor filters.rs to delegate math to
+
     color_lut::ColorOp (single source of truth), eliminating duplicated HSV/HSL
+
     conversion code between filters.rs and color_lut.rs.
-  context: |
-    The color-adjust-hsv track implemented hue_rotate/saturate/sepia/colorize as
+
+    '
+  context: 'The color-adjust-hsv track implemented hue_rotate/saturate/sepia/colorize as
+
     direct per-pixel f32 loops in filters.rs with private HSV/HSL helper functions.
+
     The lut-fusion-pipeline track independently implemented the same transforms as
+
     ColorOp enum variants in color_lut.rs (on normalized [0,1] floats) for 3D CLUT
+
     generation. The result: duplicate math in two files, and no way to create
+
     hue_rotate/saturate/sepia/colorize pipeline nodes from the graph builder API.
-  codebase_analysis: |
-    filters.rs has: rgb_to_hsv(u8,u8,u8), hsv_to_rgb(f32,f32,f32)->u8, rgb_to_hsl,
+
+    '
+  codebase_analysis: 'filters.rs has: rgb_to_hsv(u8,u8,u8), hsv_to_rgb(f32,f32,f32)->u8, rgb_to_hsl,
+
     hsl_to_rgb (all private, operating on u8<->f32 boundaries), plus public
+
     hue_rotate(), saturate(), sepia(), colorize() functions.
 
+
     color_lut.rs has: rgb_to_hsv(f32,f32,f32), hsv_to_rgb, rgb_to_hsl, hsl_to_rgb
+
     (all private, operating on normalized [0,1] floats), plus ColorOp enum with
+
     HueRotate, Saturate, Sepia, Colorize variants and apply()/to_clut() methods.
 
+
     The duplication: two sets of HSV/HSL converters with slightly different
+
     interfaces (u8 vs f32 input). The filters.rs versions convert u8->f32 internally.
 
+
     Pipeline graph builder (pipeline/mod.rs or graph.rs) exposes blur, sharpen,
+
     brightness, contrast, grayscale, resize, crop, rotate, flip, composite, icc_to_srgb
+
     but NOT hue_rotate/saturate/sepia/colorize.
+
+    '
   acceptance_criteria:
-    - filters.rs hue_rotate/saturate/sepia/colorize delegate to ColorOp for the transform math
-    - Remove duplicate HSV/HSL conversion functions from filters.rs
-    - Pipeline graph builder exposes hue_rotate, saturate, sepia, colorize methods
-    - Pipeline methods create ColorOpNode (3D-fusible) so chains can be fused
-    - All existing filter tests pass unchanged
-    - All existing color_lut tests pass unchanged
-    - New test verifying pipeline hue_rotate + saturate produces same output as direct calls
-  out_of_scope: |
-    Changing the ColorOp math or LUT grid size. Adding new color operations.
+  - filters.rs hue_rotate/saturate/sepia/colorize delegate to ColorOp for the transform math
+  - Remove duplicate HSV/HSL conversion functions from filters.rs
+  - Pipeline graph builder exposes hue_rotate, saturate, sepia, colorize methods
+  - Pipeline methods create ColorOpNode (3D-fusible) so chains can be fused
+  - All existing filter tests pass unchanged
+  - All existing color_lut tests pass unchanged
+  - New test verifying pipeline hue_rotate + saturate produces same output as direct calls
+  out_of_scope: 'Changing the ColorOp math or LUT grid size. Adding new color operations.
+
     WIT interface updates (separate track if needed).
-  technical_notes: |
-    Refactor approach for filters.rs functions:
-      pub fn hue_rotate(pixels, info, degrees) {
-          let op = ColorOp::HueRotate(degrees);
-          // For single-call path, evaluate directly per-pixel (no CLUT overhead)
-          apply_color_op(pixels, info, &op)
-      }
 
-    Where apply_color_op iterates pixels and calls op.apply(r,g,b) on normalized
-    values. This uses ColorOp as the single source of truth for the math while
-    avoiding the 431KB CLUT allocation for non-pipeline callers.
-
-    The filters.rs private HSV/HSL functions (rgb_to_hsv, hsv_to_rgb, rgb_to_hsl,
-    hsl_to_rgb) can be deleted since color_lut.rs already has them.
-
-    For the pipeline graph builder, add methods that create ColorOpNode:
-      pub fn hue_rotate(&mut self, source: u32, degrees: f32) -> Result<u32>
-      pub fn saturate(&mut self, source: u32, factor: f32) -> Result<u32>
-      pub fn sepia(&mut self, source: u32, intensity: f32) -> Result<u32>
-      pub fn colorize(&mut self, source: u32, color: [u8;3], amount: f32) -> Result<u32>
+    '
+  technical_notes: "Refactor approach for filters.rs functions:\n  pub fn hue_rotate(pixels, info, degrees) {\n      let op\
+    \ = ColorOp::HueRotate(degrees);\n      // For single-call path, evaluate directly per-pixel (no CLUT overhead)\n    \
+    \  apply_color_op(pixels, info, &op)\n  }\n\nWhere apply_color_op iterates pixels and calls op.apply(r,g,b) on normalized\n\
+    values. This uses ColorOp as the single source of truth for the math while\navoiding the 431KB CLUT allocation for non-pipeline\
+    \ callers.\n\nThe filters.rs private HSV/HSL functions (rgb_to_hsv, hsv_to_rgb, rgb_to_hsl,\nhsl_to_rgb) can be deleted\
+    \ since color_lut.rs already has them.\n\nFor the pipeline graph builder, add methods that create ColorOpNode:\n  pub\
+    \ fn hue_rotate(&mut self, source: u32, degrees: f32) -> Result<u32>\n  pub fn saturate(&mut self, source: u32, factor:\
+    \ f32) -> Result<u32>\n  pub fn sepia(&mut self, source: u32, intensity: f32) -> Result<u32>\n  pub fn colorize(&mut self,\
+    \ source: u32, color: [u8;3], amount: f32) -> Result<u32>\n"
 plan:
-  - phase: Deduplicate Math
-    tasks:
-      - text: Make color_lut.rs HSV/HSL conversion functions pub(crate) so filters.rs can use them
-        done: false
-      - text: Add apply_color_op() helper in filters.rs that evaluates ColorOp per-pixel without CLUT allocation
-        done: false
-      - text: Refactor hue_rotate/saturate/sepia/colorize in filters.rs to use apply_color_op + ColorOp
-        done: false
-      - text: Remove duplicate private HSV/HSL functions from filters.rs
-        done: false
-  - phase: Pipeline Wiring
-    tasks:
-      - text: Add hue_rotate, saturate, sepia, colorize methods to pipeline graph builder
-        done: false
-      - text: Each method creates a ColorOpNode (3D-fusible for chain optimization)
-        done: false
-      - text: Test pipeline hue_rotate + saturate chain produces correct output
-        done: false
-      - text: All existing tests pass (filters, color_lut, pipeline)
-        done: false
+- phase: Deduplicate Math
+  tasks:
+  - text: Make color_lut.rs HSV/HSL conversion functions pub(crate) so filters.rs can use them
+    done: true
+  - text: Add apply_color_op() helper in filters.rs that evaluates ColorOp per-pixel without CLUT allocation
+    done: true
+  - text: Refactor hue_rotate/saturate/sepia/colorize in filters.rs to use apply_color_op + ColorOp
+    done: true
+  - text: Remove duplicate private HSV/HSL functions from filters.rs
+    done: true
+- phase: Pipeline Wiring
+  tasks:
+  - text: Add hue_rotate, saturate, sepia, colorize methods to pipeline graph builder
+    done: true
+  - text: Each method creates a ColorOpNode (3D-fusible for chain optimization)
+    done: true
+  - text: Test pipeline hue_rotate + saturate chain produces correct output
+    done: true
+  - text: All existing tests pass (filters, color_lut, pipeline)
+    done: true
 extra: {}
