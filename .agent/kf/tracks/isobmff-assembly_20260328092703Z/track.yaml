@@ -33,32 +33,32 @@ plan:
 - phase: Image Assembly
   tasks:
   - text: Implement primary image extraction — resolve pitm, gather properties via ipma, extract bitstream from mdat via iloc
-    done: false
+    done: true
   - text: Implement grid image support — detect grid items (type=grid), parse grid descriptor (rows, cols, output dimensions),
       resolve dimg references to tile items
-    done: false
+    done: true
   - text: Implement thumbnail extraction — resolve thmb references, extract thumbnail items
-    done: false
+    done: true
   - text: Assemble top-level parse() API returning IsobmffFile (primary_item, items, thumbnails, metadata)
-    done: false
+    done: true
 - phase: Integration
   tasks:
   - text: Add native-heif feature flag to rasmcore-image Cargo.toml with optional dep on rasmcore-isobmff
-    done: false
+    done: true
   - text: Add detect_heif() to decoder/mod.rs — check ftyp for HEIC/AVIF brands before image crate fallback
-    done: false
+    done: true
   - text: Add decode_heif() stub in decoder — parse container, return metadata-only result (no codec decode yet)
-    done: false
+    done: true
 - phase: Validation
   tasks:
   - text: Integration test with real HEIC file — verify parsed brand, dimensions, codec type, Exif, ICC
-    done: false
+    done: true
   - text: Integration test with real AVIF file — verify brand and item extraction
-    done: false
+    done: true
   - text: Integration test with grid HEIC file (iPhone photo) — verify grid descriptor and tile count
-    done: false
+    done: true
   - text: Edge case tests — empty mdat, zero-length extents, unknown box types (skip gracefully)
-    done: false
+    done: true
   - text: WASM build verification (cargo component check with native-heif feature)
-    done: false
+    done: true
 extra: {}
