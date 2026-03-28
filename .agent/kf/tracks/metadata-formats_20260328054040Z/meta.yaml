@@ -1,0 +1,8 @@
+title: EXIF write, XMP read/write, IPTC parser, PNG text chunks
+status: pending
+type: feature
+approved: false
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- metadata-unification_20260328054039Z

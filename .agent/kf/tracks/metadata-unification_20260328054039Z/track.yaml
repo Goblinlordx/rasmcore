@@ -1,0 +1,140 @@
+id: metadata-unification_20260328054039Z
+title: Unified MetadataSet type, streaming read, pipeline write integration
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: >
+    Replace ad-hoc read_exif/extract_icc with unified MetadataSet domain type, WIT interface,
+    streaming header-only read, and optional metadata parameter on all pipeline write sinks.
+  context: |
+    Current metadata support is fragmented: ExifMetadata struct (7 EXIF fields via kamadak-exif),
+    ICC profile as Option<Vec<u8>> on DecodedImage, separate encode-jpeg-with-icc / encode-png-with-icc
+    WIT functions. No XMP, IPTC, or PNG text chunk support. No write-side metadata on pipeline sinks.
+
+    Design constraints (from product architecture discussions):
+    - Unified API: one MetadataSet type covering all metadata kinds
+    - Passthrough by default: metadata flows unchanged from source to sink unless transformed
+    - Host-side mapping: transform logic (include/exclude/set) runs on host, not in WASM
+    - Sequential phase separation: all metadata ops complete BEFORE pipeline pixel execution
+    - Same-format raw byte splice: when input/output format match, splice raw metadata bytes
+    - Immutable MetadataSet: pipeline receives finalized metadata, never mutates it
+    - Pipeline just embeds whatever MetadataSet it receives at write time
+  codebase_analysis: |
+    Files to modify:
+    - NEW: domain/metadata_set.rs — MetadataSet domain type
+    - MODIFY: domain/metadata.rs — refactor read_exif into streaming read_metadata
+    - MODIFY: domain/decoder/mod.rs — extract_icc_profile becomes part of read_metadata
+    - MODIFY: domain/pipeline/nodes/sink.rs — add optional MetadataSet param to all write fns
+    - MODIFY: domain/encoder/jpeg.rs — accept MetadataSet, embed ICC/EXIF
+    - MODIFY: domain/encoder/png.rs — accept MetadataSet, embed ICC
+    - MODIFY: domain/encoder/gif.rs — accept MetadataSet (passthrough, no embedding for GIF)
+    - MODIFY: domain/encoder/webp.rs — accept MetadataSet (future ICC/EXIF embedding)
+    - MODIFY: wit/image/metadata.wit — new metadata-set record and read-metadata function
+    - MODIFY: wit/image/pipeline.wit — add metadata param to all write sinks
+    - MODIFY: wit/image/encoder.wit — replace encode-X-with-icc with metadata-aware encode
+    - MODIFY: adapter/mod.rs — type conversion for MetadataSet
+    - MODIFY: adapter/pipeline_adapter.rs — wire metadata through pipeline sinks
+
+    Current write sink signatures (sink.rs):
+      write_jpeg(graph, node_id, config) -> Result<Vec<u8>>
+      write_png(graph, node_id, config) -> Result<Vec<u8>>
+    New signatures:
+      write_jpeg(graph, node_id, config, metadata: Option<&MetadataSet>) -> Result<Vec<u8>>
+      write_png(graph, node_id, config, metadata: Option<&MetadataSet>) -> Result<Vec<u8>>
+
+    Existing ICC embedding (post-encode byte injection):
+      jpeg::embed_icc_profile(jpeg_data, icc_profile) -> Result<Vec<u8>>
+      png::embed_icc_profile(png_data, icc_profile) -> Result<Vec<u8>>
+    These become internal to the metadata embedding step, not public API.
+  acceptance_criteria:
+    - MetadataSet domain type with fields for exif, xmp, iptc, icc_profile, and format_specific chunks
+    - read_metadata(data) function that extracts all available metadata without decoding pixels
+    - Streaming header-only parsing for JPEG (scan APP markers), PNG (scan chunks), TIFF (scan IFDs)
+    - All pipeline write sinks accept optional MetadataSet parameter
+    - All WIT write functions accept optional metadata-set parameter
+    - When MetadataSet provided with ICC, it is embedded into JPEG/PNG output
+    - When MetadataSet is None, write produces output identical to current behavior (backward compat)
+    - Existing encode-jpeg-with-icc / encode-png-with-icc deprecated in favor of metadata-aware encode
+    - Domain tests for MetadataSet roundtrip (read from JPEG, write to PNG, verify ICC preserved)
+    - Domain tests for streaming read (no pixel decode, only metadata extraction)
+    - All existing tests continue to pass
+  out_of_scope: |
+    - EXIF write support (Track 2: metadata-formats)
+    - XMP/IPTC parsing (Track 2: metadata-formats)
+    - PNG text chunk read/write (Track 2: metadata-formats)
+    - Host-side SDK mapping API (include/exclude/set) — that is SDK-level, not WASM component
+    - WebP ICC embedding (needs WebP encoder track to complete first)
+    - Metadata-aware auto-orient (future enhancement)
+  technical_notes: |
+    MetadataSet design:
+      pub struct MetadataSet {
+          pub exif: Option<Vec<u8>>,           // Raw EXIF bytes
+          pub xmp: Option<Vec<u8>>,            // Raw XMP bytes (XML)
+          pub iptc: Option<Vec<u8>>,           // Raw IPTC-IIM bytes
+          pub icc_profile: Option<Vec<u8>>,    // ICC profile bytes
+          pub format_specific: Vec<MetadataChunk>,  // PNG text, GIF comment, etc.
+      }
+
+      pub struct MetadataChunk {
+          pub key: String,
+          pub value: Vec<u8>,
+      }
+
+    Streaming read approach:
+    - JPEG: scan for APP1 (EXIF, XMP), APP2 (ICC), APP13 (IPTC) markers without decoding SOF/SOS
+    - PNG: scan chunk headers (eXIf, iCCP, iTXt, tEXt, zTXt) without decompressing IDAT
+    - TIFF: read IFD0 entries for EXIF/XMP/IPTC/ICC tag offsets
+    - WebP: scan RIFF chunks (EXIF, XMP, ICCP) without decoding VP8
+
+    Same-format splice optimization:
+    - When input format == output format and no metadata transform applied, the raw metadata
+      byte segments can be copied from input to output without parse/re-serialize.
+    - This is tracked via a MetadataSource enum: Raw(bytes) vs Parsed(MetadataSet).
+    - The write sink checks: if Raw and same format, splice; otherwise, embed from parsed.
+
+    Backward compatibility:
+    - All write sinks default metadata to None
+    - WIT functions use option<metadata-set> — None = current behavior
+    - encode-jpeg-with-icc kept as deprecated alias (calls metadata-aware encode internally)
+plan:
+  - phase: Domain Type and WIT Interface
+    tasks:
+      - text: Create domain/metadata_set.rs with MetadataSet and MetadataChunk structs
+        done: false
+      - text: Add metadata_set module to domain/mod.rs
+        done: false
+      - text: Update wit/image/metadata.wit with metadata-set record, metadata-chunk record, and read-metadata function
+        done: false
+      - text: Domain tests for MetadataSet construction and field access
+        done: false
+  - phase: Streaming Metadata Read
+    tasks:
+      - text: Implement JPEG streaming read (scan APP1/APP2/APP13 markers, extract raw bytes without pixel decode)
+        done: false
+      - text: Implement PNG streaming read (scan chunk headers for eXIf/iCCP/iTXt/tEXt/zTXt)
+        done: false
+      - text: Implement TIFF streaming read (parse IFD0 for EXIF/XMP/IPTC/ICC tag offsets)
+        done: false
+      - text: Implement WebP streaming read (scan RIFF chunks for EXIF/XMP/ICCP)
+        done: false
+      - text: Domain tests for streaming read from each format (verify no pixel allocation, only metadata returned)
+        done: false
+  - phase: Pipeline Write Integration
+    tasks:
+      - text: Add optional MetadataSet parameter to all domain sink functions (write_jpeg, write_png, write_gif, write_webp, write)
+        done: false
+      - text: Wire MetadataSet ICC embedding into jpeg and png encoders (use existing embed_icc_profile internally)
+        done: false
+      - text: Update WIT pipeline write sinks with optional metadata-set parameter
+        done: false
+      - text: Update adapter layer (mod.rs + pipeline_adapter.rs) for MetadataSet type conversion
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Domain tests for metadata roundtrip (read JPEG metadata, write to PNG, verify ICC preserved)
+        done: false
+      - text: Run full validation suite (./scripts/validate.sh) including WASM build
+        done: false
+extra: {}
