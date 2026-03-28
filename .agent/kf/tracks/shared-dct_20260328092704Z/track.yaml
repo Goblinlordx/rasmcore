@@ -56,39 +56,39 @@ plan:
 - phase: Crate Setup
   tasks:
   - text: Create crates/rasmcore-dct/ with Cargo.toml (zero deps), add to workspace
-    done: false
+    done: true
   - text: Define module structure — lib.rs, dct4.rs, dct8.rs, dct16.rs, dct32.rs, dst4.rs
-    done: false
+    done: true
 - phase: Core Transforms (Scalar)
   tasks:
   - text: Implement inverse_dct_4x4 — integer butterfly from HEVC spec (scalar)
-    done: false
+    done: true
   - text: Implement forward_dct_4x4 — integer forward transform (scalar)
-    done: false
+    done: true
   - text: Implement inverse_dst_4x4 — HEVC intra luma DST (different basis from DCT)
-    done: false
+    done: true
   - text: Implement inverse_dct_8x8 — integer butterfly, matches JPEG IDCT spec (scalar)
-    done: false
+    done: true
   - text: Implement forward_dct_8x8 — integer forward 8x8 for JPEG encoding
-    done: false
+    done: true
   - text: Implement inverse_dct_16x16 — HEVC 16x16 butterfly (scalar)
-    done: false
+    done: true
   - text: Implement inverse_dct_32x32 — HEVC 32x32 butterfly (scalar)
-    done: false
+    done: true
 - phase: SIMD Acceleration
   tasks:
   - text: Port WASM SIMD128 4x4 DCT from rasmcore-webp — forward and inverse
-    done: false
+    done: true
   - text: Add cfg(target_arch) dispatch for WASM vs scalar fallback (all sizes)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: 'Roundtrip tests: forward(inverse(x)) == x for 4x4, 8x8, 16x16, 32x32'
-    done: false
+    done: true
   - text: Reference value tests — known inputs/outputs from HEVC conformance and JPEG spec
-    done: false
+    done: true
   - text: Determinism tests — same input always produces same output
-    done: false
+    done: true
   - text: Performance test — 4x4 DCT throughput matches or beats rasmcore-webp
-    done: false
+    done: true
 extra: {}
