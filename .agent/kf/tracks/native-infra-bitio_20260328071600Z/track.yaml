@@ -5,46 +5,42 @@ status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: Pure Rust bit-level reader/writer (rasmcore-bitio) — foundation for Huffman,
-    LZW, and all bitstream codecs. Zero deps, WASM-ready.
-  context: 'Every non-trivial codec needs bit-level I/O. rasmcore-webp boolcoder.rs
-    (451 LOC) has a working bit writer pattern. Extract lower-level bit I/O primitives
-    that Huffman, LZW, and arithmetic coders build on. VP8 BoolWriter becomes a thin
-    wrapper. Perf: fdeflate uses 8-byte reads/16-byte writes for throughput — adopt
-    similar batching.'
-  codebase_analysis: 'Existing bit I/O: rasmcore-webp/boolcoder.rs (BoolWriter/BoolReader,
-    451 LOC, VP8-specific arithmetic). Extract bit-level read/write primitives. Both
-    MSB-first (Huffman) and LSB-first (LZW) ordering needed.'
+  summary: Pure Rust bit-level reader/writer (rasmcore-bitio) — foundation for Huffman, LZW, and all bitstream codecs. Zero
+    deps, WASM-ready.
+  context: 'Every non-trivial codec needs bit-level I/O. rasmcore-webp boolcoder.rs (451 LOC) has a working bit writer pattern.
+    Extract lower-level bit I/O primitives that Huffman, LZW, and arithmetic coders build on. VP8 BoolWriter becomes a thin
+    wrapper. Perf: fdeflate uses 8-byte reads/16-byte writes for throughput — adopt similar batching.'
+  codebase_analysis: 'Existing bit I/O: rasmcore-webp/boolcoder.rs (BoolWriter/BoolReader, 451 LOC, VP8-specific arithmetic).
+    Extract bit-level read/write primitives. Both MSB-first (Huffman) and LSB-first (LZW) ordering needed.'
   acceptance_criteria:
   - rasmcore-bitio crate with zero external dependencies
-  - BitWriter with write_bits(n, value), write_bit(bool), flush(), both MSB and LSB
-    ordering
+  - BitWriter with write_bits(n, value), write_bit(bool), flush(), both MSB and LSB ordering
   - BitReader with read_bits(n), read_bit(), peek_bits(n), both MSB and LSB ordering
   - Comprehensive roundtrip tests and Criterion benchmarks
   - WASM build succeeds
   out_of_scope: ''
-  technical_notes: 'Design: BitWriter/BitReader with configurable BitOrder (MsbFirst
-    for Huffman, LsbFirst for LZW). Use u64 accumulator with batch flush for throughput.
-    Reference: rasmcore-webp boolcoder.rs for the pattern, fdeflate for the perf tricks.'
+  technical_notes: 'Design: BitWriter/BitReader with configurable BitOrder (MsbFirst for Huffman, LsbFirst for LZW). Use u64
+    accumulator with batch flush for throughput. Reference: rasmcore-webp boolcoder.rs for the pattern, fdeflate for the perf
+    tricks.'
 plan:
 - phase: Core Implementation
   tasks:
   - text: Create crates/rasmcore-bitio/ with Cargo.toml (zero deps), add to workspace
-    done: false
+    done: true
   - text: Implement BitWriter with MSB-first and LSB-first bit ordering, u64 accumulator
-    done: false
+    done: true
   - text: Implement BitReader with MSB-first and LSB-first bit ordering, peek support
-    done: false
+    done: true
   - text: Add byte-aligned write mode and position tracking
-    done: false
+    done: true
 - phase: Testing and Benchmarks
   tasks:
   - text: Roundtrip tests (write N bits, read back, verify for both bit orders)
-    done: false
+    done: true
   - text: Edge case tests (0 bits, 32 bits, alignment boundaries, empty streams)
-    done: false
+    done: true
   - text: Criterion benchmarks vs direct byte manipulation baseline
-    done: false
+    done: true
   - text: WASM build verification
-    done: false
+    done: true
 extra: {}

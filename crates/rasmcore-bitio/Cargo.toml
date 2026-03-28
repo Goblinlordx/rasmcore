@@ -1,0 +1,8 @@
+[package]
+name = "rasmcore-bitio"
+version.workspace = true
+edition.workspace = true
+description = "Bit-level reader/writer for codec bitstreams — MSB and LSB ordering"
+
+[dependencies]
+# No external dependencies — pure Rust, WASM-ready
