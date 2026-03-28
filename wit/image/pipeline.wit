@@ -50,6 +50,11 @@ interface pipeline {
         lossless: option<bool>,
     }
 
+    /// GIF write configuration.
+    record gif-write-config {
+        repeat: option<u16>,
+    }
+
     /// The pipeline resource — owns the node graph and spatial cache.
     resource image-pipeline {
         /// Create a new empty pipeline.
@@ -120,6 +125,9 @@ interface pipeline {
 
         /// Write as WebP.
         write-webp: func(source: node-id, config: webp-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write as GIF.
+        write-gif: func(source: node-id, config: gif-write-config) -> result<buffer, rasmcore-error>;
 
         /// Write to any format (convenience).
         write: func(source: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;

@@ -229,6 +229,20 @@ impl encoder::Guest for Component {
         domain::encoder::webp::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
     }
 
+    fn encode_gif(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        config: encoder::GifEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        let domain_config = domain::encoder::gif::GifEncodeConfig {
+            repeat: config.repeat.unwrap_or(0),
+        };
+        domain::encoder::gif::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+    }
+
     fn encode(
         pixels: Vec<u8>,
         info: types::ImageInfo,

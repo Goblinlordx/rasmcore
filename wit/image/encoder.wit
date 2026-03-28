@@ -45,6 +45,12 @@ interface encoder {
         lossless: option<bool>,
     }
 
+    /// GIF encode configuration
+    record gif-encode-config {
+        /// Repeat count: 0 = infinite loop, n = repeat n times (default: 0)
+        repeat: option<u16>,
+    }
+
     /// Encode pixel data to JPEG with typed configuration
     encode-jpeg: func(pixels: buffer, info: image-info, config: jpeg-encode-config) -> result<buffer, rasmcore-error>;
 
@@ -59,6 +65,9 @@ interface encoder {
 
     /// Encode pixel data to WebP with typed configuration
     encode-webp: func(pixels: buffer, info: image-info, config: webp-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode pixel data to GIF with typed configuration
+    encode-gif: func(pixels: buffer, info: image-info, config: gif-encode-config) -> result<buffer, rasmcore-error>;
 
     /// Encode pixel data to a specific format (convenience wrapper)
     encode: func(pixels: buffer, info: image-info, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;

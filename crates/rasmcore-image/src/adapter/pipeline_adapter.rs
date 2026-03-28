@@ -237,6 +237,17 @@ impl GuestImagePipeline for PipelineResource {
         sink::write_webp(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
     }
 
+    fn write_gif(
+        &self,
+        source: NodeId,
+        config: pipeline::GifWriteConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let cfg = domain::encoder::gif::GifEncodeConfig {
+            repeat: config.repeat.unwrap_or(0),
+        };
+        sink::write_gif(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
+    }
+
     fn write(
         &self,
         source: NodeId,

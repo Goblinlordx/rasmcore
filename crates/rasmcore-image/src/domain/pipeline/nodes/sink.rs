@@ -46,6 +46,19 @@ pub fn write_png(
     encoder::png::encode(&img, &info, config)
 }
 
+/// Write a node's output as GIF with typed config.
+pub fn write_gif(
+    graph: &mut NodeGraph,
+    node_id: u32,
+    config: &encoder::gif::GifEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = graph.request_region(node_id, full)?;
+    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
+    encoder::gif::encode(&img, &info, config)
+}
+
 /// Write a node's output as WebP with typed config.
 pub fn write_webp(
     graph: &mut NodeGraph,

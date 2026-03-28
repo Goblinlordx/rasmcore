@@ -1,3 +1,4 @@
+pub mod gif;
 pub mod jpeg;
 pub mod png;
 pub mod webp;
@@ -7,7 +8,7 @@ use image::DynamicImage;
 use super::error::ImageError;
 use super::types::{ImageInfo, PixelFormat};
 
-const SUPPORTED_FORMATS: &[&str] = &["png", "jpeg", "webp"];
+const SUPPORTED_FORMATS: &[&str] = &["png", "jpeg", "webp", "gif"];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
 ///
@@ -36,6 +37,10 @@ pub fn encode(
             let img = pixels_to_dynamic_image(pixels, info)?;
             let config = webp::WebpEncodeConfig::default();
             webp::encode(&img, info, &config)
+        }
+        "gif" => {
+            let config = gif::GifEncodeConfig::default();
+            gif::encode(&img, info, &config)
         }
         other => Err(ImageError::UnsupportedFormat(format!(
             "encode format '{other}' not supported"
@@ -191,10 +196,34 @@ mod tests {
     }
 
     #[test]
+    fn encode_gif_produces_valid_gif() {
+        let (pixels, info) = make_rgb8_pixels(16, 16);
+        let result = encode(&pixels, &info, "gif", None).unwrap();
+        assert_eq!(&result[..3], b"GIF");
+    }
+
+    #[test]
+    fn encode_gif_rgba8() {
+        let (pixels, info) = make_rgba8_pixels(8, 8);
+        let result = encode(&pixels, &info, "gif", None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn roundtrip_gif_preserves_dimensions() {
+        let (pixels, info) = make_rgb8_pixels(8, 8);
+        let encoded = encode(&pixels, &info, "gif", None).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.width, 8);
+        assert_eq!(decoded.info.height, 8);
+    }
+
+    #[test]
     fn supported_formats_lists_expected() {
         let fmts = supported_formats();
         assert!(fmts.contains(&"png".to_string()));
         assert!(fmts.contains(&"jpeg".to_string()));
         assert!(fmts.contains(&"webp".to_string()));
+        assert!(fmts.contains(&"gif".to_string()));
     }
 }
