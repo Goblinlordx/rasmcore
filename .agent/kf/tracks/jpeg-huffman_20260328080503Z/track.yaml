@@ -1,0 +1,87 @@
+id: jpeg-huffman_20260328080503Z
+title: "JPEG Huffman Coding — Table Generation, Entropy Encoder, Arithmetic Mode"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement JPEG Huffman entropy coding (default tables + optimized generation),
+    run-length encoding of AC coefficients, DC difference coding, and arithmetic
+    coding mode. Covers both encoder and the table optimization pass.
+  context: |
+    JPEG uses Huffman coding for baseline mode and optionally arithmetic coding
+    for extended mode. The Huffman tables can be default (Annex K) or optimized
+    (two-pass: count symbol frequencies, build optimal tables).
+
+    Arithmetic coding uses the QM-coder (ITU-T T.81 Annex D). Patents expired
+    in 2007 — fully free to implement.
+
+    Run-length encoding: AC coefficients are coded as (run, size) pairs where
+    run = number of preceding zeros and size = magnitude category.
+
+    DC coefficients: coded as difference from previous DC in the same component.
+  codebase_analysis: |
+    - rasmcore-bitio provides MSB-first bit writer (JPEG uses MSB-first)
+    - rasmcore-webp boolcoder is VP8-specific — JPEG needs standard Huffman
+    - Standard Huffman tables in ITU-T T.81 Annex K (Tables K.3, K.5)
+    - Arithmetic coding in ITU-T T.81 Annex D (QM-coder)
+  acceptance_criteria:
+    - Default Huffman tables (DC luma, DC chroma, AC luma, AC chroma)
+    - Huffman encoder that writes variable-length codes via rasmcore-bitio
+    - DC difference coding (DPCM between successive blocks)
+    - AC run-length encoding ((run, size) pairs + EOB)
+    - Optimized Huffman table generation (frequency counting + optimal code lengths)
+    - Arithmetic coding mode (QM-coder from ITU-T T.81 Annex D)
+    - Roundtrip test with known Huffman-coded data
+    - Arithmetic mode produces valid decodable output
+  out_of_scope: |
+    - JFIF container assembly (separate track)
+    - Progressive scan ordering (separate track)
+  technical_notes: |
+    Huffman coding in JPEG:
+    - DC: category = bit_length(|dc_diff|), then raw bits for the value
+    - AC: (run_length, category) coded as a single symbol, then raw bits
+    - EOB (0,0) signals end of block
+    - ZRL (15,0) signals 16 consecutive zeros
+
+    Optimized Huffman tables (two-pass):
+    1. First pass: count frequency of each symbol
+    2. Build optimal code lengths using package-merge or similar
+    3. Generate canonical Huffman codes from lengths
+    4. Second pass: encode with optimal tables
+
+    Arithmetic coding (QM-coder):
+    - Binary arithmetic coder with probability estimation
+    - Uses conditioning contexts for DC/AC coefficients
+    - Probability table with 113 entries (ITU-T T.81 Table D.3)
+plan:
+  - phase: "Huffman Tables"
+    tasks:
+      - text: "Implement default DC and AC Huffman tables from Annex K"
+        done: false
+      - text: "Implement Huffman code lookup and variable-length bit emission"
+        done: false
+      - text: "Test default tables produce expected bit patterns"
+        done: false
+  - phase: "Entropy Encoder"
+    tasks:
+      - text: "Implement DC difference coding (DPCM)"
+        done: false
+      - text: "Implement AC run-length encoding with EOB and ZRL"
+        done: false
+      - text: "Implement optimized Huffman table generation (two-pass)"
+        done: false
+      - text: "Test entropy coding roundtrip with known coefficient blocks"
+        done: false
+  - phase: "Arithmetic Coding"
+    tasks:
+      - text: "Implement QM-coder binary arithmetic encoder (Annex D)"
+        done: false
+      - text: "Implement DC and AC conditioning contexts"
+        done: false
+      - text: "Implement probability estimation table (113 entries)"
+        done: false
+      - text: "Test arithmetic mode produces decodable output"
+        done: false
+extra: {}

@@ -1,0 +1,9 @@
+title: JPEG Baseline Sequential Encoder — JFIF Container, MCU Assembly
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg-dct-quant_20260328080502Z
+- jpeg-huffman_20260328080503Z

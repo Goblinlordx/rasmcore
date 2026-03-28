@@ -1,0 +1,8 @@
+title: JPEG Advanced Modes — Progressive, 12-bit, Arithmetic Wiring
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg-baseline_20260328080504Z

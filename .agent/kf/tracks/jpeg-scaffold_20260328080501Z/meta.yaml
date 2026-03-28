@@ -1,0 +1,8 @@
+title: rasmcore-jpeg Crate Scaffold — Types for ALL JPEG Modes
+status: pending
+type: chore
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg-research_20260328080500Z

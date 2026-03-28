@@ -1,0 +1,63 @@
+id: jpeg-scaffold_20260328080501Z
+title: "rasmcore-jpeg Crate Scaffold — Types for ALL JPEG Modes"
+type: chore
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Create rasmcore-jpeg crate with workspace integration, public API stubs,
+    and type definitions for ALL JPEG modes and parameters from ITU-T T.81.
+  context: |
+    Follows rasmcore-webp scaffold pattern. Must define types for every
+    JPEG mode combination upfront so subsequent tracks can implement
+    incrementally without API changes.
+  codebase_analysis: |
+    - Workspace already has rasmcore-color and rasmcore-bitio as deps
+    - Follow rasmcore-webp Cargo.toml pattern (zero runtime deps except shared crates)
+    - Module structure from research design document
+  acceptance_criteria:
+    - crates/rasmcore-jpeg/ with Cargo.toml
+    - Added to workspace members
+    - EncodeConfig with ALL mode parameters defined
+    - EncodeError enum
+    - PixelFormat enum (Rgb8, Rgba8, Gray8)
+    - encode() stub returning NotYetImplemented
+    - All module files created as stubs
+    - cargo check and cargo test pass
+  out_of_scope: |
+    - Any actual encoding logic
+    - WIT integration
+  technical_notes: |
+    EncodeConfig must cover ALL modes:
+      quality: u8 (1-100)
+      progressive: bool
+      subsampling: ChromaSubsampling (Quarter420, Half422, None444, Quarter411)
+      arithmetic_coding: bool (default false, use Huffman)
+      restart_interval: Option<u16> (MCU count between restart markers)
+      optimize_huffman: bool (two-pass for optimal tables)
+      trellis: bool (rate-distortion optimization)
+      sample_precision: SamplePrecision (Eight, Twelve)
+      custom_quant_tables: Option for user-provided tables
+plan:
+  - phase: "Crate Setup"
+    tasks:
+      - text: "Create crates/rasmcore-jpeg/ with Cargo.toml"
+        done: false
+      - text: "Add to workspace members"
+        done: false
+      - text: "Create lib.rs with module declarations and encode() stub"
+        done: false
+  - phase: "Type Definitions"
+    tasks:
+      - text: "Define EncodeConfig with ALL mode parameters"
+        done: false
+      - text: "Define EncodeError, PixelFormat, ChromaSubsampling, SamplePrecision"
+        done: false
+      - text: "Create stub module files for each pipeline stage"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "cargo check and cargo test pass"
+        done: false
+extra: {}

@@ -1,0 +1,77 @@
+id: jpeg-dct-quant_20260328080502Z
+title: "JPEG 8x8 DCT + Quantization — Integer Transform and Quality Tables"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement the JPEG 8x8 forward/inverse DCT (Type-II integer, AAN algorithm)
+    and quantization with standard luminance/chrominance tables scaled by quality.
+    Supports both 8-bit and 12-bit sample precision.
+  context: |
+    The 8x8 DCT is the core transform in JPEG. ITU-T T.81 Section 4.3 specifies
+    the mathematical definition. The AAN (Arai, Agui, Nakajima) algorithm is the
+    standard fast integer implementation used by libjpeg-turbo.
+
+    Quantization uses standard tables (ITU-T T.81 Annex K) scaled by a quality
+    factor. The scaling formula from libjpeg maps quality 1-100 to table values.
+  codebase_analysis: |
+    - rasmcore-webp has 4x4 DCT in dct.rs — JPEG uses 8x8 (different algorithm)
+    - Standard JPEG quantization tables are in ITU-T T.81 Annex K
+    - Quality scaling formula from libjpeg: if q<50 then S=5000/q else S=200-2*q
+    - Zigzag scan order for 8x8 blocks (64 coefficients)
+  acceptance_criteria:
+    - Forward 8x8 DCT (AAN integer algorithm)
+    - Inverse 8x8 DCT (for reconstruction verification)
+    - Standard luminance and chrominance quantization tables
+    - Quality (1-100) to quantization table scaling matching libjpeg
+    - Zigzag scan order (64-element array)
+    - Quantize and dequantize functions
+    - Support for 8-bit and 12-bit sample precision
+    - DCT roundtrip test (forward then inverse within rounding error)
+    - Quantization scaling matches libjpeg at q25, q50, q75, q95
+  out_of_scope: |
+    - Trellis quantization (separate track)
+    - SIMD optimization (future track)
+  technical_notes: |
+    AAN fast DCT algorithm:
+    - 5 multiplications, 29 additions per 1D transform
+    - Two-pass: row transform then column transform
+    - Uses scaled constants to avoid final division
+    - Integer version uses fixed-point arithmetic
+
+    Quality scaling (libjpeg formula):
+      if quality < 50: scale = 5000 / quality
+      else: scale = 200 - 2 * quality
+      table[i] = clamp((base_table[i] * scale + 50) / 100, 1, 255)
+plan:
+  - phase: "DCT"
+    tasks:
+      - text: "Implement forward 8x8 DCT (AAN integer algorithm)"
+        done: false
+      - text: "Implement inverse 8x8 DCT"
+        done: false
+      - text: "DCT roundtrip test (forward then inverse within rounding)"
+        done: false
+      - text: "Test against known reference DCT output values"
+        done: false
+  - phase: "Quantization"
+    tasks:
+      - text: "Implement standard luminance and chrominance quantization tables (Annex K)"
+        done: false
+      - text: "Implement quality-to-table scaling matching libjpeg formula"
+        done: false
+      - text: "Implement quantize and dequantize functions"
+        done: false
+      - text: "Implement zigzag scan order (64-element)"
+        done: false
+      - text: "Test quality scaling matches libjpeg at q25, q50, q75, q95"
+        done: false
+  - phase: "Precision"
+    tasks:
+      - text: "Support 12-bit sample precision (extended range tables)"
+        done: false
+      - text: "Verify 8-bit and 12-bit modes produce correct output"
+        done: false
+extra: {}

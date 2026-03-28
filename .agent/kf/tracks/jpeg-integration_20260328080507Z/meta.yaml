@@ -1,0 +1,9 @@
+title: JPEG Integration — Replace zenjpeg, Parity Tests
+status: pending
+type: feature
+approved: true
+created: '2026-03-28'
+updated: '2026-03-28'
+deps:
+- jpeg-advanced_20260328080505Z
+- jpeg-trellis_20260328080506Z

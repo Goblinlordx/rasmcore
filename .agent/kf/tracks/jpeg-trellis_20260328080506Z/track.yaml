@@ -1,0 +1,79 @@
+id: jpeg-trellis_20260328080506Z
+title: "JPEG Trellis Quantization — Rate-Distortion Optimized Compression"
+type: feature
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Implement trellis quantization for JPEG — the key quality differentiator
+    that makes mozjpeg and zenjpeg produce smaller files than libjpeg-turbo.
+    Uses dynamic programming to find optimal quantized coefficients.
+  context: |
+    Standard quantization simply rounds each DCT coefficient to the nearest
+    quantization step. Trellis quantization uses rate-distortion optimization
+    to consider the entropy cost of each coefficient choice.
+
+    For each 8x8 block, trellis builds a graph (trellis) where:
+    - States represent possible quantized coefficient values
+    - Transitions have costs based on distortion + entropy
+    - Viterbi algorithm finds the minimum-cost path
+
+    This typically achieves 5-15% file size reduction at the same visual
+    quality compared to simple rounding quantization.
+  codebase_analysis: |
+    - Requires working baseline encoder (jpeg-baseline track)
+    - Uses Huffman entropy estimates for rate cost
+    - rasmcore-webp does not have trellis (VP8 has a simpler quantizer)
+    - mozjpeg source (BSD) documents the trellis algorithm
+  acceptance_criteria:
+    - Trellis quantization as an optional mode (config.trellis = true)
+    - Rate-distortion cost function using Huffman bit estimates
+    - Viterbi algorithm for optimal coefficient selection
+    - File size reduction of 5-15% vs simple rounding at same PSNR
+    - Butteraugli and DSSIM validation against non-trellis output
+    - Performance acceptable (no more than 3x slower than simple quantization)
+  out_of_scope: |
+    - Per-block adaptive quantization (future enhancement)
+    - Multi-pass rate control
+  technical_notes: |
+    Trellis quantization algorithm:
+    1. For each DCT coefficient position (zigzag order):
+       a. Consider candidate quantized values: floor, ceil, and nearby
+       b. For each candidate, compute:
+          - Distortion: (original - dequantized)^2
+          - Rate: estimated Huffman bits for this run/size symbol
+       c. Total cost = lambda * distortion + rate
+    2. Use Viterbi to find minimum-cost path through the trellis
+    3. Lambda parameter controls quality-size tradeoff
+
+    The lambda parameter is derived from the quantization step size:
+      lambda = step_size^2 * some_constant
+
+    mozjpeg uses lambda ≈ (quant_step / 2)^2 which gives good results.
+plan:
+  - phase: "Rate-Distortion Framework"
+    tasks:
+      - text: "Implement Huffman bit estimate for (run, size) symbol pairs"
+        done: false
+      - text: "Implement distortion metric (SSD between original and quantized)"
+        done: false
+      - text: "Implement rate-distortion cost function with lambda parameter"
+        done: false
+  - phase: "Trellis Search"
+    tasks:
+      - text: "Implement trellis graph construction for 8x8 block"
+        done: false
+      - text: "Implement Viterbi algorithm for minimum-cost path"
+        done: false
+      - text: "Integrate trellis into quantization pipeline as optional mode"
+        done: false
+  - phase: "Validation"
+    tasks:
+      - text: "Test trellis reduces file size by 5-15% vs simple rounding"
+        done: false
+      - text: "Test trellis output has equal or better Butteraugli score"
+        done: false
+      - text: "Performance test: trellis no more than 3x slower"
+        done: false
+extra: {}
