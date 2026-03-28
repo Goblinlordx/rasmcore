@@ -22,6 +22,18 @@ else
   FAILED=1
 fi
 
+echo "=== 1b. License check (cargo-deny) ==="
+if command -v cargo-deny &>/dev/null; then
+  if cargo deny check licenses 2>&1; then
+    echo "  PASS"
+  else
+    echo "  FAIL — license violation detected (see deny.toml)"
+    FAILED=1
+  fi
+else
+  echo "  SKIP — cargo-deny not installed"
+fi
+
 echo "=== 2. Lint (clippy) ==="
 if cargo clippy --workspace -- -D warnings 2>&1; then
   echo "  PASS"

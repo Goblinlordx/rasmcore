@@ -2,6 +2,7 @@
 name = "rasmcore-webp"
 version.workspace = true
 edition.workspace = true
+publish.workspace = true
 description = "Pure Rust VP8 lossy encoder for WebP images (RFC 6386)"
 
 [dependencies]

@@ -2,6 +2,7 @@
 name = "rasmcore-color"
 version.workspace = true
 edition.workspace = true
+publish.workspace = true
 description = "Parameterized color space conversion (BT.601, BT.709, BT.2020) — shared by rasmcore codecs"
 
 [dependencies]

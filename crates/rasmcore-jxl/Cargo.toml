@@ -2,6 +2,7 @@
 name = "rasmcore-jxl"
 version.workspace = true
 edition.workspace = true
+publish.workspace = true
 description = "Pure Rust JPEG XL encoder (ISO/IEC 18181) — scaffold for future implementation"
 
 [dependencies]

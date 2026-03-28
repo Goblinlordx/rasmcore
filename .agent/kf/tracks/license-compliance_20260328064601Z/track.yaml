@@ -1,104 +1,113 @@
 id: license-compliance_20260328064601Z
-title: "License Compliance — Third-Party Attribution and Distribution Requirements"
+title: License Compliance — Third-Party Attribution and Distribution Requirements
 type: chore
 status: pending
 created: 2026-03-28
-updated: "2026-03-28"
+updated: '2026-03-28'
 spec:
-  summary: |
-    Create license compliance artifacts for source distribution and binary
+  summary: 'Create license compliance artifacts for source distribution and binary
+
     distribution of rasmcore. Documents all third-party licenses, attribution
+
     requirements, and distribution constraints.
-  context: |
-    rasmcore uses permissive open-source dependencies (MIT, Apache-2.0, BSD).
+
+    '
+  context: 'rasmcore uses permissive open-source dependencies (MIT, Apache-2.0, BSD).
+
     Before making the source public or distributing binaries, we need proper
-    attribution files that satisfy each license's requirements.
+
+    attribution files that satisfy each license''s requirements.
+
 
     All current runtime dependencies use permissive licenses:
+
     - MIT: include copyright + license text
+
     - Apache-2.0: include copyright + license text + NOTICE files + patent grant
+
     - BSD-2/BSD-3: include copyright + license text
 
+
     The one exception (zenjpeg AGPL) is tracked separately for replacement.
+
     This track handles everything else.
-  codebase_analysis: |
-    Runtime dependencies requiring attribution:
+
+    '
+  codebase_analysis: 'Runtime dependencies requiring attribution:
+
     - fast_image_resize (MIT/Apache-2.0) — SIMD resize
+
     - libblur (Apache-2.0/BSD-3) — SIMD gaussian blur
+
     - moxcms (BSD-3/Apache-2.0) — ICC color management
+
     - kamadak-exif (BSD-2) — EXIF metadata parsing
+
     - image (MIT/Apache-2.0) — format codec layer
+
     - wit-bindgen-rt (MIT/Apache-2.0) — WASM component glue
 
+
     Dev-only dependencies (not distributed, no attribution needed):
+
     - butteraugli (BSD-3) — quality metric
+
     - dssim-core (AGPL-3.0) — quality metric (dev-only, safe)
+
     - imgref (CC0/Apache-2.0) — buffer types
+
     - rgb (MIT) — pixel types
 
+
     Transitive dependencies also need auditing — cargo-about or
+
     cargo-license can enumerate the full tree.
+
+    '
   acceptance_criteria:
-    - LICENSES/ directory with full license text for each runtime dependency
-    - THIRD_PARTY_LICENSES file with summary table (crate, version, license, URL)
-    - NOTICE file for Apache-2.0 dependencies (if any NOTICE files exist upstream)
-    - cargo-about or cargo-deny configuration for automated license auditing
-    - CI-friendly license check that fails if a new dependency introduces a problematic license
-    - Documentation of which licenses apply to source vs binary distribution
-  out_of_scope: |
-    - Choosing rasmcore's own license (separate decision)
+  - LICENSES/ directory with full license text for each runtime dependency
+  - THIRD_PARTY_LICENSES file with summary table (crate, version, license, URL)
+  - NOTICE file for Apache-2.0 dependencies (if any NOTICE files exist upstream)
+  - cargo-about or cargo-deny configuration for automated license auditing
+  - CI-friendly license check that fails if a new dependency introduces a problematic license
+  - Documentation of which licenses apply to source vs binary distribution
+  out_of_scope: '- Choosing rasmcore''s own license (separate decision)
+
     - Replacing any dependencies (handled by separate tracks)
+
     - Legal review (this produces the artifacts for review)
-  technical_notes: |
-    Tooling options:
-    - cargo-about: generates full attribution HTML/text from Cargo.lock
-    - cargo-deny: CI check that rejects disallowed licenses
-    - cargo-license: simple table output of all dependency licenses
 
-    Recommended cargo-deny configuration (deny.toml):
-    ```toml
-    [licenses]
-    allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "ISC", "Zlib"]
-    deny = ["AGPL-3.0", "GPL-3.0", "GPL-2.0"]
-    exceptions = [
-      { allow = ["AGPL-3.0-or-later"], name = "dssim-core" },  # dev-only
-    ]
-    ```
-
-    File structure:
-    ```
-    LICENSES/
-      MIT.txt
-      Apache-2.0.txt
-      BSD-2-Clause.txt
-      BSD-3-Clause.txt
-    THIRD_PARTY_LICENSES          # summary table
-    NOTICE                        # Apache-2.0 NOTICE aggregation
-    deny.toml                     # cargo-deny config for CI
-    ```
+    '
+  technical_notes: "Tooling options:\n- cargo-about: generates full attribution HTML/text from Cargo.lock\n- cargo-deny: CI\
+    \ check that rejects disallowed licenses\n- cargo-license: simple table output of all dependency licenses\n\nRecommended\
+    \ cargo-deny configuration (deny.toml):\n```toml\n[licenses]\nallow = [\"MIT\", \"Apache-2.0\", \"BSD-2-Clause\", \"BSD-3-Clause\"\
+    , \"CC0-1.0\", \"ISC\", \"Zlib\"]\ndeny = [\"AGPL-3.0\", \"GPL-3.0\", \"GPL-2.0\"]\nexceptions = [\n  { allow = [\"AGPL-3.0-or-later\"\
+    ], name = \"dssim-core\" },  # dev-only\n]\n```\n\nFile structure:\n```\nLICENSES/\n  MIT.txt\n  Apache-2.0.txt\n  BSD-2-Clause.txt\n\
+    \  BSD-3-Clause.txt\nTHIRD_PARTY_LICENSES          # summary table\nNOTICE                        # Apache-2.0 NOTICE\
+    \ aggregation\ndeny.toml                     # cargo-deny config for CI\n```\n"
 plan:
-  - phase: Audit
-    tasks:
-      - text: "Run cargo-license/cargo-about to enumerate all runtime dependency licenses"
-        done: false
-      - text: "Identify all NOTICE files from Apache-2.0 dependencies"
-        done: false
-      - text: "Check transitive dependency tree for problematic licenses"
-        done: false
-  - phase: Attribution Files
-    tasks:
-      - text: "Create LICENSES/ directory with full license texts (MIT, Apache-2.0, BSD-2, BSD-3)"
-        done: false
-      - text: "Create THIRD_PARTY_LICENSES summary table"
-        done: false
-      - text: "Create NOTICE file aggregating Apache-2.0 NOTICE contents"
-        done: false
-  - phase: CI Guard
-    tasks:
-      - text: "Add cargo-deny configuration (deny.toml) with allowed/denied license lists"
-        done: false
-      - text: "Add license check to validate.sh or CI pipeline"
-        done: false
-      - text: "Verify check catches AGPL (should flag zenjpeg until replaced)"
-        done: false
+- phase: Audit
+  tasks:
+  - text: Run cargo-license/cargo-about to enumerate all runtime dependency licenses
+    done: true
+  - text: Identify all NOTICE files from Apache-2.0 dependencies
+    done: true
+  - text: Check transitive dependency tree for problematic licenses
+    done: true
+- phase: Attribution Files
+  tasks:
+  - text: Create LICENSES/ directory with full license texts (MIT, Apache-2.0, BSD-2, BSD-3)
+    done: true
+  - text: Create THIRD_PARTY_LICENSES summary table
+    done: true
+  - text: Create NOTICE file aggregating Apache-2.0 NOTICE contents
+    done: true
+- phase: CI Guard
+  tasks:
+  - text: Add cargo-deny configuration (deny.toml) with allowed/denied license lists
+    done: false
+  - text: Add license check to validate.sh or CI pipeline
+    done: false
+  - text: Verify check catches AGPL (should flag zenjpeg until replaced)
+    done: false
 extra: {}
