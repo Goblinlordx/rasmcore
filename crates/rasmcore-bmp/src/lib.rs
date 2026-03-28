@@ -116,6 +116,81 @@ pub fn encode_gray(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Bm
     Ok(out)
 }
 
+/// Encode 8-bit indexed pixels with RLE8 compression.
+///
+/// `indices`: one byte per pixel (palette index). `palette`: up to 256 RGBA entries.
+/// Produces a valid BI_RLE8 BMP. Effective for images with long runs of identical pixels.
+pub fn encode_rle8(
+    indices: &[u8],
+    width: u32,
+    height: u32,
+    palette: &[[u8; 4]],
+) -> Result<Vec<u8>, BmpError> {
+    let expected = width as usize * height as usize;
+    if indices.len() < expected {
+        return Err(BmpError::BufferTooSmall);
+    }
+
+    // RLE encode bottom-up
+    let mut rle_data = Vec::with_capacity(expected);
+    let w = width as usize;
+    for row in (0..height as usize).rev() {
+        let row_start = row * w;
+        let mut col = 0;
+        while col < w {
+            // Count run of identical indices
+            let idx = indices[row_start + col];
+            let mut run = 1;
+            while col + run < w && indices[row_start + col + run] == idx && run < 255 {
+                run += 1;
+            }
+            rle_data.push(run as u8);
+            rle_data.push(idx);
+            col += run;
+        }
+        // End of line
+        rle_data.push(0);
+        rle_data.push(RLE_ESCAPE_EOL);
+    }
+    // Replace last EOL with EOF
+    let len = rle_data.len();
+    rle_data[len - 1] = RLE_ESCAPE_EOF;
+
+    let num_colors = palette.len().min(256);
+    let palette_bytes = num_colors * 4;
+    let data_offset = BMP_FILE_HEADER_SIZE + BMP_INFO_HEADER_SIZE as usize + palette_bytes;
+    let file_size = data_offset + rle_data.len();
+
+    let mut out = Vec::with_capacity(file_size);
+
+    // File header
+    out.extend_from_slice(&BMP_MAGIC);
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]);
+    out.extend_from_slice(&(data_offset as u32).to_le_bytes());
+
+    // Info header
+    out.extend_from_slice(&BMP_INFO_HEADER_SIZE.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes()); // bottom-up
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&8u16.to_le_bytes());
+    out.extend_from_slice(&BI_RLE8.to_le_bytes());
+    out.extend_from_slice(&(rle_data.len() as u32).to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&(num_colors as u32).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+
+    // Palette (BGRA order)
+    for color in palette.iter().take(num_colors) {
+        out.extend_from_slice(&[color[2], color[1], color[0], 0]); // RGBA → BGRA
+    }
+
+    out.extend_from_slice(&rle_data);
+    Ok(out)
+}
+
 /// Encode RGB pixels to 24-bit uncompressed BMP.
 pub fn encode_rgb(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, BmpError> {
     let expected = width as usize * height as usize * 3;
@@ -817,6 +892,44 @@ mod tests {
         assert_eq!(extract_channel(val, 0x7C00), 255); // 31 scaled to 255
         assert_eq!(extract_channel(val, 0x03E0), 0); // G=0
         assert_eq!(extract_channel(val, 0x001F), 0); // B=0
+    }
+
+    #[test]
+    fn roundtrip_rle8_encode() {
+        // 4x2 image, solid red via palette
+        let palette = [
+            [0, 0, 0, 255],   // 0 = black
+            [255, 0, 0, 255], // 1 = red
+            [0, 255, 0, 255], // 2 = green
+        ];
+        let indices = vec![1u8; 4 * 2]; // all red
+        let encoded = encode_rle8(&indices, 4, 2, &palette).unwrap();
+        assert_eq!(&encoded[..2], b"BM");
+
+        let (header, decoded) = decode(&encoded).unwrap();
+        assert_eq!(header.compression, BI_RLE8);
+        assert_eq!(header.width, 4);
+        assert_eq!(header.height, 2);
+        // All pixels should be red (palette index 1)
+        for (i, chunk) in decoded.chunks_exact(4).enumerate() {
+            assert_eq!(chunk[0], 255, "R at {i}");
+            assert_eq!(chunk[1], 0, "G at {i}");
+            assert_eq!(chunk[2], 0, "B at {i}");
+        }
+    }
+
+    #[test]
+    fn rle8_compresses_solid() {
+        let palette: Vec<[u8; 4]> = (0..256).map(|i| [i as u8, i as u8, i as u8, 255]).collect();
+        let indices = vec![42u8; 64 * 64];
+        let rle = encode_rle8(&indices, 64, 64, &palette).unwrap();
+        let raw = encode_gray(&indices, 64, 64).unwrap();
+        assert!(
+            rle.len() < raw.len() / 2,
+            "RLE should compress solid: {} vs {}",
+            rle.len(),
+            raw.len()
+        );
     }
 
     #[test]
