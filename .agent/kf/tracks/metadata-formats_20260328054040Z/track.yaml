@@ -127,13 +127,13 @@ plan:
 - phase: XMP and IPTC
   tasks:
   - text: Add quick-xml and xmp-writer dependencies to Cargo.toml
-    done: false
+    done: true
   - text: Create domain/metadata_xmp.rs with parse_xmp (quick-xml) and serialize_xmp (xmp-writer) functions
-    done: false
+    done: true
   - text: Create domain/metadata_iptc.rs with parse_iptc and serialize_iptc for IPTC-IIM binary format
-    done: false
+    done: true
   - text: Domain tests for XMP roundtrip and IPTC roundtrip
-    done: false
+    done: true
 - phase: Encoder Metadata Embedding
   tasks:
   - text: Update jpeg encoder to embed full metadata from MetadataSet (EXIF APP1, XMP APP1, IPTC APP13, ICC APP2)
