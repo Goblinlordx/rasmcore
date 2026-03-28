@@ -1,0 +1,11 @@
+[package]
+name = "rasmcore-jpeg"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Pure Rust JPEG encoder/decoder — ITU-T T.81 baseline, progressive, arithmetic"
+
+[dependencies]
+rasmcore-bitio = { path = "../rasmcore-bitio" }
+rasmcore-deflate = { path = "../rasmcore-deflate" }  # shared Huffman module
+rasmcore-color = { path = "../rasmcore-color" }

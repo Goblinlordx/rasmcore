@@ -7,6 +7,7 @@ members = [
     "crates/rasmcore-color",
     "crates/rasmcore-image",
     "crates/rasmcore-webp",
+    "crates/rasmcore-jpeg",
     "crates/rasmcore-jxl",
     "crates/rasmcore-lzw",
     "crates/rasmcore-qoi",
