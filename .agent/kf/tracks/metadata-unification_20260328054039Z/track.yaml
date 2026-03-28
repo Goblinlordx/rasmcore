@@ -99,15 +99,15 @@ plan:
 - phase: Streaming Metadata Read
   tasks:
   - text: Implement JPEG streaming read (scan APP1/APP2/APP13 markers, extract raw bytes without pixel decode)
-    done: false
+    done: true
   - text: Implement PNG streaming read (scan chunk headers for eXIf/iCCP/iTXt/tEXt/zTXt)
-    done: false
+    done: true
   - text: Implement TIFF streaming read (parse IFD0 for EXIF/XMP/IPTC/ICC tag offsets)
-    done: false
+    done: true
   - text: Implement WebP streaming read (scan RIFF chunks for EXIF/XMP/ICCP)
-    done: false
+    done: true
   - text: Domain tests for streaming read from each format (verify no pixel allocation, only metadata returned)
-    done: false
+    done: true
 - phase: Pipeline Write Integration
   tasks:
   - text: Add optional MetadataSet parameter to all domain sink functions (write_jpeg, write_png, write_gif, write_webp, write)
