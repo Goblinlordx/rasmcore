@@ -53,5 +53,5 @@ plan:
   - text: Build WASM component and run wasm_filters_grayscale integration test
     done: true
   - text: Run full validation suite (./scripts/validate.sh)
-    done: false
+    done: true
 extra: {}
