@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Scaffold crate — modules used incrementally as encoder is built
 //! Pure Rust JPEG encoder/decoder — ITU-T T.81.
 //!
 //! Implements baseline, extended, and progressive JPEG encoding/decoding
