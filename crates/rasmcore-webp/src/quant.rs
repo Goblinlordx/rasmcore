@@ -109,6 +109,7 @@ pub fn build_matrix(qp: u8, qtype: QuantType) -> QuantMatrix {
 /// Returns the index of the last non-zero coefficient (0-15), or -1 if all zero.
 /// This is used by the entropy coder to know when to stop encoding.
 pub fn quantize_block(coeffs: &[i16; 16], matrix: &QuantMatrix, out: &mut [i16; 16]) -> i32 {
+    // Scalar implementation (used on non-WASM targets and as fallback)
     let mut last_nz: i32 = -1;
 
     for i in 0..16 {
