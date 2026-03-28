@@ -1,0 +1,179 @@
+id: webp-definitive-fix_20260328101900Z
+title: VP8 Encoder Definitive Fix — Match image-webp Decoder Exactly
+type: bug
+status: pending
+created: 2026-03-28
+updated: "2026-03-28"
+spec:
+  summary: |
+    Fix the VP8 encoder to produce output decodable at ANY size by matching
+    the image-webp decoder's exact reading sequence. This is the final fix —
+    no more incremental patches.
+  context: |
+    Five previous conformance tracks found and fixed individual issues but
+    the encoder still fails at 9+ macroblocks. The approach of guessing
+    at bugs has reached its limit.
+
+    New approach: read the decoder source line by line and make the encoder
+    match it exactly. The decoder is at image-webp 0.2.4 vp8.rs.
+
+    Three specific issues identified from the decoder source:
+
+    1. SKIP OPTIMIZATION IN TOKEN READING (vp8.rs line 1507-1508):
+       The decoder's read_coefficients uses a skip flag — when the previous
+       coefficient was zero, it starts the tree at node 1 (skipping the EOB
+       check). Our encoder always starts at node 0. This means when encoding
+       a ZERO followed by another token, the decoder reads different bits
+       than what we wrote.
+
+    2. COMPLEXITY CONTEXT TRACKING (vp8.rs lines 1575-1650):
+       The decoder maintains per-column and per-row complexity context
+       arrays that carry across macroblocks. Our encoder doesn't track
+       this state — it always uses context 0. For solid images this happens
+       to be correct (all zeros → context stays 0), but for ANY non-trivial
+       content the context diverges after the first macroblock.
+
+    3. QUANTIZATION INDEX READING (vp8.rs lines 1057-1111):
+       The decoder reads quantization via read_quantization_indices() which
+       reads yac_abs as a 7-bit literal, then 5 optional signed deltas.
+       Our encoder writes this but may have the order wrong.
+  codebase_analysis: |
+    Decoder reference: image-webp 0.2.4 vp8.rs
+
+    Our encoder: crates/rasmcore-webp/src/
+
+    Specific discrepancies to fix:
+
+    1. token.rs encode_block():
+       - Missing skip optimization: when prev coeff was ZERO, the next
+         token should be encoded starting at tree node 1 (not node 0)
+       - Decoder line 1507: read_with_tree_with_first_node(tree, tree[skip as usize])
+       - When skip=true (prev was zero): start at tree[1] which skips EOB
+       - This means we must NOT encode the EOB probability bit for the
+         non-EOB case when the previous coefficient was zero
+
+    2. bitstream.rs encode_macroblock() + token.rs:
+       - Missing inter-macroblock complexity context tracking
+       - Decoder uses top[mbx].complexity[ch] + left.complexity[ch]
+       - Must maintain top[] and left[] arrays across macroblocks
+       - top[] has 9 entries per MB column: [Y2, Y0-Y3, U0-U1, V0-V1]
+         Actually: [Y2, Ycol0, Ycol1, Ycol2, Ycol3, U0, U1, V0, V1]
+       - left[] has 9 entries per MB row: same layout
+
+    3. Coefficient encoding order within an MB (decoder lines 1575-1650):
+       - Y2 block: plane=1, complexity from top[0]+left[0]
+       - Y blocks: plane=0, nested y=0..3 outer, x=0..3 inner
+         - complexity from top[x+1]+left[y+1] (clamped to 0-2)
+         - left carries across x loop, top[x+1] updated per block
+       - U blocks: plane=2, nested y=0..1 outer, x=0..1 inner
+         - complexity from top[x+5]+left[y+5]
+       - V blocks: plane=2, nested y=0..1 outer, x=0..1 inner
+         - complexity from top[x+7]+left[y+7]
+       Our encoder must use this EXACT same ordering and context tracking.
+  acceptance_criteria:
+    - Solid images 16x16 through 4096x4096 decodable by image-webp and dwebp
+    - Gradient images 16x16 through 2048x2048 decodable
+    - Ramp/noise content 32x32 through 1024x1024 decodable
+    - All quality levels q10 through q95 produce decodable output at 512x512
+    - Deterministic encoding (same input = same bytes)
+    - PSNR above 25dB at q75 for 256x256 gradient
+    - All existing unit tests pass
+    - WASM build succeeds
+    - WASM SIMD test via wasmtime passes
+    - Regression test added that encodes 1024x1024 and asserts decode success
+  out_of_scope: |
+    - File size optimization or parity with cwebp
+    - Loop filter implementation
+    - mb_no_coeff_skip re-enablement
+    - B_PRED mode support
+    - Multi-partition encoding
+  technical_notes: |
+    Implementation plan (must be done in order):
+
+    Phase 1: Add complexity context state tracking
+      Create a struct that mirrors the decoder's state:
+      ```rust
+      struct EncodeContext {
+          // top[mbx] complexity for each column
+          top: Vec<[u8; 9]>,  // one per MB column
+          // left complexity for current row
+          left: [u8; 9],
+      }
+      ```
+      Index mapping:
+        [0] = Y2 DC block
+        [1..5] = Y sub-blocks columns 0-3
+        [5..7] = U sub-blocks columns 0-1
+        [7..9] = V sub-blocks columns 0-1
+
+      Pass this context to encode_block. After encoding each block,
+      update the context based on whether any non-zero coefficients
+      were encoded: context_out = if has_nonzero { 1 } else { 0 }.
+
+    Phase 2: Fix the skip optimization in encode_block
+      The decoder reads: read_with_tree_with_first_node(tree, tree[skip])
+      When skip=true (previous coeff was ZERO), it starts at tree node 1
+      instead of node 0. This means:
+      - If prev was ZERO and current is EOB: decoder reads node 1 → EOB
+        But wait — the tree is: node0=[EOB, node1], node1=[0, node2], ...
+        Starting at node 1 means skipping the EOB check.
+        So when skip=true and we want to encode EOB, we write the EOB
+        bit at a DIFFERENT position in the tree.
+
+      Actually, looking more carefully at the tree:
+      The decoder tree for tokens is:
+        [-EOB, node2, -ZERO, node4, -ONE, node6, ...]
+      read_with_tree_with_first_node starts at different indices.
+      When skip=false: starts at tree[0] → first decision is EOB vs rest
+      When skip=true: starts at tree[1] → skips to second pair, which is
+        [node2 continuation, meaning ZERO vs rest]
+
+      So when skip=true:
+      - ZERO: read_bool(prob[1]) = false (left branch)
+      - Non-zero: read_bool(prob[1]) = true, continue to ONE vs rest...
+      - EOB: this path doesn't naturally give EOB?
+
+      Need to study this more carefully by reading the tree traversal code.
+      The key function is read_with_tree_with_first_node in the arithmetic
+      decoder. This is critical — getting this wrong is likely THE bug.
+
+    Phase 3: Validate at all sizes
+      After fixing both issues, test exhaustively:
+      - Solid, gradient, ramp at every power-of-2 from 16 to 4096
+      - Multiple quality levels
+      - WASM SIMD path via wasmtime
+      - Add regression test for 1024x1024
+plan:
+  - phase: Context State Tracking
+    tasks:
+      - text: Create EncodeContext struct with top[] and left[] complexity arrays
+        done: false
+      - text: Wire context through encode_frame loop — initialize, pass to encode_macroblock, update after each block
+        done: false
+      - text: Pass correct complexity value to encode_block for each sub-block (Y2, Y0-15, U0-3, V0-3)
+        done: false
+      - text: Test 64x64 solid gray decodes (complexity stays 0, should work if wiring is correct)
+        done: false
+  - phase: Token Skip Optimization
+    tasks:
+      - text: Study decoder read_with_tree_with_first_node to understand exact skip behavior
+        done: false
+      - text: Implement matching skip logic in encode_block — when prev coeff was ZERO, skip EOB probability
+        done: false
+      - text: Test ramp 32x32 decodes (exercises skip paths with non-zero coefficients)
+        done: false
+  - phase: Full Validation
+    tasks:
+      - text: Test solid 128x128, 256x256, 512x512, 1024x1024 with both decoders
+        done: false
+      - text: Test gradient 128x128 through 2048x2048
+        done: false
+      - text: Test all quality levels q10/q25/q50/q75/q95 at 512x512
+        done: false
+      - text: Add regression test for 1024x1024 encode + decode success
+        done: false
+      - text: WASM SIMD validation via wasmtime
+        done: false
+      - text: Run full ./scripts/validate.sh
+        done: false
+extra: {}
