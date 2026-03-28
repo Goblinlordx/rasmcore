@@ -28,34 +28,34 @@ plan:
 - phase: Crate Setup
   tasks:
   - text: Create crates/rasmcore-isobmff/ with Cargo.toml (zero deps), add to workspace Cargo.toml members
-    done: false
+    done: true
   - text: Define error.rs with IsobmffError enum (InvalidBox, Truncated, UnsupportedVersion, etc.)
-    done: false
+    done: true
   - text: Define types.rs with Brand, CodecType, BoxHeader public types
-    done: false
+    done: true
 - phase: Box Reader
   tasks:
   - text: Implement box header parser — read 4-byte size + 4-byte FourCC type, handle size==1 (extended 64-bit), size==0 (box
       extends to EOF)
-    done: false
+    done: true
   - text: Implement full-box header parser — extends box header with version (u8) + flags (u24)
-    done: false
+    done: true
   - text: Implement box iterator — walk sibling boxes at a given nesting level, yield BoxHeader + data slice
-    done: false
+    done: true
 - phase: Ftyp + Detection
   tasks:
   - text: Implement ftyp box parser — extract major brand, minor version, list of compatible brands
-    done: false
+    done: true
   - text: Implement detect(header) — check first box is ftyp, match brand against heic/heix/heim/heis/avif/mif1
-    done: false
+    done: true
   - text: Wire lib.rs public API — re-export detect(), BoxReader, types
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: 'Unit tests for box reader: normal box, extended-size box, truncated data, nested container'
-    done: false
+    done: true
   - text: 'Unit tests for ftyp: HEIC brand, AVIF brand, unknown brand, multiple compatible brands'
-    done: false
+    done: true
   - text: Verify crate compiles as part of workspace (cargo check -p rasmcore-isobmff)
-    done: false
+    done: true
 extra: {}
