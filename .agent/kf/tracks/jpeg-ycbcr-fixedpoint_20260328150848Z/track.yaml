@@ -1,0 +1,54 @@
+id: jpeg-ycbcr-fixedpoint_20260328150848Z
+title: JPEG YCbCr→RGB — Integer Fixed-Point Conversion (libjpeg-compatible)
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Replace f64 YCbCr→RGB with i32 fixed-point (SCALEBITS=16). Eliminates float rounding differences vs libjpeg-turbo/image-rs.
+    Combined with IDCT and upsampling tracks, achieves MAE=0 vs reference.
+  context: 'Current color conversion uses f64 multiply + round(). Every major decoder uses i32 fixed-point with pre-scaled
+    coefficients. The f64 rounding differs from i32 shift-truncation by ±1 per channel. BT.601 coefficients are universal:
+    R = Y + 1.402*Cr, G = Y - 0.34414*Cb - 0.71414*Cr, B = Y + 1.772*Cb. Fixed-point: FIX(x) = (x * 65536 + 0.5) as i32, output
+    = (Y*65536 + coeff*Cr + 32768) >> 16.'
+  codebase_analysis: 'decode.rs lines 624-632 (baseline) and 898-905 (progressive): inline f64 multiply and round().clamp().
+    The shared rasmcore-color crate has integer color conversion but uses SCALEBITS=8 (less precise). For JPEG parity, implement
+    SCALEBITS=16 directly in the JPEG decoder (matching libjpeg convention). The image-rs jpeg-decoder uses SCALEBITS=20 —
+    verify whether SCALEBITS=16 or 20 matches their output better.'
+  acceptance_criteria:
+  - YCbCr to RGB uses i32 fixed-point with BT.601 coefficients
+  - Output matches image crate jpeg-decoder within ±0 for all test patterns
+  - No f64 arithmetic in the decode hot path
+  - Grayscale path unchanged (no color conversion)
+  - 'Combined with IDCT + upsampling tracks: parity test A vs B MAE < 0.5 for all patterns'
+  out_of_scope: BT.709 or BT.2020 color spaces. CMYK conversion. Lookup table optimization.
+  technical_notes: 'Constants (SCALEBITS=16): FIX_1_402 = 91881, FIX_0_34414 = 22554, FIX_0_71414 = 46802, FIX_1_772 = 116130.
+    Conversion: r = (y_fixed + FIX_1_402 * cr_shifted + ONE_HALF) >> 16, where y_fixed = y << 16, cr_shifted = cr - 128, ONE_HALF
+    = 1 << 15 = 32768. Clamp to [0, 255]. Check image-rs jpeg-decoder source to confirm if their SCALEBITS=20 produces different
+    output than SCALEBITS=16; if so, match theirs since they are our parity reference.'
+plan: []
+extra: {}
+plan:
+  - phase: Implementation
+    tasks:
+      - text: "Implement ycbcr_to_rgb_fixed() with i32 fixed-point BT.601"
+        done: false
+      - text: "Determine optimal SCALEBITS (16 vs 20) by testing against image-rs output"
+        done: false
+      - text: "Unit test: fixed-point matches f64 reference within ±1 for full value range"
+        done: false
+  - phase: Integration
+    tasks:
+      - text: "Replace f64 color conversion in baseline decode_scan"
+        done: false
+      - text: "Replace f64 color conversion in progressive decode_progressive"
+        done: false
+      - text: "Verify grayscale path unchanged"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "All existing JPEG tests pass"
+        done: false
+      - text: "Parity tests: A vs B MAE < 0.5 for all patterns (with all 3 tracks applied)"
+        done: false
+extra: {}

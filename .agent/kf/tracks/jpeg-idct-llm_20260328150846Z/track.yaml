@@ -1,0 +1,51 @@
+id: jpeg-idct-llm_20260328150846Z
+title: JPEG IDCT — LL&M Integer Fixed-Point (libjpeg-compatible)
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Replace f64 reference IDCT with Loeffler-Ligtenberg-Moschytz integer fixed-point algorithm (CONST_BITS=13, PASS1_BITS=2).
+    Matches libjpeg-turbo/mozjpeg/stb_image/image-rs output to within ±1 LSB.
+  context: Current IDCT uses f64 separable row-column direct computation. Every major decoder (libjpeg-turbo, mozjpeg, stb_image,
+    image-rs jpeg-decoder) uses the LL&M algorithm with integer fixed-point arithmetic. The f64 approach is accurate but produces
+    different rounding than integer implementations, causing ±2-3 LSB differences per pixel that accumulate to MAE ~2 across
+    the image.
+  codebase_analysis: 'dct.rs: inverse_dct() takes i32[64] → i16[64]. Uses f64 cosine sums with /2.0 normalization, round()
+    at each pass. Called from decode.rs (baseline line 567, progressive line 850). Also used by HEVC via rasmcore-dct (separate
+    crate — not affected). Forward DCT in same file is encoder-only (not changing). The image-rs jpeg-decoder uses stb_image
+    LL&M with CONST_BITS=12; libjpeg uses CONST_BITS=13. To match image crate parity tests, use CONST_BITS=12 (stb_image convention).'
+  acceptance_criteria:
+  - inverse_dct output matches image crate jpeg-decoder within ±0 LSB for all test patterns
+  - Parity test A vs B MAE drops below 1.0 for gradient and checkerboard patterns
+  - All existing JPEG tests still pass
+  - Forward DCT (encoder) unchanged — only inverse is modified
+  out_of_scope: SIMD optimization (future track). Forward DCT changes. HEVC DCT (separate crate).
+  technical_notes: 'Port the stb_image/image-rs LL&M IDCT to dct.rs as inverse_dct_int(). Constants: W1=2841, W2=2676, W3=2408,
+    W5=1609, W6=1108, W7=565 (scaled by 2^12=4096). Two-pass: rows then columns. Each pass uses 8 butterfly stages. Final
+    descale: (val + (1 << 16)) >> 17 to produce i16. The existing f64 version can be retained as inverse_dct_reference() for
+    forward DCT encoder validation.'
+plan: []
+extra: {}
+plan:
+  - phase: Implementation
+    tasks:
+      - text: "Implement inverse_dct_int() using LL&M algorithm with CONST_BITS=12, PASS1_BITS=2"
+        done: false
+      - text: "Rename existing inverse_dct to inverse_dct_reference, wire inverse_dct_int as default"
+        done: false
+      - text: "Unit test: inverse_dct_int matches image-rs jpeg-decoder output for known blocks"
+        done: false
+  - phase: Integration
+    tasks:
+      - text: "Wire inverse_dct_int into baseline decode path (decode_scan)"
+        done: false
+      - text: "Wire inverse_dct_int into progressive decode path (decode_progressive)"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "All existing lib tests pass"
+        done: false
+      - text: "Parity test A vs B MAE for gradient drops below 1.0"
+        done: false
+extra: {}

@@ -1,0 +1,57 @@
+id: jpeg-chroma-upsample_20260328150847Z
+title: JPEG Chroma Upsampling — Triangle/Bilinear Filter (libjpeg-compatible)
+type: feature
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Replace nearest-neighbor chroma upsampling with triangle/bilinear filter using 3:1 weights (1D) / 9:3:3:1 weights
+    (2D). Matches libjpeg-turbo, image-rs, and stb_image output.
+  context: 'Current chroma upsampling uses nearest-neighbor (integer division to map luma pixel to chroma sample). Every major
+    decoder uses triangle/bilinear interpolation: (3*near + far + 2) >> 2 for 1D (H2V1), and the full 9:3:3:1 kernel for 2D
+    (H2V2). This causes visible blocking artifacts at chroma boundaries and measurable MAE vs reference decoders, especially
+    at MCU edges and odd dimensions.'
+  codebase_analysis: 'decode.rs lines 618-622 (baseline) and 893-896 (progressive): inline nearest-neighbor via px*cb_h/y_h
+    integer division. Refactor to a separate upsample step that produces full-resolution Cb/Cr planes BEFORE color conversion.
+    This separates concerns and matches how libjpeg/image-rs structure the pipeline: (1) decode blocks → (2) upsample chroma
+    → (3) convert YCbCr→RGB. Currently steps 2 and 3 are fused in a single pixel loop.'
+  acceptance_criteria:
+  - H2V1 (4:2:2) upsampling uses (3*near + far + 2) >> 2
+  - H2V2 (4:2:0) upsampling uses 9:3:3:1 bilinear kernel
+  - H1V1 (4:4:4) and grayscale unchanged (no upsampling needed)
+  - Parity test A vs B MAE for odd dimensions (17x13) drops below 2.0
+  - Edge pixel handling matches libjpeg convention (replicate boundary samples)
+  out_of_scope: Fancy upsampling for H4V1 (4:1:1). SIMD optimization.
+  technical_notes: 'Refactor the decode pipeline to separate upsampling from color conversion. Add upsample_h2v1(input, output_width)
+    and upsample_h2v2(input, input_width, input_height, output_width, output_height) functions. For H2V2: first upsample horizontally
+    (3:1 weights), then vertically (3:1 weights). Or use the direct 9:3:3:1 kernel for the combined step. The pixel loop in
+    decode_scan/decode_progressive then reads from full-resolution upsampled planes instead of computing chroma coordinates
+    inline.'
+plan: []
+extra: {}
+plan:
+  - phase: Implementation
+    tasks:
+      - text: "Implement upsample_h2v1() with (3*near + far + 2) >> 2 filter"
+        done: false
+      - text: "Implement upsample_h2v2() with 9:3:3:1 bilinear kernel"
+        done: false
+      - text: "Handle edge pixels: replicate boundary samples for first/last row/col"
+        done: false
+  - phase: Integration
+    tasks:
+      - text: "Refactor baseline decode_scan to upsample Cb/Cr before color conversion"
+        done: false
+      - text: "Refactor progressive decode_progressive to upsample before conversion"
+        done: false
+      - text: "Verify 4:4:4 and grayscale paths unchanged (no upsampling)"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "All existing JPEG tests pass"
+        done: false
+      - text: "Parity test odd dims MAE drops below 2.0"
+        done: false
+      - text: "Visual comparison of 4:2:0 checkerboard shows no chroma blocking"
+        done: false
+extra: {}
