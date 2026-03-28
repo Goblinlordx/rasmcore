@@ -104,11 +104,11 @@ pub fn encode(
         ),
     };
 
-    // 2. Quality → quantizer parameter
-    let qp = quant::quality_to_qp(quality);
+    // 2. Quality → encoder parameters (QP, filter level, filter type)
+    let params = ratecontrol::quality_to_params(quality);
 
-    // 3-4. Encode VP8 frame (prediction, DCT, quantize, bool-encode, assemble)
-    let vp8_data = bitstream::encode_frame(&yuv, qp);
+    // 3-4. Encode VP8 frame (prediction, DCT, quantize, loop filter, assemble)
+    let vp8_data = bitstream::encode_frame(&yuv, &params);
 
     // 5. Wrap in RIFF/WebP container
     Ok(container::wrap_vp8(&vp8_data))

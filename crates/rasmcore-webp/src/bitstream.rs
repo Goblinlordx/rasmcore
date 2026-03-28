@@ -8,19 +8,21 @@
 use crate::block::{self, MacroblockInfo};
 use crate::boolcoder::BoolWriter;
 use crate::dct;
+use crate::filter;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};
+use crate::ratecontrol::EncodeParams;
 use crate::token;
 use rasmcore_color::YuvImage;
 
 /// Encode a VP8 key frame from YUV420 data.
 ///
 /// Returns the raw VP8 frame data (without RIFF container).
-pub fn encode_frame(yuv: &YuvImage, qp: u8) -> Vec<u8> {
+pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let width = yuv.width;
     let height = yuv.height;
     let (mb_w, mb_h) = block::mb_dimensions(width, height);
-    let seg_quant = quant::build_segment_quant(qp);
+    let seg_quant = quant::build_segment_quant(params.qp_y);
 
     // Pad YUV planes to macroblock boundaries
     let padded_w = mb_w as usize * 16;
@@ -80,8 +82,18 @@ pub fn encode_frame(yuv: &YuvImage, qp: u8) -> Vec<u8> {
 
     let token_data = token_writer.finish();
 
+    // Apply loop filter to reconstructed Y plane
+    filter::apply_loop_filter(
+        &mut recon_y,
+        padded_w,
+        padded_h,
+        params.filter_level,
+        params.filter_sharpness,
+        params.filter_type,
+    );
+
     // Build first partition (macroblock modes)
-    let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, qp);
+    let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, params);
 
     // Assemble frame
     assemble_frame(width, height, &first_partition, &token_data)
@@ -128,7 +140,12 @@ fn assemble_frame(
 }
 
 /// Encode the first partition: segment header, loop filter, quant params, MB modes.
-fn encode_first_partition(mb_infos: &[MacroblockInfo], _mb_w: u32, _mb_h: u32, qp: u8) -> Vec<u8> {
+fn encode_first_partition(
+    mb_infos: &[MacroblockInfo],
+    _mb_w: u32,
+    _mb_h: u32,
+    params: &EncodeParams,
+) -> Vec<u8> {
     let mut bw = BoolWriter::with_capacity(1024);
 
     // Color space and clamping (RFC 6386 Section 9.2)
@@ -139,9 +156,10 @@ fn encode_first_partition(mb_infos: &[MacroblockInfo], _mb_w: u32, _mb_h: u32, q
     bw.put_bit(128, false); // segmentation_enabled = false
 
     // Loop filter (RFC 6386 Section 9.4)
-    bw.put_bit(128, false); // filter_type = 0 (simple)
-    bw.put_literal(6, 0); // loop_filter_level = 0 (disabled)
-    bw.put_literal(3, 0); // sharpness_level = 0
+    // filter_type: 0=normal, 1=simple
+    bw.put_bit(128, params.filter_type == crate::filter::FilterType::Simple);
+    bw.put_literal(6, params.filter_level as u32);
+    bw.put_literal(3, params.filter_sharpness as u32);
 
     // Loop filter adjustments — disabled
     bw.put_bit(128, false); // mode_ref_lf_delta_enabled = false
@@ -151,7 +169,7 @@ fn encode_first_partition(mb_infos: &[MacroblockInfo], _mb_w: u32, _mb_h: u32, q
     bw.put_literal(2, 0); // 1 token partition
 
     // Quantizer (RFC 6386 Section 9.6)
-    bw.put_literal(7, qp as u32); // y_ac_qi
+    bw.put_literal(7, params.qp_y as u32); // y_ac_qi
     // All deltas = 0 (signaled by false flags)
     for _ in 0..5 {
         bw.put_bit(128, false); // no delta
@@ -481,6 +499,7 @@ fn pad_plane(src: &[u8], src_w: usize, src_h: usize, dst_w: usize, dst_h: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ratecontrol;
 
     #[test]
     fn frame_header_valid_structure() {
@@ -491,7 +510,8 @@ mod tests {
             u: vec![128u8; 64],
             v: vec![128u8; 64],
         };
-        let frame = encode_frame(&yuv, 50);
+        let params = ratecontrol::quality_to_params(75);
+        let frame = encode_frame(&yuv, &params);
 
         // Check frame tag (3 bytes)
         let tag = u32::from_le_bytes([frame[0], frame[1], frame[2], 0]);
@@ -519,7 +539,8 @@ mod tests {
             u: vec![128],
             v: vec![128],
         };
-        let frame = encode_frame(&yuv, 50);
+        let params = ratecontrol::quality_to_params(75);
+        let frame = encode_frame(&yuv, &params);
         assert!(frame.len() > 10, "frame should have header + data");
     }
 }
