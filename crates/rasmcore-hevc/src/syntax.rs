@@ -252,6 +252,17 @@ pub fn parse_slice_header(
         let _slice_loop_filter_across_slices = r.read_flag()?;
     }
 
+    // entry_point_offsets (Section 7.3.6.1): present when tiles or WPP enabled
+    if pps.tiles_enabled || pps.entropy_coding_sync_enabled {
+        let num_entry_point_offsets = r.read_ue()?;
+        if num_entry_point_offsets > 0 {
+            let offset_len = r.read_ue()? + 1;
+            for _ in 0..num_entry_point_offsets {
+                let _offset_minus1 = r.read_u(offset_len as u8)?;
+            }
+        }
+    }
+
     // byte_alignment() — HEVC spec Section 7.3.2.11
     // Read alignment_bit_equal_to_one (1) then alignment_bit_equal_to_zero (0..7)
     // This aligns to the next byte boundary where CABAC data starts.
