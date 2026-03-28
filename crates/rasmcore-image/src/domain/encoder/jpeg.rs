@@ -118,6 +118,72 @@ pub fn embed_icc_profile(jpeg_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>
     Ok(result)
 }
 
+/// Embed EXIF data into already-encoded JPEG data.
+///
+/// Inserts an APP1 marker with the raw EXIF bytes after SOI.
+/// The exif_data should include the "Exif\0\0" header.
+pub fn embed_exif(jpeg_data: &[u8], exif_data: &[u8]) -> Result<Vec<u8>, ImageError> {
+    if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+        return Err(ImageError::InvalidInput("not a valid JPEG".into()));
+    }
+
+    let seg_len = (exif_data.len() + 2) as u16;
+    let mut result = Vec::with_capacity(jpeg_data.len() + exif_data.len() + 4);
+    result.extend_from_slice(&jpeg_data[..2]); // SOI
+    result.push(0xFF);
+    result.push(0xE1); // APP1
+    result.extend_from_slice(&seg_len.to_be_bytes());
+    result.extend_from_slice(exif_data);
+    result.extend_from_slice(&jpeg_data[2..]); // rest of JPEG
+    Ok(result)
+}
+
+/// Embed XMP data into already-encoded JPEG data.
+///
+/// Inserts an APP1 marker with XMP namespace URI prefix after SOI.
+pub fn embed_xmp(jpeg_data: &[u8], xmp_data: &[u8]) -> Result<Vec<u8>, ImageError> {
+    if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+        return Err(ImageError::InvalidInput("not a valid JPEG".into()));
+    }
+
+    let prefix = b"http://ns.adobe.com/xap/1.0/\x00";
+    let payload_len = prefix.len() + xmp_data.len();
+    let seg_len = (payload_len + 2) as u16;
+
+    let mut result = Vec::with_capacity(jpeg_data.len() + payload_len + 4);
+    result.extend_from_slice(&jpeg_data[..2]); // SOI
+    result.push(0xFF);
+    result.push(0xE1); // APP1
+    result.extend_from_slice(&seg_len.to_be_bytes());
+    result.extend_from_slice(prefix);
+    result.extend_from_slice(xmp_data);
+    result.extend_from_slice(&jpeg_data[2..]); // rest of JPEG
+    Ok(result)
+}
+
+/// Embed IPTC data into already-encoded JPEG data.
+///
+/// Inserts an APP13 marker with "Photoshop 3.0\0" prefix after SOI.
+pub fn embed_iptc(jpeg_data: &[u8], iptc_data: &[u8]) -> Result<Vec<u8>, ImageError> {
+    if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+        return Err(ImageError::InvalidInput("not a valid JPEG".into()));
+    }
+
+    let prefix = b"Photoshop 3.0\x00";
+    let payload_len = prefix.len() + iptc_data.len();
+    let seg_len = (payload_len + 2) as u16;
+
+    let mut result = Vec::with_capacity(jpeg_data.len() + payload_len + 4);
+    result.extend_from_slice(&jpeg_data[..2]); // SOI
+    result.push(0xFF);
+    result.push(0xED); // APP13
+    result.extend_from_slice(&seg_len.to_be_bytes());
+    result.extend_from_slice(prefix);
+    result.extend_from_slice(iptc_data);
+    result.extend_from_slice(&jpeg_data[2..]); // rest of JPEG
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

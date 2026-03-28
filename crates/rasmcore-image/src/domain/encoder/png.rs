@@ -202,6 +202,49 @@ const CRC_TABLE: [u32; 256] = {
     table
 };
 
+/// Embed EXIF data into already-encoded PNG data as an eXIf chunk.
+///
+/// Inserts the eXIf chunk after IHDR (before IDAT).
+/// The exif_data should NOT include "Exif\0\0" prefix — raw TIFF bytes only.
+pub fn embed_exif(png_data: &[u8], exif_data: &[u8]) -> Result<Vec<u8>, ImageError> {
+    const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if !png_data.starts_with(PNG_SIG) {
+        return Err(ImageError::InvalidInput("not a valid PNG".into()));
+    }
+
+    // Strip "Exif\0\0" prefix if present (eXIf chunk uses raw TIFF data)
+    let tiff_data = if exif_data.starts_with(b"Exif\x00\x00") {
+        &exif_data[6..]
+    } else {
+        exif_data
+    };
+
+    // Build eXIf chunk
+    let chunk_len = tiff_data.len() as u32;
+    let mut exif_chunk = Vec::new();
+    exif_chunk.extend_from_slice(&chunk_len.to_be_bytes());
+    exif_chunk.extend_from_slice(b"eXIf");
+    exif_chunk.extend_from_slice(tiff_data);
+    let crc = png_crc32(b"eXIf", tiff_data);
+    exif_chunk.extend_from_slice(&crc.to_be_bytes());
+
+    // Find insertion point after IHDR
+    if 8 + 12 > png_data.len() {
+        return Err(ImageError::InvalidInput("PNG too short".into()));
+    }
+    let ihdr_len =
+        u32::from_be_bytes([png_data[8], png_data[9], png_data[10], png_data[11]]) as usize;
+    let after_ihdr = 8 + 12 + ihdr_len;
+
+    let mut result = Vec::with_capacity(png_data.len() + exif_chunk.len());
+    result.extend_from_slice(&png_data[..after_ihdr]);
+    result.extend_from_slice(&exif_chunk);
+    result.extend_from_slice(&png_data[after_ihdr..]);
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

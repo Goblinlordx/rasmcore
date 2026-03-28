@@ -137,13 +137,13 @@ plan:
 - phase: Encoder Metadata Embedding
   tasks:
   - text: Update jpeg encoder to embed full metadata from MetadataSet (EXIF APP1, XMP APP1, IPTC APP13, ICC APP2)
-    done: false
+    done: true
   - text: Update png encoder to embed metadata from MetadataSet (eXIf chunk, iCCP chunk, text chunks)
-    done: false
+    done: true
   - text: Integrate PNG text chunk read/write via png crate tEXt/zTXt/iTXt into MetadataSet format_specific
-    done: false
+    done: true
   - text: Domain tests for full metadata roundtrip (JPEG with all 4 metadata types, PNG with EXIF + ICC + text)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Verify kamadak-exif fully removed, all EXIF tests pass with little_exif

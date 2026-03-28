@@ -7,7 +7,9 @@ use crate::domain::pipeline::graph::NodeGraph;
 use rasmcore_pipeline::Rect;
 
 /// Embed metadata into encoded output bytes.
-/// Currently supports ICC profile embedding for JPEG and PNG.
+///
+/// Applies metadata embedding in order: EXIF, XMP, IPTC, ICC.
+/// Each embedding inserts marker segments after SOI (JPEG) or chunks after IHDR (PNG).
 fn embed_metadata(
     encoded: Vec<u8>,
     format: &str,
@@ -15,16 +17,37 @@ fn embed_metadata(
 ) -> Result<Vec<u8>, ImageError> {
     let mut result = encoded;
 
-    // Embed ICC profile if present
-    if let Some(ref icc) = metadata.icc_profile {
-        result = match format {
-            "jpeg" => encoder::jpeg::embed_icc_profile(&result, icc)?,
-            "png" => encoder::png::embed_icc_profile(&result, icc)?,
-            _ => result, // Other formats: ICC embedding not yet supported
-        };
+    match format {
+        "jpeg" => {
+            // JPEG: embed in order — EXIF (APP1), XMP (APP1), IPTC (APP13), ICC (APP2)
+            if let Some(ref exif) = metadata.exif {
+                result = encoder::jpeg::embed_exif(&result, exif)?;
+            }
+            if let Some(ref xmp) = metadata.xmp {
+                result = encoder::jpeg::embed_xmp(&result, xmp)?;
+            }
+            if let Some(ref iptc) = metadata.iptc {
+                result = encoder::jpeg::embed_iptc(&result, iptc)?;
+            }
+            if let Some(ref icc) = metadata.icc_profile {
+                result = encoder::jpeg::embed_icc_profile(&result, icc)?;
+            }
+        }
+        "png" => {
+            // PNG: embed EXIF (eXIf chunk) and ICC (iCCP chunk) after IHDR
+            if let Some(ref exif) = metadata.exif {
+                result = encoder::png::embed_exif(&result, exif)?;
+            }
+            if let Some(ref icc) = metadata.icc_profile {
+                result = encoder::png::embed_icc_profile(&result, icc)?;
+            }
+            // PNG text chunks from format_specific are deferred to a future enhancement
+        }
+        _ => {
+            // Other formats: metadata embedding not yet supported, pass through
+        }
     }
 
-    // EXIF, XMP, IPTC embedding will be added in the metadata-formats track
     Ok(result)
 }
 
