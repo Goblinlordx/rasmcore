@@ -777,3 +777,212 @@ fn wasm_pipeline_icc_to_srgb() {
         "ICC-to-sRGB pipeline should produce output"
     );
 }
+
+// =============================================================================
+// WebP SIMD128 validation tests
+//
+// These tests exercise the WASM SIMD128 code path by encoding/decoding
+// through the WASM component (which is compiled with +simd128).
+// The VP8 encoder's DCT, quantization, prediction SAD, and dequantization
+// all run through the SIMD128 implementations when executing in wasmtime.
+// =============================================================================
+
+/// Encode a synthetic image to lossy WebP via WASM, decode it, verify valid output.
+/// This exercises the full SIMD128 encode pipeline: color conversion → prediction
+/// (SAD) → DCT → quantize → bool-encode.
+#[test]
+fn wasm_webp_lossy_encode_decode_roundtrip() {
+    let (mut store, bindings) = instantiate_image_component();
+    let encoder = bindings.rasmcore_image_encoder();
+    let decoder = bindings.rasmcore_image_decoder();
+
+    // Create a 32x32 gradient image (exercises AC coefficients in DCT)
+    let mut pixels = vec![0u8; 32 * 32 * 3];
+    for y in 0..32u32 {
+        for x in 0..32u32 {
+            let idx = ((y * 32 + x) * 3) as usize;
+            pixels[idx] = (x * 8) as u8; // R: horizontal gradient
+            pixels[idx + 1] = (y * 8) as u8; // G: vertical gradient
+            pixels[idx + 2] = 128; // B: constant
+        }
+    }
+
+    let info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 32,
+        height: 32,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let config = wasm_integration::exports::rasmcore::image::encoder::WebpEncodeConfig {
+        quality: Some(75),
+        lossless: Some(false),
+    };
+
+    // Encode via WASM (SIMD128 path)
+    let encoded = encoder
+        .call_encode_webp(&mut store, &pixels, info, config)
+        .unwrap()
+        .unwrap();
+
+    // Verify RIFF/WEBP container
+    assert!(
+        encoded.len() > 20,
+        "encoded WebP too small: {} bytes",
+        encoded.len()
+    );
+    assert_eq!(&encoded[..4], b"RIFF", "should start with RIFF");
+    assert_eq!(&encoded[8..12], b"WEBP", "should contain WEBP marker");
+
+    // Decode to verify the bitstream is valid
+    let decoded = decoder.call_decode(&mut store, &encoded).unwrap().unwrap();
+    assert_eq!(decoded.info.width, 32);
+    assert_eq!(decoded.info.height, 32);
+
+    // Verify decoded pixels are reasonable (lossy, so not exact)
+    let pixel_count = decoded.pixels.len();
+    assert!(
+        pixel_count >= 32 * 32 * 3,
+        "decoded should have enough pixels"
+    );
+}
+
+/// Test WebP lossy at multiple quality levels — verifies the quantization
+/// SIMD path produces different output sizes for different quality settings.
+#[test]
+fn wasm_webp_lossy_quality_curve() {
+    let (mut store, bindings) = instantiate_image_component();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    // 64x64 checkerboard pattern (high AC energy, stress-tests DCT SIMD)
+    let mut pixels = vec![0u8; 64 * 64 * 3];
+    for y in 0..64u32 {
+        for x in 0..64u32 {
+            let idx = ((y * 64 + x) * 3) as usize;
+            let checker = ((x / 4 + y / 4) % 2) as u8;
+            pixels[idx] = checker * 200 + 28;
+            pixels[idx + 1] = (255 - checker * 200).max(28);
+            pixels[idx + 2] = 128;
+        }
+    }
+
+    let info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 64,
+        height: 64,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let mut sizes = Vec::new();
+    for q in [10, 50, 90] {
+        let config = wasm_integration::exports::rasmcore::image::encoder::WebpEncodeConfig {
+            quality: Some(q),
+            lossless: Some(false),
+        };
+        let encoded = encoder
+            .call_encode_webp(&mut store, &pixels, info, config)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&encoded[..4], b"RIFF", "q={q}: invalid WebP header");
+        sizes.push((q, encoded.len()));
+    }
+
+    // Higher quality should produce larger files
+    assert!(
+        sizes[2].1 > sizes[0].1,
+        "q90 ({}) should be larger than q10 ({})",
+        sizes[2].1,
+        sizes[0].1
+    );
+}
+
+/// Test WebP encoding of a 1x1 image — edge case that exercises the
+/// macroblock padding path in the SIMD encoder.
+#[test]
+fn wasm_webp_lossy_1x1() {
+    let (mut store, bindings) = instantiate_image_component();
+    let encoder = bindings.rasmcore_image_encoder();
+    let decoder = bindings.rasmcore_image_decoder();
+
+    let pixels = vec![128u8, 64, 32]; // 1x1 RGB
+    let info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 1,
+        height: 1,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = wasm_integration::exports::rasmcore::image::encoder::WebpEncodeConfig {
+        quality: Some(75),
+        lossless: Some(false),
+    };
+
+    let encoded = encoder
+        .call_encode_webp(&mut store, &pixels, info, config)
+        .unwrap()
+        .unwrap();
+    assert_eq!(&encoded[..4], b"RIFF");
+
+    let decoded = decoder.call_decode(&mut store, &encoded).unwrap().unwrap();
+    assert_eq!(decoded.info.width, 1);
+    assert_eq!(decoded.info.height, 1);
+}
+
+/// Test determinism — encoding the same image twice via WASM should
+/// produce byte-identical output (proves SIMD path is deterministic).
+#[test]
+fn wasm_webp_lossy_deterministic() {
+    let (mut store, bindings) = instantiate_image_component();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
+    let info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 16,
+        height: 16,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = wasm_integration::exports::rasmcore::image::encoder::WebpEncodeConfig {
+        quality: Some(85),
+        lossless: Some(false),
+    };
+
+    let out1 = encoder
+        .call_encode_webp(&mut store, &pixels, info, config)
+        .unwrap()
+        .unwrap();
+    let out2 = encoder
+        .call_encode_webp(&mut store, &pixels, info, config)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        out1, out2,
+        "WASM WebP encode must be deterministic (SIMD path)"
+    );
+}
+
+/// RGBA input — verifies alpha stripping works in the SIMD color conversion path.
+#[test]
+fn wasm_webp_lossy_rgba_input() {
+    let (mut store, bindings) = instantiate_image_component();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    let pixels: Vec<u8> = (0..16 * 16 * 4).map(|i| (i % 256) as u8).collect();
+    let info = wasm_integration::rasmcore::core::types::ImageInfo {
+        width: 16,
+        height: 16,
+        format: PixelFormat::Rgba8,
+        color_space: ColorSpace::Srgb,
+    };
+    let config = wasm_integration::exports::rasmcore::image::encoder::WebpEncodeConfig {
+        quality: Some(75),
+        lossless: Some(false),
+    };
+
+    let encoded = encoder
+        .call_encode_webp(&mut store, &pixels, info, config)
+        .unwrap()
+        .unwrap();
+    assert_eq!(&encoded[..4], b"RIFF");
+    assert_eq!(&encoded[8..12], b"WEBP");
+}

@@ -295,14 +295,13 @@ mod simd128 {
             );
         }
 
-        // Transpose so we can process columns as SIMD vectors
-        let (c0, c1, c2, c3) = transpose4x4(tmp[0], tmp[1], tmp[2], tmp[3]);
-
-        // Vertical pass: all 4 columns in parallel
-        let a0 = i32x4_add(c0, c3);
-        let a1 = i32x4_add(c1, c2);
-        let a2 = i32x4_sub(c1, c2);
-        let a3 = i32x4_sub(c0, c3);
+        // Vertical pass: row0+row3, row1+row2, etc. — all 4 columns in parallel
+        // No transpose needed: tmp[i] = [col0, col1, col2, col3] for row i
+        // Adding tmp[0]+tmp[3] gives [r0c0+r3c0, r0c1+r3c1, ...] = correct column butterflies
+        let a0 = i32x4_add(tmp[0], tmp[3]);
+        let a1 = i32x4_add(tmp[1], tmp[2]);
+        let a2 = i32x4_sub(tmp[1], tmp[2]);
+        let a3 = i32x4_sub(tmp[0], tmp[3]);
 
         let seven = i32x4_splat(7);
         let c2217 = i32x4_splat(2217);
@@ -352,60 +351,49 @@ mod simd128 {
         let r2 = load_row_i16_as_i32x4(coeffs, 2);
         let r3 = load_row_i16_as_i32x4(coeffs, 3);
 
-        // Transpose to get columns
-        let (c0, c1, c2, c3) = transpose4x4(r0, r1, r2, r3);
+        // Vertical pass: operate on rows directly (no transpose needed)
+        // r0+r2 gives row0+row2 for all 4 columns simultaneously
+        let a = i32x4_add(r0, r2);
+        let b = i32x4_sub(r0, r2);
+        // MUL2(r1) - MUL1(r3)
+        let mul2_r1 = i32x4_shr(i32x4_mul(r1, c_kc2), 16);
+        let mul1_r3 = i32x4_add(i32x4_shr(i32x4_mul(r3, c_kc1), 16), r3);
+        let c = i32x4_sub(mul2_r1, mul1_r3);
+        // MUL1(r1) + MUL2(r3)
+        let mul1_r1 = i32x4_add(i32x4_shr(i32x4_mul(r1, c_kc1), 16), r1);
+        let mul2_r3 = i32x4_shr(i32x4_mul(r3, c_kc2), 16);
+        let d = i32x4_add(mul1_r1, mul2_r3);
 
-        // Vertical pass (on columns, now stored as row vectors)
-        let a = i32x4_add(c0, c2);
-        let b = i32x4_sub(c0, c2);
-        // MUL2(c1) - MUL1(c3)
-        let mul2_c1 = i32x4_shr(i32x4_mul(c1, c_kc2), 16);
-        let mul1_c3 = i32x4_add(i32x4_shr(i32x4_mul(c3, c_kc1), 16), c3);
-        let c = i32x4_sub(mul2_c1, mul1_c3);
-        // MUL1(c1) + MUL2(c3)
-        let mul1_c1 = i32x4_add(i32x4_shr(i32x4_mul(c1, c_kc1), 16), c1);
-        let mul2_c3 = i32x4_shr(i32x4_mul(c3, c_kc2), 16);
-        let d = i32x4_add(mul1_c1, mul2_c3);
-
+        // After vertical pass, t0..t3 are row vectors (all 4 cols computed)
         let t0 = i32x4_add(a, d);
         let t1 = i32x4_add(b, c);
         let t2 = i32x4_sub(b, c);
         let t3 = i32x4_sub(a, d);
 
-        // Transpose back for horizontal pass
-        let (h0, h1, h2, h3) = transpose4x4(t0, t1, t2, t3);
-
-        // Horizontal pass (on rows) with rounding and reference addition
+        // Horizontal pass: operates within each row.
+        // For each row, we need elements [0]+[2], [0]-[2], MUL2([1])-MUL1([3]), etc.
+        // This requires lane shuffles, so we do it scalar per-row.
         let four = i32x4_splat(4);
-        // Add rounding bias to the DC column (element 0 of each row)
-        let h0b = i32x4_add(h0, four);
-
-        let a2 = i32x4_add(h0b, h2);
-        let b2 = i32x4_sub(h0b, h2);
-        let mul2_h1 = i32x4_shr(i32x4_mul(h1, c_kc2), 16);
-        let mul1_h3 = i32x4_add(i32x4_shr(i32x4_mul(h3, c_kc1), 16), h3);
-        let c2 = i32x4_sub(mul2_h1, mul1_h3);
-        let mul1_h1 = i32x4_add(i32x4_shr(i32x4_mul(h1, c_kc1), 16), h1);
-        let mul2_h3 = i32x4_shr(i32x4_mul(h3, c_kc2), 16);
-        let d2 = i32x4_add(mul1_h1, mul2_h3);
-
-        let v0 = i32x4_shr(i32x4_add(a2, d2), 3);
-        let v1 = i32x4_shr(i32x4_add(b2, c2), 3);
-        let v2 = i32x4_shr(i32x4_sub(b2, c2), 3);
-        let v3 = i32x4_shr(i32x4_sub(a2, d2), 3);
-
-        // Add reference and clamp — each v is a row of 4 values
         let zero = i32x4_splat(0);
         let max_val = i32x4_splat(255);
-        for (row, v) in [(0, v0), (1, v1), (2, v2), (3, v3)] {
-            let ref_row = load_row_u8_as_i32x4(reference, row);
-            let sum = i32x4_add(v, ref_row);
-            let clamped = i32x4_max(i32x4_min(sum, max_val), zero);
+
+        for (row, t) in [(0, t0), (1, t1), (2, t2), (3, t3)] {
+            let e0 = i32x4_extract_lane::<0>(t) + 4; // +4 rounding
+            let e1 = i32x4_extract_lane::<1>(t);
+            let e2 = i32x4_extract_lane::<2>(t);
+            let e3 = i32x4_extract_lane::<3>(t);
+
+            let ha = e0 + e2;
+            let hb = e0 - e2;
+            let hc = ((e1 * 35468) >> 16) - (((e3 * 20091) >> 16) + e3);
+            let hd = (((e1 * 20091) >> 16) + e1) + ((e3 * 35468) >> 16);
+
             let base = row * 4;
-            dst[base] = i32x4_extract_lane::<0>(clamped) as u8;
-            dst[base + 1] = i32x4_extract_lane::<1>(clamped) as u8;
-            dst[base + 2] = i32x4_extract_lane::<2>(clamped) as u8;
-            dst[base + 3] = i32x4_extract_lane::<3>(clamped) as u8;
+            let ref_base = row * 4;
+            dst[base] = (((ha + hd) >> 3) + reference[ref_base] as i32).clamp(0, 255) as u8;
+            dst[base + 1] = (((hb + hc) >> 3) + reference[ref_base + 1] as i32).clamp(0, 255) as u8;
+            dst[base + 2] = (((hb - hc) >> 3) + reference[ref_base + 2] as i32).clamp(0, 255) as u8;
+            dst[base + 3] = (((ha - hd) >> 3) + reference[ref_base + 3] as i32).clamp(0, 255) as u8;
         }
     }
 
@@ -432,14 +420,12 @@ mod simd128 {
             tmp_rows[i] = i32x4(a0 + a1, a3 + a2, a3 - a2, a0 - a1);
         }
 
-        // Transpose for vertical pass
-        let (c0, c1, c2, c3) = transpose4x4(tmp_rows[0], tmp_rows[1], tmp_rows[2], tmp_rows[3]);
-
-        // Vertical pass: pure add/sub, all columns in parallel
-        let a0 = i32x4_add(c0, c2);
-        let a1 = i32x4_add(c1, c3);
-        let a2 = i32x4_sub(c1, c3);
-        let a3 = i32x4_sub(c0, c2);
+        // Vertical pass: use row vectors directly (no transpose needed)
+        // tmp_rows[0]+tmp_rows[2] = row0+row2 for all 4 columns
+        let a0 = i32x4_add(tmp_rows[0], tmp_rows[2]);
+        let a1 = i32x4_add(tmp_rows[1], tmp_rows[3]);
+        let a2 = i32x4_sub(tmp_rows[1], tmp_rows[3]);
+        let a3 = i32x4_sub(tmp_rows[0], tmp_rows[2]);
 
         let o0 = i32x4_shr(i32x4_add(a0, a1), 1);
         let o1 = i32x4_shr(i32x4_add(a3, a2), 1);
@@ -459,30 +445,23 @@ mod simd128 {
         let r2 = load_row_i16_as_i32x4(coeffs, 2);
         let r3 = load_row_i16_as_i32x4(coeffs, 3);
 
-        // Transpose for vertical pass (columns)
-        let (c0, c1, c2, c3) = transpose4x4(r0, r1, r2, r3);
-
-        // Vertical pass
-        let a0 = i32x4_add(c0, c3);
-        let a1 = i32x4_add(c1, c2);
-        let a2 = i32x4_sub(c1, c2);
-        let a3 = i32x4_sub(c0, c3);
+        // Vertical pass: use row vectors directly (no transpose)
+        let a0 = i32x4_add(r0, r3);
+        let a1 = i32x4_add(r1, r2);
+        let a2 = i32x4_sub(r1, r2);
+        let a3 = i32x4_sub(r0, r3);
 
         let t0 = i32x4_add(a0, a1);
         let t1 = i32x4_add(a3, a2);
         let t2 = i32x4_sub(a0, a1);
         let t3 = i32x4_sub(a3, a2);
 
-        // Transpose back for horizontal pass
-        let (h0, h1, h2, h3) = transpose4x4(t0, t1, t2, t3);
-
-        // Horizontal pass with +3 rounding and >>3
-        let three = i32x4_splat(3);
-        for (row, h) in [(0, h0), (1, h1), (2, h2), (3, h3)] {
-            let v0 = i32x4_extract_lane::<0>(h);
-            let v1 = i32x4_extract_lane::<1>(h);
-            let v2 = i32x4_extract_lane::<2>(h);
-            let v3 = i32x4_extract_lane::<3>(h);
+        // Horizontal pass: scalar per-row (need cross-lane access)
+        for (row, t) in [(0, t0), (1, t1), (2, t2), (3, t3)] {
+            let v0 = i32x4_extract_lane::<0>(t);
+            let v1 = i32x4_extract_lane::<1>(t);
+            let v2 = i32x4_extract_lane::<2>(t);
+            let v3 = i32x4_extract_lane::<3>(t);
 
             let dc = v0 + 3;
             let a0 = dc + v3;
