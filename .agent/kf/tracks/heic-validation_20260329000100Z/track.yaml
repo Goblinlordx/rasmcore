@@ -1,0 +1,77 @@
+id: heic-validation_20260329000100Z
+title: HEIC Pipeline Validation — Harden Tests + End-to-End Coverage
+type: chore
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: 'Close validation gaps in the HEIC pipeline: harden parity tests (assert instead of log), add end-to-end HEIC container
+    decode test, verify WASM build, test grid decode path.'
+  context: 'The HEIC pipeline has 217 passing tests across 3 crates, but validation audit found gaps: 5 parity tests silently
+    swallow decode failures, no test exercises the full HEIC container -> HEVC decode path, no WASM build check, and grid
+    image decode is untested. This track closes those gaps systematically.'
+  codebase_analysis: '- Parity tests in tests/parity.rs: 8 tests, 19 assertions, but 5 cases catch decode Err and eprintln
+    instead of asserting. Root cause: CABAC data offset heuristic in frame.rs find_slice_data_start() is approximate.
+
+    - No test calls decode_heif() or decode_heif_hevc() with an actual HEIC file. The parity tests use raw .hevc Annex B streams.
+
+    - decode_heif_grid() in decoder/mod.rs has zero test coverage.
+
+    - WASM build with nonfree-hevc has never been verified (cargo component check).
+
+    - validate.sh now passes after clippy fix — fmt, clippy, all workspace tests clean.'
+  acceptance_criteria:
+  - 'All parity tests either assert success or are explicitly marked #[ignore] with documented reason'
+  - 'End-to-end test: HEIC file (ISOBMFF container + HEVC bitstream) through decode_heif()'
+  - WASM build verification for rasmcore-image with nonfree-hevc feature
+  - Grid decode path test with synthetic multi-tile HEIC
+  - validate.sh passes cleanly (fmt + clippy + tests) for all HEIC crates
+  - No test silently swallows errors — every test has clear pass/fail semantics
+  out_of_scope: Fixing the CABAC data offset heuristic itself (that is decoder correctness, not validation). Performance optimization.
+    New feature work.
+  technical_notes: 'Approach:
+
+    1. Harden parity tests: tests that currently log decode failures should either assert success (if we believe they should
+    work) or be marked #[ignore] with a doc comment explaining why (CABAC offset heuristic). No silent swallowing.
+
+    2. End-to-end HEIC test: wrap an x265 bitstream in a minimal HEIF container (ftyp+meta+mdat), pass to decode_heif(), verify
+    it either decodes or returns a specific error.
+
+    3. WASM build check: add cargo component check -p rasmcore-image --features nonfree-hevc to generate.sh or as a standalone
+    script.
+
+    4. Grid decode test: create a synthetic 2x2 grid HEIC (4 small tiles) and verify composited output dimensions.'
+plan:
+- phase: Harden Parity Tests
+  tasks:
+  - text: Audit all 8 parity tests — identify which catch Err and log instead of asserting
+    done: false
+  - text: For each soft-failure test, determine if decode should succeed or is expected to fail
+    done: false
+  - text: Tests that should succeed — change match to unwrap/assert_ok with descriptive message
+    done: false
+  - text: Tests expected to fail (CABAC offset heuristic) — mark
+    done: false
+- phase: End-to-End HEIC Container Test
+  tasks:
+  - text: Create test helper to wrap raw HEVC Annex B bitstream in minimal HEIF container (ftyp+meta+mdat)
+    done: false
+  - text: Add integration test that passes HEIC file through rasmcore-image decode_heif() with nonfree-hevc
+    done: false
+  - text: Verify decoded dimensions and pixel format match expected values
+    done: false
+- phase: Grid Decode + WASM Verification
+  tasks:
+  - text: Create synthetic 2x1 grid HEIC test (2 tiles side by side) and test decode_heif_grid()
+    done: false
+  - text: Verify WASM build succeeds (cargo component check -p rasmcore-image --features nonfree-hevc)
+    done: false
+  - text: Verify free build (without nonfree-hevc) returns clear error for HEIC files
+    done: false
+- phase: Final Validation
+  tasks:
+  - text: Run validate.sh and verify all checks pass (fmt, clippy, tests, WASM build)
+    done: false
+  - text: Run cargo test --workspace to verify no regressions across all crates
+    done: false
+extra: {}
