@@ -105,7 +105,7 @@ plan:
   - text: Add ICC-to-sRGB pipeline node
     done: true
   - text: Domain tests for color conversion correctness
-    done: false
+    done: true
 - phase: Profile Embedding & Verification
   tasks:
   - text: Embed ICC profile in JPEG output

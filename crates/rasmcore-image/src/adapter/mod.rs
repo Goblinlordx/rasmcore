@@ -206,6 +206,7 @@ impl encoder::Guest for Component {
             .map_err(to_wit_error)?;
         let domain_config = domain::encoder::png::PngEncodeConfig {
             compression_level: config.compression_level.unwrap_or(6),
+            filter_type: to_domain_png_filter(config.filter_type),
         };
         let encoded = domain::encoder::png::encode(&img, &domain_info, &domain_config)
             .map_err(to_wit_error)?;

@@ -12,7 +12,7 @@ use wasm_integration::exports::rasmcore::image::pipeline::PngWriteConfig;
 use wasm_integration::exports::rasmcore::image::transform::{
     FlipDirection, ResizeFilter, Rotation,
 };
-use wasm_integration::rasmcore::core::types::PixelFormat;
+use wasm_integration::rasmcore::core::types::{ColorSpace, PixelFormat};
 use wasm_integration::*;
 
 // =============================================================================
@@ -559,10 +559,127 @@ fn wasm_pipeline_composite() {
     // Write as PNG — should produce valid output
     let config = PngWriteConfig {
         compression_level: None,
+        filter_type: None,
     };
     let output = pipe_res
         .call_write_png(&mut store, pipe, comp_node, config)
         .unwrap()
         .unwrap();
     assert_eq!(&output[..4], &[0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
+}
+
+// =============================================================================
+// ICC color profile tests
+// =============================================================================
+
+#[test]
+fn wasm_decoder_extracts_icc_from_jpeg() {
+    let (mut store, bindings) = instantiate_image_component();
+    let decoder = bindings.rasmcore_image_decoder();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    // Create a JPEG, decode it, re-encode with ICC, then decode again
+    let data = load_fixture("gradient_64x64.jpeg");
+    let decoded = decoder.call_decode(&mut store, &data).unwrap().unwrap();
+
+    // Original JPEG should have no ICC profile
+    assert!(
+        decoded.icc_profile.is_none(),
+        "fixture should not have ICC profile"
+    );
+
+    // Embed a fake ICC profile and verify roundtrip
+    let fake_icc = vec![42u8; 128];
+    let config =
+        wasm_integration::exports::rasmcore::image::encoder::JpegEncodeConfig { quality: Some(95) };
+    let encoded_with_icc = encoder
+        .call_encode_jpeg_with_icc(&mut store, &decoded.pixels, decoded.info, config, &fake_icc)
+        .unwrap()
+        .unwrap();
+
+    // Decode the ICC-embedded JPEG
+    let re_decoded = decoder
+        .call_decode(&mut store, &encoded_with_icc)
+        .unwrap()
+        .unwrap();
+    assert_eq!(re_decoded.icc_profile, Some(fake_icc));
+}
+
+#[test]
+fn wasm_decoder_extracts_icc_from_png() {
+    let (mut store, bindings) = instantiate_image_component();
+    let decoder = bindings.rasmcore_image_decoder();
+    let encoder = bindings.rasmcore_image_encoder();
+
+    let data = load_fixture("gradient_64x64.png");
+    let decoded = decoder.call_decode(&mut store, &data).unwrap().unwrap();
+
+    // Embed a fake ICC profile in PNG and verify roundtrip
+    let fake_icc = vec![99u8; 200];
+    let config = wasm_integration::exports::rasmcore::image::encoder::PngEncodeConfig {
+        compression_level: Some(6),
+        filter_type: None,
+    };
+    let encoded_with_icc = encoder
+        .call_encode_png_with_icc(&mut store, &decoded.pixels, decoded.info, config, &fake_icc)
+        .unwrap()
+        .unwrap();
+
+    let re_decoded = decoder
+        .call_decode(&mut store, &encoded_with_icc)
+        .unwrap()
+        .unwrap();
+    assert_eq!(re_decoded.icc_profile, Some(fake_icc));
+}
+
+#[test]
+fn wasm_pipeline_icc_to_srgb() {
+    let (mut store, bindings) = instantiate_image_component();
+    let pipeline_iface = bindings.rasmcore_image_pipeline();
+
+    let data = load_fixture("gradient_64x64.png");
+
+    // Load sRGB ICC profile from system (macOS) for testing
+    let icc_path = "/System/Library/ColorSync/Profiles/sRGB Profile.icc";
+    let icc_profile = match std::fs::read(icc_path) {
+        Ok(p) => p,
+        Err(_) => return, // skip on non-macOS
+    };
+
+    let pipeline = pipeline_iface.image_pipeline();
+    let resource = pipeline.call_constructor(&mut store).unwrap();
+
+    let src_node = pipeline
+        .call_read(&mut store, resource, &data)
+        .unwrap()
+        .unwrap();
+
+    // Apply ICC-to-sRGB conversion
+    let srgb_node = pipeline
+        .call_icc_to_srgb(&mut store, resource, src_node, &icc_profile)
+        .unwrap()
+        .unwrap();
+
+    // Verify node info shows sRGB color space
+    let info = pipeline
+        .call_node_info(&mut store, resource, srgb_node)
+        .unwrap()
+        .unwrap();
+    assert_eq!(info.color_space, ColorSpace::Srgb);
+    assert_eq!(info.width, 64);
+    assert_eq!(info.height, 64);
+
+    // Write output — this drives the pipeline
+    let config = wasm_integration::exports::rasmcore::image::pipeline::PngWriteConfig {
+        compression_level: Some(6),
+        filter_type: None,
+    };
+    let output = pipeline
+        .call_write_png(&mut store, resource, srgb_node, config)
+        .unwrap()
+        .unwrap();
+    assert!(
+        !output.is_empty(),
+        "ICC-to-sRGB pipeline should produce output"
+    );
 }
