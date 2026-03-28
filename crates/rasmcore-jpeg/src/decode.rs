@@ -468,10 +468,10 @@ fn decode_scan(
         clean
     };
 
-    // Add padding bytes so BitReader doesn't fail at stream end
-    // (JPEG decoders typically pad with 0xFF bytes)
+    // Add zero-byte padding so BitReader doesn't fail at stream end.
+    // Zeros decode as small DC diffs / zero AC — safe for overread.
     let mut padded_data = clean_data;
-    padded_data.extend_from_slice(&[0xFF; 8]);
+    padded_data.extend_from_slice(&[0x00; 32]);
 
     let mut reader = BitReader::new(&padded_data, BitOrder::MsbFirst);
 
@@ -811,8 +811,10 @@ mod debug_tests {
 
     /// Test grayscale gradient — NOTE: fails due to encoder multi-MCU bug, not decoder.
     /// Decoder is verified correct via image crate interop (MAE 0.04).
+    /// Our encoder output is valid (image crate decodes it).
+    /// Decoder multi-MCU Huffman alignment issue under investigation.
     #[test]
-    #[ignore = "encoder multi-MCU alignment bug — decoder is correct per interop test"]
+    #[ignore = "decoder multi-MCU alignment — encoder output valid but our decoder misaligns"]
     fn decode_gray_gradient_reasonable_psnr() {
         let mut pixels = vec![0u8; 16 * 16];
         for y in 0..16 {
@@ -1018,5 +1020,39 @@ mod quality_tests {
             mae < 8.0,
             "decoder output should match reference within MAE 8, got {mae:.2}"
         );
+    }
+}
+
+#[cfg(test)]
+mod mcu_debug_tests {
+    use super::*;
+
+    #[test]
+    fn our_16x16_gray_decodable_by_image_crate() {
+        let mut pixels = vec![0u8; 16 * 16];
+        for y in 0..16 {
+            for x in 0..16 {
+                pixels[y * 16 + x] = (x * 16) as u8;
+            }
+        }
+        let config = crate::EncodeConfig {
+            quality: 95,
+            ..Default::default()
+        };
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Gray8, &config).unwrap();
+
+        // Can the image crate decode it?
+        let result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
+        match &result {
+            Ok(img) => {
+                let gray = img.to_luma8();
+                assert_eq!(gray.dimensions(), (16, 16));
+                eprintln!("image crate decoded our 16x16 gray OK");
+            }
+            Err(e) => {
+                eprintln!("image crate FAILED to decode our 16x16 gray: {e}");
+                panic!("Our encoder produces invalid JPEG for 16x16 gray");
+            }
+        }
     }
 }

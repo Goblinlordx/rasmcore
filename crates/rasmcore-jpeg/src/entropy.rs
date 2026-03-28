@@ -467,6 +467,101 @@ impl HuffmanEntropyEncoder {
     }
 }
 
+// ─── Interleaved MCU Encoder ─────────────────────────────────────────────────
+
+/// Interleaved MCU encoder — single BitWriter shared by all components.
+///
+/// This is the correct way to encode JPEG scans with multiple components:
+/// all entropy data goes into one bitstream, with Huffman table switching
+/// per component.
+pub struct InterleavedMcuEncoder {
+    writer: BitWriter,
+    /// Huffman encoders per component (index by component selector).
+    dc_encoders: Vec<HuffmanEncoder>,
+    ac_encoders: Vec<HuffmanEncoder>,
+    /// DC prediction per component.
+    dc_pred: Vec<i32>,
+}
+
+impl InterleavedMcuEncoder {
+    /// Create for grayscale (1 component with luma tables).
+    pub fn new_gray() -> Self {
+        Self {
+            writer: BitWriter::new(BitOrder::MsbFirst),
+            dc_encoders: vec![HuffmanEncoder::from_code_lengths(&DC_LUMA_CODE_LENGTHS)],
+            ac_encoders: vec![HuffmanEncoder::from_code_lengths(&AC_LUMA_CODE_LENGTHS)],
+            dc_pred: vec![0],
+        }
+    }
+
+    /// Create for YCbCr (3 components: Y=luma, Cb=chroma, Cr=chroma).
+    pub fn new_ycbcr() -> Self {
+        Self {
+            writer: BitWriter::new(BitOrder::MsbFirst),
+            dc_encoders: vec![
+                HuffmanEncoder::from_code_lengths(&DC_LUMA_CODE_LENGTHS), // Y
+                HuffmanEncoder::from_code_lengths(&DC_CHROMA_CODE_LENGTHS), // Cb
+                HuffmanEncoder::from_code_lengths(&DC_CHROMA_CODE_LENGTHS), // Cr
+            ],
+            ac_encoders: vec![
+                HuffmanEncoder::from_code_lengths(&AC_LUMA_CODE_LENGTHS), // Y
+                HuffmanEncoder::from_code_lengths(&AC_CHROMA_CODE_LENGTHS), // Cb
+                HuffmanEncoder::from_code_lengths(&AC_CHROMA_CODE_LENGTHS), // Cr
+            ],
+            dc_pred: vec![0, 0, 0],
+        }
+    }
+
+    /// Encode one 8x8 block for a specific component (0=Y, 1=Cb, 2=Cr).
+    pub fn encode_block(&mut self, component: usize, coeffs: &[i16; 64]) {
+        let dc_diff = coeffs[0] as i32 - self.dc_pred[component];
+        self.dc_pred[component] = coeffs[0] as i32;
+
+        // DC
+        let cat = magnitude_category(dc_diff);
+        self.dc_encoders[component].write_symbol(&mut self.writer, cat as u16);
+        if cat > 0 {
+            write_magnitude_bits(&mut self.writer, dc_diff, cat);
+        }
+
+        // AC
+        let ac = &coeffs[1..];
+        let mut zero_run = 0u8;
+        for (i, &coeff) in ac.iter().enumerate() {
+            if coeff == 0 {
+                zero_run += 1;
+                if ac[i + 1..].iter().all(|&c| c == 0) {
+                    self.ac_encoders[component].write_symbol(&mut self.writer, 0x00);
+                    return;
+                }
+                continue;
+            }
+            while zero_run >= 16 {
+                self.ac_encoders[component].write_symbol(&mut self.writer, 0xF0);
+                zero_run -= 16;
+            }
+            let cat = magnitude_category(coeff as i32);
+            let symbol = (zero_run as u16) << 4 | cat as u16;
+            self.ac_encoders[component].write_symbol(&mut self.writer, symbol);
+            write_magnitude_bits(&mut self.writer, coeff as i32, cat);
+            zero_run = 0;
+        }
+        self.ac_encoders[component].write_symbol(&mut self.writer, 0x00);
+    }
+
+    /// Reset all DC predictions (for restart markers).
+    pub fn reset_dc(&mut self) {
+        for pred in &mut self.dc_pred {
+            *pred = 0;
+        }
+    }
+
+    /// Finalize and return the single interleaved bitstream.
+    pub fn finish(self) -> Vec<u8> {
+        self.writer.finish()
+    }
+}
+
 // ─── Optimized Huffman Tables (Two-Pass) ───────────────────────────────────
 
 /// Frequency counter for building optimized Huffman tables.

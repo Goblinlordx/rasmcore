@@ -473,16 +473,12 @@ fn encode_mcus(
     let mcu_cols = ycbcr.width.div_ceil(mcu_w) as usize;
     let mcu_rows = ycbcr.height.div_ceil(mcu_h) as usize;
 
-    let mut y_enc = entropy::HuffmanEntropyEncoder::new_luma();
-    let mut cb_enc = if !is_gray {
-        Some(entropy::HuffmanEntropyEncoder::new_chroma())
+    // Single interleaved encoder — all components share one BitWriter.
+    // This is the correct JPEG encoding: all MCU data in one bitstream.
+    let mut enc = if is_gray {
+        entropy::InterleavedMcuEncoder::new_gray()
     } else {
-        None
-    };
-    let mut cr_enc = if !is_gray {
-        Some(entropy::HuffmanEntropyEncoder::new_chroma())
-    } else {
-        None
+        entropy::InterleavedMcuEncoder::new_ycbcr()
     };
 
     let (h_blocks, v_blocks) = if is_gray {
@@ -500,20 +496,13 @@ fn encode_mcus(
             #[allow(clippy::collapsible_if)]
             if let Some(interval) = restart_interval {
                 if mcu_count > 0 && (mcu_count as u16).is_multiple_of(interval) {
-                    // Flush current data, insert RST marker
-                    all_data.extend_from_slice(&y_enc.finish());
-                    y_enc = entropy::HuffmanEntropyEncoder::new_luma();
-                    cb_enc = if !is_gray {
-                        Some(entropy::HuffmanEntropyEncoder::new_chroma())
+                    // Flush current bitstream, insert RST marker
+                    all_data.extend_from_slice(&enc.finish());
+                    enc = if is_gray {
+                        entropy::InterleavedMcuEncoder::new_gray()
                     } else {
-                        None
+                        entropy::InterleavedMcuEncoder::new_ycbcr()
                     };
-                    cr_enc = if !is_gray {
-                        Some(entropy::HuffmanEntropyEncoder::new_chroma())
-                    } else {
-                        None
-                    };
-                    // Insert RST marker (not byte-stuffed)
                     let stuffed = markers::byte_stuff(&all_data);
                     all_data = stuffed;
                     markers::write_rst(&mut all_data, mcu_count / interval as u32 - 1);
@@ -535,16 +524,13 @@ fn encode_mcus(
                     let mut quantized = [0i16; 64];
                     quantize::quantize(&dct_out, luma_qt, &mut quantized);
                     let zz = zigzag_reorder(&quantized);
-                    y_enc.encode_block(&zz);
+                    enc.encode_block(0, &zz); // component 0 = Y
                 }
             }
 
             // Encode Cb and Cr blocks (1 each per MCU)
             if !is_gray {
-                for (plane, enc) in [
-                    (&ycbcr.cb, cb_enc.as_mut().unwrap()),
-                    (&ycbcr.cr, cr_enc.as_mut().unwrap()),
-                ] {
+                for (comp_idx, plane) in [(1usize, &ycbcr.cb), (2, &ycbcr.cr)] {
                     let block = extract_block(
                         plane,
                         ycbcr.chroma_width as usize,
@@ -557,7 +543,7 @@ fn encode_mcus(
                     let mut quantized = [0i16; 64];
                     quantize::quantize(&dct_out, chroma_qt, &mut quantized);
                     let zz = zigzag_reorder(&quantized);
-                    enc.encode_block(&zz);
+                    enc.encode_block(comp_idx, &zz);
                 }
             }
 
@@ -565,15 +551,8 @@ fn encode_mcus(
         }
     }
 
-    // Collect all entropy data
-    all_data.extend_from_slice(&y_enc.finish());
-    if let Some(enc) = cb_enc {
-        all_data.extend_from_slice(&enc.finish());
-    }
-    if let Some(enc) = cr_enc {
-        all_data.extend_from_slice(&enc.finish());
-    }
-
+    // Finalize single bitstream
+    all_data.extend_from_slice(&enc.finish());
     all_data
 }
 
