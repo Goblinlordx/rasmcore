@@ -87,16 +87,20 @@ pub fn encode(
         });
     }
 
-    // Validate quality
-    let _quality = config.quality.clamp(1, 100);
+    let quality = config.quality.clamp(1, 100);
 
-    // TODO: Full encoding pipeline will be implemented in subsequent tracks:
-    // 1. RGB → YUV420 conversion (color.rs)
-    // 2. Macroblock partitioning (block.rs)
-    // 3. Per-macroblock: prediction → residual → DCT → quantize → bool-encode
-    // 4. Bitstream assembly (bitstream.rs)
-    // 5. RIFF/WebP container wrapping (container.rs)
-    Err(EncodeError::EncodeFailed(
-        "VP8 encoder not yet implemented — scaffold only".into(),
-    ))
+    // 1. RGB → YUV420 conversion
+    let yuv = match format {
+        PixelFormat::Rgb8 => color::rgb_to_yuv420(pixels, width, height),
+        PixelFormat::Rgba8 => color::rgba_to_yuv420(pixels, width, height),
+    };
+
+    // 2. Quality → quantizer parameter
+    let qp = quant::quality_to_qp(quality);
+
+    // 3-4. Encode VP8 frame (prediction, DCT, quantize, bool-encode, assemble)
+    let vp8_data = bitstream::encode_frame(&yuv, qp);
+
+    // 5. Wrap in RIFF/WebP container
+    Ok(container::wrap_vp8(&vp8_data))
 }
