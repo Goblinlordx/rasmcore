@@ -204,7 +204,172 @@ const output = await rasmcore.image()
 
 ## 3. Internal Node Architecture
 
-### 3.1 Node Trait (Rust Domain)
+### 3.1 Pipeline-Owned Node Graph with Tile Pool
+
+**Critical design revision:** Transform functions do NOT take ownership of source
+nodes. A source node must persist across multiple tile requests (e.g., blur on
+tile (0,0) and blur on tile (1,0) both need overlapping pixels from the same
+upstream). WIT `borrow<>` is call-scoped only, so it can't persist either.
+
+**Solution: The pipeline resource owns all nodes internally.** Transform functions
+accept and return opaque `node-id` values (u32). The pipeline holds a
+`Vec<Box<dyn ImageNode>>` and a shared tile pool.
+
+#### Revised WIT (pipeline as graph owner)
+
+```wit
+resource pipeline {
+    constructor();
+
+    /// Opaque handle to a node in the pipeline's internal graph.
+    /// The pipeline owns all nodes — node-ids are indices, not resources.
+
+    read: func(data: buffer) -> result<node-id, rasmcore-error>;
+    resize: func(source: node-id, w: u32, h: u32, filter: resize-filter) -> node-id;
+    crop: func(source: node-id, x: u32, y: u32, w: u32, h: u32) -> result<node-id, rasmcore-error>;
+    rotate: func(source: node-id, angle: rotation) -> node-id;
+    flip: func(source: node-id, direction: flip-direction) -> node-id;
+    blur: func(source: node-id, radius: f32) -> result<node-id, rasmcore-error>;
+    sharpen: func(source: node-id, amount: f32) -> node-id;
+    brightness: func(source: node-id, amount: f32) -> result<node-id, rasmcore-error>;
+    contrast: func(source: node-id, amount: f32) -> result<node-id, rasmcore-error>;
+    grayscale: func(source: node-id) -> node-id;
+
+    /// Node info (available without computing pixels).
+    node-info: func(node: node-id) -> result<image-info, rasmcore-error>;
+
+    /// Drive execution — pulls tiles through the graph.
+    write-jpeg: func(source: node-id, config: jpeg-write-config) -> result<buffer, rasmcore-error>;
+    write-png: func(source: node-id, config: png-write-config) -> result<buffer, rasmcore-error>;
+    write-webp: func(source: node-id, config: webp-write-config) -> result<buffer, rasmcore-error>;
+    write: func(source: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
+}
+
+type node-id = u32;
+```
+
+This enables **DAG topologies** — the same source node can feed multiple transforms:
+```typescript
+const p = new Pipeline();
+const src = p.read(data);              // node 0
+const thumb = p.resize(src, 200, 200); // node 1, refs node 0
+const large = p.resize(src, 2000, 2000); // node 2, also refs node 0
+```
+
+### 3.2 Tile Pool with Reference-Counted Borrowing
+
+Tiles are NOT owned by nodes. They're owned by a **pipeline-level tile pool**.
+Nodes borrow tiles via ref-counted handles. Since execution is single-threaded,
+no locks needed.
+
+```rust
+/// Unique identity for a cached tile — scoped to a specific node + region.
+#[derive(Hash, Eq, PartialEq, Clone)]
+struct TileKey {
+    node_id: u32,      // which node produced this tile
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+/// A slot in the tile pool.
+struct TileSlot {
+    pixels: Vec<u8>,      // pre-allocated buffer, reused
+    key: Option<TileKey>, // None = free slot
+    rc: u32,              // reference count (0 = reclaimable)
+    generation: u32,      // incremented on reuse, prevents stale handles
+    info: ImageInfo,
+}
+
+/// Handle returned to nodes — lightweight, copyable.
+#[derive(Clone, Copy)]
+struct TileHandle {
+    slot_index: u32,
+    generation: u32,   // must match slot.generation to be valid
+}
+
+/// Pipeline-owned tile pool.
+struct TilePool {
+    slots: Vec<TileSlot>,
+    index: HashMap<TileKey, usize>,  // fast lookup: key → slot index
+    max_slots: usize,
+}
+
+impl TilePool {
+    /// Acquire a tile. Returns cached if available, otherwise computes.
+    fn acquire(&mut self, key: TileKey, compute: impl FnOnce(&mut Vec<u8>)) -> TileHandle {
+        // 1. Check cache — if key exists and slot is valid, increment rc
+        if let Some(&slot_idx) = self.index.get(&key) {
+            self.slots[slot_idx].rc += 1;
+            return TileHandle {
+                slot_index: slot_idx as u32,
+                generation: self.slots[slot_idx].generation,
+            };
+        }
+        // 2. Find a free slot (rc == 0)
+        let slot_idx = self.find_free_slot();
+        let slot = &mut self.slots[slot_idx];
+        // 3. Evict old key from index if slot was previously used
+        if let Some(old_key) = slot.key.take() {
+            self.index.remove(&old_key);
+        }
+        // 4. Fill the slot
+        slot.generation += 1;
+        slot.rc = 1;
+        slot.key = Some(key.clone());
+        compute(&mut slot.pixels);
+        self.index.insert(key, slot_idx);
+        TileHandle {
+            slot_index: slot_idx as u32,
+            generation: slot.generation,
+        }
+    }
+
+    /// Release a tile handle. Decrements rc. Slot is reclaimable when rc hits 0.
+    fn release(&mut self, handle: TileHandle) {
+        let slot = &mut self.slots[handle.slot_index as usize];
+        assert_eq!(slot.generation, handle.generation, "stale tile handle");
+        slot.rc -= 1;
+    }
+
+    /// Read tile pixels (immutable borrow while handle is valid).
+    fn read(&self, handle: TileHandle) -> &[u8] {
+        let slot = &self.slots[handle.slot_index as usize];
+        assert_eq!(slot.generation, handle.generation, "stale tile handle");
+        &slot.pixels
+    }
+}
+```
+
+**Key property: tile identity is (node_id, x, y, w, h).** Tile at (0,0) from
+the source decoder (node 0) is a different cache entry than tile at (0,0) from
+the blur node (node 2). Each node's output tiles are independently cached.
+
+#### Tile lifecycle during blur processing:
+
+```
+Processing output strip 0 (rows 0-63):
+  blur needs source strips 0-1 (rows 0-127 including overlap):
+    pool.acquire(TileKey{node:0, y:0, h:64})  → compute, rc=1
+    pool.acquire(TileKey{node:0, y:64, h:64}) → compute, rc=1
+  blur produces its output into a new slot:
+    pool.acquire(TileKey{node:1, y:0, h:64})  → compute from source strips
+  blur releases source strip 0:
+    pool.release(source_strip_0)              → rc: 1→0 (reclaimable)
+  blur keeps source strip 1 (needed for next output)
+
+Processing output strip 1 (rows 64-127):
+  blur needs source strips 1-2:
+    pool.acquire(TileKey{node:0, y:64, h:64}) → CACHE HIT, rc: 1→2
+    pool.acquire(TileKey{node:0, y:128, h:64}) → compute, rc=1
+  blur produces output strip 1
+  blur releases source strip 1 twice:
+    pool.release(...)                          → rc: 2→1→0 (reclaimable)
+  ...sliding window, only 2-3 source strips cached at any time
+```
+
+### 3.3 Node Trait (Revised)
 
 ```rust
 /// The core trait every pipeline node implements.
@@ -212,57 +377,55 @@ trait ImageNode {
     /// Image dimensions and format (available without computing pixels).
     fn info(&self) -> &ImageInfo;
 
-    /// Compute a tile. The node may request tiles from upstream.
-    fn get_tile(&self, request: TileRequest) -> Result<Tile, ImageError>;
+    /// Compute a tile into the provided buffer. The node acquires upstream
+    /// tiles from the pool as needed and releases them when done.
+    fn compute_tile(
+        &self,
+        request: &TileRequest,
+        output: &mut Vec<u8>,
+        pool: &mut TilePool,
+        graph: &NodeGraph,
+    ) -> Result<(), ImageError>;
 
     /// Overlap this node needs from upstream for each output tile.
     fn overlap(&self) -> Overlap;
+
+    /// Access pattern hint — helps the pool optimize caching.
+    fn access_pattern(&self) -> AccessPattern;
 }
 
-struct TileRequest {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-}
-
-struct Tile {
-    pixels: Vec<u8>,
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-    info: ImageInfo,
-}
-
-/// How much extra context a node needs from upstream.
-struct Overlap {
-    top: u32,
-    bottom: u32,
-    left: u32,
-    right: u32,
+enum AccessPattern {
+    /// Output tiles map to same-position upstream tiles (point ops, crop).
+    Sequential,
+    /// Output tiles map to shifted/scaled upstream tiles (resize, blur).
+    LocalNeighborhood,
+    /// Output tiles may request any upstream region (rotation, flip).
+    RandomAccess,
+    /// Must see all upstream tiles before producing any output (histogram eq).
+    GlobalTwoPass,
+    /// Has multiple upstream nodes (composite, blend).
+    MultiInput,
 }
 ```
 
-### 3.2 Tile Request Propagation
+### 3.4 Tile Request Propagation
 
 When `write()` is called, it iterates output tiles and each request cascades:
 
 ```
-write_jpeg(node, config)
-  for each output tile (x, y, w, h):
-    tile = node.get_tile(x, y, w, h)
-      ↓
-    sharpen.get_tile(x, y, w, h)
-      needs overlap: top=1, bottom=1, left=1, right=1
-      requests upstream: get_tile(x-1, y-1, w+2, h+2)
-      ↓
-    resize.get_tile(x', y', w', h')     [coordinates mapped to source scale]
-      needs overlap: depends on filter (lanczos3 = 3px each side)
-      requests upstream: get_tile(x'', y'', w'', h'')
-      ↓
-    source_decoder.get_tile(x'', y'', w'', h'')
-      decodes the required region (or full image + caches)
+write_jpeg(node_id=2, config)
+  for each output strip (y=0, y=64, y=128, ...):
+    handle = pool.acquire(TileKey{node:2, y, h:64}, |buf| {
+      // blur (node 2) computes by acquiring from upstream
+      src_h0 = pool.acquire(TileKey{node:0, y:y-overlap, h:64+2*overlap}, |buf| {
+        // source decoder (node 0) decodes the region
+        decoder.decode_region(y-overlap, 64+2*overlap, buf);
+      });
+      blur_kernel(pool.read(src_h0), buf);
+      pool.release(src_h0);
+    });
+    encoder.consume_strip(pool.read(handle));
+    pool.release(handle);
 ```
 
 ### 3.3 Overlap Calculation Per Operation
@@ -281,7 +444,137 @@ write_jpeg(node, config)
 | Median filter (future) | radius | Window size |
 | Custom convolution | kernel_size/2 | Arbitrary kernel |
 
-### 3.4 Operation Fusion
+### 3.5 Operation Validation Against Tile Pool
+
+Every operation from the parity matrix validated against the tile pool + ref-count
+model. Each entry documents access pattern, pool behavior, and any caveats.
+
+#### Tier 1: Works perfectly (sequential access, minimal pool)
+
+| Operation | Access Pattern | Pool Slots Needed | Notes |
+|-----------|---------------|-------------------|-------|
+| Brightness | Sequential | 1 upstream + 1 output | Point op, zero overlap |
+| Contrast | Sequential | 1 + 1 | Point op |
+| Gamma | Sequential | 1 + 1 | Point op |
+| Invert/negate | Sequential | 1 + 1 | Point op |
+| Grayscale | Sequential | 1 + 1 | Per-pixel channel combine |
+| Threshold | Sequential | 1 + 1 | Point op |
+| Levels/curves | Sequential | 1 + 1 | LUT-based point op |
+| Color space convert | Sequential | 1 + 1 | Per-pixel transform |
+| Crop | Sequential | 1 + 1 | Coordinate offset only |
+| Embed/pad | Sequential | 0-1 + 1 | Tiles outside input = fill color, no upstream |
+| Flip horizontal | Sequential | 1 + 1 | Mirror column coordinates within same strip |
+| Rotate 180 | Sequential (reverse) | 1 + 1 | Reverse strip order + reverse columns |
+
+#### Tier 2: Works with sliding window (local neighborhood, 2-4 pool slots)
+
+| Operation | Access Pattern | Pool Slots Needed | Overlap |
+|-----------|---------------|-------------------|---------|
+| Blur (gaussian) | LocalNeighborhood | 2-3 upstream + 1 output | ceil(3*sigma) per side |
+| Sharpen (unsharp mask) | LocalNeighborhood | 2-3 + 1 | 1-3px |
+| Median filter | LocalNeighborhood | 2-3 + 1 | radius |
+| Custom convolution | LocalNeighborhood | 2-3 + 1 | kernel_size/2 |
+| Sobel/Prewitt edge detect | LocalNeighborhood | 2-3 + 1 | 1px (3x3 kernel) |
+| Morphology (erode/dilate) | LocalNeighborhood | 2-3 + 1 | structuring element radius |
+| Emboss | LocalNeighborhood | 2-3 + 1 | 1px |
+| Resize (any filter) | LocalNeighborhood | 2-3 + 1 | ceil(filter_radius * scale_factor) |
+
+The sliding window works because strips are processed top-to-bottom. The previous
+upstream strip stays cached (rc > 0) while the next strip is computed, providing
+the overlap region. Only 2-3 upstream strips are ever live simultaneously.
+
+#### Tier 3: Works with expanded pool (random access)
+
+| Operation | Issue | Pool Behavior | Memory Impact |
+|-----------|-------|---------------|---------------|
+| Rotate 90/270 | Output strip N needs a vertical slice across ALL source rows | Source fully decoded into pool (or seek cache provides rows on demand) | Up to full image for sequential source formats |
+| Flip vertical | First output strip needs LAST source strip | Source fully decoded in reverse order | Same as rotation |
+| Arbitrary angle rotation | Any output pixel maps to any source pixel | Source fully cached | Full image |
+| Affine transform | General coordinate remapping | Source fully cached | Full image |
+| Perspective/distort | Arbitrary mapping | Source fully cached | Full image |
+
+**Not a design flaw — inherent to the operation.** These operations fundamentally
+require random access to the full source. The pool handles it by caching all source
+strips. Memory usage equals the full image for these operations, same as the current
+architecture, but downstream operations still benefit from tiling.
+
+**Mitigation:** For `rotate90(read(large_png)) → write()`, the source decoder
+fills pool slots on demand via the seek cache. The pool may hold the full decoded
+image, but it does so in reusable slots. Once the rotate is complete and output
+is written, all slots are released.
+
+#### Tier 4: Works with two-pass (global operations)
+
+| Operation | First Pass | Second Pass | Notes |
+|-----------|-----------|-------------|-------|
+| Histogram equalize | Iterate ALL upstream tiles, compute histogram | Apply LUT per tile | Stats pass acquires+releases each tile sequentially |
+| Auto-levels/auto-contrast | Compute min/max/mean across all tiles | Apply linear mapping | Same pattern |
+| Smart crop | Compute saliency/interest map across all tiles | Crop to detected region | Detection pass + crop pass |
+| Trim/autocrop | Scan border tiles for uniform color | Crop to content bounds | Partial scan (edges only) |
+
+**How it works in the pool:**
+1. First pass: acquire tile (rc=1), read pixels, compute stats, release tile (rc=0→reclaimable)
+2. Between passes: only the computed statistics are held (tiny: histogram = 256 entries)
+3. Second pass: acquire tiles again (recomputed or cache-hit if still in pool), apply transform
+
+**Key: the two-pass pattern does NOT hold all tiles simultaneously.** Each tile is
+acquired and released during the stats pass. The pool size stays small. Only the
+statistics summary persists between passes.
+
+#### Tier 5: Works with multiple inputs (DAG nodes)
+
+| Operation | Inputs | Pool Behavior | Notes |
+|-----------|--------|---------------|-------|
+| Alpha composite | 2 source nodes | Acquire tile from node A + tile from node B, composite, release both | rc=1 each |
+| Porter-Duff blend | 2 sources | Same as composite | All blend modes |
+| Watermark overlay | 2 sources | Overlay image tile (often smaller, so many output tiles need no overlay tile) | Sparse upstream |
+| Image concatenation | N sources | Output tile maps to whichever source covers that region | Only 1 source tile per output tile |
+| Difference/comparison | 2 sources | Acquire both, compute diff, release | |
+
+The pool handles DAG topology naturally. Multiple `acquire()` calls for different
+node_ids in the same output tile computation. Each upstream tile has its own
+TileKey with its node_id, so caching is independent.
+
+#### Tier 6: Encoder-specific considerations
+
+| Encoder | Tile Compatibility | Notes |
+|---------|-------------------|-------|
+| JPEG | Perfect | MCUs are 8x8 blocks; 64-row strips = 8 MCU rows, perfect alignment |
+| PNG | Perfect | Scanline-by-scanline encoding; strips provide scanlines in order |
+| TIFF (tiled) | Perfect | Write tiles directly from pool tiles |
+| TIFF (stripped) | Perfect | Write strips directly |
+| WebP (lossy) | Caveat | VP8 encoder typically needs full image; may need to materialize |
+| WebP (lossless) | Caveat | VP8L may need full image |
+| AVIF (tiled) | Perfect | AV1 tiles can be encoded independently |
+| AVIF (single tile) | Caveat | Needs full image |
+| GIF | Caveat | LZW encoder can be fed scanlines, but frame disposal may need prior frame |
+
+**Encoder materialization strategy:** For encoders that need the full image (WebP,
+single-tile AVIF), the `write()` sink iterates all upstream tiles into a contiguous
+buffer before calling the encoder. This is a worst-case fallback, not a design flaw.
+The pool still provides the tiles efficiently; only the final assembly step needs
+the full image. As encoders improve or we add streaming encode support, this
+fallback can be removed per-format.
+
+#### Summary: No design-breaking issues found
+
+| Access Pattern | Pool Behavior | Example Operations |
+|----------------|---------------|--------------------|
+| Sequential (point ops) | 2 slots, sliding | brightness, contrast, grayscale |
+| Local neighborhood | 3-4 slots, sliding window | blur, sharpen, resize, edge detect |
+| Random access | Many slots (up to full image) | rotate 90/270, flip vertical, affine |
+| Global two-pass | 2 slots during stats, 2 during apply | histogram eq, auto-levels |
+| Multi-input DAG | 2+ slots per source | composite, blend, watermark |
+| Encoder (streaming) | Consumes tiles in order | JPEG, PNG, TIFF |
+| Encoder (materialized) | Collects all tiles first | WebP lossy, single-tile AVIF |
+
+**The tile pool design works for ALL operations.** Operations that fundamentally
+need full-image access (rotation, global stats) use more pool slots, but the
+design doesn't break — it gracefully degrades to current-architecture memory
+usage for those cases while providing 50-100x improvement for the common case
+(sequential transforms and filters).
+
+### 3.6 Operation Fusion
 
 The pipeline can detect optimization opportunities before executing:
 
@@ -439,11 +732,23 @@ With seek cache add ~256KB for checkpoint storage. **50-100x memory reduction** 
 
 ## 7. Key Design Decisions
 
-### D1: image-node is a WIT resource (not opaque handle)
-Resources give hosts typed methods (`.info()`, `.getTile()`) and automatic cleanup via drop. Handles would require manual lifecycle management.
+### D1: Pipeline resource owns the node graph; nodes are opaque IDs (not WIT resources)
+WIT `own<>` transfers ownership (node consumed after one use) and `borrow<>` is
+call-scoped only. Neither works for nodes that must persist across multiple tile
+requests (blur on tile (0,0) and tile (1,0) both need the same upstream).
+Solution: the pipeline resource holds `Vec<Box<dyn ImageNode>>` internally.
+Transform functions accept and return `node-id` (u32). Nodes persist until the
+pipeline is dropped.
 
-### D2: Transform functions are module-level, not resource methods
-`resize(source, w, h, filter)` not `source.resize(w, h, filter)`. This matches WIT convention where resources are data, functions are operations. It also allows the pipeline to see the full chain before execution (fusion).
+### D2: Transform functions are pipeline methods, not node methods
+`pipeline.resize(source_id, w, h, filter)` returns a new `node-id`. This keeps
+all nodes in the pipeline's ownership and allows the pipeline to see the full
+chain before execution (fusion).
+
+### D2b: Tile identity is (node_id, x, y, w, h)
+Tile at (0,0) from the source decoder (node 0) is a different pool entry than
+tile at (0,0) from the blur node (node 2). Each node's output tiles are
+independently cached and ref-counted in the pool.
 
 ### D3: Tile size is full-width strips
 Simplifies coordinate math, aligns with format scanline structure, good cache behavior. Tiled TIFF is the exception (uses format tiles).
@@ -462,16 +767,52 @@ Each source node manages its own seek cache. This avoids shared state and makes 
 
 ---
 
-## 8. Open Questions
+## 8. Open Questions (Resolved) and Remaining
 
-### Q1: Should image-node.get_tile() be public in WIT?
-**Recommendation: Yes, but secondary.** Most users use `write()` which drives tiles internally. Power users (custom renderers, tiled output) benefit from direct tile access. Expose it but document `write()` as the primary API.
+### RESOLVED: Q1 — Node ownership model
+**Decision: Pipeline owns all nodes; node-id (u32) for references.**
+WIT resource ownership/borrowing doesn't work for nodes that must persist across
+multiple tile requests. See D1 above.
 
-### Q2: Thread-safe parallel tile computation?
-**Recommendation: Defer.** WIT resources are single-threaded per instance. The host could create multiple pipeline instances for parallelism. Internal Rust code could use rayon for parallel tile computation within a single `get_tile()` call (e.g., parallel scanlines within a strip). Design for it, don't implement yet.
+### RESOLVED: Q2 — Tile identity
+**Decision: TileKey = (node_id, x, y, w, h).**
+Tiles are scoped to the producing node. The same (x,y) coordinates at different
+pipeline steps are different cache entries. See D2b above.
 
-### Q3: Lazy node chain vs immediate execution?
-**Recommendation: Lazy with explicit materialize.** Nodes queue their parameters. First `get_tile()` or `write()` triggers actual computation. This enables fusion. `materialize()` is the escape hatch for operations that truly need the full image.
+### RESOLVED: Q3 — How to handle global operations
+**Decision: Two-pass node with stats caching.**
+First pass iterates all upstream tiles (acquire/release each) to compute statistics.
+Second pass applies the transform. Pool size stays small — tiles aren't held
+simultaneously during the stats pass. See Tier 4 in operation validation.
 
-### Q4: How to handle global operations (histogram equalize)?
-**Recommendation: Two-pass node.** First `get_tile()` triggers a full statistics pass (iterates all upstream tiles to compute histogram). Results are cached. Subsequent `get_tile()` calls apply the equalization using cached stats. The statistics pass is the cost — it's unavoidable for global operations.
+### RESOLVED: Q4 — Lazy vs immediate
+**Decision: Lazy with explicit write() trigger.**
+Node chain is built without computation. First `write()` call triggers execution.
+This enables fusion detection before any pixels are computed.
+
+### REMAINING: Q5 — Thread-safe parallel tile computation?
+**Recommendation: Defer.** Single-threaded for v1. The host could create multiple
+pipeline instances for parallelism. Internal rayon usage possible for future
+within-tile parallelism (e.g., parallel scanlines within a strip).
+
+### REMAINING: Q6 — Pool size heuristics
+How should the pool auto-size? Options:
+- Fixed pool (e.g., 32 slots) — simple, predictable memory ceiling
+- Adaptive based on access pattern hints — grows for random access ops, shrinks for sequential
+- User-configurable memory budget — pool calculates max slots from budget + tile size
+**Recommendation: Start with fixed pool + user-configurable max. Add adaptive later.**
+
+### REMAINING: Q7 — Canny edge detection hysteresis
+Canny's hysteresis thresholding uses connected component analysis which is
+inherently global — connectivity can span the entire image. Options:
+- Generous overlap (32px) with approximate tile-boundary handling
+- Full-image materialization for exact results
+- Two-phase: tile-local hysteresis + boundary stitching pass
+**Recommendation: Start with materialization; optimize with overlap later if needed.**
+
+### REMAINING: Q8 — FFT / frequency domain
+Full-image FFT requires all pixels. Options:
+- Overlap-save method for FFT-based convolution (block-wise, compatible with tiles)
+- Full materialization for direct frequency access (viewing power spectrum)
+**Recommendation: Overlap-save for convolution use cases. Full materialization for
+direct FFT access. Both work within the tile pool model.**
