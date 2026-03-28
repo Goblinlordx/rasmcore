@@ -63,18 +63,45 @@ fn encode_64x64_solid_blue() {
     assert_eq!(&webp[8..12], b"WEBP");
     assert_eq!(&webp[12..16], b"VP8 ");
 
-    // Try decoding — may fail for multi-MB images until bitstream is fully correct
-    match image::load_from_memory_with_format(&webp, image::ImageFormat::WebP) {
-        Ok(img) => {
-            let rgb = img.to_rgb8();
-            assert_eq!(rgb.dimensions(), (64, 64));
-        }
-        Err(_) => {
-            // Multi-macroblock decoding may need bitstream refinements.
-            // The RIFF container and frame structure are valid.
-            // Accept as long as the output is structurally sound.
+    // Must decode correctly
+    let img = image::load_from_memory_with_format(&webp, image::ImageFormat::WebP)
+        .expect("64x64 blue should decode");
+    let rgb = img.to_rgb8();
+    assert_eq!(rgb.dimensions(), (64, 64));
+}
+
+#[test]
+fn encode_1024x1024_solid_decode() {
+    let pixels = vec![128u8; 1024 * 1024 * 3];
+    let config = EncodeConfig { quality: 75 };
+    let webp = encode(&pixels, 1024, 1024, PixelFormat::Rgb8, &config).unwrap();
+    let (w, h, _) = decode_webp(&webp);
+    assert_eq!((w, h), (1024, 1024));
+}
+
+#[test]
+fn encode_512x512_gradient_decode() {
+    let mut pixels = Vec::with_capacity(512 * 512 * 3);
+    for y in 0..512u32 {
+        for x in 0..512u32 {
+            pixels.push(((x * 255) / 512) as u8);
+            pixels.push(((y * 255) / 512) as u8);
+            pixels.push(128);
         }
     }
+    let config = EncodeConfig { quality: 75 };
+    let webp = encode(&pixels, 512, 512, PixelFormat::Rgb8, &config).unwrap();
+    let (w, h, _) = decode_webp(&webp);
+    assert_eq!((w, h), (512, 512));
+}
+
+#[test]
+fn encode_deterministic() {
+    let pixels = vec![128u8; 256 * 256 * 3];
+    let config = EncodeConfig { quality: 75 };
+    let a = encode(&pixels, 256, 256, PixelFormat::Rgb8, &config).unwrap();
+    let b = encode(&pixels, 256, 256, PixelFormat::Rgb8, &config).unwrap();
+    assert_eq!(a, b, "encoding should be deterministic");
 }
 
 #[test]

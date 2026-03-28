@@ -16,25 +16,6 @@ pub const COEFF_PROB_UPDATE_COUNT: usize = 4 * 8 * 3 * 11;
 /// Source: libvpx vp8/common/entropy.c — vp8_coef_bands[]
 const BANDS: [u8; 17] = [0, 1, 2, 3, 6, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 0];
 
-/// Map from token type to prev-coef complexity context.
-/// Context 0 = EOB/start, Context 1 = ZERO, Context 2 = nonzero value.
-/// Source: libvpx vp8/common/entropy.c — vp8_prev_token_class[]
-const TOKEN_TO_CONTEXT: [u8; 12] = [0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0];
-
-// Token type indices for context lookup
-const TOKEN_EOB: usize = 0;
-const TOKEN_ZERO: usize = 1;
-const TOKEN_ONE: usize = 2;
-const TOKEN_TWO: usize = 3;
-const TOKEN_THREE: usize = 4;
-const TOKEN_FOUR: usize = 5;
-const TOKEN_CAT1: usize = 6;
-const TOKEN_CAT2: usize = 7;
-const TOKEN_CAT3: usize = 8;
-const TOKEN_CAT4: usize = 9;
-const TOKEN_CAT5: usize = 10;
-const TOKEN_CAT6: usize = 11; // sentinel, maps to context 0
-
 /// Default coefficient probabilities for VP8 token decoding.
 ///
 /// Source: libvpx `vp8/common/default_coef_probs.h` (kDefaultCoefProbs).
@@ -226,7 +207,7 @@ pub fn encode_block(
                 // After ZERO, decoder starts at node 1 — cannot encode EOB.
                 // Encode ZERO for remaining positions instead.
                 bw.put_bit(probs[1], false); // ZERO at node 1
-                ctx = TOKEN_TO_CONTEXT[TOKEN_ZERO] as usize;
+                ctx = 0; // matches decoder: complexity = 0 after ZERO
                 // skip stays true
                 continue;
             } else {
@@ -246,7 +227,7 @@ pub fn encode_block(
                 bw.put_bit(probs[1], false); // ZERO at node 1
             }
             skip = true;
-            ctx = TOKEN_TO_CONTEXT[TOKEN_ZERO] as usize;
+            ctx = 0; // matches decoder: complexity = 0 after ZERO
         } else {
             let abs_val = coeff.unsigned_abs() as u32;
             let sign = coeff < 0;
@@ -258,32 +239,26 @@ pub fn encode_block(
                 bw.put_bit(probs[0], true); // not EOB (node 0 → node 1)
             }
 
-            let token_type;
-
             if abs_val == 1 {
                 bw.put_bit(probs[1], true); // not ZERO (node 1 → node 2)
                 bw.put_bit(probs[2], false); // ONE (node 2 left)
-                token_type = TOKEN_ONE;
             } else if abs_val == 2 {
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], false); // node 3 left → node 4
                 bw.put_bit(probs[4], false); // TWO
-                token_type = TOKEN_TWO;
             } else if abs_val == 3 {
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], false);
                 bw.put_bit(probs[4], true);
                 bw.put_bit(probs[5], false);
-                token_type = TOKEN_THREE;
             } else if abs_val == 4 {
                 bw.put_bit(probs[1], true);
                 bw.put_bit(probs[2], true);
                 bw.put_bit(probs[3], false);
                 bw.put_bit(probs[4], true);
                 bw.put_bit(probs[5], true);
-                token_type = TOKEN_FOUR;
             } else if abs_val <= 6 {
                 // CAT1: node3→right(→n6), n6→left(→n7), n7→left(=CAT1)
                 bw.put_bit(probs[1], true);
@@ -292,7 +267,6 @@ pub fn encode_block(
                 bw.put_bit(probs[6], false); // → node 7
                 bw.put_bit(probs[7], false); // → CAT1
                 bw.put_bit(159, (abs_val - 5) != 0);
-                token_type = TOKEN_CAT1;
             } else if abs_val <= 10 {
                 // CAT2: node3→right(→n6), n6→left(→n7), n7→right(=CAT2)
                 bw.put_bit(probs[1], true);
@@ -303,7 +277,6 @@ pub fn encode_block(
                 let extra = abs_val - 7;
                 bw.put_bit(165, (extra >> 1) & 1 != 0);
                 bw.put_bit(145, extra & 1 != 0);
-                token_type = TOKEN_CAT2;
             } else if abs_val <= 18 {
                 // CAT3: node3→right(→n6), n6→right(→n8), n8→left(→n9), n9→left(=CAT3)
                 bw.put_bit(probs[1], true);
@@ -316,7 +289,6 @@ pub fn encode_block(
                 bw.put_bit(173, (extra >> 2) & 1 != 0);
                 bw.put_bit(148, (extra >> 1) & 1 != 0);
                 bw.put_bit(140, extra & 1 != 0);
-                token_type = TOKEN_CAT3;
             } else if abs_val <= 34 {
                 // CAT4: ...n8→left(→n9), n9→right(=CAT4)
                 bw.put_bit(probs[1], true);
@@ -330,7 +302,6 @@ pub fn encode_block(
                 bw.put_bit(155, (extra >> 2) & 1 != 0);
                 bw.put_bit(140, (extra >> 1) & 1 != 0);
                 bw.put_bit(135, extra & 1 != 0);
-                token_type = TOKEN_CAT4;
             } else if abs_val <= 66 {
                 // CAT5: ...n8→right(→n10), n10→left(=CAT5)
                 bw.put_bit(probs[1], true);
@@ -345,7 +316,6 @@ pub fn encode_block(
                 bw.put_bit(141, (extra >> 2) & 1 != 0);
                 bw.put_bit(134, (extra >> 1) & 1 != 0);
                 bw.put_bit(130, extra & 1 != 0);
-                token_type = TOKEN_CAT5;
             } else {
                 // CAT6: ...n8→right(→n10), n10→right(=CAT6)
                 bw.put_bit(probs[1], true);
@@ -359,12 +329,12 @@ pub fn encode_block(
                 for (j, &p) in cat6_probs.iter().enumerate() {
                     bw.put_bit(p, (extra >> (10 - j)) & 1 != 0);
                 }
-                token_type = TOKEN_CAT6;
             }
 
             bw.put_bit(128, sign);
             skip = false;
-            ctx = TOKEN_TO_CONTEXT[token_type] as usize;
+            // Match decoder: complexity = if abs==1 {1} else {2}
+            ctx = if abs_val == 1 { 1 } else { 2 };
         }
     }
     has_nonzero

@@ -227,37 +227,38 @@ fn encode_mb_header(bw: &mut BoolWriter, mb: &MacroblockInfo) {
 /// Encode luma 16x16 prediction mode for key frame.
 ///
 /// Key-frame Y mode tree (vp8_kf_ymode_tree from libvpx):
-///   Node 0: B_PRED(4) vs rest     [prob = 145]
-///   Node 1: DC_PRED(0) vs rest    [prob = 156]
-///   Node 2: V_PRED(1) vs rest     [prob = 163]
-///   Node 3: H_PRED(2) vs TM(3)    [prob = 128]
+///   `[-B_PRED, 2, 4, 6, -DC_PRED, -V_PRED, -H_PRED, -TM_PRED]`
+///
+///   Node 0: B_PRED vs rest         [prob = 145]
+///   Node 1: (DC/V) vs (H/TM)      [prob = 156]
+///   Node 2: DC vs V                [prob = 163]
+///   Node 3: H vs TM               [prob = 128]
 ///
 /// We only use DC(0), V(1), H(2), TM(3) — never B_PRED(4).
 fn encode_intra_y_mode(bw: &mut BoolWriter, mode: u8) {
     // Node 0: skip B_PRED (we never use it)
-    bw.put_bit(145, true); // not B_PRED → continue to node 1
+    bw.put_bit(145, true); // not B_PRED → node 1
 
     match mode {
         0 => {
-            // DC_PRED: node1 left
-            bw.put_bit(156, false);
+            // DC_PRED: node1 left → node2 left
+            bw.put_bit(156, false); // → node 2
+            bw.put_bit(163, false); // → DC
         }
         1 => {
-            // V_PRED: node1 right → node2 left
-            bw.put_bit(156, true);
-            bw.put_bit(163, false);
+            // V_PRED: node1 left → node2 right
+            bw.put_bit(156, false); // → node 2
+            bw.put_bit(163, true); // → V
         }
         2 => {
-            // H_PRED: node1 right → node2 right → node3 left
-            bw.put_bit(156, true);
-            bw.put_bit(163, true);
-            bw.put_bit(128, false);
+            // H_PRED: node1 right → node3 left
+            bw.put_bit(156, true); // → node 3
+            bw.put_bit(128, false); // → H
         }
         3 => {
-            // TM_PRED: node1 right → node2 right → node3 right
-            bw.put_bit(156, true);
-            bw.put_bit(163, true);
-            bw.put_bit(128, true);
+            // TM_PRED: node1 right → node3 right
+            bw.put_bit(156, true); // → node 3
+            bw.put_bit(128, true); // → TM
         }
         _ => unreachable!("invalid y_mode: {mode}"),
     }
