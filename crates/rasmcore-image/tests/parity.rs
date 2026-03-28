@@ -531,8 +531,7 @@ fn parity_jpeg_quality_per_byte_butteraugli() {
             quality: q,
             progressive: false,
         };
-        let zen_jpeg =
-            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+        let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
 
         let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
@@ -579,8 +578,7 @@ fn parity_jpeg_quality_per_byte_dssim() {
             quality: q,
             progressive: false,
         };
-        let zen_jpeg =
-            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+        let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
 
         let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
@@ -623,8 +621,7 @@ fn parity_jpeg_quality_curve_filesize() {
             quality: q,
             progressive: false,
         };
-        let zen_jpeg =
-            encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+        let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
 
         // Allow up to 60% larger at same quality number (quality scales differ).
@@ -680,8 +677,7 @@ fn parity_jpeg_progressive_structure() {
         quality: 85,
         progressive: true,
     };
-    let jpeg_data =
-        encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
+    let jpeg_data = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
 
     // Count SOS (Start of Scan) markers: 0xFF 0xDA
     // Progressive JPEG has multiple scans; baseline has exactly 1.
