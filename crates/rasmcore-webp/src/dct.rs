@@ -47,8 +47,7 @@ pub fn forward_dct(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
 
         out[i] = ((a0 + a1 + 7) >> 4) as i16;
         out[8 + i] = ((a0 - a1 + 7) >> 4) as i16;
-        out[4 + i] = ((a2 * 2217 + a3 * 5352 + 12000) >> 16) as i16
-            + if a3 != 0 { 1 } else { 0 };
+        out[4 + i] = ((a2 * 2217 + a3 * 5352 + 12000) >> 16) as i16 + if a3 != 0 { 1 } else { 0 };
         out[12 + i] = ((a3 * 2217 - a2 * 5352 + 51000) >> 16) as i16;
     }
 }
@@ -201,10 +200,7 @@ mod tests {
     #[test]
     fn forward_inverse_dct_roundtrip_zero_reference() {
         let src: [u8; 16] = [
-            52, 55, 61, 66,
-            70, 61, 64, 73,
-            63, 59, 55, 90,
-            67, 68, 78, 82,
+            52, 55, 61, 66, 70, 61, 64, 73, 63, 59, 55, 90, 67, 68, 78, 82,
         ];
         let reference = [0u8; 16];
 
@@ -221,7 +217,8 @@ mod tests {
             assert!(
                 diff <= 1,
                 "pixel {i}: src={}, reconstructed={}, diff={diff}",
-                src[i], reconstructed[i]
+                src[i],
+                reconstructed[i]
             );
         }
     }
@@ -245,7 +242,8 @@ mod tests {
             assert!(
                 diff <= 1,
                 "pixel {i}: src={}, reconstructed={}, diff={diff}",
-                src[i], reconstructed[i]
+                src[i],
+                reconstructed[i]
             );
         }
     }
@@ -302,10 +300,7 @@ mod tests {
     #[test]
     fn forward_inverse_wht_roundtrip() {
         let dc_coeffs: [i16; 16] = [
-            100, -20, 30, -40,
-            50, -60, 70, -80,
-            15, -25, 35, -45,
-            55, -65, 75, -85,
+            100, -20, 30, -40, 50, -60, 70, -80, 15, -25, 35, -45, 55, -65, 75, -85,
         ];
 
         let mut transformed = [0i16; 16];
@@ -319,7 +314,8 @@ mod tests {
             assert!(
                 diff <= 1,
                 "coeff {i}: original={}, reconstructed={}, diff={diff}",
-                dc_coeffs[i], reconstructed[i]
+                dc_coeffs[i],
+                reconstructed[i]
             );
         }
     }
@@ -389,7 +385,8 @@ mod tests {
                 assert!(
                     diff <= 1,
                     "seed={seed}, pixel {i}: src={}, recon={}, diff={diff}",
-                    src[i], reconstructed[i]
+                    src[i],
+                    reconstructed[i]
                 );
             }
         }
@@ -398,10 +395,7 @@ mod tests {
     #[test]
     fn dct_gradient_input_has_ac_energy() {
         let src: [u8; 16] = [
-            0, 85, 170, 255,
-            0, 85, 170, 255,
-            0, 85, 170, 255,
-            0, 85, 170, 255,
+            0, 85, 170, 255, 0, 85, 170, 255, 0, 85, 170, 255, 0, 85, 170, 255,
         ];
         let reference = [0u8; 16];
         let mut coeffs = [0i16; 16];
@@ -416,9 +410,15 @@ mod tests {
     fn dct_roundtrip_many_patterns() {
         // Test with many different patterns to ensure robustness
         let patterns: Vec<[u8; 16]> = vec![
-            [0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255], // half black/white
-            [0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255], // checkerboard
-            [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160], // ramp
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
+            ], // half black/white
+            [
+                0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
+            ], // checkerboard
+            [
+                10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
+            ], // ramp
             [255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // single pixel
         ];
 
@@ -435,7 +435,8 @@ mod tests {
                 assert!(
                     diff <= 1,
                     "pattern {pi}, pixel {i}: src={}, reconstructed={}, diff={diff}",
-                    pattern[i], reconstructed[i]
+                    pattern[i],
+                    reconstructed[i]
                 );
             }
         }

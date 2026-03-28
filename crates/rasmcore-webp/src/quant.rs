@@ -242,12 +242,19 @@ mod tests {
     fn build_matrix_step_sizes_are_nonzero() {
         for qp in 0..=127u8 {
             for qtype in [
-                QuantType::YDc, QuantType::YAc, QuantType::Y2Dc,
-                QuantType::Y2Ac, QuantType::UvDc, QuantType::UvAc,
+                QuantType::YDc,
+                QuantType::YAc,
+                QuantType::Y2Dc,
+                QuantType::Y2Ac,
+                QuantType::UvDc,
+                QuantType::UvAc,
             ] {
                 let m = build_matrix(qp, qtype);
                 for i in 0..16 {
-                    assert!(m.q[i] > 0, "step size must be > 0 for qp={qp}, type={qtype:?}, pos={i}");
+                    assert!(
+                        m.q[i] > 0,
+                        "step size must be > 0 for qp={qp}, type={qtype:?}, pos={i}"
+                    );
                 }
             }
         }
@@ -257,8 +264,7 @@ mod tests {
     fn quantize_dequantize_roundtrip() {
         let matrix = build_matrix(32, QuantType::YAc);
         let coeffs: [i16; 16] = [
-            200, -100, 50, -25, 12, -6, 3, -1,
-            80, -40, 20, -10, 5, -2, 1, 0,
+            200, -100, 50, -25, 12, -6, 3, -1, 80, -40, 20, -10, 5, -2, 1, 0,
         ];
 
         let mut quantized = [0i16; 16];
@@ -274,7 +280,9 @@ mod tests {
             assert!(
                 error <= matrix.q[i] as i32,
                 "coeff {i}: orig={}, dequant={}, error={error}, step={}",
-                coeffs[i], dequantized[i], matrix.q[i]
+                coeffs[i],
+                dequantized[i],
+                matrix.q[i]
             );
         }
     }
@@ -308,8 +316,7 @@ mod tests {
     fn quantize_preserves_sign() {
         let matrix = build_matrix(32, QuantType::YAc);
         let coeffs: [i16; 16] = [
-            500, -500, 200, -200, 100, -100, 50, -50,
-            0, 0, 0, 0, 0, 0, 0, 0,
+            500, -500, 200, -200, 100, -100, 50, -50, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
 
         let mut quantized = [0i16; 16];
@@ -402,7 +409,8 @@ mod tests {
         assert!(
             m_coarse.q[1] > m_fine.q[1],
             "higher QP should give larger step: fine={}, coarse={}",
-            m_fine.q[1], m_coarse.q[1]
+            m_fine.q[1],
+            m_coarse.q[1]
         );
     }
 
@@ -421,7 +429,10 @@ mod tests {
             assert!(
                 w[0].1 >= w[1].1,
                 "monotonicity violated: q={} → qp={}, q={} → qp={}",
-                w[0].0, w[0].1, w[1].0, w[1].1
+                w[0].0,
+                w[0].1,
+                w[1].0,
+                w[1].1
             );
         }
 
@@ -429,7 +440,10 @@ mod tests {
         let min_qp = mapping.iter().map(|&(_, qp)| qp).min().unwrap();
         let max_qp = mapping.iter().map(|&(_, qp)| qp).max().unwrap();
         assert_eq!(min_qp, 0, "QP range should start at 0");
-        assert!(max_qp >= 120, "QP range should reach near 127, got {max_qp}");
+        assert!(
+            max_qp >= 120,
+            "QP range should reach near 127, got {max_qp}"
+        );
     }
 
     #[test]
@@ -438,8 +452,7 @@ mod tests {
         // regardless of any floating point state — confirming integer-only math.
         let matrix = build_matrix(50, QuantType::YAc);
         let coeffs: [i16; 16] = [
-            1000, -500, 250, -125, 63, -31, 16, -8,
-            4, -2, 1, 0, -1, 2, -4, 8,
+            1000, -500, 250, -125, 63, -31, 16, -8, 4, -2, 1, 0, -1, 2, -4, 8,
         ];
         let mut out1 = [0i16; 16];
         let mut out2 = [0i16; 16];
@@ -448,17 +461,17 @@ mod tests {
         // Run again — must be bit-identical (no floating point rounding variance)
         quantize_block(&coeffs, &matrix, &mut out2);
 
-        assert_eq!(out1, out2, "quantization must be deterministic (integer-only)");
+        assert_eq!(
+            out1, out2,
+            "quantization must be deterministic (integer-only)"
+        );
     }
 
     #[test]
     fn full_dct_quant_dequant_idct_pipeline() {
         // End-to-end test: src → DCT → quantize → dequantize → IDCT → dst
         let src: [u8; 16] = [
-            100, 110, 120, 130,
-            105, 115, 125, 135,
-            110, 120, 130, 140,
-            115, 125, 135, 145,
+            100, 110, 120, 130, 105, 115, 125, 135, 110, 120, 130, 140, 115, 125, 135, 145,
         ];
         let reference = [128u8; 16];
 

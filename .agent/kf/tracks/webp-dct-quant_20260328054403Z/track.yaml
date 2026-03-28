@@ -85,9 +85,9 @@ plan:
 - phase: Verification
   tasks:
   - text: Test DCT output against known reference values from RFC or libwebp
-    done: false
+    done: true
   - text: Test quality mapping produces same QP as libwebp at q25, q50, q75, q95
-    done: false
+    done: true
   - text: Verify all arithmetic is integer-only (no f32/f64 in hot paths)
-    done: false
+    done: true
 extra: {}
