@@ -91,8 +91,18 @@ technical_requirements:
         Benchmark tests measure WASM vs native performance. These are the ONLY tests
         that run at the WASM/adapter layer — they validate the full stack against
         external references.
+    - name: three-way-codec-validation
+      description: |
+        Every native codec MUST pass three-way reference validation before
+        completion. For each encode variant:
+          A = our_encode(original) → our_decode
+          B = our_encode(original) → ref_decode (image crate)
+          C = ref_encode(original) → ref_decode
+        Lossless: B == original bit-exact, A == B bit-exact.
+        Lossy: B ≈ original at same quality as C ≈ original, A == B.
+        See code_styleguides/codec-validation.md for full methodology.
 
   testing_hierarchy:
     primary: "Domain unit tests at domain boundaries (TDD, native cargo test)"
-    secondary: "Parity tests against reference implementations (WASM integration)"
+    secondary: "Three-way codec parity tests against reference implementations"
     tertiary: "Benchmark tests comparing WASM vs native performance"
