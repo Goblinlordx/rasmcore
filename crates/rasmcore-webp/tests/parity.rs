@@ -461,6 +461,224 @@ fn solid_uses_i16x16() {
     );
 }
 
+// ─── Photo-Realistic Image Generators ─────────────────────────────────────
+
+/// Simple LCG PRNG for deterministic test images (no external deps).
+struct Lcg(u64);
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0
+    }
+    fn next_f32(&mut self) -> f32 {
+        (self.next() >> 33) as f32 / (1u64 << 31) as f32
+    }
+}
+
+/// Simple Perlin-like noise value at (x, y) using hash-based gradients.
+fn noise2d(x: f32, y: f32, seed: u32) -> f32 {
+    // Grid-based noise with smooth interpolation
+    let xi = x.floor() as i32;
+    let yi = y.floor() as i32;
+    let xf = x - xi as f32;
+    let yf = y - yi as f32;
+
+    // Smoothstep interpolation
+    let u = xf * xf * (3.0 - 2.0 * xf);
+    let v = yf * yf * (3.0 - 2.0 * yf);
+
+    // Hash-based gradient at each corner
+    let hash = |ix: i32, iy: i32| -> f32 {
+        let h = (ix.wrapping_mul(374761393) ^ iy.wrapping_mul(668265263) ^ seed as i32)
+            .wrapping_mul(1103515245)
+            .wrapping_add(12345);
+        (h & 0x7FFF) as f32 / 0x7FFF as f32
+    };
+
+    let n00 = hash(xi, yi);
+    let n10 = hash(xi + 1, yi);
+    let n01 = hash(xi, yi + 1);
+    let n11 = hash(xi + 1, yi + 1);
+
+    let nx0 = n00 + u * (n10 - n00);
+    let nx1 = n01 + u * (n11 - n01);
+    nx0 + v * (nx1 - nx0)
+}
+
+/// Multi-octave noise for natural textures.
+fn fbm(x: f32, y: f32, octaves: u32, seed: u32) -> f32 {
+    let mut val = 0.0f32;
+    let mut amp = 0.5;
+    let mut freq = 1.0f32;
+    for i in 0..octaves {
+        val += amp * noise2d(x * freq, y * freq, seed.wrapping_add(i));
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    val
+}
+
+/// Generate a Perlin-noise texture image (simulates natural surface like wood/fabric).
+fn perlin_texture(w: u32, h: u32, seed: u64) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+    let scale = 8.0 / w.max(h) as f32;
+    let s = seed as u32;
+    for y in 0..h {
+        for x in 0..w {
+            let r = fbm(x as f32 * scale, y as f32 * scale, 4, s);
+            let g = fbm(x as f32 * scale + 100.0, y as f32 * scale, 4, s.wrapping_add(1));
+            let b = fbm(x as f32 * scale, y as f32 * scale + 100.0, 4, s.wrapping_add(2));
+            pixels.push((r * 255.0).clamp(0.0, 255.0) as u8);
+            pixels.push((g * 255.0).clamp(0.0, 255.0) as u8);
+            pixels.push((b * 255.0).clamp(0.0, 255.0) as u8);
+        }
+    }
+    pixels
+}
+
+/// Generate an edge-heavy structure image (simulates architectural/geometric content).
+fn edge_structure(w: u32, h: u32) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let xf = x as f32 / w as f32;
+            let yf = y as f32 / h as f32;
+
+            // Sharp geometric edges: vertical bars + horizontal bands + diagonal
+            let v_bar = if ((xf * 8.0) as u32) % 2 == 0 { 200u8 } else { 50 };
+            let h_band = if ((yf * 6.0) as u32) % 2 == 0 { 180u8 } else { 70 };
+            let diag = if ((xf + yf) * 4.0) as u32 % 2 == 0 {
+                160u8
+            } else {
+                90
+            };
+
+            // Mix with smooth gradient in background
+            let bg = (xf * 128.0 + yf * 64.0) as u8;
+
+            pixels.push(((v_bar as u16 + bg as u16) / 2) as u8);
+            pixels.push(((h_band as u16 + bg as u16) / 2) as u8);
+            pixels.push(((diag as u16 + bg as u16) / 2) as u8);
+        }
+    }
+    pixels
+}
+
+/// Generate a mixed-frequency image (smooth regions + detailed areas, like a portrait).
+fn mixed_frequency(w: u32, h: u32, seed: u64) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+    let mut rng = Lcg::new(seed);
+    for y in 0..h {
+        for x in 0..w {
+            let xf = x as f32 / w as f32;
+            let yf = y as f32 / h as f32;
+
+            // Smooth region (center): skin-like gradient
+            let cx = (xf - 0.5).abs();
+            let cy = (yf - 0.5).abs();
+            let dist = (cx * cx + cy * cy).sqrt();
+
+            let base_r = (180.0 - dist * 60.0).clamp(0.0, 255.0);
+            let base_g = (150.0 - dist * 40.0).clamp(0.0, 255.0);
+            let base_b = (130.0 - dist * 30.0).clamp(0.0, 255.0);
+
+            // High-frequency detail in outer regions (hair/texture)
+            let detail_strength = (dist * 3.0 - 0.3).clamp(0.0, 1.0);
+            let noise = (rng.next_f32() - 0.5) * 60.0 * detail_strength;
+
+            pixels.push((base_r + noise).clamp(0.0, 255.0) as u8);
+            pixels.push((base_g + noise * 0.8).clamp(0.0, 255.0) as u8);
+            pixels.push((base_b + noise * 0.6).clamp(0.0, 255.0) as u8);
+        }
+    }
+    pixels
+}
+
+// ─── Photo Parity Tests ───────────────────────────────────────────────────
+
+fn photo_parity_test(label: &str, pixels: &[u8], w: u32, h: u32, quality: u8) {
+    if !cwebp_available() {
+        eprintln!("SKIP: cwebp not available for {label}");
+        return;
+    }
+
+    let our = rasmcore_webp::encode(
+        pixels,
+        w,
+        h,
+        rasmcore_webp::PixelFormat::Rgb8,
+        &rasmcore_webp::EncodeConfig {
+            quality,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let cwebp = cwebp_encode(pixels, w, h, quality as u32)
+        .unwrap_or_else(|| panic!("{label}: cwebp failed"));
+
+    let (_, _, a_pixels) = ref_decode(&our).unwrap_or_else(|| panic!("{label}: our decode failed"));
+    let (_, _, c_pixels) =
+        ref_decode(&cwebp).unwrap_or_else(|| panic!("{label}: cwebp decode failed"));
+
+    let a_q = psnr(&a_pixels, pixels);
+    let c_q = psnr(&c_pixels, pixels);
+    let a_mae = mae(&a_pixels, pixels);
+    let c_mae = mae(&c_pixels, pixels);
+
+    eprintln!(
+        "{label} Q{quality}: ours={a_q:.1}dB/{a_mae:.1}MAE/{} bytes | cwebp={c_q:.1}dB/{c_mae:.1}MAE/{} bytes | ratio={:.2}",
+        our.len(),
+        cwebp.len(),
+        a_q / c_q.max(0.1)
+    );
+
+    // Photo content: verify our output is decodable and produces reasonable quality.
+    // Our encoder without RDO achieves ~40-60% of cwebp's PSNR on complex content.
+    assert!(
+        a_q > 15.0,
+        "{label}: quality too low ({a_q:.1}dB), output may be garbage"
+    );
+}
+
+#[test]
+fn photo_perlin_texture_256() {
+    let (w, h) = (256, 256);
+    let pixels = perlin_texture(w, h, 42);
+    photo_parity_test("perlin_256", &pixels, w, h, 75);
+}
+
+#[test]
+fn photo_perlin_texture_256_q50() {
+    let (w, h) = (256, 256);
+    let pixels = perlin_texture(w, h, 42);
+    photo_parity_test("perlin_256_q50", &pixels, w, h, 50);
+}
+
+#[test]
+fn photo_edge_structure_256() {
+    let (w, h) = (256, 256);
+    let pixels = edge_structure(w, h);
+    photo_parity_test("edge_256", &pixels, w, h, 75);
+}
+
+#[test]
+fn photo_mixed_frequency_256() {
+    let (w, h) = (256, 256);
+    let pixels = mixed_frequency(w, h, 123);
+    photo_parity_test("mixed_256", &pixels, w, h, 75);
+}
+
+#[test]
+fn photo_mixed_frequency_256_q50() {
+    let (w, h) = (256, 256);
+    let pixels = mixed_frequency(w, h, 123);
+    photo_parity_test("mixed_256_q50", &pixels, w, h, 50);
+}
+
 // ─── Determinism ───────────────────────────────────────────────────────────
 
 #[test]
