@@ -21,6 +21,9 @@ pub struct MacroblockInfo {
     pub uv_mode: u8,
     /// Segment ID (0-3).
     pub segment: u8,
+    /// True if all quantized coefficients in this MB are zero.
+    /// When true, the decoder skips token decoding for this MB.
+    pub skip: bool,
 }
 
 /// Calculate macroblock grid dimensions for a given image size.

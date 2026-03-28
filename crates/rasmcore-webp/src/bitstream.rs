@@ -156,10 +156,12 @@ fn encode_first_partition(
     bw.put_bit(128, false); // segmentation_enabled = false
 
     // Loop filter (RFC 6386 Section 9.4)
-    // filter_type: 0=normal, 1=simple
-    bw.put_bit(128, params.filter_type == crate::filter::FilterType::Simple);
-    bw.put_literal(6, params.filter_level as u32);
-    bw.put_literal(3, params.filter_sharpness as u32);
+    // Disable loop filter for now — our encoder doesn't apply the loop filter
+    // during reconstruction, so the decoder must not filter either.
+    // Enabling filter_level > 0 causes encoder/decoder prediction mismatch.
+    bw.put_bit(128, false); // filter_type = normal
+    bw.put_literal(6, 0); // filter_level = 0 (disabled)
+    bw.put_literal(3, 0); // filter_sharpness = 0
 
     // Loop filter adjustments — disabled
     bw.put_bit(128, false); // mode_ref_lf_delta_enabled = false
@@ -190,7 +192,9 @@ fn encode_first_partition(
     }
 
     // Macroblock header: mb_no_coeff_skip flag
-    bw.put_bit(128, true); // mb_no_coeff_skip = true (we signal skip per MB)
+    // Disable mb_no_coeff_skip — always encode all tokens for every MB.
+    // This is simpler and avoids skip signaling bugs. Less efficient but correct.
+    bw.put_bit(128, false); // mb_no_coeff_skip = false
 
     // Encode macroblock modes
     for mb in mb_infos {
@@ -202,10 +206,7 @@ fn encode_first_partition(
 
 /// Encode a single macroblock header in the first partition.
 fn encode_mb_header(bw: &mut BoolWriter, mb: &MacroblockInfo) {
-    // For key frames: segment is implicit (single segment)
-
-    // MB skip coefficient flag (if mb_no_coeff_skip is enabled)
-    bw.put_bit(128, mb.y_mode == 0 && mb.uv_mode == 0); // skip if DC prediction
+    // No skip flag when mb_no_coeff_skip = false
 
     // Luma prediction mode (RFC 6386 Section 11.2)
     // Key frame Y mode is coded with a fixed tree
@@ -339,19 +340,10 @@ fn encode_macroblock(
     let mut y2_quantized = [0i16; 16];
     quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
 
-    // Encode Y2 block tokens
-    token::encode_block(token_bw, &y2_quantized, 1); // plane_type=1 for Y2
-
-    // Encode 16 Y sub-block tokens (AC only, DC is in Y2)
-    for coeffs in &y_coeffs {
-        token::encode_block(token_bw, coeffs, 0); // plane_type=0 for Y
-    }
-
-    // Chroma: select mode, predict, encode
+    // Chroma: select mode, predict, compute coefficients
     let (above_u, left_u, above_left_u) = get_uv_neighbors(recon_u, uv_stride, mb_col, mb_row);
     let (above_v, left_v, above_left_v) = get_uv_neighbors(recon_v, uv_stride, mb_col, mb_row);
 
-    // Extract 8×8 chroma blocks
     let mut u_block = [0u8; 64];
     let mut v_block = [0u8; 64];
     for r in 0..8 {
@@ -368,7 +360,9 @@ fn encode_macroblock(
     predict::predict_8x8(uv_mode, &above_u, &left_u, above_left_u, &mut pred_u);
     predict::predict_8x8(uv_mode, &above_v, &left_v, above_left_v, &mut pred_v);
 
-    // 4 U sub-blocks + 4 V sub-blocks
+    // Compute all 8 chroma sub-block coefficients
+    let mut uv_quantized = [[0i16; 16]; 8];
+    let mut uv_idx = 0;
     for (plane_block, pred_block) in [(&u_block, &pred_u), (&v_block, &pred_v)] {
         for sb in 0..4 {
             let sb_row = sb / 2;
@@ -383,11 +377,25 @@ fn encode_macroblock(
             }
             let mut coeffs = [0i16; 16];
             dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
-            let mut quantized = [0i16; 16];
-            quant::quantize_block(&coeffs, &seg_quant.uv_ac, &mut quantized);
-            token::encode_block(token_bw, &quantized, 2); // plane_type=2 for UV
+            quant::quantize_block(&coeffs, &seg_quant.uv_ac, &mut uv_quantized[uv_idx]);
+            uv_idx += 1;
         }
     }
+
+    // Always encode all tokens (mb_no_coeff_skip = false)
+    token::encode_block(token_bw, &y2_quantized, 1);
+    for coeffs in &y_coeffs {
+        token::encode_block(token_bw, coeffs, 0);
+    }
+    for coeffs in &uv_quantized {
+        token::encode_block(token_bw, coeffs, 2);
+    }
+
+    let all_zero = y2_quantized.iter().all(|&c| c == 0)
+        && y_coeffs.iter().all(|block| block.iter().all(|&c| c == 0))
+        && uv_quantized
+            .iter()
+            .all(|block| block.iter().all(|&c| c == 0));
 
     MacroblockInfo {
         mb_x: mb_col as u32,
@@ -396,6 +404,7 @@ fn encode_macroblock(
         b_modes: [0; 16],
         uv_mode: uv_mode as u8,
         segment: 0,
+        skip: all_zero,
     }
 }
 
