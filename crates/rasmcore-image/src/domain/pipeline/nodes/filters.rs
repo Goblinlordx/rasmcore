@@ -373,6 +373,136 @@ impl ImageNode for FusedLutNode {
     }
 }
 
+// ─── 3D color LUT nodes (3D-fusible) ────────────────────────────────────────
+
+/// A pipeline node for a 3D-fusible color operation (hue rotate, saturate, etc.).
+///
+/// At execution, builds a 3D CLUT from the stored `ColorOp` and applies it.
+/// The pipeline optimizer can detect consecutive `ColorOpNode`s and replace them
+/// with a single `FusedClutNode`.
+pub struct ColorOpNode {
+    upstream: u32,
+    op: crate::domain::color_lut::ColorOp,
+    source_info: ImageInfo,
+}
+
+impl ColorOpNode {
+    pub fn new(
+        upstream: u32,
+        source_info: ImageInfo,
+        op: crate::domain::color_lut::ColorOp,
+    ) -> Self {
+        Self {
+            upstream,
+            op,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for ColorOpNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        let clut = self.op.to_clut(crate::domain::color_lut::DEFAULT_GRID_SIZE);
+        clut.apply(&src_pixels, &self.source_info)
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::zero()
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+}
+
+/// A pipeline node holding a pre-composed 3D CLUT from fused color operations.
+///
+/// Created by the pipeline optimizer when it detects consecutive 3D-fusible nodes.
+/// Applies one tetrahedral interpolation pass regardless of how many ops were fused.
+/// Can also absorb adjacent 1D point ops as pre/post-curves.
+pub struct FusedClutNode {
+    upstream: u32,
+    clut: crate::domain::color_lut::ColorLut3D,
+    source_info: ImageInfo,
+}
+
+impl FusedClutNode {
+    pub fn new(
+        upstream: u32,
+        source_info: ImageInfo,
+        clut: crate::domain::color_lut::ColorLut3D,
+    ) -> Self {
+        Self {
+            upstream,
+            clut,
+            source_info,
+        }
+    }
+
+    /// Create from multiple 3D color operations, optionally with 1D pre/post-curves.
+    pub fn from_ops(
+        upstream: u32,
+        source_info: ImageInfo,
+        pre_1d: Option<&[u8; 256]>,
+        color_ops: &[crate::domain::color_lut::ColorOp],
+        post_1d: Option<&[u8; 256]>,
+    ) -> Self {
+        use crate::domain::color_lut::*;
+        let grid = DEFAULT_GRID_SIZE;
+
+        // Build composed 3D CLUT from all color ops
+        let mut clut = ColorLut3D::identity(grid);
+        for op in color_ops {
+            let op_clut = op.to_clut(grid);
+            clut = compose_cluts(&clut, &op_clut);
+        }
+
+        // Absorb 1D pre-curves
+        if let Some(pre) = pre_1d {
+            clut = absorb_1d_pre(pre, &clut);
+        }
+
+        // Absorb 1D post-curves
+        if let Some(post) = post_1d {
+            clut = absorb_1d_post(&clut, post);
+        }
+
+        Self::new(upstream, source_info, clut)
+    }
+}
+
+impl ImageNode for FusedClutNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        self.clut.apply(&src_pixels, &self.source_info)
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::zero()
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+}
+
 /// Grayscale node — changes pixel format to Gray8.
 pub struct GrayscaleNode {
     upstream: u32,
