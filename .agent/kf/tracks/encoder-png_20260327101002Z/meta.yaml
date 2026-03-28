@@ -1,7 +1,7 @@
-title: "PNG Codec — Wire Compression Config, Add Filter Type, Parity Tests"
+title: PNG Codec — Wire Compression Config, Add Filter Type, Parity Tests
 status: pending
 type: feature
-approved: false
+approved: true
 created: '2026-03-27'
 updated: '2026-03-28'
 deps: []

@@ -1,6 +1,6 @@
 title: 'P0: Alpha Compositing (Porter-Duff Over)'
 status: pending
 type: feature
-approved: false
+approved: true
 created: '2026-03-28'
 updated: '2026-03-28'
