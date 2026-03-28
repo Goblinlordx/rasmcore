@@ -1,8 +1,11 @@
 pub mod avif;
+pub mod bmp;
 pub mod dds;
 pub mod gif;
+pub mod ico;
 pub mod jpeg;
 pub mod png;
+pub mod qoi;
 pub mod tiff;
 pub mod webp;
 
@@ -12,7 +15,8 @@ use super::error::ImageError;
 use super::types::{ImageInfo, PixelFormat};
 
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tiff", "avif", "tga", "hdr", "pnm", "exr", "dds",
+    "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
+    "dds",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -58,6 +62,18 @@ pub fn encode(
         "tiff" | "tif" => {
             let config = tiff::TiffEncodeConfig::default();
             tiff::encode(pixels, info, &config)
+        }
+        "bmp" => {
+            let img = pixels_to_dynamic_image(pixels, info)?;
+            bmp::encode(&img, info, &bmp::BmpEncodeConfig)
+        }
+        "ico" => {
+            let img = pixels_to_dynamic_image(pixels, info)?;
+            ico::encode(&img, info, &ico::IcoEncodeConfig)
+        }
+        "qoi" => {
+            let img = pixels_to_dynamic_image(pixels, info)?;
+            qoi::encode(&img, info, &qoi::QoiEncodeConfig)
         }
         "tga" => {
             let img = pixels_to_dynamic_image(pixels, info)?;
@@ -201,7 +217,7 @@ mod tests {
     #[test]
     fn encode_unsupported_format_returns_error() {
         let (pixels, info) = make_rgb8_pixels(8, 8);
-        let result = encode(&pixels, &info, "bmp", None);
+        let result = encode(&pixels, &info, "svg", None);
         assert!(result.is_err());
         match result.unwrap_err() {
             ImageError::UnsupportedFormat(_) => {}
@@ -332,7 +348,8 @@ mod tests {
     fn supported_formats_lists_expected() {
         let fmts = supported_formats();
         for f in [
-            "png", "jpeg", "webp", "gif", "avif", "tga", "hdr", "pnm", "exr", "dds",
+            "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr",
+            "pnm", "exr", "dds",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing format: {f}");
         }
@@ -462,5 +479,60 @@ mod tests {
         let (pixels, info) = make_rgba8_pixels(8, 8);
         let result = encode(&pixels, &info, "dds", None);
         assert!(result.is_ok());
+    }
+
+    // ---- BMP/ICO/QOI encoder tests ----
+
+    #[test]
+    fn encode_bmp_produces_valid_bmp() {
+        let (pixels, info) = make_rgb8_pixels(16, 16);
+        let result = encode(&pixels, &info, "bmp", None).unwrap();
+        assert_eq!(&result[..2], b"BM");
+    }
+
+    #[test]
+    fn roundtrip_bmp_preserves_pixels() {
+        let (pixels, info) = make_rgb8_pixels(8, 8);
+        let encoded = encode(&pixels, &info, "bmp", None).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.width, 8);
+        assert_eq!(decoded.info.height, 8);
+        // BMP is lossless — pixels should match exactly
+        assert_eq!(decoded.pixels, pixels);
+    }
+
+    #[test]
+    fn encode_ico_produces_valid_ico() {
+        let (pixels, info) = make_rgba8_pixels(16, 16);
+        let result = encode(&pixels, &info, "ico", None).unwrap();
+        // ICO magic: 00 00 01 00
+        assert_eq!(&result[..4], &[0x00, 0x00, 0x01, 0x00]);
+    }
+
+    #[test]
+    fn roundtrip_ico_preserves_dimensions() {
+        let (pixels, info) = make_rgba8_pixels(32, 32);
+        let encoded = encode(&pixels, &info, "ico", None).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.width, 32);
+        assert_eq!(decoded.info.height, 32);
+    }
+
+    #[test]
+    fn encode_qoi_produces_valid_qoi() {
+        let (pixels, info) = make_rgb8_pixels(16, 16);
+        let result = encode(&pixels, &info, "qoi", None).unwrap();
+        assert_eq!(&result[..4], b"qoif");
+    }
+
+    #[test]
+    fn roundtrip_qoi_preserves_pixels() {
+        let (pixels, info) = make_rgba8_pixels(8, 8);
+        let encoded = encode(&pixels, &info, "qoi", None).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.width, 8);
+        assert_eq!(decoded.info.height, 8);
+        // QOI is lossless
+        assert_eq!(decoded.pixels, pixels);
     }
 }

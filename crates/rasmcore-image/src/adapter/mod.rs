@@ -270,6 +270,42 @@ impl encoder::Guest for Component {
         domain::encoder::tiff::encode(&pixels, &domain_info, &domain_config).map_err(to_wit_error)
     }
 
+    fn encode_bmp(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        _config: encoder::BmpEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        domain::encoder::bmp::encode(&img, &domain_info, &domain::encoder::bmp::BmpEncodeConfig)
+            .map_err(to_wit_error)
+    }
+
+    fn encode_ico(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        _config: encoder::IcoEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        domain::encoder::ico::encode(&img, &domain_info, &domain::encoder::ico::IcoEncodeConfig)
+            .map_err(to_wit_error)
+    }
+
+    fn encode_qoi(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        _config: encoder::QoiEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
+            .map_err(to_wit_error)?;
+        domain::encoder::qoi::encode(&img, &domain_info, &domain::encoder::qoi::QoiEncodeConfig)
+            .map_err(to_wit_error)
+    }
+
     fn encode_gif(
         pixels: Vec<u8>,
         info: types::ImageInfo,

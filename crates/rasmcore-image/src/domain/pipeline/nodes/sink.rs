@@ -156,6 +156,33 @@ pub fn write_tiff(
     encoder::tiff::encode(&pixels, &info, config)
 }
 
+/// Write a node's output as BMP.
+pub fn write_bmp(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = graph.request_region(node_id, full)?;
+    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
+    encoder::bmp::encode(&img, &info, &encoder::bmp::BmpEncodeConfig)
+}
+
+/// Write a node's output as ICO.
+pub fn write_ico(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = graph.request_region(node_id, full)?;
+    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
+    encoder::ico::encode(&img, &info, &encoder::ico::IcoEncodeConfig)
+}
+
+/// Write a node's output as QOI.
+pub fn write_qoi(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = graph.request_region(node_id, full)?;
+    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
+    encoder::qoi::encode(&img, &info, &encoder::qoi::QoiEncodeConfig)
+}
+
 /// Write a node's output as WebP with typed config and optional metadata.
 pub fn write_webp(
     graph: &mut NodeGraph,

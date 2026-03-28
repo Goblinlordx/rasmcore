@@ -303,6 +303,30 @@ impl GuestImagePipeline for PipelineResource {
         .map_err(to_wit_error)
     }
 
+    fn write_bmp(
+        &self,
+        source: NodeId,
+        _config: pipeline::BmpWriteConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        sink::write_bmp(&mut self.graph.borrow_mut(), source).map_err(to_wit_error)
+    }
+
+    fn write_ico(
+        &self,
+        source: NodeId,
+        _config: pipeline::IcoWriteConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        sink::write_ico(&mut self.graph.borrow_mut(), source).map_err(to_wit_error)
+    }
+
+    fn write_qoi(
+        &self,
+        source: NodeId,
+        _config: pipeline::QoiWriteConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        sink::write_qoi(&mut self.graph.borrow_mut(), source).map_err(to_wit_error)
+    }
+
     fn write_gif(
         &self,
         source: NodeId,

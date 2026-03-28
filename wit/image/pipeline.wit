@@ -70,6 +70,15 @@ interface pipeline {
         speed: option<u8>,
     }
 
+    /// BMP write configuration. No meaningful parameters.
+    record bmp-write-config {}
+
+    /// ICO write configuration. No meaningful parameters.
+    record ico-write-config {}
+
+    /// QOI write configuration. No meaningful parameters.
+    record qoi-write-config {}
+
     /// GIF write configuration.
     record gif-write-config {
         repeat: option<u16>,
@@ -155,6 +164,15 @@ interface pipeline {
 
         /// Write as TIFF.
         write-tiff: func(source: node-id, config: tiff-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write as BMP.
+        write-bmp: func(source: node-id, config: bmp-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write as ICO.
+        write-ico: func(source: node-id, config: ico-write-config) -> result<buffer, rasmcore-error>;
+
+        /// Write as QOI.
+        write-qoi: func(source: node-id, config: qoi-write-config) -> result<buffer, rasmcore-error>;
 
         /// Write as GIF. If metadata is provided, it is embedded.
         write-gif: func(source: node-id, config: gif-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
