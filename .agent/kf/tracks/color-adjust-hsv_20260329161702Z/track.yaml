@@ -3,77 +3,92 @@ title: Color Adjustment — HSV/HSL Conversion, Hue-Shift, Saturation, Sepia, Co
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: HSV and HSL color space round-trip conversion plus derived effects — hue shift,
-    saturation adjustment, sepia tone, and colorize/tint. Matches ImageMagick -modulate
-    and libvips colourspace operations.
-  context: |
-    ImageMagick -modulate adjusts brightness/saturation/hue via HSL conversion. libvips
+  summary: HSV and HSL color space round-trip conversion plus derived effects — hue shift, saturation adjustment, sepia tone,
+    and colorize/tint. Matches ImageMagick -modulate and libvips colourspace operations.
+  context: 'ImageMagick -modulate adjusts brightness/saturation/hue via HSL conversion. libvips
+
     provides sRGB<->HSV via vips_sRGB2HSV()/vips_HSV2sRGB(). These are high-priority
+
     missing operations — hue/saturation control is fundamental to any image editor.
+
     Sepia and colorize are popular derived effects.
-  codebase_analysis: |
-    rasmcore-color crate has BT.601 YCbCr<->RGB but no HSV/HSL. filters.rs has no
+
+    '
+  codebase_analysis: 'rasmcore-color crate has BT.601 YCbCr<->RGB but no HSV/HSL. filters.rs has no
+
     hue/saturation ops. The pattern is: convert to HSV/HSL, modify channels, convert
+
     back. All per-pixel — fits the existing LUT/loop pattern in filters.rs. For
+
     accuracy, use f32 intermediate representation during HSV/HSL conversion.
+
+    '
   acceptance_criteria:
-    - rgb_to_hsv() and hsv_to_rgb() round-trip with max error < 1 per channel
-    - rgb_to_hsl() and hsl_to_rgb() round-trip with max error < 1 per channel
-    - hue_rotate(pixels, info, degrees) shifts hue by N degrees
-    - saturate(pixels, info, factor) adjusts saturation (0=grayscale, 1=unchanged, 2=double)
-    - sepia(pixels, info, intensity) applies warm brown tone
-    - colorize(pixels, info, color, amount) tints image toward target color
-    - hue_rotate output matches ImageMagick -modulate reference within MAE < 1.0
-    - Performance within 2x of ImageMagick for 4K images
-  out_of_scope: |
-    CIELAB/Oklab perceptual color spaces. Arbitrary ICC transform (already have ICC-to-sRGB).
+  - rgb_to_hsv() and hsv_to_rgb() round-trip with max error < 1 per channel
+  - rgb_to_hsl() and hsl_to_rgb() round-trip with max error < 1 per channel
+  - hue_rotate(pixels, info, degrees) shifts hue by N degrees
+  - saturate(pixels, info, factor) adjusts saturation (0=grayscale, 1=unchanged, 2=double)
+  - sepia(pixels, info, intensity) applies warm brown tone
+  - colorize(pixels, info, color, amount) tints image toward target color
+  - hue_rotate output matches ImageMagick -modulate reference within MAE < 1.0
+  - Performance within 2x of ImageMagick for 4K images
+  out_of_scope: 'CIELAB/Oklab perceptual color spaces. Arbitrary ICC transform (already have ICC-to-sRGB).
+
     CMYK conversion.
-  technical_notes: |
-    HSV conversion: standard hexcone model. HSL conversion: standard bi-hexcone.
+
+    '
+  technical_notes: 'HSV conversion: standard hexcone model. HSL conversion: standard bi-hexcone.
+
     Use f32 intermediates to avoid quantization during conversion.
+
     Hue rotate: add degrees to H channel (mod 360). Saturate: multiply S channel.
+
     Sepia: desaturate then tint toward (112, 66, 20) via linear blend.
+
     Colorize: blend (grayscale_value, target_color) by amount.
+
     Reference: magick input.png -modulate 100,150,200 ref.png (brightness,saturation,hue).
+
+    '
 plan:
-  - phase: Color Space Conversion
-    tasks:
-      - text: Implement rgb_to_hsv() and hsv_to_rgb() with f32 intermediates
-        done: false
-      - text: Implement rgb_to_hsl() and hsl_to_rgb() with f32 intermediates
-        done: false
-      - text: Unit tests for round-trip accuracy (full 0-255 range sweep)
-        done: false
-  - phase: Color Effects
-    tasks:
-      - text: Implement hue_rotate(pixels, info, degrees) via HSV conversion
-        done: false
-      - text: Implement saturate(pixels, info, factor) via HSL conversion
-        done: false
-      - text: Implement sepia(pixels, info, intensity) — desaturate + warm tint
-        done: false
-      - text: Implement colorize(pixels, info, color, amount) — tint toward target
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Add HueRotateNode, SaturateNode, SepiaNode, ColorizeNode pipeline nodes
-        done: false
-      - text: Add WIT interface declarations and wire adapters
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Generate ImageMagick references for hue_rotate, saturate, sepia
-        done: false
-      - text: Parity tests — hue/saturation output vs magick -modulate (MAE < 1.0)
-        done: false
-      - text: Parity tests — sepia vs magick -sepia-tone (MAE < 2.0)
-        done: false
-      - text: Perf benchmark vs ImageMagick on 4K image, report wall-clock
-        done: false
-      - text: WASM build check and existing test regression
-        done: false
-      - text: Pipeline graph tests with new nodes
-        done: false
+- phase: Color Space Conversion
+  tasks:
+  - text: Implement rgb_to_hsv() and hsv_to_rgb() with f32 intermediates
+    done: true
+  - text: Implement rgb_to_hsl() and hsl_to_rgb() with f32 intermediates
+    done: true
+  - text: Unit tests for round-trip accuracy (full 0-255 range sweep)
+    done: true
+- phase: Color Effects
+  tasks:
+  - text: Implement hue_rotate(pixels, info, degrees) via HSV conversion
+    done: true
+  - text: Implement saturate(pixels, info, factor) via HSL conversion
+    done: true
+  - text: Implement sepia(pixels, info, intensity) — desaturate + warm tint
+    done: true
+  - text: Implement colorize(pixels, info, color, amount) — tint toward target
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add HueRotateNode, SaturateNode, SepiaNode, ColorizeNode pipeline nodes
+    done: true
+  - text: Add WIT interface declarations and wire adapters
+    done: true
+- phase: Verification
+  tasks:
+  - text: Generate ImageMagick references for hue_rotate, saturate, sepia
+    done: true
+  - text: Parity tests — hue/saturation output vs magick -modulate (MAE < 1.0)
+    done: true
+  - text: Parity tests — sepia vs magick -sepia-tone (MAE < 2.0)
+    done: true
+  - text: Perf benchmark vs ImageMagick on 4K image, report wall-clock
+    done: true
+  - text: WASM build check and existing test regression
+    done: true
+  - text: Pipeline graph tests with new nodes
+    done: true
 extra: {}
