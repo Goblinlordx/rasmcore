@@ -5,125 +5,149 @@ status: pending
 created: '2026-03-28'
 updated: '2026-03-28'
 spec:
-  summary: >
-    Wire format-specific metadata into MetadataSet — little_exif for EXIF read/write,
-    xmp-writer + quick-xml for XMP, custom IPTC-IIM parser, PNG text chunk integration.
-  context: |
-    Track 1 (metadata-unification) establishes the MetadataSet domain type and WIT interface
+  summary: 'Wire format-specific metadata into MetadataSet — little_exif for EXIF read/write, xmp-writer + quick-xml for XMP,
+    custom IPTC-IIM parser, PNG text chunk integration.
+
+    '
+  context: 'Track 1 (metadata-unification) establishes the MetadataSet domain type and WIT interface
+
     with streaming read and pipeline write integration. This track fills in the format-specific
+
     metadata implementations that plug into that unified type.
 
+
     Current state after Track 1: MetadataSet carries raw bytes per metadata kind. This track
+
     adds the ability to parse, create, and modify those bytes using purpose-built crates.
 
+
     Design constraints:
+
     - All parsing/creation happens at domain level (not adapter/WIT)
+
     - Host-side SDKs use WIT read-metadata to get raw bytes, parse on host, transform, pass back
+
     - Domain-level parsing is for internal use (auto-orient reads EXIF orientation, ICC transform)
+
     - little_exif replaces kamadak-exif for EXIF (adds write support, supports more formats)
+
     - XMP is XML — quick-xml for read, xmp-writer for serialization
+
     - IPTC-IIM is a simple binary format, custom parser (~200 LOC)
+
     - PNG text chunks (tEXt, zTXt, iTXt) via png crate built-in support
-  codebase_analysis: |
-    Dependencies to add:
+
+    '
+  codebase_analysis: 'Dependencies to add:
+
     - little_exif (MIT/Apache-2.0, pure Rust, WASM-compatible) — replaces kamadak-exif
+
     - xmp-writer (MIT/Apache-2.0, pure Rust, WASM-compatible) — XMP serialization
+
     - quick-xml (MIT, pure Rust, WASM-compatible) — XMP parsing (XML)
 
+
     Files to modify:
+
     - MODIFY: Cargo.toml — swap kamadak-exif for little_exif, add xmp-writer + quick-xml
+
     - MODIFY: domain/metadata.rs — refactor to use little_exif, add EXIF write function
+
     - NEW: domain/metadata_xmp.rs — XMP read (parse XML) and write (serialize)
+
     - NEW: domain/metadata_iptc.rs — IPTC-IIM binary parser and serializer
+
     - MODIFY: domain/metadata_set.rs — add helper methods for parsed metadata access
+
     - MODIFY: domain/encoder/jpeg.rs — embed EXIF/XMP/IPTC from MetadataSet (not just ICC)
+
     - MODIFY: domain/encoder/png.rs — embed text chunks from MetadataSet format_specific field
+
     - MODIFY: wit/image/metadata.wit — add parsed metadata types for host consumption
+
     - MODIFY: adapter/mod.rs — wire new metadata functions through WIT
 
+
     Key integration points:
+
     - JPEG embed: EXIF in APP1, XMP in APP1 (after EXIF), IPTC in APP13, ICC in APP2
+
     - PNG embed: EXIF in eXIf chunk, text in tEXt/zTXt/iTXt chunks, ICC in iCCP chunk
+
     - WebP embed: EXIF/XMP/ICCP chunks in RIFF container (future, after WebP track)
+
+    '
   acceptance_criteria:
-    - EXIF read/write via little_exif for JPEG, PNG, TIFF, WebP
-    - EXIF write roundtrip test (read EXIF, modify orientation, write back, verify)
-    - XMP read from raw bytes via quick-xml parsing
-    - XMP write/serialize via xmp-writer
-    - XMP roundtrip test (create XMP, serialize, parse back, verify fields)
-    - IPTC-IIM parser that extracts standard fields (caption, keywords, copyright, byline)
-    - IPTC roundtrip test
-    - PNG text chunk read/write (tEXt, zTXt, iTXt) integrated into MetadataSet format_specific
-    - JPEG encoder embeds full metadata (EXIF + XMP + IPTC + ICC) from MetadataSet
-    - PNG encoder embeds full metadata (eXIf + iCCP + text chunks) from MetadataSet
-    - kamadak-exif dependency removed (replaced by little_exif)
-    - All existing tests continue to pass (EXIF read backward compat)
-    - WASM build succeeds with new dependencies
-  out_of_scope: |
-    - WebP metadata embedding (depends on WebP encoder track)
+  - EXIF read/write via little_exif for JPEG, PNG, TIFF, WebP
+  - EXIF write roundtrip test (read EXIF, modify orientation, write back, verify)
+  - XMP read from raw bytes via quick-xml parsing
+  - XMP write/serialize via xmp-writer
+  - XMP roundtrip test (create XMP, serialize, parse back, verify fields)
+  - IPTC-IIM parser that extracts standard fields (caption, keywords, copyright, byline)
+  - IPTC roundtrip test
+  - PNG text chunk read/write (tEXt, zTXt, iTXt) integrated into MetadataSet format_specific
+  - JPEG encoder embeds full metadata (EXIF + XMP + IPTC + ICC) from MetadataSet
+  - PNG encoder embeds full metadata (eXIf + iCCP + text chunks) from MetadataSet
+  - kamadak-exif dependency removed (replaced by little_exif)
+  - All existing tests continue to pass (EXIF read backward compat)
+  - WASM build succeeds with new dependencies
+  out_of_scope: '- WebP metadata embedding (depends on WebP encoder track)
+
     - GIF comment extension read/write (trivial, can be added later)
+
     - TIFF IFD tag manipulation beyond EXIF (complex, separate track)
+
     - Host SDK mapping API (include/exclude/set) — SDK-level concern
+
     - Advanced XMP features (XMP sidecar files, multi-language alt text)
-  technical_notes: |
-    EXIF migration from kamadak-exif to little_exif:
-    - kamadak-exif: read-only, 7 fields, BSD-2 license
-    - little_exif: read+write, supports JPEG/PNG/TIFF/WebP/HEIF/AVIF/JXL, MIT/Apache-2.0
-    - Migration: ExifMetadata struct remains, but backed by little_exif instead
-    - Auto-orient still reads orientation via the same ExifMetadata.orientation field
 
-    IPTC-IIM parser design:
-    - Binary format: 1-byte tag marker (0x1C), 1-byte record, 1-byte dataset, 2-byte length, data
-    - Standard datasets: 2:05 (title), 2:25 (keywords), 2:80 (byline), 2:116 (copyright),
-      2:120 (caption), 2:10 (urgency), 2:15 (category)
-    - Custom parser is ~200 LOC, simpler than pulling in a C++ dependency (rexiv2 is GPL)
-    - Parse to IptcMetadata struct with typed fields
-
-    XMP approach:
-    - XMP is XML with RDF structure. Read via quick-xml SAX parser.
-    - Write via xmp-writer which handles the RDF boilerplate.
-    - For MetadataSet, XMP is stored as raw bytes (XML string).
-    - Domain provides parse helpers for common dc:, xmp:, photoshop: namespaces.
-
-    PNG text chunk integration:
-    - The png crate already supports tEXt/zTXt/iTXt via add_text_chunk() etc.
-    - Map MetadataSet.format_specific chunks with key "png:text:*" to png crate text API.
-    - Common keys: Title, Author, Description, Copyright, Software, Comment.
+    '
+  technical_notes: "EXIF migration from kamadak-exif to little_exif:\n- kamadak-exif: read-only, 7 fields, BSD-2 license\n\
+    - little_exif: read+write, supports JPEG/PNG/TIFF/WebP/HEIF/AVIF/JXL, MIT/Apache-2.0\n- Migration: ExifMetadata struct\
+    \ remains, but backed by little_exif instead\n- Auto-orient still reads orientation via the same ExifMetadata.orientation\
+    \ field\n\nIPTC-IIM parser design:\n- Binary format: 1-byte tag marker (0x1C), 1-byte record, 1-byte dataset, 2-byte length,\
+    \ data\n- Standard datasets: 2:05 (title), 2:25 (keywords), 2:80 (byline), 2:116 (copyright),\n  2:120 (caption), 2:10\
+    \ (urgency), 2:15 (category)\n- Custom parser is ~200 LOC, simpler than pulling in a C++ dependency (rexiv2 is GPL)\n\
+    - Parse to IptcMetadata struct with typed fields\n\nXMP approach:\n- XMP is XML with RDF structure. Read via quick-xml\
+    \ SAX parser.\n- Write via xmp-writer which handles the RDF boilerplate.\n- For MetadataSet, XMP is stored as raw bytes\
+    \ (XML string).\n- Domain provides parse helpers for common dc:, xmp:, photoshop: namespaces.\n\nPNG text chunk integration:\n\
+    - The png crate already supports tEXt/zTXt/iTXt via add_text_chunk() etc.\n- Map MetadataSet.format_specific chunks with\
+    \ key \"png:text:*\" to png crate text API.\n- Common keys: Title, Author, Description, Copyright, Software, Comment.\n"
 plan:
-  - phase: EXIF Read/Write
-    tasks:
-      - text: Replace kamadak-exif with little_exif in Cargo.toml
-        done: false
-      - text: Refactor domain/metadata.rs read_exif to use little_exif (maintain same ExifMetadata struct)
-        done: false
-      - text: Add write_exif function that serializes ExifMetadata to EXIF bytes
-        done: false
-      - text: Domain tests for EXIF write roundtrip (read, modify, write, read back, verify)
-        done: false
-  - phase: XMP and IPTC
-    tasks:
-      - text: Add quick-xml and xmp-writer dependencies to Cargo.toml
-        done: false
-      - text: Create domain/metadata_xmp.rs with parse_xmp (quick-xml) and serialize_xmp (xmp-writer) functions
-        done: false
-      - text: Create domain/metadata_iptc.rs with parse_iptc and serialize_iptc for IPTC-IIM binary format
-        done: false
-      - text: Domain tests for XMP roundtrip and IPTC roundtrip
-        done: false
-  - phase: Encoder Metadata Embedding
-    tasks:
-      - text: Update jpeg encoder to embed full metadata from MetadataSet (EXIF APP1, XMP APP1, IPTC APP13, ICC APP2)
-        done: false
-      - text: Update png encoder to embed metadata from MetadataSet (eXIf chunk, iCCP chunk, text chunks)
-        done: false
-      - text: Integrate PNG text chunk read/write via png crate tEXt/zTXt/iTXt into MetadataSet format_specific
-        done: false
-      - text: Domain tests for full metadata roundtrip (JPEG with all 4 metadata types, PNG with EXIF + ICC + text)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify kamadak-exif fully removed, all EXIF tests pass with little_exif
-        done: false
-      - text: Run full validation suite including WASM build with new dependencies
-        done: false
+- phase: EXIF Read/Write
+  tasks:
+  - text: Replace kamadak-exif with little_exif in Cargo.toml
+    done: true
+  - text: Refactor domain/metadata.rs read_exif to use little_exif (maintain same ExifMetadata struct)
+    done: true
+  - text: Add write_exif function that serializes ExifMetadata to EXIF bytes
+    done: true
+  - text: Domain tests for EXIF write roundtrip (read, modify, write, read back, verify)
+    done: true
+- phase: XMP and IPTC
+  tasks:
+  - text: Add quick-xml and xmp-writer dependencies to Cargo.toml
+    done: false
+  - text: Create domain/metadata_xmp.rs with parse_xmp (quick-xml) and serialize_xmp (xmp-writer) functions
+    done: false
+  - text: Create domain/metadata_iptc.rs with parse_iptc and serialize_iptc for IPTC-IIM binary format
+    done: false
+  - text: Domain tests for XMP roundtrip and IPTC roundtrip
+    done: false
+- phase: Encoder Metadata Embedding
+  tasks:
+  - text: Update jpeg encoder to embed full metadata from MetadataSet (EXIF APP1, XMP APP1, IPTC APP13, ICC APP2)
+    done: false
+  - text: Update png encoder to embed metadata from MetadataSet (eXIf chunk, iCCP chunk, text chunks)
+    done: false
+  - text: Integrate PNG text chunk read/write via png crate tEXt/zTXt/iTXt into MetadataSet format_specific
+    done: false
+  - text: Domain tests for full metadata roundtrip (JPEG with all 4 metadata types, PNG with EXIF + ICC + text)
+    done: false
+- phase: Verification
+  tasks:
+  - text: Verify kamadak-exif fully removed, all EXIF tests pass with little_exif
+    done: false
+  - text: Run full validation suite including WASM build with new dependencies
+    done: false
 extra: {}

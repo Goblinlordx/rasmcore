@@ -144,6 +144,119 @@ pub fn has_exif(data: &[u8]) -> bool {
     read_exif(data).is_ok()
 }
 
+/// Serialize an ExifMetadata struct to raw EXIF bytes (TIFF/IFD format).
+///
+/// Builds a minimal TIFF IFD0 structure with the fields present in ExifMetadata.
+/// The output bytes include the "Exif\0\0" header prefix suitable for
+/// JPEG APP1 embedding or PNG eXIf chunks.
+pub fn write_exif(meta: &ExifMetadata) -> Result<Vec<u8>, ImageError> {
+    // Build IFD entries
+    let mut entries: Vec<IfdEntry> = Vec::new();
+
+    if let Some(ref orient) = meta.orientation {
+        entries.push(IfdEntry::short(0x0112, orient.to_tag() as u16)); // Orientation
+    }
+    if let Some(ref make) = meta.camera_make {
+        entries.push(IfdEntry::ascii(0x010F, make)); // Make
+    }
+    if let Some(ref model) = meta.camera_model {
+        entries.push(IfdEntry::ascii(0x0110, model)); // Model
+    }
+    if let Some(ref sw) = meta.software {
+        entries.push(IfdEntry::ascii(0x0131, sw)); // Software
+    }
+    if let Some(ref dt) = meta.date_time {
+        entries.push(IfdEntry::ascii(0x0132, dt)); // DateTime
+    }
+
+    // Sort entries by tag (TIFF spec requires sorted IFDs)
+    entries.sort_by_key(|e| e.tag);
+
+    // Build TIFF structure (little-endian)
+    let mut buf = Vec::new();
+
+    // "Exif\0\0" header (for JPEG APP1 compatibility)
+    buf.extend_from_slice(b"Exif\x00\x00");
+
+    let tiff_start = buf.len();
+
+    // TIFF header: byte order (II = little-endian) + magic 42 + offset to IFD0
+    buf.extend_from_slice(b"II");
+    buf.extend_from_slice(&42u16.to_le_bytes());
+    buf.extend_from_slice(&8u32.to_le_bytes()); // IFD0 at offset 8 from TIFF start
+
+    // IFD0: entry count
+    let entry_count = entries.len() as u16;
+    buf.extend_from_slice(&entry_count.to_le_bytes());
+
+    // Calculate where overflow data starts (after IFD entries + next-IFD pointer)
+    let ifd_entries_size = entries.len() * 12; // 12 bytes per IFD entry
+    let overflow_offset = 8 + 2 + ifd_entries_size + 4; // TIFF header + count + entries + next-IFD
+    let mut overflow_data: Vec<u8> = Vec::new();
+    let mut current_overflow = overflow_offset;
+
+    // Write IFD entries
+    for entry in &entries {
+        buf.extend_from_slice(&entry.tag.to_le_bytes());
+        buf.extend_from_slice(&entry.format.to_le_bytes());
+        buf.extend_from_slice(&entry.count.to_le_bytes());
+
+        if entry.data.len() <= 4 {
+            // Inline: pad to 4 bytes
+            let mut value = [0u8; 4];
+            value[..entry.data.len()].copy_from_slice(&entry.data);
+            buf.extend_from_slice(&value);
+        } else {
+            // Overflow: write offset, data goes at end
+            buf.extend_from_slice(&(current_overflow as u32).to_le_bytes());
+            current_overflow += entry.data.len();
+            overflow_data.extend_from_slice(&entry.data);
+        }
+    }
+
+    // Next IFD offset = 0 (no more IFDs)
+    buf.extend_from_slice(&0u32.to_le_bytes());
+
+    // Append overflow data
+    buf.extend_from_slice(&overflow_data);
+
+    let _ = tiff_start; // used for offset calculations relative to TIFF start
+
+    Ok(buf)
+}
+
+/// Internal IFD entry for EXIF serialization.
+struct IfdEntry {
+    tag: u16,
+    format: u16,
+    count: u32,
+    data: Vec<u8>,
+}
+
+impl IfdEntry {
+    /// Create a SHORT (u16) IFD entry.
+    fn short(tag: u16, value: u16) -> Self {
+        Self {
+            tag,
+            format: 3, // SHORT
+            count: 1,
+            data: value.to_le_bytes().to_vec(),
+        }
+    }
+
+    /// Create an ASCII string IFD entry (null-terminated).
+    fn ascii(tag: u16, value: &str) -> Self {
+        let mut data = value.as_bytes().to_vec();
+        data.push(0); // null terminator
+        Self {
+            tag,
+            format: 2, // ASCII
+            count: data.len() as u32,
+            data,
+        }
+    }
+}
+
 /// Read all metadata from encoded image data without decoding pixels.
 ///
 /// Performs streaming header-only parsing — scans the container structure
@@ -418,6 +531,49 @@ mod tests {
         let exif_jpeg = build_exif_jpeg_with_orientation(6);
         let result = read_exif(&exif_jpeg).unwrap();
         assert_eq!(result.orientation, Some(ExifOrientation::Rotate90));
+    }
+
+    #[test]
+    fn write_exif_produces_valid_bytes() {
+        let meta = ExifMetadata {
+            orientation: Some(ExifOrientation::Rotate90),
+            camera_make: Some("TestCam".to_string()),
+            ..Default::default()
+        };
+        let bytes = write_exif(&meta).unwrap();
+        // Should start with "Exif\0\0"
+        assert!(bytes.starts_with(b"Exif\x00\x00"));
+        // Should have TIFF little-endian header
+        assert_eq!(&bytes[6..8], b"II");
+    }
+
+    #[test]
+    fn write_exif_roundtrip_orientation() {
+        let meta = ExifMetadata {
+            orientation: Some(ExifOrientation::Rotate270),
+            ..Default::default()
+        };
+        let bytes = write_exif(&meta).unwrap();
+
+        // Build a minimal JPEG with these EXIF bytes in APP1
+        let mut jpeg = vec![0xFF, 0xD8]; // SOI
+        let app1_len = (bytes.len() + 2) as u16;
+        jpeg.extend_from_slice(&[0xFF, 0xE1]);
+        jpeg.extend_from_slice(&app1_len.to_be_bytes());
+        jpeg.extend_from_slice(&bytes);
+        jpeg.extend_from_slice(&[0xFF, 0xD9]); // EOI
+
+        // Read back with kamadak-exif
+        let read_back = read_exif(&jpeg).unwrap();
+        assert_eq!(read_back.orientation, Some(ExifOrientation::Rotate270));
+    }
+
+    #[test]
+    fn write_exif_empty_metadata() {
+        let meta = ExifMetadata::default();
+        let bytes = write_exif(&meta).unwrap();
+        // Should still produce valid EXIF with 0 IFD entries
+        assert!(bytes.starts_with(b"Exif\x00\x00"));
     }
 
     #[test]
