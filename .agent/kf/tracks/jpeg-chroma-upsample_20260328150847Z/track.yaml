@@ -27,31 +27,29 @@ spec:
     (3:1 weights), then vertically (3:1 weights). Or use the direct 9:3:3:1 kernel for the combined step. The pixel loop in
     decode_scan/decode_progressive then reads from full-resolution upsampled planes instead of computing chroma coordinates
     inline.'
-plan: []
-extra: {}
 plan:
-  - phase: Implementation
-    tasks:
-      - text: "Implement upsample_h2v1() with (3*near + far + 2) >> 2 filter"
-        done: false
-      - text: "Implement upsample_h2v2() with 9:3:3:1 bilinear kernel"
-        done: false
-      - text: "Handle edge pixels: replicate boundary samples for first/last row/col"
-        done: false
-  - phase: Integration
-    tasks:
-      - text: "Refactor baseline decode_scan to upsample Cb/Cr before color conversion"
-        done: false
-      - text: "Refactor progressive decode_progressive to upsample before conversion"
-        done: false
-      - text: "Verify 4:4:4 and grayscale paths unchanged (no upsampling)"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "All existing JPEG tests pass"
-        done: false
-      - text: "Parity test odd dims MAE drops below 2.0"
-        done: false
-      - text: "Visual comparison of 4:2:0 checkerboard shows no chroma blocking"
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement upsample_h2v1() with (3*near + far + 2) >> 2 filter
+    done: true
+  - text: Implement upsample_h2v2() with 9:3:3:1 bilinear kernel
+    done: true
+  - text: 'Handle edge pixels: replicate boundary samples for first/last row/col'
+    done: true
+- phase: Integration
+  tasks:
+  - text: Refactor baseline decode_scan to upsample Cb/Cr before color conversion
+    done: true
+  - text: Refactor progressive decode_progressive to upsample before conversion
+    done: true
+  - text: Verify 4:4:4 and grayscale paths unchanged (no upsampling)
+    done: true
+- phase: Validation
+  tasks:
+  - text: All existing JPEG tests pass
+    done: true
+  - text: Parity test odd dims MAE drops below 2.0
+    done: true
+  - text: Visual comparison of 4:2:0 checkerboard shows no chroma blocking
+    done: true
 extra: {}
