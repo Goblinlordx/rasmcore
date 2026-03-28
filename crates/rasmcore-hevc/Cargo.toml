@@ -11,4 +11,8 @@ rasmcore-color = { path = "../rasmcore-color" }
 rasmcore-dct = { path = "../rasmcore-dct" }
 rasmcore-isobmff = { path = "../rasmcore-isobmff" }
 
+[features]
+default = []
+test-utils = []
+
 [dev-dependencies]

@@ -14,7 +14,6 @@ pub mod nal;
 pub mod params;
 pub mod predict;
 pub mod syntax;
-#[cfg(test)]
 pub mod testutil;
 pub mod transform;
 pub mod types;
