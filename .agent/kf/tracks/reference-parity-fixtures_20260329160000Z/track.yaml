@@ -3,89 +3,127 @@ title: Reference Parity Fixtures — FITS, JPEG Arithmetic, HEIC via External To
 type: chore
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: |
-    Generate test fixtures using external reference tools (ImageMagick, cjpeg, ffmpeg)
+  summary: 'Generate test fixtures using external reference tools (ImageMagick, cjpeg, ffmpeg)
+
     and validate our native decoders produce matching output. Covers the three codecs
+
     that currently lack external reference validation: FITS, JPEG arithmetic, and HEIC.
-  context: |
-    Audit found three native codecs with self-consistency tests only (no external reference):
+
+    '
+  context: 'Audit found three native codecs with self-consistency tests only (no external reference):
+
     - FITS: roundtrip tests are bit-exact but never compared against cfitsio/ImageMagick
+
     - JPEG arithmetic (SOF9): our encoder+decoder roundtrip, no external arith JPEG tested
+
     - HEVC/HEIC: golden-value unit tests but no end-to-end parity against ffmpeg/ImageMagick
-    
+
+
     Available tools on the build system:
+
     - ImageMagick 7 (magick): FITS rw+, HEIC rw+, JPEG rw+
+
     - cjpeg/djpeg (libjpeg-turbo 3.1.3): -arithmetic flag for SOF9
+
     - ffmpeg 7.1.1: libx265 HEVC encoder
+
     - fitsverify: FITS structural validation
+
     - Python 3.14 (astropy available via pip if needed)
-    
+
+
     Existing infrastructure: tests/fixtures/generate.sh uses Docker ImageMagick.
+
     We extend it with local tool invocations for formats Docker IM may not support.
-  codebase_analysis: |
-    - tests/fixtures/generate.sh: Docker-based ImageMagick fixture gen (gradients, solids)
+
+    '
+  codebase_analysis: '- tests/fixtures/generate.sh: Docker-based ImageMagick fixture gen (gradients, solids)
+
     - tests/codec-parity/tests/lossy_parity.rs: JPEG + FITS self-consistency tests
+
     - tests/codec-parity/tests/lossless_parity.rs: QOI/PNM/BMP/TGA three-way
+
     - crates/rasmcore-jpeg/tests/parity.rs: JPEG three-way vs ImageMagick + image crate
+
     - crates/rasmcore-hevc/tests/parity.rs: golden-value comparisons (no external tool)
+
     - crates/rasmcore-fits has NO parity test file — only internal roundtrip in lib.rs
+
+    '
   acceptance_criteria:
-    - Fixture generation script produces FITS, JPEG-arithmetic, and HEIC files from known bitmaps
-    - FITS parity test decodes ImageMagick-generated .fits and compares against PPM reference
-    - JPEG arithmetic parity test decodes cjpeg-generated SOF9 .jpg and compares against djpeg reference
-    - HEIC parity test decodes ImageMagick-generated .heic and compares against PPM reference
-    - All parity tests pass (MAE < threshold for lossy, bit-exact for lossless)
-    - Tests are skipped gracefully when external tools are not installed
-  out_of_scope: |
-    Encoding parity (our encode vs reference encode quality comparison).
+  - Fixture generation script produces FITS, JPEG-arithmetic, and HEIC files from known bitmaps
+  - FITS parity test decodes ImageMagick-generated .fits and compares against PPM reference
+  - JPEG arithmetic parity test decodes cjpeg-generated SOF9 .jpg and compares against djpeg reference
+  - HEIC parity test decodes ImageMagick-generated .heic and compares against PPM reference
+  - All parity tests pass (MAE < threshold for lossy, bit-exact for lossless)
+  - Tests are skipped gracefully when external tools are not installed
+  out_of_scope: 'Encoding parity (our encode vs reference encode quality comparison).
+
     JPEG progressive arithmetic (SOF10). HEVC inter-frame decode.
+
     Docker-based generation (use local tools directly).
-  technical_notes: |
-    Fixture generation approach:
+
+    '
+  technical_notes: 'Fixture generation approach:
+
     1. Create known PPM bitmaps in Rust test code (gradient, solid, checkerboard)
+
     2. Shell script converts via: magick convert, cjpeg -arithmetic, magick convert .heic
+
     3. Store in tests/fixtures/generated/{fits,jpeg-arith,heic}/
+
     4. Parity tests load fixtures, decode with our crate, compare against reference decode
-    
+
+
     For FITS: magick convert input.ppm output.fits (lossless — expect bit-exact Gray8)
+
     For JPEG arith: cjpeg -arithmetic -quality 85 input.ppm > output.jpg (lossy — MAE < 2)
+
     For HEIC: magick convert -quality 90 input.ppm output.heic (lossy — PSNR > 30dB)
-    
+
+
     Reference decode: magick convert output.{fits,heic} reference.ppm (ground truth pixels)
+
     Our decode: rasmcore_fits::decode / rasmcore_jpeg::decode / rasmcore_hevc via rasmcore-image
-    
+
+
     Skip pattern: check for tool availability at test start, #[ignore] or skip if missing.
+
+    '
 plan:
-  - phase: Fixture Generation
-    tasks:
-      - text: Add fixture generation commands to tests/fixtures/generate.sh for FITS (magick PPM to FITS + reference PPM)
-        done: false
-      - text: Add fixture generation for JPEG arithmetic (cjpeg -arithmetic + djpeg reference PPM)
-        done: false
-      - text: Add fixture generation for HEIC (magick PPM to HEIC + reference PPM)
-        done: false
-  - phase: FITS Parity
-    tasks:
-      - text: Add FITS reference decode parity test — load magick-generated .fits, decode with rasmcore-fits, compare against reference PPM
-        done: false
-      - text: Test multiple BITPIX variants (8-bit grayscale, 16-bit, float) if magick supports them
-        done: false
-  - phase: JPEG Arithmetic Parity
-    tasks:
-      - text: Add JPEG arithmetic decode parity test — load cjpeg-generated SOF9 .jpg, decode with our decoder, compare against djpeg reference
-        done: false
-      - text: Verify SOF9 marker detection and full decode pipeline for external files
-        done: false
-  - phase: HEIC Parity
-    tasks:
-      - text: Add HEIC decode parity test — load magick-generated .heic, decode via rasmcore-image (native-heif + nonfree-hevc), compare against reference PPM
-        done: false
-      - text: Gate test behind feature flag (nonfree-hevc) so it only runs when HEVC decoder is enabled
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All parity tests pass when fixtures are present, skip gracefully when absent
-        done: false
+- phase: Fixture Generation
+  tasks:
+  - text: Add fixture generation commands to tests/fixtures/generate.sh for FITS (magick PPM to FITS + reference PPM)
+    done: true
+  - text: Add fixture generation for JPEG arithmetic (cjpeg -arithmetic + djpeg reference PPM)
+    done: true
+  - text: Add fixture generation for HEIC (magick PPM to HEIC + reference PPM)
+    done: true
+- phase: FITS Parity
+  tasks:
+  - text: Add FITS reference decode parity test — load magick-generated .fits, decode with rasmcore-fits, compare against
+      reference PPM
+    done: true
+  - text: Test multiple BITPIX variants (8-bit grayscale, 16-bit, float) if magick supports them
+    done: true
+- phase: JPEG Arithmetic Parity
+  tasks:
+  - text: Add JPEG arithmetic decode parity test — load cjpeg-generated SOF9 .jpg, decode with our decoder, compare against
+      djpeg reference
+    done: true
+  - text: Verify SOF9 marker detection and full decode pipeline for external files
+    done: true
+- phase: HEIC Parity
+  tasks:
+  - text: Add HEIC decode parity test — load magick-generated .heic, decode via rasmcore-image (native-heif + nonfree-hevc),
+      compare against reference PPM
+    done: true
+  - text: Gate test behind feature flag (nonfree-hevc) so it only runs when HEVC decoder is enabled
+    done: true
+- phase: Verification
+  tasks:
+  - text: All parity tests pass when fixtures are present, skip gracefully when absent
+    done: true
 extra: {}
