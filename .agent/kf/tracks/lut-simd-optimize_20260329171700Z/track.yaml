@@ -3,101 +3,114 @@ title: LUT SIMD Optimization — Vectorized 1D + 3D LUT Application with Benchma
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-28'
 spec:
-  summary: |
-    SIMD-optimize the 1D and 3D LUT application hot paths. For 1D LUTs, batch-process
+  summary: 'SIMD-optimize the 1D and 3D LUT application hot paths. For 1D LUTs, batch-process
+
     pixels with explicit WASM SIMD128 gather-style loops. For 3D tetrahedral interpolation,
+
     restructure to compute all 3 output channels simultaneously using f32x4 vectors instead
+
     of 3 separate scalar passes. Validate SIMD is actually used via benchmark comparison
+
     (scalar baseline vs SIMD) and inspect generated WASM for SIMD128 instructions.
-  context: |
-    The lut-fusion-pipeline track implemented 1D LUT (point_ops.rs) and 3D CLUT
+
+    '
+  context: 'The lut-fusion-pipeline track implemented 1D LUT (point_ops.rs) and 3D CLUT
+
     (color_lut.rs) with tetrahedral interpolation. Both hot paths are currently scalar.
+
     The 1D apply_lut iterates per-byte with a table lookup — auto-vectorizes on native
+
     but WASM SIMD128 lacks gather instructions, limiting auto-vectorization. The 3D
+
     tetrahedral path calls an interp closure 3 times (once per channel) with the same
+
     4 vertex lookups — restructuring to f32x4 (R,G,B,_) eliminates redundant lookups
+
     and enables SIMD multiply-accumulate.
-  codebase_analysis: |
-    point_ops.rs: apply_lut() is a simple .map(|p| lut[p as usize]).collect(). On native
+
+    '
+  codebase_analysis: 'point_ops.rs: apply_lut() is a simple .map(|p| lut[p as usize]).collect(). On native
+
     LLVM auto-vectorizes the surrounding loop. On wasm32, no gather → scalar fallback.
+
     Can improve with manual 4-wide unrolling and explicit SIMD for the clamp/store.
 
+
     color_lut.rs: lookup() calls interp(0), interp(1), interp(2) — each loads the same
+
     4 vertices and does 3 multiply-adds. Restructuring: load 4 vertices as [f32;3] once,
+
     compute output = c0 + c1*fr + c2*fg + c3*fb as 3-wide SIMD (f32x4 with channel 3
+
     unused). On wasm32 this maps directly to f32x4_mul/f32x4_add intrinsics.
 
+
     Existing SIMD pattern: rasmcore-webp/src/dct.rs uses cfg(target_arch = "wasm32")
+
     with std::arch::wasm32::* intrinsics and scalar fallbacks for native. Follow same
+
     pattern here.
+
+    '
   acceptance_criteria:
-    - 3D tetrahedral interp restructured to compute 3 channels simultaneously
-    - WASM SIMD128 intrinsics used for f32x4 multiply-accumulate in tetrahedral path
-    - Scalar fallback for non-wasm32 targets (LLVM auto-vectorizes on native)
-    - 1D apply_lut optimized with manual loop unrolling for RGBA8 (4 pixels per iteration)
-    - Benchmark harness comparing scalar vs SIMD on 4K image (both 1D and 3D paths)
-    - SIMD path produces bit-identical output to scalar path (no precision difference)
-    - WASM binary validated to contain simd128 instructions (wasm-tools or objdump)
-    - Performance improvement measurable (>= 1.5x for 3D, >= 1.2x for 1D on 4K)
-  out_of_scope: |
-    AVX2/NEON intrinsics for native targets (rely on LLVM auto-vectorization).
+  - 3D tetrahedral interp restructured to compute 3 channels simultaneously
+  - WASM SIMD128 intrinsics used for f32x4 multiply-accumulate in tetrahedral path
+  - Scalar fallback for non-wasm32 targets (LLVM auto-vectorizes on native)
+  - 1D apply_lut optimized with manual loop unrolling for RGBA8 (4 pixels per iteration)
+  - Benchmark harness comparing scalar vs SIMD on 4K image (both 1D and 3D paths)
+  - SIMD path produces bit-identical output to scalar path (no precision difference)
+  - WASM binary validated to contain simd128 instructions (wasm-tools or objdump)
+  - Performance improvement measurable (>= 1.5x for 3D, >= 1.2x for 1D on 4K)
+  out_of_scope: 'AVX2/NEON intrinsics for native targets (rely on LLVM auto-vectorization).
+
     GPU acceleration. Multi-threaded LUT application (future wasi-threads track).
+
     Changing the interpolation algorithm (tetrahedral stays).
-  technical_notes: |
-    3D tetrahedral SIMD strategy:
-      Current: 3x interp(ch) → 3 loads of same 4 vertices, 3x (3 mul + 3 add)
-      Optimized: load 4 vertices as [f32x4; 4] (R,G,B,0 packed per vertex),
-      compute output = v0 + (v1-v0)*fr + (v2-v?)*fg + (v3-v?)*fb as single
-      f32x4 multiply-accumulate chain. Extract R,G,B from result lane.
 
-      On wasm32: use f32x4_splat, f32x4_mul, f32x4_add, f32x4_extract_lane.
-      On native: use [f32; 4] arrays — LLVM auto-vectorizes to SSE/NEON.
-
-    1D LUT SIMD strategy:
-      WASM SIMD128 lacks gather (v128_load8_lane with variable index).
-      Best approach: unroll 4 pixels, do 4 scalar lookups, pack into v128,
-      store via v128_store. The lookup itself stays scalar but surrounding
-      work (alpha copy, bounds check) can use SIMD.
-
-    Validation:
-      1. Unit test: SIMD output == scalar output for all 256^3 / sampled inputs
-      2. Benchmark: time 1000 iterations of apply on 3840x2160 RGB8 image
-      3. WASM inspection: cargo component build --release, then
-         wasm-tools print target/.../rasmcore_image.wasm | grep -c 'f32x4'
-         to confirm SIMD instructions are present
+    '
+  technical_notes: "3D tetrahedral SIMD strategy:\n  Current: 3x interp(ch) → 3 loads of same 4 vertices, 3x (3 mul + 3 add)\n\
+    \  Optimized: load 4 vertices as [f32x4; 4] (R,G,B,0 packed per vertex),\n  compute output = v0 + (v1-v0)*fr + (v2-v?)*fg\
+    \ + (v3-v?)*fb as single\n  f32x4 multiply-accumulate chain. Extract R,G,B from result lane.\n\n  On wasm32: use f32x4_splat,\
+    \ f32x4_mul, f32x4_add, f32x4_extract_lane.\n  On native: use [f32; 4] arrays — LLVM auto-vectorizes to SSE/NEON.\n\n\
+    1D LUT SIMD strategy:\n  WASM SIMD128 lacks gather (v128_load8_lane with variable index).\n  Best approach: unroll 4 pixels,\
+    \ do 4 scalar lookups, pack into v128,\n  store via v128_store. The lookup itself stays scalar but surrounding\n  work\
+    \ (alpha copy, bounds check) can use SIMD.\n\nValidation:\n  1. Unit test: SIMD output == scalar output for all 256^3\
+    \ / sampled inputs\n  2. Benchmark: time 1000 iterations of apply on 3840x2160 RGB8 image\n  3. WASM inspection: cargo\
+    \ component build --release, then\n     wasm-tools print target/.../rasmcore_image.wasm | grep -c 'f32x4'\n     to confirm\
+    \ SIMD instructions are present\n"
 plan:
-  - phase: 3D Tetrahedral SIMD
-    tasks:
-      - text: Restructure tetrahedral lookup to compute all 3 channels simultaneously using [f32; 4] arrays
-        done: false
-      - text: Add wasm32 SIMD128 path using f32x4 intrinsics for the multiply-accumulate chain
-        done: false
-      - text: Verify bit-identical output between scalar and SIMD paths
-        done: false
-  - phase: 1D LUT Optimization
-    tasks:
-      - text: Optimize apply_lut for RGBA8 with 4-pixel batch unrolling
-        done: false
-      - text: Optimize apply_lut for RGB8 with 3-byte stride handling
-        done: false
-  - phase: Benchmarks
-    tasks:
-      - text: Add benchmark harness for 3D CLUT apply on 4K RGB8 image (measure ns/pixel)
-        done: false
-      - text: Add benchmark harness for 1D LUT apply on 4K RGB8 image (measure ns/pixel)
-        done: false
-      - text: Compare scalar baseline vs optimized — document speedup ratios
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Unit test — SIMD 3D output matches scalar reference for 1000 sampled colors
-        done: false
-      - text: Unit test — SIMD 1D output matches scalar reference for full 256-value range
-        done: false
-      - text: WASM build succeeds and binary contains f32x4 SIMD instructions
-        done: false
-      - text: All existing color_lut and point_ops tests still pass
-        done: false
+- phase: 3D Tetrahedral SIMD
+  tasks:
+  - text: Restructure tetrahedral lookup to compute all 3 channels simultaneously using [f32; 4] arrays
+    done: true
+  - text: Add wasm32 SIMD128 path using f32x4 intrinsics for the multiply-accumulate chain
+    done: true
+  - text: Verify bit-identical output between scalar and SIMD paths
+    done: true
+- phase: 1D LUT Optimization
+  tasks:
+  - text: Optimize apply_lut for RGBA8 with 4-pixel batch unrolling
+    done: true
+  - text: Optimize apply_lut for RGB8 with 3-byte stride handling
+    done: true
+- phase: Benchmarks
+  tasks:
+  - text: Add benchmark harness for 3D CLUT apply on 4K RGB8 image (measure ns/pixel)
+    done: true
+  - text: Add benchmark harness for 1D LUT apply on 4K RGB8 image (measure ns/pixel)
+    done: true
+  - text: Compare scalar baseline vs optimized — document speedup ratios
+    done: true
+- phase: Validation
+  tasks:
+  - text: Unit test — SIMD 3D output matches scalar reference for 1000 sampled colors
+    done: true
+  - text: Unit test — SIMD 1D output matches scalar reference for full 256-value range
+    done: true
+  - text: WASM build succeeds and binary contains f32x4 SIMD instructions
+    done: true
+  - text: All existing color_lut and point_ops tests still pass
+    done: true
 extra: {}
