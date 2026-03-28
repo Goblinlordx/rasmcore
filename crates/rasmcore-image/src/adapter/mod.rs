@@ -327,4 +327,25 @@ impl filters::Guest for Component {
         let result = domain::filters::grayscale(&pixels, &domain_info).map_err(to_wit_error)?;
         Ok((result.pixels, to_wit_image_info(&result.info)))
     }
+
+    fn composite(
+        fg_pixels: Vec<u8>,
+        fg_info: types::ImageInfo,
+        bg_pixels: Vec<u8>,
+        bg_info: types::ImageInfo,
+        x: i32,
+        y: i32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_fg_info = to_domain_image_info(&fg_info);
+        let domain_bg_info = to_domain_image_info(&bg_info);
+        domain::composite::alpha_composite_over(
+            &fg_pixels,
+            &domain_fg_info,
+            &bg_pixels,
+            &domain_bg_info,
+            x,
+            y,
+        )
+        .map_err(to_wit_error)
+    }
 }

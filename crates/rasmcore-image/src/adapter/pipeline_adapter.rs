@@ -9,7 +9,7 @@ use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
 use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
-use crate::domain::pipeline::nodes::{filters, sink, source, transform};
+use crate::domain::pipeline::nodes::{composite, filters, sink, source, transform};
 
 use super::to_wit_error;
 use super::to_wit_image_info;
@@ -178,6 +178,21 @@ impl GuestImagePipeline for PipelineResource {
             .node_info(source)
             .map_err(to_wit_error)?;
         let node = filters::GrayscaleNode::new(source, src_info);
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+    }
+
+    fn composite(
+        &self,
+        fg: NodeId,
+        bg: NodeId,
+        x: i32,
+        y: i32,
+    ) -> Result<NodeId, RasmcoreError> {
+        let graph = self.graph.borrow();
+        let fg_info = graph.node_info(fg).map_err(to_wit_error)?;
+        let bg_info = graph.node_info(bg).map_err(to_wit_error)?;
+        drop(graph);
+        let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 

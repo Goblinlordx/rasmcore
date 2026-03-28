@@ -19,4 +19,9 @@ interface filters {
 
     /// Convert to grayscale
     grayscale: func(pixels: buffer, info: image-info) -> result<tuple<buffer, image-info>, rasmcore-error>;
+
+    /// Alpha composite foreground over background (Porter-Duff "over").
+    /// Places fg at (x, y) offset on bg. Both must be RGBA8.
+    /// Output has bg dimensions, bg pixel format, and bg color space.
+    composite: func(fg-pixels: buffer, fg-info: image-info, bg-pixels: buffer, bg-info: image-info, x: s32, y: s32) -> result<buffer, rasmcore-error>;
 }
