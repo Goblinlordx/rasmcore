@@ -1,8 +1,9 @@
 //! Pure Rust PNM (Portable Any Map) encoder/decoder.
 //!
 //! Supports PBM (P1/P4), PGM (P2/P5), PPM (P3/P6) in both ASCII and binary.
-//! Zero external dependencies, WASM-ready.
+//! Uses rasmcore-bitio for PBM bit-level I/O. WASM-ready.
 
+use rasmcore_bitio::{BitOrder, BitReader, BitWriter};
 use std::fmt;
 
 /// PNM format variant.
@@ -94,18 +95,16 @@ pub fn encode_pbm(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Pnm
     let mut out = Vec::with_capacity(header.len() + row_bytes * height as usize);
     out.extend_from_slice(header.as_bytes());
 
+    // Use BitWriter (MSB-first) for PBM bit packing
+    let mut bw = BitWriter::new(BitOrder::MsbFirst);
     for row in 0..height as usize {
-        for byte_col in 0..row_bytes {
-            let mut byte = 0u8;
-            for bit in 0..8 {
-                let col = byte_col * 8 + bit;
-                if col < width as usize && pixels[row * width as usize + col] != 0 {
-                    byte |= 0x80 >> bit;
-                }
-            }
-            out.push(byte);
+        for col in 0..width as usize {
+            bw.write_bit(pixels[row * width as usize + col] != 0);
         }
+        // PBM rows are byte-aligned
+        bw.align_to_byte();
     }
+    out.extend_from_slice(&bw.finish());
     Ok(out)
 }
 
@@ -171,14 +170,16 @@ pub fn decode(data: &[u8]) -> Result<(PnmHeader, Vec<u8>), PnmError> {
             if pos + total > data.len() {
                 return Err(PnmError::InvalidData("not enough pixel data".into()));
             }
+            // Use BitReader (MSB-first) for PBM bit unpacking
             let mut pixels = Vec::with_capacity(width as usize * height as usize);
-            for row in 0..height as usize {
-                for col in 0..width as usize {
-                    let byte_idx = pos + row * row_bytes + col / 8;
-                    let bit_idx = 7 - (col % 8);
-                    let bit = (data[byte_idx] >> bit_idx) & 1;
-                    pixels.push(if bit != 0 { 255 } else { 0 });
+            let mut br = BitReader::new(&data[pos..pos + total], BitOrder::MsbFirst);
+            for _row in 0..height as usize {
+                for _col in 0..width as usize {
+                    let bit = br.read_bit().unwrap_or(false);
+                    pixels.push(if bit { 255 } else { 0 });
                 }
+                // PBM rows are byte-aligned — skip remaining bits in row
+                br.align_to_byte();
             }
             pixels
         }

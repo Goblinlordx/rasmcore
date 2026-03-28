@@ -2133,6 +2133,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-bitio"
+version = "0.1.0"
+
+[[package]]
 name = "rasmcore-bmp"
 version = "0.1.0"
 
@@ -2177,6 +2181,9 @@ version = "0.1.0"
 [[package]]
 name = "rasmcore-pnm"
 version = "0.1.0"
+dependencies = [
+ "rasmcore-bitio",
+]
 
 [[package]]
 name = "rasmcore-qoi"
