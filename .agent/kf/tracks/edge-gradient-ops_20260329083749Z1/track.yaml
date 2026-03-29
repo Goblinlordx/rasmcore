@@ -25,13 +25,13 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement Scharr edge detection (horizontal + vertical + magnitude)
-    done: false
+    done: true
   - text: Implement Laplacian filter (3x3 and 5x5 kernels)
-    done: false
+    done: true
   - text: Implement distance transform (Euclidean via two-pass)
-    done: false
+    done: true
   - text: Generate OpenCV reference fixtures for all three
-    done: false
+    done: true
   - text: Parity test all three against canonical 7-image set
-    done: false
+    done: true
 extra: {}
