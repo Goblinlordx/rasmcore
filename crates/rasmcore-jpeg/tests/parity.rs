@@ -1553,3 +1553,198 @@ fn trellis_vs_mozjpeg_speed() {
     eprintln!("  Ratio:        {speed_ratio:.2}x (>1 = we're slower)");
     eprintln!("  Note: mozjpeg time includes process spawn overhead");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// All-Reference Comparison Chart
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn vips_available() -> bool {
+    Command::new("vips")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn libjpeg_turbo_cjpeg_path() -> Option<&'static str> {
+    // System cjpeg is typically libjpeg-turbo (not mozjpeg)
+    if let Ok(out) = Command::new("cjpeg").arg("-version").output() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if stderr.contains("libjpeg-turbo") {
+            return Some("cjpeg");
+        }
+    }
+    None
+}
+
+/// Encode via libjpeg-turbo cjpeg (no trellis, fast baseline).
+fn libjpeg_turbo_encode(pixels: &[u8], w: u32, h: u32, quality: u32) -> Option<Vec<u8>> {
+    let cjpeg = libjpeg_turbo_cjpeg_path()?;
+    let ppm_path = write_ppm(pixels, w, h);
+    let jpg_path = ppm_path.with_extension("turbo.jpg");
+    let result = Command::new(cjpeg)
+        .args(["-quality", &quality.to_string()])
+        .args(["-outfile", jpg_path.to_str().unwrap()])
+        .arg(ppm_path.to_str().unwrap())
+        .output()
+        .ok()?;
+    let _ = std::fs::remove_file(&ppm_path);
+    if !result.status.success() {
+        let _ = std::fs::remove_file(&jpg_path);
+        return None;
+    }
+    let data = std::fs::read(&jpg_path).ok();
+    let _ = std::fs::remove_file(&jpg_path);
+    data
+}
+
+/// Encode via libvips (uses libjpeg-turbo internally).
+fn vips_encode(pixels: &[u8], w: u32, h: u32, quality: u32) -> Option<Vec<u8>> {
+    if !vips_available() {
+        return None;
+    }
+    let ppm_path = write_ppm(pixels, w, h);
+    let jpg_path = ppm_path.with_extension("vips.jpg");
+    let result = Command::new("vips")
+        .args([
+            "jpegsave",
+            ppm_path.to_str().unwrap(),
+            jpg_path.to_str().unwrap(),
+        ])
+        .args(["--Q", &quality.to_string()])
+        .output()
+        .ok()?;
+    let _ = std::fs::remove_file(&ppm_path);
+    if !result.status.success() {
+        let _ = std::fs::remove_file(&jpg_path);
+        return None;
+    }
+    let data = std::fs::read(&jpg_path).ok();
+    let _ = std::fs::remove_file(&jpg_path);
+    data
+}
+
+fn measure_reference(jpeg: &[u8], original: &[u8]) -> (f64, usize) {
+    let decoded = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg)
+        .unwrap()
+        .to_rgb8();
+    (psnr(original, decoded.as_raw()), jpeg.len())
+}
+
+/// The big chart: our encoder (baseline, trellis, trellis+opt) vs
+/// ImageMagick vs libvips vs libjpeg-turbo vs mozjpeg.
+/// Measures quality (PSNR), file size, and quality-per-byte efficiency.
+#[test]
+fn all_reference_comparison_chart() {
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+
+    let has_magick = magick_available();
+    let has_vips = vips_available();
+    let has_turbo = libjpeg_turbo_cjpeg_path().is_some();
+    let has_mozjpeg = mozjpeg_cjpeg_path().is_some();
+
+    eprintln!("\n{}", "=".repeat(90));
+    eprintln!("  ALL-REFERENCE JPEG ENCODER COMPARISON (256x256 gradient)");
+    eprintln!("{}", "=".repeat(90));
+    eprintln!(
+        "Available: magick={has_magick} vips={has_vips} turbo={has_turbo} mozjpeg={has_mozjpeg}\n"
+    );
+
+    for quality in [75u8, 85, 95] {
+        eprintln!("--- Quality {quality} ---");
+        eprintln!(
+            "  {:<30} {:>8} {:>10} {:>12}",
+            "Encoder", "Size", "PSNR", "dB/KB"
+        );
+
+        // Our baseline (no trellis)
+        let config_base = rasmcore_jpeg::EncodeConfig {
+            quality,
+            ..Default::default()
+        };
+        let (_, base_psnr, base_size) = encode_and_measure(&original, w, h, &config_base);
+        let base_eff = base_psnr / (base_size as f64 / 1024.0);
+        eprintln!(
+            "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB",
+            "rasmcore (baseline)", base_size, base_psnr, base_eff
+        );
+
+        // Our trellis
+        let config_trellis = rasmcore_jpeg::EncodeConfig {
+            quality,
+            trellis: true,
+            ..Default::default()
+        };
+        let (_, t_psnr, t_size) = encode_and_measure(&original, w, h, &config_trellis);
+        let t_eff = t_psnr / (t_size as f64 / 1024.0);
+        eprintln!(
+            "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB",
+            "rasmcore (trellis)", t_size, t_psnr, t_eff
+        );
+
+        // Our trellis + optimized Huffman
+        let config_full = rasmcore_jpeg::EncodeConfig {
+            quality,
+            trellis: true,
+            optimize_huffman: true,
+            ..Default::default()
+        };
+        let (_, f_psnr, f_size) = encode_and_measure(&original, w, h, &config_full);
+        let f_eff = f_psnr / (f_size as f64 / 1024.0);
+        eprintln!(
+            "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB",
+            "rasmcore (trellis+opt_huff)", f_size, f_psnr, f_eff
+        );
+
+        // ImageMagick
+        if has_magick {
+            if let Some(jpeg) = magick_encode(&original, w, h, quality as u32, &[]) {
+                let (q, sz) = measure_reference(&jpeg, &original);
+                let eff = q / (sz as f64 / 1024.0);
+                eprintln!(
+                    "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB",
+                    "ImageMagick 7", sz, q, eff
+                );
+            }
+        }
+
+        // libvips
+        if has_vips {
+            if let Some(jpeg) = vips_encode(&original, w, h, quality as u32) {
+                let (q, sz) = measure_reference(&jpeg, &original);
+                let eff = q / (sz as f64 / 1024.0);
+                eprintln!(
+                    "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB",
+                    "libvips 8", sz, q, eff
+                );
+            }
+        }
+
+        // libjpeg-turbo
+        if has_turbo {
+            if let Some(jpeg) = libjpeg_turbo_encode(&original, w, h, quality as u32) {
+                let (q, sz) = measure_reference(&jpeg, &original);
+                let eff = q / (sz as f64 / 1024.0);
+                eprintln!(
+                    "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB",
+                    "libjpeg-turbo", sz, q, eff
+                );
+            }
+        }
+
+        // mozjpeg (gold standard)
+        if has_mozjpeg {
+            if let Some(jpeg) = mozjpeg_encode(&original, w, h, quality as u32) {
+                let (q, sz) = measure_reference(&jpeg, &original);
+                let eff = q / (sz as f64 / 1024.0);
+                eprintln!(
+                    "  {:<30} {:>7}B {:>9.1}dB {:>10.1} dB/KB  ← gold standard",
+                    "mozjpeg 4.1", sz, q, eff
+                );
+            }
+        }
+
+        eprintln!();
+    }
+}
