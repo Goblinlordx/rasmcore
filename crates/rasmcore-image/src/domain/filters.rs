@@ -1401,17 +1401,8 @@ pub fn clahe(
                 }
             }
 
-            // Degenerate tile: all same value → identity LUT, skip clipping
-            let distinct = hist.iter().filter(|&&h| h > 0).count();
-            if distinct <= 1 {
-                let lut = &mut tile_luts[ty * grid + tx];
-                for i in 0..256 {
-                    lut[i] = i as u8;
-                }
-                continue;
-            }
-
             // Clip histogram and redistribute (matching OpenCV exactly)
+            // No special case for single-value tiles — OpenCV processes all tiles uniformly.
             let clip = ((clip_limit * tile_pixels as f32) / 256.0) as u32;
             let clip = clip.max(1);
             let mut clipped = 0u32;
@@ -2360,7 +2351,9 @@ mod optimization_tests {
     }
 
     #[test]
-    fn clahe_flat_image_stays_flat() {
+    fn clahe_flat_image_uniform_output() {
+        // CLAHE on flat input: OpenCV redistributes excess across all bins,
+        // so the output is NOT identity but is uniform (all same value).
         let info = ImageInfo {
             width: 32,
             height: 32,
@@ -2369,9 +2362,10 @@ mod optimization_tests {
         };
         let pixels = vec![128u8; 32 * 32];
         let result = clahe(&pixels, &info, 2.0, 4).unwrap();
-        // Flat image should remain flat (within ±1 rounding)
+        // All output pixels should be the same value (uniform)
+        let first = result[0];
         for &v in &result {
-            assert!((v as i32 - 128).abs() <= 1, "flat pixel changed to {v}");
+            assert_eq!(v, first, "flat input should produce uniform output");
         }
     }
 
