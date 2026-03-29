@@ -1,0 +1,82 @@
+id: hevc-enc-coeff-debug_20260330010000Z
+title: "HEVC Encoder Coefficient Debug — Bin-Trace Comparison for Encode-Decode Parity"
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Debug the HEVC encoder's coefficient CABAC encoding by adding bin-level tracing
+    to both encoder and decoder, comparing bin-by-bin to find the first divergence
+    point. The coefficient coding structure is verified correct by code audit — the
+    issue is a subtle context state or value mismatch in the encode-decode roundtrip.
+  context: |
+    The HEVC encoder produces valid bitstreams (decodable) but decoded quality is
+    poor (3.8dB for gradient at QP=22). Code audit of encode_residual_coeffs vs
+    decode_residual_coeffs shows all 8 areas match structurally (scan order, context
+    derivation, gt1/gt2, sign flags, Rice/Exp-Golomb remaining).
+
+    The split_transform_flag was missing (just fixed) but quality didn't improve.
+    The issue is somewhere in the coefficient data flow — the encoder writes
+    coefficients that the decoder reads back as different values.
+
+    Root cause candidates:
+    1. A bin is written by the encoder that the decoder doesn't expect, or vice versa,
+       causing all subsequent bins to be misinterpreted (state desync)
+    2. The encoded coefficient values map to different array positions than expected
+    3. A missing or extra syntax element in the bitstream between CU structure and
+       coefficient data
+  codebase_analysis: |
+    Key files:
+    - encode/encoder.rs: encode_slice_data() — CTU loop, prediction, DCT, quant, CABAC
+    - encode/syntax_enc.rs: encode_residual_coeffs() — ~200 lines of coefficient coding
+    - syntax.rs: decode_residual_coeffs() — ~400 lines (the reference)
+    - cabac/decoder.rs: CabacDecoder with optional trace (feature=trace)
+    - encode/cabac_enc.rs: CabacEncoder (no trace yet)
+
+    The decoder has a trace feature that logs every bin. The encoder needs the same.
+  acceptance_criteria:
+    - Add bin tracing to CabacEncoder (matching decoder BinTrace format)
+    - Write a test that encodes a simple block and compares encoder bin trace vs decoder bin trace
+    - Identify the first bin mismatch and fix the root cause
+    - Encoder encode-decode roundtrip achieves PSNR > 25dB for gradient at QP=22
+    - No regression on decoder parity tests
+  out_of_scope: |
+    Pixel-exact x265 match (that requires matching mode decisions, which is a different task).
+    Checker decoder deblocking gap. Multi-mode encoder.
+  technical_notes: |
+    Approach:
+    1. Add trace capability to CabacEncoder (vec of encoded bins with type/value)
+    2. Encode a simple 4x4 or 8x8 coefficient block
+    3. Decode the same bytes with decoder trace enabled
+    4. Compare bin sequences side by side
+    5. The first divergence reveals the bug
+    6. Fix and verify PSNR improvement
+
+    Alternative approach: encode coefficients for a SINGLE CTU with cbf_luma=true,
+    capture the CABAC bytes, then manually step through the decoder to see where
+    it diverges. This is faster than full frame encode.
+plan:
+  - phase: "Encoder Trace"
+    tasks:
+      - text: "Add bin trace to CabacEncoder (record bin type, value, context for each encoded bin)"
+        done: false
+      - text: "Write test that encodes a small coefficient block and captures bin trace"
+        done: false
+  - phase: "Comparison"
+    tasks:
+      - text: "Decode the encoded bytes with decoder trace, capture decoder bin trace"
+        done: false
+      - text: "Compare encoder and decoder bin traces — find first mismatch"
+        done: false
+      - text: "Identify root cause of divergence"
+        done: false
+  - phase: "Fix and Validate"
+    tasks:
+      - text: "Fix the identified issue"
+        done: false
+      - text: "Verify encode-decode roundtrip PSNR > 25dB"
+        done: false
+      - text: "No regression on decoder parity tests"
+        done: false
+extra: {}
