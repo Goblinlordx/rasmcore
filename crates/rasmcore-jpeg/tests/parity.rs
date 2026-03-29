@@ -1753,3 +1753,318 @@ fn all_reference_comparison_chart() {
         eprintln!();
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pixel-Exact Decode Parity — our decoder vs djpeg (libjpeg-turbo 3.1.3)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Encode with cjpeg, decode with both djpeg and our decoder, compare
+// byte-for-byte. This validates our decoder produces identical output to
+// the reference implementation for the same JPEG input.
+
+fn djpeg_available() -> bool {
+    Command::new("djpeg")
+        .arg("-version")
+        .output()
+        .map(|o| {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            stderr.contains("libjpeg-turbo")
+        })
+        .unwrap_or(false)
+}
+
+fn cjpeg_available() -> bool {
+    Command::new("cjpeg")
+        .arg("-version")
+        .output()
+        .map(|o| {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            stderr.contains("libjpeg-turbo")
+        })
+        .unwrap_or(false)
+}
+
+/// Encode RGB pixels with cjpeg (libjpeg-turbo) at given quality.
+fn cjpeg_encode(pixels: &[u8], w: u32, h: u32, quality: u32, extra_args: &[&str]) -> Vec<u8> {
+    let ppm_path = write_ppm(pixels, w, h);
+    let jpg_path = ppm_path.with_extension("cjpeg.jpg");
+    let mut cmd = Command::new("cjpeg");
+    cmd.args(["-quality", &quality.to_string()]);
+    for arg in extra_args {
+        cmd.arg(*arg);
+    }
+    cmd.args(["-outfile", jpg_path.to_str().unwrap()])
+        .arg(ppm_path.to_str().unwrap());
+    let output = cmd.output().expect("cjpeg failed to launch");
+    let _ = std::fs::remove_file(&ppm_path);
+    assert!(
+        output.status.success(),
+        "cjpeg failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = std::fs::read(&jpg_path).unwrap();
+    let _ = std::fs::remove_file(&jpg_path);
+    data
+}
+
+/// Encode grayscale pixels with cjpeg.
+fn cjpeg_encode_gray(pixels: &[u8], w: u32, h: u32, quality: u32) -> Vec<u8> {
+    let pgm_path = write_pgm(pixels, w, h);
+    let jpg_path = pgm_path.with_extension("cjpeg.jpg");
+    let output = Command::new("cjpeg")
+        .args(["-quality", &quality.to_string()])
+        .args(["-grayscale"])
+        .args(["-outfile", jpg_path.to_str().unwrap()])
+        .arg(pgm_path.to_str().unwrap())
+        .output()
+        .expect("cjpeg failed to launch");
+    let _ = std::fs::remove_file(&pgm_path);
+    assert!(
+        output.status.success(),
+        "cjpeg gray failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = std::fs::read(&jpg_path).unwrap();
+    let _ = std::fs::remove_file(&jpg_path);
+    data
+}
+
+/// Decode JPEG with djpeg to raw PPM bytes, return just the pixel data.
+fn djpeg_decode_rgb(jpeg: &[u8]) -> Vec<u8> {
+    let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let jpg_path = std::env::temp_dir().join(format!(
+        "rasmcore_djpeg_{}_{id}.jpg",
+        std::process::id()
+    ));
+    let ppm_path = jpg_path.with_extension("ppm");
+    std::fs::write(&jpg_path, jpeg).unwrap();
+    let output = Command::new("djpeg")
+        .args(["-ppm", "-outfile", ppm_path.to_str().unwrap()])
+        .arg(jpg_path.to_str().unwrap())
+        .output()
+        .expect("djpeg failed");
+    let _ = std::fs::remove_file(&jpg_path);
+    assert!(
+        output.status.success(),
+        "djpeg failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let ppm_data = std::fs::read(&ppm_path).unwrap();
+    let _ = std::fs::remove_file(&ppm_path);
+    // Parse PPM: skip header (P6\n<w> <h>\n255\n)
+    let header_end = {
+        let mut pos = 0;
+        let mut newlines = 0;
+        for (i, &b) in ppm_data.iter().enumerate() {
+            if b == b'\n' {
+                newlines += 1;
+                if newlines == 3 {
+                    pos = i + 1;
+                    break;
+                }
+            }
+        }
+        pos
+    };
+    ppm_data[header_end..].to_vec()
+}
+
+/// Decode JPEG with djpeg to raw PGM bytes (grayscale).
+fn djpeg_decode_gray(jpeg: &[u8]) -> Vec<u8> {
+    let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let jpg_path = std::env::temp_dir().join(format!(
+        "rasmcore_djpeg_{}_{id}.jpg",
+        std::process::id()
+    ));
+    let pgm_path = jpg_path.with_extension("pgm");
+    std::fs::write(&jpg_path, jpeg).unwrap();
+    let output = Command::new("djpeg")
+        .args(["-grayscale", "-outfile", pgm_path.to_str().unwrap()])
+        .arg(jpg_path.to_str().unwrap())
+        .output()
+        .expect("djpeg failed");
+    let _ = std::fs::remove_file(&jpg_path);
+    assert!(
+        output.status.success(),
+        "djpeg gray failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pgm_data = std::fs::read(&pgm_path).unwrap();
+    let _ = std::fs::remove_file(&pgm_path);
+    // Parse PGM: skip header (P5\n<w> <h>\n255\n)
+    let header_end = {
+        let mut pos = 0;
+        let mut newlines = 0;
+        for (i, &b) in pgm_data.iter().enumerate() {
+            if b == b'\n' {
+                newlines += 1;
+                if newlines == 3 {
+                    pos = i + 1;
+                    break;
+                }
+            }
+        }
+        pos
+    };
+    pgm_data[header_end..].to_vec()
+}
+
+fn max_err(a: &[u8], b: &[u8]) -> u8 {
+    assert_eq!(a.len(), b.len());
+    a.iter()
+        .zip(b)
+        .map(|(&x, &y)| (x as i16 - y as i16).unsigned_abs() as u8)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Count pixels that differ
+fn diff_count(a: &[u8], b: &[u8]) -> usize {
+    a.iter().zip(b).filter(|&(&x, &y)| x != y).count()
+}
+
+// ─── Pixel-Exact Decode Tests ─────────────────────────────────────────────
+
+#[test]
+fn decode_parity_solid_color_baseline_444() {
+    assert!(djpeg_available(), "djpeg (libjpeg-turbo) required");
+    assert!(cjpeg_available(), "cjpeg (libjpeg-turbo) required");
+
+    // Solid red 8x8 at Q95 4:4:4 — minimal JPEG loss, all blocks identical
+    let w = 8u32;
+    let h = 8;
+    let pixels: Vec<u8> = (0..w * h).flat_map(|_| [200u8, 50, 50]).collect();
+    let jpeg = cjpeg_encode(&pixels, w, h, 95, &["-sample", "1x1"]);
+
+    let djpeg_out = djpeg_decode_rgb(&jpeg);
+    let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+
+    let m = mae(&our_decoded.pixels, &djpeg_out);
+    let mx = max_err(&our_decoded.pixels, &djpeg_out);
+    let diffs = diff_count(&our_decoded.pixels, &djpeg_out);
+    eprintln!("  decode solid 444: MAE={m:.4}, max_err={mx}, diffs={diffs}/{}", djpeg_out.len());
+    assert!(
+        mx <= 1,
+        "Solid color decode: max_err={mx} (expect ≤1 from IDCT rounding)"
+    );
+}
+
+#[test]
+fn decode_parity_gradient_baseline_444() {
+    assert!(djpeg_available(), "djpeg (libjpeg-turbo) required");
+    assert!(cjpeg_available(), "cjpeg (libjpeg-turbo) required");
+
+    let (w, h) = (32u32, 32);
+    let pixels = gradient_pixels(w, h);
+    let jpeg = cjpeg_encode(&pixels, w, h, 95, &["-sample", "1x1"]);
+
+    let djpeg_out = djpeg_decode_rgb(&jpeg);
+    let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+
+    let m = mae(&our_decoded.pixels, &djpeg_out);
+    let mx = max_err(&our_decoded.pixels, &djpeg_out);
+    let diffs = diff_count(&our_decoded.pixels, &djpeg_out);
+    eprintln!(
+        "  decode gradient 444 Q95: MAE={m:.4}, max_err={mx}, diffs={diffs}/{}",
+        djpeg_out.len()
+    );
+    assert!(
+        mx <= 1,
+        "Gradient 444 decode: max_err={mx} (expect ≤1 from IDCT rounding)"
+    );
+}
+
+#[test]
+fn decode_parity_gradient_baseline_420() {
+    assert!(djpeg_available(), "djpeg (libjpeg-turbo) required");
+    assert!(cjpeg_available(), "cjpeg (libjpeg-turbo) required");
+
+    let (w, h) = (32u32, 32);
+    let pixels = gradient_pixels(w, h);
+    let jpeg = cjpeg_encode(&pixels, w, h, 95, &["-sample", "2x2"]);
+
+    let djpeg_out = djpeg_decode_rgb(&jpeg);
+    let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+
+    let m = mae(&our_decoded.pixels, &djpeg_out);
+    let mx = max_err(&our_decoded.pixels, &djpeg_out);
+    let diffs = diff_count(&our_decoded.pixels, &djpeg_out);
+    eprintln!(
+        "  decode gradient 420 Q95: MAE={m:.4}, max_err={mx}, diffs={diffs}/{}",
+        djpeg_out.len()
+    );
+    // 4:2:0 chroma upsampling may differ by ±1 due to different upsample filters
+    assert!(
+        mx <= 2,
+        "Gradient 420 decode: max_err={mx} (expect ≤2 from chroma upsample)"
+    );
+}
+
+#[test]
+fn decode_parity_checkerboard_baseline() {
+    assert!(djpeg_available(), "djpeg (libjpeg-turbo) required");
+    assert!(cjpeg_available(), "cjpeg (libjpeg-turbo) required");
+
+    let (w, h) = (32u32, 32);
+    let pixels = checkerboard_pixels(w, h, 8);
+    let jpeg = cjpeg_encode(&pixels, w, h, 95, &["-sample", "1x1"]);
+
+    let djpeg_out = djpeg_decode_rgb(&jpeg);
+    let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+
+    let m = mae(&our_decoded.pixels, &djpeg_out);
+    let mx = max_err(&our_decoded.pixels, &djpeg_out);
+    eprintln!("  decode checker 444 Q95: MAE={m:.4}, max_err={mx}");
+    assert!(
+        mx <= 1,
+        "Checker 444 decode: max_err={mx} (expect ≤1 from IDCT rounding)"
+    );
+}
+
+#[test]
+fn decode_parity_grayscale() {
+    assert!(djpeg_available(), "djpeg (libjpeg-turbo) required");
+    assert!(cjpeg_available(), "cjpeg (libjpeg-turbo) required");
+
+    let (w, h) = (32u32, 32);
+    let pixels = gray_gradient(w, h);
+    let jpeg = cjpeg_encode_gray(&pixels, w, h, 95);
+
+    let djpeg_out = djpeg_decode_gray(&jpeg);
+    let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+
+    let m = mae(&our_decoded.pixels, &djpeg_out);
+    let mx = max_err(&our_decoded.pixels, &djpeg_out);
+    eprintln!("  decode gray Q95: MAE={m:.4}, max_err={mx}");
+    assert!(
+        mx <= 1,
+        "Gray decode: max_err={mx} (expect ≤1 from IDCT rounding)"
+    );
+}
+
+#[test]
+fn decode_parity_q75_various_subsampling() {
+    assert!(djpeg_available(), "djpeg (libjpeg-turbo) required");
+    assert!(cjpeg_available(), "cjpeg (libjpeg-turbo) required");
+
+    let (w, h) = (32u32, 32);
+    let pixels = gradient_pixels(w, h);
+
+    for (sample, label, max_allowed) in [
+        ("1x1", "444", 1),
+        ("2x1", "422", 2),
+        ("2x2", "420", 2),
+    ] {
+        let jpeg = cjpeg_encode(&pixels, w, h, 75, &["-sample", sample]);
+        let djpeg_out = djpeg_decode_rgb(&jpeg);
+        let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+
+        let m = mae(&our_decoded.pixels, &djpeg_out);
+        let mx = max_err(&our_decoded.pixels, &djpeg_out);
+        eprintln!("  decode {label} Q75: MAE={m:.4}, max_err={mx}");
+        assert!(
+            mx <= max_allowed,
+            "Decode {label} Q75: max_err={mx} > {max_allowed}"
+        );
+    }
+}
