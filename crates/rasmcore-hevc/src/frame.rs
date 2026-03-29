@@ -226,7 +226,7 @@ pub fn decode_frame(
 
             // Reconstruct each CU in this CTU
             for cu in &ctu.cus {
-                reconstruct_cu(cu, &sps, &pps, slice_qp, &mut fb)?;
+                reconstruct_cu(cu, &sps, &pps, slice_qp, &mut fb, ctu_y, ctu_size)?;
             }
 
             // WPP: save context models after decoding the 2nd CTU (CtbX==1)
@@ -372,12 +372,17 @@ fn resolve_intra_pred_mode(
 }
 
 /// Reconstruct a single CU: predict + add residual.
+///
+/// `ctu_y` and `ctu_size` define the current CTU row boundaries for
+/// reference sample availability computation (HEVC Section 8.4.4.2.2).
 fn reconstruct_cu(
     cu: &CuSyntax,
     sps: &Sps,
     _pps: &params::Pps,
     qp: i32,
     fb: &mut FrameBuffer,
+    ctu_y: u32,
+    ctu_size: u32,
 ) -> Result<(), HevcError> {
     if cu.pred_mode != PredMode::Intra {
         return Err(HevcError::DecodeFailed(
@@ -395,20 +400,32 @@ fn reconstruct_cu(
     // Store the resolved mode in the frame buffer for neighbor lookups
     store_intra_mode(fb, cu.x, cu.y, cu.size, luma_mode);
 
-    // Construct reference samples
+    // Construct reference samples with proper availability bounds.
+    // HEVC Section 8.4.4.2.2: reference samples from not-yet-reconstructed CTUs
+    // are unavailable and must be substituted with the nearest available sample.
     let avail_top = cu.y > 0;
     let avail_left = cu.x > 0;
     let avail_tl = cu.x > 0 && cu.y > 0;
 
-    let refs = RefSamples::from_frame(
+    // For left references: samples are available up to the bottom of the current
+    // CTU row (since all CTUs in the current row to the left have been decoded,
+    // but the row below hasn't started yet).
+    let recon_bottom = (ctu_y + ctu_size).min(fb.height) as usize;
+    // For top references: the entire row above is available (decoded in a previous CTU row).
+    let recon_right = fb.width as usize;
+
+    let refs = RefSamples::from_frame_with_bounds(
         cu.x as usize,
         cu.y as usize,
         size,
         &fb.y,
         fb.width as usize,
+        fb.height as usize,
         avail_top,
         avail_left,
         avail_tl,
+        recon_right,
+        recon_bottom,
     );
 
     // Generate prediction
@@ -482,13 +499,23 @@ fn reconstruct_cu(
 }
 
 /// Apply deblocking filter to the reconstructed frame.
+///
+/// HEVC Section 8.7.2: deblocking is applied at 8x8 grid-aligned edges
+/// that correspond to CU or TU boundaries. The boundary strength (Bs)
+/// determines filter strength: Bs=2 for intra CU boundaries, Bs=1 for
+/// TU boundaries with non-zero coefficients, Bs=0 otherwise.
+///
+/// Currently simplified: deblocking is applied at CTU boundaries only,
+/// which are guaranteed CU boundaries in an I-frame. A full implementation
+/// would track the actual CU/TU partition and apply deblocking at all
+/// CU and TU boundaries on the 8x8 grid.
 fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32) {
     let ctu_size = sps.ctu_size() as usize;
-    let min_cb = sps.min_cb_size() as usize;
     let stride = fb.width as usize;
 
-    // Apply vertical edges (at CU boundaries)
-    for edge_x in (min_cb..fb.width as usize).step_by(min_cb) {
+    // Apply vertical edges at CTU column boundaries.
+    // Each CTU boundary is a CU boundary → Bs=2 for intra.
+    for edge_x in (ctu_size..fb.width as usize).step_by(ctu_size) {
         if edge_x >= 4 && edge_x + 3 < stride {
             filter::deblock_vertical_edge(
                 &mut fb.y,
@@ -502,8 +529,8 @@ fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32) {
         }
     }
 
-    // Apply horizontal edges
-    for edge_y in (min_cb..fb.height as usize).step_by(min_cb) {
+    // Apply horizontal edges at CTU row boundaries.
+    for edge_y in (ctu_size..fb.height as usize).step_by(ctu_size) {
         if edge_y >= 4 && edge_y + 3 < fb.height as usize {
             filter::deblock_horizontal_edge(
                 &mut fb.y,
@@ -516,8 +543,6 @@ fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32) {
             );
         }
     }
-
-    let _ = ctu_size;
 }
 
 #[cfg(test)]

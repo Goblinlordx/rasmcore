@@ -180,6 +180,95 @@ impl RefSamples {
         refs
     }
 
+    /// Construct reference samples with per-sample availability based on
+    /// reconstructed region bounds.
+    ///
+    /// HEVC Section 8.4.4.2.2: reference samples beyond the reconstructed area
+    /// are substituted with the nearest available sample.
+    ///
+    /// `recon_right` is the rightmost x+1 that has been reconstructed in the row above.
+    /// `recon_bottom` is the bottommost y+1 that has been reconstructed in the column to the left.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_frame_with_bounds(
+        x: usize,
+        y: usize,
+        size: usize,
+        frame: &[u8],
+        stride: usize,
+        frame_height: usize,
+        avail_top: bool,
+        avail_left: bool,
+        avail_top_left: bool,
+        recon_right: usize,
+        recon_bottom: usize,
+    ) -> Self {
+        let default_val = 1u8 << 7; // mid-gray for 8-bit
+        let mut refs = Self::with_default(size, default_val, 8);
+
+        // Gather available reference samples
+        if avail_top_left && x > 0 && y > 0 {
+            refs.top_left = frame[(y - 1) * stride + (x - 1)];
+        }
+
+        if avail_top && y > 0 {
+            let row_above = (y - 1) * stride;
+            // Top references: only read up to the reconstructed right boundary
+            let top_avail = (2 * size)
+                .min(stride - x)
+                .min(recon_right.saturating_sub(x));
+            for i in 0..top_avail {
+                refs.top[i] = frame[row_above + x + i];
+            }
+            // Fill remaining with last available value (HEVC Section 8.4.4.2.2)
+            if top_avail > 0 && top_avail < 2 * size {
+                let fill = refs.top[top_avail - 1];
+                for i in top_avail..2 * size {
+                    refs.top[i] = fill;
+                }
+            }
+        }
+
+        if avail_left && x > 0 {
+            // Left references: only read up to the reconstructed bottom boundary
+            let left_avail = (2 * size)
+                .min(frame_height - y)
+                .min(recon_bottom.saturating_sub(y));
+            for i in 0..left_avail {
+                refs.left[i] = frame[(y + i) * stride + (x - 1)];
+            }
+            // Fill remaining with last available value (HEVC Section 8.4.4.2.2)
+            if left_avail > 0 && left_avail < 2 * size {
+                let fill = refs.left[left_avail - 1];
+                for i in left_avail..2 * size {
+                    refs.left[i] = fill;
+                }
+            }
+        }
+
+        // Substitution: if a neighbor is unavailable, fill from the first available sample
+        if !avail_top_left {
+            if avail_left {
+                refs.top_left = refs.left[0];
+            } else if avail_top {
+                refs.top_left = refs.top[0];
+            }
+        }
+        if !avail_top {
+            let fill = refs.top_left;
+            for v in refs.top.iter_mut() {
+                *v = fill;
+            }
+        }
+        if !avail_left {
+            let fill = refs.top_left;
+            for v in refs.left.iter_mut() {
+                *v = fill;
+            }
+        }
+
+        refs
+    }
+
     /// Apply 3-tap [1,2,1]/4 smoothing filter to reference samples.
     pub fn filter(&self, size: usize) -> Self {
         let mut filtered = self.clone();
