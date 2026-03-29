@@ -161,26 +161,33 @@ simple_filter_node!(
     "Contrast adjustment node."
 );
 
-// ─── Vignette node (position-dependent) ─────────────────────────────────────
+// ─── Vignette nodes (position-dependent) ────────────────────────────────────
 
-/// Vignette effect node — radial gradient multiply.
+/// Gaussian vignette node — ImageMagick-compatible.
 ///
-/// Unlike simple filters, vignette depends on absolute pixel position within
-/// the full image, so it passes tile offset and full-image dimensions to the
-/// filter function for correct tiled execution.
+/// Blurred elliptical mask × image. Position-dependent: passes tile offset
+/// and full-image dimensions for correct tiled execution.
 pub struct VignetteNode {
     upstream: u32,
-    strength: f32,
-    falloff: f32,
+    sigma: f32,
+    x_inset: u32,
+    y_inset: u32,
     source_info: ImageInfo,
 }
 
 impl VignetteNode {
-    pub fn new(upstream: u32, source_info: ImageInfo, strength: f32, falloff: f32) -> Self {
+    pub fn new(
+        upstream: u32,
+        source_info: ImageInfo,
+        sigma: f32,
+        x_inset: u32,
+        y_inset: u32,
+    ) -> Self {
         Self {
             upstream,
-            strength,
-            falloff,
+            sigma,
+            x_inset,
+            y_inset,
             source_info,
         }
     }
@@ -203,6 +210,62 @@ impl ImageNode for VignetteNode {
             ..self.source_info
         };
         filters::vignette(
+            &src_pixels,
+            &region_info,
+            self.sigma,
+            self.x_inset,
+            self.y_inset,
+            self.source_info.width,
+            self.source_info.height,
+            request.x,
+            request.y,
+        )
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::zero()
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+}
+
+/// Power-law vignette node — simple radial falloff.
+pub struct VignettePowerlawNode {
+    upstream: u32,
+    strength: f32,
+    falloff: f32,
+    source_info: ImageInfo,
+}
+
+impl VignettePowerlawNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, strength: f32, falloff: f32) -> Self {
+        Self {
+            upstream,
+            strength,
+            falloff,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for VignettePowerlawNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let src_pixels = upstream_fn(self.upstream, request)?;
+        let region_info = ImageInfo {
+            width: request.width,
+            height: request.height,
+            ..self.source_info
+        };
+        filters::vignette_powerlaw(
             &src_pixels,
             &region_info,
             self.strength,

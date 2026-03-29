@@ -182,9 +182,23 @@ pub struct CropParams {
     pub height: u32,
 }
 
-/// Parameters for vignette effect.
+/// Parameters for the default (Gaussian) vignette effect.
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct VignetteParams {
+    /// Gaussian blur sigma controlling the softness of the transition
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 20.0)]
+    pub sigma: f32,
+    /// Horizontal inset from edges (pixels) where darkening begins
+    #[param(min = 0, max = 4000, step = 1, default = 10)]
+    pub x_offset: u32,
+    /// Vertical inset from edges (pixels) where darkening begins
+    #[param(min = 0, max = 4000, step = 1, default = 10)]
+    pub y_offset: u32,
+}
+
+/// Parameters for the power-law vignette mode.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct VignettePowerlawParams {
     /// Darkening strength (0=none, 1=fully black at corners)
     #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub strength: f32,
@@ -1393,20 +1407,172 @@ fn to_grayscale_simd128(pixels: &[u8], channels: usize, pixel_count: usize) -> V
 
 // ─── Vignette Effect ────────────────────────────────────────────────────
 
-/// Radial vignette darkening effect.
+/// Separable 1D Gaussian blur on a f64 single-channel buffer.
 ///
-/// Multiplies each pixel by a radial gradient factor that falls off from
-/// center to corners. The formula:
-///   dist = sqrt((x - cx)^2 + (y - cy)^2)
-///   t    = (dist / max_dist) ^ falloff
-///   factor = 1.0 - strength * t
-///   pixel' = pixel * factor
+/// Uses zero-padding outside image bounds (matching ImageMagick's vignette
+/// canvas behaviour). Kernel radius = ceil(2.5 * sigma).
+fn gaussian_blur_mask(data: &[f64], w: usize, h: usize, sigma: f64) -> Vec<f64> {
+    let radius = (2.5 * sigma).ceil() as usize;
+    if radius == 0 {
+        return data.to_vec();
+    }
+
+    // Build 1D Gaussian kernel
+    let ksize = 2 * radius + 1;
+    let mut kernel = vec![0.0f64; ksize];
+    let inv_2s2 = 1.0 / (2.0 * sigma * sigma);
+    let mut sum = 0.0;
+    for i in 0..ksize {
+        let x = i as f64 - radius as f64;
+        kernel[i] = (-x * x * inv_2s2).exp();
+        sum += kernel[i];
+    }
+    for v in &mut kernel {
+        *v /= sum;
+    }
+
+    // Horizontal pass
+    let mut tmp = vec![0.0f64; w * h];
+    for row in 0..h {
+        for col in 0..w {
+            let mut acc = 0.0;
+            for ki in 0..ksize {
+                let src_col = col as isize + ki as isize - radius as isize;
+                if src_col >= 0 && (src_col as usize) < w {
+                    acc += data[row * w + src_col as usize] * kernel[ki];
+                }
+            }
+            tmp[row * w + col] = acc;
+        }
+    }
+
+    // Vertical pass
+    let mut out = vec![0.0f64; w * h];
+    for row in 0..h {
+        for col in 0..w {
+            let mut acc = 0.0;
+            for ki in 0..ksize {
+                let src_row = row as isize + ki as isize - radius as isize;
+                if src_row >= 0 && (src_row as usize) < h {
+                    acc += tmp[src_row as usize * w + col] * kernel[ki];
+                }
+            }
+            out[row * w + col] = acc;
+        }
+    }
+
+    out
+}
+
+/// Gaussian vignette effect — ImageMagick-compatible.
 ///
-/// `full_width`/`full_height` specify the full image dimensions (for tiled
-/// execution). `offset_x`/`offset_y` give this tile's position within the
-/// full image. For non-tiled usage, set offsets to 0 and full dims = info dims.
+/// Darkens image edges using an elliptical Gaussian mask:
+/// 1. Build a binary elliptical mask (semi-axes = image_half - offset)
+/// 2. Gaussian-blur the mask (separable, sigma controls transition softness)
+/// 3. Multiply each pixel by the blurred mask value
+///
+/// This matches ImageMagick's `-vignette 0x{sigma}+{x_off}+{y_off}` within
+/// MAE < 2.0 at 8-bit (the residual comes from IM's anti-aliased ellipse
+/// rasterization, which uses sub-pixel coverage sampling).
+///
+/// `full_width`/`full_height` and `offset_x`/`offset_y` support tiled
+/// execution. For non-tiled usage, set tile offsets to 0 and full dims to
+/// the image dimensions.
 #[rasmcore_macros::register_filter(name = "vignette", category = "enhancement")]
 pub fn vignette(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma: f32,
+    x_inset: u32,
+    y_inset: u32,
+    full_width: u32,
+    full_height: u32,
+    tile_offset_x: u32,
+    tile_offset_y: u32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            vignette(
+                p8,
+                i8,
+                sigma,
+                x_inset,
+                y_inset,
+                full_width,
+                full_height,
+                tile_offset_x,
+                tile_offset_y,
+            )
+        });
+    }
+
+    let fw = full_width as usize;
+    let fh = full_height as usize;
+    let cx = fw as f64 / 2.0;
+    let cy = fh as f64 / 2.0;
+    let rx = (fw as f64 / 2.0 - x_inset as f64).max(1.0);
+    let ry = (fh as f64 / 2.0 - y_inset as f64).max(1.0);
+
+    // Build binary elliptical mask for the full image
+    let mut mask = vec![0.0f64; fw * fh];
+    for row in 0..fh {
+        let yn = (row as f64 + 0.5 - cy) / ry;
+        let yn2 = yn * yn;
+        for col in 0..fw {
+            let xn = (col as f64 + 0.5 - cx) / rx;
+            if xn * xn + yn2 <= 1.0 {
+                mask[row * fw + col] = 1.0;
+            }
+        }
+    }
+
+    // Gaussian blur the mask
+    let blurred = gaussian_blur_mask(&mask, fw, fh, sigma as f64);
+
+    // Multiply pixels by the corresponding mask region
+    let ch = channels(info.format);
+    let color_ch = if ch == 4 { 3 } else { ch };
+    let tw = info.width as usize;
+    let th = info.height as usize;
+    let tx = tile_offset_x as usize;
+    let ty = tile_offset_y as usize;
+
+    let mut result = pixels.to_vec();
+    for row in 0..th {
+        for col in 0..tw {
+            let factor = blurred[(ty + row) * fw + (tx + col)];
+            let idx = (row * tw + col) * ch;
+            for c in 0..color_ch {
+                let v = result[idx + c] as f64 * factor;
+                result[idx + c] = v.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Convenience wrapper for non-tiled Gaussian vignette.
+pub fn vignette_full(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma: f32,
+    x_inset: u32,
+    y_inset: u32,
+) -> Result<Vec<u8>, ImageError> {
+    vignette(
+        pixels, info, sigma, x_inset, y_inset, info.width, info.height, 0, 0,
+    )
+}
+
+/// Power-law vignette — simple radial falloff.
+///
+/// Multiplies each pixel by `1.0 - strength * (dist / max_dist)^falloff`.
+/// This is a computationally cheap alternative to the Gaussian vignette
+/// with a different aesthetic (smooth polynomial falloff vs. Gaussian).
+#[rasmcore_macros::register_filter(name = "vignette_powerlaw", category = "enhancement")]
+pub fn vignette_powerlaw(
     pixels: &[u8],
     info: &ImageInfo,
     strength: f32,
@@ -1419,12 +1585,12 @@ pub fn vignette(
     validate_format(info.format)?;
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            vignette(p8, i8, strength, falloff, full_width, full_height, offset_x, offset_y)
+            vignette_powerlaw(p8, i8, strength, falloff, full_width, full_height, offset_x, offset_y)
         });
     }
 
     let ch = channels(info.format);
-    let color_ch = if ch == 4 { 3 } else { ch }; // skip alpha
+    let color_ch = if ch == 4 { 3 } else { ch };
     let w = info.width as usize;
     let h = info.height as usize;
     let fw = full_width as f64;
@@ -1453,21 +1619,10 @@ pub fn vignette(
                 let v = result[idx + c] as f64 * factor;
                 result[idx + c] = v.round().clamp(0.0, 255.0) as u8;
             }
-            // alpha channel (if present) is preserved unchanged
         }
     }
 
     Ok(result)
-}
-
-/// Convenience wrapper for non-tiled vignette (full image at once).
-pub fn vignette_full(
-    pixels: &[u8],
-    info: &ImageInfo,
-    strength: f32,
-    falloff: f32,
-) -> Result<Vec<u8>, ImageError> {
-    vignette(pixels, info, strength, falloff, info.width, info.height, 0, 0)
 }
 
 // ─── Alpha Management ────────────────────────────────────────────────────
