@@ -138,32 +138,41 @@ spec:
 
     Streaming I/O roadmap (true streaming, not pseudo):
 
-      Path 1 — WASI Preview 3 streams (preferred, pending spec):
-        WASI P3 proposes `stream<T>` as a first-class type in WIT.
-        When available, WIT sinks would become:
+      Path 1 — WASI 0.3 native streams (preferred, blocked on jco):
+        WASI 0.3 includes stream<T> and future<T> as first-class WIT types.
+        Status (March 2026):
+          - Wasmtime 37+: experimental support (--wasip3, RC 2026-03-15)
+          - wasm-tools: full parsing/emitting support
+          - wit-bindgen: Rust async bindings available
+          - jco: DOES NOT YET have stable 0.3 stream support
+        jco is our browser path (transpiles component to JS). Without jco 0.3,
+        stream<T> in WIT won't produce ReadableStream in the browser SDK.
+        When jco lands 0.3 support, WIT sinks become:
           write-jpeg-stream: func(source: node-id, config) -> stream<buffer>
-        jco would generate native ReadableStream bindings automatically.
-        Timeline: WASI P3 is in design phase (2025-2026).
+        And jco generates native ReadableStream automatically — zero effort.
+        Timeline: jco 0.3 in development, no stable release date yet.
 
-      Path 2 — Callback-based chunked encoding (can implement now):
-        Add WIT callback interface:
+      Path 2 — Iterator-based chunked encoding (implementable now):
+        Add WIT resource with pull-based iterator:
           resource jpeg-writer {
             constructor(source: node-id, config: jpeg-write-config);
             next-chunk: func() -> option<buffer>;
           }
         Host pulls chunks via next-chunk() in a loop.
         SDK wraps as ReadableStream with pull() calling next-chunk().
+        Works with current jco (0.2 resources are fully supported).
         Downside: requires Rust encoder to support incremental output.
+        This is the recommended near-term path.
 
-      Path 3 — Shared memory + Web Workers (browser-specific):
+      Path 3 — SharedArrayBuffer + Web Workers (browser perf optimization):
         Use SharedArrayBuffer for zero-copy output.
         WASM writes directly to shared memory, host reads as stream.
         Requires cross-origin isolation headers (COOP/COEP).
         Most complex but highest throughput for large images/video.
 
-      Recommendation: Start with Path 2 for image (encoders can be chunked
-      relatively easily). Path 1 for video/audio when WASI P3 lands.
-      Path 3 only if profiling shows memory copies are the bottleneck.
+      Recommendation: Path 2 now (works with current jco, gives real streaming).
+      Path 1 replaces Path 2 when jco 0.3 ships (automatic, no code change in
+      SDK wrapper — just regenerate bindings). Path 3 only if profiling demands.
 
     Streaming input (future):
       Currently: rcimage.load(data) requires full Uint8Array in memory.
