@@ -104,3 +104,46 @@ pub fn forward_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_idct_32x32_gradient_coefficients() {
+        // Dequantized coefficients from gradient CTU(0,0) at QP=19
+        let mut input = [0i16; 1024];
+        input[0] = -12532; // DC at (0,0)
+        input[1] = -2340; // freq 1 at (1,0)
+        input[3] = -247; // freq 3 at (3,0)
+        input[5] = -90; // freq 5
+        input[7] = -45; // freq 7
+        input[9] = -22; // freq 9
+        input[11] = -22; // freq 11
+
+        let mut output = [0i16; 1024];
+        inverse_dct_32x32(&input, &mut output);
+
+        // Expected spatial residual row 0 (from Python matrix multiply):
+        // [-128, -127, -125, -123, -121, -119, -117, -115, ...]
+        let expected_row0 = [
+            -128, -127, -125, -123, -121, -119, -117, -115, -113, -111, -109, -107, -105, -103,
+            -101, -99, -97, -95, -93, -91, -89, -87, -85, -83, -81, -79, -77, -75, -73, -71, -69,
+            -68,
+        ];
+
+        eprintln!("IDCT output row 0: {:?}", &output[..32]);
+        eprintln!("Expected:          {:?}", &expected_row0);
+
+        for (i, (&got, &exp)) in output[..32].iter().zip(expected_row0.iter()).enumerate() {
+            assert!(
+                (got - exp).abs() <= 1,
+                "Row 0 col {}: got {}, expected {} (diff {})",
+                i,
+                got,
+                exp,
+                got - exp
+            );
+        }
+    }
+}
