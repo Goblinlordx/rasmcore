@@ -1,0 +1,50 @@
+id: hevc-predict-fix_20260329010000Z
+title: HEVC Intra Prediction Spec Compliance — DC Filter + Boundary Smoothing
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Fix 2 intra prediction bugs causing 8dB quality gap despite correct CABAC decode: (1) DC mode reference samples
+    incorrectly filtered per HEVC Section 8.4.4.2.3, (2) angular modes 10/26 missing boundary smoothing per Section 8.4.4.2.6.'
+  context: The bin-trace-audit and ref-parity tracks verified CABAC decode is bit-exact (532 bins match libde265). WPP and
+    MPM resolution are implemented. Per-row PSNR analysis shows even CTU row 0 (with correct CABAC) only reaches 21.9dB, proving
+    the gap is in the reconstruction pipeline. Investigation traced the issue to predict.rs — two spec-compliance bugs in
+    intra prediction.
+  codebase_analysis: 'Single file: crates/rasmcore-hevc/src/predict.rs. Bug 1 at line ~50: should_filter_ref_samples() returns
+    true for DC mode (mode 1), but HEVC spec Section 8.4.4.2.3 and libde265 v1.0.18 intrapred.h line 195 say DC is never filtered.
+    Bug 2 after predict_angular(): modes 10 (horizontal) and 26 (vertical) require first-row/column boundary smoothing per
+    libde265 v1.0.18 intrapred.cc lines 379-382 and 417-420. Transform (transform/mod.rs) and dequant verified correct.'
+  acceptance_criteria:
+  - gradient_128x128_q22 PSNR > 25dB
+  - checker_256x256_q22 PSNR > 25dB
+  - flat_64x64 q22/q37 still pass at 48.1dB (no regression)
+  - All reference-derived fixes cited with libde265 v1.0.18 source location
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: CABAC context derivation (verified correct). WPP handling (already implemented). Chroma prediction. Inter
+    prediction.
+  technical_notes: "Two targeted fixes in predict.rs:\n\nFix 1 — DC mode filtering (1 line change):\n  should_filter_ref_samples()\
+    \ currently returns true for mode 0 (Planar) and mode 1 (DC).\n  DC must return false. Ref: libde265 v1.0.18 intrapred.h\
+    \ line 195.\n\nFix 2 — Boundary smoothing for modes 10 and 26 (~8 lines each):\n  After angular prediction for mode 26\
+    \ (vertical), smooth the first column:\n    pred[y][0] = top[0] + ((left[y] - top_left) >> 1)\n  After angular prediction\
+    \ for mode 10 (horizontal), smooth the first row:\n    pred[0][x] = left[0] + ((top[x] - top_left) >> 1)\n  Only for block\
+    \ sizes < 32. Ref: libde265 v1.0.18 intrapred.cc lines 379-382, 417-420."
+plan: []
+extra: {}
+plan:
+  - phase: Prediction Fixes
+    tasks:
+      - text: "Fix DC mode filtering: change should_filter_ref_samples to return false for mode 1 (DC). Cite libde265 v1.0.18 intrapred.h line 195."
+        done: false
+      - text: "Add mode 26 (vertical) boundary smoothing for first column, size < 32. Cite libde265 v1.0.18 intrapred.cc lines 379-382."
+        done: false
+      - text: "Add mode 10 (horizontal) boundary smoothing for first row, size < 32. Cite libde265 v1.0.18 intrapred.cc lines 417-420."
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat unchanged at 48.1dB"
+        done: false
+      - text: "Verify all fixes have citation comments with libde265 version and line numbers"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test -p rasmcore-hevc passes"
+        done: false
