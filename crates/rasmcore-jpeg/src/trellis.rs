@@ -21,7 +21,53 @@ use crate::entropy::{
 use crate::quantize::ZIGZAG;
 
 /// Maximum number of candidate values per coefficient position.
-const MAX_CANDIDATES: usize = 3;
+/// Bit-width candidates: [0, 1, 3, 7, 15, ..., 2^nbits-1, rounded] ≈ up to 12
+const MAX_CANDIDATES: usize = 12;
+
+// ─── CSF (Contrast Sensitivity Function) Weights ───────────────────────────
+//
+// From mozjpeg jpeg_lambda_weights_csf_luma / jpeg_lambda_weights_csf_chroma.
+// These represent human visual sensitivity to each DCT frequency.
+// Higher weight = more perceptually important = preserve more carefully.
+//
+// Applied as: distortion *= csf_weight[zigzag_pos]
+// Effect: DC/low-freq errors are penalized 57x more than high-freq errors.
+
+/// CSF weight table for luminance (8x8, natural raster order).
+/// From mozjpeg `jpeg_lambda_weights_csf_luma`.
+#[rustfmt::skip]
+const CSF_LUMA: [f64; 64] = [
+    3.356, 3.599, 3.209, 2.281, 1.424, 0.881, 0.582, 0.435,
+    3.599, 3.861, 3.444, 2.448, 1.529, 0.946, 0.625, 0.467,
+    3.209, 3.444, 3.071, 2.183, 1.363, 0.844, 0.558, 0.417,
+    2.281, 2.448, 2.183, 1.551, 0.969, 0.600, 0.396, 0.296,
+    1.424, 1.529, 1.363, 0.969, 0.605, 0.375, 0.248, 0.185,
+    0.881, 0.946, 0.844, 0.600, 0.375, 0.232, 0.153, 0.115,
+    0.582, 0.625, 0.558, 0.396, 0.248, 0.153, 0.101, 0.076,
+    0.435, 0.467, 0.417, 0.296, 0.185, 0.115, 0.076, 0.059,
+];
+
+/// CSF weight table for chrominance (8x8, natural raster order).
+/// Chroma sensitivity is lower overall; uses a simplified model.
+#[rustfmt::skip]
+const CSF_CHROMA: [f64; 64] = [
+    1.667, 1.457, 0.976, 0.550, 0.315, 0.198, 0.139, 0.110,
+    1.457, 1.274, 0.854, 0.481, 0.275, 0.173, 0.122, 0.096,
+    0.976, 0.854, 0.572, 0.322, 0.184, 0.116, 0.082, 0.064,
+    0.550, 0.481, 0.322, 0.182, 0.104, 0.065, 0.046, 0.036,
+    0.315, 0.275, 0.184, 0.104, 0.059, 0.037, 0.026, 0.021,
+    0.198, 0.173, 0.116, 0.065, 0.037, 0.023, 0.016, 0.013,
+    0.139, 0.122, 0.082, 0.046, 0.026, 0.016, 0.012, 0.009,
+    0.110, 0.096, 0.064, 0.036, 0.021, 0.013, 0.009, 0.007,
+];
+
+/// Zigzag-order index to 8x8 raster index lookup.
+/// CSF tables are in raster order; DCT processing uses zigzag order.
+fn zigzag_to_raster(zigzag_pos: usize) -> usize {
+    // ZIGZAG maps zigzag_position -> raster_position
+    // We need the inverse for CSF lookup
+    zigzag_pos // ZIGZAG[pos] already gives the raster index
+}
 
 /// Trellis quantize a single 8x8 DCT block.
 ///
@@ -66,11 +112,15 @@ pub fn trellis_quantize_with_codes(
         }
     };
 
-    // Pre-compute per-coefficient weight: 1/Q[i]^2 (normalized distortion)
+    // Pre-compute per-coefficient weight: CSF[i] * (1/Q[i]^2)
+    // CSF penalizes low-frequency errors more (human visual sensitivity).
+    // 1/Q^2 normalizes distortion relative to quantization step size.
+    let csf = if is_luma { &CSF_LUMA } else { &CSF_CHROMA };
     let mut coeff_weight = [0.0f64; 64];
     for i in 0..64 {
         let q = quant_table[i] as f64;
-        coeff_weight[i] = if q > 0.0 { 1.0 / (q * q) } else { 1.0 };
+        let inv_q2 = if q > 0.0 { 1.0 / (q * q) } else { 1.0 };
+        coeff_weight[i] = csf[i] * inv_q2;
     }
 
     let mut output = [0i16; 64];
@@ -197,7 +247,10 @@ fn trellis_optimize_ac(
     const NUM_AC: usize = 63;
     const MAX_RUN: usize = 64;
 
-    // Generate candidates for each AC position
+    // Generate candidates for each AC position using bit-width boundary strategy.
+    // mozjpeg tests: [0, ±1, ±3, ±7, ±15, ..., ±(2^nbits-1), rounded]
+    // Each boundary represents the max value at that Huffman magnitude category,
+    // so choosing a smaller one saves magnitude bits in the entropy stream.
     let mut candidates: Vec<Vec<i16>> = Vec::with_capacity(NUM_AC);
     for pos in 1..64 {
         let zigzag_pos = ZIGZAG[pos];
@@ -214,12 +267,26 @@ fn trellis_optimize_ac(
         cands.push(0); // always consider zero
 
         if rounded != 0 {
-            cands.push(rounded as i16);
-        }
-        if coeff > 0 && rounded > 1 {
-            cands.push((rounded - 1) as i16);
-        } else if coeff < 0 && rounded < -1 {
-            cands.push((rounded + 1) as i16);
+            let abs_rounded = rounded.unsigned_abs();
+            let sign = if rounded > 0 { 1i16 } else { -1i16 };
+            let nbits = 32 - abs_rounded.leading_zeros();
+
+            // Add bit-width boundary values: 1, 3, 7, 15, ..., 2^nbits - 1
+            for b in 1..=nbits {
+                let boundary = ((1u32 << b) - 1) as i16;
+                if boundary <= abs_rounded as i16 {
+                    let val = boundary * sign;
+                    if !cands.contains(&val) {
+                        cands.push(val);
+                    }
+                }
+            }
+
+            // Always include the rounded value itself
+            let val = rounded as i16;
+            if !cands.contains(&val) {
+                cands.push(val);
+            }
         }
         candidates.push(cands);
     }
@@ -403,6 +470,10 @@ pub fn dc_trellis_pass(
 
     let n = blocks.len();
 
+    // mozjpeg DC candidate count: min(9, 2 + 60/dc_quantval)
+    let max_cands = 9.min(2 + 60 / (q0 as usize).max(1));
+    let half_spread = (max_cands - 1) / 2; // e.g., 9 candidates → spread ±4
+
     // Generate DC candidates for each block
     let mut candidates: Vec<Vec<i16>> = Vec::with_capacity(n);
     for i in 0..n {
@@ -413,29 +484,28 @@ pub fn dc_trellis_pass(
             (orig_dc - q0 / 2) / q0
         } as i16;
 
-        let mut cands = vec![rounded];
-        if rounded > i16::MIN + 1 {
-            cands.push(rounded - 1);
-        }
-        if rounded < i16::MAX {
-            cands.push(rounded + 1);
+        let mut cands = Vec::with_capacity(max_cands);
+        let lo = rounded.saturating_sub(half_spread as i16);
+        let hi = rounded.saturating_add(half_spread as i16);
+        for v in lo..=hi {
+            cands.push(v);
         }
         candidates.push(cands);
     }
 
-    // DP: dp[candidate_idx] = (cost, backtrack_candidate_idx_for_prev_block)
-    // We track the best cost for each candidate of the current block
-    let max_cands = 3;
+    // Use CSF DC weight for distortion scaling
+    let csf = if is_luma { &CSF_LUMA } else { &CSF_CHROMA };
+    let dc_csf_weight = csf[0]; // DC position in raster order
 
     let mut prev_costs: Vec<f64> = vec![INF; max_cands];
-    let mut backtrack: Vec<Vec<usize>> = Vec::with_capacity(n); // [block][candidate] -> prev_candidate
+    let mut backtrack: Vec<Vec<usize>> = Vec::with_capacity(n);
 
     // Initialize first block (DPCM predictor = 0)
     let mut first_bt = vec![0usize; candidates[0].len()];
     for (ci, &cand) in candidates[0].iter().enumerate() {
         let orig_dc = dct_coeffs[0][ZIGZAG[0]];
         let dequant = cand as i32 * q0;
-        let dist = ((orig_dc - dequant) as f64).powi(2);
+        let dist = ((orig_dc - dequant) as f64).powi(2) * dc_csf_weight;
         let diff = cand as i32; // DPCM with predictor 0
         let cat = magnitude_category(diff);
         let rate = dc_code_lengths[cat as usize] as f64 + cat as f64;
@@ -452,7 +522,7 @@ pub fn dc_trellis_pass(
         for (ci, &cand) in candidates[block_idx].iter().enumerate() {
             let orig_dc = dct_coeffs[block_idx][ZIGZAG[0]];
             let dequant = cand as i32 * q0;
-            let dist = ((orig_dc - dequant) as f64).powi(2);
+            let dist = ((orig_dc - dequant) as f64).powi(2) * dc_csf_weight;
 
             // Try each previous candidate
             for (pi, &prev_cand) in candidates[block_idx - 1].iter().enumerate() {
@@ -589,11 +659,15 @@ mod tests {
         dc_trellis_pass(&mut quant_blocks, &dct_blocks, &qt, lambda, true);
         let dc_after: Vec<i16> = quant_blocks.iter().map(|b| b[0]).collect();
 
-        // DC values should be within ±1 of original (candidates are round±1)
+        // DC values should be within the candidate spread of original
+        // (min(9, 2+60/q0) candidates → spread up to ±4)
+        let q0 = qt[ZIGZAG[0]] as usize;
+        let max_cands = 9.min(2 + 60 / q0.max(1));
+        let half_spread = ((max_cands - 1) / 2) as i16;
         for i in 0..4 {
             assert!(
-                (dc_after[i] - dc_before[i]).abs() <= 1,
-                "block {i}: DC changed from {} to {} (max ±1 allowed)",
+                (dc_after[i] - dc_before[i]).abs() <= half_spread,
+                "block {i}: DC changed from {} to {} (max ±{half_spread} allowed)",
                 dc_before[i],
                 dc_after[i]
             );
