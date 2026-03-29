@@ -38,6 +38,7 @@ pub mod cost_engine;
 pub mod decimate;
 pub mod error;
 pub mod filter;
+pub mod proba;
 pub mod ratecontrol;
 pub mod rdo;
 pub mod reconstruct;

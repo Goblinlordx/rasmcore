@@ -49,6 +49,9 @@ pub const VP8_ENC_BANDS: [u8; 16 + 1] = [0, 1, 2, 3, 6, 4, 5, 6, 6, 6, 6, 6, 6, 
 /// Pattern bits indicate which probability nodes are visited;
 /// bits indicate the value at each node.
 #[rustfmt::skip]
+/// Public alias for use by proba.rs VP8RecordCoeffs.
+pub const VP8_LEVEL_CODES_PUB: &[[u16; 2]; MAX_VARIABLE_LEVEL] = &VP8_LEVEL_CODES;
+
 const VP8_LEVEL_CODES: [[u16; 2]; MAX_VARIABLE_LEVEL] = [
     [0x001, 0x000], [0x007, 0x001], [0x00f, 0x005], [0x00f, 0x00d],
     [0x033, 0x003], [0x033, 0x003], [0x033, 0x023], [0x033, 0x023],
