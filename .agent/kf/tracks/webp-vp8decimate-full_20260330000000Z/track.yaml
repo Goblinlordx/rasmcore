@@ -1,0 +1,96 @@
+id: webp-vp8decimate-full_20260330000000Z
+title: VP8 Full Decimate Port — Replace encode_macroblock with libwebp Pipeline
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Single atomic port of the complete VP8Decimate flow from libwebp quant_enc.c,
+    replacing encode_macroblock entirely. Uses already-merged cost_engine and
+    reconstruct modules. Target >= 0.95x cwebp quality.
+  context: |
+    Previous incremental attempts failed because libwebp's encode pipeline is
+    tightly coupled — trellis must be used in BOTH mode evaluation AND final
+    encoding via the same ReconstructIntra* functions. The mode evaluator and
+    coefficient encoder must see identical quantization results. This track
+    ports the entire VP8Decimate flow as one atomic unit.
+  codebase_analysis: |
+    Already ported (available in crate):
+    - cost_engine.rs: LevelCostTable, get_residual_cost, VP8LevelCodes
+    - reconstruct.rs: TrellisQuantizeBlock (Viterbi DP)
+    - rdo.rs: VP8ModeScore, set_rd_score, compute_segment_lambdas, VP8EntropyCost
+    - rdo.rs: VP8FixedCostsI16[4], VP8FixedCostsUV[4], vp8_bit_cost
+
+    To port in this track:
+    - ReconstructIntra16: 16 sub-block DCT + WHT + trellis(with context) + recon
+    - ReconstructIntra4: single 4x4 DCT + trellis(with context) + recon
+    - ReconstructUV: 8 chroma blocks DCT + trellis(with context) + recon
+    - PickBestIntra16: loop 4 I16 modes, Reconstruct + GetCostLuma16 + SetRDScore
+    - PickBestIntra4: loop 16 sub-blocks x 10 modes, sequential recon, early exit
+    - PickBestUV: loop 4 UV modes, Reconstruct + GetCostUV + SetRDScore
+    - VP8Decimate: orchestrate PickBest* + skip detection
+    - VP8FixedCostsI4[10][10][10]: context-dependent 4x4 mode costs
+
+    Critical detail: trellis ctx0 = top_nz[x] + left_nz[y] (0, 1, or 2).
+    Previous attempt hardcoded ctx0=0 which is wrong.
+  acceptance_criteria:
+    - encode_macroblock fully replaced with libwebp VP8Decimate flow
+    - ReconstructIntra16/4/UV use trellis with context tracking
+    - PickBestIntra16/4/UV use libwebp SetRDScore + lambdas
+    - VP8FixedCostsI4 context-dependent mode costs used
+    - Quality ratio >= 0.95x cwebp on mixed content at Q75
+    - PSNR within 1dB of cwebp on gradient/checkerboard at Q75
+    - All parity tests pass (re-enabled with tighter thresholds)
+    - Any remaining FP differences documented in REFERENCE.md
+  out_of_scope: |
+    Multi-pass StatLoop. Adaptive probability updates. Segment optimization.
+  technical_notes: |
+    libwebp source files (already downloaded at /tmp/):
+    - quant_enc.c lines 572-750: TrellisQuantizeBlock (already ported)
+    - quant_enc.c lines 752-805: ReconstructIntra16
+    - quant_enc.c lines 805-910: ReconstructIntra4
+    - quant_enc.c lines 910-980: ReconstructUV
+    - quant_enc.c lines 982-1050: PickBestIntra16
+    - quant_enc.c lines 1052-1145: PickBestIntra4
+    - quant_enc.c lines 1148-1200: PickBestUV
+    - quant_enc.c lines 1343-1400: VP8Decimate
+    - cost_enc.c lines 106-221: VP8FixedCostsI4[10][10][10]
+
+    Each function: read C++ source, port line-by-line, unit test against
+    C++ reference values. Parity tests #[ignore]'d during development,
+    re-enabled in Phase 4.
+plan:
+  - phase: Reconstruct Functions
+    tasks:
+      - text: Port ReconstructIntra16 with context-tracked trellis (quant_enc.c:752)
+        done: false
+      - text: Port ReconstructIntra4 with context-tracked trellis (quant_enc.c:805)
+        done: false
+      - text: Port ReconstructUV with context-tracked trellis (quant_enc.c:910)
+        done: false
+  - phase: Mode Selection
+    tasks:
+      - text: Port VP8FixedCostsI4[10][10][10] table from cost_enc.c
+        done: false
+      - text: Port PickBestIntra16 using ReconstructIntra16 + GetCostLuma16 + SetRDScore
+        done: false
+      - text: Port PickBestIntra4 with sequential recon + context costs + early exit
+        done: false
+      - text: Port PickBestUV using ReconstructUV + GetCostUV + SetRDScore
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Port VP8Decimate orchestration (I16 then I4 then UV)
+        done: false
+      - text: Replace encode_macroblock with VP8Decimate in encode_frame
+        done: false
+      - text: Port skip detection (VP8SetSkip)
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Re-enable parity tests with >= 0.95x cwebp quality threshold
+        done: false
+      - text: Document remaining FP differences in REFERENCE.md
+        done: false
+extra: {}
