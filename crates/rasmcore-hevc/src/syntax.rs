@@ -1261,7 +1261,7 @@ fn decode_coeff_abs_level_remaining(
 ///
 /// HEVC Table 6-5: each diagonal (where x+y = const) is scanned from
 /// bottom-left to top-right (increasing x, decreasing y).
-pub fn build_scan_order(n: usize) -> Vec<(usize, usize)> {
+fn build_scan_order(n: usize) -> Vec<(usize, usize)> {
     let mut order = Vec::with_capacity(n * n);
     for diag in 0..2 * n - 1 {
         // Start at the bottom-left of this diagonal
@@ -1286,21 +1286,20 @@ pub fn build_scan_order(n: usize) -> Vec<(usize, usize)> {
 // These are simplified context index mappings. A full implementation would
 // use the complete HEVC context derivation from Tables 9-5 through 9-37.
 
-// Context layout — matches HEVC spec context counts.
-// Public for use by the encoder (encode/syntax_enc.rs).
-pub const SPLIT_CU_CTX_OFFSET: usize = 0; // 3 contexts
-pub const PART_MODE_CTX_OFFSET: usize = 3; // 4 contexts
-pub const PREV_INTRA_PRED_CTX_OFFSET: usize = 7; // 1 context
-pub const CHROMA_PRED_CTX_OFFSET: usize = 8; // 1 context
-pub const SPLIT_TU_CTX_OFFSET: usize = 9; // 3 contexts
-pub const CBF_LUMA_CTX_OFFSET: usize = 12; // 2 contexts
-pub const CODED_SUB_BLOCK_FLAG_CTX_OFFSET: usize = 14; // 4 contexts
-pub const SIG_COEFF_CTX_OFFSET: usize = 18; // 42 contexts
-pub const GT1_CTX_OFFSET: usize = 60; // 24 contexts
-pub const GT2_CTX_OFFSET: usize = 84; // 6 contexts
-pub const LAST_SIG_X_CTX_OFFSET: usize = 90; // 18 contexts
-pub const LAST_SIG_Y_CTX_OFFSET: usize = 108; // 18 contexts
-pub const CBF_CHROMA_CTX_OFFSET: usize = 126; // 5 contexts
+// Context layout — matches HEVC spec context counts
+const SPLIT_CU_CTX_OFFSET: usize = 0; // 3 contexts
+const PART_MODE_CTX_OFFSET: usize = 3; // 4 contexts
+const PREV_INTRA_PRED_CTX_OFFSET: usize = 7; // 1 context
+const CHROMA_PRED_CTX_OFFSET: usize = 8; // 1 context
+const SPLIT_TU_CTX_OFFSET: usize = 9; // 3 contexts
+const CBF_LUMA_CTX_OFFSET: usize = 12; // 2 contexts
+const CODED_SUB_BLOCK_FLAG_CTX_OFFSET: usize = 14; // 4 contexts
+const SIG_COEFF_CTX_OFFSET: usize = 18; // 42 contexts
+const GT1_CTX_OFFSET: usize = 60; // 24 contexts
+const GT2_CTX_OFFSET: usize = 84; // 6 contexts
+const LAST_SIG_X_CTX_OFFSET: usize = 90; // 18 contexts
+const LAST_SIG_Y_CTX_OFFSET: usize = 108; // 18 contexts
+const CBF_CHROMA_CTX_OFFSET: usize = 126; // 5 contexts
 
 /// Total number of context models needed for syntax parsing.
 pub const NUM_SYNTAX_CONTEXTS: usize = 131;
