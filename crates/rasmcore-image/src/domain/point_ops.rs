@@ -1,9 +1,15 @@
 //! Composable LUT-based pixel point operations.
 //!
-//! Every point operation is a pure `u8 → u8` per-channel mapping expressed as a
-//! 256-entry lookup table. When multiple point ops are chained, their LUTs can be
-//! composed into a single fused LUT at plan time, reducing N operations to one
-//! memory pass regardless of chain length.
+//! Every point operation is a pure per-channel mapping expressed as a lookup table:
+//! - **8-bit:** `u8 → u8` via 256-entry LUT (256 bytes)
+//! - **16-bit:** `u16 → u16` via 65536-entry LUT (128 KB)
+//!
+//! When multiple point ops are chained, their LUTs can be composed into a single
+//! fused LUT at plan time, reducing N operations to one memory pass regardless
+//! of chain length. This applies at both bit depths.
+//!
+//! Public convenience functions auto-dispatch based on pixel format:
+//! 8-bit formats use the compact LUT, 16-bit formats use the full LUT.
 //!
 //! Non-point-op nodes (blur, resize, etc.) act as fusion barriers — only
 //! consecutive runs of point ops are fused.
@@ -184,27 +190,176 @@ pub fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Result<Vec
     }
 }
 
+// ─── 16-bit LUT infrastructure ─────────────────────────────────────────────
+
+const MAX16: f32 = 65535.0;
+const HALF16: u16 = 32768;
+
+/// Build a 65536-entry LUT for a single point operation at 16-bit depth.
+///
+/// Memory: 128 KB per LUT. Acceptable for typical chains of 2-4 fused ops.
+pub fn build_lut_u16(op: &PointOp) -> Vec<u16> {
+    let mut lut = vec![0u16; 65536];
+    match op {
+        PointOp::Gamma(gamma) => {
+            let inv_gamma = 1.0 / gamma;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (MAX16 * (i as f32 / MAX16).powf(inv_gamma) + 0.5) as u16;
+            }
+        }
+        PointOp::Invert => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (65535 - i) as u16;
+            }
+        }
+        PointOp::Threshold(level) => {
+            // Scale 8-bit threshold to 16-bit: level * 257
+            let level16 = *level as u32 * 257;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = if (i as u32) >= level16 { 65535 } else { 0 };
+            }
+        }
+        PointOp::Posterize(levels) => {
+            let n = (*levels).max(2) as f32;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let quantized = (i as f32 * (n - 1.0) / MAX16 + 0.5) as u16;
+                *entry = ((quantized as f32) * MAX16 / (n - 1.0) + 0.5) as u16;
+            }
+        }
+        PointOp::Clamp(min, max) => {
+            // Scale 8-bit clamp bounds to 16-bit
+            let min16 = (*min as u16) * 257;
+            let max16 = (*max as u16) * 257;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as u16).clamp(min16, max16);
+            }
+        }
+        PointOp::Brightness(amount) => {
+            let offset = (*amount * MAX16).round() as i32;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as i32 + offset).clamp(0, 65535) as u16;
+            }
+        }
+        PointOp::Contrast(amount) => {
+            let factor = if *amount >= 0.0 {
+                1.0 + amount * 2.0
+            } else {
+                1.0 / (1.0 - amount * 2.0)
+            };
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let v = factor * (i as f32 - HALF16 as f32) + HALF16 as f32;
+                *entry = v.clamp(0.0, MAX16) as u16;
+            }
+        }
+    }
+    lut
+}
+
+/// Compose two 16-bit LUTs: `fused[i] = second[first[i]]`.
+pub fn compose_luts_u16(first: &[u16], second: &[u16]) -> Vec<u16> {
+    assert!(first.len() == 65536 && second.len() == 65536);
+    let mut fused = vec![0u16; 65536];
+    for (i, entry) in fused.iter_mut().enumerate() {
+        *entry = second[first[i] as usize];
+    }
+    fused
+}
+
+/// Apply a 16-bit LUT to all color channels, preserving alpha.
+///
+/// Pixels are stored as LE byte pairs in `Vec<u8>`.
+pub fn apply_lut_u16(
+    pixels: &[u8],
+    info: &ImageInfo,
+    lut: &[u16],
+) -> Result<Vec<u8>, ImageError> {
+    assert!(lut.len() == 65536);
+
+    match info.format {
+        PixelFormat::Rgb16 => {
+            let mut result = vec![0u8; pixels.len()];
+            for (chunk_in, chunk_out) in pixels.chunks_exact(6).zip(result.chunks_exact_mut(6)) {
+                for c in 0..3 {
+                    let v = u16::from_le_bytes([chunk_in[c * 2], chunk_in[c * 2 + 1]]);
+                    let mapped = lut[v as usize];
+                    let bytes = mapped.to_le_bytes();
+                    chunk_out[c * 2] = bytes[0];
+                    chunk_out[c * 2 + 1] = bytes[1];
+                }
+            }
+            Ok(result)
+        }
+        PixelFormat::Rgba16 => {
+            let mut result = vec![0u8; pixels.len()];
+            for (chunk_in, chunk_out) in pixels.chunks_exact(8).zip(result.chunks_exact_mut(8)) {
+                // Map R, G, B channels
+                for c in 0..3 {
+                    let v = u16::from_le_bytes([chunk_in[c * 2], chunk_in[c * 2 + 1]]);
+                    let mapped = lut[v as usize];
+                    let bytes = mapped.to_le_bytes();
+                    chunk_out[c * 2] = bytes[0];
+                    chunk_out[c * 2 + 1] = bytes[1];
+                }
+                // Copy alpha unchanged
+                chunk_out[6] = chunk_in[6];
+                chunk_out[7] = chunk_in[7];
+            }
+            Ok(result)
+        }
+        PixelFormat::Gray16 => {
+            let mut result = vec![0u8; pixels.len()];
+            for (pair_in, pair_out) in pixels.chunks_exact(2).zip(result.chunks_exact_mut(2)) {
+                let v = u16::from_le_bytes([pair_in[0], pair_in[1]]);
+                let mapped = lut[v as usize];
+                let bytes = mapped.to_le_bytes();
+                pair_out[0] = bytes[0];
+                pair_out[1] = bytes[1];
+            }
+            Ok(result)
+        }
+        other => Err(ImageError::UnsupportedFormat(format!(
+            "16-bit point op on {other:?} not supported"
+        ))),
+    }
+}
+
+/// Check if a pixel format is 16-bit.
+fn is_16bit(format: PixelFormat) -> bool {
+    matches!(
+        format,
+        PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
+    )
+}
+
 // ─── Public convenience functions ───────────────────────────────────────────
+
+/// Apply a point operation, auto-dispatching between 8-bit and 16-bit paths.
+fn apply_op(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Result<Vec<u8>, ImageError> {
+    if is_16bit(info.format) {
+        let lut = build_lut_u16(op);
+        apply_lut_u16(pixels, info, &lut)
+    } else {
+        let lut = build_lut(op);
+        apply_lut(pixels, info, &lut)
+    }
+}
 
 /// Apply gamma correction.
 pub fn gamma(pixels: &[u8], info: &ImageInfo, gamma_value: f32) -> Result<Vec<u8>, ImageError> {
     if gamma_value <= 0.0 {
         return Err(ImageError::InvalidParameters("gamma must be > 0".into()));
     }
-    let lut = build_lut(&PointOp::Gamma(gamma_value));
-    apply_lut(pixels, info, &lut)
+    apply_op(pixels, info, &PointOp::Gamma(gamma_value))
 }
 
 /// Invert (negate) all channels.
 pub fn invert(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
-    let lut = build_lut(&PointOp::Invert);
-    apply_lut(pixels, info, &lut)
+    apply_op(pixels, info, &PointOp::Invert)
 }
 
 /// Binary threshold at the given level.
 pub fn threshold(pixels: &[u8], info: &ImageInfo, level: u8) -> Result<Vec<u8>, ImageError> {
-    let lut = build_lut(&PointOp::Threshold(level));
-    apply_lut(pixels, info, &lut)
+    apply_op(pixels, info, &PointOp::Threshold(level))
 }
 
 /// Posterize to N discrete levels per channel.
@@ -214,14 +369,12 @@ pub fn posterize(pixels: &[u8], info: &ImageInfo, levels: u8) -> Result<Vec<u8>,
             "posterize levels must be >= 2".into(),
         ));
     }
-    let lut = build_lut(&PointOp::Posterize(levels));
-    apply_lut(pixels, info, &lut)
+    apply_op(pixels, info, &PointOp::Posterize(levels))
 }
 
 /// Clamp pixel values to [min, max].
 pub fn clamp(pixels: &[u8], info: &ImageInfo, min: u8, max: u8) -> Result<Vec<u8>, ImageError> {
-    let lut = build_lut(&PointOp::Clamp(min, max));
-    apply_lut(pixels, info, &lut)
+    apply_op(pixels, info, &PointOp::Clamp(min, max))
 }
 
 #[cfg(test)]
@@ -425,6 +578,117 @@ mod tests {
         let result = clamp(&pixels, &info, 30, 220).unwrap();
         for &v in &result {
             assert!(v >= 30 && v <= 220);
+        }
+    }
+
+    // ── 16-bit LUT tests ───────────────────────────────────────────────
+
+    fn make_gray16_pixels(values: &[u16]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn read_gray16_pixels(bytes: &[u8]) -> Vec<u16> {
+        bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect()
+    }
+
+    #[test]
+    fn lut_u16_gamma_identity() {
+        let lut = build_lut_u16(&PointOp::Gamma(1.0));
+        for i in 0..=65535u16 {
+            assert_eq!(lut[i as usize], i, "gamma 1.0 identity failed at {i}");
+        }
+    }
+
+    #[test]
+    fn lut_u16_invert_roundtrip() {
+        let lut = build_lut_u16(&PointOp::Invert);
+        for i in 0..=65535u16 {
+            assert_eq!(lut[i as usize], 65535 - i);
+        }
+        let fused = compose_luts_u16(&lut, &lut);
+        for i in 0..=65535u16 {
+            assert_eq!(fused[i as usize], i, "double invert should be identity at {i}");
+        }
+    }
+
+    #[test]
+    fn lut_u16_brightness() {
+        let lut = build_lut_u16(&PointOp::Brightness(0.5));
+        assert_eq!(lut[0], 32768); // 0 + round(0.5*65535) = 32768
+        assert_eq!(lut[65535], 65535); // clamped
+    }
+
+    #[test]
+    fn apply_lut_u16_gray16() {
+        let pixels = make_gray16_pixels(&[0, 32768, 65535]);
+        let info = test_info(3, 1, PixelFormat::Gray16);
+        let lut = build_lut_u16(&PointOp::Invert);
+        let result = apply_lut_u16(&pixels, &info, &lut).unwrap();
+        let values = read_gray16_pixels(&result);
+        assert_eq!(values, vec![65535, 32767, 0]);
+    }
+
+    #[test]
+    fn apply_lut_u16_rgb16() {
+        // 1 pixel: R=0, G=32768, B=65535
+        let mut pixels = Vec::new();
+        for &v in &[0u16, 32768, 65535] {
+            pixels.extend_from_slice(&v.to_le_bytes());
+        }
+        let info = test_info(1, 1, PixelFormat::Rgb16);
+        let lut = build_lut_u16(&PointOp::Invert);
+        let result = apply_lut_u16(&pixels, &info, &lut).unwrap();
+        let values = read_gray16_pixels(&result); // reuse for reading u16 pairs
+        assert_eq!(values, vec![65535, 32767, 0]);
+    }
+
+    #[test]
+    fn apply_lut_u16_rgba16_preserves_alpha() {
+        // 1 pixel: R=100, G=200, B=300, A=50000
+        let mut pixels = Vec::new();
+        for &v in &[100u16, 200, 300, 50000] {
+            pixels.extend_from_slice(&v.to_le_bytes());
+        }
+        let info = test_info(1, 1, PixelFormat::Rgba16);
+        let lut = build_lut_u16(&PointOp::Invert);
+        let result = apply_lut_u16(&pixels, &info, &lut).unwrap();
+        let values = read_gray16_pixels(&result);
+        assert_eq!(values[0], 65435); // 65535 - 100
+        assert_eq!(values[1], 65335); // 65535 - 200
+        assert_eq!(values[2], 65235); // 65535 - 300
+        assert_eq!(values[3], 50000); // alpha preserved
+    }
+
+    #[test]
+    fn auto_dispatch_gamma_16bit() {
+        let pixels = make_gray16_pixels(&[0, 32768, 65535]);
+        let info = test_info(3, 1, PixelFormat::Gray16);
+        let result = gamma(&pixels, &info, 1.0).unwrap();
+        let values = read_gray16_pixels(&result);
+        assert_eq!(values, vec![0, 32768, 65535], "gamma 1.0 at 16-bit should be identity");
+    }
+
+    #[test]
+    fn auto_dispatch_invert_16bit_roundtrip() {
+        let pixels = make_gray16_pixels(&[0, 1000, 32768, 60000, 65535]);
+        let info = test_info(5, 1, PixelFormat::Gray16);
+        let inv = invert(&pixels, &info).unwrap();
+        let back = invert(&inv, &info).unwrap();
+        assert_eq!(back, pixels, "16-bit invert roundtrip should be identity");
+    }
+
+    #[test]
+    fn compose_luts_u16_matches_sequential() {
+        let g = build_lut_u16(&PointOp::Gamma(2.2));
+        let inv = build_lut_u16(&PointOp::Invert);
+        let fused = compose_luts_u16(&g, &inv);
+        // Spot-check several values
+        for &v in &[0u16, 100, 1000, 10000, 32768, 50000, 65535] {
+            let sequential = inv[g[v as usize] as usize];
+            assert_eq!(fused[v as usize], sequential, "compose mismatch at {v}");
         }
     }
 }
