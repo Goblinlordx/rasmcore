@@ -515,10 +515,19 @@ against OpenCV 4.13 source code (`modules/photo/src/merge.cpp`). All weight
 computation formulas match the C++ implementation exactly.
 
 **Where it differs:** 6 of 7 canonical images match within ±2 (f32 rounding).
-Checker (8px alternating pattern) has max error 29 due to pyramid aliasing — the
-extreme high-frequency content aliases at every pyrDown level, compounding across 7
-pyramid levels. Even Python-manual-vs-OpenCV-C++ has max error 17 for checker; the
-error is inherent to f32 pyramid operations on adversarial frequency content.
+Checker (8px alternating pattern) has max error 29 due to near-zero weight
+normalization amplifying f32 differences. Validated root cause:
+
+- 12.2% of checker pixels have `weight_sum < 1e-6` (all weights are ~1e-12 epsilon)
+- These pixels have zero contrast (flat regions within each check square) AND
+  zero saturation, so `contrast * saturation * wellexp ≈ 0` and only the 1e-12
+  epsilon contributes to the weight
+- Dividing by `weight_sum ≈ 3e-12` amplifies any f32 rounding by ~10⁹×
+- The top-10 highest-error pixels all have `weight_sum ≈ 1.5e-9` and `contrast = 0`
+- A Python replication using OpenCV's own cv2.pyrDown/cv2.pyrUp/cv2.Laplacian
+  produces u8 max error 17 vs cv2.createMergeMertens — same root cause (numpy's
+  f32 division differs from C++), verified on OpenCV 4.13.0 / NumPy 2.4.3
+- Error at pixels with `weight_sum >= 1e-6`: max 0.013 (within ±3 u8 levels)
 
 **Why (F32_ROUNDING):** Verified by testing each weight component independently:
 - Saturation-only fusion: max diff < 1e-6 (exact match)
