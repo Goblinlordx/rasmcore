@@ -28,30 +28,30 @@ spec:
     output scaling matches. Chroma dithered rounding: in downsample loop, maintain bias variable starting at 1, toggle via
     bias ^= 3 after each pixel. Replace (sum/count) with ((sum + bias) >> 2) for 2x2 case.'
 plan:
-  - phase: LL&M Forward DCT
-    tasks:
-      - text: Implement LL&M integer DCT from libjpeg-turbo jfdctint.c (CONST_BITS=13, PASS1_BITS=2)
-        done: false
-      - text: Verify output scaling - LL&M output is left-shifted by 3 (factor of 8), adjust quantization accordingly
-        done: false
-      - text: Unit test LL&M DCT output matches libjpeg-turbo for known test vectors (flat block, gradient, checkerboard)
-        done: false
-      - text: Replace existing matrix DCT with LL&M in forward_dct function
-        done: false
-  - phase: Dithered Chroma Downsample
-    tasks:
-      - text: Add alternating bias to h2v2 downsample - bias starts at 1, toggles via xor 3 after each pixel
-        done: false
-      - text: Add alternating bias to h2v1 downsample (horizontal only)
-        done: false
-      - text: Unit test verifying dithered rounding produces different values than truncation for biased input
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Run mozjpeg quality benchmark and verify quality ratio >= 0.98 at all quality levels
-        done: false
-      - text: All existing lib and parity tests pass
-        done: false
-      - text: DCT inverse roundtrip test still passes (forward LL&M + existing inverse)
-        done: false
+- phase: LL&M Forward DCT
+  tasks:
+  - text: Implement LL&M integer DCT from libjpeg-turbo jfdctint.c (CONST_BITS=13, PASS1_BITS=2)
+    done: true
+  - text: Verify output scaling - LL&M output is left-shifted by 3 (factor of 8), adjust quantization accordingly
+    done: true
+  - text: Unit test LL&M DCT output matches libjpeg-turbo for known test vectors (flat block, gradient, checkerboard)
+    done: true
+  - text: Replace existing matrix DCT with LL&M in forward_dct function
+    done: true
+- phase: Dithered Chroma Downsample
+  tasks:
+  - text: Add alternating bias to h2v2 downsample - bias starts at 1, toggles via xor 3 after each pixel
+    done: true
+  - text: Add alternating bias to h2v1 downsample (horizontal only)
+    done: true
+  - text: Unit test verifying dithered rounding produces different values than truncation for biased input
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run mozjpeg quality benchmark and verify quality ratio >= 0.98 at all quality levels
+    done: true
+  - text: All existing lib and parity tests pass
+    done: true
+  - text: DCT inverse roundtrip test still passes (forward LL&M + existing inverse)
+    done: true
 extra: {}
