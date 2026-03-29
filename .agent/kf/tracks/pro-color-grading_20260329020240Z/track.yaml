@@ -5,15 +5,12 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: 'DaVinci Resolve-tier color grading primitives: 3-way color corrector (lift/gamma/gain),
-    per-channel spline curves, split toning (shadow/highlight tinting), and ASC-CDL
-    (slope/offset/power). All composable into 3D CLUT.'
-  context: Professional color grading uses a small set of well-defined mathematical
-    operations that are absent from open-source image libraries. Lift/gamma/gain is
-    the industry-standard 3-way color corrector. ASC-CDL (slope/offset/power per channel)
-    is the film industry interchange format. Split toning tints shadows and highlights
-    independently. Spline curves provide arbitrary per-channel tone mapping. All can
-    be baked into our existing 3D CLUT infrastructure for efficient application.
+  summary: 'DaVinci Resolve-tier color grading primitives: 3-way color corrector (lift/gamma/gain), per-channel spline curves,
+    split toning (shadow/highlight tinting), and ASC-CDL (slope/offset/power). All composable into 3D CLUT.'
+  context: Professional color grading uses a small set of well-defined mathematical operations that are absent from open-source
+    image libraries. Lift/gamma/gain is the industry-standard 3-way color corrector. ASC-CDL (slope/offset/power per channel)
+    is the film industry interchange format. Split toning tints shadows and highlights independently. Spline curves provide
+    arbitrary per-channel tone mapping. All can be baked into our existing 3D CLUT infrastructure for efficient application.
   codebase_analysis: ''
   acceptance_criteria:
   - Lift/Gamma/Gain with per-channel RGB control
@@ -21,27 +18,24 @@ spec:
   - Split toning with shadow color, highlight color, and balance
   - Cubic spline curves with arbitrary control points, per-channel
   - All operations bakeable into 3D CLUT
-  out_of_scope: HSL qualifier (selective color keying). Power windows. Color warper.
-    Tracking.
-  technical_notes: 'Lift/Gamma/Gain: output = gain * (input + lift * (1-input))^(1/gamma).
-    ASC-CDL: output = clamp((input * slope + offset)^power). Split toning: blend shadow_color
-    at low luminance, highlight_color at high luminance, with balance control. Curves:
-    cubic spline interpolation through user control points, generate 256-entry LUT.
-    All operations can be baked into ColorLut3D via the existing shaper-CLUT-shaper
-    pattern.'
+  out_of_scope: HSL qualifier (selective color keying). Power windows. Color warper. Tracking.
+  technical_notes: 'Lift/Gamma/Gain: output = gain * (input + lift * (1-input))^(1/gamma). ASC-CDL: output = clamp((input
+    * slope + offset)^power). Split toning: blend shadow_color at low luminance, highlight_color at high luminance, with balance
+    control. Curves: cubic spline interpolation through user control points, generate 256-entry LUT. All operations can be
+    baked into ColorLut3D via the existing shaper-CLUT-shaper pattern.'
 plan:
 - phase: Color Grading Primitives
   tasks:
   - text: Implement lift/gamma/gain 3-way color corrector with per-channel control
-    done: false
+    done: true
   - text: Implement ASC-CDL (slope/offset/power) per ITU standard
-    done: false
+    done: true
   - text: Implement split toning with shadow color, highlight color, and balance
-    done: false
+    done: true
   - text: Implement cubic spline curves with arbitrary control points per-channel
-    done: false
+    done: true
   - text: Bake all operations into 3D CLUT via existing ColorLut3D infrastructure
-    done: false
+    done: true
   - text: Unit test each operation independently and as CLUT-baked version
-    done: false
+    done: true
 extra: {}
