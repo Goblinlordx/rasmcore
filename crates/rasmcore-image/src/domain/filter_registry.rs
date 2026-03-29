@@ -1,0 +1,706 @@
+//! Filter trait and registry — extensible plugin architecture.
+//!
+//! Defines a common `ImageFilter` trait that all filters implement, plus a
+//! `FilterRegistry` that collects built-in and custom filters for discovery.
+//!
+//! # Adding a custom filter (external crate)
+//!
+//! ```ignore
+//! use rasmcore_image::domain::filter_registry::*;
+//! use rasmcore_image::domain::types::*;
+//! use rasmcore_image::domain::error::ImageError;
+//!
+//! struct MyCustomBlur;
+//!
+//! impl ImageFilter for MyCustomBlur {
+//!     fn name(&self) -> &str { "my_custom_blur" }
+//!     fn category(&self) -> FilterCategory { FilterCategory::Blur }
+//!     fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+//!         vec![ParamDescriptor::float("sigma", 0.1, 100.0, 1.0)]
+//!     }
+//!     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+//!         let sigma = input.params.get_float("sigma").unwrap_or(1.0);
+//!         // ... your implementation
+//!         Ok(input.pixels.to_vec())
+//!     }
+//! }
+//!
+//! // Register at startup:
+//! registry.register(Box::new(MyCustomBlur));
+//! ```
+
+use super::error::ImageError;
+use super::types::ImageInfo;
+use std::collections::HashMap;
+
+// ─── Filter Parameters ────────────────────────────────────────────────────
+
+/// A single parameter value for a filter invocation.
+#[derive(Debug, Clone)]
+pub enum ParamValue {
+    Float(f32),
+    Int(i32),
+    UInt(u32),
+    Bool(bool),
+    Color([u8; 3]),
+}
+
+/// Named parameter map for filter invocation.
+#[derive(Debug, Clone, Default)]
+pub struct FilterParams {
+    values: HashMap<String, ParamValue>,
+}
+
+impl FilterParams {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_float(mut self, name: &str, val: f32) -> Self {
+        self.values.insert(name.to_string(), ParamValue::Float(val));
+        self
+    }
+
+    pub fn set_int(mut self, name: &str, val: i32) -> Self {
+        self.values.insert(name.to_string(), ParamValue::Int(val));
+        self
+    }
+
+    pub fn set_uint(mut self, name: &str, val: u32) -> Self {
+        self.values.insert(name.to_string(), ParamValue::UInt(val));
+        self
+    }
+
+    pub fn set_bool(mut self, name: &str, val: bool) -> Self {
+        self.values.insert(name.to_string(), ParamValue::Bool(val));
+        self
+    }
+
+    pub fn set_color(mut self, name: &str, rgb: [u8; 3]) -> Self {
+        self.values.insert(name.to_string(), ParamValue::Color(rgb));
+        self
+    }
+
+    pub fn get_float(&self, name: &str) -> Option<f32> {
+        match self.values.get(name) {
+            Some(ParamValue::Float(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn get_int(&self, name: &str) -> Option<i32> {
+        match self.values.get(name) {
+            Some(ParamValue::Int(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn get_uint(&self, name: &str) -> Option<u32> {
+        match self.values.get(name) {
+            Some(ParamValue::UInt(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn get_bool(&self, name: &str) -> Option<bool> {
+        match self.values.get(name) {
+            Some(ParamValue::Bool(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn get_color(&self, name: &str) -> Option<[u8; 3]> {
+        match self.values.get(name) {
+            Some(ParamValue::Color(v)) => Some(*v),
+            _ => None,
+        }
+    }
+}
+
+/// Describes a parameter that a filter accepts.
+#[derive(Debug, Clone)]
+pub struct ParamDescriptor {
+    pub name: String,
+    pub param_type: ParamType,
+    pub default: ParamValue,
+    pub description: String,
+}
+
+/// Parameter type with range constraints.
+#[derive(Debug, Clone)]
+pub enum ParamType {
+    Float { min: f32, max: f32 },
+    Int { min: i32, max: i32 },
+    UInt { min: u32, max: u32 },
+    Bool,
+    Color,
+}
+
+impl ParamDescriptor {
+    pub fn float(name: &str, min: f32, max: f32, default: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            param_type: ParamType::Float { min, max },
+            default: ParamValue::Float(default),
+            description: String::new(),
+        }
+    }
+
+    pub fn uint(name: &str, min: u32, max: u32, default: u32) -> Self {
+        Self {
+            name: name.to_string(),
+            param_type: ParamType::UInt { min, max },
+            default: ParamValue::UInt(default),
+            description: String::new(),
+        }
+    }
+
+    pub fn with_description(mut self, desc: &str) -> Self {
+        self.description = desc.to_string();
+        self
+    }
+}
+
+// ─── Filter Input ─────────────────────────────────────────────────────────
+
+/// Input to a filter: pixel data + metadata + parameters.
+pub struct FilterInput<'a> {
+    pub pixels: &'a [u8],
+    pub info: &'a ImageInfo,
+    pub params: &'a FilterParams,
+}
+
+// ─── Filter Trait ─────────────────────────────────────────────────────────
+
+/// Category of image filter operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FilterCategory {
+    Blur,
+    Sharpen,
+    EdgeDetection,
+    Denoise,
+    Color,
+    Contrast,
+    PointOp,
+    Morphology,
+    Transform,
+    Composite,
+    Enhancement,
+    Other,
+}
+
+/// The core filter trait. Implement this for any image filter.
+///
+/// All built-in filters implement this trait, and external crates can
+/// implement it to add custom filters that integrate with the pipeline.
+pub trait ImageFilter: Send + Sync {
+    /// Unique name for this filter (e.g., "blur", "clahe", "my_custom_filter").
+    fn name(&self) -> &str;
+
+    /// Category for grouping/discovery.
+    fn category(&self) -> FilterCategory;
+
+    /// Describe the parameters this filter accepts.
+    fn param_descriptors(&self) -> Vec<ParamDescriptor>;
+
+    /// Apply the filter to the input pixels and return the result.
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError>;
+
+    /// Whether this filter is a no-op for the given input and params.
+    ///
+    /// Used by the pipeline optimizer to skip filters entirely. Examples:
+    /// - brightness(0.0) — no change
+    /// - gamma(1.0) — identity
+    /// - bit depth conversion when already at target depth
+    /// - saturate(1.0) — identity
+    ///
+    /// Default: false (always runs).
+    fn is_noop(&self, _input: &FilterInput) -> bool {
+        false
+    }
+
+    /// Whether this filter can be collapsed into a 256-entry LUT.
+    ///
+    /// LUT-collapsible filters are per-pixel point operations where the
+    /// output depends ONLY on the input value (not neighboring pixels or
+    /// position). When true, consecutive LUT-collapsible filters are fused
+    /// into a single pass at pipeline optimization time.
+    ///
+    /// Default: false (conservative — spatial filters, convolutions, etc.)
+    fn is_lut_collapsible(&self) -> bool {
+        false
+    }
+
+    /// Build the 256-entry LUT for 8-bit input (only called if `is_lut_collapsible()` is true).
+    ///
+    /// Returns `lut[i]` = output value for input value `i`. The pipeline
+    /// uses `compose_luts()` to fuse consecutive LUT filters into a single
+    /// lookup table, then applies it in one pass via `apply_lut()`.
+    ///
+    /// Default: identity LUT (no-op).
+    fn build_lut(&self, _params: &FilterParams) -> [u8; 256] {
+        let mut lut = [0u8; 256];
+        for i in 0..256 {
+            lut[i] = i as u8;
+        }
+        lut
+    }
+
+    /// Build the 65536-entry LUT for 16-bit input.
+    /// Only called if `is_lut_collapsible()` is true AND input is 16-bit.
+    /// Default: delegates to 8-bit LUT with linear scaling.
+    fn build_lut_u16(&self, params: &FilterParams) -> Vec<u16> {
+        // Default: upscale from 8-bit LUT
+        let lut8 = self.build_lut(params);
+        (0..65536u32)
+            .map(|i| {
+                let i8 = (i >> 8) as usize;
+                (lut8[i8.min(255)] as u16) << 8 | (lut8[i8.min(255)] as u16)
+            })
+            .collect()
+    }
+}
+
+// ─── Filter Registry ──────────────────────────────────────────────────────
+
+/// Registry of all available image filters.
+///
+/// Built-in filters are registered at creation via `with_builtins()`.
+/// Custom filters can be added at any time via `register()`.
+pub struct FilterRegistry {
+    filters: Vec<Box<dyn ImageFilter>>,
+    by_name: HashMap<String, usize>,
+}
+
+impl FilterRegistry {
+    /// Create an empty registry.
+    pub fn new() -> Self {
+        Self {
+            filters: Vec::new(),
+            by_name: HashMap::new(),
+        }
+    }
+
+    /// Create a registry pre-loaded with all built-in filters.
+    pub fn with_builtins() -> Self {
+        let mut reg = Self::new();
+        register_builtin_filters(&mut reg);
+        reg
+    }
+
+    /// Register a custom filter.
+    pub fn register(&mut self, filter: Box<dyn ImageFilter>) {
+        let name = filter.name().to_string();
+        let idx = self.filters.len();
+        self.filters.push(filter);
+        self.by_name.insert(name, idx);
+    }
+
+    /// Look up a filter by name.
+    pub fn get(&self, name: &str) -> Option<&dyn ImageFilter> {
+        self.by_name.get(name).map(|&idx| self.filters[idx].as_ref())
+    }
+
+    /// List all registered filter names.
+    pub fn names(&self) -> Vec<&str> {
+        self.filters.iter().map(|f| f.name()).collect()
+    }
+
+    /// List all filters in a category.
+    pub fn by_category(&self, category: FilterCategory) -> Vec<&dyn ImageFilter> {
+        self.filters
+            .iter()
+            .filter(|f| f.category() == category)
+            .map(|f| f.as_ref())
+            .collect()
+    }
+
+    /// Total number of registered filters.
+    pub fn len(&self) -> usize {
+        self.filters.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.filters.is_empty()
+    }
+}
+
+impl Default for FilterRegistry {
+    fn default() -> Self {
+        Self::with_builtins()
+    }
+}
+
+// ─── Built-in Filter Implementations ──────────────────────────────────────
+
+macro_rules! builtin_filter {
+    ($struct_name:ident, $filter_name:expr, $category:expr,
+     params: [$($param:expr),*],
+     apply: |$input:ident| $body:expr
+    ) => {
+        pub struct $struct_name;
+
+        impl ImageFilter for $struct_name {
+            fn name(&self) -> &str { $filter_name }
+            fn category(&self) -> FilterCategory { $category }
+            fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+                vec![$($param),*]
+            }
+            fn apply(&self, $input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+                $body
+            }
+        }
+    };
+}
+
+use super::filters;
+use super::histogram;
+use super::point_ops::{self, PointOp};
+
+// Blur filters
+builtin_filter!(BlurFilter, "blur", FilterCategory::Blur,
+    params: [ParamDescriptor::float("radius", 0.0, 100.0, 1.0).with_description("Gaussian blur radius")],
+    apply: |input| {
+        let radius = input.params.get_float("radius").unwrap_or(1.0);
+        filters::blur(input.pixels, input.info, radius)
+    }
+);
+
+builtin_filter!(SharpenFilter, "sharpen", FilterCategory::Sharpen,
+    params: [ParamDescriptor::float("amount", 0.0, 10.0, 1.0).with_description("Unsharp mask amount")],
+    apply: |input| {
+        let amount = input.params.get_float("amount").unwrap_or(1.0);
+        filters::sharpen(input.pixels, input.info, amount)
+    }
+);
+
+builtin_filter!(MedianFilter, "median", FilterCategory::Denoise,
+    params: [ParamDescriptor::uint("radius", 1, 50, 3).with_description("Median filter radius")],
+    apply: |input| {
+        let radius = input.params.get_uint("radius").unwrap_or(3);
+        filters::median(input.pixels, input.info, radius)
+    }
+);
+
+// Edge detection
+builtin_filter!(SobelFilter, "sobel", FilterCategory::EdgeDetection,
+    params: [],
+    apply: |input| { filters::sobel(input.pixels, input.info) }
+);
+
+builtin_filter!(CannyFilter, "canny", FilterCategory::EdgeDetection,
+    params: [
+        ParamDescriptor::float("low_threshold", 0.0, 255.0, 50.0),
+        ParamDescriptor::float("high_threshold", 0.0, 255.0, 150.0)
+    ],
+    apply: |input| {
+        let low = input.params.get_float("low_threshold").unwrap_or(50.0);
+        let high = input.params.get_float("high_threshold").unwrap_or(150.0);
+        filters::canny(input.pixels, input.info, low, high)
+    }
+);
+
+// Point operations
+// Point operations — all are LUT-collapsible (per-pixel, no neighbors)
+pub struct GammaFilter;
+impl ImageFilter for GammaFilter {
+    fn name(&self) -> &str { "gamma" }
+    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+        vec![ParamDescriptor::float("gamma", 0.1, 10.0, 1.0)]
+    }
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+        let gamma = input.params.get_float("gamma").unwrap_or(1.0);
+        point_ops::gamma(input.pixels, input.info, gamma)
+    }
+    fn is_lut_collapsible(&self) -> bool { true }
+    fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
+        let gamma = params.get_float("gamma").unwrap_or(1.0);
+        point_ops::build_lut(&PointOp::Gamma(gamma))
+    }
+}
+
+pub struct BrightnessFilter;
+impl ImageFilter for BrightnessFilter {
+    fn name(&self) -> &str { "brightness" }
+    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+        vec![ParamDescriptor::float("amount", -1.0, 1.0, 0.0)]
+    }
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+        let amount = input.params.get_float("amount").unwrap_or(0.0);
+        filters::brightness(input.pixels, input.info, amount)
+    }
+    fn is_lut_collapsible(&self) -> bool { true }
+    fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
+        let amount = params.get_float("amount").unwrap_or(0.0);
+        point_ops::build_lut(&PointOp::Brightness(amount))
+    }
+}
+
+pub struct ContrastFilter;
+impl ImageFilter for ContrastFilter {
+    fn name(&self) -> &str { "contrast" }
+    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+        vec![ParamDescriptor::float("amount", -1.0, 1.0, 0.0)]
+    }
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+        let amount = input.params.get_float("amount").unwrap_or(0.0);
+        filters::contrast(input.pixels, input.info, amount)
+    }
+    fn is_lut_collapsible(&self) -> bool { true }
+    fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
+        let amount = params.get_float("amount").unwrap_or(0.0);
+        point_ops::build_lut(&PointOp::Contrast(amount))
+    }
+}
+
+pub struct InvertFilter;
+impl ImageFilter for InvertFilter {
+    fn name(&self) -> &str { "invert" }
+    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> { vec![] }
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+        point_ops::invert(input.pixels, input.info)
+    }
+    fn is_lut_collapsible(&self) -> bool { true }
+    fn build_lut(&self, _params: &FilterParams) -> [u8; 256] {
+        point_ops::build_lut(&PointOp::Invert)
+    }
+}
+
+pub struct ThresholdFilter;
+impl ImageFilter for ThresholdFilter {
+    fn name(&self) -> &str { "threshold" }
+    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+        vec![ParamDescriptor::uint("level", 0, 255, 128)]
+    }
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+        let level = input.params.get_uint("level").unwrap_or(128) as u8;
+        point_ops::threshold(input.pixels, input.info, level)
+    }
+    fn is_lut_collapsible(&self) -> bool { true }
+    fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
+        let level = params.get_uint("level").unwrap_or(128) as u8;
+        point_ops::build_lut(&PointOp::Threshold(level))
+    }
+}
+
+pub struct PosterizeFilter;
+impl ImageFilter for PosterizeFilter {
+    fn name(&self) -> &str { "posterize" }
+    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+        vec![ParamDescriptor::uint("levels", 2, 256, 4)]
+    }
+    fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+        let levels = input.params.get_uint("levels").unwrap_or(4) as u8;
+        point_ops::posterize(input.pixels, input.info, levels)
+    }
+    fn is_lut_collapsible(&self) -> bool { true }
+    fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
+        let levels = params.get_uint("levels").unwrap_or(4) as u8;
+        point_ops::build_lut(&PointOp::Posterize(levels))
+    }
+}
+
+// Color operations
+builtin_filter!(HueRotateFilter, "hue_rotate", FilterCategory::Color,
+    params: [ParamDescriptor::float("degrees", -360.0, 360.0, 0.0)],
+    apply: |input| {
+        let degrees = input.params.get_float("degrees").unwrap_or(0.0);
+        filters::hue_rotate(input.pixels, input.info, degrees)
+    }
+);
+
+builtin_filter!(SaturateFilter, "saturate", FilterCategory::Color,
+    params: [ParamDescriptor::float("factor", 0.0, 3.0, 1.0)],
+    apply: |input| {
+        let factor = input.params.get_float("factor").unwrap_or(1.0);
+        filters::saturate(input.pixels, input.info, factor)
+    }
+);
+
+builtin_filter!(SepiaFilter, "sepia", FilterCategory::Color,
+    params: [ParamDescriptor::float("intensity", 0.0, 1.0, 1.0)],
+    apply: |input| {
+        let intensity = input.params.get_float("intensity").unwrap_or(1.0);
+        filters::sepia(input.pixels, input.info, intensity)
+    }
+);
+
+// Histogram operations
+builtin_filter!(EqualizeFilter, "equalize", FilterCategory::Contrast,
+    params: [],
+    apply: |input| { histogram::equalize(input.pixels, input.info) }
+);
+
+builtin_filter!(NormalizeFilter, "normalize", FilterCategory::Contrast,
+    params: [],
+    apply: |input| { histogram::normalize(input.pixels, input.info) }
+);
+
+builtin_filter!(AutoLevelFilter, "auto_level", FilterCategory::Contrast,
+    params: [],
+    apply: |input| { histogram::auto_level(input.pixels, input.info) }
+);
+
+// OpenCV-tier filters
+builtin_filter!(ClaheFilter, "clahe", FilterCategory::Contrast,
+    params: [
+        ParamDescriptor::float("clip_limit", 1.0, 100.0, 2.0).with_description("Contrast clip limit"),
+        ParamDescriptor::uint("tile_grid", 1, 32, 8).with_description("Tile grid size")
+    ],
+    apply: |input| {
+        let clip = input.params.get_float("clip_limit").unwrap_or(2.0);
+        let grid = input.params.get_uint("tile_grid").unwrap_or(8);
+        filters::clahe(input.pixels, input.info, clip, grid)
+    }
+);
+
+builtin_filter!(BilateralFilter, "bilateral", FilterCategory::Denoise,
+    params: [
+        ParamDescriptor::uint("diameter", 0, 25, 9).with_description("Filter diameter (0=auto)"),
+        ParamDescriptor::float("sigma_color", 1.0, 200.0, 75.0),
+        ParamDescriptor::float("sigma_space", 1.0, 200.0, 75.0)
+    ],
+    apply: |input| {
+        let d = input.params.get_uint("diameter").unwrap_or(9);
+        let sc = input.params.get_float("sigma_color").unwrap_or(75.0);
+        let ss = input.params.get_float("sigma_space").unwrap_or(75.0);
+        filters::bilateral(input.pixels, input.info, d, sc, ss)
+    }
+);
+
+builtin_filter!(GuidedFilterEntry, "guided_filter", FilterCategory::Denoise,
+    params: [
+        ParamDescriptor::uint("radius", 1, 50, 4),
+        ParamDescriptor::float("epsilon", 0.001, 1.0, 0.01)
+    ],
+    apply: |input| {
+        let r = input.params.get_uint("radius").unwrap_or(4);
+        let eps = input.params.get_float("epsilon").unwrap_or(0.01);
+        filters::guided_filter(input.pixels, input.info, r, eps)
+    }
+);
+
+/// Register all built-in filters into a registry.
+fn register_builtin_filters(reg: &mut FilterRegistry) {
+    reg.register(Box::new(BlurFilter));
+    reg.register(Box::new(SharpenFilter));
+    reg.register(Box::new(MedianFilter));
+    reg.register(Box::new(SobelFilter));
+    reg.register(Box::new(CannyFilter));
+    reg.register(Box::new(GammaFilter));
+    reg.register(Box::new(BrightnessFilter));
+    reg.register(Box::new(ContrastFilter));
+    reg.register(Box::new(InvertFilter));
+    reg.register(Box::new(ThresholdFilter));
+    reg.register(Box::new(PosterizeFilter));
+    reg.register(Box::new(HueRotateFilter));
+    reg.register(Box::new(SaturateFilter));
+    reg.register(Box::new(SepiaFilter));
+    reg.register(Box::new(EqualizeFilter));
+    reg.register(Box::new(NormalizeFilter));
+    reg.register(Box::new(AutoLevelFilter));
+    reg.register(Box::new(ClaheFilter));
+    reg.register(Box::new(BilateralFilter));
+    reg.register(Box::new(GuidedFilterEntry));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::types::{ColorSpace, PixelFormat};
+
+    #[test]
+    fn registry_has_all_builtins() {
+        let reg = FilterRegistry::with_builtins();
+        assert!(reg.len() >= 20, "expected 20+ built-in filters, got {}", reg.len());
+
+        // Spot-check key filters exist
+        for name in ["blur", "sharpen", "clahe", "bilateral", "guided_filter", "sobel", "canny",
+                      "gamma", "brightness", "contrast", "invert", "sepia", "equalize"] {
+            assert!(reg.get(name).is_some(), "missing built-in filter: {name}");
+        }
+    }
+
+    #[test]
+    fn filter_by_category() {
+        let reg = FilterRegistry::with_builtins();
+        let blur_filters = reg.by_category(FilterCategory::Blur);
+        assert!(!blur_filters.is_empty());
+        assert!(blur_filters.iter().any(|f| f.name() == "blur"));
+    }
+
+    #[test]
+    fn apply_filter_via_registry() {
+        let reg = FilterRegistry::with_builtins();
+        let blur = reg.get("blur").unwrap();
+
+        let info = ImageInfo {
+            width: 8, height: 8,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![128u8; 64];
+        let params = FilterParams::new().set_float("radius", 1.0);
+        let input = FilterInput { pixels: &pixels, info: &info, params: &params };
+
+        let result = blur.apply(&input).unwrap();
+        assert_eq!(result.len(), 64);
+    }
+
+    #[test]
+    fn custom_filter_registration() {
+        struct DoubleFilter;
+        impl ImageFilter for DoubleFilter {
+            fn name(&self) -> &str { "double" }
+            fn category(&self) -> FilterCategory { FilterCategory::Other }
+            fn param_descriptors(&self) -> Vec<ParamDescriptor> { vec![] }
+            fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
+                Ok(input.pixels.iter().map(|&v| v.saturating_mul(2)).collect())
+            }
+        }
+
+        let mut reg = FilterRegistry::with_builtins();
+        let before = reg.len();
+        reg.register(Box::new(DoubleFilter));
+        assert_eq!(reg.len(), before + 1);
+        assert!(reg.get("double").is_some());
+
+        let info = ImageInfo {
+            width: 4, height: 1,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![10u8, 20, 30, 40];
+        let params = FilterParams::new();
+        let input = FilterInput { pixels: &pixels, info: &info, params: &params };
+
+        let result = reg.get("double").unwrap().apply(&input).unwrap();
+        assert_eq!(result, vec![20, 40, 60, 80]);
+    }
+
+    #[test]
+    fn param_descriptors_populated() {
+        let reg = FilterRegistry::with_builtins();
+        let clahe = reg.get("clahe").unwrap();
+        let descs = clahe.param_descriptors();
+        assert_eq!(descs.len(), 2);
+        assert_eq!(descs[0].name, "clip_limit");
+        assert_eq!(descs[1].name, "tile_grid");
+    }
+
+    #[test]
+    fn all_filter_names_unique() {
+        let reg = FilterRegistry::with_builtins();
+        let names = reg.names();
+        let mut seen = std::collections::HashSet::new();
+        for name in &names {
+            assert!(seen.insert(name), "duplicate filter name: {name}");
+        }
+    }
+}
