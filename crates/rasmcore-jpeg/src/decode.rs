@@ -180,8 +180,8 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
             }
             M_DAC => {
                 // Skip arithmetic conditioning — we use defaults
-                let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-                pos += len;
+                let len = read_u16be(data, &mut pos)? as usize;
+                pos += len - 2; // len includes the 2-byte length field
             }
             M_DQT => {
                 parse_dqt(data, &mut pos, &mut quant_tables)?;
@@ -255,6 +255,32 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
 
 // ─── Marker Parsers ─────────────────────────────────────────────────────────
 
+/// Bounds-checked read helpers for truncation safety.
+#[inline]
+fn need(data: &[u8], pos: usize, n: usize) -> Result<(), EncodeError> {
+    if pos + n > data.len() {
+        Err(EncodeError::InvalidInput("truncated JPEG data".into()))
+    } else {
+        Ok(())
+    }
+}
+
+#[inline]
+fn read_u8(data: &[u8], pos: &mut usize) -> Result<u8, EncodeError> {
+    need(data, *pos, 1)?;
+    let v = data[*pos];
+    *pos += 1;
+    Ok(v)
+}
+
+#[inline]
+fn read_u16be(data: &[u8], pos: &mut usize) -> Result<u16, EncodeError> {
+    need(data, *pos, 2)?;
+    let v = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
+    *pos += 2;
+    Ok(v)
+}
+
 fn parse_sof(data: &[u8], pos: &mut usize) -> Result<JpegFrame, EncodeError> {
     if *pos + 2 > data.len() {
         return Err(EncodeError::DecodeFailed("truncated SOF".into()));
@@ -300,11 +326,17 @@ fn parse_dqt(
     pos: &mut usize,
     tables: &mut [Option<[u16; 64]>; 4],
 ) -> Result<(), EncodeError> {
+    if *pos + 1 >= data.len() {
+        return Err(EncodeError::InvalidInput("truncated DQT marker".into()));
+    }
     let len = u16::from_be_bytes([data[*pos], data[*pos + 1]]) as usize;
     let end = *pos + len;
     *pos += 2;
 
     while *pos < end {
+        if *pos >= data.len() {
+            return Err(EncodeError::InvalidInput("truncated DQT data".into()));
+        }
         let info = data[*pos];
         *pos += 1;
         let precision = info >> 4; // 0 = 8-bit, 1 = 16-bit
@@ -319,9 +351,15 @@ fn parse_dqt(
         let mut zigzag_table = [0u16; 64];
         for i in 0..64 {
             if precision == 0 {
+                if *pos >= data.len() {
+                    return Err(EncodeError::InvalidInput("truncated DQT".into()));
+                }
                 zigzag_table[i] = data[*pos] as u16;
                 *pos += 1;
             } else {
+                if *pos + 1 >= data.len() {
+                    return Err(EncodeError::InvalidInput("truncated DQT".into()));
+                }
                 zigzag_table[i] = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
                 *pos += 2;
             }
@@ -344,13 +382,11 @@ fn parse_dht(
     dc_tables: &mut [Option<HuffmanTable>; 4],
     ac_tables: &mut [Option<HuffmanTable>; 4],
 ) -> Result<(), EncodeError> {
-    let len = u16::from_be_bytes([data[*pos], data[*pos + 1]]) as usize;
-    let end = *pos + len;
-    *pos += 2;
+    let len = read_u16be(data, pos)? as usize;
+    let end = *pos - 2 + len; // len includes the 2-byte length field
 
     while *pos < end {
-        let info = data[*pos];
-        *pos += 1;
+        let info = read_u8(data, pos)?;
         let table_class = info >> 4; // 0 = DC, 1 = AC
         let table_id = (info & 0x0F) as usize;
         if table_id >= 4 {
@@ -361,12 +397,14 @@ fn parse_dht(
 
         let mut lengths = [0u8; 16];
         let mut total_symbols = 0usize;
+        need(data, *pos, 16)?;
         for i in 0..16 {
             lengths[i] = data[*pos];
             total_symbols += lengths[i] as usize;
             *pos += 1;
         }
 
+        need(data, *pos, total_symbols)?;
         let symbols: Vec<u8> = data[*pos..*pos + total_symbols].to_vec();
         *pos += total_symbols;
 
@@ -382,24 +420,19 @@ fn parse_dht(
 }
 
 fn parse_dri(data: &[u8], pos: &mut usize) -> Result<u16, EncodeError> {
-    let _len = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
-    *pos += 2;
-    let interval = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
-    *pos += 2;
+    let _len = read_u16be(data, pos)?;
+    let interval = read_u16be(data, pos)?;
     Ok(interval)
 }
 
 fn parse_sos(data: &[u8], pos: &mut usize) -> Result<ScanHeader, EncodeError> {
-    let _len = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
-    *pos += 2;
-    let num_components = data[*pos] as usize;
-    *pos += 1;
+    let _len = read_u16be(data, pos)?;
+    let num_components = read_u8(data, pos)? as usize;
 
     let mut selectors = Vec::with_capacity(num_components);
     for _ in 0..num_components {
-        let id = data[*pos];
-        let tables = data[*pos + 1];
-        *pos += 2;
+        let id = read_u8(data, pos)?;
+        let tables = read_u8(data, pos)?;
         selectors.push(ScanComponentSelector {
             component_id: id,
             dc_table_id: tables >> 4,
@@ -407,12 +440,11 @@ fn parse_sos(data: &[u8], pos: &mut usize) -> Result<ScanHeader, EncodeError> {
         });
     }
 
-    let ss = data[*pos];
-    let se = data[*pos + 1];
-    let approx = data[*pos + 2];
+    let ss = read_u8(data, pos)?;
+    let se = read_u8(data, pos)?;
+    let approx = read_u8(data, pos)?;
     let ah = approx >> 4;
     let al = approx & 0x0F;
-    *pos += 3;
 
     Ok(ScanHeader {
         component_selectors: selectors,
@@ -1460,6 +1492,51 @@ mod tests {
     fn decode_rejects_truncated() {
         let result = jpeg_decode(&[0xFF, 0xD8]); // SOI only
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_truncated_arithmetic_returns_err() {
+        // Encode a valid arithmetic JPEG, truncate it, verify Err (not panic)
+        let pixels: Vec<u8> = (0..8 * 8).map(|i| (i * 3) as u8).collect();
+        let config = crate::EncodeConfig {
+            quality: 75,
+            arithmetic_coding: true,
+            ..Default::default()
+        };
+        let jpeg =
+            crate::encode(&pixels, 8, 8, crate::PixelFormat::Gray8, &config).unwrap();
+
+        // Truncate at various points — all should return Err or Ok, never panic.
+        // Missing EOI (last 2 bytes) is tolerated by most decoders, so we test
+        // truncation within markers and scan data, not just at the end.
+        for cut in [10, 20, jpeg.len() / 4, jpeg.len() / 2] {
+            let truncated = &jpeg[..cut.min(jpeg.len())];
+            let result = std::panic::catch_unwind(|| jpeg_decode(truncated));
+            assert!(
+                result.is_ok(),
+                "truncated arithmetic at {cut} bytes panicked (should return Err)"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_truncated_huffman_no_panic() {
+        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
+        let config = crate::EncodeConfig {
+            quality: 75,
+            ..Default::default()
+        };
+        let jpeg =
+            crate::encode(&pixels, 16, 16, crate::PixelFormat::Rgb8, &config).unwrap();
+
+        for cut in [10, 50, 100, jpeg.len() / 4, jpeg.len() / 2] {
+            let truncated = &jpeg[..cut.min(jpeg.len())];
+            let result = std::panic::catch_unwind(|| jpeg_decode(truncated));
+            assert!(
+                result.is_ok(),
+                "truncated Huffman at {cut} bytes panicked"
+            );
+        }
     }
 
     #[test]
