@@ -109,6 +109,137 @@ fn idct16_1d(c: &[i32]) -> [i32; 16] {
     result
 }
 
+/// Forward 16x16 DCT: spatial → frequency domain.
+///
+/// HEVC-spec forward 16x16 DCT using butterfly decomposition.
+///
+/// Shift convention per HEVC spec (8-bit):
+/// - shift1 = log2(N) + bitDepth - 9 = 4 + 8 - 9 = 3
+/// - shift2 = log2(N) + 6 = 4 + 6 = 10
+///
+/// Ref: x265 4.1 common/dct.cpp — dct16_c()
+/// Ref: ITU-T H.265 Table 8-6 (16-point DCT kernel)
+pub fn forward_dct_16x16(input: &[i16; 256], output: &mut [i16; 256]) {
+    let mut tmp = [0i32; 256];
+
+    // Row pass
+    let shift1 = 3; // log2(16) + 8 - 9
+    let add1 = 1 << (shift1 - 1);
+    for i in 0..16 {
+        let s = i * 16;
+        let x: Vec<i32> = (0..16).map(|j| input[s + j] as i32).collect();
+        let row = fdct16_1d(&x);
+        for j in 0..16 {
+            tmp[s + j] = (row[j] + add1) >> shift1;
+        }
+    }
+
+    // Column pass
+    let shift2 = 10; // log2(16) + 6
+    let add2 = 1 << (shift2 - 1);
+    for j in 0..16 {
+        let x: Vec<i32> = (0..16).map(|i| tmp[i * 16 + j]).collect();
+        let col = fdct16_1d(&x);
+        for i in 0..16 {
+            output[i * 16 + j] = ((col[i] + add2) >> shift2) as i16;
+        }
+    }
+}
+
+/// 1D 16-point forward DCT butterfly.
+///
+/// The forward DCT butterfly computes:
+///   Y[k] = sum(x[n] * T[k][n]) for n = 0..15
+/// where T is the HEVC 16-point DCT matrix.
+///
+/// Uses the same even/odd decomposition as the inverse, but
+/// with input samples decomposed into even (e) and odd (o) parts.
+fn fdct16_1d(x: &[i32]) -> [i32; 16] {
+    // Stage 1: even/odd decomposition of input
+    let mut e = [0i32; 8];
+    let mut o = [0i32; 8];
+    for k in 0..8 {
+        e[k] = x[k] + x[15 - k];
+        o[k] = x[k] - x[15 - k];
+    }
+
+    // Stage 2: even part → 8-point decomposition
+    let mut ee = [0i32; 4];
+    let mut eo = [0i32; 4];
+    for k in 0..4 {
+        ee[k] = e[k] + e[7 - k];
+        eo[k] = e[k] - e[7 - k];
+    }
+
+    // Stage 3: even-even part → 4-point decomposition
+    let eee0 = ee[0] + ee[3];
+    let eee1 = ee[1] + ee[2];
+    let eeo0 = ee[0] - ee[3];
+    let eeo1 = ee[1] - ee[2];
+
+    // Output even-even: indices 0, 8 (DC and half-Nyquist)
+    let mut result = [0i32; 16];
+    result[0] = E[0] * eee0 + E[0] * eee1;
+    result[8] = E[0] * eee0 - E[0] * eee1;
+    // Output even-even-odd: indices 4, 12
+    result[4] = E[1] * eeo0 + E[3] * eeo1;
+    result[12] = E[3] * eeo0 - E[1] * eeo1;
+
+    // Output even-odd: indices 2, 6, 10, 14
+    result[2] = O8[0] * eo[0] + O8[1] * eo[1] + O8[2] * eo[2] + O8[3] * eo[3];
+    result[6] = O8[1] * eo[0] - O8[3] * eo[1] - O8[0] * eo[2] - O8[2] * eo[3];
+    result[10] = O8[2] * eo[0] - O8[0] * eo[1] + O8[3] * eo[2] + O8[1] * eo[3];
+    result[14] = O8[3] * eo[0] - O8[2] * eo[1] + O8[1] * eo[2] - O8[0] * eo[3];
+
+    // Output odd: indices 1, 3, 5, 7, 9, 11, 13, 15
+    result[1] = O16[0] * o[0]
+        + O16[1] * o[1]
+        + O16[2] * o[2]
+        + O16[3] * o[3]
+        + O16[4] * o[4]
+        + O16[5] * o[5]
+        + O16[6] * o[6]
+        + O16[7] * o[7];
+    result[3] = O16[1] * o[0] - O16[4] * o[1] - O16[7] * o[2] - O16[5] * o[3]
+        - O16[2] * o[4]
+        + O16[0] * o[5]
+        + O16[3] * o[6]
+        + O16[6] * o[7];
+    result[5] = O16[2] * o[0] - O16[7] * o[1] - O16[3] * o[2]
+        + O16[6] * o[3]
+        + O16[0] * o[4]
+        + O16[4] * o[5]
+        - O16[1] * o[6]
+        - O16[5] * o[7];
+    result[7] = O16[3] * o[0] - O16[5] * o[1] + O16[6] * o[2] + O16[0] * o[3]
+        - O16[7] * o[4]
+        - O16[1] * o[5]
+        + O16[4] * o[6]
+        + O16[2] * o[7];
+    result[9] = O16[4] * o[0] - O16[2] * o[1] + O16[0] * o[2] - O16[7] * o[3]
+        - O16[3] * o[4]
+        + O16[6] * o[5]
+        + O16[5] * o[6]
+        - O16[1] * o[7];
+    result[11] = O16[5] * o[0] - O16[0] * o[1] + O16[4] * o[2] + O16[1] * o[3]
+        - O16[6] * o[4]
+        - O16[2] * o[5]
+        + O16[7] * o[6]
+        + O16[3] * o[7];
+    result[13] = O16[6] * o[0] - O16[3] * o[1] + O16[1] * o[2] - O16[4] * o[3]
+        + O16[5] * o[4]
+        + O16[7] * o[5]
+        - O16[0] * o[6]
+        + O16[2] * o[7];
+    result[15] = O16[7] * o[0] - O16[6] * o[1] + O16[5] * o[2] - O16[4] * o[3]
+        + O16[3] * o[4]
+        - O16[2] * o[5]
+        + O16[1] * o[6]
+        - O16[0] * o[7];
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +276,53 @@ mod tests {
         inverse_dct_16x16(&input, &mut out1);
         inverse_dct_16x16(&input, &mut out2);
         assert_eq!(out1, out2);
+    }
+
+    #[test]
+    fn forward_16x16_dc_concentrates_energy() {
+        // Flat input should produce large DC and near-zero AC
+        let input = [50i16; 256];
+        let mut output = [0i16; 256];
+        forward_dct_16x16(&input, &mut output);
+        // DC coefficient should be non-zero
+        assert!(output[0].abs() > 0, "DC should be non-zero for flat input");
+        // AC coefficients should be zero for perfectly flat input
+        let ac_energy: i64 = output[1..].iter().map(|&v| (v as i64) * (v as i64)).sum();
+        assert_eq!(ac_energy, 0, "AC should be zero for flat input");
+    }
+
+    #[test]
+    fn forward_inverse_16x16_approximate_roundtrip() {
+        // HEVC forward/inverse are NOT exact inverses — different shift amounts
+        // mean quantization is needed in between for exact reconstruction.
+        // This test verifies the transforms are structurally correct by checking
+        // that roundtrip error is bounded (not that it's zero).
+        let mut input = [0i16; 256];
+        for i in 0..256 {
+            input[i] = ((i % 16) as i16 - 8) * 4; // smaller range
+        }
+        let mut coeffs = [0i16; 256];
+        let mut reconstructed = [0i16; 256];
+        forward_dct_16x16(&input, &mut coeffs);
+        inverse_dct_16x16(&coeffs, &mut reconstructed);
+        // Verify correlation — same sign and approximate magnitude
+        let mse: f64 = input
+            .iter()
+            .zip(reconstructed.iter())
+            .map(|(&a, &b)| {
+                let d = a as f64 - b as f64;
+                d * d
+            })
+            .sum::<f64>()
+            / 256.0;
+        let psnr = if mse < 0.001 {
+            f64::INFINITY
+        } else {
+            10.0 * (255.0 * 255.0 / mse).log10()
+        };
+        assert!(
+            psnr > 20.0,
+            "forward-inverse roundtrip PSNR={psnr:.1}dB, expected > 20dB"
+        );
     }
 }

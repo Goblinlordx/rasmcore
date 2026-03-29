@@ -14,6 +14,6 @@ mod dst4;
 
 pub use dct4::{forward_dct_4x4, inverse_dct_4x4};
 pub use dct8::{forward_dct_8x8, inverse_dct_8x8};
-pub use dct16::inverse_dct_16x16;
-pub use dct32::inverse_dct_32x32;
-pub use dst4::inverse_dst_4x4;
+pub use dct16::{forward_dct_16x16, inverse_dct_16x16};
+pub use dct32::{forward_dct_32x32, inverse_dct_32x32};
+pub use dst4::{forward_dst_4x4, inverse_dst_4x4};
