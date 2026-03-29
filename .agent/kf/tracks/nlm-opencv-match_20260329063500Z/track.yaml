@@ -1,0 +1,79 @@
+id: nlm-opencv-match_20260329063500Z
+title: NLM Denoising — Match OpenCV Algorithm + SIMD Morphology
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Fix NLM weight formula to match OpenCV fastNlMeansDenoising, add algorithm
+    selection enum (OpenCV default, Classic option), integral-image SSD
+    acceleration, and SIMD-optimize morphology erode/dilate.
+  context: |
+    Current NLM uses exp(-SSD / (patchArea * h^2)) while OpenCV uses
+    exp(-SSD / h^2) — different normalization producing MAE=1.39.
+    Morphology erode/dilate use scalar min/max loops with no SIMD.
+    Both should match the reference exactly and be performance-optimized.
+  codebase_analysis: |
+    filters.rs:1973 nlm_denoise — weight = exp(-ssd / (patch_area * h2))
+    OpenCV fastNlMeansDenoising — weight = exp(-ssd / h^2) with LUT approximation
+
+    Morphology erode/dilate at filters.rs:1830 — scalar per-pixel per-kernel loop.
+    Blur already uses libblur SIMD. Point ops use autovectorized LUT loops.
+    No SIMD for spatial neighborhood ops (morphology, bilateral, NLM).
+
+    Existing NlmParams struct has h, patch_size, search_size fields.
+    Need to add algorithm field.
+  acceptance_criteria:
+    - NLM with OpenCV algorithm matches cv2.fastNlMeansDenoising at MAE < 0.5
+    - NlmAlgorithm enum with OpenCv (default) and Classic variants
+    - Integral-image SSD computation for NLM performance
+    - Morphology erode/dilate use SIMD min/max where LLVM can autovectorize
+    - All existing morphology tests still pass (MAE=0.0 vs OpenCV)
+    - Validated against reference images (photo_256x256.png)
+  out_of_scope: |
+    Color NLM (fastNlMeansDenoisingColored). GPU acceleration. Bilateral SIMD.
+  technical_notes: |
+    NLM OpenCV match:
+    - Change weight to exp(-SSD / h^2) — drop the patch_area divisor
+    - OpenCV also uses a lookup table for exp() approximation, but the dominant
+      difference is the normalization. With matching normalization, MAE should
+      drop to near 0.
+
+    Integral images for SSD:
+    - Precompute integral image of squared differences for each search offset
+    - Patch SSD = sum over patch using 4 integral image lookups instead of N^2
+    - Reduces NLM from O(W*H*S^2*P^2) to O(W*H*S^2)
+
+    Morphology SIMD:
+    - Restructure erode/dilate to process rows as contiguous slices
+    - Use horizontal min/max scan (van Herk/Gil-Werman algorithm) for O(1) per pixel
+    - Autovectorizes when processing row buffers with .iter().min()/.max()
+
+    Algorithm enum:
+    - NlmAlgorithm::OpenCv — exp(-SSD/h^2), default
+    - NlmAlgorithm::Classic — exp(-SSD/(N*h^2)), current behavior preserved
+plan:
+  - phase: NLM Algorithm Fix
+    tasks:
+      - text: Add NlmAlgorithm enum (OpenCv default, Classic) to NlmParams
+        done: false
+      - text: Fix NLM weight formula for OpenCv variant (exp(-SSD/h^2))
+        done: false
+      - text: Verify MAE < 0.5 vs cv2.fastNlMeansDenoising on reference images
+        done: false
+  - phase: NLM Performance
+    tasks:
+      - text: Implement integral-image SSD computation for NLM
+        done: false
+      - text: Verify identical output before and after optimization
+        done: false
+  - phase: Morphology SIMD
+    tasks:
+      - text: Restructure erode/dilate for autovectorizable row processing
+        done: false
+      - text: Verify morphology still MAE=0.0 vs OpenCV after restructure
+        done: false
+      - text: Validate all operations on photo_256x256.png reference image
+        done: false
+extra: {}
