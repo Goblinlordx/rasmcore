@@ -5,112 +5,82 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Fix 3 MAE gaps in photo enhancement operations to achieve pixel-perfect
-    reference alignment. Dehaze test reference missing guided filter (MAE 43.4),
-    clarity blur kernel mismatch (MAE 1.04), pyramid remap misnamed as Local
-    Laplacian (vips comparison invalid).
-  context: |
-    Photo enhancement validation (photo-enhance-validation track) revealed:
-    1. Dehaze MAE=43.4 vs Python — Python reference lacks guided filter refinement
-    2. Clarity MAE=1.04 vs Python — blur kernel size/border mode differs from OpenCV
-    3. Pyramid remap MAE=0.0 vs Python but MAE=31.6 vs vips — wrong reference
+  summary: 'Fix 3 MAE gaps in photo enhancement operations to achieve pixel-perfect reference alignment. Dehaze test reference
+    missing guided filter (MAE 43.4), clarity blur kernel mismatch (MAE 1.04), pyramid remap misnamed as Local Laplacian (vips
+    comparison invalid).
 
-    Root causes identified by research:
-    - Dehaze: OpenCV has cv2.ximgproc.guidedFilter (He et al. 2010 exact algorithm).
-      Adding it to the Python reference eliminates the 43.4 gap.
-    - Clarity: libblur uses kernel_size=ceil(sigma*3)*2+1 with EdgeMode::Clamp.
-      OpenCV uses different kernel derivation and BORDER_REFLECT_101. Matching
-      either in the test reference closes the 1.04 gap.
-    - Our pyramid_detail_remap function uses d*sigma/(sigma+|d|) sigmoidal remapping
-      on a pre-built Laplacian pyramid. This is NOT Paris et al. 2011 (which rebuilds
-      the pyramid per-pixel with (|d|/sigma_r)^alpha power remapping). The function
-      should be renamed and the vips comparison removed.
-  codebase_analysis: |
-    Files to modify:
-    - tests/photo_enhance_parity.rs: Fix dehaze reference, fix clarity reference,
-      remove vips comparison, update assertions
-    - src/domain/filters.rs: Rename local_laplacian() to pyramid_detail_remap(),
-      update docstring to remove Paris 2011 citation, fix clarity blur alignment
-    - REFERENCE.md: Update entries for all 3 operations
-
-    Current test results:
-    - dehaze_vs_python_dark_channel_prior: MAE=43.4 (FAIL → target <1.0)
-    - clarity_vs_python_usm_midtone: MAE=1.04 (CLOSE → target 0.0)
-    - local_laplacian_vs_python_pyramid: MAE=0.0 (EXACT → keep, rename)
-    - local_laplacian_vs_vips: MAE=31.6 (INVALID → remove)
-
-    Guided filter in our codebase: already implemented and validated at
-    F32_ROUNDING tier vs OpenCV (filters.rs guided_filter function).
+    '
+  context: "Photo enhancement validation (photo-enhance-validation track) revealed:\n1. Dehaze MAE=43.4 vs Python — Python\
+    \ reference lacks guided filter refinement\n2. Clarity MAE=1.04 vs Python — blur kernel size/border mode differs from\
+    \ OpenCV\n3. Pyramid remap MAE=0.0 vs Python but MAE=31.6 vs vips — wrong reference\n\nRoot causes identified by research:\n\
+    - Dehaze: OpenCV has cv2.ximgproc.guidedFilter (He et al. 2010 exact algorithm).\n  Adding it to the Python reference\
+    \ eliminates the 43.4 gap.\n- Clarity: libblur uses kernel_size=ceil(sigma*3)*2+1 with EdgeMode::Clamp.\n  OpenCV uses\
+    \ different kernel derivation and BORDER_REFLECT_101. Matching\n  either in the test reference closes the 1.04 gap.\n\
+    - Our pyramid_detail_remap function uses d*sigma/(sigma+|d|) sigmoidal remapping\n  on a pre-built Laplacian pyramid.\
+    \ This is NOT Paris et al. 2011 (which rebuilds\n  the pyramid per-pixel with (|d|/sigma_r)^alpha power remapping). The\
+    \ function\n  should be renamed and the vips comparison removed.\n"
+  codebase_analysis: "Files to modify:\n- tests/photo_enhance_parity.rs: Fix dehaze reference, fix clarity reference,\n  remove\
+    \ vips comparison, update assertions\n- src/domain/filters.rs: Rename local_laplacian() to pyramid_detail_remap(),\n \
+    \ update docstring to remove Paris 2011 citation, fix clarity blur alignment\n- REFERENCE.md: Update entries for all 3\
+    \ operations\n\nCurrent test results:\n- dehaze_vs_python_dark_channel_prior: MAE=43.4 (FAIL → target <1.0)\n- clarity_vs_python_usm_midtone:\
+    \ MAE=1.04 (CLOSE → target 0.0)\n- local_laplacian_vs_python_pyramid: MAE=0.0 (EXACT → keep, rename)\n- local_laplacian_vs_vips:\
+    \ MAE=31.6 (INVALID → remove)\n\nGuided filter in our codebase: already implemented and validated at\nF32_ROUNDING tier\
+    \ vs OpenCV (filters.rs guided_filter function).\n"
   acceptance_criteria:
-    - Dehaze reference test uses cv2.ximgproc.guidedFilter, achieves MAE < 1.0
-    - Clarity reference test matches our blur kernel exactly, achieves MAE = 0.0
-    - local_laplacian renamed to pyramid_detail_remap (or similar) throughout
-    - Paris et al. 2011 citation removed from docstrings
-    - vips sharpen comparison test removed (wrong algorithm comparison)
-    - All public API callers updated for rename
-    - REFERENCE.md updated with correct references and PASS status
-    - All existing tests pass after changes
-  out_of_scope: |
-    Implementing true Paris et al. 2011 Local Laplacian (per-pixel pyramid rebuild).
+  - Dehaze reference test uses cv2.ximgproc.guidedFilter, achieves MAE < 1.0
+  - Clarity reference test matches our blur kernel exactly, achieves MAE = 0.0
+  - local_laplacian renamed to pyramid_detail_remap (or similar) throughout
+  - Paris et al. 2011 citation removed from docstrings
+  - vips sharpen comparison test removed (wrong algorithm comparison)
+  - All public API callers updated for rename
+  - REFERENCE.md updated with correct references and PASS status
+  - All existing tests pass after changes
+  out_of_scope: 'Implementing true Paris et al. 2011 Local Laplacian (per-pixel pyramid rebuild).
+
     Changing dehaze algorithm itself (only fixing the test reference).
+
     Adding new photo enhancement operations.
-  technical_notes: |
-    Dehaze fix (test-only, no code change):
-      Add cv2.ximgproc.guidedFilter to Python reference script:
-        gray = cv2.cvtColor(img_u8, cv2.COLOR_RGB2GRAY)
-        t_u8 = (t * 255).clip(0, 255).astype(np.uint8)
-        t_refined = cv2.ximgproc.guidedFilter(
-            guide=gray, src=t_u8, radius=7, eps=int(0.001*255*255))
-        t_refined_f = t_refined.astype(np.float32) / 255.0
-      Our code does the same: quantize t to u8, guided_filter(), convert back.
-      The only MAE source is f32 rounding in guided filter (proven <0.1).
 
-    Clarity fix (match blur kernel):
-      Option A: Change Python reference to match our libblur parameters:
-        ksize = int(np.ceil(sigma * 3)) * 2 + 1
-        ksize = max(ksize, 3)
-        blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma,
-                                    borderType=cv2.BORDER_REPLICATE)
-      Option B: Change our clarity to use our own convolve() with OpenCV-matching
-        kernel. Since convolve() is already proven exact vs OpenCV filter2D,
-        this guarantees MAE=0.0.
-      Prefer Option A (less code change, keeps libblur performance).
-
-    Rename (code change):
-      - filters.rs: local_laplacian() -> pyramid_detail_remap()
-      - filters.rs: local_laplacian_channel() -> pyramid_detail_remap_channel()
-      - pipeline/nodes/filters.rs: any node references
-      - filter_registry.rs: if registered
-      - tests: all test function names and references
-      - REFERENCE.md: update operation name
+    '
+  technical_notes: "Dehaze fix (test-only, no code change):\n  Add cv2.ximgproc.guidedFilter to Python reference script:\n\
+    \    gray = cv2.cvtColor(img_u8, cv2.COLOR_RGB2GRAY)\n    t_u8 = (t * 255).clip(0, 255).astype(np.uint8)\n    t_refined\
+    \ = cv2.ximgproc.guidedFilter(\n        guide=gray, src=t_u8, radius=7, eps=int(0.001*255*255))\n    t_refined_f = t_refined.astype(np.float32)\
+    \ / 255.0\n  Our code does the same: quantize t to u8, guided_filter(), convert back.\n  The only MAE source is f32 rounding\
+    \ in guided filter (proven <0.1).\n\nClarity fix (match blur kernel):\n  Option A: Change Python reference to match our\
+    \ libblur parameters:\n    ksize = int(np.ceil(sigma * 3)) * 2 + 1\n    ksize = max(ksize, 3)\n    blurred = cv2.GaussianBlur(img,\
+    \ (ksize, ksize), sigma,\n                                borderType=cv2.BORDER_REPLICATE)\n  Option B: Change our clarity\
+    \ to use our own convolve() with OpenCV-matching\n    kernel. Since convolve() is already proven exact vs OpenCV filter2D,\n\
+    \    this guarantees MAE=0.0.\n  Prefer Option A (less code change, keeps libblur performance).\n\nRename (code change):\n\
+    \  - filters.rs: local_laplacian() -> pyramid_detail_remap()\n  - filters.rs: local_laplacian_channel() -> pyramid_detail_remap_channel()\n\
+    \  - pipeline/nodes/filters.rs: any node references\n  - filter_registry.rs: if registered\n  - tests: all test function\
+    \ names and references\n  - REFERENCE.md: update operation name\n"
 plan:
-  - phase: Dehaze Reference Fix
-    tasks:
-      - text: Update dehaze Python reference to include cv2.ximgproc.guidedFilter refinement step
-        done: false
-      - text: Match guided filter parameters (radius, eps) between Python and our implementation
-        done: false
-      - text: Verify dehaze MAE drops below 1.0 (from 43.4)
-        done: false
-  - phase: Clarity Blur Alignment
-    tasks:
-      - text: Align Python clarity reference blur kernel size formula to match libblur (ceil(sigma*3)*2+1)
-        done: false
-      - text: Align Python reference border mode to BORDER_REPLICATE matching libblur EdgeMode::Clamp
-        done: false
-      - text: Verify clarity MAE drops to 0.0 (from 1.04)
-        done: false
-  - phase: Pyramid Remap Rename and Cleanup
-    tasks:
-      - text: Rename local_laplacian() to pyramid_detail_remap() in filters.rs and all callers
-        done: false
-      - text: Update docstrings to remove Paris et al. 2011 citation, describe actual algorithm
-        done: false
-      - text: Remove local_laplacian_vs_vips test (wrong algorithm comparison)
-        done: false
-      - text: Update REFERENCE.md with correct references and PASS status for all 3 operations
-        done: false
-      - text: Verify all tests pass after rename (lib tests, parity tests, reference audit)
-        done: false
+- phase: Dehaze Reference Fix
+  tasks:
+  - text: Update dehaze Python reference to include cv2.ximgproc.guidedFilter refinement step
+    done: true
+  - text: Match guided filter parameters (radius, eps) between Python and our implementation
+    done: true
+  - text: Verify dehaze MAE drops below 1.0 (from 43.4)
+    done: true
+- phase: Clarity Blur Alignment
+  tasks:
+  - text: Align Python clarity reference blur kernel size formula to match libblur (ceil(sigma*3)*2+1)
+    done: true
+  - text: Align Python reference border mode to BORDER_REPLICATE matching libblur EdgeMode::Clamp
+    done: true
+  - text: Verify clarity MAE drops to 0.0 (from 1.04)
+    done: true
+- phase: Pyramid Remap Rename and Cleanup
+  tasks:
+  - text: Rename local_laplacian() to pyramid_detail_remap() in filters.rs and all callers
+    done: true
+  - text: Update docstrings to remove Paris et al. 2011 citation, describe actual algorithm
+    done: true
+  - text: Remove local_laplacian_vs_vips test (wrong algorithm comparison)
+    done: true
+  - text: Update REFERENCE.md with correct references and PASS status for all 3 operations
+    done: true
+  - text: Verify all tests pass after rename (lib tests, parity tests, reference audit)
+    done: true
 extra: {}
