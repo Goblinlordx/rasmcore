@@ -1,0 +1,57 @@
+id: hevc-deblock-fix_20260329070000Z
+title: HEVC Deblocking Filter Fix — P-Array Reversal + dp3/dq3
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Fix two deblocking bugs: (1) p.reverse() inverts p-array indexing relative to the HEVC spec formulas, causing
+    corrections to flow in wrong direction at CTU boundaries (1021 affected pixels). (2) dp3/dq3 use same row as dp0/dq0 instead
+    of row 3. These are the last obstacles to byte-exact Y plane output.'
+  context: 'All CABAC decode, coefficient assembly, dequant, IDCT, and prediction are verified correct. Y plane is byte-exact
+    for CTU(0,0) of gradient. The remaining 14126 Y diffs are caused by the deblocking filter applying corrections in the
+    wrong direction: at x=31 pixel decreases by 1 instead of increasing, at x=32 increases instead of decreasing. Root cause:
+    p.reverse() in filter.rs inverts the p-array so p[0] becomes the farthest sample instead of the closest to the boundary.'
+  codebase_analysis: 'File: crates/rasmcore-hevc/src/filter.rs. Bug 1 at lines 199/217 (vertical) and 273/275 (horizontal):
+    p.reverse() flips the array after gathering samples. HEVC spec and libde265 v1.0.18 deblock.cc define p[0] as the sample
+    immediately adjacent to the boundary (closest), p[3] as farthest. Our code gathers in ascending x order then reverses
+    — correct in CONCEPT but the filter formulas were written assuming the pre-reversal order. Bug 2 at lines 78-81: dp3/dq3
+    computed identically to dp0/dq0 instead of using row 3 samples.'
+  acceptance_criteria:
+  - Y plane byte-exact for gradient_128x128_q22 (0 diffs in yuv_parity test)
+  - Y plane byte-exact for flat_64x64_q22 and q37 (no regression)
+  - All 9 RGB parity tests pass with PSNR > 25dB
+  - Fix cited with libde265 v1.0.18 deblock.cc reference
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: Chroma deblocking. Per-TU boundary strength (currently uses intra boundary for all).
+  technical_notes: "Two targeted fixes in filter.rs:\n\nFix 1 — P-array indexing (PRIMARY):\n  Remove p.reverse() and instead\
+    \ gather samples in the correct order:\n  p[0] = frame[edge - 1] (closest to boundary)\n  p[1] = frame[edge - 2]\n  p[2]\
+    \ = frame[edge - 3]\n  p[3] = frame[edge - 4] (farthest)\n  This matches libde265 v1.0.18 deblock.cc: p[k][i] = ptr[-i-1+k*stride].\n\
+    \  Apply same fix to both deblock_vertical_edge and deblock_horizontal_edge.\n\nFix 2 — dp3/dq3 strong filter decision:\n\
+    \  Currently dp3 = dp0 (same formula). Must use row 3 samples:\n  dp3 = abs(p_row3[2] - 2*p_row3[1] + p_row3[0])\n  This\
+    \ requires expanding the sample window to include row 3 data.\n  Ref: libde265 v1.0.18 deblock.cc — dp3 uses p[3][2]-2*p[3][1]+p[3][0]."
+plan: []
+extra: {}
+plan:
+  - phase: Fix P-Array Indexing
+    tasks:
+      - text: "Fix deblock_vertical_edge: remove p.reverse() and gather p[0..3] in correct order (closest to farthest from boundary). Cite libde265 v1.0.18 deblock.cc."
+        done: false
+      - text: "Fix deblock_horizontal_edge: same p-array fix for horizontal edges."
+        done: false
+      - text: "Run yuv_parity tests after p-array fix — check if gradient Y diffs decrease"
+        done: false
+  - phase: Fix dp3/dq3
+    tasks:
+      - text: "Fix use_strong_filter dp3/dq3 to use row 3 samples instead of duplicating row 0. Cite libde265 v1.0.18 deblock.cc."
+        done: false
+      - text: "Run yuv_parity tests after dp3/dq3 fix"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "yuv_parity_gradient_128x128_q22 passes (0 Y diffs)"
+        done: false
+      - text: "All 9 RGB parity tests pass with PSNR > 25dB"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test passes"
+        done: false
