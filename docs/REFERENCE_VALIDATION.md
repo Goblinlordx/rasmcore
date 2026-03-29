@@ -99,8 +99,9 @@ for per-filter details including alignment notes.
 | blend Screen | numpy W3C CSS L1 | 2.4.3 |
 | bilateral filter | OpenCV `bilateralFilter` | 4.13.0 |
 | brightness(0) | Self identity | N/A |
-| histogram match (gray) | Python CDF inversion (f64) | Pure Python |
-| histogram match (RGB) | Python CDF inversion (f64) | Pure Python |
+| histogram match (gray) | scikit-image `match_histograms` | 0.26.0 |
+| histogram match (RGB) | scikit-image `match_histograms` | 0.26.0 |
+| histogram match (64x64) | scikit-image `match_histograms` | 0.26.0 |
 
 ### Inpainting — Telea + Navier-Stokes
 
@@ -125,18 +126,25 @@ average, no gradient correction) is unaffected and achieves exact match.
 
 | Test Case | Pixels | Reference | Result |
 |-----------|--------|-----------|--------|
-| identity_ramp (gray, 0-255) | 256 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
-| dark_to_bright (gray, 0-99 → 155-254) | 100 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
-| uniform_to_gaussian (gray, random) | 1024 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
-| rgb_dark_to_bright (3-channel) | 192 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
+| identity_ramp (gray, 0-255) | 256 | scikit-image 0.26.0 | **Pixel-exact** (0 diff) |
+| dark_to_bright (gray, 0-99 to 155-254) | 100 | scikit-image 0.26.0 | **Pixel-exact** (0 diff) |
+| uniform_to_gaussian (gray, random 1024px) | 1024 | scikit-image 0.26.0 | **Pixel-exact** (0 diff) |
+| rgb_dark_to_bright (3-channel 8x8) | 192 | scikit-image 0.26.0 | **Pixel-exact** (0 diff) |
+| gray_64x64_random (realistic histogram) | 4096 | scikit-image 0.26.0 | **Pixel-exact** (0 diff) |
 
-**Algorithm:** Standard CDF inversion mapping. For each source intensity, find
-the target intensity with the nearest normalized CDF value. The algorithm is
-deterministic (integer histograms → f64 CDFs → nearest-value LUT search),
-so exact match with any reference using the same algorithm is expected and proven.
+**Algorithm:** CDF interpolation matching scikit-image's `_match_cumulative_cdf`:
+(1) compute source CDF over all 256 bins, (2) collect non-zero target bins + CDF,
+(3) linear interpolation (`np.interp` equivalent) to map source CDF to target values,
+(4) truncation (floor) to uint8 matching numpy's `astype(uint8)` behavior.
 
-**Reference:** `tests/fixtures/scripts/histogram_match_reference.py` (pure Python,
-no numpy dependency). Reference data: `tests/fixtures/generated/histogram_match_reference.json`.
+**Initial implementation used nearest-neighbor CDF lookup and rounding**, which
+diverged from scikit-image by +-1 on ~42% of pixels. Root cause: scikit-image uses
+`np.interp` (linear interpolation) + `astype(uint8)` (truncation), while our initial
+version used argmin (nearest neighbor) + `round()`. Fixed to match scikit-image exactly.
+
+**Reference:** scikit-image 0.26.0 (`skimage.exposure.match_histograms`), numpy 2.4.3.
+Generator: `tests/fixtures/scripts/histogram_match_reference.py`.
+Data: `tests/fixtures/generated/histogram_match_reference.json`.
 
 ### Deterministic (MAE < 0.1, max_err = 1)
 
@@ -253,6 +261,7 @@ tests/fixtures/.venv/bin/pip install numpy==2.4.3 Pillow==12.1.1 opencv-python-h
 | numpy | 2.4.3 | Formula reference (sepia, blend modes, gamma) | f64 — gold standard |
 | OpenCV | 4.13.0 | Spatial filters, bit-depth conversion, bilateral, CLAHE | Native bit depth |
 | Pillow | 12.1.1 | 8-bit median filter, format I/O only (see deficiencies above) | 8-bit only |
+| scikit-image | 0.26.0 | Histogram matching (`match_histograms`) | Native bit depth |
 
 ### System Tools
 
