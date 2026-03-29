@@ -5,70 +5,96 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Port libwebp's precalculated residual cost tables and rate estimation
+  summary: 'Port libwebp''s precalculated residual cost tables and rate estimation
+
     functions to replace our per-coefficient approximation with exact costs.
-  context: |
-    Our estimate_block_bits computes token costs per-coefficient using
+
+    '
+  context: 'Our estimate_block_bits computes token costs per-coefficient using
+
     probability lookups and a linear approximation of -log2. libwebp
+
     precomputes VP8LevelCost tables (per coefficient level, per context)
+
     from the probability tables, then VP8GetResidualCost sums from the table.
+
     This produces different rate estimates that affect all mode decisions.
-  codebase_analysis: |
-    libwebp cost_enc.c:
+
+    '
+  codebase_analysis: 'libwebp cost_enc.c:
+
     - VP8CalculateLevelCosts (line ~60): precomputes cost tables from proba
+
     - VP8GetResidualCost: sums precalculated costs for a coefficient sequence
+
     - VP8GetCostLuma16/Luma4/UV: rate for full luma/chroma using residual cost
+
     - VP8BitCost uses VP8EntropyCost[256] table (same 256-unit scale as ours)
 
+
     Our code rdo.rs:
+
     - estimate_token_cost: per-coefficient, uses prob_cost approximation
+
     - estimate_block_bits: sums estimate_token_cost per block
+
     - prob_cost: linear approximation ((256-prob)*256/256) instead of log2 table
 
+
     Key difference: libwebp uses exact -log2 via VP8EntropyCost lookup table.
+
     Our prob_cost uses a linear approximation that diverges significantly for
+
     extreme probabilities.
+
+    '
   acceptance_criteria:
-    - VP8EntropyCost[256] table ported from libwebp dsp/cost.c
-    - VP8BitCost using exact table lookup (not linear approximation)
-    - VP8CalculateLevelCosts precomputing per-level costs from probability tables
-    - VP8GetResidualCost matching libwebp exactly
-    - VP8GetCostLuma16/Luma4/UV matching libwebp exactly
-    - estimate_block_bits replaced with libwebp-exact rate estimation
-    - Quality ratio >= 0.90x cwebp on mixed content
-    - All parity tests pass
-  out_of_scope: |
-    Trellis quantization in mode evaluation. Context-dependent I4 costs (Track 2).
-  technical_notes: |
-    Read cost_enc.c and cost_enc.h for the full cost computation pipeline.
+  - VP8EntropyCost[256] table ported from libwebp dsp/cost.c
+  - VP8BitCost using exact table lookup (not linear approximation)
+  - VP8CalculateLevelCosts precomputing per-level costs from probability tables
+  - VP8GetResidualCost matching libwebp exactly
+  - VP8GetCostLuma16/Luma4/UV matching libwebp exactly
+  - estimate_block_bits replaced with libwebp-exact rate estimation
+  - Quality ratio >= 0.90x cwebp on mixed content
+  - All parity tests pass
+  out_of_scope: 'Trellis quantization in mode evaluation. Context-dependent I4 costs (Track 2).
+
+    '
+  technical_notes: 'Read cost_enc.c and cost_enc.h for the full cost computation pipeline.
+
     Read dsp/cost.c for VP8EntropyCost[256] table.
 
+
     Implementation: add VP8EntropyCost as a const table, implement VP8BitCost
+
     as a table lookup, implement VP8CalculateLevelCosts to precompute level
+
     costs, then implement VP8GetResidualCost using the precomputed tables.
+
     Replace prob_cost and estimate_token_cost with the exact versions.
+
+    '
 plan:
-  - phase: Cost Tables
-    tasks:
-      - text: Port VP8EntropyCost[256] table from libwebp dsp/cost.c
-        done: false
-      - text: Implement VP8BitCost as exact table lookup
-        done: false
-      - text: Port VP8CalculateLevelCosts precomputation from cost_enc.c
-        done: false
-  - phase: Rate Functions
-    tasks:
-      - text: Port VP8GetResidualCost from cost_enc.c
-        done: false
-      - text: Port VP8GetCostLuma16/Luma4/UV using VP8GetResidualCost
-        done: false
-      - text: Replace estimate_block_bits with libwebp-exact version
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Quality ratio >= 0.90x cwebp on photo content
-        done: false
-      - text: All parity tests pass
-        done: false
+- phase: Cost Tables
+  tasks:
+  - text: Port VP8EntropyCost[256] table from libwebp dsp/cost.c
+    done: true
+  - text: Implement VP8BitCost as exact table lookup
+    done: true
+  - text: Port VP8CalculateLevelCosts precomputation from cost_enc.c
+    done: true
+- phase: Rate Functions
+  tasks:
+  - text: Port VP8GetResidualCost from cost_enc.c
+    done: true
+  - text: Port VP8GetCostLuma16/Luma4/UV using VP8GetResidualCost
+    done: true
+  - text: Replace estimate_block_bits with libwebp-exact version
+    done: true
+- phase: Validation
+  tasks:
+  - text: Quality ratio >= 0.90x cwebp on photo content
+    done: true
+  - text: All parity tests pass
+    done: true
 extra: {}
