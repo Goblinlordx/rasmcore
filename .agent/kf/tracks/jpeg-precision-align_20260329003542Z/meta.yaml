@@ -1,0 +1,8 @@
+title: JPEG Precision Alignment — LL&M DCT + Dithered Chroma Downsample
+status: pending
+type: feature
+approved: false
+created: '2026-03-29'
+updated: '2026-03-29'
+deps:
+- jpeg-trellis-csf-fix_20260329003541Z

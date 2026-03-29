@@ -1,0 +1,57 @@
+id: jpeg-precision-align_20260329003542Z
+title: JPEG Precision Alignment — LL&M DCT + Dithered Chroma Downsample
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Match mozjpeg precision in two areas: (1) replace direct matrix DCT with LL&M fast DCT (CONST_BITS=13, PASS1_BITS=2)
+    for bit-exact coefficient matching, (2) add alternating rounding bias to chroma downsample matching mozjpeg h2v2_downsample().'
+  context: 'After fixing CSF weighting and color precision (Track 1), remaining quality gap comes from: (1) DCT algorithm:
+    our direct O(N^3) matrix multiply with 14-bit table vs mozjpeg''s LL&M butterfly with CONST_BITS=13, PASS1_BITS=2. Different
+    intermediate rounding paths produce slightly different coefficients. (2) Chroma downsample: our simple truncating average
+    vs mozjpeg''s alternating bias (1,2,1,2...) that prevents systematic rounding bias.'
+  codebase_analysis: 'dct.rs: uses DCT_COS[8][8] lookup table with 14-bit precision, direct row/column multiply. Should replace
+    with LL&M from libjpeg-turbo jfdctint.c: 12 multiplies + 32 adds per 1-D pass, CONST_BITS=13, constants FIX_0_298631336=2446,
+    FIX_0_390180644=3196, etc. color.rs downsample(): uses sum/count integer truncation. Should add alternating bias: bias
+    starts at 1, xor with 3 each sample, added before >>2.'
+  acceptance_criteria:
+  - Forward DCT uses LL&M algorithm with CONST_BITS=13, PASS1_BITS=2
+  - DCT output matches libjpeg-turbo jfdctint.c for known test vectors
+  - Chroma downsample uses alternating rounding bias
+  - Quality ratio vs mozjpeg >= 0.98 at all quality levels
+  - All existing tests pass
+  out_of_scope: SIMD DCT (separate speed parity track). Smooth downsampling (smoothing_factor > 0). NEON/SSE intrinsics.
+  technical_notes: 'LL&M DCT: port jfdctint.c from libjpeg-turbo. The algorithm uses butterfly operations: stage 1 (even/odd
+    split), stage 2 (even part uses FIX_0_541196100=4433 rotation), stage 3 (odd part uses 4 multiplies). Output is left scaled
+    by factor of 8 — but our quantization already handles this (quantize divides by Q, mozjpeg divides by Q*8). Need to ensure
+    output scaling matches. Chroma dithered rounding: in downsample loop, maintain bias variable starting at 1, toggle via
+    bias ^= 3 after each pixel. Replace (sum/count) with ((sum + bias) >> 2) for 2x2 case.'
+plan:
+  - phase: LL&M Forward DCT
+    tasks:
+      - text: Implement LL&M integer DCT from libjpeg-turbo jfdctint.c (CONST_BITS=13, PASS1_BITS=2)
+        done: false
+      - text: Verify output scaling - LL&M output is left-shifted by 3 (factor of 8), adjust quantization accordingly
+        done: false
+      - text: Unit test LL&M DCT output matches libjpeg-turbo for known test vectors (flat block, gradient, checkerboard)
+        done: false
+      - text: Replace existing matrix DCT with LL&M in forward_dct function
+        done: false
+  - phase: Dithered Chroma Downsample
+    tasks:
+      - text: Add alternating bias to h2v2 downsample - bias starts at 1, toggles via xor 3 after each pixel
+        done: false
+      - text: Add alternating bias to h2v1 downsample (horizontal only)
+        done: false
+      - text: Unit test verifying dithered rounding produces different values than truncation for biased input
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Run mozjpeg quality benchmark and verify quality ratio >= 0.98 at all quality levels
+        done: false
+      - text: All existing lib and parity tests pass
+        done: false
+      - text: DCT inverse roundtrip test still passes (forward LL&M + existing inverse)
+        done: false
+extra: {}
