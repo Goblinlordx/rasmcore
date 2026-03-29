@@ -121,6 +121,33 @@ impl NodeGraph {
 }
 
 /// Calculate bytes per pixel for a given format.
+/// Extract a sub-rectangle from a pixel buffer.
+///
+/// Given `src_pixels` covering `src_rect`, extracts the pixels for `sub_rect`.
+/// Both rects must be in the same coordinate space, and `sub_rect` must be
+/// contained within `src_rect`. Used by tiled node implementations to crop
+/// the overlap padding after applying a filter.
+pub fn crop_region(src_pixels: &[u8], src_rect: Rect, sub_rect: Rect, bpp: u32) -> Vec<u8> {
+    debug_assert!(
+        src_rect.contains(&sub_rect),
+        "sub_rect {sub_rect:?} not within src_rect {src_rect:?}"
+    );
+    if src_rect == sub_rect {
+        return src_pixels.to_vec();
+    }
+    let src_stride = src_rect.width as usize * bpp as usize;
+    let sub_stride = sub_rect.width as usize * bpp as usize;
+    let x_off = (sub_rect.x - src_rect.x) as usize * bpp as usize;
+    let y_off = (sub_rect.y - src_rect.y) as usize;
+
+    let mut out = Vec::with_capacity(sub_rect.height as usize * sub_stride);
+    for row in 0..sub_rect.height as usize {
+        let start = (y_off + row) * src_stride + x_off;
+        out.extend_from_slice(&src_pixels[start..start + sub_stride]);
+    }
+    out
+}
+
 pub fn bytes_per_pixel(format: crate::domain::types::PixelFormat) -> u32 {
     use crate::domain::types::PixelFormat;
     match format {
@@ -257,5 +284,250 @@ mod tests {
 
         let p = g.request_region(dbl, Rect::new(0, 0, 5, 5)).unwrap();
         assert!(p.iter().all(|&v| v == 20));
+    }
+}
+
+#[cfg(test)]
+mod tiled_parity_tests {
+    use super::*;
+    use crate::domain::pipeline::nodes::filters::{
+        BlurNode, BrightnessNode, ContrastNode, SharpenNode,
+    };
+    use crate::domain::types::*;
+
+    /// Raw pixel source node for testing (no decode step).
+    struct RawSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+    }
+    impl RawSource {
+        fn new(pixels: Vec<u8>, info: ImageInfo) -> Self {
+            Self { pixels, info }
+        }
+    }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let bpp = bytes_per_pixel(self.info.format);
+            Ok(crop_region(
+                &self.pixels,
+                Rect::new(0, 0, self.info.width, self.info.height),
+                request,
+                bpp,
+            ))
+        }
+        fn overlap(&self) -> rasmcore_pipeline::Overlap {
+            rasmcore_pipeline::Overlap::zero()
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
+    }
+
+    fn gradient_pixels(w: u32, h: u32) -> Vec<u8> {
+        let mut px = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(((x * 255) / w) as u8);
+                px.push(((y * 255) / h) as u8);
+                px.push(128);
+                px.push(255);
+            }
+        }
+        px
+    }
+
+    fn stitch_tiles(tiles: &[(Rect, Vec<u8>)], full_w: u32, full_h: u32, bpp: u32) -> Vec<u8> {
+        let stride = full_w as usize * bpp as usize;
+        let mut out = vec![0u8; full_h as usize * stride];
+        for (rect, pixels) in tiles {
+            let tile_stride = rect.width as usize * bpp as usize;
+            for row in 0..rect.height as usize {
+                let dst_start = (rect.y as usize + row) * stride + rect.x as usize * bpp as usize;
+                let src_start = row * tile_stride;
+                out[dst_start..dst_start + tile_stride]
+                    .copy_from_slice(&pixels[src_start..src_start + tile_stride]);
+            }
+        }
+        out
+    }
+
+    /// Core validation: full-image request must produce byte-identical output
+    /// to stitched tile requests. Zero tolerance.
+    fn assert_tiled_matches_full(graph_builder: impl Fn() -> (NodeGraph, u32, u32, u32, u32)) {
+        // Build graph and get full-image result
+        let (mut g, output_node, w, h, bpp) = graph_builder();
+        let full = g
+            .request_region(output_node, Rect::new(0, 0, w, h))
+            .unwrap();
+
+        // Build fresh graph and request as 4 quadrant tiles
+        let (mut g2, output_node2, _, _, _) = graph_builder();
+        let hw = w / 2;
+        let hh = h / 2;
+        let tiles = vec![
+            (
+                Rect::new(0, 0, hw, hh),
+                g2.request_region(output_node2, Rect::new(0, 0, hw, hh))
+                    .unwrap(),
+            ),
+            (
+                Rect::new(hw, 0, w - hw, hh),
+                g2.request_region(output_node2, Rect::new(hw, 0, w - hw, hh))
+                    .unwrap(),
+            ),
+            (
+                Rect::new(0, hh, hw, h - hh),
+                g2.request_region(output_node2, Rect::new(0, hh, hw, h - hh))
+                    .unwrap(),
+            ),
+            (
+                Rect::new(hw, hh, w - hw, h - hh),
+                g2.request_region(output_node2, Rect::new(hw, hh, w - hw, h - hh))
+                    .unwrap(),
+            ),
+        ];
+
+        let stitched = stitch_tiles(&tiles, w, h, bpp);
+
+        assert_eq!(
+            full.len(),
+            stitched.len(),
+            "buffer length mismatch: full={} stitched={}",
+            full.len(),
+            stitched.len()
+        );
+        assert_eq!(
+            full,
+            stitched,
+            "TILED OUTPUT DIFFERS FROM FULL-IMAGE OUTPUT. \
+             First diff at byte {}",
+            full.iter()
+                .zip(stitched.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(0)
+        );
+    }
+
+    #[test]
+    fn tiled_parity_point_op() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let bright = g.add_node(Box::new(BrightnessNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                0.2,
+            )));
+            (g, bright, w, h, 4)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_blur() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let blur = g.add_node(Box::new(BlurNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                2.0,
+            )));
+            (g, blur, w, h, 4)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_sharpen() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let sharp = g.add_node(Box::new(SharpenNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                1.5,
+            )));
+            (g, sharp, w, h, 4)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_contrast() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let contrast = g.add_node(Box::new(ContrastNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                0.5,
+            )));
+            (g, contrast, w, h, 4)
+        });
     }
 }

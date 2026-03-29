@@ -2,9 +2,60 @@
 
 use crate::domain::error::ImageError;
 use crate::domain::filters;
-use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
+use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};
 use crate::domain::types::*;
 use rasmcore_pipeline::{Overlap, Rect};
+
+/// Tiled execution helper: expand request by overlap, fetch upstream, apply filter, crop back.
+///
+/// This is the standard pattern for all local-neighborhood filter nodes.
+/// For Overlap::zero() nodes, no expansion or cropping occurs.
+fn tiled_filter<F>(
+    request: Rect,
+    overlap: &Overlap,
+    source_info: &ImageInfo,
+    upstream: u32,
+    upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    apply: F,
+) -> Result<Vec<u8>, ImageError>
+where
+    F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
+{
+    let bpp = bytes_per_pixel(source_info.format);
+    let upstream_rect = request.expand(overlap, source_info.width, source_info.height);
+    let src_pixels = upstream_fn(upstream, upstream_rect)?;
+
+    let region_info = ImageInfo {
+        width: upstream_rect.width,
+        height: upstream_rect.height,
+        ..*source_info
+    };
+
+    let filtered = apply(&src_pixels, &region_info)?;
+
+    if upstream_rect == request {
+        Ok(filtered)
+    } else {
+        let sub = Rect::new(
+            request.x - upstream_rect.x,
+            request.y - upstream_rect.y,
+            request.width,
+            request.height,
+        );
+        let out_rect = Rect::new(0, 0, upstream_rect.width, upstream_rect.height);
+        Ok(crop_region(&filtered, out_rect, sub, bpp))
+    }
+}
+
+/// Build ImageInfo for a tile region (same format/color_space, tile dimensions).
+#[inline]
+fn tile_info(request: Rect, source: &ImageInfo) -> ImageInfo {
+    ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*source
+    }
+}
 
 macro_rules! simple_filter_node {
     ($name:ident, $param_type:ty, $fn_name:ident, $overlap_val:expr, $doc:expr) => {
@@ -32,12 +83,43 @@ macro_rules! simple_filter_node {
 
             fn compute_region(
                 &self,
-                _request: Rect,
+                request: Rect,
                 upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
             ) -> Result<Vec<u8>, ImageError> {
-                let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-                let src_pixels = upstream_fn(self.upstream, full_src)?;
-                filters::$fn_name(&src_pixels, &self.source_info, self.param)
+                let overlap = self.overlap();
+                let bounds_w = self.source_info.width;
+                let bounds_h = self.source_info.height;
+                let bpp = bytes_per_pixel(self.source_info.format);
+
+                // Expand request by overlap, clamped to image bounds
+                let upstream_rect = request.expand(&overlap, bounds_w, bounds_h);
+
+                let src_pixels = upstream_fn(self.upstream, upstream_rect)?;
+
+                // Build info for the upstream region (may be larger than request)
+                let region_info = ImageInfo {
+                    width: upstream_rect.width,
+                    height: upstream_rect.height,
+                    ..self.source_info
+                };
+
+                // Apply filter to the fetched region
+                let filtered = filters::$fn_name(&src_pixels, &region_info, self.param)?;
+
+                // Crop back to the originally requested rect (remove overlap padding)
+                if upstream_rect == request {
+                    Ok(filtered)
+                } else {
+                    // The request rect relative to the upstream_rect origin
+                    let sub = Rect::new(
+                        request.x - upstream_rect.x,
+                        request.y - upstream_rect.y,
+                        request.width,
+                        request.height,
+                    );
+                    let out_rect = Rect::new(0, 0, upstream_rect.width, upstream_rect.height);
+                    Ok(crop_region(&filtered, out_rect, sub, bpp))
+                }
             }
 
             fn overlap(&self) -> Overlap {
@@ -117,18 +199,20 @@ impl ImageNode for ConvolveNode {
     }
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src = upstream_fn(self.upstream, full)?;
-        filters::convolve(
-            &src,
+        let kernel = &self.kernel;
+        let kw = self.kw;
+        let kh = self.kh;
+        let divisor = self.divisor;
+        tiled_filter(
+            request,
+            &self.overlap(),
             &self.source_info,
-            &self.kernel,
-            self.kw,
-            self.kh,
-            self.divisor,
+            self.upstream,
+            upstream_fn,
+            |px, info| filters::convolve(px, info, kernel, kw, kh, divisor),
         )
     }
     fn overlap(&self) -> Overlap {
@@ -162,12 +246,18 @@ impl ImageNode for MedianNode {
     }
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src = upstream_fn(self.upstream, full)?;
-        filters::median(&src, &self.source_info, self.radius)
+        let radius = self.radius;
+        tiled_filter(
+            request,
+            &self.overlap(),
+            &self.source_info,
+            self.upstream,
+            upstream_fn,
+            |px, info| filters::median(px, info, radius),
+        )
     }
     fn overlap(&self) -> Overlap {
         Overlap::uniform(self.radius)
@@ -201,12 +291,37 @@ impl ImageNode for SobelNode {
     }
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src = upstream_fn(self.upstream, full)?;
-        filters::sobel(&src, &self.source_info)
+        let overlap = self.overlap();
+        let bpp = bytes_per_pixel(self.source_info.format);
+        let ur = request.expand(&overlap, self.source_info.width, self.source_info.height);
+        let src = upstream_fn(self.upstream, ur)?;
+        {
+            let ri = ImageInfo {
+                width: ur.width,
+                height: ur.height,
+                ..self.source_info
+            };
+            let f = filters::sobel(&src, &ri)?;
+            if ur == request {
+                Ok(f)
+            } else {
+                let sub = Rect::new(
+                    request.x - ur.x,
+                    request.y - ur.y,
+                    request.width,
+                    request.height,
+                );
+                Ok(crop_region(
+                    &f,
+                    Rect::new(0, 0, ur.width, ur.height),
+                    sub,
+                    1,
+                ))
+            }
+        }
     }
     fn overlap(&self) -> Overlap {
         Overlap::uniform(1)
@@ -244,11 +359,11 @@ impl ImageNode for CannyNode {
     }
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src = upstream_fn(self.upstream, full)?;
+        // tiled: use request directly
+        let src = upstream_fn(self.upstream, request)?;
         filters::canny(
             &src,
             &self.source_info,
@@ -298,12 +413,12 @@ impl ImageNode for PointOpNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
         use crate::domain::point_ops;
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
         // Auto-dispatch: 16-bit formats use 65536-entry LUT, 8-bit use 256-entry
         if matches!(
             self.source_info.format,
@@ -368,12 +483,12 @@ impl ImageNode for FusedLutNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
         use crate::domain::point_ops;
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
 
         if matches!(
             self.source_info.format,
@@ -439,11 +554,11 @@ impl ImageNode for ColorOpNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
         let clut = self.op.to_clut(crate::domain::color_lut::DEFAULT_GRID_SIZE);
         clut.apply(&src_pixels, &self.source_info)
     }
@@ -519,11 +634,11 @@ impl ImageNode for FusedClutNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
         self.clut.apply(&src_pixels, &self.source_info)
     }
 
@@ -560,11 +675,11 @@ impl ImageNode for GrayscaleNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
         let result = filters::grayscale(&src_pixels, &self.source_info)?;
         Ok(result.pixels)
     }
@@ -603,11 +718,11 @@ macro_rules! histogram_node {
 
             fn compute_region(
                 &self,
-                _request: Rect,
+                request: Rect,
                 upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
             ) -> Result<Vec<u8>, ImageError> {
-                let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-                let src_pixels = upstream_fn(self.upstream, full_src)?;
+                // tiled: use request directly
+                let src_pixels = upstream_fn(self.upstream, request)?;
                 crate::domain::histogram::$fn_name(&src_pixels, &self.source_info)
             }
 
@@ -691,22 +806,19 @@ impl ImageNode for BitDepthNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
 
         if self.is_noop() {
             return Ok(src_pixels);
         }
 
         let target = self.target_format();
-        let result = crate::domain::transform::convert_format(
-            &src_pixels,
-            &self.source_info,
-            target,
-        )?;
+        let result =
+            crate::domain::transform::convert_format(&src_pixels, &self.source_info, target)?;
         Ok(result.pixels)
     }
 
@@ -744,11 +856,11 @@ impl ImageNode for ContrastStretchNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
         crate::domain::histogram::contrast_stretch(
             &src_pixels,
             &self.source_info,
@@ -805,11 +917,11 @@ impl ImageNode for SmartCropNode {
 
     fn compute_region(
         &self,
-        _request: Rect,
+        request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
-        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        // tiled: use request directly
+        let src_pixels = upstream_fn(self.upstream, request)?;
         let result = crate::domain::smart_crop::smart_crop(
             &src_pixels,
             &self.source_info,
