@@ -477,6 +477,16 @@ pub fn sepia(pixels: &[u8], info: &ImageInfo, intensity: f32) -> Result<Vec<u8>,
     apply_color_op(pixels, info, &ColorOp::Sepia(intensity.clamp(0.0, 1.0)))
 }
 
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct ColorizeParams {
+    /// Target color to blend toward
+    #[param(hint = "rc.color_rgb")]
+    pub target: [u8; 3],
+    /// Blend amount (0=none, 1=full tint)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub amount: f32,
+}
+
 /// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
 #[rasmcore_macros::register_filter(name = "colorize", category = "color")]
 pub fn colorize(

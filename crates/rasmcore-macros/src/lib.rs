@@ -249,6 +249,7 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
         let mut max_s = String::from("null");
         let mut step_s = String::from("null");
         let mut default_s = String::new();
+        let mut hint_s = String::new();
 
         for attr in &field.attrs {
             if !attr.path().is_ident("param") { continue; }
@@ -268,6 +269,7 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
                     "max" => max_s = val,
                     "step" => step_s = val,
                     "default" => default_s = val,
+                    "hint" => hint_s = val,
                     _ => {}
                 }
                 Ok(())
@@ -306,6 +308,7 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
                 step: #step_s.to_string(),
                 default_val: #default_s.to_string(),
                 label: #label.to_string(),
+                hint: #hint_s.to_string(),
             }
         });
     }

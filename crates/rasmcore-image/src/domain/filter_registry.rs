@@ -274,6 +274,7 @@ pub struct ParamDescriptorJson {
     pub step: String,
     pub default_val: String,
     pub label: String,
+    pub hint: String,
 }
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────

@@ -154,10 +154,15 @@ fn main() {
         if let Some(fields) = params {
             for (j, field) in fields.iter().enumerate() {
                 if j > 0 { manifest.push(','); }
+                let hint_json = if field.hint.is_empty() {
+                    String::new()
+                } else {
+                    format!(",\"hint\":\"{}\"", field.hint)
+                };
                 manifest.push_str(&format!(
-                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\"}}",
+                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\"{}}}",
                     field.name, field.param_type,
-                    field.min, field.max, field.step, field.default_val, field.label
+                    field.min, field.max, field.step, field.default_val, field.label, hint_json
                 ));
             }
             if !fields.is_empty() { manifest.push('\n'); manifest.push_str("      "); }
@@ -306,6 +311,7 @@ struct ParamField {
     step: String,
     default_val: String,
     label: String,
+    hint: String,
 }
 
 fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String, Vec<ParamField>> {
@@ -332,7 +338,7 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                 // Parse fields until closing brace
                 let mut fields = Vec::new();
                 let mut doc_comment = String::new();
-                let mut param_attrs: (String, String, String, String) = ("null".into(), "null".into(), "null".into(), String::new());
+                let mut param_attrs: (String, String, String, String, String) = ("null".into(), "null".into(), "null".into(), String::new(), String::new());
                 j += 1;
                 while j < lines.len() {
                     let fl = lines[j].trim();
@@ -353,6 +359,7 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                                     "max" => param_attrs.1 = v.to_string(),
                                     "step" => param_attrs.2 = v.to_string(),
                                     "default" => param_attrs.3 = v.to_string(),
+                                    "hint" => param_attrs.4 = v.to_string(),
                                     _ => {}
                                 }
                             }
@@ -376,9 +383,10 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                                 step: param_attrs.2.clone(),
                                 default_val: default,
                                 label: doc_comment.clone(),
+                                hint: param_attrs.4.clone(),
                             });
                             doc_comment.clear();
-                            param_attrs = ("null".into(), "null".into(), "null".into(), String::new());
+                            param_attrs = ("null".into(), "null".into(), "null".into(), String::new(), String::new());
                         }
                     }
                     j += 1;
