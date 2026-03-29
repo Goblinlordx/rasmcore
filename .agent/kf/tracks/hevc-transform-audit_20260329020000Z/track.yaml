@@ -1,0 +1,65 @@
+id: hevc-transform-audit_20260329020000Z
+title: HEVC Transform/Dequant Audit — Coefficient-Level Validation vs libde265
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Investigate and fix the 8dB PSNR gap in residual reconstruction. CABAC decode is bit-exact (532 bins match) but
+    pixel output diverges — CTU(0,0) achieves 21.9dB vs reference 99.9dB despite identical CABAC. Must trace dequantized coefficients
+    and IDCT output position-by-position against libde265 v1.0.18.
+  context: Previous tracks verified CABAC is bit-exact, prediction modes are resolved correctly, and WPP context save/restore
+    works. Per-CTU analysis shows CTU(0,0) at 21.9dB vs reference 99.9dB. The first CTU has 7 non-zero frequency coefficients
+    (confirmed in libde265 trace). Dequant formula verified correct (both produce -22 for level -1 at QP=19). The bug is in
+    how coefficients flow through dequant→IDCT→spatial output.
+  codebase_analysis: 'Files: crates/rasmcore-hevc/src/transform/dequant.rs (verified formulas correct), crates/rasmcore-dct/src/dct32.rs
+    (IDCT 32x32 — matrix coefficients and shift values need element-by-element verification against libde265 v1.0.18 transform.cc),
+    crates/rasmcore-hevc/src/syntax.rs decode_residual_coeffs (coefficient position assembly — positions within 32x32 grid
+    may be wrong), crates/rasmcore-hevc/src/frame.rs reconstruct_cu (pred+residual addition). Reference trace at /tmp/de265_trace_grad_q22.txt.
+    libde265 built at /tmp/libde265-trace/.'
+  acceptance_criteria:
+  - gradient_128x128_q22 PSNR > 25dB
+  - checker_256x256_q22 PSNR > 25dB
+  - flat_64x64 q22/q37 unchanged at 48.1dB
+  - All fixes cited with libde265 v1.0.18 source location
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: CABAC context derivation (verified correct). Prediction modes (verified correct). WPP handling (implemented).
+    Chroma decode.
+  technical_notes: "Systematic coefficient-level debugging approach:\n\nPhase 1 — Instrumentation:\n  Add a debug mode that\
+    \ dumps per-CTU dequantized coefficient grids (32x32 values).\n  Compare against libde265 trace output for CTU(0,0) of\
+    \ gradient_128x128_q22.\n  This will reveal whether the bug is in dequant, coefficient positioning, or IDCT.\n\nPhase\
+    \ 2 — Targeted Fixes (based on Phase 1 findings):\n  Likely candidates based on investigation so far:\n  a) Coefficient\
+    \ position assembly in decode_residual_coeffs — the scan-order-to-grid\n     mapping may place coefficients at wrong (tx,ty)\
+    \ positions within the 32x32 TU\n  b) IDCT matrix coefficients in rasmcore-dct — need element-by-element comparison\n\
+    \     against libde265 v1.0.18 transform.cc fallback implementation\n  c) Intermediate precision — HEVC spec uses i32\
+    \ for dequantized coefficients\n     throughout the transform; check for i16 truncation anywhere in the chain\n\nPhase\
+    \ 3 — Validation:\n  Run all 9 parity tests. Gradient and checker must reach 25dB+."
+plan: []
+extra: {}
+plan:
+  - phase: Coefficient Tracing
+    tasks:
+      - text: "Add debug dump of dequantized 32x32 coefficient grid for CTU(0,0) of gradient_128x128_q22"
+        done: false
+      - text: "Extract libde265 dequantized coefficients for the same CTU from trace output"
+        done: false
+      - text: "Compare coefficient positions and values — identify first divergence"
+        done: false
+  - phase: Fix Identified Issues
+    tasks:
+      - text: "Fix coefficient positioning if scan-order-to-grid mapping is wrong"
+        done: false
+      - text: "Fix IDCT matrix coefficients if any differ from libde265 v1.0.18 transform.cc"
+        done: false
+      - text: "Fix any intermediate precision (i16 truncation) issues found"
+        done: false
+      - text: "Add post-IDCT spatial residual dump and compare against reference"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat 48.1dB"
+        done: false
+      - text: "All fixes cited with libde265 v1.0.18 source locations"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test passes"
+        done: false
