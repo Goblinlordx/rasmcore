@@ -745,3 +745,114 @@ fn undistort_matches_opencv() {
         "undistort: max_err={max_err} — must be pixel-exact with OpenCV"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Spatial Utilities — OpenCV Reference
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn pyr_down_matches_opencv() {
+    let py = venv_python();
+    eprintln!("=== pyrDown — OpenCV Reference ===");
+
+    let w = 64u32;
+    let h = 64u32;
+    let mut input = Vec::with_capacity((w * h) as usize);
+    for _y in 0..h {
+        for x in 0..w {
+            input.push(((x * 255) / w) as u8);
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let (ours, _) = filters::pyr_down(&input, &info).unwrap();
+
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         out=cv2.pyrDown(px,borderType=cv2.BORDER_REFLECT_101)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv pyrDown failed");
+    assert!(output.status.success(), "opencv pyrDown: {}", String::from_utf8_lossy(&output.stderr));
+
+    let mae = mean_absolute_error(&ours, &output.stdout);
+    let max_err = max_absolute_error(&ours, &output.stdout);
+    eprintln!("  pyrDown: MAE={mae:.4}, max_err={max_err}");
+    assert!(mae < 1.0, "pyrDown: MAE={mae:.4} — should be near-exact");
+}
+
+#[test]
+fn connected_components_matches_opencv() {
+    let py = venv_python();
+    eprintln!("=== Connected Components — OpenCV Reference ===");
+
+    // Create binary image with two blobs
+    let w = 32u32;
+    let h = 32u32;
+    let mut input = vec![0u8; (w * h) as usize];
+    // Blob 1: top-left 5x5
+    for y in 2..7 {
+        for x in 2..7 {
+            input[y * w as usize + x] = 255;
+        }
+    }
+    // Blob 2: bottom-right 5x5
+    for y in 20..25 {
+        for x in 20..25 {
+            input[y * w as usize + x] = 255;
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let (our_labels, our_count) = filters::connected_components(&input, &info, 8).unwrap();
+
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         n,labels=cv2.connectedComponents(px,connectivity=8)\n\
+         sys.stdout.buffer.write(np.array([n],dtype=np.uint32).tobytes())\n\
+         sys.stdout.buffer.write(labels.astype(np.uint32).tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv connectedComponents failed");
+    assert!(output.status.success(), "opencv CC: {}", String::from_utf8_lossy(&output.stderr));
+
+    // Parse OpenCV output: first 4 bytes = num_labels (including background)
+    let cv_count = u32::from_le_bytes(output.stdout[0..4].try_into().unwrap()) - 1; // subtract background
+    eprintln!("  connectedComponents: ours={our_count} labels, cv={cv_count} labels");
+    assert_eq!(our_count, cv_count, "component count must match OpenCV");
+}

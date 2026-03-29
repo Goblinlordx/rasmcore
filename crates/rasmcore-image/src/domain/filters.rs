@@ -2997,6 +2997,312 @@ pub fn retinex_msrcr(
     Ok(result)
 }
 
+// ─── Connected Component Labeling ─────────────────────────────────────────
+
+/// Connected component labeling on a binary (thresholded) grayscale image.
+///
+/// Returns a label map where each pixel has the label of its connected component
+/// (0 = background, 1..N = component labels). Matches `cv2.connectedComponents`.
+///
+/// `connectivity`: 4 or 8 (default 8).
+/// Input must be binary: 0 = background, non-zero = foreground.
+pub fn connected_components(
+    pixels: &[u8],
+    info: &ImageInfo,
+    connectivity: u32,
+) -> Result<(Vec<u32>, u32), ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "connected_components requires Gray8".into(),
+        ));
+    }
+    let w = info.width as usize;
+    let h = info.height as usize;
+
+    let mut labels = vec![0u32; w * h];
+    let mut parent = vec![0u32; w * h + 1]; // union-find
+    let mut next_label: u32 = 1;
+
+    // Initialize union-find
+    for i in 0..parent.len() {
+        parent[i] = i as u32;
+    }
+
+    fn find(parent: &mut [u32], mut x: u32) -> u32 {
+        while parent[x as usize] != x {
+            parent[x as usize] = parent[parent[x as usize] as usize]; // path compression
+            x = parent[x as usize];
+        }
+        x
+    }
+
+    fn union(parent: &mut [u32], a: u32, b: u32) {
+        let ra = find(parent, a);
+        let rb = find(parent, b);
+        if ra != rb {
+            parent[ra as usize] = rb;
+        }
+    }
+
+    // Pass 1: assign provisional labels
+    for y in 0..h {
+        for x in 0..w {
+            if pixels[y * w + x] == 0 {
+                continue; // background
+            }
+
+            let mut neighbors = Vec::with_capacity(4);
+
+            // Check neighbors based on connectivity
+            if y > 0 && pixels[(y - 1) * w + x] != 0 {
+                neighbors.push(labels[(y - 1) * w + x]); // above
+            }
+            if x > 0 && pixels[y * w + x - 1] != 0 {
+                neighbors.push(labels[y * w + x - 1]); // left
+            }
+            if connectivity == 8 {
+                if y > 0 && x > 0 && pixels[(y - 1) * w + x - 1] != 0 {
+                    neighbors.push(labels[(y - 1) * w + x - 1]); // above-left
+                }
+                if y > 0 && x + 1 < w && pixels[(y - 1) * w + x + 1] != 0 {
+                    neighbors.push(labels[(y - 1) * w + x + 1]); // above-right
+                }
+            }
+
+            if neighbors.is_empty() {
+                labels[y * w + x] = next_label;
+                next_label += 1;
+            } else {
+                let min_label = *neighbors.iter().min().unwrap();
+                labels[y * w + x] = min_label;
+                for &n in &neighbors {
+                    if n != min_label {
+                        union(&mut parent, n, min_label);
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 2: resolve labels
+    let mut label_map = vec![0u32; next_label as usize];
+    let mut num_labels: u32 = 0;
+    for y in 0..h {
+        for x in 0..w {
+            if labels[y * w + x] > 0 {
+                let root = find(&mut parent, labels[y * w + x]);
+                if label_map[root as usize] == 0 {
+                    num_labels += 1;
+                    label_map[root as usize] = num_labels;
+                }
+                labels[y * w + x] = label_map[root as usize];
+            }
+        }
+    }
+
+    Ok((labels, num_labels))
+}
+
+// ─── Flood Fill ───────────────────────────────────────────────────────────
+
+/// Flood fill from a seed point with configurable tolerance and connectivity.
+///
+/// Fills connected pixels within `tolerance` of the seed pixel's value with
+/// `new_val`. Returns the modified image and the number of pixels filled.
+///
+/// Matches `cv2.floodFill` behavior for grayscale images.
+pub fn flood_fill(
+    pixels: &[u8],
+    info: &ImageInfo,
+    seed_x: u32,
+    seed_y: u32,
+    new_val: u8,
+    tolerance: u8,
+    connectivity: u32,
+) -> Result<(Vec<u8>, u32), ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "flood_fill requires Gray8".into(),
+        ));
+    }
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let sx = seed_x as usize;
+    let sy = seed_y as usize;
+    if sx >= w || sy >= h {
+        return Err(ImageError::InvalidParameters("seed point out of bounds".into()));
+    }
+
+    let mut result = pixels.to_vec();
+    let seed_val = pixels[sy * w + sx];
+    let lo = seed_val.saturating_sub(tolerance);
+    let hi = seed_val.saturating_add(tolerance);
+
+    let mut visited = vec![false; w * h];
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back((sx, sy));
+    visited[sy * w + sx] = true;
+    let mut filled: u32 = 0;
+
+    while let Some((cx, cy)) = queue.pop_front() {
+        let val = pixels[cy * w + cx];
+        if val < lo || val > hi {
+            continue;
+        }
+        result[cy * w + cx] = new_val;
+        filled += 1;
+
+        // 4-connectivity neighbors
+        let neighbors: &[(i32, i32)] = if connectivity == 8 {
+            &[(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        } else {
+            &[(0, -1), (-1, 0), (1, 0), (0, 1)]
+        };
+
+        for &(dx, dy) in neighbors {
+            let nx = cx as i32 + dx;
+            let ny = cy as i32 + dy;
+            if nx >= 0 && nx < w as i32 && ny >= 0 && ny < h as i32 {
+                let ni = ny as usize * w + nx as usize;
+                if !visited[ni] {
+                    visited[ni] = true;
+                    let nval = pixels[ni];
+                    if nval >= lo && nval <= hi {
+                        queue.push_back((nx as usize, ny as usize));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((result, filled))
+}
+
+// ─── Image Pyramids ──────────────────────────────────────────────────────
+
+/// Gaussian pyramid downsample: blur + subsample by 2.
+///
+/// Applies a 5x5 Gaussian kernel then takes every other pixel.
+/// Output is (w+1)/2 x (h+1)/2. Matches `cv2.pyrDown`.
+pub fn pyr_down(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "pyr_down requires Gray8".into(),
+        ));
+    }
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ow = (w + 1) / 2;
+    let oh = (h + 1) / 2;
+
+    // 5x5 Gaussian kernel (1/256 normalization): [1,4,6,4,1] x [1,4,6,4,1]
+    let kernel_1d: [i32; 5] = [1, 4, 6, 4, 1];
+
+    // Horizontal pass → temp buffer
+    let mut temp = vec![0i32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum: i32 = 0;
+            for k in 0..5i32 {
+                let sx = reflect101((x as isize + k as isize - 2) as isize, w as isize) as usize;
+                sum += pixels[y * w + sx] as i32 * kernel_1d[k as usize];
+            }
+            temp[y * w + x] = sum;
+        }
+    }
+
+    // Vertical pass + subsample
+    let mut output = vec![0u8; ow * oh];
+    for oy in 0..oh {
+        for ox in 0..ow {
+            let x = ox * 2;
+            let y = oy * 2;
+            let mut sum: i32 = 0;
+            for k in 0..5i32 {
+                let sy = reflect101((y as isize + k as isize - 2) as isize, h as isize) as usize;
+                sum += temp[sy * w + x] * kernel_1d[k as usize];
+            }
+            // Normalize by 256 (16*16)
+            output[oy * ow + ox] = ((sum + 128) >> 8).clamp(0, 255) as u8;
+        }
+    }
+
+    let new_info = ImageInfo {
+        width: ow as u32,
+        height: oh as u32,
+        format: info.format,
+        color_space: info.color_space,
+    };
+    Ok((output, new_info))
+}
+
+/// Gaussian pyramid upsample: upsample by 2 + blur.
+///
+/// Inserts zeros between pixels, then applies 5x5 Gaussian * 4.
+/// Output is w*2 x h*2. Matches `cv2.pyrUp`.
+pub fn pyr_up(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "pyr_up requires Gray8".into(),
+        ));
+    }
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ow = w * 2;
+    let oh = h * 2;
+
+    // Upsample: insert zeros
+    let mut upsampled = vec![0i32; ow * oh];
+    for y in 0..h {
+        for x in 0..w {
+            upsampled[y * 2 * ow + x * 2] = pixels[y * w + x] as i32 * 4; // *4 to compensate for zero-insertion
+        }
+    }
+
+    // 5x5 Gaussian blur on upsampled
+    let kernel_1d: [i32; 5] = [1, 4, 6, 4, 1];
+
+    // Horizontal pass
+    let mut temp = vec![0i32; ow * oh];
+    for y in 0..oh {
+        for x in 0..ow {
+            let mut sum: i32 = 0;
+            for k in 0..5i32 {
+                let sx = reflect101((x as isize + k as isize - 2) as isize, ow as isize) as usize;
+                sum += upsampled[y * ow + sx] * kernel_1d[k as usize];
+            }
+            temp[y * ow + x] = sum;
+        }
+    }
+
+    // Vertical pass
+    let mut output = vec![0u8; ow * oh];
+    for y in 0..oh {
+        for x in 0..ow {
+            let mut sum: i32 = 0;
+            for k in 0..5i32 {
+                let sy = reflect101((y as isize + k as isize - 2) as isize, oh as isize) as usize;
+                sum += temp[sy * ow + x] * kernel_1d[k as usize];
+            }
+            output[y * ow + x] = ((sum + 128) >> 8).clamp(0, 255) as u8;
+        }
+    }
+
+    let new_info = ImageInfo {
+        width: ow as u32,
+        height: oh as u32,
+        format: info.format,
+        color_space: info.color_space,
+    };
+    Ok((output, new_info))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5320,5 +5626,125 @@ mod hdr_tests {
         assert_eq!(reflect101_safe(3, 2), 1);
         assert_eq!(reflect101_safe(-1, 1), 0);
         assert_eq!(reflect101_safe(5, 1), 0);
+    }
+}
+
+#[cfg(test)]
+mod spatial_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb }
+    }
+
+    #[test]
+    fn connected_components_two_blobs() {
+        // Two separate 2x2 white squares on black background
+        #[rustfmt::skip]
+        let px = vec![
+            255,255,  0,  0,  0,
+            255,255,  0,  0,  0,
+              0,  0,  0,  0,  0,
+              0,  0,  0,255,255,
+              0,  0,  0,255,255,
+        ];
+        let info = gray_info(5, 5);
+        let (labels, count) = connected_components(&px, &info, 8).unwrap();
+        assert_eq!(count, 2, "should find 2 components");
+        // Top-left and bottom-right should have different labels
+        assert_ne!(labels[0], labels[3 * 5 + 3]);
+        assert_ne!(labels[0], 0);
+        assert_ne!(labels[3 * 5 + 3], 0);
+        // Background should be 0
+        assert_eq!(labels[2 * 5 + 2], 0);
+    }
+
+    #[test]
+    fn connected_components_4_vs_8() {
+        // Diagonal connection: 4-connectivity = 2 components, 8-connectivity = 1
+        #[rustfmt::skip]
+        let px = vec![
+            255,  0,
+              0,255,
+        ];
+        let info = gray_info(2, 2);
+        let (_, count4) = connected_components(&px, &info, 4).unwrap();
+        let (_, count8) = connected_components(&px, &info, 8).unwrap();
+        assert_eq!(count4, 2, "4-connectivity: diagonal = separate");
+        assert_eq!(count8, 1, "8-connectivity: diagonal = connected");
+    }
+
+    #[test]
+    fn flood_fill_fills_region() {
+        #[rustfmt::skip]
+        let px = vec![
+            100,100,100,  0,200,
+            100,100,100,  0,200,
+            100,100,100,  0,200,
+        ];
+        let info = gray_info(5, 3);
+        let (result, filled) = flood_fill(&px, &info, 1, 1, 50, 0, 4).unwrap();
+        assert_eq!(filled, 9, "should fill 3x3 region of value 100");
+        assert_eq!(result[0], 50);
+        assert_eq!(result[4], 200); // untouched
+        assert_eq!(result[3], 0);   // barrier untouched
+    }
+
+    #[test]
+    fn flood_fill_with_tolerance() {
+        let px = vec![100, 102, 105, 110, 200];
+        let info = gray_info(5, 1);
+        let (result, filled) = flood_fill(&px, &info, 0, 0, 50, 5, 4).unwrap();
+        // Tolerance 5 from seed=100: fills 100, 102, 105 (all within ±5)
+        assert_eq!(filled, 3);
+        assert_eq!(result[0], 50);
+        assert_eq!(result[1], 50);
+        assert_eq!(result[2], 50);
+        assert_eq!(result[3], 110); // 110 > 105, not within tolerance of 100
+    }
+
+    #[test]
+    fn pyr_down_halves_size() {
+        let px = vec![128u8; 64 * 64];
+        let info = gray_info(64, 64);
+        let (result, new_info) = pyr_down(&px, &info).unwrap();
+        assert_eq!(new_info.width, 32);
+        assert_eq!(new_info.height, 32);
+        assert_eq!(result.len(), 32 * 32);
+        // Uniform input → uniform output
+        for &v in &result {
+            assert_eq!(v, 128);
+        }
+    }
+
+    #[test]
+    fn pyr_up_doubles_size() {
+        let px = vec![128u8; 32 * 32];
+        let info = gray_info(32, 32);
+        let (result, new_info) = pyr_up(&px, &info).unwrap();
+        assert_eq!(new_info.width, 64);
+        assert_eq!(new_info.height, 64);
+        assert_eq!(result.len(), 64 * 64);
+    }
+
+    #[test]
+    fn pyr_down_up_roundtrip() {
+        // pyrUp(pyrDown(img)) should be close to original for smooth content
+        let mut px = vec![0u8; 64 * 64];
+        for y in 0..64 {
+            for x in 0..64 {
+                px[y * 64 + x] = ((x * 255) / 63) as u8;
+            }
+        }
+        let info = gray_info(64, 64);
+        let (down, down_info) = pyr_down(&px, &info).unwrap();
+        let (up, _) = pyr_up(&down, &down_info).unwrap();
+
+        // MAE should be small for smooth gradient
+        let mae: f64 = px.iter().zip(up.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>() / px.len() as f64;
+        assert!(mae < 5.0, "pyrDown→pyrUp roundtrip MAE={mae:.2} (should be < 5.0)");
     }
 }
