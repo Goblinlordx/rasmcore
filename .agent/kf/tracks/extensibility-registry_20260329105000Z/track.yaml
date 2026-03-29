@@ -166,19 +166,19 @@ plan:
 - phase: Encoder and Decoder Extension
   tasks:
   - text: Add register_encoder proc macro attribute
-    done: false
+    done: true
   - text: Add register_decoder proc macro attribute
-    done: false
+    done: true
   - text: Migrate existing encoders to use register_encoder
-    done: false
+    done: true
   - text: Migrate existing decoders to use register_decoder
-    done: false
+    done: true
   - text: Generate encoder/decoder WIT + adapter dispatch from registry
-    done: false
+    done: true
   - text: Verify WASM build with feature flags (enable/disable codecs)
-    done: false
+    done: true
   - text: Verify TypeScript SDK reflects only registered operations
-    done: false
+    done: true
 - phase: Cross-Crate Plugin Support
   tasks:
   - text: Verify inventory/linkme collection works across crate boundaries on wasm32-wasip1
