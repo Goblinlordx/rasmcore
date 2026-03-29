@@ -1,0 +1,101 @@
+id: bench-filters-color-edge_20260329230314Z
+title: "Benchmark Suite \u2014 Color, Edge, and Threshold Filter Coverage"
+type: chore
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Add Criterion benchmarks for color/tone adjustments, edge detectors,
+    thresholding, alpha operations, blend modes, and vignette to perf.rs.
+  context: |
+    These are mostly point operations or small-kernel filters that run fast
+    per pixel. Benchmarking them catches regressions and validates that
+    LLVM auto-vectorization delivers expected throughput.
+  codebase_analysis: |
+    Unbenchmarked color/tone filters:
+    - brightness, contrast, hue_rotate, saturate, sepia, colorize
+    All are point ops or LUT-based -- should be near memory-bandwidth limited.
+
+    Unbenchmarked edge detectors:
+    - sobel, scharr, laplacian, canny, distance_transform
+    Sobel/Scharr/Laplacian are 3x3 convolutions. Canny is multi-pass.
+
+    Unbenchmarked threshold operations:
+    - otsu_threshold, triangle_threshold, threshold_binary, adaptive_threshold
+
+    Unbenchmarked alpha/compositing:
+    - premultiply, unpremultiply, blend (various modes), flatten
+
+    Unbenchmarked vignette:
+    - vignette_powerlaw (per-pixel radial computation)
+
+    Unbenchmarked pyramids:
+    - pyr_down, pyr_up
+
+    ImageMagick supports most of these for reference comparison:
+    -modulate for brightness/saturation, -edge for Sobel, -threshold, etc.
+  acceptance_criteria:
+    - Criterion benchmarks for brightness, contrast, hue_rotate, saturate, sepia at 256/512/1024
+    - Criterion benchmarks for sobel, scharr, laplacian, canny at 256/512/1024
+    - Criterion benchmarks for otsu_threshold, adaptive_threshold at 256/512/1024
+    - Criterion benchmarks for premultiply, unpremultiply, blend at 256/512/1024
+    - Criterion benchmarks for vignette_powerlaw at 256/512/1024
+    - Criterion benchmarks for pyr_down, pyr_up at 256/512/1024
+    - ImageMagick reference comparison where applicable
+  out_of_scope: |
+    colorize (requires extra params), connected_components, flood_fill,
+    hough_lines_p (analysis ops, not filter throughput).
+  technical_notes: |
+    Point ops (brightness, contrast, etc.) are memory-bandwidth bound. Expect
+    throughput close to memcpy speed. Group them in a "pointop" Criterion
+    group to distinguish from compute-bound filters.
+
+    Edge detectors work on Gray8 only. Decode to grayscale first.
+
+    Alpha ops require RGBA input -- generate RGBA test fixtures.
+
+    Blend requires two input images -- use the same image twice for consistency.
+
+    ImageMagick comparisons:
+    - Brightness: magick convert in.png -evaluate Add 25% out.png
+    - Sobel: magick convert in.png -edge 1 out.png
+    - Threshold: magick convert in.png -threshold 50% out.png
+plan:
+  - phase: "Color and Tone Operations"
+    tasks:
+      - text: "Add brightness benchmark at 256/512/1024 with ImageMagick comparison"
+        done: false
+      - text: "Add contrast benchmark at 256/512/1024"
+        done: false
+      - text: "Add hue_rotate, saturate, sepia benchmarks at 256/512/1024"
+        done: false
+  - phase: "Edge Detection"
+    tasks:
+      - text: "Add sobel benchmark at 256/512/1024 with ImageMagick comparison"
+        done: false
+      - text: "Add scharr and laplacian benchmarks at 256/512/1024"
+        done: false
+      - text: "Add canny benchmark at 256/512/1024"
+        done: false
+  - phase: "Threshold and Analysis"
+    tasks:
+      - text: "Add otsu_threshold and triangle_threshold benchmarks at 256/512/1024"
+        done: false
+      - text: "Add adaptive_threshold (Gaussian) benchmark at 256/512/1024"
+        done: false
+  - phase: "Alpha, Blend, Vignette, Pyramids"
+    tasks:
+      - text: "Add premultiply and unpremultiply benchmarks (RGBA) at 256/512/1024"
+        done: false
+      - text: "Add blend benchmark (Normal, Multiply, Screen modes) at 256/512/1024"
+        done: false
+      - text: "Add vignette_powerlaw benchmark at 256/512/1024"
+        done: false
+      - text: "Add pyr_down and pyr_up benchmarks at 256/512/1024"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Run cargo bench --bench perf and verify all new groups appear"
+        done: false
+extra: {}

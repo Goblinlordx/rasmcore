@@ -1,0 +1,82 @@
+id: bench-codecs_20260329230312Z
+title: "Benchmark Suite \u2014 Codec Decode/Encode Coverage"
+type: chore
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Add Criterion benchmarks for all unbenchmarked codecs to perf.rs.
+    Currently only JPEG, PNG, and WebP have decode/encode benchmarks.
+  context: |
+    The existing perf.rs benchmarks JPEG/PNG/WebP decode and encode at
+    256/512/1024 sizes with reference tool comparisons (ImageMagick, libvips,
+    libjpeg-turbo, cwebp/dwebp). Many other supported codecs have zero
+    performance coverage.
+  codebase_analysis: |
+    Codecs with decode support but no benchmarks: TIFF, AVIF, GIF, QOI, BMP,
+    TGA, HDR, EXR, DDS, FITS, JP2, JXL, ICO, PNM.
+
+    Codecs with encode support but no benchmarks: TIFF, AVIF, QOI, BMP, TGA.
+
+    Native codec crates (rasmcore-jpeg, rasmcore-webp, rasmcore-hevc) have
+    parity tests but no standalone Criterion benchmarks.
+
+    HEVC encode/decode is behind the nonfree-hevc feature flag.
+
+    ref_tools.rs already has magick_decode/encode, vips_decode/encode which
+    support most formats. ffmpeg can be used for HEVC/AVIF reference.
+  acceptance_criteria:
+    - Criterion decode benchmarks for TIFF, AVIF, GIF, QOI, BMP at 256/512/1024
+    - Criterion encode benchmarks for TIFF, AVIF, QOI at 256/512/1024
+    - HEVC decode/encode benchmarks gated behind cfg(feature = "nonfree-hevc")
+    - Reference tool comparisons where tools are available (ImageMagick for TIFF/GIF/BMP/AVIF, ffmpeg for HEVC)
+    - All benchmarks skip gracefully if reference tools are missing
+    - cargo bench --bench perf -- decoder and encoder groups include new codecs
+  out_of_scope: |
+    Exotic formats with minimal usage (ICO, PNM, HDR, EXR, DDS, FITS, JP2, JXL)
+    can be deferred. Focus on formats users actually encounter.
+  technical_notes: |
+    Follow existing pattern in perf.rs: ensure_input() generates test images,
+    group.throughput(Throughput::Elements(pixel_count)), bench_with_input for
+    rasmcore, bench_function with has_tool() guard for reference tools.
+
+    For HEVC, use #[cfg(feature = "nonfree-hevc")] to gate the benchmark group.
+    Reference: ffmpeg -i input.hevc -f rawvideo /dev/null for decode timing.
+
+    For AVIF, ImageMagick 7.x supports AVIF natively. libvips also supports it.
+
+    Generate test fixtures via ensure_input() with ImageMagick fallback to
+    Rust-based generation, same as existing JPEG/PNG/WebP pattern.
+plan:
+  - phase: "Decode Benchmarks"
+    tasks:
+      - text: "Add TIFF decode benchmark (256/512/1024) with ImageMagick comparison"
+        done: false
+      - text: "Add GIF decode benchmark (256/512/1024) with ImageMagick comparison"
+        done: false
+      - text: "Add AVIF decode benchmark (256/512/1024) with ImageMagick/libvips comparison"
+        done: false
+      - text: "Add QOI decode benchmark (256/512/1024) — rasmcore only (no standard reference tool)"
+        done: false
+      - text: "Add BMP decode benchmark (256/512/1024) with ImageMagick comparison"
+        done: false
+      - text: "Add HEVC decode benchmark gated behind nonfree-hevc feature flag, ffmpeg reference"
+        done: false
+  - phase: "Encode Benchmarks"
+    tasks:
+      - text: "Add TIFF encode benchmark (256/512/1024) with ImageMagick comparison"
+        done: false
+      - text: "Add AVIF encode benchmark (256/512/1024) with ImageMagick comparison"
+        done: false
+      - text: "Add QOI encode benchmark (256/512/1024) — rasmcore only"
+        done: false
+      - text: "Add HEVC encode benchmark gated behind nonfree-hevc, ffmpeg reference"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Run full cargo bench --bench perf and verify all new groups appear"
+        done: false
+      - text: "Generate benchmark report with scripts/bench-report.py and verify new entries"
+        done: false
+extra: {}
