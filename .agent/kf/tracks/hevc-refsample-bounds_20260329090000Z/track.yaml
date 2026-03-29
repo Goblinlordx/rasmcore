@@ -26,26 +26,25 @@ spec:
     \ in frame.rs\n  Move deblocking from post-frame pass to inside the CTU row loop.\n  After each row of CTUs is decoded,\
     \ apply deblocking to that row so\n  the next row reads deblocked top references. This matches the HEVC\n  spec where\
     \ deblocking is part of the per-CTU decode loop.\n  Ref: libde265 v1.0.18 — deblocking applied per-CTU-row."
-plan: []
-extra: {}
 plan:
-  - phase: Reference Sample Bounds (Done)
-    tasks:
-      - text: "Verify from_frame_with_bounds() correctly substitutes unavailable samples"
-        done: true
-      - text: "Verify reconstruct_cu passes correct CTU bounds"
-        done: true
-  - phase: Per-CTU-Row Deblocking
-    tasks:
-      - text: "Move deblocking from post-frame to per-CTU-row inside the decode loop"
-        done: false
-      - text: "After each row of CTUs, deblock horizontal edges at CTU row boundary and vertical edges within the row"
-        done: false
-      - text: "Verify gradient Y diffs decrease further toward 0"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "yuv_parity_gradient passes (0 Y diffs)"
-        done: false
-      - text: "All parity tests pass, clippy clean, fmt clean"
-        done: false
+- phase: Reference Sample Bounds (Done)
+  tasks:
+  - text: Verify from_frame_with_bounds() correctly substitutes unavailable samples
+    done: true
+  - text: Verify reconstruct_cu passes correct CTU bounds
+    done: true
+- phase: Per-CTU-Row Deblocking
+  tasks:
+  - text: Move deblocking from post-frame to per-CTU-row inside the decode loop
+    done: true
+  - text: After each row of CTUs, deblock horizontal edges at CTU row boundary and vertical edges within the row
+    done: true
+  - text: Verify gradient Y diffs decrease further toward 0
+    done: true
+- phase: Validation
+  tasks:
+  - text: yuv_parity_gradient passes (0 Y diffs)
+    done: false
+  - text: All parity tests pass, clippy clean, fmt clean
+    done: false
+extra: {}
