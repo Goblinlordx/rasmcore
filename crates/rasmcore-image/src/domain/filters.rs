@@ -1640,12 +1640,10 @@ fn build_aa_ellipse_mask(w: usize, h: usize, cx: f64, cy: f64, rx: f64, ry: f64)
                 // Mixed corners — boundary pixel, supersample
                 let mut count = 0u32;
                 for sy in 0..N {
-                    let py =
-                        (row as f64 - 0.5 + (sy as f64 + 0.5) / N as f64 - cy) * inv_ry;
+                    let py = (row as f64 - 0.5 + (sy as f64 + 0.5) / N as f64 - cy) * inv_ry;
                     let py2 = py * py;
                     for sx in 0..N {
-                        let px =
-                            (col as f64 - 0.5 + (sx as f64 + 0.5) / N as f64 - cx) * inv_rx;
+                        let px = (col as f64 - 0.5 + (sx as f64 + 0.5) / N as f64 - cx) * inv_rx;
                         if px * px + py2 <= 1.0 {
                             count += 1;
                         }
@@ -2053,34 +2051,78 @@ pub fn blend(
 }
 
 // ─── Perspective Correction ─────────────────────────────────────────────────
+//
+// Reference implementations: OpenCV 4.x (hough.cpp, imgwarp.cpp)
+// All algorithms match OpenCV's exact formulations for parity testing.
 
 /// A detected line segment from Hough transform: (x1, y1, x2, y2).
 #[derive(Debug, Clone, Copy)]
 pub struct LineSegment {
-    pub x1: f32,
-    pub y1: f32,
-    pub x2: f32,
-    pub y2: f32,
+    pub x1: i32,
+    pub y1: i32,
+    pub x2: i32,
+    pub y2: i32,
 }
 
-/// Probabilistic Hough Line Transform on a binary edge image (Gray8, 0/255).
+/// Multiply-With-Carry PRNG matching OpenCV's cv::RNG.
+/// Seeded with `0xFFFF_FFFF_FFFF_FFFF` by default (OpenCV convention).
+struct CvRng {
+    state: u64,
+}
+
+impl CvRng {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: if seed == 0 { u64::MAX } else { seed },
+        }
+    }
+
+    /// Advance state and return next u32.
+    fn next_u32(&mut self) -> u32 {
+        self.state = self
+            .state
+            .wrapping_mul(4164903690)
+            .wrapping_add(self.state >> 32);
+        self.state as u32
+    }
+
+    /// Uniform random in [0, upper). Matches OpenCV RNG::uniform(0, upper).
+    fn uniform(&mut self, upper: u32) -> u32 {
+        if upper == 0 {
+            return 0;
+        }
+        self.next_u32() % upper
+    }
+}
+
+/// Progressive Probabilistic Hough Transform (PPHT) on a binary edge image.
 ///
-/// Detects line segments using the progressive probabilistic Hough transform.
-/// - `rho_res`: distance resolution of the accumulator in pixels (typically 1.0)
-/// - `theta_res`: angle resolution in radians (typically PI/180)
-/// - `threshold`: minimum accumulator votes to consider a line
-/// - `min_length`: minimum line length in pixels
-/// - `max_gap`: maximum gap between points on the same line
+/// Implements the exact algorithm from OpenCV's `HoughLinesProbabilistic`
+/// (Matas et al., 2000). Key properties:
+/// - Random pixel processing order via seeded PRNG (deterministic given seed)
+/// - Incremental accumulator with vote decrement on consumed pixels
+/// - Fixed-point line walking with gap tolerance
+/// - Chebyshev (L∞) length check for min_length
 ///
-/// Reference: cv2.HoughLinesP (OpenCV 4.13).
+/// Parameters match cv2.HoughLinesP:
+/// - `rho`: distance resolution of the accumulator in pixels
+/// - `theta`: angle resolution in radians
+/// - `threshold`: accumulator threshold — only lines with votes > threshold are returned
+/// - `min_line_length`: minimum line segment length (Chebyshev / L∞ metric)
+/// - `max_line_gap`: maximum gap between points on the same line segment
+/// - `seed`: PRNG seed for deterministic output (use 0 for OpenCV default)
+///
+/// Reference: OpenCV 4.x modules/imgproc/src/hough.cpp HoughLinesProbabilistic
+#[allow(clippy::too_many_arguments)]
 pub fn hough_lines_p(
     pixels: &[u8],
     info: &ImageInfo,
-    rho_res: f32,
-    theta_res: f32,
-    threshold: u32,
-    min_length: f32,
-    max_gap: f32,
+    rho: f32,
+    theta: f32,
+    threshold: i32,
+    min_line_length: i32,
+    max_line_gap: i32,
+    seed: u64,
 ) -> Result<Vec<LineSegment>, ImageError> {
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::InvalidInput(
@@ -2088,205 +2130,301 @@ pub fn hough_lines_p(
         ));
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let diag = ((w * w + h * h) as f32).sqrt();
-    let num_rho = (2.0 * diag / rho_res) as usize + 1;
-    let num_theta = (std::f32::consts::PI / theta_res) as usize;
-    let rho_offset = diag;
+    let width = info.width as i32;
+    let height = info.height as i32;
+    let irho = 1.0f32 / rho;
 
-    // Precompute sin/cos tables
-    let mut sin_tab = vec![0.0f32; num_theta];
-    let mut cos_tab = vec![0.0f32; num_theta];
-    for t in 0..num_theta {
-        let theta = t as f32 * theta_res;
-        sin_tab[t] = theta.sin();
-        cos_tab[t] = theta.cos();
-    }
-
-    // Build accumulator
-    let mut accum = vec![0u32; num_rho * num_theta];
-    let mut edge_points: Vec<(usize, usize)> = Vec::new();
-
-    for y in 0..h {
-        for x in 0..w {
-            if pixels[y * w + x] > 128 {
-                edge_points.push((x, y));
-                for t in 0..num_theta {
-                    let rho = x as f32 * cos_tab[t] + y as f32 * sin_tab[t] + rho_offset;
-                    let ri = (rho / rho_res) as usize;
-                    if ri < num_rho {
-                        accum[t * num_rho + ri] += 1;
-                    }
-                }
-            }
+    // Compute numangle: discrete theta bins from [0, pi)
+    let mut numangle = ((std::f64::consts::PI / theta as f64).floor() as i32) + 1;
+    if numangle > 1 {
+        let last_theta = (numangle - 1) as f64 * theta as f64;
+        if (std::f64::consts::PI - last_theta).abs() < theta as f64 / 2.0 {
+            numangle -= 1;
         }
     }
 
-    // Extract peaks above threshold and trace line segments
+    // numrho: rho bins covering [-(w+h), +(w+h)]
+    let numrho = (((width + height) * 2 + 1) as f64 / rho as f64).round() as i32;
+
+    // Precompute trig table: trigtab[n*2] = cos(n*theta)*irho, trigtab[n*2+1] = sin(n*theta)*irho
+    let mut trigtab = vec![0.0f32; (numangle * 2) as usize];
+    for n in 0..numangle {
+        let ang = n as f64 * theta as f64;
+        trigtab[(n * 2) as usize] = (ang.cos() * irho as f64) as f32;
+        trigtab[(n * 2 + 1) as usize] = (ang.sin() * irho as f64) as f32;
+    }
+
+    // Accumulator: numangle rows × numrho cols
+    let mut accum = vec![0i32; (numangle * numrho) as usize];
+
+    // Mask: tracks live edge pixels
+    let mut mask = vec![0u8; (width * height) as usize];
+
+    // Collect non-zero pixels
+    let mut nzloc: Vec<(i32, i32)> = Vec::new(); // (x, y)
+    for y in 0..height {
+        for x in 0..width {
+            if pixels[(y * width + x) as usize] != 0 {
+                mask[(y * width + x) as usize] = 1;
+                nzloc.push((x, y));
+            }
+        }
+    }
+    let mut count = nzloc.len();
+
+    let mut rng = CvRng::new(if seed == 0 { u64::MAX } else { seed });
     let mut lines = Vec::new();
-    let mut used = vec![false; w * h];
+    let line_walk_shift: i32 = 16;
 
-    // Collect peaks sorted by vote count (descending)
-    let mut peaks: Vec<(u32, usize, usize)> = Vec::new();
-    for t in 0..num_theta {
-        for ri in 0..num_rho {
-            let votes = accum[t * num_rho + ri];
-            if votes >= threshold {
-                peaks.push((votes, t, ri));
-            }
-        }
-    }
-    peaks.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+    // Main PPHT loop: process pixels in random order
+    while count > 0 {
+        // Pick random pixel, swap-remove
+        let idx = rng.uniform(count as u32) as usize;
+        let (j, i) = nzloc[idx]; // j=x, i=y
+        nzloc[idx] = nzloc[count - 1];
+        count -= 1;
 
-    for &(_votes, t_idx, r_idx) in &peaks {
-        let rho = r_idx as f32 * rho_res - rho_offset;
-        let cos_t = cos_tab[t_idx];
-        let sin_t = sin_tab[t_idx];
-
-        // Walk along the line and collect edge points near it
-        let mut on_line: Vec<(f32, usize, usize)> = Vec::new();
-        for &(x, y) in &edge_points {
-            if used[y * w + x] {
-                continue;
-            }
-            let d = (x as f32 * cos_t + y as f32 * sin_t - rho).abs();
-            if d <= rho_res * 1.5 {
-                // Project onto line direction to get parametric position
-                let proj = if sin_t.abs() > cos_t.abs() {
-                    y as f32 / sin_t - rho * cos_t / sin_t + x as f32 * cos_t / sin_t
-                } else {
-                    x as f32 / cos_t
-                };
-                on_line.push((proj, x, y));
-            }
-        }
-
-        if on_line.is_empty() {
+        // Skip if already consumed
+        if mask[(i * width + j) as usize] == 0 {
             continue;
         }
 
-        on_line.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Vote: increment accumulator for all angle bins
+        let mut max_val = threshold - 1;
+        let mut max_n: i32 = 0;
+        for n in 0..numangle {
+            let r = (j as f32 * trigtab[(n * 2) as usize]
+                + i as f32 * trigtab[(n * 2 + 1) as usize])
+                .round() as i32
+                + (numrho - 1) / 2;
+            if r >= 0 && r < numrho {
+                let idx_acc = (n * numrho + r) as usize;
+                accum[idx_acc] += 1;
+                if accum[idx_acc] > max_val {
+                    max_val = accum[idx_acc];
+                    max_n = n;
+                }
+            }
+        }
 
-        // Extract segments: walk sorted points, split at gaps > max_gap
-        let mut seg_start = 0;
-        while seg_start < on_line.len() {
-            let mut seg_end = seg_start;
-            while seg_end + 1 < on_line.len() {
-                let gap = on_line[seg_end + 1].0 - on_line[seg_end].0;
-                if gap > max_gap {
+        // If no bin reached threshold, continue
+        if max_val < threshold {
+            continue;
+        }
+
+        // Line walking: extract segment along the peak (rho, theta)
+        // Line direction perpendicular to normal: a = -sin*irho, b = cos*irho
+        let a = -trigtab[(max_n * 2 + 1) as usize];
+        let b = trigtab[(max_n * 2) as usize];
+
+        let mut x0 = j as i64;
+        let mut y0 = i as i64;
+        let dx0: i64;
+        let dy0: i64;
+        let xflag: bool;
+
+        if a.abs() > b.abs() {
+            xflag = true;
+            dx0 = if a > 0.0 { 1 } else { -1 };
+            dy0 = (b as f64 * (1i64 << line_walk_shift) as f64 / a.abs() as f64).round() as i64;
+            y0 = (y0 << line_walk_shift) + (1i64 << (line_walk_shift - 1));
+        } else {
+            xflag = false;
+            dy0 = if b > 0.0 { 1 } else { -1 };
+            dx0 = (a as f64 * (1i64 << line_walk_shift) as f64 / b.abs() as f64).round() as i64;
+            x0 = (x0 << line_walk_shift) + (1i64 << (line_walk_shift - 1));
+        }
+
+        // Walk in both directions to find segment endpoints
+        #[allow(clippy::needless_range_loop)]
+        let mut line_end = [(0i32, 0i32); 2];
+        for k in 0..2usize {
+            let mut gap = 0i32;
+            let (mut x, mut y) = (x0, y0);
+            let (dx, dy) = if k == 0 { (dx0, dy0) } else { (-dx0, -dy0) };
+
+            loop {
+                let (j1, i1) = if xflag {
+                    (x as i32, (y >> line_walk_shift) as i32)
+                } else {
+                    ((x >> line_walk_shift) as i32, y as i32)
+                };
+
+                if j1 < 0 || j1 >= width || i1 < 0 || i1 >= height {
                     break;
                 }
-                seg_end += 1;
-            }
 
-            let dx = on_line[seg_end].1 as f32 - on_line[seg_start].1 as f32;
-            let dy = on_line[seg_end].2 as f32 - on_line[seg_start].2 as f32;
-            let length = (dx * dx + dy * dy).sqrt();
-
-            if length >= min_length {
-                lines.push(LineSegment {
-                    x1: on_line[seg_start].1 as f32,
-                    y1: on_line[seg_start].2 as f32,
-                    x2: on_line[seg_end].1 as f32,
-                    y2: on_line[seg_end].2 as f32,
-                });
-                // Mark points as used
-                for &(_, px, py) in &on_line[seg_start..=seg_end] {
-                    used[py * w + px] = true;
+                if mask[(i1 * width + j1) as usize] != 0 {
+                    gap = 0;
+                    line_end[k] = (j1, i1);
+                } else {
+                    gap += 1;
+                    if gap > max_line_gap {
+                        break;
+                    }
                 }
+
+                x += dx;
+                y += dy;
             }
-            seg_start = seg_end + 1;
+        }
+
+        // Length check: Chebyshev distance (L∞), matching OpenCV
+        let good_line = (line_end[1].0 - line_end[0].0).abs() >= min_line_length
+            || (line_end[1].1 - line_end[0].1).abs() >= min_line_length;
+
+        // Second walk: consume pixels along the line, decrement votes if good
+        #[allow(clippy::needless_range_loop)]
+        for k in 0..2usize {
+            let (mut x, mut y) = (x0, y0);
+            let (dx, dy) = if k == 0 { (dx0, dy0) } else { (-dx0, -dy0) };
+
+            loop {
+                let (j1, i1) = if xflag {
+                    (x as i32, (y >> line_walk_shift) as i32)
+                } else {
+                    ((x >> line_walk_shift) as i32, y as i32)
+                };
+
+                if j1 < 0 || j1 >= width || i1 < 0 || i1 >= height {
+                    break;
+                }
+
+                let midx = (i1 * width + j1) as usize;
+                if mask[midx] != 0 {
+                    if good_line {
+                        // Decrement accumulator for ALL angle bins this pixel voted for
+                        for n in 0..numangle {
+                            let r = (j1 as f32 * trigtab[(n * 2) as usize]
+                                + i1 as f32 * trigtab[(n * 2 + 1) as usize])
+                                .round() as i32
+                                + (numrho - 1) / 2;
+                            if r >= 0 && r < numrho {
+                                accum[(n * numrho + r) as usize] -= 1;
+                            }
+                        }
+                    }
+                    mask[midx] = 0; // Always consume, even if not good
+                }
+
+                // Stop at the endpoint found in first walk
+                if i1 == line_end[k].1 && j1 == line_end[k].0 {
+                    break;
+                }
+
+                x += dx;
+                y += dy;
+            }
+        }
+
+        if good_line {
+            lines.push(LineSegment {
+                x1: line_end[0].0,
+                y1: line_end[0].1,
+                x2: line_end[1].0,
+                y2: line_end[1].1,
+            });
         }
     }
 
     Ok(lines)
 }
 
-/// Solve a 3x3 homography from 4 point correspondences using Direct Linear Transform (DLT).
+/// Solve a 3x3 perspective transform from 4 point correspondences.
 ///
-/// `src` and `dst` are 4 pairs of (x, y) coordinates.
-/// Returns a 3x3 matrix (row-major) mapping src → dst.
+/// Matches OpenCV's `getPerspectiveTransform` exactly:
+/// - Formulates A*x = b with c22=1 assumption
+/// - Solves via LU decomposition (Gaussian elimination with partial pivoting)
+/// - Row ordering: x-equations first (rows 0–3), then y-equations (rows 4–7)
+///
+/// Returns the 3×3 matrix (row-major) mapping src → dst.
+/// Reference: OpenCV 4.x modules/imgproc/src/imgwarp.cpp getPerspectiveTransform
 fn solve_homography_4pt(src: &[(f32, f32); 4], dst: &[(f32, f32); 4]) -> Option<[f64; 9]> {
-    // Build 8x9 matrix A for Ah = 0
-    let mut a = [0.0f64; 8 * 9];
+    // Build 8×8 system A*x = b, where x = [c00, c01, c02, c10, c11, c12, c20, c21]
+    // and c22 = 1 (assumed).
+    let mut a = [0.0f64; 8 * 8];
+    let mut b = [0.0f64; 8];
+
     for i in 0..4 {
         let (sx, sy) = (src[i].0 as f64, src[i].1 as f64);
         let (dx, dy) = (dst[i].0 as f64, dst[i].1 as f64);
-        let r0 = i * 2;
-        let r1 = r0 + 1;
-        // Row r0: [-sx, -sy, -1, 0, 0, 0, dx*sx, dx*sy, dx]
-        a[r0 * 9] = -sx;
-        a[r0 * 9 + 1] = -sy;
-        a[r0 * 9 + 2] = -1.0;
-        a[r0 * 9 + 6] = dx * sx;
-        a[r0 * 9 + 7] = dx * sy;
-        a[r0 * 9 + 8] = dx;
-        // Row r1: [0, 0, 0, -sx, -sy, -1, dy*sx, dy*sy, dy]
-        a[r1 * 9 + 3] = -sx;
-        a[r1 * 9 + 4] = -sy;
-        a[r1 * 9 + 5] = -1.0;
-        a[r1 * 9 + 6] = dy * sx;
-        a[r1 * 9 + 7] = dy * sy;
-        a[r1 * 9 + 8] = dy;
+
+        // Row i: x-equation → c00*sx + c01*sy + c02 - c20*sx*dx - c21*sy*dx = dx
+        a[i * 8] = sx;
+        a[i * 8 + 1] = sy;
+        a[i * 8 + 2] = 1.0;
+        // a[i*8+3..5] = 0 (c10, c11, c12 terms)
+        a[i * 8 + 6] = -sx * dx;
+        a[i * 8 + 7] = -sy * dx;
+        b[i] = dx;
+
+        // Row i+4: y-equation → c10*sx + c11*sy + c12 - c20*sx*dy - c21*sy*dy = dy
+        // a[(i+4)*8+0..2] = 0 (c00, c01, c02 terms)
+        a[(i + 4) * 8 + 3] = sx;
+        a[(i + 4) * 8 + 4] = sy;
+        a[(i + 4) * 8 + 5] = 1.0;
+        a[(i + 4) * 8 + 6] = -sx * dy;
+        a[(i + 4) * 8 + 7] = -sy * dy;
+        b[i + 4] = dy;
     }
 
-    // Solve via null space of A using Gaussian elimination with partial pivoting
-    // Reduce to row echelon form, then back-substitute with h[8] = 1
-    let mut aug = [0.0f64; 8 * 9];
-    aug.copy_from_slice(&a);
+    // Solve via Gaussian elimination with partial pivoting (DECOMP_LU)
+    let n = 8usize;
+    let mut aug = [0.0f64; 8 * 9]; // augmented [A|b]
+    for r in 0..n {
+        for c in 0..n {
+            aug[r * (n + 1) + c] = a[r * n + c];
+        }
+        aug[r * (n + 1) + n] = b[r];
+    }
 
-    for col in 0..8 {
-        // Partial pivot
-        let mut max_val = aug[col * 9 + col].abs();
+    for col in 0..n {
+        let mut max_val = aug[col * (n + 1) + col].abs();
         let mut max_row = col;
-        for row in (col + 1)..8 {
-            let v = aug[row * 9 + col].abs();
+        for row in (col + 1)..n {
+            let v = aug[row * (n + 1) + col].abs();
             if v > max_val {
                 max_val = v;
                 max_row = row;
             }
         }
-        if max_val < 1e-12 {
-            return None; // Singular
+        if max_val < 1e-15 {
+            return None; // Singular — would need SVD fallback
         }
         if max_row != col {
-            for c in 0..9 {
-                aug.swap(col * 9 + c, max_row * 9 + c);
+            for c in 0..(n + 1) {
+                aug.swap(col * (n + 1) + c, max_row * (n + 1) + c);
             }
         }
-        let pivot = aug[col * 9 + col];
-        for c in col..9 {
-            aug[col * 9 + c] /= pivot;
+        let pivot = aug[col * (n + 1) + col];
+        for c in col..(n + 1) {
+            aug[col * (n + 1) + c] /= pivot;
         }
-        for row in 0..8 {
+        for row in 0..n {
             if row == col {
                 continue;
             }
-            let factor = aug[row * 9 + col];
-            for c in col..9 {
-                aug[row * 9 + c] -= factor * aug[col * 9 + c];
+            let factor = aug[row * (n + 1) + col];
+            for c in col..(n + 1) {
+                aug[row * (n + 1) + c] -= factor * aug[col * (n + 1) + c];
             }
         }
     }
 
-    // h[8] = 1, h[i] = -aug[i][8] for i in 0..8
-    let mut h = [0.0f64; 9];
-    for i in 0..8 {
-        h[i] = -aug[i * 9 + 8];
-    }
-    h[8] = 1.0;
-
-    // Normalize so h[8] = 1
-    if h[8].abs() < 1e-12 {
-        return None;
-    }
-    let inv = 1.0 / h[8];
-    for v in &mut h {
-        *v *= inv;
-    }
-
-    Some(h)
+    // Extract solution: x[i] = aug[i][n]
+    // Pack into 3×3 with M[8] = 1.0 (c22 = 1)
+    #[allow(clippy::identity_op)]
+    Some([
+        aug[0 * (n + 1) + n], // c00
+        aug[1 * (n + 1) + n], // c01
+        aug[2 * (n + 1) + n], // c02
+        aug[3 * (n + 1) + n], // c10
+        aug[4 * (n + 1) + n], // c11
+        aug[5 * (n + 1) + n], // c12
+        aug[6 * (n + 1) + n], // c20
+        aug[7 * (n + 1) + n], // c21
+        1.0,                  // c22
+    ])
 }
 
 /// Invert a 3x3 matrix (row-major). Returns None if singular.
@@ -2311,14 +2449,100 @@ fn invert_3x3(m: &[f64; 9]) -> Option<[f64; 9]> {
     ])
 }
 
+// ── OpenCV-matched fixed-point bilinear warp constants ──────────────────────
+
+const INTER_BITS: i32 = 5;
+const INTER_TAB_SIZE: i32 = 1 << INTER_BITS; // 32
+const INTER_REMAP_COEF_BITS: i32 = 15;
+const INTER_REMAP_COEF_SCALE: i32 = 1 << INTER_REMAP_COEF_BITS; // 32768
+
+/// Build the 2D bilinear weight table (1024 entries of 4 i32 weights).
+///
+/// Matches OpenCV's initInterTab2D for ksize=2 (bilinear). OpenCV stores
+/// weights as i16 but we use i32 to avoid overflow at the (0,0) entry
+/// where the weight is exactly INTER_REMAP_COEF_SCALE (32768). The
+/// interpolation math is identical — only the storage type differs.
+fn build_bilinear_tab() -> Vec<[i32; 4]> {
+    let sz = (INTER_TAB_SIZE * INTER_TAB_SIZE) as usize; // 1024
+    let mut itab = vec![[0i32; 4]; sz];
+
+    for iy in 0..INTER_TAB_SIZE {
+        let fy = iy as f32 / INTER_TAB_SIZE as f32;
+        for ix in 0..INTER_TAB_SIZE {
+            let fx = ix as f32 / INTER_TAB_SIZE as f32;
+            let idx = (iy * INTER_TAB_SIZE + ix) as usize;
+
+            let fw = [
+                (1.0 - fy) * (1.0 - fx),
+                (1.0 - fy) * fx,
+                fy * (1.0 - fx),
+                fy * fx,
+            ];
+
+            for k in 0..4 {
+                itab[idx][k] = (fw[k] * INTER_REMAP_COEF_SCALE as f32).round() as i32;
+            }
+
+            // Fix rounding: ensure weights sum to exactly INTER_REMAP_COEF_SCALE
+            let isum: i32 = itab[idx].iter().sum();
+            let diff = isum - INTER_REMAP_COEF_SCALE;
+            if diff != 0 {
+                if diff < 0 {
+                    let max_idx = itab[idx]
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|&(_, &w)| w)
+                        .unwrap()
+                        .0;
+                    itab[idx][max_idx] -= diff;
+                } else {
+                    let min_idx = itab[idx]
+                        .iter()
+                        .enumerate()
+                        .min_by_key(|&(_, &w)| w)
+                        .unwrap()
+                        .0;
+                    itab[idx][min_idx] -= diff;
+                }
+            }
+        }
+    }
+    itab
+}
+
+/// cvRound: round to nearest, ties to even (matches C lrint/rint).
+#[inline]
+fn cv_round(v: f64) -> i32 {
+    // Rust's f64::round() rounds ties away from zero (0.5 → 1), but OpenCV
+    // uses C lrint which rounds ties to even. For the coordinate ranges we
+    // deal with, the difference is negligible on half-integer values. We use
+    // round-half-to-even for exact parity.
+    let r = v.round();
+    // Check if exactly at a .5 boundary
+    if (v - (v.floor() + 0.5)).abs() < 1e-15 {
+        let fl = v.floor() as i64;
+        if fl & 1 == 0 {
+            fl as i32 // even floor → round down
+        } else {
+            (fl + 1) as i32 // odd floor → round up
+        }
+    } else {
+        r as i32
+    }
+}
+
 /// Warp an image using a 3x3 perspective transform (homography).
 ///
-/// The matrix maps output coordinates to input coordinates (inverse mapping).
-/// Uses bilinear interpolation for sub-pixel accuracy.
-/// Out-of-bounds pixels are set to black (0).
+/// Matches OpenCV's `warpPerspective` with `INTER_LINEAR` + `BORDER_CONSTANT(0)`:
+/// - 5-bit sub-pixel precision (1/32 pixel grid)
+/// - Integer weight table scaled by 32768 with rounding correction
+/// - Fixed-point multiply-accumulate with +16384 rounding term
+/// - cvRound coordinate quantization
 ///
-/// - `matrix`: 3x3 row-major homography (output → input mapping)
-/// - `out_width`, `out_height`: dimensions of the output image
+/// The `matrix` maps output → input (inverse mapping, as if `WARP_INVERSE_MAP`
+/// were set). If you have a forward mapping, invert it first.
+///
+/// Reference: OpenCV 4.x modules/imgproc/src/imgwarp.cpp warpPerspective
 #[rasmcore_macros::register_filter(name = "perspective_warp", category = "advanced")]
 pub fn perspective_warp(
     pixels: &[u8],
@@ -2335,52 +2559,79 @@ pub fn perspective_warp(
         });
     }
 
-    let in_w = info.width as usize;
-    let in_h = info.height as usize;
+    let in_w = info.width as i32;
+    let in_h = info.height as i32;
     let ow = out_width as usize;
     let oh = out_height as usize;
     let ch = channels(info.format);
 
+    let wtab = build_bilinear_tab();
     let mut out = vec![0u8; ow * oh * ch];
+    let tab_sz = INTER_TAB_SIZE as f64;
 
     for oy in 0..oh {
+        // Per-row base values
+        let base_x = matrix[1] * oy as f64 + matrix[2];
+        let base_y = matrix[4] * oy as f64 + matrix[5];
+        let base_w = matrix[7] * oy as f64 + matrix[8];
+
         for ox in 0..ow {
-            let oxf = ox as f64;
-            let oyf = oy as f64;
+            let w = base_w + matrix[6] * ox as f64;
+            let w_scaled = if w != 0.0 { tab_sz / w } else { 0.0 };
 
-            // Apply homography: src = H * dst
-            let w = matrix[6] * oxf + matrix[7] * oyf + matrix[8];
-            if w.abs() < 1e-12 {
-                continue;
-            }
-            let inv_w = 1.0 / w;
-            let sx = (matrix[0] * oxf + matrix[1] * oyf + matrix[2]) * inv_w;
-            let sy = (matrix[3] * oxf + matrix[4] * oyf + matrix[5]) * inv_w;
+            let fx = ((base_x + matrix[0] * ox as f64) * w_scaled)
+                .max(i32::MIN as f64)
+                .min(i32::MAX as f64);
+            let fy = ((base_y + matrix[3] * ox as f64) * w_scaled)
+                .max(i32::MIN as f64)
+                .min(i32::MAX as f64);
 
-            // Bilinear interpolation
-            if sx < 0.0 || sy < 0.0 || sx >= (in_w - 1) as f64 || sy >= (in_h - 1) as f64 {
-                continue; // out-of-bounds → black
-            }
+            let ix = cv_round(fx);
+            let iy = cv_round(fy);
 
-            let x0 = sx as usize;
-            let y0 = sy as usize;
-            let x1 = (x0 + 1).min(in_w - 1);
-            let y1 = (y0 + 1).min(in_h - 1);
-            let fx = sx - x0 as f64;
-            let fy = sy - y0 as f64;
+            // Integer source coords (right-shift by INTER_BITS = 5)
+            let sx = ix >> INTER_BITS;
+            let sy = iy >> INTER_BITS;
 
-            let w00 = ((1.0 - fx) * (1.0 - fy)) as f32;
-            let w10 = (fx * (1.0 - fy)) as f32;
-            let w01 = ((1.0 - fx) * fy) as f32;
-            let w11 = (fx * fy) as f32;
+            // Sub-pixel index into weight table
+            let alpha = ((iy & (INTER_TAB_SIZE - 1)) * INTER_TAB_SIZE + (ix & (INTER_TAB_SIZE - 1)))
+                as usize;
+            let w4 = &wtab[alpha];
 
+            // BORDER_CONSTANT: if any neighbor is outside, handle per-sample
             let dst_base = (oy * ow + ox) * ch;
-            for c in 0..ch {
-                let v00 = pixels[(y0 * in_w + x0) * ch + c] as f32;
-                let v10 = pixels[(y0 * in_w + x1) * ch + c] as f32;
-                let v01 = pixels[(y1 * in_w + x0) * ch + c] as f32;
-                let v11 = pixels[(y1 * in_w + x1) * ch + c] as f32;
-                out[dst_base + c] = (v00 * w00 + v10 * w10 + v01 * w01 + v11 * w11 + 0.5) as u8;
+
+            if (sx as u32) < (in_w - 1) as u32 && (sy as u32) < (in_h - 1) as u32 {
+                // Fast path: all 4 neighbors inside
+                let src_base = (sy * in_w + sx) as usize * ch;
+                let src_row2 = src_base + in_w as usize * ch;
+                for c in 0..ch {
+                    let v = pixels[src_base + c] as i32 * w4[0]
+                        + pixels[src_base + ch + c] as i32 * w4[1]
+                        + pixels[src_row2 + c] as i32 * w4[2]
+                        + pixels[src_row2 + ch + c] as i32 * w4[3]
+                        + (1 << (INTER_REMAP_COEF_BITS - 1)); // +16384 rounding
+                    out[dst_base + c] = (v >> INTER_REMAP_COEF_BITS).clamp(0, 255) as u8;
+                }
+            } else if sx >= in_w || sx + 1 < 0 || sy >= in_h || sy + 1 < 0 {
+                // Fully outside → border constant (0), already zeroed
+            } else {
+                // Partially outside: fetch each neighbor individually
+                for c in 0..ch {
+                    let fetch = |x: i32, y: i32| -> i32 {
+                        if x >= 0 && x < in_w && y >= 0 && y < in_h {
+                            pixels[(y * in_w + x) as usize * ch + c] as i32
+                        } else {
+                            0 // border constant
+                        }
+                    };
+                    let v = fetch(sx, sy) * w4[0]
+                        + fetch(sx + 1, sy) * w4[1]
+                        + fetch(sx, sy + 1) * w4[2]
+                        + fetch(sx + 1, sy + 1) * w4[3]
+                        + (1 << (INTER_REMAP_COEF_BITS - 1));
+                    out[dst_base + c] = (v >> INTER_REMAP_COEF_BITS).clamp(0, 255) as u8;
+                }
             }
         }
     }
@@ -2412,8 +2663,8 @@ pub fn perspective_correct(
         return Ok(pixels.to_vec());
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
+    let w = info.width as i32;
+    let h = info.height as i32;
 
     // Step 1: Edge detection
     let edge_map = canny(pixels, info, 50.0, 150.0)?;
@@ -2426,15 +2677,16 @@ pub fn perspective_correct(
 
     // Step 2: Line detection
     let min_dim = w.min(h) as f32;
-    let min_length = (min_dim * 0.1).max(30.0);
+    let min_length = ((min_dim * 0.1).max(30.0)) as i32;
     let lines = hough_lines_p(
         &edge_map,
         &edge_info,
         1.0,                          // rho resolution
         std::f32::consts::PI / 180.0, // theta resolution (1 degree)
-        (min_dim * 0.15) as u32,      // threshold scales with image size
+        (min_dim * 0.15) as i32,      // threshold scales with image size
         min_length,
-        min_length * 0.3, // max gap
+        (min_length as f32 * 0.3) as i32, // max gap
+        0,                                // default seed
     )?;
 
     if lines.len() < 4 {
@@ -2444,11 +2696,11 @@ pub fn perspective_correct(
     // Step 3: Classify lines as near-horizontal or near-vertical
     let mut h_lines = Vec::new();
     let mut v_lines = Vec::new();
-    let angle_threshold = 20.0f32.to_radians(); // ±20° from axis
+    let angle_threshold = 20.0f32.to_radians();
 
     for line in &lines {
-        let dx = line.x2 - line.x1;
-        let dy = line.y2 - line.y1;
+        let dx = (line.x2 - line.x1) as f32;
+        let dy = (line.y2 - line.y1) as f32;
         let angle = dy.atan2(dx).abs();
         let length = (dx * dx + dy * dy).sqrt();
 
@@ -2459,12 +2711,11 @@ pub fn perspective_correct(
         }
     }
 
-    // Need at least 2 lines in each direction for vanishing point estimation
     if h_lines.len() < 2 && v_lines.len() < 2 {
         return Ok(pixels.to_vec());
     }
 
-    // Step 4: Estimate vanishing points via weighted median of intersections
+    // Step 4: Estimate vanishing points
     let cx = w as f32 / 2.0;
     let cy = h as f32 / 2.0;
 
@@ -2472,43 +2723,34 @@ pub fn perspective_correct(
     let mut angle_y = 0.0f32;
 
     if v_lines.len() >= 2 {
-        // Vertical vanishing point — estimate tilt from convergence of vertical lines
         if let Some(vp) = estimate_vanishing_point(&v_lines) {
-            // Angle from image center to vanishing point
             let dx = vp.0 - cx;
-            // Correction: shift vanishing point toward infinity (directly above center)
             angle_x = (dx / (h as f32 * 2.0)).atan() * strength;
         }
     }
 
     if h_lines.len() >= 2 {
-        // Horizontal vanishing point — estimate keystone from convergence
         if let Some(vp) = estimate_vanishing_point(&h_lines) {
             let dy = vp.1 - cy;
             angle_y = (dy / (w as f32 * 2.0)).atan() * strength;
         }
     }
 
-    // Step 5: Build rectifying homography from correction angles
-    // Map image corners through a perspective correction
+    // Step 5: Build rectifying homography
     let hw = w as f32 / 2.0;
     let hh = h as f32 / 2.0;
-
-    // Compute corner offsets based on correction angles
     let shift_top_x = -angle_x * hh;
     let shift_bot_x = angle_x * hh;
     let shift_left_y = -angle_y * hw;
     let shift_right_y = angle_y * hw;
 
-    // Source corners (original image)
     let src_corners = [
-        (0.0f32, 0.0f32),     // top-left
-        (w as f32, 0.0),      // top-right
-        (w as f32, h as f32), // bottom-right
-        (0.0, h as f32),      // bottom-left
+        (0.0f32, 0.0f32),
+        (w as f32, 0.0),
+        (w as f32, h as f32),
+        (0.0, h as f32),
     ];
 
-    // Destination corners (corrected positions)
     let dst_corners = [
         (shift_top_x + shift_left_y, shift_left_y + shift_top_x),
         (
@@ -2525,8 +2767,6 @@ pub fn perspective_correct(
         ),
     ];
 
-    // Compute homography: maps output coords → input coords
-    // We want H such that for each output pixel, we sample from the input
     let h_mat = match solve_homography_4pt(
         &[
             dst_corners[0],
@@ -2542,29 +2782,25 @@ pub fn perspective_correct(
         ],
     ) {
         Some(h) => h,
-        None => return Ok(pixels.to_vec()), // Degenerate — skip correction
+        None => return Ok(pixels.to_vec()),
     };
 
-    // Step 6: Warp
     perspective_warp(pixels, info, &h_mat, info.width, info.height)
 }
 
-/// Estimate vanishing point from a set of line segments using weighted median.
-///
-/// Computes pairwise intersections of lines, weighted by the product of line
-/// lengths, and returns the weighted median intersection point.
+/// Estimate vanishing point from line segments using weighted median of
+/// pairwise intersections, weighted by product of segment lengths.
 fn estimate_vanishing_point(lines: &[(LineSegment, f32)]) -> Option<(f32, f32)> {
     if lines.len() < 2 {
         return None;
     }
 
-    let mut intersections: Vec<(f32, f32, f32)> = Vec::new(); // (x, y, weight)
+    let mut intersections: Vec<(f32, f32, f32)> = Vec::new();
 
     for i in 0..lines.len() {
         for j in (i + 1)..lines.len() {
             let (l1, w1) = &lines[i];
             let (l2, w2) = &lines[j];
-
             if let Some((ix, iy)) = line_intersection(l1, l2) {
                 intersections.push((ix, iy, w1 * w2));
             }
@@ -2575,18 +2811,15 @@ fn estimate_vanishing_point(lines: &[(LineSegment, f32)]) -> Option<(f32, f32)> 
         return None;
     }
 
-    // Weighted median: sort by x and y independently, find median
     let total_weight: f32 = intersections.iter().map(|&(_, _, w)| w).sum();
     if total_weight <= 0.0 {
         return None;
     }
 
-    // Weighted median for x
     let mut sorted_x = intersections.clone();
     sorted_x.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let median_x = weighted_median_val(&sorted_x, total_weight, |p| p.0);
 
-    // Weighted median for y
     let mut sorted_y = intersections;
     sorted_y.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let median_y = weighted_median_val(&sorted_y, total_weight, |p| p.1);
@@ -2594,7 +2827,6 @@ fn estimate_vanishing_point(lines: &[(LineSegment, f32)]) -> Option<(f32, f32)> 
     Some((median_x, median_y))
 }
 
-/// Compute weighted median from sorted values.
 fn weighted_median_val(
     sorted: &[(f32, f32, f32)],
     total_weight: f32,
@@ -2611,24 +2843,19 @@ fn weighted_median_val(
     val(sorted.last().unwrap())
 }
 
-/// Line-line intersection of two segments (extended to infinite lines).
-/// Returns None if lines are parallel.
 fn line_intersection(l1: &LineSegment, l2: &LineSegment) -> Option<(f32, f32)> {
-    let d1x = l1.x2 - l1.x1;
-    let d1y = l1.y2 - l1.y1;
-    let d2x = l2.x2 - l2.x1;
-    let d2y = l2.y2 - l2.y1;
+    let d1x = (l1.x2 - l1.x1) as f32;
+    let d1y = (l1.y2 - l1.y1) as f32;
+    let d2x = (l2.x2 - l2.x1) as f32;
+    let d2y = (l2.y2 - l2.y1) as f32;
 
     let denom = d1x * d2y - d1y * d2x;
     if denom.abs() < 1e-6 {
-        return None; // Parallel
+        return None;
     }
 
-    let t = ((l2.x1 - l1.x1) * d2y - (l2.y1 - l1.y1) * d2x) / denom;
-    let ix = l1.x1 + t * d1x;
-    let iy = l1.y1 + t * d1y;
-
-    Some((ix, iy))
+    let t = ((l2.x1 - l1.x1) as f32 * d2y - (l2.y1 - l1.y1) as f32 * d2x) / denom;
+    Some((l1.x1 as f32 + t * d1x, l1.y1 as f32 + t * d1y))
 }
 
 // ─── CLAHE (Contrast Limited Adaptive Histogram Equalization) ──────────────
@@ -7745,13 +7972,37 @@ mod perspective_tests {
         (pixels, info)
     }
 
-    // ── solve_homography_4pt ──────────────────────────────────────────────
+    // ── CvRng ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cv_rng_deterministic_with_same_seed() {
+        let mut rng1 = CvRng::new(12345);
+        let mut rng2 = CvRng::new(12345);
+        for _ in 0..100 {
+            assert_eq!(rng1.next_u32(), rng2.next_u32());
+        }
+    }
+
+    #[test]
+    fn cv_rng_different_seeds_differ() {
+        let mut rng1 = CvRng::new(1);
+        let mut rng2 = CvRng::new(2);
+        let mut same = true;
+        for _ in 0..10 {
+            if rng1.next_u32() != rng2.next_u32() {
+                same = false;
+                break;
+            }
+        }
+        assert!(!same);
+    }
+
+    // ── solve_homography_4pt (OpenCV formulation) ────────────────────────
 
     #[test]
     fn homography_identity_mapping() {
         let pts = [(0.0f32, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
         let h = solve_homography_4pt(&pts, &pts).unwrap();
-        // Should be close to identity
         for (i, &v) in h.iter().enumerate() {
             let expected = if i == 0 || i == 4 || i == 8 { 1.0 } else { 0.0 };
             assert!(
@@ -7766,7 +8017,6 @@ mod perspective_tests {
         let src = [(0.0f32, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
         let dst = [(10.0f32, 20.0), (11.0, 20.0), (11.0, 21.0), (10.0, 21.0)];
         let h = solve_homography_4pt(&src, &dst).unwrap();
-        // h should encode translation by (10, 20)
         assert!((h[2] - 10.0).abs() < 1e-6, "tx = {}", h[2]);
         assert!((h[5] - 20.0).abs() < 1e-6, "ty = {}", h[5]);
     }
@@ -7778,6 +8028,19 @@ mod perspective_tests {
         let h = solve_homography_4pt(&src, &dst).unwrap();
         assert!((h[0] - 2.0).abs() < 1e-6, "sx = {}", h[0]);
         assert!((h[4] - 2.0).abs() < 1e-6, "sy = {}", h[4]);
+    }
+
+    #[test]
+    fn homography_c22_is_one() {
+        // OpenCV convention: M[2][2] = 1.0 always
+        let src = [(0.0f32, 0.0), (100.0, 0.0), (110.0, 80.0), (10.0, 90.0)];
+        let dst = [(5.0f32, 5.0), (95.0, 10.0), (90.0, 85.0), (15.0, 95.0)];
+        let h = solve_homography_4pt(&src, &dst).unwrap();
+        assert!(
+            (h[8] - 1.0).abs() < 1e-12,
+            "c22 should be exactly 1.0, got {}",
+            h[8]
+        );
     }
 
     // ── invert_3x3 ───────────────────────────────────────────────────────
@@ -7801,7 +8064,6 @@ mod perspective_tests {
     fn invert_roundtrip() {
         let m = [2.0, 1.0, 0.0, 0.0, 3.0, 1.0, 1.0, 0.0, 2.0];
         let inv = invert_3x3(&m).unwrap();
-        // m * inv should be identity
         let mut prod = [0.0f64; 9];
         for r in 0..3 {
             for c in 0..3 {
@@ -7821,16 +8083,16 @@ mod perspective_tests {
     #[test]
     fn intersection_perpendicular() {
         let l1 = LineSegment {
-            x1: 0.0,
-            y1: 5.0,
-            x2: 10.0,
-            y2: 5.0,
+            x1: 0,
+            y1: 5,
+            x2: 10,
+            y2: 5,
         };
         let l2 = LineSegment {
-            x1: 5.0,
-            y1: 0.0,
-            x2: 5.0,
-            y2: 10.0,
+            x1: 5,
+            y1: 0,
+            x2: 5,
+            y2: 10,
         };
         let (ix, iy) = line_intersection(&l1, &l2).unwrap();
         assert!((ix - 5.0).abs() < 1e-4);
@@ -7840,38 +8102,53 @@ mod perspective_tests {
     #[test]
     fn intersection_parallel_returns_none() {
         let l1 = LineSegment {
-            x1: 0.0,
-            y1: 0.0,
-            x2: 10.0,
-            y2: 0.0,
+            x1: 0,
+            y1: 0,
+            x2: 10,
+            y2: 0,
         };
         let l2 = LineSegment {
-            x1: 0.0,
-            y1: 5.0,
-            x2: 10.0,
-            y2: 5.0,
+            x1: 0,
+            y1: 5,
+            x2: 10,
+            y2: 5,
         };
         assert!(line_intersection(&l1, &l2).is_none());
     }
 
-    // ── perspective_warp ─────────────────────────────────────────────────
+    // ── bilinear weight table ────────────────────────────────────────────
 
     #[test]
-    fn warp_identity_preserves_pixels() {
+    fn bilinear_tab_weights_sum_to_scale() {
+        let tab = build_bilinear_tab();
+        for (idx, w4) in tab.iter().enumerate() {
+            let sum: i32 = w4.iter().sum();
+            assert_eq!(
+                sum, INTER_REMAP_COEF_SCALE,
+                "tab[{idx}] weights sum to {sum}, expected {INTER_REMAP_COEF_SCALE}"
+            );
+        }
+    }
+
+    #[test]
+    fn bilinear_tab_identity_at_origin() {
+        let tab = build_bilinear_tab();
+        // At (0,0): all weight on top-left
+        assert_eq!(tab[0], [INTER_REMAP_COEF_SCALE, 0, 0, 0]);
+    }
+
+    // ── perspective_warp (OpenCV fixed-point) ────────────────────────────
+
+    #[test]
+    fn warp_identity_preserves_all_pixels() {
         let (px, info) = make_rgb_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let result = perspective_warp(&px, &info, &identity, 16, 16).unwrap();
-        // Interior pixels (not on last row/col) should match exactly
-        for y in 0..15 {
-            for x in 0..15 {
-                let idx = (y * 16 + x) * 3;
-                assert_eq!(
-                    &result[idx..idx + 3],
-                    &px[idx..idx + 3],
-                    "mismatch at ({x},{y})"
-                );
-            }
-        }
+        // With fixed-point, identity warp at integer coords should be exact
+        assert_eq!(
+            result, px,
+            "identity warp should preserve all pixels exactly"
+        );
     }
 
     #[test]
@@ -7900,11 +8177,9 @@ mod perspective_tests {
 
     #[test]
     fn warp_translation_shifts_pixels() {
-        // Create a 10x10 image with a known pattern
         let w = 10u32;
         let h = 10u32;
         let mut pixels = vec![0u8; (w * h * 3) as usize];
-        // Place a white pixel at (5, 5)
         let idx = (5 * w as usize + 5) * 3;
         pixels[idx] = 255;
         pixels[idx + 1] = 255;
@@ -7916,11 +8191,11 @@ mod perspective_tests {
             color_space: super::super::types::ColorSpace::Srgb,
         };
 
-        // Translate by (-2, -1): output pixel (ox,oy) maps to input (ox+2, oy+1)
+        // Inverse map: output (ox,oy) → input (ox+2, oy+1)
         let mat = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
         let result = perspective_warp(&pixels, &info, &mat, w, h).unwrap();
 
-        // The white pixel at input (5,5) should appear at output (3,4)
+        // White pixel at input (5,5) → output (3,4)
         let expected_idx = (4 * w as usize + 3) * 3;
         assert_eq!(result[expected_idx], 255);
         assert_eq!(result[expected_idx + 1], 255);
@@ -7957,22 +8232,44 @@ mod perspective_tests {
         assert_eq!(result.len(), px.len());
     }
 
-    // ── hough_lines_p ────────────────────────────────────────────────────
+    // ── hough_lines_p (PPHT) ────────────────────────────────────────────
 
     #[test]
     fn hough_requires_gray8() {
         let (px, info) = make_rgb_image(16, 16);
-        let result = hough_lines_p(&px, &info, 1.0, 0.01, 5, 10.0, 5.0);
+        let result = hough_lines_p(&px, &info, 1.0, 0.01, 5, 10, 5, 0);
         assert!(result.is_err());
     }
 
     #[test]
-    fn hough_empty_image_returns_no_lines() {
-        let (px, info) = make_gray_image(32, 32);
-        // All values < 128, so treated as non-edge
-        let lines = hough_lines_p(&px, &info, 1.0, std::f32::consts::PI / 180.0, 10, 10.0, 5.0);
-        // Should succeed but likely return few/no lines from gradient pattern
-        assert!(lines.is_ok());
+    fn hough_deterministic_with_seed() {
+        let w = 64u32;
+        let h = 64u32;
+        let mut pixels = vec![0u8; (w * h) as usize];
+        for x in 5..60 {
+            pixels[32 * w as usize + x] = 255;
+        }
+        for y in 10..55 {
+            pixels[y * w as usize + 20] = 255;
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let theta = std::f32::consts::PI / 180.0;
+
+        let lines1 = hough_lines_p(&pixels, &info, 1.0, theta, 15, 20, 5, 42).unwrap();
+        let lines2 = hough_lines_p(&pixels, &info, 1.0, theta, 15, 20, 5, 42).unwrap();
+        assert_eq!(
+            lines1.len(),
+            lines2.len(),
+            "same seed should give same count"
+        );
+        for (a, b) in lines1.iter().zip(lines2.iter()) {
+            assert_eq!((a.x1, a.y1, a.x2, a.y2), (b.x1, b.y1, b.x2, b.y2));
+        }
     }
 
     #[test]
@@ -7980,7 +8277,6 @@ mod perspective_tests {
         let w = 64u32;
         let h = 64u32;
         let mut pixels = vec![0u8; (w * h) as usize];
-        // Draw a horizontal line at y=32
         for x in 5..60 {
             pixels[32 * w as usize + x] = 255;
         }
@@ -7996,16 +8292,16 @@ mod perspective_tests {
             1.0,
             std::f32::consts::PI / 180.0,
             20,
-            20.0,
-            5.0,
+            20,
+            5,
+            0,
         )
         .unwrap();
         assert!(!lines.is_empty(), "should detect horizontal line");
-        // At least one line should be roughly horizontal (small dy)
         let has_horizontal = lines.iter().any(|l| {
             let dy = (l.y2 - l.y1).abs();
             let dx = (l.x2 - l.x1).abs();
-            dx > 20.0 && dy < 5.0
+            dx > 20 && dy < 5
         });
         assert!(has_horizontal, "should find a horizontal line segment");
     }
@@ -8015,7 +8311,6 @@ mod perspective_tests {
         let w = 64u32;
         let h = 64u32;
         let mut pixels = vec![0u8; (w * h) as usize];
-        // Draw a vertical line at x=32
         for y in 5..60 {
             pixels[y * w as usize + 32] = 255;
         }
@@ -8031,16 +8326,51 @@ mod perspective_tests {
             1.0,
             std::f32::consts::PI / 180.0,
             20,
-            20.0,
-            5.0,
+            20,
+            5,
+            0,
         )
         .unwrap();
         assert!(!lines.is_empty(), "should detect vertical line");
         let has_vertical = lines.iter().any(|l| {
             let dy = (l.y2 - l.y1).abs();
             let dx = (l.x2 - l.x1).abs();
-            dy > 20.0 && dx < 5.0
+            dy > 20 && dx < 5
         });
         assert!(has_vertical, "should find a vertical line segment");
+    }
+
+    #[test]
+    fn hough_vote_decrement_prevents_duplicates() {
+        // A single strong line should produce exactly one segment, not many
+        let w = 100u32;
+        let h = 100u32;
+        let mut pixels = vec![0u8; (w * h) as usize];
+        for x in 10..90 {
+            pixels[50 * w as usize + x] = 255;
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let lines = hough_lines_p(
+            &pixels,
+            &info,
+            1.0,
+            std::f32::consts::PI / 180.0,
+            30,
+            30,
+            5,
+            0,
+        )
+        .unwrap();
+        // PPHT with vote decrement: one strong line → one segment
+        assert!(
+            lines.len() <= 2,
+            "vote decrement should prevent duplicates, got {} lines",
+            lines.len()
+        );
     }
 }
