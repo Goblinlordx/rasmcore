@@ -1,113 +1,129 @@
 id: hevc-pixel-exact_20260330000000Z
-title: "HEVC Pixel-Exact — Close Decoder Checker Gap + Encoder Residual Coding"
+title: HEVC Pixel-Exact — Close Decoder Checker Gap + Encoder Residual Coding
 type: bug
 status: pending
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-03-29'
 spec:
-  summary: >
-    Close the remaining HEVC decoder gap (checker_256x256 at max_diff=10) to byte-exact,
-    and implement full encoder residual coding (forward quant + CABAC coefficient encoding)
-    so the encoder produces quality-comparable output validated against x265.
-  context: |
-    Decoder status: 3/4 test cases byte-exact (PSNR=inf). Checker_256x256_q22 has
+  summary: 'Close the remaining HEVC decoder gap (checker_256x256 at max_diff=10) to byte-exact, and implement full encoder
+    residual coding (forward quant + CABAC coefficient encoding) so the encoder produces quality-comparable output validated
+    against x265.
+
+    '
+  context: 'Decoder status: 3/4 test cases byte-exact (PSNR=inf). Checker_256x256_q22 has
+
     PSNR=39.2dB with max_diff=10. Root cause: 56 pixels in CTU(0,0) differ by ±1
+
     (without deblocking), then cascade into subsequent CTUs via prediction references.
+
     The ±1 source is likely 32x32 IDCT rounding or strong smoothing interpolation.
 
+
     Encoder status: produces valid HEVC bitstreams (decodable by our decoder and ffmpeg)
+
     but uses DC prediction with no residual (cbf_luma always false). Encoder needs:
+
     - Forward quantization wired into encode loop
+
     - Full CABAC coefficient encoding (encode_residual_coeffs in syntax_enc.rs is a stub)
+
     - Reconstruction loop (prediction + residual stored back to frame buffer for neighbors)
+
     - Validation against x265 at same QP
 
+
     The decoder ±1 gap and encoder quality are both blocking pixel-exact alignment
+
     with the reference. This track addresses both.
-  codebase_analysis: |
-    Decoder (checker gap):
+
+    '
+  codebase_analysis: 'Decoder (checker gap):
+
     - predict.rs: strong_smooth() uses formula matching libde265 v1.0.18
+
     - transform/mod.rs: IDCT uses rasmcore-dct inverse transforms
+
     - dct32.rs: uses direct 32x32 matrix multiply (not butterfly)
+
     - The 56 diffs at ±1 are likely in the 32x32 IDCT or strong smoothing
+
     - Flat/gradient pass byte-exact because they have fewer/simpler coefficients
 
+
     Encoder (residual coding):
+
     - encode/syntax_enc.rs: encode_residual_coeffs() is a stub (TODO comment)
+
     - encode/encoder.rs: has_nonzero_residual() always returns false
+
     - encode/cabac_enc.rs: arithmetic engine works (9 roundtrip tests pass)
+
     - transform/dequant.rs: has dequantization but no forward quant
+
     - rasmcore-dct: forward DCT 4/8/16/32 and DST 4x4 all available
+
+    '
   acceptance_criteria:
-    - Decoder checker_256x256_q22 achieves byte-exact Y plane (0 diffs)
-    - Decoder all 4 test cases at PSNR=inf for RGB
-    - No regression on flat/gradient byte-exact parity
-    - Encoder produces residual-coded bitstream (not prediction-only)
-    - Encoder output decodable by our decoder AND ffmpeg
-    - Encoder encode-then-decode roundtrip produces reasonable PSNR (> 30dB)
-    - Document root cause of any remaining differences with x265 4.1 citations
-    - clippy clean, cargo test passes
-  out_of_scope: |
-    Full RDO mode decision (35-mode search). Rate control. SAO encoding.
+  - Decoder checker_256x256_q22 achieves byte-exact Y plane (0 diffs)
+  - Decoder all 4 test cases at PSNR=inf for RGB
+  - No regression on flat/gradient byte-exact parity
+  - Encoder produces residual-coded bitstream (not prediction-only)
+  - Encoder output decodable by our decoder AND ffmpeg
+  - Encoder encode-then-decode roundtrip produces reasonable PSNR (> 30dB)
+  - Document root cause of any remaining differences with x265 4.1 citations
+  - clippy clean, cargo test passes
+  out_of_scope: 'Full RDO mode decision (35-mode search). Rate control. SAO encoding.
+
     Multi-pass encoding. SIMD optimization. Pixel-exact x265 match for
+
     mode decisions (mode selection differs, but given same modes, same output).
-  technical_notes: |
-    Part 1 — Decoder checker gap:
-    Investigation approach: dump prediction + residual values for CTU(0,0) pixels
-    that differ by ±1. Compare against reference (generate no-deblock reference
-    from the same bitstream). The source is either:
-    a) 32x32 IDCT rounding (matrix multiply accumulation order)
-    b) Strong smoothing interpolation rounding
-    c) Planar prediction rounding
-    Fix by matching the exact integer arithmetic from ffmpeg/libde265.
 
-    Part 2 — Encoder residual coding:
-    1. Forward quantization: port x265 quant.cpp quantBlock() formula
-       level = (abs(coeff) * quantScale + offset) >> shift
-    2. Wire forward DCT + quant into encode loop
-    3. Implement encode_residual_coeffs in syntax_enc.rs — mirror the decoder's
-       decode_residual_coeffs exactly but in encoding direction
-    4. Add reconstruction: after encoding, dequant + IDCT + prediction → store
-       in frame buffer so subsequent CTUs use correct reference samples
-    5. Validate: encode flat_64x64, decode, check PSNR
-
-    Ref: x265 4.1 common/quant.cpp — quantBlock()
-    Ref: libde265 v1.0.18 for IDCT reference values
+    '
+  technical_notes: "Part 1 — Decoder checker gap:\nInvestigation approach: dump prediction + residual values for CTU(0,0)\
+    \ pixels\nthat differ by ±1. Compare against reference (generate no-deblock reference\nfrom the same bitstream). The source\
+    \ is either:\na) 32x32 IDCT rounding (matrix multiply accumulation order)\nb) Strong smoothing interpolation rounding\n\
+    c) Planar prediction rounding\nFix by matching the exact integer arithmetic from ffmpeg/libde265.\n\nPart 2 — Encoder\
+    \ residual coding:\n1. Forward quantization: port x265 quant.cpp quantBlock() formula\n   level = (abs(coeff) * quantScale\
+    \ + offset) >> shift\n2. Wire forward DCT + quant into encode loop\n3. Implement encode_residual_coeffs in syntax_enc.rs\
+    \ — mirror the decoder's\n   decode_residual_coeffs exactly but in encoding direction\n4. Add reconstruction: after encoding,\
+    \ dequant + IDCT + prediction → store\n   in frame buffer so subsequent CTUs use correct reference samples\n5. Validate:\
+    \ encode flat_64x64, decode, check PSNR\n\nRef: x265 4.1 common/quant.cpp — quantBlock()\nRef: libde265 v1.0.18 for IDCT\
+    \ reference values\n"
 plan:
-  - phase: "Decoder Checker Fix"
-    tasks:
-      - text: "Trace CTU(0,0) prediction and residual at differing pixel positions to identify ±1 source"
-        done: false
-      - text: "Fix the rounding difference (IDCT, strong smoothing, or Planar prediction)"
-        done: false
-      - text: "Verify checker_256x256_q22 achieves byte-exact Y plane"
-        done: false
-      - text: "Verify no regression on flat/gradient byte-exact parity"
-        done: false
-  - phase: "Forward Quantization"
-    tasks:
-      - text: "Implement forward quantization function matching x265 quant.cpp quantBlock()"
-        done: false
-      - text: "Add roundtrip test — forward quant then dequant, verify coefficient preservation"
-        done: false
-  - phase: "Encoder Residual Coding"
-    tasks:
-      - text: "Implement full encode_residual_coeffs in syntax_enc.rs (sig flags, gt1/gt2, sign, remaining)"
-        done: false
-      - text: "Wire forward DCT + quant + CABAC coeff encoding into CTU encode loop"
-        done: false
-      - text: "Add reconstruction loop — dequant + IDCT + prediction stored to frame buffer"
-        done: false
-      - text: "Update has_nonzero_residual to actually compute residual and check for non-zero"
-        done: false
-  - phase: "Validation"
-    tasks:
-      - text: "Encode flat_64x64 with residual — decode with our decoder, verify PSNR > 30dB"
-        done: false
-      - text: "Encode flat_64x64 — decode with ffmpeg, verify output matches our decode"
-        done: false
-      - text: "All decoder parity tests pass (4/4 byte-exact)"
-        done: false
-      - text: "All encoder tests pass, clippy clean"
-        done: false
+- phase: Decoder Checker Fix
+  tasks:
+  - text: Trace CTU(0,0) prediction and residual at differing pixel positions to identify ±1 source
+    done: true
+  - text: Fix the rounding difference (IDCT, strong smoothing, or Planar prediction)
+    done: true
+  - text: Verify checker_256x256_q22 achieves byte-exact Y plane
+    done: true
+  - text: Verify no regression on flat/gradient byte-exact parity
+    done: true
+- phase: Forward Quantization
+  tasks:
+  - text: Implement forward quantization function matching x265 quant.cpp quantBlock()
+    done: true
+  - text: Add roundtrip test — forward quant then dequant, verify coefficient preservation
+    done: true
+- phase: Encoder Residual Coding
+  tasks:
+  - text: Implement full encode_residual_coeffs in syntax_enc.rs (sig flags, gt1/gt2, sign, remaining)
+    done: true
+  - text: Wire forward DCT + quant + CABAC coeff encoding into CTU encode loop
+    done: true
+  - text: Add reconstruction loop — dequant + IDCT + prediction stored to frame buffer
+    done: true
+  - text: Update has_nonzero_residual to actually compute residual and check for non-zero
+    done: true
+- phase: Validation
+  tasks:
+  - text: Encode flat_64x64 with residual — decode with our decoder, verify PSNR > 30dB
+    done: true
+  - text: Encode flat_64x64 — decode with ffmpeg, verify output matches our decode
+    done: true
+  - text: All decoder parity tests pass (4/4 byte-exact)
+    done: true
+  - text: All encoder tests pass, clippy clean
+    done: true
 extra: {}
