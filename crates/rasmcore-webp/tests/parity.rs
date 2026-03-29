@@ -471,7 +471,10 @@ impl Lcg {
         Self(seed)
     }
     fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.0
     }
     fn next_f32(&mut self) -> f32 {
@@ -530,8 +533,18 @@ fn perlin_texture(w: u32, h: u32, seed: u64) -> Vec<u8> {
     for y in 0..h {
         for x in 0..w {
             let r = fbm(x as f32 * scale, y as f32 * scale, 4, s);
-            let g = fbm(x as f32 * scale + 100.0, y as f32 * scale, 4, s.wrapping_add(1));
-            let b = fbm(x as f32 * scale, y as f32 * scale + 100.0, 4, s.wrapping_add(2));
+            let g = fbm(
+                x as f32 * scale + 100.0,
+                y as f32 * scale,
+                4,
+                s.wrapping_add(1),
+            );
+            let b = fbm(
+                x as f32 * scale,
+                y as f32 * scale + 100.0,
+                4,
+                s.wrapping_add(2),
+            );
             pixels.push((r * 255.0).clamp(0.0, 255.0) as u8);
             pixels.push((g * 255.0).clamp(0.0, 255.0) as u8);
             pixels.push((b * 255.0).clamp(0.0, 255.0) as u8);
@@ -549,8 +562,16 @@ fn edge_structure(w: u32, h: u32) -> Vec<u8> {
             let yf = y as f32 / h as f32;
 
             // Sharp geometric edges: vertical bars + horizontal bands + diagonal
-            let v_bar = if ((xf * 8.0) as u32) % 2 == 0 { 200u8 } else { 50 };
-            let h_band = if ((yf * 6.0) as u32) % 2 == 0 { 180u8 } else { 70 };
+            let v_bar = if ((xf * 8.0) as u32) % 2 == 0 {
+                200u8
+            } else {
+                50
+            };
+            let h_band = if ((yf * 6.0) as u32) % 2 == 0 {
+                180u8
+            } else {
+                70
+            };
             let diag = if ((xf + yf) * 4.0) as u32 % 2 == 0 {
                 160u8
             } else {
