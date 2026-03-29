@@ -94,6 +94,11 @@ pub struct EncodeConfig {
     /// Default: false.
     pub trellis: bool,
 
+    /// EOB block-level optimization — zero entire blocks where encoding cost
+    /// exceeds distortion penalty. Requires `optimize_huffman: true`.
+    /// Default: false.
+    pub eob_optimize: bool,
+
     /// Sample precision (8-bit baseline or 12-bit extended).
     /// Default: Eight.
     pub sample_precision: SamplePrecision,
@@ -116,6 +121,7 @@ impl Default for EncodeConfig {
             restart_interval: None,
             optimize_huffman: false,
             trellis: false,
+            eob_optimize: false,
             sample_precision: SamplePrecision::Eight,
             quant_preset: crate::quantize::QuantPreset::default(),
             custom_quant_tables: None,
@@ -140,6 +146,7 @@ impl EncodeConfig {
             restart_interval: None,
             optimize_huffman: false,
             trellis: false,
+            eob_optimize: false,
             sample_precision: SamplePrecision::Eight,
             quant_preset: crate::quantize::QuantPreset::AnnexK,
             custom_quant_tables: None,

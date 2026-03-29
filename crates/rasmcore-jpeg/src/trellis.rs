@@ -571,6 +571,229 @@ pub fn dc_trellis_pass(
     }
 }
 
+/// EOB block-level optimization — DP over block sequences to find optimal
+/// keep/zero decisions. Follows mozjpeg's `trellis_eob_opt` algorithm
+/// (jcdctmgr.c lines 981-1297).
+///
+/// **Note on sequential vs progressive mode:**
+/// In mozjpeg, `trellis_eob_opt` is disabled by default. It provides meaningful
+/// savings only in progressive scans where EOBn symbols can efficiently encode
+/// runs of zero blocks. In sequential baseline JPEG, each block independently
+/// encodes an EOB, so there is no run-length benefit across blocks. The per-
+/// coefficient trellis already optimally handles coefficient zeroing.
+///
+/// This function implements the algorithm for future progressive mode support.
+/// For sequential mode, it typically produces zero additional savings.
+pub fn eob_optimize_blocks(
+    blocks: &mut [(usize, [i16; 64])],
+    luma_qt: &[u16; 64],
+    chroma_qt: &[u16; 64],
+    ac_luma_len: &[u8],
+    ac_chroma_len: &[u8],
+    _lambda_scale: f64,
+) -> usize {
+    let n = blocks.len();
+    if n == 0 {
+        return 0;
+    }
+
+    // Per-block state following mozjpeg's algorithm
+    let mut accumulated_zero_block_cost = vec![0.0f64; n + 1];
+    let mut accumulated_block_cost = vec![0.0f64; n + 1];
+    let mut block_run_start = vec![0usize; n];
+    // has_eob: 0 = block has nonzero trailing (needs EOB), 1 = block has trailing zeros (needs EOB), 2 = all AC zero
+    let mut requires_eob = vec![0u8; n + 1];
+
+    // Forward pass: compute per-block costs and DP
+    for bi in 0..n {
+        let (comp_idx, ref coeffs) = blocks[bi];
+        let (qt, ac_len) = if comp_idx == 0 {
+            (luma_qt, ac_luma_len)
+        } else {
+            (chroma_qt, ac_chroma_len)
+        };
+
+        // Compute lambda using mozjpeg's formula:
+        // lambda = 2^14.75 / (2^16.5 + block_energy) * lambda_tbl[z]
+        // where lambda_tbl[z] = 1/(q[z]^2)
+        // For block-level decisions, we use the accumulated distortion directly.
+
+        // cost_all_zeros: total distortion from zeroing all AC coefficients
+        // Uses mozjpeg's distortion model: delta^2 * lambda * lambda_tbl[z]
+        // where delta = quantized_level * q * 8 (the dequantized DCT value)
+        // and lambda_tbl[z] = 1/(q[z]^2)
+        // So: delta^2 / q^2 = (level * q * 8)^2 / q^2 = level^2 * 64
+        //
+        // But we also need lambda. For block-level decisions, we compute
+        // the full mozjpeg accumulated_zero_dist matching jcdctmgr.c line 1133.
+        let mut cost_all_zeros: f64 = 0.0;
+        for pos in 1..64 {
+            if coeffs[pos] != 0 {
+                let q = qt[ZIGZAG[pos]] as f64;
+                // dequantized DCT value = level * q * 8 (LL&M scale)
+                let dequant = coeffs[pos] as f64 * q * 8.0;
+                // mozjpeg: x * x * lambda * lambda_tbl[z]
+                // where lambda_tbl[z] = 1/(q^2) and lambda ≈ 1.0 (mode=1 lambda_base)
+                // So: dequant^2 / (q^2) = level^2 * 64
+                cost_all_zeros += dequant * dequant / (q * q);
+            }
+        }
+
+        // best_cost_skip: the encoding cost of keeping this block (rate only,
+        // since distortion is already captured by the per-coeff trellis)
+        let keep_rate = estimate_block_ac_rate(coeffs, ac_len) as f64;
+
+        // Determine has_eob state:
+        // 2 = all AC zero, 1 = has trailing zeros (needs EOB), 0 = last coeff is nonzero
+        let last_nonzero = coeffs[1..].iter().rposition(|&c| c != 0);
+        let has_eob: u8 = match last_nonzero {
+            None => 2,              // all AC zero
+            Some(p) if p < 62 => 1, // has trailing zeros
+            _ => 0,                 // last AC position is nonzero (or needs EOB at end)
+        };
+
+        // Update accumulated costs (mozjpeg lines 1224-1254)
+        accumulated_zero_block_cost[bi + 1] = accumulated_zero_block_cost[bi] + cost_all_zeros;
+        requires_eob[bi + 1] = has_eob;
+
+        // DP: find best block_run_start for this block
+        let mut best_cost = f64::MAX;
+
+        if has_eob != 2 {
+            // This block has nonzero ACs — evaluate merging zero-block runs
+            for i in 0..=bi {
+                if requires_eob[i] == 2 {
+                    continue;
+                }
+
+                // Cost = keep this block + zero blocks from i to bi + accumulated cost up to i
+                let mut cost = keep_rate;
+                cost += accumulated_zero_block_cost[bi] - accumulated_zero_block_cost[i];
+                cost += accumulated_block_cost[i];
+
+                // EOB run encoding cost (for progressive: EOBn; for sequential: just EOB)
+                let zero_block_run = bi - i + requires_eob[i] as usize;
+                if zero_block_run > 0 {
+                    // Sequential mode: each zero block costs one EOB symbol
+                    let eob_cost = if !ac_len.is_empty() && ac_len[0] > 0 {
+                        ac_len[0] as f64
+                    } else {
+                        4.0
+                    };
+                    cost += eob_cost * zero_block_run as f64;
+                }
+
+                if cost < best_cost {
+                    block_run_start[bi] = i;
+                    best_cost = cost;
+                    accumulated_block_cost[bi + 1] = cost;
+                }
+            }
+        }
+    }
+
+    // Final pass: find optimal last_block (mozjpeg lines 1258-1292)
+    let mut last_block = n;
+    let mut best_cost = f64::MAX;
+
+    for i in 0..=n {
+        if requires_eob[i] == 2 {
+            continue;
+        }
+
+        let mut cost = accumulated_zero_block_cost[n] - accumulated_zero_block_cost[i];
+
+        // Cost of encoding trailing zero blocks
+        let zero_block_run = n - i + requires_eob[i] as usize;
+        if zero_block_run > 0 {
+            let eob_cost = 4.0; // approximate EOB cost
+            cost += eob_cost * zero_block_run as f64;
+        }
+
+        if cost < best_cost {
+            best_cost = cost;
+            last_block = i;
+        }
+    }
+
+    // Backtrack: zero blocks from last_block backward (mozjpeg lines 1281-1292)
+    let mut zeroed_count = 0usize;
+    if last_block > 0 {
+        last_block -= 1;
+    }
+    let mut bi = n as i64 - 1;
+    while bi >= 0 {
+        while bi > last_block as i64 {
+            let (_, ref mut coeffs) = blocks[bi as usize];
+            for pos in 1..64 {
+                if coeffs[pos] != 0 {
+                    coeffs[pos] = 0;
+                    zeroed_count += 1;
+                }
+            }
+            bi -= 1;
+        }
+        if bi >= 0 && (bi as usize) < block_run_start.len() {
+            last_block = if block_run_start[bi as usize] > 0 {
+                block_run_start[bi as usize] - 1
+            } else {
+                0
+            };
+        }
+        bi -= 1;
+    }
+
+    zeroed_count
+}
+
+/// Estimate the Huffman bit cost of encoding AC coefficients in a block.
+fn estimate_block_ac_rate(coeffs: &[i16; 64], ac_code_lengths: &[u8]) -> u32 {
+    let mut total_bits = 0u32;
+    let mut zero_run: u8 = 0;
+
+    for pos in 1..64 {
+        if coeffs[pos] == 0 {
+            zero_run += 1;
+            continue;
+        }
+
+        // Emit ZRL symbols for runs >= 16
+        while zero_run >= 16 {
+            let zrl_symbol = 0xF0usize;
+            if zrl_symbol < ac_code_lengths.len() && ac_code_lengths[zrl_symbol] > 0 {
+                total_bits += ac_code_lengths[zrl_symbol] as u32;
+            } else {
+                total_bits += 16;
+            }
+            zero_run -= 16;
+        }
+
+        // Encode (run, size) symbol
+        let abs_val = coeffs[pos].unsigned_abs();
+        let size = 16 - abs_val.leading_zeros(); // magnitude category
+        let symbol = ((zero_run as usize) << 4) | (size as usize);
+        if symbol < ac_code_lengths.len() && ac_code_lengths[symbol] > 0 {
+            total_bits += ac_code_lengths[symbol] as u32;
+        } else {
+            total_bits += 16; // fallback for missing symbols
+        }
+        total_bits += size; // magnitude bits
+
+        zero_run = 0;
+    }
+
+    // EOB if we didn't end on a non-zero at position 63
+    if zero_run > 0 {
+        if ac_code_lengths.len() > 0 && ac_code_lengths[0x00] > 0 {
+            total_bits += ac_code_lengths[0x00] as u32;
+        } else {
+            total_bits += 4;
+        }
+    }
+
+    total_bits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
