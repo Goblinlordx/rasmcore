@@ -1,0 +1,71 @@
+id: hevc-idct-deblock-fix_20260329030000Z
+title: HEVC IDCT Matrix + Deblocking Alignment — Final Reference Parity
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Replace butterfly IDCT for 4x4/8x8/16x16 with direct matrix multiply (matching the 32x32 fix), fix deblocking
+    dp3/dq3 strong filter decision, and verify WPP substream byte alignment. Target: all 9 parity tests pass with >25dB.'
+  context: Previous tracks fixed the 32x32 IDCT (butterfly sign matrix errors → replaced with direct matrix multiply from
+    HEVC Table 8-6). Checker jumped 11.0→22.7dB. The 4x4/8x8/16x16 IDCT implementations still use butterfly decomposition
+    which likely has similar rounding or sign errors. Additionally, the deblocking filter has a known dp3/dq3 bug (uses same
+    samples as dp0/dq0 instead of offset samples). WPP CABAC init values are verified correct but substream boundary alignment
+    needs validation.
+  codebase_analysis: 'IDCT files: crates/rasmcore-dct/src/dct4.rs (butterfly 4x4), dct8.rs (butterfly 8x8), dct16.rs (butterfly
+    16x16), dst4.rs (4x4 DST for intra luma). Reference matrix: libde265 v1.0.18 fallback-dct.cc lines 512-544 mat_dct[32][32]
+    — smaller sizes use fact=1<<(5-Log2(nT)) stride to select rows. Deblocking: crates/rasmcore-hevc/src/filter.rs lines 78-81
+    dp3/dq3 bug. Frame loop: crates/rasmcore-hevc/src/frame.rs WPP handling.'
+  acceptance_criteria:
+  - All 9 parity tests pass (0 failures)
+  - gradient_128x128_q22 PSNR > 25dB
+  - checker_256x256_q22 PSNR > 25dB
+  - flat_64x64 q22/q37 unchanged at 48.1dB
+  - All fixes cited with libde265 v1.0.18 source locations
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: CABAC context derivation (verified correct). Prediction modes (verified correct). Chroma decode. Per-TU boundary
+    strength tracking (deferred — focus on dp3/dq3 first).
+  technical_notes: "Three fix categories:\n\nPhase 1 — IDCT Matrix Multiply (PRIMARY FIX):\n  Replace butterfly decomposition\
+    \ in dct4.rs, dct8.rs, dct16.rs, dst4.rs\n  with direct matrix multiply using exact HEVC Table 8-6 / Table 8-7 coefficients.\n\
+    \  The 32x32 fix (dct32.rs) already proves this approach works (+11.7dB on checker).\n  Smaller sizes use the same mat_dct[32][32]\
+    \ matrix with stride fact=1<<(5-Log2(nT)):\n    4x4: rows 0,8,16,24 of mat_dct (fact=8)\n    8x8: rows 0,4,8,12,16,20,24,28\
+    \ (fact=4)\n    16x16: rows 0,2,4,...,30 (fact=2)\n  Ref: libde265 v1.0.18 fallback-dct.cc lines 512-544, 637.\n\nPhase\
+    \ 2 — Deblocking Fix:\n  filter.rs lines 78-81: dp3/dq3 use p[0..2] but should use p[3..5] per\n  HEVC Section 8.7.2.4.5.\
+    \ Need to expand sample window or use libde265's\n  actual implementation from deblock.cc.\n  Ref: libde265 v1.0.18 deblock.cc.\n\
+    \nPhase 3 — WPP Verification:\n  Confirm terminate bit is consumed at WPP row boundaries before CABAC reinit.\n  Run per-row\
+    \ PSNR comparison to verify each row matches reference."
+plan: []
+extra: {}
+plan:
+  - phase: IDCT Matrix Multiply
+    tasks:
+      - text: "Replace dct4.rs inverse_dct_4x4 with direct 4x4 matrix multiply using HEVC Table 8-6 rows at stride 8. Cite libde265 v1.0.18 fallback-dct.cc."
+        done: false
+      - text: "Replace dct8.rs inverse_dct_8x8 with direct 8x8 matrix multiply using HEVC Table 8-6 rows at stride 4. Cite reference."
+        done: false
+      - text: "Replace dct16.rs inverse_dct_16x16 with direct 16x16 matrix multiply using HEVC Table 8-6 rows at stride 2. Cite reference."
+        done: false
+      - text: "Verify dst4.rs inverse_dst_4x4 against HEVC Table 8-7 — fix if needed. Cite reference."
+        done: false
+      - text: "Run parity tests after IDCT fixes — check gradient and checker improvement"
+        done: false
+  - phase: Deblocking Fix
+    tasks:
+      - text: "Fix dp3/dq3 in filter.rs use_strong_filter to use correct offset samples per HEVC Section 8.7.2.4.5. Cite libde265 v1.0.18 deblock.cc."
+        done: false
+      - text: "Run parity tests after deblocking fix — check improvement"
+        done: false
+  - phase: WPP Verification
+    tasks:
+      - text: "Add per-CTU-row PSNR comparison test for gradient_128x128_q22 — verify each row matches reference"
+        done: false
+      - text: "If any row diverges significantly, investigate WPP terminate bit handling"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat 48.1dB"
+        done: false
+      - text: "All fixes cited with libde265 v1.0.18 source locations"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test passes"
+        done: false
