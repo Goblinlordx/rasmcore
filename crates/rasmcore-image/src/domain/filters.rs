@@ -7141,6 +7141,130 @@ mod spatial_tests {
             "pyrDown→pyrUp roundtrip MAE={mae:.2} (should be < 5.0)"
         );
     }
+
+    // ── Displacement Map Tests ───────────────────────────────────────────
+
+    #[test]
+    fn displacement_map_identity() {
+        // Identity map: map_x[y*w+x] = x, map_y[y*w+x] = y → output == input
+        let w = 16u32;
+        let h = 16u32;
+        let info = gray_info(w, h);
+        let pixels: Vec<u8> = (0..256).map(|i| i as u8).collect();
+        let mut map_x = vec![0.0f32; 256];
+        let mut map_y = vec![0.0f32; 256];
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                map_x[idx] = x as f32;
+                map_y[idx] = y as f32;
+            }
+        }
+        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        assert_eq!(result, pixels, "identity displacement should reproduce input");
+    }
+
+    #[test]
+    fn displacement_map_uniform_shift() {
+        // Shift all pixels right by 1: map_x = x - 1.0
+        let w = 8u32;
+        let h = 4u32;
+        let info = gray_info(w, h);
+        let mut pixels = vec![0u8; (w * h) as usize];
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                pixels[y * w as usize + x] = (x * 30 + y * 10) as u8;
+            }
+        }
+        let mut map_x = vec![0.0f32; (w * h) as usize];
+        let mut map_y = vec![0.0f32; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                map_x[idx] = x as f32 - 1.0; // shift right by 1
+                map_y[idx] = y as f32;
+            }
+        }
+        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        // First column should be black (source x = -1 → out of bounds)
+        for y in 0..h as usize {
+            assert_eq!(result[y * w as usize], 0, "left edge should be black");
+        }
+        // Other columns should match pixels shifted
+        for y in 0..h as usize {
+            for x in 1..w as usize {
+                assert_eq!(
+                    result[y * w as usize + x],
+                    pixels[y * w as usize + x - 1],
+                    "pixel ({x},{y}) should be shifted"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn displacement_map_oob_produces_black() {
+        let w = 4u32;
+        let h = 4u32;
+        let info = gray_info(w, h);
+        let pixels = vec![128u8; (w * h) as usize];
+        // All map coordinates point outside the image
+        let map_x = vec![-10.0f32; (w * h) as usize];
+        let map_y = vec![-10.0f32; (w * h) as usize];
+        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        assert!(result.iter().all(|&v| v == 0), "all OOB → all black");
+    }
+
+    #[test]
+    fn displacement_map_rgba() {
+        let w = 4u32;
+        let h = 4u32;
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels: Vec<u8> = (0..64).map(|i| (i * 4) as u8).collect();
+        // Identity map
+        let mut map_x = vec![0.0f32; 16];
+        let mut map_y = vec![0.0f32; 16];
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                map_x[idx] = x as f32;
+                map_y[idx] = y as f32;
+            }
+        }
+        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn displacement_map_size_mismatch_error() {
+        let info = gray_info(4, 4);
+        let pixels = vec![0u8; 16];
+        let map_x = vec![0.0f32; 8]; // wrong size
+        let map_y = vec![0.0f32; 16];
+        assert!(displacement_map(&pixels, &info, &map_x, &map_y).is_err());
+    }
+
+    #[test]
+    fn displacement_map_subpixel_bilinear() {
+        // Test bilinear interpolation at half-pixel offsets
+        let w = 4u32;
+        let h = 1u32;
+        let info = gray_info(w, h);
+        let pixels = vec![0u8, 100, 200, 50];
+        // Sample at x=0.5 → blend of pixel 0 (0) and pixel 1 (100)
+        let map_x = vec![0.5f32, 1.5, 2.5, 0.0];
+        let map_y = vec![0.0f32; 4];
+        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        assert_eq!(result[0], 50, "blend(0, 100) at 0.5 = 50");
+        assert_eq!(result[1], 150, "blend(100, 200) at 0.5 = 150");
+        assert_eq!(result[2], 125, "blend(200, 50) at 0.5 = 125");
+        assert_eq!(result[3], 0, "exact pixel 0 = 0");
+    }
 }
 
 // ─── Perspective Correction Tests ───────────────────────────────────────────
