@@ -19,6 +19,7 @@ members = [
     "crates/rasmcore-dct",
     "crates/rasmcore-hevc",
     "crates/rasmcore-trellis",
+    "crates/rasmcore-macros",
     "tests/wasm-integration",
     "tests/codec-parity",
 ]

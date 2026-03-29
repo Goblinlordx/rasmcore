@@ -105,6 +105,7 @@ where
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on
 /// x86 (SSE/AVX), ARM (NEON), and WASM (SIMD128).
+#[rasmcore_macros::register_filter(name = "blur", category = "spatial")]
 pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError> {
     if radius < 0.0 {
         return Err(ImageError::InvalidParameters(

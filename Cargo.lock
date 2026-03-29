@@ -2345,6 +2345,7 @@ dependencies = [
  "rasmcore-hevc",
  "rasmcore-isobmff",
  "rasmcore-jpeg",
+ "rasmcore-macros",
  "rasmcore-pipeline",
  "rasmcore-pnm",
  "rasmcore-qoi",
@@ -2382,6 +2383,15 @@ version = "0.1.0"
 dependencies = [
  "rasmcore-bitio",
  "weezl",
+]
+
+[[package]]
+name = "rasmcore-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
