@@ -847,13 +847,10 @@ fn adaptive_mean_matches_opencv() {
             128 * 128
         );
 
-        // Binary thresholds: any different pixel is 255 off. Allow <4% pixel mismatch
-        // due to border mode and integer-vs-float mean rounding. OpenCV uses integer
-        // box filter with BORDER_REFLECT_101; our implementation uses f64 integral image.
-        // Mismatches occur at pixels near the threshold boundary.
-        assert!(
-            mismatch_pct < 4.0,
-            "Adaptive mean {name}: {mismatch_pct:.2}% mismatches > 4%"
+        // Integer box mean + BORDER_REPLICATE matches OpenCV exactly.
+        assert_eq!(
+            mismatches, 0,
+            "Adaptive mean {name}: {mismatches} pixel mismatches (expected exact match)"
         );
     }
 }

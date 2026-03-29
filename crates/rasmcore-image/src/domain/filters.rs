@@ -4951,32 +4951,102 @@ pub fn adaptive_threshold(
     let (w, h) = (info.width as usize, info.height as usize);
     let r = (block_size / 2) as usize;
 
-    // Compute local mean (integral image approach for Mean, Gaussian for Gaussian)
-    let local_mean = match method {
+    match method {
         AdaptiveMethod::Mean => {
-            // Box mean via integral image — BORDER_REFLECT_101
-            let input: Vec<f64> = pixels.iter().map(|&v| v as f64).collect();
-            box_mean_f64(&input, w, h, r)
+            // Integer box mean via integral image — BORDER_REPLICATE (matches OpenCV exactly).
+            // OpenCV adaptiveThreshold uses: boxFilter(src, mean, CV_8U, ..., BORDER_REPLICATE)
+            // then: pixel > (mean - C) in integer arithmetic.
+            let box_mean = box_mean_u8_replicate(pixels, w, h, r);
+            let c_int = c.round() as i16;
+            let mut result = vec![0u8; w * h];
+            for i in 0..(w * h) {
+                // Signed comparison — threshold can be negative (OpenCV does NOT clamp to 0)
+                let thresh = box_mean[i] as i16 - c_int;
+                result[i] = if (pixels[i] as i16) > thresh {
+                    max_value
+                } else {
+                    0
+                };
+            }
+            Ok(result)
         }
         AdaptiveMethod::Gaussian => {
             // Gaussian-weighted mean — use separable Gaussian blur
             let sigma = 0.3 * ((block_size as f64 - 1.0) * 0.5 - 1.0) + 0.8;
-            gaussian_blur_f64(pixels, w, h, block_size as usize, sigma)
+            let local_mean = gaussian_blur_f64(pixels, w, h, block_size as usize, sigma);
+            let mut result = vec![0u8; w * h];
+            for i in 0..(w * h) {
+                let thresh = local_mean[i] - c;
+                result[i] = if (pixels[i] as f64) > thresh {
+                    max_value
+                } else {
+                    0
+                };
+            }
+            Ok(result)
         }
-    };
+    }
+}
 
-    let mut result = vec![0u8; w * h];
-    for i in 0..(w * h) {
-        let thresh = local_mean[i] - c;
-        // OpenCV uses strict > for THRESH_BINARY comparison
-        result[i] = if (pixels[i] as f64) > thresh {
-            max_value
-        } else {
+/// Integer box mean via integral image with BORDER_REPLICATE padding.
+/// Matches OpenCV's boxFilter(src, CV_8U, ksize, BORDER_REPLICATE) exactly.
+fn box_mean_u8_replicate(pixels: &[u8], w: usize, h: usize, radius: usize) -> Vec<u8> {
+    let r = radius;
+    let ksize = 2 * r + 1;
+
+    // Pad with BORDER_REPLICATE: clamp to edge
+    let pw = w + 2 * r;
+    let ph = h + 2 * r;
+    let mut padded = vec![0u32; pw * ph];
+    for py in 0..ph {
+        let sy = if py < r {
             0
+        } else if py >= h + r {
+            h - 1
+        } else {
+            py - r
         };
+        for px in 0..pw {
+            let sx = if px < r {
+                0
+            } else if px >= w + r {
+                w - 1
+            } else {
+                px - r
+            };
+            padded[py * pw + px] = pixels[sy * w + sx] as u32;
+        }
     }
 
-    Ok(result)
+    // Build integral image (i64 for safe subtraction)
+    let mut sat = vec![0i64; (pw + 1) * (ph + 1)];
+    for y in 0..ph {
+        for x in 0..pw {
+            sat[(y + 1) * (pw + 1) + (x + 1)] = padded[y * pw + x] as i64
+                + sat[y * (pw + 1) + (x + 1)]
+                + sat[(y + 1) * (pw + 1) + x]
+                - sat[y * (pw + 1) + x];
+        }
+    }
+
+    // Query box means with rounded integer division (matches OpenCV boxFilter CV_8U)
+    let area = (ksize * ksize) as i64;
+    let half_area = area / 2;
+    let n = w * h;
+    let mut result = vec![0u8; n];
+    for y in 0..h {
+        for x in 0..w {
+            let y1 = y;
+            let x1 = x;
+            let y2 = y + ksize;
+            let x2 = x + ksize;
+            let sum = sat[y2 * (pw + 1) + x2] - sat[y1 * (pw + 1) + x2] - sat[y2 * (pw + 1) + x1]
+                + sat[y1 * (pw + 1) + x1];
+            result[y * w + x] = ((sum + half_area) / area) as u8;
+        }
+    }
+
+    result
 }
 
 /// Box mean via integral image (f64 precision).
