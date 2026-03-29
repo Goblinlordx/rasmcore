@@ -122,14 +122,119 @@ pub fn register_filter(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// Register a function as a rasmcore encoder (stub — will be extended).
-#[proc_macro_attribute]
-pub fn register_encoder(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item // pass-through for now
+// ─── Encoder Registration ───────────────────────────────────────────────────
+
+struct RegisterEncoderArgs {
+    name: String,
+    format: String,
+    mime: String,
 }
 
-/// Register a function as a rasmcore decoder (stub — will be extended).
+impl Parse for RegisterEncoderArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut name = String::new();
+        let mut format = String::new();
+        let mut mime = String::new();
+
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            let _: Token![=] = input.parse()?;
+            let lit: LitStr = input.parse()?;
+
+            match ident.to_string().as_str() {
+                "name" => name = lit.value(),
+                "format" => format = lit.value(),
+                "mime" => mime = lit.value(),
+                other => return Err(syn::Error::new(ident.span(), format!("unknown: {other}"))),
+            }
+
+            if input.peek(Token![,]) { let _: Token![,] = input.parse()?; }
+        }
+
+        Ok(RegisterEncoderArgs { name, format, mime })
+    }
+}
+
+/// Register a function as a rasmcore encoder.
 #[proc_macro_attribute]
-pub fn register_decoder(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item // pass-through for now
+pub fn register_encoder(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterEncoderArgs);
+    let input_fn = parse_macro_input!(item as ItemFn);
+    let fn_name = &input_fn.sig.ident;
+    let name = &args.name;
+    let format = &args.format;
+    let mime = &args.mime;
+    let reg_ident = format_ident!("__RASMCORE_ENCODER_{}", fn_name.to_string().to_uppercase());
+
+    let expanded = quote! {
+        #input_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: crate::domain::encoder::StaticEncoderRegistration =
+            crate::domain::encoder::StaticEncoderRegistration {
+                name: #name,
+                format: #format,
+                mime: #mime,
+                fn_name: stringify!(#fn_name),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+    TokenStream::from(expanded)
+}
+
+// ─── Decoder Registration ───────────────────────────────────────────────────
+
+struct RegisterDecoderArgs {
+    name: String,
+    formats: String,
+}
+
+impl Parse for RegisterDecoderArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut name = String::new();
+        let mut formats = String::new();
+
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            let _: Token![=] = input.parse()?;
+            let lit: LitStr = input.parse()?;
+
+            match ident.to_string().as_str() {
+                "name" => name = lit.value(),
+                "formats" => formats = lit.value(),
+                other => return Err(syn::Error::new(ident.span(), format!("unknown: {other}"))),
+            }
+
+            if input.peek(Token![,]) { let _: Token![,] = input.parse()?; }
+        }
+
+        Ok(RegisterDecoderArgs { name, formats })
+    }
+}
+
+/// Register a function as a rasmcore decoder.
+#[proc_macro_attribute]
+pub fn register_decoder(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterDecoderArgs);
+    let input_fn = parse_macro_input!(item as ItemFn);
+    let fn_name = &input_fn.sig.ident;
+    let name = &args.name;
+    let formats = &args.formats;
+    let reg_ident = format_ident!("__RASMCORE_DECODER_{}", fn_name.to_string().to_uppercase());
+
+    let expanded = quote! {
+        #input_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: crate::domain::decoder::StaticDecoderRegistration =
+            crate::domain::decoder::StaticDecoderRegistration {
+                name: #name,
+                formats: #formats,
+                fn_name: stringify!(#fn_name),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+    TokenStream::from(expanded)
 }
