@@ -108,11 +108,11 @@ plan:
 - phase: Verification
   tasks:
   - text: Test decode-encode roundtrip for 16-bit PNG (gradient, verify no precision loss)
-    done: false
+    done: true
   - text: Test decode-encode roundtrip for 16-bit TIFF
-    done: false
+    done: true
   - text: Test format conversion roundtrips (Rgb8 to Rgb16 to Rgb8 preserves values)
-    done: false
+    done: true
   - text: Verify all existing 8-bit tests still pass
-    done: false
+    done: true
 extra: {}
