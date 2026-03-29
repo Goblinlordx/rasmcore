@@ -3,108 +3,111 @@ title: VP8 Fix NZ Context Propagation — Pass Real Frame Context to VP8Decimate
 type: bug
 status: pending
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-03-29'
 spec:
-  summary: |
-    Fix the critical bug where VP8Decimate receives dummy zero-context arrays
+  summary: 'Fix the critical bug where VP8Decimate receives dummy zero-context arrays
+
     instead of real NZ context from neighboring MBs. This causes all trellis
+
     and cost estimation decisions to use wrong probabilities, producing the
+
     ~18 dB quality gap vs cwebp.
-  context: |
-    Current quality ratio is 0.55-0.60x cwebp despite comparable file sizes.
-    The root cause is in bitstream.rs encode_frame Pass 1 loop (lines 98-100):
 
-      let mut dummy_token = BoolWriter::with_capacity(0);
-      let mut dummy_top_ctx = [0u8; 9];
-      let mut dummy_left_ctx = [0u8; 9];
+    '
+  context: "Current quality ratio is 0.55-0.60x cwebp despite comparable file sizes.\nThe root cause is in bitstream.rs encode_frame\
+    \ Pass 1 loop (lines 98-100):\n\n  let mut dummy_token = BoolWriter::with_capacity(0);\n  let mut dummy_top_ctx = [0u8;\
+    \ 9];\n  let mut dummy_left_ctx = [0u8; 9];\n\nThese dummy arrays are created INSIDE the MB loop, so every macroblock's\n\
+    VP8Decimate call starts with zero context. In libwebp, the VP8EncIterator\ncarries persistent NZ context across the entire\
+    \ frame.\n\nImpact chain:\n1. Trellis quantization uses ctx=0 for first coefficient of every block\n2. Cost estimation\
+    \ (GetCostLuma16/4/UV) uses ctx=0 for DC and first AC\n3. Mode decisions (I16 vs I4, which I16 mode, which I4 mode) are\
+    \ all\n   based on wrong cost estimates\n4. Coefficients chosen are suboptimal for every MB after the first\n5. The token\
+    \ encoding in Pass 2 uses correct context, but the\n   COEFFICIENTS it encodes were chosen with wrong context\n"
+  codebase_analysis: 'The fix requires passing real frame-level NZ context into encode_macroblock
 
-    These dummy arrays are created INSIDE the MB loop, so every macroblock's
-    VP8Decimate call starts with zero context. In libwebp, the VP8EncIterator
-    carries persistent NZ context across the entire frame.
-
-    Impact chain:
-    1. Trellis quantization uses ctx=0 for first coefficient of every block
-    2. Cost estimation (GetCostLuma16/4/UV) uses ctx=0 for DC and first AC
-    3. Mode decisions (I16 vs I4, which I16 mode, which I4 mode) are all
-       based on wrong cost estimates
-    4. Coefficients chosen are suboptimal for every MB after the first
-    5. The token encoding in Pass 2 uses correct context, but the
-       COEFFICIENTS it encodes were chosen with wrong context
-  codebase_analysis: |
-    The fix requires passing real frame-level NZ context into encode_macroblock
     and through to VP8Decimate. Currently encode_macroblock takes top_ctx and
-    left_ctx parameters but they're dummies in Pass 1.
+
+    left_ctx parameters but they''re dummies in Pass 1.
+
 
     In libwebp, the NZ context is maintained in VP8EncIterator:
+
     - it->top_nz[0..3]: luma Y column context (4 entries)
+
     - it->left_nz[0..3]: luma Y row context (4 entries)
+
     - it->top_nz[4..7]: chroma UV column context
+
     - it->left_nz[4..7]: chroma UV row context
+
     - it->top_nz[8]: Y2 DC context
+
     - it->left_nz[8]: Y2 DC context
+
 
     These are propagated via VP8IteratorNzToBytes before each Reconstruct call.
 
+
     Our encode_macroblock already has top_ctx/left_ctx parameters (9 entries
+
     each, same layout as libwebp). The fix is:
+
     1. In Pass 1 loop: use real top_ctx/left_ctx arrays (maintained across MBs)
+
     2. Pass them through encode_macroblock to VP8Decimate
+
     3. VP8Decimate passes initial NZ context to PickBestIntra16/4/UV
+
     4. PickBest functions use this context for trellis and cost estimation
 
+
     Also need to fix get_cost_luma16 dc_nz parameter: currently hardcoded to 0,
+
     should come from top_ctx[0] + left_ctx[0] (Y2 NZ from neighboring MBs).
+
+    '
   acceptance_criteria:
-    - Pass 1 maintains real NZ context arrays across MBs (not dummies)
-    - VP8Decimate receives initial NZ context from neighboring MBs
-    - PickBestIntra16 uses correct Y2 DC context for cost estimation
-    - PickBestIntra4 uses correct luma NZ context for trellis quantization
-    - PickBestUV uses correct chroma NZ context for trellis quantization
-    - Quality ratio improves to >= 0.75x cwebp at Q75 (up from 0.55-0.60x)
-    - gradient_256 Q75 PSNR >= 30 dB (up from 23.4 dB)
-    - All 139 unit tests + 11 encode/decode tests pass
-    - All existing parity tests continue to pass
-  out_of_scope: |
-    StatLoop (multi-pass). Y2 trellis (disabled due to lambda calibration).
+  - Pass 1 maintains real NZ context arrays across MBs (not dummies)
+  - VP8Decimate receives initial NZ context from neighboring MBs
+  - PickBestIntra16 uses correct Y2 DC context for cost estimation
+  - PickBestIntra4 uses correct luma NZ context for trellis quantization
+  - PickBestUV uses correct chroma NZ context for trellis quantization
+  - Quality ratio improves to >= 0.75x cwebp at Q75 (up from 0.55-0.60x)
+  - gradient_256 Q75 PSNR >= 30 dB (up from 23.4 dB)
+  - All 139 unit tests + 11 encode/decode tests pass
+  - All existing parity tests continue to pass
+  out_of_scope: 'StatLoop (multi-pass). Y2 trellis (disabled due to lambda calibration).
+
     Spectral distortion (disabled pending calibration).
-  technical_notes: |
-    Implementation approach:
 
-    1. Remove dummy context arrays from Pass 1 loop
-    2. Use the real top_ctx/left_ctx arrays for both Pass 1 (VP8Decimate)
-       and the existing token encoding in encode_macroblock
-    3. Modify vp8_decimate to accept initial NZ context (top[9] + left[9])
-    4. Thread NZ context through PickBestIntra16/4/UV functions
-    5. Update get_cost_luma16 to use real dc_nz from context arrays
-
-    The key insight: the NZ context after VP8Decimate processing should
-    match what the decoder will see. So Pass 1 context propagation must
-    exactly mirror the token encoding context updates in Pass 2.
-
-    This means we need to update top_ctx/left_ctx in Pass 1 based on
-    the VP8Decimate coefficient output, exactly as we do in Pass 2's
-    encode_mb_tokens.
+    '
+  technical_notes: "Implementation approach:\n\n1. Remove dummy context arrays from Pass 1 loop\n2. Use the real top_ctx/left_ctx\
+    \ arrays for both Pass 1 (VP8Decimate)\n   and the existing token encoding in encode_macroblock\n3. Modify vp8_decimate\
+    \ to accept initial NZ context (top[9] + left[9])\n4. Thread NZ context through PickBestIntra16/4/UV functions\n5. Update\
+    \ get_cost_luma16 to use real dc_nz from context arrays\n\nThe key insight: the NZ context after VP8Decimate processing\
+    \ should\nmatch what the decoder will see. So Pass 1 context propagation must\nexactly mirror the token encoding context\
+    \ updates in Pass 2.\n\nThis means we need to update top_ctx/left_ctx in Pass 1 based on\nthe VP8Decimate coefficient\
+    \ output, exactly as we do in Pass 2's\nencode_mb_tokens.\n"
 plan:
-  - phase: Context Threading
-    tasks:
-      - text: Remove dummy context arrays from Pass 1 loop, use real top_ctx/left_ctx
-        done: false
-      - text: Add NZ context parameters to vp8_decimate (top_nz[9], left_nz[9])
-        done: false
-      - text: Thread NZ context into PickBestIntra16 (for trellis + dc_nz cost)
-        done: false
-      - text: Thread NZ context into PickBestIntra4 and PickBestUV
-        done: false
-  - phase: Context Update
-    tasks:
-      - text: Update top_ctx/left_ctx in Pass 1 loop after each MB (mirror Pass 2 logic)
-        done: false
-      - text: Fix get_cost_luma16 dc_nz to use real Y2 context from neighboring MBs
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Verify quality improvement on gradient_256 Q75 (target >= 30 dB)
-        done: false
-      - text: Run full parity test suite, verify no regressions
-        done: false
+- phase: Context Threading
+  tasks:
+  - text: Remove dummy context arrays from Pass 1 loop, use real top_ctx/left_ctx
+    done: true
+  - text: Add NZ context parameters to vp8_decimate (top_nz[9], left_nz[9])
+    done: true
+  - text: Thread NZ context into PickBestIntra16 (for trellis + dc_nz cost)
+    done: true
+  - text: Thread NZ context into PickBestIntra4 and PickBestUV
+    done: true
+- phase: Context Update
+  tasks:
+  - text: Update top_ctx/left_ctx in Pass 1 loop after each MB (mirror Pass 2 logic)
+    done: true
+  - text: Fix get_cost_luma16 dc_nz to use real Y2 context from neighboring MBs
+    done: true
+- phase: Validation
+  tasks:
+  - text: Verify quality improvement on gradient_256 Q75 (target >= 30 dB)
+    done: true
+  - text: Run full parity test suite, verify no regressions
+    done: true
 extra: {}
