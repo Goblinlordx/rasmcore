@@ -1,0 +1,8 @@
+title: VP8 libwebp VP8Decimate — Full MB Encode Loop from Source
+status: pending
+type: refactor
+approved: false
+created: '2026-03-29'
+updated: '2026-03-29'
+deps:
+- webp-libwebp-mode-decision_20260329103501Z

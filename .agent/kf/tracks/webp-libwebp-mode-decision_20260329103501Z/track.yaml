@@ -1,0 +1,79 @@
+id: webp-libwebp-mode-decision_20260329103501Z
+title: VP8 libwebp Mode Decision — PickBestIntra16/Intra4/UV from Source
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Port PickBestIntra16, PickBestIntra4, and PickBestUV from libwebp
+    quant_enc.c. Each function replicated line-by-line from source with
+    the exact same RD evaluation, trellis path, and early termination.
+  context: |
+    Our mode selection uses approximated RD costs. libwebp's PickBestIntra16
+    (line 982), PickBestIntra4 (line 1052), and PickBestUV (line 1148) use
+    VP8ModeScore with specific distortion metrics, trellis quantization,
+    and the SetRDScore formula. Matching these exactly closes the quality gap.
+  codebase_analysis: |
+    libwebp quant_enc.c key functions:
+    - PickBestIntra16 (982-1050): tries all 4 I16 modes, full encode trial each,
+      picks min RD score. Uses VP8SetIntra16Mode, VP8MakeIntra4Preds for setup.
+    - PickBestIntra4 (1052-1145): for each 4x4 sub-block, tries all 10 modes
+      with full encode (DCT + quant + trellis + token cost), sequential recon.
+      Uses VP8MakeLuma4Preds, VP8SetIntra4Mode. Early exit if I4 cost > I16 cost.
+    - PickBestUV (1148-1200): tries all 4 chroma modes with full encode trial.
+
+    Our current code:
+    - predict.rs: select_best_16x16_rd (SSD-based, no trellis)
+    - predict.rs: select_best_4x4_rd (SATD pre-screen + top-3 RD)
+    - bitstream.rs: encode_macroblock (ad-hoc B_PRED vs I16 comparison)
+
+    Key differences:
+    1. libwebp evaluates ALL modes with full encode (not just top-3 by SATD)
+    2. libwebp uses trellis quantization in mode evaluation (DO_TRELLIS_I4=1)
+    3. libwebp has early exit: stops I4 evaluation if cumulative cost > I16 cost
+    4. libwebp computes R (rate) via VP8GetCostLuma/VP8GetCostUV with exact token tree
+  acceptance_criteria:
+    - PickBestIntra16 matches libwebp line-by-line (all 4 modes, full encode, SetRDScore)
+    - PickBestIntra4 matches libwebp (all 10 modes per sub-block, sequential recon, early exit)
+    - PickBestUV matches libwebp (all 4 modes, full encode)
+    - Quality ratio >= 0.90x cwebp on mixed content at Q75
+    - All existing tests pass
+  out_of_scope: |
+    VP8Decimate orchestration (Track 3). Multi-pass encoding. Segment assignment.
+  technical_notes: |
+    Read libwebp quant_enc.c lines 982-1200 for all three functions.
+    Read cost_enc.c for VP8GetCostLuma16/VP8GetCostLuma4/VP8GetCostUV.
+    Read vp8i_enc.h for VP8EncIterator, VP8ModeScore, VP8SegmentInfo.
+
+    Implementation approach: create new functions in bitstream.rs that replace
+    the current mode selection. Keep old functions available behind a flag for
+    A/B comparison.
+plan:
+  - phase: Source Reading
+    tasks:
+      - text: Read and document PickBestIntra16 from quant_enc.c lines 982-1050
+        done: false
+      - text: Read and document PickBestIntra4 from quant_enc.c lines 1052-1145
+        done: false
+      - text: Read and document PickBestUV from quant_enc.c lines 1148-1200
+        done: false
+      - text: Read VP8GetCostLuma16/Luma4/UV from cost_enc.c
+        done: false
+  - phase: Implementation
+    tasks:
+      - text: Port PickBestIntra16 with exact libwebp RD evaluation
+        done: false
+      - text: Port PickBestIntra4 with sequential recon and early exit
+        done: false
+      - text: Port PickBestUV with exact libwebp RD evaluation
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Quality ratio >= 0.90x cwebp on photo content
+        done: false
+      - text: Mode distribution matches cwebp verbose output for test images
+        done: false
+      - text: All parity tests pass
+        done: false
+extra: {}

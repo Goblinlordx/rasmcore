@@ -1,0 +1,71 @@
+id: webp-libwebp-rd-framework_20260329103500Z
+title: VP8 libwebp RD Framework — SetRDScore, VP8ModeScore, Lambda from Source
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Port libwebp's exact RD cost framework from quant_enc.c: SetRDScore,
+    VP8ModeScore, lambda derivation, and residual coefficient handling.
+    Foundation for all subsequent mode decision ports.
+  context: |
+    Our WebP encoder uses ad-hoc RD cost computation (SSD + lambda * bits)
+    that approximates but does not match libwebp's exact framework. libwebp
+    uses VP8ModeScore (D, SD, H, R, score fields), SetRDScore with specific
+    lambda values per segment, and a particular residual coefficient layout.
+    Matching this exactly is prerequisite to matching mode decisions.
+  codebase_analysis: |
+    libwebp source: src/enc/quant_enc.c
+    - SetRDScore (line 557): rd->score = (rd->R + rd->H) * lambda + RD_DISTO_MULT * (rd->D + rd->SD)
+    - RD_DISTO_MULT = 256
+    - VP8ModeScore: D (distortion), SD (secondary distortion for UV), H (header bits),
+      R (residual bits), score (combined RD), nz (nonzero pattern), mode_i16/mode_uv
+    - Lambda: dqm->lambda_mode from VP8SetSegmentParams, derived from quality/segment
+    - VP8SetResidualCoeffs: packs quantized coefficients into residual layout
+
+    Our code: crates/rasmcore-webp/src/rdo.rs
+    - rd_cost(ssd, bits_256, lambda) = ssd + lambda * bits_256
+    - lambda_from_qp(qp) = q_step^2 / (2*256*16)
+    - No VP8ModeScore struct, no segment-specific lambda
+
+    Key differences to resolve:
+    1. Lambda computation (ours is approximate, libwebp derives from quality curve)
+    2. RD score formula (ours lacks RD_DISTO_MULT=256 scaling and H/R separation)
+    3. No VP8ModeScore struct (needed for mode decision functions)
+  acceptance_criteria:
+    - VP8ModeScore struct matching libwebp fields (D, SD, H, R, score, nz, mode)
+    - SetRDScore matching libwebp formula exactly (with RD_DISTO_MULT=256)
+    - Lambda derivation matching VP8SetSegmentParams from quant_enc.c
+    - All existing tests still pass
+  out_of_scope: |
+    Mode decision functions (Track 2). VP8Decimate orchestration (Track 3).
+  technical_notes: |
+    Read libwebp quant_enc.c lines 557-570 for SetRDScore.
+    Read quant_enc.c lines 378-430 for VP8SetSegmentParams lambda derivation.
+    Read vp8i_enc.h for VP8ModeScore struct definition.
+    Port as new structs/functions in rdo.rs, keeping existing functions for backward compat.
+plan:
+  - phase: Source Reading
+    tasks:
+      - text: Read and document VP8ModeScore from libwebp vp8i_enc.h
+        done: false
+      - text: Read and document SetRDScore from quant_enc.c line 557
+        done: false
+      - text: Read and document lambda derivation from VP8SetSegmentParams
+        done: false
+  - phase: Implementation
+    tasks:
+      - text: Implement VP8ModeScore struct in rdo.rs
+        done: false
+      - text: Implement set_rd_score matching libwebp SetRDScore exactly
+        done: false
+      - text: Implement lambda derivation matching VP8SetSegmentParams
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Unit test SetRDScore against known libwebp values
+        done: false
+      - text: All existing WebP tests still pass
+        done: false
+extra: {}

@@ -1,0 +1,78 @@
+id: webp-libwebp-decimate_20260329103502Z
+title: VP8 libwebp VP8Decimate — Full MB Encode Loop from Source
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Port VP8Decimate from libwebp quant_enc.c — the complete per-macroblock
+    encode orchestration including I16 vs I4 decision, skip detection, and
+    token encoding. Replace current encode_macroblock entirely.
+  context: |
+    VP8Decimate (quant_enc.c line 1343) is the top-level function that makes
+    all encoding decisions for a macroblock. It calls PickBestIntra16, then
+    conditionally PickBestIntra4, then PickBestUV, compares I16 vs I4 scores,
+    handles skip detection, and stores the final encoded result. Our current
+    encode_macroblock approximates this but differs in orchestration details.
+  codebase_analysis: |
+    libwebp VP8Decimate (quant_enc.c:1343-1400):
+    1. PickBestIntra16 (always)
+    2. if (method >= 2) PickBestIntra4 — compares I4 score vs I16 score
+    3. PickBestUV (always)
+    4. VP8SetSkip — skip detection
+    5. Store coefficients and modes
+
+    Our encode_macroblock (bitstream.rs):
+    1. select_best_16x16_rd (approximate)
+    2. B_PRED eval with scratch buffer (approximate)
+    3. Trial encode both paths, compare RD (approximate)
+    4. Chroma mode selection (SAD-based, not RD)
+    5. Coefficient encoding + token writing
+
+    Key differences:
+    1. libwebp compares I4 vs I16 using VP8ModeScore.score directly
+    2. libwebp has skip detection that zeros entire MB if skip is cheaper
+    3. libwebp stores residual coefficients in specific layout for bitstream
+    4. Our token encoding differs from libwebp's VP8EmitTokens
+  acceptance_criteria:
+    - VP8Decimate port replaces encode_macroblock
+    - I16 vs I4 decision uses VP8ModeScore comparison from libwebp
+    - Skip detection matches libwebp logic
+    - Quality ratio >= 0.95x cwebp on mixed content at Q75
+    - PSNR within 1dB of cwebp on gradient/checkerboard at Q75
+    - All parity tests pass with tighter thresholds
+  out_of_scope: |
+    Multi-pass StatLoop. Segment optimization. Alpha channel encoding.
+  technical_notes: |
+    Read quant_enc.c lines 1343-1400 for VP8Decimate.
+    Read frame_enc.c for the encode loop that calls VP8Decimate.
+    Read syntax_enc.c for VP8EmitTokens (token writing).
+
+    This is the final integration track. After this, our encoder should
+    produce output within 1dB of cwebp at the same quality setting,
+    because every encoder decision matches the reference source code.
+plan:
+  - phase: Source Reading
+    tasks:
+      - text: Read and document VP8Decimate from quant_enc.c lines 1343-1400
+        done: false
+      - text: Read skip detection logic (VP8SetSkip)
+        done: false
+  - phase: Implementation
+    tasks:
+      - text: Port VP8Decimate as new encode_macroblock_libwebp
+        done: false
+      - text: Wire into encode_frame replacing current encode_macroblock
+        done: false
+      - text: Port skip detection matching libwebp
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Quality ratio >= 0.95x cwebp on photo content
+        done: false
+      - text: PSNR within 1dB of cwebp on test images
+        done: false
+      - text: All parity tests pass with tightened thresholds
+        done: false
+extra: {}
