@@ -1053,4 +1053,73 @@ mod tests {
         let result = affine(&px, &info, &singular, 8, 8, &[0, 0, 0]);
         assert!(result.is_err());
     }
+
+    // ─── 16-bit format conversion tests ────────────────────────────
+
+    #[test]
+    fn convert_rgb8_to_rgb16_roundtrip() {
+        let pixels = vec![0u8, 128, 255, 64, 192, 32];
+        let info = ImageInfo {
+            width: 2,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Upscale to 16-bit
+        let up = convert_format(&pixels, &info, PixelFormat::Rgb16).unwrap();
+        assert_eq!(up.info.format, PixelFormat::Rgb16);
+        assert_eq!(up.pixels.len(), 12); // 2 pixels * 3 channels * 2 bytes
+
+        // Verify precise scaling: u8*257 maps 0->0, 128->32896, 255->65535
+        let r0 = u16::from_le_bytes([up.pixels[0], up.pixels[1]]);
+        let g0 = u16::from_le_bytes([up.pixels[2], up.pixels[3]]);
+        let b0 = u16::from_le_bytes([up.pixels[4], up.pixels[5]]);
+        assert_eq!(r0, 0);
+        assert_eq!(g0, 128 * 257); // 32896
+        assert_eq!(b0, 65535);
+
+        // Downscale back to 8-bit
+        let down = convert_format(&up.pixels, &up.info, PixelFormat::Rgb8).unwrap();
+        assert_eq!(down.info.format, PixelFormat::Rgb8);
+        assert_eq!(down.pixels, pixels, "Rgb8 -> Rgb16 -> Rgb8 must be lossless");
+    }
+
+    #[test]
+    fn convert_gray8_to_gray16_preserves_values() {
+        let pixels: Vec<u8> = (0..=255).collect();
+        let info = ImageInfo {
+            width: 256,
+            height: 1,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let up = convert_format(&pixels, &info, PixelFormat::Gray16).unwrap();
+        assert_eq!(up.info.format, PixelFormat::Gray16);
+
+        // Check boundary values
+        let first = u16::from_le_bytes([up.pixels[0], up.pixels[1]]);
+        let last = u16::from_le_bytes([up.pixels[510], up.pixels[511]]);
+        assert_eq!(first, 0);
+        assert_eq!(last, 65535);
+    }
+
+    #[test]
+    fn convert_rgb16_to_rgba16() {
+        let mut pixels = Vec::new();
+        for v in [0u16, 32768, 65535] {
+            pixels.extend_from_slice(&v.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = convert_format(&pixels, &info, PixelFormat::Rgba16).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgba16);
+        assert_eq!(result.pixels.len(), 8); // 1 pixel * 4 channels * 2 bytes
+        // Alpha should be 65535 (fully opaque)
+        let alpha = u16::from_le_bytes([result.pixels[6], result.pixels[7]]);
+        assert_eq!(alpha, 65535);
+    }
 }

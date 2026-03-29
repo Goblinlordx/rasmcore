@@ -257,4 +257,61 @@ mod tests {
             TiffCompression::Lzw
         );
     }
+
+    // ── 16-bit roundtrip tests ──────────────────────────────────────
+
+    fn make_rgb16(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
+        // Generate 16-bit gradient with full range values
+        let mut pixels = Vec::with_capacity((w * h * 6) as usize);
+        for i in 0..(w * h) {
+            let r = ((i * 257) % 65536) as u16;
+            let g = ((i * 131 + 1000) % 65536) as u16;
+            let b = ((i * 73 + 5000) % 65536) as u16;
+            pixels.extend_from_slice(&r.to_le_bytes());
+            pixels.extend_from_slice(&g.to_le_bytes());
+            pixels.extend_from_slice(&b.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+        (pixels, info)
+    }
+
+    fn make_gray16(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
+        let mut pixels = Vec::with_capacity((w * h * 2) as usize);
+        for i in 0..(w * h) {
+            let v = ((i * 257) % 65536) as u16;
+            pixels.extend_from_slice(&v.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray16,
+            color_space: ColorSpace::Srgb,
+        };
+        (pixels, info)
+    }
+
+    #[test]
+    fn roundtrip_rgb16_pixel_exact() {
+        let (pixels, info) = make_rgb16(16, 16);
+        let encoded = encode(&pixels, &info, &TiffEncodeConfig::default()).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Rgb16);
+        assert_eq!(decoded.info.width, 16);
+        assert_eq!(decoded.info.height, 16);
+        assert_eq!(decoded.pixels, pixels, "16-bit TIFF roundtrip must be pixel-exact");
+    }
+
+    #[test]
+    fn roundtrip_gray16_pixel_exact() {
+        let (pixels, info) = make_gray16(16, 16);
+        let encoded = encode(&pixels, &info, &TiffEncodeConfig::default()).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Gray16);
+        assert_eq!(decoded.pixels, pixels, "16-bit Gray TIFF roundtrip must be pixel-exact");
+    }
 }

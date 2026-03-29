@@ -102,9 +102,9 @@ plan:
 - phase: Encoder
   tasks:
   - text: Update PNG encoder to output 16-bit when input is Rgb16/Rgba16/Gray16
-    done: false
+    done: true
   - text: Update TIFF encoder to output 16-bit when input is Rgb16/Rgba16/Gray16
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Test decode-encode roundtrip for 16-bit PNG (gradient, verify no precision loss)

@@ -381,6 +381,37 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_rgb16_pixel_exact() {
+        // Create 16-bit gradient image
+        let (w, h) = (16u32, 16u32);
+        let mut pixel_bytes = Vec::with_capacity((w * h * 6) as usize);
+        for i in 0..(w * h) {
+            let r = ((i * 257) % 65536) as u16;
+            let g = ((i * 131 + 1000) % 65536) as u16;
+            let b = ((i * 73 + 5000) % 65536) as u16;
+            pixel_bytes.extend_from_slice(&r.to_le_bytes());
+            pixel_bytes.extend_from_slice(&g.to_le_bytes());
+            pixel_bytes.extend_from_slice(&b.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+        let img = pixels_to_dynamic_image(&pixel_bytes, &info).unwrap();
+        let encoded = encode(&img, &info, &PngEncodeConfig::default()).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Rgb16);
+        assert_eq!(decoded.info.width, w);
+        assert_eq!(decoded.info.height, h);
+        assert_eq!(
+            decoded.pixels, pixel_bytes,
+            "16-bit PNG roundtrip must be pixel-exact"
+        );
+    }
+
+    #[test]
     fn determinism_same_input_same_output() {
         let (img, info) = make_larger_test_image();
         let config = PngEncodeConfig {
