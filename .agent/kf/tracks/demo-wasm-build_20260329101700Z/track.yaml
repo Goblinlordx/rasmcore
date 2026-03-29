@@ -5,83 +5,81 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Fix/verify WASM component build, generate browser-compatible TS SDK via jco,
-    and create a unified build script that produces a ready-to-import demo bundle.
-  context: |
-    The WASM build (cargo component) and TS SDK generation (jco transpile) exist
+  summary: 'Fix/verify WASM component build, generate browser-compatible TS SDK via jco, and create a unified build script
+    that produces a ready-to-import demo bundle.
+
+    '
+  context: 'The WASM build (cargo component) and TS SDK generation (jco transpile) exist
+
     but the generated SDK targets Node.js. For a browser demo harness, we need:
+
     1. Verify cargo component build succeeds on current codebase
+
     2. Generate browser-compatible bindings (jco transpile with --instantiation)
+
     3. Create a build script that chains WASM build + SDK generation
+
     4. Verify the SDK loads and runs in a browser context (not just Node)
 
+
     Current state:
+
     - cargo component build -p rasmcore-image → wasm32-wasip1 component
+
     - scripts/generate-ts-sdk.sh → jco transpile → sdk/typescript/generated/
+
     - SDK tests run in Node.js (parity.test.mjs)
+
     - No browser-specific generation or verification exists
-  codebase_analysis: |
-    Build chain:
-    1. cargo component build -p rasmcore-image --release
-       → target/wasm32-wasip1/release/rasmcore_image.wasm
-    2. npx jco transpile rasmcore_image.wasm -o sdk/typescript/generated/
-       → rasmcore-image.js, rasmcore-image.d.ts, *.wasm
 
-    For browser use, jco needs --instantiation flag to generate
-    a module that can be instantiated with fetch() for the WASM binary,
-    rather than using Node.js fs.readFileSync.
-
-    package.json has: sdk:generate and sdk:test scripts.
-    Need to add: demo:build script.
+    '
+  codebase_analysis: "Build chain:\n1. cargo component build -p rasmcore-image --release\n   → target/wasm32-wasip1/release/rasmcore_image.wasm\n\
+    2. npx jco transpile rasmcore_image.wasm -o sdk/typescript/generated/\n   → rasmcore-image.js, rasmcore-image.d.ts, *.wasm\n\
+    \nFor browser use, jco needs --instantiation flag to generate\na module that can be instantiated with fetch() for the\
+    \ WASM binary,\nrather than using Node.js fs.readFileSync.\n\npackage.json has: sdk:generate and sdk:test scripts.\nNeed\
+    \ to add: demo:build script.\n"
   acceptance_criteria:
-    - cargo component build -p rasmcore-image succeeds
-    - jco transpile produces browser-compatible output
-    - Generated JS module can be imported via ESM in a browser
-    - Build script chains WASM compile + SDK generation in one command
-    - Generated SDK exposes decoder, encoder, transform, filters, pipeline interfaces
-    - A minimal HTML test page loads the SDK and decodes one image
-  out_of_scope: |
-    The demo webapp UI (separate track). Fixing WASM integration test failures.
+  - cargo component build -p rasmcore-image succeeds
+  - jco transpile produces browser-compatible output
+  - Generated JS module can be imported via ESM in a browser
+  - Build script chains WASM compile + SDK generation in one command
+  - Generated SDK exposes decoder, encoder, transform, filters, pipeline interfaces
+  - A minimal HTML test page loads the SDK and decodes one image
+  out_of_scope: 'The demo webapp UI (separate track). Fixing WASM integration test failures.
+
     Optimizing WASM binary size. Production deployment.
-  technical_notes: |
-    jco transpile options for browser:
-      npx jco transpile input.wasm -o output/ --instantiation async
 
-    This generates an async factory function instead of top-level await,
-    making it compatible with Vite and other bundlers.
-
-    The demo build script should:
-    1. cargo component build -p rasmcore-image --release
-    2. npx jco transpile target/.../rasmcore_image.wasm -o demo/src/sdk/
-    3. Copy any .wasm files to demo/public/ for fetch()
-
-    Alternatively, Vite can import .wasm files directly with ?url suffix.
+    '
+  technical_notes: "jco transpile options for browser:\n  npx jco transpile input.wasm -o output/ --instantiation async\n\n\
+    This generates an async factory function instead of top-level await,\nmaking it compatible with Vite and other bundlers.\n\
+    \nThe demo build script should:\n1. cargo component build -p rasmcore-image --release\n2. npx jco transpile target/.../rasmcore_image.wasm\
+    \ -o demo/src/sdk/\n3. Copy any .wasm files to demo/public/ for fetch()\n\nAlternatively, Vite can import .wasm files\
+    \ directly with ?url suffix.\n"
 plan:
-  - phase: WASM Build Verification
-    tasks:
-      - text: Verify cargo component build -p rasmcore-image succeeds on current main
-        done: false
-      - text: Document any build fixes needed (missing deps, WIT changes, etc.)
-        done: false
-  - phase: Browser SDK Generation
-    tasks:
-      - text: Create demo/build.sh script that builds WASM + generates browser SDK
-        done: false
-      - text: Run jco transpile with browser-compatible options (--instantiation async or similar)
-        done: false
-      - text: Generate TypeScript declarations for the SDK
-        done: false
-      - text: Add demo:build script to package.json
-        done: false
-  - phase: Browser Smoke Test
-    tasks:
-      - text: Create demo/smoke-test.html — minimal page that imports SDK and decodes a PNG
-        done: false
-      - text: Verify SDK loads in browser (Chrome/Safari) without Node.js polyfills
-        done: false
-      - text: Verify all 4 interfaces are accessible (decoder, encoder, transform, filters)
-        done: false
-      - text: Document the build chain in demo/README.md
-        done: false
+- phase: WASM Build Verification
+  tasks:
+  - text: Verify cargo component build -p rasmcore-image succeeds on current main
+    done: true
+  - text: Document any build fixes needed (missing deps, WIT changes, etc.)
+    done: true
+- phase: Browser SDK Generation
+  tasks:
+  - text: Create demo/build.sh script that builds WASM + generates browser SDK
+    done: false
+  - text: Run jco transpile with browser-compatible options (--instantiation async or similar)
+    done: false
+  - text: Generate TypeScript declarations for the SDK
+    done: false
+  - text: Add demo:build script to package.json
+    done: false
+- phase: Browser Smoke Test
+  tasks:
+  - text: Create demo/smoke-test.html — minimal page that imports SDK and decodes a PNG
+    done: false
+  - text: Verify SDK loads in browser (Chrome/Safari) without Node.js polyfills
+    done: false
+  - text: Verify all 4 interfaces are accessible (decoder, encoder, transform, filters)
+    done: false
+  - text: Document the build chain in demo/README.md
+    done: false
 extra: {}
