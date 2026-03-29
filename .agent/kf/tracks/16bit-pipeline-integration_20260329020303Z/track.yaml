@@ -5,145 +5,116 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Wire 16-bit support through transforms (resize, crop, rotate, flip),
-    pipeline nodes, and smart crop. End-to-end test of full 16-bit editing
-    chains. Validates IM parity for histogram ops at native 16-bit.
-  context: |
-    With 16-bit types/I/O (foundation), point ops/histogram (point-ops track),
+  summary: 'Wire 16-bit support through transforms (resize, crop, rotate, flip), pipeline nodes, and smart crop. End-to-end
+    test of full 16-bit editing chains. Validates IM parity for histogram ops at native 16-bit.
+
+    '
+  context: 'With 16-bit types/I/O (foundation), point ops/histogram (point-ops track),
+
     and filters/color (filters track) complete, the final piece is wiring
+
     everything through the pipeline graph and transform operations.
 
+
     This track also validates the key win: 16-bit histogram operations
+
     (equalize, normalize) should now match ImageMagick exactly, eliminating
+
     the Q16-HDRI precision gap documented in REFERENCE.md.
-  codebase_analysis: |
-    Transform (transform.rs):
-    - resize: uses fast_image_resize. Library supports U16x3, U16x4, U16.
-      Need to add dispatch for Rgb16/Rgba16/Gray16.
-    - crop: uses image crate crop_imm(). Format-agnostic for supported types.
-      Need to verify image crate handles Rgb16Image.
-    - rotate 90/180/270: uses image crate rotate90/180/270(). Verify 16-bit.
-    - flip: uses image crate fliph/flipv(). Verify 16-bit.
-    - rotate_arbitrary: bilinear interpolation with f64 arithmetic. Need u16 I/O.
-    - pad: pixel copy with background fill. Need u16 byte-pair handling.
-    - trim: histogram-based border detection. Need 16-bit histogram support.
 
-    Pipeline (pipeline/):
-    - graph.rs: bytes_per_pixel() already updated (foundation track).
-    - nodes/filters.rs: PointOpNode, FusedLutNode, ColorOpNode, etc.
-      Need to dispatch to 16-bit variants based on ImageInfo.format.
-    - nodes/transform.rs: ResizeNode, CropNode, etc. Use transform:: functions.
-    - Pipeline optimizer (if LUT fusion): need to handle 16-bit LUT fusion.
-
-    Smart crop (smart_crop.rs):
-    - Entropy and attention modes. Both downsample to small size for scoring.
-    - Can accept 16-bit by downsampling to 8-bit for analysis, returning crop
-      coordinates that are applied to the original 16-bit image.
+    '
+  codebase_analysis: "Transform (transform.rs):\n- resize: uses fast_image_resize. Library supports U16x3, U16x4, U16.\n \
+    \ Need to add dispatch for Rgb16/Rgba16/Gray16.\n- crop: uses image crate crop_imm(). Format-agnostic for supported types.\n\
+    \  Need to verify image crate handles Rgb16Image.\n- rotate 90/180/270: uses image crate rotate90/180/270(). Verify 16-bit.\n\
+    - flip: uses image crate fliph/flipv(). Verify 16-bit.\n- rotate_arbitrary: bilinear interpolation with f64 arithmetic.\
+    \ Need u16 I/O.\n- pad: pixel copy with background fill. Need u16 byte-pair handling.\n- trim: histogram-based border\
+    \ detection. Need 16-bit histogram support.\n\nPipeline (pipeline/):\n- graph.rs: bytes_per_pixel() already updated (foundation\
+    \ track).\n- nodes/filters.rs: PointOpNode, FusedLutNode, ColorOpNode, etc.\n  Need to dispatch to 16-bit variants based\
+    \ on ImageInfo.format.\n- nodes/transform.rs: ResizeNode, CropNode, etc. Use transform:: functions.\n- Pipeline optimizer\
+    \ (if LUT fusion): need to handle 16-bit LUT fusion.\n\nSmart crop (smart_crop.rs):\n- Entropy and attention modes. Both\
+    \ downsample to small size for scoring.\n- Can accept 16-bit by downsampling to 8-bit for analysis, returning crop\n \
+    \ coordinates that are applied to the original 16-bit image.\n"
   acceptance_criteria:
-    - resize works on Rgb16/Rgba16/Gray16 with all ResizeFilter variants
-    - crop, rotate, flip work on 16-bit formats (lossless pixel operations)
-    - rotate_arbitrary works on 16-bit with bilinear interpolation
-    - pad works on 16-bit with u16 background color
-    - Pipeline nodes dispatch to 16-bit processing when format is 16-bit
-    - FusedLutNode uses 16-bit LUT fusion when input is 16-bit
-    - Smart crop works on 16-bit input (downsample for analysis, crop original)
-    - End-to-end test passes full 16-bit chain without precision loss
-    - 16-bit equalize/normalize matches ImageMagick (MAE<1.0 at 8-bit downscale)
-    - REFERENCE.md updated to document 16-bit IM parity
-    - BitDepthNode pipeline node allows explicit 16-to-8 or 8-to-16 conversion at any point
-    - BitDepthNode is NOOP when input already matches target depth (auto-removed by optimizer)
-    - Encoder implicitly downconverts 16-bit to 8-bit for 8-bit-only formats (JPEG, WebP, GIF)
-    - All existing 8-bit tests continue to pass
-  out_of_scope: |
-    SIMD optimization for 16-bit resize (fast_image_resize handles this internally).
+  - resize works on Rgb16/Rgba16/Gray16 with all ResizeFilter variants
+  - crop, rotate, flip work on 16-bit formats (lossless pixel operations)
+  - rotate_arbitrary works on 16-bit with bilinear interpolation
+  - pad works on 16-bit with u16 background color
+  - Pipeline nodes dispatch to 16-bit processing when format is 16-bit
+  - FusedLutNode uses 16-bit LUT fusion when input is 16-bit
+  - Smart crop works on 16-bit input (downsample for analysis, crop original)
+  - End-to-end test passes full 16-bit chain without precision loss
+  - 16-bit equalize/normalize matches ImageMagick (MAE<1.0 at 8-bit downscale)
+  - REFERENCE.md updated to document 16-bit IM parity
+  - BitDepthNode pipeline node allows explicit 16-to-8 or 8-to-16 conversion at any point
+  - BitDepthNode is NOOP when input already matches target depth (auto-removed by optimizer)
+  - Encoder implicitly downconverts 16-bit to 8-bit for 8-bit-only formats (JPEG, WebP, GIF)
+  - All existing 8-bit tests continue to pass
+  out_of_scope: 'SIMD optimization for 16-bit resize (fast_image_resize handles this internally).
+
     16-bit WASM SIMD specialization — future optimization track.
+
     16-bit YUV formats.
-  technical_notes: |
-    Transform operations:
-    - resize: fast_image_resize supports fir::PixelType::U16x3 (Rgb16),
-      fir::PixelType::U16x4 (Rgba16), fir::PixelType::U16 (Gray16).
-      Just add match arms in the dispatch.
-    - crop/rotate/flip: image crate's DynamicImage has ImageRgb16, ImageRgba16,
-      ImageLuma16 variants. These support all geometric operations.
-    - rotate_arbitrary: bilinear interpolation reads pixel values as f64.
-      For 16-bit, read u16 pairs, convert to f64, interpolate, convert back.
-    - pad: background color for 16-bit is [u16; 3] or [u16; 4], stored as
-      byte pairs. Copy bytes per pixel accordingly.
 
-    Pipeline integration:
-    - PointOpNode: check format, use build_lut() or build_lut_u16()
-    - FusedLutNode: check format, use compose_luts() or compose_luts_u16()
-    - Filter nodes: delegate to filter functions which auto-dispatch
-    - Format must propagate through pipeline graph correctly
-
-    End-to-end test chain:
-    1. Decode 16-bit PNG (gradient with full 0-65535 range)
-    2. Apply gamma correction (16-bit LUT)
-    3. Apply brightness adjustment (16-bit LUT, fused with gamma)
-    4. Resize to 50% (fast_image_resize U16)
-    5. Apply equalize (16-bit histogram)
-    6. Encode as 16-bit TIFF
-    7. Verify: decode TIFF, check values match expected output
-
-    BitDepthNode design:
-    - BitDepthNode(target: 8 | 16) converts pixel format depth at any pipeline position
-    - If input format matches target depth, node is a NOOP
-    - Pipeline optimizer detects NOOPs and removes them during planning phase
-    - Encoder auto-inserts implicit BitDepthNode(8) before 8-bit-only formats
-      (JPEG, WebP, GIF) if the pipeline output is 16-bit
-    - Users who want speed on 16-bit input can insert BitDepthNode(8) early:
-      decode 16-bit TIFF -> to_8bit -> blur -> resize -> encode JPEG
-    - Users who want precision keep it late or omit it:
-      decode 16-bit TIFF -> blur -> resize -> equalize -> encode 16-bit PNG
-
-    IM parity validation:
-    - Decode 16-bit PNG
-    - Apply equalize at 16-bit
-    - Downscale to 8-bit
-    - Compare against magick -equalize output
-    - Expect MAE<1.0 (vs current MAE=11.5 at 8-bit processing)
+    '
+  technical_notes: "Transform operations:\n- resize: fast_image_resize supports fir::PixelType::U16x3 (Rgb16),\n  fir::PixelType::U16x4\
+    \ (Rgba16), fir::PixelType::U16 (Gray16).\n  Just add match arms in the dispatch.\n- crop/rotate/flip: image crate's DynamicImage\
+    \ has ImageRgb16, ImageRgba16,\n  ImageLuma16 variants. These support all geometric operations.\n- rotate_arbitrary: bilinear\
+    \ interpolation reads pixel values as f64.\n  For 16-bit, read u16 pairs, convert to f64, interpolate, convert back.\n\
+    - pad: background color for 16-bit is [u16; 3] or [u16; 4], stored as\n  byte pairs. Copy bytes per pixel accordingly.\n\
+    \nPipeline integration:\n- PointOpNode: check format, use build_lut() or build_lut_u16()\n- FusedLutNode: check format,\
+    \ use compose_luts() or compose_luts_u16()\n- Filter nodes: delegate to filter functions which auto-dispatch\n- Format\
+    \ must propagate through pipeline graph correctly\n\nEnd-to-end test chain:\n1. Decode 16-bit PNG (gradient with full\
+    \ 0-65535 range)\n2. Apply gamma correction (16-bit LUT)\n3. Apply brightness adjustment (16-bit LUT, fused with gamma)\n\
+    4. Resize to 50% (fast_image_resize U16)\n5. Apply equalize (16-bit histogram)\n6. Encode as 16-bit TIFF\n7. Verify: decode\
+    \ TIFF, check values match expected output\n\nBitDepthNode design:\n- BitDepthNode(target: 8 | 16) converts pixel format\
+    \ depth at any pipeline position\n- If input format matches target depth, node is a NOOP\n- Pipeline optimizer detects\
+    \ NOOPs and removes them during planning phase\n- Encoder auto-inserts implicit BitDepthNode(8) before 8-bit-only formats\n\
+    \  (JPEG, WebP, GIF) if the pipeline output is 16-bit\n- Users who want speed on 16-bit input can insert BitDepthNode(8)\
+    \ early:\n  decode 16-bit TIFF -> to_8bit -> blur -> resize -> encode JPEG\n- Users who want precision keep it late or\
+    \ omit it:\n  decode 16-bit TIFF -> blur -> resize -> equalize -> encode 16-bit PNG\n\nIM parity validation:\n- Decode\
+    \ 16-bit PNG\n- Apply equalize at 16-bit\n- Downscale to 8-bit\n- Compare against magick -equalize output\n- Expect MAE<1.0\
+    \ (vs current MAE=11.5 at 8-bit processing)\n"
 plan:
-  - phase: Transform 16-Bit
-    tasks:
-      - text: Add Rgb16/Rgba16/Gray16 dispatch to resize via fast_image_resize U16 types
-        done: false
-      - text: Verify crop, rotate 90/180/270, flip work on 16-bit via image crate
-        done: false
-      - text: Add 16-bit rotate_arbitrary with u16 bilinear interpolation
-        done: false
-      - text: Add 16-bit pad with u16 background color
-        done: false
-      - text: Add 16-bit trim (using 16-bit histogram for border detection)
-        done: false
-  - phase: Pipeline Nodes
-    tasks:
-      - text: Update PointOpNode and FusedLutNode to dispatch 16-bit LUT paths
-        done: false
-      - text: Update ColorOpNode and FusedClutNode for 16-bit format dispatch
-        done: false
-      - text: Update filter nodes (blur, sharpen, etc.) for 16-bit format propagation
-        done: false
-      - text: Update SmartCropNode to handle 16-bit input (downsample for analysis)
-        done: false
-      - text: Add BitDepthNode for explicit 16-to-8 and 8-to-16 conversion at any pipeline point
-        done: false
-      - text: Add NOOP detection in pipeline optimizer (remove BitDepthNode when input matches target)
-        done: false
-      - text: Add implicit BitDepthNode(8) insertion before 8-bit-only encoders (JPEG, WebP, GIF)
-        done: false
-  - phase: End-to-End Validation
-    tasks:
-      - text: Create 16-bit test PNG with full 0-65535 gradient range
-        done: false
-      - text: E2E test of full 16-bit chain (decode->gamma->brightness->resize->equalize->encode)
-        done: false
-      - text: Validate 16-bit equalize against ImageMagick (expect MAE<1.0 at 8-bit)
-        done: false
-      - text: Validate 16-bit normalize against ImageMagick (expect MAE<1.0 at 8-bit)
-        done: false
-      - text: Update REFERENCE.md to document 16-bit IM parity for equalize/normalize
-        done: false
-      - text: Verify all existing 8-bit tests still pass
-        done: false
+- phase: Transform 16-Bit
+  tasks:
+  - text: Add Rgb16/Rgba16/Gray16 dispatch to resize via fast_image_resize U16 types
+    done: true
+  - text: Verify crop, rotate 90/180/270, flip work on 16-bit via image crate
+    done: true
+  - text: Add 16-bit rotate_arbitrary with u16 bilinear interpolation
+    done: true
+  - text: Add 16-bit pad with u16 background color
+    done: true
+  - text: Add 16-bit trim (using 16-bit histogram for border detection)
+    done: true
+- phase: Pipeline Nodes
+  tasks:
+  - text: Update PointOpNode and FusedLutNode to dispatch 16-bit LUT paths
+    done: false
+  - text: Update ColorOpNode and FusedClutNode for 16-bit format dispatch
+    done: false
+  - text: Update filter nodes (blur, sharpen, etc.) for 16-bit format propagation
+    done: false
+  - text: Update SmartCropNode to handle 16-bit input (downsample for analysis)
+    done: false
+  - text: Add BitDepthNode for explicit 16-to-8 and 8-to-16 conversion at any pipeline point
+    done: false
+  - text: Add NOOP detection in pipeline optimizer (remove BitDepthNode when input matches target)
+    done: false
+  - text: Add implicit BitDepthNode(8) insertion before 8-bit-only encoders (JPEG, WebP, GIF)
+    done: false
+- phase: End-to-End Validation
+  tasks:
+  - text: Create 16-bit test PNG with full 0-65535 gradient range
+    done: false
+  - text: E2E test of full 16-bit chain (decode->gamma->brightness->resize->equalize->encode)
+    done: false
+  - text: Validate 16-bit equalize against ImageMagick (expect MAE<1.0 at 8-bit)
+    done: false
+  - text: Validate 16-bit normalize against ImageMagick (expect MAE<1.0 at 8-bit)
+    done: false
+  - text: Update REFERENCE.md to document 16-bit IM parity for equalize/normalize
+    done: false
+  - text: Verify all existing 8-bit tests still pass
+    done: false
 extra: {}

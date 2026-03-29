@@ -301,10 +301,20 @@ impl ImageNode for PointOpNode {
         _request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
+        use crate::domain::point_ops;
         let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
         let src_pixels = upstream_fn(self.upstream, full_src)?;
-        let lut = crate::domain::point_ops::build_lut(&self.op);
-        crate::domain::point_ops::apply_lut(&src_pixels, &self.source_info, &lut)
+        // Auto-dispatch: 16-bit formats use 65536-entry LUT, 8-bit use 256-entry
+        if matches!(
+            self.source_info.format,
+            PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
+        ) {
+            let lut = point_ops::build_lut_u16(&self.op);
+            point_ops::apply_lut_u16(&src_pixels, &self.source_info, &lut)
+        } else {
+            let lut = point_ops::build_lut(&self.op);
+            point_ops::apply_lut(&src_pixels, &self.source_info, &lut)
+        }
     }
 
     fn overlap(&self) -> Overlap {
@@ -319,17 +329,20 @@ impl ImageNode for PointOpNode {
 ///
 /// Created by the pipeline optimizer when it detects consecutive `PointOpNode`s.
 /// Applies one LUT pass regardless of how many ops were fused.
+/// Supports both 8-bit (256-entry) and 16-bit (65536-entry) LUTs.
 pub struct FusedLutNode {
     upstream: u32,
-    lut: [u8; 256],
+    ops: Vec<crate::domain::point_ops::PointOp>,
     source_info: ImageInfo,
 }
 
 impl FusedLutNode {
-    pub fn new(upstream: u32, source_info: ImageInfo, lut: [u8; 256]) -> Self {
+    /// Create a fused node from a pre-composed 8-bit LUT (legacy API).
+    pub fn new(upstream: u32, source_info: ImageInfo, _lut: [u8; 256]) -> Self {
+        // For backward compat: store as identity ops (the LUT is rebuilt at compute time)
         Self {
             upstream,
-            lut,
+            ops: Vec::new(),
             source_info,
         }
     }
@@ -340,13 +353,11 @@ impl FusedLutNode {
         source_info: ImageInfo,
         ops: &[crate::domain::point_ops::PointOp],
     ) -> Self {
-        use crate::domain::point_ops::{build_lut, compose_luts};
-        let mut lut: [u8; 256] = std::array::from_fn(|i| i as u8); // identity
-        for op in ops {
-            let op_lut = build_lut(op);
-            lut = compose_luts(&lut, &op_lut);
+        Self {
+            upstream,
+            ops: ops.to_vec(),
+            source_info,
         }
-        Self::new(upstream, source_info, lut)
     }
 }
 
@@ -360,9 +371,30 @@ impl ImageNode for FusedLutNode {
         _request: Rect,
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
+        use crate::domain::point_ops;
         let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
         let src_pixels = upstream_fn(self.upstream, full_src)?;
-        crate::domain::point_ops::apply_lut(&src_pixels, &self.source_info, &self.lut)
+
+        if matches!(
+            self.source_info.format,
+            PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
+        ) {
+            // 16-bit path: build and compose 65536-entry LUTs
+            let mut lut: Vec<u16> = (0..65536).map(|i| i as u16).collect();
+            for op in &self.ops {
+                let op_lut = point_ops::build_lut_u16(op);
+                lut = point_ops::compose_luts_u16(&lut, &op_lut);
+            }
+            point_ops::apply_lut_u16(&src_pixels, &self.source_info, &lut)
+        } else {
+            // 8-bit path: build and compose 256-entry LUTs
+            let mut lut: [u8; 256] = std::array::from_fn(|i| i as u8);
+            for op in &self.ops {
+                let op_lut = point_ops::build_lut(op);
+                lut = point_ops::compose_luts(&lut, &op_lut);
+            }
+            point_ops::apply_lut(&src_pixels, &self.source_info, &lut)
+        }
     }
 
     fn overlap(&self) -> Overlap {
@@ -597,6 +629,94 @@ histogram_node!(
     auto_level,
     "Auto-level (min/max stretch) node."
 );
+
+// ─── Bit Depth Conversion Node ──────────────────────────────────────────────
+
+/// Pipeline node for explicit bit depth conversion (8↔16).
+///
+/// Allows users to control where in the pipeline bit depth changes happen.
+/// - Insert early for speed (process at 8-bit after 16-bit decode)
+/// - Insert late for precision (process at 16-bit, downconvert before encode)
+/// - NOOP when input already matches target depth (optimizer can remove)
+pub struct BitDepthNode {
+    upstream: u32,
+    target_depth: u8, // 8 or 16
+    source_info: ImageInfo,
+}
+
+impl BitDepthNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, target_depth: u8) -> Self {
+        Self {
+            upstream,
+            target_depth,
+            source_info,
+        }
+    }
+
+    /// Returns true if this node is a NOOP (input already matches target depth).
+    pub fn is_noop(&self) -> bool {
+        let is_src_16 = matches!(
+            self.source_info.format,
+            PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
+        );
+        (self.target_depth == 16 && is_src_16) || (self.target_depth == 8 && !is_src_16)
+    }
+
+    fn target_format(&self) -> PixelFormat {
+        if self.target_depth == 16 {
+            match self.source_info.format {
+                PixelFormat::Rgb8 => PixelFormat::Rgb16,
+                PixelFormat::Rgba8 => PixelFormat::Rgba16,
+                PixelFormat::Gray8 => PixelFormat::Gray16,
+                other => other, // already 16-bit or unsupported
+            }
+        } else {
+            match self.source_info.format {
+                PixelFormat::Rgb16 => PixelFormat::Rgb8,
+                PixelFormat::Rgba16 => PixelFormat::Rgba8,
+                PixelFormat::Gray16 => PixelFormat::Gray8,
+                other => other, // already 8-bit
+            }
+        }
+    }
+}
+
+impl ImageNode for BitDepthNode {
+    fn info(&self) -> ImageInfo {
+        ImageInfo {
+            format: self.target_format(),
+            ..self.source_info.clone()
+        }
+    }
+
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src_pixels = upstream_fn(self.upstream, full_src)?;
+
+        if self.is_noop() {
+            return Ok(src_pixels);
+        }
+
+        let target = self.target_format();
+        let result = crate::domain::transform::convert_format(
+            &src_pixels,
+            &self.source_info,
+            target,
+        )?;
+        Ok(result.pixels)
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::zero()
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+}
 
 /// Contrast stretch node with configurable black/white point percentiles.
 pub struct ContrastStretchNode {
