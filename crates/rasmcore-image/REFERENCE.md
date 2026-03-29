@@ -117,12 +117,95 @@ pip install numpy opencv-contrib-python-headless
 python3 tests/fixtures/opencv/generate.py  # (generation script)
 ```
 
+### Convolution Filters — Pixel-Exact
+
+**Test file:** `tests/filter_reference_parity.rs`
+**Venv:** `tests/fixtures/.venv` (Python 3.14, numpy 2.4.3, OpenCV 4.13.0, Pillow 12.1.1)
+
+These tests run inline Python scripts via the venv to generate reference output,
+then compare byte-for-byte against our Rust implementation. **No tests skip** —
+if the venv is missing, tests fail with setup instructions.
+
+#### Formula Operations — Pixel-Exact (MAE = 0.0000)
+
+| Operation | Reference | Formula | Status |
+|-----------|-----------|---------|--------|
+| premultiply | Python `(c*a+127)//255` | Integer alpha multiply | Exact |
+| add_alpha + remove_alpha | Self roundtrip | Byte insertion/removal | Exact |
+| convolve (identity kernel) | Self | `[0,0,0,0,1,0,0,0,0]` | Exact |
+| brightness(0) | Self | Identity | Exact |
+| median (r=1) | Pillow `MedianFilter(3)` | Sorting-based median | Exact |
+
+#### Color Operations — Pixel-Exact (MAE = 0.0000)
+
+| Operation | Reference | Formula | Status |
+|-----------|-----------|---------|--------|
+| sepia | numpy matrix multiply | Microsoft `[[.393,.769,.189],[.349,.686,.168],[.272,.534,.131]]` | Exact |
+| blend Multiply | numpy W3C CSS L1 | `(fg * bg + 127) // 255` | Exact |
+| blend Screen | numpy W3C CSS L1 | `fg + bg - (fg * bg + 127) // 255` | Exact |
+
+#### Spatial Operations — Pixel-Exact (MAE = 0.0000)
+
+| Operation | Reference | Config | Status |
+|-----------|-----------|--------|--------|
+| convolve (sharpen 3x3) | OpenCV `filter2D` | `[[0,-1,0],[-1,5,-1],[0,-1,0]]`, `BORDER_REFLECT_101` | Exact |
+| convolve (box blur 3x3) | OpenCV `blur` | `(3,3)`, `BORDER_REFLECT_101` | Exact |
+| sobel | OpenCV `Sobel` | `CV_32F`, L2 magnitude, `BORDER_REFLECT_101` | Exact |
+
+**Alignment details (convolution):**
+- Border handling: reflect-edge padding matching OpenCV's `BORDER_REFLECT_101`
+- Accumulation: f32 per channel, clamped to [0, 255]
+- Rounding: truncation to u8 (matching OpenCV's saturate_cast)
+- Separable detection: rank-1 kernels auto-detected and processed as two 1D passes
+
+## Reference Tool Versions
+
+All reference validation uses pinned tool versions. Changes to reference
+versions require re-validation of all parity results.
+
+### Python Venv (tests/fixtures/.venv)
+
+| Package | Version | Used For |
+|---------|---------|----------|
+| Python | 3.14.3 | Script execution |
+| numpy | 2.4.3 | Formula operations, array math |
+| OpenCV | 4.13.0 | Spatial filters, bilateral, CLAHE, guided |
+| Pillow | 12.1.1 | Median filter, format I/O |
+
+Setup:
+```bash
+python3 -m venv tests/fixtures/.venv
+tests/fixtures/.venv/bin/pip install numpy Pillow opencv-python-headless
+```
+
+### System Tools
+
+| Tool | Version | Used For |
+|------|---------|----------|
+| ImageMagick | 7.1.2-18 Q16-HDRI | Fixture generation, encode/decode parity |
+| libwebp (cwebp/dwebp) | 1.6.0 | VP8 encode/decode validation |
+| libjpeg-turbo (cjpeg/djpeg) | 3.1.3 | JPEG encode/decode validation |
+| libvips | 8.18.1 | Performance benchmarking reference |
+
+## Match Tiers
+
+| Tier | Requirement | When to Use |
+|------|-------------|-------------|
+| **EXACT** | MAE = 0.0, byte-identical | Formula ops, sorting-based filters, integer arithmetic |
+| **DETERMINISTIC** | MAE < 0.1, max_err = 1 | f32 rounding differences (CLAHE, guided filter) |
+| **ALGORITHM** | MAE < 2.0 | Different border modes, different intermediate precision |
+| **DESIGN** | Structural similarity | Different algorithms for same goal (e.g., Sobel vs Laplacian) |
+
+All new operations must target EXACT tier. DETERMINISTIC is acceptable only
+when f32 cross-platform rounding is unavoidable (document why).
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:
 
-1. Generate reference output from OpenCV (or other authoritative source) for all 7 canonical images
-2. Save as `{image_name}_{filter_name}.raw` in `tests/fixtures/opencv/`
-3. Add a parity test in `tests/opencv_parity.rs` that checks MAE and max error
-4. Document alignment details and any differences in this file
-5. Target: MAE=0.00 (pixel-exact) or MAE<0.1 with max_err≤1 (f32 rounding only)
+1. Implement the filter in `domain/filters.rs`
+2. Add a parity test in `tests/filter_reference_parity.rs` using the venv Python
+3. Generate reference output from the authoritative source (OpenCV preferred, numpy for formulas)
+4. Verify MAE = 0.0000 (EXACT tier) or document why DETERMINISTIC/ALGORITHM tier is needed
+5. Document the reference, formula, and alignment details in this file
+6. Add the reference tool version to the version table above
