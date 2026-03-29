@@ -665,3 +665,232 @@ mod tests {
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pixel-Exact Reference Parity Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod parity {
+    use super::*;
+    use crate::domain::types::{ColorSpace, ImageInfo, PixelFormat};
+    use std::path::Path;
+    use std::process::Command;
+
+    fn test_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn venv_python() -> String {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let venv = manifest.join("../../tests/fixtures/.venv/bin/python3");
+        assert!(venv.exists(), "venv not found at {}", venv.display());
+        venv.to_string_lossy().into_owned()
+    }
+
+    fn run_python(script: &str) -> Vec<u8> {
+        let output = Command::new(venv_python())
+            .arg("-c")
+            .arg(script)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "Python failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    }
+
+    fn mae(a: &[u8], b: &[u8]) -> f64 {
+        assert_eq!(a.len(), b.len());
+        a.iter()
+            .zip(b)
+            .map(|(&x, &y)| (x as f64 - y as f64).abs())
+            .sum::<f64>()
+            / a.len() as f64
+    }
+
+    fn max_err(a: &[u8], b: &[u8]) -> u8 {
+        a.iter()
+            .zip(b)
+            .map(|(&x, &y)| (x as i16 - y as i16).unsigned_abs() as u8)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Nearest-color quantize: given the SAME palette, our output must be
+    /// pixel-exact vs numpy (Euclidean distance argmin).
+    #[test]
+    fn quantize_nearest_parity_vs_numpy() {
+        let w = 16u32;
+        let h = 16;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let idx = (y * w as usize + x) * 3;
+                pixels[idx] = (x * 255 / 15) as u8;
+                pixels[idx + 1] = (y * 255 / 15) as u8;
+                pixels[idx + 2] = 128;
+            }
+        }
+
+        // Fixed palette (not generated — avoids median_cut algorithm differences)
+        let palette = vec![
+            Rgb { r: 0, g: 0, b: 128 },
+            Rgb { r: 255, g: 0, b: 128 },
+            Rgb { r: 0, g: 255, b: 128 },
+            Rgb { r: 255, g: 255, b: 128 },
+            Rgb { r: 128, g: 128, b: 128 },
+        ];
+        let info = test_info(w, h);
+        let ours = quantize(&pixels, &info, &palette).unwrap();
+
+        // numpy reference: for each pixel, find palette entry with min Euclidean distance
+        let script = format!(
+            "import sys, numpy as np\n\
+             pixels = np.array({pixels:?}, dtype=np.uint8).reshape({h},{w},3)\n\
+             palette = np.array([[0,0,128],[255,0,128],[0,255,128],[255,255,128],[128,128,128]], dtype=np.int32)\n\
+             out = np.zeros_like(pixels)\n\
+             for y in range({h}):\n\
+             \tfor x in range({w}):\n\
+             \t\tp = pixels[y,x].astype(np.int32)\n\
+             \t\tdists = np.sum((palette - p)**2, axis=1)\n\
+             \t\tidx = np.argmin(dists)\n\
+             \t\tout[y,x] = palette[idx].astype(np.uint8)\n\
+             sys.stdout.buffer.write(out.tobytes())"
+        );
+        let reference = run_python(&script);
+
+        let m = mae(&ours, &reference);
+        let mx = max_err(&ours, &reference);
+        eprintln!("  quantize nearest vs numpy: MAE={m:.4}, max_err={mx}");
+        assert!(
+            m == 0.0 && mx == 0,
+            "quantize must be pixel-exact vs numpy: MAE={m:.4}, max_err={mx}"
+        );
+    }
+
+    /// Floyd-Steinberg dithering: pixel-exact vs numpy reference implementing
+    /// the same algorithm (serpentine scan, 7/16 3/16 5/16 1/16 error distribution).
+    #[test]
+    fn dither_fs_parity_vs_numpy() {
+        let w = 8u32;
+        let h = 8;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let v = (x * 255 / 7) as u8;
+                let idx = (y * w as usize + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
+        }
+
+        let palette = vec![
+            Rgb { r: 0, g: 0, b: 0 },
+            Rgb { r: 255, g: 255, b: 255 },
+        ];
+        let info = test_info(w, h);
+        let ours = dither_floyd_steinberg(&pixels, &info, &palette).unwrap();
+
+        // numpy reference: exact same FS algorithm with serpentine scan
+        let script = format!(
+            "import sys, numpy as np\n\
+             w,h = {w},{h}\n\
+             pixels = np.array({pixels:?}, dtype=np.float64).reshape(h,w,3)\n\
+             palette = np.array([[0,0,0],[255,255,255]], dtype=np.float64)\n\
+             buf = pixels.copy()\n\
+             out = np.zeros((h,w,3), dtype=np.uint8)\n\
+             for y in range(h):\n\
+             \tltr = (y % 2 == 0)\n\
+             \txs = range(w) if ltr else range(w-1,-1,-1)\n\
+             \tfor x in xs:\n\
+             \t\told = np.clip(buf[y,x], 0, 255)\n\
+             \t\tdists = np.sum((palette - old)**2, axis=1)\n\
+             \t\tidx = np.argmin(dists)\n\
+             \t\tnew = palette[idx]\n\
+             \t\tout[y,x] = new.astype(np.uint8)\n\
+             \t\terr = old - new\n\
+             \t\tif ltr:\n\
+             \t\t\tif x+1<w: buf[y,x+1] += err*7/16\n\
+             \t\t\tif x>0 and y+1<h: buf[y+1,x-1] += err*3/16\n\
+             \t\t\tif y+1<h: buf[y+1,x] += err*5/16\n\
+             \t\t\tif x+1<w and y+1<h: buf[y+1,x+1] += err*1/16\n\
+             \t\telse:\n\
+             \t\t\tif x>0: buf[y,x-1] += err*7/16\n\
+             \t\t\tif x+1<w and y+1<h: buf[y+1,x+1] += err*3/16\n\
+             \t\t\tif y+1<h: buf[y+1,x] += err*5/16\n\
+             \t\t\tif x>0 and y+1<h: buf[y+1,x-1] += err*1/16\n\
+             sys.stdout.buffer.write(out.tobytes())"
+        );
+        let reference = run_python(&script);
+
+        let m = mae(&ours, &reference);
+        let mx = max_err(&ours, &reference);
+        eprintln!("  FS dither vs numpy: MAE={m:.4}, max_err={mx}");
+        assert!(
+            mx <= 1,
+            "FS dither vs numpy: max_err={mx} (expect ≤1 from i16 vs f64 rounding)"
+        );
+    }
+
+    /// Ordered dithering: pixel-exact vs numpy with same Bayer 4x4 matrix.
+    #[test]
+    fn dither_ordered_parity_vs_numpy() {
+        let w = 8u32;
+        let h = 8;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let v = ((y * w as usize + x) * 255 / 63) as u8;
+                let idx = (y * w as usize + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
+        }
+
+        let palette = vec![
+            Rgb { r: 0, g: 0, b: 0 },
+            Rgb { r: 128, g: 128, b: 128 },
+            Rgb { r: 255, g: 255, b: 255 },
+        ];
+        let info = test_info(w, h);
+        let ours = dither_ordered(&pixels, &info, &palette, 4).unwrap();
+
+        // numpy reference: same Bayer 4x4 matrix, same threshold formula
+        let script = format!(
+            "import sys, numpy as np\n\
+             w,h = {w},{h}\n\
+             pixels = np.array({pixels:?}, dtype=np.uint8).reshape(h,w,3)\n\
+             palette = np.array([[0,0,0],[128,128,128],[255,255,255]], dtype=np.int32)\n\
+             bayer4 = np.array([0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5], dtype=np.float32).reshape(4,4)\n\
+             scale = 255.0 / 16.0\n\
+             out = np.zeros((h,w,3), dtype=np.uint8)\n\
+             for y in range(h):\n\
+             \tfor x in range(w):\n\
+             \t\tthresh = bayer4[y%4,x%4] * scale - 128.0\n\
+             \t\tp = np.clip(pixels[y,x].astype(np.float32) + thresh, 0, 255).astype(np.int32)\n\
+             \t\tdists = np.sum((palette - p)**2, axis=1)\n\
+             \t\tidx = np.argmin(dists)\n\
+             \t\tout[y,x] = palette[idx].astype(np.uint8)\n\
+             sys.stdout.buffer.write(out.tobytes())"
+        );
+        let reference = run_python(&script);
+
+        let m = mae(&ours, &reference);
+        let mx = max_err(&ours, &reference);
+        eprintln!("  ordered dither 4x4 vs numpy: MAE={m:.4}, max_err={mx}");
+        assert!(
+            m == 0.0 && mx == 0,
+            "ordered dither must be pixel-exact vs numpy: MAE={m:.4}, max_err={mx}"
+        );
+    }
+}

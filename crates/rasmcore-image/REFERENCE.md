@@ -381,9 +381,9 @@ when the cause is proven and documented:
 | CLAHE | OpenCV 4.13 | F32_ROUNDING | ≤1 u8 | 7 images, zero >1 |
 | Guided filter | OpenCV 4.13 | F32_ROUNDING | ≤1 u8 | 7 images, zero >1 |
 | Lab (vs OpenCV) | OpenCV 4.13 | REF_PRECISION | ≤2 u8 | We are more precise |
-| Median Cut quantize | Unit tests | QUALITY | MSE<350 | 16-color 2D gradient |
-| Floyd-Steinberg dither | Unit tests | QUALITY | brightness ±2 | Average brightness preserved |
-| Ordered dither (Bayer) | Unit tests | QUALITY | ~50% BW | Mid-gray Bayer 2x2 pattern |
+| Quantize (nearest-color) | numpy argmin | EXACT | 0 | 16×16 gradient, 5-color palette |
+| Floyd-Steinberg dither | numpy FS impl | EXACT | 0 | 8×8 gradient, B/W serpentine |
+| Ordered dither (Bayer 4×4) | numpy Bayer impl | EXACT | 0 | 8×8 gradient, 3-color |
 | Inpaint Telea (uniform) | OpenCV 4.13 | EXACT | 0 | 16×16, 4×4 hole |
 | Inpaint Telea (gradient) | OpenCV 4.13 | COMPILER_FP | ≤6 u8 | 32×32, 6×6 hole (see below) |
 | Inpaint NS (uniform) | OpenCV 4.13 | EXACT | 0 | 16×16, 4×4 hole |
