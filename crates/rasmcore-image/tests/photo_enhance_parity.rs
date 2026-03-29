@@ -86,7 +86,9 @@ fn error_histogram(a: &[u8], b: &[u8]) -> Vec<(u8, usize)> {
         let diff = (x as i16 - y as i16).unsigned_abs() as u8;
         counts[diff as usize] += 1;
     }
-    counts.iter().enumerate()
+    counts
+        .iter()
+        .enumerate()
         .filter(|&(_, &c)| c > 0)
         .map(|(d, &c)| (d as u8, c))
         .collect()
@@ -634,7 +636,9 @@ sys.stdout.buffer.write(result.tobytes())
             if diff > 1 {
                 let px = i / 3;
                 let ch = i % 3;
-                eprintln!("    First >1 diff at pixel {px} channel {ch}: ours={a} ref={b} diff={diff}");
+                eprintln!(
+                    "    First >1 diff at pixel {px} channel {ch}: ours={a} ref={b} diff={diff}"
+                );
                 break;
             }
         }
@@ -764,7 +768,9 @@ sys.stdout.buffer.write(result.tobytes())
     let mae = mean_absolute_error(&ours, &reference);
     let max_err = max_absolute_error(&ours, &reference);
     let hist = error_histogram(&ours, &reference);
-    eprintln!("  MSRCR vs Python+OpenCV (3 scales, alpha={alpha}, beta={beta}): MAE={mae:.4}, max_err={max_err}");
+    eprintln!(
+        "  MSRCR vs Python+OpenCV (3 scales, alpha={alpha}, beta={beta}): MAE={mae:.4}, max_err={max_err}"
+    );
     eprintln!("    Error distribution: {:?}", hist);
 
     // Multi-scale + color restoration accumulates FP differences

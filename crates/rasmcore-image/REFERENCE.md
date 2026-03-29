@@ -442,42 +442,47 @@ Our algorithm remaps pre-built Laplacian coefficients — simpler, faster, diffe
 remapping function. The vips sharpen comparison (previously MAE=31.6) was removed
 as it compared against an entirely different algorithm (unsharp mask in LABS space).
 
-### Mertens Exposure Fusion — F32_ROUNDING Tier
+### Mertens Exposure Fusion — F32_ROUNDING Tier (max ±4)
 
 **Reference:** `cv2.createMergeMertens(1.0, 1.0, 1.0).process(brackets)`
 
 | Metric | Value | Scale |
 |--------|-------|-------|
-| f32 MAE | 0.0085 | [0, 1] |
-| f32 max error | 0.029 | [0, 1] |
-| u8 MAE | 1.61 | [0, 255] |
-| u8 max error | 8 | [0, 255] |
+| f32 MAE | 0.004 | [0, 1] |
+| f32 max error | 0.018 | [0, 1] |
+| u8 MAE | 0.53 | [0, 255] |
+| u8 max error | 4 | [0, 255] |
 
 **Test inputs:** 3 synthetic exposure brackets (dark/mid/bright), 64×64 RGB.
 
-**Algorithm:** Mertens et al. "Exposure Fusion" (Pacific Graphics 2007). Per-pixel
-weights from contrast (abs Laplacian), saturation (population std across channels),
-and well-exposedness (Gaussian around 0.5). Laplacian pyramid blending of weighted
-images. Structurally identical to OpenCV implementation.
+**Algorithm:** Mertens et al. "Exposure Fusion" (Pacific Graphics 2007). Verified
+against OpenCV 4.13 source code (`modules/photo/src/merge.cpp`). All weight
+computation formulas match the C++ implementation exactly.
 
-**Where it differs:** Up to 8 intensity levels in u8 output, concentrated at
-high-contrast boundaries and image corners. Interior regions typically match within ±1.
+**Where it differs:** Up to 4 intensity levels in u8 output. f32 precision in
+6-level pyramid operations accumulates differently between Rust and C++ due to
+instruction ordering and FMA availability.
 
-**Why (F32_ROUNDING):** The Laplacian pyramid blending involves 6 levels of
-Gaussian downsampling and upsampling (pyrDown/pyrUp with 5×5 kernel). Each level
-compounds f32 rounding differences between Rust and C++ implementations. The error
-is structural (f32 accumulation order) not algorithmic — all components individually
-match OpenCV to within float epsilon.
+**Why (F32_ROUNDING):** Verified by testing each weight component independently:
+- Saturation-only fusion: max diff < 1e-6 (exact match)
+- Well-exposedness-only fusion: max diff < 1e-6 (exact match)
+- Contrast-only fusion: max diff ~0.003 (f32 Laplacian → pyramid accumulation)
+- Combined: max diff ~0.018 (compounds through 6 pyramid levels)
 
-**Alignment details:**
-- Grayscale: BT.601 (0.299R + 0.587G + 0.114B), computed on [0,1] float
-- Contrast weight: abs(Laplacian(gray_f32)) with ksize=1 (standard 3×3 kernel)
-- Saturation: population std (divisor N, not N-1) across 3 channels
-- Well-exposedness: `prod_c(exp(-0.5 * ((ch - 0.5) / 0.2)²))`, σ=0.2
+Three bugs were found and fixed during alignment:
+1. Grayscale: OpenCV MergeMertens uses `COLOR_RGB2GRAY` on BGR data (swapped R/B)
+2. Saturation: OpenCV uses `sqrt(sum((ch-mean)²))`, not population std `sqrt(sum/3)`
+3. Laplacian border: OpenCV uses `BORDER_REFLECT_101`, not `BORDER_REPLICATE`
+
+**Alignment details (verified against OpenCV 4.13 source):**
+- Grayscale: `0.299*ch0 + 0.587*ch1 + 0.114*ch2` (COLOR_RGB2GRAY on BGR = 0.299*B+0.587*G+0.114*R)
+- Contrast: `abs(Laplacian(gray, CV_32F))` with default ksize=1, BORDER_REFLECT_101
+- Saturation: `sqrt(sum((ch_i - mean)²))` — NOT divided by channel count
+- Well-exposedness: `-(ch-0.5)² / 0.08`, then exp() — operation order matched
 - Weight epsilon: +1e-12 to avoid zero
 - Pyramid: separable 5×5 Gaussian kernel [1,4,6,4,1]/16, BORDER_REFLECT_101
 - pyrUp: 4× scaling at even positions, then 5×5 Gaussian
-- Pyramid depth: floor(log2(min(w,h)))
+- Pyramid depth: `int(logf(min(w,h)) / logf(2.0))`
 
 ### Debevec HDR Merge — Algorithmic Match
 

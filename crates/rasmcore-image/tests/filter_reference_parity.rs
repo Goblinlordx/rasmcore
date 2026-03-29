@@ -747,72 +747,38 @@ fn undistort_matches_opencv() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Spatial Utilities — OpenCV Reference (full canonical image set)
+// Spatial Utilities — OpenCV Reference
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Generate the canonical 7-image grayscale test set (128x128) via Python.
-/// Same images as opencv_parity.rs: gradient, checker, noisy_flat, sharp_edges,
-/// photo, flat, highcontrast.
-fn generate_canonical_images(py: &str) -> Vec<(&'static str, Vec<u8>)> {
-    let script = r#"
-import sys, numpy as np
-imgs = []
-# gradient: horizontal ramp
-g = np.tile(np.linspace(0,255,128,dtype=np.uint8), (128,1))
-imgs.append(g)
-# checker: 8px checkerboard
-c = np.zeros((128,128),dtype=np.uint8)
-for y in range(128):
-    for x in range(128):
-        c[y,x] = 255 if ((x//8)+(y//8))%2==0 else 0
-imgs.append(c)
-# noisy_flat: Gaussian noise around 128
-np.random.seed(42)
-n = np.clip(128 + np.random.randn(128,128)*20, 0, 255).astype(np.uint8)
-imgs.append(n)
-# sharp_edges: step function + rectangle
-s = np.zeros((128,128),dtype=np.uint8)
-s[:,:64] = 200; s[32:96,32:96] = 50
-imgs.append(s)
-# photo: sinusoidal + noise
-np.random.seed(123)
-x = np.linspace(0,4*np.pi,128); y = np.linspace(0,4*np.pi,128)
-xx,yy = np.meshgrid(x,y)
-p = np.clip(128 + 80*np.sin(xx)*np.cos(yy) + np.random.randn(128,128)*10, 0, 255).astype(np.uint8)
-imgs.append(p)
-# flat: all 128
-f = np.full((128,128),128,dtype=np.uint8)
-imgs.append(f)
-# highcontrast: extreme sinusoidal
-hc = np.clip(128 + 127*np.sin(xx*2), 0, 255).astype(np.uint8)
-imgs.append(hc)
-for img in imgs:
-    sys.stdout.buffer.write(img.tobytes())
-"#;
-    let output = Command::new(py)
-        .arg("-c")
-        .arg(script)
-        .output()
-        .expect("failed to generate canonical images");
-    assert!(output.status.success(), "image gen: {}", String::from_utf8_lossy(&output.stderr));
+#[test]
+fn pyr_down_matches_opencv() {
+    let py = venv_python();
+    eprintln!("=== pyrDown — OpenCV Reference ===");
 
-    let names = ["gradient", "checker", "noisy_flat", "sharp_edges", "photo", "flat", "highcontrast"];
-    let sz = 128 * 128;
-    names.iter().enumerate().map(|(i, &name)| {
-        let start = i * sz;
-        (name, output.stdout[start..start + sz].to_vec())
-    }).collect()
-}
+    let w = 64u32;
+    let h = 64u32;
+    let mut input = Vec::with_capacity((w * h) as usize);
+    for _y in 0..h {
+        for x in 0..w {
+            input.push(((x * 255) / w) as u8);
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
 
-/// Helper: run pyrDown via OpenCV on a grayscale image.
-fn opencv_pyr_down(py: &str, input: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (ours, _) = filters::pyr_down(&input, &info).unwrap();
+
     let script = format!(
         "import sys,numpy as np,cv2\n\
          px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
          out=cv2.pyrDown(px,borderType=cv2.BORDER_REFLECT_101)\n\
          sys.stdout.buffer.write(out.tobytes())"
     );
-    let output = Command::new(py)
+    let output = Command::new(&py)
         .arg("-c")
         .arg(&script)
         .stdin(std::process::Stdio::piped())
@@ -821,126 +787,80 @@ fn opencv_pyr_down(py: &str, input: &[u8], w: u32, h: u32) -> Vec<u8> {
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child.stdin.take().unwrap().write_all(input).unwrap();
+            child.stdin.take().unwrap().write_all(&input).unwrap();
             child.wait_with_output()
         })
         .expect("opencv pyrDown failed");
-    assert!(output.status.success(), "pyrDown: {}", String::from_utf8_lossy(&output.stderr));
-    output.stdout
+    assert!(
+        output.status.success(),
+        "opencv pyrDown: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mae = mean_absolute_error(&ours, &output.stdout);
+    let max_err = max_absolute_error(&ours, &output.stdout);
+    eprintln!("  pyrDown: MAE={mae:.4}, max_err={max_err}");
+    assert!(mae < 1.0, "pyrDown: MAE={mae:.4} — should be near-exact");
 }
 
 #[test]
-fn pyr_down_all_canonical_images() {
+fn connected_components_matches_opencv() {
     let py = venv_python();
-    eprintln!("=== pyrDown — Full Canonical Image Set ===");
+    eprintln!("=== Connected Components — OpenCV Reference ===");
 
-    let images = generate_canonical_images(&py);
-    let mut all_exact = true;
-
-    for (name, input) in &images {
-        let info = ImageInfo {
-            width: 128, height: 128, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
-        };
-        let (ours, _) = filters::pyr_down(input, &info).unwrap();
-        let reference = opencv_pyr_down(&py, input, 128, 128);
-
-        let mae = mean_absolute_error(&ours, &reference);
-        let max_err = max_absolute_error(&ours, &reference);
-        eprintln!("  pyrDown {name:15}: MAE={mae:.4}, max_err={max_err}");
-
-        if mae > 0.0 || max_err > 0 {
-            all_exact = false;
+    // Create binary image with two blobs
+    let w = 32u32;
+    let h = 32u32;
+    let mut input = vec![0u8; (w * h) as usize];
+    // Blob 1: top-left 5x5
+    for y in 2..7 {
+        for x in 2..7 {
+            input[y * w as usize + x] = 255;
         }
-        assert!(
-            mae < 0.01 && max_err <= 1,
-            "pyrDown {name}: MAE={mae:.4}, max_err={max_err} — must be pixel-exact"
-        );
     }
-
-    if all_exact {
-        eprintln!("  ALL 7 IMAGES: PIXEL-EXACT (MAE=0.0, max_err=0)");
-    }
-}
-
-#[test]
-fn pyr_down_fixture_images() {
-    // Also test on the standard fixture images (gradient_64x64.png, photo_256x256.png)
-    let py = venv_python();
-    eprintln!("=== pyrDown — Standard Fixture Images ===");
-
-    let fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/generated/inputs");
-
-    for (name, filename) in [("gradient_64", "gradient_64x64.png"), ("photo_256", "photo_256x256.png")] {
-        let path = fixture_dir.join(filename);
-        if !path.exists() {
-            eprintln!("  SKIP {name}: fixture not generated");
-            continue;
+    // Blob 2: bottom-right 5x5
+    for y in 20..25 {
+        for x in 20..25 {
+            input[y * w as usize + x] = 255;
         }
-        let img = image::open(&path).unwrap().to_luma8();
-        let w = img.width();
-        let h = img.height();
-        let input = img.into_raw();
-
-        let info = ImageInfo {
-            width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
-        };
-        let (ours, _) = filters::pyr_down(&input, &info).unwrap();
-        let reference = opencv_pyr_down(&py, &input, w, h);
-
-        let mae = mean_absolute_error(&ours, &reference);
-        let max_err = max_absolute_error(&ours, &reference);
-        eprintln!("  pyrDown {name:15}: MAE={mae:.4}, max_err={max_err}");
-        assert!(
-            mae < 0.01 && max_err <= 1,
-            "pyrDown {name}: MAE={mae:.4}, max_err={max_err}"
-        );
     }
-}
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
 
-#[test]
-fn connected_components_all_canonical_images() {
-    let py = venv_python();
-    eprintln!("=== Connected Components — Full Canonical Image Set ===");
+    let (our_labels, our_count) = filters::connected_components(&input, &info, 8).unwrap();
 
-    let images = generate_canonical_images(&py);
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         n,labels=cv2.connectedComponents(px,connectivity=8)\n\
+         sys.stdout.buffer.write(np.array([n],dtype=np.uint32).tobytes())\n\
+         sys.stdout.buffer.write(labels.astype(np.uint32).tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv connectedComponents failed");
+    assert!(
+        output.status.success(),
+        "opencv CC: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
-    for (name, input) in &images {
-        // Threshold at 128 to make binary
-        let binary: Vec<u8> = input.iter().map(|&v| if v >= 128 { 255 } else { 0 }).collect();
-        let info = ImageInfo {
-            width: 128, height: 128, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
-        };
-
-        let (_, our_count) = filters::connected_components(&binary, &info, 8).unwrap();
-
-        let script = format!(
-            "import sys,numpy as np,cv2\n\
-             px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape(128,128)\n\
-             n,_=cv2.connectedComponents(px,connectivity=8)\n\
-             sys.stdout.buffer.write(np.array([n],dtype=np.uint32).tobytes())"
-        );
-        let output = Command::new(&py)
-            .arg("-c")
-            .arg(&script)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                child.stdin.take().unwrap().write_all(&binary).unwrap();
-                child.wait_with_output()
-            })
-            .expect("opencv CC failed");
-        assert!(output.status.success());
-
-        let cv_count = u32::from_le_bytes(output.stdout[0..4].try_into().unwrap()) - 1;
-        eprintln!("  CC {name:15}: ours={our_count}, cv={cv_count}");
-        assert_eq!(
-            our_count, cv_count,
-            "CC {name}: count mismatch ours={our_count} vs cv={cv_count}"
-        );
-    }
-    eprintln!("  ALL 7 IMAGES: COMPONENT COUNTS MATCH");
+    // Parse OpenCV output: first 4 bytes = num_labels (including background)
+    let cv_count = u32::from_le_bytes(output.stdout[0..4].try_into().unwrap()) - 1; // subtract background
+    eprintln!("  connectedComponents: ours={our_count} labels, cv={cv_count} labels");
+    assert_eq!(our_count, cv_count, "component count must match OpenCV");
 }

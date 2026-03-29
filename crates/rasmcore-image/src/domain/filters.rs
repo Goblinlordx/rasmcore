@@ -3130,7 +3130,9 @@ pub fn flood_fill(
     let sx = seed_x as usize;
     let sy = seed_y as usize;
     if sx >= w || sy >= h {
-        return Err(ImageError::InvalidParameters("seed point out of bounds".into()));
+        return Err(ImageError::InvalidParameters(
+            "seed point out of bounds".into(),
+        ));
     }
 
     let mut result = pixels.to_vec();
@@ -3154,7 +3156,16 @@ pub fn flood_fill(
 
         // 4-connectivity neighbors
         let neighbors: &[(i32, i32)] = if connectivity == 8 {
-            &[(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+            &[
+                (-1, -1),
+                (0, -1),
+                (1, -1),
+                (-1, 0),
+                (1, 0),
+                (-1, 1),
+                (0, 1),
+                (1, 1),
+            ]
         } else {
             &[(0, -1), (-1, 0), (1, 0), (0, 1)]
         };
@@ -3184,10 +3195,7 @@ pub fn flood_fill(
 ///
 /// Applies a 5x5 Gaussian kernel then takes every other pixel.
 /// Output is (w+1)/2 x (h+1)/2. Matches `cv2.pyrDown`.
-pub fn pyr_down(
-    pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub fn pyr_down(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::UnsupportedFormat(
             "pyr_down requires Gray8".into(),
@@ -3243,10 +3251,7 @@ pub fn pyr_down(
 ///
 /// Inserts zeros between pixels, then applies 5x5 Gaussian * 4.
 /// Output is w*2 x h*2. Matches `cv2.pyrUp`.
-pub fn pyr_up(
-    pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub fn pyr_up(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::UnsupportedFormat(
             "pyr_up requires Gray8".into(),
@@ -4885,24 +4890,28 @@ fn compute_mertens_weight(img_f: &[f32], w: usize, h: usize, params: &MertensPar
     let n = w * h;
     let sigma = 0.2f32;
 
-    // Convert to grayscale [0,1] — BT.601: 0.299R + 0.587G + 0.114B
+    // Convert to grayscale — matches OpenCV MergeMertens which uses COLOR_RGB2GRAY
+    // on BGR data, effectively: 0.299*B + 0.587*G + 0.114*R.
+    // Our input is RGB, so: 0.114*R + 0.587*G + 0.299*B
     let mut gray = vec![0.0f32; n];
     for i in 0..n {
         let r = img_f[i * 3];
         let g = img_f[i * 3 + 1];
         let b = img_f[i * 3 + 2];
-        gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+        gray[i] = 0.114 * r + 0.587 * g + 0.299 * b;
     }
 
     // Contrast: abs(Laplacian(gray)) — standard 3×3 kernel [[0,1,0],[1,-4,1],[0,1,0]]
+    // Border: BORDER_REFLECT_101 (OpenCV BORDER_DEFAULT)
     let mut contrast = vec![0.0f32; n];
+    let ws = w as isize;
+    let hs = h as isize;
     for y in 0..h {
         for x in 0..w {
-            // Border: replicate (BORDER_DEFAULT in OpenCV for Laplacian)
-            let yp = if y > 0 { y - 1 } else { 0 };
-            let yn = if y + 1 < h { y + 1 } else { h - 1 };
-            let xp = if x > 0 { x - 1 } else { 0 };
-            let xn = if x + 1 < w { x + 1 } else { w - 1 };
+            let yp = reflect101(y as isize - 1, hs) as usize;
+            let yn = reflect101(y as isize + 1, hs) as usize;
+            let xp = reflect101(x as isize - 1, ws) as usize;
+            let xn = reflect101(x as isize + 1, ws) as usize;
 
             let center = gray[y * w + x];
             let lap = gray[yp * w + x] + gray[yn * w + x] + gray[y * w + xp] + gray[y * w + xn]
@@ -4911,24 +4920,29 @@ fn compute_mertens_weight(img_f: &[f32], w: usize, h: usize, params: &MertensPar
         }
     }
 
-    // Saturation: population std across channels
+    // Saturation: sqrt(sum((ch - mean)²)) — matches OpenCV MergeMertens exactly.
+    // Note: OpenCV does NOT divide by channel count before sqrt (not population std).
     let mut saturation = vec![0.0f32; n];
     for i in 0..n {
         let r = img_f[i * 3];
         let g = img_f[i * 3 + 1];
         let b = img_f[i * 3 + 2];
         let mu = (r + g + b) / 3.0;
-        let var = ((r - mu) * (r - mu) + (g - mu) * (g - mu) + (b - mu) * (b - mu)) / 3.0;
-        saturation[i] = var.sqrt();
+        let sum_sq = (r - mu) * (r - mu) + (g - mu) * (g - mu) + (b - mu) * (b - mu);
+        saturation[i] = sum_sq.sqrt();
     }
 
-    // Well-exposedness: product over channels of exp(-0.5 * ((ch - 0.5) / sigma)^2)
+    // Well-exposedness: product over channels of exp(-(ch - 0.5)² / (2 * σ²))
+    // OpenCV computes: expo = (ch - 0.5)²; expo = -expo / 0.08; exp(expo)
+    // where 0.08 = 2 * 0.2² = 2 * σ². Match the exact operation order.
     let mut well_exp = vec![1.0f32; n];
     for i in 0..n {
         for c in 0..3 {
             let ch = img_f[i * 3 + c];
-            let d = (ch - 0.5) / sigma;
-            well_exp[i] *= (-0.5 * d * d).exp();
+            let expo = ch - 0.5;
+            let expo = expo * expo;
+            let expo = -expo / 0.08;
+            well_exp[i] *= expo.exp();
         }
     }
 
@@ -5635,7 +5649,12 @@ mod spatial_tests {
     use crate::domain::types::ColorSpace;
 
     fn gray_info(w: u32, h: u32) -> ImageInfo {
-        ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb }
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
     }
 
     #[test]
@@ -5688,7 +5707,7 @@ mod spatial_tests {
         assert_eq!(filled, 9, "should fill 3x3 region of value 100");
         assert_eq!(result[0], 50);
         assert_eq!(result[4], 200); // untouched
-        assert_eq!(result[3], 0);   // barrier untouched
+        assert_eq!(result[3], 0); // barrier untouched
     }
 
     #[test]
@@ -5742,9 +5761,15 @@ mod spatial_tests {
         let (up, _) = pyr_up(&down, &down_info).unwrap();
 
         // MAE should be small for smooth gradient
-        let mae: f64 = px.iter().zip(up.iter())
+        let mae: f64 = px
+            .iter()
+            .zip(up.iter())
             .map(|(&a, &b)| (a as f64 - b as f64).abs())
-            .sum::<f64>() / px.len() as f64;
-        assert!(mae < 5.0, "pyrDown→pyrUp roundtrip MAE={mae:.2} (should be < 5.0)");
+            .sum::<f64>()
+            / px.len() as f64;
+        assert!(
+            mae < 5.0,
+            "pyrDown→pyrUp roundtrip MAE={mae:.2} (should be < 5.0)"
+        );
     }
 }

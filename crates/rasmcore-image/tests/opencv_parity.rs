@@ -686,17 +686,20 @@ fn mertens_fusion_matches_opencv() {
 
     eprintln!("Mertens u8 vs OpenCV:  MAE={e_u8:.4}, max_err={m_u8}");
 
-    // Mertens uses Laplacian pyramid blending which accumulates f32 error.
-    // The algorithm matches OpenCV's structure but f32 accumulation across
-    // 6 pyramid levels introduces rounding differences.
-    // Tier: F32_ROUNDING — differences are from f32 precision in pyramid ops.
+    // Algorithm exactly matches OpenCV MergeMertens (verified against source):
+    // - COLOR_RGB2GRAY on BGR data (0.299*B + 0.587*G + 0.114*R)
+    // - Saturation: sqrt(sum((ch-mean)²)) — not population std
+    // - Well-exposedness: -(ch-0.5)²/0.08 — exact operation order
+    // Remaining difference: f32 accumulation order in 6-level pyramid ops.
+    // Tier: F32_ROUNDING — max ±4 u8 levels.
     assert!(
-        e < 0.05,
-        "Mertens f32 MAE {e:.6} > 0.05 — algorithmic divergence from OpenCV"
+        e < 0.01,
+        "Mertens f32 MAE {e:.6} > 0.01 — algorithmic divergence from OpenCV"
     );
     assert!(
-        m < 0.15,
-        "Mertens f32 max_err {m:.6} > 0.15 — likely algorithmic issue"
+        m < 0.03,
+        "Mertens f32 max_err {m:.6} > 0.03 — likely algorithmic issue"
     );
-    assert!(e_u8 < 10.0, "Mertens u8 MAE {e_u8:.4} > 10.0");
+    assert!(m_u8 <= 4, "Mertens u8 max error {m_u8} > 4");
+    assert!(e_u8 < 1.0, "Mertens u8 MAE {e_u8:.4} > 1.0");
 }
