@@ -1087,3 +1087,41 @@ fn bokeh_hex_r7_all_images_match_opencv() {
         assert!(m <= 1, "bokeh_hex_7 {name}: max_err={m} > 1");
     }
 }
+
+// ─── Vignette (Gaussian) Parity ─────────────────────────────────────────
+
+/// Validates Gaussian vignette against ImageMagick 7.x reference output.
+///
+/// Reference: `magick -vignette 0x15+10+10` (sigma=15, x_inset=10, y_inset=10).
+/// The residual error comes from IM's anti-aliased ellipse rasterization
+/// (sub-pixel coverage) vs our binary ellipse mask. After Gaussian blur
+/// the difference is small: MAE < 2.0 at 8-bit.
+#[test]
+fn vignette_gaussian_all_images_match_imagemagick() {
+    let info = info_128();
+    let sigma = 15.0f32;
+    let x_inset = 10u32;
+    let y_inset = 10u32;
+    let mut total_mae = 0.0;
+    let mut total_max = 0u8;
+
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_vignette.raw"));
+        let ours = filters::vignette(
+            &input, &info, sigma, x_inset, y_inset, 128, 128, 0, 0,
+        )
+        .unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        total_mae += e;
+        total_max = total_max.max(m);
+        eprintln!("vignette {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(e < 2.0, "vignette {name}: MAE={e:.4} >= 2.0");
+        assert!(m <= 15, "vignette {name}: max_err={m} > 15");
+    }
+
+    let avg_mae = total_mae / TEST_IMAGES.len() as f64;
+    eprintln!("vignette summary: avg_MAE={avg_mae:.4}, global_max_err={total_max}");
+}
