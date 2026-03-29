@@ -24,13 +24,13 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement Brown-Conrady radial distortion model
-    done: false
+    done: true
   - text: Implement inverse mapping (output to distorted source coordinate)
-    done: false
+    done: true
   - text: Implement undistort with bilinear sampling
-    done: false
+    done: true
   - text: Generate OpenCV reference fixtures with known camera/distortion params
-    done: false
+    done: true
   - text: Parity test against cv2.undistort
-    done: false
+    done: true
 extra: {}
