@@ -112,24 +112,19 @@ pub fn trellis_quantize_with_codes(
         }
     };
 
-    // Pre-compute per-coefficient weight: 64 / Q[i]^2
-    // Matches mozjpeg mode=1: lambda_tbl[i] = 1/(Q[i]*Q[i]).
-    //
-    // The factor of 64 compensates for DCT output scaling: mozjpeg's forward DCT
-    // leaves output scaled by 8 (uses Q*8 for quantization), while our DCT normalizes
-    // to JPEG standard scale. Since delta^2 is 64x smaller in our system, we multiply
-    // the weight by 64 so the rate-distortion balance matches mozjpeg exactly.
-    const DCT_SCALE_COMPENSATION: f64 = 64.0;
+    // Per-coefficient weight: 1/Q[i]^2 (mozjpeg mode=1).
+    // No compensation factor needed — LL&M DCT output is 8x-scaled (same as mozjpeg),
+    // and trellis uses Q*8 for candidate generation, so delta^2 matches naturally.
     let mut coeff_weight = [0.0f64; 64];
     for i in 0..64 {
         let q = quant_table[i] as f64;
-        coeff_weight[i] = if q > 0.0 { DCT_SCALE_COMPENSATION / (q * q) } else { 1.0 };
+        coeff_weight[i] = if q > 0.0 { 1.0 / (q * q) } else { 1.0 };
     }
 
     let mut output = [0i16; 64];
 
-    // DC coefficient: use simple rounding (trellis only optimizes AC)
-    let q0 = quant_table[ZIGZAG[0]] as i32;
+    // DC coefficient: simple rounding with Q*8 (LL&M DCT scale)
+    let q0 = quant_table[ZIGZAG[0]] as i32 * 8;
     let dc = dct_coeffs[ZIGZAG[0]];
     output[0] = if dc >= 0 {
         ((dc + q0 / 2) / q0) as i16
@@ -258,7 +253,7 @@ fn trellis_optimize_ac(
     for pos in 1..64 {
         let zigzag_pos = ZIGZAG[pos];
         let coeff = dct_coeffs[zigzag_pos];
-        let q = quant_table[zigzag_pos] as i32;
+        let q = quant_table[zigzag_pos] as i32 * 8; // Q*8: LL&M DCT scale
 
         let rounded = if coeff >= 0 {
             (coeff + q / 2) / q
@@ -314,7 +309,7 @@ fn trellis_optimize_ac(
     // Initialize position 0 (first AC coefficient, zigzag position 1)
     {
         let zigzag_pos = ZIGZAG[1];
-        let q = quant_table[zigzag_pos] as i32;
+        let q = quant_table[zigzag_pos] as i32 * 8; // Q*8: LL&M DCT scale
         let original = dct_coeffs[zigzag_pos];
 
         for &cand in &candidates[0] {
@@ -348,7 +343,7 @@ fn trellis_optimize_ac(
     // Forward Viterbi pass
     for pos in 1..NUM_AC {
         let zigzag_pos = ZIGZAG[pos + 1];
-        let q = quant_table[zigzag_pos] as i32;
+        let q = quant_table[zigzag_pos] as i32 * 8; // Q*8: LL&M DCT scale
         let original = dct_coeffs[zigzag_pos];
 
         for &cand in &candidates[pos] {
@@ -468,15 +463,16 @@ pub fn dc_trellis_pass(
     } else {
         &DC_CHROMA_CODE_LENGTHS
     };
-    let q0 = quant_table[ZIGZAG[0]] as i32;
+    let q0_raw = quant_table[ZIGZAG[0]] as i32;
+    let q0 = q0_raw * 8; // Q*8: LL&M DCT scale
     if q0 == 0 {
         return;
     }
 
     let n = blocks.len();
 
-    // mozjpeg DC candidate count: min(9, 2 + 60/dc_quantval)
-    let max_cands = 9.min(2 + 60 / (q0 as usize).max(1));
+    // mozjpeg DC candidate count: min(9, 2 + 60/dc_quantval) — uses raw Q
+    let max_cands = 9.min(2 + 60 / (q0_raw as usize).max(1));
     let half_spread = (max_cands - 1) / 2; // e.g., 9 candidates → spread ±4
 
     // Generate DC candidates for each block
@@ -498,10 +494,10 @@ pub fn dc_trellis_pass(
         candidates.push(cands);
     }
 
-    // DC distortion weight: 64/Q_dc^2 (matching mozjpeg mode=1 with DCT scale compensation)
+    // DC distortion weight: 1/Q_dc^2 (mozjpeg mode=1, raw Q not Q*8)
     let dc_weight = {
-        let q = q0 as f64;
-        if q > 0.0 { 64.0 / (q * q) } else { 1.0 }
+        let q = q0_raw as f64;
+        if q > 0.0 { 1.0 / (q * q) } else { 1.0 }
     };
 
     let mut prev_costs: Vec<f64> = vec![INF; max_cands];

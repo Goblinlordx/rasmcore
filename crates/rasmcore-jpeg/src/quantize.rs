@@ -182,10 +182,12 @@ pub fn chroma_quant_table(quality: u8, preset: QuantPreset, twelve_bit: bool) ->
     scale_quant_table(preset_chroma_table(preset), quality, twelve_bit)
 }
 
+/// Quantize DCT coefficients. Divisor is Q*8 because the LL&M forward
+/// DCT leaves output scaled by 8 (libjpeg/mozjpeg convention).
 #[inline]
 pub fn quantize(coeffs: &[i32; 64], qt: &[u16; 64], out: &mut [i16; 64]) {
     for i in 0..64 {
-        let q = qt[i] as i32;
+        let q = qt[i] as i32 * 8; // Q*8 absorbs DCT scale factor
         let c = coeffs[i];
         out[i] = if c >= 0 {
             ((c + q / 2) / q) as i16
@@ -307,26 +309,36 @@ mod tests {
 
     #[test]
     fn quantize_roundtrip() {
+        // Quantize divides by Q*8 (LL&M convention), dequantize multiplies by Q.
+        // So quantize→dequantize gives c / 8 (approximately).
+        // The error from the original is bounded by Q*8/2 (half-step).
         let qt = luma_quant_table(50, QuantPreset::AnnexK, false);
         let mut c = [0i32; 64];
         for i in 0..64 {
-            c[i] = (i as i32 * 7 - 200).clamp(-1024, 1023);
+            c[i] = (i as i32 * 70 - 2000).clamp(-8192, 8191); // LL&M scale (8x larger)
         }
         let mut q = [0i16; 64];
         quantize(&c, &qt, &mut q);
         let mut d = [0i32; 64];
         dequantize(&q, &qt, &mut d);
+        // After quantize(÷Q*8) → dequantize(×Q), result ≈ c/8.
+        // Error: |c/8 - d| <= Q/2 (half quantization step after the 8x is removed)
         for i in 0..64 {
-            assert!((c[i] - d[i]).abs() <= qt[i] as i32);
+            let expected = c[i] / 8; // approximate
+            assert!(
+                (expected - d[i]).abs() <= qt[i] as i32,
+                "pos {i}: expected≈{expected} got {}, Qt={}", d[i], qt[i]
+            );
         }
     }
 
     #[test]
     fn quantize_sign() {
+        // Q*8: 10*8=80. 50/80=0 (rounds to 0), need larger values
         let qt = [10u16; 64];
         let mut c = [0i32; 64];
-        c[0] = 50;
-        c[1] = -50;
+        c[0] = 400; // 400 / (10*8) = 400/80 = 5
+        c[1] = -400;
         let mut q = [0i16; 64];
         quantize(&c, &qt, &mut q);
         assert_eq!(q[0], 5);

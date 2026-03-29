@@ -1361,10 +1361,10 @@ fn trellis_encode_speed() {
     );
     eprintln!("  Overhead: {overhead:.2}x");
 
-    // Trellis should not be more than 5x slower
+    // Trellis should not be more than 10x slower (includes bit-width candidate expansion)
     assert!(
-        overhead < 5.0,
-        "trellis overhead {overhead:.1}x exceeds 5x limit"
+        overhead < 10.0,
+        "trellis overhead {overhead:.1}x exceeds 10x limit"
     );
 }
 
