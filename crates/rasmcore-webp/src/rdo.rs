@@ -127,6 +127,20 @@ pub fn vp8_bit_cost(bit: bool, prob: u8) -> u32 {
     }
 }
 
+/// VP8 level fixed costs for levels > MAX_VARIABLE_LEVEL (67).
+/// Stub: returns approximate cost. The full 2048-entry table from libwebp
+/// dsp/cost.c will be embedded when Track 2/3 needs exact values.
+#[inline]
+pub fn vp8_level_fixed_cost(level: usize) -> u16 {
+    if level <= 67 {
+        return 0; // handled by LevelCostTable
+    }
+    // Approximate: extra bits cost ~10 bits per doubling of level
+    // The exact table has values from 2816 (level 256) to 7761 (level 2047)
+    let extra_bits = 16 - (level as u32).leading_zeros();
+    (extra_bits * 256) as u16
+}
+
 /// Cost of encoding a boolean — approximate version for backward compat.
 ///
 /// NOTE: The exact version is `vp8_bit_cost` using VP8_ENTROPY_COST table.

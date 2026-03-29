@@ -161,6 +161,12 @@ pub fn get_coeff_probs(block_type: usize, band: usize, ctx: usize) -> &'static [
     &DEFAULT_COEFF_PROBS[offset..offset + 11]
 }
 
+/// Get the flat default coefficient probability table (1056 bytes).
+/// Layout: [4 types][8 bands][3 ctx][11 probas] flattened.
+pub fn get_default_coeff_probs_flat() -> &'static [u8; 1056] {
+    &DEFAULT_COEFF_PROBS
+}
+
 /// Encode a block of 16 quantized coefficients into the token partition.
 ///
 /// Uses band-indexed, context-aware probabilities matching the VP8 decoder.
