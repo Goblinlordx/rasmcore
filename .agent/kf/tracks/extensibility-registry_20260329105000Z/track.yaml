@@ -73,6 +73,7 @@ spec:
     - Third-party crate can register encoders/decoders without modifying rasmcore source
     - Assembly crate pattern works (combine rasmcore + N plugin crates → one WASM)
     - inventory/linkme collection works across crate boundaries in WASM target
+    - ACID TEST — bare-infra build with zero built-in filters/codecs plus one custom filter and one custom codec builds, runs, and produces correct output end-to-end
   out_of_scope: |
     Runtime dynamic plugin loading (hot-loading .wasm at runtime).
     Hot-reloading of filters during execution. GUI for filter creation.
@@ -289,5 +290,23 @@ plan:
       - text: Verify assembly crate builds to WASM with both built-in and custom filters in WIT
         done: false
       - text: Document plugin authoring guide (how to create a filter/codec crate)
+        done: false
+  - phase: Acid Test — Bare Infrastructure Build
+    tasks:
+      - text: Create rasmcore-image feature flag that disables ALL built-in filters and codecs (infra-only)
+        done: false
+      - text: Create examples/custom-filter crate with one trivial filter (e.g. invert-red) using register_filter
+        done: false
+      - text: Create examples/custom-codec crate with one trivial codec (e.g. raw-rgb encoder) using register_encoder
+        done: false
+      - text: Create examples/bare-assembly crate depending on rasmcore-image[infra-only] + custom-filter + custom-codec
+        done: false
+      - text: Verify bare-assembly builds to WASM component with only custom operations in WIT (no built-ins)
+        done: false
+      - text: Verify jco transpile produces SDK with only custom filter and custom codec
+        done: false
+      - text: Verify pipeline works end-to-end — load raw pixels, apply custom filter, encode with custom codec
+        done: false
+      - text: Verify adding rasmcore-image[core-filters] feature brings back built-in filters alongside custom ones
         done: false
 extra: {}
