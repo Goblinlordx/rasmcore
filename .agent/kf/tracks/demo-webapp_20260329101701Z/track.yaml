@@ -1,0 +1,133 @@
+id: demo-webapp_20260329101701Z
+title: Demo Harness — Interactive Webapp (Vite + Vanilla TS)
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Local interactive webapp at demo/ that showcases all rasmcore functionality
+    using the actual WASM binary. Drop an image, apply filters/transforms/encode
+    in real-time with before/after comparison and performance timing.
+  context: |
+    With the WASM build and browser SDK ready (demo-wasm-build track), this track
+    creates the actual demo webapp. The goal is a live playground that the developer
+    can keep running while adding features — new operations appear automatically
+    when the WASM binary is rebuilt.
+
+    Design principles:
+    - Minimal: Vite + vanilla TypeScript (no React/Vue framework overhead)
+    - Fast: instant dev server startup, HMR for demo code changes
+    - Complete: every WIT-exposed operation should be demoable
+    - Live: npm run demo starts the dev server, rebuilds on WASM changes
+    - Visual: before/after comparison, performance timing, pixel inspector
+  codebase_analysis: |
+    WIT API surface to demo (from wit/image/):
+    - Decoder: detect-format, decode (all 12+ formats)
+    - Encoder: write-jpeg, write-png, write-webp, write-avif, write-tiff, etc.
+    - Filters: blur, sharpen, brightness, contrast, grayscale, hue-rotate,
+      saturate, sepia, colorize, convolve, median, sobel, canny,
+      dehaze, clarity, pyramid-detail-remap, retinex (SSR/MSR/MSRCR)
+    - Transforms: resize, crop, rotate, flip, convert-format
+    - Pipeline: lazy DAG evaluation (advanced demo section)
+    - 16-bit: decode/process/encode at 16-bit depth
+
+    Vite setup:
+    - vite.config.ts with WASM asset handling
+    - ESM import of jco-generated SDK
+    - Dev server with proxy for .wasm files
+  acceptance_criteria:
+    - npm run demo starts Vite dev server at localhost:5173
+    - User can drag-drop or file-pick any supported image format
+    - Image displays with format/dimensions/size metadata
+    - Filter panel with sliders for blur, sharpen, brightness, contrast, etc.
+    - Transform panel for resize, crop, rotate, flip
+    - Encode panel with format selection and quality slider
+    - Before/after toggle or side-by-side view
+    - Performance timing displayed for each operation (ms)
+    - Download button for processed output
+    - Works in Chrome and Safari
+    - All operations use the actual WASM binary (no server-side processing)
+  out_of_scope: |
+    Production deployment (CDN, bundling). User accounts or persistence.
+    Mobile-optimized layout. Pipeline DAG visualization (future enhancement).
+    Video processing demo. Batch processing UI.
+  technical_notes: |
+    Project structure:
+      demo/
+        package.json          # Vite + TS deps
+        vite.config.ts        # WASM asset config
+        tsconfig.json
+        index.html            # Entry point
+        src/
+          main.ts             # App entry, SDK initialization
+          sdk/                # jco-generated (copied by build script)
+          components/
+            image-input.ts    # Drag-drop + file picker
+            filter-panel.ts   # Filter controls (sliders, buttons)
+            transform-panel.ts # Transform controls
+            encode-panel.ts   # Format + quality picker
+            viewer.ts         # Before/after image display
+            timing.ts         # Performance timing display
+          utils/
+            sdk-bridge.ts     # Typed wrapper around raw SDK imports
+            image-utils.ts    # Canvas/ImageData conversion helpers
+
+    SDK bridge pattern:
+      The jco-generated SDK works with raw byte buffers (Uint8Array).
+      sdk-bridge.ts provides typed wrappers:
+        async function applyBlur(imageData: ImageData, radius: number): Promise<ImageData>
+      This converts ImageData → raw pixels → SDK call → raw pixels → ImageData.
+
+    Image display:
+      Use <canvas> for rendering. ImageData for pixel access.
+      Before/after: two canvases side-by-side or a slider overlay.
+
+    Performance timing:
+      performance.now() around each SDK call. Display in a panel.
+
+    Dev workflow:
+      1. npm run demo:build  — rebuild WASM + SDK (when Rust code changes)
+      2. npm run demo        — start Vite dev server (instant, watches demo/ code)
+      3. Edit demo/ code → Vite HMR updates instantly
+      4. Edit Rust code → re-run demo:build → refresh browser
+
+    Future: file watcher on target/*.wasm that auto-triggers jco transpile.
+plan:
+  - phase: Project Scaffold
+    tasks:
+      - text: Create demo/ directory with package.json (vite, typescript deps)
+        done: false
+      - text: Create vite.config.ts with WASM asset handling and dev server config
+        done: false
+      - text: Create index.html entry point with app mount div
+        done: false
+      - text: Create src/main.ts that initializes SDK and renders app shell
+        done: false
+  - phase: SDK Integration
+    tasks:
+      - text: Create src/utils/sdk-bridge.ts with typed wrappers for decode/encode/filter/transform
+        done: false
+      - text: Create src/utils/image-utils.ts for Canvas/ImageData to raw pixel conversion
+        done: false
+      - text: Verify SDK loads and decodes a test image in the browser
+        done: false
+  - phase: UI Components
+    tasks:
+      - text: Create image-input component (drag-drop zone + file picker)
+        done: false
+      - text: Create viewer component (before/after canvas display)
+        done: false
+      - text: Create filter-panel with sliders for all filter operations
+        done: false
+      - text: Create transform-panel for resize/crop/rotate/flip
+        done: false
+      - text: Create encode-panel with format picker and quality slider + download
+        done: false
+      - text: Create timing display component showing operation duration in ms
+        done: false
+  - phase: Polish
+    tasks:
+      - text: Add npm run demo script to root package.json
+        done: false
+extra: {}

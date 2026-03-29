@@ -1,0 +1,135 @@
+id: demo-fluent-sdk_20260329101702Z
+title: Fluent TypeScript SDK — Chainable API Wrapper over jco Bindings
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Thin ergonomic TypeScript wrapper over the jco-generated SDK that provides
+    a fluent chainable API. Leverages the WIT pipeline resource for lazy evaluation.
+  context: |
+    jco transpile generates typed bindings from WIT, but the API uses raw
+    node-id numbers and verbose config records. The pipeline resource already
+    has a builder pattern (each method returns a node-id), but using it requires
+    manual ID threading.
+
+    This track creates a fluent wrapper:
+      const result = await rasmcore.load(imageBytes)
+        .blur(3.0)
+        .resize(800, 600, 'lanczos3')
+        .brightness(0.1)
+        .toJpeg({ quality: 85 });
+
+    The wrapper is a thin layer — it holds a pipeline instance and the current
+    node-id, forwarding each method call to the underlying WIT resource.
+    Lazy evaluation is preserved: no pixels are computed until a to*() sink.
+  codebase_analysis: |
+    WIT pipeline resource (wit/image/pipeline.wit):
+    - image-pipeline resource with constructor()
+    - read(data) -> node-id (source)
+    - blur/sharpen/brightness/contrast/grayscale(source, params) -> node-id
+    - resize/crop/rotate/flip(source, params) -> node-id
+    - write-jpeg/write-png/write-webp/etc.(source, config) -> buffer (sink)
+
+    jco generates:
+    - ImagePipeline class with all methods
+    - Config record types (JpegWriteConfig, PngWriteConfig, etc.)
+    - Enum types (ResizeFilter, Rotation, FlipDirection)
+
+    The fluent wrapper needs to:
+    1. Hold an ImagePipeline instance
+    2. Track the current node-id (last operation's output)
+    3. Return `this` from each transform/filter method (for chaining)
+    4. Return the output buffer from each sink method (terminates chain)
+  acceptance_criteria:
+    - Fluent API supports all filter operations (blur, sharpen, brightness, etc.)
+    - Fluent API supports all transform operations (resize, crop, rotate, flip)
+    - Fluent API supports all encode sinks (toJpeg, toPng, toWebp, etc.)
+    - Chain is lazy — no pixels computed until sink is called
+    - TypeScript types are fully typed (no `any`)
+    - Can branch a chain (apply different sinks to same intermediate)
+    - Used by the demo webapp for all operations
+    - Exported as npm-importable module
+  out_of_scope: |
+    Streaming/progressive decode. Worker thread integration.
+    Custom pipeline node creation from JS. Batch processing API.
+  technical_notes: |
+    Implementation pattern:
+
+    ```typescript
+    export class RasmcoreImage {
+      private pipeline: ImagePipeline;
+      private nodeId: number;
+
+      static async load(data: Uint8Array): Promise<RasmcoreImage> {
+        const pipeline = new ImagePipeline();
+        const nodeId = pipeline.read(data);
+        return new RasmcoreImage(pipeline, nodeId);
+      }
+
+      blur(radius: number): RasmcoreImage {
+        this.nodeId = this.pipeline.blur(this.nodeId, radius);
+        return this;
+      }
+
+      resize(width: number, height: number, filter = 'lanczos3'): RasmcoreImage {
+        this.nodeId = this.pipeline.resize(this.nodeId, width, height, filter);
+        return this;
+      }
+
+      async toJpeg(config?: { quality?: number }): Promise<Uint8Array> {
+        return this.pipeline.writeJpeg(this.nodeId, config ?? {});
+      }
+
+      // Fork: create a new chain from the current node
+      fork(): RasmcoreImage {
+        return new RasmcoreImage(this.pipeline, this.nodeId);
+      }
+
+      // Inspect without computing pixels
+      get info(): ImageInfo {
+        return this.pipeline.nodeInfo(this.nodeId);
+      }
+    }
+    ```
+
+    File: sdk/typescript/src/rasmcore.ts
+    Exports: RasmcoreImage class + all WIT types re-exported
+    Build: tsc → dist/ (ESM + CJS + .d.ts)
+plan:
+  - phase: Core Fluent API
+    tasks:
+      - text: Create sdk/typescript/src/rasmcore.ts with RasmcoreImage class
+        done: false
+      - text: Implement static load() factory that creates pipeline + reads image
+        done: false
+      - text: Implement all filter methods (blur, sharpen, brightness, contrast, grayscale, etc.)
+        done: false
+      - text: Implement all transform methods (resize, crop, rotate, flip, convert-format)
+        done: false
+      - text: Implement all sink methods (toJpeg, toPng, toWebp, toAvif, toTiff, etc.)
+        done: false
+      - text: Implement fork() for chain branching
+        done: false
+      - text: Implement info getter for lazy dimension/format inspection
+        done: false
+  - phase: Types and Build
+    tasks:
+      - text: Re-export all WIT types (ResizeFilter, Rotation, config records, etc.)
+        done: false
+      - text: Add tsconfig.json for ESM output with declarations
+        done: false
+      - text: Add build script to package.json (tsc → dist/)
+        done: false
+  - phase: Tests
+    tasks:
+      - text: Test fluent chain - load, blur, resize, toJpeg produces valid JPEG
+        done: false
+      - text: Test fork - two different outputs from same intermediate
+        done: false
+      - text: Test info - dimensions correct after resize without computing pixels
+        done: false
+      - text: Test error handling - invalid operations return typed errors
+        done: false
+extra: {}
