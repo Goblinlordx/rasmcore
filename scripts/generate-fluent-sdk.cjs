@@ -5,11 +5,27 @@
  * Reads: demo/sdk/interfaces/rasmcore-image-pipeline.d.ts
  * Writes: sdk/typescript/src/rcimage.ts
  *
- * Usage: node scripts/generate-fluent-sdk.js
+ * Usage: node scripts/generate-fluent-sdk.cjs [--naming camel|snake]
+ *
+ * --naming camel  (default) — JS/TS style: hueRotate, toJpeg
+ * --naming snake  — Python style: hue_rotate, to_jpeg
  */
 
 const fs = require('fs');
 const path = require('path');
+
+// Parse --naming flag
+const namingArg = process.argv.find(a => a.startsWith('--naming'));
+const namingIdx = process.argv.indexOf('--naming');
+const NAMING = (namingIdx >= 0 && process.argv[namingIdx + 1]) || 'camel';
+if (NAMING !== 'camel' && NAMING !== 'snake') {
+  console.error(`ERROR: --naming must be "camel" or "snake", got "${NAMING}"`);
+  process.exit(1);
+}
+
+// Naming conversion helpers
+function camelToSnake(s) { return s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, ''); }
+function convertName(name) { return NAMING === 'snake' ? camelToSnake(name) : name; }
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const PIPELINE_DTS = path.join(PROJECT_ROOT, 'demo/sdk/interfaces/rasmcore-image-pipeline.d.ts');
@@ -157,18 +173,21 @@ function main() {
   lines.push('  // ─── Chainable Operations (lazy, return RcImage) ───');
 
   for (const m of chainable) {
-    const paramSig = m.userParams.map(p => `${p.name}: ${p.type}`).join(', ');
-    const paramCall = m.userParams.map(p => p.name).join(', ');
+    // Public SDK names use the configured naming convention
+    const pubName = convertName(m.name);
+    const pubParams = m.userParams.map(p => ({ ...p, pubName: convertName(p.name) }));
+    const paramSig = pubParams.map(p => `${p.pubName}: ${p.type}`).join(', ');
+    // Internal pipeline call always uses camelCase (jco-generated)
+    const paramCall = pubParams.map(p => p.pubName).join(', ');
     const callArgs = paramCall ? `this.nodeId, ${paramCall}` : 'this.nodeId';
 
     lines.push('');
-    lines.push(`  ${m.name}(${paramSig}): RcImage {`);
-    // Add runtime validation for primitive params
-    for (const p of m.userParams) {
+    lines.push(`  ${pubName}(${paramSig}): RcImage {`);
+    for (const p of pubParams) {
       if (p.type === 'number') {
-        lines.push(`    RcImage.assertNumber('${p.name}', ${p.name});`);
+        lines.push(`    RcImage.assertNumber('${p.pubName}', ${p.pubName});`);
       } else if (p.type === 'string') {
-        lines.push(`    RcImage.assertString('${p.name}', ${p.name});`);
+        lines.push(`    RcImage.assertString('${p.pubName}', ${p.pubName});`);
       }
     }
     lines.push(`    this.nodeId = this.pipeline.${m.name}(${callArgs});`);
@@ -181,25 +200,26 @@ function main() {
   lines.push('  // ─── Terminal Operations (execute pipeline, return data) ───');
 
   for (const m of terminal) {
-    // Convert writeJpeg → toJpeg
+    // Convert writeJpeg → toJpeg, then apply naming convention
     let methodName = m.name;
     if (methodName.startsWith('write')) {
       methodName = 'to' + methodName.slice(5);
     }
+    const pubName = convertName(methodName);
+    const pubParams = m.userParams.map(p => ({ ...p, pubName: convertName(p.name) }));
 
-    const paramSig = m.userParams.map(p => {
-      // Make optional params with | undefined truly optional
+    const paramSig = pubParams.map(p => {
       if (p.type.includes('| undefined')) {
-        return `${p.name}?: ${p.type.replace(' | undefined', '')}`;
+        return `${p.pubName}?: ${p.type.replace(' | undefined', '')}`;
       }
-      return `${p.name}: ${p.type}`;
+      return `${p.pubName}: ${p.type}`;
     }).join(', ');
 
-    const paramCall = m.userParams.map(p => p.name).join(', ');
+    const paramCall = pubParams.map(p => p.pubName).join(', ');
     const callArgs = paramCall ? `this.nodeId, ${paramCall}` : 'this.nodeId';
 
     lines.push('');
-    lines.push(`  ${methodName}(${paramSig}): Uint8Array {`);
+    lines.push(`  ${pubName}(${paramSig}): Uint8Array {`);
     lines.push(`    return this.pipeline.${m.name}(${callArgs}) as unknown as Uint8Array;`);
     lines.push('  }');
   }
