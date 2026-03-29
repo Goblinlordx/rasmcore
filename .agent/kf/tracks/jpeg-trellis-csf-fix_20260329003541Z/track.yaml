@@ -29,32 +29,32 @@ spec:
     + 29*b + 128) >> 8) to ((19595*r + 38470*g + 7471*b + 32768) >> 16). Same for Cb/Cr: mozjpeg uses Cb_R=-11059, Cb_G=-21709,
     Cb_B=32768, Cr_R=32768, Cr_G=-27439, Cr_B=-5329, all with >>16 and +32768 for rounding.'
 plan:
-  - phase: CSF Weighting Fix
-    tasks:
-      - text: Remove CSF multiplication from coeff_weight in trellis_quantize_with_codes (use 1/Q^2 only)
-        done: false
-      - text: Remove CSF weighting from DC trellis distortion computation
-        done: false
-      - text: Keep CSF tables in code for future use but mark as unused in mode=1
-        done: false
-      - text: Unit test confirming trellis distortion weight is purely 1/Q^2
-        done: false
-  - phase: Color Conversion Precision
-    tasks:
-      - text: Upgrade Y computation to 16-bit - (19595*R + 38470*G + 7471*B + 32768) >> 16
-        done: false
-      - text: Upgrade Cb computation to 16-bit - (-11059*R - 21709*G + 32768*B + (128<<16) + 32768) >> 16
-        done: false
-      - text: Upgrade Cr computation to 16-bit - (32768*R - 27439*G - 5329*B + (128<<16) + 32768) >> 16
-        done: false
-      - text: Unit test verifying 16-bit coefficients match mozjpeg values for known RGB inputs
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Run mozjpeg quality benchmark and verify quality ratio >= 0.95 at Q50/Q75
-        done: false
-      - text: All existing lib and parity tests pass
-        done: false
-      - text: Generate updated benchmark chart
-        done: false
+- phase: CSF Weighting Fix
+  tasks:
+  - text: Remove CSF multiplication from coeff_weight in trellis_quantize_with_codes (use 1/Q^2 only)
+    done: true
+  - text: Remove CSF weighting from DC trellis distortion computation
+    done: true
+  - text: Keep CSF tables in code for future use but mark as unused in mode=1
+    done: true
+  - text: Unit test confirming trellis distortion weight is purely 1/Q^2
+    done: true
+- phase: Color Conversion Precision
+  tasks:
+  - text: Upgrade Y computation to 16-bit - (19595*R + 38470*G + 7471*B + 32768) >> 16
+    done: true
+  - text: Upgrade Cb computation to 16-bit - (-11059*R - 21709*G + 32768*B + (128<<16) + 32768) >> 16
+    done: true
+  - text: Upgrade Cr computation to 16-bit - (32768*R - 27439*G - 5329*B + (128<<16) + 32768) >> 16
+    done: true
+  - text: Unit test verifying 16-bit coefficients match mozjpeg values for known RGB inputs
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run mozjpeg quality benchmark and verify quality ratio >= 0.95 at Q50/Q75
+    done: true
+  - text: All existing lib and parity tests pass
+    done: true
+  - text: Generate updated benchmark chart
+    done: true
 extra: {}
