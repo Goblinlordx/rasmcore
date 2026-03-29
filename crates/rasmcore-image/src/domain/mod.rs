@@ -11,6 +11,7 @@ pub mod error;
 pub mod filter_registry;
 pub mod filters;
 pub mod histogram;
+pub mod inpainting;
 pub mod metadata;
 pub mod metadata_iptc;
 pub mod metadata_set;
