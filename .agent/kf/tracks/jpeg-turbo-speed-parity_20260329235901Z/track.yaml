@@ -1,0 +1,108 @@
+id: jpeg-turbo-speed-parity_20260329235901Z
+title: JPEG Speed Parity with libjpeg-turbo — SIMD DCT + Fast Huffman + Turbo Mode
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Close the speed gap with libjpeg-turbo by SIMD-optimizing the three hot paths
+    (forward DCT, quantization, Huffman encoding) and adding a turbo mode that
+    disables trellis for maximum throughput. Target within 3x of turbo speed.
+  context: |
+    Our baseline encode is 25ms for 256x256 (libjpeg-turbo is <1ms for the same).
+    The 25x gap comes from:
+    1. Forward DCT: our pure-Rust scalar vs turbo's hand-written SIMD assembly
+    2. Huffman encoding: turbo's SIMD block scanner vs our per-coefficient loop
+    3. Quantization: turbo's SIMD packed multiply vs our scalar division
+    4. Color conversion: turbo's SIMD vs our per-pixel loop
+
+    libjpeg-turbo achieves its speed through hand-written NASM assembly for x86
+    (SSE2/AVX2) and NEON for ARM. We target WASM SIMD128 primarily, with LLVM
+    auto-vectorization for native. We won't match turbo's hand-tuned assembly
+    but should get within 3-5x.
+  codebase_analysis: |
+    rasmcore-jpeg/src/dct.rs: forward_dct uses rasmcore-dct which has scalar
+    implementations with LLVM auto-vectorization. The 8x8 DCT operates on i32
+    coefficients with row/column passes.
+
+    rasmcore-jpeg/src/entropy.rs: Huffman encoding iterates per-coefficient with
+    run-length counting. No SIMD for the zero-scan or bit-packing.
+
+    rasmcore-jpeg/src/quantize.rs: quantize() is a simple per-coefficient loop
+    with integer division. No SIMD.
+
+    rasmcore-jpeg/src/color.rs: rgb_to_ycbcr uses per-pixel integer arithmetic
+    with SCALEBITS=8. Could use SIMD for the matrix multiply.
+
+    The turbo mode should bypass trellis entirely (already supported via
+    config.trellis=false) and use the fastest code paths.
+  acceptance_criteria:
+    - Forward 8x8 DCT optimized with WASM SIMD128 intrinsics
+    - Quantization uses SIMD packed multiply (16 coefficients at a time)
+    - Huffman encoder uses SIMD zero-scan for run-length computation
+    - Color conversion RGB-to-YCbCr uses SIMD for 3-channel matrix multiply
+    - Turbo mode config preset (trellis=false, optimize_huffman=false, standard tables)
+    - Encode speed within 3x of libjpeg-turbo for 256x256 (target <3ms)
+    - Quality identical to current baseline (SIMD must be bit-exact)
+    - All existing tests pass
+    - Benchmark comparing turbo mode vs libjpeg-turbo vs our baseline
+  out_of_scope: |
+    Hand-written assembly (rely on Rust SIMD intrinsics + LLVM). AVX2/AVX-512
+    for native (LLVM auto-vectorizes). Progressive mode speed (focus on baseline
+    sequential which is the fast path). Decode speed optimization.
+  technical_notes: |
+    Priority order (by % of encode time):
+    1. Forward DCT (~30%): WASM SIMD128 i16x8 butterfly. Process 8 samples per
+       instruction via pmaddwd equivalent (i32x4_dot_i16x8 or manual multiply-add).
+       libjpeg-turbo's AAN algorithm uses only 5 multiplies per 1D pass vs our 11.
+       Consider switching to AAN for the fast path.
+
+    2. Huffman encoding (~40%): SIMD zero-scan to find last non-zero coefficient
+       and compute run lengths. Use i8x16 comparison to build a zero-mask, then
+       count leading zeros. Processes 16 coefficients at once.
+
+    3. Quantization (~15%): Pack 8 coefficients as i16, multiply by inverse quantizer
+       (precomputed iq[] table), shift right. WASM i16x8_mul + i16x8_shr.
+
+    4. Color conversion (~15%): Process 4 pixels at a time via i16x8 matrix multiply.
+       R/G/B -> Y/Cb/Cr with BT.601 integer coefficients.
+
+    Turbo mode preset:
+      EncodeConfig::turbo() -> EncodeConfig {
+          trellis: false,
+          optimize_huffman: false,
+          progressive: false,
+          quant_preset: AnnexK,  // standard tables, no custom
+          ..Default::default()
+      }
+plan:
+  - phase: SIMD Hot Paths
+    tasks:
+      - text: Implement WASM SIMD128 forward 8x8 DCT (AAN algorithm, 5 multiplies per 1D pass)
+        done: false
+      - text: Implement SIMD quantization (i16x8 packed multiply by inverse quantizer)
+        done: false
+      - text: Implement SIMD Huffman zero-scan (i8x16 comparison for run-length computation)
+        done: false
+      - text: Implement SIMD RGB-to-YCbCr color conversion (4 pixels per iteration)
+        done: false
+  - phase: Turbo Mode
+    tasks:
+      - text: Add EncodeConfig::turbo() preset (no trellis, no opt huffman, standard tables)
+        done: false
+      - text: Verify turbo mode produces identical output to current baseline config
+        done: false
+  - phase: Verification
+    tasks:
+      - text: SIMD output is bit-exact with scalar output for all test patterns
+        done: false
+      - text: Benchmark turbo mode vs libjpeg-turbo vs baseline (target within 3x of turbo)
+        done: false
+      - text: WASM binary contains SIMD128 instructions (verified via wasm-tools)
+        done: false
+      - text: All existing JPEG tests pass
+        done: false
+      - text: Update all-reference chart with turbo mode speed column
+        done: false
+extra: {}
