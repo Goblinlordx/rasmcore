@@ -9,10 +9,10 @@
 //! These functions are used by the libwebp-exact encode pipeline (Track 3).
 //! They combine: predict → DCT → quantize (optionally trellis) → dequantize → IDCT.
 
-use crate::cost_engine::{LevelCostTable, NUM_CTX, VP8_ENC_BANDS, MAX_VARIABLE_LEVEL};
+use crate::cost_engine::{LevelCostTable, MAX_VARIABLE_LEVEL, NUM_CTX, VP8_ENC_BANDS};
 use crate::dct;
 use crate::quant::{self, QuantMatrix};
-use crate::rdo::{self, ScoreT, RD_DISTO_MULT, MAX_COST};
+use crate::rdo::{self, MAX_COST, RD_DISTO_MULT, ScoreT};
 
 // ─── Trellis Constants (from quant_enc.c) ─────────────────────────────────
 
@@ -24,18 +24,16 @@ const MAX_DELTA: i32 = 1;
 const NUM_NODES: usize = (MIN_DELTA + 1 + MAX_DELTA) as usize;
 
 /// Zigzag scan order for 4x4 block.
-const KZIGZAG: [usize; 16] = [
-    0, 1, 4, 8, 5, 2, 3, 6, 9, 12, 13, 10, 7, 11, 14, 15,
-];
+const KZIGZAG: [usize; 16] = [0, 1, 4, 8, 5, 2, 3, 6, 9, 12, 13, 10, 7, 11, 14, 15];
 
 // ─── Trellis Node ─────────────────────────────────────────────────────────
 
 /// Trellis node — stores the optimal decision at one coefficient position.
 #[derive(Clone, Copy, Default)]
 struct Node {
-    prev: i8,    // best previous node index (-MIN_DELTA..MAX_DELTA)
-    sign: i8,    // sign of original coefficient (0 or 1)
-    level: i16,  // quantized level
+    prev: i8,   // best previous node index (-MIN_DELTA..MAX_DELTA)
+    sign: i8,   // sign of original coefficient (0 or 1)
+    level: i16, // quantized level
 }
 
 /// Score state — accumulated RD score and cost table pointer for the next position.
@@ -116,8 +114,10 @@ pub fn trellis_quantize_block(
 
     // Initialize source nodes
     let init_rate = if ctx0 == 0 {
-        rdo::vp8_bit_cost(true,
-            crate::token::get_coeff_probs(coeff_type, first_band, ctx0)[0]) as ScoreT
+        rdo::vp8_bit_cost(
+            true,
+            crate::token::get_coeff_probs(coeff_type, first_band, ctx0)[0],
+        ) as ScoreT
     } else {
         0
     };
@@ -136,7 +136,11 @@ pub fn trellis_quantize_block(
         let bias = matrix.bias[j];
 
         let sign = if coeffs_in[j] < 0 { 1i8 } else { 0i8 };
-        let coeff0 = if sign != 0 { -coeffs_in[j] as i32 } else { coeffs_in[j] as i32 };
+        let coeff0 = if sign != 0 {
+            -coeffs_in[j] as i32
+        } else {
+            coeffs_in[j] as i32
+        };
 
         // Round-to-nearest quantization
         let level0 = (((coeff0 as u32).wrapping_add(bias)) as u64 * iq as u64 >> 16) as i32;
@@ -153,8 +157,16 @@ pub fn trellis_quantize_block(
                 continue;
             }
 
-            let ctx = match level { 0 => 0usize, 1 => 1, _ => 2 };
-            let next_band = if n + 1 < 16 { VP8_ENC_BANDS[n + 1] as u8 } else { 0 };
+            let ctx = match level {
+                0 => 0usize,
+                1 => 1,
+                _ => 2,
+            };
+            let next_band = if n + 1 < 16 {
+                VP8_ENC_BANDS[n + 1] as u8
+            } else {
+                0
+            };
 
             ss[ss_cur_idx][m].cost_band = next_band;
             ss[ss_cur_idx][m].cost_ctx = ctx as u8;
@@ -174,9 +186,9 @@ pub fn trellis_quantize_block(
                 let prev_band = ss[ss_prev_idx][p].cost_band as usize;
                 let prev_ctx = ss[ss_prev_idx][p].cost_ctx as usize;
                 let level_cost = cost_table.level_cost[coeff_type][prev_band][prev_ctx]
-                    [level.min(MAX_VARIABLE_LEVEL as i32) as usize] as ScoreT;
-                let score = ss[ss_prev_idx][p].score
-                    + rdo::rd_score_trellis(lambda, level_cost, 0);
+                    [level.min(MAX_VARIABLE_LEVEL as i32) as usize]
+                    as ScoreT;
+                let score = ss[ss_prev_idx][p].score + rdo::rd_score_trellis(lambda, level_cost, 0);
                 if score < best_cur_score {
                     best_cur_score = score;
                     best_prev = p as i8;
@@ -241,7 +253,11 @@ pub fn trellis_quantize_block(
     loop {
         let node = &nodes[n][best_node];
         let j = KZIGZAG[n];
-        let signed_level = if node.sign != 0 { -node.level } else { node.level };
+        let signed_level = if node.sign != 0 {
+            -node.level
+        } else {
+            node.level
+        };
         coeffs_out[j] = signed_level; // store in raster order (matching quant/dequant)
         if node.level != 0 {
             nz = true;
@@ -326,7 +342,11 @@ pub fn reconstruct_intra16(
     quant::quantize_block(&wht_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
     // TODO: trellis for Y2 block (TYPE_I16_DC=1) when full pipeline is validated
     result.y_dc_levels = y2_quantized;
-    result.nz |= if y2_quantized.iter().any(|&c| c != 0) { 1 << 24 } else { 0 };
+    result.nz |= if y2_quantized.iter().any(|&c| c != 0) {
+        1 << 24
+    } else {
+        0
+    };
 
     // Step 3: Quantize AC blocks with trellis + context tracking
     // Trellis modifies dct_tmp[sb] in-place: writes dequantized values back to raster positions.
@@ -338,9 +358,13 @@ pub fn reconstruct_intra16(
             // Trellis quantize (TYPE_I16_AC=0, starts at position 1)
             let mut ac_out = [0i16; 16];
             let non_zero = trellis_quantize_block(
-                &mut dct_tmp[sb], &mut ac_out, ctx,
+                &mut dct_tmp[sb],
+                &mut ac_out,
+                ctx,
                 0, // TYPE_I16_AC
-                &seg_quant.y_ac, lambda_trellis, cost_table,
+                &seg_quant.y_ac,
+                lambda_trellis,
+                cost_table,
             );
 
             ac_out[0] = 0; // DC goes to Y2
@@ -421,9 +445,13 @@ pub fn reconstruct_intra4(
     // After: coeffs has dequantized values in raster order, levels has quantized levels in scan order
     let mut levels = [0i16; 16];
     let nz = trellis_quantize_block(
-        &mut coeffs, &mut levels, ctx,
+        &mut coeffs,
+        &mut levels,
+        ctx,
         3, // TYPE_I4_AC
-        matrix, lambda_trellis, cost_table,
+        matrix,
+        lambda_trellis,
+        cost_table,
     );
 
     // Inverse DCT using trellis-dequantized coefficients directly
@@ -458,7 +486,7 @@ pub fn reconstruct_uv(
     seg_quant: &crate::quant::SegmentQuant,
     lambda_trellis: i32,
     cost_table: &LevelCostTable,
-    top_nz: &mut [u8; 4], // [u0, u1, v0, v1]
+    top_nz: &mut [u8; 4],  // [u0, u1, v0, v1]
     left_nz: &mut [u8; 4], // [u0, u1, v0, v1]
 ) -> ReconUVResult {
     let mut result = ReconUVResult {
@@ -472,7 +500,10 @@ pub fn reconstruct_uv(
         // Safe: we only write to separate output arrays
         let recon_u = &mut result.recon_u as *mut [u8; 64];
         let recon_v = &mut result.recon_v as *mut [u8; 64];
-        [(src_u, pred_u, &mut *recon_u), (src_v, pred_v, &mut *recon_v)]
+        [
+            (src_u, pred_u, &mut *recon_u),
+            (src_v, pred_v, &mut *recon_v),
+        ]
     };
 
     for (ch, (src_plane, pred_plane, recon_plane)) in planes.into_iter().enumerate() {
@@ -501,9 +532,13 @@ pub fn reconstruct_uv(
 
             let mut levels = [0i16; 16];
             let nz = trellis_quantize_block(
-                &mut coeffs, &mut levels, ctx,
+                &mut coeffs,
+                &mut levels,
+                ctx,
                 2, // TYPE_CHROMA_A
-                &seg_quant.uv_ac, lambda_trellis, cost_table,
+                &seg_quant.uv_ac,
+                lambda_trellis,
+                cost_table,
             );
 
             result.uv_levels[block_idx] = levels;
@@ -512,8 +547,12 @@ pub fn reconstruct_uv(
             }
 
             // Update context
-            if ctx_x < 4 { top_nz[ctx_x] = if nz { 1 } else { 0 }; }
-            if ctx_y < 4 { left_nz[ctx_y] = if nz { 1 } else { 0 }; }
+            if ctx_x < 4 {
+                top_nz[ctx_x] = if nz { 1 } else { 0 };
+            }
+            if ctx_y < 4 {
+                left_nz[ctx_y] = if nz { 1 } else { 0 };
+            }
 
             // IDCT using trellis-dequantized coefficients directly
             let mut recon_4x4 = [0u8; 16];
@@ -534,7 +573,13 @@ pub fn reconstruct_uv(
 mod tests {
     use super::*;
 
-    fn test_setup(qp: u8) -> (crate::quant::SegmentQuant, LevelCostTable, rdo::VP8SegmentLambdas) {
+    fn test_setup(
+        qp: u8,
+    ) -> (
+        crate::quant::SegmentQuant,
+        LevelCostTable,
+        rdo::VP8SegmentLambdas,
+    ) {
         let seg_quant = quant::build_segment_quant(qp);
         let probs = crate::cost_engine::reshape_probs();
         let cost_table = LevelCostTable::compute(&probs);
@@ -552,8 +597,13 @@ mod tests {
         let mut left_nz = [0u8; 4];
 
         let result = reconstruct_intra16(
-            &src, &pred, &seg_quant, lambdas.lambda_trellis_i16,
-            &cost_table, &mut top_nz, &mut left_nz,
+            &src,
+            &pred,
+            &seg_quant,
+            lambdas.lambda_trellis_i16,
+            &cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // Flat block: all AC should be zero, reconstruction should match prediction
@@ -562,8 +612,13 @@ mod tests {
         }
         // Recon should be very close to source for a flat block
         for i in 0..256 {
-            assert!((result.recon[i] as i32 - src[i] as i32).abs() <= 1,
-                "pixel {} differs: {} vs {}", i, result.recon[i], src[i]);
+            assert!(
+                (result.recon[i] as i32 - src[i] as i32).abs() <= 1,
+                "pixel {} differs: {} vs {}",
+                i,
+                result.recon[i],
+                src[i]
+            );
         }
     }
 
@@ -582,12 +637,19 @@ mod tests {
         let mut top_nz = [0u8; 4];
         let mut left_nz = [0u8; 4];
         let result = reconstruct_intra16(
-            &src, &pred, &seg_quant, lambdas.lambda_trellis_i16,
-            &cost_table, &mut top_nz, &mut left_nz,
+            &src,
+            &pred,
+            &seg_quant,
+            lambdas.lambda_trellis_i16,
+            &cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // Should produce some nonzero AC coefficients for gradient
-        let total_nz: usize = result.y_ac_levels.iter()
+        let total_nz: usize = result
+            .y_ac_levels
+            .iter()
             .flat_map(|b| b.iter())
             .filter(|&&c| c != 0)
             .count();
@@ -607,8 +669,13 @@ mod tests {
         let mut top_nz = [0u8; 4];
         let mut left_nz = [0u8; 4];
         let _result = reconstruct_intra16(
-            &src, &pred, &seg_quant, lambdas.lambda_trellis_i16,
-            &cost_table, &mut top_nz, &mut left_nz,
+            &src,
+            &pred,
+            &seg_quant,
+            lambdas.lambda_trellis_i16,
+            &cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // Context should be updated after processing
@@ -622,7 +689,14 @@ mod tests {
         let (seg_quant, cost_table, lambdas) = test_setup(30);
         let src = [128u8; 16];
         let pred = [128u8; 16];
-        let result = reconstruct_intra4(&src, &pred, &seg_quant.y_ac, lambdas.lambda_trellis_i4, &cost_table, 0);
+        let result = reconstruct_intra4(
+            &src,
+            &pred,
+            &seg_quant.y_ac,
+            lambdas.lambda_trellis_i4,
+            &cost_table,
+            0,
+        );
 
         // Flat block should produce zero/near-zero
         for i in 0..16 {
@@ -641,14 +715,28 @@ mod tests {
             }
         }
         let pred = [128u8; 16];
-        let result = reconstruct_intra4(&src, &pred, &seg_quant.y_ac, lambdas.lambda_trellis_i4, &cost_table, 0);
+        let result = reconstruct_intra4(
+            &src,
+            &pred,
+            &seg_quant.y_ac,
+            lambdas.lambda_trellis_i4,
+            &cost_table,
+            0,
+        );
 
         // PSNR should be reasonable for low QP
-        let mse: f64 = (0..16).map(|i| {
-            let d = result.recon[i] as f64 - src[i] as f64;
-            d * d
-        }).sum::<f64>() / 16.0;
-        let psnr = if mse == 0.0 { 99.0 } else { 10.0 * (255.0 * 255.0 / mse).log10() };
+        let mse: f64 = (0..16)
+            .map(|i| {
+                let d = result.recon[i] as f64 - src[i] as f64;
+                d * d
+            })
+            .sum::<f64>()
+            / 16.0;
+        let psnr = if mse == 0.0 {
+            99.0
+        } else {
+            10.0 * (255.0 * 255.0 / mse).log10()
+        };
         assert!(psnr > 20.0, "PSNR {psnr:.1} too low for QP 20");
     }
 
@@ -663,9 +751,15 @@ mod tests {
         let mut left_nz = [0u8; 4];
 
         let result = reconstruct_uv(
-            &src_u, &src_v, &pred_u, &pred_v,
-            &seg_quant, lambdas.lambda_trellis_uv,
-            &cost_table, &mut top_nz, &mut left_nz,
+            &src_u,
+            &src_v,
+            &pred_u,
+            &pred_v,
+            &seg_quant,
+            lambdas.lambda_trellis_uv,
+            &cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // Flat chroma should produce near-zero
@@ -692,13 +786,21 @@ mod tests {
         let mut left_nz = [0u8; 4];
 
         let result = reconstruct_uv(
-            &src_u, &src_v, &pred_u, &pred_v,
-            &seg_quant, lambdas.lambda_trellis_uv,
-            &cost_table, &mut top_nz, &mut left_nz,
+            &src_u,
+            &src_v,
+            &pred_u,
+            &pred_v,
+            &seg_quant,
+            lambdas.lambda_trellis_uv,
+            &cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // Should have some nonzero coefficients for gradients
-        let total_nz: usize = result.uv_levels.iter()
+        let total_nz: usize = result
+            .uv_levels
+            .iter()
             .flat_map(|b| b.iter())
             .filter(|&&c| c != 0)
             .count();
@@ -754,7 +856,9 @@ mod tests {
     #[test]
     fn trellis_produces_more_zeros_than_simple() {
         // Trellis should zero out more small coefficients than simple quantization
-        let original = [200i16, 80, -60, 40, 25, -15, 10, -8, 5, -3, 2, -1, 1, 0, 0, 0];
+        let original = [
+            200i16, 80, -60, 40, 25, -15, 10, -8, 5, -3, 2, -1, 1, 0, 0, 0,
+        ];
         let matrix = quant::build_matrix(40, quant::QuantType::YAc);
 
         // Simple quantization

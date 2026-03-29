@@ -41,9 +41,7 @@ pub const NUM_PROBAS: usize = 11;
 pub const MAX_VARIABLE_LEVEL: usize = 67;
 
 /// VP8 band index for each coefficient position (from libwebp).
-pub const VP8_ENC_BANDS: [u8; 16 + 1] = [
-    0, 1, 2, 3, 6, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 0,
-];
+pub const VP8_ENC_BANDS: [u8; 16 + 1] = [0, 1, 2, 3, 6, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 0];
 
 // ─── VP8LevelCodes (from cost_enc.c) ─────────────────────────────────────
 
@@ -132,8 +130,7 @@ impl LevelCostTable {
                         0
                     };
                     // cost_base: cost of "nonzero" + cost0
-                    let cost_base =
-                        crate::rdo::vp8_bit_cost(true, p[1]) as u16 + cost0;
+                    let cost_base = crate::rdo::vp8_bit_cost(true, p[1]) as u16 + cost0;
 
                     // level 0: cost of signaling "zero" at the is_nonzero node
                     table.level_cost[ctype][band][ctx][0] =

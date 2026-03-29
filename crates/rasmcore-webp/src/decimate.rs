@@ -11,22 +11,30 @@
 //! - VP8GetCostLuma16/Luma4/UV: rate computation using get_residual_cost
 
 use crate::cost_engine::{self, LevelCostTable};
-use crate::predict::{self, Intra16Mode, Intra4Mode, ChromaMode};
+use crate::predict::{self, ChromaMode, Intra4Mode, Intra16Mode};
 use crate::quant::SegmentQuant;
+use crate::rdo::{self, MAX_COST, ScoreT, VP8ModeScore, VP8SegmentLambdas};
 use crate::reconstruct;
-use crate::rdo::{self, ScoreT, MAX_COST, VP8ModeScore, VP8SegmentLambdas};
 
 const ALL_INTRA16: [Intra16Mode; 4] = [
-    Intra16Mode::DC, Intra16Mode::V, Intra16Mode::H, Intra16Mode::TM,
+    Intra16Mode::DC,
+    Intra16Mode::V,
+    Intra16Mode::H,
+    Intra16Mode::TM,
 ];
 const ALL_INTRA4: [Intra4Mode; 10] = [
-    Intra4Mode::DC, Intra4Mode::TM, Intra4Mode::V, Intra4Mode::H,
-    Intra4Mode::LD, Intra4Mode::RD, Intra4Mode::VR, Intra4Mode::VL,
-    Intra4Mode::HD, Intra4Mode::HU,
+    Intra4Mode::DC,
+    Intra4Mode::TM,
+    Intra4Mode::V,
+    Intra4Mode::H,
+    Intra4Mode::LD,
+    Intra4Mode::RD,
+    Intra4Mode::VR,
+    Intra4Mode::VL,
+    Intra4Mode::HD,
+    Intra4Mode::HU,
 ];
-const ALL_CHROMA: [ChromaMode; 4] = [
-    ChromaMode::DC, ChromaMode::V, ChromaMode::H, ChromaMode::TM,
-];
+const ALL_CHROMA: [ChromaMode; 4] = [ChromaMode::DC, ChromaMode::V, ChromaMode::H, ChromaMode::TM];
 
 // ─── VP8FixedCostsI4[10][10][10] ────────────────────────────────────────
 
@@ -144,28 +152,37 @@ pub const VP8_FIXED_COSTS_I4: [[[u16; 10]; 10]; 10] = [
 /// Sum of squared errors for 16x16 block.
 #[inline]
 pub fn sse_16x16(a: &[u8; 256], b: &[u8; 256]) -> u32 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| {
-        let d = x as i32 - y as i32;
-        (d * d) as u32
-    }).sum()
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let d = x as i32 - y as i32;
+            (d * d) as u32
+        })
+        .sum()
 }
 
 /// Sum of squared errors for 4x4 block.
 #[inline]
 pub fn sse_4x4(a: &[u8; 16], b: &[u8; 16]) -> u32 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| {
-        let d = x as i32 - y as i32;
-        (d * d) as u32
-    }).sum()
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let d = x as i32 - y as i32;
+            (d * d) as u32
+        })
+        .sum()
 }
 
 /// Sum of squared errors for two 8x8 blocks (U+V, 16x8 in libwebp layout).
 #[inline]
 pub fn sse_8x8(a: &[u8; 64], b: &[u8; 64]) -> u32 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| {
-        let d = x as i32 - y as i32;
-        (d * d) as u32
-    }).sum()
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let d = x as i32 - y as i32;
+            (d * d) as u32
+        })
+        .sum()
 }
 
 // ─── Flatness detection (from quant_enc.c) ───────────────────────────────
@@ -181,8 +198,12 @@ fn is_flat(levels: &[[i16; 16]], thresh: i16) -> bool {
     let mut score = 0;
     for block in levels {
         for &v in block.iter() {
-            if v != 0 { score += 1; }
-            if v.abs() > thresh { return false; }
+            if v != 0 {
+                score += 1;
+            }
+            if v.abs() > thresh {
+                return false;
+            }
         }
     }
     score <= thresh as i32
@@ -205,7 +226,7 @@ pub fn get_cost_luma16(
     cost_table: &LevelCostTable,
     top_nz: &mut [u8; 4],
     left_nz: &mut [u8; 4],
-    dc_nz: u8,   // previous Y2 NZ context
+    dc_nz: u8, // previous Y2 NZ context
 ) -> u32 {
     let mut r: u32 = 0;
 
@@ -218,9 +239,7 @@ pub fn get_cost_luma16(
         for x in 0..4 {
             let sb = y * 4 + x;
             let ctx = (top_nz[x] + left_nz[y]).min(2) as usize;
-            r += cost_engine::get_residual_cost(
-                &rd.y_ac_levels[sb], 1, 0, ctx, cost_table,
-            );
+            r += cost_engine::get_residual_cost(&rd.y_ac_levels[sb], 1, 0, ctx, cost_table);
             // Update context: nonzero if any AC coefficient is nonzero
             let has_nz = rd.y_ac_levels[sb].iter().skip(1).any(|&c| c != 0);
             let nz_val = if has_nz { 1 } else { 0 };
@@ -234,11 +253,7 @@ pub fn get_cost_luma16(
 
 /// Compute rate for a single 4x4 luma block.
 /// Ported from libwebp cost_enc.c VP8GetCostLuma4().
-pub fn get_cost_luma4(
-    levels: &[i16; 16],
-    cost_table: &LevelCostTable,
-    ctx: usize,
-) -> u32 {
+pub fn get_cost_luma4(levels: &[i16; 16], cost_table: &LevelCostTable, ctx: usize) -> u32 {
     // type=3 (TYPE_I4_AC), first=0
     cost_engine::get_residual_cost(levels, 0, 3, ctx, cost_table)
 }
@@ -261,9 +276,7 @@ pub fn get_cost_uv(
                 let ctx_x = ch * 2 + x;
                 let ctx_y = ch * 2 + y;
                 let ctx = (top_nz[ctx_x] + left_nz[ctx_y]).min(2) as usize;
-                r += cost_engine::get_residual_cost(
-                    &uv_levels[block_idx], 0, 2, ctx, cost_table,
-                );
+                r += cost_engine::get_residual_cost(&uv_levels[block_idx], 0, 2, ctx, cost_table);
                 let has_nz = uv_levels[block_idx].iter().any(|&c| c != 0);
                 let nz_val = if has_nz { 1 } else { 0 };
                 top_nz[ctx_x] = nz_val;
@@ -301,8 +314,13 @@ pub fn pick_best_intra16(
         let mut top_nz = [0u8; 4];
         let mut left_nz = [0u8; 4];
         let recon_result = reconstruct::reconstruct_intra16(
-            src_16x16, &pred, seg_quant, lambdas.lambda_trellis_i16,
-            cost_table, &mut top_nz, &mut left_nz,
+            src_16x16,
+            &pred,
+            seg_quant,
+            lambdas.lambda_trellis_i16,
+            cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // Build temporary ModeScore
@@ -322,9 +340,8 @@ pub fn pick_best_intra16(
         // Rate
         let mut cost_top_nz = [0u8; 4];
         let mut cost_left_nz = [0u8; 4];
-        rd_cur.r = get_cost_luma16(
-            &rd_cur, cost_table, &mut cost_top_nz, &mut cost_left_nz, 0,
-        ) as ScoreT;
+        rd_cur.r =
+            get_cost_luma16(&rd_cur, cost_table, &mut cost_top_nz, &mut cost_left_nz, 0) as ScoreT;
 
         // Flatness penalty
         if flat_src {
@@ -365,7 +382,7 @@ pub fn pick_best_intra16(
 /// Ported from libwebp quant_enc.c PickBestIntra4 (line 1052).
 pub fn pick_best_intra4(
     src_16x16: &[u8; 256],
-    above_row: &[u8; 20],  // 16 above pixels + 4 extra for diagonal modes
+    above_row: &[u8; 20], // 16 above pixels + 4 extra for diagonal modes
     left_col: &[u8; 16],
     seg_quant: &SegmentQuant,
     lambdas: &VP8SegmentLambdas,
@@ -460,9 +477,7 @@ pub fn pick_best_intra4(
         } else {
             best_modes[i4 - 1]
         };
-        let mode_costs = &VP8_FIXED_COSTS_I4
-            [top_mode.min(9) as usize]
-            [left_mode.min(9) as usize];
+        let mode_costs = &VP8_FIXED_COSTS_I4[top_mode.min(9) as usize][left_mode.min(9) as usize];
 
         // Try all 10 B_PRED modes
         let mut best_i4_mode: i32 = -1;
@@ -481,8 +496,12 @@ pub fn pick_best_intra4(
 
             // Reconstruct with trellis (y_dc has DC step at [0], AC step at [1..15])
             let result = reconstruct::reconstruct_intra4(
-                &src_4x4, &pred, &seg_quant.y_dc,
-                lambdas.lambda_trellis_i4, cost_table, ctx,
+                &src_4x4,
+                &pred,
+                &seg_quant.y_dc,
+                lambdas.lambda_trellis_i4,
+                cost_table,
+                ctx,
             );
 
             // RD evaluation
@@ -602,15 +621,21 @@ pub fn pick_best_uv(
         let mut top_nz = [0u8; 4];
         let mut left_nz = [0u8; 4];
         let recon_result = reconstruct::reconstruct_uv(
-            src_u, src_v, &pred_u, &pred_v,
-            seg_quant, lambdas.lambda_trellis_uv,
-            cost_table, &mut top_nz, &mut left_nz,
+            src_u,
+            src_v,
+            &pred_u,
+            &pred_v,
+            seg_quant,
+            lambdas.lambda_trellis_uv,
+            cost_table,
+            &mut top_nz,
+            &mut left_nz,
         );
 
         // RD evaluation
         let mut rd_uv = VP8ModeScore::default();
-        rd_uv.d = (sse_8x8(src_u, &recon_result.recon_u)
-                 + sse_8x8(src_v, &recon_result.recon_v)) as ScoreT;
+        rd_uv.d = (sse_8x8(src_u, &recon_result.recon_u) + sse_8x8(src_v, &recon_result.recon_v))
+            as ScoreT;
         rd_uv.sd = 0; // No spectral distortion for UV
         rd_uv.h = rdo::VP8_FIXED_COSTS_UV[mode_idx] as ScoreT;
 
@@ -618,8 +643,10 @@ pub fn pick_best_uv(
         let mut cost_top_nz = [0u8; 4];
         let mut cost_left_nz = [0u8; 4];
         rd_uv.r = get_cost_uv(
-            &recon_result.uv_levels, cost_table,
-            &mut cost_top_nz, &mut cost_left_nz,
+            &recon_result.uv_levels,
+            cost_table,
+            &mut cost_top_nz,
+            &mut cost_left_nz,
         ) as ScoreT;
 
         // Flatness penalty
@@ -648,21 +675,29 @@ pub fn pick_best_uv(
     let mut top_nz = [0u8; 4];
     let mut left_nz = [0u8; 4];
     let recon_result = reconstruct::reconstruct_uv(
-        src_u, src_v, &pred_u, &pred_v,
-        seg_quant, lambdas.lambda_trellis_uv,
-        cost_table, &mut top_nz, &mut left_nz,
+        src_u,
+        src_v,
+        &pred_u,
+        &pred_v,
+        seg_quant,
+        lambdas.lambda_trellis_uv,
+        cost_table,
+        &mut top_nz,
+        &mut left_nz,
     );
 
     let mut rd_best = VP8ModeScore::default();
-    rd_best.d = (sse_8x8(src_u, &recon_result.recon_u)
-               + sse_8x8(src_v, &recon_result.recon_v)) as ScoreT;
+    rd_best.d =
+        (sse_8x8(src_u, &recon_result.recon_u) + sse_8x8(src_v, &recon_result.recon_v)) as ScoreT;
     rd_best.sd = 0;
     rd_best.h = rdo::VP8_FIXED_COSTS_UV[rd.mode_uv as usize] as ScoreT;
     let mut cost_top_nz = [0u8; 4];
     let mut cost_left_nz = [0u8; 4];
     rd_best.r = get_cost_uv(
-        &rd.uv_levels, cost_table,
-        &mut cost_top_nz, &mut cost_left_nz,
+        &rd.uv_levels,
+        cost_table,
+        &mut cost_top_nz,
+        &mut cost_left_nz,
     ) as ScoreT;
     rdo::set_rd_score(lambdas.lambda_uv, &mut rd_best);
 
@@ -707,7 +742,7 @@ pub fn vp8_decimate(
     seg_quant: &SegmentQuant,
     lambdas: &VP8SegmentLambdas,
     cost_table: &LevelCostTable,
-    above_y_full: &[u8; 20],  // 16 + 4 extra for diagonal
+    above_y_full: &[u8; 20], // 16 + 4 extra for diagonal
     top_modes: &[u8; 4],
     left_modes: &[u8; 4],
 ) -> DecimateResult {
@@ -715,27 +750,37 @@ pub fn vp8_decimate(
 
     // Phase 1: Evaluate I16x16
     pick_best_intra16(
-        src_y, above_y, left_y, tl_y,
-        seg_quant, lambdas, cost_table, &mut rd,
+        src_y, above_y, left_y, tl_y, seg_quant, lambdas, cost_table, &mut rd,
     );
 
     // Phase 2: Evaluate I4x4 (if it can beat I16)
     let max_header = 15000; // libwebp uses enc->max_i4_header_bits
     let is_i4 = pick_best_intra4(
-        src_y, above_y_full, left_y,
-        seg_quant, lambdas, cost_table, &mut rd,
-        max_header, top_modes, left_modes,
+        src_y,
+        above_y_full,
+        left_y,
+        seg_quant,
+        lambdas,
+        cost_table,
+        &mut rd,
+        max_header,
+        top_modes,
+        left_modes,
     );
 
     // Phase 3: Evaluate UV
     pick_best_uv(
-        src_u, src_v, above_u, above_v, left_u, left_v, tl_u, tl_v,
-        seg_quant, lambdas, cost_table, &mut rd,
+        src_u, src_v, above_u, above_v, left_u, left_v, tl_u, tl_v, seg_quant, lambdas, cost_table,
+        &mut rd,
     );
 
     let is_skipped = rd.nz == 0;
 
-    DecimateResult { is_i4, is_skipped, rd }
+    DecimateResult {
+        is_i4,
+        is_skipped,
+        rd,
+    }
 }
 
 #[cfg(test)]
@@ -782,7 +827,16 @@ mod tests {
         let cost_table = LevelCostTable::compute(&probs);
 
         let mut rd = VP8ModeScore::default();
-        pick_best_intra16(&src, &above, &left, 128, &seg_quant, &lambdas, &cost_table, &mut rd);
+        pick_best_intra16(
+            &src,
+            &above,
+            &left,
+            128,
+            &seg_quant,
+            &lambdas,
+            &cost_table,
+            &mut rd,
+        );
 
         // Flat block should pick DC mode (0)
         assert_eq!(rd.mode_i16, 0, "flat block should prefer DC mode");
@@ -805,8 +859,18 @@ mod tests {
         let mut rd = VP8ModeScore::default();
         rd.score = 0; // initialize score before UV adds to it
         pick_best_uv(
-            &src_u, &src_v, &above_u, &above_v, &left_u, &left_v, 128, 128,
-            &seg_quant, &lambdas, &cost_table, &mut rd,
+            &src_u,
+            &src_v,
+            &above_u,
+            &above_v,
+            &left_u,
+            &left_v,
+            128,
+            128,
+            &seg_quant,
+            &lambdas,
+            &cost_table,
+            &mut rd,
         );
         assert!(rd.mode_uv >= 0 && rd.mode_uv < 4);
     }
@@ -831,15 +895,30 @@ mod tests {
         let cost_table = LevelCostTable::compute(&probs);
 
         let result = vp8_decimate(
-            &src_y, &src_u, &src_v,
-            &above_y, &left_y, 128,
-            &above_u, &above_v, &left_u, &left_v, 128, 128,
-            &seg_quant, &lambdas, &cost_table,
-            &above_y_full, &top_modes, &left_modes,
+            &src_y,
+            &src_u,
+            &src_v,
+            &above_y,
+            &left_y,
+            128,
+            &above_u,
+            &above_v,
+            &left_u,
+            &left_v,
+            128,
+            128,
+            &seg_quant,
+            &lambdas,
+            &cost_table,
+            &above_y_full,
+            &top_modes,
+            &left_modes,
         );
 
         // Flat block: should be skip (all zeros)
-        assert!(result.is_skipped || result.rd.nz == 0,
-            "flat block should have zero residual");
+        assert!(
+            result.is_skipped || result.rd.nz == 0,
+            "flat block should have zero residual"
+        );
     }
 }

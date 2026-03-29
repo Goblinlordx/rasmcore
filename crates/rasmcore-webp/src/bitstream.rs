@@ -112,7 +112,10 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 }
             } else {
                 let ctx_mode = match mb.y_mode {
-                    1 => 2, 2 => 3, 3 => 1, _ => 0,
+                    1 => 2,
+                    2 => 3,
+                    3 => 1,
+                    _ => 0,
                 };
                 top_bmode_enc[mb_col] = [ctx_mode; 4];
                 left_bmode_enc = [ctx_mode; 4];
@@ -615,16 +618,33 @@ fn encode_macroblock(
 
     // ─── VP8Decimate: libwebp-exact mode selection ──────────────────────
     let result = decimate::vp8_decimate(
-        &y_block, &u_block, &v_block,
-        &above_y, &left_y, above_left_y,
-        &above_u, &above_v, &left_u, &left_v, above_left_u, above_left_v,
-        seg_quant, lambdas, cost_table,
-        &above_y_full, top_bmode_ctx, left_bmode_ctx,
+        &y_block,
+        &u_block,
+        &v_block,
+        &above_y,
+        &left_y,
+        above_left_y,
+        &above_u,
+        &above_v,
+        &left_u,
+        &left_v,
+        above_left_u,
+        above_left_v,
+        seg_quant,
+        lambdas,
+        cost_table,
+        &above_y_full,
+        top_bmode_ctx,
+        left_bmode_ctx,
     );
 
     // Map DecimateResult to token encoder's expected format
     let use_bpred = result.is_i4;
-    let final_y_mode: u8 = if use_bpred { 4 } else { result.rd.mode_i16 as u8 };
+    let final_y_mode: u8 = if use_bpred {
+        4
+    } else {
+        result.rd.mode_i16 as u8
+    };
     let b_modes = result.rd.modes_i4;
     let y_coeffs = result.rd.y_ac_levels;
     let y2_quantized = result.rd.y_dc_levels;
@@ -746,8 +766,15 @@ fn encode_macroblock(
             _ => predict::Intra16Mode::TM,
         };
         let mut pred_y = [0u8; 256];
-        predict::predict_16x16(y_mode_enum, &above_y_r, &left_y_r, al_y_r,
-            mb_row > 0, mb_col > 0, &mut pred_y);
+        predict::predict_16x16(
+            y_mode_enum,
+            &above_y_r,
+            &left_y_r,
+            al_y_r,
+            mb_row > 0,
+            mb_col > 0,
+            &mut pred_y,
+        );
 
         // Dequantize Y2 (DC) and inverse WHT
         let mut y2_dequant = [0i16; 16];
@@ -792,21 +819,42 @@ fn encode_macroblock(
         };
         let mut pred_u_r = [0u8; 64];
         let mut pred_v_r = [0u8; 64];
-        predict::predict_8x8(uv_mode_enum, &above_u_r, &left_u_r, al_u_r,
-            mb_row > 0, mb_col > 0, &mut pred_u_r);
-        predict::predict_8x8(uv_mode_enum, &above_v_r, &left_v_r, al_v_r,
-            mb_row > 0, mb_col > 0, &mut pred_v_r);
+        predict::predict_8x8(
+            uv_mode_enum,
+            &above_u_r,
+            &left_u_r,
+            al_u_r,
+            mb_row > 0,
+            mb_col > 0,
+            &mut pred_u_r,
+        );
+        predict::predict_8x8(
+            uv_mode_enum,
+            &above_v_r,
+            &left_v_r,
+            al_v_r,
+            mb_row > 0,
+            mb_col > 0,
+            &mut pred_v_r,
+        );
 
         for (ch, (pred_plane, recon_plane)) in [
             (&pred_u_r, &mut *recon_u as &mut [u8]),
             (&pred_v_r, &mut *recon_v as &mut [u8]),
-        ].into_iter().enumerate() {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             for sb in 0..4 {
                 let sb_row = sb / 2;
                 let sb_col = sb % 2;
                 let block_idx = ch * 4 + sb;
                 let mut dequant_coeff = [0i16; 16];
-                quant::dequantize_block(&uv_quantized[block_idx], &seg_quant.uv_ac, &mut dequant_coeff);
+                quant::dequantize_block(
+                    &uv_quantized[block_idx],
+                    &seg_quant.uv_ac,
+                    &mut dequant_coeff,
+                );
                 let mut ref_block = [0u8; 16];
                 for r in 0..4 {
                     for c in 0..4 {
@@ -892,7 +940,6 @@ fn get_4x4_neighbors(
 
     (above, left, above_left, above_right)
 }
-
 
 /// Get Y prediction neighbors for a macroblock.
 fn get_y_neighbors(
