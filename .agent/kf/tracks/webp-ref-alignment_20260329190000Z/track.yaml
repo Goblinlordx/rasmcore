@@ -5,89 +5,99 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Systematic investigation and fix of all VP8 encoder quality gaps vs cwebp.
+  summary: 'Systematic investigation and fix of all VP8 encoder quality gaps vs cwebp.
+
     Current quality ratio is 0.4-0.8x. Target is >= 0.85x for all content types.
-  context: |
-    Measured quality gap: gradient Q75 ours=27dB vs cwebp=42dB (ratio 0.64).
+
+    '
+  context: 'Measured quality gap: gradient Q75 ours=27dB vs cwebp=42dB (ratio 0.64).
+
     Photo content: 16-19dB vs 34-36dB (ratio 0.45-0.53). Quality PLATEAUS
+
     around 27dB regardless of quality setting (Q75=27.0, Q95=27.6) while
+
     cwebp scales linearly (Q75=42.4, Q95=46.9). File sizes are SMALLER than
+
     cwebp at all quality levels below 95, meaning we discard too much data.
-    
+
+
     Gap analysis identified these root causes:
+
     1. B_PRED vs I16x16 decision uses hardcoded 128 bias instead of RD cost
+
     2. 4x4 sub-block mode selection uses SATD only, no RD optimization
+
     3. RDO coefficient pruning lambda may be miscalibrated
+
     4. Reconstruction accumulation errors from prediction cascade
-  codebase_analysis: |
-    bitstream.rs line 640: use_bpred = bpred_sad + 128 < i16_sad (hardcoded bias)
+
+    '
+  codebase_analysis: 'bitstream.rs line 640: use_bpred = bpred_sad + 128 < i16_sad (hardcoded bias)
+
     predict.rs: select_best_4x4 uses SATD only, no coefficient cost estimation
+
     rdo.rs: lambda = q_step^2 / (512*16) — may be too aggressive at low QP
+
     ratecontrol.rs: linear quality_to_qp mapping
-    
+
+
     Key observation: at Q95 (QP=6, step=10), our file is 870 bytes vs cwebp
+
     2018 bytes. We produce less than HALF the data. This means our quantizer
+
     + RDO is discarding far too many coefficients.
+
+    '
   acceptance_criteria:
-    - Gradient Q75 PSNR >= 35dB (up from 27dB)
-    - Gradient Q95 PSNR >= 40dB (up from 27.6dB)  
-    - Photo content quality ratio >= 0.7 vs cwebp (up from 0.45-0.53)
-    - File sizes within 1.5x of cwebp at Q75
-    - Quality scales monotonically with quality parameter (no plateau)
-    - All existing tests pass
-  out_of_scope: |
-    Multi-pass encoding. Probability table updates. Inter-frame prediction.
-  technical_notes: |
-    Investigation approach: work from highest-impact to lowest.
-    
-    1. B_PRED RD decision: replace hardcoded bias with full RD cost comparison.
-       Encode both I16x16 and B_PRED fully, compare total RD cost.
-       Expected impact: +3-5dB on textured content.
-    
-    2. 4x4 sub-block RD: for each B_PRED sub-block, evaluate all 10 modes
-       with full encode cost (DCT+quantize+token estimation), not just SATD.
-       Expected impact: +2-3dB on detailed content.
-    
-    3. Lambda recalibration: the current lambda may be too high at low QP,
-       causing excessive coefficient zeroing. Derive lambda empirically by
-       matching cwebp's coefficient density at each QP.
-       Expected impact: removes the quality plateau.
-    
-    4. Quality curve: match cwebp's nonlinear quality-to-QP mapping.
+  - Gradient Q75 PSNR >= 35dB (up from 27dB)
+  - Gradient Q95 PSNR >= 40dB (up from 27.6dB)
+  - Photo content quality ratio >= 0.7 vs cwebp (up from 0.45-0.53)
+  - File sizes within 1.5x of cwebp at Q75
+  - Quality scales monotonically with quality parameter (no plateau)
+  - All existing tests pass
+  out_of_scope: 'Multi-pass encoding. Probability table updates. Inter-frame prediction.
+
+    '
+  technical_notes: "Investigation approach: work from highest-impact to lowest.\n\n1. B_PRED RD decision: replace hardcoded\
+    \ bias with full RD cost comparison.\n   Encode both I16x16 and B_PRED fully, compare total RD cost.\n   Expected impact:\
+    \ +3-5dB on textured content.\n\n2. 4x4 sub-block RD: for each B_PRED sub-block, evaluate all 10 modes\n   with full encode\
+    \ cost (DCT+quantize+token estimation), not just SATD.\n   Expected impact: +2-3dB on detailed content.\n\n3. Lambda recalibration:\
+    \ the current lambda may be too high at low QP,\n   causing excessive coefficient zeroing. Derive lambda empirically by\n\
+    \   matching cwebp's coefficient density at each QP.\n   Expected impact: removes the quality plateau.\n\n4. Quality curve:\
+    \ match cwebp's nonlinear quality-to-QP mapping.\n"
 plan:
-  - phase: Diagnosis
-    tasks:
-      - text: Add diagnostic test that logs per-MB coefficient density (nonzeros per block) vs cwebp at Q75 and Q95
-        done: false
-      - text: Identify which pipeline stage causes the most quality loss (prediction vs quantization vs RDO pruning)
-        done: false
-  - phase: B_PRED RD Decision
-    tasks:
-      - text: Replace hardcoded bpred_sad+128 bias with full RD cost comparison (encode both, pick lower RD)
-        done: false
-      - text: Add RD evaluation for B_PRED that includes per-4x4 encode cost
-        done: false
-  - phase: Lambda Calibration
-    tasks:
-      - text: Compare coefficient density per block at Q75 and Q95 vs cwebp output
-        done: false
-      - text: Adjust lambda_from_qp to produce matching coefficient density
-        done: false
-      - text: Verify quality scales monotonically (no plateau)
-        done: false
-  - phase: Sub-block RD
-    tasks:
-      - text: Add RD evaluation for 4x4 sub-block mode selection (encode cost per mode)
-        done: false
-      - text: Add early termination for modes with SATD > 2x best
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Gradient Q75 PSNR >= 35dB
-        done: false
-      - text: Photo quality ratio >= 0.7 vs cwebp
-        done: false
-      - text: All existing tests pass with tightened thresholds
-        done: false
+- phase: Diagnosis
+  tasks:
+  - text: Add diagnostic test that logs per-MB coefficient density (nonzeros per block) vs cwebp at Q75 and Q95
+    done: true
+  - text: Identify which pipeline stage causes the most quality loss (prediction vs quantization vs RDO pruning)
+    done: true
+- phase: B_PRED RD Decision
+  tasks:
+  - text: Replace hardcoded bpred_sad+128 bias with full RD cost comparison (encode both, pick lower RD)
+    done: false
+  - text: Add RD evaluation for B_PRED that includes per-4x4 encode cost
+    done: false
+- phase: Lambda Calibration
+  tasks:
+  - text: Compare coefficient density per block at Q75 and Q95 vs cwebp output
+    done: false
+  - text: Adjust lambda_from_qp to produce matching coefficient density
+    done: false
+  - text: Verify quality scales monotonically (no plateau)
+    done: false
+- phase: Sub-block RD
+  tasks:
+  - text: Add RD evaluation for 4x4 sub-block mode selection (encode cost per mode)
+    done: false
+  - text: Add early termination for modes with SATD > 2x best
+    done: false
+- phase: Validation
+  tasks:
+  - text: Gradient Q75 PSNR >= 35dB
+    done: false
+  - text: Photo quality ratio >= 0.7 vs cwebp
+    done: false
+  - text: All existing tests pass with tightened thresholds
+    done: false
 extra: {}
