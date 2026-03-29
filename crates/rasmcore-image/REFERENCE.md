@@ -4,6 +4,18 @@ All filters in `rasmcore-image` are validated against reference implementations
 using a canonical 7-image test suite. This document records what matches,
 what differs, and why.
 
+## Quick Start
+
+```bash
+# Install all reference tools + Python venv + generate fixtures:
+./scripts/setup-references.sh
+
+# Run ALL reference/parity tests across all crates:
+./scripts/run-reference-tests.sh
+```
+
+See `scripts/setup-references.sh --help` for options. Both scripts are idempotent.
+
 ## Reference Implementation
 
 - **OpenCV 4.13.0** via `opencv-contrib-python-headless` (Python, in venv)

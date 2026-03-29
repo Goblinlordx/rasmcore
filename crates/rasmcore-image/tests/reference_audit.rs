@@ -79,6 +79,11 @@ fn mae(a: &[u8], b: &[u8]) -> f64 {
         / n as f64
 }
 
+/// Generate a deterministic gradient test image (canonical test input).
+///
+/// This is the canonical reference input — both our code and ImageMagick
+/// receive this exact pixel data. Do NOT replace with fixture loading,
+/// as the fixture gradient may differ in pixel values.
 fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
     let mut p = Vec::with_capacity((w * h * 3) as usize);
     for y in 0..h {
@@ -89,6 +94,19 @@ fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
         }
     }
     p
+}
+
+/// Load the standard 256x256 photo fixture for more realistic test content.
+/// Returns None if fixtures haven't been generated yet.
+fn photo_rgb_256() -> Option<Vec<u8>> {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/generated/inputs/photo_256x256.png");
+    if fixture.exists() {
+        if let Ok(img) = image::open(&fixture) {
+            return Some(img.to_rgb8().into_raw());
+        }
+    }
+    None
 }
 
 fn gradient_rgba(w: u32, h: u32) -> Vec<u8> {
