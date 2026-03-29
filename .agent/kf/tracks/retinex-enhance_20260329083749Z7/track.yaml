@@ -25,13 +25,13 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement Single-Scale Retinex (log domain, Gaussian surround)
-    done: false
+    done: true
   - text: Implement Multi-Scale Retinex (average over 3 scales)
-    done: false
+    done: true
   - text: Implement MSRCR with color restoration factor
-    done: false
+    done: true
   - text: Unit test enhancement properties (increased dynamic range, preserved mean)
-    done: false
+    done: true
   - text: Generate reference comparison against GIMP Retinex
-    done: false
+    done: true
 extra: {}
