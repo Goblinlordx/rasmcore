@@ -161,6 +161,67 @@ simple_filter_node!(
     "Contrast adjustment node."
 );
 
+// ─── Vignette node (position-dependent) ─────────────────────────────────────
+
+/// Vignette effect node — radial gradient multiply.
+///
+/// Unlike simple filters, vignette depends on absolute pixel position within
+/// the full image, so it passes tile offset and full-image dimensions to the
+/// filter function for correct tiled execution.
+pub struct VignetteNode {
+    upstream: u32,
+    strength: f32,
+    falloff: f32,
+    source_info: ImageInfo,
+}
+
+impl VignetteNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, strength: f32, falloff: f32) -> Self {
+        Self {
+            upstream,
+            strength,
+            falloff,
+            source_info,
+        }
+    }
+}
+
+impl ImageNode for VignetteNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let src_pixels = upstream_fn(self.upstream, request)?;
+        let region_info = ImageInfo {
+            width: request.width,
+            height: request.height,
+            ..self.source_info
+        };
+        filters::vignette(
+            &src_pixels,
+            &region_info,
+            self.strength,
+            self.falloff,
+            self.source_info.width,
+            self.source_info.height,
+            request.x,
+            request.y,
+        )
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::zero()
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+}
+
 // ─── Convolution filter nodes ───────────────────────────────────────────────
 
 /// General convolution node with custom kernel.
