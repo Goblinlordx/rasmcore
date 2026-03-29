@@ -523,13 +523,16 @@ function generateCode() {
   lines.push('const result = rcimage.load(imageBytes)');
 
   for (const node of chain) {
-    const args = node.op.params.map(p => {
-      const val = node.paramValues[p.name];
-      if (p.type === 'enum' || typeof val === 'string') return `'${val}'`;
-      return val;
-    });
-    const argStr = args.length > 0 ? args.join(', ') : '';
-    lines.push(`  .${node.op.name}(${argStr})`);
+    if (node.op.params.length === 0) {
+      lines.push(`  .${node.op.name}()`);
+    } else {
+      const args = node.op.params.map(p => {
+        const val = node.paramValues[p.name];
+        if (p.type === 'enum' || typeof val === 'string') return `'${val}'`;
+        return val;
+      });
+      lines.push(`  .${node.op.name}(${args.join(', ')})`);
+    }
   }
 
   // Terminal method
