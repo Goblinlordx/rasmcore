@@ -67,9 +67,15 @@ pub fn reconstruct_residual(
     // Step 2: Inverse transform
     inverse_transform(&dequant_buf, output, log2_size, is_intra_4x4_luma)?;
 
-    // Step 3: Clip residuals to valid range
-    let max_val = (1i16 << (bit_depth - 1)) - 1;
-    let min_val = -(1i16 << (bit_depth - 1));
+    // Step 3: Clip residuals to valid range.
+    // HEVC spec Section 8.6.2: residuals are clipped to [-(1<<(BitDepth+1)), (1<<(BitDepth+1))-1]
+    // for standard precision. For 8-bit: [-512, 511].
+    // NOT [-128, 127] — residuals can exceed the pixel range because they
+    // represent the difference between prediction and reconstruction.
+    // Ref: libde265 v1.0.18 transform.cc line 283 — bdShift = 20 - bit_depth
+    // (the IDCT output range is determined by the transform shift, not pixel depth).
+    let max_val = (1i16 << (bit_depth + 1)) - 1;
+    let min_val = -(1i16 << (bit_depth + 1));
     for v in output[..block_size].iter_mut() {
         *v = (*v).clamp(min_val, max_val);
     }
