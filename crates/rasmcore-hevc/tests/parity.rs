@@ -239,6 +239,138 @@ fn yuv_parity_gradient_128x128_q22() {
 }
 
 #[test]
+fn yuv_diag_checker_256x256_q22() {
+    if !fixtures_available() {
+        return;
+    }
+    let frame = decode_test_case("checker_256x256_q22").unwrap();
+    let ref_yuv = load_reference_yuv("checker_256x256_q22").unwrap();
+    let width = frame.width as usize;
+    let height = frame.height as usize;
+    let ref_y = &ref_yuv[..width * height];
+    let our_y = &frame.y_plane;
+
+    // Per CTU row analysis (CTU = 64 for 256x256)
+    let ctu_size = 64usize;
+    let ctu_rows = height / ctu_size;
+    let ctu_cols = width / ctu_size;
+    for ctu_row in 0..ctu_rows {
+        let start = ctu_row * ctu_size * width;
+        let end = start + ctu_size * width;
+        let mut diffs = 0u32;
+        let mut max_diff = 0i32;
+        let mut sum_sq = 0f64;
+        for i in start..end {
+            let d = our_y[i] as i32 - ref_y[i] as i32;
+            if d != 0 {
+                diffs += 1;
+            }
+            max_diff = max_diff.max(d.abs());
+            sum_sq += (d as f64) * (d as f64);
+        }
+        let mse = sum_sq / (ctu_size * width) as f64;
+        let psnr = if mse < 0.001 {
+            f64::INFINITY
+        } else {
+            10.0 * (255.0f64 * 255.0 / mse).log10()
+        };
+        eprintln!(
+            "CTU row {}: diffs={}/{}, max_diff={}, PSNR={:.1}dB",
+            ctu_row,
+            diffs,
+            ctu_size * width,
+            max_diff,
+            psnr
+        );
+    }
+
+    // Per CTU analysis (within each row)
+    for ctu_row in 0..ctu_rows {
+        for ctu_col in 0..ctu_cols {
+            let mut diffs = 0u32;
+            let mut max_diff = 0i32;
+            for row in 0..ctu_size {
+                for col in 0..ctu_size {
+                    let y = ctu_row * ctu_size + row;
+                    let x = ctu_col * ctu_size + col;
+                    let i = y * width + x;
+                    let d = (our_y[i] as i32 - ref_y[i] as i32).abs();
+                    if d != 0 {
+                        diffs += 1;
+                    }
+                    max_diff = max_diff.max(d);
+                }
+            }
+            if diffs > 0 {
+                eprintln!(
+                    "  CTU({},{}): diffs={}/{}, max_diff={}",
+                    ctu_col,
+                    ctu_row,
+                    diffs,
+                    ctu_size * ctu_size,
+                    max_diff
+                );
+            }
+        }
+    }
+
+    // Per 8x8 block analysis within CTU(0,0) to pinpoint where errors start
+    eprintln!("\nCTU(0,0) per-8x8 block diffs:");
+    for by in 0..4 {
+        for bx in 0..4 {
+            let mut diffs = 0u32;
+            for r in 0..8 {
+                for c in 0..8 {
+                    let y = by * 8 + r;
+                    let x = bx * 8 + c;
+                    let i = y * width + x;
+                    if our_y[i] != ref_y[i] {
+                        diffs += 1;
+                    }
+                }
+            }
+            if diffs > 0 {
+                let i0 = (by * 8) * width + bx * 8;
+                eprint!(
+                    "  block({},{}):{}/64 ours={} ref={} ",
+                    bx, by, diffs, our_y[i0], ref_y[i0]
+                );
+            }
+        }
+    }
+    eprintln!();
+
+    // Show specific row 0 values for first 64 pixels
+    eprintln!("\nRow 0, first 64 pixels:");
+    eprint!("  REF: ");
+    for x in 0..64 { eprint!("{:3} ", ref_y[x]); }
+    eprintln!();
+    eprint!("  OUR: ");
+    for x in 0..64 { eprint!("{:3} ", our_y[x]); }
+    eprintln!();
+    eprint!("  DIF: ");
+    for x in 0..64 { eprint!("{:3} ", our_y[x] as i16 - ref_y[x] as i16); }
+    eprintln!();
+
+    // Show first 20 differing pixels
+    let first_diffs: Vec<_> = our_y
+        .iter()
+        .zip(ref_y.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .take(20)
+        .map(|(i, (&a, &b))| {
+            let x = i % width;
+            let y = i / width;
+            (x, y, a, b, a as i16 - b as i16)
+        })
+        .collect();
+    if !first_diffs.is_empty() {
+        eprintln!("First diffs (x, y, ours, ref, delta): {:?}", first_diffs);
+    }
+}
+
+#[test]
 
 fn parity_all_cases_decode() {
     if !fixtures_available() {

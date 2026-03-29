@@ -403,8 +403,9 @@ fn predict_dc(refs: &RefSamples, size: usize) -> Vec<u8> {
 
     let mut pred = vec![dc; size * size];
 
-    // DC boundary filter (for blocks > 4x4 it's simpler, but we apply for all)
-    if size <= 32 {
+    // DC boundary filter — HEVC Section 8.4.4.2.5: applied only when nTbS < 32.
+    // Ref: libde265 v1.0.18 intrapred.h line 195 — boundary filter skipped for 32x32.
+    if size < 32 {
         // Top row: filter with top reference
         pred[0] = ((refs.top[0] as u16 + refs.left[0] as u16 + 2 * dc as u16 + 2) >> 2) as u8;
         for x in 1..size {

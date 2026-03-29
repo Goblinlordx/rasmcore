@@ -457,30 +457,14 @@ fn reconstruct_cu(
     let predicted =
         predict::predict_intra(luma_mode, &refs, size, sps.strong_intra_smoothing_enabled);
 
-    // Get residual from transform unit (if present)
-    let residual = if let Some(tu) = &cu.tu {
-        if tu.cbf_luma && !tu.luma_coeffs.is_empty() {
-            // Dequantize and inverse transform
-            let log2_size = (size as f32).log2() as u8;
-            let is_4x4_intra_luma = size == 4;
-            let mut residual_buf = vec![0i16; size * size];
-            transform_reconstruct(
-                &tu.luma_coeffs,
-                &mut residual_buf,
-                log2_size,
-                qp,
-                sps.bit_depth_luma,
-                is_4x4_intra_luma,
-                None, // No custom scaling list
-                0,    // Default matrix ID
-            )?;
-            residual_buf
-        } else {
-            vec![0i16; size * size]
-        }
-    } else {
-        vec![0i16; size * size]
-    };
+    // Get residual from transform unit tree (recursive for TU splits).
+    // HEVC Section 8.6: when the transform tree splits, each child TU has its own
+    // coefficients that are independently dequantized and inverse-transformed at
+    // the child's size, then placed into the CU-sized residual buffer.
+    let mut residual = vec![0i16; size * size];
+    if let Some(tu) = &cu.tu {
+        reconstruct_tu_residual(tu, cu.x, cu.y, size, qp, sps.bit_depth_luma, &mut residual)?;
+    }
 
     // Add prediction + residual → reconstructed, write to frame buffer
     for row in 0..size {
@@ -568,6 +552,60 @@ fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32) {
             );
         }
     }
+}
+
+/// Recursively reconstruct luma residual from a transform unit tree.
+///
+/// When the TU is a leaf (no children), dequantize + inverse-transform its coefficients
+/// and place them into the CU-sized residual buffer at the TU's position.
+/// When the TU has children (split), recurse into each child.
+///
+/// Ref: HEVC Section 8.6 — residual coding for split transform trees.
+fn reconstruct_tu_residual(
+    tu: &syntax::TuSyntax,
+    cu_x: u32,
+    cu_y: u32,
+    cu_size: usize,
+    qp: i32,
+    bit_depth: u8,
+    residual: &mut [i16],
+) -> Result<(), HevcError> {
+    if !tu.children.is_empty() {
+        // Split TU: recurse into children
+        for child in &tu.children {
+            reconstruct_tu_residual(child, cu_x, cu_y, cu_size, qp, bit_depth, residual)?;
+        }
+    } else if tu.cbf_luma && !tu.luma_coeffs.is_empty() {
+        // Leaf TU with non-zero coefficients
+        let tu_size = tu.size as usize;
+        let log2_size = (tu_size as f32).log2() as u8;
+        let is_4x4_intra_luma = tu_size == 4;
+        let mut tu_residual = vec![0i16; tu_size * tu_size];
+
+        transform_reconstruct(
+            &tu.luma_coeffs,
+            &mut tu_residual,
+            log2_size,
+            qp,
+            bit_depth,
+            is_4x4_intra_luma,
+            None, // No custom scaling list
+            0,    // Default matrix ID
+        )?;
+
+        // Place TU residual into CU-sized buffer at the TU's position
+        let offset_x = (tu.x - cu_x) as usize;
+        let offset_y = (tu.y - cu_y) as usize;
+        for row in 0..tu_size {
+            for col in 0..tu_size {
+                let cu_pos = (offset_y + row) * cu_size + (offset_x + col);
+                if cu_pos < residual.len() {
+                    residual[cu_pos] = tu_residual[row * tu_size + col];
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
