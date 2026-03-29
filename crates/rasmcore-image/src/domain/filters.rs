@@ -2514,17 +2514,23 @@ pub fn clarity(
     Ok(result)
 }
 
-/// Local Laplacian filtering (Paris et al. 2011).
+/// Pyramid detail remapping — edge-aware detail enhancement/smoothing.
 ///
 /// Decomposes the image into a Gaussian/Laplacian pyramid and remaps
-/// detail at each level via a sigmoidal curve. Enables detail enhancement
-/// (sigma < 1.0) or smoothing (sigma > 1.0) while preserving edges.
+/// detail coefficients at each level via a sigmoidal curve:
+/// `f(d) = d * sigma / (sigma + |d|)`.
+///
+/// - `sigma < 1.0`: compresses large gradients, enhances fine detail
+/// - `sigma = 1.0`: near-identity (slight compression at large gradients)
+/// - `sigma > 1.0`: suppresses fine detail (smoothing)
+///
+/// This is a Laplacian pyramid coefficient remapping filter, distinct from
+/// the Paris et al. 2011 "Local Laplacian Filter" which rebuilds the pyramid
+/// per-pixel with a power-law remapping.
 ///
 /// - `sigma`: detail remapping strength (0.2 = strong enhancement, 1.0 = neutral, 3.0 = smooth)
 /// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
-///
-/// Reference: Paris, Hasinoff, Kautz — "Local Laplacian Filters" (SIGGRAPH 2011)
-pub fn local_laplacian(
+pub fn pyramid_detail_remap(
     pixels: &[u8],
     info: &ImageInfo,
     sigma: f32,
@@ -2536,7 +2542,7 @@ pub fn local_laplacian(
         PixelFormat::Rgba8 => 4,
         _ => {
             return Err(ImageError::UnsupportedFormat(
-                "local laplacian requires RGB8 or RGBA8".into(),
+                "pyramid_detail_remap requires RGB8 or RGBA8".into(),
             ));
         }
     };
@@ -2558,7 +2564,7 @@ pub fn local_laplacian(
             .map(|i| pixels[i * channels + c] as f32 / 255.0)
             .collect();
 
-        let output = local_laplacian_channel(&channel, w, h, levels, sigma);
+        let output = pyramid_detail_remap_channel(&channel, w, h, levels, sigma);
 
         // Write back
         for i in 0..w * h {
@@ -2577,7 +2583,7 @@ pub fn local_laplacian(
 }
 
 /// Process a single channel through the Local Laplacian pyramid.
-fn local_laplacian_channel(
+fn pyramid_detail_remap_channel(
     input: &[f32],
     w: usize,
     h: usize,
@@ -3651,18 +3657,18 @@ mod photo_enhance_tests {
     }
 
     #[test]
-    fn local_laplacian_preserves_dimensions() {
+    fn pyramid_detail_remap_preserves_dimensions() {
         let (px, info) = make_rgb(32, 32);
-        let result = local_laplacian(&px, &info, 0.5, 0).unwrap();
+        let result = pyramid_detail_remap(&px, &info, 0.5, 0).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
-    fn local_laplacian_sigma_1_near_identity() {
+    fn pyramid_detail_remap_sigma_1_near_identity() {
         let (px, info) = make_rgb(32, 32);
         // sigma=1.0 means the remapping d * 1.0 / (1.0 + |d|) ≈ d for small d
         // This is close to identity (slight compression of large gradients)
-        let result = local_laplacian(&px, &info, 1.0, 4).unwrap();
+        let result = pyramid_detail_remap(&px, &info, 1.0, 4).unwrap();
         let diff: f64 = px
             .iter()
             .zip(result.iter())
@@ -3676,9 +3682,9 @@ mod photo_enhance_tests {
     }
 
     #[test]
-    fn local_laplacian_small_sigma_produces_output() {
+    fn pyramid_detail_remap_small_sigma_produces_output() {
         let (px, info) = make_rgb(64, 64);
-        let result = local_laplacian(&px, &info, 0.2, 0).unwrap();
+        let result = pyramid_detail_remap(&px, &info, 0.2, 0).unwrap();
         assert_eq!(result.len(), px.len());
         // Result should differ from input (enhancement applied)
         let diff: usize = px.iter().zip(result.iter()).filter(|&(&a, &b)| a != b).count();
@@ -3686,7 +3692,7 @@ mod photo_enhance_tests {
     }
 
     #[test]
-    fn local_laplacian_rgba_preserves_alpha() {
+    fn pyramid_detail_remap_rgba_preserves_alpha() {
         let (w, h) = (16u32, 16u32);
         let mut pixels = vec![128u8; (w * h * 4) as usize];
         for i in 0..(w * h) as usize {
@@ -3696,7 +3702,7 @@ mod photo_enhance_tests {
             pixels[i * 4 + 3] = 200;
         }
         let info = test_info(w, h, PixelFormat::Rgba8);
-        let result = local_laplacian(&pixels, &info, 0.5, 3).unwrap();
+        let result = pyramid_detail_remap(&pixels, &info, 0.5, 3).unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
         }
