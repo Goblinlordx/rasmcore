@@ -99,6 +99,8 @@ for per-filter details including alignment notes.
 | blend Screen | numpy W3C CSS L1 | 2.4.3 |
 | bilateral filter | OpenCV `bilateralFilter` | 4.13.0 |
 | brightness(0) | Self identity | N/A |
+| histogram match (gray) | Python CDF inversion (f64) | Pure Python |
+| histogram match (RGB) | Python CDF inversion (f64) | Pure Python |
 
 ### Inpainting — Telea + Navier-Stokes
 
@@ -118,6 +120,23 @@ optimizations (FMA instructions, extended-precision registers) that change f32
 intermediate rounding. This affects even single-pixel inpainting on gradient images
 (ours=107, OpenCV binary=108, our C replica=107). The NS method (pure weighted
 average, no gradient correction) is unaffected and achieves exact match.
+
+### Histogram Matching
+
+| Test Case | Pixels | Reference | Result |
+|-----------|--------|-----------|--------|
+| identity_ramp (gray, 0-255) | 256 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
+| dark_to_bright (gray, 0-99 → 155-254) | 100 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
+| uniform_to_gaussian (gray, random) | 1024 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
+| rgb_dark_to_bright (3-channel) | 192 | Python CDF inversion (f64) | **Pixel-exact** (0 diff) |
+
+**Algorithm:** Standard CDF inversion mapping. For each source intensity, find
+the target intensity with the nearest normalized CDF value. The algorithm is
+deterministic (integer histograms → f64 CDFs → nearest-value LUT search),
+so exact match with any reference using the same algorithm is expected and proven.
+
+**Reference:** `tests/fixtures/scripts/histogram_match_reference.py` (pure Python,
+no numpy dependency). Reference data: `tests/fixtures/generated/histogram_match_reference.json`.
 
 ### Deterministic (MAE < 0.1, max_err = 1)
 
@@ -254,6 +273,7 @@ tests/fixtures/.venv/bin/pip install numpy==2.4.3 Pillow==12.1.1 opencv-python-h
 | `crates/rasmcore-image/tests/parity.rs` | Decode/encode/transform | 20+ tests, fixtures from generate.sh |
 | `crates/rasmcore-webp/tests/encode_decode.rs` | VP8 encode → decode | 11 tests, image-webp decoder |
 | `crates/rasmcore-jpeg/tests/parity.rs` | JPEG three-way | 28+ tests, libjpeg-turbo + mozjpeg |
+| `tests/fixtures/scripts/histogram_match_reference.py` | Histogram matching | 4 cases, pure Python CDF inversion |
 
 ---
 
