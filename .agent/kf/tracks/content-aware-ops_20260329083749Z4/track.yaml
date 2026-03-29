@@ -25,13 +25,13 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement energy map computation (dual-gradient Sobel)
-    done: false
+    done: true
   - text: Implement minimum-energy seam finding via dynamic programming
-    done: false
+    done: true
   - text: Implement vertical and horizontal seam removal
-    done: false
+    done: true
   - text: Implement selective color (HSL-based per-hue-range adjustment)
-    done: false
+    done: true
   - text: Generate reference fixtures and parity tests
-    done: false
+    done: true
 extra: {}
