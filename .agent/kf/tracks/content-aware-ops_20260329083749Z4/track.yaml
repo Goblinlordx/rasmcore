@@ -1,0 +1,33 @@
+id: content-aware-ops_20260329083749Z4
+title: Content-Aware Operations — Seam Carving + Selective Color
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Seam carving (content-aware resize via energy-based seam removal) and selective color adjustment (per-hue-range
+    channel manipulation). Seam carving testable against ImageMagick -liquid-rescale.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'Seam carving: compute energy map (gradient magnitude), find minimum-energy vertical/horizontal seam via
+    DP, remove seam, repeat. Selective color: convert to HSL, identify pixels in target hue range, adjust their HSL values.'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement energy map computation (dual-gradient Sobel)
+    done: false
+  - text: Implement minimum-energy seam finding via dynamic programming
+    done: false
+  - text: Implement vertical and horizontal seam removal
+    done: false
+  - text: Implement selective color (HSL-based per-hue-range adjustment)
+    done: false
+  - text: Generate reference fixtures and parity tests
+    done: false
+extra: {}

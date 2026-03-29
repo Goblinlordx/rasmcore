@@ -1,0 +1,33 @@
+id: retinex-enhance_20260329083749Z7
+title: Retinex Enhancement — SSR, MSR, MSRCR
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Retinex-based image enhancement: Single-Scale Retinex, Multi-Scale Retinex, and MSRCR (with color restoration).
+    Testable against GIMP''s Retinex filter implementation.'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'SSR: R(x,y) = log(I(x,y)) - log(G(x,y,sigma) * I(x,y)) where G is Gaussian. MSR: average of SSR at multiple
+    scales (typically sigma=15,80,250). MSRCR: MSR + color restoration term C(x,y) = beta * log(alpha * I_c / sum(I_channels)).'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement Single-Scale Retinex (log domain, Gaussian surround)
+    done: false
+  - text: Implement Multi-Scale Retinex (average over 3 scales)
+    done: false
+  - text: Implement MSRCR with color restoration factor
+    done: false
+  - text: Unit test enhancement properties (increased dynamic range, preserved mean)
+    done: false
+  - text: Generate reference comparison against GIMP Retinex
+    done: false
+extra: {}

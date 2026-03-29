@@ -1,0 +1,33 @@
+id: spatial-utilities_20260329083749Z2
+title: Spatial Utilities — Connected Components, Flood Fill, Image Pyramids
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Connected component labeling, flood fill (4/8-connectivity), and Gaussian/Laplacian image pyramid construction.
+    All testable against OpenCV 4.13.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'Connected components: two-pass algorithm with union-find. Flood fill: BFS/DFS from seed with tolerance.
+    Pyramids: Gaussian pyrDown = blur+subsample, pyrUp = upsample+blur. Laplacian = level - pyrUp(pyrDown(level)).'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement connected component labeling (4-connectivity and 8-connectivity)
+    done: false
+  - text: Implement flood fill with configurable tolerance and connectivity
+    done: false
+  - text: Implement Gaussian pyramid (pyrDown/pyrUp)
+    done: false
+  - text: Implement Laplacian pyramid construction and reconstruction
+    done: false
+  - text: Generate OpenCV reference fixtures and parity tests
+    done: false
+extra: {}

@@ -1,0 +1,32 @@
+id: lens-correction_20260329083749Z5
+title: Lens Correction — Barrel/Pincushion Distortion (Brown-Conrady)
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Radial lens distortion correction using the Brown-Conrady model (k1/k2/k3 coefficients). Testable against cv2.undistort().
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'Brown-Conrady: r_distorted = r(1 + k1*r^2 + k2*r^4 + k3*r^6). Apply inverse mapping: for each output pixel,
+    compute distorted source coordinate, bilinear sample. Camera matrix K = [[fx,0,cx],[0,fy,cy],[0,0,1]].'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement Brown-Conrady radial distortion model
+    done: false
+  - text: Implement inverse mapping (output to distorted source coordinate)
+    done: false
+  - text: Implement undistort with bilinear sampling
+    done: false
+  - text: Generate OpenCV reference fixtures with known camera/distortion params
+    done: false
+  - text: Parity test against cv2.undistort
+    done: false
+extra: {}

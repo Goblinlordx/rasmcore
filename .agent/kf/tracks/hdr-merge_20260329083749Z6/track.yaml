@@ -1,0 +1,36 @@
+id: hdr-merge_20260329083749Z6
+title: HDR Merge — Mertens Exposure Fusion + Debevec
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Multi-exposure HDR: Mertens exposure fusion (no HDR intermediate, direct blend) and Debevec HDR merge (recover
+    radiance map). Both testable against OpenCV.'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'Mertens: weight each exposure by contrast/saturation/well-exposedness, normalize weights, Laplacian pyramid
+    blend. Debevec: estimate camera response curve from bracketed exposures, compute HDR radiance map. Both take a Vec of
+    same-size images.'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement exposure weight computation (contrast, saturation, well-exposedness)
+    done: false
+  - text: Implement Mertens fusion with Laplacian pyramid blending
+    done: false
+  - text: Implement Debevec camera response curve estimation
+    done: false
+  - text: Implement Debevec HDR radiance map computation
+    done: false
+  - text: Generate OpenCV reference fixtures from synthetic brackets
+    done: false
+  - text: Parity test both methods
+    done: false
+extra: {}

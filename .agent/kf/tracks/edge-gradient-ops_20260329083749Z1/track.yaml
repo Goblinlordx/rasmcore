@@ -1,0 +1,33 @@
+id: edge-gradient-ops_20260329083749Z1
+title: Edge & Gradient Operators — Scharr, Laplacian, Distance Transform
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Scharr edge detector (rotationally symmetric), Laplacian second-order derivative, and distance transform (Euclidean/L1/L-inf).
+    All testable against OpenCV 4.13.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'Scharr: 3x3 kernel [-3,0,3;-10,0,10;-3,0,3] and transpose. Laplacian: 3x3 kernel [0,1,0;1,-4,1;0,1,0].
+    Distance transform: for each pixel, distance to nearest zero pixel. Euclidean via two-pass Rosenfeld-Pfaltz or chamfer.'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement Scharr edge detection (horizontal + vertical + magnitude)
+    done: false
+  - text: Implement Laplacian filter (3x3 and 5x5 kernels)
+    done: false
+  - text: Implement distance transform (Euclidean via two-pass)
+    done: false
+  - text: Generate OpenCV reference fixtures for all three
+    done: false
+  - text: Parity test all three against canonical 7-image set
+    done: false
+extra: {}

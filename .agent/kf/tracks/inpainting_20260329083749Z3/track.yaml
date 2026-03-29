@@ -1,0 +1,33 @@
+id: inpainting_20260329083749Z3
+title: Inpainting — Telea FMM + Navier-Stokes
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Two inpainting algorithms from OpenCV: Telea (Fast Marching Method, 2004) and Navier-Stokes (PDE-based isophote
+    propagation). Both testable against cv2.inpaint().'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria:
+  - All operations validated against reference implementation (OpenCV/colour-science/GIMP)
+  - Reference parity tests added to opencv_parity.rs with fixtures
+  - SIMD optimization where applicable (per project feedback)
+  - Registered in FilterRegistry with param descriptors
+  out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
+  technical_notes: 'Telea: FMM propagates known pixel values into masked region weighted by distance and gradient. Navier-Stokes:
+    iterative PDE solving Laplacian of image smoothness along isophotes. Both take image + binary mask + inpaint radius.'
+plan:
+- phase: Implementation + Validation
+  tasks:
+  - text: Implement Fast Marching Method for distance ordering
+    done: false
+  - text: Implement Telea inpainting (FMM + weighted interpolation)
+    done: false
+  - text: Implement Navier-Stokes inpainting (iterative Laplacian smoothing)
+    done: false
+  - text: Generate OpenCV reference fixtures with test masks
+    done: false
+  - text: Parity test both methods against OpenCV
+    done: false
+extra: {}
