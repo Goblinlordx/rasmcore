@@ -8,8 +8,8 @@
 
 use super::error::ImageError;
 use super::types::ImageInfo;
-use std::collections::BinaryHeap;
 use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 /// Inpainting method selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,16 +107,24 @@ struct FmmEntry {
 }
 
 impl PartialEq for FmmEntry {
-    fn eq(&self, other: &Self) -> bool { self.dist == other.dist && self.seq == other.seq }
+    fn eq(&self, other: &Self) -> bool {
+        self.dist == other.dist && self.seq == other.seq
+    }
 }
 impl Eq for FmmEntry {}
 impl PartialOrd for FmmEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 impl Ord for FmmEntry {
     fn cmp(&self, other: &Self) -> Ordering {
         // Min-heap: smallest distance first, FIFO for ties
-        match other.dist.partial_cmp(&self.dist).unwrap_or(Ordering::Equal) {
+        match other
+            .dist
+            .partial_cmp(&self.dist)
+            .unwrap_or(Ordering::Equal)
+        {
             Ordering::Equal => other.seq.cmp(&self.seq),
             ord => ord,
         }
@@ -125,10 +133,7 @@ impl Ord for FmmEntry {
 
 /// Solve Eikonal equation for a single pair of neighbors.
 /// Matches OpenCV's FastMarching_solve(i1,j1, i2,j2, f, t).
-fn fm_solve_pair(
-    a11: f32, f1_inside: bool,
-    a22: f32, f2_inside: bool,
-) -> f32 {
+fn fm_solve_pair(a11: f32, f1_inside: bool, a22: f32, f2_inside: bool) -> f32 {
     let m12 = a11.min(a22);
     if !f1_inside {
         if !f2_inside {
@@ -152,10 +157,26 @@ fn fm_solve_pair(
 /// and return the minimum distance.
 fn solve_eikonal(dist: &[f32], flags: &[u8], w: usize, h: usize, x: usize, y: usize) -> f32 {
     // Neighbor values and INSIDE status
-    let up = if y > 0 { (dist[(y - 1) * w + x], flags[(y - 1) * w + x] == INSIDE) } else { (1e6, true) };
-    let down = if y + 1 < h { (dist[(y + 1) * w + x], flags[(y + 1) * w + x] == INSIDE) } else { (1e6, true) };
-    let left = if x > 0 { (dist[y * w + x - 1], flags[y * w + x - 1] == INSIDE) } else { (1e6, true) };
-    let right = if x + 1 < w { (dist[y * w + x + 1], flags[y * w + x + 1] == INSIDE) } else { (1e6, true) };
+    let up = if y > 0 {
+        (dist[(y - 1) * w + x], flags[(y - 1) * w + x] == INSIDE)
+    } else {
+        (1e6, true)
+    };
+    let down = if y + 1 < h {
+        (dist[(y + 1) * w + x], flags[(y + 1) * w + x] == INSIDE)
+    } else {
+        (1e6, true)
+    };
+    let left = if x > 0 {
+        (dist[y * w + x - 1], flags[y * w + x - 1] == INSIDE)
+    } else {
+        (1e6, true)
+    };
+    let right = if x + 1 < w {
+        (dist[y * w + x + 1], flags[y * w + x + 1] == INSIDE)
+    } else {
+        (1e6, true)
+    };
 
     // OpenCV tries all 4 diagonal combinations and takes min
     let s1 = fm_solve_pair(up.0, up.1, left.0, left.1);
@@ -206,7 +227,12 @@ fn fmm_init_padded(
                 if has_inside_neighbor {
                     flags[pidx] = BAND;
                     dist[pidx] = 0.0;
-                    heap.push(FmmEntry { dist: 0.0, seq, x: px, y: py });
+                    heap.push(FmmEntry {
+                        dist: 0.0,
+                        seq,
+                        x: px,
+                        y: py,
+                    });
                     seq += 1;
                 }
             }
@@ -216,7 +242,13 @@ fn fmm_init_padded(
     (flags, dist, heap, pw, ph, seq)
 }
 
-fn telea_inpaint(pixels: &[u8], w: usize, h: usize, mask: &[u8], radius: f32) -> Result<Vec<u8>, ImageError> {
+fn telea_inpaint(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    mask: &[u8],
+    radius: f32,
+) -> Result<Vec<u8>, ImageError> {
     let (mut flags, mut dist, mut heap, pw, ph, mut seq) = fmm_init_padded(mask, w, h);
     let r = radius.ceil() as i32;
 
@@ -243,12 +275,15 @@ fn telea_inpaint(pixels: &[u8], w: usize, h: usize, mask: &[u8], radius: f32) ->
                 let new_dist = solve_eikonal(&dist, &flags, pw, ph, nx, ny);
                 dist[nidx] = new_dist;
 
-                result[nidx] = telea_interpolate(
-                    &result, &flags, &dist, pw, ph, nx, ny, r,
-                );
+                result[nidx] = telea_interpolate(&result, &flags, &dist, pw, ph, nx, ny, r);
 
                 flags[nidx] = BAND;
-                heap.push(FmmEntry { dist: new_dist, seq, x: nx, y: ny });
+                heap.push(FmmEntry {
+                    dist: new_dist,
+                    seq,
+                    x: nx,
+                    y: ny,
+                });
                 seq += 1;
             }
         }
@@ -368,7 +403,8 @@ fn telea_interpolate(
             let left_ok = kx > 0 && flags[ky * w + kx - 1] != INSIDE;
             if right_ok {
                 if left_ok {
-                    grad_ix = (pixels[ky * w + kx + 1] as f32 - pixels[ky * w + kx - 1] as f32) * 2.0;
+                    grad_ix =
+                        (pixels[ky * w + kx + 1] as f32 - pixels[ky * w + kx - 1] as f32) * 2.0;
                 } else {
                     grad_ix = pixels[ky * w + kx + 1] as f32 - pixels[kidx] as f32;
                 }
@@ -380,7 +416,8 @@ fn telea_interpolate(
             let up_ok = ky > 0 && flags[(ky - 1) * w + kx] != INSIDE;
             if down_ok {
                 if up_ok {
-                    grad_iy = (pixels[(ky + 1) * w + kx] as f32 - pixels[(ky - 1) * w + kx] as f32) * 2.0;
+                    grad_iy =
+                        (pixels[(ky + 1) * w + kx] as f32 - pixels[(ky - 1) * w + kx] as f32) * 2.0;
                 } else {
                     grad_iy = pixels[(ky + 1) * w + kx] as f32 - pixels[kidx] as f32;
                 }
@@ -447,12 +484,15 @@ fn navier_stokes_inpaint(
                 let new_dist = solve_eikonal(&dist, &flags, pw, ph, nx, ny);
                 dist[nidx] = new_dist;
 
-                result[nidx] = ns_interpolate(
-                    &result, &flags, pw, ph, nx, ny, r,
-                );
+                result[nidx] = ns_interpolate(&result, &flags, pw, ph, nx, ny, r);
 
                 flags[nidx] = BAND;
-                heap.push(FmmEntry { dist: new_dist, seq, x: nx, y: ny });
+                heap.push(FmmEntry {
+                    dist: new_dist,
+                    seq,
+                    x: nx,
+                    y: ny,
+                });
                 seq += 1;
             }
         }
@@ -572,10 +612,18 @@ fn ns_interpolate(
 
 fn neighbors_4(x: usize, y: usize, w: usize, h: usize) -> Vec<(usize, usize)> {
     let mut n = Vec::with_capacity(4);
-    if x > 0 { n.push((x - 1, y)); }
-    if x + 1 < w { n.push((x + 1, y)); }
-    if y > 0 { n.push((x, y - 1)); }
-    if y + 1 < h { n.push((x, y + 1)); }
+    if x > 0 {
+        n.push((x - 1, y));
+    }
+    if x + 1 < w {
+        n.push((x + 1, y));
+    }
+    if y > 0 {
+        n.push((x, y - 1));
+    }
+    if y + 1 < h {
+        n.push((x, y + 1));
+    }
     n
 }
 
@@ -584,13 +632,21 @@ fn neighbors_4(x: usize, y: usize, w: usize, h: usize) -> Vec<(usize, usize)> {
 fn neighbors_4_opencv(x: usize, y: usize, w: usize, h: usize) -> Vec<(usize, usize)> {
     let mut n = Vec::with_capacity(4);
     // up: i-1 must be > 0 (i.e., y-1 >= 1, so y >= 2)
-    if y >= 2 { n.push((x, y - 1)); }
+    if y >= 2 {
+        n.push((x, y - 1));
+    }
     // left: j-1 must be > 0 (i.e., x-1 >= 1, so x >= 2)
-    if x >= 2 { n.push((x - 1, y)); }
+    if x >= 2 {
+        n.push((x - 1, y));
+    }
     // down: i+1 must be <= rows-1 (i.e., y+1 <= h-1)
-    if y + 1 < h { n.push((x, y + 1)); }
+    if y + 1 < h {
+        n.push((x, y + 1));
+    }
     // right: j+1 must be <= cols-1 (i.e., x+1 <= w-1)
-    if x + 1 < w { n.push((x + 1, y)); }
+    if x + 1 < w {
+        n.push((x + 1, y));
+    }
     n
 }
 
@@ -715,33 +771,55 @@ mod opencv_parity {
 
     fn run_python(script: &str) -> Vec<u8> {
         let output = Command::new(venv_python())
-            .arg("-c").arg(script)
-            .output().unwrap();
-        assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
+            .arg("-c")
+            .arg(script)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "Python failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         output.stdout
     }
 
     fn mae(a: &[u8], b: &[u8]) -> f64 {
         assert_eq!(a.len(), b.len());
-        a.iter().zip(b).map(|(&x, &y)| (x as f64 - y as f64).abs()).sum::<f64>() / a.len() as f64
+        a.iter()
+            .zip(b)
+            .map(|(&x, &y)| (x as f64 - y as f64).abs())
+            .sum::<f64>()
+            / a.len() as f64
     }
 
     fn max_err(a: &[u8], b: &[u8]) -> u8 {
-        a.iter().zip(b).map(|(&x, &y)| (x as i16 - y as i16).unsigned_abs() as u8).max().unwrap_or(0)
+        a.iter()
+            .zip(b)
+            .map(|(&x, &y)| (x as i16 - y as i16).unsigned_abs() as u8)
+            .max()
+            .unwrap_or(0)
     }
 
     #[test]
     fn telea_parity_vs_opencv() {
         // Create test image: uniform 128 with a masked 4x4 hole
-        let w = 16u32; let h = 16;
+        let w = 16u32;
+        let h = 16;
         let mut img = vec![128u8; (w * h) as usize];
         let mut mask = vec![0u8; (w * h) as usize];
-        for y in 6..10 { for x in 6..10 {
-            mask[y * w as usize + x] = 255;
-            img[y * w as usize + x] = 0;
-        }}
+        for y in 6..10 {
+            for x in 6..10 {
+                mask[y * w as usize + x] = 255;
+                img[y * w as usize + x] = 0;
+            }
+        }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 3.0, InpaintMethod::Telea).unwrap();
 
         // OpenCV reference
@@ -757,20 +835,31 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  Telea inpaint vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(m == 0.0 && mx == 0, "Telea MAE={m:.4}, max_err={mx} vs OpenCV — must be exact");
+        assert!(
+            m == 0.0 && mx == 0,
+            "Telea MAE={m:.4}, max_err={mx} vs OpenCV — must be exact"
+        );
     }
 
     #[test]
     fn ns_parity_vs_opencv() {
-        let w = 16u32; let h = 16;
+        let w = 16u32;
+        let h = 16;
         let mut img = vec![128u8; (w * h) as usize];
         let mut mask = vec![0u8; (w * h) as usize];
-        for y in 6..10 { for x in 6..10 {
-            mask[y * w as usize + x] = 255;
-            img[y * w as usize + x] = 0;
-        }}
+        for y in 6..10 {
+            for x in 6..10 {
+                mask[y * w as usize + x] = 255;
+                img[y * w as usize + x] = 0;
+            }
+        }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 3.0, InpaintMethod::NavierStokes).unwrap();
 
         let script = format!(
@@ -785,13 +874,17 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  NS inpaint vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(m == 0.0 && mx == 0, "NS MAE={m:.4}, max_err={mx} vs OpenCV — must be exact");
+        assert!(
+            m == 0.0 && mx == 0,
+            "NS MAE={m:.4}, max_err={mx} vs OpenCV — must be exact"
+        );
     }
 
     #[test]
     fn telea_gradient_parity_vs_opencv() {
         // Gradient image: harder test for Telea with non-uniform content
-        let w = 32u32; let h = 32;
+        let w = 32u32;
+        let h = 32;
         let mut img = vec![0u8; (w * h) as usize];
         let mut mask = vec![0u8; (w * h) as usize];
         for y in 0..h as usize {
@@ -800,12 +893,19 @@ mod opencv_parity {
             }
         }
         // 6x6 hole in center
-        for y in 13..19 { for x in 13..19 {
-            mask[y * w as usize + x] = 255;
-            img[y * w as usize + x] = 0;
-        }}
+        for y in 13..19 {
+            for x in 13..19 {
+                mask[y * w as usize + x] = 255;
+                img[y * w as usize + x] = 0;
+            }
+        }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 5.0, InpaintMethod::Telea).unwrap();
 
         let script = format!(
@@ -825,13 +925,17 @@ mod opencv_parity {
         // Rust's BinaryHeap. NS (pure weighted average) is exact; Telea's
         // first-order gradient correction amplifies tiny ordering differences.
         // Uniform images are exact (no gradient to amplify). Threshold: max_err ≤ 6.
-        assert!(mx <= 6, "Telea gradient max_err={mx} vs OpenCV — should be ≤ 6");
+        assert!(
+            mx <= 6,
+            "Telea gradient max_err={mx} vs OpenCV — should be ≤ 6"
+        );
     }
 
     #[test]
     fn ns_gradient_parity_vs_opencv() {
         // Gradient image: harder test for NS
-        let w = 32u32; let h = 32;
+        let w = 32u32;
+        let h = 32;
         let mut img = vec![0u8; (w * h) as usize];
         let mut mask = vec![0u8; (w * h) as usize];
         for y in 0..h as usize {
@@ -839,12 +943,19 @@ mod opencv_parity {
                 img[y * w as usize + x] = (x * 255 / (w as usize - 1)) as u8;
             }
         }
-        for y in 13..19 { for x in 13..19 {
-            mask[y * w as usize + x] = 255;
-            img[y * w as usize + x] = 0;
-        }}
+        for y in 13..19 {
+            for x in 13..19 {
+                mask[y * w as usize + x] = 255;
+                img[y * w as usize + x] = 0;
+            }
+        }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 5.0, InpaintMethod::NavierStokes).unwrap();
 
         let script = format!(
@@ -859,6 +970,9 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  NS gradient vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(m == 0.0 && mx == 0, "NS gradient MAE={m:.4}, max_err={mx} vs OpenCV — must be exact");
+        assert!(
+            m == 0.0 && mx == 0,
+            "NS gradient MAE={m:.4}, max_err={mx} vs OpenCV — must be exact"
+        );
     }
 }
