@@ -1,0 +1,103 @@
+id: webp-spec-audit_20260329200000Z
+title: "Research: VP8 Encode Pipeline Spec Audit — RFC 6386 Step-by-Step"
+type: research
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Read RFC 6386 and libwebp source code. Document the exact mathematical
+    formula for each VP8 encode pipeline step with section/equation citations.
+    Then diff each formula against our rasmcore-webp implementation to produce
+    a precise, actionable bug list.
+  context: |
+    We have a 15-20dB quality gap vs cwebp that survived multiple optimization
+    attempts (RDO, trellis, RD mode selection, QP mapping). Previous investigations
+    disproved several hypotheses (YUV range, RDO aggressiveness) but never found
+    the root cause. The problem is we've been guessing instead of reading the spec.
+    
+    This track produces a REFERENCE DOCUMENT that future developers can use to
+    verify any pipeline stage. Each step gets the exact formula from RFC 6386 with
+    section number, then a code diff showing where our implementation matches or
+    diverges.
+  codebase_analysis: |
+    rasmcore-webp has 12 source files implementing the full VP8 intra-frame encoder.
+    RFC 6386 defines the VP8 bitstream format and decoder behavior. The encoder
+    must produce bitstreams that the decoder processes correctly. Any divergence
+    from the spec's mathematical definitions causes quality loss.
+    
+    Key areas where spec compliance matters:
+    - Color conversion coefficients (Section 13.1)
+    - Intra prediction formulas (Sections 12.1-12.3)
+    - DCT/WHT transform constants (Section 14)
+    - Quantization tables and formulas (Section 20)
+    - Boolean coder mechanics (Section 7)
+    - Loop filter thresholds and clamp functions (Section 15)
+  acceptance_criteria:
+    - Reference document covers all 10 pipeline stages with RFC 6386 citations
+    - Each formula is written out explicitly (not just described)
+    - Each formula has a code reference to our implementation
+    - Divergences are classified as bug, approximation, or intentional difference
+    - Final bug list is actionable (specific file, line, fix description)
+  out_of_scope: |
+    Implementing any fixes (this is research only). Inter-frame encoding.
+    Lossless WebP. Container format (RIFF).
+  technical_notes: |
+    Output: .agent/kf/tracks/{id}/vp8-pipeline-spec.md
+    
+    For each pipeline stage, document:
+    1. RFC 6386 section number and equation
+    2. The exact mathematical formula (LaTeX-style notation)
+    3. Our code: file, function, line
+    4. Match/diverge status with explanation
+    
+    Pipeline stages (in encode order):
+    A. RGB to YUV conversion (Section 13.1)
+    B. Intra prediction (Sections 12.1-12.3)
+    C. Forward 4x4 DCT (Section 14.4)
+    D. Forward 4x4 WHT for Y2 (Section 14.4)
+    E. Quantization (Section 20)
+    F. Dequantization (Section 20)
+    G. Inverse WHT (Section 14.3)
+    H. Inverse DCT + reconstruction (Section 14.3)
+    I. Loop filter (Section 15)
+    J. Boolean encoder (Section 7)
+    
+    Sources:
+    - RFC 6386: https://datatracker.ietf.org/doc/html/rfc6386
+    - libwebp source (for reference when RFC is ambiguous)
+    - Our code: crates/rasmcore-webp/src/
+plan:
+  - phase: Color + Prediction Spec
+    tasks:
+      - text: "Document RGB→YUV conversion formula from RFC 6386 Section 13.1, diff against rasmcore-color matrix.rs"
+        done: false
+      - text: "Document all I16x16 prediction modes (DC/V/H/TM) from RFC 6386 Section 12.2, diff against predict.rs"
+        done: false
+      - text: "Document all B_PRED 4x4 modes (10 modes) from RFC 6386 Section 12.3, diff against predict.rs"
+        done: false
+      - text: "Document chroma prediction modes from RFC 6386 Section 12.1, diff against predict.rs"
+        done: false
+  - phase: Transform + Quantization Spec
+    tasks:
+      - text: "Document forward 4x4 DCT formula from RFC 6386 Section 14.4, diff against dct.rs"
+        done: false
+      - text: "Document forward 4x4 WHT formula from RFC 6386 Section 14.4, diff against dct.rs"
+        done: false
+      - text: "Document quantization tables and formula from RFC 6386 Section 20, diff against quant.rs"
+        done: false
+      - text: "Document dequantization + inverse transforms from RFC 6386 Sections 14.3/20, diff against dct.rs"
+        done: false
+  - phase: Filter + Entropy + Bug List
+    tasks:
+      - text: "Document loop filter formulas from RFC 6386 Section 15, diff against filter.rs"
+        done: false
+      - text: "Document boolean coder from RFC 6386 Section 7, diff against boolcoder.rs"
+        done: false
+      - text: "Document token probability tables from RFC 6386 Section 13.3, diff against token.rs"
+        done: false
+      - text: "Compile final bug list with severity, file, line, and fix description for each divergence"
+        done: false
+      - text: "Write executive summary with prioritized fix order based on expected quality impact"
+        done: false
+extra: {}
