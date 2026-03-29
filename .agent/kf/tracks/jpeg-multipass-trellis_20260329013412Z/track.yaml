@@ -5,47 +5,40 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: 'Run trellis twice: first pass with standard Huffman tables to get initial
-    coefficients, collect frequencies, build optimal tables, then re-run trellis with
-    accurate rate estimates from the optimal tables. This is mozjpeg''s default behavior
+  summary: 'Run trellis twice: first pass with standard Huffman tables to get initial coefficients, collect frequencies, build
+    optimal tables, then re-run trellis with accurate rate estimates from the optimal tables. This is mozjpeg''s default behavior
     and produces better rate-distortion decisions.'
-  context: 'mozjpeg runs trellis multiple times per component (trellis_num_loops,
-    default 1). Each loop: trellis quantize → collect Huffman stats → generate optimal
-    tables → (optionally re-trellis). Currently our optimize_huffman path does: trellis
-    with standard tables → collect frequencies → encode with optimal tables. But the
-    trellis decisions were made with INACCURATE rate estimates (standard tables),
-    so the R+λD balance is suboptimal. Running trellis again with the actual optimal
-    code lengths gives better decisions.'
+  context: 'mozjpeg runs trellis multiple times per component (trellis_num_loops, default 1). Each loop: trellis quantize
+    → collect Huffman stats → generate optimal tables → (optionally re-trellis). Currently our optimize_huffman path does:
+    trellis with standard tables → collect frequencies → encode with optimal tables. But the trellis decisions were made with
+    INACCURATE rate estimates (standard tables), so the R+λD balance is suboptimal. Running trellis again with the actual
+    optimal code lengths gives better decisions.'
   codebase_analysis: ''
   acceptance_criteria:
   - Trellis re-runs with optimized Huffman code lengths for accurate rate estimation
-  - File size within 1.0x of mozjpeg at same PSNR (currently ~0.9x size but higher
-    PSNR)
+  - File size within 1.0x of mozjpeg at same PSNR (currently ~0.9x size but higher PSNR)
   - All existing tests pass
-  out_of_scope: Multiple trellis loops (trellis_num_loops > 1). Quantization table
-    refinement (trellis_q_opt). EOB optimization.
-  technical_notes: 'Implementation: (1) In collect_frequencies, run trellis with standard
-    tables (current behavior). (2) Build optimal Huffman tables from frequencies.
-    (3) Re-run trellis on the same DCT blocks using trellis_quantize_with_codes(custom_ac_codes=optimal_table).
-    (4) Re-count frequencies from the updated coefficients. (5) Encode with final
-    optimal tables. This doubles the trellis work but significantly improves rate
-    estimation accuracy. The trellis_quantize_with_codes function already accepts
-    custom AC code lengths — just need to wire the two-pass loop.'
+  out_of_scope: Multiple trellis loops (trellis_num_loops > 1). Quantization table refinement (trellis_q_opt). EOB optimization.
+  technical_notes: 'Implementation: (1) In collect_frequencies, run trellis with standard tables (current behavior). (2) Build
+    optimal Huffman tables from frequencies. (3) Re-run trellis on the same DCT blocks using trellis_quantize_with_codes(custom_ac_codes=optimal_table).
+    (4) Re-count frequencies from the updated coefficients. (5) Encode with final optimal tables. This doubles the trellis
+    work but significantly improves rate estimation accuracy. The trellis_quantize_with_codes function already accepts custom
+    AC code lengths — just need to wire the two-pass loop.'
 plan:
 - phase: Two-Pass Trellis Loop
   tasks:
   - text: After initial trellis + frequency collection, build optimal AC code lengths
-    done: false
+    done: true
   - text: Re-run trellis on same DCT blocks with optimal code lengths via trellis_quantize_with_codes
-    done: false
+    done: true
   - text: Re-collect frequencies from updated coefficients
-    done: false
+    done: true
   - text: Encode with final optimal tables
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: File size closer to mozjpeg at matching PSNR
-    done: false
+    done: true
   - text: All existing tests pass
-    done: false
+    done: true
 extra: {}
