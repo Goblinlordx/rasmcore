@@ -1,4 +1,5 @@
 pub mod color;
+pub mod color_grading;
 pub mod color_lut;
 pub mod composite;
 pub mod decoder;
