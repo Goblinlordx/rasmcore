@@ -4762,6 +4762,415 @@ mod retinex_tests {
     }
 }
 
+// ─── Adaptive Thresholding ───────────────────────────────────────────────────
+
+/// Compute Otsu's optimal threshold for a grayscale image.
+///
+/// Maximizes inter-class variance between foreground and background.
+/// Returns the threshold value [0, 255].
+///
+/// Reference: OpenCV cv2.threshold(..., THRESH_OTSU).
+pub fn otsu_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "otsu requires Gray8 input".into(),
+        ));
+    }
+
+    let n = pixels.len() as f64;
+    if n == 0.0 {
+        return Ok(0);
+    }
+
+    // Build histogram
+    let mut hist = [0u32; 256];
+    for &v in pixels {
+        hist[v as usize] += 1;
+    }
+
+    // Compute total mean
+    let mut total_sum = 0.0f64;
+    for i in 0..256 {
+        total_sum += i as f64 * hist[i] as f64;
+    }
+
+    let mut best_thresh = 0u8;
+    let mut best_var = 0.0f64;
+    let mut w0 = 0.0f64;
+    let mut sum0 = 0.0f64;
+
+    for t in 0..256 {
+        w0 += hist[t] as f64;
+        if w0 == 0.0 {
+            continue;
+        }
+        let w1 = n - w0;
+        if w1 == 0.0 {
+            break;
+        }
+
+        sum0 += t as f64 * hist[t] as f64;
+        let mu0 = sum0 / w0;
+        let mu1 = (total_sum - sum0) / w1;
+        let between_var = w0 * w1 * (mu0 - mu1) * (mu0 - mu1);
+
+        if between_var > best_var {
+            best_var = between_var;
+            best_thresh = t as u8;
+        }
+    }
+
+    Ok(best_thresh)
+}
+
+/// Compute triangle threshold for a grayscale image.
+///
+/// Draws a line from the histogram peak to the farthest end,
+/// then finds the bin with maximum perpendicular distance to that line.
+///
+/// Reference: OpenCV cv2.threshold(..., THRESH_TRIANGLE).
+pub fn triangle_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "triangle requires Gray8 input".into(),
+        ));
+    }
+
+    let mut hist = [0u32; 256];
+    for &v in pixels {
+        hist[v as usize] += 1;
+    }
+
+    // Find histogram bounds and peak
+    let mut left = 0usize;
+    let mut right = 255usize;
+    while left < 256 && hist[left] == 0 {
+        left += 1;
+    }
+    while right > 0 && hist[right] == 0 {
+        right -= 1;
+    }
+    if left >= right {
+        return Ok(left as u8);
+    }
+
+    let mut peak = left;
+    for i in left..=right {
+        if hist[i] > hist[peak] {
+            peak = i;
+        }
+    }
+
+    // Determine which side is longer — the line goes from peak to the far end
+    let flip = (peak - left) < (right - peak);
+    let (a, b) = if flip { (peak, right) } else { (left, peak) };
+
+    // Line from (a, hist[a]) to (b, hist[b])
+    let ax = a as f64;
+    let ay = hist[a] as f64;
+    let bx = b as f64;
+    let by = hist[b] as f64;
+
+    // Find bin with max perpendicular distance to the line
+    let line_len = ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt();
+    if line_len < 1e-10 {
+        return Ok(peak as u8);
+    }
+
+    let mut best_dist = 0.0f64;
+    let mut best_t = a;
+    let range = if a < b { a..=b } else { b..=a };
+    for t in range {
+        let px = t as f64;
+        let py = hist[t] as f64;
+        // Perpendicular distance from point to line
+        let dist = ((by - ay) * px - (bx - ax) * py + bx * ay - by * ax).abs() / line_len;
+        if dist > best_dist {
+            best_dist = dist;
+            best_t = t;
+        }
+    }
+
+    Ok(best_t as u8)
+}
+
+/// Apply binary threshold to a grayscale image.
+///
+/// Pixels >= threshold become max_value, pixels < threshold become 0.
+pub fn threshold_binary(
+    pixels: &[u8],
+    info: &ImageInfo,
+    thresh: u8,
+    max_value: u8,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "threshold requires Gray8 input".into(),
+        ));
+    }
+    Ok(pixels
+        .iter()
+        .map(|&v| if v >= thresh { max_value } else { 0 })
+        .collect())
+}
+
+/// Adaptive threshold modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdaptiveMethod {
+    /// Use mean of the block neighborhood.
+    Mean,
+    /// Use Gaussian-weighted mean of the block neighborhood.
+    Gaussian,
+}
+
+/// Adaptive threshold — per-pixel threshold computed from local neighborhood.
+///
+/// For each pixel, the threshold is the (mean or Gaussian-weighted mean) of a
+/// block_size × block_size neighborhood, minus constant C.
+///
+/// Reference: OpenCV cv2.adaptiveThreshold.
+pub fn adaptive_threshold(
+    pixels: &[u8],
+    info: &ImageInfo,
+    max_value: u8,
+    method: AdaptiveMethod,
+    block_size: u32,
+    c: f64,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "adaptive threshold requires Gray8 input".into(),
+        ));
+    }
+    if block_size % 2 == 0 || block_size < 3 {
+        return Err(ImageError::InvalidParameters(
+            "block_size must be odd and >= 3".into(),
+        ));
+    }
+
+    let (w, h) = (info.width as usize, info.height as usize);
+    let r = (block_size / 2) as usize;
+
+    // Compute local mean (integral image approach for Mean, Gaussian for Gaussian)
+    let local_mean = match method {
+        AdaptiveMethod::Mean => {
+            // Box mean via integral image — BORDER_REFLECT_101
+            let input: Vec<f64> = pixels.iter().map(|&v| v as f64).collect();
+            box_mean_f64(&input, w, h, r)
+        }
+        AdaptiveMethod::Gaussian => {
+            // Gaussian-weighted mean — use separable Gaussian blur
+            let sigma = 0.3 * ((block_size as f64 - 1.0) * 0.5 - 1.0) + 0.8;
+            gaussian_blur_f64(pixels, w, h, block_size as usize, sigma)
+        }
+    };
+
+    let mut result = vec![0u8; w * h];
+    for i in 0..(w * h) {
+        let thresh = local_mean[i] - c;
+        // OpenCV uses strict > for THRESH_BINARY comparison
+        result[i] = if (pixels[i] as f64) > thresh {
+            max_value
+        } else {
+            0
+        };
+    }
+
+    Ok(result)
+}
+
+/// Box mean via integral image (f64 precision).
+fn box_mean_f64(data: &[f64], w: usize, h: usize, radius: usize) -> Vec<f64> {
+    let n = w * h;
+    let r = radius;
+
+    // Build integral image with BORDER_REFLECT_101 padding
+    let pw = w + 2 * r;
+    let ph = h + 2 * r;
+    let mut padded = vec![0.0f64; pw * ph];
+    for py in 0..ph {
+        let sy = if py < r {
+            r - 1 - py
+        } else if py >= h + r {
+            2 * h - (py - r) - 1
+        } else {
+            py - r
+        };
+        for px in 0..pw {
+            let sx = if px < r {
+                r - 1 - px
+            } else if px >= w + r {
+                2 * w - (px - r) - 1
+            } else {
+                px - r
+            };
+            padded[py * pw + px] = data[sy.min(h - 1) * w + sx.min(w - 1)];
+        }
+    }
+
+    // Build SAT
+    let mut sat = vec![0.0f64; (pw + 1) * (ph + 1)];
+    for y in 0..ph {
+        for x in 0..pw {
+            sat[(y + 1) * (pw + 1) + (x + 1)] =
+                padded[y * pw + x] + sat[y * (pw + 1) + (x + 1)] + sat[(y + 1) * (pw + 1) + x]
+                    - sat[y * (pw + 1) + x];
+        }
+    }
+
+    // Query box means
+    let ksize = 2 * r + 1;
+    let area = (ksize * ksize) as f64;
+    let mut result = vec![0.0f64; n];
+    for y in 0..h {
+        for x in 0..w {
+            let y1 = y;
+            let x1 = x;
+            let y2 = y + ksize;
+            let x2 = x + ksize;
+            let sum = sat[y2 * (pw + 1) + x2] - sat[y1 * (pw + 1) + x2] - sat[y2 * (pw + 1) + x1]
+                + sat[y1 * (pw + 1) + x1];
+            result[y * w + x] = sum / area;
+        }
+    }
+
+    result
+}
+
+/// Separable Gaussian blur (f64 precision) for adaptive threshold Gaussian mode.
+fn gaussian_blur_f64(pixels: &[u8], w: usize, h: usize, ksize: usize, sigma: f64) -> Vec<f64> {
+    let r = ksize / 2;
+
+    // Build 1D Gaussian kernel
+    let mut kernel = vec![0.0f64; ksize];
+    let mut sum = 0.0;
+    for i in 0..ksize {
+        let x = i as f64 - r as f64;
+        kernel[i] = (-x * x / (2.0 * sigma * sigma)).exp();
+        sum += kernel[i];
+    }
+    for k in &mut kernel {
+        *k /= sum;
+    }
+
+    let hs = h as isize;
+    let ws = w as isize;
+
+    // Horizontal pass
+    let mut tmp = vec![0.0f64; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut val = 0.0f64;
+            for k in 0..ksize {
+                let sx = (x as isize + k as isize - r as isize);
+                let sx = reflect101(sx, ws) as usize;
+                val += pixels[y * w + sx] as f64 * kernel[k];
+            }
+            tmp[y * w + x] = val;
+        }
+    }
+
+    // Vertical pass
+    let mut result = vec![0.0f64; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut val = 0.0f64;
+            for k in 0..ksize {
+                let sy = (y as isize + k as isize - r as isize);
+                let sy = reflect101(sy, hs) as usize;
+                val += tmp[sy * w + x] * kernel[k];
+            }
+            result[y * w + x] = val;
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod threshold_tests {
+    use super::super::types::ColorSpace;
+    use super::*;
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn otsu_bimodal() {
+        // Bimodal image: half black, half white
+        let mut px = vec![0u8; 64 * 64];
+        for i in 0..32 * 64 {
+            px[i] = 20;
+        }
+        for i in 32 * 64..64 * 64 {
+            px[i] = 220;
+        }
+        let info = gray_info(64, 64);
+        let t = otsu_threshold(&px, &info).unwrap();
+        // Otsu should find a threshold between 20 and 220
+        assert!(t > 20 && t < 220, "otsu={t}, expected between 20-220");
+    }
+
+    #[test]
+    fn triangle_unimodal() {
+        // Mostly dark image with a few bright pixels
+        let mut px = vec![10u8; 64 * 64];
+        for i in 0..100 {
+            px[i] = 200;
+        }
+        let info = gray_info(64, 64);
+        let t = triangle_threshold(&px, &info).unwrap();
+        assert!(t > 0, "triangle={t}, expected > 0");
+    }
+
+    #[test]
+    fn threshold_binary_basic() {
+        let px = vec![50, 100, 150, 200];
+        let info = gray_info(2, 2);
+        let out = threshold_binary(&px, &info, 120, 255).unwrap();
+        assert_eq!(out, vec![0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn adaptive_mean_basic() {
+        let mut px = vec![128u8; 32 * 32];
+        // Make one quadrant brighter
+        for y in 0..16 {
+            for x in 0..16 {
+                px[y * 32 + x] = 200;
+            }
+        }
+        let info = gray_info(32, 32);
+        let out = adaptive_threshold(&px, &info, 255, AdaptiveMethod::Mean, 11, 2.0).unwrap();
+        assert_eq!(out.len(), 32 * 32);
+        // Should produce binary output
+        assert!(out.iter().all(|&v| v == 0 || v == 255));
+    }
+
+    #[test]
+    fn adaptive_gaussian_basic() {
+        let px = vec![128u8; 16 * 16];
+        let info = gray_info(16, 16);
+        let out = adaptive_threshold(&px, &info, 255, AdaptiveMethod::Gaussian, 5, 0.0).unwrap();
+        assert_eq!(out.len(), 16 * 16);
+        // Uniform image with C=0 → all pixels equal mean → all ≥ threshold
+        assert!(out.iter().all(|&v| v == 255));
+    }
+
+    #[test]
+    fn adaptive_rejects_even_block() {
+        let px = vec![128u8; 16 * 16];
+        let info = gray_info(16, 16);
+        assert!(adaptive_threshold(&px, &info, 255, AdaptiveMethod::Mean, 10, 0.0).is_err());
+    }
+}
+
 // ─── HDR Merge: Mertens Exposure Fusion + Debevec ────────────────────────────
 
 /// Parameters for Mertens exposure fusion.

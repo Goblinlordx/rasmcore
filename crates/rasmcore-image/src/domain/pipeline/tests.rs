@@ -245,7 +245,9 @@ mod tests {
         let bg_info = graph.node_info(bg).unwrap();
         let fg_info = graph.node_info(fg).unwrap();
 
-        let comp = graph.add_node(Box::new(CompositeNode::new(fg, bg, fg_info, bg_info, 1, 1, None)));
+        let comp = graph.add_node(Box::new(CompositeNode::new(
+            fg, bg, fg_info, bg_info, 1, 1, None,
+        )));
 
         // Request full region
         let pixels = graph.request_region(comp, Rect::new(0, 0, 4, 4)).unwrap();

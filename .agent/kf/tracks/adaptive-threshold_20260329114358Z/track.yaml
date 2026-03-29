@@ -5,58 +5,76 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Implement automatic and adaptive thresholding methods: Otsu global,
+  summary: 'Implement automatic and adaptive thresholding methods: Otsu global,
+
     triangle global, and local adaptive (mean/gaussian window). All
+
     validated pixel-exact against OpenCV.
-  context: |
-    Current threshold() is binary with a fixed user-supplied value.
+
+    '
+  context: 'Current threshold() is binary with a fixed user-supplied value.
+
     Missing automatic threshold selection (Otsu, triangle) and
+
     spatially-adaptive thresholding which are standard in document
+
     processing and OCR pipelines. OpenCV provides all of these via
+
     cv2.threshold() and cv2.adaptiveThreshold().
-  codebase_analysis: |
-    Existing threshold in filters.rs is a simple LUT-collapsible point op.
+
+    '
+  codebase_analysis: 'Existing threshold in filters.rs is a simple LUT-collapsible point op.
+
     New operations go in filters.rs with registry entries in filter_registry.rs.
+
     Otsu/triangle are histogram-based (can reuse histogram::histogram()).
+
     Adaptive thresholding needs per-pixel neighborhood mean/gaussian which
+
     can use the existing blur() or convolve() for the local mean.
+
+    '
   acceptance_criteria:
-    - otsu_threshold() returns optimal threshold and binary image, pixel-exact vs OpenCV cv2.threshold(THRESH_OTSU)
-    - triangle_threshold() returns threshold and binary image, pixel-exact vs OpenCV cv2.threshold(THRESH_TRIANGLE)
-    - adaptive_threshold() with ADAPTIVE_THRESH_MEAN_C pixel-exact vs OpenCV
-    - adaptive_threshold() with ADAPTIVE_THRESH_GAUSSIAN_C pixel-exact vs OpenCV
-    - All registered in FilterRegistry
-  out_of_scope: |
-    Sauvola/Niblack (can be added later). Multi-level thresholding.
-  technical_notes: |
-    Otsu: maximize inter-class variance from histogram. Triangle: find
+  - otsu_threshold() returns optimal threshold and binary image, pixel-exact vs OpenCV cv2.threshold(THRESH_OTSU)
+  - triangle_threshold() returns threshold and binary image, pixel-exact vs OpenCV cv2.threshold(THRESH_TRIANGLE)
+  - adaptive_threshold() with ADAPTIVE_THRESH_MEAN_C pixel-exact vs OpenCV
+  - adaptive_threshold() with ADAPTIVE_THRESH_GAUSSIAN_C pixel-exact vs OpenCV
+  - All registered in FilterRegistry
+  out_of_scope: 'Sauvola/Niblack (can be added later). Multi-level thresholding.
+
+    '
+  technical_notes: 'Otsu: maximize inter-class variance from histogram. Triangle: find
+
     threshold at max distance from histogram peak to tail line. Adaptive:
+
     compute local mean (box blur) or gaussian-weighted mean per pixel,
+
     threshold at mean - C. All reference-validated against OpenCV 4.13.
+
+    '
 plan:
-  - phase: Global Threshold Methods
-    tasks:
-      - text: Implement otsu_threshold() using histogram inter-class variance maximization
-        done: false
-      - text: Implement triangle_threshold() using histogram geometry
-        done: false
-      - text: Add OpenCV parity tests for Otsu on gradient, bimodal, and photo images
-        done: false
-      - text: Add OpenCV parity tests for triangle method
-        done: false
-  - phase: Adaptive Threshold
-    tasks:
-      - text: Implement adaptive_threshold() with mean and gaussian modes
-        done: false
-      - text: Add OpenCV parity tests for adaptive mean (block_size=11, C=2)
-        done: false
-      - text: Add OpenCV parity tests for adaptive gaussian
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Register all methods in FilterRegistry with param descriptors
-        done: false
-      - text: Update REFERENCE.md with parity results
-        done: false
+- phase: Global Threshold Methods
+  tasks:
+  - text: Implement otsu_threshold() using histogram inter-class variance maximization
+    done: true
+  - text: Implement triangle_threshold() using histogram geometry
+    done: true
+  - text: Add OpenCV parity tests for Otsu on gradient, bimodal, and photo images
+    done: true
+  - text: Add OpenCV parity tests for triangle method
+    done: true
+- phase: Adaptive Threshold
+  tasks:
+  - text: Implement adaptive_threshold() with mean and gaussian modes
+    done: true
+  - text: Add OpenCV parity tests for adaptive mean (block_size=11, C=2)
+    done: true
+  - text: Add OpenCV parity tests for adaptive gaussian
+    done: true
+- phase: Integration
+  tasks:
+  - text: Register all methods in FilterRegistry with param descriptors
+    done: true
+  - text: Update REFERENCE.md with parity results
+    done: true
 extra: {}

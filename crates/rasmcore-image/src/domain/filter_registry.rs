@@ -698,6 +698,35 @@ builtin_filter!(DebevecHdrFilter, "debevec_hdr", FilterCategory::Composite,
     }
 );
 
+// Adaptive thresholding
+builtin_filter!(OtsuThresholdFilter, "otsu_threshold", FilterCategory::Contrast,
+    params: [],
+    apply: |input| {
+        let t = filters::otsu_threshold(input.pixels, input.info)?;
+        filters::threshold_binary(input.pixels, input.info, t, 255)
+    }
+);
+
+builtin_filter!(TriangleThresholdFilter, "triangle_threshold", FilterCategory::Contrast,
+    params: [],
+    apply: |input| {
+        let t = filters::triangle_threshold(input.pixels, input.info)?;
+        filters::threshold_binary(input.pixels, input.info, t, 255)
+    }
+);
+
+builtin_filter!(AdaptiveThresholdFilter, "adaptive_threshold", FilterCategory::Contrast,
+    params: [
+        ParamDescriptor::uint("block_size", 3, 99, 11).with_description("Block size (odd, >= 3)"),
+        ParamDescriptor::float("c", -100.0, 100.0, 2.0).with_description("Constant subtracted from mean")
+    ],
+    apply: |input| {
+        let block_size = input.params.get_uint("block_size").unwrap_or(11);
+        let c = input.params.get_float("c").unwrap_or(2.0) as f64;
+        filters::adaptive_threshold(input.pixels, input.info, 255, filters::AdaptiveMethod::Mean, block_size, c)
+    }
+);
+
 /// Register all built-in filters into a registry.
 fn register_builtin_filters(reg: &mut FilterRegistry) {
     reg.register(Box::new(BlurFilter));
@@ -722,6 +751,9 @@ fn register_builtin_filters(reg: &mut FilterRegistry) {
     reg.register(Box::new(GuidedFilterEntry));
     reg.register(Box::new(MertensFusionFilter));
     reg.register(Box::new(DebevecHdrFilter));
+    reg.register(Box::new(OtsuThresholdFilter));
+    reg.register(Box::new(TriangleThresholdFilter));
+    reg.register(Box::new(AdaptiveThresholdFilter));
 }
 
 #[cfg(test)]

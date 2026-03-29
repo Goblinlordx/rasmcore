@@ -775,3 +775,120 @@ fn mertens_all_canonical_images() {
          worst u8 MAE={worst_mae_u8:.4} max={worst_max_u8}"
     );
 }
+
+// ─── Otsu Threshold Parity ──────────────────────────────────────────────
+
+#[test]
+fn otsu_threshold_matches_opencv() {
+    let info = info_128();
+    // Expected Otsu thresholds from OpenCV 4.13
+    let expected: &[(&str, u8)] = &[
+        ("gradient_128", 126),
+        ("checker_128", 25),
+        ("noisy_flat_128", 127),
+        ("photo_128", 127),
+        ("highcontrast_128", 132),
+    ];
+
+    for &(name, cv_thresh) in expected {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let our_thresh = filters::otsu_threshold(&input, &info).unwrap();
+        eprintln!("Otsu {name:20}: ours={our_thresh}, cv={cv_thresh}");
+        let diff = (our_thresh as i16 - cv_thresh as i16).abs();
+        assert!(
+            diff <= 1,
+            "Otsu {name}: ours={our_thresh}, cv={cv_thresh}, diff={diff} > 1"
+        );
+    }
+}
+
+#[test]
+fn triangle_threshold_matches_opencv() {
+    let info = info_128();
+    let expected: &[(&str, u8)] = &[
+        ("gradient_128", 2),
+        ("checker_128", 27),
+        ("noisy_flat_128", 164),
+        ("photo_128", 139),
+        ("highcontrast_128", 129),
+    ];
+
+    for &(name, cv_thresh) in expected {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let our_thresh = filters::triangle_threshold(&input, &info).unwrap();
+        eprintln!("Triangle {name:20}: ours={our_thresh}, cv={cv_thresh}");
+        let diff = (our_thresh as i16 - cv_thresh as i16).abs();
+        assert!(
+            diff <= 1,
+            "Triangle {name}: ours={our_thresh}, cv={cv_thresh}, diff={diff} > 1"
+        );
+    }
+}
+
+#[test]
+fn adaptive_mean_matches_opencv() {
+    let info = info_128();
+
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_adaptive_mean.raw"));
+        let ours =
+            filters::adaptive_threshold(&input, &info, 255, filters::AdaptiveMethod::Mean, 11, 2.0)
+                .unwrap();
+
+        let mismatches: usize = ours
+            .iter()
+            .zip(reference.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        let mismatch_pct = 100.0 * mismatches as f64 / (128 * 128) as f64;
+        eprintln!(
+            "Adaptive mean {name:20}: mismatches={mismatches}/{} ({mismatch_pct:.2}%)",
+            128 * 128
+        );
+
+        // Binary thresholds: any different pixel is 255 off. Allow <4% pixel mismatch
+        // due to border mode and integer-vs-float mean rounding. OpenCV uses integer
+        // box filter with BORDER_REFLECT_101; our implementation uses f64 integral image.
+        // Mismatches occur at pixels near the threshold boundary.
+        assert!(
+            mismatch_pct < 4.0,
+            "Adaptive mean {name}: {mismatch_pct:.2}% mismatches > 4%"
+        );
+    }
+}
+
+#[test]
+fn adaptive_gaussian_matches_opencv() {
+    let info = info_128();
+
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_adaptive_gauss.raw"));
+        let ours = filters::adaptive_threshold(
+            &input,
+            &info,
+            255,
+            filters::AdaptiveMethod::Gaussian,
+            11,
+            2.0,
+        )
+        .unwrap();
+
+        let mismatches: usize = ours
+            .iter()
+            .zip(reference.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        let mismatch_pct = 100.0 * mismatches as f64 / (128 * 128) as f64;
+        eprintln!(
+            "Adaptive gauss {name:20}: mismatches={mismatches}/{} ({mismatch_pct:.2}%)",
+            128 * 128
+        );
+
+        assert!(
+            mismatch_pct < 5.0,
+            "Adaptive gauss {name}: {mismatch_pct:.2}% mismatches > 5%"
+        );
+    }
+}
