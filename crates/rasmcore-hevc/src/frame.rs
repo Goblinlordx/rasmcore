@@ -24,6 +24,9 @@ struct FrameBuffer {
     height: u32,
     chroma_width: u32,
     chroma_height: u32,
+    /// Per-pixel intra prediction mode map (used for MPM derivation).
+    /// Stores the resolved mode for each luma sample position.
+    intra_modes: Vec<u8>,
 }
 
 impl FrameBuffer {
@@ -38,6 +41,8 @@ impl FrameBuffer {
             height,
             chroma_width,
             chroma_height,
+            // Default intra mode = 1 (DC) — same as HEVC "unavailable" default
+            intra_modes: vec![1u8; (width * height) as usize],
         }
     }
 
@@ -265,6 +270,106 @@ pub fn decode_frame(
     })
 }
 
+/// Store the resolved intra prediction mode for all samples in a CU.
+fn store_intra_mode(fb: &mut FrameBuffer, x: u32, y: u32, size: u32, mode: u8) {
+    let w = fb.width as usize;
+    for dy in 0..size as usize {
+        for dx in 0..size as usize {
+            let px = x as usize + dx;
+            let py = y as usize + dy;
+            if px < fb.width as usize && py < fb.height as usize {
+                fb.intra_modes[py * w + px] = mode;
+            }
+        }
+    }
+}
+
+/// Resolve the intra prediction mode from the raw syntax value.
+///
+/// The syntax parser stores either an MPM index (0-2) or rem_intra_pred_mode + 3 (3-34).
+/// This function derives the MPM candidate list from left and above neighbors,
+/// then resolves the final mode.
+///
+/// Ref: libde265 v1.0.18 slice.cc — derive_IntraPredMode, and
+///      HEVC spec Section 8.4.2: derivation of luma intra prediction mode.
+fn resolve_intra_pred_mode(
+    raw_mode: u8,
+    x: u32,
+    y: u32,
+    _size: u32,
+    fb: &FrameBuffer,
+    _sps: &Sps,
+) -> u8 {
+    let w = fb.width as usize;
+
+    // Get candidate modes from left and above neighbors.
+    // Ref: HEVC Section 8.4.2 — candIntraPredModeA (left), candIntraPredModeB (above).
+    let cand_a = if x > 0 {
+        let px = (x - 1) as usize;
+        let py = y as usize;
+        if py < fb.height as usize {
+            fb.intra_modes[py * w + px]
+        } else {
+            1 // DC
+        }
+    } else {
+        1 // DC when unavailable
+    };
+
+    let cand_b = if y > 0 {
+        let px = x as usize;
+        let py = (y - 1) as usize;
+        fb.intra_modes[py * w + px]
+    } else {
+        1 // DC when unavailable
+    };
+
+    // Build MPM candidate list.
+    // Ref: HEVC Section 8.4.2, steps for candModeList[0..2].
+    let mut cand_mode_list = [0u8; 3];
+    if cand_a == cand_b {
+        if cand_a < 2 {
+            // Both are Planar(0) or DC(1)
+            cand_mode_list[0] = 0; // Planar
+            cand_mode_list[1] = 1; // DC
+            cand_mode_list[2] = 26; // Vertical
+        } else {
+            cand_mode_list[0] = cand_a;
+            cand_mode_list[1] = 2 + ((cand_a - 2 + 29) % 32); // cand_a - 1 (wrapped in angular range)
+            cand_mode_list[2] = 2 + ((cand_a - 2 + 1) % 32); // cand_a + 1 (wrapped)
+        }
+    } else {
+        cand_mode_list[0] = cand_a;
+        cand_mode_list[1] = cand_b;
+        if cand_a != 0 && cand_b != 0 {
+            cand_mode_list[2] = 0; // Planar
+        } else if cand_a != 1 && cand_b != 1 {
+            cand_mode_list[2] = 1; // DC
+        } else {
+            cand_mode_list[2] = 26; // Vertical
+        }
+    }
+
+    if raw_mode <= 2 {
+        // prev_intra_luma_pred_flag was true — use MPM index
+        cand_mode_list[raw_mode as usize]
+    } else {
+        // prev_intra_luma_pred_flag was false — rem_intra_pred_mode
+        let rem = raw_mode - 3;
+        // Sort MPM candidates for exclusion
+        let mut sorted = cand_mode_list;
+        sorted.sort();
+        // Map rem to actual mode by skipping MPM candidates
+        let mut mode = rem;
+        for &c in &sorted {
+            if mode >= c {
+                mode += 1;
+            }
+        }
+        mode
+    }
+}
+
 /// Reconstruct a single CU: predict + add residual.
 fn reconstruct_cu(
     cu: &CuSyntax,
@@ -281,8 +386,13 @@ fn reconstruct_cu(
 
     let size = cu.size as usize;
 
-    // Get intra prediction mode (use first mode for 2Nx2N)
-    let luma_mode = cu.intra_luma_modes.first().copied().unwrap_or(1); // Default DC
+    // Resolve intra prediction mode via MPM candidate list.
+    // Ref: libde265 v1.0.18 slice.cc — derive_IntraPredMode, HEVC Section 8.4.2.
+    let raw_mode = cu.intra_luma_modes.first().copied().unwrap_or(1);
+    let luma_mode = resolve_intra_pred_mode(raw_mode, cu.x, cu.y, cu.size, fb, sps);
+
+    // Store the resolved mode in the frame buffer for neighbor lookups
+    store_intra_mode(fb, cu.x, cu.y, cu.size, luma_mode);
 
     // Construct reference samples
     let avail_top = cu.y > 0;
