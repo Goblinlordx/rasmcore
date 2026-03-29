@@ -1,5 +1,5 @@
 title: VP8 Port — Encode Loop (VP8Decimate + unified RD pipeline)
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-29'

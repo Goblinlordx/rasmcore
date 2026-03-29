@@ -5,80 +5,74 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Wire the ported cost engine (Track 1) and reconstruct/trellis (Track 2)
+  summary: 'Wire the ported cost engine (Track 1) and reconstruct/trellis (Track 2)
+
     into VP8Decimate, replacing encode_macroblock. Re-enable parity tests
+
     with tightened thresholds. Target >= 0.95x cwebp.
-  context: |
-    Tracks 1-2 ported the individual functions; this track integrates them.
+
+    '
+  context: 'Tracks 1-2 ported the individual functions; this track integrates them.
+
     VP8Decimate orchestrates: PickBestIntra16 → PickBestIntra4 → PickBestUV,
+
     each using ReconstructIntra* (with trellis) for encoding and
+
     VP8GetCostLuma*/UV for rate, and SetRDScore for combined RD cost.
+
     All using libwebp-exact lambda values from VP8SegmentLambdas.
-  codebase_analysis: |
-    Integration points:
-    1. Replace encode_macroblock with libwebp-exact VP8Decimate flow
-    2. PickBestIntra16: loop 4 modes, ReconstructIntra16 each, VP8GetCostLuma16, SetRDScore
-    3. PickBestIntra4: loop 16 sub-blocks × 10 modes, ReconstructIntra4, VP8GetCostLuma4
-       with early exit when I4 cost > I16 cost
-    4. PickBestUV: loop 4 modes, ReconstructUV, VP8GetCostUV, SetRDScore
-    5. Replace lambda_from_qp with compute_segment_lambdas
-    6. Replace estimate_block_bits with VP8GetCostLuma*/UV
-    7. Replace rdo_prune_block with TrellisQuantizeBlock
-    8. Use VP8FixedCostsI4[10][10][10] context-dependent mode costs
 
-    Token encoding: keep existing VP8 bool coder + token encoder,
-    feed them the libwebp-compatible quantized coefficients.
+    '
+  codebase_analysis: "Integration points:\n1. Replace encode_macroblock with libwebp-exact VP8Decimate flow\n2. PickBestIntra16:\
+    \ loop 4 modes, ReconstructIntra16 each, VP8GetCostLuma16, SetRDScore\n3. PickBestIntra4: loop 16 sub-blocks × 10 modes,\
+    \ ReconstructIntra4, VP8GetCostLuma4\n   with early exit when I4 cost > I16 cost\n4. PickBestUV: loop 4 modes, ReconstructUV,\
+    \ VP8GetCostUV, SetRDScore\n5. Replace lambda_from_qp with compute_segment_lambdas\n6. Replace estimate_block_bits with\
+    \ VP8GetCostLuma*/UV\n7. Replace rdo_prune_block with TrellisQuantizeBlock\n8. Use VP8FixedCostsI4[10][10][10] context-dependent\
+    \ mode costs\n\nToken encoding: keep existing VP8 bool coder + token encoder,\nfeed them the libwebp-compatible quantized\
+    \ coefficients.\n"
   acceptance_criteria:
-    - encode_macroblock replaced with libwebp-exact VP8Decimate flow
-    - All mode decisions use libwebp lambda values and SetRDScore formula
-    - TrellisQuantizeBlock used in mode evaluation (DO_TRELLIS_I4/I16)
-    - VP8FixedCostsI4 context-dependent mode costs used
-    - Quality ratio >= 0.95x cwebp on all photo content at Q75
-    - PSNR within 1dB of cwebp on gradient/checkerboard at Q75
-    - Previously-ignored parity tests re-enabled with tighter thresholds
-    - Any remaining FP differences documented (same as NLM approach)
-  out_of_scope: |
-    Multi-pass StatLoop. Segment optimization. Alpha channel encoding.
-    Adaptive probability updates.
-  technical_notes: |
-    This is the integration track. Steps:
-    1. Create new encode_macroblock_libwebp() using VP8Decimate flow
-    2. Wire PickBestIntra16 using ReconstructIntra16 + VP8GetCostLuma16
-    3. Wire PickBestIntra4 using ReconstructIntra4 + VP8GetCostLuma4
-       with VP8FixedCostsI4 context costs and early exit
-    4. Wire PickBestUV using ReconstructUV + VP8GetCostUV
-    5. Replace encode_macroblock call in encode_frame
-    6. Run parity tests, tighten thresholds
-    7. Document any remaining differences vs cwebp
+  - encode_macroblock replaced with libwebp-exact VP8Decimate flow
+  - All mode decisions use libwebp lambda values and SetRDScore formula
+  - TrellisQuantizeBlock used in mode evaluation (DO_TRELLIS_I4/I16)
+  - VP8FixedCostsI4 context-dependent mode costs used
+  - Quality ratio >= 0.95x cwebp on all photo content at Q75
+  - PSNR within 1dB of cwebp on gradient/checkerboard at Q75
+  - Previously-ignored parity tests re-enabled with tighter thresholds
+  - Any remaining FP differences documented (same as NLM approach)
+  out_of_scope: 'Multi-pass StatLoop. Segment optimization. Alpha channel encoding.
 
-    Expected remaining gap after this track: ~1-2dB from:
-    - Adaptive probability updates (multi-pass StatLoop)
-    - Segment optimization (multiple QP levels per image)
-    - Possible FP rounding differences in trellis DP
+    Adaptive probability updates.
+
+    '
+  technical_notes: "This is the integration track. Steps:\n1. Create new encode_macroblock_libwebp() using VP8Decimate flow\n\
+    2. Wire PickBestIntra16 using ReconstructIntra16 + VP8GetCostLuma16\n3. Wire PickBestIntra4 using ReconstructIntra4 +\
+    \ VP8GetCostLuma4\n   with VP8FixedCostsI4 context costs and early exit\n4. Wire PickBestUV using ReconstructUV + VP8GetCostUV\n\
+    5. Replace encode_macroblock call in encode_frame\n6. Run parity tests, tighten thresholds\n7. Document any remaining\
+    \ differences vs cwebp\n\nExpected remaining gap after this track: ~1-2dB from:\n- Adaptive probability updates (multi-pass\
+    \ StatLoop)\n- Segment optimization (multiple QP levels per image)\n- Possible FP rounding differences in trellis DP\n"
 plan:
-  - phase: Integration
-    tasks:
-      - text: Create encode_macroblock_libwebp using VP8Decimate flow
-        done: false
-      - text: Wire PickBestIntra16 with ReconstructIntra16 + exact cost engine
-        done: false
-      - text: Wire PickBestIntra4 with ReconstructIntra4 + VP8FixedCostsI4 + early exit
-        done: false
-      - text: Wire PickBestUV with ReconstructUV + exact cost engine
-        done: false
-      - text: Replace encode_macroblock in encode_frame
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Re-enable parity tests with >= 0.95x quality threshold
-        done: false
-      - text: Verify PSNR within 1dB of cwebp on gradient and checkerboard
-        done: false
-      - text: Document remaining FP differences in REFERENCE.md
-        done: false
-      - text: Run quality sweep Q25-Q95 comparing our output vs cwebp
-        done: false
-      - text: Update WebP quality gap memory with final numbers
-        done: false
+- phase: Integration
+  tasks:
+  - text: Create encode_macroblock_libwebp using VP8Decimate flow
+    done: true
+  - text: Wire PickBestIntra16 with ReconstructIntra16 + exact cost engine
+    done: true
+  - text: Wire PickBestIntra4 with ReconstructIntra4 + VP8FixedCostsI4 + early exit
+    done: true
+  - text: Wire PickBestUV with ReconstructUV + exact cost engine
+    done: true
+  - text: Replace encode_macroblock in encode_frame
+    done: true
+- phase: Validation
+  tasks:
+  - text: Re-enable parity tests with >= 0.95x quality threshold
+    done: false
+  - text: Verify PSNR within 1dB of cwebp on gradient and checkerboard
+    done: false
+  - text: Document remaining FP differences in REFERENCE.md
+    done: false
+  - text: Run quality sweep Q25-Q95 comparing our output vs cwebp
+    done: false
+  - text: Update WebP quality gap memory with final numbers
+    done: false
 extra: {}
