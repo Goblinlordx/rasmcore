@@ -660,4 +660,175 @@ impl GuestImagePipeline for PipelineResource {
         )
         .map_err(to_wit_error)
     }
+
+    // ─── Metadata ───
+
+    fn metadata_dump(&self) -> Result<String, RasmcoreError> {
+        let ops = self.metadata_ops.borrow();
+        let ms = ops.resolve();
+        match ops.source_data.as_ref() {
+            Some(data) => Ok(domain::metadata_query::metadata_dump_json_from_bytes(
+                data, &ms,
+            )),
+            None => Ok(domain::metadata_query::metadata_dump_json(&ms)),
+        }
+    }
+
+    fn metadata_read(&self, path: String) -> Result<Option<String>, RasmcoreError> {
+        let ops = self.metadata_ops.borrow();
+        let ms = ops.resolve();
+        match ops.source_data.as_ref() {
+            Some(data) => domain::metadata_query::metadata_read_from_bytes(data, &ms, &path)
+                .map_err(to_wit_error),
+            None => domain::metadata_query::metadata_read(&ms, &path).map_err(to_wit_error),
+        }
+    }
+
+    fn keep_metadata(&self) -> Result<NodeId, RasmcoreError> {
+        self.metadata_ops.borrow_mut().keep = true;
+        Ok(0)
+    }
+
+    fn set_metadata(&self, path: String, value: String) -> Result<NodeId, RasmcoreError> {
+        let parts: Vec<&str> = path.splitn(2, '.').collect();
+        if parts.len() != 2 {
+            return Err(RasmcoreError::InvalidInput(format!(
+                "Invalid metadata path \"{path}\". Expected format: container.Field"
+            )));
+        }
+        self.metadata_ops.borrow_mut().sets.push((
+            parts[0].to_string(),
+            parts[1].to_string(),
+            value,
+        ));
+        Ok(0)
+    }
+
+    fn load_metadata(&self, json: String) -> Result<NodeId, RasmcoreError> {
+        // Parse JSON object: {"container": {"field": "value", ...}, ...}
+        // and push each entry into loads.
+        let mut ops = self.metadata_ops.borrow_mut();
+        // Simple JSON parsing: iterate the resolved entries.
+        // For now, just store the raw JSON and let resolve() handle it.
+        // Actually, parse with the simple parser we have.
+        let entries = parse_metadata_json(&json).map_err(|e| {
+            RasmcoreError::InvalidInput(format!("Invalid metadata JSON: {e}"))
+        })?;
+        for (container, field, value) in entries {
+            ops.loads.push((container, field, value));
+        }
+        Ok(0)
+    }
+
+    fn strip_metadata(&self, path: String) -> Result<NodeId, RasmcoreError> {
+        let parts: Vec<&str> = path.splitn(2, '.').collect();
+        if parts.len() != 2 {
+            return Err(RasmcoreError::InvalidInput(format!(
+                "Invalid metadata path \"{path}\". Expected format: container.Field"
+            )));
+        }
+        self.metadata_ops
+            .borrow_mut()
+            .strips
+            .push((parts[0].to_string(), parts[1].to_string()));
+        Ok(0)
+    }
+}
+
+/// Parse a simple JSON object of the form `{"container": {"field": "value", ...}, ...}`
+/// into a flat list of (container, field, value) triples.
+fn parse_metadata_json(json: &str) -> Result<Vec<(String, String, String)>, String> {
+    let json = json.trim();
+    if !json.starts_with('{') || !json.ends_with('}') {
+        return Err("expected JSON object".into());
+    }
+    let mut entries = Vec::new();
+    // Use the domain metadata_query's dump_json format as reference:
+    // {"exif":{"Artist":"...", ...}, "xmp":{...}}
+    // Minimal parser: split on container objects.
+    let inner = &json[1..json.len() - 1];
+    let mut chars = inner.chars().peekable();
+    loop {
+        skip_ws(&mut chars);
+        if chars.peek().is_none() {
+            break;
+        }
+        let container = parse_json_string(&mut chars)?;
+        skip_ws(&mut chars);
+        expect_char(&mut chars, ':')?;
+        skip_ws(&mut chars);
+        expect_char(&mut chars, '{')?;
+        loop {
+            skip_ws(&mut chars);
+            if chars.peek() == Some(&'}') {
+                chars.next();
+                break;
+            }
+            let field = parse_json_string(&mut chars)?;
+            skip_ws(&mut chars);
+            expect_char(&mut chars, ':')?;
+            skip_ws(&mut chars);
+            let value = parse_json_string(&mut chars)?;
+            entries.push((container.clone(), field, value));
+            skip_ws(&mut chars);
+            if chars.peek() == Some(&',') {
+                chars.next();
+            }
+        }
+        skip_ws(&mut chars);
+        if chars.peek() == Some(&',') {
+            chars.next();
+        }
+    }
+    Ok(entries)
+}
+
+fn skip_ws(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+        } else {
+            break;
+        }
+    }
+}
+
+fn expect_char(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    expected: char,
+) -> Result<(), String> {
+    match chars.next() {
+        Some(c) if c == expected => Ok(()),
+        Some(c) => Err(format!("expected '{expected}', got '{c}'")),
+        None => Err(format!("expected '{expected}', got EOF")),
+    }
+}
+
+fn parse_json_string(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<String, String> {
+    match chars.next() {
+        Some('"') => {}
+        Some(c) => return Err(format!("expected '\"', got '{c}'")),
+        None => return Err("expected string, got EOF".into()),
+    }
+    let mut s = String::new();
+    loop {
+        match chars.next() {
+            Some('"') => return Ok(s),
+            Some('\\') => match chars.next() {
+                Some(c @ ('"' | '\\' | '/')) => s.push(c),
+                Some('n') => s.push('\n'),
+                Some('t') => s.push('\t'),
+                Some('r') => s.push('\r'),
+                Some(c) => {
+                    s.push('\\');
+                    s.push(c);
+                }
+                None => return Err("unexpected EOF in escape".into()),
+            },
+            Some(c) => s.push(c),
+            None => return Err("unterminated string".into()),
+        }
+    }
 }
