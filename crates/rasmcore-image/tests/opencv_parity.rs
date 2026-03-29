@@ -347,3 +347,68 @@ fn lab_matches_colour_science() {
     eprintln!("Lab max error vs colour-science: {max_err:.2e}");
     assert!(max_err < 1e-6, "Lab error {max_err:.2e} > 1e-6 vs colour-science");
 }
+
+// ─── Delta E + LCH + Luv Parity (colour-science 0.4.7) ─────────────────
+
+#[test]
+fn delta_e_matches_colour_science() {
+    let pairs: &[(&str, (f64,f64,f64), (f64,f64,f64), f64, f64, f64)] = &[
+        ("red_green", (53.233, 80.109, 67.220), (87.737, -86.185, 83.181), 170.5842137274, 73.4337884112, 86.6149551816),
+        ("red_blue", (53.233, 80.109, 67.220), (32.303, 79.197, -107.864), 176.3329342466, 70.5760489317, 52.8786354875),
+        ("gray_white", (53.389, 0.005, 0.002), (100.0, 0.005, 0.002), 46.6110000000, 46.6110000000, 33.4149645009),
+        ("similar", (50.0, 2.5, 0.0), (50.0, 0.0, -2.5), 3.5355339059, 3.4077435238, 4.3064820958),
+        ("identical", (50.0, 25.0, -10.0), (50.0, 25.0, -10.0), 0.0, 0.0, 0.0),
+    ];
+
+    let mut max76 = 0.0f64; let mut max94 = 0.0f64; let mut max00 = 0.0f64;
+    for (name, lab1, lab2, ref76, ref94, ref00) in pairs {
+        let de76 = color_spaces::delta_e_76(*lab1, *lab2);
+        let de94 = color_spaces::delta_e_94(*lab1, *lab2, false);
+        let de00 = color_spaces::delta_e_2000(*lab1, *lab2);
+        let e76 = (de76 - ref76).abs(); max76 = max76.max(e76);
+        let e94 = (de94 - ref94).abs(); max94 = max94.max(e94);
+        let e00 = (de00 - ref00).abs(); max00 = max00.max(e00);
+        eprintln!("{name:15}: dE76={de76:.6} (e={e76:.2e}) dE94={de94:.6} (e={e94:.2e}) dE00={de00:.6} (e={e00:.2e})");
+    }
+    eprintln!("Max errors: dE76={max76:.2e} dE94={max94:.2e} dE00={max00:.2e}");
+    assert!(max76 < 1e-6, "Delta E 76 error {max76:.2e}");
+    assert!(max94 < 1e-6, "Delta E 94 error {max94:.2e}");
+    assert!(max00 < 1e-4, "Delta E 2000 error {max00:.2e}"); // DE2000 has more chained ops
+}
+
+#[test]
+fn lch_matches_colour_science() {
+    let cases: &[(&str, (f64,f64,f64), (f64,f64,f64))] = &[
+        ("red", (53.233, 80.109, 67.220), (53.233, 104.5752374179, 40.0002382458)),
+        ("green", (87.737, -86.185, 83.181), (87.737, 119.7786833539, 136.0161335584)),
+        ("gray", (50.0, 0.0, 0.0), (50.0, 0.0, 0.0)),
+        ("custom", (75.0, 20.0, -30.0), (75.0, 36.0555127546, 303.6900675260)),
+    ];
+    let mut max_err = 0.0f64;
+    for (name, lab, ref_lch) in cases {
+        let (l, c, h) = color_spaces::lab_to_lch(lab.0, lab.1, lab.2);
+        let err = (l - ref_lch.0).abs().max((c - ref_lch.1).abs()).max((h - ref_lch.2).abs());
+        max_err = max_err.max(err);
+        eprintln!("LCH {name:8}: L={l:.6} C={c:.6} H={h:.6} err={err:.2e}");
+    }
+    assert!(max_err < 1e-8, "LCH error {max_err:.2e}");
+}
+
+#[test]
+fn luv_matches_colour_science() {
+    let cases: &[(&str, (f64,f64,f64), (f64,f64,f64))] = &[
+        ("red", (1.0, 0.0, 0.0), (53.2328817858, 175.0598301857, 37.7617906121)),
+        ("green", (0.0, 1.0, 0.0), (87.7370334735, -83.0685534991, 107.4199653357)),
+        ("blue", (0.0, 0.0, 1.0), (32.3025866672, -9.3957447040, -130.3515592133)),
+        ("gray", (0.5, 0.5, 0.5), (53.3889647411, 0.0072898903, 0.0021849107)),
+        ("custom", (0.8, 0.3, 0.6), (52.2589367273, 73.0391180135, -32.3262768981)),
+    ];
+    let mut max_err = 0.0f64;
+    for (name, rgb, ref_luv) in cases {
+        let (l, u, v) = color_spaces::rgb_to_luv(rgb.0, rgb.1, rgb.2);
+        let err = (l - ref_luv.0).abs().max((u - ref_luv.1).abs()).max((v - ref_luv.2).abs());
+        max_err = max_err.max(err);
+        eprintln!("Luv {name:8}: L={l:.6} u={u:.6} v={v:.6} err={err:.2e}");
+    }
+    assert!(max_err < 1e-6, "Luv error {max_err:.2e}");
+}

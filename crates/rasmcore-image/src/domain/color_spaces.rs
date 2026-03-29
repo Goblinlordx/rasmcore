@@ -295,6 +295,187 @@ pub fn white_balance_temperature(
     Ok(out)
 }
 
+// ─── Delta E (Color Difference Metrics) ──────────────────────────────────
+
+/// Delta E 76 (CIE 1976) — Euclidean distance in Lab space.
+pub fn delta_e_76(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
+    let dl = lab1.0 - lab2.0;
+    let da = lab1.1 - lab2.1;
+    let db = lab1.2 - lab2.2;
+    (dl * dl + da * da + db * db).sqrt()
+}
+
+/// Delta E 94 (CIE 1994) — weighted distance with lightness/chroma/hue terms.
+/// `textile`: if true, uses textile weights (kL=2); false uses graphic arts (kL=1).
+pub fn delta_e_94(lab1: (f64, f64, f64), lab2: (f64, f64, f64), textile: bool) -> f64 {
+    let (k_l, k1, k2) = if textile { (2.0, 0.048, 0.014) } else { (1.0, 0.045, 0.015) };
+    let dl = lab1.0 - lab2.0;
+    let c1 = (lab1.1 * lab1.1 + lab1.2 * lab1.2).sqrt();
+    let c2 = (lab2.1 * lab2.1 + lab2.2 * lab2.2).sqrt();
+    let dc = c1 - c2;
+    let da = lab1.1 - lab2.1;
+    let db = lab1.2 - lab2.2;
+    let dh_sq = da * da + db * db - dc * dc;
+    let dh_sq = dh_sq.max(0.0); // numerical safety
+
+    let sl = 1.0;
+    let sc = 1.0 + k1 * c1;
+    let sh = 1.0 + k2 * c1;
+
+    let t1 = dl / (k_l * sl);
+    let t2 = dc / sc;
+    let t3_sq = dh_sq / (sh * sh);
+
+    (t1 * t1 + t2 * t2 + t3_sq).sqrt()
+}
+
+/// Delta E 2000 (CIEDE2000) — most perceptually uniform color difference metric.
+pub fn delta_e_2000(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
+    use std::f64::consts::PI;
+    let (l1, a1, b1) = lab1;
+    let (l2, a2, b2) = lab2;
+
+    let l_bar = (l1 + l2) / 2.0;
+    let c1 = (a1 * a1 + b1 * b1).sqrt();
+    let c2 = (a2 * a2 + b2 * b2).sqrt();
+    let c_bar = (c1 + c2) / 2.0;
+
+    let c_bar_7 = c_bar.powi(7);
+    let g = 0.5 * (1.0 - (c_bar_7 / (c_bar_7 + 25.0_f64.powi(7))).sqrt());
+
+    let a1p = a1 * (1.0 + g);
+    let a2p = a2 * (1.0 + g);
+    let c1p = (a1p * a1p + b1 * b1).sqrt();
+    let c2p = (a2p * a2p + b2 * b2).sqrt();
+    let c_bar_p = (c1p + c2p) / 2.0;
+
+    let h1p = b1.atan2(a1p).to_degrees().rem_euclid(360.0);
+    let h2p = b2.atan2(a2p).to_degrees().rem_euclid(360.0);
+
+    let dh_abs = (h1p - h2p).abs();
+    let dh_p = if c1p * c2p == 0.0 {
+        0.0
+    } else if dh_abs <= 180.0 {
+        h2p - h1p
+    } else if h2p <= h1p {
+        h2p - h1p + 360.0
+    } else {
+        h2p - h1p - 360.0
+    };
+
+    let dl_p = l2 - l1;
+    let dc_p = c2p - c1p;
+    let dh_p_val = 2.0 * (c1p * c2p).sqrt() * (dh_p / 2.0 * PI / 180.0).sin();
+
+    let h_bar_p = if c1p * c2p == 0.0 {
+        h1p + h2p
+    } else if dh_abs <= 180.0 {
+        (h1p + h2p) / 2.0
+    } else if h1p + h2p < 360.0 {
+        (h1p + h2p + 360.0) / 2.0
+    } else {
+        (h1p + h2p - 360.0) / 2.0
+    };
+
+    let t = 1.0 - 0.17 * ((h_bar_p - 30.0) * PI / 180.0).cos()
+        + 0.24 * ((2.0 * h_bar_p) * PI / 180.0).cos()
+        + 0.32 * ((3.0 * h_bar_p + 6.0) * PI / 180.0).cos()
+        - 0.20 * ((4.0 * h_bar_p - 63.0) * PI / 180.0).cos();
+
+    let l_bar_50_sq = (l_bar - 50.0) * (l_bar - 50.0);
+    let sl = 1.0 + 0.015 * l_bar_50_sq / (20.0 + l_bar_50_sq).sqrt();
+    let sc = 1.0 + 0.045 * c_bar_p;
+    let sh = 1.0 + 0.015 * c_bar_p * t;
+
+    let c_bar_p_7 = c_bar_p.powi(7);
+    let rc = 2.0 * (c_bar_p_7 / (c_bar_p_7 + 25.0_f64.powi(7))).sqrt();
+    let rt = -rc * (60.0 * (-(((h_bar_p - 275.0) / 25.0).powi(2))).exp() * PI / 180.0).sin();
+
+    let t1 = dl_p / sl;
+    let t2 = dc_p / sc;
+    let t3 = dh_p_val / sh;
+
+    (t1 * t1 + t2 * t2 + t3 * t3 + rt * t2 * t3).sqrt()
+}
+
+// ─── CIE LCH (Cylindrical Lab) ──────────────────────────────────────────
+
+/// Convert CIE Lab to LCH (Lightness, Chroma, Hue in degrees).
+pub fn lab_to_lch(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
+    let c = (a * a + b * b).sqrt();
+    let h = b.atan2(a).to_degrees().rem_euclid(360.0);
+    (l, c, h)
+}
+
+/// Convert CIE LCH to Lab.
+pub fn lch_to_lab(l: f64, c: f64, h_deg: f64) -> (f64, f64, f64) {
+    let h_rad = h_deg * std::f64::consts::PI / 180.0;
+    let a = c * h_rad.cos();
+    let b = c * h_rad.sin();
+    (l, a, b)
+}
+
+// ─── CIE Luv ────────────────────────────────────────────────────────────
+
+/// Convert CIE XYZ to CIE Luv (D65 illuminant).
+pub fn xyz_to_luv(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+    let (xn, yn, zn) = (D65_X, D65_Y, D65_Z);
+    let yr = y / yn;
+
+    let l = if yr > (6.0 / 29.0_f64).powi(3) {
+        116.0 * yr.cbrt() - 16.0
+    } else {
+        (29.0 / 3.0_f64).powi(3) * yr
+    };
+
+    let denom = x + 15.0 * y + 3.0 * z;
+    let denom_n = xn + 15.0 * yn + 3.0 * zn;
+
+    if denom == 0.0 {
+        return (l, 0.0, 0.0);
+    }
+
+    let u_prime = 4.0 * x / denom;
+    let v_prime = 9.0 * y / denom;
+    let u_prime_n = 4.0 * xn / denom_n;
+    let v_prime_n = 9.0 * yn / denom_n;
+
+    let u = 13.0 * l * (u_prime - u_prime_n);
+    let v = 13.0 * l * (v_prime - v_prime_n);
+    (l, u, v)
+}
+
+/// Convert sRGB [0,1] to CIE Luv.
+pub fn rgb_to_luv(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let (x, y, z) = rgb_to_xyz(r, g, b);
+    xyz_to_luv(x, y, z)
+}
+
+/// Convert CIE Luv to CIE XYZ (D65 illuminant).
+pub fn luv_to_xyz(l: f64, u: f64, v: f64) -> (f64, f64, f64) {
+    if l == 0.0 {
+        return (0.0, 0.0, 0.0);
+    }
+
+    let (xn, yn, zn) = (D65_X, D65_Y, D65_Z);
+    let denom_n = xn + 15.0 * yn + 3.0 * zn;
+    let u_prime_n = 4.0 * xn / denom_n;
+    let v_prime_n = 9.0 * yn / denom_n;
+
+    let u_prime = u / (13.0 * l) + u_prime_n;
+    let v_prime = v / (13.0 * l) + v_prime_n;
+
+    let y = if l > 8.0 {
+        yn * ((l + 16.0) / 116.0).powi(3)
+    } else {
+        yn * l * (3.0 / 29.0_f64).powi(3)
+    };
+
+    let x = y * 9.0 * u_prime / (4.0 * v_prime);
+    let z = y * (12.0 - 3.0 * u_prime - 20.0 * v_prime) / (4.0 * v_prime);
+    (x, y, z)
+}
+
 // ─── Bradford Chromatic Adaptation ───────────────────────────────────────
 
 /// Standard illuminant white points (CIE XYZ, Y=1).
