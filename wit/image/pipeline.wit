@@ -168,6 +168,32 @@ interface pipeline {
         /// Output dimensions match the background.
         composite: func(fg: node-id, bg: node-id, x: s32, y: s32) -> result<node-id, rasmcore-error>;
 
+        // ─── Metadata ───
+
+        /// Read metadata from the source data without decoding pixels.
+        /// Returns a JSON string with all metadata containers.
+        metadata-dump: func() -> result<string, rasmcore-error>;
+
+        /// Read a single metadata value by dot-path (e.g., "exif.Artist").
+        /// Returns None for valid paths where the field is absent.
+        metadata-read: func(path: string) -> result<option<string>, rasmcore-error>;
+
+        /// Opt-in to carry source metadata through to the output.
+        /// Without this, output has NO metadata from source (safe default).
+        keep-metadata: func() -> result<node-id, rasmcore-error>;
+
+        /// Set a metadata field by dot-path. Chainable — applied at encode time.
+        /// Works with or without keep-metadata.
+        set-metadata: func(path: string, value: string) -> result<node-id, rasmcore-error>;
+
+        /// Bulk-set metadata from a JSON object (inverse of metadata-dump).
+        /// Validates all containers and fields. Applied at encode time.
+        load-metadata: func(json: string) -> result<node-id, rasmcore-error>;
+
+        /// Remove a metadata field or container. Only meaningful after keep-metadata.
+        /// Without keep-metadata, this is a no-op.
+        strip-metadata: func(path: string) -> result<node-id, rasmcore-error>;
+
         // ─── Write (drives execution) ───
 
         /// Write as JPEG. Pulls all regions through the graph.

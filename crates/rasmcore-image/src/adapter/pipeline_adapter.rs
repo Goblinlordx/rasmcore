@@ -51,18 +51,206 @@ fn to_domain_tiff_compression_pipeline(
 }
 
 /// Pipeline resource implementation wrapping the domain NodeGraph.
+/// Tracks metadata operations (keep/set/strip/load) for resolution at encode time.
+#[derive(Default)]
+struct MetadataOps {
+    /// Source data bytes (for reading metadata from headers).
+    source_data: Option<Vec<u8>>,
+    /// Whether to carry source metadata through (opt-in via keepMetadata).
+    keep: bool,
+    /// Individual field overrides: (container, field, value).
+    sets: Vec<(String, String, String)>,
+    /// Field removals: (container, field). Applied after keep.
+    strips: Vec<(String, String)>,
+    /// Bulk load from JSON-shaped object: (container, field, value).
+    loads: Vec<(String, String, String)>,
+}
+
+impl MetadataOps {
+    /// Resolve all metadata operations into a final MetadataSet for encoding.
+    ///
+    /// Resolution order:
+    /// 1. If keep=true, start with source metadata; otherwise start empty
+    /// 2. Apply load entries (bulk set)
+    /// 3. Apply individual set entries (override)
+    /// 4. Apply strip entries (remove)
+    fn resolve(&self) -> crate::domain::metadata_set::MetadataSet {
+        use crate::domain::metadata;
+        use crate::domain::metadata_set::MetadataSet;
+
+        let mut ms = if self.keep {
+            // Parse source metadata
+            self.source_data
+                .as_ref()
+                .and_then(|data| metadata::read_metadata(data).ok())
+                .unwrap_or_else(MetadataSet::new)
+        } else {
+            MetadataSet::new()
+        };
+
+        // Apply loads and sets by rebuilding the relevant container.
+        // For now, loads and sets modify the ExifMetadata/XmpMetadata/IptcMetadata
+        // structs and re-serialize. This is the simplest correct approach.
+
+        // Collect all field operations (loads first, then sets to override)
+        let mut exif_ops: Vec<(&str, &str)> = Vec::new();
+        let mut xmp_ops: Vec<(&str, &str)> = Vec::new();
+        let mut iptc_ops: Vec<(&str, &str)> = Vec::new();
+
+        for (container, field, value) in self.loads.iter().chain(self.sets.iter()) {
+            match container.as_str() {
+                "exif" => exif_ops.push((field, value)),
+                "xmp" => xmp_ops.push((field, value)),
+                "iptc" => iptc_ops.push((field, value)),
+                _ => {}
+            }
+        }
+
+        // Apply EXIF operations
+        if !exif_ops.is_empty() {
+            let mut exif = ms
+                .exif
+                .as_ref()
+                .and_then(|bytes| {
+                    // Parse existing EXIF
+                    let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xE1];
+                    let len = (bytes.len() + 2) as u16;
+                    jpeg.extend_from_slice(&len.to_be_bytes());
+                    jpeg.extend_from_slice(bytes);
+                    jpeg.extend_from_slice(&[0xFF, 0xD9]);
+                    metadata::read_exif(&jpeg).ok()
+                })
+                .unwrap_or_default();
+
+            for (field, value) in &exif_ops {
+                match *field {
+                    "Artist" | "Copyright" | "Software" | "ImageDescription" => {
+                        // These go into the Software/Make/Model string fields
+                        match *field {
+                            "Software" => exif.software = Some(value.to_string()),
+                            _ => {} // Other string EXIF fields require raw TIFF IFD editing
+                        }
+                    }
+                    "Make" => exif.camera_make = Some(value.to_string()),
+                    "Model" => exif.camera_model = Some(value.to_string()),
+                    "DateTime" => exif.date_time = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+
+            if let Ok(bytes) = metadata::write_exif(&exif) {
+                ms.exif = Some(bytes);
+            }
+        }
+
+        // Apply XMP operations
+        if !xmp_ops.is_empty() {
+            use crate::domain::metadata_xmp;
+            let mut xmp = ms
+                .xmp
+                .as_ref()
+                .and_then(|bytes| metadata_xmp::parse_xmp(bytes).ok())
+                .unwrap_or_default();
+
+            for (field, value) in &xmp_ops {
+                match *field {
+                    "Title" => xmp.title = Some(value.to_string()),
+                    "Description" => xmp.description = Some(value.to_string()),
+                    "Creator" => xmp.creator = Some(value.to_string()),
+                    "Rights" => xmp.rights = Some(value.to_string()),
+                    "CreateDate" => xmp.create_date = Some(value.to_string()),
+                    "ModifyDate" => xmp.modify_date = Some(value.to_string()),
+                    "CreatorTool" => xmp.creator_tool = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+
+            if let Ok(bytes) = metadata_xmp::serialize_xmp(&xmp) {
+                ms.xmp = Some(bytes);
+            }
+        }
+
+        // Apply IPTC operations
+        if !iptc_ops.is_empty() {
+            use crate::domain::metadata_iptc;
+            let mut iptc = ms
+                .iptc
+                .as_ref()
+                .and_then(|bytes| metadata_iptc::parse_iptc(bytes).ok())
+                .unwrap_or_default();
+
+            for (field, value) in &iptc_ops {
+                match *field {
+                    "Title" | "Headline" => iptc.title = Some(value.to_string()),
+                    "Caption" => iptc.caption = Some(value.to_string()),
+                    "Byline" => iptc.byline = Some(value.to_string()),
+                    "Copyright" => iptc.copyright = Some(value.to_string()),
+                    "Category" => iptc.category = Some(value.to_string()),
+                    "Keywords" => {
+                        iptc.keywords = value.split(',').map(|s| s.trim().to_string()).collect();
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Ok(bytes) = metadata_iptc::serialize_iptc(&iptc) {
+                ms.iptc = Some(bytes);
+            }
+        }
+
+        // Apply strip operations
+        for (container, field) in &self.strips {
+            match container.as_str() {
+                "exif" => {
+                    // For strip, clear the entire EXIF container if stripping individual fields
+                    // is too complex (raw TIFF IFD editing). Simple approach: if any EXIF field
+                    // is stripped, remove the whole container if it's the only field.
+                    // TODO: granular field removal requires TIFF IFD editing
+                    if ms.exif.is_some() {
+                        // For GPS fields, strip entire EXIF for now (privacy-safe)
+                        if field.starts_with("GPS") {
+                            ms.exif = None;
+                        }
+                    }
+                }
+                "xmp" => {
+                    if ms.xmp.is_some() {
+                        ms.xmp = None; // Strip entire XMP for now
+                    }
+                }
+                "iptc" => {
+                    if ms.iptc.is_some() {
+                        ms.iptc = None;
+                    }
+                }
+                "icc" => {
+                    ms.icc_profile = None;
+                }
+                _ => {}
+            }
+        }
+
+        ms
+    }
+}
+
 pub struct PipelineResource {
     graph: RefCell<NodeGraph>,
+    /// Metadata operations, keyed by source node ID.
+    metadata_ops: RefCell<MetadataOps>,
 }
 
 impl GuestImagePipeline for PipelineResource {
     fn new() -> Self {
         Self {
             graph: RefCell::new(NodeGraph::new(16 * 1024 * 1024)), // 16MB cache budget
+            metadata_ops: RefCell::new(MetadataOps::default()),
         }
     }
 
     fn read(&self, data: Vec<u8>) -> Result<NodeId, RasmcoreError> {
+        // Capture source data for metadata operations
+        self.metadata_ops.borrow_mut().source_data = Some(data.clone());
         let node = source::SourceNode::new(data).map_err(to_wit_error)?;
         let id = self.graph.borrow_mut().add_node(Box::new(node));
         Ok(id)

@@ -15,6 +15,7 @@ pub mod histogram;
 pub mod inpainting;
 pub mod metadata;
 pub mod metadata_iptc;
+pub mod metadata_query;
 pub mod metadata_set;
 pub mod metadata_xmp;
 pub mod pipeline;
