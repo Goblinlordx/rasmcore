@@ -106,15 +106,15 @@ plan:
 - phase: End-to-End Validation
   tasks:
   - text: Create 16-bit test PNG with full 0-65535 gradient range
-    done: false
+    done: true
   - text: E2E test of full 16-bit chain (decode->gamma->brightness->resize->equalize->encode)
-    done: false
+    done: true
   - text: Validate 16-bit equalize against ImageMagick (expect MAE<1.0 at 8-bit)
-    done: false
+    done: true
   - text: Validate 16-bit normalize against ImageMagick (expect MAE<1.0 at 8-bit)
-    done: false
+    done: true
   - text: Update REFERENCE.md to document 16-bit IM parity for equalize/normalize
-    done: false
+    done: true
   - text: Verify all existing 8-bit tests still pass
-    done: false
+    done: true
 extra: {}
