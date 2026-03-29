@@ -718,50 +718,97 @@ pub fn undistort(
     let h = info.height as usize;
     validate_pixel_buffer(pixels, info, bpp)?;
 
+    // OpenCV constants for fixed-point bilinear interpolation
+    const INTER_BITS: u32 = 5;
+    const INTER_TAB_SIZE: i32 = 1 << INTER_BITS; // 32
+    const INTER_REMAP_COEF_BITS: u32 = 15;
+    const INTER_REMAP_COEF_SCALE: i32 = 1 << INTER_REMAP_COEF_BITS; // 32768
+
+    // Precompute bilinear weight table (matches OpenCV BilinearTab_i)
+    // For each (fx, fy) pair quantized to 1/32, compute 4 weights as i16
+    // Precompute bilinear weight table matching OpenCV BilinearTab_i exactly.
+    // OpenCV: saturate_cast<short>(v * SCALE) for each weight, then correct sum.
+    let mut wtab = vec![[0i16; 4]; (INTER_TAB_SIZE * INTER_TAB_SIZE) as usize];
+    for iy in 0..INTER_TAB_SIZE {
+        let ay = iy as f32 / INTER_TAB_SIZE as f32;
+        // 1D tab for Y
+        let ty0 = 1.0 - ay;
+        let ty1 = ay;
+        for ix in 0..INTER_TAB_SIZE {
+            let ax = ix as f32 / INTER_TAB_SIZE as f32;
+            let tx0 = 1.0 - ax;
+            let tx1 = ax;
+            let idx = (iy * INTER_TAB_SIZE + ix) as usize;
+
+            // Compute 2D weights as float, then saturate_cast to i16
+            let fweights = [ty0 * tx0, ty0 * tx1, ty1 * tx0, ty1 * tx1];
+            let mut iweights = [0i16; 4];
+            let mut isum: i32 = 0;
+            for k in 0..4 {
+                let v = (fweights[k] * INTER_REMAP_COEF_SCALE as f32).round() as i32;
+                iweights[k] = v.clamp(-32768, 32767) as i16; // saturate_cast<short>
+                isum += iweights[k] as i32;
+            }
+            // Correct rounding error matching OpenCV exactly:
+            // OpenCV only checks the central 2x2 of the ksize×ksize kernel.
+            // For bilinear (ksize=2), ksize2=1, so k1 in [1,2) and k2 in [1,2)
+            // → only index (1,1) = flat index 3 is checked for both min and max.
+            // So the correction always adjusts itab[3] (bottom-right weight).
+            if isum != INTER_REMAP_COEF_SCALE {
+                let diff = isum - INTER_REMAP_COEF_SCALE;
+                // OpenCV: adjust itab[ksize2*ksize + ksize2] = itab[1*2+1] = itab[3]
+                iweights[3] = (iweights[3] as i32 - diff) as i16;
+            }
+            wtab[idx] = iweights;
+        }
+    }
+
     let mut output = vec![0u8; w * h * bpp];
 
     for oy in 0..h {
         for ox in 0..w {
-            // Normalize to camera coordinates
+            // Step 1: compute distorted source coordinate in f64
+            // (matches OpenCV initUndistortRectifyMap scalar path)
             let x = (ox as f64 - camera.cx) / camera.fx;
             let y = (oy as f64 - camera.cy) / camera.fy;
-
-            // Apply distortion (forward model: undistorted → distorted)
             let r2 = x * x + y * y;
-            let r4 = r2 * r2;
-            let r6 = r4 * r2;
-            let radial = 1.0 + dist.k1 * r2 + dist.k2 * r4 + dist.k3 * r6;
+            let kr = 1.0 + ((dist.k3 * r2 + dist.k2) * r2 + dist.k1) * r2;
+            let xd = x * kr;
+            let yd = y * kr;
+            let u = camera.fx * xd + camera.cx;
+            let v = camera.fy * yd + camera.cy;
 
-            let xd = x * radial;
-            let yd = y * radial;
+            // Step 2: quantize to fixed-point (matches OpenCV m1type=CV_16SC2)
+            // saturate_cast<int>(u * INTER_TAB_SIZE) — rounds to nearest
+            let iu = (u * INTER_TAB_SIZE as f64).round() as i32;
+            let iv = (v * INTER_TAB_SIZE as f64).round() as i32;
 
-            // Back to pixel coordinates
-            let sx = xd * camera.fx + camera.cx;
-            let sy = yd * camera.fy + camera.cy;
+            let sx = iu >> INTER_BITS; // integer pixel X
+            let sy = iv >> INTER_BITS; // integer pixel Y
+            let fxy = ((iv & (INTER_TAB_SIZE - 1)) * INTER_TAB_SIZE
+                + (iu & (INTER_TAB_SIZE - 1))) as usize;
 
             let out_idx = (oy * w + ox) * bpp;
 
-            // Bilinear sampling
-            if sx >= 0.0 && sx < (w - 1) as f64 && sy >= 0.0 && sy < (h - 1) as f64 {
-                let x0 = sx.floor() as usize;
-                let y0 = sy.floor() as usize;
-                let x1 = x0 + 1;
-                let y1 = y0 + 1;
-                let fx = sx - x0 as f64;
-                let fy = sy - y0 as f64;
+            // Step 3: fixed-point bilinear interpolation (matches OpenCV remapBilinear)
+            if sx >= 0 && (sx as usize) < w - 1 && sy >= 0 && (sy as usize) < h - 1 {
+                let sx = sx as usize;
+                let sy = sy as usize;
+                let weights = &wtab[fxy];
 
                 for ch in 0..bpp {
-                    let p00 = pixels[y0 * w * bpp + x0 * bpp + ch] as f64;
-                    let p10 = pixels[y0 * w * bpp + x1 * bpp + ch] as f64;
-                    let p01 = pixels[y1 * w * bpp + x0 * bpp + ch] as f64;
-                    let p11 = pixels[y1 * w * bpp + x1 * bpp + ch] as f64;
+                    let p00 = pixels[sy * w * bpp + sx * bpp + ch] as i32;
+                    let p10 = pixels[sy * w * bpp + (sx + 1) * bpp + ch] as i32;
+                    let p01 = pixels[(sy + 1) * w * bpp + sx * bpp + ch] as i32;
+                    let p11 = pixels[(sy + 1) * w * bpp + (sx + 1) * bpp + ch] as i32;
 
-                    let val = p00 * (1.0 - fx) * (1.0 - fy)
-                        + p10 * fx * (1.0 - fy)
-                        + p01 * (1.0 - fx) * fy
-                        + p11 * fx * fy;
-
-                    output[out_idx + ch] = val.round().clamp(0.0, 255.0) as u8;
+                    // FixedPtCast: (sum + (1 << 14)) >> 15
+                    let sum = p00 * weights[0] as i32
+                        + p10 * weights[1] as i32
+                        + p01 * weights[2] as i32
+                        + p11 * weights[3] as i32;
+                    let val = (sum + (1 << (INTER_REMAP_COEF_BITS - 1))) >> INTER_REMAP_COEF_BITS;
+                    output[out_idx + ch] = val.clamp(0, 255) as u8;
                 }
             }
             // Out-of-bounds pixels stay black (0)

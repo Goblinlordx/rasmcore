@@ -661,7 +661,7 @@ fn undistort_matches_opencv() {
          px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w},3)\n\
          K=np.array([[100.0,0,64.0],[0,100.0,64.0],[0,0,1]],dtype=np.float64)\n\
          D=np.array([-0.3,0.1,0,0,0],dtype=np.float64)\n\
-         out=cv2.undistort(px,K,D)\n\
+         out=cv2.undistort(px,K,D,None,K)\n\
          sys.stdout.buffer.write(out.tobytes())"
     );
     let output = Command::new(&py)
@@ -705,13 +705,13 @@ fn undistort_matches_opencv() {
     let mae = total_err / count as f64;
     eprintln!("  undistort (interior): MAE={mae:.4}, max_err={max_err}");
 
-    // Bilinear interpolation may differ by ±1 due to rounding
-    assert!(
-        mae < 1.0,
-        "undistort: MAE={mae:.4} exceeds threshold 1.0"
+    // Pixel-exact: same fixed-point bilinear as OpenCV (INTER_BITS=5, COEF_BITS=15)
+    assert_eq!(
+        mae, 0.0,
+        "undistort: MAE={mae:.4} — must be pixel-exact with OpenCV"
     );
-    assert!(
-        max_err <= 2,
-        "undistort: max_err={max_err} exceeds ±2"
+    assert_eq!(
+        max_err, 0,
+        "undistort: max_err={max_err} — must be pixel-exact with OpenCV"
     );
 }
