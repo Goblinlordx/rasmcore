@@ -1,5 +1,5 @@
 title: JPEG Parity Audit — Pixel-Exact Decode, Multi-MCU Fix, Threshold Tightening
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-03-29'

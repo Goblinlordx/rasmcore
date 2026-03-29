@@ -28,34 +28,35 @@ spec:
     (2) Fix multi-MCU grayscale by tracing Huffman DC/AC encoding per-MCU and comparing with reference. (3) Replace arithmetic
     decoder panic with proper error return. (4) For each existing threshold test, measure actual MAE and tighten to actual+1.'
 plan:
-  - phase: Pixel-Exact Decode Parity
-    tasks:
-      - text: Generate reference JPEGs via libjpeg-turbo cjpeg (solid color, gradient, checkerboard) at Q75/Q95 baseline 4:2:0 and 4:4:4
-        done: false
-      - text: Decode each with our decoder and libjpeg-turbo djpeg, compare byte-for-byte
-        done: false
-      - text: Investigate and document any decode pixel differences
-        done: false
-      - text: Add pixel-exact decode parity tests to tests/parity.rs
-        done: false
-  - phase: Multi-MCU Grayscale Fix
-    tasks:
-      - text: Reproduce multi-MCU grayscale failure with minimal 8x16 gradient (2 MCUs)
-        done: false
-      - text: Trace per-MCU DC differential encoding vs libjpeg reference
-        done: false
-      - text: Fix encoder Huffman alignment for multi-MCU grayscale
-        done: false
-      - text: Verify roundtrip PSNR > 35 dB
-        done: false
-  - phase: Robustness + Threshold Tightening
-    tasks:
-      - text: Replace arithmetic decoder panic with Result::Err on truncated QM-coder data
-        done: false
-      - text: Measure actual MAE for each existing threshold test and record results
-        done: false
-      - text: Tighten all MAE assertions to measured_value + 1.0 margin
-        done: false
-      - text: Update REFERENCE_VALIDATION.md JPEG section with results
-        done: false
+- phase: Pixel-Exact Decode Parity
+  tasks:
+  - text: Generate reference JPEGs via libjpeg-turbo cjpeg (solid color, gradient, checkerboard) at Q75/Q95 baseline 4:2:0
+      and 4:4:4
+    done: true
+  - text: Decode each with our decoder and libjpeg-turbo djpeg, compare byte-for-byte
+    done: true
+  - text: Investigate and document any decode pixel differences
+    done: true
+  - text: Add pixel-exact decode parity tests to tests/parity.rs
+    done: true
+- phase: Multi-MCU Grayscale Fix
+  tasks:
+  - text: Reproduce multi-MCU grayscale failure with minimal 8x16 gradient (2 MCUs)
+    done: true
+  - text: Trace per-MCU DC differential encoding vs libjpeg reference
+    done: true
+  - text: Fix encoder Huffman alignment for multi-MCU grayscale
+    done: true
+  - text: Verify roundtrip PSNR > 35 dB
+    done: true
+- phase: Robustness + Threshold Tightening
+  tasks:
+  - text: Replace arithmetic decoder panic with Result::Err on truncated QM-coder data
+    done: true
+  - text: Measure actual MAE for each existing threshold test and record results
+    done: true
+  - text: Tighten all MAE assertions to measured_value + 1.0 margin
+    done: true
+  - text: Update REFERENCE_VALIDATION.md JPEG section with results
+    done: true
 extra: {}
