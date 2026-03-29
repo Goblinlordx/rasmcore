@@ -580,42 +580,87 @@ pub fn histogram_match(
     }
 }
 
-/// Build a histogram matching LUT via CDF inversion.
+/// Build a histogram matching LUT via CDF interpolation.
 ///
-/// For each source intensity `s`, find the target intensity `t` such that
-/// CDF_target(t) >= CDF_source(s). This is the standard CDF inversion method.
+/// Matches scikit-image's `match_histograms` algorithm:
+/// 1. Compute source CDF over all 256 bins
+/// 2. Collect target non-zero bins and their CDF values
+/// 3. Use linear interpolation (np.interp equivalent) to map source CDF → target values
+///
+/// Reference: scikit-image 0.26.0 `exposure.histogram_matching._match_cumulative_cdf`
 fn match_lut(
     src_hist: &Histogram,
     src_pixels: u64,
     tgt_hist: &Histogram,
     tgt_pixels: u64,
 ) -> [u8; 256] {
-    // Compute normalized CDFs (0.0 to 1.0)
-    let mut src_cdf = [0.0f64; 256];
-    let mut tgt_cdf = [0.0f64; 256];
-
-    src_cdf[0] = src_hist[0] as f64 / src_pixels as f64;
-    tgt_cdf[0] = tgt_hist[0] as f64 / tgt_pixels as f64;
+    // Source CDF over all 256 bins (normalized 0..1)
+    let mut src_counts_cumsum = [0u64; 256];
+    src_counts_cumsum[0] = src_hist[0] as u64;
     for i in 1..256 {
-        src_cdf[i] = src_cdf[i - 1] + src_hist[i] as f64 / src_pixels as f64;
-        tgt_cdf[i] = tgt_cdf[i - 1] + tgt_hist[i] as f64 / tgt_pixels as f64;
+        src_counts_cumsum[i] = src_counts_cumsum[i - 1] + src_hist[i] as u64;
+    }
+    let src_quantiles: Vec<f64> = src_counts_cumsum
+        .iter()
+        .map(|&c| c as f64 / src_pixels as f64)
+        .collect();
+
+    // Target: only non-zero bins (matching scikit-image's np.nonzero approach)
+    let mut tgt_values = Vec::new();
+    let mut tgt_counts = Vec::new();
+    for (i, &count) in tgt_hist.iter().enumerate() {
+        if count > 0 {
+            tgt_values.push(i as f64);
+            tgt_counts.push(count as u64);
+        }
     }
 
-    // For each source intensity, find nearest target intensity via CDF
+    // Target CDF over non-zero bins only
+    let mut tgt_cumsum = Vec::with_capacity(tgt_counts.len());
+    let mut acc = 0u64;
+    for &c in &tgt_counts {
+        acc += c;
+        tgt_cumsum.push(acc);
+    }
+    let tgt_quantiles: Vec<f64> = tgt_cumsum
+        .iter()
+        .map(|&c| c as f64 / tgt_pixels as f64)
+        .collect();
+
+    // np.interp equivalent: for each src_quantile, interpolate in (tgt_quantiles, tgt_values)
     let mut lut = [0u8; 256];
     for s in 0..256 {
-        let val = src_cdf[s];
-        // Binary search or linear scan for nearest CDF value in target
-        let mut best = 0usize;
-        let mut best_diff = f64::MAX;
-        for t in 0..256 {
-            let diff = (tgt_cdf[t] - val).abs();
-            if diff < best_diff {
-                best_diff = diff;
-                best = t;
+        let xp = &tgt_quantiles;
+        let fp = &tgt_values;
+        let x = src_quantiles[s];
+
+        // np.interp: clamp to endpoints, linear interpolation between adjacent points
+        let val = if xp.is_empty() {
+            s as f64
+        } else if x <= xp[0] {
+            fp[0]
+        } else if x >= xp[xp.len() - 1] {
+            fp[fp.len() - 1]
+        } else {
+            // Find interval: xp[i] <= x < xp[i+1]
+            let mut lo = 0;
+            let mut hi = xp.len() - 1;
+            while hi - lo > 1 {
+                let mid = (lo + hi) / 2;
+                if xp[mid] <= x {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
             }
-        }
-        lut[s] = best as u8;
+            // Linear interpolation
+            let t = (x - xp[lo]) / (xp[hi] - xp[lo]);
+            fp[lo] + t * (fp[hi] - fp[lo])
+        };
+
+        // Truncate (floor), not round — matches numpy's astype(uint8) behavior
+        // which scikit-image relies on via interp_a_values[src_lookup].astype(uint8)
+        lut[s] = val.clamp(0.0, 255.0) as u8;
     }
     lut
 }
