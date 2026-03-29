@@ -36,10 +36,16 @@ pub fn rgb_to_ycbcr(
         let r = pixels[off] as i32;
         let g = pixels[off + 1] as i32;
         let b = pixels[off + 2] as i32;
-        // BT.601 (JPEG standard): full-range YCbCr
-        y.push(((77 * r + 150 * g + 29 * b + 128) >> 8) as u8);
-        cb_full.push(((-43 * r - 85 * g + 128 * b + 128) >> 8).wrapping_add(128) as u8);
-        cr_full.push(((128 * r - 107 * g - 21 * b + 128) >> 8).wrapping_add(128) as u8);
+        // BT.601 (JPEG standard): full-range YCbCr, 16-bit fixed-point
+        // Matches mozjpeg/libjpeg-turbo jccolor.c coefficients exactly:
+        //   FIX(0.29900)=19595, FIX(0.58700)=38470, FIX(0.11400)=7471
+        //   FIX(0.16874)=11059, FIX(0.33126)=21709
+        //   FIX(0.41869)=27439, FIX(0.08131)=5329
+        const ONE_HALF: i32 = 1 << 15; // 32768
+        const CBCR_OFF: i32 = 128 << 16; // 128 * 65536
+        y.push(((19595 * r + 38470 * g + 7471 * b + ONE_HALF) >> 16) as u8);
+        cb_full.push((((-11059 * r - 21709 * g + 32768 * b + CBCR_OFF + ONE_HALF - 1) >> 16) as i32).clamp(0, 255) as u8);
+        cr_full.push((((32768 * r - 27439 * g - 5329 * b + CBCR_OFF + ONE_HALF - 1) >> 16) as i32).clamp(0, 255) as u8);
     }
 
     // Subsample chroma

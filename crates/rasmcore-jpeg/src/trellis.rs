@@ -112,15 +112,18 @@ pub fn trellis_quantize_with_codes(
         }
     };
 
-    // Pre-compute per-coefficient weight: CSF[i] * (1/Q[i]^2)
-    // CSF penalizes low-frequency errors more (human visual sensitivity).
-    // 1/Q^2 normalizes distortion relative to quantization step size.
-    let csf = if is_luma { &CSF_LUMA } else { &CSF_CHROMA };
+    // Pre-compute per-coefficient weight: 64 / Q[i]^2
+    // Matches mozjpeg mode=1: lambda_tbl[i] = 1/(Q[i]*Q[i]).
+    //
+    // The factor of 64 compensates for DCT output scaling: mozjpeg's forward DCT
+    // leaves output scaled by 8 (uses Q*8 for quantization), while our DCT normalizes
+    // to JPEG standard scale. Since delta^2 is 64x smaller in our system, we multiply
+    // the weight by 64 so the rate-distortion balance matches mozjpeg exactly.
+    const DCT_SCALE_COMPENSATION: f64 = 64.0;
     let mut coeff_weight = [0.0f64; 64];
     for i in 0..64 {
         let q = quant_table[i] as f64;
-        let inv_q2 = if q > 0.0 { 1.0 / (q * q) } else { 1.0 };
-        coeff_weight[i] = csf[i] * inv_q2;
+        coeff_weight[i] = if q > 0.0 { DCT_SCALE_COMPENSATION / (q * q) } else { 1.0 };
     }
 
     let mut output = [0i16; 64];
@@ -304,6 +307,10 @@ fn trellis_optimize_ac(
         NUM_AC
     ];
 
+    // mozjpeg cost convention: cost = rate_bits + lambda * weighted_distortion
+    // where weighted_distortion = delta^2 * (1/Q^2)
+    // Lambda scales distortion into "equivalent bits" units.
+
     // Initialize position 0 (first AC coefficient, zigzag position 1)
     {
         let zigzag_pos = ZIGZAG[1];
@@ -312,14 +319,13 @@ fn trellis_optimize_ac(
 
         for &cand in &candidates[0] {
             let dequant = cand as i32 * q;
-            // Per-coefficient weighted distortion: SSD * weight[zigzag_pos]
-            let dist = ((original - dequant) as f64).powi(2) * coeff_weight[zigzag_pos];
+            let dist = ((original - dequant) as f64).powi(2) * lambda * coeff_weight[zigzag_pos];
 
             if cand == 0 {
-                let total = dist;
-                if total < dp[0][1].cost {
+                // Zero: distortion only (no rate for zero in run)
+                if dist < dp[0][1].cost {
                     dp[0][1] = DpCell {
-                        cost: total,
+                        cost: dist,
                         level: 0,
                         prev_run: 0,
                     };
@@ -327,7 +333,7 @@ fn trellis_optimize_ac(
             } else {
                 let size = magnitude_category(cand as i32);
                 let rate = estimate_ac_bits(0, size, ac_code_lengths) as f64;
-                let total = dist + lambda * rate;
+                let total = rate + dist;
                 if total < dp[0][0].cost {
                     dp[0][0] = DpCell {
                         cost: total,
@@ -347,8 +353,7 @@ fn trellis_optimize_ac(
 
         for &cand in &candidates[pos] {
             let dequant = cand as i32 * q;
-            // Per-coefficient weighted distortion: SSD * weight[zigzag_pos]
-            let dist = ((original - dequant) as f64).powi(2) * coeff_weight[zigzag_pos];
+            let dist = ((original - dequant) as f64).powi(2) * lambda * coeff_weight[zigzag_pos];
 
             if cand == 0 {
                 // Zero: extend run from any previous state
@@ -360,13 +365,13 @@ fn trellis_optimize_ac(
                     if new_run >= MAX_RUN {
                         continue;
                     }
-                    // ZRL cost for runs that cross 16-boundary
-                    let zrl_cost = if new_run >= 16 && prev_run < 16 {
-                        lambda * estimate_zrl_bits(ac_code_lengths) as f64
+                    // ZRL cost for runs that cross 16-boundary (rate in bits)
+                    let zrl_rate = if new_run >= 16 && prev_run < 16 {
+                        estimate_zrl_bits(ac_code_lengths) as f64
                     } else {
                         0.0
                     };
-                    let total = dp[pos - 1][prev_run].cost + dist + zrl_cost;
+                    let total = dp[pos - 1][prev_run].cost + dist + zrl_rate;
                     if total < dp[pos][new_run].cost {
                         dp[pos][new_run] = DpCell {
                             cost: total,
@@ -382,16 +387,16 @@ fn trellis_optimize_ac(
                         continue;
                     }
                     let run = prev_run;
-                    let mut extra = 0.0;
+                    let mut zrl_rate = 0.0;
                     let mut effective_run = run;
                     while effective_run >= 16 {
-                        extra += lambda * estimate_zrl_bits(ac_code_lengths) as f64;
+                        zrl_rate += estimate_zrl_bits(ac_code_lengths) as f64;
                         effective_run -= 16;
                     }
                     let size = magnitude_category(cand as i32);
                     let rate = estimate_ac_bits(effective_run as u8, size, ac_code_lengths) as f64
-                        + extra / lambda.max(1e-10); // normalize extra back
-                    let total = dp[pos - 1][prev_run].cost + dist + lambda * rate;
+                        + zrl_rate;
+                    let total = dp[pos - 1][prev_run].cost + dist + rate;
                     if total < dp[pos][0].cost {
                         dp[pos][0] = DpCell {
                             cost: total,
@@ -411,8 +416,8 @@ fn trellis_optimize_ac(
         if dp[NUM_AC - 1][run].cost >= INF {
             continue;
         }
-        let eob_cost = estimate_ac_bits(0, 0, ac_code_lengths) as f64;
-        let total = dp[NUM_AC - 1][run].cost + lambda * eob_cost;
+        let eob_rate = estimate_ac_bits(0, 0, ac_code_lengths) as f64;
+        let total = dp[NUM_AC - 1][run].cost + eob_rate;
         if total < best_cost {
             best_cost = total;
             best_run = run;
@@ -493,9 +498,11 @@ pub fn dc_trellis_pass(
         candidates.push(cands);
     }
 
-    // Use CSF DC weight for distortion scaling
-    let csf = if is_luma { &CSF_LUMA } else { &CSF_CHROMA };
-    let dc_csf_weight = csf[0]; // DC position in raster order
+    // DC distortion weight: 64/Q_dc^2 (matching mozjpeg mode=1 with DCT scale compensation)
+    let dc_weight = {
+        let q = q0 as f64;
+        if q > 0.0 { 64.0 / (q * q) } else { 1.0 }
+    };
 
     let mut prev_costs: Vec<f64> = vec![INF; max_cands];
     let mut backtrack: Vec<Vec<usize>> = Vec::with_capacity(n);
@@ -505,11 +512,11 @@ pub fn dc_trellis_pass(
     for (ci, &cand) in candidates[0].iter().enumerate() {
         let orig_dc = dct_coeffs[0][ZIGZAG[0]];
         let dequant = cand as i32 * q0;
-        let dist = ((orig_dc - dequant) as f64).powi(2) * dc_csf_weight;
+        let dist = ((orig_dc - dequant) as f64).powi(2) * lambda * dc_weight;
         let diff = cand as i32; // DPCM with predictor 0
         let cat = magnitude_category(diff);
         let rate = dc_code_lengths[cat as usize] as f64 + cat as f64;
-        prev_costs[ci] = dist + lambda * rate;
+        prev_costs[ci] = rate + dist;
         first_bt[ci] = 0;
     }
     backtrack.push(first_bt);
@@ -522,7 +529,7 @@ pub fn dc_trellis_pass(
         for (ci, &cand) in candidates[block_idx].iter().enumerate() {
             let orig_dc = dct_coeffs[block_idx][ZIGZAG[0]];
             let dequant = cand as i32 * q0;
-            let dist = ((orig_dc - dequant) as f64).powi(2) * dc_csf_weight;
+            let dist = ((orig_dc - dequant) as f64).powi(2) * lambda * dc_weight;
 
             // Try each previous candidate
             for (pi, &prev_cand) in candidates[block_idx - 1].iter().enumerate() {
@@ -532,7 +539,7 @@ pub fn dc_trellis_pass(
                 let diff = cand as i32 - prev_cand as i32;
                 let cat = magnitude_category(diff);
                 let rate = dc_code_lengths[cat as usize] as f64 + cat as f64;
-                let total = prev_costs[pi] + dist + lambda * rate;
+                let total = prev_costs[pi] + dist + rate;
 
                 if total < curr_costs[ci] {
                     curr_costs[ci] = total;
