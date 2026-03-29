@@ -1760,6 +1760,279 @@ fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
     result
 }
 
+// ─── Morphological Operations ─────────────────────────────────────────────
+
+/// Structuring element shape for morphological operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MorphShape {
+    /// Rectangle (all ones).
+    Rect,
+    /// Ellipse inscribed in the kernel rectangle.
+    Ellipse,
+    /// Cross (horizontal + vertical lines through center).
+    Cross,
+}
+
+/// Generate a structuring element as a boolean mask.
+fn make_structuring_element(shape: MorphShape, kw: usize, kh: usize) -> Vec<bool> {
+    let mut se = vec![false; kw * kh];
+    let cx = kw / 2;
+    let cy = kh / 2;
+    for y in 0..kh {
+        for x in 0..kw {
+            se[y * kw + x] = match shape {
+                MorphShape::Rect => true,
+                MorphShape::Cross => x == cx || y == cy,
+                MorphShape::Ellipse => {
+                    let dx = (x as f32 - cx as f32) / cx.max(1) as f32;
+                    let dy = (y as f32 - cy as f32) / cy.max(1) as f32;
+                    dx * dx + dy * dy <= 1.0
+                }
+            };
+        }
+    }
+    se
+}
+
+/// Erode: output pixel = minimum over structuring element neighborhood.
+///
+/// For grayscale: per-pixel minimum. For RGB: per-channel minimum.
+/// Matches OpenCV `cv2.erode` with `BORDER_REFLECT_101`.
+pub fn erode(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    morph_op(pixels, info, ksize, shape, true)
+}
+
+/// Dilate: output pixel = maximum over structuring element neighborhood.
+pub fn dilate(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    morph_op(pixels, info, ksize, shape, false)
+}
+
+/// Core morphological operation (erode=min, dilate=max).
+fn morph_op(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+    is_erode: bool,
+) -> Result<Vec<u8>, ImageError> {
+    let ch = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        PixelFormat::Gray8 => 1,
+        other => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "morphology on {other:?} not supported"
+            )))
+        }
+    };
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let kw = ksize as usize;
+    let kh = ksize as usize;
+    let kx = kw / 2;
+    let ky = kh / 2;
+    let se = make_structuring_element(shape, kw, kh);
+
+    let process_ch = if info.format == PixelFormat::Rgba8 { 3 } else { ch };
+    let mut out = pixels.to_vec();
+
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..process_ch {
+                let mut val = if is_erode { 255u8 } else { 0u8 };
+                for ky2 in 0..kh {
+                    for kx2 in 0..kw {
+                        if !se[ky2 * kw + kx2] {
+                            continue;
+                        }
+                        // Reflect101 boundary
+                        let sy = reflect101(y as isize + ky2 as isize - ky as isize, h as isize) as usize;
+                        let sx = reflect101(x as isize + kx2 as isize - kx as isize, w as isize) as usize;
+                        let p = pixels[(sy * w + sx) * ch + c];
+                        if is_erode {
+                            val = val.min(p);
+                        } else {
+                            val = val.max(p);
+                        }
+                    }
+                }
+                out[(y * w + x) * ch + c] = val;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Morphological opening: erode then dilate. Removes small bright spots.
+pub fn morph_open(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    let eroded = erode(pixels, info, ksize, shape)?;
+    dilate(&eroded, info, ksize, shape)
+}
+
+/// Morphological closing: dilate then erode. Fills small dark holes.
+pub fn morph_close(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    let dilated = dilate(pixels, info, ksize, shape)?;
+    erode(&dilated, info, ksize, shape)
+}
+
+/// Morphological gradient: dilate - erode. Highlights edges.
+pub fn morph_gradient(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    let dilated = dilate(pixels, info, ksize, shape)?;
+    let eroded = erode(pixels, info, ksize, shape)?;
+    Ok(dilated
+        .iter()
+        .zip(eroded.iter())
+        .map(|(&d, &e)| d.saturating_sub(e))
+        .collect())
+}
+
+/// Top-hat: input - opening. Extracts small bright features.
+pub fn morph_tophat(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    let opened = morph_open(pixels, info, ksize, shape)?;
+    Ok(pixels
+        .iter()
+        .zip(opened.iter())
+        .map(|(&p, &o)| p.saturating_sub(o))
+        .collect())
+}
+
+/// Black-hat: closing - input. Extracts small dark features.
+pub fn morph_blackhat(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: MorphShape,
+) -> Result<Vec<u8>, ImageError> {
+    let closed = morph_close(pixels, info, ksize, shape)?;
+    Ok(closed
+        .iter()
+        .zip(pixels.iter())
+        .map(|(&c, &p)| c.saturating_sub(p))
+        .collect())
+}
+
+// ─── Non-Local Means Denoising ────────────────────────────────────────────
+
+/// Non-local means denoising parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct NlmParams {
+    /// Filter strength (h). Higher = more denoising. Default: 10.0.
+    pub h: f32,
+    /// Patch size (must be odd). Default: 7.
+    pub patch_size: u32,
+    /// Search window size (must be odd). Default: 21.
+    pub search_size: u32,
+}
+
+impl Default for NlmParams {
+    fn default() -> Self {
+        Self {
+            h: 10.0,
+            patch_size: 7,
+            search_size: 21,
+        }
+    }
+}
+
+/// Non-local means denoising for grayscale images.
+///
+/// For each pixel, computes a weighted average of all pixels in the search
+/// window, where weights depend on patch similarity (Gaussian-weighted SSD).
+///
+/// Reference: Buades et al., "A Non-Local Algorithm for Image Denoising" (2005).
+pub fn nlm_denoise(
+    pixels: &[u8],
+    info: &ImageInfo,
+    params: &NlmParams,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "NLM denoising currently supports Gray8 only".into(),
+        ));
+    }
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ps = params.patch_size as usize;
+    let ss = params.search_size as usize;
+    let pr = ps / 2; // patch radius
+    let sr = ss / 2; // search radius
+    let h2 = params.h * params.h;
+    let patch_area = (ps * ps) as f32;
+
+    let mut out = vec![0u8; w * h];
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut weight_sum: f32 = 0.0;
+            let mut pixel_sum: f32 = 0.0;
+
+            // Search window
+            let sy_start = (y as i32 - sr as i32).max(0) as usize;
+            let sy_end = (y + sr + 1).min(h);
+            let sx_start = (x as i32 - sr as i32).max(0) as usize;
+            let sx_end = (x + sr + 1).min(w);
+
+            for sy in sy_start..sy_end {
+                for sx in sx_start..sx_end {
+                    // Compute patch SSD
+                    let mut ssd: f32 = 0.0;
+                    for py in 0..ps {
+                        for px in 0..ps {
+                            let y1 = reflect101(y as isize + py as isize - pr as isize, h as isize) as usize;
+                            let x1 = reflect101(x as isize + px as isize - pr as isize, w as isize) as usize;
+                            let y2 = reflect101(sy as isize + py as isize - pr as isize, h as isize) as usize;
+                            let x2 = reflect101(sx as isize + px as isize - pr as isize, w as isize) as usize;
+                            let d = pixels[y1 * w + x1] as f32 - pixels[y2 * w + x2] as f32;
+                            ssd += d * d;
+                        }
+                    }
+                    let weight = (-ssd / (patch_area * h2)).exp();
+                    weight_sum += weight;
+                    pixel_sum += weight * pixels[sy * w + sx] as f32;
+                }
+            }
+
+            out[y * w + x] = if weight_sum > 0.0 {
+                (pixel_sum / weight_sum).round().clamp(0.0, 255.0) as u8
+            } else {
+                pixels[y * w + x]
+            };
+        }
+    }
+
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2604,5 +2877,194 @@ mod tests_16bit {
         let (px, info) = make_rgb16(4, 4, 32768);
         let result = sepia(&px, &info, 1.0).unwrap();
         assert_eq!(result.len(), px.len());
+    }
+}
+
+#[cfg(test)]
+mod morphology_tests {
+    use super::*;
+    use super::super::types::ColorSpace;
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn erode_shrinks_bright_region() {
+        // 8x8 image: center 4x4 white block on black background
+        let mut px = vec![0u8; 64];
+        for y in 2..6 {
+            for x in 2..6 {
+                px[y * 8 + x] = 255;
+            }
+        }
+        let info = gray_info(8, 8);
+        let result = erode(&px, &info, 3, MorphShape::Rect).unwrap();
+        // Center pixel should still be white
+        assert_eq!(result[3 * 8 + 3], 255);
+        // Edge of original white block should be eroded
+        assert_eq!(result[2 * 8 + 2], 0, "corner should be eroded");
+    }
+
+    #[test]
+    fn dilate_grows_bright_region() {
+        // Single white pixel at center
+        let mut px = vec![0u8; 64];
+        px[3 * 8 + 3] = 255;
+        let info = gray_info(8, 8);
+        let result = dilate(&px, &info, 3, MorphShape::Rect).unwrap();
+        // 3x3 neighborhood should all be white
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                let y = (3 + dy) as usize;
+                let x = (3 + dx) as usize;
+                assert_eq!(result[y * 8 + x], 255, "({x},{y}) should be dilated");
+            }
+        }
+    }
+
+    #[test]
+    fn erode_dilate_identity_on_uniform() {
+        let px = vec![128u8; 64];
+        let info = gray_info(8, 8);
+        let eroded = erode(&px, &info, 3, MorphShape::Rect).unwrap();
+        let dilated = dilate(&px, &info, 3, MorphShape::Rect).unwrap();
+        assert_eq!(eroded, px);
+        assert_eq!(dilated, px);
+    }
+
+    #[test]
+    fn open_removes_small_bright_noise() {
+        // Black image with single white pixel (noise)
+        let mut px = vec![0u8; 64];
+        px[3 * 8 + 3] = 255;
+        let info = gray_info(8, 8);
+        let result = morph_open(&px, &info, 3, MorphShape::Rect).unwrap();
+        // Opening should remove the single bright pixel
+        assert_eq!(result[3 * 8 + 3], 0, "single bright pixel removed by opening");
+    }
+
+    #[test]
+    fn close_fills_small_dark_hole() {
+        // White image with single black pixel (hole)
+        let mut px = vec![255u8; 64];
+        px[3 * 8 + 3] = 0;
+        let info = gray_info(8, 8);
+        let result = morph_close(&px, &info, 3, MorphShape::Rect).unwrap();
+        // Closing should fill the single dark pixel
+        assert_eq!(result[3 * 8 + 3], 255, "single dark pixel filled by closing");
+    }
+
+    #[test]
+    fn gradient_highlights_edges() {
+        // Step edge: left half black, right half white
+        let mut px = vec![0u8; 64];
+        for y in 0..8 {
+            for x in 4..8 {
+                px[y * 8 + x] = 255;
+            }
+        }
+        let info = gray_info(8, 8);
+        let result = morph_gradient(&px, &info, 3, MorphShape::Rect).unwrap();
+        // Edge at x=3/4 should be highlighted
+        assert!(result[3 * 8 + 3] > 0 || result[3 * 8 + 4] > 0, "edge should be visible");
+        // Interior should be zero
+        assert_eq!(result[3 * 8 + 0], 0, "interior black should be zero");
+        assert_eq!(result[3 * 8 + 7], 0, "interior white should be zero");
+    }
+
+    #[test]
+    fn cross_structuring_element() {
+        let se = make_structuring_element(MorphShape::Cross, 3, 3);
+        // Cross: center row and center column
+        assert!(!se[0]); // top-left
+        assert!(se[1]);  // top-center
+        assert!(!se[2]); // top-right
+        assert!(se[3]);  // mid-left
+        assert!(se[4]);  // center
+        assert!(se[5]);  // mid-right
+        assert!(!se[6]); // bottom-left
+        assert!(se[7]);  // bottom-center
+        assert!(!se[8]); // bottom-right
+    }
+
+    #[test]
+    fn rgb_morphology() {
+        use super::super::types::ColorSpace;
+        let mut px = vec![0u8; 8 * 8 * 3];
+        let idx = (3 * 8 + 3) * 3;
+        px[idx] = 255;
+        px[idx + 1] = 255;
+        px[idx + 2] = 255;
+        let info = ImageInfo {
+            width: 8, height: 8, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
+        };
+        let result = dilate(&px, &info, 3, MorphShape::Rect).unwrap();
+        // Neighbor should be dilated
+        let n_idx = (3 * 8 + 4) * 3;
+        assert_eq!(result[n_idx], 255);
+    }
+}
+
+#[cfg(test)]
+mod nlm_tests {
+    use super::*;
+    use super::super::types::ColorSpace;
+
+    #[test]
+    fn nlm_reduces_noise() {
+        // Create noisy grayscale image: uniform 128 + noise
+        let w = 32u32;
+        let h = 32u32;
+        let mut px = vec![128u8; (w * h) as usize];
+        // Add deterministic noise
+        for i in 0..px.len() {
+            let noise = ((i as u32).wrapping_mul(2654435761) >> 24) as i16 - 128;
+            let noise_scaled = noise / 4; // ±32 noise
+            px[i] = (128i16 + noise_scaled).clamp(0, 255) as u8;
+        }
+
+        let info = ImageInfo {
+            width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
+        };
+        let params = NlmParams {
+            h: 20.0,
+            patch_size: 5,
+            search_size: 11,
+        };
+        let result = nlm_denoise(&px, &info, &params).unwrap();
+
+        // Compute MAE vs ground truth (128)
+        let mae_input: f64 = px.iter().map(|&v| (v as f64 - 128.0).abs()).sum::<f64>() / px.len() as f64;
+        let mae_output: f64 = result.iter().map(|&v| (v as f64 - 128.0).abs()).sum::<f64>() / result.len() as f64;
+
+        assert!(
+            mae_output < mae_input,
+            "NLM should reduce noise: input MAE={mae_input:.1}, output MAE={mae_output:.1}"
+        );
+    }
+
+    #[test]
+    fn nlm_preserves_uniform() {
+        let px = vec![128u8; 16 * 16];
+        let info = ImageInfo {
+            width: 16, height: 16, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
+        };
+        let result = nlm_denoise(&px, &info, &NlmParams::default()).unwrap();
+        assert_eq!(result, px, "uniform image should be preserved");
+    }
+
+    #[test]
+    fn nlm_gray_only() {
+        let px = vec![128u8; 4 * 4 * 3];
+        let info = ImageInfo {
+            width: 4, height: 4, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
+        };
+        assert!(nlm_denoise(&px, &info, &NlmParams::default()).is_err());
     }
 }
