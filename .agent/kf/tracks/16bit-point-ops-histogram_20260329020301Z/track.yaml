@@ -5,104 +5,124 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Extend LUT-based point operations and histogram operations to 16-bit
-    (Rgb16, Rgba16, Gray16). Enables 16-bit gamma, threshold, equalize,
-    normalize, and all LUT-fusible operations with full precision.
-  context: |
-    With 16-bit types and I/O established by the foundation track, the
+  summary: 'Extend LUT-based point operations and histogram operations to 16-bit (Rgb16, Rgba16, Gray16). Enables 16-bit gamma,
+    threshold, equalize, normalize, and all LUT-fusible operations with full precision.
+
+    '
+  context: 'With 16-bit types and I/O established by the foundation track, the
+
     processing pipeline needs 16-bit computation. Point ops and histogram
+
     ops are the highest-value targets because:
+
     1. They are the most common operations in editing chains
+
     2. They benefit most from 16-bit precision (gamma, levels, curves)
+
     3. LUT fusion still works (128KB per [u16; 65536] LUT is acceptable)
+
     4. Histogram equalize/normalize at 16-bit matches ImageMagick exactly
 
-    After this track, operations like gamma->levels->curves will preserve
-    full 16-bit precision through the entire chain.
-  codebase_analysis: |
-    Point ops (point_ops.rs):
-    - build_lut() returns [u8; 256]. Need build_lut_u16() returning Vec<u16> (65536 entries).
-    - apply_lut() matches Rgb8/Rgba8/Gray8. Need apply_lut_u16() for 16-bit formats.
-    - compose_luts() composes [u8; 256]. Need compose_luts_u16() for [u16; 65536].
-    - All PointOp variants (Gamma, Invert, Threshold, Posterize, Clamp, Brightness, Contrast)
-      need 16-bit LUT generation.
-    - Memory: single [u16; 65536] = 128KB. Three fused = 384KB. Acceptable.
 
-    Histogram (histogram.rs):
-    - Histogram type is [u32; 256]. Need Histogram16 = [u32; 65536] (256KB).
-    - histogram() builds per-channel histograms. Need 16-bit variant.
-    - equalize_lut(), stretch_lut(), and per-channel LUT application need 16-bit paths.
-    - Total memory for 3-channel RGB16 histogram: 768KB. Acceptable.
+    After this track, operations like gamma->levels->curves will preserve
+
+    full 16-bit precision through the entire chain.
+
+    '
+  codebase_analysis: "Point ops (point_ops.rs):\n- build_lut() returns [u8; 256]. Need build_lut_u16() returning Vec<u16>\
+    \ (65536 entries).\n- apply_lut() matches Rgb8/Rgba8/Gray8. Need apply_lut_u16() for 16-bit formats.\n- compose_luts()\
+    \ composes [u8; 256]. Need compose_luts_u16() for [u16; 65536].\n- All PointOp variants (Gamma, Invert, Threshold, Posterize,\
+    \ Clamp, Brightness, Contrast)\n  need 16-bit LUT generation.\n- Memory: single [u16; 65536] = 128KB. Three fused = 384KB.\
+    \ Acceptable.\n\nHistogram (histogram.rs):\n- Histogram type is [u32; 256]. Need Histogram16 = [u32; 65536] (256KB).\n\
+    - histogram() builds per-channel histograms. Need 16-bit variant.\n- equalize_lut(), stretch_lut(), and per-channel LUT\
+    \ application need 16-bit paths.\n- Total memory for 3-channel RGB16 histogram: 768KB. Acceptable.\n"
   acceptance_criteria:
-    - build_lut_u16() generates correct 65536-entry LUT for all PointOp variants
-    - apply_lut_u16() applies 16-bit LUT to Rgb16, Rgba16, Gray16 pixels
-    - compose_luts_u16() correctly fuses two 16-bit LUTs
-    - Gamma 1.0 is identity at 16-bit (all 65536 values preserved)
-    - Invert roundtrip at 16-bit is identity
-    - histogram_u16() produces correct 65536-bin histograms
-    - equalize at 16-bit matches ImageMagick output (MAE<1.0 on 8-bit downscale)
-    - normalize at 16-bit matches ImageMagick output (MAE<1.0 on 8-bit downscale)
-    - Public API functions (gamma, invert, threshold, etc.) auto-dispatch on format
-    - Memory usage documented (LUT size, histogram size)
-  out_of_scope: |
-    16-bit spatial filters (blur, sharpen, convolve) — separate track.
+  - build_lut_u16() generates correct 65536-entry LUT for all PointOp variants
+  - apply_lut_u16() applies 16-bit LUT to Rgb16, Rgba16, Gray16 pixels
+  - compose_luts_u16() correctly fuses two 16-bit LUTs
+  - Gamma 1.0 is identity at 16-bit (all 65536 values preserved)
+  - Invert roundtrip at 16-bit is identity
+  - histogram_u16() produces correct 65536-bin histograms
+  - equalize at 16-bit matches ImageMagick output (MAE<1.0 on 8-bit downscale)
+  - normalize at 16-bit matches ImageMagick output (MAE<1.0 on 8-bit downscale)
+  - Public API functions (gamma, invert, threshold, etc.) auto-dispatch on format
+  - Memory usage documented (LUT size, histogram size)
+  out_of_scope: '16-bit spatial filters (blur, sharpen, convolve) — separate track.
+
     16-bit color LUT / blend modes — separate track.
+
     LUT memory optimization (sampling/interpolation) — future if needed.
-  technical_notes: |
-    LUT strategy: full [u16; 65536] (128KB). This preserves the fusion property
+
+    '
+  technical_notes: 'LUT strategy: full [u16; 65536] (128KB). This preserves the fusion property
+
     (compose_luts_u16 is still O(65536)). Memory is acceptable for typical chains
+
     of 2-4 fused point ops (256-512KB total).
 
+
     For PointOp formulas at 16-bit:
+
     - Gamma: LUT[i] = round(65535 * (i/65535)^(1/gamma))
+
     - Invert: LUT[i] = 65535 - i
+
     - Threshold: LUT[i] = if i > level { 65535 } else { 0 }
+
     - Posterize: LUT[i] = round(round(i*(n-1)/65535) * 65535/(n-1))
+
     - Brightness: LUT[i] = (i + offset).clamp(0, 65535) where offset = amount * 65535
+
     - Contrast: LUT[i] = (factor*(i-32768)+32768).clamp(0, 65535)
 
+
     For histogram at 16-bit:
+
     - 65536 bins per channel, u32 counts (handles images up to 4 billion pixels)
+
     - CDF, percentile finding, stretch all work identically to 8-bit
+
     - equalize_lut_u16: (cdf[i] - cdf_min) * 65535 / (N - cdf_min)
 
+
     Auto-dispatch: public functions check info.format and call u8 or u16 path.
+
+    '
 plan:
-  - phase: 16-Bit LUT Infrastructure
-    tasks:
-      - text: Implement build_lut_u16() for all PointOp variants with 65536-entry output
-        done: false
-      - text: Implement apply_lut_u16() for Rgb16, Rgba16, Gray16 with batch unrolling
-        done: false
-      - text: Implement compose_luts_u16() for 16-bit LUT fusion
-        done: false
-  - phase: Point Op Auto-Dispatch
-    tasks:
-      - text: Update gamma(), invert(), threshold(), posterize(), clamp() to auto-dispatch on format
-        done: false
-      - text: Update brightness and contrast convenience functions for 16-bit
-        done: false
-      - text: Unit tests for all point ops at 16-bit (identity, roundtrip, boundary values)
-        done: false
-  - phase: 16-Bit Histogram
-    tasks:
-      - text: Define Histogram16 type and implement histogram_u16() for Rgb16/Rgba16/Gray16
-        done: false
-      - text: Implement equalize_lut_u16() and equalize() auto-dispatch for 16-bit
-        done: false
-      - text: Implement stretch_lut_u16() and normalize/auto_level/contrast_stretch for 16-bit
-        done: false
-      - text: Implement statistics_u16() (min, max, mean, stddev at 16-bit)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Compare 16-bit equalize output against ImageMagick (expect MAE<1.0 at 8-bit downscale)
-        done: false
-      - text: Compare 16-bit normalize output against ImageMagick (expect MAE<1.0)
-        done: false
-      - text: Test LUT fusion correctness (fused matches sequential for 16-bit)
-        done: false
-      - text: Verify all existing 8-bit tests still pass (auto-dispatch does not regress)
-        done: false
+- phase: 16-Bit LUT Infrastructure
+  tasks:
+  - text: Implement build_lut_u16() for all PointOp variants with 65536-entry output
+    done: true
+  - text: Implement apply_lut_u16() for Rgb16, Rgba16, Gray16 with batch unrolling
+    done: true
+  - text: Implement compose_luts_u16() for 16-bit LUT fusion
+    done: true
+- phase: Point Op Auto-Dispatch
+  tasks:
+  - text: Update gamma(), invert(), threshold(), posterize(), clamp() to auto-dispatch on format
+    done: true
+  - text: Update brightness and contrast convenience functions for 16-bit
+    done: true
+  - text: Unit tests for all point ops at 16-bit (identity, roundtrip, boundary values)
+    done: true
+- phase: 16-Bit Histogram
+  tasks:
+  - text: Define Histogram16 type and implement histogram_u16() for Rgb16/Rgba16/Gray16
+    done: false
+  - text: Implement equalize_lut_u16() and equalize() auto-dispatch for 16-bit
+    done: false
+  - text: Implement stretch_lut_u16() and normalize/auto_level/contrast_stretch for 16-bit
+    done: false
+  - text: Implement statistics_u16() (min, max, mean, stddev at 16-bit)
+    done: false
+- phase: Verification
+  tasks:
+  - text: Compare 16-bit equalize output against ImageMagick (expect MAE<1.0 at 8-bit downscale)
+    done: false
+  - text: Compare 16-bit normalize output against ImageMagick (expect MAE<1.0)
+    done: false
+  - text: Test LUT fusion correctness (fused matches sequential for 16-bit)
+    done: false
+  - text: Verify all existing 8-bit tests still pass (auto-dispatch does not regress)
+    done: false
 extra: {}
