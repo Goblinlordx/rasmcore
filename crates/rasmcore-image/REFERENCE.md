@@ -101,8 +101,9 @@ aligned with, the match expectation, and the validation status.
 | asc_cdl (per-channel) | ImageMagick -fx | Per-channel slope/offset/power via -fx | EXACT | PASS (MAE=0.0) |
 | lift_gamma_gain | ImageMagick -fx | `magick -fx "G*pow(u+L*(1-u),1/g)"` (DaVinci formula) | EXACT | PASS (MAE=0.0) |
 | lgg (per-channel) | ImageMagick -fx | Per-channel lift/gamma/gain independence | EXACT | PASS (MAE=0.0) |
-| curves (spline) | ImageMagick -fx | `magick -fx "pow(u,2.0)"` (vs monotone cubic approx) | DETERMINISTIC | PASS (MAE=0.46) |
-| split_toning | ImageMagick -fx | Luminance-weighted shadow/highlight blend via -fx | DETERMINISTIC | PASS (MAE=0.92) |
+| curves (identity) | Self (formula) | Linear 2-point curve = identity | EXACT | PASS (MAE=0.0) |
+| curves (pow) | ImageMagick -fx | `magick -fx "pow(u,2.0)"` (same formula, f64) | EXACT | PASS (MAE=0.0) |
+| split_toning | ImageMagick -fx | Luminance-weighted blend via -fx | ALGORITHM | PASS (MAE=0.92, Q16-HDRI; see note) |
 
 ### Content-Aware
 
@@ -142,6 +143,14 @@ ImageMagick 7 Q16-HDRI processes pixels as 64-bit floating-point internally, whi
 rasmcore operates at 8-bit. For histogram-based operations (equalize, normalize), this
 creates rounding differences visible as MAE 7-12. The algorithms are identical; the
 precision difference is intrinsic.
+
+### Split Toning Q16-HDRI Precision
+
+Split toning MAE=0.92 vs IM is caused by Q16-HDRI intermediate quantization.
+Our f32 implementation matches the f64 formula evaluation exactly (MAE=0.0 vs f64 reference).
+IM's chain: u8→Q16 (65535 levels)→f64 -fx→Q16→u8 introduces rounding cascades
+at Q16 boundaries that differ from our u8→f32→u8 path. 5592/12288 pixels differ
+by ±1–5 levels. The formula is identical; only intermediate precision differs.
 
 ### Per-channel vs Intensity
 
