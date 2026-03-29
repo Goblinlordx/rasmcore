@@ -24,7 +24,11 @@ pub struct Rgb {
 /// partitioning at the median. Each final box's average color becomes a palette entry.
 ///
 /// `max_colors` must be 2..=256.
-pub fn median_cut(pixels: &[u8], info: &ImageInfo, max_colors: usize) -> Result<Vec<Rgb>, ImageError> {
+pub fn median_cut(
+    pixels: &[u8],
+    info: &ImageInfo,
+    max_colors: usize,
+) -> Result<Vec<Rgb>, ImageError> {
     if max_colors < 2 || max_colors > 256 {
         return Err(ImageError::InvalidParameters(
             "max_colors must be 2..256".into(),
@@ -72,11 +76,7 @@ pub fn median_cut(pixels: &[u8], info: &ImageInfo, max_colors: usize) -> Result<
 /// Map each pixel in an RGB8 image to the nearest color in the palette.
 ///
 /// Returns a new RGB8 image with only palette colors.
-pub fn quantize(
-    pixels: &[u8],
-    info: &ImageInfo,
-    palette: &[Rgb],
-) -> Result<Vec<u8>, ImageError> {
+pub fn quantize(pixels: &[u8], info: &ImageInfo, palette: &[Rgb]) -> Result<Vec<u8>, ImageError> {
     let n = (info.width * info.height) as usize;
     if pixels.len() < n * 3 {
         return Err(ImageError::InvalidInput("pixel buffer too small".into()));
@@ -269,7 +269,7 @@ pub fn dither_ordered(
         _ => {
             return Err(ImageError::InvalidParameters(
                 "matrix_size must be 2, 4, or 8".into(),
-            ))
+            ));
         }
     };
     let ms = matrix_size;
@@ -481,8 +481,14 @@ mod tests {
         // Should span from dark to light
         let min_v = palette.iter().map(|c| c.r).min().unwrap();
         let max_v = palette.iter().map(|c| c.r).max().unwrap();
-        assert!(min_v < 64, "darkest palette entry should be < 64, got {min_v}");
-        assert!(max_v > 191, "lightest palette entry should be > 191, got {max_v}");
+        assert!(
+            min_v < 64,
+            "darkest palette entry should be < 64, got {min_v}"
+        );
+        assert!(
+            max_v > 191,
+            "lightest palette entry should be > 191, got {max_v}"
+        );
     }
 
     #[test]
@@ -592,7 +598,10 @@ mod tests {
         }
         mse /= (n * 3) as f64;
 
-        eprintln!("  median_cut 16-color MSE={mse:.2} PSNR={:.1}dB", 10.0 * (255.0f64 * 255.0 / mse).log10());
+        eprintln!(
+            "  median_cut 16-color MSE={mse:.2} PSNR={:.1}dB",
+            10.0 * (255.0f64 * 255.0 / mse).log10()
+        );
         // 16-color palette for a 2D gradient: PSNR > 23 dB (measured: 24.4 dB)
         assert!(
             mse < 350.0,
@@ -626,12 +635,9 @@ mod tests {
         let naive = quantize(&pixels, &info, &palette).unwrap();
 
         // Average brightness of original
-        let orig_avg: f64 =
-            pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
-        let dith_avg: f64 =
-            dithered.iter().map(|&v| v as f64).sum::<f64>() / dithered.len() as f64;
-        let naive_avg: f64 =
-            naive.iter().map(|&v| v as f64).sum::<f64>() / naive.len() as f64;
+        let orig_avg: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let dith_avg: f64 = dithered.iter().map(|&v| v as f64).sum::<f64>() / dithered.len() as f64;
+        let naive_avg: f64 = naive.iter().map(|&v| v as f64).sum::<f64>() / naive.len() as f64;
 
         eprintln!("  orig_avg={orig_avg:.1} dithered_avg={dith_avg:.1} naive_avg={naive_avg:.1}");
         // Dithered should preserve average brightness better than naive
@@ -743,10 +749,26 @@ mod parity {
         // Fixed palette (not generated — avoids median_cut algorithm differences)
         let palette = vec![
             Rgb { r: 0, g: 0, b: 128 },
-            Rgb { r: 255, g: 0, b: 128 },
-            Rgb { r: 0, g: 255, b: 128 },
-            Rgb { r: 255, g: 255, b: 128 },
-            Rgb { r: 128, g: 128, b: 128 },
+            Rgb {
+                r: 255,
+                g: 0,
+                b: 128,
+            },
+            Rgb {
+                r: 0,
+                g: 255,
+                b: 128,
+            },
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 128,
+            },
+            Rgb {
+                r: 128,
+                g: 128,
+                b: 128,
+            },
         ];
         let info = test_info(w, h);
         let ours = quantize(&pixels, &info, &palette).unwrap();
@@ -795,7 +817,11 @@ mod parity {
 
         let palette = vec![
             Rgb { r: 0, g: 0, b: 0 },
-            Rgb { r: 255, g: 255, b: 255 },
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
         ];
         let info = test_info(w, h);
         let ours = dither_floyd_steinberg(&pixels, &info, &palette).unwrap();
@@ -859,8 +885,16 @@ mod parity {
 
         let palette = vec![
             Rgb { r: 0, g: 0, b: 0 },
-            Rgb { r: 128, g: 128, b: 128 },
-            Rgb { r: 255, g: 255, b: 255 },
+            Rgb {
+                r: 128,
+                g: 128,
+                b: 128,
+            },
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
         ];
         let info = test_info(w, h);
         let ours = dither_ordered(&pixels, &info, &palette, 4).unwrap();

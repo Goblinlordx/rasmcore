@@ -560,7 +560,11 @@ pub fn histogram_match(
         let channels = match source_info.format {
             PixelFormat::Rgb8 => 3,
             PixelFormat::Rgba8 => 4,
-            _ => return Err(ImageError::UnsupportedFormat("histogram_match: unsupported format".into())),
+            _ => {
+                return Err(ImageError::UnsupportedFormat(
+                    "histogram_match: unsupported format".into(),
+                ));
+            }
         };
 
         let mut result = Vec::with_capacity(source.len());
@@ -912,7 +916,10 @@ mod tests {
         // Result should be much brighter than source
         let src_mean: f64 = source.iter().map(|&v| v as f64).sum::<f64>() / source.len() as f64;
         let res_mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
-        assert!(res_mean > src_mean + 50.0, "matched output should be much brighter: src_mean={src_mean}, res_mean={res_mean}");
+        assert!(
+            res_mean > src_mean + 50.0,
+            "matched output should be much brighter: src_mean={src_mean}, res_mean={res_mean}"
+        );
     }
 
     #[test]
