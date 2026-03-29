@@ -151,7 +151,9 @@ pub fn ycbcr_to_rgb_fixed(y: i32, cb: i32, cr: i32) -> (u8, u8, u8) {
     )
 }
 
-/// Downsample a full-resolution plane by averaging blocks.
+/// Downsample a full-resolution plane with dithered rounding.
+/// Matches mozjpeg/libjpeg h2v2_downsample: alternating bias (1, 2, 1, 2...)
+/// prevents systematic rounding bias that degrades chroma quality.
 fn downsample(
     src: &[u8],
     src_w: usize,
@@ -162,6 +164,7 @@ fn downsample(
     dst_h: usize,
 ) -> Vec<u8> {
     let mut dst = Vec::with_capacity(dst_w * dst_h);
+    let mut bias = 1u32; // Alternating 1, 2, 1, 2... (mozjpeg: bias ^= 3)
     for dy in 0..dst_h {
         for dx in 0..dst_w {
             let mut sum = 0u32;
@@ -180,7 +183,20 @@ fn downsample(
                     count += 1;
                 }
             }
-            dst.push(if count > 0 { (sum / count) as u8 } else { 128 });
+            // Dithered rounding: add alternating bias before division
+            if count == 4 {
+                // Fast path for 2x2 (h2v2): (sum + bias) >> 2
+                dst.push(((sum + bias) >> 2) as u8);
+                bias ^= 3; // Alternate between 1 and 2
+            } else if count == 2 {
+                // Fast path for 2x1 (h2v1): (sum + (bias >> 1)) >> 1
+                dst.push(((sum + (bias >> 1)) >> 1) as u8);
+                bias ^= 3;
+            } else if count > 0 {
+                dst.push(((sum + count / 2) / count) as u8);
+            } else {
+                dst.push(128);
+            }
         }
     }
     dst
