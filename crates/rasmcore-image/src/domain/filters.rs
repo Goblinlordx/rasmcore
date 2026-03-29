@@ -4150,8 +4150,8 @@ pub fn displacement_map(
     }
 
     let mut out = vec![0u8; pixels.len()];
-    let w_max = (w as f32) - 1.0;
-    let h_max = (h as f32) - 1.0;
+    let wi = w as i32;
+    let hi = h as i32;
 
     for y in 0..h {
         let row_off = y * w;
@@ -4160,34 +4160,38 @@ pub fn displacement_map(
             let sx = map_x[idx];
             let sy = map_y[idx];
 
-            // BORDER_CONSTANT: out-of-bounds → 0 (already zeroed)
-            if sx < 0.0 || sy < 0.0 || sx > w_max || sy > h_max {
+            // Entirely outside the bilinear footprint → 0 (already zeroed)
+            if sx < -1.0 || sy < -1.0 || sx >= wi as f32 || sy >= hi as f32 {
                 continue;
             }
 
-            let x0 = sx.floor() as usize;
-            let y0 = sy.floor() as usize;
-            let x1 = (x0 + 1).min(w - 1);
-            let y1 = (y0 + 1).min(h - 1);
+            let x0 = sx.floor() as i32;
+            let y0 = sy.floor() as i32;
+            let x1 = x0 + 1;
+            let y1 = y0 + 1;
             let fx = sx - x0 as f32;
             let fy = sy - y0 as f32;
 
-            let out_off = idx * ch;
             let w00 = (1.0 - fx) * (1.0 - fy);
             let w10 = fx * (1.0 - fy);
             let w01 = (1.0 - fx) * fy;
             let w11 = fx * fy;
 
-            let off_tl = (y0 * w + x0) * ch;
-            let off_tr = (y0 * w + x1) * ch;
-            let off_bl = (y1 * w + x0) * ch;
-            let off_br = (y1 * w + x1) * ch;
+            // Inline helper: fetch pixel or 0 if out-of-bounds (BORDER_CONSTANT)
+            let sample = |px: i32, py: i32, c: usize| -> f32 {
+                if px >= 0 && px < wi && py >= 0 && py < hi {
+                    pixels[(py as usize * w + px as usize) * ch + c] as f32
+                } else {
+                    0.0
+                }
+            };
 
+            let out_off = idx * ch;
             for c in 0..ch {
-                let v = pixels[off_tl + c] as f32 * w00
-                    + pixels[off_tr + c] as f32 * w10
-                    + pixels[off_bl + c] as f32 * w01
-                    + pixels[off_br + c] as f32 * w11;
+                let v = sample(x0, y0, c) * w00
+                    + sample(x1, y0, c) * w10
+                    + sample(x0, y1, c) * w01
+                    + sample(x1, y1, c) * w11;
                 out[out_off + c] = v.round().min(255.0) as u8;
             }
         }

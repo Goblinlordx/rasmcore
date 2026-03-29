@@ -973,3 +973,63 @@ fn morph_compound_ops_match_opencv() {
         assert!(m <= 1, "Morph {op_name}: max_err={m} > 1");
     }
 }
+
+// ─── Displacement Map Parity ─────────────────────────────────────────────
+
+fn load_f32_fixture(name: &str) -> Vec<f32> {
+    let bytes = load_fixture(name);
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+#[test]
+fn displacement_map_barrel_all_images_match_opencv() {
+    let info = info_128();
+    let map_x = load_f32_fixture("displace_barrel_map_x.raw");
+    let map_y = load_f32_fixture("displace_barrel_map_y.raw");
+
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_displace_barrel.raw"));
+        let ours = filters::displacement_map(&input, &info, &map_x, &map_y).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("displace_barrel {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(
+            e < 0.5,
+            "displace_barrel {name}: MAE={e:.4} >= 0.5"
+        );
+        assert!(
+            m <= 1,
+            "displace_barrel {name}: max_err={m} > 1"
+        );
+    }
+}
+
+#[test]
+fn displacement_map_wave_all_images_match_opencv() {
+    let info = info_128();
+    let map_x = load_f32_fixture("displace_wave_map_x.raw");
+    let map_y = load_f32_fixture("displace_wave_map_y.raw");
+
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_displace_wave.raw"));
+        let ours = filters::displacement_map(&input, &info, &map_x, &map_y).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("displace_wave {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(
+            e < 0.5,
+            "displace_wave {name}: MAE={e:.4} >= 0.5"
+        );
+        assert!(
+            m <= 1,
+            "displace_wave {name}: max_err={m} > 1"
+        );
+    }
+}
