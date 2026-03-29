@@ -5,120 +5,127 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Validate dehaze, clarity, and Local Laplacian against external reference
-    implementations using real-world test images. Confirms correctness with
-    pixel-level comparisons, not just self-referential smoke tests.
-  context: |
-    The photo-enhance track implemented three operations (dehaze, clarity,
+  summary: 'Validate dehaze, clarity, and Local Laplacian against external reference implementations using real-world test
+    images. Confirms correctness with pixel-level comparisons, not just self-referential smoke tests.
+
+    '
+  context: 'The photo-enhance track implemented three operations (dehaze, clarity,
+
     Local Laplacian) with only self-referential tests (output exists, alpha
+
     preserved, stats reasonable). No comparison against known-good references.
 
+
     Reference implementations:
+
     - Dehaze: OpenCV cv2.xphoto or Python reimplementation of He et al. 2009
+
     - Clarity: Darktable / Python USM with midtone weighting
+
     - Local Laplacian: libvips vips_locallaplacian (only open-source impl)
 
+
     The filter-reference-realign track already built the Python test harness
+
     (python_ref_available, run_python_ref helpers in reference_audit.rs).
+
     This track uses that infrastructure.
-  codebase_analysis: |
-    Current photo enhancement tests (filters.rs photo_enhance_tests module):
+
+    '
+  codebase_analysis: 'Current photo enhancement tests (filters.rs photo_enhance_tests module):
+
     - dehaze_produces_output: checks output exists and range increases
+
     - dehaze_rgba_preserves_alpha: checks alpha channel unchanged
+
     - clarity_enhances_midtones: checks stddev not dramatically reduced
+
     - clarity_zero_amount_is_near_identity: checks MAE < 1.0
+
     - local_laplacian_preserves_dimensions: checks output size
+
     - local_laplacian_sigma_1_near_identity: checks MAE < 30.0
+
     - local_laplacian_small_sigma_produces_output: checks pixels changed
+
     - local_laplacian_rgba_preserves_alpha: checks alpha unchanged
+
 
     None compare against external references. No real photograph test images.
 
+
     Test infrastructure available in reference_audit.rs:
+
     - python_ref_available() (from filter-reference-realign track)
+
     - run_python_ref() helper
+
     - write_png(), read_png_rgb(), mae() helpers
+
     - magick_available(), magick_op() for ImageMagick comparisons
 
+
     libvips CLI: vips locallaplacian input.png output.png sigma
+
+    '
   acceptance_criteria:
-    - Dehaze compared against Python He et al. 2009 reimplementation on synthetic hazy image
-    - Dehaze transmission map values within reasonable range (0.1-1.0)
-    - Clarity compared against Python large-radius USM with midtone weighting on gradient image
-    - Local Laplacian compared against vips locallaplacian (if vips CLI available)
-    - Local Laplacian pyramid reconstruction is lossless at sigma=infinity (identity)
-    - All tests use deterministic synthetic test images (reproducible)
-    - Tests skip gracefully when Python/vips not available
-    - REFERENCE.md updated with reference and PASS status for all 3 operations
-  out_of_scope: |
-    Real photograph datasets (copyright concerns). Neural-network-based comparisons.
+  - Dehaze compared against Python He et al. 2009 reimplementation on synthetic hazy image
+  - Dehaze transmission map values within reasonable range (0.1-1.0)
+  - Clarity compared against Python large-radius USM with midtone weighting on gradient image
+  - Local Laplacian compared against vips locallaplacian (if vips CLI available)
+  - Local Laplacian pyramid reconstruction is lossless at sigma=infinity (identity)
+  - All tests use deterministic synthetic test images (reproducible)
+  - Tests skip gracefully when Python/vips not available
+  - REFERENCE.md updated with reference and PASS status for all 3 operations
+  out_of_scope: 'Real photograph datasets (copyright concerns). Neural-network-based comparisons.
+
     Performance benchmarking (separate track). Fixing any bugs found (separate bug tracks).
-  technical_notes: |
-    Test images (deterministic, generated in Rust):
-    1. Hazy scene: gradient image with additive haze (I_hazy = I*t + A*(1-t), t=0.3, A=0.8)
-    2. Midtone gradient: values concentrated in 64-192 range for clarity testing
-    3. Detail-rich pattern: checkerboard + gradient for Local Laplacian
 
-    Dehaze reference (Python):
-      Dark channel prior reimplementation in numpy:
-      - dark_channel = min over RGB in patch (cv2.erode with rect kernel)
-      - atmospheric_light from top 0.1% brightest dark channel pixels
-      - transmission = 1 - omega * dark_channel(I/A)
-      - No guided filter refinement (compare raw transmission map)
-      Compare: transmission map MAE and recovered scene MAE
-
-    Clarity reference (Python):
-      - blur = cv2.GaussianBlur(img, (0,0), sigma)
-      - detail = img - blur
-      - luma = 0.2126*R + 0.7152*G + 0.0722*B (normalized 0-1)
-      - weight = 4 * luma * (1 - luma) * amount
-      - output = img + detail * weight
-      Compare: output MAE (should be < 2.0 for matching formula)
-
-    Local Laplacian reference:
-      Option A: vips locallaplacian (if vips available)
-        vips locallaplacian input.png output.png sigma
-      Option B: Python pyramid implementation
-        Build Gaussian pyramid, remap, reconstruct
-      Compare: MAE at matched sigma values
-
-    Expected MAE thresholds:
-    - Dehaze transmission: MAE < 5.0 (guided filter refinement differs)
-    - Dehaze scene recovery: MAE < 10.0 (refinement propagates)
-    - Clarity: MAE < 2.0 (exact formula match possible)
-    - Local Laplacian vs vips: MAE < 15.0 (algorithm variants differ)
+    '
+  technical_notes: "Test images (deterministic, generated in Rust):\n1. Hazy scene: gradient image with additive haze (I_hazy\
+    \ = I*t + A*(1-t), t=0.3, A=0.8)\n2. Midtone gradient: values concentrated in 64-192 range for clarity testing\n3. Detail-rich\
+    \ pattern: checkerboard + gradient for Local Laplacian\n\nDehaze reference (Python):\n  Dark channel prior reimplementation\
+    \ in numpy:\n  - dark_channel = min over RGB in patch (cv2.erode with rect kernel)\n  - atmospheric_light from top 0.1%\
+    \ brightest dark channel pixels\n  - transmission = 1 - omega * dark_channel(I/A)\n  - No guided filter refinement (compare\
+    \ raw transmission map)\n  Compare: transmission map MAE and recovered scene MAE\n\nClarity reference (Python):\n  - blur\
+    \ = cv2.GaussianBlur(img, (0,0), sigma)\n  - detail = img - blur\n  - luma = 0.2126*R + 0.7152*G + 0.0722*B (normalized\
+    \ 0-1)\n  - weight = 4 * luma * (1 - luma) * amount\n  - output = img + detail * weight\n  Compare: output MAE (should\
+    \ be < 2.0 for matching formula)\n\nLocal Laplacian reference:\n  Option A: vips locallaplacian (if vips available)\n\
+    \    vips locallaplacian input.png output.png sigma\n  Option B: Python pyramid implementation\n    Build Gaussian pyramid,\
+    \ remap, reconstruct\n  Compare: MAE at matched sigma values\n\nExpected MAE thresholds:\n- Dehaze transmission: MAE <\
+    \ 5.0 (guided filter refinement differs)\n- Dehaze scene recovery: MAE < 10.0 (refinement propagates)\n- Clarity: MAE\
+    \ < 2.0 (exact formula match possible)\n- Local Laplacian vs vips: MAE < 15.0 (algorithm variants differ)\n"
 plan:
-  - phase: Test Infrastructure
-    tasks:
-      - text: Add generate_hazy_image() helper (gradient + synthetic haze with known t and A)
-        done: false
-      - text: Add generate_midtone_image() helper for clarity testing
-        done: false
-      - text: Add generate_detail_image() helper (checkerboard + gradient) for Local Laplacian
-        done: false
-      - text: Add vips_available() helper to check for vips CLI
-        done: false
-  - phase: Dehaze Validation
-    tasks:
-      - text: Compare dehaze transmission map against Python dark channel prior (MAE < 5.0)
-        done: false
-      - text: Compare dehaze scene recovery against Python implementation (MAE < 10.0)
-        done: false
-      - text: Verify dehaze on fully clear image is near-identity
-        done: false
-  - phase: Clarity Validation
-    tasks:
-      - text: Compare clarity against Python USM+midtone formula (MAE < 2.0)
-        done: false
-      - text: Verify clarity amount=0 is identity (MAE = 0.0)
-        done: false
-  - phase: Local Laplacian Validation
-    tasks:
-      - text: Compare Local Laplacian against vips locallaplacian at sigma=0.5 (MAE < 15.0)
-        done: false
-      - text: Verify Local Laplacian pyramid reconstruction identity (large sigma, MAE < 1.0)
-        done: false
-      - text: Update REFERENCE.md with references and PASS status for dehaze, clarity, local_laplacian
-        done: false
+- phase: Test Infrastructure
+  tasks:
+  - text: Add generate_hazy_image() helper (gradient + synthetic haze with known t and A)
+    done: true
+  - text: Add generate_midtone_image() helper for clarity testing
+    done: true
+  - text: Add generate_detail_image() helper (checkerboard + gradient) for Local Laplacian
+    done: true
+  - text: Add vips_available() helper to check for vips CLI
+    done: true
+- phase: Dehaze Validation
+  tasks:
+  - text: Compare dehaze transmission map against Python dark channel prior (MAE < 5.0)
+    done: true
+  - text: Compare dehaze scene recovery against Python implementation (MAE < 10.0)
+    done: true
+  - text: Verify dehaze on fully clear image is near-identity
+    done: true
+- phase: Clarity Validation
+  tasks:
+  - text: Compare clarity against Python USM+midtone formula (MAE < 2.0)
+    done: true
+  - text: Verify clarity amount=0 is identity (MAE = 0.0)
+    done: true
+- phase: Local Laplacian Validation
+  tasks:
+  - text: Compare Local Laplacian against vips locallaplacian at sigma=0.5 (MAE < 15.0)
+    done: true
+  - text: Verify Local Laplacian pyramid reconstruction identity (large sigma, MAE < 1.0)
+    done: true
+  - text: Update REFERENCE.md with references and PASS status for dehaze, clarity, local_laplacian
+    done: true
 extra: {}
