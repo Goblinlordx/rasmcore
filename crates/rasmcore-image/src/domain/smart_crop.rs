@@ -39,12 +39,10 @@ pub enum SmartCropStrategy {
 
 /// Smart crop: find the most interesting crop window of target dimensions.
 ///
-/// Analyzes the image using the chosen strategy, then selects the crop position
-/// that maximizes the score. Uses an integral image (summed area table) for
-/// O(1) window sum queries after the initial score map computation.
-///
-/// For images larger than 1024px in either dimension, a 4x downsampled version
-/// is analyzed and coordinates scaled back up.
+/// Algorithm matches libvips `vips_smartcrop()`:
+/// - **Entropy**: iterative slice removal (~8 iterations, trim least-interesting edge)
+/// - **Attention**: downsample to ~32px, score via Laplacian edge + skin detection +
+///   saturation, Gaussian blur, find max point, center crop
 pub fn smart_crop(
     pixels: &[u8],
     info: &ImageInfo,
@@ -70,171 +68,307 @@ pub fn smart_crop(
         });
     }
 
-    // For large images, downsample for analysis then scale coordinates back
-    let (analysis_pixels, analysis_info, scale) = if info.width > 1024 || info.height > 1024 {
-        let scale = 4u32;
-        let small_w = info.width / scale;
-        let small_h = info.height / scale;
-        let small = transform::resize(
+    let (crop_x, crop_y) = match strategy {
+        SmartCropStrategy::Entropy => entropy_iterative_slice(pixels, info, target_w, target_h)?,
+        SmartCropStrategy::Attention => attention_blur_maxpoint(pixels, info, target_w, target_h)?,
+    };
+
+    transform::crop(pixels, info, crop_x, crop_y, target_w, target_h)
+}
+
+// ─── Entropy: Iterative Slice Removal (matching libvips) ────────────────────
+
+/// Entropy-based crop via iterative slice removal (libvips algorithm).
+///
+/// Repeatedly trims the least-interesting edge slice (~8 iterations) until
+/// the remaining region matches the target dimensions.
+fn entropy_iterative_slice(
+    pixels: &[u8],
+    info: &ImageInfo,
+    target_w: u32,
+    target_h: u32,
+) -> Result<(u32, u32), ImageError> {
+    let gray = to_grayscale(pixels, info);
+    let w = info.width as usize;
+    let h = info.height as usize;
+
+    // Current crop region (starts as full image)
+    let mut x0 = 0usize;
+    let mut y0 = 0usize;
+    let mut cw = w;
+    let mut ch = h;
+
+    let excess_w = w - target_w as usize;
+    let excess_h = h - target_h as usize;
+    let max_slice = (excess_w.div_ceil(8)).max(excess_h.div_ceil(8)).max(1);
+
+    // Iteratively trim the least-interesting edge (~8 iterations)
+    while cw > target_w as usize || ch > target_h as usize {
+        if cw > target_w as usize {
+            let slice_w = max_slice.min(cw - target_w as usize);
+            let left_entropy = region_entropy(&gray, w, x0, y0, slice_w, ch);
+            let right_entropy = region_entropy(&gray, w, x0 + cw - slice_w, y0, slice_w, ch);
+
+            if left_entropy <= right_entropy {
+                x0 += slice_w; // trim left
+            }
+            // else trim right (just reduce cw)
+            cw -= slice_w;
+        }
+        if ch > target_h as usize {
+            let slice_h = max_slice.min(ch - target_h as usize);
+            let top_entropy = region_entropy(&gray, w, x0, y0, cw, slice_h);
+            let bottom_entropy = region_entropy(&gray, w, x0, y0 + ch - slice_h, cw, slice_h);
+
+            if top_entropy <= bottom_entropy {
+                y0 += slice_h; // trim top
+            }
+            ch -= slice_h;
+        }
+    }
+
+    Ok((x0 as u32, y0 as u32))
+}
+
+/// Shannon entropy of a rectangular region in a grayscale image.
+fn region_entropy(gray: &[u8], stride: usize, x: usize, y: usize, w: usize, h: usize) -> f64 {
+    let mut hist = [0u32; 256];
+    let mut count = 0u32;
+
+    for row in y..y + h {
+        for col in x..x + w {
+            if row < stride * 100000 && col < stride {
+                // bounds safety
+                hist[gray[row * stride + col] as usize] += 1;
+                count += 1;
+            }
+        }
+    }
+
+    if count == 0 {
+        return 0.0;
+    }
+    let n = count as f64;
+    let mut entropy = 0.0f64;
+    for &c in &hist {
+        if c > 0 {
+            let p = c as f64 / n;
+            entropy -= p * p.log2();
+        }
+    }
+    entropy
+}
+
+// ─── Attention: Laplacian + Skin + Saturation (matching libvips) ────────────
+
+/// Attention-based crop via multi-signal scoring (libvips algorithm).
+///
+/// 1. Downsample to ~32px
+/// 2. Compute edge score (Laplacian on luminance)
+/// 3. Compute skin color score (XYZ distance from skin vector)
+/// 4. Compute saturation score (approximate chroma energy)
+/// 5. Sum scores, Gaussian blur, find max point, center crop
+fn attention_blur_maxpoint(
+    pixels: &[u8],
+    info: &ImageInfo,
+    target_w: u32,
+    target_h: u32,
+) -> Result<(u32, u32), ImageError> {
+    // Downsample to ~32px on longest side (matching libvips)
+    let hscale = 32.0 / info.width as f64;
+    let vscale = 32.0 / info.height as f64;
+    let scale = hscale.min(vscale).min(1.0);
+
+    let small_w = ((info.width as f64 * scale).round() as u32).max(1);
+    let small_h = ((info.height as f64 * scale).round() as u32).max(1);
+
+    let small = if scale < 1.0 {
+        transform::resize(
             pixels,
             info,
             small_w,
             small_h,
             super::types::ResizeFilter::Bilinear,
-        )?;
-        (small.pixels, small.info, scale)
+        )?
     } else {
-        (pixels.to_vec(), info.clone(), 1u32)
+        DecodedImage {
+            pixels: pixels.to_vec(),
+            info: info.clone(),
+            icc_profile: None,
+        }
     };
 
-    // Compute score map
-    let score_map = match strategy {
-        SmartCropStrategy::Entropy => entropy_score_map(&analysis_pixels, &analysis_info)?,
-        SmartCropStrategy::Attention => attention_score_map(&analysis_pixels, &analysis_info)?,
-    };
+    let sw = small.info.width as usize;
+    let sh = small.info.height as usize;
 
-    let map_w = analysis_info.width as usize;
-    let map_h = analysis_info.height as usize;
+    // Convert to f32 RGB for scoring
+    let rgb_f32: Vec<[f32; 3]> = small
+        .pixels
+        .chunks_exact(3)
+        .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32])
+        .collect();
 
-    // Build integral image for O(1) window sums
-    let sat = summed_area_table(&score_map, map_w, map_h);
+    // 1. Edge score: Laplacian on luminance
+    let luma: Vec<f32> = rgb_f32
+        .iter()
+        .map(|[r, g, b]| 0.2126 * r + 0.7152 * g + 0.0722 * b)
+        .collect();
+    let edge_scores = laplacian_score(&luma, sw, sh);
 
-    // Sliding window to find best crop position
-    let win_w = (target_w / scale) as usize;
-    let win_h = (target_h / scale) as usize;
+    // 2. Skin color score (simplified: distance from skin hue in RGB space)
+    let skin_scores = skin_score(&rgb_f32, &luma, sw, sh);
 
-    let mut best_score = f64::MIN;
-    let mut best_x = 0usize;
-    let mut best_y = 0usize;
+    // 3. Saturation score (chroma energy from RGB)
+    let sat_scores = saturation_score(&rgb_f32, &luma, sw, sh);
 
-    let max_x = map_w.saturating_sub(win_w);
-    let max_y = map_h.saturating_sub(win_h);
+    // 4. Sum all scores
+    let mut combined = vec![0.0f32; sw * sh];
+    for i in 0..combined.len() {
+        combined[i] = edge_scores[i] + skin_scores[i] + sat_scores[i];
+    }
 
-    for y in 0..=max_y {
-        for x in 0..=max_x {
-            let score = sat_window_sum(&sat, map_w, x, y, win_w, win_h);
-            if score > best_score {
-                best_score = score;
-                best_x = x;
-                best_y = y;
+    // 5. Gaussian blur as spatial integrator
+    let crop_diag = ((target_w as f64 * scale).powi(2) + (target_h as f64 * scale).powi(2)).sqrt();
+    let sigma = (crop_diag / 10.0).max(1.0);
+    let blurred = gaussian_blur_f32(&combined, sw, sh, sigma as f32);
+
+    // 6. Find max point
+    let mut max_val = f32::MIN;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    for y in 0..sh {
+        for x in 0..sw {
+            let v = blurred[y * sw + x];
+            if v > max_val {
+                max_val = v;
+                max_x = x;
+                max_y = y;
             }
         }
     }
 
-    // Scale coordinates back to original image
-    let crop_x = (best_x as u32 * scale).min(info.width - target_w);
-    let crop_y = (best_y as u32 * scale).min(info.height - target_h);
+    // 7. Scale back and center crop on max point
+    let center_x = (max_x as f64 / scale).round() as u32;
+    let center_y = (max_y as f64 / scale).round() as u32;
 
-    transform::crop(pixels, info, crop_x, crop_y, target_w, target_h)
+    let crop_x = center_x
+        .saturating_sub(target_w / 2)
+        .min(info.width.saturating_sub(target_w));
+    let crop_y = center_y
+        .saturating_sub(target_h / 2)
+        .min(info.height.saturating_sub(target_h));
+
+    Ok((crop_x, crop_y))
 }
 
-/// Compute per-pixel entropy score from local histograms.
-///
-/// Divides the image into cells and computes Shannon entropy per cell.
-/// Returns a score map where higher values = more information content.
-fn entropy_score_map(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, ImageError> {
-    let w = info.width as usize;
-    let h = info.height as usize;
-
-    // Convert to grayscale intensity for entropy computation
-    let gray = to_grayscale(pixels, info);
-
-    // Compute per-pixel local entropy using a sliding window histogram
-    let cell_size = 16usize; // 16x16 cells for local entropy
-    let mut scores = vec![0.0f64; w * h];
-
-    for cy in (0..h).step_by(cell_size) {
-        for cx in (0..w).step_by(cell_size) {
-            // Build local histogram for this cell
-            let mut hist = [0u32; 256];
-            let mut count = 0u32;
-            let cell_h = cell_size.min(h - cy);
-            let cell_w = cell_size.min(w - cx);
-
-            for dy in 0..cell_h {
-                for dx in 0..cell_w {
-                    let idx = (cy + dy) * w + (cx + dx);
-                    hist[gray[idx] as usize] += 1;
-                    count += 1;
-                }
-            }
-
-            // Shannon entropy: H = -sum(p * log2(p))
-            let n = count as f64;
-            let mut entropy = 0.0f64;
-            for &c in &hist {
-                if c > 0 {
-                    let p = c as f64 / n;
-                    entropy -= p * p.log2();
-                }
-            }
-
-            // Fill all pixels in this cell with the same entropy score
-            for dy in 0..cell_h {
-                for dx in 0..cell_w {
-                    scores[(cy + dy) * w + (cx + dx)] = entropy;
-                }
-            }
+/// Laplacian edge detection on grayscale image. Kernel: [0,-1,0; -1,4,-1; 0,-1,0].
+/// Returns abs(result) * 5.0 per pixel (matching libvips scaling).
+fn laplacian_score(luma: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; w * h];
+    for y in 1..h.saturating_sub(1) {
+        for x in 1..w.saturating_sub(1) {
+            let center = luma[y * w + x];
+            let top = luma[(y - 1) * w + x];
+            let bottom = luma[(y + 1) * w + x];
+            let left = luma[y * w + (x - 1)];
+            let right = luma[y * w + (x + 1)];
+            let lap = (4.0 * center - top - bottom - left - right).abs() * 5.0;
+            out[y * w + x] = lap;
         }
     }
-
-    Ok(scores)
+    out
 }
 
-/// Compute per-pixel attention score from Sobel edge energy.
-///
-/// Returns a score map where higher values = more edge/structure content.
-fn attention_score_map(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, ImageError> {
-    // Use Sobel filter to get gradient magnitude
-    let sobel_output = filters::sobel(pixels, info)?;
+/// Skin color detection score. Uses distance from a skin color direction in
+/// normalized RGB space (simplified from libvips's XYZ-based approach).
+/// Pixels with luminance <= 5 are masked out.
+fn skin_score(rgb: &[[f32; 3]], luma: &[f32], _w: usize, _h: usize) -> Vec<f32> {
+    // Skin color direction in RGB (approximation of libvips's XYZ {-0.78,-0.57,-0.44})
+    let skin_r: f32 = 0.78;
+    let skin_g: f32 = 0.57;
+    let skin_b: f32 = 0.20;
 
-    // Sobel output is grayscale — each pixel value is the gradient magnitude
-    let scores: Vec<f64> = sobel_output.iter().map(|&v| v as f64).collect();
-    Ok(scores)
+    rgb.iter()
+        .zip(luma.iter())
+        .map(|([r, g, b], &l)| {
+            if l <= 5.0 {
+                return 0.0;
+            }
+            let norm = (r * r + g * g + b * b).sqrt().max(0.001);
+            let nr = r / norm;
+            let ng = g / norm;
+            let nb = b / norm;
+            let dist =
+                ((nr - skin_r).powi(2) + (ng - skin_g).powi(2) + (nb - skin_b).powi(2)).sqrt();
+            (-100.0 * dist + 100.0).max(0.0)
+        })
+        .collect()
 }
 
-/// Build a summed area table (integral image) for O(1) rectangular sum queries.
-fn summed_area_table(scores: &[f64], w: usize, h: usize) -> Vec<f64> {
-    let mut sat = vec![0.0f64; w * h];
+/// Saturation score (chroma energy from RGB, approximating LAB a* channel).
+/// Pixels with luminance <= 5 are masked out.
+fn saturation_score(rgb: &[[f32; 3]], luma: &[f32], _w: usize, _h: usize) -> Vec<f32> {
+    rgb.iter()
+        .zip(luma.iter())
+        .map(|([r, g, b], &l)| {
+            if l <= 5.0 {
+                return 0.0;
+            }
+            // Chroma approximation: distance from gray axis
+            let avg = (r + g + b) / 3.0;
+            ((r - avg).powi(2) + (g - avg).powi(2) + (b - avg).powi(2)).sqrt()
+        })
+        .collect()
+}
 
+/// Simple Gaussian blur on f32 score map (separable, box approximation).
+fn gaussian_blur_f32(input: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
+    let radius = (sigma * 2.5).ceil() as usize;
+    if radius == 0 {
+        return input.to_vec();
+    }
+
+    // Build 1D Gaussian kernel
+    let ksize = radius * 2 + 1;
+    let mut kernel = vec![0.0f32; ksize];
+    let mut sum = 0.0f32;
+    for i in 0..ksize {
+        let x = i as f32 - radius as f32;
+        let v = (-x * x / (2.0 * sigma * sigma)).exp();
+        kernel[i] = v;
+        sum += v;
+    }
+    for k in &mut kernel {
+        *k /= sum;
+    }
+
+    // Horizontal pass
+    let mut horiz = vec![0.0f32; w * h];
     for y in 0..h {
         for x in 0..w {
-            let idx = y * w + x;
-            let mut val = scores[idx];
-            if x > 0 {
-                val += sat[idx - 1];
+            let mut acc = 0.0f32;
+            for ki in 0..ksize {
+                let sx = (x as i32 + ki as i32 - radius as i32).clamp(0, w as i32 - 1) as usize;
+                acc += input[y * w + sx] * kernel[ki];
             }
-            if y > 0 {
-                val += sat[idx - w];
-            }
-            if x > 0 && y > 0 {
-                val -= sat[idx - w - 1];
-            }
-            sat[idx] = val;
+            horiz[y * w + x] = acc;
         }
     }
 
-    sat
-}
+    // Vertical pass
+    let mut result = vec![0.0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = 0.0f32;
+            for ki in 0..ksize {
+                let sy = (y as i32 + ki as i32 - radius as i32).clamp(0, h as i32 - 1) as usize;
+                acc += horiz[sy * w + x] * kernel[ki];
+            }
+            result[y * w + x] = acc;
+        }
+    }
 
-/// Query the sum of a rectangular region using the summed area table.
-/// Region: [x, x+w) x [y, y+h)
-#[inline]
-fn sat_window_sum(sat: &[f64], stride: usize, x: usize, y: usize, w: usize, h: usize) -> f64 {
-    let x2 = x + w - 1;
-    let y2 = y + h - 1;
-
-    let mut sum = sat[y2 * stride + x2];
-    if x > 0 {
-        sum -= sat[y2 * stride + (x - 1)];
-    }
-    if y > 0 {
-        sum -= sat[(y - 1) * stride + x2];
-    }
-    if x > 0 && y > 0 {
-        sum += sat[(y - 1) * stride + (x - 1)];
-    }
-    sum
+    result
 }
 
 /// Convert to grayscale (single-channel luminance).
@@ -272,67 +406,51 @@ mod tests {
         }
     }
 
-    // ── Summed Area Table ───────────────────────────────────────────────
+    // ── Region Entropy ────────────────────────────────────────────────
 
     #[test]
-    fn sat_correctness() {
-        // 3x3 grid: [1,2,3, 4,5,6, 7,8,9]
-        let scores = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let sat = summed_area_table(&scores, 3, 3);
-
-        // Top-left 2x2 window: 1+2+4+5 = 12
-        let sum = sat_window_sum(&sat, 3, 0, 0, 2, 2);
-        assert!((sum - 12.0).abs() < 0.01, "2x2 sum should be 12, got {sum}");
-
-        // Full 3x3: 1+2+3+4+5+6+7+8+9 = 45
-        let sum = sat_window_sum(&sat, 3, 0, 0, 3, 3);
-        assert!((sum - 45.0).abs() < 0.01, "3x3 sum should be 45, got {sum}");
-
-        // Bottom-right 2x2: 5+6+8+9 = 28
-        let sum = sat_window_sum(&sat, 3, 1, 1, 2, 2);
+    fn region_entropy_uniform_is_zero() {
+        let gray = vec![128u8; 32 * 32];
+        let e = region_entropy(&gray, 32, 0, 0, 32, 32);
         assert!(
-            (sum - 28.0).abs() < 0.01,
-            "BR 2x2 sum should be 28, got {sum}"
-        );
-
-        // Single pixel [1][1]: 5
-        let sum = sat_window_sum(&sat, 3, 1, 1, 1, 1);
-        assert!(
-            (sum - 5.0).abs() < 0.01,
-            "single pixel should be 5, got {sum}"
+            e < 0.01,
+            "uniform region should have near-zero entropy, got {e}"
         );
     }
 
-    // ── Entropy Score Map ───────────────────────────────────────────────
+    #[test]
+    fn region_entropy_varied_is_high() {
+        let gray: Vec<u8> = (0..64 * 64).map(|i| ((i * 37 + 13) % 256) as u8).collect();
+        let e = region_entropy(&gray, 64, 0, 0, 64, 64);
+        assert!(e > 5.0, "varied region should have high entropy, got {e}");
+    }
+
+    // ── Laplacian Edge ──────────────────────────────────────────────────
 
     #[test]
-    fn entropy_uniform_is_zero() {
-        // Uniform image: all same value → entropy = 0
-        let pixels = vec![128u8; 32 * 32 * 3];
-        let info = test_info(32, 32);
-        let scores = entropy_score_map(&pixels, &info).unwrap();
+    fn laplacian_flat_is_zero() {
+        let luma = vec![128.0f32; 16 * 16];
+        let scores = laplacian_score(&luma, 16, 16);
         assert!(
             scores.iter().all(|&s| s < 0.01),
-            "uniform image should have near-zero entropy"
+            "flat image should have zero Laplacian"
         );
     }
 
     #[test]
-    fn entropy_random_is_high() {
-        // "Random" image: varied values → high entropy
-        let mut pixels = Vec::with_capacity(64 * 64 * 3);
-        for i in 0..(64 * 64) {
-            let v = ((i * 37 + 13) % 256) as u8;
-            pixels.push(v);
-            pixels.push(v);
-            pixels.push(v);
+    fn laplacian_edge_is_high() {
+        // Vertical edge: left half = 0, right half = 255
+        let mut luma = vec![0.0f32; 16 * 16];
+        for y in 0..16 {
+            for x in 8..16 {
+                luma[y * 16 + x] = 255.0;
+            }
         }
-        let info = test_info(64, 64);
-        let scores = entropy_score_map(&pixels, &info).unwrap();
-        let max_entropy = scores.iter().cloned().fold(0.0f64, f64::max);
+        let scores = laplacian_score(&luma, 16, 16);
+        let max_score = scores.iter().cloned().fold(0.0f32, f32::max);
         assert!(
-            max_entropy > 3.0,
-            "varied image should have high entropy, got {max_entropy}"
+            max_score > 100.0,
+            "edge should have high Laplacian, got {max_score}"
         );
     }
 
