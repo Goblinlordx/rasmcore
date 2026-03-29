@@ -72,6 +72,26 @@ fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
         / a.len() as f64
 }
 
+fn max_absolute_error(a: &[u8], b: &[u8]) -> u8 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x as i16 - y as i16).unsigned_abs() as u8)
+        .max()
+        .unwrap_or(0)
+}
+
+fn error_histogram(a: &[u8], b: &[u8]) -> Vec<(u8, usize)> {
+    let mut counts = [0usize; 256];
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        let diff = (x as i16 - y as i16).unsigned_abs() as u8;
+        counts[diff as usize] += 1;
+    }
+    counts.iter().enumerate()
+        .filter(|&(_, &c)| c > 0)
+        .map(|(d, &c)| (d as u8, c))
+        .collect()
+}
+
 fn test_info(w: u32, h: u32) -> ImageInfo {
     ImageInfo {
         width: w,
@@ -600,7 +620,25 @@ sys.stdout.buffer.write(result.tobytes())
     let reference = run_python_ref(&script);
 
     let mae = mean_absolute_error(&ours, &reference);
-    eprintln!("  SSR vs Python+OpenCV (sigma={sigma}): MAE={mae:.4}");
+    let max_err = max_absolute_error(&ours, &reference);
+    let hist = error_histogram(&ours, &reference);
+    eprintln!("  SSR vs Python+OpenCV (sigma={sigma}): MAE={mae:.4}, max_err={max_err}");
+    eprintln!("    Error distribution: {:?}", hist);
+
+    // If max_err > 1, this is NOT just FP rounding — it's a real difference
+    if max_err > 1 {
+        eprintln!("    WARNING: max_err={max_err} > 1 — NOT pure FP rounding!");
+        // Find first pixel with large diff for debugging
+        for (i, (&a, &b)) in ours.iter().zip(reference.iter()).enumerate() {
+            let diff = (a as i16 - b as i16).abs();
+            if diff > 1 {
+                let px = i / 3;
+                let ch = i % 3;
+                eprintln!("    First >1 diff at pixel {px} channel {ch}: ours={a} ref={b} diff={diff}");
+                break;
+            }
+        }
+    }
 
     assert!(
         mae < 1.0,
@@ -654,9 +692,12 @@ sys.stdout.buffer.write(result.tobytes())
     let reference = run_python_ref(&script);
 
     let mae = mean_absolute_error(&ours, &reference);
-    eprintln!("  MSR vs Python+OpenCV (3 scales): MAE={mae:.4}");
+    let max_err = max_absolute_error(&ours, &reference);
+    let hist = error_histogram(&ours, &reference);
+    eprintln!("  MSR vs Python+OpenCV (3 scales): MAE={mae:.4}, max_err={max_err}");
+    eprintln!("    Error distribution: {:?}", hist);
 
-    // Multi-scale accumulates per-scale FP differences (~0.6 per scale × 3 scales)
+    // Multi-scale accumulates per-scale FP differences
     assert!(
         mae < 2.0,
         "MSR MAE={mae:.4} too high (expected < 2.0, FP accumulation across 3 scales)"
@@ -721,7 +762,10 @@ sys.stdout.buffer.write(result.tobytes())
     let reference = run_python_ref(&script);
 
     let mae = mean_absolute_error(&ours, &reference);
-    eprintln!("  MSRCR vs Python+OpenCV (3 scales, alpha={alpha}, beta={beta}): MAE={mae:.4}");
+    let max_err = max_absolute_error(&ours, &reference);
+    let hist = error_histogram(&ours, &reference);
+    eprintln!("  MSRCR vs Python+OpenCV (3 scales, alpha={alpha}, beta={beta}): MAE={mae:.4}, max_err={max_err}");
+    eprintln!("    Error distribution: {:?}", hist);
 
     // Multi-scale + color restoration accumulates FP differences
     assert!(
