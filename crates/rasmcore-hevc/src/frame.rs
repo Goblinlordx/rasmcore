@@ -167,8 +167,38 @@ pub fn decode_frame(
     let ctu_size = sps.ctu_size();
     let ctus_x = sps.pic_width_in_ctus();
     let ctus_y = sps.pic_height_in_ctus();
+    let wpp_enabled = pps.entropy_coding_sync_enabled;
+
+    // WPP context storage: save context models after the 2nd CTU in each row
+    // for re-initialization at the start of the next row.
+    // Ref: libde265 v1.0.18 slice.cc lines 4785-4794 — context save at CtbX==1
+    let mut wpp_saved_contexts: Vec<Option<Vec<syntax::ContextModelState>>> =
+        vec![None; ctus_y as usize];
 
     'ctu_loop: for ctu_row in 0..ctus_y {
+        // WPP: at the start of each row (except the first), restore saved contexts
+        // from the previous row and re-init the CABAC engine from the entry point.
+        // Ref: libde265 v1.0.18 slice.cc lines 4725-4747 — context restore at CtbX==0
+        if wpp_enabled && ctu_row > 0 {
+            // Restore context models from the row above
+            if let Some(saved) = &wpp_saved_contexts[(ctu_row - 1) as usize] {
+                syntax::restore_contexts(&mut contexts, saved);
+            } else {
+                // Fallback: re-initialize contexts from slice QP
+                contexts = syntax::init_syntax_contexts(slice_qp);
+            }
+
+            // Re-initialize CABAC engine at the entry point for this row.
+            // entry_point_offsets[row-1] gives the cumulative byte offset from
+            // the start of slice data to this row's substream.
+            // Ref: libde265 v1.0.18 slice.cc line 4866 — init_CABAC()
+            let ep_idx = (ctu_row - 1) as usize;
+            if ep_idx < _slice_header.entry_point_offsets.len() {
+                let ep_offset = _slice_header.entry_point_offsets[ep_idx] as usize;
+                cabac.reinit_at(ep_offset);
+            }
+        }
+
         for ctu_col in 0..ctus_x {
             let ctu_x = ctu_col * ctu_size;
             let ctu_y = ctu_row * ctu_size;
@@ -194,9 +224,22 @@ pub fn decode_frame(
                 reconstruct_cu(cu, &sps, &pps, slice_qp, &mut fb)?;
             }
 
+            // WPP: save context models after decoding the 2nd CTU (CtbX==1)
+            // for use by the next row's context initialization.
+            // Ref: libde265 v1.0.18 slice.cc lines 4793-4794 — save at CtbX==1
+            if wpp_enabled && ctu_col == 1 && (ctu_row + 1) < ctus_y {
+                wpp_saved_contexts[ctu_row as usize] = Some(syntax::save_contexts(&contexts));
+            }
+
             // end_of_slice_segment_flag — decoded via CABAC terminate
             let end_of_slice = cabac.decode_terminate()?;
             if end_of_slice != 0 {
+                // In WPP mode, end_of_slice at the end of a row is actually
+                // end_of_sub_stream — break inner loop to continue to next row.
+                // Ref: libde265 v1.0.18 slice.cc lines 4851-4868
+                if wpp_enabled && ctu_row + 1 < ctus_y {
+                    break; // break inner ctu_col loop, outer ctu_row loop continues
+                }
                 break 'ctu_loop;
             }
         }

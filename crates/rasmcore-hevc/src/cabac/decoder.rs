@@ -236,6 +236,31 @@ impl<'a> CabacDecoder<'a> {
         self.bin_count = 0;
     }
 
+    /// Re-initialize the CABAC engine at a new byte position.
+    ///
+    /// Used for WPP substream boundaries where the CABAC engine must be
+    /// reset with fresh bytes from the new substream entry point.
+    /// Ref: libde265 v1.0.18 slice.cc line 4866 — init_CABAC() call at
+    /// end-of-substream for WPP row transitions.
+    pub fn reinit_at(&mut self, byte_offset: usize) {
+        self.byte_pos = byte_offset;
+        self.range = 510;
+        self.value = 0;
+        self.bits_needed = 8;
+
+        // Read first 2 bytes as initial value (same as init_CABAC in libde265)
+        if self.byte_pos < self.data.len() {
+            self.value = (self.data[self.byte_pos] as u32) << 8;
+            self.byte_pos += 1;
+            self.bits_needed -= 8;
+        }
+        if self.byte_pos < self.data.len() {
+            self.value |= self.data[self.byte_pos] as u32;
+            self.byte_pos += 1;
+            self.bits_needed -= 8;
+        }
+    }
+
     /// Get the current byte position and bits remaining (for debugging).
     pub fn position(&self) -> (usize, u8) {
         (self.byte_pos, 0)

@@ -27,6 +27,10 @@ pub struct SliceHeader {
     pub slice_sao_chroma_flag: bool,
     /// Byte offset where slice data (CABAC) begins in the RBSP.
     pub data_offset: usize,
+    /// Entry point byte offsets for WPP substreams (relative to slice data start).
+    /// Present when entropy_coding_sync_enabled or tiles_enabled in PPS.
+    /// Each offset marks the start of a new CTU row's CABAC data.
+    pub entry_point_offsets: Vec<u32>,
 }
 
 /// Decoded syntax elements for a single Coding Unit.
@@ -251,13 +255,18 @@ pub fn parse_slice_header(
         let _slice_loop_filter_across_slices = r.read_flag()?;
     }
 
-    // entry_point_offsets (Section 7.3.6.1): present when tiles or WPP enabled
+    // entry_point_offsets (Section 7.3.6.1): present when tiles or WPP enabled.
+    // Each offset marks the byte boundary of a WPP substream (one per CTU row).
+    let mut entry_point_offsets = Vec::new();
     if pps.tiles_enabled || pps.entropy_coding_sync_enabled {
         let num_entry_point_offsets = r.read_ue()?;
         if num_entry_point_offsets > 0 {
             let offset_len = r.read_ue()? + 1;
+            let mut cumulative = 0u32;
             for _ in 0..num_entry_point_offsets {
-                let _offset_minus1 = r.read_u(offset_len as u8)?;
+                let offset_minus1 = r.read_u(offset_len as u8)?;
+                cumulative += offset_minus1 + 1;
+                entry_point_offsets.push(cumulative);
             }
         }
     }
@@ -284,6 +293,7 @@ pub fn parse_slice_header(
         slice_sao_luma_flag,
         slice_sao_chroma_flag,
         data_offset,
+        entry_point_offsets,
     })
 }
 
@@ -1376,6 +1386,30 @@ pub fn init_syntax_contexts(qp: i32) -> Vec<ContextModel> {
     }
 
     cabac::init_contexts(&iv, qp)
+}
+
+/// Snapshot of a single context model's state, for WPP save/restore.
+pub type ContextModelState = (u8, u8); // (state, mps)
+
+/// Save all context model states for WPP row boundary propagation.
+///
+/// After decoding the 2nd CTU in a row, the context models are saved so
+/// the next row can restore them at its start.
+/// Ref: libde265 v1.0.18 slice.cc lines 4793-4794
+pub fn save_contexts(contexts: &[ContextModel]) -> Vec<ContextModelState> {
+    contexts.iter().map(|c| (c.state, c.mps)).collect()
+}
+
+/// Restore context model states saved from a previous WPP row.
+///
+/// At the start of each WPP row (CtbX==0, CtbY>=1), contexts are restored
+/// from the saved state of the 2nd CTU in the row above.
+/// Ref: libde265 v1.0.18 slice.cc lines 4740-4741
+pub fn restore_contexts(contexts: &mut [ContextModel], saved: &[ContextModelState]) {
+    for (ctx, &(state, mps)) in contexts.iter_mut().zip(saved.iter()) {
+        ctx.state = state;
+        ctx.mps = mps;
+    }
 }
 
 #[cfg(test)]
