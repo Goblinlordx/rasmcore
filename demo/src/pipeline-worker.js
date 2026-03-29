@@ -147,6 +147,50 @@ function exportImage(chain, format, quality) {
   }
 }
 
+// ─── Multi-Layer Composite ───────────────────────────────────────────────────
+
+function compositeLayers(layerDefs) {
+  if (!layerDefs || layerDefs.length === 0) {
+    self.postMessage({ type: 'error', message: 'No layers to composite' });
+    return;
+  }
+
+  const t0 = performance.now();
+  try {
+    const pipe = new Pipeline();
+
+    // Process each layer: load → apply chain → get node
+    let resultNode = null;
+    for (let i = 0; i < layerDefs.length; i++) {
+      const layer = layerDefs[i];
+      const bytes = new Uint8Array(layer.imageBytes);
+      let node = pipe.read(bytes);
+
+      // Apply per-layer chain
+      for (const step of layer.chain) {
+        const args = expandArgs(step.params, step.paramValues);
+        node = pipe[step.name](node, ...args);
+      }
+
+      if (i === 0) {
+        resultNode = node;
+      } else {
+        // Composite this layer onto the result
+        // Map blend mode string to WIT enum value
+        const mode = layer.blendMode || undefined;
+        resultNode = pipe.composite(node, resultNode, layer.x || 0, layer.y || 0, mode);
+      }
+    }
+
+    const output = pipe.writePng(resultNode, {}, undefined);
+    const totalMs = Math.round(performance.now() - t0);
+    const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
+    self.postMessage({ type: 'result', png: buf, timings: [], totalMs, mode: 'full' }, [buf]);
+  } catch (e) {
+    self.postMessage({ type: 'error', message: `Composite error: ${e.message}` });
+  }
+}
+
 // ─── Message Handler ────────────────────────────────────────────────────────
 
 self.onmessage = (e) => {
@@ -163,6 +207,9 @@ self.onmessage = (e) => {
       break;
     case 'export':
       exportImage(e.data.chain, e.data.format, e.data.quality);
+      break;
+    case 'composite':
+      compositeLayers(e.data.layers);
       break;
   }
 };

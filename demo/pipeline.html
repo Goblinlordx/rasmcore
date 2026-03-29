@@ -41,6 +41,22 @@
     .node-param input[type="range"] { width: 100%; accent-color: #3b82f6; }
     .node-param select { width: 100%; padding: 3px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; font-size: 0.75rem; }
 
+    /* Layers */
+    .layer-panel { margin-bottom: 8px; }
+    .layer-card { background: #12122a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 6px 10px; margin-bottom: 4px; }
+    .layer-card.active { border-color: #8b5cf6; }
+    .layer-card .layer-header { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
+    .layer-card .layer-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 3px; border: 1px solid #333; }
+    .layer-card .layer-name { flex: 1; font-weight: 600; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-card .layer-controls { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+    .layer-card .layer-controls select, .layer-card .layer-controls input { font-size: 0.65rem; padding: 2px 4px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; }
+    .layer-card .layer-controls input[type="number"] { width: 50px; }
+    .layer-vis { cursor: pointer; font-size: 0.8rem; opacity: 0.6; }
+    .layer-vis:hover { opacity: 1; }
+    .layer-vis.hidden { opacity: 0.3; }
+    #add-layer-btn { width: 100%; margin-top: 4px; background: #1a1a3a; border: 1px dashed #333; font-size: 0.7rem; color: #888; }
+    #add-layer-btn:hover { border-color: #3b82f6; color: #e0e0e0; }
+
     /* Export row */
     .export-row { background: #12122a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 12px; margin-top: 8px; }
     .export-row .node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -82,7 +98,14 @@
     </div>
 
     <div class="chain-area">
-      <h3>Processing Chain</h3>
+      <div class="layer-panel">
+        <h3>Layers</h3>
+        <div id="layers"></div>
+        <button id="add-layer-btn" class="sm">+ Add Layer</button>
+        <input type="file" id="layer-file-input" accept="image/*" style="display:none">
+      </div>
+
+      <h3>Processing Chain <span id="active-layer-label" style="color:#8b5cf6;font-size:0.6rem"></span></h3>
       <div id="chain"></div>
       <div id="drop-hint" style="display:none">Click an operation to add it</div>
 

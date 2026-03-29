@@ -224,11 +224,51 @@ function requestWorker(msg) {
 }
 
 function serializeChain() {
+  const chain = getChain();
   return chain.map(n => ({
     name: n.op.name,
     params: n.op.params,
     paramValues: { ...n.paramValues },
   }));
+}
+
+function serializeLayers() {
+  return layers.filter(l => l.visible).map((l, idx) => ({
+    id: l.id,
+    chain: l.chain.map(n => ({
+      name: n.op.name,
+      params: n.op.params,
+      paramValues: { ...n.paramValues },
+    })),
+    blendMode: idx === 0 ? null : (l.blendMode === 'over' ? null : l.blendMode),
+    x: l.x,
+    y: l.y,
+  }));
+}
+
+function requestCompositeProcess() {
+  if (layers.length === 0) return;
+  if (layers.length === 1) {
+    // Single layer — use simple process
+    const copy = layers[0].imageBytes.buffer.slice(0);
+    requestWorker({ type: 'load', imageBytes: copy }, [copy]);
+    return;
+  }
+  // Multi-layer — send all layer data to worker
+  const layerData = layers.filter(l => l.visible).map(l => ({
+    id: l.id,
+    imageBytes: l.imageBytes.buffer.slice(0),
+    chain: l.chain.map(n => ({
+      name: n.op.name,
+      params: n.op.params,
+      paramValues: { ...n.paramValues },
+    })),
+    blendMode: l === layers[0] ? null : (l.blendMode === 'over' ? null : l.blendMode),
+    x: l.x,
+    y: l.y,
+  }));
+  const transfers = layerData.map(l => l.imageBytes);
+  requestWorker({ type: 'composite', layers: layerData }, transfers);
 }
 
 worker.onmessage = (e) => {
@@ -330,13 +370,19 @@ worker.onmessage = (e) => {
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
-let imageBytes = null;
-let imageInfo = null;
-let chain = [];
+// Layer model: each layer has its own image + filter chain
+let layers = []; // [{ id, name, imageBytes, chain: [], blendMode: 'over', x: 0, y: 0, visible: true }]
+let activeLayerId = null; // Which layer's chain is being edited
+let nextLayerId = 0;
 let nextId = 0;
-let editingNodeId = null; // Currently editing node (null = none)
-let dragSrcIdx = null; // Drag source index
-let showingOriginal = false; // Before/after toggle state
+let editingNodeId = null;
+let dragSrcIdx = null;
+let showingOriginal = false;
+
+// Convenience: get active layer
+function activeLayer() { return layers.find(l => l.id === activeLayerId); }
+// Convenience: get active layer's chain (for backwards compat)
+function getChain() { const l = activeLayer(); return l ? l.chain : []; }
 
 const chainEl = document.getElementById('chain');
 const dropHint = document.getElementById('drop-hint');
@@ -346,76 +392,214 @@ const previewInfo = document.getElementById('preview-info');
 const totalTimeEl = document.getElementById('total-time');
 const fileInput = document.getElementById('file-input');
 const compareBtn = document.getElementById('compare-btn');
+const layersEl = document.getElementById('layers');
+const addLayerBtn = document.getElementById('add-layer-btn');
+const layerFileInput = document.getElementById('layer-file-input');
+const activeLayerLabel = document.getElementById('active-layer-label');
 
-// ─── Image Loading ──────────────────────────────────────────────────────────
+// ─── Image Loading (Layer-Aware) ────────────────────────────────────────────
 
-document.querySelector('.preview').addEventListener('click', () => { if (!imageBytes) fileInput.click(); });
+document.querySelector('.preview').addEventListener('click', () => { if (layers.length === 0) fileInput.click(); });
 document.querySelector('.preview').addEventListener('dragover', (e) => e.preventDefault());
 document.querySelector('.preview').addEventListener('drop', (e) => {
   e.preventDefault();
-  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer.files[0]) addLayer(e.dataTransfer.files[0]);
 });
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) addLayer(fileInput.files[0]); });
 
-async function loadFile(file) {
-  imageBytes = new Uint8Array(await file.arrayBuffer());
-  previewInfo.textContent = `${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB | Loading...`;
+// Add layer button
+addLayerBtn.addEventListener('click', () => layerFileInput.click());
+layerFileInput.addEventListener('change', () => {
+  if (layerFileInput.files[0]) addLayer(layerFileInput.files[0]);
+  layerFileInput.value = '';
+});
 
-  // Render original for before/after comparison
+async function addLayer(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const layer = {
+    id: nextLayerId++,
+    name: file.name.replace(/\.[^.]+$/, ''),
+    imageBytes: bytes,
+    chain: [],
+    blendMode: layers.length === 0 ? 'over' : 'over', // base layer has no blend
+    x: 0,
+    y: 0,
+    visible: true,
+    thumbUrl: null,
+  };
+
+  // Create thumbnail for layer card
   try {
-    const blob = new Blob([imageBytes], { type: file.type || 'image/png' });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      originalCanvas.width = img.width;
-      originalCanvas.height = img.height;
-      originalCanvas.getContext('2d').drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
+    const blob = new Blob([bytes], { type: file.type || 'image/png' });
+    layer.thumbUrl = URL.createObjectURL(blob);
   } catch (_) {}
 
-  // Send to worker — it creates thumbnail + stores bytes
-  const copy = imageBytes.buffer.slice(0);
-  worker.postMessage({ type: 'load', imageBytes: copy }, [copy]);
+  layers.push(layer);
+  if (layers.length === 1) {
+    activeLayerId = layer.id;
+    // Render original for before/after
+    try {
+      const blob = new Blob([bytes], { type: file.type || 'image/png' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        originalCanvas.width = img.width;
+        originalCanvas.height = img.height;
+        originalCanvas.getContext('2d').drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    } catch (_) {}
+    compareBtn.style.display = 'inline-block';
+  }
+
+  renderLayers();
+  renderChain();
+  requestCompositeProcess();
+}
+
+function removeLayer(id) {
+  layers = layers.filter(l => l.id !== id);
+  if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[0].id : null;
+  renderLayers();
+  renderChain();
+  requestCompositeProcess();
+}
+
+function setActiveLayer(id) {
+  activeLayerId = id;
+  editingNodeId = null;
+  renderLayers();
+  renderChain();
+}
+
+// ─── Layer Panel Rendering ─────────────────────────────────────────────────
+
+const BLEND_MODES = ['over', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'soft-light', 'hard-light', 'difference', 'exclusion'];
+
+function renderLayers() {
+  layersEl.innerHTML = '';
+  activeLayerLabel.textContent = activeLayer() ? `(${activeLayer().name})` : '';
+
+  layers.forEach((layer, idx) => {
+    const card = document.createElement('div');
+    card.className = 'layer-card' + (layer.id === activeLayerId ? ' active' : '');
+    card.addEventListener('click', () => setActiveLayer(layer.id));
+
+    const header = document.createElement('div');
+    header.className = 'layer-header';
+
+    if (layer.thumbUrl) {
+      const thumb = document.createElement('img');
+      thumb.className = 'layer-thumb';
+      thumb.src = layer.thumbUrl;
+      header.appendChild(thumb);
+    }
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'layer-name';
+    nameEl.textContent = `${idx === 0 ? 'BG' : `L${idx}`}: ${layer.name}`;
+    header.appendChild(nameEl);
+
+    const visBtn = document.createElement('span');
+    visBtn.className = 'layer-vis' + (layer.visible ? '' : ' hidden');
+    visBtn.textContent = layer.visible ? '👁' : '👁‍🗨';
+    visBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      layer.visible = !layer.visible;
+      renderLayers();
+      requestCompositeProcess();
+    });
+    header.appendChild(visBtn);
+
+    if (layers.length > 1) {
+      const removeBtn = document.createElement('span');
+      removeBtn.className = 'node-remove';
+      removeBtn.textContent = '✕';
+      removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeLayer(layer.id); });
+      header.appendChild(removeBtn);
+    }
+
+    card.appendChild(header);
+
+    // Blend mode + offset controls (not for base layer)
+    if (idx > 0) {
+      const controls = document.createElement('div');
+      controls.className = 'layer-controls';
+
+      const blendSelect = document.createElement('select');
+      for (const mode of BLEND_MODES) {
+        const opt = document.createElement('option');
+        opt.value = mode; opt.textContent = mode;
+        if (mode === layer.blendMode) opt.selected = true;
+        blendSelect.appendChild(opt);
+      }
+      blendSelect.addEventListener('change', (e) => {
+        e.stopPropagation();
+        layer.blendMode = blendSelect.value;
+        requestCompositeProcess();
+      });
+      controls.appendChild(blendSelect);
+
+      const xInput = document.createElement('input');
+      xInput.type = 'number'; xInput.value = layer.x; xInput.placeholder = 'X';
+      xInput.addEventListener('change', (e) => { e.stopPropagation(); layer.x = parseInt(xInput.value) || 0; requestCompositeProcess(); });
+      xInput.addEventListener('click', (e) => e.stopPropagation());
+      controls.appendChild(xInput);
+
+      const yInput = document.createElement('input');
+      yInput.type = 'number'; yInput.value = layer.y; yInput.placeholder = 'Y';
+      yInput.addEventListener('change', (e) => { e.stopPropagation(); layer.y = parseInt(yInput.value) || 0; requestCompositeProcess(); });
+      yInput.addEventListener('click', (e) => e.stopPropagation());
+      controls.appendChild(yInput);
+
+      card.appendChild(controls);
+    }
+
+    layersEl.appendChild(card);
+  });
 }
 
 // ─── Node Management ────────────────────────────────────────────────────────
 
 function addNode(op) {
-  if (!imageBytes) { fileInput.click(); return; }
+  const layer = activeLayer();
+  if (!layer) { fileInput.click(); return; }
   const node = {
     id: nextId++,
     op,
     paramValues: Object.fromEntries(op.params.map(p => [p.name, p.default])),
-    applied: true, // new nodes are "applied" with defaults
+    applied: true,
     timingMs: 0,
   };
-  chain.push(node);
-  editingNodeId = node.id; // auto-open edit mode
+  layer.chain.push(node);
+  editingNodeId = node.id;
   renderChain();
-  previewEditing(); // show thumbnail preview
+  previewEditing();
 }
 
 function removeNode(id) {
-  chain = chain.filter(n => n.id !== id);
+  const layer = activeLayer();
+  if (layer) layer.chain = layer.chain.filter(n => n.id !== id);
   if (editingNodeId === id) editingNodeId = null;
   renderChain();
-  applyFullChain();
+  requestCompositeProcess();
 }
 
 function moveNode(fromIdx, toIdx) {
-  if (fromIdx === toIdx) return;
+  const chain = getChain();
+  if (fromIdx === toIdx || !chain.length) return;
   const [node] = chain.splice(fromIdx, 1);
   chain.splice(toIdx, 0, node);
   renderChain();
-  applyFullChain();
+  requestCompositeProcess();
 }
 
 // ─── Render Chain ───────────────────────────────────────────────────────────
 
 function renderChain() {
   chainEl.innerHTML = '';
+  const chain = getChain();
 
   chain.forEach((node, idx) => {
     const card = document.createElement('div');
@@ -620,10 +804,24 @@ document.getElementById('quality').addEventListener('input', (e) => {
 });
 
 document.getElementById('download-btn').addEventListener('click', () => {
-  if (!imageBytes) return;
+  if (layers.length === 0) return;
   const format = document.getElementById('export-format').value;
   const quality = parseInt(document.getElementById('quality').value);
-  requestWorker({ type: 'export', chain: serializeChain(), format, quality });
+  // For single layer, use export; for multi-layer, export is TODO (use composite result)
+  if (layers.length === 1) {
+    requestWorker({ type: 'export', chain: serializeChain(), format, quality });
+  } else {
+    // Multi-layer export — composite then download the result
+    // For now, download the preview canvas content
+    const canvas = document.getElementById('preview-canvas');
+    canvas.toBlob((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `rasmcore-composite.${format === 'jpeg' ? 'jpg' : format}`;
+      a.click();
+    }, format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png',
+    format === 'png' ? undefined : parseInt(document.getElementById('quality').value) / 100);
+  }
 });
 
 // ─── Code Generation ────────────────────────────────────────────────────────
@@ -635,9 +833,42 @@ function generateCode() {
   const lines = [];
   lines.push(`import { rcimage } from '@rasmcore/sdk';`);
   lines.push('');
-  lines.push('const result = rcimage.load(imageBytes)');
 
-  for (const node of chain) {
+  const visibleLayers = layers.filter(l => l.visible);
+  if (visibleLayers.length <= 1) {
+    lines.push('const result = rcimage.load(imageBytes)');
+  } else {
+    // Multi-layer: generate loadLayer + composite code
+    lines.push(`const bg = rcimage.load(layer0Bytes)`);
+    for (const node of (visibleLayers[0]?.chain || [])) {
+      lines.push(`  .${node.op.name}(${node.op.params.map(p => {
+        const val = node.paramValues[p.name];
+        return typeof val === 'string' ? `'${val}'` : val;
+      }).join(', ')})`);
+    }
+    lines.push('');
+    for (let i = 1; i < visibleLayers.length; i++) {
+      const l = visibleLayers[i];
+      lines.push(`const layer${i} = bg.loadLayer(layer${i}Bytes)`);
+      for (const node of l.chain) {
+        lines.push(`  .${node.op.name}(${node.op.params.map(p => {
+          const val = node.paramValues[p.name];
+          return typeof val === 'string' ? `'${val}'` : val;
+        }).join(', ')})`);
+      }
+      const opts = [];
+      if (l.x) opts.push(`x: ${l.x}`);
+      if (l.y) opts.push(`y: ${l.y}`);
+      if (l.blendMode && l.blendMode !== 'over') opts.push(`blend: '${l.blendMode}'`);
+      const optsStr = opts.length ? `{ ${opts.join(', ')} }` : '';
+      lines.push(`bg.composite(layer${i}${optsStr ? ', ' + optsStr : ''});`);
+      lines.push('');
+    }
+    lines.push('const result = bg');
+  }
+
+  const chain = getChain();
+  for (const node of (visibleLayers.length <= 1 ? chain : [])) {
     if (node.op.params.length === 0) {
       lines.push(`  .${node.op.name}()`);
     } else {
