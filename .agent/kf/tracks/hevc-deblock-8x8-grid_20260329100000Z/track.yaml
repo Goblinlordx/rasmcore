@@ -1,0 +1,70 @@
+id: hevc-deblock-8x8-grid_20260329100000Z
+title: HEVC Deblocking on 8x8 Grid — Reference-Exact Filter Application
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Change deblocking from CTU-boundary-only (32px) to 8x8 grid (8px) matching the HEVC spec and libde265 reference.
+    Also fix dp3/dq3 row sampling. This is the last obstacle to byte-exact Y plane — the fundamental decode pipeline is verified
+    correct.
+  context: 11,169 remaining Y-plane diffs are ALL from deblocking. Our decoder deblocks at CTU boundaries only (6 edges for
+    128x128 image), but the HEVC spec and libde265 deblock at every 8x8 block boundary (32 edges for 128x128). The missing
+    26 edges account for exactly the byte difference count. Additionally, dp3/dq3 strong filter decision uses the same row
+    twice instead of rows 0 and 3.
+  codebase_analysis: 'frame.rs apply_deblocking: loops in ctu_size steps (32px). Must change to 8px steps. filter.rs use_strong_filter:
+    dp3 = dp0 (line 80, has a comment admitting this). Must pass row 3 samples separately. For I-frames, all 8x8 edges at
+    CU boundaries get Bs=2 — since our CTU uses min_cb_size=16 and the encoder uses ctu=32 with single CU per CTU, the CU
+    boundaries are at 32px intervals for this bitstream. However, the 8x8 grid edges WITHIN CUs that are NOT CU boundaries
+    get Bs=0 or Bs=1. For intra-only content, only CU boundaries matter (Bs=2). For this specific gradient bitstream, the
+    edges at 8,16,24 within each 32x32 CTU are NOT CU boundaries — they should get Bs=0 (no deblocking) since there are no
+    TU splits. Ref: libde265 v1.0.18 deblock.cc lines 244-262.'
+  acceptance_criteria:
+  - Y plane byte-exact for gradient_128x128_q22 (0 diffs in yuv_parity test)
+  - Y plane byte-exact for flat_64x64 q22/q37 (no regression)
+  - All 9 RGB parity tests pass with PSNR > 25dB
+  - All fixes cited with libde265 v1.0.18 deblock.cc
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: Inter-prediction boundary strength (B/P slices). Chroma deblocking. SAO filter.
+  technical_notes: 'The key insight: for I-frames with no TU split (MaxTrafoDepth=0), the ONLY edges with Bs>0 are at CU boundaries.
+    Since the gradient uses a single 32x32 CU per CTU, CU boundaries ARE CTU boundaries. The 8x8 grid edges at x=8,16,24 WITHIN
+    each CTU are NOT CU boundaries and should get Bs=0 (no deblocking).
+
+
+    This means our CTU-boundary-only deblocking should actually be CORRECT for this bitstream — we''re already deblocking
+    at the right edges! The remaining diffs must come from the dp3/dq3 bug or the deblocking write-back order.
+
+
+    Approach:
+
+    1. Fix dp3/dq3 to use row 3 samples (requires passing a 4-row sample window)
+
+    2. Verify deblocking scope is correct for this specific bitstream
+
+    3. If still wrong: compare our deblocking output at x=32 edge pixel-by-pixel against reference
+
+    4. Build a numerical test: compute expected deblocking output for known input values at the gradient CTU boundary and
+    compare against our code'
+plan: []
+extra: {}
+plan:
+  - phase: dp3/dq3 Strong Filter Fix
+    tasks:
+      - text: "Expand use_strong_filter to accept 4 rows of p/q samples and compute dp3/dq3 from row 3. Ref: libde265 v1.0.18 deblock.cc lines 535-545."
+        done: false
+      - text: "Update deblock_vertical_edge and deblock_horizontal_edge to gather and pass 4 rows of samples for the strong filter decision."
+        done: false
+      - text: "Run yuv_parity_gradient — check if Y diffs decrease"
+        done: false
+  - phase: Deblocking Scope Verification
+    tasks:
+      - text: "Build numerical test: compute expected deblocked values at the gradient x=32 edge for row 0 and compare against our output and reference"
+        done: false
+      - text: "If scope is wrong, implement proper edge marking based on CU/TU boundaries on the 8x8 grid"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "yuv_parity_gradient passes (0 Y diffs)"
+        done: false
+      - text: "All parity tests pass, clippy clean, fmt clean"
+        done: false
