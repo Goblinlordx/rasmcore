@@ -24,7 +24,10 @@ echo "=== 2. Generating browser SDK via jco transpile ==="
 mkdir -p "$SCRIPT_DIR/sdk"
 npx @bytecodealliance/jco transpile "$WASM" -o "$SCRIPT_DIR/sdk/" --name rasmcore-image
 
-echo "=== 3. SDK ready ==="
+echo "=== 3. Generating fluent SDK (rcimage) ==="
+node "$PROJECT_ROOT/scripts/generate-fluent-sdk.cjs"
+
+echo "=== 4. SDK ready ==="
 echo "  Output: demo/sdk/"
 echo "  Import: import { pipeline, decoder, encoder, filters } from './sdk/rasmcore-image.js'"
 echo ""

@@ -34,6 +34,21 @@ fn main() {
         return;
     }
 
+    // Duplicate detection — fail at compile time if two filters share a name
+    {
+        let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        for f in &filters {
+            if let Some(existing_fn) = seen.get(f.name.as_str()) {
+                panic!(
+                    "\n\nDuplicate filter name '{}' registered by:\n  {} (fn {})\n  {} (fn {})\n\
+                     Rename one to resolve the conflict.\n",
+                    f.name, f.fn_name, f.fn_name, existing_fn, existing_fn
+                );
+            }
+            seen.insert(&f.name, &f.fn_name);
+        }
+    }
+
     // Print summary to stderr (visible during build)
     eprintln!("rasmcore build.rs: Found {} registered filter(s):", filters.len());
     for f in &filters {
