@@ -1,5 +1,5 @@
 title: HEVC Deblocking Filter Fix — P-Array Reversal + dp3/dq3
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-03-29'

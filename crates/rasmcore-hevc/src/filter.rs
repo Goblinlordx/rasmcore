@@ -207,16 +207,17 @@ pub fn deblock_vertical_edge(
 
         if bs == BoundaryStrength::Bs2 && use_strong_filter(p, q, beta, tc) {
             deblock_strong(&mut p, &mut q, tc);
-            p.reverse();
-            frame[base + x - 4] = p[0] as u8;
-            frame[base + x - 3] = p[1] as u8;
-            frame[base + x - 2] = p[2] as u8;
-            frame[base + x - 1] = p[3] as u8;
+            // Write back: p[0]=closest to edge → x-1, p[3]=farthest → x-4
+            // Ref: libde265 v1.0.18 deblock.cc — p[i] maps to ptr[-i-1]
+            frame[base + x - 1] = p[0] as u8;
+            frame[base + x - 2] = p[1] as u8;
+            frame[base + x - 3] = p[2] as u8;
+            frame[base + x - 4] = p[3] as u8;
         } else if bs != BoundaryStrength::Bs0 {
             deblock_weak(&mut p, &mut q, tc, true, true);
-            p.reverse();
-            frame[base + x - 2] = p[2] as u8;
-            frame[base + x - 1] = p[3] as u8;
+            // Weak filter only modifies p[0] and p[1]
+            frame[base + x - 1] = p[0] as u8;
+            frame[base + x - 2] = p[1] as u8;
         }
 
         frame[base + x] = q[0] as u8;
@@ -263,16 +264,17 @@ pub fn deblock_horizontal_edge(
 
         if bs == BoundaryStrength::Bs2 && use_strong_filter(p, q, beta, tc) {
             deblock_strong(&mut p, &mut q, tc);
-            p.reverse();
-            frame[(y - 4) * stride + col] = p[0] as u8;
-            frame[(y - 3) * stride + col] = p[1] as u8;
-            frame[(y - 2) * stride + col] = p[2] as u8;
-            frame[(y - 1) * stride + col] = p[3] as u8;
+            // Write back: p[0]=closest to edge → y-1, p[3]=farthest → y-4
+            // Ref: libde265 v1.0.18 deblock.cc — p[i] maps to ptr[-i-1]
+            frame[(y - 1) * stride + col] = p[0] as u8;
+            frame[(y - 2) * stride + col] = p[1] as u8;
+            frame[(y - 3) * stride + col] = p[2] as u8;
+            frame[(y - 4) * stride + col] = p[3] as u8;
         } else if bs != BoundaryStrength::Bs0 {
             deblock_weak(&mut p, &mut q, tc, true, true);
-            p.reverse();
-            frame[(y - 2) * stride + col] = p[2] as u8;
-            frame[(y - 1) * stride + col] = p[3] as u8;
+            // Weak filter only modifies p[0] and p[1]
+            frame[(y - 1) * stride + col] = p[0] as u8;
+            frame[(y - 2) * stride + col] = p[1] as u8;
         }
 
         frame[y * stride + col] = q[0] as u8;

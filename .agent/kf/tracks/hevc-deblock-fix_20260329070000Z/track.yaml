@@ -30,28 +30,28 @@ spec:
     \  Apply same fix to both deblock_vertical_edge and deblock_horizontal_edge.\n\nFix 2 — dp3/dq3 strong filter decision:\n\
     \  Currently dp3 = dp0 (same formula). Must use row 3 samples:\n  dp3 = abs(p_row3[2] - 2*p_row3[1] + p_row3[0])\n  This\
     \ requires expanding the sample window to include row 3 data.\n  Ref: libde265 v1.0.18 deblock.cc — dp3 uses p[3][2]-2*p[3][1]+p[3][0]."
-plan: []
-extra: {}
 plan:
-  - phase: Fix P-Array Indexing
-    tasks:
-      - text: "Fix deblock_vertical_edge: remove p.reverse() and gather p[0..3] in correct order (closest to farthest from boundary). Cite libde265 v1.0.18 deblock.cc."
-        done: false
-      - text: "Fix deblock_horizontal_edge: same p-array fix for horizontal edges."
-        done: false
-      - text: "Run yuv_parity tests after p-array fix — check if gradient Y diffs decrease"
-        done: false
-  - phase: Fix dp3/dq3
-    tasks:
-      - text: "Fix use_strong_filter dp3/dq3 to use row 3 samples instead of duplicating row 0. Cite libde265 v1.0.18 deblock.cc."
-        done: false
-      - text: "Run yuv_parity tests after dp3/dq3 fix"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "yuv_parity_gradient_128x128_q22 passes (0 Y diffs)"
-        done: false
-      - text: "All 9 RGB parity tests pass with PSNR > 25dB"
-        done: false
-      - text: "clippy clean, fmt clean, cargo test passes"
-        done: false
+- phase: Fix P-Array Indexing
+  tasks:
+  - text: 'Fix deblock_vertical_edge: remove p.reverse() and gather p[0..3] in correct order (closest to farthest from boundary).
+      Cite libde265 v1.0.18 deblock.cc.'
+    done: true
+  - text: 'Fix deblock_horizontal_edge: same p-array fix for horizontal edges.'
+    done: true
+  - text: Run yuv_parity tests after p-array fix — check if gradient Y diffs decrease
+    done: true
+- phase: Fix dp3/dq3
+  tasks:
+  - text: Fix use_strong_filter dp3/dq3 to use row 3 samples instead of duplicating row 0. Cite libde265 v1.0.18 deblock.cc.
+    done: true
+  - text: Run yuv_parity tests after dp3/dq3 fix
+    done: true
+- phase: Validation
+  tasks:
+  - text: yuv_parity_gradient_128x128_q22 passes (0 Y diffs)
+    done: false
+  - text: All 9 RGB parity tests pass with PSNR > 25dB
+    done: false
+  - text: clippy clean, fmt clean, cargo test passes
+    done: true
+extra: {}
