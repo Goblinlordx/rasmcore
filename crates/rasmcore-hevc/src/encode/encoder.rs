@@ -892,6 +892,66 @@ mod tests {
         }
     }
 
+    /// Test ffmpeg parity with flat-128 (no residual) to isolate CU structure from coefficients.
+    #[test]
+    fn encoder_flat128_ffmpeg_parity() {
+        let width = 64u32;
+        let height = 64u32;
+        let y = vec![128u8; (width * height) as usize];
+        let cb = vec![128u8; (width * height / 4) as usize];
+        let cr = vec![128u8; (width * height / 4) as usize];
+
+        let config = EncodeConfig { qp: 22 };
+        let bitstream = encode_iframe(&y, &cb, &cr, width, height, &config).unwrap();
+
+        let bs_path = "/tmp/rasmcore_flat128_test.hevc";
+        std::fs::write(bs_path, &bitstream).unwrap();
+
+        let our_frame = crate::decode(&bitstream, &[]).unwrap();
+
+        let ffmpeg_out = "/tmp/rasmcore_flat128_ffmpeg.yuv";
+        let status = std::process::Command::new("ffmpeg")
+            .args(["-y", "-i", bs_path, "-pix_fmt", "yuv420p", ffmpeg_out])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                let ffmpeg_yuv = std::fs::read(ffmpeg_out).unwrap();
+                let ffmpeg_y = &ffmpeg_yuv[..our_frame.y_plane.len()];
+
+                let diffs: usize = our_frame
+                    .y_plane
+                    .iter()
+                    .zip(ffmpeg_y.iter())
+                    .filter(|(a, b)| a != b)
+                    .count();
+                let max_diff: i32 = our_frame
+                    .y_plane
+                    .iter()
+                    .zip(ffmpeg_y.iter())
+                    .map(|(&a, &b)| (a as i32 - b as i32).abs())
+                    .max()
+                    .unwrap_or(0);
+
+                eprintln!("flat128 ffmpeg parity: {diffs} diffs, max_diff={max_diff}");
+                eprintln!("  our Y[0..4]: {:?}", &our_frame.y_plane[..4]);
+                eprintln!("  ffmpeg Y[0..4]: {:?}", &ffmpeg_y[..4]);
+
+                if diffs > 0 {
+                    eprintln!("  BUG: even flat-128 (no residual) disagrees with ffmpeg!");
+                    eprintln!("  This means the CU structure encoding (not residual) is wrong.");
+                } else {
+                    eprintln!("  OK: flat-128 matches ffmpeg. Issue is in residual encoding.");
+                }
+            }
+            _ => {
+                eprintln!("ffmpeg not available");
+            }
+        }
+    }
+
     #[test]
     fn encode_produces_decodable_stream_various_sizes() {
         for (w, h) in [(32, 32), (64, 64), (128, 128)] {

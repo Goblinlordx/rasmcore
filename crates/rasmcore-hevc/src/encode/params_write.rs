@@ -228,7 +228,7 @@ pub fn write_pps(pps: &Pps) -> Vec<u8> {
 
     w.write_flag(false); // pps_scaling_list_data_present_flag
     w.write_flag(pps.lists_modification_present);
-    w.write_ue(pps.log2_parallel_merge_level as u32);
+    w.write_ue((pps.log2_parallel_merge_level - 2) as u32);
     w.write_flag(false); // slice_segment_header_extension_present_flag
     w.write_flag(false); // pps_extension_flag
 
