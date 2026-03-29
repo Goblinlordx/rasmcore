@@ -1407,6 +1407,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8062b737e5389949f477d4760a2ebbff0c366f97798f2419b8d8f366363d3342"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "io-extras"
 version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2334,6 +2343,7 @@ dependencies = [
  "fast_image_resize",
  "image",
  "imgref",
+ "inventory",
  "justjp2",
  "jxl-oxide",
  "kamadak-exif",
