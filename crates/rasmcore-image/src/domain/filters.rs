@@ -1243,84 +1243,109 @@ pub fn clahe(
                 }
             }
 
-            // Check for degenerate tile (all same value) before clipping
-            let distinct_values = hist.iter().filter(|&&h| h > 0).count();
-
-            // Clip histogram and redistribute
-            let clip = ((clip_limit * tile_pixels as f32) / 256.0).max(1.0) as u32;
-            let mut excess = 0u32;
-            for h in hist.iter_mut() {
-                if *h > clip {
-                    excess += *h - clip;
-                    *h = clip;
-                }
-            }
-            let incr = excess / 256;
-            let residual = (excess - incr * 256) as usize;
-            for (i, h) in hist.iter_mut().enumerate() {
-                *h += incr;
-                if i < residual {
-                    *h += 1;
-                }
-            }
-
-            // Build CDF → LUT
-            let lut = &mut tile_luts[ty * grid + tx];
-            if distinct_values <= 1 {
-                // Degenerate: all pixels same value → identity LUT
+            // Degenerate tile: all same value → identity LUT, skip clipping
+            let distinct = hist.iter().filter(|&&h| h > 0).count();
+            if distinct <= 1 {
+                let lut = &mut tile_luts[ty * grid + tx];
                 for i in 0..256 {
                     lut[i] = i as u8;
                 }
-            } else {
-                let mut cdf = [0u32; 256];
-                cdf[0] = hist[0];
-                for i in 1..256 {
-                    cdf[i] = cdf[i - 1] + hist[i];
+                continue;
+            }
+
+            // Clip histogram and redistribute (matching OpenCV exactly)
+            let clip = ((clip_limit * tile_pixels as f32) / 256.0) as u32;
+            let clip = clip.max(1);
+            let mut clipped = 0u32;
+            for h in hist.iter_mut() {
+                if *h > clip {
+                    clipped += *h - clip;
+                    *h = clip;
                 }
-                let cdf_min = cdf.iter().copied().find(|&v| v > 0).unwrap_or(0);
-                let denom = (tile_pixels as u32).saturating_sub(cdf_min).max(1);
-                for i in 0..256 {
-                    lut[i] = ((cdf[i].saturating_sub(cdf_min)) as u64 * 255 / denom as u64)
-                        .min(255) as u8;
+            }
+
+            // Redistribute: uniform batch + stepped residual (OpenCV algorithm)
+            let redist_batch = clipped / 256;
+            let residual = clipped - redist_batch * 256;
+            for h in hist.iter_mut() {
+                *h += redist_batch;
+            }
+            if residual > 0 {
+                let step = (256 / residual as usize).max(1);
+                let mut remaining = residual as usize;
+                let mut i = 0;
+                while i < 256 && remaining > 0 {
+                    hist[i] += 1;
+                    remaining -= 1;
+                    i += step;
                 }
+            }
+
+            // Build CDF → LUT (OpenCV formula: lut[i] = saturate(sum * lutScale))
+            // lutScale = 255.0 / tilePixels
+            let lut_scale = 255.0f32 / tile_pixels as f32;
+            let lut = &mut tile_luts[ty * grid + tx];
+            let mut sum = 0u32;
+            for i in 0..256 {
+                sum += hist[i];
+                let v = (sum as f32 * lut_scale).round();
+                lut[i] = v.clamp(0.0, 255.0) as u8;
             }
         }
     }
 
-    // Apply with bilinear interpolation between tiles
+    // Apply with bilinear interpolation (matching OpenCV exactly)
+    // OpenCV: txf = x * inv_tw - 0.5, tx1 = cvFloor(txf), clamped to [0, tilesX-1]
+    let inv_tw = 1.0f32 / tile_w as f32;
+    let inv_th = 1.0f32 / tile_h as f32;
+
     let mut result = vec![0u8; pixels.len()];
     for y in 0..h {
-        // Tile center coordinates
-        let fy = (y as f32 + 0.5) / tile_h as f32 - 0.5;
-        let ty0 = (fy.floor() as isize).clamp(0, grid as isize - 1) as usize;
-        let ty1 = (ty0 + 1).min(grid - 1);
-        let wy = fy - ty0 as f32;
-        let wy = wy.clamp(0.0, 1.0);
+        let tyf = y as f32 * inv_th - 0.5;
+        let ty1 = tyf.floor() as isize;
+        let ty2 = ty1 + 1;
+        let ya = tyf - ty1 as f32;
+        let ya1 = 1.0 - ya;
+        let ty1 = ty1.clamp(0, grid as isize - 1) as usize;
+        let ty2 = (ty2 as usize).min(grid - 1);
 
         for x in 0..w {
-            let fx = (x as f32 + 0.5) / tile_w as f32 - 0.5;
-            let tx0 = (fx.floor() as isize).clamp(0, grid as isize - 1) as usize;
-            let tx1 = (tx0 + 1).min(grid - 1);
-            let wx = fx - tx0 as f32;
-            let wx = wx.clamp(0.0, 1.0);
+            let txf = x as f32 * inv_tw - 0.5;
+            let tx1 = txf.floor() as isize;
+            let tx2 = tx1 + 1;
+            let xa = txf - tx1 as f32;
+            let xa1 = 1.0 - xa;
+            let tx1 = tx1.clamp(0, grid as isize - 1) as usize;
+            let tx2 = (tx2 as usize).min(grid - 1);
 
             let val = pixels[y * w + x] as usize;
 
-            // Bilinear interpolation of 4 tile LUTs
-            let tl = tile_luts[ty0 * grid + tx0][val] as f32;
-            let tr = tile_luts[ty0 * grid + tx1][val] as f32;
-            let bl = tile_luts[ty1 * grid + tx0][val] as f32;
-            let br = tile_luts[ty1 * grid + tx1][val] as f32;
+            // Bilinear interpolation of 4 tile LUTs (OpenCV order)
+            let res = tile_luts[ty1 * grid + tx1][val] as f32 * xa1
+                + tile_luts[ty1 * grid + tx2][val] as f32 * xa;
+            let res = res * ya1
+                + (tile_luts[ty2 * grid + tx1][val] as f32 * xa1
+                    + tile_luts[ty2 * grid + tx2][val] as f32 * xa)
+                    * ya;
 
-            let top = tl + wx * (tr - tl);
-            let bot = bl + wx * (br - bl);
-            let v = top + wy * (bot - top);
-
-            result[y * w + x] = v.round().clamp(0.0, 255.0) as u8;
+            result[y * w + x] = res.round().clamp(0.0, 255.0) as u8;
         }
     }
 
     Ok(result)
+}
+
+/// BORDER_REFLECT_101: reflect at boundary without duplicating edge pixel.
+/// Matches OpenCV's default border mode.
+#[inline(always)]
+fn reflect101(idx: isize, size: isize) -> isize {
+    if idx < 0 {
+        -idx
+    } else if idx >= size {
+        2 * size - 2 - idx
+    } else {
+        idx
+    }
 }
 
 // ─── Bilateral Filter ─────────────────────────────────────────────────────
@@ -1355,26 +1380,20 @@ pub fn bilateral(
     };
     let radius = d / 2;
 
-    // Pre-compute spatial Gaussian weights
-    let inv_2_sigma_s2 = 1.0 / (2.0 * sigma_space * sigma_space);
+    // Pre-compute spatial Gaussian weights (f64 for precision, matches OpenCV)
+    let space_coeff = -0.5 / (sigma_space as f64 * sigma_space as f64);
     let mut spatial_weights = vec![0.0f32; d * d];
     for dy in 0..d {
         for dx in 0..d {
-            let iy = dy as f32 - radius as f32;
-            let ix = dx as f32 - radius as f32;
-            spatial_weights[dy * d + dx] = (-((ix * ix + iy * iy) * inv_2_sigma_s2)).exp();
+            let iy = dy as f64 - radius as f64;
+            let ix = dx as f64 - radius as f64;
+            spatial_weights[dy * d + dx] = ((ix * ix + iy * iy) * space_coeff).exp() as f32;
         }
     }
 
-    // Pre-compute color/range Gaussian LUT (for intensity diff 0..255*channels)
-    let inv_2_sigma_c2 = 1.0 / (2.0 * sigma_color * sigma_color);
-    let max_diff = 255.0 * 255.0 * channels as f32;
-    let range_lut_size = (max_diff.sqrt() as usize) + 1;
-    let mut range_lut = vec![0.0f32; range_lut_size + 1];
-    for i in 0..=range_lut_size {
-        let d2 = (i * i) as f32;
-        range_lut[i] = (-(d2 * inv_2_sigma_c2)).exp();
-    }
+    // Range Gaussian: exp(-diff^2 / (2 * sigma_color^2))
+    // Use direct float computation for precision (matches OpenCV)
+    let color_coeff = -0.5 / (sigma_color as f64 * sigma_color as f64);
 
     let mut result = vec![0u8; pixels.len()];
 
@@ -1386,27 +1405,22 @@ pub fn bilateral(
             let center_off = (y * w + x) * channels;
 
             for dy in 0..d {
-                let ny = y as isize + dy as isize - radius as isize;
-                let ny = ny.clamp(0, h as isize - 1) as usize;
+                let raw_ny = y as isize + dy as isize - radius as isize;
+                let ny = reflect101(raw_ny, h as isize) as usize;
 
                 for dx in 0..d {
-                    let nx = x as isize + dx as isize - radius as isize;
-                    let nx = nx.clamp(0, w as isize - 1) as usize;
+                    let raw_nx = x as isize + dx as isize - radius as isize;
+                    let nx = reflect101(raw_nx, w as isize) as usize;
 
                     let n_off = (ny * w + nx) * channels;
 
-                    // Color distance
-                    let mut color_dist2 = 0i32;
+                    // Color/range distance (direct float, matches OpenCV)
+                    let mut color_dist2 = 0.0f64;
                     for c in 0..channels {
-                        let diff = pixels[center_off + c] as i32 - pixels[n_off + c] as i32;
+                        let diff = pixels[center_off + c] as f64 - pixels[n_off + c] as f64;
                         color_dist2 += diff * diff;
                     }
-                    let color_dist = (color_dist2 as f32).sqrt() as usize;
-                    let range_w = if color_dist < range_lut.len() {
-                        range_lut[color_dist]
-                    } else {
-                        0.0
-                    };
+                    let range_w = (color_dist2 * color_coeff).exp() as f32;
 
                     let w_total = spatial_weights[dy * d + dx] * range_w;
                     weight_sum += w_total;

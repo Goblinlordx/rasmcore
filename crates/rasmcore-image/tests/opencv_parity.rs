@@ -101,14 +101,54 @@ fn bilateral_matches_opencv() {
 
     eprintln!("Bilateral vs OpenCV: MAE={error:.2}, PSNR={quality:.1}dB");
 
-    // Bilateral implementations may differ in boundary handling.
-    // Accept MAE < 5 — the smoothing behavior should be very close.
+    // Bilateral: float arithmetic differs between implementations.
+    // MAE < 1.0 and PSNR > 45dB confirms algorithmic correctness.
+    // Max per-pixel error ≤ 4 at corners (boundary reflection rounding).
     assert!(
-        error < 5.0,
-        "Bilateral MAE vs OpenCV {error:.2} > 5.0 — implementation diverges"
+        error < 1.0,
+        "Bilateral MAE vs OpenCV {error:.2} > 1.0 — implementation diverges"
     );
     assert!(
-        quality > 30.0,
-        "Bilateral PSNR vs OpenCV {quality:.1}dB < 30dB — implementation diverges"
+        quality > 45.0,
+        "Bilateral PSNR vs OpenCV {quality:.1}dB < 45dB — implementation diverges"
     );
+}
+
+#[test]
+fn bilateral_max_error_analysis() {
+    let input = load_fixture("gradient_64x64_gray.raw");
+    let reference = load_fixture("bilateral_64x64_d9_sc75_ss75.raw");
+
+    let info = ImageInfo {
+        width: 64, height: 64,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let ours = filters::bilateral(&input, &info, 9, 75.0, 75.0).unwrap();
+
+    let mut max_diff = 0i32;
+    let mut max_pos = (0, 0);
+    let mut error_histogram = [0u32; 10];
+    for y in 0..64 {
+        for x in 0..64 {
+            let i = y * 64 + x;
+            let diff = (ours[i] as i32 - reference[i] as i32).abs();
+            if diff > max_diff {
+                max_diff = diff;
+                max_pos = (x, y);
+            }
+            if (diff as usize) < error_histogram.len() {
+                error_histogram[diff as usize] += 1;
+            }
+        }
+    }
+    eprintln!("Bilateral max error: {max_diff} at ({}, {})", max_pos.0, max_pos.1);
+    eprintln!("Error histogram: 0={}, 1={}, 2={}, 3+={}", 
+        error_histogram[0], error_histogram[1], error_histogram[2],
+        error_histogram[3..].iter().sum::<u32>());
+    
+    // Max error ≤ 4 at corner pixels (float precision + boundary reflection)
+    // 69% pixels exact, 12% off-by-1, 14% off-by-2, 5% off-by-3/4
+    assert!(max_diff <= 4, "bilateral max error {max_diff} > 4");
 }
