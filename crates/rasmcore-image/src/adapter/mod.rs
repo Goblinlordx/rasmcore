@@ -656,6 +656,34 @@ impl filters::Guest for Component {
         };
         domain::filters::blend(&fg, &domain_fg, &bg, &domain_bg, domain_mode).map_err(to_wit_error)
     }
+
+    fn perspective_warp(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        matrix: Vec<f64>,
+        out_width: u32,
+        out_height: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        if matrix.len() != 9 {
+            return Err(RasmcoreError::InvalidInput(
+                "perspective_warp requires exactly 9 matrix elements".into(),
+            ));
+        }
+        let mut mat = [0.0f64; 9];
+        mat.copy_from_slice(&matrix);
+        let di = to_domain_image_info(&info);
+        domain::filters::perspective_warp(&pixels, &di, &mat, out_width, out_height)
+            .map_err(to_wit_error)
+    }
+
+    fn perspective_correct(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        strength: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::perspective_correct(&pixels, &di, strength).map_err(to_wit_error)
+    }
 }
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {

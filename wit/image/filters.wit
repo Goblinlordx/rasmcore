@@ -91,4 +91,13 @@ interface filters {
 
     /// Blend two same-size images using the specified blend mode
     blend: func(fg: buffer, fg-info: image-info, bg: buffer, bg-info: image-info, mode: blend-mode) -> result<buffer, rasmcore-error>;
+
+    /// Warp image using a 3x3 perspective transform (homography).
+    /// Matrix is row-major, 9 elements, maps output coords → input coords.
+    /// Uses bilinear interpolation; out-of-bounds pixels become black.
+    perspective-warp: func(pixels: buffer, info: image-info, matrix: list<f64>, out-width: u32, out-height: u32) -> result<buffer, rasmcore-error>;
+
+    /// Automatic perspective correction — detects lines and rectifies.
+    /// Strength 0.0 = no correction, 1.0 = full correction.
+    perspective-correct: func(pixels: buffer, info: image-info, strength: f32) -> result<buffer, rasmcore-error>;
 }
