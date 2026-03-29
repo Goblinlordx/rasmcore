@@ -381,6 +381,56 @@ when the cause is proven and documented:
 | CLAHE | OpenCV 4.13 | F32_ROUNDING | ≤1 u8 | 7 images, zero >1 |
 | Guided filter | OpenCV 4.13 | F32_ROUNDING | ≤1 u8 | 7 images, zero >1 |
 | Lab (vs OpenCV) | OpenCV 4.13 | REF_PRECISION | ≤2 u8 | We are more precise |
+| Inpaint Telea (uniform) | OpenCV 4.13 | EXACT | 0 | 16×16, 4×4 hole |
+| Inpaint Telea (gradient) | OpenCV 4.13 | COMPILER_FP | ≤6 u8 | 32×32, 6×6 hole (see below) |
+| Inpaint NS (uniform) | OpenCV 4.13 | EXACT | 0 | 16×16, 4×4 hole |
+| Inpaint NS (gradient) | OpenCV 4.13 | EXACT | 0 | 32×32, 6×6 hole |
+
+### Inpainting — Telea FMM + Navier-Stokes FMM
+
+**Reference:** `cv2.inpaint(img, mask, radius, cv2.INPAINT_TELEA / cv2.INPAINT_NS)` (OpenCV 4.13.0)
+
+Both methods are FMM-based (Fast Marching Method), matching OpenCV's `inpaint.cpp`:
+
+| Aspect | Telea | Navier-Stokes |
+|--------|-------|---------------|
+| Distance weight | `1 / (|r|^3)` | `1 / (|r|^4 + 1)` |
+| Level-set weight | `1 / (1 + |t_neighbor - t_target|)` | None |
+| Direction weight | `dot(r, gradT)` | `|cos(angle(r, gradI))|` |
+| Image gradient | Signed central diff (col: ×2, row: ×2) | TV-style abs sum (row/col) |
+| gradI axes | .x = column, .y = row | .x = row (negated), .y = column |
+| Correction term | `(Jx+Jy) / sqrt(Jx^2+Jy^2)` | None (pure weighted average) |
+| Final rounding | `saturate_cast<uchar>` (round to nearest) | Same |
+
+**Alignment details (verified against OpenCV 4.13 source, `modules/photo/src/inpaint.cpp`):**
+- Padded arrays: +1 pixel border (pw=w+2, ph=h+2), border=KNOWN with dist=0
+- Eikonal solver: `min4(FastMarching_solve(up,left), solve(down,left), solve(up,right), solve(down,right))`
+- Heap: `std::priority_queue<CvHeapElem, vector, greater>` with FIFO tie-breaking via `order` field
+- FMM loop: pop → mark KNOWN → for each INSIDE 4-neighbor (up, left, down, right order) → Eikonal → interpolate → mark BAND → push
+- Neighbor filter in interpolation: `!= INSIDE` (includes both KNOWN and BAND)
+- `s` initialized to `1.0e-20f` (not 0)
+- `dst` denominator computed in f32 (`r2 * sqrtf(r2)`), division in f64, cast back to f32
+- `lev` `fabs` in f32, division in f64, cast to f32
+- `dir` raw dot product (not abs'd separately), `w = fabsf(dst * lev * dir)`
+- Distance check: integer `(l-j)^2 + (k-i)^2 <= range^2`
+
+**COMPILER_FP tier (Telea gradient):**
+
+The Telea gradient correction term `(Jx+Jy)/|J|` amplifies f32 accumulation differences.
+Investigation:
+
+1. Built standalone C replica of OpenCV's exact published source code
+2. C replica and Rust produce byte-identical results (sat=107.35 for single-pixel test)
+3. OpenCV 4.13.0 binary produces different result (sat≈107.76 → rounds to 108)
+4. The 0.41 difference in `sat` traces to the `Jx/Jy` gradient correction term
+5. The base weighted average `Ia/s` matches exactly between C, Rust, and OpenCV
+6. The gradient correction uses products of 3-5 f32 values per neighbor, accumulated
+   across ~70 neighbors — sensitive to FMA (fused multiply-add) and register width
+
+Root cause: the OpenCV binary was compiled with `-O2` or higher, likely enabling FMA
+instructions that change intermediate f32 rounding. Our C replica compiled with `-O0`
+matches Rust exactly. This is a compiler optimization artifact, not an algorithmic
+difference. The NS method (no gradient correction) is unaffected.
 
 ### Photo Enhancement
 

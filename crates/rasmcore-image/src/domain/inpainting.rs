@@ -5,6 +5,14 @@
 //!   alignment, plus a first-order gradient correction term (Telea 2004).
 //! - **Navier-Stokes (FMM):** Weighted interpolation using distance^4 and image-gradient
 //!   alignment. Pure weighted average without gradient correction.
+//!
+//! # Parity with OpenCV 4.13.0
+//!
+//! NS: pixel-exact on all test cases (uniform and gradient images).
+//! Telea: pixel-exact on uniform images; max_err=6 on gradient images due to
+//! compiler-level f32 optimization differences in the gradient correction term.
+//! A standalone C replica of OpenCV's source reproduces our result, not the
+//! binary's — see `REFERENCE.md` for full investigation.
 
 use super::error::ImageError;
 use super::types::ImageInfo;

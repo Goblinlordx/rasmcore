@@ -86,6 +86,25 @@ for per-filter details including alignment notes.
 | bilateral filter | OpenCV `bilateralFilter` | 4.13.0 |
 | brightness(0) | Self identity | N/A |
 
+### Inpainting — Telea + Navier-Stokes
+
+| Method | Test Case | Reference | MAE | Max Error | Status |
+|--------|-----------|-----------|-----|-----------|--------|
+| Telea (FMM) | uniform 16x16, 4x4 hole | OpenCV `cv2.inpaint(..., INPAINT_TELEA)` 4.13.0 | 0.0000 | 0 | Exact |
+| NS (FMM) | uniform 16x16, 4x4 hole | OpenCV `cv2.inpaint(..., INPAINT_NS)` 4.13.0 | 0.0000 | 0 | Exact |
+| NS (FMM) | gradient 32x32, 6x6 hole | OpenCV `cv2.inpaint(..., INPAINT_NS)` 4.13.0 | 0.0000 | 0 | Exact |
+| Telea (FMM) | gradient 32x32, 6x6 hole | OpenCV `cv2.inpaint(..., INPAINT_TELEA)` 4.13.0 | 0.0645 | 6 | See note |
+
+**Telea gradient note:** max_err=6 (2.4% of 255) on non-uniform content. Root-caused
+to f32 accumulation order in the gradient correction term `(Jx+Jy)/|J|`. A standalone
+C replica of OpenCV's published source (exact same algorithm, same f32 types, same
+accumulation order) produces the same result as our Rust implementation — not the
+same as the OpenCV 4.13.0 binary. The binary likely differs due to compiler
+optimizations (FMA instructions, extended-precision registers) that change f32
+intermediate rounding. This affects even single-pixel inpainting on gradient images
+(ours=107, OpenCV binary=108, our C replica=107). The NS method (pure weighted
+average, no gradient correction) is unaffected and achieves exact match.
+
 ### Deterministic (MAE < 0.1, max_err = 1)
 
 | Operation | Reference | Tool Version | Why Not Exact |
