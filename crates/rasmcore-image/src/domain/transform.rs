@@ -141,9 +141,15 @@ pub fn convert_format(
         PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
         PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
         PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-        PixelFormat::Gray16 => (u16_to_le_bytes(img.to_luma16().as_raw()), PixelFormat::Gray16),
+        PixelFormat::Gray16 => (
+            u16_to_le_bytes(img.to_luma16().as_raw()),
+            PixelFormat::Gray16,
+        ),
         PixelFormat::Rgb16 => (u16_to_le_bytes(img.to_rgb16().as_raw()), PixelFormat::Rgb16),
-        PixelFormat::Rgba16 => (u16_to_le_bytes(img.to_rgba16().as_raw()), PixelFormat::Rgba16),
+        PixelFormat::Rgba16 => (
+            u16_to_le_bytes(img.to_rgba16().as_raw()),
+            PixelFormat::Rgba16,
+        ),
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "conversion to {other:?} not supported"
@@ -224,7 +230,9 @@ fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, Imag
         PixelFormat::Gray16 => {
             let u16_pixels = le_bytes_to_u16(pixels);
             image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(
-                info.width, info.height, u16_pixels,
+                info.width,
+                info.height,
+                u16_pixels,
             )
             .map(DynamicImage::ImageLuma16)
             .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
@@ -232,7 +240,9 @@ fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, Imag
         PixelFormat::Rgb16 => {
             let u16_pixels = le_bytes_to_u16(pixels);
             image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(
-                info.width, info.height, u16_pixels,
+                info.width,
+                info.height,
+                u16_pixels,
             )
             .map(DynamicImage::ImageRgb16)
             .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
@@ -240,7 +250,9 @@ fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, Imag
         PixelFormat::Rgba16 => {
             let u16_pixels = le_bytes_to_u16(pixels);
             image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
-                info.width, info.height, u16_pixels,
+                info.width,
+                info.height,
+                u16_pixels,
             )
             .map(DynamicImage::ImageRgba16)
             .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
@@ -273,9 +285,15 @@ fn image_to_decoded(
         PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
         PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
         PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-        PixelFormat::Gray16 => (u16_to_le_bytes(img.to_luma16().as_raw()), PixelFormat::Gray16),
+        PixelFormat::Gray16 => (
+            u16_to_le_bytes(img.to_luma16().as_raw()),
+            PixelFormat::Gray16,
+        ),
         PixelFormat::Rgb16 => (u16_to_le_bytes(img.to_rgb16().as_raw()), PixelFormat::Rgb16),
-        PixelFormat::Rgba16 => (u16_to_le_bytes(img.to_rgba16().as_raw()), PixelFormat::Rgba16),
+        PixelFormat::Rgba16 => (
+            u16_to_le_bytes(img.to_rgba16().as_raw()),
+            PixelFormat::Rgba16,
+        ),
         _ => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
     };
     Ok(DecodedImage {
@@ -1264,7 +1282,10 @@ mod tests {
         // Downscale back to 8-bit
         let down = convert_format(&up.pixels, &up.info, PixelFormat::Rgb8).unwrap();
         assert_eq!(down.info.format, PixelFormat::Rgb8);
-        assert_eq!(down.pixels, pixels, "Rgb8 -> Rgb16 -> Rgb8 must be lossless");
+        assert_eq!(
+            down.pixels, pixels,
+            "Rgb8 -> Rgb16 -> Rgb8 must be lossless"
+        );
     }
 
     #[test]
@@ -1351,8 +1372,7 @@ mod tests {
         assert_eq!(resized.pixels.len(), 16 * 16 * 6);
 
         // 5. Equalize (16-bit histogram with 65536 bins)
-        let equalized =
-            histogram::equalize(&resized.pixels, &resized.info).unwrap();
+        let equalized = histogram::equalize(&resized.pixels, &resized.info).unwrap();
         assert_eq!(equalized.len(), resized.pixels.len());
 
         // 6. Verify: read back u16 values, check range expanded
@@ -1404,7 +1424,10 @@ mod tests {
         assert_eq!(decoded.info.format, PixelFormat::Rgb16);
         assert_eq!(decoded.info.width, w);
         assert_eq!(decoded.info.height, h);
-        assert_eq!(decoded.pixels, pixels, "16-bit TIFF roundtrip must be lossless");
+        assert_eq!(
+            decoded.pixels, pixels,
+            "16-bit TIFF roundtrip must be lossless"
+        );
     }
 
     #[test]

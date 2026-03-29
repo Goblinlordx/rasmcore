@@ -44,8 +44,14 @@ pub fn rgb_to_ycbcr(
         const ONE_HALF: i32 = 1 << 15; // 32768
         const CBCR_OFF: i32 = 128 << 16; // 128 * 65536
         y.push(((19595 * r + 38470 * g + 7471 * b + ONE_HALF) >> 16) as u8);
-        cb_full.push((((-11059 * r - 21709 * g + 32768 * b + CBCR_OFF + ONE_HALF - 1) >> 16) as i32).clamp(0, 255) as u8);
-        cr_full.push((((32768 * r - 27439 * g - 5329 * b + CBCR_OFF + ONE_HALF - 1) >> 16) as i32).clamp(0, 255) as u8);
+        cb_full.push(
+            (((-11059 * r - 21709 * g + 32768 * b + CBCR_OFF + ONE_HALF - 1) >> 16) as i32)
+                .clamp(0, 255) as u8,
+        );
+        cr_full.push(
+            (((32768 * r - 27439 * g - 5329 * b + CBCR_OFF + ONE_HALF - 1) >> 16) as i32)
+                .clamp(0, 255) as u8,
+        );
     }
 
     // Subsample chroma

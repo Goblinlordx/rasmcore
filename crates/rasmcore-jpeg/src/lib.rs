@@ -238,7 +238,11 @@ pub fn encode(
                 };
                 let lambda = trellis::default_lambda(qt);
                 let zz = trellis::trellis_quantize_with_codes(
-                    dct_coeffs, qt, lambda, is_luma, Some(ac_codes),
+                    dct_coeffs,
+                    qt,
+                    lambda,
+                    is_luma,
+                    Some(ac_codes),
                 );
 
                 match comp {
@@ -312,21 +316,19 @@ pub fn encode(
                 h_blocks * v_blocks + 2
             };
 
-            let mcu_data = encode_blocks_with_tables(
-                &blocks,
-                config.restart_interval,
-                blocks_per_mcu,
-                || {
+            let mcu_data =
+                encode_blocks_with_tables(&blocks, config.restart_interval, blocks_per_mcu, || {
                     if is_gray {
                         entropy::InterleavedMcuEncoder::new_gray_custom(&dc_luma_len, &ac_luma_len)
                     } else {
                         entropy::InterleavedMcuEncoder::new_ycbcr_custom(
-                            &dc_luma_len, &ac_luma_len,
-                            &dc_chroma_len, &ac_chroma_len,
+                            &dc_luma_len,
+                            &ac_luma_len,
+                            &dc_chroma_len,
+                            &ac_chroma_len,
                         )
                     }
-                },
-            );
+                });
             let stuffed = markers::byte_stuff(&mcu_data);
             out.extend_from_slice(&stuffed);
 
@@ -1651,7 +1653,11 @@ fn eob_optimize_sequential_no_regression() {
     let mut pixels = Vec::with_capacity(128 * 128 * 3);
     for y in 0..128u16 {
         for x in 0..128u16 {
-            let checker = if ((x / 16) + (y / 16)) % 2 == 0 { 180u8 } else { 80u8 };
+            let checker = if ((x / 16) + (y / 16)) % 2 == 0 {
+                180u8
+            } else {
+                80u8
+            };
             let noise = ((x.wrapping_mul(17).wrapping_add(y.wrapping_mul(31))) % 25) as u8;
             pixels.push(checker.wrapping_add(noise));
             pixels.push(checker.wrapping_sub(noise.min(checker)));
@@ -1661,7 +1667,10 @@ fn eob_optimize_sequential_no_regression() {
 
     for &quality in &[50u8, 75] {
         let without_eob = encode(
-            &pixels, 128, 128, PixelFormat::Rgb8,
+            &pixels,
+            128,
+            128,
+            PixelFormat::Rgb8,
             &EncodeConfig {
                 quality,
                 optimize_huffman: true,
@@ -1669,10 +1678,14 @@ fn eob_optimize_sequential_no_regression() {
                 eob_optimize: false,
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let with_eob = encode(
-            &pixels, 128, 128, PixelFormat::Rgb8,
+            &pixels,
+            128,
+            128,
+            PixelFormat::Rgb8,
             &EncodeConfig {
                 quality,
                 optimize_huffman: true,
@@ -1680,11 +1693,13 @@ fn eob_optimize_sequential_no_regression() {
                 eob_optimize: true,
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // For sequential mode: should produce identical output (no block-run benefit)
         assert_eq!(
-            without_eob.len(), with_eob.len(),
+            without_eob.len(),
+            with_eob.len(),
             "Q{quality}: sequential EOB opt should produce same size"
         );
 
@@ -1712,17 +1727,28 @@ fn turbo_vs_default_speed_and_validity() {
     // Turbo mode
     let turbo_start = std::time::Instant::now();
     let turbo_jpeg = encode(
-        &pixels, 256, 256, PixelFormat::Rgb8,
+        &pixels,
+        256,
+        256,
+        PixelFormat::Rgb8,
         &EncodeConfig::turbo(75),
-    ).unwrap();
+    )
+    .unwrap();
     let turbo_time = turbo_start.elapsed();
 
     // Default mode (trellis + optimize_huffman)
     let default_start = std::time::Instant::now();
     let default_jpeg = encode(
-        &pixels, 256, 256, PixelFormat::Rgb8,
-        &EncodeConfig { quality: 75, ..Default::default() },
-    ).unwrap();
+        &pixels,
+        256,
+        256,
+        PixelFormat::Rgb8,
+        &EncodeConfig {
+            quality: 75,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let default_time = default_start.elapsed();
 
     let speedup = default_time.as_secs_f64() / turbo_time.as_secs_f64().max(0.0001);

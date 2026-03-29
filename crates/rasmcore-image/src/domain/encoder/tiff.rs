@@ -303,7 +303,10 @@ mod tests {
         assert_eq!(decoded.info.format, PixelFormat::Rgb16);
         assert_eq!(decoded.info.width, 16);
         assert_eq!(decoded.info.height, 16);
-        assert_eq!(decoded.pixels, pixels, "16-bit TIFF roundtrip must be pixel-exact");
+        assert_eq!(
+            decoded.pixels, pixels,
+            "16-bit TIFF roundtrip must be pixel-exact"
+        );
     }
 
     #[test]
@@ -312,6 +315,9 @@ mod tests {
         let encoded = encode(&pixels, &info, &TiffEncodeConfig::default()).unwrap();
         let decoded = crate::domain::decoder::decode(&encoded).unwrap();
         assert_eq!(decoded.info.format, PixelFormat::Gray16);
-        assert_eq!(decoded.pixels, pixels, "16-bit Gray TIFF roundtrip must be pixel-exact");
+        assert_eq!(
+            decoded.pixels, pixels,
+            "16-bit Gray TIFF roundtrip must be pixel-exact"
+        );
     }
 }

@@ -47,18 +47,26 @@ pub fn forward_dct(input: &[i16; 64], output: &mut [i32; 64]) {
     // Pass 1: rows. Results have PASS1_BITS extra precision.
     for row in 0..8 {
         let i = row * 8;
-        let d0 = input[i] as i32;     let d7 = input[i + 7] as i32;
-        let d1 = input[i + 1] as i32; let d6 = input[i + 6] as i32;
-        let d2 = input[i + 2] as i32; let d5 = input[i + 5] as i32;
-        let d3 = input[i + 3] as i32; let d4 = input[i + 4] as i32;
+        let d0 = input[i] as i32;
+        let d7 = input[i + 7] as i32;
+        let d1 = input[i + 1] as i32;
+        let d6 = input[i + 6] as i32;
+        let d2 = input[i + 2] as i32;
+        let d5 = input[i + 5] as i32;
+        let d3 = input[i + 3] as i32;
+        let d4 = input[i + 4] as i32;
 
         // Even part
-        let tmp0 = d0 + d7;  let tmp1 = d1 + d6;
-        let tmp2 = d2 + d5;  let tmp3 = d3 + d4;
-        let tmp10 = tmp0 + tmp3;  let tmp13 = tmp0 - tmp3;
-        let tmp11 = tmp1 + tmp2;  let tmp12 = tmp1 - tmp2;
+        let tmp0 = d0 + d7;
+        let tmp1 = d1 + d6;
+        let tmp2 = d2 + d5;
+        let tmp3 = d3 + d4;
+        let tmp10 = tmp0 + tmp3;
+        let tmp13 = tmp0 - tmp3;
+        let tmp11 = tmp1 + tmp2;
+        let tmp12 = tmp1 - tmp2;
 
-        ws[i]     = (tmp10 + tmp11) << PASS1_BITS;
+        ws[i] = (tmp10 + tmp11) << PASS1_BITS;
         ws[i + 4] = (tmp10 - tmp11) << PASS1_BITS;
 
         let z1 = (tmp12 + tmp13) * FIX_0_541196100;
@@ -66,11 +74,15 @@ pub fn forward_dct(input: &[i16; 64], output: &mut [i32; 64]) {
         ws[i + 6] = descale(z1 + tmp12 * (-FIX_1_847759065), CONST_BITS - PASS1_BITS);
 
         // Odd part — variable names match libjpeg exactly
-        let tmp7 = d0 - d7;  let tmp6 = d1 - d6;
-        let tmp5 = d2 - d5;  let tmp4 = d3 - d4;
+        let tmp7 = d0 - d7;
+        let tmp6 = d1 - d6;
+        let tmp5 = d2 - d5;
+        let tmp4 = d3 - d4;
 
-        let z1 = tmp4 + tmp7;  let z2 = tmp5 + tmp6;
-        let z3 = tmp4 + tmp6;  let z4 = tmp5 + tmp7;
+        let z1 = tmp4 + tmp7;
+        let z2 = tmp5 + tmp6;
+        let z3 = tmp4 + tmp6;
+        let z4 = tmp5 + tmp7;
         let z5 = (z3 + z4) * FIX_1_175875602;
 
         let tmp4 = tmp4 * FIX_0_298631336;
@@ -90,28 +102,40 @@ pub fn forward_dct(input: &[i16; 64], output: &mut [i32; 64]) {
 
     // Pass 2: columns. Remove PASS1_BITS precision.
     for col in 0..8 {
-        let d0 = ws[col];      let d7 = ws[col + 56];
-        let d1 = ws[col + 8];  let d6 = ws[col + 48];
-        let d2 = ws[col + 16]; let d5 = ws[col + 40];
-        let d3 = ws[col + 24]; let d4 = ws[col + 32];
+        let d0 = ws[col];
+        let d7 = ws[col + 56];
+        let d1 = ws[col + 8];
+        let d6 = ws[col + 48];
+        let d2 = ws[col + 16];
+        let d5 = ws[col + 40];
+        let d3 = ws[col + 24];
+        let d4 = ws[col + 32];
 
-        let tmp0 = d0 + d7;  let tmp1 = d1 + d6;
-        let tmp2 = d2 + d5;  let tmp3 = d3 + d4;
-        let tmp10 = tmp0 + tmp3;  let tmp13 = tmp0 - tmp3;
-        let tmp11 = tmp1 + tmp2;  let tmp12 = tmp1 - tmp2;
+        let tmp0 = d0 + d7;
+        let tmp1 = d1 + d6;
+        let tmp2 = d2 + d5;
+        let tmp3 = d3 + d4;
+        let tmp10 = tmp0 + tmp3;
+        let tmp13 = tmp0 - tmp3;
+        let tmp11 = tmp1 + tmp2;
+        let tmp12 = tmp1 - tmp2;
 
-        output[col]      = descale(tmp10 + tmp11, PASS1_BITS);
+        output[col] = descale(tmp10 + tmp11, PASS1_BITS);
         output[col + 32] = descale(tmp10 - tmp11, PASS1_BITS);
 
         let z1 = (tmp12 + tmp13) * FIX_0_541196100;
         output[col + 16] = descale(z1 + tmp13 * FIX_0_765366865, CONST_BITS + PASS1_BITS);
         output[col + 48] = descale(z1 + tmp12 * (-FIX_1_847759065), CONST_BITS + PASS1_BITS);
 
-        let tmp7 = d0 - d7;  let tmp6 = d1 - d6;
-        let tmp5 = d2 - d5;  let tmp4 = d3 - d4;
+        let tmp7 = d0 - d7;
+        let tmp6 = d1 - d6;
+        let tmp5 = d2 - d5;
+        let tmp4 = d3 - d4;
 
-        let z1 = tmp4 + tmp7;  let z2 = tmp5 + tmp6;
-        let z3 = tmp4 + tmp6;  let z4 = tmp5 + tmp7;
+        let z1 = tmp4 + tmp7;
+        let z2 = tmp5 + tmp6;
+        let z3 = tmp4 + tmp6;
+        let z4 = tmp5 + tmp7;
         let z5 = (z3 + z4) * FIX_1_175875602;
 
         let tmp4 = tmp4 * FIX_0_298631336;
@@ -126,7 +150,7 @@ pub fn forward_dct(input: &[i16; 64], output: &mut [i32; 64]) {
         output[col + 56] = descale(tmp4 + z1 + z3, CONST_BITS + PASS1_BITS);
         output[col + 40] = descale(tmp5 + z2 + z4, CONST_BITS + PASS1_BITS);
         output[col + 24] = descale(tmp6 + z2 + z3, CONST_BITS + PASS1_BITS);
-        output[col + 8]  = descale(tmp7 + z1 + z4, CONST_BITS + PASS1_BITS);
+        output[col + 8] = descale(tmp7 + z1 + z4, CONST_BITS + PASS1_BITS);
     }
 }
 
@@ -147,8 +171,12 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
     // Pass 1: columns. Input is dequantized coefficients.
     for col in 0..8 {
         // AC zero shortcut
-        if input[col + 8] == 0 && input[col + 16] == 0 && input[col + 24] == 0
-            && input[col + 32] == 0 && input[col + 40] == 0 && input[col + 48] == 0
+        if input[col + 8] == 0
+            && input[col + 16] == 0
+            && input[col + 24] == 0
+            && input[col + 32] == 0
+            && input[col + 40] == 0
+            && input[col + 48] == 0
             && input[col + 56] == 0
         {
             let dcval = input[col] << PASS1_BITS;
@@ -170,8 +198,10 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let tmp0 = (z2 + z3) << CONST_BITS;
         let tmp1 = (z2 - z3) << CONST_BITS;
 
-        let tmp10 = tmp0 + tmp3;  let tmp13 = tmp0 - tmp3;
-        let tmp11 = tmp1 + tmp2;  let tmp12 = tmp1 - tmp2;
+        let tmp10 = tmp0 + tmp3;
+        let tmp13 = tmp0 - tmp3;
+        let tmp11 = tmp1 + tmp2;
+        let tmp12 = tmp1 - tmp2;
 
         // Odd part
         let tmp0 = input[col + 56];
@@ -179,8 +209,10 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let tmp2 = input[col + 24];
         let tmp3 = input[col + 8];
 
-        let z1 = tmp0 + tmp3;  let z2 = tmp1 + tmp2;
-        let z3 = tmp0 + tmp2;  let z4 = tmp1 + tmp3;
+        let z1 = tmp0 + tmp3;
+        let z2 = tmp1 + tmp2;
+        let z3 = tmp0 + tmp2;
+        let z4 = tmp1 + tmp3;
         let z5 = (z3 + z4) * FIX_1_175875602;
 
         let tmp0 = tmp0 * FIX_0_298631336;
@@ -197,9 +229,9 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let tmp2 = tmp2 + z2 + z3;
         let tmp3 = tmp3 + z1 + z4;
 
-        ws[col]      = descale(tmp10 + tmp3, CONST_BITS - PASS1_BITS);
+        ws[col] = descale(tmp10 + tmp3, CONST_BITS - PASS1_BITS);
         ws[col + 56] = descale(tmp10 - tmp3, CONST_BITS - PASS1_BITS);
-        ws[col + 8]  = descale(tmp11 + tmp2, CONST_BITS - PASS1_BITS);
+        ws[col + 8] = descale(tmp11 + tmp2, CONST_BITS - PASS1_BITS);
         ws[col + 48] = descale(tmp11 - tmp2, CONST_BITS - PASS1_BITS);
         ws[col + 16] = descale(tmp12 + tmp1, CONST_BITS - PASS1_BITS);
         ws[col + 40] = descale(tmp12 - tmp1, CONST_BITS - PASS1_BITS);
@@ -219,8 +251,12 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let i = row * 8;
 
         // AC zero shortcut
-        if ws[i + 1] == 0 && ws[i + 2] == 0 && ws[i + 3] == 0
-            && ws[i + 4] == 0 && ws[i + 5] == 0 && ws[i + 6] == 0
+        if ws[i + 1] == 0
+            && ws[i + 2] == 0
+            && ws[i + 3] == 0
+            && ws[i + 4] == 0
+            && ws[i + 5] == 0
+            && ws[i + 6] == 0
             && ws[i + 7] == 0
         {
             let dcval = descale(ws[i], DC_SHIFT) + RANGE_CENTER;
@@ -241,8 +277,10 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let tmp0 = (ws[i] + ws[i + 4]) << CONST_BITS;
         let tmp1 = (ws[i] - ws[i + 4]) << CONST_BITS;
 
-        let tmp10 = tmp0 + tmp3;  let tmp13 = tmp0 - tmp3;
-        let tmp11 = tmp1 + tmp2;  let tmp12 = tmp1 - tmp2;
+        let tmp10 = tmp0 + tmp3;
+        let tmp13 = tmp0 - tmp3;
+        let tmp11 = tmp1 + tmp2;
+        let tmp12 = tmp1 - tmp2;
 
         // Odd part
         let tmp0 = ws[i + 7];
@@ -250,8 +288,10 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let tmp2 = ws[i + 3];
         let tmp3 = ws[i + 1];
 
-        let z1 = tmp0 + tmp3;  let z2 = tmp1 + tmp2;
-        let z3 = tmp0 + tmp2;  let z4 = tmp1 + tmp3;
+        let z1 = tmp0 + tmp3;
+        let z2 = tmp1 + tmp2;
+        let z3 = tmp0 + tmp2;
+        let z4 = tmp1 + tmp3;
         let z5 = (z3 + z4) * FIX_1_175875602;
 
         let tmp0 = tmp0 * FIX_0_298631336;
@@ -268,7 +308,7 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
         let tmp2 = tmp2 + z2 + z3;
         let tmp3 = tmp3 + z1 + z4;
 
-        output[i]     = (descale(tmp10 + tmp3, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+        output[i] = (descale(tmp10 + tmp3, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
         output[i + 7] = (descale(tmp10 - tmp3, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
         output[i + 1] = (descale(tmp11 + tmp2, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
         output[i + 6] = (descale(tmp11 - tmp2, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
@@ -346,7 +386,9 @@ mod tests {
 
             // Forward DCT on level-shifted input
             let mut shifted = [0i16; 64];
-            for i in 0..64 { shifted[i] = pixels[i] - 128; }
+            for i in 0..64 {
+                shifted[i] = pixels[i] - 128;
+            }
             let mut dct = [0i32; 64];
             forward_dct(&shifted, &mut dct);
 
@@ -364,13 +406,25 @@ mod tests {
             let mut worst_i = 0;
             for i in 0..64 {
                 let d = (pixels[i] - recon[i]).abs();
-                if d > max_diff { max_diff = d; worst_i = i; }
+                if d > max_diff {
+                    max_diff = d;
+                    worst_i = i;
+                }
             }
             if max_diff > 1 {
                 eprintln!("seed={seed}: max diff={max_diff} at pos {worst_i}");
-                eprintln!("  pixel={} shifted={} recon={}", pixels[worst_i], pixels[worst_i]-128, recon[worst_i]);
-                eprintln!("  dct[0..4]={:?} quant[0..4]={:?} deq[0..4]={:?}",
-                    &dct[0..4], &quantized[0..4], &dequantized[0..4]);
+                eprintln!(
+                    "  pixel={} shifted={} recon={}",
+                    pixels[worst_i],
+                    pixels[worst_i] - 128,
+                    recon[worst_i]
+                );
+                eprintln!(
+                    "  dct[0..4]={:?} quant[0..4]={:?} deq[0..4]={:?}",
+                    &dct[0..4],
+                    &quantized[0..4],
+                    &dequantized[0..4]
+                );
             }
             assert!(
                 max_diff <= 1,
@@ -441,7 +495,9 @@ mod tests {
     #[test]
     fn fdct_matches_f64_reference() {
         let mut input = [0i16; 64];
-        for i in 0..64 { input[i] = ((i * 4) as i16) - 128; }
+        for i in 0..64 {
+            input[i] = ((i * 4) as i16) - 128;
+        }
 
         let mut llm = [0i32; 64];
         forward_dct(&input, &mut llm);
@@ -451,17 +507,27 @@ mod tests {
         for v in 0..8 {
             for u in 0..8 {
                 let mut sum = 0.0f64;
-                for y in 0..8 { for x in 0..8 {
-                    sum += input[y * 8 + x] as f64
-                        * ((2.0 * x as f64 + 1.0) * u as f64 * PI / 16.0).cos()
-                        * ((2.0 * y as f64 + 1.0) * v as f64 * PI / 16.0).cos();
-                }}
+                for y in 0..8 {
+                    for x in 0..8 {
+                        sum += input[y * 8 + x] as f64
+                            * ((2.0 * x as f64 + 1.0) * u as f64 * PI / 16.0).cos()
+                            * ((2.0 * y as f64 + 1.0) * v as f64 * PI / 16.0).cos();
+                    }
+                }
                 // LL&M convention: output = sum/4 (no C(u)*C(v) normalization)
                 // Actually LL&M output = sum for DC (all cos=1 terms give N*N=64)
                 // The raw sum of cos products for u=v=0 = 64, so DC = sum * 64 / 4 = sum * 16?
                 // Let me just compute the normalized version and multiply by 8
-                let cu = if u == 0 { 1.0 / std::f64::consts::SQRT_2 } else { 1.0 };
-                let cv = if v == 0 { 1.0 / std::f64::consts::SQRT_2 } else { 1.0 };
+                let cu = if u == 0 {
+                    1.0 / std::f64::consts::SQRT_2
+                } else {
+                    1.0
+                };
+                let cv = if v == 0 {
+                    1.0 / std::f64::consts::SQRT_2
+                } else {
+                    1.0
+                };
                 f64_out[v * 8 + u] = (cu * cv * sum / 4.0 * 8.0).round() as i32;
             }
         }
@@ -473,11 +539,22 @@ mod tests {
             let d = (llm[i] - f64_out[i]).abs();
             if d > max_diff {
                 max_diff = d;
-                if d > 2 { eprintln!("pos[{},{}]: llm={} f64={} diff={d}", i/8, i%8, llm[i], f64_out[i]); }
+                if d > 2 {
+                    eprintln!(
+                        "pos[{},{}]: llm={} f64={} diff={d}",
+                        i / 8,
+                        i % 8,
+                        llm[i],
+                        f64_out[i]
+                    );
+                }
             }
         }
         eprintln!("Max diff: {max_diff}");
-        assert!(max_diff <= 2, "LL&M should match f64*8 within ±2, got {max_diff}");
+        assert!(
+            max_diff <= 2,
+            "LL&M should match f64*8 within ±2, got {max_diff}"
+        );
     }
 
     #[test]

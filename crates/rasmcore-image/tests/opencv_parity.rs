@@ -87,10 +87,7 @@ fn clahe_all_images_match_opencv() {
             e < 0.5,
             "CLAHE {name}: MAE {e:.4} > 0.5 — not pixel-exact with OpenCV"
         );
-        assert!(
-            m <= 1,
-            "CLAHE {name}: max error {m} > 1"
-        );
+        assert!(m <= 1, "CLAHE {name}: max error {m} > 1");
     }
 
     let avg_mae = total_mae / count as f64;
@@ -123,10 +120,7 @@ fn bilateral_all_images_match_opencv() {
             e < 0.5,
             "Bilateral {name}: MAE {e:.4} > 0.5 — not pixel-exact with OpenCV"
         );
-        assert!(
-            m <= 1,
-            "Bilateral {name}: max error {m} > 1"
-        );
+        assert!(m <= 1, "Bilateral {name}: max error {m} > 1");
     }
 
     let avg_mae = total_mae / count as f64;
@@ -159,10 +153,7 @@ fn guided_all_images_match_opencv() {
             e < 0.5,
             "Guided {name}: MAE {e:.4} > 0.5 — not pixel-exact with OpenCV"
         );
-        assert!(
-            m <= 2,
-            "Guided {name}: max error {m} > 2"
-        );
+        assert!(m <= 2, "Guided {name}: max error {m} > 2");
     }
 
     let avg_mae = total_mae / count as f64;
@@ -179,7 +170,8 @@ fn lab_conversion_matches_opencv() {
     let reference_lab = load_fixture("color_gradient_128_lab.raw");
 
     let info = ImageInfo {
-        width: 128, height: 128,
+        width: 128,
+        height: 128,
         format: PixelFormat::Rgb8,
         color_space: ColorSpace::Srgb,
     };
@@ -221,7 +213,8 @@ fn perspective_warp_matches_opencv() {
     let reference = load_fixture("gradient_128_perspective.raw");
 
     let info = ImageInfo {
-        width: 128, height: 128,
+        width: 128,
+        height: 128,
         format: PixelFormat::Gray8,
         color_space: ColorSpace::Srgb,
     };
@@ -243,9 +236,16 @@ fn perspective_warp_matches_opencv() {
             count += 1;
         }
     }
-    let mae = if count > 0 { total_err / count as f64 } else { 0.0 };
+    let mae = if count > 0 {
+        total_err / count as f64
+    } else {
+        0.0
+    };
 
-    eprintln!("Perspective vs OpenCV: MAE={mae:.4}, max_err={max_err}, compared={count}/{}", ours.len());
+    eprintln!(
+        "Perspective vs OpenCV: MAE={mae:.4}, max_err={max_err}, compared={count}/{}",
+        ours.len()
+    );
     assert!(mae < 2.0, "Perspective MAE {mae:.4} > 2.0 vs OpenCV");
 }
 
@@ -255,7 +255,8 @@ fn gray_world_wb_matches_reference() {
     let reference = load_fixture("blue_tinted_64_grayworld.raw");
 
     let info = ImageInfo {
-        width: 64, height: 64,
+        width: 64,
+        height: 64,
         format: PixelFormat::Rgb8,
         color_space: ColorSpace::Srgb,
     };
@@ -276,24 +277,32 @@ fn gray_world_wb_matches_reference() {
 fn oklab_matches_colour_science() {
     // Reference values from colour-science 0.4.7 (colour.XYZ_to_Oklab)
     let test_cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
-        ("red",    (1.0, 0.0, 0.0), (0.627926, 0.224888, 0.125805)),
-        ("green",  (0.0, 1.0, 0.0), (0.866452, -0.233921, 0.179422)),
-        ("blue",   (0.0, 0.0, 1.0), (0.452033, -0.032352, -0.311621)),
-        ("gray",   (0.5, 0.5, 0.5), (0.598182, 0.000001, -0.000068)),
+        ("red", (1.0, 0.0, 0.0), (0.627926, 0.224888, 0.125805)),
+        ("green", (0.0, 1.0, 0.0), (0.866452, -0.233921, 0.179422)),
+        ("blue", (0.0, 0.0, 1.0), (0.452033, -0.032352, -0.311621)),
+        ("gray", (0.5, 0.5, 0.5), (0.598182, 0.000001, -0.000068)),
         ("custom", (0.5, 0.3, 0.8), (0.541759, 0.089488, -0.166634)),
-        ("white",  (1.0, 1.0, 1.0), (1.000002, 0.000002, -0.000114)),
-        ("black",  (0.0, 0.0, 0.0), (0.000000, 0.000000, 0.000000)),
+        ("white", (1.0, 1.0, 1.0), (1.000002, 0.000002, -0.000114)),
+        ("black", (0.0, 0.0, 0.0), (0.000000, 0.000000, 0.000000)),
     ];
 
     let mut max_err: f64 = 0.0;
     for (name, (r, g, b), (ref_l, ref_a, ref_b)) in test_cases {
         let (l, a, bv) = color_spaces::rgb_to_oklab(*r, *g, *b);
-        let err = (l - ref_l).abs().max((a - ref_a).abs()).max((bv - ref_b).abs());
+        let err = (l - ref_l)
+            .abs()
+            .max((a - ref_a).abs())
+            .max((bv - ref_b).abs());
         max_err = max_err.max(err);
-        eprintln!("OKLab {name:8}: L={l:.6} a={a:.6} b={bv:.6} (ref: {ref_l:.6},{ref_a:.6},{ref_b:.6}) err={err:.6}");
+        eprintln!(
+            "OKLab {name:8}: L={l:.6} a={a:.6} b={bv:.6} (ref: {ref_l:.6},{ref_a:.6},{ref_b:.6}) err={err:.6}"
+        );
     }
 
-    assert!(max_err < 0.001, "OKLab max error {max_err:.6} > 0.001 vs colour-science");
+    assert!(
+        max_err < 0.001,
+        "OKLab max error {max_err:.6} > 0.001 vs colour-science"
+    );
 }
 
 #[test]
@@ -301,24 +310,34 @@ fn bradford_matches_colour_science() {
     // Reference: colour-science 0.4.7, Von Kries method with Bradford transform
     // D65->D50: XYZ(0.5, 0.4, 0.3) → (0.518086, 0.405866, 0.226963)
     let (x, y, z) = color_spaces::bradford_adapt(
-        0.5, 0.4, 0.3,
+        0.5,
+        0.4,
+        0.3,
         color_spaces::Illuminant::D65,
         color_spaces::Illuminant::D50,
     );
     eprintln!("Bradford D65->D50: X={x:.6} Y={y:.6} Z={z:.6}");
     eprintln!("  Reference:       X=0.518086 Y=0.405866 Z=0.226963");
-    let err = (x - 0.518086f64).abs().max((y - 0.405866).abs()).max((z - 0.226963).abs());
+    let err = (x - 0.518086f64)
+        .abs()
+        .max((y - 0.405866).abs())
+        .max((z - 0.226963).abs());
     assert!(err < 0.01, "Bradford D65->D50 error {err:.6} > 0.01");
 
     // D65->A: XYZ(0.5, 0.4, 0.3) → (0.606172, 0.425971, 0.096777)
     let (x, y, z) = color_spaces::bradford_adapt(
-        0.5, 0.4, 0.3,
+        0.5,
+        0.4,
+        0.3,
         color_spaces::Illuminant::D65,
         color_spaces::Illuminant::A,
     );
     eprintln!("Bradford D65->A:   X={x:.6} Y={y:.6} Z={z:.6}");
     eprintln!("  Reference:       X=0.606172 Y=0.425971 Z=0.096777");
-    let err = (x - 0.606172f64).abs().max((y - 0.425971).abs()).max((z - 0.096777).abs());
+    let err = (x - 0.606172f64)
+        .abs()
+        .max((y - 0.425971).abs())
+        .max((z - 0.096777).abs());
     assert!(err < 0.01, "Bradford D65->A error {err:.6} > 0.01");
 }
 
@@ -327,48 +346,120 @@ fn lab_matches_colour_science() {
     // Reference: colour-science 0.4.7 (f64, our true reference for Lab)
     // OpenCV uses 16-bit fixed-point internally — our f64 is more precise.
     let test_cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
-        ("red",    (1.0, 0.0, 0.0), (53.2328817858, 80.1111777431, 67.2237036669)),
-        ("green",  (0.0, 1.0, 0.0), (87.7370334735, -86.1828549966, 83.1878346582)),
-        ("blue",   (0.0, 0.0, 1.0), (32.3025866672, 79.1980802348, -107.8503556950)),
-        ("gray",   (0.5, 0.5, 0.5), (53.3889647411, 0.0046229008, 0.0021147334)),
-        ("white",  (1.0, 1.0, 1.0), (100.0, 0.0077282677, 0.0035352751)),
-        ("black",  (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-        ("custom", (0.8, 0.3, 0.6), (52.2589367273, 58.1618923913, -15.7114375190)),
+        (
+            "red",
+            (1.0, 0.0, 0.0),
+            (53.2328817858, 80.1111777431, 67.2237036669),
+        ),
+        (
+            "green",
+            (0.0, 1.0, 0.0),
+            (87.7370334735, -86.1828549966, 83.1878346582),
+        ),
+        (
+            "blue",
+            (0.0, 0.0, 1.0),
+            (32.3025866672, 79.1980802348, -107.8503556950),
+        ),
+        (
+            "gray",
+            (0.5, 0.5, 0.5),
+            (53.3889647411, 0.0046229008, 0.0021147334),
+        ),
+        (
+            "white",
+            (1.0, 1.0, 1.0),
+            (100.0, 0.0077282677, 0.0035352751),
+        ),
+        ("black", (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        (
+            "custom",
+            (0.8, 0.3, 0.6),
+            (52.2589367273, 58.1618923913, -15.7114375190),
+        ),
     ];
 
     let mut max_err: f64 = 0.0;
     for (name, (r, g, b), (ref_l, ref_a, ref_b)) in test_cases {
         let (l, a, bv) = color_spaces::rgb_to_lab(*r, *g, *b);
-        let err = (l - ref_l).abs().max((a - ref_a).abs()).max((bv - ref_b).abs());
+        let err = (l - ref_l)
+            .abs()
+            .max((a - ref_a).abs())
+            .max((bv - ref_b).abs());
         max_err = max_err.max(err);
         eprintln!("Lab {name:8}: L={l:.10} a={a:.10} b={bv:.10} err={err:.2e}");
     }
 
     eprintln!("Lab max error vs colour-science: {max_err:.2e}");
-    assert!(max_err < 1e-6, "Lab error {max_err:.2e} > 1e-6 vs colour-science");
+    assert!(
+        max_err < 1e-6,
+        "Lab error {max_err:.2e} > 1e-6 vs colour-science"
+    );
 }
 
 // ─── Delta E + LCH + Luv Parity (colour-science 0.4.7) ─────────────────
 
 #[test]
 fn delta_e_matches_colour_science() {
-    let pairs: &[(&str, (f64,f64,f64), (f64,f64,f64), f64, f64, f64)] = &[
-        ("red_green", (53.233, 80.109, 67.220), (87.737, -86.185, 83.181), 170.5842137274, 73.4337884112, 86.6149551816),
-        ("red_blue", (53.233, 80.109, 67.220), (32.303, 79.197, -107.864), 176.3329342466, 70.5760489317, 52.8786354875),
-        ("gray_white", (53.389, 0.005, 0.002), (100.0, 0.005, 0.002), 46.6110000000, 46.6110000000, 33.4149645009),
-        ("similar", (50.0, 2.5, 0.0), (50.0, 0.0, -2.5), 3.5355339059, 3.4077435238, 4.3064820958),
-        ("identical", (50.0, 25.0, -10.0), (50.0, 25.0, -10.0), 0.0, 0.0, 0.0),
+    let pairs: &[(&str, (f64, f64, f64), (f64, f64, f64), f64, f64, f64)] = &[
+        (
+            "red_green",
+            (53.233, 80.109, 67.220),
+            (87.737, -86.185, 83.181),
+            170.5842137274,
+            73.4337884112,
+            86.6149551816,
+        ),
+        (
+            "red_blue",
+            (53.233, 80.109, 67.220),
+            (32.303, 79.197, -107.864),
+            176.3329342466,
+            70.5760489317,
+            52.8786354875,
+        ),
+        (
+            "gray_white",
+            (53.389, 0.005, 0.002),
+            (100.0, 0.005, 0.002),
+            46.6110000000,
+            46.6110000000,
+            33.4149645009,
+        ),
+        (
+            "similar",
+            (50.0, 2.5, 0.0),
+            (50.0, 0.0, -2.5),
+            3.5355339059,
+            3.4077435238,
+            4.3064820958,
+        ),
+        (
+            "identical",
+            (50.0, 25.0, -10.0),
+            (50.0, 25.0, -10.0),
+            0.0,
+            0.0,
+            0.0,
+        ),
     ];
 
-    let mut max76 = 0.0f64; let mut max94 = 0.0f64; let mut max00 = 0.0f64;
+    let mut max76 = 0.0f64;
+    let mut max94 = 0.0f64;
+    let mut max00 = 0.0f64;
     for (name, lab1, lab2, ref76, ref94, ref00) in pairs {
         let de76 = color_spaces::delta_e_76(*lab1, *lab2);
         let de94 = color_spaces::delta_e_94(*lab1, *lab2, false);
         let de00 = color_spaces::delta_e_2000(*lab1, *lab2);
-        let e76 = (de76 - ref76).abs(); max76 = max76.max(e76);
-        let e94 = (de94 - ref94).abs(); max94 = max94.max(e94);
-        let e00 = (de00 - ref00).abs(); max00 = max00.max(e00);
-        eprintln!("{name:15}: dE76={de76:.6} (e={e76:.2e}) dE94={de94:.6} (e={e94:.2e}) dE00={de00:.6} (e={e00:.2e})");
+        let e76 = (de76 - ref76).abs();
+        max76 = max76.max(e76);
+        let e94 = (de94 - ref94).abs();
+        max94 = max94.max(e94);
+        let e00 = (de00 - ref00).abs();
+        max00 = max00.max(e00);
+        eprintln!(
+            "{name:15}: dE76={de76:.6} (e={e76:.2e}) dE94={de94:.6} (e={e94:.2e}) dE00={de00:.6} (e={e00:.2e})"
+        );
     }
     eprintln!("Max errors: dE76={max76:.2e} dE94={max94:.2e} dE00={max00:.2e}");
     assert!(max76 < 1e-6, "Delta E 76 error {max76:.2e}");
@@ -378,16 +469,31 @@ fn delta_e_matches_colour_science() {
 
 #[test]
 fn lch_matches_colour_science() {
-    let cases: &[(&str, (f64,f64,f64), (f64,f64,f64))] = &[
-        ("red", (53.233, 80.109, 67.220), (53.233, 104.5752374179, 40.0002382458)),
-        ("green", (87.737, -86.185, 83.181), (87.737, 119.7786833539, 136.0161335584)),
+    let cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
+        (
+            "red",
+            (53.233, 80.109, 67.220),
+            (53.233, 104.5752374179, 40.0002382458),
+        ),
+        (
+            "green",
+            (87.737, -86.185, 83.181),
+            (87.737, 119.7786833539, 136.0161335584),
+        ),
         ("gray", (50.0, 0.0, 0.0), (50.0, 0.0, 0.0)),
-        ("custom", (75.0, 20.0, -30.0), (75.0, 36.0555127546, 303.6900675260)),
+        (
+            "custom",
+            (75.0, 20.0, -30.0),
+            (75.0, 36.0555127546, 303.6900675260),
+        ),
     ];
     let mut max_err = 0.0f64;
     for (name, lab, ref_lch) in cases {
         let (l, c, h) = color_spaces::lab_to_lch(lab.0, lab.1, lab.2);
-        let err = (l - ref_lch.0).abs().max((c - ref_lch.1).abs()).max((h - ref_lch.2).abs());
+        let err = (l - ref_lch.0)
+            .abs()
+            .max((c - ref_lch.1).abs())
+            .max((h - ref_lch.2).abs());
         max_err = max_err.max(err);
         eprintln!("LCH {name:8}: L={l:.6} C={c:.6} H={h:.6} err={err:.2e}");
     }
@@ -396,17 +502,40 @@ fn lch_matches_colour_science() {
 
 #[test]
 fn luv_matches_colour_science() {
-    let cases: &[(&str, (f64,f64,f64), (f64,f64,f64))] = &[
-        ("red", (1.0, 0.0, 0.0), (53.2328817858, 175.0598301857, 37.7617906121)),
-        ("green", (0.0, 1.0, 0.0), (87.7370334735, -83.0685534991, 107.4199653357)),
-        ("blue", (0.0, 0.0, 1.0), (32.3025866672, -9.3957447040, -130.3515592133)),
-        ("gray", (0.5, 0.5, 0.5), (53.3889647411, 0.0072898903, 0.0021849107)),
-        ("custom", (0.8, 0.3, 0.6), (52.2589367273, 73.0391180135, -32.3262768981)),
+    let cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
+        (
+            "red",
+            (1.0, 0.0, 0.0),
+            (53.2328817858, 175.0598301857, 37.7617906121),
+        ),
+        (
+            "green",
+            (0.0, 1.0, 0.0),
+            (87.7370334735, -83.0685534991, 107.4199653357),
+        ),
+        (
+            "blue",
+            (0.0, 0.0, 1.0),
+            (32.3025866672, -9.3957447040, -130.3515592133),
+        ),
+        (
+            "gray",
+            (0.5, 0.5, 0.5),
+            (53.3889647411, 0.0072898903, 0.0021849107),
+        ),
+        (
+            "custom",
+            (0.8, 0.3, 0.6),
+            (52.2589367273, 73.0391180135, -32.3262768981),
+        ),
     ];
     let mut max_err = 0.0f64;
     for (name, rgb, ref_luv) in cases {
         let (l, u, v) = color_spaces::rgb_to_luv(rgb.0, rgb.1, rgb.2);
-        let err = (l - ref_luv.0).abs().max((u - ref_luv.1).abs()).max((v - ref_luv.2).abs());
+        let err = (l - ref_luv.0)
+            .abs()
+            .max((u - ref_luv.1).abs())
+            .max((v - ref_luv.2).abs());
         max_err = max_err.max(err);
         eprintln!("Luv {name:8}: L={l:.6} u={u:.6} v={v:.6} err={err:.2e}");
     }
@@ -417,7 +546,12 @@ fn luv_matches_colour_science() {
 
 #[test]
 fn scharr_matches_opencv() {
-    let test_images = ["gradient_128", "checker_128", "sharp_edges_128", "photo_128"];
+    let test_images = [
+        "gradient_128",
+        "checker_128",
+        "sharp_edges_128",
+        "photo_128",
+    ];
     let info = info_128();
     let mut worst_mae = 0.0f64;
     let mut worst_max = 0u8;
@@ -440,7 +574,12 @@ fn scharr_matches_opencv() {
 
 #[test]
 fn laplacian_matches_opencv() {
-    let test_images = ["gradient_128", "checker_128", "sharp_edges_128", "photo_128"];
+    let test_images = [
+        "gradient_128",
+        "checker_128",
+        "sharp_edges_128",
+        "photo_128",
+    ];
     let info = info_128();
     let mut worst_mae = 0.0f64;
     let mut worst_max = 0u8;
@@ -465,7 +604,11 @@ fn laplacian_matches_opencv() {
 
 fn load_fixture_f32(name: &str) -> Vec<f32> {
     let bytes = load_fixture(name);
-    assert_eq!(bytes.len() % 4, 0, "f32 fixture must be multiple of 4 bytes");
+    assert_eq!(
+        bytes.len() % 4,
+        0,
+        "f32 fixture must be multiple of 4 bytes"
+    );
     bytes
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
@@ -509,12 +652,8 @@ fn mertens_fusion_matches_opencv() {
     };
 
     // Get f32 result for precision comparison
-    let ours_f32 = filters::mertens_fusion_f32(
-        &[&bracket0, &bracket1, &bracket2],
-        &info,
-        &params,
-    )
-    .unwrap();
+    let ours_f32 =
+        filters::mertens_fusion_f32(&[&bracket0, &bracket1, &bracket2], &info, &params).unwrap();
 
     // Load OpenCV f32 reference (BGR order from OpenCV)
     let ref_f32 = load_fixture_f32("mertens_64x64_3exp_f32.raw");
@@ -538,12 +677,8 @@ fn mertens_fusion_matches_opencv() {
     eprintln!("  (MAE in [0,1] scale; max_err in [0,1] scale)");
 
     // Also check u8 result
-    let ours_u8 = filters::mertens_fusion(
-        &[&bracket0, &bracket1, &bracket2],
-        &info,
-        &params,
-    )
-    .unwrap();
+    let ours_u8 =
+        filters::mertens_fusion(&[&bracket0, &bracket1, &bracket2], &info, &params).unwrap();
 
     let ref_u8 = load_fixture("mertens_64x64_3exp_rgb.raw");
     let e_u8 = mae(&ours_u8, &ref_u8);
@@ -563,8 +698,5 @@ fn mertens_fusion_matches_opencv() {
         m < 0.15,
         "Mertens f32 max_err {m:.6} > 0.15 — likely algorithmic issue"
     );
-    assert!(
-        e_u8 < 10.0,
-        "Mertens u8 MAE {e_u8:.4} > 10.0"
-    );
+    assert!(e_u8 < 10.0, "Mertens u8 MAE {e_u8:.4} > 10.0");
 }

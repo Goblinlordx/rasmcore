@@ -1239,7 +1239,10 @@ fn trellis_large_512() {
     eprintln!("  vs no-trellis: {size_base}B (savings: {savings:.1}%)");
     // With mozjpeg-aligned lambda (quality-preserving), trellis may not save bytes
     // on simple content — it optimizes rate-distortion, not just rate.
-    assert!(savings > -5.0, "trellis should not increase size by more than 5% at 512x512");
+    assert!(
+        savings > -5.0,
+        "trellis should not increase size by more than 5% at 512x512"
+    );
 }
 
 #[test]

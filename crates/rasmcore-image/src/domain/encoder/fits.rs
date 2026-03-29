@@ -11,8 +11,8 @@ pub fn encode_pixels(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageEr
             let gray: Vec<u8> = pixels
                 .chunks_exact(3)
                 .map(|rgb| {
-                    (0.299 * rgb[0] as f64 + 0.587 * rgb[1] as f64 + 0.114 * rgb[2] as f64)
-                        .round() as u8
+                    (0.299 * rgb[0] as f64 + 0.587 * rgb[1] as f64 + 0.114 * rgb[2] as f64).round()
+                        as u8
                 })
                 .collect();
             rasmcore_fits::encode_u8(&gray, info.width, info.height)

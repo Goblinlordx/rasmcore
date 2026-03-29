@@ -401,7 +401,11 @@ fn morphology_erode_matches_opencv() {
             child.wait_with_output()
         })
         .expect("opencv erode failed");
-    assert!(output.status.success(), "opencv erode: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "opencv erode: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let reference = output.stdout;
 
     assert_close("erode 3x3 rect", &ours, &reference, 1.0);
@@ -451,7 +455,11 @@ fn morphology_dilate_matches_opencv() {
             child.wait_with_output()
         })
         .expect("opencv dilate failed");
-    assert!(output.status.success(), "opencv dilate: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "opencv dilate: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     assert_close("dilate 3x3 rect", &ours, &output.stdout, 1.0);
 }
@@ -501,14 +509,23 @@ fn morphology_open_close_matches_opencv() {
          sys.stdout.buffer.write(out.tobytes())"
     );
     let out = Command::new(&py)
-        .arg("-c").arg(&script_open)
+        .arg("-c")
+        .arg(&script_open)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .and_then(|mut c| { use std::io::Write; c.stdin.take().unwrap().write_all(&input).unwrap(); c.wait_with_output() })
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin.take().unwrap().write_all(&input).unwrap();
+            c.wait_with_output()
+        })
         .expect("opencv open failed");
-    assert!(out.status.success(), "opencv open: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "opencv open: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_close("open 5x5 rect", &ours_open, &out.stdout, 1.0);
 
     // Close
@@ -521,14 +538,23 @@ fn morphology_open_close_matches_opencv() {
          sys.stdout.buffer.write(out.tobytes())"
     );
     let out = Command::new(&py)
-        .arg("-c").arg(&script_close)
+        .arg("-c")
+        .arg(&script_close)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .and_then(|mut c| { use std::io::Write; c.stdin.take().unwrap().write_all(&input).unwrap(); c.wait_with_output() })
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin.take().unwrap().write_all(&input).unwrap();
+            c.wait_with_output()
+        })
         .expect("opencv close failed");
-    assert!(out.status.success(), "opencv close: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "opencv close: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_close("close 5x5 rect", &ours_close, &out.stdout, 1.0);
 }
 
@@ -585,7 +611,11 @@ fn nlm_denoise_matches_opencv() {
             child.wait_with_output()
         })
         .expect("opencv nlm failed");
-    assert!(output.status.success(), "opencv nlm: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "opencv nlm: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let reference = &output.stdout;
     let mae = mean_absolute_error(&ours, reference);

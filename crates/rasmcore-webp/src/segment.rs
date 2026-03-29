@@ -121,10 +121,10 @@ pub fn compute_segment_map(
     let delta_range = ((base_qp as i32) / 5).clamp(2, 15) as i8;
 
     let qp_deltas = [
-        delta_range,      // segment 0: smooth → higher QP (more compression)
-        delta_range / 3,  // segment 1: slight increase
-        0,                // segment 2: base QP
-        -delta_range,     // segment 3: detailed → lower QP (better quality)
+        delta_range,     // segment 0: smooth → higher QP (more compression)
+        delta_range / 3, // segment 1: slight increase
+        0,               // segment 2: base QP
+        -delta_range,    // segment 3: detailed → lower QP (better quality)
     ];
 
     // Build per-segment SegmentQuant with clamped QPs

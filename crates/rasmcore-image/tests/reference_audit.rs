@@ -250,10 +250,7 @@ fn deterministic_brightness() {
         &["-brightness-contrast", "30x0"],
         "brightness_30",
     ) {
-        assert!(
-            error < 2.0,
-            "brightness MAE = {error:.4} (expected < 2.0)"
-        );
+        assert!(error < 2.0, "brightness MAE = {error:.4} (expected < 2.0)");
     }
 }
 
@@ -372,10 +369,7 @@ fn algorithm_hue_rotate() {
         &["-modulate", "100,100,150"],
         "hue_rotate_90",
     ) {
-        assert!(
-            error < 2.0,
-            "hue_rotate MAE = {error:.4} (expected < 2.0)"
-        );
+        assert!(error < 2.0, "hue_rotate MAE = {error:.4} (expected < 2.0)");
     }
 }
 
@@ -596,7 +590,11 @@ fn magick_fx_per_channel(
     let out = std::env::temp_dir().join(format!("refaudit_ref_{id}.png"));
 
     // Process each channel: apply -fx then extract the modified channel as grayscale
-    for (ch_idx, fx, tmp) in [("0", r_fx, &r_tmp), ("1", g_fx, &g_tmp), ("2", b_fx, &b_tmp)] {
+    for (ch_idx, fx, tmp) in [
+        ("0", r_fx, &r_tmp),
+        ("1", g_fx, &g_tmp),
+        ("2", b_fx, &b_tmp),
+    ] {
         let ch_name = match ch_idx {
             "0" => "R",
             "1" => "G",
@@ -649,7 +647,7 @@ fn magick_fx_per_channel(
 fn deterministic_asc_cdl_sop() {
     // ASC-CDL: out = clamp01((in * slope + offset) ^ power)
     // slope=[1.5, 0.8, 1.2], offset=[0.1, -0.05, 0.0], power=[1.2, 0.9, 1.5]
-    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
+    use rasmcore_image::domain::color_grading::{AscCdl, asc_cdl};
 
     if !magick_available() {
         eprintln!("SKIP asc_cdl: magick not available");
@@ -687,13 +685,16 @@ fn deterministic_asc_cdl_sop() {
     let error = mae(&our, &magick_out);
     eprintln!("  asc_cdl SOP: MAE = {error:.4}");
     cleanup(&[&input_path, &ref_path]);
-    assert!(error < 2.0, "ASC-CDL SOP: MAE={error:.4} exceeds DETERMINISTIC threshold 2.0");
+    assert!(
+        error < 2.0,
+        "ASC-CDL SOP: MAE={error:.4} exceeds DETERMINISTIC threshold 2.0"
+    );
 }
 
 #[test]
 fn deterministic_asc_cdl_per_channel() {
     // Test with very different values per channel to ensure independence
-    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
+    use rasmcore_image::domain::color_grading::{AscCdl, asc_cdl};
 
     if !magick_available() {
         eprintln!("SKIP asc_cdl_per_channel: magick not available");
@@ -739,7 +740,7 @@ fn deterministic_asc_cdl_per_channel() {
 #[test]
 fn deterministic_lift_gamma_gain() {
     // Lift/Gamma/Gain: out = gain * (in + lift*(1-in))^(1/gamma)
-    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
+    use rasmcore_image::domain::color_grading::{LiftGammaGain, lift_gamma_gain};
 
     if !magick_available() {
         eprintln!("SKIP lift_gamma_gain: magick not available");
@@ -785,7 +786,7 @@ fn deterministic_lift_gamma_gain() {
 #[test]
 fn deterministic_lift_gamma_gain_per_channel() {
     // Test per-channel independence: red lift, green gamma, blue gain
-    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
+    use rasmcore_image::domain::color_grading::{LiftGammaGain, lift_gamma_gain};
 
     if !magick_available() {
         eprintln!("SKIP lgg_per_channel: magick not available");
@@ -822,7 +823,10 @@ fn deterministic_lift_gamma_gain_per_channel() {
     let error = mae(&our, &magick_out);
     eprintln!("  lgg per-channel: MAE = {error:.4}");
     cleanup(&[&input_path, &ref_path]);
-    assert!(error < 2.0, "LGG per-channel: MAE={error:.4} exceeds threshold 2.0");
+    assert!(
+        error < 2.0,
+        "LGG per-channel: MAE={error:.4} exceeds threshold 2.0"
+    );
 }
 
 #[test]
@@ -901,7 +905,7 @@ fn deterministic_curves_lut() {
 fn exact_split_toning() {
     // Split toning: validate against ImageMagick -fx using the exact same formula.
     // Each channel processed independently from the original image.
-    use rasmcore_image::domain::color_grading::{split_toning, SplitToning};
+    use rasmcore_image::domain::color_grading::{SplitToning, split_toning};
 
     if !magick_available() {
         eprintln!("SKIP split_toning: magick not available");

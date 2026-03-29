@@ -9,8 +9,7 @@
 use std::path::{Path, PathBuf};
 
 fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../fixtures/generated/reference-parity")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/generated/reference-parity")
 }
 
 fn has_fixtures(subdir: &str) -> bool {
@@ -64,7 +63,13 @@ fn parse_pnm(data: &[u8]) -> (u32, u32, Vec<u8>) {
 }
 
 fn mae(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "pixel buffer length mismatch: {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "pixel buffer length mismatch: {} vs {}",
+        a.len(),
+        b.len()
+    );
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x as f64 - y as f64).abs())
@@ -74,10 +79,20 @@ fn mae(a: &[u8], b: &[u8]) -> f64 {
 
 fn psnr(a: &[u8], b: &[u8]) -> f64 {
     assert_eq!(a.len(), b.len());
-    let mse: f64 = a.iter().zip(b.iter())
-        .map(|(&x, &y)| { let d = x as f64 - y as f64; d * d })
-        .sum::<f64>() / a.len() as f64;
-    if mse == 0.0 { f64::INFINITY } else { 10.0 * (255.0_f64 * 255.0 / mse).log10() }
+    let mse: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let d = x as f64 - y as f64;
+            d * d
+        })
+        .sum::<f64>()
+        / a.len() as f64;
+    if mse == 0.0 {
+        f64::INFINITY
+    } else {
+        10.0 * (255.0_f64 * 255.0 / mse).log10()
+    }
 }
 
 // ─── FITS Parity ─────────────────────────────────────────────────────────────
@@ -174,15 +189,18 @@ fn jpeg_arithmetic_our_encode_roundtrip() {
     );
 
     // Decode with our decoder
-    let (decoded, w, h, _) = rasmcore_jpeg::decode::jpeg_decode(&jpeg)
-        .expect("arithmetic decode failed");
+    let (decoded, w, h, _) =
+        rasmcore_jpeg::decode::jpeg_decode(&jpeg).expect("arithmetic decode failed");
     assert_eq!((w, h), (32, 32));
 
     let error = mae(&pixels, &decoded);
     let quality = psnr(&pixels, &decoded);
     eprintln!("JPEG arith our roundtrip: MAE={error:.2}, PSNR={quality:.1}dB");
     assert!(error < 6.0, "JPEG arith roundtrip MAE too high: {error:.2}");
-    assert!(quality > 25.0, "JPEG arith roundtrip PSNR too low: {quality:.1}dB");
+    assert!(
+        quality > 25.0,
+        "JPEG arith roundtrip PSNR too low: {quality:.1}dB"
+    );
 }
 
 #[test]
@@ -208,7 +226,9 @@ fn jpeg_arithmetic_reference_baseline_exists() {
 
     eprintln!(
         "JPEG arith reference: cjpeg SOF9 fixture valid, djpeg ref {}x{} ({} bytes)",
-        ref_w, ref_h, ref_pixels.len()
+        ref_w,
+        ref_h,
+        ref_pixels.len()
     );
 }
 
@@ -227,10 +247,7 @@ fn heic_fixture_exists_and_is_valid() {
     let heic_data = load("heic", "gradient_q90.heic");
 
     // Verify HEIC ftyp box
-    assert!(
-        heic_data.len() > 12,
-        "HEIC fixture too small"
-    );
+    assert!(heic_data.len() > 12, "HEIC fixture too small");
     // ftyp box should be near the start
     let has_ftyp = heic_data.windows(4).any(|w| w == b"ftyp");
     assert!(has_ftyp, "HEIC fixture should contain ftyp box");
@@ -241,5 +258,8 @@ fn heic_fixture_exists_and_is_valid() {
     assert_eq!(ref_w, 32);
     assert_eq!(ref_h, 32);
 
-    eprintln!("HEIC fixture valid: ftyp present, reference {}x{}", ref_w, ref_h);
+    eprintln!(
+        "HEIC fixture valid: ftyp present, reference {}x{}",
+        ref_w, ref_h
+    );
 }

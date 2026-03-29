@@ -61,15 +61,15 @@ pub fn asc_cdl_pixel(r: f32, g: f32, b: f32, cdl: &AscCdl) -> (f32, f32, f32) {
         out_b = luma + (out_b - luma) * cdl.saturation;
     }
 
-    (out_r.clamp(0.0, 1.0), out_g.clamp(0.0, 1.0), out_b.clamp(0.0, 1.0))
+    (
+        out_r.clamp(0.0, 1.0),
+        out_g.clamp(0.0, 1.0),
+        out_b.clamp(0.0, 1.0),
+    )
 }
 
 /// Apply ASC-CDL to an image pixel buffer.
-pub fn asc_cdl(
-    pixels: &[u8],
-    info: &ImageInfo,
-    cdl: &AscCdl,
-) -> Result<Vec<u8>, ImageError> {
+pub fn asc_cdl(pixels: &[u8], info: &ImageInfo, cdl: &AscCdl) -> Result<Vec<u8>, ImageError> {
     apply_rgb_transform(pixels, info, |r, g, b| asc_cdl_pixel(r, g, b, cdl))
 }
 
@@ -102,12 +102,7 @@ impl Default for LiftGammaGain {
 
 /// Apply lift/gamma/gain to a single pixel.
 #[inline]
-pub fn lift_gamma_gain_pixel(
-    r: f32,
-    g: f32,
-    b: f32,
-    lgg: &LiftGammaGain,
-) -> (f32, f32, f32) {
+pub fn lift_gamma_gain_pixel(r: f32, g: f32, b: f32, lgg: &LiftGammaGain) -> (f32, f32, f32) {
     #[inline]
     fn channel(val: f32, lift: f32, gamma: f32, gain: f32) -> f32 {
         let lifted = val + lift * (1.0 - val);
@@ -156,7 +151,7 @@ impl Default for SplitToning {
     fn default() -> Self {
         Self {
             shadow_color: [0.0, 0.0, 0.5],    // Blue shadows
-            highlight_color: [1.0, 0.8, 0.4],  // Warm highlights
+            highlight_color: [1.0, 0.8, 0.4], // Warm highlights
             balance: 0.0,
             strength: 0.5,
         }
@@ -165,12 +160,7 @@ impl Default for SplitToning {
 
 /// Apply split toning to a single pixel.
 #[inline]
-pub fn split_toning_pixel(
-    r: f32,
-    g: f32,
-    b: f32,
-    st: &SplitToning,
-) -> (f32, f32, f32) {
+pub fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f32) {
     // Luminance (Rec. 709)
     let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
@@ -185,14 +175,21 @@ pub fn split_toning_pixel(
         * st.strength;
 
     // Blend: tint toward shadow/highlight color
-    let out_r = r + (st.shadow_color[0] - r) * shadow_weight
+    let out_r = r
+        + (st.shadow_color[0] - r) * shadow_weight
         + (st.highlight_color[0] - r) * highlight_weight;
-    let out_g = g + (st.shadow_color[1] - g) * shadow_weight
+    let out_g = g
+        + (st.shadow_color[1] - g) * shadow_weight
         + (st.highlight_color[1] - g) * highlight_weight;
-    let out_b = b + (st.shadow_color[2] - b) * shadow_weight
+    let out_b = b
+        + (st.shadow_color[2] - b) * shadow_weight
         + (st.highlight_color[2] - b) * highlight_weight;
 
-    (out_r.clamp(0.0, 1.0), out_g.clamp(0.0, 1.0), out_b.clamp(0.0, 1.0))
+    (
+        out_r.clamp(0.0, 1.0),
+        out_g.clamp(0.0, 1.0),
+        out_b.clamp(0.0, 1.0),
+    )
 }
 
 /// Apply split toning to an image pixel buffer.
@@ -291,7 +288,9 @@ pub fn build_curve_lut(points: &[(f32, f32)]) -> [u8; 256] {
         let x = i as f32 / 255.0;
 
         // Find segment
-        let seg = match pts.binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal)) {
+        let seg = match pts
+            .binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal))
+        {
             Ok(idx) => {
                 lut[i] = (pts[idx].1 * 255.0).round().clamp(0.0, 255.0) as u8;
                 continue;
@@ -352,11 +351,7 @@ pub fn curves_pixel(
 }
 
 /// Apply per-channel tone curves to an image pixel buffer.
-pub fn curves(
-    pixels: &[u8],
-    info: &ImageInfo,
-    tc: &ToneCurves,
-) -> Result<Vec<u8>, ImageError> {
+pub fn curves(pixels: &[u8], info: &ImageInfo, tc: &ToneCurves) -> Result<Vec<u8>, ImageError> {
     let r_lut = build_curve_lut(&tc.r);
     let g_lut = build_curve_lut(&tc.g);
     let b_lut = build_curve_lut(&tc.b);
@@ -393,18 +388,11 @@ pub fn bake_split_toning(st: &SplitToning, grid_size: usize) -> ColorLut3D {
 #[inline]
 pub fn tonemap_reinhard_pixel(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     // Apply per-channel: out = val / (1 + val)
-    (
-        r / (1.0 + r),
-        g / (1.0 + g),
-        b / (1.0 + b),
-    )
+    (r / (1.0 + r), g / (1.0 + g), b / (1.0 + b))
 }
 
 /// Apply Reinhard tone mapping to an image buffer.
-pub fn tonemap_reinhard(
-    pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<Vec<u8>, ImageError> {
+pub fn tonemap_reinhard(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     apply_rgb_transform(pixels, info, |r, g, b| tonemap_reinhard_pixel(r, g, b))
 }
 
@@ -503,11 +491,7 @@ pub fn tonemap_filmic_pixel(r: f32, g: f32, b: f32, params: &FilmicParams) -> (f
         (num / den).clamp(0.0, 1.0)
     }
 
-    (
-        filmic(r, params),
-        filmic(g, params),
-        filmic(b, params),
-    )
+    (filmic(r, params), filmic(g, params), filmic(b, params))
 }
 
 /// Apply filmic/ACES tone mapping to an image buffer.
@@ -516,7 +500,9 @@ pub fn tonemap_filmic(
     info: &ImageInfo,
     params: &FilmicParams,
 ) -> Result<Vec<u8>, ImageError> {
-    apply_rgb_transform(pixels, info, |r, g, b| tonemap_filmic_pixel(r, g, b, params))
+    apply_rgb_transform(pixels, info, |r, g, b| {
+        tonemap_filmic_pixel(r, g, b, params)
+    })
 }
 
 // ─── Film Grain Simulation ────────────────────────────────────────────────
@@ -550,7 +536,8 @@ impl Default for FilmGrainParams {
 #[inline]
 fn hash_noise(x: u32, y: u32, seed: u32) -> f32 {
     // Simple but effective hash: based on Wang hash
-    let mut h = x.wrapping_mul(374761393)
+    let mut h = x
+        .wrapping_mul(374761393)
         .wrapping_add(y.wrapping_mul(668265263))
         .wrapping_add(seed.wrapping_mul(1274126177));
     h = (h ^ (h >> 13)).wrapping_mul(1103515245);
@@ -574,7 +561,7 @@ pub fn film_grain(
         _ => {
             return Err(ImageError::UnsupportedFormat(
                 "film grain requires RGB8 or RGBA8".into(),
-            ))
+            ));
         }
     };
     let w = info.width as usize;
@@ -639,7 +626,7 @@ fn apply_rgb_transform(
         _ => {
             return Err(ImageError::UnsupportedFormat(
                 "color grading requires RGB8 or RGBA8".into(),
-            ))
+            ));
         }
     };
     let expected = info.width as usize * info.height as usize * bpp;
@@ -831,12 +818,7 @@ mod tests {
 
     #[test]
     fn curves_s_curve() {
-        let points = vec![
-            (0.0, 0.0),
-            (0.25, 0.15),
-            (0.75, 0.85),
-            (1.0, 1.0),
-        ];
+        let points = vec![(0.0, 0.0), (0.25, 0.15), (0.75, 0.85), (1.0, 1.0)];
         let lut = build_curve_lut(&points);
         // S-curve should darken shadows and brighten highlights
         assert!(lut[64] < 64, "S-curve should darken shadows");
@@ -847,12 +829,7 @@ mod tests {
 
     #[test]
     fn curves_monotone() {
-        let points = vec![
-            (0.0, 0.0),
-            (0.3, 0.2),
-            (0.7, 0.9),
-            (1.0, 1.0),
-        ];
+        let points = vec![(0.0, 0.0), (0.3, 0.2), (0.7, 0.9), (1.0, 1.0)];
         let lut = build_curve_lut(&points);
         // Should be monotonically non-decreasing
         for i in 1..256 {
@@ -1003,8 +980,24 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let a = film_grain(&px, &info, &FilmGrainParams { seed: 0, ..Default::default() }).unwrap();
-        let b = film_grain(&px, &info, &FilmGrainParams { seed: 42, ..Default::default() }).unwrap();
+        let a = film_grain(
+            &px,
+            &info,
+            &FilmGrainParams {
+                seed: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let b = film_grain(
+            &px,
+            &info,
+            &FilmGrainParams {
+                seed: 42,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_ne!(a, b);
     }
 
@@ -1027,10 +1020,14 @@ mod tests {
         let dark_out = film_grain(&dark, &info, &params).unwrap();
         let mid_out = film_grain(&mid, &info, &params).unwrap();
 
-        let dark_diff: u32 = dark.iter().zip(dark_out.iter())
+        let dark_diff: u32 = dark
+            .iter()
+            .zip(dark_out.iter())
             .map(|(&a, &b)| (a as i32 - b as i32).unsigned_abs())
             .sum();
-        let mid_diff: u32 = mid.iter().zip(mid_out.iter())
+        let mid_diff: u32 = mid
+            .iter()
+            .zip(mid_out.iter())
             .map(|(&a, &b)| (a as i32 - b as i32).unsigned_abs())
             .sum();
 
@@ -1049,12 +1046,26 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let mono = film_grain(&px, &info, &FilmGrainParams {
-            color: false, amount: 0.5, ..Default::default()
-        }).unwrap();
-        let color = film_grain(&px, &info, &FilmGrainParams {
-            color: true, amount: 0.5, ..Default::default()
-        }).unwrap();
+        let mono = film_grain(
+            &px,
+            &info,
+            &FilmGrainParams {
+                color: false,
+                amount: 0.5,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let color = film_grain(
+            &px,
+            &info,
+            &FilmGrainParams {
+                color: true,
+                amount: 0.5,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         // Mono grain: R delta == G delta == B delta for each pixel
         let mut mono_uniform = true;
@@ -1067,7 +1078,10 @@ mod tests {
                 break;
             }
         }
-        assert!(mono_uniform, "mono grain should affect all channels equally");
+        assert!(
+            mono_uniform,
+            "mono grain should affect all channels equally"
+        );
 
         // Color grain: channels should differ for some pixels
         let mut color_varied = false;

@@ -298,7 +298,9 @@ impl FilterRegistry {
 
     /// Look up a filter by name.
     pub fn get(&self, name: &str) -> Option<&dyn ImageFilter> {
-        self.by_name.get(name).map(|&idx| self.filters[idx].as_ref())
+        self.by_name
+            .get(name)
+            .map(|&idx| self.filters[idx].as_ref())
     }
 
     /// List all registered filter names.
@@ -404,8 +406,12 @@ builtin_filter!(CannyFilter, "canny", FilterCategory::EdgeDetection,
 // Point operations — all are LUT-collapsible (per-pixel, no neighbors)
 pub struct GammaFilter;
 impl ImageFilter for GammaFilter {
-    fn name(&self) -> &str { "gamma" }
-    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn name(&self) -> &str {
+        "gamma"
+    }
+    fn category(&self) -> FilterCategory {
+        FilterCategory::PointOp
+    }
     fn param_descriptors(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor::float("gamma", 0.1, 10.0, 1.0)]
     }
@@ -413,7 +419,9 @@ impl ImageFilter for GammaFilter {
         let gamma = input.params.get_float("gamma").unwrap_or(1.0);
         point_ops::gamma(input.pixels, input.info, gamma)
     }
-    fn is_lut_collapsible(&self) -> bool { true }
+    fn is_lut_collapsible(&self) -> bool {
+        true
+    }
     fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
         let gamma = params.get_float("gamma").unwrap_or(1.0);
         point_ops::build_lut(&PointOp::Gamma(gamma))
@@ -422,8 +430,12 @@ impl ImageFilter for GammaFilter {
 
 pub struct BrightnessFilter;
 impl ImageFilter for BrightnessFilter {
-    fn name(&self) -> &str { "brightness" }
-    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn name(&self) -> &str {
+        "brightness"
+    }
+    fn category(&self) -> FilterCategory {
+        FilterCategory::PointOp
+    }
     fn param_descriptors(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor::float("amount", -1.0, 1.0, 0.0)]
     }
@@ -431,7 +443,9 @@ impl ImageFilter for BrightnessFilter {
         let amount = input.params.get_float("amount").unwrap_or(0.0);
         filters::brightness(input.pixels, input.info, amount)
     }
-    fn is_lut_collapsible(&self) -> bool { true }
+    fn is_lut_collapsible(&self) -> bool {
+        true
+    }
     fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
         let amount = params.get_float("amount").unwrap_or(0.0);
         point_ops::build_lut(&PointOp::Brightness(amount))
@@ -440,8 +454,12 @@ impl ImageFilter for BrightnessFilter {
 
 pub struct ContrastFilter;
 impl ImageFilter for ContrastFilter {
-    fn name(&self) -> &str { "contrast" }
-    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn name(&self) -> &str {
+        "contrast"
+    }
+    fn category(&self) -> FilterCategory {
+        FilterCategory::PointOp
+    }
     fn param_descriptors(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor::float("amount", -1.0, 1.0, 0.0)]
     }
@@ -449,7 +467,9 @@ impl ImageFilter for ContrastFilter {
         let amount = input.params.get_float("amount").unwrap_or(0.0);
         filters::contrast(input.pixels, input.info, amount)
     }
-    fn is_lut_collapsible(&self) -> bool { true }
+    fn is_lut_collapsible(&self) -> bool {
+        true
+    }
     fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
         let amount = params.get_float("amount").unwrap_or(0.0);
         point_ops::build_lut(&PointOp::Contrast(amount))
@@ -458,13 +478,21 @@ impl ImageFilter for ContrastFilter {
 
 pub struct InvertFilter;
 impl ImageFilter for InvertFilter {
-    fn name(&self) -> &str { "invert" }
-    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
-    fn param_descriptors(&self) -> Vec<ParamDescriptor> { vec![] }
+    fn name(&self) -> &str {
+        "invert"
+    }
+    fn category(&self) -> FilterCategory {
+        FilterCategory::PointOp
+    }
+    fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+        vec![]
+    }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
         point_ops::invert(input.pixels, input.info)
     }
-    fn is_lut_collapsible(&self) -> bool { true }
+    fn is_lut_collapsible(&self) -> bool {
+        true
+    }
     fn build_lut(&self, _params: &FilterParams) -> [u8; 256] {
         point_ops::build_lut(&PointOp::Invert)
     }
@@ -472,8 +500,12 @@ impl ImageFilter for InvertFilter {
 
 pub struct ThresholdFilter;
 impl ImageFilter for ThresholdFilter {
-    fn name(&self) -> &str { "threshold" }
-    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn name(&self) -> &str {
+        "threshold"
+    }
+    fn category(&self) -> FilterCategory {
+        FilterCategory::PointOp
+    }
     fn param_descriptors(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor::uint("level", 0, 255, 128)]
     }
@@ -481,7 +513,9 @@ impl ImageFilter for ThresholdFilter {
         let level = input.params.get_uint("level").unwrap_or(128) as u8;
         point_ops::threshold(input.pixels, input.info, level)
     }
-    fn is_lut_collapsible(&self) -> bool { true }
+    fn is_lut_collapsible(&self) -> bool {
+        true
+    }
     fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
         let level = params.get_uint("level").unwrap_or(128) as u8;
         point_ops::build_lut(&PointOp::Threshold(level))
@@ -490,8 +524,12 @@ impl ImageFilter for ThresholdFilter {
 
 pub struct PosterizeFilter;
 impl ImageFilter for PosterizeFilter {
-    fn name(&self) -> &str { "posterize" }
-    fn category(&self) -> FilterCategory { FilterCategory::PointOp }
+    fn name(&self) -> &str {
+        "posterize"
+    }
+    fn category(&self) -> FilterCategory {
+        FilterCategory::PointOp
+    }
     fn param_descriptors(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor::uint("levels", 2, 256, 4)]
     }
@@ -499,7 +537,9 @@ impl ImageFilter for PosterizeFilter {
         let levels = input.params.get_uint("levels").unwrap_or(4) as u8;
         point_ops::posterize(input.pixels, input.info, levels)
     }
-    fn is_lut_collapsible(&self) -> bool { true }
+    fn is_lut_collapsible(&self) -> bool {
+        true
+    }
     fn build_lut(&self, params: &FilterParams) -> [u8; 256] {
         let levels = params.get_uint("levels").unwrap_or(4) as u8;
         point_ops::build_lut(&PointOp::Posterize(levels))
@@ -646,12 +686,30 @@ mod tests {
     #[test]
     fn registry_has_all_builtins() {
         let reg = FilterRegistry::with_builtins();
-        assert!(reg.len() >= 22, "expected 22+ built-in filters, got {}", reg.len());
+        assert!(
+            reg.len() >= 22,
+            "expected 22+ built-in filters, got {}",
+            reg.len()
+        );
 
         // Spot-check key filters exist
-        for name in ["blur", "sharpen", "clahe", "bilateral", "guided_filter", "sobel", "canny",
-                      "gamma", "brightness", "contrast", "invert", "sepia", "equalize",
-                      "mertens_fusion", "debevec_hdr"] {
+        for name in [
+            "blur",
+            "sharpen",
+            "clahe",
+            "bilateral",
+            "guided_filter",
+            "sobel",
+            "canny",
+            "gamma",
+            "brightness",
+            "contrast",
+            "invert",
+            "sepia",
+            "equalize",
+            "mertens_fusion",
+            "debevec_hdr",
+        ] {
             assert!(reg.get(name).is_some(), "missing built-in filter: {name}");
         }
     }
@@ -670,13 +728,18 @@ mod tests {
         let blur = reg.get("blur").unwrap();
 
         let info = ImageInfo {
-            width: 8, height: 8,
+            width: 8,
+            height: 8,
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 64];
         let params = FilterParams::new().set_float("radius", 1.0);
-        let input = FilterInput { pixels: &pixels, info: &info, params: &params };
+        let input = FilterInput {
+            pixels: &pixels,
+            info: &info,
+            params: &params,
+        };
 
         let result = blur.apply(&input).unwrap();
         assert_eq!(result.len(), 64);
@@ -686,9 +749,15 @@ mod tests {
     fn custom_filter_registration() {
         struct DoubleFilter;
         impl ImageFilter for DoubleFilter {
-            fn name(&self) -> &str { "double" }
-            fn category(&self) -> FilterCategory { FilterCategory::Other }
-            fn param_descriptors(&self) -> Vec<ParamDescriptor> { vec![] }
+            fn name(&self) -> &str {
+                "double"
+            }
+            fn category(&self) -> FilterCategory {
+                FilterCategory::Other
+            }
+            fn param_descriptors(&self) -> Vec<ParamDescriptor> {
+                vec![]
+            }
             fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
                 Ok(input.pixels.iter().map(|&v| v.saturating_mul(2)).collect())
             }
@@ -701,13 +770,18 @@ mod tests {
         assert!(reg.get("double").is_some());
 
         let info = ImageInfo {
-            width: 4, height: 1,
+            width: 4,
+            height: 1,
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![10u8, 20, 30, 40];
         let params = FilterParams::new();
-        let input = FilterInput { pixels: &pixels, info: &info, params: &params };
+        let input = FilterInput {
+            pixels: &pixels,
+            info: &info,
+            params: &params,
+        };
 
         let result = reg.get("double").unwrap().apply(&input).unwrap();
         assert_eq!(result, vec![20, 40, 60, 80]);

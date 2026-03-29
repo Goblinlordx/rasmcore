@@ -47,8 +47,16 @@ fn find_vertical_seam(energy: &[f64], w: usize, h: usize) -> Vec<usize> {
     for y in 1..h {
         for x in 0..w {
             let above = dp[(y - 1) * w + x];
-            let above_left = if x > 0 { dp[(y - 1) * w + x - 1] } else { f64::MAX };
-            let above_right = if x < w - 1 { dp[(y - 1) * w + x + 1] } else { f64::MAX };
+            let above_left = if x > 0 {
+                dp[(y - 1) * w + x - 1]
+            } else {
+                f64::MAX
+            };
+            let above_right = if x < w - 1 {
+                dp[(y - 1) * w + x + 1]
+            } else {
+                f64::MAX
+            };
             dp[y * w + x] = energy[y * w + x] + above.min(above_left).min(above_right);
         }
     }
@@ -130,7 +138,7 @@ pub fn seam_carve_width(
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "seam carving on {other:?}"
-            )))
+            )));
         }
     };
 
@@ -175,7 +183,7 @@ pub fn seam_carve_height(
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "seam carving on {other:?}"
-            )))
+            )));
         }
     };
 
@@ -353,11 +361,21 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
 }
 
 fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
-    if t < 0.0 { t += 1.0; }
-    if t > 1.0 { t -= 1.0; }
-    if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-    if t < 1.0 / 2.0 { return q; }
-    if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+    if t < 0.0 {
+        t += 1.0;
+    }
+    if t > 1.0 {
+        t -= 1.0;
+    }
+    if t < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * t;
+    }
+    if t < 1.0 / 2.0 {
+        return q;
+    }
+    if t < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
     p
 }
 
@@ -369,7 +387,8 @@ mod tests {
     #[test]
     fn seam_carve_reduces_width() {
         let info = ImageInfo {
-            width: 16, height: 8,
+            width: 16,
+            height: 8,
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
@@ -389,7 +408,8 @@ mod tests {
     #[test]
     fn seam_carve_preserves_high_energy() {
         let info = ImageInfo {
-            width: 8, height: 4,
+            width: 8,
+            height: 4,
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
@@ -406,13 +426,17 @@ mod tests {
         // Check that the result still has a transition from dark to bright
         let has_dark = result.iter().any(|&v| v < 50);
         let has_bright = result.iter().any(|&v| v > 200);
-        assert!(has_dark && has_bright, "seam carving should preserve the edge");
+        assert!(
+            has_dark && has_bright,
+            "seam carving should preserve the edge"
+        );
     }
 
     #[test]
     fn seam_carve_height_reduces() {
         let info = ImageInfo {
-            width: 8, height: 16,
+            width: 8,
+            height: 16,
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
@@ -426,21 +450,28 @@ mod tests {
     #[test]
     fn selective_color_shifts_target_hue() {
         let info = ImageInfo {
-            width: 3, height: 1,
+            width: 3,
+            height: 1,
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
         // Red, Green, Blue pixels
         let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255];
         let params = SelectiveColorParams {
-            hue_range: HueRange { center: 0.0, width: 60.0 }, // Target reds
+            hue_range: HueRange {
+                center: 0.0,
+                width: 60.0,
+            }, // Target reds
             hue_shift: 120.0, // Shift red → green
             saturation: 1.0,
             lightness: 0.0,
         };
         let result = selective_color(&pixels, &info, &params).unwrap();
         // Red pixel should have shifted toward green
-        assert!(result[1] > result[0], "shifted red should have more green than red");
+        assert!(
+            result[1] > result[0],
+            "shifted red should have more green than red"
+        );
         // Green and blue pixels should be unchanged
         assert_eq!(result[3], 0);
         assert_eq!(result[4], 255);
@@ -453,13 +484,17 @@ mod tests {
     #[test]
     fn selective_color_identity_outside_range() {
         let info = ImageInfo {
-            width: 1, height: 1,
+            width: 1,
+            height: 1,
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![0, 0, 255]; // Pure blue (hue ≈ 240°)
         let params = SelectiveColorParams {
-            hue_range: HueRange { center: 0.0, width: 30.0 }, // Target reds only
+            hue_range: HueRange {
+                center: 0.0,
+                width: 30.0,
+            }, // Target reds only
             hue_shift: 90.0,
             saturation: 2.0,
             lightness: 0.5,

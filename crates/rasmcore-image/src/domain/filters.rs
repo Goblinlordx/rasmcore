@@ -1022,10 +1022,12 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
             }
             // Diagonal
             if y > 0 && x > 0 {
-                dist[y * w + x] = dist[y * w + x].min(dist[(y - 1) * w + x - 1] + std::f64::consts::SQRT_2);
+                dist[y * w + x] =
+                    dist[y * w + x].min(dist[(y - 1) * w + x - 1] + std::f64::consts::SQRT_2);
             }
             if y > 0 && x < w - 1 {
-                dist[y * w + x] = dist[y * w + x].min(dist[(y - 1) * w + x + 1] + std::f64::consts::SQRT_2);
+                dist[y * w + x] =
+                    dist[y * w + x].min(dist[(y - 1) * w + x + 1] + std::f64::consts::SQRT_2);
             }
         }
     }
@@ -1043,10 +1045,12 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
                 dist[y * w + x] = dist[y * w + x].min(dist[y * w + x + 1] + 1.0);
             }
             if y < h - 1 && x < w - 1 {
-                dist[y * w + x] = dist[y * w + x].min(dist[(y + 1) * w + x + 1] + std::f64::consts::SQRT_2);
+                dist[y * w + x] =
+                    dist[y * w + x].min(dist[(y + 1) * w + x + 1] + std::f64::consts::SQRT_2);
             }
             if y < h - 1 && x > 0 {
-                dist[y * w + x] = dist[y * w + x].min(dist[(y + 1) * w + x - 1] + std::f64::consts::SQRT_2);
+                dist[y * w + x] =
+                    dist[y * w + x].min(dist[(y + 1) * w + x - 1] + std::f64::consts::SQRT_2);
             }
         }
     }
@@ -1668,7 +1672,11 @@ pub fn bilateral(
     }
 
     let (w, h) = (info.width as usize, info.height as usize);
-    let channels = if info.format == PixelFormat::Gray8 { 1 } else { 3 };
+    let channels = if info.format == PixelFormat::Gray8 {
+        1
+    } else {
+        3
+    };
     let radius = if diameter > 0 {
         (diameter as usize | 1) / 2
     } else {
@@ -1746,14 +1754,13 @@ pub fn bilateral(
                 let mut rsum: f32 = 0.0;
                 for k in 0..maxk {
                     let (dy, dx) = space_ofs[k];
-                    let n_off = ((py as isize + dy) as usize * pw
-                        + (px as isize + dx) as usize) * channels;
+                    let n_off =
+                        ((py as isize + dy) as usize * pw + (px as isize + dx) as usize) * channels;
                     let b = padded[n_off] as i32;
                     let g = padded[n_off + 1] as i32;
                     let r = padded[n_off + 2] as i32;
-                    let color_diff = (b - b0).unsigned_abs()
-                        + (g - g0).unsigned_abs()
-                        + (r - r0).unsigned_abs();
+                    let color_diff =
+                        (b - b0).unsigned_abs() + (g - g0).unsigned_abs() + (r - r0).unsigned_abs();
                     let w = space_weight[k]
                         * color_weight[(color_diff as usize).min(color_lut_size - 1)];
                     wsum += w;
@@ -1885,10 +1892,9 @@ fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
     let mut sat = vec![0.0f32; (pw + 1) * (ph + 1)];
     for y in 0..ph {
         for x in 0..pw {
-            sat[(y + 1) * (pw + 1) + (x + 1)] = padded[y * pw + x]
-                + sat[y * (pw + 1) + (x + 1)]
-                + sat[(y + 1) * (pw + 1) + x]
-                - sat[y * (pw + 1) + x];
+            sat[(y + 1) * (pw + 1) + (x + 1)] =
+                padded[y * pw + x] + sat[y * (pw + 1) + (x + 1)] + sat[(y + 1) * (pw + 1) + x]
+                    - sat[y * (pw + 1) + x];
         }
     }
 
@@ -1901,8 +1907,7 @@ fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
         for x in 0..w {
             let x0 = x;
             let x1 = x + ksize;
-            let sum = sat[y1 * (pw + 1) + x1] - sat[y0 * (pw + 1) + x1]
-                - sat[y1 * (pw + 1) + x0]
+            let sum = sat[y1 * (pw + 1) + x1] - sat[y0 * (pw + 1) + x1] - sat[y1 * (pw + 1) + x0]
                 + sat[y0 * (pw + 1) + x0];
             result[y * w + x] = sum / count;
         }
@@ -1983,7 +1988,7 @@ fn morph_op(
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "morphology on {other:?} not supported"
-            )))
+            )));
         }
     };
     let w = info.width as usize;
@@ -1994,7 +1999,11 @@ fn morph_op(
     let ky = kh / 2;
     let se = make_structuring_element(shape, kw, kh);
 
-    let process_ch = if info.format == PixelFormat::Rgba8 { 3 } else { ch };
+    let process_ch = if info.format == PixelFormat::Rgba8 {
+        3
+    } else {
+        ch
+    };
     let mut out = pixels.to_vec();
 
     for y in 0..h {
@@ -2007,8 +2016,10 @@ fn morph_op(
                             continue;
                         }
                         // Reflect101 boundary
-                        let sy = reflect101(y as isize + ky2 as isize - ky as isize, h as isize) as usize;
-                        let sx = reflect101(x as isize + kx2 as isize - kx as isize, w as isize) as usize;
+                        let sy = reflect101(y as isize + ky2 as isize - ky as isize, h as isize)
+                            as usize;
+                        let sx = reflect101(x as isize + kx2 as isize - kx as isize, w as isize)
+                            as usize;
                         let p = pixels[(sy * w + sx) * ch + c];
                         if is_erode {
                             val = val.min(p);
@@ -2169,7 +2180,7 @@ fn nlm_denoise_opencv(
 ) -> Result<Vec<u8>, ImageError> {
     let w = info.width as usize;
     let h = info.height as usize;
-    let tw = params.patch_size as usize;  // template window size
+    let tw = params.patch_size as usize; // template window size
     let sw = params.search_size as usize; // search window size
     let thr = tw / 2; // template half radius
     let shr = sw / 2; // search half radius
@@ -2295,10 +2306,15 @@ fn nlm_denoise_classic(
                     let mut ssd: f32 = 0.0;
                     for py in 0..ps {
                         for ppx in 0..ps {
-                            let y1 = reflect101(y as isize + py as isize - pr as isize, h as isize) as usize;
-                            let x1 = reflect101(x as isize + ppx as isize - pr as isize, w as isize) as usize;
-                            let y2 = reflect101(sy as isize + py as isize - pr as isize, h as isize) as usize;
-                            let x2 = reflect101(sx as isize + ppx as isize - pr as isize, w as isize) as usize;
+                            let y1 = reflect101(y as isize + py as isize - pr as isize, h as isize)
+                                as usize;
+                            let x1 = reflect101(x as isize + ppx as isize - pr as isize, w as isize)
+                                as usize;
+                            let y2 = reflect101(sy as isize + py as isize - pr as isize, h as isize)
+                                as usize;
+                            let x2 =
+                                reflect101(sx as isize + ppx as isize - pr as isize, w as isize)
+                                    as usize;
                             let d = pixels[y1 * w + x1] as f32 - pixels[y2 * w + x2] as f32;
                             ssd += d * d;
                         }
@@ -2386,8 +2402,7 @@ pub fn dehaze(
     let mut max_intensity = 0.0f32;
     for &(idx, _) in dc_indexed.iter().take(top_count) {
         let pi = idx * channels;
-        let intensity =
-            pixels[pi] as f32 + pixels[pi + 1] as f32 + pixels[pi + 2] as f32;
+        let intensity = pixels[pi] as f32 + pixels[pi + 1] as f32 + pixels[pi + 2] as f32;
         if intensity > max_intensity {
             max_intensity = intensity;
             atm[0] = pixels[pi] as f32 / 255.0;
@@ -2674,11 +2689,9 @@ fn downsample_2x(data: &[f32], w: usize, h: usize) -> Vec<f32> {
             let y0 = y * 2;
             let x1 = (x0 + 1).min(w - 1);
             let y1 = (y0 + 1).min(h - 1);
-            out[y * nw + x] = (data[y0 * w + x0]
-                + data[y0 * w + x1]
-                + data[y1 * w + x0]
-                + data[y1 * w + x1])
-                / 4.0;
+            out[y * nw + x] =
+                (data[y0 * w + x0] + data[y0 * w + x1] + data[y1 * w + x0] + data[y1 * w + x1])
+                    / 4.0;
         }
     }
     out
@@ -3837,7 +3850,6 @@ mod tests_16bit {
         let result = sepia(&px, &info, 1.0).unwrap();
         assert_eq!(result.len(), px.len());
     }
-
 }
 
 #[cfg(test)]
@@ -3939,7 +3951,10 @@ mod photo_enhance_tests {
             .map(|(&a, &b)| (a as f64 - b as f64).abs())
             .sum::<f64>()
             / px.len() as f64;
-        assert!(diff < 1.0, "clarity with amount=0 should be near-identity, MAE={diff}");
+        assert!(
+            diff < 1.0,
+            "clarity with amount=0 should be near-identity, MAE={diff}"
+        );
     }
 
     #[test]
@@ -3973,7 +3988,11 @@ mod photo_enhance_tests {
         let result = pyramid_detail_remap(&px, &info, 0.2, 0).unwrap();
         assert_eq!(result.len(), px.len());
         // Result should differ from input (enhancement applied)
-        let diff: usize = px.iter().zip(result.iter()).filter(|&(&a, &b)| a != b).count();
+        let diff: usize = px
+            .iter()
+            .zip(result.iter())
+            .filter(|&(&a, &b)| a != b)
+            .count();
         assert!(diff > 0, "local laplacian should modify the image");
     }
 
@@ -3997,8 +4016,8 @@ mod photo_enhance_tests {
 
 #[cfg(test)]
 mod morphology_tests {
-    use super::*;
     use super::super::types::ColorSpace;
+    use super::*;
 
     fn gray_info(w: u32, h: u32) -> ImageInfo {
         ImageInfo {
@@ -4061,7 +4080,11 @@ mod morphology_tests {
         let info = gray_info(8, 8);
         let result = morph_open(&px, &info, 3, MorphShape::Rect).unwrap();
         // Opening should remove the single bright pixel
-        assert_eq!(result[3 * 8 + 3], 0, "single bright pixel removed by opening");
+        assert_eq!(
+            result[3 * 8 + 3],
+            0,
+            "single bright pixel removed by opening"
+        );
     }
 
     #[test]
@@ -4072,7 +4095,11 @@ mod morphology_tests {
         let info = gray_info(8, 8);
         let result = morph_close(&px, &info, 3, MorphShape::Rect).unwrap();
         // Closing should fill the single dark pixel
-        assert_eq!(result[3 * 8 + 3], 255, "single dark pixel filled by closing");
+        assert_eq!(
+            result[3 * 8 + 3],
+            255,
+            "single dark pixel filled by closing"
+        );
     }
 
     #[test]
@@ -4087,7 +4114,10 @@ mod morphology_tests {
         let info = gray_info(8, 8);
         let result = morph_gradient(&px, &info, 3, MorphShape::Rect).unwrap();
         // Edge at x=3/4 should be highlighted
-        assert!(result[3 * 8 + 3] > 0 || result[3 * 8 + 4] > 0, "edge should be visible");
+        assert!(
+            result[3 * 8 + 3] > 0 || result[3 * 8 + 4] > 0,
+            "edge should be visible"
+        );
         // Interior should be zero
         assert_eq!(result[3 * 8 + 0], 0, "interior black should be zero");
         assert_eq!(result[3 * 8 + 7], 0, "interior white should be zero");
@@ -4098,13 +4128,13 @@ mod morphology_tests {
         let se = make_structuring_element(MorphShape::Cross, 3, 3);
         // Cross: center row and center column
         assert!(!se[0]); // top-left
-        assert!(se[1]);  // top-center
+        assert!(se[1]); // top-center
         assert!(!se[2]); // top-right
-        assert!(se[3]);  // mid-left
-        assert!(se[4]);  // center
-        assert!(se[5]);  // mid-right
+        assert!(se[3]); // mid-left
+        assert!(se[4]); // center
+        assert!(se[5]); // mid-right
         assert!(!se[6]); // bottom-left
-        assert!(se[7]);  // bottom-center
+        assert!(se[7]); // bottom-center
         assert!(!se[8]); // bottom-right
     }
 
@@ -4117,7 +4147,10 @@ mod morphology_tests {
         px[idx + 1] = 255;
         px[idx + 2] = 255;
         let info = ImageInfo {
-            width: 8, height: 8, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
         };
         let result = dilate(&px, &info, 3, MorphShape::Rect).unwrap();
         // Neighbor should be dilated
@@ -4128,8 +4161,8 @@ mod morphology_tests {
 
 #[cfg(test)]
 mod nlm_tests {
-    use super::*;
     use super::super::types::ColorSpace;
+    use super::*;
 
     #[test]
     fn nlm_reduces_noise() {
@@ -4145,7 +4178,10 @@ mod nlm_tests {
         }
 
         let info = ImageInfo {
-            width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
         };
         let params = NlmParams {
             h: 20.0,
@@ -4156,8 +4192,13 @@ mod nlm_tests {
         let result = nlm_denoise(&px, &info, &params).unwrap();
 
         // Compute MAE vs ground truth (128)
-        let mae_input: f64 = px.iter().map(|&v| (v as f64 - 128.0).abs()).sum::<f64>() / px.len() as f64;
-        let mae_output: f64 = result.iter().map(|&v| (v as f64 - 128.0).abs()).sum::<f64>() / result.len() as f64;
+        let mae_input: f64 =
+            px.iter().map(|&v| (v as f64 - 128.0).abs()).sum::<f64>() / px.len() as f64;
+        let mae_output: f64 = result
+            .iter()
+            .map(|&v| (v as f64 - 128.0).abs())
+            .sum::<f64>()
+            / result.len() as f64;
 
         assert!(
             mae_output < mae_input,
@@ -4169,7 +4210,10 @@ mod nlm_tests {
     fn nlm_preserves_uniform() {
         let px = vec![128u8; 16 * 16];
         let info = ImageInfo {
-            width: 16, height: 16, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb,
+            width: 16,
+            height: 16,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
         };
         let result = nlm_denoise(&px, &info, &NlmParams::default()).unwrap();
         assert_eq!(result, px, "uniform image should be preserved");
@@ -4179,7 +4223,10 @@ mod nlm_tests {
     fn nlm_gray_only() {
         let px = vec![128u8; 4 * 4 * 3];
         let info = ImageInfo {
-            width: 4, height: 4, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
         };
         assert!(nlm_denoise(&px, &info, &NlmParams::default()).is_err());
     }
@@ -4546,8 +4593,7 @@ fn compute_mertens_weight(img_f: &[f32], w: usize, h: usize, params: &MertensPar
             let xn = if x + 1 < w { x + 1 } else { w - 1 };
 
             let center = gray[y * w + x];
-            let lap = gray[yp * w + x] + gray[yn * w + x]
-                + gray[y * w + xp] + gray[y * w + xn]
+            let lap = gray[yp * w + x] + gray[yn * w + x] + gray[y * w + xp] + gray[y * w + xn]
                 - 4.0 * center;
             contrast[y * w + x] = lap.abs();
         }
@@ -4840,12 +4886,7 @@ fn gaussian_pyramid_gray(src: &[f32], w: u32, h: u32, levels: usize) -> Vec<Vec<
 /// Build Laplacian pyramid for a 3-channel f32 image.
 /// Returns levels+1 entries: levels Laplacian layers + 1 low-res residual.
 /// Each entry is (pixels, width, height).
-fn laplacian_pyramid_rgb(
-    src: &[f32],
-    w: u32,
-    h: u32,
-    levels: usize,
-) -> Vec<(Vec<f32>, u32, u32)> {
+fn laplacian_pyramid_rgb(src: &[f32], w: u32, h: u32, levels: usize) -> Vec<(Vec<f32>, u32, u32)> {
     // Build Gaussian pyramid first
     let mut gpyr: Vec<(Vec<f32>, u32, u32)> = Vec::with_capacity(levels + 1);
     gpyr.push((src.to_vec(), w, h));
@@ -4953,9 +4994,9 @@ pub fn debevec_response_curve(
                 let z = img[si * 3 + ch] as usize;
                 let wt = hat_weight(z);
 
-                a[eq * n_unknowns + z] = wt;              // g(z) coefficient
-                a[eq * n_unknowns + 256 + s] = -wt;       // -ln(E_i) coefficient
-                b[eq] = wt * (dt as f64).ln();              // w(z) * ln(dt)
+                a[eq * n_unknowns + z] = wt; // g(z) coefficient
+                a[eq * n_unknowns + 256 + s] = -wt; // -ln(E_i) coefficient
+                b[eq] = wt * (dt as f64).ln(); // w(z) * ln(dt)
                 eq += 1;
             }
         }
@@ -5135,8 +5176,8 @@ fn solve_least_squares(a: &[f64], b: &[f64], m: usize, n: usize) -> Vec<f64> {
 
 #[cfg(test)]
 mod hdr_tests {
-    use super::*;
     use super::super::types::ColorSpace;
+    use super::*;
 
     fn test_info_rgb(w: u32, h: u32) -> ImageInfo {
         ImageInfo {
@@ -5197,13 +5238,12 @@ mod hdr_tests {
             }
         }
         let info = test_info_rgb(w, h);
-        let params = DebevecParams { samples: 30, lambda: 10.0 };
-        let response = debevec_response_curve(
-            &[&dark, &bright],
-            &info,
-            &[0.5, 2.0],
-            &params,
-        ).unwrap();
+        let params = DebevecParams {
+            samples: 30,
+            lambda: 10.0,
+        };
+        let response =
+            debevec_response_curve(&[&dark, &bright], &info, &[0.5, 2.0], &params).unwrap();
         assert_eq!(response.len(), 3);
         // Response should be monotonically increasing (approximately)
         // g(128) should be near 0 (our constraint)
@@ -5231,12 +5271,7 @@ mod hdr_tests {
                 response[ch][z] = ((z as f32 + 1.0) / 128.0).ln();
             }
         }
-        let hdr = debevec_hdr_merge(
-            &[&dark, &bright],
-            &info,
-            &[0.25, 4.0],
-            &response,
-        ).unwrap();
+        let hdr = debevec_hdr_merge(&[&dark, &bright], &info, &[0.25, 4.0], &response).unwrap();
         assert_eq!(hdr.len(), n * 3);
         // All values should be positive
         assert!(hdr.iter().all(|&v| v > 0.0));

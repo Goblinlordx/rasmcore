@@ -1,10 +1,10 @@
 pub mod codec;
 pub mod color;
-pub mod content_aware;
 pub mod color_grading;
-pub mod color_spaces;
 pub mod color_lut;
+pub mod color_spaces;
 pub mod composite;
+pub mod content_aware;
 pub mod decoder;
 pub mod encoder;
 pub mod error;

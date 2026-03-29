@@ -208,8 +208,7 @@ pub fn estimate_block_bits(quantized: &[i16; 16], block_type: u8) -> u32 {
         Some(pos) => pos,
         None => {
             // All-zero block: just the EOB signal at position 0
-            let probs =
-                token::get_coeff_probs(block_type as usize, BANDS[0] as usize, 0);
+            let probs = token::get_coeff_probs(block_type as usize, BANDS[0] as usize, 0);
             return prob_cost(probs[0] as u32); // cost of signaling "zero/EOB"
         }
     };

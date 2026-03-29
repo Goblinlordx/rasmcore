@@ -55,7 +55,13 @@ fn vips_available() -> bool {
 }
 
 fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "buffer length mismatch: {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "buffer length mismatch: {} vs {}",
+        a.len(),
+        b.len()
+    );
     if a.is_empty() {
         return 0.0;
     }
@@ -109,7 +115,11 @@ Image.fromarray(arr, '{mode}').save('{path}')
         child.stdin.take().unwrap().write_all(pixels).unwrap();
     }
     let output = child.wait_with_output().unwrap();
-    assert!(output.status.success(), "write_png failed: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "write_png failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     path
 }
 
@@ -187,7 +197,11 @@ fn generate_detail_image(w: u32, h: u32) -> Vec<u8> {
     let mut pixels = Vec::with_capacity((w * h * 3) as usize);
     for y in 0..h {
         for x in 0..w {
-            let checker = if ((x / 4) + (y / 4)) % 2 == 0 { 200u8 } else { 55u8 };
+            let checker = if ((x / 4) + (y / 4)) % 2 == 0 {
+                200u8
+            } else {
+                55u8
+            };
             let grad = (x * 255 / w.max(1)) as u8;
             let r = ((checker as u16 + grad as u16) / 2) as u8;
             let g = checker;
@@ -315,7 +329,10 @@ fn dehaze_clear_image_near_identity() {
     let mae = mean_absolute_error(&clear, &result);
     eprintln!("  dehaze on clear image: MAE={mae:.4}");
     // Clear images have low dark channel → high transmission → minimal change
-    assert!(mae < 30.0, "dehaze on clear image should be near-identity, MAE={mae:.4}");
+    assert!(
+        mae < 30.0,
+        "dehaze on clear image should be near-identity, MAE={mae:.4}"
+    );
 }
 
 // ─── Clarity Validation ─────────────────────────────────────────────────────

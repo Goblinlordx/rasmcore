@@ -173,7 +173,9 @@ pub fn pixels_to_dynamic_image(
                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                 .collect();
             let img = image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(
-                info.width, info.height, u16_pixels,
+                info.width,
+                info.height,
+                u16_pixels,
             )
             .ok_or_else(|| {
                 ImageError::InvalidInput("pixel data size mismatch for Gray16".into())
@@ -186,11 +188,11 @@ pub fn pixels_to_dynamic_image(
                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                 .collect();
             let img = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(
-                info.width, info.height, u16_pixels,
+                info.width,
+                info.height,
+                u16_pixels,
             )
-            .ok_or_else(|| {
-                ImageError::InvalidInput("pixel data size mismatch for Rgb16".into())
-            })?;
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch for Rgb16".into()))?;
             Ok(DynamicImage::ImageRgb16(img))
         }
         PixelFormat::Rgba16 => {
@@ -199,7 +201,9 @@ pub fn pixels_to_dynamic_image(
                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                 .collect();
             let img = image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
-                info.width, info.height, u16_pixels,
+                info.width,
+                info.height,
+                u16_pixels,
             )
             .ok_or_else(|| {
                 ImageError::InvalidInput("pixel data size mismatch for Rgba16".into())

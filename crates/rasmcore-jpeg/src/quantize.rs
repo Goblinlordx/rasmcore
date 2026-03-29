@@ -327,7 +327,9 @@ mod tests {
             let expected = c[i] / 8; // approximate
             assert!(
                 (expected - d[i]).abs() <= qt[i] as i32,
-                "pos {i}: expected≈{expected} got {}, Qt={}", d[i], qt[i]
+                "pos {i}: expected≈{expected} got {}, Qt={}",
+                d[i],
+                qt[i]
             );
         }
     }

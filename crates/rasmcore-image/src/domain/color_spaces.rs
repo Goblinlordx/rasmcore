@@ -104,7 +104,9 @@ pub fn lab_to_rgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
 /// Convert an RGB8 image to Lab (output: 3 f64 channels per pixel, interleaved [L,a,b,...]).
 pub fn image_rgb_to_lab(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, ImageError> {
     if info.format != PixelFormat::Rgb8 {
-        return Err(ImageError::UnsupportedFormat("Lab conversion requires Rgb8".into()));
+        return Err(ImageError::UnsupportedFormat(
+            "Lab conversion requires Rgb8".into(),
+        ));
     }
     let n = (info.width * info.height) as usize;
     let mut out = Vec::with_capacity(n * 3);
@@ -124,7 +126,9 @@ pub fn image_rgb_to_lab(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, Ima
 pub fn image_lab_to_rgb(lab: &[f64], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let n = (info.width * info.height) as usize;
     if lab.len() != n * 3 {
-        return Err(ImageError::InvalidParameters("Lab buffer size mismatch".into()));
+        return Err(ImageError::InvalidParameters(
+            "Lab buffer size mismatch".into(),
+        ));
     }
     let mut out = Vec::with_capacity(n * 3);
     for i in 0..n {
@@ -241,7 +245,9 @@ pub fn oklab_to_rgb_direct(ok_l: f64, ok_a: f64, ok_b: f64) -> (f64, f64, f64) {
 /// Gray-world white balance: adjust so mean R = mean G = mean B.
 pub fn white_balance_gray_world(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     if info.format != PixelFormat::Rgb8 {
-        return Err(ImageError::UnsupportedFormat("White balance requires Rgb8".into()));
+        return Err(ImageError::UnsupportedFormat(
+            "White balance requires Rgb8".into(),
+        ));
     }
     let n = (info.width * info.height) as usize;
     let (mut sr, mut sg, mut sb) = (0u64, 0u64, 0u64);
@@ -262,8 +268,12 @@ pub fn white_balance_gray_world(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u
     let mut out = vec![0u8; pixels.len()];
     for i in 0..n {
         out[i * 3] = (pixels[i * 3] as f64 * scale_r).round().clamp(0.0, 255.0) as u8;
-        out[i * 3 + 1] = (pixels[i * 3 + 1] as f64 * scale_g).round().clamp(0.0, 255.0) as u8;
-        out[i * 3 + 2] = (pixels[i * 3 + 2] as f64 * scale_b).round().clamp(0.0, 255.0) as u8;
+        out[i * 3 + 1] = (pixels[i * 3 + 1] as f64 * scale_g)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        out[i * 3 + 2] = (pixels[i * 3 + 2] as f64 * scale_b)
+            .round()
+            .clamp(0.0, 255.0) as u8;
     }
     Ok(out)
 }
@@ -272,10 +282,15 @@ pub fn white_balance_gray_world(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u
 /// `temperature`: Kelvin offset from 6500K (negative = cooler/blue, positive = warmer/yellow)
 /// `tint`: green-magenta shift (-1.0 to 1.0)
 pub fn white_balance_temperature(
-    pixels: &[u8], info: &ImageInfo, temperature: f64, tint: f64,
+    pixels: &[u8],
+    info: &ImageInfo,
+    temperature: f64,
+    tint: f64,
 ) -> Result<Vec<u8>, ImageError> {
     if info.format != PixelFormat::Rgb8 {
-        return Err(ImageError::UnsupportedFormat("White balance requires Rgb8".into()));
+        return Err(ImageError::UnsupportedFormat(
+            "White balance requires Rgb8".into(),
+        ));
     }
     // Simple temperature model: shift R and B channels
     // Positive temp → warm (boost R, reduce B)
@@ -289,8 +304,12 @@ pub fn white_balance_temperature(
     let mut out = vec![0u8; pixels.len()];
     for i in 0..n {
         out[i * 3] = (pixels[i * 3] as f64 * scale_r).round().clamp(0.0, 255.0) as u8;
-        out[i * 3 + 1] = (pixels[i * 3 + 1] as f64 * scale_g).round().clamp(0.0, 255.0) as u8;
-        out[i * 3 + 2] = (pixels[i * 3 + 2] as f64 * scale_b).round().clamp(0.0, 255.0) as u8;
+        out[i * 3 + 1] = (pixels[i * 3 + 1] as f64 * scale_g)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        out[i * 3 + 2] = (pixels[i * 3 + 2] as f64 * scale_b)
+            .round()
+            .clamp(0.0, 255.0) as u8;
     }
     Ok(out)
 }
@@ -308,7 +327,11 @@ pub fn delta_e_76(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
 /// Delta E 94 (CIE 1994) — weighted distance with lightness/chroma/hue terms.
 /// `textile`: if true, uses textile weights (kL=2); false uses graphic arts (kL=1).
 pub fn delta_e_94(lab1: (f64, f64, f64), lab2: (f64, f64, f64), textile: bool) -> f64 {
-    let (k_l, k1, k2) = if textile { (2.0, 0.048, 0.014) } else { (1.0, 0.045, 0.015) };
+    let (k_l, k1, k2) = if textile {
+        (2.0, 0.048, 0.014)
+    } else {
+        (1.0, 0.045, 0.015)
+    };
     let dl = lab1.0 - lab2.0;
     let c1 = (lab1.1 * lab1.1 + lab1.2 * lab1.2).sqrt();
     let c2 = (lab2.1 * lab2.1 + lab2.2 * lab2.2).sqrt();
@@ -565,7 +588,11 @@ pub fn perspective_warp(
         PixelFormat::Rgb8 => 3,
         PixelFormat::Rgba8 => 4,
         PixelFormat::Gray8 => 1,
-        other => return Err(ImageError::UnsupportedFormat(format!("perspective warp on {other:?}"))),
+        other => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "perspective warp on {other:?}"
+            )));
+        }
     };
     let (w, h) = (info.width as usize, info.height as usize);
 
@@ -643,7 +670,9 @@ fn solve_homography(src: &[(f64, f64); 4], dst: &[(f64, f64); 4]) -> Result<[f64
             }
         }
         if max_val < 1e-12 {
-            return Err(ImageError::InvalidParameters("degenerate homography".into()));
+            return Err(ImageError::InvalidParameters(
+                "degenerate homography".into(),
+            ));
         }
         mat.swap(col, max_row);
 
@@ -678,7 +707,14 @@ mod tests {
     #[test]
     fn lab_roundtrip() {
         // Test several colors
-        for (r, g, b) in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (128, 128, 128), (0, 0, 0), (255, 255, 255)] {
+        for (r, g, b) in [
+            (255, 0, 0),
+            (0, 255, 0),
+            (0, 0, 255),
+            (128, 128, 128),
+            (0, 0, 0),
+            (255, 255, 255),
+        ] {
             let rf = r as f64 / 255.0;
             let gf = g as f64 / 255.0;
             let bf = b as f64 / 255.0;
@@ -687,9 +723,18 @@ mod tests {
             let r_out = (r2.clamp(0.0, 1.0) * 255.0).round() as u8;
             let g_out = (g2.clamp(0.0, 1.0) * 255.0).round() as u8;
             let b_out = (b2.clamp(0.0, 1.0) * 255.0).round() as u8;
-            assert!((r as i16 - r_out as i16).abs() <= 1, "R roundtrip: {r} → {r_out}");
-            assert!((g as i16 - g_out as i16).abs() <= 1, "G roundtrip: {g} → {g_out}");
-            assert!((b as i16 - b_out as i16).abs() <= 1, "B roundtrip: {b} → {b_out}");
+            assert!(
+                (r as i16 - r_out as i16).abs() <= 1,
+                "R roundtrip: {r} → {r_out}"
+            );
+            assert!(
+                (g as i16 - g_out as i16).abs() <= 1,
+                "G roundtrip: {g} → {g_out}"
+            );
+            assert!(
+                (b as i16 - b_out as i16).abs() <= 1,
+                "B roundtrip: {b} → {b_out}"
+            );
         }
     }
 
@@ -704,9 +749,18 @@ mod tests {
             let r_out = (r2.clamp(0.0, 1.0) * 255.0).round() as u8;
             let g_out = (g2.clamp(0.0, 1.0) * 255.0).round() as u8;
             let b_out = (b2.clamp(0.0, 1.0) * 255.0).round() as u8;
-            assert!((r as i16 - r_out as i16).abs() <= 1, "OKLab R roundtrip: {r} → {r_out}");
-            assert!((g as i16 - g_out as i16).abs() <= 1, "OKLab G roundtrip: {g} → {g_out}");
-            assert!((b as i16 - b_out as i16).abs() <= 1, "OKLab B roundtrip: {b} → {b_out}");
+            assert!(
+                (r as i16 - r_out as i16).abs() <= 1,
+                "OKLab R roundtrip: {r} → {r_out}"
+            );
+            assert!(
+                (g as i16 - g_out as i16).abs() <= 1,
+                "OKLab G roundtrip: {g} → {g_out}"
+            );
+            assert!(
+                (b as i16 - b_out as i16).abs() <= 1,
+                "OKLab B roundtrip: {b} → {b_out}"
+            );
         }
     }
 
@@ -735,7 +789,8 @@ mod tests {
     #[test]
     fn gray_world_corrects_cast() {
         let info = ImageInfo {
-            width: 4, height: 1,
+            width: 4,
+            height: 1,
             format: PixelFormat::Rgb8,
             color_space: super::super::types::ColorSpace::Srgb,
         };
@@ -745,10 +800,25 @@ mod tests {
         // After correction, mean R ≈ mean G ≈ mean B
         let n = 4;
         let mean_r: f64 = result.iter().step_by(3).map(|&v| v as f64).sum::<f64>() / n as f64;
-        let mean_g: f64 = result.iter().skip(1).step_by(3).map(|&v| v as f64).sum::<f64>() / n as f64;
-        let mean_b: f64 = result.iter().skip(2).step_by(3).map(|&v| v as f64).sum::<f64>() / n as f64;
+        let mean_g: f64 = result
+            .iter()
+            .skip(1)
+            .step_by(3)
+            .map(|&v| v as f64)
+            .sum::<f64>()
+            / n as f64;
+        let mean_b: f64 = result
+            .iter()
+            .skip(2)
+            .step_by(3)
+            .map(|&v| v as f64)
+            .sum::<f64>()
+            / n as f64;
         let spread = (mean_r - mean_g).abs().max((mean_g - mean_b).abs());
-        assert!(spread < 5.0, "gray-world should equalize means: R={mean_r:.0} G={mean_g:.0} B={mean_b:.0}");
+        assert!(
+            spread < 5.0,
+            "gray-world should equalize means: R={mean_r:.0} G={mean_g:.0} B={mean_b:.0}"
+        );
     }
 
     #[test]
@@ -773,7 +843,8 @@ mod tests {
     #[test]
     fn perspective_warp_identity() {
         let info = ImageInfo {
-            width: 4, height: 4,
+            width: 4,
+            height: 4,
             format: PixelFormat::Gray8,
             color_space: super::super::types::ColorSpace::Srgb,
         };
@@ -785,7 +856,9 @@ mod tests {
         for i in 0..16 {
             assert!(
                 (pixels[i] as i16 - result[i] as i16).abs() <= 1,
-                "pixel {i}: {}->{}", pixels[i], result[i]
+                "pixel {i}: {}->{}",
+                pixels[i],
+                result[i]
             );
         }
     }

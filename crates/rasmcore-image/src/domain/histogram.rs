@@ -341,10 +341,7 @@ pub fn histogram_u16(pixels: &[u8], info: &ImageInfo) -> Result<Vec<Histogram16>
 }
 
 /// Compute 16-bit per-channel statistics.
-pub fn statistics_u16(
-    pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<Vec<ChannelStats16>, ImageError> {
+pub fn statistics_u16(pixels: &[u8], info: &ImageInfo) -> Result<Vec<ChannelStats16>, ImageError> {
     let histograms = histogram_u16(pixels, info)?;
     let pixel_count = (info.width as u64) * (info.height as u64);
     Ok(histograms
@@ -413,8 +410,7 @@ fn equalize_lut_u16(h: &Histogram16, pixel_count: u64) -> Vec<u16> {
         }
     } else {
         for (i, entry) in lut.iter_mut().enumerate() {
-            let v =
-                (cdf[i].saturating_sub(cdf_min) as f64 * 65535.0 / denom as f64 + 0.5) as u16;
+            let v = (cdf[i].saturating_sub(cdf_min) as f64 * 65535.0 / denom as f64 + 0.5) as u16;
             *entry = v;
         }
     }
@@ -440,12 +436,7 @@ fn contrast_stretch_16(
     }
 }
 
-fn stretch_lut_u16(
-    h: &Histogram16,
-    pixel_count: u64,
-    black_pct: f64,
-    white_pct: f64,
-) -> Vec<u16> {
+fn stretch_lut_u16(h: &Histogram16, pixel_count: u64, black_pct: f64, white_pct: f64) -> Vec<u16> {
     let black_threshold = (pixel_count as f64 * black_pct / 100.0) as u64;
     let white_threshold = (pixel_count as f64 * white_pct / 100.0) as u64;
 
@@ -523,7 +514,11 @@ where
                 chunk_out[7] = chunk_in[7]; // alpha hi
             }
         }
-        _ => return Err(ImageError::UnsupportedFormat("unexpected 16-bit format".into())),
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "unexpected 16-bit format".into(),
+            ));
+        }
     }
     Ok(result)
 }

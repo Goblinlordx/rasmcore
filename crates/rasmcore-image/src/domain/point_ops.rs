@@ -268,11 +268,7 @@ pub fn compose_luts_u16(first: &[u16], second: &[u16]) -> Vec<u16> {
 /// Apply a 16-bit LUT to all color channels, preserving alpha.
 ///
 /// Pixels are stored as LE byte pairs in `Vec<u8>`.
-pub fn apply_lut_u16(
-    pixels: &[u8],
-    info: &ImageInfo,
-    lut: &[u16],
-) -> Result<Vec<u8>, ImageError> {
+pub fn apply_lut_u16(pixels: &[u8], info: &ImageInfo, lut: &[u16]) -> Result<Vec<u8>, ImageError> {
     assert!(lut.len() == 65536);
 
     match info.format {
@@ -610,7 +606,10 @@ mod tests {
         }
         let fused = compose_luts_u16(&lut, &lut);
         for i in 0..=65535u16 {
-            assert_eq!(fused[i as usize], i, "double invert should be identity at {i}");
+            assert_eq!(
+                fused[i as usize], i,
+                "double invert should be identity at {i}"
+            );
         }
     }
 
@@ -668,7 +667,11 @@ mod tests {
         let info = test_info(3, 1, PixelFormat::Gray16);
         let result = gamma(&pixels, &info, 1.0).unwrap();
         let values = read_gray16_pixels(&result);
-        assert_eq!(values, vec![0, 32768, 65535], "gamma 1.0 at 16-bit should be identity");
+        assert_eq!(
+            values,
+            vec![0, 32768, 65535],
+            "gamma 1.0 at 16-bit should be identity"
+        );
     }
 
     #[test]
