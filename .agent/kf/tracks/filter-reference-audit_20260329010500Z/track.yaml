@@ -1,0 +1,156 @@
+id: filter-reference-audit_20260329010500Z
+title: Filter/Transform Reference Audit — Validate All Ops Against ImageMagick + Document
+type: chore
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Systematic reference validation for all 40+ image processing operations. For each
+    operation, generate deterministic test input, run through both rasmcore and
+    ImageMagick CLI, compare output via MAE/PSNR, and document which reference
+    implementation each operation is aligned with.
+  context: |
+    Currently only 6 operations are validated against external references
+    (resize, crop, rotate, flip, grayscale vs ImageMagick; smart_crop vs libvips).
+    The remaining 35+ operations have only internal unit tests. For a production
+    image processing library claiming vips/ImageMagick parity, every operation
+    must be validated against a known-good reference.
+
+    ImageMagick is the primary reference since it's the most widely available CLI
+    tool and supports all operations we implement. libvips is secondary for
+    operations where it's the gold standard (smart_crop, resize quality).
+  codebase_analysis: |
+    tests/parity.rs has the reference test infrastructure:
+    - load_fixture()/load_reference() for test images
+    - mean_absolute_error()/psnr() for comparison metrics
+    - tests/fixtures/generate.sh for ImageMagick reference generation
+
+    Operations needing reference validation (grouped by category):
+
+    Point ops (11): blur, sharpen, brightness, contrast, gamma, invert,
+    threshold, posterize, clamp, grayscale (already done), sepia
+
+    Color ops (3): hue_rotate, saturate, colorize
+
+    Convolution (4): convolve (custom kernel), median, sobel, canny
+
+    Histogram (4): equalize, normalize, auto_level, contrast_stretch
+
+    Alpha (6): premultiply, unpremultiply, flatten, add_alpha, remove_alpha, blend (9 modes)
+
+    Geometry (4): rotate_arbitrary, pad, trim, affine
+
+    Composite (1): alpha_composite_over
+
+    Already validated: resize, crop, rotate90/180, flip H/V, grayscale, smart_crop
+  acceptance_criteria:
+    - Every operation has a documented reference implementation
+    - Every operation has a parity test comparing output against the reference
+    - tests/fixtures/generate.sh updated to produce all reference outputs
+    - Reference comparison document listing each operation + its reference + MAE threshold
+    - All parity tests pass (MAE within documented threshold per operation)
+    - Operations where we intentionally diverge from the reference have documented rationale
+  out_of_scope: |
+    Fixing operations that fail parity (separate bug tracks per operation).
+    Adding new operations. Performance comparison (separate track).
+    WASM-specific testing.
+  technical_notes: |
+    ImageMagick CLI equivalents for each operation:
+
+    Point ops:
+      blur:            magick input.png -blur 0x{radius} ref.png
+      sharpen:         magick input.png -sharpen 0x{amount} ref.png
+      brightness:      magick input.png -brightness-contrast {bri}x0 ref.png
+      contrast:        magick input.png -brightness-contrast 0x{con} ref.png
+      gamma:           magick input.png -gamma {value} ref.png
+      invert:          magick input.png -negate ref.png
+      threshold:       magick input.png -threshold {pct}% ref.png
+      posterize:       magick input.png -posterize {levels} ref.png
+      sepia:           magick input.png -sepia-tone {pct}% ref.png
+
+    Color ops:
+      hue_rotate:      magick input.png -modulate 100,100,{hue} ref.png
+      saturate:        magick input.png -modulate 100,{sat},100 ref.png
+      colorize:        magick input.png -fill "rgb(r,g,b)" -colorize {pct}% ref.png
+
+    Convolution:
+      convolve:        magick input.png -convolve "{kernel}" ref.png
+      median:          magick input.png -median {radius} ref.png
+      sobel:           magick input.png -edge 1 ref.png (approximate)
+      canny:           magick input.png -canny 0x1+{lo}%+{hi}% ref.png
+
+    Histogram:
+      equalize:        magick input.png -equalize ref.png
+      normalize:       magick input.png -normalize ref.png
+      auto_level:      magick input.png -auto-level ref.png
+      contrast_stretch: magick input.png -contrast-stretch {b}x{w}% ref.png
+
+    Alpha:
+      flatten:         magick input.png -background white -flatten ref.png
+      blend multiply:  magick fg.png bg.png -compose Multiply -composite ref.png
+      blend screen:    magick fg.png bg.png -compose Screen -composite ref.png
+      (etc. for each blend mode)
+
+    Geometry:
+      rotate_arbitrary: magick input.png -rotate {deg} -background white ref.png
+      pad:             magick input.png -gravity center -extent {w}x{h} ref.png
+      trim:            magick input.png -trim ref.png
+      affine:          magick input.png -affine "{a},{b},{c},{d},{tx},{ty}" ref.png
+
+    Test methodology per operation:
+    1. Generate 64x64 deterministic test image (gradient or checkerboard)
+    2. Apply operation via rasmcore
+    3. Apply equivalent via ImageMagick CLI
+    4. Compare outputs via MAE
+    5. Assert MAE < threshold (varies per operation — blur is forgiving, invert is exact)
+    6. Document the reference and threshold in a reference table
+
+    MAE thresholds (expected):
+      Exact ops (invert, threshold, posterize): MAE < 0.5
+      Linear ops (brightness, contrast, gamma): MAE < 2.0
+      Spatial ops (blur, sharpen, median): MAE < 5.0
+      Complex ops (canny, equalize, hue_rotate): MAE < 10.0
+      Geometry ops (rotate_arbitrary, affine): MAE < 3.0 (interpolation differences)
+plan:
+  - phase: Reference Documentation
+    tasks:
+      - text: Create REFERENCE.md documenting each operation, its reference impl, and expected MAE threshold
+        done: false
+      - text: Categorize operations by validation status (validated, needs-validation, intentional-divergence)
+        done: false
+  - phase: Point Op + Color Parity Tests
+    tasks:
+      - text: Add parity tests for blur, sharpen vs ImageMagick -blur, -sharpen
+        done: false
+      - text: Add parity tests for brightness, contrast vs ImageMagick -brightness-contrast
+        done: false
+      - text: Add parity tests for gamma, invert, threshold, posterize vs ImageMagick equivalents
+        done: false
+      - text: Add parity tests for hue_rotate, saturate, sepia, colorize vs ImageMagick -modulate
+        done: false
+  - phase: Convolution + Histogram Parity Tests
+    tasks:
+      - text: Add parity tests for median vs ImageMagick -median
+        done: false
+      - text: Add parity tests for equalize, normalize, auto_level vs ImageMagick equivalents
+        done: false
+      - text: Add parity tests for sobel vs ImageMagick -edge (approximate — different algorithms)
+        done: false
+  - phase: Alpha + Geometry + Blend Parity Tests
+    tasks:
+      - text: Add parity tests for flatten vs ImageMagick -flatten
+        done: false
+      - text: Add parity tests for blend modes (Multiply, Screen, Overlay) vs ImageMagick -compose
+        done: false
+      - text: Add parity tests for rotate_arbitrary vs ImageMagick -rotate
+        done: false
+      - text: Add parity tests for pad vs ImageMagick -extent and trim vs ImageMagick -trim
+        done: false
+  - phase: Summary
+    tasks:
+      - text: Update generate.sh to produce all reference outputs
+        done: false
+      - text: Run full parity suite and document results in REFERENCE.md
+        done: false
+extra: {}
