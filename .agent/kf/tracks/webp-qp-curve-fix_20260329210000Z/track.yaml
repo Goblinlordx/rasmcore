@@ -1,0 +1,49 @@
+id: webp-qp-curve-fix_20260329210000Z
+title: VP8 QP Curve Fix — Match cwebp Quality-to-Quantizer Mapping
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Replace linear quality_to_qp mapping with cwebp's nonlinear curve.
+    Current: Q75→QP32(step 29). cwebp: Q75→QP26(step 24). 21% over-quantization.
+  context: |
+    Spec audit (vp8-pipeline-spec.md) identified QP mapping as Bug #1.
+    cwebp verbose output confirms: Q75→quantizer 26, Q50→quantizer 48.
+    Our linear formula: qp = (100-quality)*127/99. cwebp uses a piecewise curve.
+    This is the simplest fix with immediate measurable impact.
+  codebase_analysis: |
+    ratecontrol.rs:quality_to_qp() — single line formula.
+    Empirical cwebp QP values: Q25→QP~80, Q50→QP~48, Q75→QP~26, Q95→QP~6.
+    These fit a piecewise linear or quadratic curve, not our linear mapping.
+  acceptance_criteria:
+    - quality_to_qp(75) produces QP 25-27 (matching cwebp Q75 range)
+    - quality_to_qp(50) produces QP 46-50
+    - quality_to_qp(95) produces QP 4-8
+    - Gradient Q75 PSNR improves by at least 2dB
+    - All existing tests pass (thresholds may need updating)
+  out_of_scope: Multi-pass rate control. Adaptive QP per frame.
+  technical_notes: |
+    Approach: fit a piecewise linear curve to empirical cwebp QP values.
+    Measured via cwebp -v at multiple quality levels.
+    The curve should be: high quality (80-100) maps to low QP more aggressively
+    than our linear curve; low quality (1-50) maps similarly.
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Measure cwebp QP at 10 quality levels (10,20,...,100) using cwebp -v
+        done: false
+      - text: Fit piecewise linear curve to measured QP values
+        done: false
+      - text: Replace quality_to_qp formula in ratecontrol.rs
+        done: false
+      - text: Remove dead qp_uv field (computed but never used)
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Gradient Q75 PSNR improves by at least 2dB vs baseline
+        done: false
+      - text: All parity tests pass with updated QP curve
+        done: false
+extra: {}

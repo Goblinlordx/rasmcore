@@ -1,0 +1,60 @@
+id: webp-subblock-rd_20260329210002Z
+title: VP8 4x4 Sub-Block RD — Replace SATD with Encode-Trial Mode Selection
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    For B_PRED mode, evaluate each 4x4 sub-block's 10 prediction modes with
+    full encode cost (DCT + quantize + token bits) instead of just SATD.
+  context: |
+    Spec audit Bug #3. Current 4x4 mode selection uses SATD (Hadamard transform
+    absolute difference) which correlates with encode cost but doesn't account
+    for quantization or entropy coding efficiency. cwebp evaluates actual encode
+    cost per mode.
+  codebase_analysis: |
+    predict.rs:select_best_4x4() — loops over 10 modes, picks min SATD.
+    To add RD: for each mode, compute prediction, DCT residual, quantize,
+    estimate token bits, compute SSD. Pick mode with min (SSD + lambda * bits).
+    
+    This is 10x more work per sub-block (10 full encode trials vs 10 SATD).
+    Early termination helps: skip modes with SATD > 2x best SATD.
+  acceptance_criteria:
+    - 4x4 sub-block mode selected by min RD cost, not min SATD
+    - Early termination for modes with SATD > 2x best
+    - Detailed content (checkerboard, edges) quality improves
+    - Encode time stays within 5x of SATD-only baseline
+    - All tests pass
+  out_of_scope: SIMD optimization of the RD evaluation loop.
+  technical_notes: |
+    For each 4x4 sub-block in B_PRED mode:
+    1. Compute SATD for all 10 modes (fast screening)
+    2. Sort by SATD
+    3. For top 3-5 modes (SATD within 2x of best): compute full RD cost
+    4. Pick mode with minimum RD cost
+    
+    Full RD per mode: predict → subtract → DCT → quantize → estimate_block_bits
+    → compute SSD → SSD + lambda * bits
+plan:
+  - phase: Mode RD Evaluation
+    tasks:
+      - text: Implement evaluate_4x4_mode_rd(src, pred, matrix, lambda) returning RD cost
+        done: false
+      - text: Implement select_best_4x4_rd with SATD pre-screening + top-N RD evaluation
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Wire select_best_4x4_rd into encode_macroblock for B_PRED sub-blocks
+        done: false
+      - text: Pass quantization matrix and lambda to sub-block selection
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Checkerboard and edge content quality improves
+        done: false
+      - text: Encode time within 5x of SATD-only baseline
+        done: false
+      - text: All parity tests pass
+        done: false
+extra: {}
