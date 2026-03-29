@@ -1,111 +1,98 @@
 id: isobmff-writer_20260329113503Z
-title: "ISOBMFF Container Writer — HEIC/HEIF Box Assembly"
+title: ISOBMFF Container Writer — HEIC/HEIF Box Assembly
 type: feature
 status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Implement ISOBMFF container writing in rasmcore-isobmff for HEIC still image
-    output. Writes ftyp, meta (with iloc/iinf/iprp), hvcC config, and mdat boxes.
-    Validated by roundtrip — write container, parse back with our reader.
-  context: |
-    rasmcore-isobmff currently only parses ISOBMFF containers. For HEIC encode,
+  summary: 'Implement ISOBMFF container writing in rasmcore-isobmff for HEIC still image output. Writes ftyp, meta (with iloc/iinf/iprp),
+    hvcC config, and mdat boxes. Validated by roundtrip — write container, parse back with our reader.
+
+    '
+  context: 'rasmcore-isobmff currently only parses ISOBMFF containers. For HEIC encode,
+
     we need the write direction. The container format is well-defined (ISO 14496-12)
+
     and independent of HEVC encoding complexity.
 
+
     This track is independent of the x265 port tracks — it can proceed in parallel.
+
     It produces an ISOBMFF container given raw HEVC bitstream bytes and metadata.
-  codebase_analysis: |
-    Existing in rasmcore-isobmff:
-    - assembly.rs — IsobmffFile, ImageItem structs (parser output, can reuse for writer input)
-    - types.rs — Ftyp, HevcConfig, ItemProperties, ColorInfo, GridDescriptor
-    - boxreader.rs — Low-level box parsing (need write counterpart)
-    - properties.rs — Property parsing (ispe, colr, hvcC, etc.)
-    - meta.rs — Meta box parsing (iloc, iinf, pitm)
-    - ftyp.rs — Ftyp box parsing
 
-    Required boxes for minimal HEIC:
-    - ftyp (file type: mif1, heic brands)
-    - meta (container for image metadata)
-      - hdlr (handler: pict)
-      - pitm (primary item)
-      - iinf (item info: 1 item, type hvc1)
-      - iloc (item location: offset + length in mdat)
-      - iprp (item properties)
-        - ipco (property container: ispe + hvcC + colr)
-        - ipma (property-to-item association)
-    - mdat (media data: raw HEVC bitstream)
+    '
+  codebase_analysis: "Existing in rasmcore-isobmff:\n- assembly.rs — IsobmffFile, ImageItem structs (parser output, can reuse\
+    \ for writer input)\n- types.rs — Ftyp, HevcConfig, ItemProperties, ColorInfo, GridDescriptor\n- boxreader.rs — Low-level\
+    \ box parsing (need write counterpart)\n- properties.rs — Property parsing (ispe, colr, hvcC, etc.)\n- meta.rs — Meta\
+    \ box parsing (iloc, iinf, pitm)\n- ftyp.rs — Ftyp box parsing\n\nRequired boxes for minimal HEIC:\n- ftyp (file type:\
+    \ mif1, heic brands)\n- meta (container for image metadata)\n  - hdlr (handler: pict)\n  - pitm (primary item)\n  - iinf\
+    \ (item info: 1 item, type hvc1)\n  - iloc (item location: offset + length in mdat)\n  - iprp (item properties)\n    -\
+    \ ipco (property container: ispe + hvcC + colr)\n    - ipma (property-to-item association)\n- mdat (media data: raw HEVC\
+    \ bitstream)\n"
   acceptance_criteria:
-    - Write a minimal HEIC container with flat_64x64_q22.hevc bitstream
-    - Our parser (rasmcore_isobmff::parse) successfully reads the written container back
-    - All fields match in roundtrip (dimensions, codec config, bitstream bytes)
-    - Written container opens in Apple Preview and ffmpeg (ffprobe validates structure)
-    - Grid image writing works (multi-tile HEIC)
-    - ICC profile embedding works (colr box with prof type)
-    - clippy clean, cargo test passes
-  out_of_scope: |
-    HEVC encoding (separate tracks). AVIF container variant (future).
+  - Write a minimal HEIC container with flat_64x64_q22.hevc bitstream
+  - Our parser (rasmcore_isobmff::parse) successfully reads the written container back
+  - All fields match in roundtrip (dimensions, codec config, bitstream bytes)
+  - Written container opens in Apple Preview and ffmpeg (ffprobe validates structure)
+  - Grid image writing works (multi-tile HEIC)
+  - ICC profile embedding works (colr box with prof type)
+  - clippy clean, cargo test passes
+  out_of_scope: 'HEVC encoding (separate tracks). AVIF container variant (future).
+
     Animated HEIF sequences. Thumbnail writing (future enhancement).
+
     Multi-image HEIF (only primary image).
-  technical_notes: |
-    Implementation approach:
-    1. Add a BoxWriter counterpart to BoxIterator in boxreader.rs
-    2. Implement write functions for each box type (ftyp, meta, hdlr, etc.)
-    3. The tricky part is iloc — item locations reference mdat offsets,
-       so mdat position must be known or placeholders patched after writing
-    4. Use a two-pass approach: first pass computes sizes, second writes bytes.
-       Or: write to a Vec<u8> buffer, patch offsets at the end.
 
-    Validation:
-    - Roundtrip test: assemble container -> parse -> compare all fields
-    - External: ffprobe on the written file (structure validation)
-    - Visual: open in Apple Preview (if on macOS)
-
-    Reference: ISO 14496-12 (ISOBMFF), ISO 23008-12 (HEIF)
+    '
+  technical_notes: "Implementation approach:\n1. Add a BoxWriter counterpart to BoxIterator in boxreader.rs\n2. Implement\
+    \ write functions for each box type (ftyp, meta, hdlr, etc.)\n3. The tricky part is iloc — item locations reference mdat\
+    \ offsets,\n   so mdat position must be known or placeholders patched after writing\n4. Use a two-pass approach: first\
+    \ pass computes sizes, second writes bytes.\n   Or: write to a Vec<u8> buffer, patch offsets at the end.\n\nValidation:\n\
+    - Roundtrip test: assemble container -> parse -> compare all fields\n- External: ffprobe on the written file (structure\
+    \ validation)\n- Visual: open in Apple Preview (if on macOS)\n\nReference: ISO 14496-12 (ISOBMFF), ISO 23008-12 (HEIF)\n"
 plan:
-  - phase: "Box Writer Infrastructure"
-    tasks:
-      - text: "Implement BoxWriter — write box header (type + size), handle wide boxes"
-        done: false
-      - text: "Implement ftyp box writer (brands, compatible brands)"
-        done: false
-      - text: "Add test — write ftyp, parse back with our reader"
-        done: false
-  - phase: "Meta Box Assembly"
-    tasks:
-      - text: "Implement hdlr box writer (handler type pict)"
-        done: false
-      - text: "Implement pitm box writer (primary item ID)"
-        done: false
-      - text: "Implement iinf box writer (item info entries)"
-        done: false
-      - text: "Implement iloc box writer (item locations with mdat offsets)"
-        done: false
-  - phase: "Property Boxes"
-    tasks:
-      - text: "Implement ispe box writer (image spatial extents)"
-        done: false
-      - text: "Implement hvcC box writer (HEVC decoder config record)"
-        done: false
-      - text: "Implement colr box writer (nclx or ICC profile)"
-        done: false
-      - text: "Implement iprp/ipco/ipma assembly (property container + associations)"
-        done: false
-  - phase: "Container Assembly"
-    tasks:
-      - text: "Implement top-level assemble_heic() function — ftyp + meta + mdat"
-        done: false
-      - text: "Handle iloc offset patching (mdat position depends on meta size)"
-        done: false
-      - text: "Add grid image support (grid descriptor + multiple tile items)"
-        done: false
-  - phase: "Validation"
-    tasks:
-      - text: "Roundtrip test — write HEIC, parse back, verify all fields match"
-        done: false
-      - text: "External validation — ffprobe on written file, verify no errors"
-        done: false
-      - text: "clippy clean, cargo test passes"
-        done: false
+- phase: Box Writer Infrastructure
+  tasks:
+  - text: Implement BoxWriter — write box header (type + size), handle wide boxes
+    done: true
+  - text: Implement ftyp box writer (brands, compatible brands)
+    done: true
+  - text: Add test — write ftyp, parse back with our reader
+    done: true
+- phase: Meta Box Assembly
+  tasks:
+  - text: Implement hdlr box writer (handler type pict)
+    done: true
+  - text: Implement pitm box writer (primary item ID)
+    done: true
+  - text: Implement iinf box writer (item info entries)
+    done: true
+  - text: Implement iloc box writer (item locations with mdat offsets)
+    done: true
+- phase: Property Boxes
+  tasks:
+  - text: Implement ispe box writer (image spatial extents)
+    done: true
+  - text: Implement hvcC box writer (HEVC decoder config record)
+    done: true
+  - text: Implement colr box writer (nclx or ICC profile)
+    done: true
+  - text: Implement iprp/ipco/ipma assembly (property container + associations)
+    done: true
+- phase: Container Assembly
+  tasks:
+  - text: Implement top-level assemble_heic() function — ftyp + meta + mdat
+    done: true
+  - text: Handle iloc offset patching (mdat position depends on meta size)
+    done: true
+  - text: Add grid image support (grid descriptor + multiple tile items)
+    done: true
+- phase: Validation
+  tasks:
+  - text: Roundtrip test — write HEIC, parse back, verify all fields match
+    done: true
+  - text: External validation — ffprobe on written file, verify no errors
+    done: true
+  - text: clippy clean, cargo test passes
+    done: true
 extra: {}
