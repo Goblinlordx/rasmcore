@@ -5,308 +5,208 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Unified registration system where filters, encoders, decoders, and transforms
-    are registered via proc macro attributes. A build.rs codegen step generates
-    WIT interfaces, adapter dispatch, pipeline nodes, and registry from the
-    registered operations. Adding a new operation becomes a single-file change.
-  context: |
-    Currently, adding a new filter requires 7 manual file changes:
+  summary: 'Unified registration system where filters, encoders, decoders, and transforms are registered via proc macro attributes.
+    A build.rs codegen step generates WIT interfaces, adapter dispatch, pipeline nodes, and registry from the registered operations.
+    Adding a new operation becomes a single-file change.
+
+    '
+  context: 'Currently, adding a new filter requires 7 manual file changes:
+
     1. domain/filters.rs — filter function (domain logic)
+
     2. filter_registry.rs — builtin_filter! macro
+
     3. pipeline/nodes/filters.rs — pipeline node struct
+
     4. wit/image/filters.wit — WIT interface declaration
+
     5. wit/image/pipeline.wit — pipeline resource method
+
     6. adapter/mod.rs — filters::Guest impl method
+
     7. adapter/pipeline_adapter.rs — GuestImagePipeline impl method
 
+
     Encoders and decoders have similar manual wiring. This is:
+
     - Error-prone (miss a file → WASM build fails)
+
     - Tedious (boilerplate copy-paste for each operation)
-    - Not extensible (third parties can't easily add operations)
-    - Feature-flag unfriendly (can't conditionally include operations)
+
+    - Not extensible (third parties can''t easily add operations)
+
+    - Feature-flag unfriendly (can''t conditionally include operations)
+
 
     The goal: write the domain function, add an attribute, rebuild. Everything
+
     else is generated. Feature flags control which operations are included.
-  codebase_analysis: |
-    Current registration mechanisms:
-    - filter_registry.rs: FilterRegistry with builtin_filter! macro and
-      register_builtin_filters() function. Already has metadata (name,
-      category, params, apply fn). Could be the source of truth.
-    - encoder/mod.rs: Manual match on format string to dispatch encode.
-    - decoder/mod.rs: Manual format detection + decode dispatch.
-    - adapter/mod.rs: Manual impl blocks for each WIT interface.
-    - pipeline_adapter.rs: Manual impl for each pipeline method.
 
-    Existing patterns to leverage:
-    - builtin_filter! macro already generates struct + ImageFilter impl
-    - simple_filter_node! macro already generates pipeline nodes
-    - WIT files are the public API contract (source of truth for bindings)
-    - build.rs can generate Rust code into OUT_DIR
-    - Proc macros can collect metadata at compile time
-
-    Hybrid approach (proc macro + build.rs):
-    - Proc macro: #[register_filter], #[register_encoder], etc.
-      Expands to registry entry + metadata const. No external file I/O.
-    - build.rs: Scans source for registration attributes (via syn),
-      collects all metadata, generates:
-      - WIT interface files (filters.wit, encoder.wit, etc.)
-      - Adapter dispatch code (impl Guest for Component)
-      - Pipeline adapter dispatch (impl GuestImagePipeline)
-      - Pipeline node wrappers
-    - Feature flags: #[cfg(feature = "nonfree-hevc")] on registration
-      → conditionally included in codegen output
+    '
+  codebase_analysis: "Current registration mechanisms:\n- filter_registry.rs: FilterRegistry with builtin_filter! macro and\n\
+    \  register_builtin_filters() function. Already has metadata (name,\n  category, params, apply fn). Could be the source\
+    \ of truth.\n- encoder/mod.rs: Manual match on format string to dispatch encode.\n- decoder/mod.rs: Manual format detection\
+    \ + decode dispatch.\n- adapter/mod.rs: Manual impl blocks for each WIT interface.\n- pipeline_adapter.rs: Manual impl\
+    \ for each pipeline method.\n\nExisting patterns to leverage:\n- builtin_filter! macro already generates struct + ImageFilter\
+    \ impl\n- simple_filter_node! macro already generates pipeline nodes\n- WIT files are the public API contract (source\
+    \ of truth for bindings)\n- build.rs can generate Rust code into OUT_DIR\n- Proc macros can collect metadata at compile\
+    \ time\n\nHybrid approach (proc macro + build.rs):\n- Proc macro: #[register_filter], #[register_encoder], etc.\n  Expands\
+    \ to registry entry + metadata const. No external file I/O.\n- build.rs: Scans source for registration attributes (via\
+    \ syn),\n  collects all metadata, generates:\n  - WIT interface files (filters.wit, encoder.wit, etc.)\n  - Adapter dispatch\
+    \ code (impl Guest for Component)\n  - Pipeline adapter dispatch (impl GuestImagePipeline)\n  - Pipeline node wrappers\n\
+    - Feature flags: #[cfg(feature = \"nonfree-hevc\")] on registration\n  → conditionally included in codegen output\n"
   acceptance_criteria:
-    - Adding a new filter requires only 1 file change (domain function + attribute)
-    - Adding a new encoder requires only 1 file change (encode function + attribute)
-    - Adding a new decoder requires only 1 file change (decode function + attribute)
-    - WIT files are auto-generated from registry metadata
-    - Adapter dispatch code is auto-generated from registry
-    - Pipeline nodes are auto-generated for simple filters
-    - Complex pipeline nodes (custom overlap, format changes) can override auto-generation
-    - Feature flags conditionally include/exclude operations
-    - cargo component build succeeds with generated code
-    - All existing tests pass after migration
-    - TypeScript SDK reflects only registered operations
-    - Runtime registry queryable (list available filters/codecs)
-    - Third-party crate can register filters without modifying rasmcore source
-    - Third-party crate can register encoders/decoders without modifying rasmcore source
-    - Assembly crate pattern works (combine rasmcore + N plugin crates → one WASM)
-    - inventory/linkme collection works across crate boundaries in WASM target
-    - ACID TEST — bare-infra build with zero built-in filters/codecs plus one custom filter and one custom codec builds, runs, and produces correct output end-to-end
-  out_of_scope: |
-    Runtime dynamic plugin loading (hot-loading .wasm at runtime).
+  - Adding a new filter requires only 1 file change (domain function + attribute)
+  - Adding a new encoder requires only 1 file change (encode function + attribute)
+  - Adding a new decoder requires only 1 file change (decode function + attribute)
+  - WIT files are auto-generated from registry metadata
+  - Adapter dispatch code is auto-generated from registry
+  - Pipeline nodes are auto-generated for simple filters
+  - Complex pipeline nodes (custom overlap, format changes) can override auto-generation
+  - Feature flags conditionally include/exclude operations
+  - cargo component build succeeds with generated code
+  - All existing tests pass after migration
+  - TypeScript SDK reflects only registered operations
+  - Runtime registry queryable (list available filters/codecs)
+  - Third-party crate can register filters without modifying rasmcore source
+  - Third-party crate can register encoders/decoders without modifying rasmcore source
+  - Assembly crate pattern works (combine rasmcore + N plugin crates → one WASM)
+  - inventory/linkme collection works across crate boundaries in WASM target
+  - ACID TEST — bare-infra build with zero built-in filters/codecs plus one custom filter and one custom codec builds, runs,
+    and produces correct output end-to-end
+  out_of_scope: 'Runtime dynamic plugin loading (hot-loading .wasm at runtime).
+
     Hot-reloading of filters during execution. GUI for filter creation.
+
     Changing the domain function signatures (these stay as-is).
+
     npm package publishing (separate track).
 
-  plugin_architecture: |
-    CROSS-CRATE PLUGIN SUPPORT:
-
-    Third parties can add custom filters/codecs WITHOUT modifying rasmcore source.
-    They create their own crate, depend on rasmcore-macros + rasmcore-image, and
-    register operations using the same proc macro attributes.
-
-    Example — third-party filter crate:
-
-      # my-filters/Cargo.toml
-      [dependencies]
-      rasmcore-image = "0.1"
-      rasmcore-macros = "0.1"
-
-      # my-filters/src/lib.rs
-      use rasmcore_macros::register_filter;
-      use rasmcore_image::domain::types::*;
-      use rasmcore_image::domain::error::ImageError;
-
-      #[register_filter(name = "custom_tone", category = "color",
-                         params = [("warmth", f32, 0.0, 1.0, 0.5)])]
-      pub fn custom_tone(pixels: &[u8], info: &ImageInfo, warmth: f32)
-          -> Result<Vec<u8>, ImageError> {
-          // custom logic — no rasmcore source modification needed
-      }
-
-    Example — assembly crate (combines rasmcore + plugins):
-
-      # my-image-app/Cargo.toml
-      [dependencies]
-      rasmcore-image = "0.1"
-      my-filters = { path = "../my-filters" }
-      my-codecs = { path = "../my-codecs" }  # custom codec support
-
-      # my-image-app/src/lib.rs
-      // Just pull in all registrations — build.rs collects across crates
-      pub use rasmcore_image;
-      pub use my_filters;
-      pub use my_codecs;
-
-    The assembly crate's build.rs (provided by rasmcore tooling) scans all
-    dependencies for registered operations and generates the unified WIT +
-    adapter + pipeline code. The resulting WASM component includes both
-    rasmcore built-in operations AND third-party additions.
-
-    This works via the inventory crate (distributed slices across crate boundaries)
-    or via a build-time manifest that each plugin crate emits.
-
-    Feature flag example — exclude built-in codecs:
-
-      [dependencies.rasmcore-image]
-      version = "0.1"
-      default-features = false
-      features = ["core-filters", "png", "jpeg"]  # no hevc, no webp
-  technical_notes: |
-    Architecture:
-
-    1. PROC MACRO CRATE: rasmcore-macros (new crate)
-
-       #[register_filter(
-         name = "blur",
-         category = "spatial",
-         params = [("radius", f32, 0.0, 100.0, 3.0)],
-         overlap = "uniform(10)",
-       )]
-       pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError>
-
-       #[register_encoder(
-         name = "jpeg",
-         format = "jpeg",
-         extensions = ["jpg", "jpeg"],
-         mime = "image/jpeg",
-         config_type = "JpegEncodeConfig",
-       )]
-       pub fn encode_jpeg(img: &DynamicImage, info: &ImageInfo, config: &JpegEncodeConfig) -> Result<Vec<u8>, ImageError>
-
-       #[register_decoder(
-         name = "png",
-         formats = ["png"],
-         magic_bytes = [0x89, 0x50, 0x4E, 0x47],
-       )]
-       pub fn decode_png(data: &[u8]) -> Result<DecodedImage, ImageError>
-
-       The proc macro expands to:
-       - Original function (unchanged)
-       - Metadata const: FILTER_BLUR_META: FilterMeta = FilterMeta { name, category, ... }
-       - Registry entry via inventory::submit! or linkme
-       - Simple pipeline node (if overlap specified)
-
-    2. BUILD SCRIPT: build.rs
-
-       Runs before compilation. Two modes:
-       a) Parse source files with syn to find #[register_*] attributes
-       b) Or: read a generated manifest from proc macro (inventory pattern)
-
-       Generates into $OUT_DIR/:
-       - generated_wit_filters.wit — filter function declarations
-       - generated_wit_pipeline_filters.wit — pipeline method declarations
-       - generated_wit_encoders.wit — encoder function declarations
-       - generated_adapter_filters.rs — impl filters::Guest dispatch
-       - generated_adapter_pipeline.rs — impl GuestImagePipeline filter methods
-       - generated_adapter_encoders.rs — impl encoder::Guest dispatch
-       - generated_registry.rs — register_all() function
-
-       WIT generation example:
-         For each registered filter:
-           {kebab-name}: func(pixels: buffer, info: image-info, {params...}) -> result<buffer, rasmcore-error>;
-
-    3. FEATURE FLAGS:
-
-       #[cfg(feature = "nonfree-hevc")]
-       #[register_decoder(name = "hevc", ...)]
-       pub fn decode_hevc(data: &[u8]) -> Result<DecodedImage, ImageError>
-
-       build.rs respects cfg attributes → HEVC decoder not in WIT when
-       feature is disabled → not in SDK → not in WASM binary.
-
-    4. COMPLEX OVERRIDES:
-
-       For filters needing custom pipeline nodes (format changes, complex overlap):
-       #[register_filter(
-         name = "sobel",
-         category = "edge",
-         params = [],
-         custom_node = true,  // skip auto-generated node, use manual SobelNode
-       )]
-
-       The developer still writes SobelNode manually, but everything else
-       (WIT, adapter, registry) is auto-generated.
-
-    5. MIGRATION PATH:
-
-       Phase 1: Create proc macro crate, implement for filters only
-       Phase 2: Add build.rs codegen for WIT + adapter (filters)
-       Phase 3: Migrate all existing filters to use attributes
-       Phase 4: Extend to encoders and decoders
-       Phase 5: Extend to transforms
-       Phase 6: Remove all manual adapter/WIT code
-
-    6. INVENTORY/LINKME PATTERN:
-
-       For collecting registrations without build.rs source scanning:
-       - inventory crate: distributed slice, works on all platforms
-       - linkme crate: linker-based collection, zero runtime cost
-       Both allow proc macros to submit items that are collected at link time.
-       build.rs reads the collected items to generate WIT.
-
-       Preferred: inventory (more portable, WASM-compatible).
+    '
+  technical_notes: "Architecture:\n\n1. PROC MACRO CRATE: rasmcore-macros (new crate)\n\n   #[register_filter(\n     name\
+    \ = \"blur\",\n     category = \"spatial\",\n     params = [(\"radius\", f32, 0.0, 100.0, 3.0)],\n     overlap = \"uniform(10)\"\
+    ,\n   )]\n   pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError>\n\n   #[register_encoder(\n\
+    \     name = \"jpeg\",\n     format = \"jpeg\",\n     extensions = [\"jpg\", \"jpeg\"],\n     mime = \"image/jpeg\",\n\
+    \     config_type = \"JpegEncodeConfig\",\n   )]\n   pub fn encode_jpeg(img: &DynamicImage, info: &ImageInfo, config:\
+    \ &JpegEncodeConfig) -> Result<Vec<u8>, ImageError>\n\n   #[register_decoder(\n     name = \"png\",\n     formats = [\"\
+    png\"],\n     magic_bytes = [0x89, 0x50, 0x4E, 0x47],\n   )]\n   pub fn decode_png(data: &[u8]) -> Result<DecodedImage,\
+    \ ImageError>\n\n   The proc macro expands to:\n   - Original function (unchanged)\n   - Metadata const: FILTER_BLUR_META:\
+    \ FilterMeta = FilterMeta { name, category, ... }\n   - Registry entry via inventory::submit! or linkme\n   - Simple pipeline\
+    \ node (if overlap specified)\n\n2. BUILD SCRIPT: build.rs\n\n   Runs before compilation. Two modes:\n   a) Parse source\
+    \ files with syn to find #[register_*] attributes\n   b) Or: read a generated manifest from proc macro (inventory pattern)\n\
+    \n   Generates into $OUT_DIR/:\n   - generated_wit_filters.wit — filter function declarations\n   - generated_wit_pipeline_filters.wit\
+    \ — pipeline method declarations\n   - generated_wit_encoders.wit — encoder function declarations\n   - generated_adapter_filters.rs\
+    \ — impl filters::Guest dispatch\n   - generated_adapter_pipeline.rs — impl GuestImagePipeline filter methods\n   - generated_adapter_encoders.rs\
+    \ — impl encoder::Guest dispatch\n   - generated_registry.rs — register_all() function\n\n   WIT generation example:\n\
+    \     For each registered filter:\n       {kebab-name}: func(pixels: buffer, info: image-info, {params...}) -> result<buffer,\
+    \ rasmcore-error>;\n\n3. FEATURE FLAGS:\n\n   #[cfg(feature = \"nonfree-hevc\")]\n   #[register_decoder(name = \"hevc\"\
+    , ...)]\n   pub fn decode_hevc(data: &[u8]) -> Result<DecodedImage, ImageError>\n\n   build.rs respects cfg attributes\
+    \ → HEVC decoder not in WIT when\n   feature is disabled → not in SDK → not in WASM binary.\n\n4. COMPLEX OVERRIDES:\n\
+    \n   For filters needing custom pipeline nodes (format changes, complex overlap):\n   #[register_filter(\n     name =\
+    \ \"sobel\",\n     category = \"edge\",\n     params = [],\n     custom_node = true,  // skip auto-generated node, use\
+    \ manual SobelNode\n   )]\n\n   The developer still writes SobelNode manually, but everything else\n   (WIT, adapter,\
+    \ registry) is auto-generated.\n\n5. MIGRATION PATH:\n\n   Phase 1: Create proc macro crate, implement for filters only\n\
+    \   Phase 2: Add build.rs codegen for WIT + adapter (filters)\n   Phase 3: Migrate all existing filters to use attributes\n\
+    \   Phase 4: Extend to encoders and decoders\n   Phase 5: Extend to transforms\n   Phase 6: Remove all manual adapter/WIT\
+    \ code\n\n6. INVENTORY/LINKME PATTERN:\n\n   For collecting registrations without build.rs source scanning:\n   - inventory\
+    \ crate: distributed slice, works on all platforms\n   - linkme crate: linker-based collection, zero runtime cost\n  \
+    \ Both allow proc macros to submit items that are collected at link time.\n   build.rs reads the collected items to generate\
+    \ WIT.\n\n   Preferred: inventory (more portable, WASM-compatible).\n"
+  plugin_architecture: "CROSS-CRATE PLUGIN SUPPORT:\n\nThird parties can add custom filters/codecs WITHOUT modifying rasmcore\
+    \ source.\nThey create their own crate, depend on rasmcore-macros + rasmcore-image, and\nregister operations using the\
+    \ same proc macro attributes.\n\nExample — third-party filter crate:\n\n  # my-filters/Cargo.toml\n  [dependencies]\n\
+    \  rasmcore-image = \"0.1\"\n  rasmcore-macros = \"0.1\"\n\n  # my-filters/src/lib.rs\n  use rasmcore_macros::register_filter;\n\
+    \  use rasmcore_image::domain::types::*;\n  use rasmcore_image::domain::error::ImageError;\n\n  #[register_filter(name\
+    \ = \"custom_tone\", category = \"color\",\n                     params = [(\"warmth\", f32, 0.0, 1.0, 0.5)])]\n  pub\
+    \ fn custom_tone(pixels: &[u8], info: &ImageInfo, warmth: f32)\n      -> Result<Vec<u8>, ImageError> {\n      // custom\
+    \ logic — no rasmcore source modification needed\n  }\n\nExample — assembly crate (combines rasmcore + plugins):\n\n \
+    \ # my-image-app/Cargo.toml\n  [dependencies]\n  rasmcore-image = \"0.1\"\n  my-filters = { path = \"../my-filters\" }\n\
+    \  my-codecs = { path = \"../my-codecs\" }  # custom codec support\n\n  # my-image-app/src/lib.rs\n  // Just pull in all\
+    \ registrations — build.rs collects across crates\n  pub use rasmcore_image;\n  pub use my_filters;\n  pub use my_codecs;\n\
+    \nThe assembly crate's build.rs (provided by rasmcore tooling) scans all\ndependencies for registered operations and generates\
+    \ the unified WIT +\nadapter + pipeline code. The resulting WASM component includes both\nrasmcore built-in operations\
+    \ AND third-party additions.\n\nThis works via the inventory crate (distributed slices across crate boundaries)\nor via\
+    \ a build-time manifest that each plugin crate emits.\n\nFeature flag example — exclude built-in codecs:\n\n  [dependencies.rasmcore-image]\n\
+    \  version = \"0.1\"\n  default-features = false\n  features = [\"core-filters\", \"png\", \"jpeg\"]  # no hevc, no webp\n"
 plan:
-  - phase: Proc Macro Foundation
-    tasks:
-      - text: Create rasmcore-macros crate with register_filter proc macro attribute
-        done: false
-      - text: Implement FilterMeta struct with name, category, params, overlap fields
-        done: false
-      - text: Proc macro expands to original function + metadata const + inventory submit
-        done: false
-      - text: Test proc macro on one filter (blur) — verify metadata collected
-        done: false
-  - phase: Build Script Codegen
-    tasks:
-      - text: Create build.rs that reads inventory-collected filter metadata
-        done: false
-      - text: Generate WIT filter declarations from metadata (filters.wit fragment)
-        done: false
-      - text: Generate WIT pipeline methods from metadata (pipeline.wit fragment)
-        done: false
-      - text: Generate adapter dispatch code (impl filters::Guest)
-        done: false
-      - text: Generate pipeline adapter dispatch (impl GuestImagePipeline filter methods)
-        done: false
-      - text: Generate simple pipeline nodes for non-custom filters
-        done: false
-  - phase: Filter Migration
-    tasks:
-      - text: Migrate all existing filters to use register_filter attribute
-        done: false
-      - text: Remove manual filter entries from adapter/mod.rs and pipeline_adapter.rs
-        done: false
-      - text: Verify cargo component build succeeds with generated code
-        done: false
-      - text: Verify all existing tests pass
-        done: false
-  - phase: Encoder and Decoder Extension
-    tasks:
-      - text: Add register_encoder proc macro attribute
-        done: false
-      - text: Add register_decoder proc macro attribute
-        done: false
-      - text: Migrate existing encoders to use register_encoder
-        done: false
-      - text: Migrate existing decoders to use register_decoder
-        done: false
-      - text: Generate encoder/decoder WIT + adapter dispatch from registry
-        done: false
-      - text: Verify WASM build with feature flags (enable/disable codecs)
-        done: false
-      - text: Verify TypeScript SDK reflects only registered operations
-        done: false
-  - phase: Cross-Crate Plugin Support
-    tasks:
-      - text: Verify inventory/linkme collection works across crate boundaries on wasm32-wasip1
-        done: false
-      - text: Create example plugin crate (example-filters) with one registered custom filter
-        done: false
-      - text: Create example assembly crate that combines rasmcore-image + example-filters
-        done: false
-      - text: Verify assembly crate builds to WASM with both built-in and custom filters in WIT
-        done: false
-      - text: Document plugin authoring guide (how to create a filter/codec crate)
-        done: false
-  - phase: Acid Test — Bare Infrastructure Build
-    tasks:
-      - text: Create rasmcore-image feature flag that disables ALL built-in filters and codecs (infra-only)
-        done: false
-      - text: Create examples/custom-filter crate with one trivial filter (e.g. invert-red) using register_filter
-        done: false
-      - text: Create examples/custom-codec crate with one trivial codec (e.g. raw-rgb encoder) using register_encoder
-        done: false
-      - text: Create examples/bare-assembly crate depending on rasmcore-image[infra-only] + custom-filter + custom-codec
-        done: false
-      - text: Verify bare-assembly builds to WASM component with only custom operations in WIT (no built-ins)
-        done: false
-      - text: Verify jco transpile produces SDK with only custom filter and custom codec
-        done: false
-      - text: Verify pipeline works end-to-end — load raw pixels, apply custom filter, encode with custom codec
-        done: false
-      - text: Verify adding rasmcore-image[core-filters] feature brings back built-in filters alongside custom ones
-        done: false
+- phase: Proc Macro Foundation
+  tasks:
+  - text: Create rasmcore-macros crate with register_filter proc macro attribute
+    done: true
+  - text: Implement FilterMeta struct with name, category, params, overlap fields
+    done: true
+  - text: Proc macro expands to original function + metadata const + inventory submit
+    done: true
+  - text: Test proc macro on one filter (blur) — verify metadata collected
+    done: true
+- phase: Build Script Codegen
+  tasks:
+  - text: Create build.rs that reads inventory-collected filter metadata
+    done: false
+  - text: Generate WIT filter declarations from metadata (filters.wit fragment)
+    done: false
+  - text: Generate WIT pipeline methods from metadata (pipeline.wit fragment)
+    done: false
+  - text: Generate adapter dispatch code (impl filters::Guest)
+    done: false
+  - text: Generate pipeline adapter dispatch (impl GuestImagePipeline filter methods)
+    done: false
+  - text: Generate simple pipeline nodes for non-custom filters
+    done: false
+- phase: Filter Migration
+  tasks:
+  - text: Migrate all existing filters to use register_filter attribute
+    done: false
+  - text: Remove manual filter entries from adapter/mod.rs and pipeline_adapter.rs
+    done: false
+  - text: Verify cargo component build succeeds with generated code
+    done: false
+  - text: Verify all existing tests pass
+    done: false
+- phase: Encoder and Decoder Extension
+  tasks:
+  - text: Add register_encoder proc macro attribute
+    done: false
+  - text: Add register_decoder proc macro attribute
+    done: false
+  - text: Migrate existing encoders to use register_encoder
+    done: false
+  - text: Migrate existing decoders to use register_decoder
+    done: false
+  - text: Generate encoder/decoder WIT + adapter dispatch from registry
+    done: false
+  - text: Verify WASM build with feature flags (enable/disable codecs)
+    done: false
+  - text: Verify TypeScript SDK reflects only registered operations
+    done: false
+- phase: Cross-Crate Plugin Support
+  tasks:
+  - text: Verify inventory/linkme collection works across crate boundaries on wasm32-wasip1
+    done: false
+  - text: Create example plugin crate (example-filters) with one registered custom filter
+    done: false
+  - text: Create example assembly crate that combines rasmcore-image + example-filters
+    done: false
+  - text: Verify assembly crate builds to WASM with both built-in and custom filters in WIT
+    done: false
+  - text: Document plugin authoring guide (how to create a filter/codec crate)
+    done: false
+- phase: Acid Test — Bare Infrastructure Build
+  tasks:
+  - text: Create rasmcore-image feature flag that disables ALL built-in filters and codecs (infra-only)
+    done: false
+  - text: Create examples/custom-filter crate with one trivial filter (e.g. invert-red) using register_filter
+    done: false
+  - text: Create examples/custom-codec crate with one trivial codec (e.g. raw-rgb encoder) using register_encoder
+    done: false
+  - text: Create examples/bare-assembly crate depending on rasmcore-image[infra-only] + custom-filter + custom-codec
+    done: false
+  - text: Verify bare-assembly builds to WASM component with only custom operations in WIT (no built-ins)
+    done: false
+  - text: Verify jco transpile produces SDK with only custom filter and custom codec
+    done: false
+  - text: Verify pipeline works end-to-end — load raw pixels, apply custom filter, encode with custom codec
+    done: false
+  - text: Verify adding rasmcore-image[core-filters] feature brings back built-in filters alongside custom ones
+    done: false
 extra: {}
