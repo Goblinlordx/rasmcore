@@ -31,10 +31,11 @@ fn linear_to_srgb(v: f64) -> f64 {
 
 // ─── CIE Lab (via XYZ, D65 illuminant) ───────────────────────────────────
 
-/// D65 reference white point (standard daylight).
-const D65_X: f64 = 0.95047;
-const D65_Y: f64 = 1.00000;
-const D65_Z: f64 = 1.08883;
+/// D65 reference white point — derived from CIE chromaticity (0.3127, 0.329) with Y=1.
+/// Matches colour-science's full-precision derivation.
+const D65_X: f64 = 0.9504559270516716;
+const D65_Y: f64 = 1.0;
+const D65_Z: f64 = 1.0890577507598784;
 
 /// sRGB to XYZ matrix (D65, IEC 61966-2-1).
 /// Uses the same precision as colour-science for reference alignment.
@@ -296,37 +297,42 @@ pub fn white_balance_temperature(
 
 // ─── Bradford Chromatic Adaptation ───────────────────────────────────────
 
-/// Standard illuminant white points (CIE XYZ).
+/// Standard illuminant white points (CIE XYZ, Y=1).
+/// Derived from CIE chromaticity coordinates at full f64 precision,
+/// matching colour-science's derivation via xy_to_XYZ().
 #[derive(Debug, Clone, Copy)]
 pub enum Illuminant {
-    D50, // 0.96422, 1.00000, 0.82521
-    D65, // 0.95047, 1.00000, 1.08883
-    A,   // 1.09850, 1.00000, 0.35585
+    D50,
+    D65,
+    A,
 }
 
 impl Illuminant {
     pub fn xyz(self) -> (f64, f64, f64) {
         match self {
-            Illuminant::D50 => (0.96422, 1.00000, 0.82521),
-            Illuminant::D65 => (0.95047, 1.00000, 1.08883),
-            Illuminant::A => (1.09850, 1.00000, 0.35585),
+            // CIE xy (0.3457, 0.3585) → XYZ
+            Illuminant::D50 => (0.9642956764295680, 1.0, 0.8251046025104602),
+            // CIE xy (0.3127, 0.329) → XYZ
+            Illuminant::D65 => (D65_X, D65_Y, D65_Z),
+            // CIE xy (0.44758, 0.40745) → XYZ
+            Illuminant::A => (1.0984906123450726, 1.0, 0.3557982574549030),
         }
     }
 }
 
 /// Bradford chromatic adaptation matrix: transform XYZ from one illuminant to another.
 pub fn bradford_adapt(x: f64, y: f64, z: f64, from: Illuminant, to: Illuminant) -> (f64, f64, f64) {
-    // Bradford cone response matrix
+    // Bradford cone response matrix (matches colour-science)
     const M: [[f64; 3]; 3] = [
         [0.8951, 0.2664, -0.1614],
         [-0.7502, 1.7135, 0.0367],
         [0.0389, -0.0685, 1.0296],
     ];
-    // Inverse
+    // Inverse — computed via np.linalg.inv(M) to match colour-science precision
     const M_INV: [[f64; 3]; 3] = [
-        [0.9869929, -0.1470543, 0.1599627],
-        [0.4323053, 0.5183603, 0.0492912],
-        [-0.0085287, 0.0400428, 0.9684867],
+        [0.986992905466712, -0.147054256420990, 0.159962651663731],
+        [0.432305269723394, 0.518360271536777, 0.049291228212856],
+        [-0.008528664575177, 0.040042821654085, 0.968486695787550],
     ];
 
     let (sx, sy, sz) = from.xyz();

@@ -321,3 +321,29 @@ fn bradford_matches_colour_science() {
     let err = (x - 0.606172f64).abs().max((y - 0.425971).abs()).max((z - 0.096777).abs());
     assert!(err < 0.01, "Bradford D65->A error {err:.6} > 0.01");
 }
+
+#[test]
+fn lab_matches_colour_science() {
+    // Reference: colour-science 0.4.7 (f64, our true reference for Lab)
+    // OpenCV uses 16-bit fixed-point internally — our f64 is more precise.
+    let test_cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
+        ("red",    (1.0, 0.0, 0.0), (53.2328817858, 80.1111777431, 67.2237036669)),
+        ("green",  (0.0, 1.0, 0.0), (87.7370334735, -86.1828549966, 83.1878346582)),
+        ("blue",   (0.0, 0.0, 1.0), (32.3025866672, 79.1980802348, -107.8503556950)),
+        ("gray",   (0.5, 0.5, 0.5), (53.3889647411, 0.0046229008, 0.0021147334)),
+        ("white",  (1.0, 1.0, 1.0), (100.0, 0.0077282677, 0.0035352751)),
+        ("black",  (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ("custom", (0.8, 0.3, 0.6), (52.2589367273, 58.1618923913, -15.7114375190)),
+    ];
+
+    let mut max_err: f64 = 0.0;
+    for (name, (r, g, b), (ref_l, ref_a, ref_b)) in test_cases {
+        let (l, a, bv) = color_spaces::rgb_to_lab(*r, *g, *b);
+        let err = (l - ref_l).abs().max((a - ref_a).abs()).max((bv - ref_b).abs());
+        max_err = max_err.max(err);
+        eprintln!("Lab {name:8}: L={l:.10} a={a:.10} b={bv:.10} err={err:.2e}");
+    }
+
+    eprintln!("Lab max error vs colour-science: {max_err:.2e}");
+    assert!(max_err < 1e-6, "Lab error {max_err:.2e} > 1e-6 vs colour-science");
+}
