@@ -42,3 +42,13 @@ hevc-test-vectors_20260328130000Z:
 
 # WebP RD math alignment — no deps
 webp-rd-cwebp-align_20260329225317Z: []
+
+# WASM build fix — no deps (critical path blocker)
+wasm-api-sync_20260329230500Z: []
+
+# KF metadata + Rust style guide — independent of build fix
+kf-metadata-styleguide_20260329230501Z: []
+
+# Zero-warnings — depends on WASM build fix (can't clippy-clean broken crate)
+zero-warnings-lint-gate_20260329230502Z:
+  - wasm-api-sync_20260329230500Z

@@ -1,0 +1,90 @@
+id: wasm-api-sync_20260329230500Z
+title: "Fix WASM Component Build and Integration Tests"
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Implement 6 missing metadata trait methods in pipeline_adapter.rs and
+    update 9 call sites in wasm-integration tests to match current API
+    signatures. Restores demo/build.sh and validate.sh steps 5-6.
+  context: |
+    The WASM component build (cargo component build -p rasmcore-image) fails
+    with E0046: GuestImagePipeline impl in pipeline_adapter.rs:244 is missing
+    6 metadata trait methods that were added to the WIT interface but never
+    implemented: metadata_dump, metadata_read, keep_metadata, set_metadata,
+    load_metadata, strip_metadata.
+
+    The wasm-integration test crate also fails to compile with 9 errors:
+    - wasm_bench.rs (6 errors): write/write_jpeg/write_png called with wrong
+      arg count (missing MetadataSet param), missing progressive field in
+      JpegEncodeConfig, missing filter_type in PngEncodeConfig
+    - wasm_parity.rs (3 errors): call_composite missing BlendMode arg,
+      call_write_png missing MetadataSet arg, missing filter_type field
+
+    This blocks demo/build.sh (step 1: cargo component build) and
+    validate.sh steps 5-6 (WASM build + integration tests).
+  codebase_analysis: |
+    - crates/rasmcore-image/src/adapter/pipeline_adapter.rs:244 — impl
+      GuestImagePipeline for PipelineResource is missing 6 methods. The
+      trait definition lives in the generated bindings (bindings.rs) from
+      the WIT interface.
+
+    - tests/wasm-integration/tests/wasm_bench.rs — 6 call sites need
+      updated signatures:
+      - sink::write() needs 5th arg Option<&MetadataSet>
+      - sink::write_jpeg() needs 4th arg
+      - sink::write_png() needs 4th arg
+      - JpegEncodeConfig needs progressive: bool field
+      - PngEncodeConfig needs filter_type field (u8 or enum)
+
+    - tests/wasm-integration/tests/wasm_parity.rs — 3 call sites:
+      - call_composite() needs 7th arg Option<BlendMode>
+      - call_write_png() needs 5th arg Option<&MetadataSet>
+      - PngEncodeConfig needs filter_type field
+  acceptance_criteria:
+    - cargo component build -p rasmcore-image succeeds (debug and release)
+    - cargo test -p wasm-integration --no-run compiles without errors
+    - demo/build.sh completes through step 2 (SDK generation)
+    - validate.sh step 5 (WASM build) passes
+    - Metadata trait methods return sensible defaults (empty/no-op for now)
+    - No regressions in cargo test --workspace --lib
+  out_of_scope: |
+    Full metadata pipeline implementation. The 6 trait methods should be
+    stub implementations (return empty/error) sufficient to compile. Full
+    metadata support is a separate track.
+  technical_notes: |
+    1. Read the WIT-generated trait in bindings.rs to find exact signatures
+       for the 6 missing methods.
+    2. Implement stubs in pipeline_adapter.rs (e.g., return empty vec or
+       Err("not implemented")).
+    3. For wasm_bench.rs: add the missing arguments to each call site.
+       Use None or default values for MetadataSet params.
+    4. For wasm_parity.rs: add missing BlendMode and MetadataSet args.
+    5. Add missing struct fields (progressive, filter_type) with defaults.
+    6. Verify with cargo component build and cargo test --no-run.
+plan:
+  - phase: Fix WASM Component Build
+    tasks:
+      - text: Read WIT-generated trait signatures for the 6 missing metadata methods
+        done: false
+      - text: Implement stub methods in pipeline_adapter.rs GuestImagePipeline impl
+        done: false
+      - text: Verify cargo component build -p rasmcore-image succeeds
+        done: false
+  - phase: Fix Integration Test Compilation
+    tasks:
+      - text: Fix wasm_bench.rs 6 call-site errors (write/write_jpeg/write_png signatures, struct fields)
+        done: false
+      - text: Fix wasm_parity.rs 3 call-site errors (composite, write_png signatures, struct fields)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify cargo test -p wasm-integration --no-run compiles
+        done: false
+      - text: Verify demo/build.sh completes through SDK generation
+        done: false
+      - text: Verify cargo test --workspace --lib has no regressions
+        done: false
+extra: {}
