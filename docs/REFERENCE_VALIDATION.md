@@ -118,6 +118,73 @@ for per-filter details including alignment notes.
 
 ---
 
+## Reference Selection Rationale
+
+Not all tools are suitable references for all operations. This section
+documents why specific tools were chosen — and why others were rejected —
+for each category of validation.
+
+### Why OpenCV over Pillow for precision-sensitive operations
+
+**Pillow (PIL) has known precision deficiencies** that make it unsuitable
+as a reference for operations requiring mathematical correctness:
+
+| Deficiency | Details | Impact |
+|------------|---------|--------|
+| **16→8 bit-depth uses truncation** | Pillow's `Image.convert('RGB')` on 16-bit images uses `v >> 8` (right shift / truncation) instead of the mathematically correct `round(v * 255 / 65535)`. | 26% of values differ by 1 vs correct rounding. Example: u16=1023 → Pillow gives 3 (`1023>>8`), correct is 4 (`round(1023*255/65535)`). |
+| **16-bit RGB not natively supported** | Pillow reads 16-bit RGB PNG as mode `'RGB'` (8-bit) or `'I;16'` (single-channel). There is no native 16-bit RGB mode. `Image.fromarray()` rejects `uint16` RGB arrays. | Cannot use Pillow for 16-bit RGB pixel comparison without lossy conversion. |
+| **Q8 internal processing** | Pillow processes images at 8-bit precision internally, even when the source is 16-bit. Operations like histogram equalization, gamma, and color adjustment lose the low 8 bits. | Comparing 16-bit processing output against Pillow always shows artificial MAE from Pillow's precision loss, not from our implementation. |
+
+**OpenCV** operates at the requested bit depth (8, 16, or 32-bit float)
+and uses `round()` for bit-depth conversion (matching the IEEE 754
+standard). Our `(v + 128) / 257` formula is algebraically identical to
+OpenCV's `saturate_cast<uchar>(v * 255.0 / 65535.0 + 0.5)`.
+
+**numpy** uses f64 precision for formula computation, making it the gold
+standard for validating mathematical formulas (gamma, sepia matrix, blend
+modes). Our f64 `powf()` matches numpy's f64 `**` operator exactly.
+
+**ImageMagick Q16-HDRI** processes at 64-bit float precision internally.
+When comparing at native Q16 (via `magick ... rgb:-` raw output), our f64
+gamma formula produces identical results. Previous tests that routed IM
+output through Pillow's 8-bit `.convert('RGB')` showed false MAE=0.10
+from Pillow's lossy `>>8` conversion — not from any algorithmic difference.
+
+### Where Pillow IS a valid reference
+
+Pillow remains valid for:
+- **Median filter** (sorting-based, integer-only, pixel-exact at 8-bit)
+- **Format I/O** (PNG/TIFF decode at 8-bit precision)
+- **Image creation** (test fixture generation)
+
+Pillow is NOT valid for:
+- **Bit-depth conversion** (uses truncation instead of rounding)
+- **16-bit processing** (downcasts to 8-bit internally)
+- **Precision-sensitive formulas** (use numpy instead)
+
+### Reference hierarchy
+
+When multiple tools could validate an operation, prefer in this order:
+
+1. **numpy** — for pure formula validation (MAE=0.0 achievable)
+2. **OpenCV** — for spatial filters, bit-depth conversion, image processing
+3. **ImageMagick Q16-HDRI** — for full-pipeline validation (compare at native Q16 via `rgb:-`)
+4. **Pillow** — only for 8-bit integer operations (median, format I/O)
+5. **Self-validation** — roundtrip tests, identity kernels, known input/output pairs
+
+### Lesson learned
+
+When comparing against a reference, **always compare at native precision**.
+Routing high-precision output through a lower-precision tool (e.g., reading
+16-bit IM output via Pillow's 8-bit `convert('RGB')`) creates false
+divergences that are artifacts of the comparison pathway, not of the
+implementation under test. We discovered this when:
+
+- Gamma at Q16 showed MAE=0.10 via Pillow (false) but MAE=0.0000 via raw `rgb:-` (true)
+- 16→8 conversion showed MAE=0.26 vs Pillow (Pillow's formula is wrong) but MAE=0.0 vs OpenCV (correct)
+
+---
+
 ## Test Infrastructure
 
 ### Python Venv
@@ -129,11 +196,11 @@ python3 -m venv tests/fixtures/.venv
 tests/fixtures/.venv/bin/pip install numpy==2.4.3 Pillow==12.1.1 opencv-python-headless==4.13.0.86
 ```
 
-| Package | Pinned Version | Purpose |
-|---------|---------------|---------|
-| numpy | 2.4.3 | Formula reference (sepia, blend modes) |
-| OpenCV | 4.13.0 | Spatial filter reference (convolve, sobel, bilateral, CLAHE) |
-| Pillow | 12.1.1 | Median filter, format I/O reference |
+| Package | Pinned Version | Purpose | Precision |
+|---------|---------------|---------|-----------|
+| numpy | 2.4.3 | Formula reference (sepia, blend modes, gamma) | f64 — gold standard |
+| OpenCV | 4.13.0 | Spatial filters, bit-depth conversion, bilateral, CLAHE | Native bit depth |
+| Pillow | 12.1.1 | 8-bit median filter, format I/O only (see deficiencies above) | 8-bit only |
 
 ### System Tools
 

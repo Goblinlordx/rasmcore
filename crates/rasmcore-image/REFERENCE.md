@@ -177,12 +177,17 @@ versions require re-validation of all parity results.
 
 ### Python Venv (tests/fixtures/.venv)
 
-| Package | Version | Used For |
-|---------|---------|----------|
-| Python | 3.14.3 | Script execution |
-| numpy | 2.4.3 | Formula operations, array math |
-| OpenCV | 4.13.0 | Spatial filters, bilateral, CLAHE, guided |
-| Pillow | 12.1.1 | Median filter, format I/O |
+| Package | Version | Used For | Notes |
+|---------|---------|----------|-------|
+| Python | 3.14.3 | Script execution | |
+| numpy | 2.4.3 | Formula operations (f64 precision) | Gold standard for math validation |
+| OpenCV | 4.13.0 | Spatial filters, bit-depth, bilateral, CLAHE | Native precision, correct rounding |
+| Pillow | 12.1.1 | 8-bit median filter, format I/O only | **Not used for bit-depth conversion or 16-bit ops** (see below) |
+
+**Pillow limitation:** Pillow 12.x converts 16-bit to 8-bit via `v >> 8`
+(truncation), not `round(v * 255 / 65535)`. This produces incorrect results
+for 26% of values (off by 1). OpenCV uses the mathematically correct
+rounding formula. See `docs/REFERENCE_VALIDATION.md` for full analysis.
 
 Setup:
 ```bash
