@@ -1,5 +1,5 @@
 title: VP8 libwebp Mode Decision — PickBestIntra16/Intra4/UV from Source
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-29'
