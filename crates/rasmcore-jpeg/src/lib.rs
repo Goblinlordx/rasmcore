@@ -261,6 +261,20 @@ pub fn encode(
                 chroma_freq2.build_optimal_tables()
             };
 
+            // EOB block-level optimization (mozjpeg trellis_eob_opt)
+            // Note: for sequential JPEG this is a no-op — per-coefficient trellis
+            // already handles AC zeroing. Meaningful savings only in progressive mode.
+            if config.eob_optimize {
+                trellis::eob_optimize_blocks(
+                    &mut blocks,
+                    &luma_qt,
+                    &chroma_qt,
+                    &ac_luma_arr,
+                    &ac_chroma_arr,
+                    1.0,
+                );
+            }
+
             // Use the refined tables
             // (shadow the outer bindings for the encode step below)
             let dc_luma_len = dc_luma_len2;
@@ -1608,6 +1622,59 @@ fn trellis_savings_256x256() {
         assert!(
             image::load_from_memory_with_format(&with_trellis, image::ImageFormat::Jpeg).is_ok(),
             "Q{quality}: trellis output not decodable"
+        );
+    }
+}
+
+#[test]
+fn eob_optimize_sequential_no_regression() {
+    // EOB block-level optimization follows mozjpeg's trellis_eob_opt (disabled by
+    // default in mozjpeg). For sequential baseline JPEG, the per-coefficient trellis
+    // already optimally handles AC zeroing. Block-level EOB runs only benefit
+    // progressive mode (EOBn symbols). Verify: no regression and output is valid.
+    let mut pixels = Vec::with_capacity(128 * 128 * 3);
+    for y in 0..128u16 {
+        for x in 0..128u16 {
+            let checker = if ((x / 16) + (y / 16)) % 2 == 0 { 180u8 } else { 80u8 };
+            let noise = ((x.wrapping_mul(17).wrapping_add(y.wrapping_mul(31))) % 25) as u8;
+            pixels.push(checker.wrapping_add(noise));
+            pixels.push(checker.wrapping_sub(noise.min(checker)));
+            pixels.push(128);
+        }
+    }
+
+    for &quality in &[50u8, 75] {
+        let without_eob = encode(
+            &pixels, 128, 128, PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality,
+                optimize_huffman: true,
+                trellis: true,
+                eob_optimize: false,
+                ..Default::default()
+            },
+        ).unwrap();
+
+        let with_eob = encode(
+            &pixels, 128, 128, PixelFormat::Rgb8,
+            &EncodeConfig {
+                quality,
+                optimize_huffman: true,
+                trellis: true,
+                eob_optimize: true,
+                ..Default::default()
+            },
+        ).unwrap();
+
+        // For sequential mode: should produce identical output (no block-run benefit)
+        assert_eq!(
+            without_eob.len(), with_eob.len(),
+            "Q{quality}: sequential EOB opt should produce same size"
+        );
+
+        assert!(
+            image::load_from_memory_with_format(&with_eob, image::ImageFormat::Jpeg).is_ok(),
+            "Q{quality}: EOB optimized output not decodable"
         );
     }
 }
