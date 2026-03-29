@@ -182,31 +182,31 @@ plan:
 - phase: Cross-Crate Plugin Support
   tasks:
   - text: Verify inventory/linkme collection works across crate boundaries on wasm32-wasip1
-    done: false
+    done: true
   - text: Create example plugin crate (example-filters) with one registered custom filter
-    done: false
+    done: true
   - text: Create example assembly crate that combines rasmcore-image + example-filters
-    done: false
+    done: true
   - text: Verify assembly crate builds to WASM with both built-in and custom filters in WIT
-    done: false
+    done: true
   - text: Document plugin authoring guide (how to create a filter/codec crate)
-    done: false
+    done: true
 - phase: Acid Test — Bare Infrastructure Build
   tasks:
   - text: Create rasmcore-image feature flag that disables ALL built-in filters and codecs (infra-only)
-    done: false
+    done: true
   - text: Create examples/custom-filter crate with one trivial filter (e.g. invert-red) using register_filter
-    done: false
+    done: true
   - text: Create examples/custom-codec crate with one trivial codec (e.g. raw-rgb encoder) using register_encoder
-    done: false
+    done: true
   - text: Create examples/bare-assembly crate depending on rasmcore-image[infra-only] + custom-filter + custom-codec
-    done: false
+    done: true
   - text: Verify bare-assembly builds to WASM component with only custom operations in WIT (no built-ins)
-    done: false
+    done: true
   - text: Verify jco transpile produces SDK with only custom filter and custom codec
-    done: false
+    done: true
   - text: Verify pipeline works end-to-end — load raw pixels, apply custom filter, encode with custom codec
-    done: false
+    done: true
   - text: Verify adding rasmcore-image[core-filters] feature brings back built-in filters alongside custom ones
-    done: false
+    done: true
 extra: {}
