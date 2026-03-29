@@ -1,0 +1,74 @@
+id: hevc-bitexact-yuv_20260329040000Z
+title: HEVC Bit-Exact YUV Parity — Match libde265/ffmpeg Byte-for-Byte
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Achieve byte-exact Y plane output matching the libde265/ffmpeg reference YUV. Current parity tests compare RGB
+    (which includes YCbCr→RGB conversion differences). The authoritative target is the decoded YUV file, which is byte-identical
+    between ffmpeg and libde265. Every formula in the decode pipeline must produce the same numerical result as the reference.
+  context: 'ffmpeg and libde265 produce byte-identical YUV for all test cases (verified). Our parity tests compare RGB which
+    introduces a conversion mismatch. The correct approach is: (1) compare our Y plane byte-for-byte against reference YUV,
+    (2) find and fix every byte that differs, (3) update parity tests to compare YUV instead of (or in addition to) RGB. Per-row
+    analysis shows row 0 at 26.4dB RGB PSNR — even a 1-pixel Y error would produce nearly infinite YUV PSNR, so the RGB gap
+    is dominated by the YCbCr→RGB conversion formula, not Y-plane errors.'
+  codebase_analysis: 'Reference YUV files at tests/fixtures/hevc/generated/{case}_decoded.yuv (from ffmpeg) and {case}.hevc.de265.yuv
+    (from libde265) — byte-identical. Our decode pipeline: CABAC→coefficients→dequant→IDCT→pred+residual→Y plane→YCbCr→RGB.
+    All stages up to Y plane are verified correct for flat images (48.1dB). For gradient, the Y plane needs byte-level comparison.
+    The parity tests (tests/parity.rs) currently compare RGB only — need YUV comparison test. Frame buffer Y plane is at frame.rs
+    FrameBuffer.y field.'
+  acceptance_criteria:
+  - Y plane byte-exact match against reference YUV for flat_64x64_q22
+  - Y plane byte-exact match against reference YUV for flat_64x64_q37
+  - Y plane byte-exact match against reference YUV for gradient_128x128_q22
+  - Add YUV parity test that compares Y plane directly (not via RGB)
+  - Update RGB parity test to use ffmpeg-matched conversion coefficients
+  - All 9 parity tests pass with PSNR > 25dB
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: Chroma plane parity (Cb/Cr decode not implemented). Inter prediction. Only luma Y plane is validated.
+  technical_notes: "Approach: work backwards from byte differences.\n\nPhase 1 — YUV comparison infrastructure:\n  Add a test\
+    \ that exports our decoded Y plane and compares byte-for-byte\n  against the reference YUV. For each differing byte, report\
+    \ position and\n  values. This immediately tells us which CTUs have errors.\n\nPhase 2 — Fix Y plane errors:\n  For each\
+    \ byte difference found in Phase 1:\n  a) Determine which CTU and CU the pixel belongs to\n  b) Check if the prediction\
+    \ is correct (compare prediction alone)\n  c) Check if the residual is correct (compare dequant+IDCT alone)\n  d) Fix\
+    \ the specific formula that produces the wrong value\n  Likely sources: WPP context restore timing, prediction reference\
+    \ sample\n  gathering for CUs at CTU boundaries, or edge cases in the decode loop.\n\nPhase 3 — RGB conversion alignment:\n\
+    \  Extract ffmpeg 7.1 exact YCbCr→RGB coefficients from libswscale source.\n  Update our BT709 matrix to match. Verify\
+    \ flat test produces RGB=129\n  for Y=128 (currently produces 130).\n\nPhase 4 — Validation:\n  All parity tests pass.\
+    \ Y plane is byte-exact. RGB is within 0 of reference."
+plan: []
+extra: {}
+plan:
+  - phase: YUV Comparison Infrastructure
+    tasks:
+      - text: "Add YUV parity test that compares our Y plane byte-for-byte against reference _decoded.yuv files"
+        done: false
+      - text: "Run YUV parity test for flat_64x64_q22 — identify any Y plane byte differences"
+        done: false
+      - text: "Run YUV parity test for gradient_128x128_q22 — identify differing bytes by position"
+        done: false
+  - phase: Fix Y Plane Errors
+    tasks:
+      - text: "For each Y byte difference in gradient, trace back to the specific CU and identify whether the error is in prediction, residual, or both"
+        done: false
+      - text: "Fix each identified error source — match the exact reference formula"
+        done: false
+      - text: "Verify flat and gradient Y planes are now byte-exact"
+        done: false
+  - phase: RGB Conversion Alignment
+    tasks:
+      - text: "Extract ffmpeg 7.1 exact BT.709 YCbCr→RGB integer coefficients from libswscale source code"
+        done: false
+      - text: "Update rasmcore-color BT709 matrix to match ffmpeg coefficients exactly"
+        done: false
+      - text: "Verify flat_64x64 produces RGB=(129,129,129) for Y=128 (matching ffmpeg reference)"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "All 9 parity tests pass with PSNR > 25dB"
+        done: false
+      - text: "Y plane byte-exact for flat and gradient test cases"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test passes"
+        done: false
