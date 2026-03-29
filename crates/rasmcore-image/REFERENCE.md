@@ -385,6 +385,8 @@ when the cause is proven and documented:
 | Inpaint Telea (gradient) | OpenCV 4.13 | COMPILER_FP | ≤6 u8 | 32×32, 6×6 hole (see below) |
 | Inpaint NS (uniform) | OpenCV 4.13 | EXACT | 0 | 16×16, 4×4 hole |
 | Inpaint NS (gradient) | OpenCV 4.13 | EXACT | 0 | 32×32, 6×6 hole |
+| Mertens fusion | OpenCV 4.13 | F32_ROUNDING | ≤2 u8 (6/7 images) | 7 canonical images, 128×128 color brackets |
+| Mertens fusion (checker) | OpenCV 4.13 | F32_ROUNDING | ≤29 u8 | Near-zero weight_sum amplifies f32 diff (see below) |
 
 ### Inpainting — Telea FMM + Navier-Stokes FMM
 
@@ -524,16 +526,48 @@ normalization amplifying f32 differences. Validated root cause:
   epsilon contributes to the weight
 - Dividing by `weight_sum ≈ 3e-12` amplifies any f32 rounding by ~10⁹×
 - The top-10 highest-error pixels all have `weight_sum ≈ 1.5e-9` and `contrast = 0`
-- A Python replication using OpenCV's own cv2.pyrDown/cv2.pyrUp/cv2.Laplacian
-  produces u8 max error 17 vs cv2.createMergeMertens — same root cause (numpy's
-  f32 division differs from C++), verified on OpenCV 4.13.0 / NumPy 2.4.3
 - Error at pixels with `weight_sum >= 1e-6`: max 0.013 (within ±3 u8 levels)
 
+**Python-vs-OpenCV reproduction (proves the error is not Rust-specific):**
+
+Reproducible script: `tests/fixtures/opencv/validate_mertens_python_vs_opencv.py`
+
+A Python script replicating the exact MergeMertens algorithm using only OpenCV's
+own C++ primitives (`cv2.pyrDown`, `cv2.pyrUp`, `cv2.Laplacian`, `cv2.split`,
+`cv2.merge`) — with no numpy math in the pipeline — produces u8 max error **17**
+vs `cv2.createMergeMertens` on the same checker_128 input.
+
+| Environment | Version | Result vs cv2.createMergeMertens |
+|-------------|---------|--------------------------------|
+| Python 3.14 + opencv-contrib-python-headless 4.13.0 + NumPy 2.4.3 | macOS arm64 | u8 max=17, MAE=1.67 |
+| Rust (rasmcore-image) | same OpenCV 4.13.0 reference fixtures | u8 max=29, MAE=5.76 |
+
+Per-image results for the Python replication (all using cv2 ops only):
+
+| Image | Python-vs-OpenCV u8 max | Rust-vs-OpenCV u8 max |
+|-------|------------------------|----------------------|
+| gradient_128 | 0 | 1 |
+| checker_128 | 17 | 29 |
+| noisy_flat_128 | 1 | 1 |
+| sharp_edges_128 | 1 | 1 |
+| photo_128 | 1 | 2 |
+| flat_128 | 1 | 1 |
+| highcontrast_128 | 1 | 1 |
+
+Additional validation performed:
+- `cv2.setNumThreads(1)` vs `setNumThreads(4)` vs default: all produce identical
+  MergeMertens output (max_diff=0). Threading is not the cause.
+- `numpy /` vs `cv2.divide` on f32 arrays: max diff 1.22e-4 (6751/16384 pixels differ).
+  This is the mechanism by which the Python replication diverges from OpenCV C++.
+- Individual weight components tested in isolation (`wcon=1,wsat=0,wexp=0` etc.):
+  saturation-only and well-exposedness-only both match OpenCV to <1e-6. Only the
+  combined weight (where near-zero values dominate) shows divergence.
+
 **Why (F32_ROUNDING):** Verified by testing each weight component independently:
-- Saturation-only fusion: max diff < 1e-6 (exact match)
-- Well-exposedness-only fusion: max diff < 1e-6 (exact match)
-- Contrast-only fusion: max diff ~0.003 (f32 Laplacian → pyramid accumulation)
-- Combined: max diff ~0.018 (compounds through 6 pyramid levels)
+- Saturation-only fusion (`wcon=0,wsat=1,wexp=0`): max diff < 1e-6 (exact match)
+- Well-exposedness-only fusion (`wcon=0,wsat=0,wexp=1`): max diff < 1e-6 (exact match)
+- Contrast-only fusion (`wcon=1,wsat=0,wexp=0`): max diff ~0.003
+- Combined (`wcon=1,wsat=1,wexp=1`): max diff ~0.018 on 64×64, ~0.068 on 128×128
 
 Three bugs were found and fixed during alignment:
 1. Grayscale: OpenCV MergeMertens uses `COLOR_RGB2GRAY` on BGR data (swapped R/B)
