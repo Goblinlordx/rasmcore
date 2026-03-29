@@ -13,6 +13,10 @@ spec:
   - Reference parity tests added to opencv_parity.rs with fixtures
   - SIMD optimization where applicable (per project feedback)
   - Registered in FilterRegistry with param descriptors
+  - Validated against canonical 7-image test set (gradient, checker, noisy_flat, sharp_edges, photo, flat, highcontrast) where
+    applicable
+  - Reference fixtures generated from OpenCV/colour-science/GIMP in venv and stored in tests/fixtures/opencv/
+  - Parity tier documented in REFERENCE.md (EXACT, F64_LIMIT, F32_ROUNDING, or REF_PRECISION)
   out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
   technical_notes: 'Brown-Conrady: r_distorted = r(1 + k1*r^2 + k2*r^4 + k3*r^6). Apply inverse mapping: for each output pixel,
     compute distorted source coordinate, bilinear sample. Camera matrix K = [[fx,0,cx],[0,fy,cy],[0,0,1]].'

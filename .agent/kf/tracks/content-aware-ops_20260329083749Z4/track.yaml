@@ -14,6 +14,10 @@ spec:
   - Reference parity tests added to opencv_parity.rs with fixtures
   - SIMD optimization where applicable (per project feedback)
   - Registered in FilterRegistry with param descriptors
+  - Validated against canonical 7-image test set (gradient, checker, noisy_flat, sharp_edges, photo, flat, highcontrast) where
+    applicable
+  - Reference fixtures generated from OpenCV/colour-science/GIMP in venv and stored in tests/fixtures/opencv/
+  - Parity tier documented in REFERENCE.md (EXACT, F64_LIMIT, F32_ROUNDING, or REF_PRECISION)
   out_of_scope: GPU acceleration. Neural network approaches. SIMD optimization deferred to separate track if needed.
   technical_notes: 'Seam carving: compute energy map (gradient magnitude), find minimum-energy vertical/horizontal seam via
     DP, remove seam, repeat. Selective color: convert to HSL, identify pixels in target hue range, adjust their HSL values.'
