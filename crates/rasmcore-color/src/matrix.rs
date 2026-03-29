@@ -73,6 +73,33 @@ impl ColorMatrix {
         inv_cb_b: 516,
     };
 
+    /// BT.601 Full Range — VP8/WebP, MJPEG.
+    ///
+    /// Same luma weights as BT.601 but Y uses full 0-255 range (no 16-235 headroom).
+    /// VP8 (RFC 6386) operates on full-range Y internally.
+    pub const BT601_FULL: Self = Self {
+        yr: 77,      // 0.299 * 256 ≈ 77
+        yg: 150,     // 0.587 * 256 ≈ 150
+        yb: 29,      // 0.114 * 256 ≈ 29
+        y_offset: 0, // FULL RANGE: Y ∈ [0, 255]
+        cbr: -43,    // -0.169 * 256
+        cbg: -85,    // -0.331 * 256
+        cbb: 128,    // 0.500 * 256
+        crr: 128,    // 0.500 * 256
+        crg: -107,   // -0.419 * 256
+        crb: -21,    // -0.081 * 256
+        c_offset: 128,
+        // Inverse (full range): no 1.164 scaling, direct
+        // R = Y + 1.402*Cr' → (256*Y + 359*Cr' + 128) >> 8
+        // G = Y - 0.344*Cb' - 0.714*Cr' → (256*Y - 88*Cb' - 183*Cr' + 128) >> 8
+        // B = Y + 1.772*Cb' → (256*Y + 454*Cb' + 128) >> 8
+        inv_y_scale: 256,
+        inv_cr_r: 359,
+        inv_cb_g: -88,
+        inv_cr_g: -183,
+        inv_cb_b: 454,
+    };
+
     /// ITU-R BT.709 — HD video, H.264, H.265, AV1.
     ///
     /// Luma weights: 0.2126 R + 0.7152 G + 0.0722 B
