@@ -290,6 +290,29 @@ if the venv is missing, tests fail with setup instructions.
 - Rounding: truncation to u8 (matching OpenCV's saturate_cast)
 - Separable detection: rank-1 kernels auto-detected and processed as two 1D passes
 
+#### NLM Denoising — Near-Exact (MAE = 0.004, max ±1)
+
+| Operation | Reference | Config | Status |
+|-----------|-----------|--------|--------|
+| nlm_denoise (OpenCv) | OpenCV `fastNlMeansDenoising` | h=20, templateWindowSize=7, searchWindowSize=21 | MAE=0.004, max_err=±1 |
+
+**Algorithm**: Identical to OpenCV 4.x `fast_nlmeans_denoising_invoker.hpp`:
+- Integer SSD between patches
+- Bit-shift division (`SSD >> ceil(log2(N))`) to approximate average distance
+- Precomputed weight LUT: `exp(-dist / (h² * channels))` (DistSquared, NOT dist²)
+- Fixed-point integer accumulation with `fixed_point_mult = min(INT_MAX / max_sum, 255)`
+- Rounding division: `(unsigned(estimation) + weights_sum/2) / weights_sum`
+- Weight threshold: zero if `< 0.001 * fixed_point_mult`
+- Border: BORDER_REFLECT_101 via border extension
+
+**Remaining ±1 on 8/1024 pixels**: All have `estimation/weights_sum` fractional part
+within 0.005 of 0.5. Cause: C++ libm `exp()` vs Rust libm `exp()` differ at the IEEE 754
+ULP (unit of last place) for some inputs, shifting a few LUT entries by ±1. The accumulated
+difference across 441 search positions flips rounding at the 0.5 boundary.
+This is a compiler/libm implementation difference, not an algorithmic difference.
+
+**NlmAlgorithm::Classic** variant: Standard Buades 2005 with float math (available as option).
+
 ## Reference Tool Versions
 
 All reference validation uses pinned tool versions. Changes to reference

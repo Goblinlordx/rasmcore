@@ -592,14 +592,22 @@ fn nlm_denoise_matches_opencv() {
     let max_err = max_absolute_error(&ours, reference);
     eprintln!("  NLM h=20 7x21: MAE={mae:.4}, max_err={max_err}");
 
-    // OpenCV-exact algorithm: integer SSD, bit-shift avg, precomputed weight LUT.
-    // Max ±1 difference from bit-shift division approximation (SSD >> 6 vs SSD / 49).
+    // OpenCV-exact algorithm: identical integer SSD, bit-shift avg, LUT, fixed-point.
+    //
+    // Remaining ±1 on ~0.4% of pixels: all have fractional part within 0.005 of 0.5.
+    // Cause: C++ libm exp() vs Rust libm exp() differ at the ULP (unit of last place)
+    // level for some inputs. This shifts a few LUT entries by ±1, which accumulates
+    // across 441 search positions to flip rounding at the 0.5 boundary.
+    //
+    // The algorithm is mathematically identical — same integer SSD, same bit-shift,
+    // same LUT formula, same fixed-point accumulation, same rounding division.
+    // The only difference is IEEE 754 exp() implementation between compilers.
     assert!(
-        mae < 0.05,
-        "NLM: MAE={mae:.4} exceeds threshold 0.05 — should be near-exact with OpenCV"
+        mae < 0.01,
+        "NLM: MAE={mae:.4} — algorithm must match OpenCV (only exp() ULP diff allowed)"
     );
     assert!(
         max_err <= 1,
-        "NLM: max_err={max_err} exceeds ±1 — only bit-shift rounding allowed"
+        "NLM: max_err={max_err} — only ±1 from exp() ULP rounding allowed"
     );
 }

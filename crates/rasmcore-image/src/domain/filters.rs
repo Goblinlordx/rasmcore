@@ -2100,9 +2100,9 @@ fn nlm_denoise_opencv(
                 }
             }
 
-            // divByWeightsSum: (estimation + weights_sum/2) / weights_sum
+            // OpenCV divByWeightsSum: (unsigned(estimation) + weights_sum/2) / weights_sum
             out[y * w + x] = if weights_sum > 0 {
-                ((estimation + weights_sum / 2) / weights_sum).clamp(0, 255) as u8
+                ((estimation as u64 + weights_sum as u64 / 2) / weights_sum as u64).min(255) as u8
             } else {
                 pixels[y * w + x]
             };
