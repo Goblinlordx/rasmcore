@@ -523,6 +523,99 @@ where
     Ok(result)
 }
 
+// ─── Histogram Matching ─────────────────────────────────────────────────────
+
+/// Match the tonal distribution of `source` to the distribution of `target`.
+///
+/// Computes per-channel CDF for both images, then builds a LUT that maps each
+/// source intensity to the target intensity with the nearest CDF value.
+/// Works on Gray8, RGB8, and RGBA8 (alpha channel preserved unchanged).
+pub fn histogram_match(
+    source: &[u8],
+    source_info: &ImageInfo,
+    target: &[u8],
+    target_info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
+    let src_hists = histogram(source, source_info)?;
+    let tgt_hists = histogram(target, target_info)?;
+
+    if src_hists.len() != tgt_hists.len() {
+        return Err(ImageError::InvalidParameters(
+            "source and target must have the same number of channels".into(),
+        ));
+    }
+
+    let src_pixels = (source_info.width as u64) * (source_info.height as u64);
+    let tgt_pixels = (target_info.width as u64) * (target_info.height as u64);
+
+    if src_hists.len() == 1 {
+        let lut = match_lut(&src_hists[0], src_pixels, &tgt_hists[0], tgt_pixels);
+        point_ops::apply_lut(source, source_info, &lut)
+    } else {
+        // Per-channel matching for RGB/RGBA
+        let luts: Vec<[u8; 256]> = (0..src_hists.len())
+            .map(|i| match_lut(&src_hists[i], src_pixels, &tgt_hists[i], tgt_pixels))
+            .collect();
+
+        let channels = match source_info.format {
+            PixelFormat::Rgb8 => 3,
+            PixelFormat::Rgba8 => 4,
+            _ => return Err(ImageError::UnsupportedFormat("histogram_match: unsupported format".into())),
+        };
+
+        let mut result = Vec::with_capacity(source.len());
+        for chunk in source.chunks_exact(channels) {
+            for c in 0..3 {
+                result.push(luts[c][chunk[c] as usize]);
+            }
+            if channels == 4 {
+                result.push(chunk[3]); // preserve alpha
+            }
+        }
+        Ok(result)
+    }
+}
+
+/// Build a histogram matching LUT via CDF inversion.
+///
+/// For each source intensity `s`, find the target intensity `t` such that
+/// CDF_target(t) >= CDF_source(s). This is the standard CDF inversion method.
+fn match_lut(
+    src_hist: &Histogram,
+    src_pixels: u64,
+    tgt_hist: &Histogram,
+    tgt_pixels: u64,
+) -> [u8; 256] {
+    // Compute normalized CDFs (0.0 to 1.0)
+    let mut src_cdf = [0.0f64; 256];
+    let mut tgt_cdf = [0.0f64; 256];
+
+    src_cdf[0] = src_hist[0] as f64 / src_pixels as f64;
+    tgt_cdf[0] = tgt_hist[0] as f64 / tgt_pixels as f64;
+    for i in 1..256 {
+        src_cdf[i] = src_cdf[i - 1] + src_hist[i] as f64 / src_pixels as f64;
+        tgt_cdf[i] = tgt_cdf[i - 1] + tgt_hist[i] as f64 / tgt_pixels as f64;
+    }
+
+    // For each source intensity, find nearest target intensity via CDF
+    let mut lut = [0u8; 256];
+    for s in 0..256 {
+        let val = src_cdf[s];
+        // Binary search or linear scan for nearest CDF value in target
+        let mut best = 0usize;
+        let mut best_diff = f64::MAX;
+        for t in 0..256 {
+            let diff = (tgt_cdf[t] - val).abs();
+            if diff < best_diff {
+                best_diff = diff;
+                best = t;
+            }
+        }
+        lut[s] = best as u8;
+    }
+    lut
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -793,5 +886,44 @@ mod tests {
         // Should stretch near full range
         assert!(*out.iter().min().unwrap() < 1000);
         assert!(*out.iter().max().unwrap() > 64000);
+    }
+
+    // ── Histogram Matching ─────────────────────────────────────────────
+
+    #[test]
+    fn histogram_match_identity() {
+        // Matching an image to itself should produce identical output
+        let pixels: Vec<u8> = (0..256).map(|i| i as u8).collect();
+        let info = test_info(256, 1, PixelFormat::Gray8);
+        let result = histogram_match(&pixels, &info, &pixels, &info).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn histogram_match_transfers_distribution() {
+        // Dark source (0-100) matched to bright target (155-255)
+        let source: Vec<u8> = (0..100).map(|i| i as u8).collect();
+        let src_info = test_info(100, 1, PixelFormat::Gray8);
+        let target: Vec<u8> = (0..100).map(|i| (155 + i) as u8).collect();
+        let tgt_info = test_info(100, 1, PixelFormat::Gray8);
+
+        let result = histogram_match(&source, &src_info, &target, &tgt_info).unwrap();
+
+        // Result should be much brighter than source
+        let src_mean: f64 = source.iter().map(|&v| v as f64).sum::<f64>() / source.len() as f64;
+        let res_mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(res_mean > src_mean + 50.0, "matched output should be much brighter: src_mean={src_mean}, res_mean={res_mean}");
+    }
+
+    #[test]
+    fn histogram_match_rgb() {
+        // RGB matching — per-channel
+        let source: Vec<u8> = (0..192).map(|i| (i % 64) as u8).collect(); // 64 pixels RGB
+        let src_info = test_info(64, 1, PixelFormat::Rgb8);
+        let target: Vec<u8> = (0..192).map(|i| ((i % 64) + 128) as u8).collect();
+        let tgt_info = test_info(64, 1, PixelFormat::Rgb8);
+
+        let result = histogram_match(&source, &src_info, &target, &tgt_info).unwrap();
+        assert_eq!(result.len(), source.len());
     }
 }
