@@ -31,3 +31,4 @@ tests/fixtures/hevc/generated/
 # Environment
 .env
 .env.local
+tests/fixtures/.venv/
