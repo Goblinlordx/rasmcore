@@ -592,10 +592,14 @@ fn nlm_denoise_matches_opencv() {
     let max_err = max_absolute_error(&ours, reference);
     eprintln!("  NLM h=20 7x21: MAE={mae:.4}, max_err={max_err}");
 
-    // NLM implementations vary significantly — OpenCV uses a different
-    // normalization and patch weighting scheme. Accept ALGORITHM tier.
+    // OpenCV-exact algorithm: integer SSD, bit-shift avg, precomputed weight LUT.
+    // Max ±1 difference from bit-shift division approximation (SSD >> 6 vs SSD / 49).
     assert!(
-        mae < 10.0,
-        "NLM: MAE={mae:.4} exceeds ALGORITHM threshold 10.0 (different normalization)"
+        mae < 0.05,
+        "NLM: MAE={mae:.4} exceeds threshold 0.05 — should be near-exact with OpenCV"
+    );
+    assert!(
+        max_err <= 1,
+        "NLM: max_err={max_err} exceeds ±1 — only bit-shift rounding allowed"
     );
 }

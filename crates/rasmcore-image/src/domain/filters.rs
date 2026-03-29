@@ -1946,11 +1946,11 @@ pub fn morph_blackhat(
 /// NLM algorithm variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NlmAlgorithm {
-    /// Match OpenCV's `fastNlMeansDenoising` — self-pixel weight = max(other weights),
-    /// weight = exp(-SSD / (N * h²)). Default.
+    /// Match OpenCV's `fastNlMeansDenoising` exactly — integer SSD, bit-shift
+    /// average, precomputed weight LUT, fixed-point accumulation. Default.
     #[default]
     OpenCv,
-    /// Classic Buades et al. 2005 — uniform weighting including self-pixel.
+    /// Classic Buades et al. 2005 — float SSD, exp() weights.
     Classic,
 }
 
@@ -1963,7 +1963,7 @@ pub struct NlmParams {
     pub patch_size: u32,
     /// Search window size (must be odd). Default: 21.
     pub search_size: u32,
-    /// Algorithm variant. Default: OpenCv (matches cv2.fastNlMeansDenoising).
+    /// Algorithm variant. Default: OpenCv.
     pub algorithm: NlmAlgorithm,
 }
 
@@ -1980,16 +1980,12 @@ impl Default for NlmParams {
 
 /// Non-local means denoising for grayscale images.
 ///
-/// For each pixel, computes a weighted average of all pixels in the search
-/// window, where weights depend on patch similarity.
+/// With `NlmAlgorithm::OpenCv` (default): replicates OpenCV's
+/// `fastNlMeansDenoising` exactly — integer SSD with bit-shift division
+/// to approximate average, precomputed weight LUT indexed by integer
+/// almost-average-distance, fixed-point integer accumulation.
 ///
-/// With `NlmAlgorithm::OpenCv` (default): matches `cv2.fastNlMeansDenoising`.
-/// The self-pixel weight is set to `max(other_weights)` instead of `exp(0)=1`,
-/// preventing the reference pixel from dominating the average.
-///
-/// With `NlmAlgorithm::Classic`: standard Buades et al. 2005 formulation.
-///
-/// Weight formula: `exp(-SSD / (patch_area * h²))`.
+/// With `NlmAlgorithm::Classic`: standard Buades et al. 2005 with float math.
 pub fn nlm_denoise(
     pixels: &[u8],
     info: &ImageInfo,
@@ -2000,6 +1996,128 @@ pub fn nlm_denoise(
             "NLM denoising currently supports Gray8 only".into(),
         ));
     }
+    match params.algorithm {
+        NlmAlgorithm::OpenCv => nlm_denoise_opencv(pixels, info, params),
+        NlmAlgorithm::Classic => nlm_denoise_classic(pixels, info, params),
+    }
+}
+
+/// OpenCV-exact NLM implementation.
+///
+/// Replicates `FastNlMeansDenoisingInvoker` from OpenCV 4.x:
+/// - `copyMakeBorder(BORDER_DEFAULT)` → reflect101 padding
+/// - Integer SSD between patches
+/// - `almostAvgDist = ssd >> bin_shift` (bit-shift approximation of SSD/N)
+/// - Precomputed `almost_dist2weight[almostAvgDist]` LUT
+/// - Fixed-point integer accumulation with `fixed_point_mult`
+/// - `divByWeightsSum` with rounding
+fn nlm_denoise_opencv(
+    pixels: &[u8],
+    info: &ImageInfo,
+    params: &NlmParams,
+) -> Result<Vec<u8>, ImageError> {
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let tw = params.patch_size as usize;  // template window size
+    let sw = params.search_size as usize; // search window size
+    let thr = tw / 2; // template half radius
+    let shr = sw / 2; // search half radius
+    let border = shr + thr;
+
+    // Create border-extended image (BORDER_REFLECT_101)
+    let ew = w + 2 * border;
+    let eh = h + 2 * border;
+    let mut ext = vec![0u8; ew * eh];
+    for ey in 0..eh {
+        for ex in 0..ew {
+            let sy = reflect101(ey as isize - border as isize, h as isize) as usize;
+            let sx = reflect101(ex as isize - border as isize, w as isize) as usize;
+            ext[ey * ew + ex] = pixels[sy * w + sx];
+        }
+    }
+
+    // Precompute weight LUT (matches OpenCV's constructor)
+    let tw_sq = tw * tw;
+    let bin_shift = {
+        let mut p = 0u32;
+        while (1u32 << p) < tw_sq as u32 {
+            p += 1;
+        }
+        p
+    };
+    let almost_dist2actual: f64 = (1u64 << bin_shift) as f64 / tw_sq as f64;
+    // DistSquared::maxDist<uchar>() = sampleMax * sampleMax * channels = 255*255*1
+    let max_dist: i32 = 255 * 255;
+    let almost_max_dist = (max_dist as f64 / almost_dist2actual + 1.0) as usize;
+
+    // fixed_point_mult: max value that won't overflow i32 accumulation
+    let max_estimate_sum = sw as i64 * sw as i64 * 255i64;
+    let fixed_point_mult = (i32::MAX as i64 / max_estimate_sum).min(255) as i32;
+
+    let weight_threshold = (0.001 * fixed_point_mult as f64) as i32;
+
+    let mut lut = vec![0i32; almost_max_dist];
+    for ad in 0..almost_max_dist {
+        let dist = ad as f64 * almost_dist2actual;
+        // OpenCV DistSquared::calcWeight: exp(-dist / (h*h * channels))
+        // Note: -dist (NOT -dist*dist) because dist is already squared per-pixel distance.
+        // For grayscale (channels=1): exp(-dist / (h*h))
+        let wf = (-dist / (params.h as f64 * params.h as f64)).exp();
+        let wi = (fixed_point_mult as f64 * wf + 0.5) as i32;
+        lut[ad] = if wi < weight_threshold { 0 } else { wi };
+    }
+
+    let mut out = vec![0u8; w * h];
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut estimation: i64 = 0;
+            let mut weights_sum: i64 = 0;
+
+            // For each search window position
+            for sy in 0..sw {
+                for sx in 0..sw {
+                    // Compute SSD between patches (integer)
+                    let mut ssd: i32 = 0;
+                    for ty in 0..tw {
+                        for tx in 0..tw {
+                            let a_y = border + y - thr + ty;
+                            let a_x = border + x - thr + tx;
+                            let b_y = border + y - shr + sy - thr + ty;
+                            let b_x = border + x - shr + sx - thr + tx;
+                            let a = ext[a_y * ew + a_x] as i32;
+                            let b = ext[b_y * ew + b_x] as i32;
+                            ssd += (a - b) * (a - b);
+                        }
+                    }
+
+                    let almost_avg_dist = (ssd >> bin_shift) as usize;
+                    let weight = lut[almost_avg_dist.min(lut.len() - 1)] as i64;
+
+                    let p = ext[(border + y - shr + sy) * ew + (border + x - shr + sx)] as i64;
+                    estimation += weight * p;
+                    weights_sum += weight;
+                }
+            }
+
+            // divByWeightsSum: (estimation + weights_sum/2) / weights_sum
+            out[y * w + x] = if weights_sum > 0 {
+                ((estimation + weights_sum / 2) / weights_sum).clamp(0, 255) as u8
+            } else {
+                pixels[y * w + x]
+            };
+        }
+    }
+
+    Ok(out)
+}
+
+/// Classic NLM (Buades 2005) with float math.
+fn nlm_denoise_classic(
+    pixels: &[u8],
+    info: &ImageInfo,
+    params: &NlmParams,
+) -> Result<Vec<u8>, ImageError> {
     let w = info.width as usize;
     let h = info.height as usize;
     let ps = params.patch_size as usize;
@@ -2008,7 +2126,6 @@ pub fn nlm_denoise(
     let sr = ss / 2;
     let h2 = params.h * params.h;
     let patch_area = (ps * ps) as f32;
-    let opencv_mode = params.algorithm == NlmAlgorithm::OpenCv;
 
     let mut out = vec![0u8; w * h];
 
@@ -2016,7 +2133,6 @@ pub fn nlm_denoise(
         for x in 0..w {
             let mut weight_sum: f32 = 0.0;
             let mut pixel_sum: f32 = 0.0;
-            let mut max_weight: f32 = 0.0;
 
             let sy_start = (y as i32 - sr as i32).max(0) as usize;
             let sy_end = (y + sr + 1).min(h);
@@ -2025,48 +2141,21 @@ pub fn nlm_denoise(
 
             for sy in sy_start..sy_end {
                 for sx in sx_start..sx_end {
-                    // Skip self-pixel in OpenCV mode (add it separately)
-                    if opencv_mode && sy == y && sx == x {
-                        continue;
-                    }
-
                     let mut ssd: f32 = 0.0;
                     for py in 0..ps {
                         for ppx in 0..ps {
-                            let y1 = reflect101(
-                                y as isize + py as isize - pr as isize,
-                                h as isize,
-                            ) as usize;
-                            let x1 = reflect101(
-                                x as isize + ppx as isize - pr as isize,
-                                w as isize,
-                            ) as usize;
-                            let y2 = reflect101(
-                                sy as isize + py as isize - pr as isize,
-                                h as isize,
-                            ) as usize;
-                            let x2 = reflect101(
-                                sx as isize + ppx as isize - pr as isize,
-                                w as isize,
-                            ) as usize;
+                            let y1 = reflect101(y as isize + py as isize - pr as isize, h as isize) as usize;
+                            let x1 = reflect101(x as isize + ppx as isize - pr as isize, w as isize) as usize;
+                            let y2 = reflect101(sy as isize + py as isize - pr as isize, h as isize) as usize;
+                            let x2 = reflect101(sx as isize + ppx as isize - pr as isize, w as isize) as usize;
                             let d = pixels[y1 * w + x1] as f32 - pixels[y2 * w + x2] as f32;
                             ssd += d * d;
                         }
                     }
                     let weight = (-ssd / (patch_area * h2)).exp();
-                    if opencv_mode && weight > max_weight {
-                        max_weight = weight;
-                    }
                     weight_sum += weight;
                     pixel_sum += weight * pixels[sy * w + sx] as f32;
                 }
-            }
-
-            // OpenCV mode: self-pixel gets max(other_weights) instead of exp(0)=1
-            if opencv_mode {
-                let self_weight = max_weight.max(f32::MIN_POSITIVE);
-                weight_sum += self_weight;
-                pixel_sum += self_weight * pixels[y * w + x] as f32;
             }
 
             out[y * w + x] = if weight_sum > 0.0 {
