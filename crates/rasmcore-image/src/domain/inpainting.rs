@@ -306,6 +306,7 @@ fn telea_inpaint(
 ///   dir = dot(r, gradT)
 ///
 /// Final value = Ia/s + (Jx+Jy) / sqrt(Jx^2+Jy^2) (gradient correction)
+#[allow(clippy::too_many_arguments)]
 fn telea_interpolate(
     pixels: &[u8],
     flags: &[u8],
