@@ -534,3 +534,183 @@ sys.stdout.buffer.write(result.tobytes())
 
     cleanup(&[&input_path]);
 }
+
+// ─── Retinex Validation ─────────────────────────────────────────────────────
+
+#[test]
+fn ssr_vs_python_opencv_blur() {
+    let (w, h) = (32u32, 32u32);
+    let pixels = generate_midtone_image(w, h);
+    let info = test_info(w, h);
+    let sigma = 15.0f32;
+
+    let ours = filters::retinex_ssr(&pixels, &info, sigma).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    let script = format!(
+        r#"
+import numpy as np
+from PIL import Image
+import cv2
+import sys
+
+img = np.array(Image.open('{input_path}').convert('RGB')).astype(np.float32)
+h, w, _ = img.shape
+sigma = {sigma}
+
+# OpenCV GaussianBlur with auto ksize (matching our gaussian_blur_cv)
+ksize = int(round(sigma * 6 + 1))
+if ksize % 2 == 0:
+    ksize += 1
+ksize = max(ksize, 3)
+blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma)
+
+# SSR: log(I) - log(blur(I)), normalized to [0,255]
+orig = np.maximum(img, 1.0)
+surround = np.maximum(blurred, 1.0)
+retinex = np.log(orig) - np.log(surround)
+
+rmin = retinex.min()
+rmax = retinex.max()
+rng = max(rmax - rmin, 1e-6)
+result = np.clip(np.round((retinex - rmin) / rng * 255.0), 0, 255).astype(np.uint8)
+
+sys.stdout.buffer.write(result.tobytes())
+"#,
+        input_path = input_path,
+        sigma = sigma,
+    );
+    let reference = run_python_ref(&script);
+
+    let mae = mean_absolute_error(&ours, &reference);
+    eprintln!("  SSR vs Python+OpenCV (sigma={sigma}): MAE={mae:.4}");
+
+    assert!(
+        mae < 1.0,
+        "SSR MAE={mae:.4} too high (expected < 1.0, same algorithm + OpenCV blur)"
+    );
+
+    cleanup(&[&input_path]);
+}
+
+#[test]
+fn msr_vs_python_opencv_blur() {
+    let (w, h) = (32u32, 32u32);
+    let pixels = generate_midtone_image(w, h);
+    let info = test_info(w, h);
+
+    let ours = filters::retinex_msr(&pixels, &info, &[15.0, 80.0, 250.0]).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    let script = format!(
+        r#"
+import numpy as np
+from PIL import Image
+import cv2
+import sys
+
+img = np.array(Image.open('{input_path}').convert('RGB')).astype(np.float32)
+h, w, _ = img.shape
+sigmas = [15.0, 80.0, 250.0]
+num_scales = float(len(sigmas))
+
+retinex = np.zeros_like(img)
+for sigma in sigmas:
+    ksize = int(round(sigma * 6 + 1))
+    if ksize % 2 == 0:
+        ksize += 1
+    ksize = max(ksize, 3)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma)
+    orig = np.maximum(img, 1.0)
+    surround = np.maximum(blurred, 1.0)
+    retinex += (np.log(orig) - np.log(surround)) / num_scales
+
+rmin = retinex.min()
+rmax = retinex.max()
+rng = max(rmax - rmin, 1e-6)
+result = np.clip(np.round((retinex - rmin) / rng * 255.0), 0, 255).astype(np.uint8)
+
+sys.stdout.buffer.write(result.tobytes())
+"#,
+        input_path = input_path,
+    );
+    let reference = run_python_ref(&script);
+
+    let mae = mean_absolute_error(&ours, &reference);
+    eprintln!("  MSR vs Python+OpenCV (3 scales): MAE={mae:.4}");
+
+    // Multi-scale accumulates per-scale FP differences (~0.6 per scale × 3 scales)
+    assert!(
+        mae < 2.0,
+        "MSR MAE={mae:.4} too high (expected < 2.0, FP accumulation across 3 scales)"
+    );
+
+    cleanup(&[&input_path]);
+}
+
+#[test]
+fn msrcr_vs_python_opencv_blur() {
+    let (w, h) = (32u32, 32u32);
+    let pixels = generate_midtone_image(w, h);
+    let info = test_info(w, h);
+    let alpha = 125.0f32;
+    let beta = 46.0f32;
+
+    let ours = filters::retinex_msrcr(&pixels, &info, &[15.0, 80.0, 250.0], alpha, beta).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    let script = format!(
+        r#"
+import numpy as np
+from PIL import Image
+import cv2
+import sys
+
+img = np.array(Image.open('{input_path}').convert('RGB')).astype(np.float32)
+h, w, _ = img.shape
+sigmas = [15.0, 80.0, 250.0]
+alpha = {alpha}
+beta = {beta}
+num_scales = float(len(sigmas))
+
+# MSR
+msr = np.zeros_like(img)
+for sigma in sigmas:
+    ksize = int(round(sigma * 6 + 1))
+    if ksize % 2 == 0:
+        ksize += 1
+    ksize = max(ksize, 3)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma)
+    orig = np.maximum(img, 1.0)
+    surround = np.maximum(blurred, 1.0)
+    msr += (np.log(orig) - np.log(surround)) / num_scales
+
+# Color restoration
+sum_ch = np.maximum(img.sum(axis=2, keepdims=True), 1.0)
+color_restore = beta * np.log(alpha * np.maximum(img, 1.0) / sum_ch)
+msrcr = color_restore * msr
+
+rmin = msrcr.min()
+rmax = msrcr.max()
+rng = max(rmax - rmin, 1e-6)
+result = np.clip(np.round((msrcr - rmin) / rng * 255.0), 0, 255).astype(np.uint8)
+
+sys.stdout.buffer.write(result.tobytes())
+"#,
+        input_path = input_path,
+        alpha = alpha,
+        beta = beta,
+    );
+    let reference = run_python_ref(&script);
+
+    let mae = mean_absolute_error(&ours, &reference);
+    eprintln!("  MSRCR vs Python+OpenCV (3 scales, alpha={alpha}, beta={beta}): MAE={mae:.4}");
+
+    // Multi-scale + color restoration accumulates FP differences
+    assert!(
+        mae < 2.0,
+        "MSRCR MAE={mae:.4} too high (expected < 2.0, FP accumulation across 3 scales)"
+    );
+
+    cleanup(&[&input_path]);
+}

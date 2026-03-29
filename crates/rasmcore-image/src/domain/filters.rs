@@ -2706,6 +2706,72 @@ fn upsample_2x(data: &[f32], sw: usize, sh: usize, tw: usize, th: usize) -> Vec<
     out
 }
 
+// ─── OpenCV-Compatible Gaussian Blur ────────────────────────────────────────
+
+/// Gaussian blur with OpenCV-compatible kernel and border handling.
+///
+/// Generates a Gaussian kernel matching `cv2.getGaussianKernel` and applies it
+/// via our `convolve()` function (which uses `BORDER_REFLECT_101` and is already
+/// pixel-exact against OpenCV `filter2D`).
+///
+/// This is a separate implementation from `blur()` (which uses libblur with
+/// `BORDER_REPLICATE`). Use this when pixel-exact OpenCV parity is required.
+///
+/// - `sigma`: Gaussian standard deviation
+///
+/// Future path: this could replace `blur()` as the primary Gaussian implementation
+/// if full OpenCV alignment is desired across all filters. SIMD optimization can
+/// be added later and validated against this reference-aligned output.
+pub fn gaussian_blur_cv(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if sigma <= 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    // OpenCV kernel size for 8U: ksize = round(sigma * 6 + 1) | 1
+    let ksize = {
+        let k = (sigma * 6.0 + 1.0).round() as usize;
+        if k % 2 == 0 { k + 1 } else { k }
+    };
+    let ksize = ksize.max(3);
+
+    // Generate 2D Gaussian kernel (separable: outer product of 1D kernel)
+    let k1d = gaussian_kernel_1d(ksize, sigma);
+    let mut kernel_2d = vec![0.0f32; ksize * ksize];
+    for y in 0..ksize {
+        for x in 0..ksize {
+            kernel_2d[y * ksize + x] = k1d[y] * k1d[x];
+        }
+    }
+
+    // Delegate to convolve() which is pixel-exact against OpenCV filter2D
+    // (uses BORDER_REFLECT_101 and is already validated)
+    convolve(pixels, info, &kernel_2d, ksize, ksize, 1.0)
+}
+
+/// Generate a 1D Gaussian kernel matching OpenCV's `getGaussianKernel`.
+///
+/// `k[i] = exp(-0.5 * ((i - center) / sigma)^2)`, normalized to sum=1.
+fn gaussian_kernel_1d(ksize: usize, sigma: f32) -> Vec<f32> {
+    let center = (ksize / 2) as f32;
+    let mut kernel = Vec::with_capacity(ksize);
+    let mut sum = 0.0f32;
+    for i in 0..ksize {
+        let x = i as f32 - center;
+        let v = (-0.5 * (x / sigma).powi(2)).exp();
+        kernel.push(v);
+        sum += v;
+    }
+    let inv_sum = 1.0 / sum;
+    for v in &mut kernel {
+        *v *= inv_sum;
+    }
+    kernel
+}
+
 // ─── Retinex Enhancement ────────────────────────────────────────────────────
 
 /// Single-Scale Retinex (SSR).
@@ -2736,8 +2802,8 @@ pub fn retinex_ssr(
     };
     let n = (info.width as usize) * (info.height as usize);
 
-    // Gaussian blur for surround function
-    let blurred = blur(pixels, info, sigma)?;
+    // Gaussian blur for surround function (OpenCV-compatible for reference alignment)
+    let blurred = gaussian_blur_cv(pixels, info, sigma)?;
 
     // Compute log(I) - log(blur(I)) per channel, then normalize
     let mut retinex = vec![0.0f32; n * 3];
@@ -2807,7 +2873,7 @@ pub fn retinex_msr(
     let mut retinex = vec![0.0f32; n * 3];
 
     for &sigma in sigmas {
-        let blurred = blur(pixels, info, sigma)?;
+        let blurred = gaussian_blur_cv(pixels, info, sigma)?;
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
@@ -2875,10 +2941,10 @@ pub fn retinex_msrcr(
     let n = (info.width as usize) * (info.height as usize);
     let num_scales = sigmas.len() as f32;
 
-    // Compute MSR
+    // Compute MSR (OpenCV-compatible blur for reference alignment)
     let mut msr = vec![0.0f32; n * 3];
     for &sigma in sigmas {
-        let blurred = blur(pixels, info, sigma)?;
+        let blurred = gaussian_blur_cv(pixels, info, sigma)?;
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
