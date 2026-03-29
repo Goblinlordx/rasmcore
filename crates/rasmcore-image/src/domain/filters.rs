@@ -2706,6 +2706,226 @@ fn upsample_2x(data: &[f32], sw: usize, sh: usize, tw: usize, th: usize) -> Vec<
     out
 }
 
+// ─── Retinex Enhancement ────────────────────────────────────────────────────
+
+/// Single-Scale Retinex (SSR).
+///
+/// `R(x,y) = log(I(x,y)) - log(G(x,y,sigma) * I(x,y))`
+///
+/// Enhances local contrast by removing the illumination component estimated
+/// via Gaussian blur. Output is normalized to [0, 255].
+///
+/// - `sigma`: Gaussian scale (typical: 80.0 for general enhancement)
+///
+/// Reference: Jobson, Rahman, Woodell — "Properties and Performance of a
+/// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
+pub fn retinex_ssr(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let channels = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "retinex requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let n = (info.width as usize) * (info.height as usize);
+
+    // Gaussian blur for surround function
+    let blurred = blur(pixels, info, sigma)?;
+
+    // Compute log(I) - log(blur(I)) per channel, then normalize
+    let mut retinex = vec![0.0f32; n * 3];
+    let mut min_val = f32::MAX;
+    let mut max_val = f32::MIN;
+
+    for i in 0..n {
+        let pi = i * channels;
+        for c in 0..3 {
+            let orig = (pixels[pi + c] as f32).max(1.0); // avoid log(0)
+            let surround = (blurred[pi + c] as f32).max(1.0);
+            let r = orig.ln() - surround.ln();
+            retinex[i * 3 + c] = r;
+            min_val = min_val.min(r);
+            max_val = max_val.max(r);
+        }
+    }
+
+    // Normalize to [0, 255]
+    let range = (max_val - min_val).max(1e-6);
+    let mut result = vec![0u8; pixels.len()];
+    for i in 0..n {
+        let pi = i * channels;
+        for c in 0..3 {
+            let v = (retinex[i * 3 + c] - min_val) / range * 255.0;
+            result[pi + c] = v.round().clamp(0.0, 255.0) as u8;
+        }
+        if channels == 4 {
+            result[pi + 3] = pixels[pi + 3]; // alpha
+        }
+    }
+
+    Ok(result)
+}
+
+/// Multi-Scale Retinex (MSR).
+///
+/// Averages SSR at multiple Gaussian scales for balanced enhancement across
+/// fine and coarse detail. Default scales: sigma = [15, 80, 250].
+///
+/// `MSR(x,y) = (1/N) * sum_i [log(I(x,y)) - log(G(x,y,sigma_i) * I(x,y))]`
+///
+/// - `sigmas`: Gaussian scales (typical: &[15.0, 80.0, 250.0])
+///
+/// Reference: Jobson, Rahman, Woodell — "A Multiscale Retinex for Bridging
+/// the Gap Between Color Images and the Human Observation of Scenes"
+/// (IEEE Trans. Image Processing, 1997)
+pub fn retinex_msr(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigmas: &[f32],
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let channels = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "retinex requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let n = (info.width as usize) * (info.height as usize);
+    let num_scales = sigmas.len() as f32;
+
+    // Accumulate retinex across scales
+    let mut retinex = vec![0.0f32; n * 3];
+
+    for &sigma in sigmas {
+        let blurred = blur(pixels, info, sigma)?;
+        for i in 0..n {
+            let pi = i * channels;
+            for c in 0..3 {
+                let orig = (pixels[pi + c] as f32).max(1.0);
+                let surround = (blurred[pi + c] as f32).max(1.0);
+                retinex[i * 3 + c] += (orig.ln() - surround.ln()) / num_scales;
+            }
+        }
+    }
+
+    // Normalize to [0, 255]
+    let mut min_val = f32::MAX;
+    let mut max_val = f32::MIN;
+    for &v in &retinex {
+        min_val = min_val.min(v);
+        max_val = max_val.max(v);
+    }
+    let range = (max_val - min_val).max(1e-6);
+
+    let mut result = vec![0u8; pixels.len()];
+    for i in 0..n {
+        let pi = i * channels;
+        for c in 0..3 {
+            let v = (retinex[i * 3 + c] - min_val) / range * 255.0;
+            result[pi + c] = v.round().clamp(0.0, 255.0) as u8;
+        }
+        if channels == 4 {
+            result[pi + 3] = pixels[pi + 3];
+        }
+    }
+
+    Ok(result)
+}
+
+/// Multi-Scale Retinex with Color Restoration (MSRCR).
+///
+/// Extends MSR with a color restoration factor that prevents desaturation:
+/// `MSRCR(x,y) = C(x,y) * MSR(x,y)`
+/// where `C(x,y) = beta * log(alpha * I_c / sum(I_channels))`
+///
+/// - `sigmas`: Gaussian scales (typical: &[15.0, 80.0, 250.0])
+/// - `alpha`: color restoration nonlinearity (typical: 125.0)
+/// - `beta`: color restoration gain (typical: 46.0)
+///
+/// Reference: Jobson, Rahman, Woodell — "A Multiscale Retinex for Bridging
+/// the Gap Between Color Images and the Human Observation of Scenes"
+/// (IEEE Trans. Image Processing, 1997)
+pub fn retinex_msrcr(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigmas: &[f32],
+    alpha: f32,
+    beta: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let channels = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "retinex requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let n = (info.width as usize) * (info.height as usize);
+    let num_scales = sigmas.len() as f32;
+
+    // Compute MSR
+    let mut msr = vec![0.0f32; n * 3];
+    for &sigma in sigmas {
+        let blurred = blur(pixels, info, sigma)?;
+        for i in 0..n {
+            let pi = i * channels;
+            for c in 0..3 {
+                let orig = (pixels[pi + c] as f32).max(1.0);
+                let surround = (blurred[pi + c] as f32).max(1.0);
+                msr[i * 3 + c] += (orig.ln() - surround.ln()) / num_scales;
+            }
+        }
+    }
+
+    // Color restoration: C(x,y) = beta * log(alpha * I_c / sum(I))
+    let mut msrcr = vec![0.0f32; n * 3];
+    for i in 0..n {
+        let pi = i * channels;
+        let sum_channels = pixels[pi] as f32 + pixels[pi + 1] as f32 + pixels[pi + 2] as f32;
+        let sum_channels = sum_channels.max(1.0);
+        for c in 0..3 {
+            let ic = (pixels[pi + c] as f32).max(1.0);
+            let color_restore = beta * (alpha * ic / sum_channels).ln();
+            msrcr[i * 3 + c] = color_restore * msr[i * 3 + c];
+        }
+    }
+
+    // Normalize to [0, 255]
+    let mut min_val = f32::MAX;
+    let mut max_val = f32::MIN;
+    for &v in &msrcr {
+        min_val = min_val.min(v);
+        max_val = max_val.max(v);
+    }
+    let range = (max_val - min_val).max(1e-6);
+
+    let mut result = vec![0u8; pixels.len()];
+    for i in 0..n {
+        let pi = i * channels;
+        for c in 0..3 {
+            let v = (msrcr[i * 3 + c] - min_val) / range * 255.0;
+            result[pi + c] = v.round().clamp(0.0, 255.0) as u8;
+        }
+        if channels == 4 {
+            result[pi + 3] = pixels[pi + 3];
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3896,5 +4116,113 @@ mod nlm_tests {
             width: 4, height: 4, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
         };
         assert!(nlm_denoise(&px, &info, &NlmParams::default()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod retinex_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn make_rgb(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
+        let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                pixels.push(((x * 200 / w.max(1)) + 30) as u8);
+                pixels.push(((y * 200 / h.max(1)) + 30) as u8);
+                pixels.push(128u8);
+            }
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        (pixels, info)
+    }
+
+    #[test]
+    fn ssr_produces_output() {
+        let (px, info) = make_rgb(32, 32);
+        let result = retinex_ssr(&px, &info, 80.0).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn ssr_increases_dynamic_range() {
+        // Low-contrast input
+        let (w, h) = (32u32, 32u32);
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for i in 0..(w * h) as usize {
+            pixels[i * 3] = 100 + (i % 20) as u8;
+            pixels[i * 3 + 1] = 110 + (i % 15) as u8;
+            pixels[i * 3 + 2] = 120;
+        }
+        let info = ImageInfo {
+            width: w, height: h, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
+        };
+        let result = retinex_ssr(&pixels, &info, 80.0).unwrap();
+
+        let stats_before = crate::domain::histogram::statistics(&pixels, &info).unwrap();
+        let stats_after = crate::domain::histogram::statistics(&result, &info).unwrap();
+        let range_before = stats_before[0].max as f32 - stats_before[0].min as f32;
+        let range_after = stats_after[0].max as f32 - stats_after[0].min as f32;
+        assert!(
+            range_after > range_before,
+            "SSR should increase dynamic range: {range_before} -> {range_after}"
+        );
+    }
+
+    #[test]
+    fn msr_produces_output() {
+        let (px, info) = make_rgb(32, 32);
+        let result = retinex_msr(&px, &info, &[15.0, 80.0, 250.0]).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn msr_single_scale_matches_ssr() {
+        let (px, info) = make_rgb(32, 32);
+        let ssr = retinex_ssr(&px, &info, 80.0).unwrap();
+        let msr = retinex_msr(&px, &info, &[80.0]).unwrap();
+        // MSR with one scale should equal SSR
+        assert_eq!(ssr, msr, "MSR with single scale should match SSR");
+    }
+
+    #[test]
+    fn msrcr_produces_output() {
+        let (px, info) = make_rgb(32, 32);
+        let result = retinex_msrcr(&px, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn msrcr_preserves_alpha() {
+        let (w, h) = (16u32, 16u32);
+        let mut pixels = vec![128u8; (w * h * 4) as usize];
+        for i in 0..(w * h) as usize {
+            pixels[i * 4] = 100 + (i % 50) as u8;
+            pixels[i * 4 + 1] = 120;
+            pixels[i * 4 + 2] = 80;
+            pixels[i * 4 + 3] = 200;
+        }
+        let info = ImageInfo {
+            width: w, height: h, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb,
+        };
+        let result = retinex_msrcr(&pixels, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
+        for i in 0..(w * h) as usize {
+            assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
+        }
+    }
+
+    #[test]
+    fn msrcr_output_uses_full_range() {
+        let (px, info) = make_rgb(64, 64);
+        let result = retinex_msrcr(&px, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
+        let stats = crate::domain::histogram::statistics(&result, &info).unwrap();
+        // Normalized output should span most of 0-255
+        assert!(stats[0].min <= 5, "min should be near 0, got {}", stats[0].min);
+        assert!(stats[0].max >= 250, "max should be near 255, got {}", stats[0].max);
     }
 }
