@@ -311,6 +311,13 @@ fn encode_slice_data(
 
             // Step 5: Encode coefficients via CABAC (if non-zero)
             if encode_residual {
+                #[cfg(test)]
+                if ctu_x == 0 && ctu_y == 0 {
+                    let nz: Vec<_> = quant_levels.iter().enumerate()
+                        .filter(|(_, v)| **v != 0).take(5)
+                        .map(|(i, v)| (i, *v)).collect();
+                    eprintln!("  encode_residual_coeffs input: first 5 nonzero = {:?}", nz);
+                }
                 syntax_enc::encode_residual_coeffs(
                     &mut cabac,
                     &mut contexts,
@@ -321,44 +328,21 @@ fn encode_slice_data(
             }
 
             // Step 6: Reconstruct (for neighbor prediction in subsequent CTUs)
-            // Dequantize → inverse DCT → add prediction → clip → store
+            // CRITICAL: Must use the EXACT same reconstruction path as the decoder
+            // (transform::reconstruct_residual) to ensure prediction references match.
             if encode_residual {
-                let mut recon_coeffs = quant_levels.clone();
-                crate::transform::dequant::dequantize_block(
-                    &mut recon_coeffs,
+                let mut recon_residual = vec![0i16; cu_size * cu_size];
+                crate::transform::reconstruct_residual(
+                    &quant_levels,
+                    &mut recon_residual,
                     log2_size,
                     qp,
-                    8,
-                );
-
-                let mut recon_residual = vec![0i16; cu_size * cu_size];
-                match cu_size {
-                    4 => {
-                        let input: [i16; 16] = recon_coeffs[..16].try_into().unwrap();
-                        let output: &mut [i16; 16] =
-                            (&mut recon_residual[..16]).try_into().unwrap();
-                        rasmcore_dct::inverse_dct_4x4(&input, output);
-                    }
-                    8 => {
-                        let input: [i16; 64] = recon_coeffs[..64].try_into().unwrap();
-                        let output: &mut [i16; 64] =
-                            (&mut recon_residual[..64]).try_into().unwrap();
-                        rasmcore_dct::inverse_dct_8x8(&input, output);
-                    }
-                    16 => {
-                        let input: [i16; 256] = recon_coeffs[..256].try_into().unwrap();
-                        let output: &mut [i16; 256] =
-                            (&mut recon_residual[..256]).try_into().unwrap();
-                        rasmcore_dct::inverse_dct_16x16(&input, output);
-                    }
-                    32 => {
-                        let input: [i16; 1024] = recon_coeffs[..1024].try_into().unwrap();
-                        let output: &mut [i16; 1024] =
-                            (&mut recon_residual[..1024]).try_into().unwrap();
-                        rasmcore_dct::inverse_dct_32x32(&input, output);
-                    }
-                    _ => {}
-                }
+                    8,     // bit_depth
+                    false, // not 4x4 intra luma (we use 32x32 CUs)
+                    None,  // no scaling list
+                    0,     // default matrix ID
+                )
+                .unwrap();
 
                 for row in 0..cu_size {
                     for col in 0..cu_size {
@@ -714,9 +698,78 @@ mod tests {
         eprintln!("  Row 0 original: {:?}", &y[..8]);
         eprintln!("  Row 0 decoded:  {:?}", &frame.y_plane[..8]);
 
+        // Also trace: what did the decoder see in the CU?
+        // Parse the bitstream manually to check the first CU
+        let hevc_data = &bitstream;
+        use crate::nal::NalIterator;
+        for nal_data in NalIterator::new(hevc_data) {
+            let nal_unit = crate::nal::parse_nal_unit(nal_data).unwrap();
+            if nal_unit.nal_type.is_vcl() {
+                // Parse slice header to find data_offset
+                let sps = crate::encode::params_write::default_sps(width, height);
+                let pps = crate::encode::params_write::default_pps(config.qp);
+                let sh = crate::syntax::parse_slice_header(
+                    &nal_unit.rbsp,
+                    &sps,
+                    &pps,
+                    nal_unit.nal_type,
+                )
+                .unwrap();
+                eprintln!(
+                    "  Slice header: data_offset={}, qp_delta={}, qp={}",
+                    sh.data_offset,
+                    sh.slice_qp_delta,
+                    pps.init_qp + sh.slice_qp_delta
+                );
+
+                // Decode first CTU
+                let cabac_start = sh.data_offset;
+                let mut cabac =
+                    crate::cabac::CabacDecoder::new(&nal_unit.rbsp[cabac_start..]).unwrap();
+                let mut contexts = crate::syntax::init_syntax_contexts(
+                    pps.init_qp + sh.slice_qp_delta,
+                );
+                let mut dm = crate::syntax::CuDepthMap::new(
+                    sps.pic_width,
+                    sps.pic_height,
+                    sps.min_cb_size(),
+                );
+                let ctu = crate::syntax::decode_ctu(
+                    &mut cabac, &mut contexts, &sps, &pps, 0, 0, &mut dm,
+                )
+                .unwrap();
+
+                // Show decoded CU info
+                for cu in &ctu.cus {
+                    let has_coeffs = cu
+                        .tu
+                        .as_ref()
+                        .map_or(false, |t| t.cbf_luma && !t.luma_coeffs.is_empty());
+                    if has_coeffs {
+                        let coeffs = &cu.tu.as_ref().unwrap().luma_coeffs;
+                        let nz = coeffs.iter().filter(|&&v| v != 0).count();
+                        eprintln!(
+                            "  Decoded CU(0,0): size={}, cbf=true, DC={}, nonzero={}",
+                            cu.size,
+                            coeffs[0],
+                            nz
+                        );
+                    } else {
+                        eprintln!(
+                            "  Decoded CU(0,0): size={}, cbf={}",
+                            cu.size,
+                            cu.tu.as_ref().map_or(false, |t| t.cbf_luma)
+                        );
+                    }
+                }
+                break;
+            }
+        }
+        eprintln!();
+
         assert!(
-            psnr > 5.0,
-            "PSNR should be > 5dB, got {psnr:.1}dB"
+            psnr > 40.0,
+            "PSNR should be > 40dB at QP=22, got {psnr:.1}dB"
         );
     }
 

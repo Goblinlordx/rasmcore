@@ -284,7 +284,7 @@ pub fn default_pps(qp: i32) -> Pps {
         dependent_slice_segments_enabled: false,
         output_flag_present: false,
         num_extra_slice_header_bits: 0,
-        sign_data_hiding_enabled: true,
+        sign_data_hiding_enabled: false,
         cabac_init_present: false,
         num_ref_idx_l0_default_active: 1,
         num_ref_idx_l1_default_active: 1,
