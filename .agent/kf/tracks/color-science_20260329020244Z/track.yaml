@@ -5,14 +5,11 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: Perceptually uniform color spaces (CIE Lab, OKLab), white balance via gray-world
-    and illuminant estimation, chromatic adaptation (Bradford transform), and 4-point
-    perspective warp (homography). Foundations for pro-grade color work.
-  context: Lab and OKLab are perceptually uniform color spaces essential for correct
-    color difference computation, gamut mapping, and perceptual blending. White balance
-    corrects color casts. Bradford chromatic adaptation is the standard for converting
-    between illuminants (D50/D65/A). Perspective warp (homography) enables keystone
-    correction and document scanning.
+  summary: Perceptually uniform color spaces (CIE Lab, OKLab), white balance via gray-world and illuminant estimation, chromatic
+    adaptation (Bradford transform), and 4-point perspective warp (homography). Foundations for pro-grade color work.
+  context: Lab and OKLab are perceptually uniform color spaces essential for correct color difference computation, gamut mapping,
+    and perceptual blending. White balance corrects color casts. Bradford chromatic adaptation is the standard for converting
+    between illuminants (D50/D65/A). Perspective warp (homography) enables keystone correction and document scanning.
   codebase_analysis: ''
   acceptance_criteria:
   - RGB to/from CIE Lab conversion matching OpenCV within deltaE < 0.5
@@ -21,24 +18,23 @@ spec:
   - Bradford chromatic adaptation between D50/D65/A illuminants
   - 4-point perspective warp with bilinear interpolation
   out_of_scope: ACES/OCIO pipeline. CMYK. Spectral rendering. ICC profile creation.
-  technical_notes: 'Lab: RGB → XYZ (via sRGB matrix) → Lab (via cube root). OKLab:
-    Ottosson 2020 — direct matrix from linear sRGB, simpler and more uniform than
-    Lab. White balance: gray-world (mean R=mean G=mean B), max-RGB, or manual temperature/tint.
-    Bradford: 3x3 cone response matrix for illuminant adaptation. Perspective warp:
-    solve 4-point homography, bilinear sample with inverse mapping.'
+  technical_notes: 'Lab: RGB → XYZ (via sRGB matrix) → Lab (via cube root). OKLab: Ottosson 2020 — direct matrix from linear
+    sRGB, simpler and more uniform than Lab. White balance: gray-world (mean R=mean G=mean B), max-RGB, or manual temperature/tint.
+    Bradford: 3x3 cone response matrix for illuminant adaptation. Perspective warp: solve 4-point homography, bilinear sample
+    with inverse mapping.'
 plan:
 - phase: Color Science
   tasks:
   - text: Implement RGB to/from CIE Lab via XYZ intermediate (D65 illuminant)
-    done: false
+    done: true
   - text: Implement RGB to/from OKLab per Ottosson 2020
-    done: false
+    done: true
   - text: Implement gray-world and manual temperature/tint white balance
-    done: false
+    done: true
   - text: Implement Bradford chromatic adaptation (D50/D65/A matrices)
-    done: false
+    done: true
   - text: Implement 4-point perspective warp via homography solve + bilinear sample
-    done: false
+    done: true
   - text: Unit test Lab roundtrip deltaE < 0.5 vs OpenCV
-    done: false
+    done: true
 extra: {}
