@@ -1,0 +1,105 @@
+id: 16bit-foundation_20260329020300Z
+title: 16-Bit Pipeline Foundation — Types, WIT, Decoder, Encoder
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Add Rgb16/Rgba16 pixel formats to the type system, WIT interface, decoder,
+    and encoder. Establishes the foundation for full 16-bit pipeline support.
+  context: |
+    ImageMagick and libvips process at 16-bit internally, preserving precision
+    through editing chains. Our pipeline is 8-bit only (except Gray16 decode).
+    Professional workflows (photography, medical, scientific) require 16-bit
+    to avoid banding and cumulative precision loss.
+
+    This track adds the type infrastructure and I/O (decode/encode) so that
+    16-bit images can enter and exit the pipeline. Processing operations are
+    added in subsequent tracks.
+  codebase_analysis: |
+    Current state:
+    - types.rs: Gray16 exists. No Rgb16, Rgba16, Bgr16, Bgra16.
+    - DecodedImage.pixels is Vec<u8> — 16-bit stored as LE byte pairs. No change needed.
+    - Decoder: Gray16 decode works via image crate to_luma16(). Rgb16/Rgba16 not wired.
+    - Encoder: PNG/TIFF can theoretically output 16-bit via image crate. Not wired.
+    - WIT (types.wit): Gray16 in enum. Need Rgb16/Rgba16.
+    - pipeline/graph.rs: bytes_per_pixel() handles Gray16 (2). Need Rgb16 (6), Rgba16 (8).
+    - adapter/mod.rs: Gray16 conversion exists. Need Rgb16/Rgba16 conversions.
+
+    Key design: Vec<u8> with LE byte pairs (same pattern as existing Gray16).
+    Format conversion: u8*257 for upscale, (u16+128)/257 for downscale (precise).
+  acceptance_criteria:
+    - Rgb16 and Rgba16 added to PixelFormat enum
+    - WIT types.wit updated with rgb16, rgba16 variants
+    - Bindings regenerated and adapter conversions updated
+    - bytes_per_pixel() returns 6 for Rgb16, 8 for Rgba16
+    - Decoder detects and decodes 16-bit PNG (Rgb16, Rgba16, Gray16)
+    - Decoder detects and decodes 16-bit TIFF
+    - Encoder outputs 16-bit PNG (Rgb16, Rgba16, Gray16)
+    - Encoder outputs 16-bit TIFF (Rgb16, Rgba16, Gray16)
+    - Format conversion functions added (Rgb8 to Rgb16, Rgb16 to Rgb8, etc.)
+    - Decode-encode roundtrip test passes for 16-bit PNG and TIFF
+    - All existing 8-bit tests continue to pass
+  out_of_scope: |
+    16-bit processing (point ops, filters, histogram) — separate tracks.
+    Bgr16/Bgra16 variants (add when needed).
+    JP2/JXL/FITS 16-bit — handle in format-specific tracks.
+    YUV 16-bit formats.
+  technical_notes: |
+    Pixel storage: Vec<u8> with little-endian byte pairs. Read via
+    u16::from_le_bytes([lo, hi]). Write via u16::to_le_bytes().
+
+    Format conversion (precise, no precision loss):
+      u8 -> u16: value * 257 (maps 0->0, 255->65535 exactly)
+      u16 -> u8: (value + 128) / 257 (rounds correctly)
+
+    image crate support:
+      Decode: to_rgb16() -> ImageBuffer<Rgb<u16>>
+      Encode: DynamicImage::ImageRgb16(buf) -> PNG/TIFF
+
+    fast_image_resize: supports U16x3, U16x4, U16 pixel types.
+plan:
+  - phase: Type System
+    tasks:
+      - text: Add Rgb16 and Rgba16 to PixelFormat enum in types.rs
+        done: false
+      - text: Update bytes_per_pixel() in pipeline/graph.rs for Rgb16 (6) and Rgba16 (8)
+        done: false
+      - text: Add rgb16 and rgba16 to WIT types.wit and regenerate bindings
+        done: false
+      - text: Update adapter/mod.rs with Rgb16/Rgba16 conversions
+        done: false
+  - phase: Format Conversion
+    tasks:
+      - text: Add convert_format() support for Rgb8-to-Rgb16 and Rgb16-to-Rgb8 using precise scaling
+        done: false
+      - text: Add convert_format() for Rgba8-to-Rgba16, Rgba16-to-Rgba8, Gray8-to-Gray16, Gray16-to-Gray8
+        done: false
+      - text: Add convert_format() for cross-depth (Rgb16-to-Rgba16, Gray16-to-Rgb16, etc.)
+        done: false
+  - phase: Decoder
+    tasks:
+      - text: Update detect_pixel_format() to map ColorType::Rgb16 and Rgba16
+        done: false
+      - text: Add Rgb16 and Rgba16 decode paths in decode() using to_rgb16()/to_rgba16()
+        done: false
+      - text: Add 16-bit TIFF decode support (verify image crate handles it)
+        done: false
+  - phase: Encoder
+    tasks:
+      - text: Update PNG encoder to output 16-bit when input is Rgb16/Rgba16/Gray16
+        done: false
+      - text: Update TIFF encoder to output 16-bit when input is Rgb16/Rgba16/Gray16
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test decode-encode roundtrip for 16-bit PNG (gradient, verify no precision loss)
+        done: false
+      - text: Test decode-encode roundtrip for 16-bit TIFF
+        done: false
+      - text: Test format conversion roundtrips (Rgb8 to Rgb16 to Rgb8 preserves values)
+        done: false
+      - text: Verify all existing 8-bit tests still pass
+        done: false
+extra: {}
