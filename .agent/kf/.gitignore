@@ -1,0 +1,4 @@
+# Transient artifacts — not tracked in git
+*.lock
+*.tmp
+_reports/*.tmp
