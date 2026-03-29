@@ -1,0 +1,75 @@
+id: filter-trait-registry_20260329041903Z
+title: Filter Trait + Registry — Extensible Plugin Architecture for Image Operations
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Define ImageFilter trait with apply/metadata, FilterRegistry with inventory-based
+    static registration. Refactor all existing filters to implement the trait. External
+    crates can register custom filters at build time.
+  context: All 30+ image filters are standalone functions with unique signatures (blur
+    takes radius, sharpen takes amount, clahe takes clip_limit+tile_grid, etc.). Adding
+    a custom filter requires modifying rasmcore-image source. The pipeline has ImageNode
+    trait but each filter needs a manual wrapper struct. No common interface exists
+    for filter discovery, parameter description, or external registration.
+  codebase_analysis: 'Current: filters.rs has 20+ pub fn with signature fn(pixels,
+    info, params...) -> Result<Vec<u8>>. Pipeline nodes/filters.rs uses simple_filter_node!
+    macro to wrap each one. PointOp enum already abstracts point operations with composable
+    LUTs. ColorOp enum does the same for color ops. The pattern exists — it just needs
+    to be generalized to all filters.'
+  acceptance_criteria:
+  - ImageFilter trait defined with apply, name, category, and param_descriptors methods
+  - FilterRegistry collects all registered filters at link time via inventory
+  - All existing filters implement ImageFilter (backward-compatible, standalone fns
+    remain)
+  - External crate can register a custom filter without modifying rasmcore-image
+  - Pipeline node generation works from registry (no manual wrapper per filter)
+  - Works on wasm32 target (inventory supports it)
+  - All existing tests pass unchanged
+  out_of_scope: Runtime plugin loading (dlopen). GPU filter dispatch. Filter parameter
+    UI generation.
+  technical_notes: 'Design: (1) ImageFilter trait with fn apply(input: FilterInput)
+    -> Result<FilterOutput> where FilterInput bundles pixels+info+params. (2) FilterMeta
+    struct with name, category, param descriptors. (3) FilterRegistry using inventory
+    crate for zero-overhead static registration. (4) Params as FilterParams enum (Float,
+    Int, Bool, Color, Rect) with serde support. (5) Each existing filter becomes a
+    unit struct implementing ImageFilter. (6) Pipeline auto-generates ImageNode wrappers
+    from FilterRegistry entries. (7) External crate usage: impl ImageFilter for MyFilter
+    + inventory::submit!'
+plan:
+- phase: Trait Definition
+  tasks:
+  - text: Define ImageFilter trait with apply, name, category, param_descriptors
+    done: false
+  - text: Define FilterParams enum (Float, Int, Bool, Color, etc.) with serde
+    done: false
+  - text: Define FilterMeta struct and FilterCategory enum
+    done: false
+  - text: Add FilterRegistry using inventory crate for static collection
+    done: false
+- phase: Refactor Existing Filters
+  tasks:
+  - text: Implement ImageFilter for all point ops (gamma, invert, threshold, posterize,
+      clamp, brightness, contrast)
+    done: false
+  - text: Implement ImageFilter for all convolution filters (blur, sharpen, convolve,
+      median, sobel, canny)
+    done: false
+  - text: Implement ImageFilter for all color ops (hue_rotate, saturate, sepia, colorize)
+    done: false
+  - text: Implement ImageFilter for OpenCV-tier filters (clahe, bilateral, guided_filter)
+    done: false
+  - text: Implement ImageFilter for histogram ops (equalize, normalize, auto_level,
+      contrast_stretch)
+    done: false
+- phase: Integration + Verification
+  tasks:
+  - text: Pipeline auto-generates ImageNode wrappers from FilterRegistry entries
+    done: false
+  - text: 'Add integration test: external crate registers custom filter, verify it
+      appears in registry'
+    done: false
+  - text: All existing filter tests pass unchanged
+    done: false
+extra: {}

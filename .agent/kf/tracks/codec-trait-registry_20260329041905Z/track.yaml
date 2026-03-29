@@ -1,0 +1,66 @@
+id: codec-trait-registry_20260329041905Z
+title: Codec Trait + Registry — Extensible Encoder/Decoder Plugin Architecture
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Define ImageDecoder/ImageEncoder traits with format detection, encode/decode,
+    and metadata. CodecRegistry with inventory-based static registration. Replace
+    hardcoded if/else format dispatch with trait-based lookup.
+  context: The decode() function is a hardcoded if/else chain checking magic bytes
+    for each format (JXL, JP2, HEIF, FITS, SVG, QOI, BMP, PNM, then fallback to image
+    crate). The encode() function has a similar match on output format string. Adding
+    a new codec requires modifying decoder/mod.rs and encoder/mod.rs directly. Feature
+    flags gate some codecs but there is no plugin interface.
+  codebase_analysis: 'decoder/mod.rs: decode() checks is_jxl/is_jp2/is_heif/is_fits/is_svg
+    then native-qoi/native-bmp/native-pnm via feature flags, then falls back to image
+    crate. encoder/mod.rs: encode() matches on format string to dispatch to jpeg/png/webp/gif/tiff/avif/qoi/bmp/pnm/ico/dds/jp2.
+    Each codec is in its own module with unique function signatures.'
+  acceptance_criteria:
+  - ImageDecoder trait with can_decode, decode, name, extensions, mime_types
+  - ImageEncoder trait with encode, name, extensions
+  - CodecRegistry discovers all registered codecs at link time
+  - All existing codecs refactored to implement the traits
+  - decode() uses registry dispatch instead of hardcoded if/else
+  - External crate can register a custom codec without modifying rasmcore-image
+  - All existing codec tests pass unchanged
+  out_of_scope: Runtime codec loading. Streaming decode. Container format parsing
+    (MP4, MKV).
+  technical_notes: 'Design: (1) ImageDecoder trait: fn can_decode(data: &[u8]) ->
+    bool (magic byte check) + fn decode(data: &[u8]) -> Result<DecodedImage> + fn
+    name/extensions/mime_types. (2) ImageEncoder trait: fn encode(pixels: &[u8], info:
+    &ImageInfo, config: &dyn Any) -> Result<Vec<u8>> + fn name/extensions. (3) CodecRegistry
+    using inventory for static registration, ordered by priority. (4) decode() becomes:
+    iterate registry, first can_decode() match wins. (5) encode() becomes: lookup
+    by format name in registry. (6) External crate registers a new format: impl ImageDecoder
+    + inventory::submit!'
+plan:
+- phase: Trait Definition
+  tasks:
+  - text: Define ImageDecoder trait with can_decode, decode, name, extensions, mime_types
+    done: false
+  - text: Define ImageEncoder trait with encode, name, extensions, default_config
+    done: false
+  - text: Add CodecRegistry using inventory for static decoder/encoder collection
+    done: false
+- phase: Refactor Existing Codecs
+  tasks:
+  - text: Implement ImageDecoder for all native decoders (JPEG, PNG, WebP, HEIF, JXL,
+      JP2, FITS, SVG, QOI, BMP, PNM)
+    done: false
+  - text: Implement ImageEncoder for all encoders (JPEG, PNG, WebP, GIF, TIFF, AVIF,
+      QOI, BMP, PNM, ICO, DDS, JP2)
+    done: false
+  - text: Replace decode() if/else chain with registry iteration
+    done: false
+  - text: Replace encode() format match with registry lookup
+    done: false
+- phase: Integration + Verification
+  tasks:
+  - text: 'Add integration test: external crate registers custom codec, verify decode
+      dispatch works'
+    done: false
+  - text: All existing codec/parity tests pass unchanged
+    done: false
+extra: {}
