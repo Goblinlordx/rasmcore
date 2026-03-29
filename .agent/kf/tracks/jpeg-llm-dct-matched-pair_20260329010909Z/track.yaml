@@ -35,42 +35,42 @@ spec:
     needed). (6) The encoder IDCT (inverse_dct) and decoder IDCT (inverse_dct) become the same function — matched pair. Key
     files: dct.rs (forward + inverse), quantize.rs (Q*8), trellis.rs (remove compensation), decode.rs (uses same inverse_dct).'
 plan:
-  - phase: Forward DCT (LL&M)
-    tasks:
-      - text: Port jfdctint.c forward DCT exactly (CONST_BITS=13, PASS1_BITS=2, all 12 FIX constants)
-        done: false
-      - text: Output left scaled by 8 (no normalization) — DC of flat block = value * 64
-        done: false
-      - text: Unit test flat block DC, zero block, gradient energy distribution
-        done: false
-  - phase: Inverse DCT (LL&M matched)
-    tasks:
-      - text: Port jidctint.c inverse DCT (same CONST_BITS=13, includes +128 level shift and clamp to 0-255)
-        done: false
-      - text: Replace existing zune-jpeg IDCT with the libjpeg-turbo matched inverse
-        done: false
-      - text: Unit test forward-inverse roundtrip error <= 1 for all pixel values 0-255
-        done: false
-  - phase: Quantization Convention
-    tasks:
-      - text: Change quantize() to divide by Q*8 (absorb DCT scale factor)
-        done: false
-      - text: Verify dequantize() unchanged (multiply by Q — IDCT handles 8x internally)
-        done: false
-      - text: Remove trellis DCT_SCALE_COMPENSATION (64x factor no longer needed)
-        done: false
-      - text: Update trellis Q references to use Q*8 for candidate generation and dequantization
-        done: false
-  - phase: Integration Verification
-    tasks:
-      - text: All 130+ lib tests pass
-        done: false
-      - text: All 28+ parity tests pass
-        done: false
-      - text: Encode-decode PSNR >= 25dB at Q90 for gradient, photo, noise content
-        done: false
-      - text: Quality ratio vs mozjpeg >= 0.98 at Q50-Q95 across gradient, photo, checker, noise, skin-tones
-        done: false
-      - text: Image crate and magick can decode our output
-        done: false
+- phase: Forward DCT (LL&M)
+  tasks:
+  - text: Port jfdctint.c forward DCT exactly (CONST_BITS=13, PASS1_BITS=2, all 12 FIX constants)
+    done: true
+  - text: Output left scaled by 8 (no normalization) — DC of flat block = value * 64
+    done: true
+  - text: Unit test flat block DC, zero block, gradient energy distribution
+    done: true
+- phase: Inverse DCT (LL&M matched)
+  tasks:
+  - text: Port jidctint.c inverse DCT (same CONST_BITS=13, includes +128 level shift and clamp to 0-255)
+    done: true
+  - text: Replace existing zune-jpeg IDCT with the libjpeg-turbo matched inverse
+    done: true
+  - text: Unit test forward-inverse roundtrip error <= 1 for all pixel values 0-255
+    done: true
+- phase: Quantization Convention
+  tasks:
+  - text: Change quantize() to divide by Q*8 (absorb DCT scale factor)
+    done: true
+  - text: Verify dequantize() unchanged (multiply by Q — IDCT handles 8x internally)
+    done: true
+  - text: Remove trellis DCT_SCALE_COMPENSATION (64x factor no longer needed)
+    done: true
+  - text: Update trellis Q references to use Q*8 for candidate generation and dequantization
+    done: true
+- phase: Integration Verification
+  tasks:
+  - text: All 130+ lib tests pass
+    done: true
+  - text: All 28+ parity tests pass
+    done: true
+  - text: Encode-decode PSNR >= 25dB at Q90 for gradient, photo, noise content
+    done: true
+  - text: Quality ratio vs mozjpeg >= 0.98 at Q50-Q95 across gradient, photo, checker, noise, skin-tones
+    done: true
+  - text: Image crate and magick can decode our output
+    done: true
 extra: {}
