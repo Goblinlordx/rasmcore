@@ -1,0 +1,96 @@
+id: filter-magick-exact-match_20260329012000Z
+title: Fix 7 Filter Parity Failures — Match ImageMagick Formulas Exactly
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Fix all 7 reference audit failures by matching ImageMagick's exact formulas.
+    None are intentional divergences — all are formula or parameter mapping bugs.
+  context: |
+    The reference audit (filter-reference-audit track) found 7 operations that
+    produce different output than ImageMagick. Root cause analysis shows each is
+    either a formula difference or a parameter mapping issue. All are fixable by
+    matching ImageMagick's exact implementation.
+  codebase_analysis: |
+    1. threshold (MAE=86): uses >= boundary. ImageMagick uses > for 50%.
+       Our PointOp::Threshold LUT: if i >= level { 255 } else { 0 }
+       Fix: match ImageMagick boundary semantics.
+
+    2. posterize (MAE=19.9): our formula round(round(i*(n-1)/255)*255/(n-1))
+       uses double-rounding. ImageMagick uses floor-based quantization.
+       Fix: match ImageMagick posterize formula.
+
+    3. brightness (MAE=33.4): we use linear offset (amount * 128).
+       ImageMagick -brightness-contrast uses a sigmoidal percentage-based formula.
+       Fix: implement ImageMagick's brightness formula.
+
+    4. hue_rotate (MAE=26.7): parameter mapping issue (-modulate hue scale)
+       plus possible HSL vs HSB precision differences.
+       Fix: verify ImageMagick's HSL implementation and match exactly.
+
+    5. equalize (MAE=11.5): CDF normalization rounding differs.
+       Our: (cdf[i] - cdf_min) * 255.0 / (N - cdf_min) + 0.5
+       Fix: match ImageMagick's equalize CDF computation.
+
+    6. normalize (MAE=8.2): we use 0.5%/99.5% percentiles.
+       ImageMagick -normalize uses 0.1%/0.1% black/white clip.
+       Fix: change to 0.1%/0.1% to match ImageMagick.
+
+    7. rotate_arbitrary (MAE=70.9): ImageMagick auto-expands canvas to fit
+       rotated image. We keep original dimensions.
+       Fix: match canvas expansion behavior, or fix test comparison.
+  acceptance_criteria:
+    - All 7 operations produce MAE < 1.0 vs ImageMagick (was 8-87)
+    - threshold, posterize, brightness formulas match ImageMagick exactly
+    - equalize CDF matches ImageMagick equalize
+    - normalize uses 0.1%/0.1% percentiles matching ImageMagick -normalize
+    - hue_rotate matches ImageMagick -modulate output
+    - rotate_arbitrary canvas behavior matches or test accounts for difference
+    - All 18 reference_audit tests pass
+    - All existing unit tests still pass (may need threshold updates)
+    - REFERENCE.md updated with PASS status for all 7
+  out_of_scope: |
+    Adding new operations. Performance changes. SIMD optimization.
+  technical_notes: |
+    Research approach for each fix:
+    1. Run magick with debug output to see exact formula
+    2. Compare our LUT output vs magick LUT at each of 256 input values
+    3. Adjust our formula to match
+    4. Verify MAE drops to 0.0 or < 1.0
+
+    ImageMagick source references (for formula verification):
+    - threshold: MagickCore/threshold.c
+    - posterize: MagickCore/quantize.c PosterizeImage()
+    - brightness: MagickCore/enhance.c BrightnessContrastImage()
+    - equalize: MagickCore/enhance.c EqualizeImage()
+    - normalize: MagickCore/enhance.c NormalizeImage() → ContrastStretchImage(0.1%,0.1%)
+    - modulate: MagickCore/enhance.c ModulateImage()
+    - rotate: MagickCore/distort.c RotateImage()
+plan:
+  - phase: Formula Fixes
+    tasks:
+      - text: Fix threshold to match ImageMagick boundary semantics (> vs >=)
+        done: false
+      - text: Fix posterize to match ImageMagick floor-based quantization formula
+        done: false
+      - text: Fix brightness to match ImageMagick sigmoidal percentage formula
+        done: false
+      - text: Fix normalize percentiles from 0.5%/99.5% to 0.1%/0.1% matching ImageMagick
+        done: false
+      - text: Fix equalize CDF normalization to match ImageMagick rounding
+        done: false
+      - text: Fix hue_rotate to match ImageMagick -modulate HSL implementation
+        done: false
+      - text: Fix rotate_arbitrary test to account for canvas expansion difference
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All 18 reference_audit tests pass with MAE < 1.0 for each
+        done: false
+      - text: All existing unit tests pass (update thresholds if formula changed)
+        done: false
+      - text: Update REFERENCE.md with PASS status for all fixed operations
+        done: false
+extra: {}
