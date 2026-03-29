@@ -109,6 +109,8 @@ function main() {
   lines.push('');
   lines.push("import type { ImagePipeline, NodeId, ImageInfo, Buffer as WasmBuffer } from '../../demo/sdk/interfaces/rasmcore-image-pipeline.js';");
 
+  // Always include BlendMode for composite method
+  typeImports.add('BlendMode');
   if (typeImports.size > 0) {
     const imports = [...typeImports].sort().join(', ');
     lines.push(`import type { ${imports} } from '../../demo/sdk/interfaces/rasmcore-image-pipeline.js';`);
@@ -194,6 +196,51 @@ function main() {
     lines.push('    return this;');
     lines.push('  }');
   }
+
+  // Generate multi-image methods
+  lines.push('');
+  lines.push('  // ─── Multi-Image Operations ───');
+  lines.push('');
+  const llName = convertName('loadLayer');
+  lines.push(`  /**`);
+  lines.push(`   * Load another image into the same pipeline for compositing.`);
+  lines.push(`   * Returns a new RcImage sharing this pipeline — apply filters, then pass to composite().`);
+  lines.push(`   */`);
+  lines.push(`  ${llName}(data: Uint8Array): RcImage {`);
+  lines.push(`    RcImage.assertUint8Array('data', data);`);
+  lines.push(`    const nodeId = this.pipeline.read(data as unknown as WasmBuffer);`);
+  lines.push(`    return new RcImage(this.pipeline, nodeId);`);
+  lines.push(`  }`);
+  lines.push('');
+  const compName = convertName('composite');
+  lines.push(`  /**`);
+  lines.push(`   * Composite another image over this one.`);
+  lines.push(`   *`);
+  lines.push(`   * @param other - Foreground: an RcImage from loadLayer(), or raw Uint8Array bytes`);
+  lines.push(`   * @param opts - x/y offset (default 0,0) and blend mode (default Porter-Duff over)`);
+  lines.push(`   *`);
+  lines.push(`   * @example`);
+  lines.push(`   * // Simple: composite with raw bytes`);
+  lines.push(`   * bg.composite(fgBytes, { x: 10, y: 10 });`);
+  lines.push(`   *`);
+  lines.push(`   * // With filters on foreground:`);
+  lines.push(`   * const fg = bg.loadLayer(fgBytes).blur(2.0);`);
+  lines.push(`   * bg.composite(fg, { x: 10, y: 10, blend: 'multiply' });`);
+  lines.push(`   */`);
+  lines.push(`  ${compName}(other: RcImage | Uint8Array, opts?: { x?: number, y?: number, blend?: BlendMode }): RcImage {`);
+  lines.push(`    let fgNodeId: number;`);
+  lines.push(`    if (other instanceof RcImage) {`);
+  lines.push(`      fgNodeId = other.nodeId;`);
+  lines.push(`    } else {`);
+  lines.push(`      RcImage.assertUint8Array('other', other);`);
+  lines.push(`      fgNodeId = this.pipeline.read(other as unknown as WasmBuffer);`);
+  lines.push(`    }`);
+  lines.push(`    const x = opts?.x ?? 0;`);
+  lines.push(`    const y = opts?.y ?? 0;`);
+  lines.push(`    const mode = opts?.blend ?? undefined;`);
+  lines.push(`    this.nodeId = this.pipeline.composite(fgNodeId, this.nodeId, x, y, mode);`);
+  lines.push(`    return this;`);
+  lines.push(`  }`);
 
   // Generate terminal methods
   lines.push('');

@@ -4,7 +4,7 @@
 // Generated from 16 chainable + 10 terminal operations
 
 import type { ImagePipeline, NodeId, ImageInfo, Buffer as WasmBuffer } from '../../demo/sdk/interfaces/rasmcore-image-pipeline.js';
-import type { AvifWriteConfig, BmpWriteConfig, ExifOrientation, FlipDirection, GifWriteConfig, IcoWriteConfig, JpegWriteConfig, MetadataSet, PixelFormat, PngWriteConfig, QoiWriteConfig, ResizeFilter, Rotation, TiffWriteConfig, WebpWriteConfig } from '../../demo/sdk/interfaces/rasmcore-image-pipeline.js';
+import type { AvifWriteConfig, BlendMode, BmpWriteConfig, ExifOrientation, FlipDirection, GifWriteConfig, IcoWriteConfig, JpegWriteConfig, MetadataSet, PixelFormat, PngWriteConfig, QoiWriteConfig, ResizeFilter, Rotation, TiffWriteConfig, WebpWriteConfig } from '../../demo/sdk/interfaces/rasmcore-image-pipeline.js';
 
 /**
  * Fluent image processing chain.
@@ -154,6 +154,47 @@ export class RcImage {
     RcImage.assertNumber('lowThreshold', lowThreshold);
     RcImage.assertNumber('highThreshold', highThreshold);
     this.nodeId = this.pipeline.canny(this.nodeId, lowThreshold, highThreshold);
+    return this;
+  }
+
+  // ─── Multi-Image Operations ───
+
+  /**
+   * Load another image into the same pipeline for compositing.
+   * Returns a new RcImage sharing this pipeline — apply filters, then pass to composite().
+   */
+  loadLayer(data: Uint8Array): RcImage {
+    RcImage.assertUint8Array('data', data);
+    const nodeId = this.pipeline.read(data as unknown as WasmBuffer);
+    return new RcImage(this.pipeline, nodeId);
+  }
+
+  /**
+   * Composite another image over this one.
+   *
+   * @param other - Foreground: an RcImage from loadLayer(), or raw Uint8Array bytes
+   * @param opts - x/y offset (default 0,0) and blend mode (default Porter-Duff over)
+   *
+   * @example
+   * // Simple: composite with raw bytes
+   * bg.composite(fgBytes, { x: 10, y: 10 });
+   *
+   * // With filters on foreground:
+   * const fg = bg.loadLayer(fgBytes).blur(2.0);
+   * bg.composite(fg, { x: 10, y: 10, blend: 'multiply' });
+   */
+  composite(other: RcImage | Uint8Array, opts?: { x?: number, y?: number, blend?: BlendMode }): RcImage {
+    let fgNodeId: number;
+    if (other instanceof RcImage) {
+      fgNodeId = other.nodeId;
+    } else {
+      RcImage.assertUint8Array('other', other);
+      fgNodeId = this.pipeline.read(other as unknown as WasmBuffer);
+    }
+    const x = opts?.x ?? 0;
+    const y = opts?.y ?? 0;
+    const mode = opts?.blend ?? undefined;
+    this.nodeId = this.pipeline.composite(fgNodeId, this.nodeId, x, y, mode);
     return this;
   }
 
