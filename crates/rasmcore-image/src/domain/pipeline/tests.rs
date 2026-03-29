@@ -219,7 +219,7 @@ mod tests {
         let fg_info = graph.node_info(fg).unwrap();
 
         let comp = graph.add_node(Box::new(CompositeNode::new(
-            fg, bg, fg_info, bg_info, 10, 10,
+            fg, bg, fg_info, bg_info, 10, 10, None,
         )));
 
         // Output should have bg dimensions
@@ -245,7 +245,7 @@ mod tests {
         let bg_info = graph.node_info(bg).unwrap();
         let fg_info = graph.node_info(fg).unwrap();
 
-        let comp = graph.add_node(Box::new(CompositeNode::new(fg, bg, fg_info, bg_info, 1, 1)));
+        let comp = graph.add_node(Box::new(CompositeNode::new(fg, bg, fg_info, bg_info, 1, 1, None)));
 
         // Request full region
         let pixels = graph.request_region(comp, Rect::new(0, 0, 4, 4)).unwrap();
@@ -294,6 +294,7 @@ mod tests {
             bg_info,
             24,
             24,
+            None,
         )));
 
         let output = sink::write(&mut graph, comp, "png", None, None).unwrap();

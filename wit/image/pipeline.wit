@@ -9,6 +9,7 @@ interface pipeline {
     use rasmcore:core/types.{buffer, image-info, pixel-format};
     use rasmcore:core/errors.{rasmcore-error};
     use metadata.{exif-orientation, metadata-set};
+    use filters.{blend-mode};
 
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
@@ -163,10 +164,11 @@ interface pipeline {
 
         // ─── Compositing ───
 
-        /// Alpha composite foreground over background (Porter-Duff "over").
-        /// Places fg at (x, y) offset on bg. Both must be RGBA8.
-        /// Output dimensions match the background.
-        composite: func(fg: node-id, bg: node-id, x: s32, y: s32) -> result<node-id, rasmcore-error>;
+        /// Composite foreground over background with optional blend mode.
+        /// Places fg at (x, y) offset on bg. Output dimensions match background.
+        /// mode=none uses Porter-Duff "over" (default alpha composite).
+        /// mode=some uses the specified blend mode (multiply, screen, etc.).
+        composite: func(fg: node-id, bg: node-id, x: s32, y: s32, mode: option<blend-mode>) -> result<node-id, rasmcore-error>;
 
         // ─── Metadata ───
 

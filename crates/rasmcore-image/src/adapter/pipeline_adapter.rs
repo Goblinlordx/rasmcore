@@ -3,7 +3,8 @@
 use std::cell::RefCell;
 
 use crate::bindings::exports::rasmcore::image::pipeline::{
-    self, ExifOrientation, FlipDirection, GuestImagePipeline, NodeId, ResizeFilter, Rotation,
+    self, BlendMode as WitBlendMode, ExifOrientation, FlipDirection, GuestImagePipeline, NodeId,
+    ResizeFilter, Rotation,
 };
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
@@ -481,12 +482,30 @@ impl GuestImagePipeline for PipelineResource {
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 
-    fn composite(&self, fg: NodeId, bg: NodeId, x: i32, y: i32) -> Result<NodeId, RasmcoreError> {
+    fn composite(
+        &self,
+        fg: NodeId,
+        bg: NodeId,
+        x: i32,
+        y: i32,
+        mode: Option<WitBlendMode>,
+    ) -> Result<NodeId, RasmcoreError> {
         let graph = self.graph.borrow();
         let fg_info = graph.node_info(fg).map_err(to_wit_error)?;
         let bg_info = graph.node_info(bg).map_err(to_wit_error)?;
         drop(graph);
-        let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y);
+        let domain_mode = mode.map(|m| match m {
+            WitBlendMode::Multiply => domain::filters::BlendMode::Multiply,
+            WitBlendMode::Screen => domain::filters::BlendMode::Screen,
+            WitBlendMode::Overlay => domain::filters::BlendMode::Overlay,
+            WitBlendMode::Darken => domain::filters::BlendMode::Darken,
+            WitBlendMode::Lighten => domain::filters::BlendMode::Lighten,
+            WitBlendMode::SoftLight => domain::filters::BlendMode::SoftLight,
+            WitBlendMode::HardLight => domain::filters::BlendMode::HardLight,
+            WitBlendMode::Difference => domain::filters::BlendMode::Difference,
+            WitBlendMode::Exclusion => domain::filters::BlendMode::Exclusion,
+        });
+        let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y, domain_mode);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 

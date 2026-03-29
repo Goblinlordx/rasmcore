@@ -1,7 +1,8 @@
-//! Composite node — Porter-Duff "over" blend of two upstream sources.
+//! Composite node — blends two upstream sources with optional blend mode.
 
 use crate::domain::composite;
 use crate::domain::error::ImageError;
+use crate::domain::filters::BlendMode;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
 use crate::domain::types::*;
 use rasmcore_pipeline::{Overlap, Rect};
@@ -10,6 +11,8 @@ use rasmcore_pipeline::{Overlap, Rect};
 ///
 /// Takes two upstream node-ids: foreground and background.
 /// Output dimensions match the background.
+/// When `blend_mode` is None, uses Porter-Duff "over" (alpha composite).
+/// When `blend_mode` is Some, uses the specified blend mode.
 pub struct CompositeNode {
     fg_upstream: u32,
     bg_upstream: u32,
@@ -17,6 +20,7 @@ pub struct CompositeNode {
     bg_info: ImageInfo,
     offset_x: i32,
     offset_y: i32,
+    blend_mode: Option<BlendMode>,
 }
 
 impl CompositeNode {
@@ -27,6 +31,7 @@ impl CompositeNode {
         bg_info: ImageInfo,
         offset_x: i32,
         offset_y: i32,
+        blend_mode: Option<BlendMode>,
     ) -> Self {
         Self {
             fg_upstream,
@@ -35,6 +40,7 @@ impl CompositeNode {
             bg_info,
             offset_x,
             offset_y,
+            blend_mode,
         }
     }
 }
@@ -55,14 +61,47 @@ impl ImageNode for CompositeNode {
         let fg_pixels = upstream_fn(self.fg_upstream, fg_full)?;
         let bg_pixels = upstream_fn(self.bg_upstream, bg_full)?;
 
-        composite::alpha_composite_over(
-            &fg_pixels,
-            &self.fg_info,
-            &bg_pixels,
-            &self.bg_info,
-            self.offset_x,
-            self.offset_y,
-        )
+        match self.blend_mode {
+            None => composite::alpha_composite_over(
+                &fg_pixels,
+                &self.fg_info,
+                &bg_pixels,
+                &self.bg_info,
+                self.offset_x,
+                self.offset_y,
+            ),
+            Some(ref mode) => {
+                // For blend modes, we first composite (position fg on bg-sized canvas),
+                // then blend. This handles different-size images with offset.
+                let positioned = composite::alpha_composite_over(
+                    &fg_pixels,
+                    &self.fg_info,
+                    // Transparent background matching bg dimensions
+                    &vec![0u8; self.bg_info.width as usize * self.bg_info.height as usize * 4],
+                    &ImageInfo {
+                        width: self.bg_info.width,
+                        height: self.bg_info.height,
+                        format: PixelFormat::Rgba8,
+                        color_space: self.bg_info.color_space,
+                    },
+                    self.offset_x,
+                    self.offset_y,
+                )?;
+                let positioned_info = ImageInfo {
+                    width: self.bg_info.width,
+                    height: self.bg_info.height,
+                    format: PixelFormat::Rgba8,
+                    color_space: self.bg_info.color_space,
+                };
+                crate::domain::filters::blend(
+                    &positioned,
+                    &positioned_info,
+                    &bg_pixels,
+                    &self.bg_info,
+                    mode.clone(),
+                )
+            }
+        }
     }
 
     fn overlap(&self) -> Overlap {
