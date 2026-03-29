@@ -5,70 +5,87 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: Content-aware cropping via attention (edge energy concentration) and entropy
-    (information density) heuristics. Matches libvips vips_smartcrop() with VIPS_INTERESTING_ENTROPY
-    and VIPS_INTERESTING_ATTENTION strategies. Essential for automatic thumbnail generation.
-  context: |
-    libvips smartcrop is heavily used in web thumbnail pipelines (sharp.js, thumbor,
+  summary: Content-aware cropping via attention (edge energy concentration) and entropy (information density) heuristics.
+    Matches libvips vips_smartcrop() with VIPS_INTERESTING_ENTROPY and VIPS_INTERESTING_ATTENTION strategies. Essential for
+    automatic thumbnail generation.
+  context: 'libvips smartcrop is heavily used in web thumbnail pipelines (sharp.js, thumbor,
+
     imgproxy). It slides the target crop window across the image and scores each position
+
     by either edge energy (attention) or Shannon entropy. The highest-scoring window is
+
     selected. This avoids cropping faces off or centering on uninteresting regions.
-  codebase_analysis: |
-    transform.rs has crop() for explicit coordinates. No content-aware variant exists.
+
+    '
+  codebase_analysis: 'transform.rs has crop() for explicit coordinates. No content-aware variant exists.
+
     This track depends on histogram-analysis (for entropy computation via histogram)
+
     and convolution-filters (for Sobel edge detection used in attention scoring).
+
     The implementation: 1) compute a score map (entropy or edge energy per region),
+
     2) slide the target window and sum scores, 3) select the max-scoring position.
+
+    '
   acceptance_criteria:
-    - smart_crop(pixels, info, target_w, target_h, strategy) returns cropped region
-    - Strategy enum with Entropy and Attention variants
-    - Entropy strategy uses local Shannon entropy from histogram windows
-    - Attention strategy uses Sobel edge energy as the importance signal
-    - Output crop position matches libvips smartcrop within +-5% of image dimension
-    - Performance within 3x of libvips smartcrop on 4K images
-  out_of_scope: |
-    Face detection. Saliency maps (neural network based). Custom importance maps.
+  - smart_crop(pixels, info, target_w, target_h, strategy) returns cropped region
+  - Strategy enum with Entropy and Attention variants
+  - Entropy strategy uses local Shannon entropy from histogram windows
+  - Attention strategy uses Sobel edge energy as the importance signal
+  - Output crop position matches libvips smartcrop within +-5% of image dimension
+  - Performance within 3x of libvips smartcrop on 4K images
+  out_of_scope: 'Face detection. Saliency maps (neural network based). Custom importance maps.
+
     Center-weighted crop (trivial — not smart).
-  technical_notes: |
-    Entropy: divide image into grid cells (e.g. 16x16), compute Shannon entropy per cell
+
+    '
+  technical_notes: 'Entropy: divide image into grid cells (e.g. 16x16), compute Shannon entropy per cell
+
     from local histogram: H = -sum(p * log2(p)). Slide target window, sum cell entropies.
+
     Attention: compute Sobel gradient magnitude map, sum within sliding window.
+
     Optimization: use integral image (summed area table) for O(1) window sum queries.
+
     For large images, downsample first (4x), compute score map on downsampled, scale
+
     coordinates back up. Reference: vips smartcrop --interesting attention input.jpg output.jpg
+
+    '
 plan:
-  - phase: Score Maps
-    tasks:
-      - text: Implement entropy_score_map() — per-cell Shannon entropy via local histograms
-        done: false
-      - text: Implement attention_score_map() — Sobel gradient magnitude energy map
-        done: false
-      - text: Implement summed_area_table() — integral image for O(1) window sum queries
-        done: false
-  - phase: Smart Crop
-    tasks:
-      - text: Implement sliding window scorer using integral image for O(1) region sums
-        done: false
-      - text: Implement smart_crop(pixels, info, target_w, target_h, strategy) with Strategy enum
-        done: false
-      - text: Add downsampling pre-pass for images larger than 1024px (4x downsample, score, scale back)
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Add SmartCropNode pipeline node with strategy parameter
-        done: false
-      - text: Add WIT interface declaration for smart_crop with strategy enum
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit tests for summed area table correctness
-        done: false
-      - text: Unit tests for entropy/attention score maps on synthetic patterns
-        done: false
-      - text: Generate libvips smartcrop references (entropy + attention) on test images
-        done: false
-      - text: Parity tests — crop position vs vips smartcrop (within 5% of dimension)
-        done: false
-      - text: Perf benchmark vs libvips smartcrop on 4K image, report wall-clock
-        done: false
+- phase: Score Maps
+  tasks:
+  - text: Implement entropy_score_map() — per-cell Shannon entropy via local histograms
+    done: true
+  - text: Implement attention_score_map() — Sobel gradient magnitude energy map
+    done: true
+  - text: Implement summed_area_table() — integral image for O(1) window sum queries
+    done: true
+- phase: Smart Crop
+  tasks:
+  - text: Implement sliding window scorer using integral image for O(1) region sums
+    done: true
+  - text: Implement smart_crop(pixels, info, target_w, target_h, strategy) with Strategy enum
+    done: true
+  - text: Add downsampling pre-pass for images larger than 1024px (4x downsample, score, scale back)
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add SmartCropNode pipeline node with strategy parameter
+    done: true
+  - text: Add WIT interface declaration for smart_crop with strategy enum
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for summed area table correctness
+    done: true
+  - text: Unit tests for entropy/attention score maps on synthetic patterns
+    done: true
+  - text: Generate libvips smartcrop references (entropy + attention) on test images
+    done: true
+  - text: Parity tests — crop position vs vips smartcrop (within 5% of dimension)
+    done: true
+  - text: Perf benchmark vs libvips smartcrop on 4K image, report wall-clock
+    done: true
 extra: {}
