@@ -735,6 +735,90 @@ pub fn select_best_4x4(
     best_mode
 }
 
+/// Select the best 4×4 prediction mode using RD cost with SATD pre-screening.
+///
+/// 1. Compute SATD for all 10 modes (fast)
+/// 2. For modes with SATD within 2x of best: compute full RD cost
+///    (DCT → quantize → RDO prune → estimate bits → dequant → IDCT → SSD)
+/// 3. Pick mode with minimum RD cost
+pub fn select_best_4x4_rd(
+    actual: &[u8],
+    above: &[u8; 4],
+    left: &[u8; 4],
+    above_left: u8,
+    above_right: &[u8; 4],
+    matrix: &crate::quant::QuantMatrix,
+    lambda: f64,
+) -> Intra4Mode {
+    let mut pred = [0u8; 16];
+
+    // Phase 1: SATD screening for all 10 modes
+    let mut satd_costs: [(u32, Intra4Mode); 10] = [(u32::MAX, Intra4Mode::DC); 10];
+    for (i, &mode) in ALL_INTRA4.iter().enumerate() {
+        predict_4x4(mode, above, left, above_left, above_right, &mut pred);
+        satd_costs[i] = (satd(&actual[..16], &pred), mode);
+    }
+
+    // Find best SATD and threshold
+    let best_satd = satd_costs.iter().map(|&(c, _)| c).min().unwrap_or(u32::MAX);
+    let threshold = best_satd.saturating_mul(2);
+
+    // Sort by SATD — evaluate top 3 candidates with full RD
+    satd_costs.sort_by_key(|&(c, _)| c);
+    let n_candidates = 3.min(satd_costs.len());
+
+    let mut best_mode = satd_costs[0].1; // fallback to SATD best
+    let mut best_rd = f64::MAX;
+
+    for i in 0..n_candidates {
+        let (satd_cost, mode) = satd_costs[i];
+        if i > 0 && satd_cost > threshold {
+            break; // remaining candidates too far from best
+        }
+
+        predict_4x4(mode, above, left, above_left, above_right, &mut pred);
+
+        // DCT + quantize
+        let mut coeffs = [0i16; 16];
+        crate::dct::forward_dct(
+            &<[u8; 16]>::try_from(&actual[..16]).unwrap(),
+            &pred,
+            &mut coeffs,
+        );
+        let mut quantized = [0i16; 16];
+        crate::quant::quantize_block(&coeffs, matrix, &mut quantized);
+
+        // RDO prune (block_type 3 = Y-with-DC for B_PRED)
+        crate::rdo::rdo_prune_block(&mut quantized, &coeffs, matrix, 3, lambda);
+
+        // Rate: mode header + coefficient bits
+        let mode_bits = crate::rdo::mode_header_cost_4x4(mode as u8);
+        let coeff_bits = crate::rdo::estimate_block_bits(&quantized, 3);
+        let total_bits = mode_bits + coeff_bits;
+
+        // Distortion: SSD of reconstructed vs original
+        let mut dequant = [0i16; 16];
+        crate::quant::dequantize_block(&quantized, matrix, &mut dequant);
+        let mut recon = [0u8; 16];
+        crate::dct::inverse_dct(&dequant, &pred, &mut recon);
+
+        let mut ssd: u64 = 0;
+        for i in 0..16 {
+            let d = actual[i] as i32 - recon[i] as i32;
+            ssd += (d * d) as u64;
+        }
+
+        let rd = crate::rdo::rd_cost(ssd, total_bits, lambda);
+
+        if rd < best_rd {
+            best_rd = rd;
+            best_mode = mode;
+        }
+    }
+
+    best_mode
+}
+
 /// Select the best 8×8 chroma prediction mode by minimizing SAD.
 pub fn select_best_8x8(
     actual: &[u8],

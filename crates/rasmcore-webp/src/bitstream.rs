@@ -591,9 +591,14 @@ fn encode_macroblock(
         &mut i16_pred,
     );
 
-    // ─── B_PRED mode evaluation ─────────────────────────────────────────
+    // ─── B_PRED mode evaluation with sequential reconstruction ──────────
+    // Each sub-block's mode is selected using RD cost, and the reconstruction
+    // is written to a scratch buffer so subsequent sub-blocks use correct neighbors.
     let mut b_modes = [0u8; 16];
-    let mut bpred_preds = [[0u8; 16]; 16]; // per-block prediction
+    let mut bpred_preds = [[0u8; 16]; 16];
+
+    // Copy current recon_y region into scratch buffer for sequential updates
+    let mut scratch_y = recon_y.to_vec();
 
     for sb in 0..16 {
         let sb_row = sb / 4;
@@ -606,15 +611,37 @@ fn encode_macroblock(
             }
         }
 
+        // Get neighbors from scratch buffer (has reconstructed previous sub-blocks)
         let (above_4, left_4, al, ar) =
-            get_4x4_neighbors(recon_y, y_stride, mb_col, mb_row, sb_row, sb_col);
+            get_4x4_neighbors(&scratch_y, y_stride, mb_col, mb_row, sb_row, sb_col);
 
-        let mode = predict::select_best_4x4(&src_4x4, &above_4, &left_4, al, &ar);
+        // RD mode selection: try top SATD candidates with full encode trial
+        let mode = predict::select_best_4x4_rd(
+            &src_4x4, &above_4, &left_4, al, &ar, &seg_quant.y_dc, lambda,
+        );
         b_modes[sb] = mode as u8;
 
         let mut pred = [0u8; 16];
         predict::predict_4x4(mode, &above_4, &left_4, al, &ar, &mut pred);
         bpred_preds[sb] = pred;
+
+        // Reconstruct this sub-block into scratch buffer for next sub-block's neighbors
+        let mut coeffs = [0i16; 16];
+        dct::forward_dct(&src_4x4, &pred, &mut coeffs);
+        let mut quantized = [0i16; 16];
+        quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut quantized);
+        let mut dequant_tmp = [0i16; 16];
+        quant::dequantize_block(&quantized, &seg_quant.y_dc, &mut dequant_tmp);
+        let mut recon_block = [0u8; 16];
+        dct::inverse_dct(&dequant_tmp, &pred, &mut recon_block);
+
+        for r in 0..4 {
+            for c in 0..4 {
+                let row = mb_row * 16 + sb_row * 4 + r;
+                let col = mb_col * 16 + sb_col * 4 + c;
+                scratch_y[row * y_stride + col] = recon_block[r * 4 + c];
+            }
+        }
     }
 
     // ─── Mode decision: full RD cost comparison ─────────────────────────
