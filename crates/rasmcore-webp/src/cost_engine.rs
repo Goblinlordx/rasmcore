@@ -177,6 +177,7 @@ impl LevelCostTable {
 /// level cost table.
 pub fn get_residual_cost(
     coeffs: &[i16; 16],
+    first: usize,
     coeff_type: usize,
     initial_ctx: usize,
     table: &LevelCostTable,
@@ -184,16 +185,16 @@ pub fn get_residual_cost(
     let mut cost: u32 = 0;
     let mut ctx = initial_ctx;
 
-    // Find last nonzero
-    let last = match coeffs.iter().rposition(|&c| c != 0) {
-        Some(pos) => pos as i32,
+    // Find last nonzero (from position `first` onwards)
+    let last = match coeffs[first..].iter().rposition(|&c| c != 0) {
+        Some(pos) => (first + pos) as i32,
         None => {
-            // All zero: just the EOB cost at position 0
-            return table.get_cost(coeff_type, 0, ctx, 0) as u32;
+            // All zero: just the EOB cost at the first position
+            return table.get_cost(coeff_type, first, ctx, 0) as u32;
         }
     };
 
-    for n in 0..=last as usize {
+    for n in first..=last as usize {
         let v = coeffs[n].unsigned_abs() as usize;
         let level = v.min(MAX_VARIABLE_LEVEL);
         cost += table.get_cost(coeff_type, n, ctx, level) as u32;
@@ -276,7 +277,7 @@ mod tests {
         let table = LevelCostTable::compute(&default_probs);
 
         let coeffs = [0i16; 16];
-        let cost = get_residual_cost(&coeffs, 0, 0, &table);
+        let cost = get_residual_cost(&coeffs, 0, 0, 0, &table);
         // Should just be the EOB cost at position 0
         assert!(cost > 0, "all-zero block should have nonzero EOB cost");
         assert!(cost < 500, "all-zero block should be cheap: {cost}");
@@ -289,7 +290,7 @@ mod tests {
 
         let mut coeffs = [0i16; 16];
         coeffs[0] = 5;
-        let cost = get_residual_cost(&coeffs, 0, 0, &table);
+        let cost = get_residual_cost(&coeffs, 0, 0, 0, &table);
         // Should include: cost of level 5 at pos 0 + EOB at pos 1
         assert!(cost > 0);
     }
