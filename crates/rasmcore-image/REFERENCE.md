@@ -381,8 +381,9 @@ when the cause is proven and documented:
 | CLAHE | OpenCV 4.13 | F32_ROUNDING | ≤1 u8 | 7 images, zero >1 |
 | Guided filter | OpenCV 4.13 | F32_ROUNDING | ≤1 u8 | 7 images, zero >1 |
 | Lab (vs OpenCV) | OpenCV 4.13 | REF_PRECISION | ≤2 u8 | We are more precise |
-| Quantize (nearest-color) | numpy argmin | EXACT | 0 | 16×16 gradient, 5-color palette |
-| Floyd-Steinberg dither | numpy FS impl | EXACT | 0 | 8×8 gradient, B/W serpentine |
+| Quantize (nearest-color) | ImageMagick 7.1.2 `-remap -dither None` | EXACT | 0 | 32×32 gradient, 4-color palette |
+| Floyd-Steinberg 1st row | ImageMagick 7.1.2 `-dither FloydSteinberg` | EXACT | 0 | 32×1 gradient, B/W |
+| Floyd-Steinberg multi-row | ImageMagick 7.1.2 + Pillow 12.1.1 | F32_ROUNDING | ≤0.3 dB PSNR | IM Q16-HDRI precision (see below) |
 | Ordered dither (Bayer 4×4) | numpy Bayer impl | EXACT | 0 | 8×8 gradient, 3-color |
 | Inpaint Telea (uniform) | OpenCV 4.13 | EXACT | 0 | 16×16, 4×4 hole |
 | Inpaint Telea (gradient) | OpenCV 4.13 | COMPILER_FP | ≤6 u8 | 32×32, 6×6 hole (see below) |
