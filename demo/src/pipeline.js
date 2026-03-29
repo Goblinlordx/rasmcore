@@ -192,11 +192,146 @@ for (const [cat, ops] of Object.entries(grouped)) {
   }
 }
 
+// ─── Web Worker ─────────────────────────────────────────────────────────────
+
+const worker = new Worker(new URL('./pipeline-worker.js', import.meta.url), { type: 'module' });
+let workerReady = false;
+let isProcessing = false;
+let queuedRequest = null; // Single-slot queue: latest pending request
+
+worker.postMessage({ type: 'init' });
+
+function setProcessing(active) {
+  isProcessing = active;
+  const canvas = document.getElementById('preview-canvas');
+  canvas.style.opacity = active ? '0.5' : '1';
+  document.getElementById('total-time').textContent = active
+    ? (queuedRequest ? 'Processing... (queued)' : 'Processing...')
+    : document.getElementById('total-time').textContent;
+}
+
+function requestWorker(msg) {
+  if (!workerReady) return;
+  if (isProcessing) {
+    queuedRequest = msg; // Replace any pending — single-slot
+    setProcessing(true); // Update "queued" indicator
+    return;
+  }
+  isProcessing = true;
+  queuedRequest = null;
+  setProcessing(true);
+  worker.postMessage(msg, msg.imageBytes ? [msg.imageBytes] : []);
+}
+
+function serializeChain() {
+  return chain.map(n => ({
+    name: n.op.name,
+    params: n.op.params,
+    paramValues: { ...n.paramValues },
+  }));
+}
+
+worker.onmessage = (e) => {
+  const { type } = e.data;
+
+  if (type === 'ready') {
+    workerReady = true;
+    return;
+  }
+
+  if (type === 'loaded') {
+    imageInfo = e.data.info;
+    compareBtn.style.display = 'inline-block';
+    dropHint.style.display = 'block';
+    if (imageInfo) {
+      previewInfo.textContent = `${imageInfo.width}×${imageInfo.height}`;
+    }
+    // Trigger initial render
+    requestWorker({ type: 'process', chain: serializeChain(), mode: 'full' });
+    return;
+  }
+
+  if (type === 'result') {
+    isProcessing = false;
+    const blob = new Blob([e.data.png], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = e.data.mode === 'thumb'
+        ? document.getElementById('thumb-preview')
+        : previewCanvas;
+      if (canvas) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+
+    // Update timings
+    if (e.data.mode === 'full' && e.data.timings) {
+      totalTimeEl.textContent = `Total: ${e.data.totalMs}ms (${e.data.timings.length} ops)`;
+      totalTimeEl.style.color = '#4ade80';
+      for (const t of e.data.timings) {
+        for (const cn of chain) {
+          if (cn.op.name === t.name) {
+            cn.timingMs = t.ms;
+            break;
+          }
+        }
+      }
+      // Update timing in cards
+      for (const cn of chain) {
+        const card = chainEl.querySelector(`[data-id="${cn.id}"]`);
+        if (card) {
+          const tEl = card.querySelector('.node-timing');
+          if (tEl) tEl.textContent = `${cn.timingMs}ms`;
+        }
+      }
+    }
+
+    setProcessing(false);
+
+    // Drain single-slot queue
+    if (queuedRequest) {
+      const next = queuedRequest;
+      queuedRequest = null;
+      requestWorker(next);
+    }
+    return;
+  }
+
+  if (type === 'exported') {
+    isProcessing = false;
+    setProcessing(false);
+    const blob = new Blob([e.data.data], { type: e.data.mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `rasmcore-pipeline.${e.data.format}`;
+    a.click();
+    return;
+  }
+
+  if (type === 'error') {
+    isProcessing = false;
+    setProcessing(false);
+    totalTimeEl.textContent = `Error: ${e.data.message}`;
+    totalTimeEl.style.color = '#f87171';
+    // Drain queue even on error
+    if (queuedRequest) {
+      const next = queuedRequest;
+      queuedRequest = null;
+      requestWorker(next);
+    }
+    return;
+  }
+};
+
 // ─── State ──────────────────────────────────────────────────────────────────
 
 let imageBytes = null;
-let thumbBytes = null; // Downscaled version for fast preview
-const THUMB_MAX = 256; // Max dimension for preview thumbnail
+let imageInfo = null;
 let chain = [];
 let nextId = 0;
 let editingNodeId = null; // Currently editing node (null = none)
@@ -224,30 +359,11 @@ fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fi
 
 async function loadFile(file) {
   imageBytes = new Uint8Array(await file.arrayBuffer());
-
-  // Create thumbnail for fast preview
-  try {
-    const pipe = new Pipeline();
-    const src = pipe.read(imageBytes);
-    const info = pipe.nodeInfo(src);
-    const scale = Math.min(THUMB_MAX / info.width, THUMB_MAX / info.height, 1);
-    if (scale < 1) {
-      const tw = Math.round(info.width * scale);
-      const th = Math.round(info.height * scale);
-      const resized = pipe.resize(src, tw, th, 'bilinear');
-      thumbBytes = pipe.writePng(resized, {}, undefined);
-    } else {
-      thumbBytes = imageBytes;
-    }
-    previewInfo.textContent = `${info.width}×${info.height} | ${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB`;
-  } catch (e) {
-    thumbBytes = imageBytes;
-    previewInfo.textContent = `${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB`;
-  }
+  previewInfo.textContent = `${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB | Loading...`;
 
   // Render original for before/after comparison
   try {
-    const blob = new Blob([imageBytes], { type: 'image/png' });
+    const blob = new Blob([imageBytes], { type: file.type || 'image/png' });
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
@@ -259,9 +375,9 @@ async function loadFile(file) {
     img.src = url;
   } catch (_) {}
 
-  compareBtn.style.display = 'inline-block';
-  dropHint.style.display = 'block';
-  applyFullChain();
+  // Send to worker — it creates thumbnail + stores bytes
+  const copy = imageBytes.buffer.slice(0);
+  worker.postMessage({ type: 'load', imageBytes: copy }, [copy]);
 }
 
 // ─── Node Management ────────────────────────────────────────────────────────
@@ -476,93 +592,15 @@ function schedulePreview() {
 }
 
 function previewEditing() {
-  if (!thumbBytes || editingNodeId === null) return;
-
-  try {
-    const pipe = new Pipeline();
-    let node = pipe.read(thumbBytes);
-
-    // Apply all chain operations on thumbnail
-    for (const chainNode of chain) {
-      const args = expandArgs(chainNode.op.params, chainNode.paramValues);
-      // For resize on thumbnail, scale proportionally
-      if (chainNode.op.name === 'resize') {
-        const info = pipe.nodeInfo(node);
-        const scale = Math.min(THUMB_MAX / args[0], THUMB_MAX / args[1], 1);
-        node = pipe.resize(node, Math.max(1, Math.round(args[0] * scale)), Math.max(1, Math.round(args[1] * scale)), args[2]);
-      } else if (chainNode.op.name === 'crop') {
-        // Scale crop to thumbnail dimensions
-        const info = pipe.nodeInfo(node);
-        node = pipe.crop(node, 0, 0, Math.min(args[2], info.width), Math.min(args[3], info.height));
-      } else {
-        node = pipe[chainNode.op.name](node, ...args);
-      }
-    }
-
-    const output = pipe.writePng(node, {}, undefined);
-    const blob = new Blob([output], { type: 'image/png' });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.getElementById('thumb-preview');
-      if (canvas) {
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-      }
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  } catch (e) {
-    console.warn('Thumb preview error:', e.message);
-  }
+  if (!imageBytes || editingNodeId === null) return;
+  requestWorker({ type: 'process', chain: serializeChain(), mode: 'thumb' });
 }
 
 // ─── Full Processing (on Apply) ─────────────────────────────────────────────
 
 function applyFullChain() {
   if (!imageBytes) return;
-
-  const t0 = performance.now();
-  try {
-    const pipe = new Pipeline();
-    let node = pipe.read(imageBytes);
-
-    for (const chainNode of chain) {
-      const t = performance.now();
-      const args = expandArgs(chainNode.op.params, chainNode.paramValues);
-      node = pipe[chainNode.op.name](node, ...args);
-      chainNode.timingMs = Math.round(performance.now() - t);
-    }
-
-    const output = pipe.writePng(node, {}, undefined);
-    const totalMs = Math.round(performance.now() - t0);
-    totalTimeEl.textContent = `Total: ${totalMs}ms (${chain.length} ops)`;
-
-    // Update timing in cards
-    for (const cn of chain) {
-      const card = chainEl.querySelector(`[data-id="${cn.id}"]`);
-      if (card) {
-        const t = card.querySelector('.node-timing');
-        if (t) t.textContent = `${cn.timingMs}ms`;
-      }
-    }
-
-    const blob = new Blob([output], { type: 'image/png' });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      previewCanvas.width = img.width;
-      previewCanvas.height = img.height;
-      previewCanvas.getContext('2d').drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  } catch (e) {
-    totalTimeEl.textContent = `Error: ${e.message}`;
-    totalTimeEl.style.color = '#f87171';
-    console.error(e);
-  }
+  requestWorker({ type: 'process', chain: serializeChain(), mode: 'full' });
 }
 
 // ─── Before/After Comparison ────────────────────────────────────────────────
@@ -585,24 +623,7 @@ document.getElementById('download-btn').addEventListener('click', () => {
   if (!imageBytes) return;
   const format = document.getElementById('export-format').value;
   const quality = parseInt(document.getElementById('quality').value);
-
-  const pipe = new Pipeline();
-  let node = pipe.read(imageBytes);
-  for (const cn of chain) {
-    const args = expandArgs(cn.op.params, cn.paramValues);
-    node = pipe[cn.op.name](node, ...args);
-  }
-
-  let output, mime;
-  if (format === 'jpeg') { output = pipe.writeJpeg(node, { quality }, undefined); mime = 'image/jpeg'; }
-  else if (format === 'webp') { output = pipe.writeWebp(node, { quality }, undefined); mime = 'image/webp'; }
-  else { output = pipe.writePng(node, {}, undefined); mime = 'image/png'; }
-
-  const blob = new Blob([output], { type: mime });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `rasmcore-pipeline.${format}`;
-  a.click();
+  requestWorker({ type: 'export', chain: serializeChain(), format, quality });
 });
 
 // ─── Code Generation ────────────────────────────────────────────────────────
