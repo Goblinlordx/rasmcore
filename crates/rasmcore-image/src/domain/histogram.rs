@@ -946,7 +946,9 @@ mod tests {
         let ref_data = match std::fs::read_to_string(ref_path) {
             Ok(d) => d,
             Err(_) => {
-                eprintln!("SKIP: histogram_match_reference.json not found (run python3 tests/fixtures/scripts/histogram_match_reference.py)");
+                eprintln!(
+                    "SKIP: histogram_match_reference.json not found (run python3 tests/fixtures/scripts/histogram_match_reference.py)"
+                );
                 return;
             }
         };
@@ -958,19 +960,43 @@ mod tests {
         for case in &cases {
             let name = case["name"].as_str().unwrap();
             let channels = case["channels"].as_u64().unwrap() as usize;
-            let src_w = case["width_src"].as_u64().unwrap_or(case["width"].as_u64().unwrap_or(0)) as u32;
-            let src_h = case["height_src"].as_u64().unwrap_or(case["height"].as_u64().unwrap_or(1)) as u32;
-            let tgt_w = case["width_tgt"].as_u64().unwrap_or(case["width"].as_u64().unwrap_or(0)) as u32;
-            let tgt_h = case["height_tgt"].as_u64().unwrap_or(case["height"].as_u64().unwrap_or(1)) as u32;
+            let src_w = case["width_src"]
+                .as_u64()
+                .unwrap_or(case["width"].as_u64().unwrap_or(0)) as u32;
+            let src_h = case["height_src"]
+                .as_u64()
+                .unwrap_or(case["height"].as_u64().unwrap_or(1)) as u32;
+            let tgt_w = case["width_tgt"]
+                .as_u64()
+                .unwrap_or(case["width"].as_u64().unwrap_or(0)) as u32;
+            let tgt_h = case["height_tgt"]
+                .as_u64()
+                .unwrap_or(case["height"].as_u64().unwrap_or(1)) as u32;
 
-            let source: Vec<u8> = case["source"].as_array().unwrap()
-                .iter().map(|v| v.as_u64().unwrap() as u8).collect();
-            let target: Vec<u8> = case["target"].as_array().unwrap()
-                .iter().map(|v| v.as_u64().unwrap() as u8).collect();
-            let expected: Vec<u8> = case["expected"].as_array().unwrap()
-                .iter().map(|v| v.as_u64().unwrap() as u8).collect();
+            let source: Vec<u8> = case["source"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u8)
+                .collect();
+            let target: Vec<u8> = case["target"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u8)
+                .collect();
+            let expected: Vec<u8> = case["expected"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u8)
+                .collect();
 
-            let fmt = if channels == 1 { PixelFormat::Gray8 } else { PixelFormat::Rgb8 };
+            let fmt = if channels == 1 {
+                PixelFormat::Gray8
+            } else {
+                PixelFormat::Rgb8
+            };
             let src_info = test_info(src_w, src_h, fmt);
             let tgt_info = test_info(tgt_w, tgt_h, fmt);
 
@@ -991,11 +1017,16 @@ mod tests {
             }
 
             assert_eq!(
-                mismatches, 0,
+                mismatches,
+                0,
                 "PARITY FAIL: {name} — {mismatches}/{} pixels differ, max_diff={max_diff}",
                 result.len()
             );
-            eprintln!("  PARITY OK: {name} — {}/{} pixels exact match", result.len(), result.len());
+            eprintln!(
+                "  PARITY OK: {name} — {}/{} pixels exact match",
+                result.len(),
+                result.len()
+            );
         }
     }
 }
