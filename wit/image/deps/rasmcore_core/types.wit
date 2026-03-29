@@ -13,6 +13,8 @@ interface types {
         bgra8,
         gray8,
         gray16,
+        rgb16,
+        rgba16,
         yuv420p,
         yuv422p,
         yuv444p,

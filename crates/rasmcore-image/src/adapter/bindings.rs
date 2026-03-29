@@ -24,6 +24,8 @@ pub mod rasmcore {
                 Bgra8,
                 Gray8,
                 Gray16,
+                Rgb16,
+                Rgba16,
                 Yuv420p,
                 Yuv422p,
                 Yuv444p,
@@ -48,6 +50,12 @@ pub mod rasmcore {
                         }
                         PixelFormat::Gray16 => {
                             f.debug_tuple("PixelFormat::Gray16").finish()
+                        }
+                        PixelFormat::Rgb16 => {
+                            f.debug_tuple("PixelFormat::Rgb16").finish()
+                        }
+                        PixelFormat::Rgba16 => {
+                            f.debug_tuple("PixelFormat::Rgba16").finish()
                         }
                         PixelFormat::Yuv420p => {
                             f.debug_tuple("PixelFormat::Yuv420p").finish()
@@ -75,10 +83,12 @@ pub mod rasmcore {
                         3 => PixelFormat::Bgra8,
                         4 => PixelFormat::Gray8,
                         5 => PixelFormat::Gray16,
-                        6 => PixelFormat::Yuv420p,
-                        7 => PixelFormat::Yuv422p,
-                        8 => PixelFormat::Yuv444p,
-                        9 => PixelFormat::Nv12,
+                        6 => PixelFormat::Rgb16,
+                        7 => PixelFormat::Rgba16,
+                        8 => PixelFormat::Yuv420p,
+                        9 => PixelFormat::Yuv422p,
+                        10 => PixelFormat::Yuv444p,
+                        11 => PixelFormat::Nv12,
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
