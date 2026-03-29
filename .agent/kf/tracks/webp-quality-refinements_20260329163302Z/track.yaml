@@ -132,7 +132,7 @@ plan:
 - phase: Validation
   tasks:
   - text: Verify PSNR improvement on gradient_256 Q75 (target >= 0.5 dB gain)
-    done: false
+    done: true
   - text: Verify all existing tests pass
-    done: false
+    done: true
 extra: {}
