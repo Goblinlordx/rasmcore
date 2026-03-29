@@ -5,42 +5,34 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: 'Three Lightroom/Photoshop-tier photo enhancement operations: dehaze (dark
-    channel prior), clarity (midtone local contrast), and Local Laplacian filtering
-    (Paris et al. 2011 for detail enhancement). Huge visual impact, rare in open-source.'
-  context: Dehaze uses the dark channel prior (He et al. 2009) to estimate atmospheric
-    light and transmission map, then recover the scene. Clarity is midtone-targeted
-    local contrast enhancement (unsharp mask with large radius, applied primarily
-    to midtones). Local Laplacian filtering (Paris et al. 2011) decomposes the image
-    into a Laplacian pyramid and remaps each level, enabling detail enhancement or
-    smoothing. libvips is the only open-source lib with Local Laplacian.
+  summary: 'Three Lightroom/Photoshop-tier photo enhancement operations: dehaze (dark channel prior), clarity (midtone local
+    contrast), and Local Laplacian filtering (Paris et al. 2011 for detail enhancement). Huge visual impact, rare in open-source.'
+  context: Dehaze uses the dark channel prior (He et al. 2009) to estimate atmospheric light and transmission map, then recover
+    the scene. Clarity is midtone-targeted local contrast enhancement (unsharp mask with large radius, applied primarily to
+    midtones). Local Laplacian filtering (Paris et al. 2011) decomposes the image into a Laplacian pyramid and remaps each
+    level, enabling detail enhancement or smoothing. libvips is the only open-source lib with Local Laplacian.
   codebase_analysis: ''
   acceptance_criteria:
   - Dehaze visibly removes haze from test images (foggy scenes)
   - Clarity enhances midtone local contrast without affecting shadows/highlights
   - Local Laplacian produces detail enhancement comparable to libvips locallaplacian
-  out_of_scope: Neural network-based enhancement. HDR tone mapping (separate track).
-    GPU acceleration.
-  technical_notes: 'Dehaze: (1) compute dark channel (min over color channels in local
-    patch), (2) estimate atmospheric light from brightest dark-channel pixels, (3)
-    estimate transmission map, (4) refine transmission with guided filter (from Track
-    1), (5) recover scene radiance. Clarity: apply unsharp mask with large sigma (30-50px),
-    blend only midtones (luminance 25-75%). Local Laplacian: build Gaussian pyramid,
-    at each level remap intensities via sigmoidal curve, reconstruct via Laplacian.'
+  out_of_scope: Neural network-based enhancement. HDR tone mapping (separate track). GPU acceleration.
+  technical_notes: 'Dehaze: (1) compute dark channel (min over color channels in local patch), (2) estimate atmospheric light
+    from brightest dark-channel pixels, (3) estimate transmission map, (4) refine transmission with guided filter (from Track
+    1), (5) recover scene radiance. Clarity: apply unsharp mask with large sigma (30-50px), blend only midtones (luminance
+    25-75%). Local Laplacian: build Gaussian pyramid, at each level remap intensities via sigmoidal curve, reconstruct via
+    Laplacian.'
 plan:
 - phase: Photo Enhancement
   tasks:
-  - text: Implement dark channel prior dehaze (He et al. 2009) with guided filter
-      refinement
-    done: false
-  - text: Implement clarity as midtone-weighted local contrast (large-radius unsharp
-      mask)
-    done: false
-  - text: Implement Local Laplacian filtering (Paris et al. 2011) with sigma and detail
-      parameters
-    done: false
+  - text: Implement dark channel prior dehaze (He et al. 2009) with guided filter refinement
+    done: true
+  - text: Implement clarity as midtone-weighted local contrast (large-radius unsharp mask)
+    done: true
+  - text: Implement Local Laplacian filtering (Paris et al. 2011) with sigma and detail parameters
+    done: true
   - text: Test dehaze on synthetic hazy images
-    done: false
+    done: true
   - text: Test clarity and Local Laplacian against libvips reference
-    done: false
+    done: true
 extra: {}
