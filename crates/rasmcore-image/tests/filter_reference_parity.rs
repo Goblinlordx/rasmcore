@@ -349,3 +349,252 @@ fn reference_parity_summary() {
     eprintln!("  CLOSE (MAE≤2.0): sobel (border reflect variant)");
     eprintln!("=======================================");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Morphological Operations — OpenCV Reference
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn morphology_erode_matches_opencv() {
+    use filters::MorphShape;
+
+    let py = venv_python();
+    eprintln!("=== Morphology Erode — OpenCV Reference ===");
+
+    // Use standard reference image (grayscale gradient)
+    let w = 64u32;
+    let h = 64u32;
+    let mut input = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            input.push(((x * 255) / w) as u8);
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    // Our erode
+    let ours = filters::erode(&input, &info, 3, MorphShape::Rect).unwrap();
+
+    // OpenCV erode
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         k=np.ones((3,3),np.uint8)\n\
+         out=cv2.erode(px,k,borderType=cv2.BORDER_REFLECT_101)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv erode failed");
+    assert!(output.status.success(), "opencv erode: {}", String::from_utf8_lossy(&output.stderr));
+    let reference = output.stdout;
+
+    assert_close("erode 3x3 rect", &ours, &reference, 1.0);
+}
+
+#[test]
+fn morphology_dilate_matches_opencv() {
+    use filters::MorphShape;
+
+    let py = venv_python();
+    eprintln!("=== Morphology Dilate — OpenCV Reference ===");
+
+    let w = 64u32;
+    let h = 64u32;
+    let mut input = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            input.push(((x * 255) / w) as u8);
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let ours = filters::dilate(&input, &info, 3, MorphShape::Rect).unwrap();
+
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         k=np.ones((3,3),np.uint8)\n\
+         out=cv2.dilate(px,k,borderType=cv2.BORDER_REFLECT_101)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv dilate failed");
+    assert!(output.status.success(), "opencv dilate: {}", String::from_utf8_lossy(&output.stderr));
+
+    assert_close("dilate 3x3 rect", &ours, &output.stdout, 1.0);
+}
+
+#[test]
+fn morphology_open_close_matches_opencv() {
+    use filters::MorphShape;
+
+    let py = venv_python();
+    eprintln!("=== Morphology Open/Close — OpenCV Reference ===");
+
+    // Use photo_256x256 as standard reference, converted to grayscale
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/generated/inputs/photo_256x256.png");
+    let (input, w, h) = if fixture_path.exists() {
+        let img = image::open(&fixture_path).unwrap().to_luma8();
+        let w = img.width();
+        let h = img.height();
+        (img.into_raw(), w, h)
+    } else {
+        // Fallback: synthetic gradient
+        let w = 64u32;
+        let h = 64u32;
+        let mut px = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(((x * 255) / w) as u8);
+            }
+        }
+        (px, w, h)
+    };
+
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    // Open
+    let ours_open = filters::morph_open(&input, &info, 5, MorphShape::Rect).unwrap();
+    let script_open = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         k=np.ones((5,5),np.uint8)\n\
+         out=cv2.morphologyEx(px,cv2.MORPH_OPEN,k,borderType=cv2.BORDER_REFLECT_101)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let out = Command::new(&py)
+        .arg("-c").arg(&script_open)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| { use std::io::Write; c.stdin.take().unwrap().write_all(&input).unwrap(); c.wait_with_output() })
+        .expect("opencv open failed");
+    assert!(out.status.success(), "opencv open: {}", String::from_utf8_lossy(&out.stderr));
+    assert_close("open 5x5 rect", &ours_open, &out.stdout, 1.0);
+
+    // Close
+    let ours_close = filters::morph_close(&input, &info, 5, MorphShape::Rect).unwrap();
+    let script_close = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         k=np.ones((5,5),np.uint8)\n\
+         out=cv2.morphologyEx(px,cv2.MORPH_CLOSE,k,borderType=cv2.BORDER_REFLECT_101)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let out = Command::new(&py)
+        .arg("-c").arg(&script_close)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| { use std::io::Write; c.stdin.take().unwrap().write_all(&input).unwrap(); c.wait_with_output() })
+        .expect("opencv close failed");
+    assert!(out.status.success(), "opencv close: {}", String::from_utf8_lossy(&out.stderr));
+    assert_close("close 5x5 rect", &ours_close, &out.stdout, 1.0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NLM Denoising — OpenCV Reference
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn nlm_denoise_matches_opencv() {
+    let py = venv_python();
+    eprintln!("=== NLM Denoising — OpenCV Reference ===");
+
+    // Create noisy grayscale image (deterministic)
+    let w = 32u32;
+    let h = 32u32;
+    let mut input = vec![128u8; (w * h) as usize];
+    for i in 0..input.len() {
+        let noise = ((i as u32).wrapping_mul(2654435761) >> 24) as i16 - 128;
+        input[i] = (128i16 + noise / 4).clamp(0, 255) as u8;
+    }
+
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let params = filters::NlmParams {
+        h: 20.0,
+        patch_size: 7,
+        search_size: 21,
+    };
+    let ours = filters::nlm_denoise(&input, &info, &params).unwrap();
+
+    // OpenCV NLM
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w})\n\
+         out=cv2.fastNlMeansDenoising(px,None,20.0,7,21)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv nlm failed");
+    assert!(output.status.success(), "opencv nlm: {}", String::from_utf8_lossy(&output.stderr));
+
+    let reference = &output.stdout;
+    let mae = mean_absolute_error(&ours, reference);
+    let max_err = max_absolute_error(&ours, reference);
+    eprintln!("  NLM h=20 7x21: MAE={mae:.4}, max_err={max_err}");
+
+    // NLM implementations vary significantly — OpenCV uses a different
+    // normalization and patch weighting scheme. Accept ALGORITHM tier.
+    assert!(
+        mae < 10.0,
+        "NLM: MAE={mae:.4} exceeds ALGORITHM threshold 10.0 (different normalization)"
+    );
+}
