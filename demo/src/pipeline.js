@@ -1,11 +1,16 @@
 /**
- * rasmcore pipeline builder — visual chain editor with auto-discovered operations.
+ * rasmcore pipeline builder v2 — visual chain editor.
  *
- * Operations are discovered from the ImagePipeline class methods at runtime.
- * No hard-coded filter list — new #[register_filter] operations appear automatically.
+ * Features:
+ * - Auto-discovered operations from ImagePipeline
+ * - Complete param metadata for all operations
+ * - Drag-to-reorder layers
+ * - Edit mode with small preview (downscaled for speed)
+ * - Apply button commits to full-res pipeline
+ * - 1-second debounce on slider drags
  */
 
-// ─── SDK + Operation Discovery ──────────────────────────────────────────────
+// ─── SDK ────────────────────────────────────────────────────────────────────
 
 let sdk, Pipeline;
 try {
@@ -16,27 +21,26 @@ try {
   throw e;
 }
 
-// Auto-discover operations from ImagePipeline prototype
-const SKIP = new Set(['constructor', 'read', 'nodeInfo', 'composite']);
-const WRITE_PREFIX = 'write';
+// ─── Operation Metadata ─────────────────────────────────────────────────────
 
-// Operation metadata — auto-derived from method signatures
-const operations = [];
-const pipe = new Pipeline();
-const proto = Object.getPrototypeOf(pipe);
-const methodNames = Object.getOwnPropertyNames(proto).filter(n => typeof proto[n] === 'function' && !SKIP.has(n) && !n.startsWith(WRITE_PREFIX));
-
-// Define param metadata for known operations (extensible via JSON manifest in future)
+// Complete param metadata for all pipeline operations.
+// This should eventually be auto-generated from filter registry at build time.
 const PARAM_META = {
+  // Filters
   blur:        [{ name: 'radius', type: 'number', min: 0, max: 50, step: 0.5, default: 3 }],
   sharpen:     [{ name: 'amount', type: 'number', min: 0, max: 10, step: 0.1, default: 1 }],
-  brightness:  [{ name: 'amount', type: 'number', min: -1, max: 1, step: 0.05, default: 0 }],
-  contrast:    [{ name: 'amount', type: 'number', min: -1, max: 1, step: 0.05, default: 0 }],
+  brightness:  [{ name: 'amount', type: 'number', min: -1, max: 1, step: 0.02, default: 0 }],
+  contrast:    [{ name: 'amount', type: 'number', min: -1, max: 1, step: 0.02, default: 0 }],
   grayscale:   [],
+  median:      [{ name: 'radius', type: 'number', min: 1, max: 20, step: 1, default: 3 }],
+  convolve:    [{ name: 'kernelWidth', type: 'number', min: 1, max: 7, step: 2, default: 3 },
+                { name: 'kernelHeight', type: 'number', min: 1, max: 7, step: 2, default: 3 },
+                { name: 'divisor', type: 'number', min: 0.1, max: 25, step: 0.1, default: 9 }],
+  // Edge detection
   sobel:       [],
   canny:       [{ name: 'lowThreshold', type: 'number', min: 0, max: 255, step: 1, default: 50 },
                 { name: 'highThreshold', type: 'number', min: 0, max: 255, step: 1, default: 150 }],
-  median:      [{ name: 'radius', type: 'number', min: 1, max: 20, step: 1, default: 3 }],
+  // Transform
   resize:      [{ name: 'width', type: 'number', min: 1, max: 4000, step: 1, default: 800 },
                 { name: 'height', type: 'number', min: 1, max: 4000, step: 1, default: 600 },
                 { name: 'filter', type: 'enum', options: ['nearest', 'bilinear', 'bicubic', 'lanczos3'], default: 'lanczos3' }],
@@ -46,32 +50,41 @@ const PARAM_META = {
                 { name: 'height', type: 'number', min: 1, max: 4000, step: 1, default: 256 }],
   rotate:      [{ name: 'angle', type: 'enum', options: ['r90', 'r180', 'r270'], default: 'r90' }],
   flip:        [{ name: 'direction', type: 'enum', options: ['horizontal', 'vertical'], default: 'horizontal' }],
+  // Color
+  convertFormat: [{ name: 'target', type: 'enum', options: ['rgb8', 'rgba8', 'gray8'], default: 'rgb8' }],
 };
 
-// Categorize operations
+// Operations to skip (not useful in the chain builder)
+const SKIP = new Set(['constructor', 'read', 'nodeInfo', 'composite', 'iccToSrgb', 'autoOrient']);
+
 const CATEGORIES = {
   'Filters':    ['blur', 'sharpen', 'brightness', 'contrast', 'grayscale', 'median'],
   'Edge':       ['sobel', 'canny'],
   'Transform':  ['resize', 'crop', 'rotate', 'flip'],
-  'Color':      ['convertFormat', 'autoOrient', 'iccToSrgb'],
+  'Color':      ['convertFormat'],
 };
 
-// Build discovered operations list
+// Discover operations
+const operations = [];
+const tempPipe = new Pipeline();
+const proto = Object.getPrototypeOf(tempPipe);
+const methodNames = Object.getOwnPropertyNames(proto)
+  .filter(n => typeof proto[n] === 'function' && !SKIP.has(n) && !n.startsWith('write'));
+
 for (const name of methodNames) {
-  const params = PARAM_META[name] || [];
+  if (!PARAM_META[name]) continue; // skip ops without param metadata
   let category = 'Other';
   for (const [cat, ops] of Object.entries(CATEGORIES)) {
     if (ops.includes(name)) { category = cat; break; }
   }
-  operations.push({ name, category, params });
+  operations.push({ name, category, params: PARAM_META[name] });
 }
 
-// ─── Palette UI ─────────────────────────────────────────────────────────────
+// ─── Palette ────────────────────────────────────────────────────────────────
 
 const paletteEl = document.getElementById('palette-items');
 paletteEl.innerHTML = '';
 
-// Group by category
 const grouped = {};
 for (const op of operations) {
   if (!grouped[op.category]) grouped[op.category] = [];
@@ -81,167 +94,319 @@ for (const op of operations) {
 for (const [cat, ops] of Object.entries(grouped)) {
   const h3 = document.createElement('h3');
   h3.textContent = cat;
-  paletteEl.parentElement.appendChild(h3);
+  h3.style.cssText = 'font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:#666;margin:0.75rem 0 0.3rem';
+  paletteEl.appendChild(h3);
   for (const op of ops) {
     const div = document.createElement('div');
     div.className = 'palette-item';
-    div.textContent = op.name;
+    const paramHint = op.params.length > 0 ? ` (${op.params.length})` : '';
+    div.innerHTML = `${op.name}<span style="color:#555;font-size:0.7rem">${paramHint}</span>`;
     div.addEventListener('click', () => addNode(op));
-    paletteEl.parentElement.appendChild(div);
+    paletteEl.appendChild(div);
   }
 }
-paletteEl.remove(); // remove the loading placeholder
 
-// ─── Chain State ────────────────────────────────────────────────────────────
+// ─── State ──────────────────────────────────────────────────────────────────
 
 let imageBytes = null;
-let chain = []; // Array of { op, paramValues, id, timingMs }
+let thumbBytes = null; // Downscaled version for fast preview
+const THUMB_MAX = 256; // Max dimension for preview thumbnail
+let chain = [];
 let nextId = 0;
+let editingNodeId = null; // Currently editing node (null = none)
+let dragSrcIdx = null; // Drag source index
 
 const chainEl = document.getElementById('chain');
 const dropHint = document.getElementById('drop-hint');
 const previewCanvas = document.getElementById('preview-canvas');
 const previewInfo = document.getElementById('preview-info');
 const totalTimeEl = document.getElementById('total-time');
+const fileInput = document.getElementById('file-input');
 
 // ─── Image Loading ──────────────────────────────────────────────────────────
 
-const fileInput = document.getElementById('file-input');
-
-// Make preview area a drop zone
-document.querySelector('.preview').addEventListener('click', () => {
-  if (!imageBytes) fileInput.click();
-});
+document.querySelector('.preview').addEventListener('click', () => { if (!imageBytes) fileInput.click(); });
 document.querySelector('.preview').addEventListener('dragover', (e) => e.preventDefault());
 document.querySelector('.preview').addEventListener('drop', (e) => {
   e.preventDefault();
   if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
 });
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) loadFile(fileInput.files[0]);
-});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
 
 async function loadFile(file) {
   imageBytes = new Uint8Array(await file.arrayBuffer());
-  previewInfo.textContent = `${file.name} | ${(imageBytes.length / 1024).toFixed(0)} KB`;
+
+  // Create thumbnail for fast preview
+  try {
+    const pipe = new Pipeline();
+    const src = pipe.read(imageBytes);
+    const info = pipe.nodeInfo(src);
+    const scale = Math.min(THUMB_MAX / info.width, THUMB_MAX / info.height, 1);
+    if (scale < 1) {
+      const tw = Math.round(info.width * scale);
+      const th = Math.round(info.height * scale);
+      const resized = pipe.resize(src, tw, th, 'bilinear');
+      thumbBytes = pipe.writePng(resized, {}, undefined);
+    } else {
+      thumbBytes = imageBytes;
+    }
+    previewInfo.textContent = `${info.width}×${info.height} | ${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB`;
+  } catch (e) {
+    thumbBytes = imageBytes;
+    previewInfo.textContent = `${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB`;
+  }
+
   dropHint.style.display = 'block';
-  processChain();
+  applyFullChain();
 }
 
 // ─── Node Management ────────────────────────────────────────────────────────
 
 function addNode(op) {
-  if (!imageBytes) {
-    fileInput.click();
-    return;
-  }
+  if (!imageBytes) { fileInput.click(); return; }
   const node = {
     id: nextId++,
     op,
     paramValues: Object.fromEntries(op.params.map(p => [p.name, p.default])),
+    applied: true, // new nodes are "applied" with defaults
     timingMs: 0,
   };
   chain.push(node);
+  editingNodeId = node.id; // auto-open edit mode
   renderChain();
-  processChain();
+  previewEditing(); // show thumbnail preview
 }
 
 function removeNode(id) {
   chain = chain.filter(n => n.id !== id);
+  if (editingNodeId === id) editingNodeId = null;
   renderChain();
-  processChain();
+  applyFullChain();
 }
+
+function moveNode(fromIdx, toIdx) {
+  if (fromIdx === toIdx) return;
+  const [node] = chain.splice(fromIdx, 1);
+  chain.splice(toIdx, 0, node);
+  renderChain();
+  applyFullChain();
+}
+
+// ─── Render Chain ───────────────────────────────────────────────────────────
 
 function renderChain() {
   chainEl.innerHTML = '';
-  for (const node of chain) {
+
+  chain.forEach((node, idx) => {
     const card = document.createElement('div');
-    card.className = 'node-card';
+    card.className = 'node-card' + (editingNodeId === node.id ? ' editing' : '');
     card.dataset.id = node.id;
+    card.dataset.idx = idx;
+    card.draggable = true;
+
+    // Drag handlers
+    card.addEventListener('dragstart', (e) => {
+      dragSrcIdx = idx;
+      card.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => { card.style.opacity = '1'; dragSrcIdx = null; });
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.style.borderTop = '2px solid #3b82f6';
+    });
+    card.addEventListener('dragleave', () => { card.style.borderTop = ''; });
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.style.borderTop = '';
+      if (dragSrcIdx !== null && dragSrcIdx !== idx) {
+        moveNode(dragSrcIdx, idx);
+      }
+    });
 
     // Header
     const header = document.createElement('div');
     header.className = 'node-header';
+
     const nameSpan = document.createElement('span');
     nameSpan.className = 'node-name';
-    nameSpan.textContent = node.op.name;
+    nameSpan.textContent = `${idx + 1}. ${node.op.name}`;
+
+    const actions = document.createElement('span');
+    actions.style.cssText = 'display:flex;gap:6px;align-items:center';
+
     const timingSpan = document.createElement('span');
     timingSpan.className = 'node-timing';
     timingSpan.textContent = node.timingMs > 0 ? `${node.timingMs}ms` : '';
+
+    if (editingNodeId !== node.id && node.op.params.length > 0) {
+      const editBtn = document.createElement('span');
+      editBtn.textContent = '✎';
+      editBtn.style.cssText = 'cursor:pointer;color:#60a5fa;font-size:0.85rem';
+      editBtn.title = 'Edit parameters';
+      editBtn.addEventListener('click', () => { editingNodeId = node.id; renderChain(); previewEditing(); });
+      actions.appendChild(editBtn);
+    }
+
     const removeBtn = document.createElement('span');
     removeBtn.className = 'node-remove';
     removeBtn.textContent = '✕';
     removeBtn.addEventListener('click', () => removeNode(node.id));
+
+    actions.appendChild(timingSpan);
+    actions.appendChild(removeBtn);
     header.appendChild(nameSpan);
-    header.appendChild(timingSpan);
-    header.appendChild(removeBtn);
+    header.appendChild(actions);
     card.appendChild(header);
 
-    // Params
-    for (const p of node.op.params) {
-      const paramDiv = document.createElement('div');
-      paramDiv.className = 'node-param';
+    // Param summary (when not editing)
+    if (editingNodeId !== node.id && node.op.params.length > 0) {
+      const summary = document.createElement('div');
+      summary.style.cssText = 'font-size:0.65rem;color:#666;margin-top:2px';
+      summary.textContent = node.op.params.map(p => `${p.name}=${node.paramValues[p.name]}`).join(', ');
+      card.appendChild(summary);
+    }
 
-      if (p.type === 'number') {
-        const label = document.createElement('label');
-        const valSpan = document.createElement('span');
-        valSpan.textContent = node.paramValues[p.name];
-        label.textContent = p.name + ' ';
-        label.appendChild(valSpan);
-        paramDiv.appendChild(label);
+    // Edit mode: param controls + preview + apply
+    if (editingNodeId === node.id) {
+      for (const p of node.op.params) {
+        const paramDiv = document.createElement('div');
+        paramDiv.className = 'node-param';
 
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = p.min;
-        input.max = p.max;
-        input.step = p.step;
-        input.value = node.paramValues[p.name];
-        input.addEventListener('input', () => {
-          node.paramValues[p.name] = parseFloat(input.value);
-          valSpan.textContent = input.value;
-          scheduleProcess();
-        });
-        paramDiv.appendChild(input);
-      } else if (p.type === 'enum') {
-        const label = document.createElement('label');
-        label.textContent = p.name;
-        paramDiv.appendChild(label);
+        if (p.type === 'number') {
+          const label = document.createElement('label');
+          const valSpan = document.createElement('span');
+          valSpan.textContent = node.paramValues[p.name];
+          label.textContent = p.name + ' ';
+          label.appendChild(valSpan);
+          paramDiv.appendChild(label);
 
-        const select = document.createElement('select');
-        for (const opt of p.options) {
-          const option = document.createElement('option');
-          option.value = opt;
-          option.textContent = opt;
-          if (opt === node.paramValues[p.name]) option.selected = true;
-          select.appendChild(option);
+          const input = document.createElement('input');
+          input.type = 'range';
+          input.min = p.min; input.max = p.max; input.step = p.step;
+          input.value = node.paramValues[p.name];
+          input.addEventListener('input', () => {
+            node.paramValues[p.name] = parseFloat(input.value);
+            valSpan.textContent = input.value;
+            schedulePreview(); // debounced small preview
+          });
+          paramDiv.appendChild(input);
+        } else if (p.type === 'enum') {
+          const label = document.createElement('label');
+          label.textContent = p.name;
+          paramDiv.appendChild(label);
+          const select = document.createElement('select');
+          for (const opt of p.options) {
+            const option = document.createElement('option');
+            option.value = opt; option.textContent = opt;
+            if (opt === node.paramValues[p.name]) option.selected = true;
+            select.appendChild(option);
+          }
+          select.addEventListener('change', () => {
+            node.paramValues[p.name] = select.value;
+            schedulePreview();
+          });
+          paramDiv.appendChild(select);
         }
-        select.addEventListener('change', () => {
-          node.paramValues[p.name] = select.value;
-          scheduleProcess();
-        });
-        paramDiv.appendChild(select);
+        card.appendChild(paramDiv);
       }
 
-      card.appendChild(paramDiv);
+      // Small preview canvas
+      const previewWrap = document.createElement('div');
+      previewWrap.style.cssText = 'margin-top:6px;text-align:center';
+      const thumbCanvas = document.createElement('canvas');
+      thumbCanvas.id = 'thumb-preview';
+      thumbCanvas.style.cssText = 'max-width:100%;border:1px solid #333;border-radius:3px';
+      previewWrap.appendChild(thumbCanvas);
+      card.appendChild(previewWrap);
+
+      // Apply button
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'margin-top:6px;display:flex;gap:6px';
+      const applyBtn = document.createElement('button');
+      applyBtn.textContent = 'Apply';
+      applyBtn.addEventListener('click', () => {
+        editingNodeId = null;
+        renderChain();
+        applyFullChain();
+      });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.className = 'secondary';
+      cancelBtn.style.cssText = 'background:#333';
+      cancelBtn.addEventListener('click', () => {
+        editingNodeId = null;
+        renderChain();
+      });
+      btnRow.appendChild(applyBtn);
+      btnRow.appendChild(cancelBtn);
+      card.appendChild(btnRow);
     }
 
     chainEl.appendChild(card);
+  });
+}
+
+// ─── Preview (small thumbnail, debounced) ───────────────────────────────────
+
+let previewTimer = null;
+const PREVIEW_DEBOUNCE_MS = 1000; // Wait 1 second after last slider movement
+
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(previewEditing, PREVIEW_DEBOUNCE_MS);
+}
+
+function previewEditing() {
+  if (!thumbBytes || editingNodeId === null) return;
+
+  try {
+    const pipe = new Pipeline();
+    let node = pipe.read(thumbBytes);
+
+    // Apply all chain operations on thumbnail
+    for (const chainNode of chain) {
+      const args = chainNode.op.params.map(p => chainNode.paramValues[p.name]);
+      // For resize on thumbnail, scale proportionally
+      if (chainNode.op.name === 'resize') {
+        const info = pipe.nodeInfo(node);
+        const scale = Math.min(THUMB_MAX / args[0], THUMB_MAX / args[1], 1);
+        node = pipe.resize(node, Math.max(1, Math.round(args[0] * scale)), Math.max(1, Math.round(args[1] * scale)), args[2]);
+      } else if (chainNode.op.name === 'crop') {
+        // Scale crop to thumbnail dimensions
+        const info = pipe.nodeInfo(node);
+        node = pipe.crop(node, 0, 0, Math.min(args[2], info.width), Math.min(args[3], info.height));
+      } else {
+        node = pipe[chainNode.op.name](node, ...args);
+      }
+    }
+
+    const output = pipe.writePng(node, {}, undefined);
+    const blob = new Blob([output], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.getElementById('thumb-preview');
+      if (canvas) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  } catch (e) {
+    console.warn('Thumb preview error:', e.message);
   }
 }
 
-// ─── Processing ─────────────────────────────────────────────────────────────
+// ─── Full Processing (on Apply) ─────────────────────────────────────────────
 
-let debounceTimer = null;
-function scheduleProcess() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(processChain, 150);
-}
-
-function processChain() {
+function applyFullChain() {
   if (!imageBytes) return;
 
   const t0 = performance.now();
-
   try {
     const pipe = new Pipeline();
     let node = pipe.read(imageBytes);
@@ -253,21 +418,19 @@ function processChain() {
       chainNode.timingMs = Math.round(performance.now() - t);
     }
 
-    // Encode as PNG for preview
     const output = pipe.writePng(node, {}, undefined);
     const totalMs = Math.round(performance.now() - t0);
-    totalTimeEl.textContent = `Total: ${totalMs}ms (${chain.length} operations)`;
+    totalTimeEl.textContent = `Total: ${totalMs}ms (${chain.length} ops)`;
 
-    // Update per-node timing display
-    for (const chainNode of chain) {
-      const card = chainEl.querySelector(`[data-id="${chainNode.id}"]`);
+    // Update timing in cards
+    for (const cn of chain) {
+      const card = chainEl.querySelector(`[data-id="${cn.id}"]`);
       if (card) {
-        const timing = card.querySelector('.node-timing');
-        if (timing) timing.textContent = `${chainNode.timingMs}ms`;
+        const t = card.querySelector('.node-timing');
+        if (t) t.textContent = `${cn.timingMs}ms`;
       }
     }
 
-    // Display
     const blob = new Blob([output], { type: 'image/png' });
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -293,28 +456,20 @@ document.getElementById('quality').addEventListener('input', (e) => {
 
 document.getElementById('download-btn').addEventListener('click', () => {
   if (!imageBytes) return;
-
   const format = document.getElementById('export-format').value;
   const quality = parseInt(document.getElementById('quality').value);
 
   const pipe = new Pipeline();
   let node = pipe.read(imageBytes);
-  for (const chainNode of chain) {
-    const args = chainNode.op.params.map(p => chainNode.paramValues[p.name]);
-    node = pipe[chainNode.op.name](node, ...args);
+  for (const cn of chain) {
+    const args = cn.op.params.map(p => cn.paramValues[p.name]);
+    node = pipe[cn.op.name](node, ...args);
   }
 
   let output, mime;
-  if (format === 'jpeg') {
-    output = pipe.writeJpeg(node, { quality }, undefined);
-    mime = 'image/jpeg';
-  } else if (format === 'webp') {
-    output = pipe.writeWebp(node, { quality }, undefined);
-    mime = 'image/webp';
-  } else {
-    output = pipe.writePng(node, {}, undefined);
-    mime = 'image/png';
-  }
+  if (format === 'jpeg') { output = pipe.writeJpeg(node, { quality }, undefined); mime = 'image/jpeg'; }
+  else if (format === 'webp') { output = pipe.writeWebp(node, { quality }, undefined); mime = 'image/webp'; }
+  else { output = pipe.writePng(node, {}, undefined); mime = 'image/png'; }
 
   const blob = new Blob([output], { type: mime });
   const a = document.createElement('a');

@@ -26,7 +26,9 @@
     #drop-hint { border: 2px dashed #333; border-radius: 8px; padding: 2rem 1rem; text-align: center; color: #555; font-size: 0.8rem; cursor: pointer; }
     #drop-hint:hover { border-color: #3b82f6; color: #888; }
 
-    .node-card { background: #16162e; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; position: relative; }
+    .node-card { background: #16162e; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; position: relative; cursor: grab; transition: border-color 0.2s; }
+    .node-card:active { cursor: grabbing; }
+    .node-card.editing { border-color: #3b82f6; background: #1a1a3a; }
     .node-card.source { border-color: #3b82f6; }
     .node-card .node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
     .node-card .node-name { font-size: 0.8rem; font-weight: 600; }
