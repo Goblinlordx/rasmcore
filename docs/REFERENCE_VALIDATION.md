@@ -36,10 +36,15 @@ setup instructions.
 - q75: 27.6 dB (vs cwebp 44.9 dB — gap from missing B_PRED + segmentation)
 - q100: 46.4 dB (vs cwebp 47.4 dB — 1 dB gap from VP8 format floor)
 
-### JPEG Encoder (rasmcore-jpeg)
+### JPEG Encoder/Decoder (rasmcore-jpeg)
 
 | Aspect | Reference | Version | Result |
 |--------|-----------|---------|--------|
+| **Decode 4:4:4** | djpeg (libjpeg-turbo) | 3.1.3 | **Pixel-exact** (MAE=0.0, max_err=0) |
+| **Decode grayscale** | djpeg (libjpeg-turbo) | 3.1.3 | **Pixel-exact** (MAE=0.0, max_err=0) |
+| **Decode 4:2:0/4:2:2** | djpeg (libjpeg-turbo) | 3.1.3 | max_err≤2 (chroma upsample filter) |
+| Encode→decode A≈B MAE | image crate cross-decode | 0.25 | **≤0.12** (tightened from 4.0) |
+| Encode→cross-decode prog. | ImageMagick + image crate | 7.1.2-18 | MAE≤2.6 (tightened from 8.0) |
 | Baseline decode | libjpeg-turbo (djpeg) | 3.1.3 | All outputs decodable |
 | Progressive decode | image crate (Rust) | 0.25 | All outputs decodable |
 | Huffman tables | ITU-T T.81 Annex K | N/A | Standard tables K.3/K.5 |
@@ -47,6 +52,15 @@ setup instructions.
 | Trellis lambda | mozjpeg formula | N/A | `2^14.75 / (2^16.5 + block_energy)` |
 | DCT (shared crate) | HEVC spec ITU-T H.265 | N/A | Butterfly with E8/O8 constants |
 | Three-way parity | mozjpeg + libjpeg-turbo | 3.1.3 | SSIM > 0.99 at matched QP |
+| Truncation safety | N/A | N/A | All parsers return Err, no panics |
+
+**Decode parity detail:** Our JPEG decoder produces byte-identical output to libjpeg-turbo 3.1.3
+for all non-subsampled modes (4:4:4, grayscale). The ±2 difference for 4:2:0/4:2:2
+is from chroma upsampling filter choice (our triangle filter vs libjpeg's fancy upsampling).
+
+**Threshold tightening:** All encode→decode A≈B MAE thresholds tightened from 4.0-5.0 to 1.0
+based on measured values (all ≤0.12). Cross-decode progressive tightened from 8.0 to 4.0
+(measured: 2.59). Multi-MCU grayscale PSNR tightened from 25 dB to 35 dB (measured: infinity).
 
 ### HEVC Decoder (rasmcore-hevc)
 

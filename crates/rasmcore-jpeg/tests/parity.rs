@@ -334,7 +334,7 @@ fn baseline_420_quality_sweep() {
             &original,
             false,
             0.9,
-            4.0,
+            1.0,
         );
     }
 }
@@ -370,7 +370,7 @@ fn baseline_422() {
     )
     .expect("magick 422 failed");
 
-    three_way_check("baseline_422", &our, &ref_jpeg, &original, false, 0.9, 4.0);
+    three_way_check("baseline_422", &our, &ref_jpeg, &original, false, 0.9, 1.0);
 }
 
 // ─── Baseline 4:4:4 ───────────────────────────────────────────────────────
@@ -403,7 +403,7 @@ fn baseline_444() {
     )
     .expect("magick 444 failed");
 
-    three_way_check("baseline_444", &our, &ref_jpeg, &original, false, 0.9, 4.0);
+    three_way_check("baseline_444", &our, &ref_jpeg, &original, false, 0.9, 1.0);
 }
 
 // ─── Grayscale ─────────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ fn grayscale_quality_sweep() {
             &original,
             true,
             0.9,
-            4.0,
+            1.0,
         );
     }
 }
@@ -467,7 +467,7 @@ fn progressive_420() {
         &original,
         false,
         0.9,
-        4.0,
+        1.0,
     );
 }
 
@@ -507,7 +507,7 @@ fn progressive_444() {
         &original,
         false,
         0.9,
-        4.0,
+        1.0,
     );
 }
 
@@ -539,7 +539,7 @@ fn progressive_grayscale() {
         &original,
         true,
         0.9,
-        4.0,
+        1.0,
     );
 }
 
@@ -563,7 +563,7 @@ fn trellis_420() {
     let ref_jpeg = image_crate_encode(&original, w, h, 85);
 
     // Trellis should produce similar or better quality at similar or smaller size
-    three_way_check("trellis_420", &our, &ref_jpeg, &original, false, 0.85, 4.0);
+    three_way_check("trellis_420", &our, &ref_jpeg, &original, false, 0.85, 1.0);
 }
 
 // ─── Arithmetic Coding ─────────────────────────────────────────────────────
@@ -652,7 +652,7 @@ fn checkerboard_420() {
         &original,
         false,
         0.9,
-        4.0,
+        1.0,
     );
 }
 
@@ -684,7 +684,7 @@ fn odd_dimensions_17x13() {
         &original,
         false,
         0.9,
-        5.0, // Higher tolerance for odd dims + MCU padding
+        1.0, // Higher tolerance for odd dims + MCU padding
     );
 }
 
@@ -735,9 +735,9 @@ fn decode_magick_baseline_fixtures() {
         assert!(our_psnr > 15.0, "{label}: PSNR too low: {our_psnr:.1}dB");
         // SA refinement gap for progressive magick files
         let mae_limit = if label.contains("progressive") || label.contains("odd") {
-            8.0
-        } else {
             4.0
+        } else {
+            1.0
         };
         assert!(
             cross_mae < mae_limit,
@@ -777,7 +777,7 @@ fn progressive_quality_sweep() {
             &original,
             false,
             0.9,
-            4.0,
+            1.0,
         );
     }
 }
@@ -809,7 +809,7 @@ fn optimized_huffman_420() {
         &original,
         false,
         0.9,
-        4.0,
+        1.0,
     );
 }
 
