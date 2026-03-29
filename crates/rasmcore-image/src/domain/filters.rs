@@ -101,12 +101,85 @@ where
     Ok(u16_to_bytes(&result_16))
 }
 
+// ─── Filter Config Structs (auto-generate param metadata via ConfigParams) ──
+
 /// Parameters for Gaussian blur.
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct BlurParams {
     /// Blur radius in pixels
     #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
     pub radius: f32,
+}
+
+/// Parameters for unsharp mask sharpening.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct SharpenParams {
+    /// Sharpening amount
+    #[param(min = 0.0, max = 10.0, step = 0.1, default = 1.0)]
+    pub amount: f32,
+}
+
+/// Parameters for brightness adjustment.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct BrightnessParams {
+    /// Brightness offset (-1 to 1)
+    #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
+    pub amount: f32,
+}
+
+/// Parameters for contrast adjustment.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct ContrastParams {
+    /// Contrast factor (-1 to 1)
+    #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
+    pub amount: f32,
+}
+
+/// Parameters for median filter.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MedianParams {
+    /// Filter radius in pixels
+    #[param(min = 1, max = 20, step = 1, default = 3)]
+    pub radius: u32,
+}
+
+/// Parameters for Canny edge detection.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct CannyParams {
+    /// Low hysteresis threshold
+    #[param(min = 0.0, max = 255.0, step = 1.0, default = 50.0)]
+    pub low_threshold: f32,
+    /// High hysteresis threshold
+    #[param(min = 0.0, max = 255.0, step = 1.0, default = 150.0)]
+    pub high_threshold: f32,
+}
+
+/// Parameters for resize transform.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct ResizeParams {
+    /// Target width in pixels
+    #[param(min = 1, max = 8000, step = 1, default = 800)]
+    pub width: u32,
+    /// Target height in pixels
+    #[param(min = 1, max = 8000, step = 1, default = 600)]
+    pub height: u32,
+}
+
+/// Parameters for crop transform.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct CropParams {
+    /// X offset
+    #[param(min = 0, max = 8000, step = 1, default = 0)]
+    pub x: u32,
+    /// Y offset
+    #[param(min = 0, max = 8000, step = 1, default = 0)]
+    pub y: u32,
+    /// Crop width
+    #[param(min = 1, max = 8000, step = 1, default = 256)]
+    pub width: u32,
+    /// Crop height
+    #[param(min = 1, max = 8000, step = 1, default = 256)]
+    pub height: u32,
 }
 
 /// Apply gaussian blur using libblur (SIMD-optimized).

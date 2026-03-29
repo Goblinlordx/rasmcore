@@ -132,6 +132,58 @@ fn main() {
         "rasmcore build.rs: Generated adapter code at {}/generated_filter_adapter.rs",
         out_dir.display()
     );
+
+    // ── Generate param-manifest.json ──────────────────────────────────────
+    let param_structs = parse_config_params_structs(&source);
+    let mut manifest = String::from("{\n  \"filters\": [\n");
+
+    for (i, f) in filters.iter().enumerate() {
+        // Match filter to its param struct by name convention: blur → BlurParams
+        let struct_name = format!(
+            "{}Params",
+            f.name.chars().next().unwrap().to_uppercase().collect::<String>()
+                + &f.name[1..]
+        );
+        let params = param_structs.get(&struct_name);
+
+        manifest.push_str("    {\n");
+        manifest.push_str(&format!("      \"name\": \"{}\",\n", f.name));
+        manifest.push_str(&format!("      \"category\": \"{}\",\n", f.category));
+        manifest.push_str("      \"params\": [");
+
+        if let Some(fields) = params {
+            for (j, field) in fields.iter().enumerate() {
+                if j > 0 { manifest.push(','); }
+                manifest.push_str(&format!(
+                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\"}}",
+                    field.name, field.param_type,
+                    field.min, field.max, field.step, field.default_val, field.label
+                ));
+            }
+            if !fields.is_empty() { manifest.push('\n'); manifest.push_str("      "); }
+        } else if !f.params.is_empty() {
+            // Fallback: use function signature params with default ranges
+            for (j, (pname, ptype)) in f.params.iter().enumerate() {
+                if j > 0 { manifest.push(','); }
+                let (min, max, step, def) = default_range_for_type(ptype);
+                manifest.push_str(&format!(
+                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"\"}}",
+                    pname, ptype, min, max, step, def
+                ));
+            }
+            manifest.push('\n');
+            manifest.push_str("      ");
+        }
+
+        manifest.push_str("]\n    }");
+        if i < filters.len() - 1 { manifest.push(','); }
+        manifest.push('\n');
+    }
+
+    manifest.push_str("  ]\n}\n");
+
+    fs::write(out_dir.join("param-manifest.json"), &manifest).unwrap();
+    eprintln!("rasmcore build.rs: Generated param-manifest.json ({} filters)", filters.len());
 }
 
 /// Parsed filter registration.
@@ -242,6 +294,122 @@ fn parse_fn_signature(line: &str, name: &str, category: &str) -> Option<FilterRe
         fn_name,
         params,
     })
+}
+
+// ─── ConfigParams struct parser ─────────────────────────────────────────────
+
+struct ParamField {
+    name: String,
+    param_type: String,
+    min: String,
+    max: String,
+    step: String,
+    default_val: String,
+    label: String,
+}
+
+fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String, Vec<ParamField>> {
+    let mut result = std::collections::HashMap::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+        if line.contains("derive") && line.contains("ConfigParams") {
+            // Next non-comment line should be "pub struct FooParams {"
+            let mut j = i + 1;
+            while j < lines.len() && (lines[j].trim().starts_with("//") || lines[j].trim().is_empty()) {
+                j += 1;
+            }
+            if j < lines.len() && lines[j].trim().starts_with("pub struct ") {
+                let struct_line = lines[j].trim();
+                let struct_name = struct_line
+                    .strip_prefix("pub struct ")
+                    .and_then(|s| s.split(|c: char| c == ' ' || c == '{').next())
+                    .unwrap_or("")
+                    .to_string();
+
+                // Parse fields until closing brace
+                let mut fields = Vec::new();
+                let mut doc_comment = String::new();
+                let mut param_attrs: (String, String, String, String) = ("null".into(), "null".into(), "null".into(), String::new());
+                j += 1;
+                while j < lines.len() {
+                    let fl = lines[j].trim();
+                    if fl == "}" { break; }
+
+                    if fl.starts_with("///") {
+                        doc_comment = fl.trim_start_matches("///").trim().to_string();
+                    } else if fl.starts_with("#[param(") {
+                        // Parse #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
+                        let inner = fl.trim_start_matches("#[param(").trim_end_matches(")]");
+                        for part in inner.split(',') {
+                            let part = part.trim();
+                            if let Some((k, v)) = part.split_once('=') {
+                                let k = k.trim();
+                                let v = v.trim().trim_matches('"');
+                                match k {
+                                    "min" => param_attrs.0 = v.to_string(),
+                                    "max" => param_attrs.1 = v.to_string(),
+                                    "step" => param_attrs.2 = v.to_string(),
+                                    "default" => param_attrs.3 = v.to_string(),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    } else if fl.starts_with("pub ") && fl.contains(':') {
+                        // pub radius: f32,
+                        let field_str = fl.strip_prefix("pub ").unwrap_or(fl);
+                        if let Some((fname, ftype)) = field_str.split_once(':') {
+                            let fname = fname.trim().to_string();
+                            let ftype = ftype.trim().trim_end_matches(',').trim().to_string();
+                            let default = if param_attrs.3.is_empty() {
+                                default_for_type(&ftype)
+                            } else {
+                                param_attrs.3.clone()
+                            };
+                            fields.push(ParamField {
+                                name: fname,
+                                param_type: ftype,
+                                min: param_attrs.0.clone(),
+                                max: param_attrs.1.clone(),
+                                step: param_attrs.2.clone(),
+                                default_val: default,
+                                label: doc_comment.clone(),
+                            });
+                            doc_comment.clear();
+                            param_attrs = ("null".into(), "null".into(), "null".into(), String::new());
+                        }
+                    }
+                    j += 1;
+                }
+
+                if !fields.is_empty() {
+                    result.insert(struct_name, fields);
+                }
+            }
+        }
+        i += 1;
+    }
+    result
+}
+
+fn default_for_type(ty: &str) -> String {
+    match ty {
+        "f32" | "f64" => "0.0".to_string(),
+        "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => "0".to_string(),
+        "bool" => "false".to_string(),
+        _ => "null".to_string(),
+    }
+}
+
+fn default_range_for_type(ty: &str) -> (&str, &str, &str, &str) {
+    match ty {
+        "f32" => ("0.0", "1.0", "0.01", "0.0"),
+        "u32" => ("0", "1000", "1", "0"),
+        "bool" => ("null", "null", "null", "false"),
+        _ => ("null", "null", "null", "null"),
+    }
 }
 
 fn to_wit_name(rust_name: &str) -> String {

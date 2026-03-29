@@ -29,10 +29,19 @@ echo "=== 2. Generating browser SDK via jco transpile ==="
 mkdir -p "$SCRIPT_DIR/sdk"
 npx @bytecodealliance/jco transpile "$WASM" -o "$SCRIPT_DIR/sdk/" --name rasmcore-image
 
-echo "=== 3. Generating fluent SDK (rcimage) ==="
+echo "=== 3. Copying param manifest ==="
+MANIFEST=$(find "$PROJECT_ROOT/target" -name "param-manifest.json" 2>/dev/null | sort | tail -1)
+if [ -n "$MANIFEST" ]; then
+    cp "$MANIFEST" "$SCRIPT_DIR/sdk/param-manifest.json"
+    echo "  Copied: param-manifest.json → demo/sdk/"
+else
+    echo "  WARNING: param-manifest.json not found"
+fi
+
+echo "=== 4. Generating fluent SDK (rcimage) ==="
 node "$PROJECT_ROOT/scripts/generate-fluent-sdk.cjs"
 
-echo "=== 4. SDK ready ==="
+echo "=== 5. SDK ready ==="
 echo "  Output: demo/sdk/"
 echo "  Import: import { pipeline, decoder, encoder, filters } from './sdk/rasmcore-image.js'"
 echo ""
