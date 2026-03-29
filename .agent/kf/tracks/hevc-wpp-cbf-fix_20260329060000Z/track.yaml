@@ -35,34 +35,33 @@ spec:
     \ a syntax\n  element that we decode differently, (b) the c1/prev_c1 carry-over between\n  sub-blocks modifies a context\
     \ we don't expect, (c) the terminate decode\n  between CTU(0,0) and CTU(1,0) affects engine state that impacts context.\n\
     \nPhase 4 — Validation:\n  Run yuv_parity tests — gradient must show 0 Y diffs."
-plan: []
-extra: {}
 plan:
-  - phase: WPP-Aware Bin Trace
-    tasks:
-      - text: "Build libde265 reference bin trace for gradient row 1 (bins starting at CTU(0,32))"
-        done: false
-      - text: "Update bin_trace test to support WPP — reinit CABAC and restore contexts at row boundaries"
-        done: false
-      - text: "Compare our row 1 bins against reference — find first divergence"
-        done: false
-  - phase: Context State Analysis
-    tasks:
-      - text: "Dump all 131 context states at ctu_col==1 save point and compare against reference"
-        done: false
-      - text: "Identify which specific context has wrong state+mps after WPP restore"
-        done: false
-  - phase: Fix
-    tasks:
-      - text: "Fix the identified context state divergence to match libde265 v1.0.18"
-        done: false
-      - text: "Run yuv_parity_gradient — verify 0 Y diffs"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "All yuv_parity tests pass (0 Y diffs for flat and gradient)"
-        done: false
-      - text: "All 9 RGB parity tests pass with PSNR > 25dB"
-        done: false
-      - text: "clippy clean, fmt clean, cargo test passes"
-        done: false
+- phase: WPP-Aware Bin Trace
+  tasks:
+  - text: Build libde265 reference bin trace for gradient row 1 (bins starting at CTU(0,32))
+    done: true
+  - text: Update bin_trace test to support WPP — reinit CABAC and restore contexts at row boundaries
+    done: true
+  - text: Compare our row 1 bins against reference — find first divergence
+    done: true
+- phase: Context State Analysis
+  tasks:
+  - text: Dump all 131 context states at ctu_col==1 save point and compare against reference
+    done: true
+  - text: Identify which specific context has wrong state+mps after WPP restore
+    done: true
+- phase: Fix
+  tasks:
+  - text: Fix the identified context state divergence to match libde265 v1.0.18
+    done: false
+  - text: Run yuv_parity_gradient — verify 0 Y diffs
+    done: false
+- phase: Validation
+  tasks:
+  - text: All yuv_parity tests pass (0 Y diffs for flat and gradient)
+    done: false
+  - text: All 9 RGB parity tests pass with PSNR > 25dB
+    done: false
+  - text: clippy clean, fmt clean, cargo test passes
+    done: false
+extra: {}
