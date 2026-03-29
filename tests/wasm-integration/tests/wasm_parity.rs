@@ -544,7 +544,7 @@ fn wasm_pipeline_composite() {
 
     // Composite fg over bg at offset (10, 10)
     let comp_node = pipe_res
-        .call_composite(&mut store, pipe, fg_node, bg_node, 10, 10)
+        .call_composite(&mut store, pipe, fg_node, bg_node, 10, 10, None)
         .unwrap()
         .unwrap();
 
@@ -562,7 +562,7 @@ fn wasm_pipeline_composite() {
         filter_type: None,
     };
     let output = pipe_res
-        .call_write_png(&mut store, pipe, comp_node, config)
+        .call_write_png(&mut store, pipe, comp_node, config, None)
         .unwrap()
         .unwrap();
     assert_eq!(&output[..4], &[0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
@@ -769,7 +769,7 @@ fn wasm_pipeline_icc_to_srgb() {
         filter_type: None,
     };
     let output = pipeline
-        .call_write_png(&mut store, resource, srgb_node, config)
+        .call_write_png(&mut store, resource, srgb_node, config, None)
         .unwrap()
         .unwrap();
     assert!(

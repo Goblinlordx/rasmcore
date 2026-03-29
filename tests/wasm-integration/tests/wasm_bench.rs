@@ -157,7 +157,7 @@ fn perf_1080p() {
             540,
             ResizeFilter::Lanczos3,
         )));
-        let _ = sink::write(&mut g, r, "png", None).unwrap();
+        let _ = sink::write(&mut g, r, "png", None, None).unwrap();
     });
     let ws = bench(|| {
         let _ = wtr
@@ -195,7 +195,7 @@ fn perf_1080p() {
         let s = g.add_node(Box::new(source::SourceNode::new(data.clone()).unwrap()));
         let si = g.node_info(s).unwrap();
         let b = g.add_node(Box::new(pf::BlurNode::new(s, si, 2.0)));
-        let _ = sink::write(&mut g, b, "png", None).unwrap();
+        let _ = sink::write(&mut g, b, "png", None, None).unwrap();
     });
     let ws = bench(|| {
         let _ = wfl
@@ -344,7 +344,8 @@ fn perf_1080p() {
         let _ = sink::write_jpeg(
             &mut g,
             sh,
-            &rasmcore_image::domain::encoder::jpeg::JpegEncodeConfig { quality: 85 },
+            &rasmcore_image::domain::encoder::jpeg::JpegEncodeConfig { quality: 85, progressive: false },
+            None,
         )
         .unwrap();
     });
@@ -410,7 +411,9 @@ fn perf_1080p() {
             gr,
             &rasmcore_image::domain::encoder::png::PngEncodeConfig {
                 compression_level: 6,
+                filter_type: rasmcore_image::domain::encoder::png::PngFilterType::Adaptive,
             },
+            None,
         )
         .unwrap();
     });
