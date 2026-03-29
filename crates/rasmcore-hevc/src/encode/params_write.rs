@@ -300,7 +300,7 @@ pub fn default_pps(qp: i32) -> Pps {
         weighted_bipred: false,
         transquant_bypass_enabled: false,
         tiles_enabled: false,
-        entropy_coding_sync_enabled: true, // WPP enabled
+        entropy_coding_sync_enabled: false, // WPP disabled — encoder is single-threaded
         num_tile_columns: 1,
         num_tile_rows: 1,
         loop_filter_across_tiles_enabled: true,

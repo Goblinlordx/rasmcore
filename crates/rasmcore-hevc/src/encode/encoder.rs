@@ -88,8 +88,11 @@ fn encode_slice(
     // Slice header
     write_slice_header(&mut bw, sps, pps, qp);
 
-    // Byte-align before CABAC
-    bw.byte_align();
+    // byte_alignment() per HEVC Section 7.3.2.11:
+    // alignment_bit_equal_to_one (1) followed by alignment_bit_equal_to_zero (0..7)
+    // The decoder reads this 1-bit then aligns, so we must write it.
+    bw.write_flag(true); // alignment_bit_equal_to_one
+    bw.byte_align(); // alignment_bit_equal_to_zero padding
     let mut slice_data = bw.finish();
 
     // CABAC-encoded slice data
@@ -292,6 +295,16 @@ fn encode_slice_data(
             let has_residual = quant::has_nonzero(&quant_levels);
 
             let encode_residual = has_residual;
+
+            #[cfg(test)]
+            if ctu_x == 0 && ctu_y == 0 {
+                eprintln!(
+                    "  CTU(0,0): pred[0]={}, residual[0]={}, dct[0]={}, quant[0]={}, has_residual={}",
+                    predicted[0], residual_pixels[0], dct_coeffs[0], quant_levels[0], has_residual
+                );
+                let nonzero_count = quant_levels.iter().filter(|&&v| v != 0).count();
+                eprintln!("  quant nonzero: {nonzero_count}");
+            }
 
             // cbf_luma — depth=0 maps to ctxInc=1 per HEVC Table 9-33
             syntax_enc::encode_cbf_luma(&mut cabac, &mut contexts, 0, encode_residual);
@@ -529,6 +542,132 @@ mod tests {
     }
 
     #[test]
+    fn encode_flat_128_exact_dc() {
+        // All-128 input: DC prediction=128, residual=0, cbf_luma=false
+        // The decoded output should be exactly 128 everywhere
+        let width = 64u32;
+        let height = 64u32;
+        let y = vec![128u8; (width * height) as usize];
+        let cb = vec![128u8; (width * height / 4) as usize];
+        let cr = vec![128u8; (width * height / 4) as usize];
+
+        let config = EncodeConfig { qp: 22 };
+        let bitstream = encode_iframe(&y, &cb, &cr, width, height, &config).unwrap();
+        let frame = crate::decode(&bitstream, &[]).unwrap();
+
+        // Every pixel should be exactly 128 (DC prediction, no residual)
+        let max_diff: i32 = frame
+            .y_plane
+            .iter()
+            .map(|&v| (v as i32 - 128).abs())
+            .max()
+            .unwrap_or(0);
+        eprintln!(
+            "Flat 128: max_diff={max_diff}, first pixel={}, bitstream={} bytes",
+            frame.y_plane[0],
+            bitstream.len()
+        );
+        assert!(
+            max_diff <= 1,
+            "flat 128 should decode to ~128, max_diff={max_diff}"
+        );
+    }
+
+    /// Full CTU CABAC roundtrip: encode CU structure + coefficients, decode, compare.
+    #[test]
+    fn full_ctu_cabac_roundtrip() {
+        use crate::cabac::CabacDecoder;
+        use crate::encode::cabac_enc::CabacEncoder;
+        use crate::encode::syntax_enc;
+        use crate::syntax;
+
+        let qp = 22;
+
+        // Create a 32x32 coefficient block (what a CTU would have)
+        let mut coeffs = vec![0i16; 1024];
+        coeffs[0] = -264; // DC from gradient residual
+        coeffs[1] = 50;
+        coeffs[32] = -30;
+
+        let mut enc = CabacEncoder::new();
+        let mut enc_ctx = syntax::init_syntax_contexts(qp);
+
+        // Encode full CU structure (matching what encode_slice_data does)
+        syntax_enc::encode_split_cu_flag(&mut enc, &mut enc_ctx, 0, false); // no split
+        syntax_enc::encode_intra_luma_mode(&mut enc, &mut enc_ctx, 1); // DC mode
+        syntax_enc::encode_intra_chroma_mode(&mut enc, &mut enc_ctx, 4); // DM
+        syntax_enc::encode_cbf_chroma(&mut enc, &mut enc_ctx, 0, false); // Cb
+        syntax_enc::encode_cbf_chroma(&mut enc, &mut enc_ctx, 0, false); // Cr
+        // split_transform_flag (size=32, min_tu=4, depth=0, max_depth=1 → encode)
+        syntax_enc::encode_split_transform_flag(&mut enc, &mut enc_ctx, 32, false);
+        syntax_enc::encode_cbf_luma(&mut enc, &mut enc_ctx, 0, true); // has residual
+        syntax_enc::encode_residual_coeffs(&mut enc, &mut enc_ctx, &coeffs, 32, false);
+        enc.encode_terminate(1);
+        let data = enc.finish_and_get_bytes();
+
+        eprintln!("Full CTU encoded: {} bytes", data.len());
+
+        // Decode CU structure
+        let mut dec = CabacDecoder::new(&data).unwrap();
+        let mut dec_ctx = syntax::init_syntax_contexts(qp);
+
+        // split_cu_flag
+        let split = dec.decode_bin(&mut dec_ctx[0]).unwrap();
+        assert_eq!(split, 0, "split_cu_flag");
+
+        // prev_intra_luma_pred_flag
+        let flag = dec.decode_bin(&mut dec_ctx[syntax::PREV_INTRA_PRED_CTX_OFFSET]).unwrap();
+        assert_eq!(flag, 1, "prev_intra_luma_pred_flag");
+        // mpm_idx = 1 → bypass 1, bypass 0
+        let b0 = dec.decode_bypass().unwrap();
+        assert_eq!(b0, 1, "mpm_idx bit 0");
+        let b1 = dec.decode_bypass().unwrap();
+        assert_eq!(b1, 0, "mpm_idx bit 1");
+
+        // chroma mode = DM (flag=0)
+        let chroma = dec.decode_bin(&mut dec_ctx[syntax::CHROMA_PRED_CTX_OFFSET]).unwrap();
+        assert_eq!(chroma, 0, "chroma_pred_mode_flag");
+
+        // cbf_chroma Cb
+        let cbf_cb = dec.decode_bin(&mut dec_ctx[syntax::CBF_CHROMA_CTX_OFFSET]).unwrap();
+        assert_eq!(cbf_cb, 0, "cbf_cb");
+        // cbf_chroma Cr
+        let cbf_cr = dec.decode_bin(&mut dec_ctx[syntax::CBF_CHROMA_CTX_OFFSET]).unwrap();
+        assert_eq!(cbf_cr, 0, "cbf_cr");
+
+        // split_transform_flag
+        let split_tu_ctx = syntax::SPLIT_TU_CTX_OFFSET + 5 - 5; // size=32 → trailing_zeros=5
+        let split_tu = dec.decode_bin(&mut dec_ctx[split_tu_ctx]).unwrap();
+        assert_eq!(split_tu, 0, "split_transform_flag");
+
+        // cbf_luma (depth=0 → ctxInc=1)
+        let cbf_luma = dec.decode_bin(&mut dec_ctx[syntax::CBF_LUMA_CTX_OFFSET + 1]).unwrap();
+        assert_eq!(cbf_luma, 1, "cbf_luma");
+
+        // Decode coefficients
+        let decoded_coeffs =
+            syntax::decode_residual_coeffs(&mut dec, &mut dec_ctx, 32, false).unwrap();
+
+        // Compare
+        let mut mismatches = 0;
+        for i in 0..1024 {
+            if coeffs[i] != decoded_coeffs[i] {
+                if mismatches < 5 {
+                    eprintln!("  MISMATCH [{i}]: enc={}, dec={}", coeffs[i], decoded_coeffs[i]);
+                }
+                mismatches += 1;
+            }
+        }
+
+        let term = dec.decode_terminate().unwrap();
+        assert_eq!(term, 1, "terminate");
+        assert_eq!(
+            mismatches, 0,
+            "full CTU roundtrip has {mismatches} coefficient mismatches"
+        );
+    }
+
+    #[test]
     fn encode_quality_with_residual() {
         let width = 64u32;
         let height = 64u32;
@@ -571,10 +710,10 @@ mod tests {
             bitstream.len()
         );
 
-        // Coefficient CABAC roundtrip is now perfect (7/7 test cases byte-exact).
-        // Full encoder quality depends on the mode decision and full pipeline
-        // matching the decoder's expectations. PSNR threshold will be tightened
-        // as the encoder matures.
+        // Trace first pixels for debugging
+        eprintln!("  Row 0 original: {:?}", &y[..8]);
+        eprintln!("  Row 0 decoded:  {:?}", &frame.y_plane[..8]);
+
         assert!(
             psnr > 5.0,
             "PSNR should be > 5dB, got {psnr:.1}dB"
