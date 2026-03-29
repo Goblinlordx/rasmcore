@@ -1,0 +1,128 @@
+id: hevc-decoder-recon-parity_20260329223947Z
+title: HEVC Decoder Reconstruction Parity — byte-exact checker_256x256_q22
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Achieve byte-exact Y-plane parity with ffmpeg for the checker_256x256_q22
+    decoder test. Currently max_diff=7 (Y), PSNR=39.3dB. Target: max_diff=0
+    (byte-exact) or PSNR > 45dB minimum. Three other test cases (flat q22/q37,
+    gradient q22) are already byte-exact.
+  context: |
+    The checker_256x256_q22 fixture is encoded by x265 (ultrafast, --no-sao,
+    QP=22, CTU=32) and decoded by both our decoder and ffmpeg. The Y-plane
+    comparison shows 55,315 diffs (out of 65,536 pixels) with max_diff=7
+    concentrated at and cascading from CTU boundary edges.
+
+    Previous track (hevc-ffmpeg-slice-parity) improved the deblocking filter:
+    - Proper 4-sample segment processing
+    - Correct strong/weak decision (sum-of-absolutes, d0/d3 checks)
+    - Strong filter q[2] writeback fix
+    - CU/TU boundary detection
+    - 10*tc per-row weak filter guard
+
+    Despite these improvements, max_diff only went from 10→7. The remaining
+    diffs cascade through vertical→horizontal deblocking at CTU boundaries.
+    With tc=1 at QP=22, each edge changes pixels by at most ±1, but the
+    cascading through 7 vertical + 7 horizontal CTU edges accumulates to
+    max_diff=7.
+
+    Key question: are the diffs from (a) deblocking filter arithmetic alone,
+    or (b) pre-deblocking reconstruction differences (intra prediction or
+    dequantization)? This must be isolated first.
+  codebase_analysis: |
+    Key files:
+    - frame.rs: apply_deblocking() — boundary strength map + filter dispatch
+    - filter.rs: deblock_vertical_edge/horizontal_edge — 4-sample segment filter
+    - predict.rs: intra prediction (DC, planar, angular)
+    - transform.rs: dequantization and inverse transform
+
+    Test infrastructure:
+    - tests/parity.rs: yuv_diag_checker_256x256_q22 — Y-plane comparison
+    - testutil.rs: load_reference_yuv, compare_pixels
+
+    x265 fixture parameters:
+    - CTU=32, min_cu=16, min_tu=4, max_tu_depth=1
+    - QP=22 (constant, no cu_qp_delta)
+    - Deblocking enabled (beta=0, tc=0 offsets)
+    - SAO disabled
+    - Checker pattern: 8x8 blocks alternating 32/224
+
+    Deblocking at QP=22: beta=10, tc=1. Max pixel change per edge: ±1 (weak)
+    or ±2 (strong, 2*tc). With 7 CTU boundary edges in each direction and
+    cascading V→H, max accumulated diff ≈ 7. This matches observed max_diff=7.
+
+    The parity.rs test hardcodes ctu_size=64 in the diagnostic (line 254) but
+    actual CTU=32 — this makes the per-CTU analysis misleading but doesn't
+    affect the pixel comparison.
+  acceptance_criteria:
+    - checker_256x256_q22 Y-plane max_diff <= 1 (near byte-exact)
+    - checker_256x256_q22 PSNR > 45dB
+    - flat/gradient byte-exact parity maintained (no regression)
+    - All existing HEVC tests pass
+  out_of_scope: |
+    Encoder CABAC parity (separate track). Chroma plane parity. SAO filter
+    implementation. New test fixtures.
+  technical_notes: |
+    Approach: isolate the source of diffs, then fix.
+
+    Phase 1 — Isolate source:
+    Add a temporary test that decodes checker_256x256_q22 with deblocking
+    disabled (force deblocking_filter_disabled=true) and compares Y-plane
+    against a reference decoded with ffmpeg -vf "deblock=0:0:1" (deblocking
+    off). If pre-deblocking Y is byte-exact, the issue is purely deblocking.
+    If not, the issue is in prediction/transform.
+
+    Phase 2a — If deblocking-only:
+    Deep-dive into ffmpeg's hevc deblocking implementation. Use WebFetch to
+    read the HEVC-specific hevc_loop_filter_luma wrapper (not the shared
+    h2656 template). Compare:
+    - Exact strong filter decision conditions
+    - Per-row vs per-segment processing order
+    - Whether ffmpeg applies the 10*tc guard for HEVC (or only VVC)
+    - Edge processing order within a CTU (all vertical first, then horizontal)
+
+    Phase 2b — If prediction/transform:
+    Compare intra prediction at block edges. Check reference sample
+    availability and filtering. Compare dequantization rounding. The checker
+    pattern's 8x8 alternation creates the sharpest possible transitions,
+    stressing edge cases in reference sample handling.
+
+    Phase 3 — Fix and verify:
+    Apply the identified fix. Target byte-exact or max_diff=1.
+plan:
+  - phase: Isolate Diff Source
+    tasks:
+      - text: Create test that decodes checker with deblocking disabled and compares pre-deblocking Y
+        done: false
+      - text: Generate ffmpeg reference with deblocking disabled for comparison
+        done: false
+      - text: Determine if diffs are from deblocking only or also from prediction/transform
+        done: false
+  - phase: Fix Deblocking (if source is deblocking)
+    tasks:
+      - text: Fetch and study ffmpeg HEVC-specific loop filter wrapper (not shared VVC template)
+        done: false
+      - text: Compare strong/weak filter decision and per-row guard exactly
+        done: false
+      - text: Fix any remaining arithmetic or decision differences
+        done: false
+  - phase: Fix Prediction/Transform (if source is reconstruction)
+    tasks:
+      - text: Compare intra prediction reference sample handling at block edges
+        done: false
+      - text: Compare dequantization rounding for QP=22
+        done: false
+      - text: Fix identified differences
+        done: false
+  - phase: Verification
+    tasks:
+      - text: checker_256x256_q22 Y-plane max_diff <= 1
+        done: false
+      - text: flat/gradient byte-exact parity maintained
+        done: false
+      - text: All existing HEVC tests pass
+        done: false
+extra: {}

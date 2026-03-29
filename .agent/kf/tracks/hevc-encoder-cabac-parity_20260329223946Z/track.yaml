@@ -1,0 +1,127 @@
+id: hevc-encoder-cabac-parity_20260329223946Z
+title: HEVC Encoder CABAC Parity — ffmpeg-decodable output with 0 Y-plane diffs
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Fix the HEVC encoder so its output, when decoded by ffmpeg, produces
+    identical Y-plane pixels to our own decoder. Currently 4077 Y-plane diffs
+    (max_diff=138) despite the slice header now being structurally correct
+    (ffmpeg hevc_metadata BSF passes without errors).
+  context: |
+    The slice header alignment was fixed in the previous track
+    (hevc-ffmpeg-slice-parity_20260330020000Z): the spurious
+    deblocking_filter_override_flag bit was removed. ffmpeg can now parse
+    the NAL structure. However, ffmpeg decodes the CABAC data differently:
+    ffmpeg sees cbf_luma=false for the first CTU (produces flat 128 DC)
+    while our decoder correctly reads cbf_luma=true with residual=-264.
+
+    This means the CABAC bitstream is being interpreted differently by ffmpeg.
+    Since our encoder and decoder share the same init_syntax_contexts() and
+    context index derivation, they agree — but ffmpeg, using spec-standard
+    CABAC tables and context derivation, reads different values from the
+    same bits.
+
+    Encoder config: QP=22, CTU=32, min_cb=16, min_tu=4, max_tu_depth=1,
+    SAO disabled, deblocking enabled (0,0), Main Still Picture profile.
+  codebase_analysis: |
+    Key files:
+    - encode/encoder.rs: encode_slice_data() — CTU syntax encoding loop
+    - encode/syntax_enc.rs: individual syntax element encoders
+    - syntax.rs: init_syntax_contexts() — CABAC init table loading
+    - cabac/context.rs: INIT tables (SPLIT_CU_FLAG_INIT, CBF_LUMA_INIT, etc.)
+
+    Current encoder CTU syntax order:
+    1. split_cu_flag (ctx_idx=0 hardcoded)
+    2. intra_luma_mode (prev_intra_pred_flag ctx=7 + mpm_idx bypass)
+    3. intra_chroma_mode (ctx=8 + bypass)
+    4. cbf_chroma Cb/Cr (ctx=126+depth)
+    5. split_transform_flag (ctx=9+offset)
+    6. cbf_luma (ctx=12+depth)
+    7. residual coefficients
+
+    Decoder expects same order (verified: part_mode not decoded since
+    CTU=32 > min_cb=16). Context offsets match between encoder and decoder.
+
+    Suspected root causes (in priority order):
+    a) CABAC context init values don't match HEVC spec Tables 9-5 through
+       9-37 exactly. The init function uses si=0 (I-slice) with a comment
+       saying "I-slice init table index = 2" — contradictory.
+    b) Context index derivation for split_cu_flag is hardcoded to 0 instead
+       of being derived from neighbor CU depths (happens to be correct for
+       our encoder's specific case, but indicates the code hasn't been
+       validated against the spec).
+    c) Residual coefficient encoding context derivation (sig_coeff_flag,
+       last_sig_coeff, coeff_abs_greater1/2) may use wrong context indices.
+    d) CABAC encoder arithmetic (range, low) may have a subtle difference
+       from ffmpeg's implementation.
+  acceptance_criteria:
+    - Encoder output decoded by ffmpeg produces 0 Y-plane diffs vs our decoder
+    - Encoder output decoded by ffmpeg produces PSNR > 50dB for gradient input
+    - ffmpeg hevc_metadata BSF reports no errors (already passing)
+    - No regression on encoder self-roundtrip tests (PSNR > 40dB)
+    - No regression on existing decoder parity tests
+  out_of_scope: |
+    Decoder-side deblocking parity (separate track). Encoder quality
+    improvements (mode decision, rate control). Multi-frame encoding.
+    Chroma plane encoding (currently flat 128).
+  technical_notes: |
+    Approach: systematic audit of CABAC encoding against HEVC spec and ffmpeg.
+
+    Phase 1 — Context init audit:
+    Cross-check every init value in cabac/context.rs against HEVC spec
+    Tables 9-5 through 9-37. Use WebFetch to read ffmpeg's hevc_cabac.c
+    init tables for reference. Fix any discrepancies.
+
+    Phase 2 — Syntax element audit:
+    For each syntax element the encoder writes, verify:
+    a) Correct CABAC context index (matches spec Section 9.3.4.2)
+    b) Correct binarization (truncated unary, fixed length, etc.)
+    c) Correct order in the bitstream
+
+    Phase 3 — Binary comparison:
+    Write a test that dumps the encoder's CABAC bit decisions (context idx,
+    bin value, bypass flag) for the first CTU. Compare against what ffmpeg
+    would expect. This pinpoints the exact divergence point.
+
+    Phase 4 — Fix and verify:
+    Apply fixes. Verify 0 Y-plane diffs with ffmpeg for multiple test
+    patterns (flat, gradient, checker).
+plan:
+  - phase: Context Init Audit
+    tasks:
+      - text: Fetch ffmpeg hevc_cabac.c init tables and cross-check against our cabac/context.rs
+        done: false
+      - text: Verify init_syntax_contexts uses correct slice type index (si=0 for I-slice)
+        done: false
+      - text: Fix any init value discrepancies
+        done: false
+  - phase: Syntax Element Audit
+    tasks:
+      - text: Verify split_cu_flag context derivation matches HEVC Section 9.3.4.2.2
+        done: false
+      - text: Verify intra_luma_mode encoding (prev_intra_pred_flag + mpm_idx binarization)
+        done: false
+      - text: Verify cbf_luma/cbf_chroma context indices and depth calculations
+        done: false
+      - text: Verify residual coefficient encoding (sig_coeff, last_sig, gt1/gt2 contexts)
+        done: false
+      - text: Verify CABAC encoder arithmetic (renormalization, flushing) matches spec
+        done: false
+  - phase: Binary Comparison
+    tasks:
+      - text: Add debug trace to encoder dumping per-bin context+value decisions
+        done: false
+      - text: Compare first-CTU trace against ffmpeg expected parse (or spec walkthrough)
+        done: false
+      - text: Identify exact divergence point and fix
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Encoder output produces 0 Y-plane diffs with ffmpeg decode
+        done: false
+      - text: All existing encoder and decoder tests pass
+        done: false
+extra: {}
