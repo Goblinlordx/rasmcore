@@ -14,12 +14,19 @@ spec:
     has a builder pattern (each method returns a node-id), but using it requires
     manual ID threading.
 
-    This track creates a fluent wrapper:
-      const result = await rasmcore.load(imageBytes)
+    This track creates a fluent wrapper under the `rcimage` namespace:
+      import { rcimage } from '@rasmcore/sdk';
+
+      const result = await rcimage.load(imageBytes)
         .blur(3.0)
         .resize(800, 600, 'lanczos3')
         .brightness(0.1)
         .toJpeg({ quality: 85 });
+
+    The `rcimage` prefix supports future multi-media expansion:
+      import { rcimage, rcaudio, rcvideo } from '@rasmcore/sdk';
+    Each media type gets its own chainable API backed by a separate
+    WASM component (rasmcore:image, rasmcore:audio, rasmcore:video).
 
     The wrapper is a thin layer — it holds a pipeline instance and the current
     node-id, forwarding each method call to the underlying WIT resource.
@@ -58,22 +65,26 @@ spec:
     Implementation pattern:
 
     ```typescript
-    export class RasmcoreImage {
+    // Package: @rasmcore/sdk
+    // Exports: { rcimage, rcaudio (future), rcvideo (future) }
+
+    // rcimage is the image processing chain builder
+    export class RcImage {
       private pipeline: ImagePipeline;
       private nodeId: number;
 
-      static async load(data: Uint8Array): Promise<RasmcoreImage> {
+      static async load(data: Uint8Array): Promise<RcImage> {
         const pipeline = new ImagePipeline();
         const nodeId = pipeline.read(data);
-        return new RasmcoreImage(pipeline, nodeId);
+        return new RcImage(pipeline, nodeId);
       }
 
-      blur(radius: number): RasmcoreImage {
+      blur(radius: number): RcImage {
         this.nodeId = this.pipeline.blur(this.nodeId, radius);
         return this;
       }
 
-      resize(width: number, height: number, filter = 'lanczos3'): RasmcoreImage {
+      resize(width: number, height: number, filter = 'lanczos3'): RcImage {
         this.nodeId = this.pipeline.resize(this.nodeId, width, height, filter);
         return this;
       }
@@ -83,8 +94,8 @@ spec:
       }
 
       // Fork: create a new chain from the current node
-      fork(): RasmcoreImage {
-        return new RasmcoreImage(this.pipeline, this.nodeId);
+      fork(): RcImage {
+        return new RcImage(this.pipeline, this.nodeId);
       }
 
       // Inspect without computing pixels
@@ -94,13 +105,23 @@ spec:
     }
     ```
 
-    File: sdk/typescript/src/rasmcore.ts
-    Exports: RasmcoreImage class + all WIT types re-exported
-    Build: tsc → dist/ (ESM + CJS + .d.ts)
+    File structure:
+      sdk/typescript/src/
+        index.ts            # export { rcimage } (future: rcaudio, rcvideo)
+        rcimage.ts          # RcImage class + rcimage namespace
+        types.ts            # Re-exported WIT types
+    Package: @rasmcore/sdk
+    Build: tsc → dist/ (ESM + .d.ts)
+
+    Multi-media expansion path:
+      - rcaudio: backed by future rasmcore:audio WASM component
+      - rcvideo: backed by future rasmcore:video WASM component
+      - Each gets its own chainable class (RcAudio, RcVideo)
+      - All share @rasmcore/sdk package, imported individually
 plan:
   - phase: Core Fluent API
     tasks:
-      - text: Create sdk/typescript/src/rasmcore.ts with RasmcoreImage class
+      - text: Create sdk/typescript/src/rcimage.ts with RcImage class and rcimage namespace
         done: false
       - text: Implement static load() factory that creates pipeline + reads image
         done: false
