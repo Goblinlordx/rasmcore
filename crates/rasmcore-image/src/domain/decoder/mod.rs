@@ -209,14 +209,24 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
         PixelFormat::Rgba8 => img.to_rgba8().into_raw(),
         PixelFormat::Rgb8 => img.to_rgb8().into_raw(),
         PixelFormat::Gray8 => img.to_luma8().into_raw(),
-        PixelFormat::Gray16 => {
-            let luma16 = img.to_luma16();
-            luma16
-                .as_raw()
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect()
-        }
+        PixelFormat::Gray16 => img
+            .to_luma16()
+            .as_raw()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect(),
+        PixelFormat::Rgb16 => img
+            .to_rgb16()
+            .as_raw()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect(),
+        PixelFormat::Rgba16 => img
+            .to_rgba16()
+            .as_raw()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect(),
         _ => img.to_rgba8().into_raw(),
     };
 
@@ -411,6 +421,9 @@ fn detect_pixel_format(img: &image::DynamicImage) -> PixelFormat {
         image::ColorType::Rgba8 => PixelFormat::Rgba8,
         image::ColorType::L8 => PixelFormat::Gray8,
         image::ColorType::L16 => PixelFormat::Gray16,
+        image::ColorType::Rgb16 => PixelFormat::Rgb16,
+        image::ColorType::Rgba16 => PixelFormat::Rgba16,
+        image::ColorType::La16 => PixelFormat::Rgba16, // promote LA16 to RGBA16
         _ => PixelFormat::Rgba8,
     }
 }

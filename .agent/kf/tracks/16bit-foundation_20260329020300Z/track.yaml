@@ -86,11 +86,11 @@ plan:
 - phase: Format Conversion
   tasks:
   - text: Add convert_format() support for Rgb8-to-Rgb16 and Rgb16-to-Rgb8 using precise scaling
-    done: false
+    done: true
   - text: Add convert_format() for Rgba8-to-Rgba16, Rgba16-to-Rgba8, Gray8-to-Gray16, Gray16-to-Gray8
-    done: false
+    done: true
   - text: Add convert_format() for cross-depth (Rgb16-to-Rgba16, Gray16-to-Rgb16, etc.)
-    done: false
+    done: true
 - phase: Decoder
   tasks:
   - text: Update detect_pixel_format() to map ColorType::Rgb16 and Rgba16
