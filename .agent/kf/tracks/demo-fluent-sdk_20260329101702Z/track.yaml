@@ -5,149 +5,94 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Auto-generate the fluent rcimage TypeScript SDK from jco output types.
-    A codegen script reads the generated ImagePipeline .d.ts and produces
-    the RcImage chainable wrapper. No hand-written SDK methods.
-  context: |
-    The current chain:
-      #[register_filter] → build.rs → WIT → jco transpile → ImagePipeline class
+  summary: 'Auto-generate the fluent rcimage TypeScript SDK from jco output types. A codegen script reads the generated ImagePipeline
+    .d.ts and produces the RcImage chainable wrapper. No hand-written SDK methods.
 
-    The missing last step:
-      ImagePipeline .d.ts → codegen → RcImage fluent wrapper
-
-    This must be auto-generated so new filters/codecs appear in the SDK
-    automatically when the WASM is rebuilt. A hand-written wrapper would
-    require manual updates for every new operation — defeating the purpose
-    of the extensibility system.
-
-    Also: build.rs must detect duplicate operation names at compile time
-    and fail with a clear error, preventing ambiguous SDK generation.
-  codebase_analysis: |
-    jco transpile produces demo/sdk/interfaces/rasmcore-image-pipeline.d.ts:
-      export class ImagePipeline {
-        constructor()
-        read(data: Buffer): NodeId;
-        blur(source: NodeId, radius: number): NodeId;
-        resize(source: NodeId, width: number, height: number, filter: ResizeFilter): NodeId;
-        writeJpeg(source: NodeId, config: JpegWriteConfig, metadata: MetadataSet | undefined): Buffer;
-        ...
-      }
-
-    The codegen script parses this .d.ts and generates:
-      export class RcImage {
-        blur(radius: number): RcImage { ... }
-        resize(width: number, height: number, filter?: ResizeFilter): RcImage { ... }
-        toJpeg(config?: { quality?: number }): Uint8Array { ... }
-        ...
-      }
-
-    Every pipeline method that takes (source: NodeId, ...params) → NodeId
-    becomes a chainable method that takes (...params) → RcImage.
-
-    Every pipeline method that takes (source: NodeId, ...config) → Buffer
-    becomes a terminal method that takes (...config) → Uint8Array.
+    '
+  context: "The current chain:\n  #[register_filter] → build.rs → WIT → jco transpile → ImagePipeline class\n\nThe missing\
+    \ last step:\n  ImagePipeline .d.ts → codegen → RcImage fluent wrapper\n\nThis must be auto-generated so new filters/codecs\
+    \ appear in the SDK\nautomatically when the WASM is rebuilt. A hand-written wrapper would\nrequire manual updates for\
+    \ every new operation — defeating the purpose\nof the extensibility system.\n\nAlso: build.rs must detect duplicate operation\
+    \ names at compile time\nand fail with a clear error, preventing ambiguous SDK generation.\n"
+  codebase_analysis: "jco transpile produces demo/sdk/interfaces/rasmcore-image-pipeline.d.ts:\n  export class ImagePipeline\
+    \ {\n    constructor()\n    read(data: Buffer): NodeId;\n    blur(source: NodeId, radius: number): NodeId;\n    resize(source:\
+    \ NodeId, width: number, height: number, filter: ResizeFilter): NodeId;\n    writeJpeg(source: NodeId, config: JpegWriteConfig,\
+    \ metadata: MetadataSet | undefined): Buffer;\n    ...\n  }\n\nThe codegen script parses this .d.ts and generates:\n \
+    \ export class RcImage {\n    blur(radius: number): RcImage { ... }\n    resize(width: number, height: number, filter?:\
+    \ ResizeFilter): RcImage { ... }\n    toJpeg(config?: { quality?: number }): Uint8Array { ... }\n    ...\n  }\n\nEvery\
+    \ pipeline method that takes (source: NodeId, ...params) → NodeId\nbecomes a chainable method that takes (...params) →\
+    \ RcImage.\n\nEvery pipeline method that takes (source: NodeId, ...config) → Buffer\nbecomes a terminal method that takes\
+    \ (...config) → Uint8Array.\n"
   acceptance_criteria:
-    - Codegen script reads ImagePipeline .d.ts and produces rcimage.ts automatically
-    - RcImage class has typed methods for every pipeline operation
-    - New filters added via #[register_filter] appear in SDK after rebuild (no manual step)
-    - Duplicate operation names detected at build.rs compile time with clear error
-    - rcimage.load().blur(3).resize(800,600).toJpeg() works end-to-end
-    - fork() creates branch from current pipeline state
-    - info getter returns dimensions/format without computing pixels
-    - Package exports as { rcimage } from @rasmcore/sdk
-    - TypeScript types fully typed (no any)
-    - All operations from current WIT are present in generated SDK
-  out_of_scope: |
-    Streaming output (documented as future). Worker thread integration.
+  - Codegen script reads ImagePipeline .d.ts and produces rcimage.ts automatically
+  - RcImage class has typed methods for every pipeline operation
+  - New filters added via
+  - Duplicate operation names detected at build.rs compile time with clear error
+  - rcimage.load().blur(3).resize(800,600).toJpeg() works end-to-end
+  - fork() creates branch from current pipeline state
+  - info getter returns dimensions/format without computing pixels
+  - Package exports as { rcimage } from @rasmcore/sdk
+  - TypeScript types fully typed (no any)
+  - All operations from current WIT are present in generated SDK
+  out_of_scope: 'Streaming output (documented as future). Worker thread integration.
+
     rcaudio/rcvideo (future media types). npm publishing.
-  technical_notes: |
-    Codegen approach:
 
-    1. DUPLICATE DETECTION (build.rs enhancement):
-       build.rs already scans #[register_filter] annotations.
-       Add: collect all names into a HashSet, panic if duplicate found.
-       Error message: "Duplicate filter name 'blur' registered by:
-         rasmcore_filter_spatial::blur (crates/rasmcore-filter-spatial/src/lib.rs)
-         my_custom_crate::blur (my-crate/src/lib.rs)
-       Rename one to resolve the conflict."
-
-    2. SDK CODEGEN SCRIPT (scripts/generate-fluent-sdk.ts or .js):
-       Input: demo/sdk/interfaces/rasmcore-image-pipeline.d.ts
-       Output: sdk/typescript/src/rcimage.ts
-
-       Algorithm:
-       a) Parse the .d.ts file (regex or ts-morph)
-       b) For each method on ImagePipeline:
-          - If returns NodeId → chainable method (→ RcImage)
-          - If returns Buffer → terminal method (→ Uint8Array)
-          - Skip: constructor, read (handled by static load())
-          - Strip first param (source: NodeId) from signature
-       c) Generate RcImage class with:
-          - private pipeline: ImagePipeline
-          - private nodeId: number
-          - static load(data: Uint8Array): RcImage
-          - One method per pipeline operation
-          - fork(): RcImage
-          - get info(): ImageInfo
-
-    3. BUILD INTEGRATION:
-       demo/build.sh updated to:
-         cargo component build → jco transpile → generate-fluent-sdk
-       npm run demo:build does all three steps.
-
-    4. NAMING:
-       Package: @rasmcore/sdk
-       Export: import { rcimage } from '@rasmcore/sdk'
-       The rcimage namespace is a factory: rcimage.load(bytes)
-
-    Method categorization from pipeline.d.ts:
-      Chainable (NodeId → NodeId):
-        resize, crop, rotate, flip, convertFormat, iccToSrgb, autoOrient,
-        blur, sharpen, brightness, contrast, grayscale, convolve, median,
-        sobel, canny, composite
-      Terminal (NodeId → Buffer):
-        writeJpeg, writePng, writeWebp, writeAvif, writeTiff, writeBmp,
-        writeIco, writeQoi, writeGif, write
-      Info (NodeId → ImageInfo):
-        nodeInfo
+    '
+  technical_notes: "Codegen approach:\n\n1. DUPLICATE DETECTION (build.rs enhancement):\n   build.rs already scans #[register_filter]\
+    \ annotations.\n   Add: collect all names into a HashSet, panic if duplicate found.\n   Error message: \"Duplicate filter\
+    \ name 'blur' registered by:\n     rasmcore_filter_spatial::blur (crates/rasmcore-filter-spatial/src/lib.rs)\n     my_custom_crate::blur\
+    \ (my-crate/src/lib.rs)\n   Rename one to resolve the conflict.\"\n\n2. SDK CODEGEN SCRIPT (scripts/generate-fluent-sdk.ts\
+    \ or .js):\n   Input: demo/sdk/interfaces/rasmcore-image-pipeline.d.ts\n   Output: sdk/typescript/src/rcimage.ts\n\n \
+    \  Algorithm:\n   a) Parse the .d.ts file (regex or ts-morph)\n   b) For each method on ImagePipeline:\n      - If returns\
+    \ NodeId → chainable method (→ RcImage)\n      - If returns Buffer → terminal method (→ Uint8Array)\n      - Skip: constructor,\
+    \ read (handled by static load())\n      - Strip first param (source: NodeId) from signature\n   c) Generate RcImage class\
+    \ with:\n      - private pipeline: ImagePipeline\n      - private nodeId: number\n      - static load(data: Uint8Array):\
+    \ RcImage\n      - One method per pipeline operation\n      - fork(): RcImage\n      - get info(): ImageInfo\n\n3. BUILD\
+    \ INTEGRATION:\n   demo/build.sh updated to:\n     cargo component build → jco transpile → generate-fluent-sdk\n   npm\
+    \ run demo:build does all three steps.\n\n4. NAMING:\n   Package: @rasmcore/sdk\n   Export: import { rcimage } from '@rasmcore/sdk'\n\
+    \   The rcimage namespace is a factory: rcimage.load(bytes)\n\nMethod categorization from pipeline.d.ts:\n  Chainable\
+    \ (NodeId → NodeId):\n    resize, crop, rotate, flip, convertFormat, iccToSrgb, autoOrient,\n    blur, sharpen, brightness,\
+    \ contrast, grayscale, convolve, median,\n    sobel, canny, composite\n  Terminal (NodeId → Buffer):\n    writeJpeg, writePng,\
+    \ writeWebp, writeAvif, writeTiff, writeBmp,\n    writeIco, writeQoi, writeGif, write\n  Info (NodeId → ImageInfo):\n\
+    \    nodeInfo\n"
 plan:
-  - phase: Duplicate Detection
-    tasks:
-      - text: Add duplicate name detection to build.rs — collect all filter names, panic on collision
-        done: false
-      - text: Add duplicate name detection for encoder and decoder registrations
-        done: false
-      - text: Test duplicate detection with a deliberate collision (expect compile error)
-        done: false
-  - phase: SDK Codegen Script
-    tasks:
-      - text: Create scripts/generate-fluent-sdk.js that parses ImagePipeline .d.ts
-        done: false
-      - text: Generate RcImage class with chainable methods (NodeId→NodeId become →RcImage)
-        done: false
-      - text: Generate terminal methods (NodeId→Buffer become →Uint8Array) with camelCase naming
-        done: false
-      - text: Generate static load() factory, fork(), and info getter
-        done: false
-      - text: Generate TypeScript types file with re-exported WIT types
-        done: false
-  - phase: Build Integration
-    tasks:
-      - text: Update demo/build.sh to run codegen after jco transpile
-        done: false
-      - text: Add npm run sdk:build script that generates the fluent SDK
-        done: false
-      - text: Verify new filter added via #[register_filter] appears in SDK after rebuild
-        done: false
-  - phase: Testing
-    tasks:
-      - text: Test rcimage.load().blur(3).resize(800,600).toJpeg() produces valid JPEG
-        done: false
-      - text: Test fork() creates independent branch
-        done: false
-      - text: Test info getter returns correct dimensions after resize
-        done: false
-      - text: Verify all pipeline operations present in generated RcImage class
-        done: false
+- phase: Duplicate Detection
+  tasks:
+  - text: Add duplicate name detection to build.rs — collect all filter names, panic on collision
+    done: true
+  - text: Add duplicate name detection for encoder and decoder registrations
+    done: true
+  - text: Test duplicate detection with a deliberate collision (expect compile error)
+    done: true
+- phase: SDK Codegen Script
+  tasks:
+  - text: Create scripts/generate-fluent-sdk.js that parses ImagePipeline .d.ts
+    done: true
+  - text: Generate RcImage class with chainable methods (NodeId→NodeId become →RcImage)
+    done: true
+  - text: Generate terminal methods (NodeId→Buffer become →Uint8Array) with camelCase naming
+    done: true
+  - text: Generate static load() factory, fork(), and info getter
+    done: true
+  - text: Generate TypeScript types file with re-exported WIT types
+    done: true
+- phase: Build Integration
+  tasks:
+  - text: Update demo/build.sh to run codegen after jco transpile
+    done: true
+  - text: Add npm run sdk:build script that generates the fluent SDK
+    done: true
+  - text: Verify new filter added via
+    done: true
+- phase: Testing
+  tasks:
+  - text: Test rcimage.load().blur(3).resize(800,600).toJpeg() produces valid JPEG
+    done: true
+  - text: Test fork() creates independent branch
+    done: true
+  - text: Test info getter returns correct dimensions after resize
+    done: true
+  - text: Verify all pipeline operations present in generated RcImage class
+    done: true
 extra: {}
