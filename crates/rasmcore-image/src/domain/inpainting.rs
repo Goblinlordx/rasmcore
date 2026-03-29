@@ -350,97 +350,107 @@ fn telea_interpolate(
         0.0
     };
 
-    // OpenCV accumulates in f32, final division in f64
-    let mut ia = 0.0f32;
-    let mut jx = 0.0f32;
-    let mut jy = 0.0f32;
-    let mut s = 0.0f32;
+    // All f32 accumulation matching OpenCV exactly
+    let mut ia: f32 = 0.0;
+    let mut jx: f32 = 0.0;
+    let mut jy: f32 = 0.0;
+    let mut s: f32 = 1.0e-20; // OpenCV initializes s to 1.0e-20f
 
-    for dy in -r..=r {
-        for dx in -r..=r {
-            let kx = x as i32 + dx;
-            let ky = y as i32 + dy;
-            // OpenCV boundary: k>0 && l>0 && k<rows-1 && l<cols-1 (padded)
-            if kx <= 0 || ky <= 0 || kx >= w as i32 - 1 || ky >= h as i32 - 1 {
+    let range = r;
+    let rows = h as i32;
+    let cols = w as i32;
+
+    for ky in (y as i32 - range)..=(y as i32 + range) {
+        for kx in (x as i32 - range)..=(x as i32 + range) {
+            // OpenCV boundary: k>0 && l>0 && k<rows-1 && l<cols-1
+            if kx <= 0 || ky <= 0 || kx >= cols - 1 || ky >= rows - 1 {
                 continue;
             }
-            let kx = kx as usize;
-            let ky = ky as usize;
-            let kidx = ky * w + kx;
+            let kxu = kx as usize;
+            let kyu = ky as usize;
+            let kidx = kyu * w + kxu;
 
-            // OpenCV uses != INSIDE (includes both KNOWN and BAND)
             if flags[kidx] == INSIDE {
                 continue;
             }
 
-            let rx = (x as f32) - (kx as f32);
-            let ry = (y as f32) - (ky as f32);
-            let r2 = rx * rx + ry * ry;
-            if r2 == 0.0 || r2 > (r as f32 * r as f32) {
+            // Distance check: integer arithmetic matching OpenCV
+            let dk = ky - y as i32;
+            let dl = kx - x as i32;
+            if dl * dl + dk * dk > range * range {
                 continue;
             }
 
-            // dst = 1 / (|r|^2 * sqrt(|r|^2)) = 1/|r|^3
-            let dst = 1.0f32 / (r2 * r2.sqrt());
+            let ry = (y as i32 - ky) as f32; // r.y = i - k
+            let rx = (x as i32 - kx) as f32; // r.x = j - l
+            let r2 = rx * rx + ry * ry; // VectorLength(r) = x^2 + y^2
 
-            // lev = 1 / (1 + |t_neighbor - t_target|)
-            let lev = 1.0f32 / (1.0 + (dist[kidx] - t_center).abs());
+            // dst = (float)(1. / (VectorLength(r) * sqrt(VectorLength(r))))
+            // OpenCV: r2*sqrt(r2) in f32, then 1.0/... in f64, then cast to f32
+            let denom_f32 = r2 * r2.sqrt(); // f32 intermediate, matches OpenCV
+            let dst: f32 = (1.0f64 / denom_f32 as f64) as f32;
 
-            // dir = dot(r, gradT)
-            let dir_val = rx * grad_t_x + ry * grad_t_y;
-            let dir = if dir_val.abs() <= 0.01 {
-                0.000001f32
-            } else {
-                dir_val.abs()
-            };
+            // lev = (float)(1./(1+fabs(t(k,l)-t(i,j))))
+            // fabs computed in f32, division in f64
+            let t_diff = (dist[kidx] - t_center).abs(); // f32
+            let lev: f32 = (1.0f64 / (1.0 + t_diff as f64)) as f32;
 
-            let weight = (dst * lev * dir).abs();
+            // dir = dot(r, gradT) — keep raw value, not abs
+            let mut dir: f32 = rx * grad_t_x + ry * grad_t_y;
+            if dir.abs() <= 0.01 {
+                dir = 0.000001;
+            }
+            // w = fabs(dst * lev * dir) — abs on the full product
+            let weight: f32 = (dst * lev * dir).abs();
 
-            // Image gradient at neighbor — matches OpenCV's flag-aware selection
-            let mut grad_ix = 0.0f32;
-            let mut grad_iy = 0.0f32;
-
-            let right_ok = kx + 1 < w && flags[ky * w + kx + 1] != INSIDE;
-            let left_ok = kx > 0 && flags[ky * w + kx - 1] != INSIDE;
-            if right_ok {
-                if left_ok {
+            // gradI.x — column gradient (checks l+1, l-1 flags)
+            let mut grad_ix: f32 = 0.0;
+            let r_ok = kxu + 1 < w && flags[kyu * w + kxu + 1] != INSIDE;
+            let l_ok = kxu > 0 && flags[kyu * w + kxu - 1] != INSIDE;
+            if r_ok {
+                if l_ok {
+                    // Central: (pixel_right - pixel_left) * 2
                     grad_ix =
-                        (pixels[ky * w + kx + 1] as f32 - pixels[ky * w + kx - 1] as f32) * 2.0;
+                        (pixels[kyu * w + kxu + 1] as f32 - pixels[kyu * w + kxu - 1] as f32) * 2.0;
                 } else {
-                    grad_ix = pixels[ky * w + kx + 1] as f32 - pixels[kidx] as f32;
+                    // Forward: pixel_right - pixel_center
+                    grad_ix = pixels[kyu * w + kxu + 1] as f32 - pixels[kidx] as f32;
                 }
-            } else if left_ok {
-                grad_ix = pixels[kidx] as f32 - pixels[ky * w + kx - 1] as f32;
+            } else if l_ok {
+                // Backward: pixel_center - pixel_left
+                grad_ix = pixels[kidx] as f32 - pixels[kyu * w + kxu - 1] as f32;
             }
 
-            let down_ok = ky + 1 < h && flags[(ky + 1) * w + kx] != INSIDE;
-            let up_ok = ky > 0 && flags[(ky - 1) * w + kx] != INSIDE;
-            if down_ok {
-                if up_ok {
-                    grad_iy =
-                        (pixels[(ky + 1) * w + kx] as f32 - pixels[(ky - 1) * w + kx] as f32) * 2.0;
+            // gradI.y — row gradient (checks k+1, k-1 flags)
+            let mut grad_iy: f32 = 0.0;
+            let d_ok = kyu + 1 < h && flags[(kyu + 1) * w + kxu] != INSIDE;
+            let u_ok = kyu > 0 && flags[(kyu - 1) * w + kxu] != INSIDE;
+            if d_ok {
+                if u_ok {
+                    grad_iy = (pixels[(kyu + 1) * w + kxu] as f32
+                        - pixels[(kyu - 1) * w + kxu] as f32)
+                        * 2.0;
                 } else {
-                    grad_iy = pixels[(ky + 1) * w + kx] as f32 - pixels[kidx] as f32;
+                    grad_iy = pixels[(kyu + 1) * w + kxu] as f32 - pixels[kidx] as f32;
                 }
-            } else if up_ok {
-                grad_iy = pixels[kidx] as f32 - pixels[(ky - 1) * w + kx] as f32;
+            } else if u_ok {
+                grad_iy = pixels[kidx] as f32 - pixels[(kyu - 1) * w + kxu] as f32;
             }
 
+            // Accumulate: pixel value is at out(k-1, l-1) = pixels[(ky-1)*w + (kx-1)]
+            // But in our padded buffer, pixels[kidx] IS the correct position
+            // since padded(ky, kx) = image(ky-1, kx-1)
             ia += weight * pixels[kidx] as f32;
-            jx -= weight * grad_ix * rx;
-            jy -= weight * grad_iy * ry;
+            jx -= weight * (grad_ix * rx);
+            jy -= weight * (grad_iy * ry);
             s += weight;
         }
     }
 
-    if s > 0.0 {
-        // OpenCV: Ia/s (f64) + correction, then saturate_cast (round)
-        let j_mag = ((jx as f64) * (jx as f64) + (jy as f64) * (jy as f64)).sqrt();
-        let sat = (ia as f64 / s as f64) + (jx as f64 + jy as f64) / (j_mag + 1e-20);
-        sat.clamp(0.0, 255.0).round() as u8
-    } else {
-        0
-    }
+    // sat = Ia/s + (Jx+Jy)/(sqrt(Jx*Jx+Jy*Jy)+1.0e-20f) — all f32
+    let sat: f32 = ia / s + (jx + jy) / ((jx * jx + jy * jy).sqrt() + 1.0e-20);
+    // round_cast<uchar> = saturate_cast = round to nearest
+    sat.clamp(0.0, 255.0).round() as u8
 }
 
 // ─── Navier-Stokes FMM Inpainting ──────────────────────────────────────────
