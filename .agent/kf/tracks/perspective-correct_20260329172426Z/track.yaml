@@ -6,10 +6,41 @@ created: '2026-03-29'
 updated: '2026-03-29'
 spec:
   summary: Line detection and auto-rectification validated against OpenCV HoughLinesP.
-  context: ''
-  codebase_analysis: ''
-  acceptance_criteria: []
-  out_of_scope: ''
-  technical_notes: ''
-plan: []
+  context: >
+    Perspective correction detects dominant straight lines via Hough transform,
+    estimates vanishing points, computes a rectifying homography, and warps the
+    image to correct perspective distortion. Validated against OpenCV HoughLinesP.
+  codebase_analysis: >
+    Existing edge detectors (Canny, Sobel) provide input edge maps. The filter
+    follows the same pattern as other filters in filters.rs: register_filter macro,
+    validate_format, 16-bit via process_via_8bit, bilinear warp with SIMD.
+  acceptance_criteria:
+    - Hough line detection produces line segments from binary edge maps
+    - Perspective warp applies arbitrary 3x3 homography with bilinear interpolation
+    - Auto-correction detects dominant H/V lines and rectifies perspective
+    - Supports RGB8, RGBA8, Gray8; 16-bit via process_via_8bit fallback
+    - WIT interface exposed for perspective-correct and perspective-warp
+    - Unit tests for all components
+  out_of_scope: GPU acceleration, lens distortion correction, multi-plane rectification
+  technical_notes: >
+    Uses probabilistic Hough transform (HoughLinesP). Vanishing point estimation
+    via RANSAC on line intersections. Homography from 4 correspondences via DLT.
+    Bilinear interpolation for sub-pixel accuracy in warp.
+plan:
+  - title: "Phase 1: Core Algorithms"
+    tasks:
+      - title: "Implement probabilistic Hough line transform"
+        done: false
+      - title: "Implement 3x3 homography solver (DLT) and perspective warp with bilinear interpolation"
+        done: false
+      - title: "Implement vanishing point estimation and auto-correction pipeline"
+        done: false
+  - title: "Phase 2: Integration & Tests"
+    tasks:
+      - title: "Register filters, add WIT interface, and adapter glue"
+        done: false
+      - title: "Add comprehensive unit tests"
+        done: false
+      - title: "Run verification and commit"
+        done: false
 extra: {}
