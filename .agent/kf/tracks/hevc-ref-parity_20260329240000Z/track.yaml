@@ -67,13 +67,13 @@ plan:
   - text: Re-initialize CABAC decoder engine at each CTU row start using entry_point_offset to find correct byte position
     done: true
   - text: Run bin trace test — all 619 gradient bins must now match reference
-    done: false
+    done: true
 - phase: Validation
   tasks:
   - text: Run all 9 parity tests — all must pass with PSNR thresholds met
-    done: false
+    done: true
   - text: Verify all reference-derived formulas have citation comments in code
-    done: false
+    done: true
   - text: clippy clean, fmt clean, full cargo test -p rasmcore-hevc passes
-    done: false
+    done: true
 extra: {}
