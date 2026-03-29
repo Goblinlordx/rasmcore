@@ -5,42 +5,36 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: Additional Viterbi pass that decides whether entire blocks should be zeroed
-    (all-EOB) by considering the cost of encoding runs of zero blocks. mozjpeg's trellis_eob_opt
-    feature.
-  context: After per-block trellis, some blocks may have very few non-zero coefficients
-    where the Huffman overhead of encoding them exceeds the distortion cost of zeroing
-    them entirely. mozjpeg runs a block-level Viterbi (trellis_eob_opt) that considers
-    sequences of blocks and decides which ones to zero entirely. This is especially
-    effective at low quality where many blocks are nearly zero.
+  summary: Additional Viterbi pass that decides whether entire blocks should be zeroed (all-EOB) by considering the cost of
+    encoding runs of zero blocks. mozjpeg's trellis_eob_opt feature.
+  context: After per-block trellis, some blocks may have very few non-zero coefficients where the Huffman overhead of encoding
+    them exceeds the distortion cost of zeroing them entirely. mozjpeg runs a block-level Viterbi (trellis_eob_opt) that considers
+    sequences of blocks and decides which ones to zero entirely. This is especially effective at low quality where many blocks
+    are nearly zero.
   codebase_analysis: ''
   acceptance_criteria:
   - Block-level Viterbi decides which blocks to zero entirely
   - Additional 1-3% file size savings at Q50-Q75
   - PSNR within 0.1dB of non-EOB-optimized at same quality setting
   - All existing tests pass
-  out_of_scope: Progressive scan EOB optimization. Per-coefficient EOB placement (already
-    handled by AC trellis).
-  technical_notes: 'Implementation: After AC trellis, compute per-block cost of (a)
-    encoding as-is vs (b) zeroing all AC. Run a 1D Viterbi over blocks in scan order
-    where state = consecutive zero-block count. Transitions: keep block (pay encoding
-    cost, reset run) or zero block (pay distortion, extend run). The run of zero blocks
-    is encoded efficiently (single EOB vs multiple per-block EOBs). Apply the optimal
-    keep/zero decisions. This is a post-pass on already-trellis''d blocks.'
+  out_of_scope: Progressive scan EOB optimization. Per-coefficient EOB placement (already handled by AC trellis).
+  technical_notes: 'Implementation: After AC trellis, compute per-block cost of (a) encoding as-is vs (b) zeroing all AC.
+    Run a 1D Viterbi over blocks in scan order where state = consecutive zero-block count. Transitions: keep block (pay encoding
+    cost, reset run) or zero block (pay distortion, extend run). The run of zero blocks is encoded efficiently (single EOB
+    vs multiple per-block EOBs). Apply the optimal keep/zero decisions. This is a post-pass on already-trellis''d blocks.'
 plan:
 - phase: EOB Block Viterbi
   tasks:
   - text: Compute per-block keep vs zero-all-AC cost (distortion + encoding overhead)
-    done: false
-  - text: Implement block-level Viterbi DP over scan order (state = consecutive zero-block
-      count)
-    done: false
+    done: true
+  - text: Implement block-level Viterbi DP over scan order (state = consecutive zero-block count)
+    done: true
   - text: Apply keep/zero decisions to trellis-quantized blocks
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Additional file size savings at Q50-Q75 without significant PSNR drop
-    done: false
+    done: true
   - text: All existing tests pass
-    done: false
+    done: true
 extra: {}
