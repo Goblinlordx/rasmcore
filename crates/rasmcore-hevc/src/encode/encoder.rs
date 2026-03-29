@@ -201,9 +201,26 @@ fn encode_slice_data(
             // Intra chroma pred mode: DM
             syntax_enc::encode_intra_chroma_mode(&mut cabac, &mut contexts, 4);
 
-            // cbf_chroma = false (luma only for now)
-            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false);
-            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false);
+            // Transform tree structure — must match decoder's decode_transform_tree exactly.
+            // The decoder reads: cbf_chroma (at depth 0, before split) → split_transform_flag → cbf_luma
+            //
+            // cbf_chroma at depth 0 with parent_cbf=true: decoded when log2TrafoSize > 2
+            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false); // Cb
+            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false); // Cr
+
+            // split_transform_flag: decoder reads this when size > min_tu_size && depth < max_tu_depth
+            // With size=32, min_tu=4, depth=0, max_depth=1: decoder WILL read this flag.
+            // Encode split=0 (no TU split — single 32x32 TU).
+            let min_tu_size = 1u32 << sps.log2_min_luma_transform_block_size;
+            let max_tu_depth = sps.max_transform_hierarchy_depth_intra as u32;
+            if ctu_size > min_tu_size && 0 < max_tu_depth {
+                syntax_enc::encode_split_transform_flag(
+                    &mut cabac,
+                    &mut contexts,
+                    ctu_size,
+                    false, // no split
+                );
+            }
 
             // Step 1: Generate DC prediction from reconstructed neighbors
             let avail_top = ctu_y > 0;
@@ -274,11 +291,13 @@ fn encode_slice_data(
             quant::quantize_block(&dct_coeffs, &mut quant_levels, log2_size, qp, 8);
             let has_residual = quant::has_nonzero(&quant_levels);
 
-            // cbf_luma
-            syntax_enc::encode_cbf_luma(&mut cabac, &mut contexts, 0, has_residual);
+            let encode_residual = has_residual;
+
+            // cbf_luma — depth=0 maps to ctxInc=1 per HEVC Table 9-33
+            syntax_enc::encode_cbf_luma(&mut cabac, &mut contexts, 0, encode_residual);
 
             // Step 5: Encode coefficients via CABAC (if non-zero)
-            if has_residual {
+            if encode_residual {
                 syntax_enc::encode_residual_coeffs(
                     &mut cabac,
                     &mut contexts,
@@ -290,7 +309,7 @@ fn encode_slice_data(
 
             // Step 6: Reconstruct (for neighbor prediction in subsequent CTUs)
             // Dequantize → inverse DCT → add prediction → clip → store
-            if has_residual {
+            if encode_residual {
                 let mut recon_coeffs = quant_levels.clone();
                 crate::transform::dequant::dequantize_block(
                     &mut recon_coeffs,
