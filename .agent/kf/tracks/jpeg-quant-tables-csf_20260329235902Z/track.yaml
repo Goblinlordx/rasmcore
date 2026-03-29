@@ -5,81 +5,117 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Add mozjpeg-style perceptually optimized quantization tables as an alternative
+  summary: 'Add mozjpeg-style perceptually optimized quantization tables as an alternative
+
     to Annex K. mozjpeg Table 3 follows a smooth geometric progression matching
+
     the human Contrast Sensitivity Function, producing fewer visible artifacts
-    per bit than Annex K's irregular values. This is the single biggest quality-per-byte
+
+    per bit than Annex K''s irregular values. This is the single biggest quality-per-byte
+
     improvement available without changing the encoder algorithm.
-  context: |
-    At Q85, mozjpeg's Table 3 quantizes high-frequency [7][7] with step 126 vs
-    Annex K's 30. This means mozjpeg aggressively discards imperceptible
+
+    '
+  context: 'At Q85, mozjpeg''s Table 3 quantizes high-frequency [7][7] with step 126 vs
+
+    Annex K''s 30. This means mozjpeg aggressively discards imperceptible
+
     high-frequency energy and uses those saved bits for low/mid-frequency detail
+
     that humans actually see. Our encoder uses Annex K by default, wasting bits
+
     on high-frequency coefficients.
 
+
     The research shows quantization tables account for the largest single quality
+
     difference between mozjpeg and libjpeg-turbo — even more than trellis.
-  codebase_analysis: |
-    quantize.rs has QuantPreset enum with AnnexK and Robidoux variants. The
+
+    '
+  codebase_analysis: 'quantize.rs has QuantPreset enum with AnnexK and Robidoux variants. The
+
     quality-to-table mapping uses the standard libjpeg formula:
+
     scale = (quality < 50) ? 5000/quality : 200 - 2*quality.
 
+
     Adding mozjpeg Table 3 as a new QuantPreset::Mozjpeg variant requires:
+
     1. New base table constants (luma + chroma)
-    2. Same scaling formula (it's universal)
+
+    2. Same scaling formula (it''s universal)
+
     3. Wire into EncodeConfig and test
+
+    '
   acceptance_criteria:
-    - QuantPreset::Mozjpeg variant with Table 3 luma and chroma base tables
-    - Smooth geometric progression matching mozjpeg MAX_COMPRESSION tables
-    - File size reduction of 10-20% vs Annex K at same perceptual quality
-    - PSNR may be lower (because high frequencies are quantized harder) but
-      perceived quality should match or exceed Annex K
-    - All test patterns decodable by image crate
-    - Benchmark showing size reduction vs Annex K
-  out_of_scope: |
-    Image-adaptive quantization tables (trellis_q_opt). SSIM/VMAF perceptual
+  - QuantPreset::Mozjpeg variant with Table 3 luma and chroma base tables
+  - Smooth geometric progression matching mozjpeg MAX_COMPRESSION tables
+  - File size reduction of 10-20% vs Annex K at same perceptual quality
+  - PSNR may be lower (because high frequencies are quantized harder) but perceived quality should match or exceed Annex K
+  - All test patterns decodable by image crate
+  - Benchmark showing size reduction vs Annex K
+  out_of_scope: 'Image-adaptive quantization tables (trellis_q_opt). SSIM/VMAF perceptual
+
     quality measurement. All 9 mozjpeg table sets (just Table 3 for now).
-  technical_notes: |
-    mozjpeg Table 3 luma base values:
+
+    '
+  technical_notes: 'mozjpeg Table 3 luma base values:
+
     16  16  16  18  25  37  56  85
+
     16  17  20  27  34  40  53  75
+
     16  20  24  31  43  62  91 135
+
     18  27  31  40  53  74 106 156
+
     25  34  43  53  69  94 131 189
+
     37  40  62  74  94 124 169 238
+
     56  53  91 106 131 169 226 311
+
     85  75 135 156 189 238 311 418
 
+
     Note values > 255 are valid — they get scaled down by the quality factor
+
     and clamped to [1, 255] in the final table. At Q85 (scale 30),
+
     418 * 30 / 100 = 125.4 → 126. This aggressively quantizes [7][7].
 
+
     Chroma Table 3 follows the same smooth progression pattern.
-    These tables are derived from the human visual system's Contrast
+
+    These tables are derived from the human visual system''s Contrast
+
     Sensitivity Function and are well-studied in the JPEG optimization
+
     literature.
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Add mozjpeg Table 3 luma base values as const array
-        done: false
-      - text: Add mozjpeg Table 3 chroma base values as const array
-        done: false
-      - text: Add QuantPreset::Mozjpeg variant to enum and wire into table selection
-        done: false
-      - text: Handle values > 255 in base table (scale then clamp, same as standard)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit test that Mozjpeg preset produces valid quantization tables at all quality levels
-        done: false
-      - text: Benchmark file size Mozjpeg vs AnnexK at Q75/Q85/Q95 (expect 10-20% reduction)
-        done: false
-      - text: All test patterns decodable with Mozjpeg tables
-        done: false
-      - text: Update all-reference chart to include Mozjpeg tables variant
-        done: false
-      - text: Three-way parity test with Mozjpeg tables
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Add mozjpeg Table 3 luma base values as const array
+    done: true
+  - text: Add mozjpeg Table 3 chroma base values as const array
+    done: true
+  - text: Add QuantPreset::Mozjpeg variant to enum and wire into table selection
+    done: true
+  - text: Handle values > 255 in base table (scale then clamp, same as standard)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit test that Mozjpeg preset produces valid quantization tables at all quality levels
+    done: true
+  - text: Benchmark file size Mozjpeg vs AnnexK at Q75/Q85/Q95 (expect 10-20% reduction)
+    done: true
+  - text: All test patterns decodable with Mozjpeg tables
+    done: true
+  - text: Update all-reference chart to include Mozjpeg tables variant
+    done: true
+  - text: Three-way parity test with Mozjpeg tables
+    done: true
 extra: {}
