@@ -1,0 +1,75 @@
+id: hevc-ref-parity_20260329240000Z
+title: HEVC Reference Parity — Bit-Exact Decode vs libde265
+type: bug
+status: pending
+created: '2026-03-28'
+updated: '2026-03-28'
+spec:
+  summary: Fix all remaining CABAC context derivation issues and add WPP support to achieve bit-exact decode output matching
+    libde265 for all 9 parity test cases.
+  context: 'The bin-trace-audit track fixed 9 bugs (CABAC decoder precision, LPS table, init tables, slice header, transform
+    tree structure). Flat 64x64 test cases now decode at 48.1dB (bit-exact). However, gradient (13.9dB) and checker (5.1dB)
+    still fail due to two categories of remaining issues: (1) residual coding context derivation uses simplified formulas
+    instead of exact HEVC spec logic, and (2) WPP CABAC re-initialization at CTU row boundaries is not implemented. All gradient/checker
+    test bitstreams use entropy_coding_sync_enabled=1, making WPP handling mandatory.'
+  codebase_analysis: 'Primary file: crates/rasmcore-hevc/src/syntax.rs (decode_residual_coeffs and derive_sig_coeff_ctx).
+    Secondary: crates/rasmcore-hevc/src/frame.rs (CTU decode loop, no WPP handling). Reference formulas documented in .agent/kf/tracks/hevc-cabac-research_20260329020000Z/research.md
+    (extracted from libde265 slice.cc lines 1887-3400). libde265 source built with trace logging at /tmp/libde265-trace/.
+    Bin trace test infrastructure already exists at tests/bin_trace.rs (requires --features trace). Current divergence: bin
+    533 of gradient_128x128_q22 (start of second CTU row — WPP re-init point).'
+  acceptance_criteria:
+  - 'All 9 parity tests pass (0 failures, no #[ignore])'
+  - flat_64x64_q22 and q37 PSNR > 40dB
+  - gradient_128x128_q22 PSNR > 25dB
+  - checker_256x256_q22 PSNR > 25dB
+  - Bin trace test for gradient_128x128_q22 matches all 619 reference bins
+  - All reference-derived values and formulas cited in code comments with libde265 source location
+  - clippy clean, fmt clean, full cargo test passes
+  out_of_scope: Chroma residual coding (only luma tested). Inter prediction (HEIC is I-frame only). Transform skip mode. Parallel
+    WPP execution (we implement the context save/restore but decode single-threaded).
+  technical_notes: "Two categories of fixes, in dependency order:\n\nPhase 1 — Residual coding context derivation (syntax.rs):\n\
+    All formulas from libde265 slice.cc, cited with line numbers.\n  1a. sig_coeff_flag: implement prevCsbf-dependent switch/case\
+    \ (libde265 lines 2083-2096)\n  1b. gt1 ctxSet: track firstSubblock + lastSubblock_greater1Ctx (lines 2407-2437)\n  1c.\
+    \ gt2 context: use ctxSet from gt1 derivation, not fixed offset (line 3297)\n  1d. signHidden: skip last sign when scan\
+    \ distance > 3 (lines 3306-3327)\n  1e. Rice parameter adaptation: increment when baseLevel+remaining > 3*(1<<ricePar)\
+    \ (lines 3342-3390)\n\nPhase 2 — WPP CABAC re-initialization (frame.rs):\n  2a. Add context model save/restore infrastructure\
+    \ to the CTU loop\n  2b. At CTU row start (CtbX==0, CtbY>=1): restore contexts from saved row above\n  2c. After decoding\
+    \ CTU at CtbX==1: save contexts for next row\n  2d. Re-initialize CABAC decoder engine (read 2 fresh bytes) at each entry\
+    \ point\n  2e. Handle entry_point_offsets from slice header to find CABAC data boundaries per row\n\nValidation approach:\
+    \ run bin trace test after each fix to measure progress.\nThe gradient_128x128_q22 bin trace (619 reference bins) is the\
+    \ primary validation tool."
+plan: []
+extra: {}
+plan:
+  - phase: Residual Context Derivation
+    tasks:
+      - text: "Fix sig_coeff_flag context: implement prevCsbf switch/case per libde265 lines 2083-2096, with sub-block position offset. Add comment citing reference."
+        done: false
+      - text: "Fix gt1 ctxSet derivation: track firstSubblock, lastSubblock_greater1Ctx, use formula from libde265 lines 2407-2437. Cite reference in comments."
+        done: false
+      - text: "Fix gt2 context: use ctxSet from gt1 derivation (libde265 line 3297), not fixed offset. Cite reference."
+        done: false
+      - text: "Implement signHidden: skip last coefficient sign when first-last scan distance > 3 (libde265 lines 3306-3327). Cite reference."
+        done: false
+      - text: "Implement Rice parameter adaptation: increment ricePar when baseLevel + remaining > 3*(1<<ricePar) (libde265 lines 3342-3390). Cite reference."
+        done: false
+      - text: "Run bin trace test for gradient — verify residual context fixes increase match count past bin 533"
+        done: false
+  - phase: WPP CABAC Re-initialization
+    tasks:
+      - text: "Store entry_point_offsets from slice header in SliceHeader struct for use in CTU loop"
+        done: false
+      - text: "Add context model save/restore in frame.rs CTU loop: save after CtbX==1, restore at CtbX==0 on new row (libde265 slice.cc lines 4723-4747). Cite reference."
+        done: false
+      - text: "Re-initialize CABAC decoder engine at each CTU row start using entry_point_offset to find correct byte position"
+        done: false
+      - text: "Run bin trace test — all 619 gradient bins must now match reference"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "Run all 9 parity tests — all must pass with PSNR thresholds met"
+        done: false
+      - text: "Verify all reference-derived formulas have citation comments in code"
+        done: false
+      - text: "clippy clean, fmt clean, full cargo test -p rasmcore-hevc passes"
+        done: false
