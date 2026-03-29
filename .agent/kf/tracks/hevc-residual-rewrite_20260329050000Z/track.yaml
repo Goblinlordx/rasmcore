@@ -1,0 +1,66 @@
+id: hevc-residual-rewrite_20260329050000Z
+title: HEVC Residual Coding Rewrite — List-Order Coefficient Assembly
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Rewrite decode_residual_coeffs to process coefficients in list order (matching libde265) instead of reverse scan
+    order. Root cause of all remaining Y-plane byte errors: gt1/gt2/sign/remaining are assigned to wrong coefficients.'
+  context: 'YUV byte comparison proved CTU(0,0) is byte-exact but CTU(1,0) produces [193,-104,-11,-4,-2,-1,-1,-1] instead
+    of reference [-1,-1,-1,-2,-4]. Line-by-line comparison against libde265 v1.0.18 residual_coding() identified the root
+    cause: our coefficient assembly loop processes sig positions in REVERSE scan order, while the spec requires FORWARD list
+    order. This causes gt1 flags, gt2 candidate, signs, and remaining levels to be associated with wrong coefficients.'
+  codebase_analysis: 'Single function to rewrite: decode_residual_coeffs() in crates/rasmcore-hevc/src/syntax.rs (lines ~622-1005).
+    The function must be restructured to match libde265 v1.0.18 slice.cc residual_coding() (lines 2931-3430). Key structural
+    change: collect significant coefficients into a list first (with scan positions), then process gt1/gt2/sign/remaining
+    in list order (index 0..nCoeff-1), not in scan order.'
+  acceptance_criteria:
+  - Y plane byte-exact for flat_64x64_q22 and flat_64x64_q37
+  - Y plane byte-exact for gradient_128x128_q22 (0 diffs in yuv_parity test)
+  - All 9 RGB parity tests pass with PSNR > 25dB
+  - All fixes cited with libde265 v1.0.18 source locations
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: Chroma residual decode. RGB conversion alignment (separate concern). WPP improvements beyond what is needed
+    for gradient parity.
+  technical_notes: "Six specific bugs to fix, all in decode_residual_coeffs():\n\n1. COEFFICIENT ORDERING (PRIMARY): Change\
+    \ from reverse-scan-order iteration\n   to list-order processing. Collect significant coefficients into a Vec first,\n\
+    \   then process gt1/gt2/sign/remaining by list index.\n   Ref: libde265 v1.0.18 slice.cc lines 3164-3196 — coefficient\
+    \ collection.\n\n2. GT1 SCOPE: Decode gt1 for first min(8, nCoefficients) coefficients in LIST\n   order, not the last\
+    \ 8 by scan position.\n   Ref: libde265 v1.0.18 slice.cc line 3269 — lastGreater1Coefficient.\n\n3. GT2 CANDIDATE: Select\
+    \ the FIRST coefficient with gt1=1 in list order.\n   Currently selects the first in reverse scan order (wrong coefficient).\n\
+    \   Ref: libde265 v1.0.18 slice.cc line 3283 — newLastGreater1ScanPos.\n\n4. SIGN ORDER: Decode signs for coefficients\
+    \ 0..nCoeff-2 in list order,\n   then handle last coefficient specially for signHidden.\n   Ref: libde265 v1.0.18 slice.cc\
+    \ lines 3312-3327.\n\n5. REMAINING DECODE: Use coeff_has_max_base_level flag (1 when base is at max)\n   instead of inferring\
+    \ from abs_levels value.\n   Ref: libde265 v1.0.18 slice.cc lines 3360-3397.\n\n6. RICE PARAM ADAPTATION: Must happen\
+    \ in list order to match reference state.\n   Ref: libde265 v1.0.18 slice.cc lines 3367-3377.\n\nAlso update YCbCr to\
+    \ RGB to match ffmpeg coefficients for full parity."
+plan: []
+extra: {}
+plan:
+  - phase: Rewrite Coefficient Assembly
+    tasks:
+      - text: "Restructure decode_residual_coeffs to collect significant coefficients into a list with scan positions, then process in list order matching libde265 v1.0.18 slice.cc lines 3164-3430. Cite reference."
+        done: false
+      - text: "Fix gt1 decoding to process first min(8, nCoeff) coefficients in list order. Cite libde265 v1.0.18 slice.cc line 3269."
+        done: false
+      - text: "Fix gt2 candidate selection to use first gt1=1 in list order. Cite libde265 v1.0.18 slice.cc line 3283."
+        done: false
+      - text: "Fix sign decoding order: list order 0..nCoeff-2, then signHidden for last. Cite libde265 v1.0.18 slice.cc lines 3312-3327."
+        done: false
+      - text: "Fix remaining decode with coeff_has_max_base_level tracking. Cite libde265 v1.0.18 slice.cc lines 3360-3397."
+        done: false
+  - phase: YCbCr to RGB Alignment
+    tasks:
+      - text: "Update BT709 matrix coefficients to match ffmpeg 7.1 output exactly"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "yuv_parity_flat_64x64_q22 and q37 pass (0 Y diffs)"
+        done: false
+      - text: "yuv_parity_gradient_128x128_q22 passes (0 Y diffs)"
+        done: false
+      - text: "All 9 RGB parity tests pass with PSNR > 25dB"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test passes"
+        done: false
