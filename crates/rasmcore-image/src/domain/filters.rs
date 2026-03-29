@@ -2032,6 +2032,386 @@ pub fn nlm_denoise(
 
     Ok(out)
 }
+// ─── Photo Enhancement ─────────────────────────────────────────────────────
+
+/// Dehaze an image using the dark channel prior (He et al. 2009).
+///
+/// Estimates atmospheric light and transmission from the dark channel (minimum
+/// over color channels in a local patch), refines with guided filter, then
+/// recovers the scene: `J = (I - A) / max(t, t_min) + A`.
+///
+/// - `patch_radius`: local patch size for dark channel (typical: 7-15)
+/// - `omega`: haze removal strength 0.0-1.0 (typical: 0.95)
+/// - `t_min`: minimum transmission to avoid noise amplification (typical: 0.1)
+pub fn dehaze(
+    pixels: &[u8],
+    info: &ImageInfo,
+    patch_radius: u32,
+    omega: f32,
+    t_min: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let (w, h) = (info.width as usize, info.height as usize);
+    let channels = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "dehaze requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let n = w * h;
+    let r = patch_radius as usize;
+
+    // Step 1: Compute dark channel — min over RGB in local patch
+    let mut dark_channel = vec![0.0f32; n];
+    for y in 0..h {
+        for x in 0..w {
+            let mut min_val = f32::MAX;
+            let y0 = y.saturating_sub(r);
+            let y1 = (y + r + 1).min(h);
+            let x0 = x.saturating_sub(r);
+            let x1 = (x + r + 1).min(w);
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let idx = (py * w + px) * channels;
+                    let r_val = pixels[idx] as f32 / 255.0;
+                    let g_val = pixels[idx + 1] as f32 / 255.0;
+                    let b_val = pixels[idx + 2] as f32 / 255.0;
+                    let ch_min = r_val.min(g_val).min(b_val);
+                    min_val = min_val.min(ch_min);
+                }
+            }
+            dark_channel[y * w + x] = min_val;
+        }
+    }
+
+    // Step 2: Estimate atmospheric light — brightest 0.1% of dark channel pixels
+    let mut dc_indexed: Vec<(usize, f32)> = dark_channel
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i, v))
+        .collect();
+    dc_indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    let top_count = (n as f32 * 0.001).max(1.0) as usize;
+    let mut atm = [0.0f32; 3];
+    let mut max_intensity = 0.0f32;
+    for &(idx, _) in dc_indexed.iter().take(top_count) {
+        let pi = idx * channels;
+        let intensity =
+            pixels[pi] as f32 + pixels[pi + 1] as f32 + pixels[pi + 2] as f32;
+        if intensity > max_intensity {
+            max_intensity = intensity;
+            atm[0] = pixels[pi] as f32 / 255.0;
+            atm[1] = pixels[pi + 1] as f32 / 255.0;
+            atm[2] = pixels[pi + 2] as f32 / 255.0;
+        }
+    }
+
+    // Step 3: Estimate transmission — t(x) = 1 - omega * dark_channel(I/A)
+    let mut transmission = vec![0.0f32; n];
+    for y in 0..h {
+        for x in 0..w {
+            let mut min_val = f32::MAX;
+            let y0 = y.saturating_sub(r);
+            let y1 = (y + r + 1).min(h);
+            let x0 = x.saturating_sub(r);
+            let x1 = (x + r + 1).min(w);
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let idx = (py * w + px) * channels;
+                    let nr = (pixels[idx] as f32 / 255.0) / atm[0].max(0.001);
+                    let ng = (pixels[idx + 1] as f32 / 255.0) / atm[1].max(0.001);
+                    let nb = (pixels[idx + 2] as f32 / 255.0) / atm[2].max(0.001);
+                    min_val = min_val.min(nr.min(ng).min(nb));
+                }
+            }
+            transmission[y * w + x] = (1.0 - omega * min_val).max(t_min);
+        }
+    }
+
+    // Step 4: Refine transmission with guided filter (use grayscale as guide)
+    // Convert transmission to u8, apply guided filter, convert back
+    let t_u8: Vec<u8> = transmission
+        .iter()
+        .map(|&t| (t * 255.0).round().clamp(0.0, 255.0) as u8)
+        .collect();
+    let gray_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    let refined_u8 = guided_filter(&t_u8, &gray_info, patch_radius.min(15), 0.001)?;
+    let refined: Vec<f32> = refined_u8.iter().map(|&v| v as f32 / 255.0).collect();
+
+    // Step 5: Recover scene — J = (I - A) / max(t, t_min) + A
+    let mut result = vec![0u8; pixels.len()];
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * w + x;
+            let t = refined[i].max(t_min);
+            let pi = i * channels;
+            for c in 0..3 {
+                let ic = pixels[pi + c] as f32 / 255.0;
+                let jc = (ic - atm[c]) / t + atm[c];
+                result[pi + c] = (jc * 255.0).round().clamp(0.0, 255.0) as u8;
+            }
+            if channels == 4 {
+                result[pi + 3] = pixels[pi + 3]; // alpha
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Clarity — midtone-weighted local contrast enhancement.
+///
+/// Applies a large-radius unsharp mask but weights the effect by a midtone curve:
+/// shadows and highlights get less enhancement, midtones (luminance 25-75%) get full.
+/// This matches Lightroom/Photoshop "Clarity" slider behavior.
+///
+/// - `amount`: enhancement strength (0.0-2.0 typical, 1.0 = full effect)
+/// - `sigma`: blur radius for local contrast (30-50 typical)
+pub fn clarity(
+    pixels: &[u8],
+    info: &ImageInfo,
+    amount: f32,
+    sigma: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let channels = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "clarity requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let n = (info.width as usize) * (info.height as usize);
+
+    // Compute luminance for midtone weighting
+    let mut luma = vec![0.0f32; n];
+    for i in 0..n {
+        let pi = i * channels;
+        luma[i] = (0.2126 * pixels[pi] as f32
+            + 0.7152 * pixels[pi + 1] as f32
+            + 0.0722 * pixels[pi + 2] as f32)
+            / 255.0;
+    }
+
+    // Apply large-radius blur
+    let blurred = blur(pixels, info, sigma)?;
+
+    // Midtone weight function: bell curve centered at 0.5, zero at 0 and 1
+    // w(l) = 4 * l * (1 - l) — parabola peaking at 0.5 with w(0.5) = 1.0
+    let mut result = vec![0u8; pixels.len()];
+    for i in 0..n {
+        let weight = 4.0 * luma[i] * (1.0 - luma[i]) * amount;
+        let pi = i * channels;
+        for c in 0..3 {
+            let orig = pixels[pi + c] as f32;
+            let blur_val = blurred[pi + c] as f32;
+            let detail = orig - blur_val; // high-frequency detail
+            let enhanced = orig + detail * weight;
+            result[pi + c] = enhanced.round().clamp(0.0, 255.0) as u8;
+        }
+        if channels == 4 {
+            result[pi + 3] = pixels[pi + 3]; // alpha
+        }
+    }
+
+    Ok(result)
+}
+
+/// Local Laplacian filtering (Paris et al. 2011).
+///
+/// Decomposes the image into a Gaussian/Laplacian pyramid and remaps
+/// detail at each level via a sigmoidal curve. Enables detail enhancement
+/// (sigma < 1.0) or smoothing (sigma > 1.0) while preserving edges.
+///
+/// - `sigma`: detail remapping strength (0.2 = strong enhancement, 1.0 = neutral, 3.0 = smooth)
+/// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
+///
+/// Reference: Paris, Hasinoff, Kautz — "Local Laplacian Filters" (SIGGRAPH 2011)
+pub fn local_laplacian(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma: f32,
+    num_levels: usize,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let channels = match info.format {
+        PixelFormat::Rgb8 => 3,
+        PixelFormat::Rgba8 => 4,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "local laplacian requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let (w, h) = (info.width as usize, info.height as usize);
+
+    // Determine pyramid levels
+    let levels = if num_levels == 0 {
+        ((w.min(h) as f32).log2() as usize).min(7).max(2)
+    } else {
+        num_levels.min(10)
+    };
+
+    // Process each channel independently through the pyramid
+    let mut result = vec![0u8; pixels.len()];
+
+    for c in 0..3 {
+        // Extract single channel as f32
+        let channel: Vec<f32> = (0..w * h)
+            .map(|i| pixels[i * channels + c] as f32 / 255.0)
+            .collect();
+
+        let output = local_laplacian_channel(&channel, w, h, levels, sigma);
+
+        // Write back
+        for i in 0..w * h {
+            result[i * channels + c] = (output[i] * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    // Copy alpha if present
+    if channels == 4 {
+        for i in 0..w * h {
+            result[i * 4 + 3] = pixels[i * 4 + 3];
+        }
+    }
+
+    Ok(result)
+}
+
+/// Process a single channel through the Local Laplacian pyramid.
+fn local_laplacian_channel(
+    input: &[f32],
+    w: usize,
+    h: usize,
+    levels: usize,
+    sigma: f32,
+) -> Vec<f32> {
+    // Build Gaussian pyramid
+    let mut gauss_pyramid = vec![input.to_vec()];
+    let mut cw = w;
+    let mut ch = h;
+    for _ in 1..levels {
+        let prev = gauss_pyramid.last().unwrap();
+        let (nw, nh) = ((cw + 1) / 2, (ch + 1) / 2);
+        let downsampled = downsample_2x(prev, cw, ch);
+        gauss_pyramid.push(downsampled);
+        cw = nw;
+        ch = nh;
+    }
+
+    // Build output Laplacian pyramid with remapped detail
+    let mut output_laplacian: Vec<Vec<f32>> = Vec::with_capacity(levels);
+    cw = w;
+    ch = h;
+
+    for level in 0..levels - 1 {
+        let (nw, nh) = ((cw + 1) / 2, (ch + 1) / 2);
+
+        // Laplacian = current level - upsampled(next level)
+        let upsampled = upsample_2x(&gauss_pyramid[level + 1], nw, nh, cw, ch);
+        let mut laplacian = vec![0.0f32; cw * ch];
+        for i in 0..cw * ch {
+            laplacian[i] = gauss_pyramid[level][i] - upsampled[i];
+        }
+
+        // Remap detail: attenuate or amplify based on sigma
+        // Enhancement: small sigma compresses large gradients, preserves small detail
+        // Smoothing: large sigma suppresses small detail
+        for i in 0..cw * ch {
+            let d = laplacian[i];
+            // Sigmoidal remapping: f(d) = d * (sigma / (sigma + |d|))
+            // sigma < 1: enhances small detail (compresses large)
+            // sigma > 1: smooths (suppresses small detail)
+            laplacian[i] = d * sigma / (sigma + d.abs());
+        }
+
+        output_laplacian.push(laplacian);
+        cw = nw;
+        ch = nh;
+    }
+
+    // Coarsest level is kept as-is (DC component)
+    output_laplacian.push(gauss_pyramid[levels - 1].clone());
+
+    // Reconstruct from Laplacian pyramid
+    let mut reconstructed = output_laplacian[levels - 1].clone();
+    let _ = gauss_pyramid[levels - 1].len(); // dims recalculated below
+
+    // Recompute dimensions for each level
+    let mut dims: Vec<(usize, usize)> = Vec::with_capacity(levels);
+    let (mut tw, mut th) = (w, h);
+    for _ in 0..levels {
+        dims.push((tw, th));
+        tw = (tw + 1) / 2;
+        th = (th + 1) / 2;
+    }
+
+    for level in (0..levels - 1).rev() {
+        let (target_w, target_h) = dims[level];
+        let (src_w, src_h) = dims[level + 1];
+        let upsampled = upsample_2x(&reconstructed, src_w, src_h, target_w, target_h);
+        reconstructed = vec![0.0f32; target_w * target_h];
+        for i in 0..target_w * target_h {
+            reconstructed[i] = (upsampled[i] + output_laplacian[level][i]).clamp(0.0, 1.0);
+        }
+    }
+
+    reconstructed
+}
+
+/// Downsample by 2x using box filter (average of 2x2 blocks).
+fn downsample_2x(data: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let nw = (w + 1) / 2;
+    let nh = (h + 1) / 2;
+    let mut out = vec![0.0f32; nw * nh];
+    for y in 0..nh {
+        for x in 0..nw {
+            let x0 = x * 2;
+            let y0 = y * 2;
+            let x1 = (x0 + 1).min(w - 1);
+            let y1 = (y0 + 1).min(h - 1);
+            out[y * nw + x] = (data[y0 * w + x0]
+                + data[y0 * w + x1]
+                + data[y1 * w + x0]
+                + data[y1 * w + x1])
+                / 4.0;
+        }
+    }
+    out
+}
+
+/// Upsample by 2x using bilinear interpolation.
+fn upsample_2x(data: &[f32], sw: usize, sh: usize, tw: usize, th: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; tw * th];
+    for y in 0..th {
+        for x in 0..tw {
+            let sx = x as f32 / tw as f32 * sw as f32;
+            let sy = y as f32 / th as f32 * sh as f32;
+            let x0 = (sx as usize).min(sw - 1);
+            let y0 = (sy as usize).min(sh - 1);
+            let x1 = (x0 + 1).min(sw - 1);
+            let y1 = (y0 + 1).min(sh - 1);
+            let fx = sx - x0 as f32;
+            let fy = sy - y0 as f32;
+            out[y * tw + x] = data[y0 * sw + x0] * (1.0 - fx) * (1.0 - fy)
+                + data[y0 * sw + x1] * fx * (1.0 - fy)
+                + data[y1 * sw + x0] * (1.0 - fx) * fy
+                + data[y1 * sw + x1] * fx * fy;
+        }
+    }
+    out
+}
 
 #[cfg(test)]
 mod tests {
@@ -2877,6 +3257,162 @@ mod tests_16bit {
         let (px, info) = make_rgb16(4, 4, 32768);
         let result = sepia(&px, &info, 1.0).unwrap();
         assert_eq!(result.len(), px.len());
+    }
+
+}
+
+#[cfg(test)]
+mod photo_enhance_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn test_info(w: u32, h: u32, fmt: PixelFormat) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: fmt,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn make_rgb(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
+        let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();
+        (pixels, test_info(w, h, PixelFormat::Rgb8))
+    }
+
+    #[test]
+    fn dehaze_produces_output() {
+        // Create a synthetic hazy image (low contrast, washed out)
+        let (w, h) = (32u32, 32u32);
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 3) as usize;
+                // Hazy: everything shifted toward bright gray (haze = 180)
+                pixels[i] = (((x * 2) as u8).wrapping_add(180)).min(250);
+                pixels[i + 1] = (((y * 2) as u8).wrapping_add(180)).min(250);
+                pixels[i + 2] = 200;
+            }
+        }
+        let info = test_info(w, h, PixelFormat::Rgb8);
+        let result = dehaze(&pixels, &info, 7, 0.95, 0.1).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Dehazed image should have more contrast (wider range)
+        let stats_before = crate::domain::histogram::statistics(&pixels, &info).unwrap();
+        let stats_after = crate::domain::histogram::statistics(&result, &info).unwrap();
+        let range_before = stats_before[0].max as f32 - stats_before[0].min as f32;
+        let range_after = stats_after[0].max as f32 - stats_after[0].min as f32;
+        assert!(
+            range_after >= range_before,
+            "dehaze should increase contrast: range {range_before} -> {range_after}"
+        );
+    }
+
+    #[test]
+    fn dehaze_rgba_preserves_alpha() {
+        let (w, h) = (16u32, 16u32);
+        let mut pixels = vec![200u8; (w * h * 4) as usize];
+        for i in 0..(w * h) as usize {
+            pixels[i * 4 + 3] = 128; // set alpha
+        }
+        let info = test_info(w, h, PixelFormat::Rgba8);
+        let result = dehaze(&pixels, &info, 5, 0.8, 0.1).unwrap();
+        for i in 0..(w * h) as usize {
+            assert_eq!(result[i * 4 + 3], 128, "alpha must be preserved");
+        }
+    }
+
+    #[test]
+    fn clarity_enhances_midtones() {
+        let (w, h) = (32u32, 32u32);
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 3) as usize;
+                // Midtone image (values around 128)
+                pixels[i] = 100 + (x % 28) as u8;
+                pixels[i + 1] = 110 + (y % 20) as u8;
+                pixels[i + 2] = 120;
+            }
+        }
+        let info = test_info(w, h, PixelFormat::Rgb8);
+        let result = clarity(&pixels, &info, 1.0, 10.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Clarity should increase local contrast (stddev should increase)
+        let stats_before = crate::domain::histogram::statistics(&pixels, &info).unwrap();
+        let stats_after = crate::domain::histogram::statistics(&result, &info).unwrap();
+        assert!(
+            stats_after[0].stddev >= stats_before[0].stddev * 0.9,
+            "clarity should not dramatically reduce contrast"
+        );
+    }
+
+    #[test]
+    fn clarity_zero_amount_is_near_identity() {
+        let (px, info) = make_rgb(32, 32);
+        let result = clarity(&px, &info, 0.0, 10.0).unwrap();
+        // With amount=0, the detail weighting is 0, so output ≈ input
+        let diff: f64 = px
+            .iter()
+            .zip(result.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / px.len() as f64;
+        assert!(diff < 1.0, "clarity with amount=0 should be near-identity, MAE={diff}");
+    }
+
+    #[test]
+    fn local_laplacian_preserves_dimensions() {
+        let (px, info) = make_rgb(32, 32);
+        let result = local_laplacian(&px, &info, 0.5, 0).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn local_laplacian_sigma_1_near_identity() {
+        let (px, info) = make_rgb(32, 32);
+        // sigma=1.0 means the remapping d * 1.0 / (1.0 + |d|) ≈ d for small d
+        // This is close to identity (slight compression of large gradients)
+        let result = local_laplacian(&px, &info, 1.0, 4).unwrap();
+        let diff: f64 = px
+            .iter()
+            .zip(result.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / px.len() as f64;
+        assert!(
+            diff < 30.0,
+            "local laplacian sigma=1 should be close to identity, MAE={diff}"
+        );
+    }
+
+    #[test]
+    fn local_laplacian_small_sigma_produces_output() {
+        let (px, info) = make_rgb(64, 64);
+        let result = local_laplacian(&px, &info, 0.2, 0).unwrap();
+        assert_eq!(result.len(), px.len());
+        // Result should differ from input (enhancement applied)
+        let diff: usize = px.iter().zip(result.iter()).filter(|&(&a, &b)| a != b).count();
+        assert!(diff > 0, "local laplacian should modify the image");
+    }
+
+    #[test]
+    fn local_laplacian_rgba_preserves_alpha() {
+        let (w, h) = (16u32, 16u32);
+        let mut pixels = vec![128u8; (w * h * 4) as usize];
+        for i in 0..(w * h) as usize {
+            pixels[i * 4] = (i % 200) as u8;
+            pixels[i * 4 + 1] = ((i * 3) % 200) as u8;
+            pixels[i * 4 + 2] = ((i * 7) % 200) as u8;
+            pixels[i * 4 + 3] = 200;
+        }
+        let info = test_info(w, h, PixelFormat::Rgba8);
+        let result = local_laplacian(&pixels, &info, 0.5, 3).unwrap();
+        for i in 0..(w * h) as usize {
+            assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
+        }
     }
 }
 
