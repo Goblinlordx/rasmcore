@@ -156,13 +156,13 @@ plan:
 - phase: Filter Migration
   tasks:
   - text: Migrate all existing filters to use register_filter attribute
-    done: false
+    done: true
   - text: Remove manual filter entries from adapter/mod.rs and pipeline_adapter.rs
-    done: false
+    done: true
   - text: Verify cargo component build succeeds with generated code
-    done: false
+    done: true
   - text: Verify all existing tests pass
-    done: false
+    done: true
 - phase: Encoder and Decoder Extension
   tasks:
   - text: Add register_encoder proc macro attribute
