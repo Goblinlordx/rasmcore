@@ -10,3 +10,4 @@ pub mod bitwrite;
 pub mod cabac_enc;
 pub mod nal_write;
 pub mod params_write;
+pub mod syntax_enc;
