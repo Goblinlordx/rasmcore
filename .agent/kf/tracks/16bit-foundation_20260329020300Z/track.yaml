@@ -94,11 +94,11 @@ plan:
 - phase: Decoder
   tasks:
   - text: Update detect_pixel_format() to map ColorType::Rgb16 and Rgba16
-    done: false
+    done: true
   - text: Add Rgb16 and Rgba16 decode paths in decode() using to_rgb16()/to_rgba16()
-    done: false
+    done: true
   - text: Add 16-bit TIFF decode support (verify image crate handles it)
-    done: false
+    done: true
 - phase: Encoder
   tasks:
   - text: Update PNG encoder to output 16-bit when input is Rgb16/Rgba16/Gray16

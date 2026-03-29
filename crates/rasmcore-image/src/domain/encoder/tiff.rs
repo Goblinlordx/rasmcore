@@ -84,6 +84,36 @@ pub fn encode(
                 .map_err(err_map)?;
             img.write_data(pixels).map_err(err_map)?;
         }
+        PixelFormat::Gray16 => {
+            let u16_data: Vec<u16> = pixels
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let img = encoder
+                .new_image::<tiff::encoder::colortype::Gray16>(info.width, info.height)
+                .map_err(err_map)?;
+            img.write_data(&u16_data).map_err(err_map)?;
+        }
+        PixelFormat::Rgb16 => {
+            let u16_data: Vec<u16> = pixels
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let img = encoder
+                .new_image::<tiff::encoder::colortype::RGB16>(info.width, info.height)
+                .map_err(err_map)?;
+            img.write_data(&u16_data).map_err(err_map)?;
+        }
+        PixelFormat::Rgba16 => {
+            let u16_data: Vec<u16> = pixels
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let img = encoder
+                .new_image::<tiff::encoder::colortype::RGBA16>(info.width, info.height)
+                .map_err(err_map)?;
+            img.write_data(&u16_data).map_err(err_map)?;
+        }
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "TIFF encoding from {other:?} not supported"
