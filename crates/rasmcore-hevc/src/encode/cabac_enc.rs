@@ -7,8 +7,8 @@
 //! Ref: x265 4.1 encoder/entropy.cpp — encodeBin, encodeBinEP, encodeBinTrm
 //! Ref: ITU-T H.265 Section 9.3.4 (arithmetic encoding process)
 
-use crate::cabac::tables::{RANGE_TAB_LPS, RENORM_TABLE};
 use crate::cabac::ContextModel;
+use crate::cabac::tables::{RANGE_TAB_LPS, RENORM_TABLE};
 
 /// CABAC binary arithmetic encoder.
 ///
@@ -54,8 +54,7 @@ impl CabacEncoder {
     /// Ref: ITU-T H.265 Section 9.3.4.2
     #[inline]
     pub fn encode_bin(&mut self, bin_val: u32, ctx: &mut ContextModel) {
-        let lps_range =
-            RANGE_TAB_LPS[ctx.state as usize][((self.range >> 6) & 3) as usize] as u32;
+        let lps_range = RANGE_TAB_LPS[ctx.state as usize][((self.range >> 6) & 3) as usize] as u32;
 
         self.range -= lps_range;
 
@@ -513,10 +512,7 @@ mod tests {
         for i in 0..200 {
             let decoded = dec.decode_bin(&mut dec_ctx).unwrap();
             // After encoding all MPS, the context stabilizes
-            assert!(
-                decoded == 0 || decoded == 1,
-                "invalid bin at position {i}"
-            );
+            assert!(decoded == 0 || decoded == 1, "invalid bin at position {i}");
         }
         assert_eq!(dec.decode_terminate().unwrap(), 1);
     }

@@ -70,25 +70,54 @@ pub fn get_tc(qp: i32) -> i32 {
     TC_TABLE[idx]
 }
 
-/// Decide whether to apply strong or weak filter for a luma edge.
+/// Compute dp = |p[2] - 2*p[1] + p[0]| for a single row of 4 p-side samples.
+///
+/// ITU-T H.265 Section 8.7.2.4.2 — second-order derivative on p side.
+fn compute_dp(p: &[i32; 4]) -> i32 {
+    (p[2] - 2 * p[1] + p[0]).abs()
+}
+
+/// Compute dq = |q[2] - 2*q[1] + q[0]| for a single row of 4 q-side samples.
+fn compute_dq(q: &[i32; 4]) -> i32 {
+    (q[2] - 2 * q[1] + q[0]).abs()
+}
+
+/// Decide whether to apply strong or weak filter for a 4-sample luma edge segment.
 ///
 /// ITU-T H.265 Section 8.7.2.4.5.
-/// Returns `true` if strong filter should be used.
-pub fn use_strong_filter(p: [i32; 4], q: [i32; 4], beta: i32, tc: i32) -> bool {
-    let dp0 = (p[2] - 2 * p[1] + p[0]).abs();
-    let dq0 = (q[2] - 2 * q[1] + q[0]).abs();
-    let dp3 = (p[2] - 2 * p[1] + p[0]).abs(); // simplified — should use different row
-    let dq3 = (q[2] - 2 * q[1] + q[0]).abs();
+/// Ref: ffmpeg libavcodec/hevc/dsp_template.c — hevc_loop_filter_luma
+///
+/// Takes samples from row 0 (p0/q0) and row 3 (p3/q3) of the segment,
+/// plus the per-row d values (d0 = dp0+dq0, d3 = dp3+dq3).
+pub fn use_strong_filter(
+    p0: &[i32; 4],
+    q0: &[i32; 4],
+    p3: &[i32; 4],
+    q3: &[i32; 4],
+    d0: i32,
+    d3: i32,
+    beta: i32,
+    tc: i32,
+) -> bool {
+    let beta_3 = beta >> 3;
+    let beta_2 = beta >> 2;
+    let tc25 = (tc * 5 + 1) >> 1;
 
-    let d = dp0 + dq0 + dp3 + dq3;
+    // Row 0 conditions: |p3-p0| + |q0-q3| < beta/8  AND  |p0-q0| < tc25
+    let sp0 = (p0[3] - p0[0]).abs() + (q0[0] - q0[3]).abs();
+    let spq0 = (p0[0] - q0[0]).abs();
 
-    if d < beta {
-        let strong_cond1 = (p[3] - p[0] + q[0] - q[3]).abs() < (beta >> 3);
-        let strong_cond2 = (p[0] - q[0]).abs() < ((5 * tc + 1) >> 1);
-        strong_cond1 && strong_cond2
-    } else {
-        false
-    }
+    // Row 3 conditions
+    let sp3 = (p3[3] - p3[0]).abs() + (q3[0] - q3[3]).abs();
+    let spq3 = (p3[0] - q3[0]).abs();
+
+    // Additional per-row d conditions: 2*d0 < beta/4 and 2*d3 < beta/4
+    sp0 < beta_3
+        && spq0 < tc25
+        && sp3 < beta_3
+        && spq3 < tc25
+        && (d0 << 1) < beta_2
+        && (d3 << 1) < beta_2
 }
 
 /// Apply strong deblocking filter to 4 samples on each side of the edge.
@@ -130,15 +159,31 @@ pub fn deblock_strong(p: &mut [i32; 4], q: &mut [i32; 4], tc: i32) {
 
 /// Apply weak deblocking filter.
 ///
-/// Modifies p[0..1] and q[0..1]. Returns whether p[1] and q[1] were also modified.
-pub fn deblock_weak(p: &mut [i32; 4], q: &mut [i32; 4], tc: i32, filter_p1: bool, filter_q1: bool) {
+/// Modifies p[0..1] and q[0..1]. Returns false if the per-row guard
+/// rejects filtering (abs(delta_raw) >= 10*tc).
+///
+/// Ref: ffmpeg h2656_deblock_template.c — loop_filter_luma_weak
+/// Ref: ITU-T H.265 Section 8.7.2.4.4
+pub fn deblock_weak(
+    p: &mut [i32; 4],
+    q: &mut [i32; 4],
+    tc: i32,
+    filter_p1: bool,
+    filter_q1: bool,
+) -> bool {
     // Save original values before modification.
-    // Ref: libde265 v1.0.18 deblock.cc — delta_p/delta_q use original p0/q0.
     let (p0, p1, p2) = (p[0], p[1], p[2]);
     let (q0, q1, q2) = (q[0], q[1], q[2]);
 
-    let delta = (9 * (q0 - p0) - 3 * (q1 - p1) + 8) >> 4;
-    let delta = clip3(-tc, tc, delta);
+    let delta_raw = (9 * (q0 - p0) - 3 * (q1 - p1) + 8) >> 4;
+
+    // Per-row guard: ffmpeg checks abs(delta) < 10*tc before applying.
+    // This replaces the spec's per-row dp+dq < beta/4 check.
+    if delta_raw.abs() >= 10 * tc {
+        return false;
+    }
+
+    let delta = clip3(-tc, tc, delta_raw);
 
     p[0] = clip_pixel(p0 + delta);
     q[0] = clip_pixel(q0 - delta);
@@ -160,6 +205,8 @@ pub fn deblock_weak(p: &mut [i32; 4], q: &mut [i32; 4], tc: i32, filter_p1: bool
         );
         q[1] = clip_pixel(q1 + delta_q);
     }
+
+    true
 }
 
 /// Apply chroma deblocking filter.
@@ -171,10 +218,33 @@ pub fn deblock_chroma(p: &mut [i32; 2], q: &mut [i32; 2], tc: i32) {
     q[0] = clip_pixel(q[0] - delta);
 }
 
+/// Read 4 p-side and 4 q-side samples for a vertical edge at (x, row).
+/// p[0] is closest to edge (x-1), p[3] is farthest (x-4).
+/// q[0] is closest to edge (x), q[3] is farthest (x+3).
+fn read_vert_samples(frame: &[u8], stride: usize, x: usize, row: usize) -> ([i32; 4], [i32; 4]) {
+    let base = row * stride;
+    let p = [
+        frame[base + x - 1] as i32,
+        frame[base + x - 2] as i32,
+        frame[base + x - 3] as i32,
+        frame[base + x - 4] as i32,
+    ];
+    let q = [
+        frame[base + x] as i32,
+        frame[base + x + 1] as i32,
+        frame[base + x + 2] as i32,
+        frame[base + x + 3] as i32,
+    ];
+    (p, q)
+}
+
 /// Apply deblocking to a vertical edge in a frame buffer.
 ///
 /// `x`, `y` is the position of the edge (between column x-1 and x).
-/// Processes `length` rows starting from y.
+/// Processes `length` rows starting from y, in 4-row segments per HEVC spec.
+///
+/// ITU-T H.265 Section 8.7.2.4 — edges are processed in 4-sample segments.
+/// The strong/weak decision is made per segment using rows 0 and 3.
 pub fn deblock_vertical_edge(
     frame: &mut [u8],
     stride: usize,
@@ -190,53 +260,107 @@ pub fn deblock_vertical_edge(
 
     let beta = get_beta(qp);
     let tc = get_tc(qp);
+    let max_row = frame.len() / stride;
 
-    for row in y..y + length {
-        if row >= frame.len() / stride {
+    // Process in 4-row segments per HEVC spec Section 8.7.2.4
+    let mut seg_start = y;
+    while seg_start < y + length {
+        let seg_end = (seg_start + 4).min(y + length).min(max_row);
+        let seg_len = seg_end - seg_start;
+        if seg_len == 0 || x + 3 >= stride {
             break;
         }
-        let base = row * stride;
-        if x + 3 >= stride {
+
+        // Read samples from first and last row of segment for decision
+        let (p0, q0) = read_vert_samples(frame, stride, x, seg_start);
+        let last_row = if seg_len >= 4 {
+            seg_start + 3
+        } else {
+            seg_end - 1
+        };
+        let (p3, q3) = read_vert_samples(frame, stride, x, last_row);
+
+        let dp0 = compute_dp(&p0);
+        let dq0 = compute_dq(&q0);
+        let dp3 = compute_dp(&p3);
+        let dq3 = compute_dq(&q3);
+        let d0 = dp0 + dq0;
+        let d3 = dp3 + dq3;
+
+        if d0 + d3 >= beta {
+            seg_start = seg_end;
             continue;
         }
 
-        let mut p = [
-            frame[base + x - 4] as i32,
-            frame[base + x - 3] as i32,
-            frame[base + x - 2] as i32,
-            frame[base + x - 1] as i32,
-        ];
-        // Reverse order: p[0] is closest to edge
-        p.reverse();
+        if bs == BoundaryStrength::Bs2 && use_strong_filter(&p0, &q0, &p3, &q3, d0, d3, beta, tc) {
+            // Strong filter: apply to each row in the segment
+            for row in seg_start..seg_end {
+                let (mut p, mut q) = read_vert_samples(frame, stride, x, row);
+                deblock_strong(&mut p, &mut q, tc);
+                let base = row * stride;
+                frame[base + x - 1] = p[0] as u8;
+                frame[base + x - 2] = p[1] as u8;
+                frame[base + x - 3] = p[2] as u8;
+                frame[base + x - 4] = p[3] as u8;
+                frame[base + x] = q[0] as u8;
+                frame[base + x + 1] = q[1] as u8;
+                frame[base + x + 2] = q[2] as u8;
+            }
+        } else {
+            // Weak filter: per-segment dEp/dEq for p[1]/q[1] decision
+            let d_ep = dp0 + dp3;
+            let d_eq = dq0 + dq3;
+            let side_threshold = (beta + (beta >> 1)) >> 3;
+            let filter_p1 = d_ep < side_threshold;
+            let filter_q1 = d_eq < side_threshold;
 
-        let mut q = [
-            frame[base + x] as i32,
-            frame[base + x + 1] as i32,
-            frame[base + x + 2] as i32,
-            frame[base + x + 3] as i32,
-        ];
-
-        if bs == BoundaryStrength::Bs2 && use_strong_filter(p, q, beta, tc) {
-            deblock_strong(&mut p, &mut q, tc);
-            // Write back: p[0]=closest to edge → x-1, p[3]=farthest → x-4
-            // Ref: libde265 v1.0.18 deblock.cc — p[i] maps to ptr[-i-1]
-            frame[base + x - 1] = p[0] as u8;
-            frame[base + x - 2] = p[1] as u8;
-            frame[base + x - 3] = p[2] as u8;
-            frame[base + x - 4] = p[3] as u8;
-        } else if bs != BoundaryStrength::Bs0 {
-            deblock_weak(&mut p, &mut q, tc, true, true);
-            // Weak filter only modifies p[0] and p[1]
-            frame[base + x - 1] = p[0] as u8;
-            frame[base + x - 2] = p[1] as u8;
+            for row in seg_start..seg_end {
+                let (mut p, mut q) = read_vert_samples(frame, stride, x, row);
+                // Per-row guard is inside deblock_weak (abs(delta) < 10*tc)
+                if !deblock_weak(&mut p, &mut q, tc, filter_p1, filter_q1) {
+                    continue;
+                }
+                let base = row * stride;
+                frame[base + x - 1] = p[0] as u8;
+                if filter_p1 {
+                    frame[base + x - 2] = p[1] as u8;
+                }
+                frame[base + x] = q[0] as u8;
+                if filter_q1 {
+                    frame[base + x + 1] = q[1] as u8;
+                }
+            }
         }
 
-        frame[base + x] = q[0] as u8;
-        frame[base + x + 1] = q[1] as u8;
+        seg_start = seg_end;
     }
 }
 
+/// Read 4 p-side and 4 q-side samples for a horizontal edge at (col, y).
+/// p[0] is closest to edge (y-1), p[3] is farthest (y-4).
+/// q[0] is closest to edge (y), q[3] is farthest (y+3).
+fn read_horiz_samples(frame: &[u8], stride: usize, col: usize, y: usize) -> ([i32; 4], [i32; 4]) {
+    let p = [
+        frame[(y - 1) * stride + col] as i32,
+        frame[(y - 2) * stride + col] as i32,
+        frame[(y - 3) * stride + col] as i32,
+        frame[(y - 4) * stride + col] as i32,
+    ];
+    let q = [
+        frame[y * stride + col] as i32,
+        frame[(y + 1) * stride + col] as i32,
+        frame[(y + 2) * stride + col] as i32,
+        frame[(y + 3) * stride + col] as i32,
+    ];
+    (p, q)
+}
+
 /// Apply deblocking to a horizontal edge in a frame buffer.
+///
+/// `x`, `y` is the position of the edge (between row y-1 and y).
+/// Processes `length` columns starting from x, in 4-column segments per HEVC spec.
+///
+/// ITU-T H.265 Section 8.7.2.4 — edges are processed in 4-sample segments.
 pub fn deblock_horizontal_edge(
     frame: &mut [u8],
     stride: usize,
@@ -253,43 +377,74 @@ pub fn deblock_horizontal_edge(
     let beta = get_beta(qp);
     let tc = get_tc(qp);
 
-    for col in x..x + length {
-        if col >= stride {
+    // Process in 4-column segments per HEVC spec Section 8.7.2.4
+    let mut seg_start = x;
+    while seg_start < x + length {
+        let seg_end = (seg_start + 4).min(x + length).min(stride);
+        let seg_len = seg_end - seg_start;
+        if seg_len == 0 || y + 3 >= frame.len() / stride {
             break;
         }
 
-        let mut p = [
-            frame[(y - 4) * stride + col] as i32,
-            frame[(y - 3) * stride + col] as i32,
-            frame[(y - 2) * stride + col] as i32,
-            frame[(y - 1) * stride + col] as i32,
-        ];
-        p.reverse();
+        // Read samples from first and last column of segment for decision
+        let (p0, q0) = read_horiz_samples(frame, stride, seg_start, y);
+        let last_col = if seg_len >= 4 {
+            seg_start + 3
+        } else {
+            seg_end - 1
+        };
+        let (p3, q3) = read_horiz_samples(frame, stride, last_col, y);
 
-        let mut q = [
-            frame[y * stride + col] as i32,
-            frame[(y + 1) * stride + col] as i32,
-            frame[(y + 2) * stride + col] as i32,
-            frame[(y + 3) * stride + col] as i32,
-        ];
+        let dp0 = compute_dp(&p0);
+        let dq0 = compute_dq(&q0);
+        let dp3 = compute_dp(&p3);
+        let dq3 = compute_dq(&q3);
+        let d0 = dp0 + dq0;
+        let d3 = dp3 + dq3;
 
-        if bs == BoundaryStrength::Bs2 && use_strong_filter(p, q, beta, tc) {
-            deblock_strong(&mut p, &mut q, tc);
-            // Write back: p[0]=closest to edge → y-1, p[3]=farthest → y-4
-            // Ref: libde265 v1.0.18 deblock.cc — p[i] maps to ptr[-i-1]
-            frame[(y - 1) * stride + col] = p[0] as u8;
-            frame[(y - 2) * stride + col] = p[1] as u8;
-            frame[(y - 3) * stride + col] = p[2] as u8;
-            frame[(y - 4) * stride + col] = p[3] as u8;
-        } else if bs != BoundaryStrength::Bs0 {
-            deblock_weak(&mut p, &mut q, tc, true, true);
-            // Weak filter only modifies p[0] and p[1]
-            frame[(y - 1) * stride + col] = p[0] as u8;
-            frame[(y - 2) * stride + col] = p[1] as u8;
+        if d0 + d3 >= beta {
+            seg_start = seg_end;
+            continue;
         }
 
-        frame[y * stride + col] = q[0] as u8;
-        frame[(y + 1) * stride + col] = q[1] as u8;
+        if bs == BoundaryStrength::Bs2 && use_strong_filter(&p0, &q0, &p3, &q3, d0, d3, beta, tc) {
+            // Strong filter: apply to each column in the segment
+            for col in seg_start..seg_end {
+                let (mut p, mut q) = read_horiz_samples(frame, stride, col, y);
+                deblock_strong(&mut p, &mut q, tc);
+                frame[(y - 1) * stride + col] = p[0] as u8;
+                frame[(y - 2) * stride + col] = p[1] as u8;
+                frame[(y - 3) * stride + col] = p[2] as u8;
+                frame[(y - 4) * stride + col] = p[3] as u8;
+                frame[y * stride + col] = q[0] as u8;
+                frame[(y + 1) * stride + col] = q[1] as u8;
+                frame[(y + 2) * stride + col] = q[2] as u8;
+            }
+        } else {
+            // Weak filter
+            let d_ep = dp0 + dp3;
+            let d_eq = dq0 + dq3;
+            let side_threshold = (beta + (beta >> 1)) >> 3;
+            let filter_p1 = d_ep < side_threshold;
+            let filter_q1 = d_eq < side_threshold;
+
+            for col in seg_start..seg_end {
+                let (mut p, mut q) = read_horiz_samples(frame, stride, col, y);
+                if !deblock_weak(&mut p, &mut q, tc, filter_p1, filter_q1) {
+                    continue;
+                }
+                frame[(y - 1) * stride + col] = p[0] as u8;
+                if filter_p1 {
+                    frame[(y - 2) * stride + col] = p[1] as u8;
+                }
+                frame[y * stride + col] = q[0] as u8;
+                if filter_q1 {
+                    frame[(y + 1) * stride + col] = q[1] as u8;
+                }
+            }
+        }
+
+        seg_start = seg_end;
     }
 }
 
@@ -557,8 +712,10 @@ mod tests {
         let q = [100, 100, 100, 100];
         let beta = get_beta(30);
         let tc = get_tc(30);
+        let d0 = compute_dp(&p) + compute_dq(&q);
+        let d3 = compute_dp(&p) + compute_dq(&q);
         // Flat input has d=0 < beta, and all conditions met
-        assert!(use_strong_filter(p, q, beta, tc));
+        assert!(use_strong_filter(&p, &q, &p, &q, d0, d3, beta, tc));
     }
 
     #[test]
@@ -568,8 +725,10 @@ mod tests {
         let q = [200, 200, 200, 200];
         let beta = get_beta(22);
         let tc = get_tc(22);
+        let d0 = compute_dp(&p) + compute_dq(&q);
+        let d3 = compute_dp(&p) + compute_dq(&q);
         // Large p[0]-q[0] difference should fail strong filter condition
-        assert!(!use_strong_filter(p, q, beta, tc));
+        assert!(!use_strong_filter(&p, &q, &p, &q, d0, d3, beta, tc));
     }
 
     #[test]
@@ -606,23 +765,24 @@ mod tests {
 
     #[test]
     fn deblock_vertical_on_frame() {
-        // 16x4 frame with a sharp step at column 8
+        // 16x4 frame with a moderate step at column 8.
+        // The 10*tc guard in deblock_weak skips rows where delta is too large.
+        // QP=40 → tc=7, 10*tc=70. Step of 40 → delta≈15, within guard.
         let mut frame = vec![0u8; 16 * 4];
         for row in 0..4 {
             for col in 0..8 {
-                frame[row * 16 + col] = 50;
+                frame[row * 16 + col] = 80;
             }
             for col in 8..16 {
-                frame[row * 16 + col] = 200;
+                frame[row * 16 + col] = 120;
             }
         }
 
-        deblock_vertical_edge(&mut frame, 16, 8, 0, 4, 30, BoundaryStrength::Bs2);
+        deblock_vertical_edge(&mut frame, 16, 8, 0, 4, 40, BoundaryStrength::Bs2);
 
         // Pixels near the edge should be smoothed
-        // Column 7 (p side) should increase, column 8 (q side) should decrease
-        assert!(frame[7] > 50, "p[0] should be smoothed up: {}", frame[7]);
-        assert!(frame[8] < 200, "q[0] should be smoothed down: {}", frame[8]);
+        assert!(frame[7] > 80, "p[0] should be smoothed up: {}", frame[7]);
+        assert!(frame[8] < 120, "q[0] should be smoothed down: {}", frame[8]);
     }
 
     #[test]
@@ -711,10 +871,10 @@ mod tests {
             let mut f = vec![0u8; 16 * 4];
             for row in 0..4 {
                 for col in 0..8 {
-                    f[row * 16 + col] = 50;
+                    f[row * 16 + col] = 80;
                 }
                 for col in 8..16 {
-                    f[row * 16 + col] = 200;
+                    f[row * 16 + col] = 120;
                 }
             }
             f

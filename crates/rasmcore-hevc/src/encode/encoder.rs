@@ -130,14 +130,31 @@ fn write_slice_header(
     let slice_qp_delta = qp - pps.init_qp;
     bw.write_se(slice_qp_delta);
 
-    // deblocking_filter_override_flag — present whenever control_present is true.
-    // Ref: HEVC Section 7.3.6.1
-    if pps.deblocking_filter_control_present {
-        bw.write_flag(false); // no override
+    // deblocking_filter_override_flag — only present when override_enabled is true.
+    // Ref: HEVC Section 7.3.6.1:
+    //   if (deblocking_filter_control_present_flag) {
+    //     if (deblocking_filter_override_enabled_flag)
+    //       deblocking_filter_override_flag
+    //   }
+    // When override_enabled is false, the flag is inferred to be 0.
+    let deblocking_filter_override = false;
+    if pps.deblocking_filter_control_present && pps.deblocking_filter_override_enabled {
+        bw.write_flag(deblocking_filter_override); // no override
     }
 
-    // slice_loop_filter_across_slices_enabled_flag
-    if pps.loop_filter_across_slices_enabled {
+    // slice_deblocking_filter_disabled_flag inherits from PPS when not overridden
+    let slice_deblocking_filter_disabled = pps.deblocking_filter_disabled;
+
+    // slice_loop_filter_across_slices_enabled_flag — HEVC Section 7.3.6.1:
+    //   if (pps_loop_filter_across_slices_enabled_flag &&
+    //       (slice_sao_luma_flag || slice_sao_chroma_flag ||
+    //        !slice_deblocking_filter_disabled_flag))
+    // SAO is disabled in SPS so both SAO flags are false.
+    let slice_sao_luma = false;
+    let slice_sao_chroma = false;
+    if pps.loop_filter_across_slices_enabled
+        && (slice_sao_luma || slice_sao_chroma || !slice_deblocking_filter_disabled)
+    {
         bw.write_flag(true);
     }
 
@@ -314,9 +331,13 @@ fn encode_slice_data(
             if encode_residual {
                 #[cfg(test)]
                 if ctu_x == 0 && ctu_y == 0 {
-                    let nz: Vec<_> = quant_levels.iter().enumerate()
-                        .filter(|(_, v)| **v != 0).take(5)
-                        .map(|(i, v)| (i, *v)).collect();
+                    let nz: Vec<_> = quant_levels
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, v)| **v != 0)
+                        .take(5)
+                        .map(|(i, v)| (i, *v))
+                        .collect();
                     eprintln!("  encode_residual_coeffs input: first 5 nonzero = {:?}", nz);
                 }
                 syntax_enc::encode_residual_coeffs(
@@ -446,17 +467,29 @@ mod tests {
             }),
             ("dense_8x8", 8, {
                 let mut c = vec![0i16; 64];
-                c[0] = 100; c[1] = -50; c[2] = 25; c[3] = -10;
-                c[8] = 40; c[9] = -20; c[10] = 8;
-                c[16] = 15; c[17] = -7;
+                c[0] = 100;
+                c[1] = -50;
+                c[2] = 25;
+                c[3] = -10;
+                c[8] = 40;
+                c[9] = -20;
+                c[10] = 8;
+                c[16] = 15;
+                c[17] = -7;
                 c[24] = 5;
                 c
             }),
             ("large_values_4x4", 4, {
                 let mut c = vec![0i16; 16];
-                c[0] = 200; c[1] = -150; c[2] = 80; c[3] = -30;
-                c[4] = 50; c[5] = -20; c[6] = 10;
-                c[8] = 15; c[9] = -5;
+                c[0] = 200;
+                c[1] = -150;
+                c[2] = 80;
+                c[3] = -30;
+                c[4] = 50;
+                c[5] = -20;
+                c[6] = 10;
+                c[8] = 15;
+                c[9] = -5;
                 c
             }),
             ("dc_only_32x32", 32, {
@@ -466,7 +499,10 @@ mod tests {
             }),
             ("sparse_32x32", 32, {
                 let mut c = vec![0i16; 1024];
-                c[0] = 100; c[1] = -30; c[32] = 20; c[33] = -10;
+                c[0] = 100;
+                c[1] = -30;
+                c[32] = 20;
+                c[33] = -10;
                 c
             }),
         ];
@@ -601,7 +637,9 @@ mod tests {
         assert_eq!(split, 0, "split_cu_flag");
 
         // prev_intra_luma_pred_flag
-        let flag = dec.decode_bin(&mut dec_ctx[syntax::PREV_INTRA_PRED_CTX_OFFSET]).unwrap();
+        let flag = dec
+            .decode_bin(&mut dec_ctx[syntax::PREV_INTRA_PRED_CTX_OFFSET])
+            .unwrap();
         assert_eq!(flag, 1, "prev_intra_luma_pred_flag");
         // mpm_idx = 1 → bypass 1, bypass 0
         let b0 = dec.decode_bypass().unwrap();
@@ -610,14 +648,20 @@ mod tests {
         assert_eq!(b1, 0, "mpm_idx bit 1");
 
         // chroma mode = DM (flag=0)
-        let chroma = dec.decode_bin(&mut dec_ctx[syntax::CHROMA_PRED_CTX_OFFSET]).unwrap();
+        let chroma = dec
+            .decode_bin(&mut dec_ctx[syntax::CHROMA_PRED_CTX_OFFSET])
+            .unwrap();
         assert_eq!(chroma, 0, "chroma_pred_mode_flag");
 
         // cbf_chroma Cb
-        let cbf_cb = dec.decode_bin(&mut dec_ctx[syntax::CBF_CHROMA_CTX_OFFSET]).unwrap();
+        let cbf_cb = dec
+            .decode_bin(&mut dec_ctx[syntax::CBF_CHROMA_CTX_OFFSET])
+            .unwrap();
         assert_eq!(cbf_cb, 0, "cbf_cb");
         // cbf_chroma Cr
-        let cbf_cr = dec.decode_bin(&mut dec_ctx[syntax::CBF_CHROMA_CTX_OFFSET]).unwrap();
+        let cbf_cr = dec
+            .decode_bin(&mut dec_ctx[syntax::CBF_CHROMA_CTX_OFFSET])
+            .unwrap();
         assert_eq!(cbf_cr, 0, "cbf_cr");
 
         // split_transform_flag
@@ -626,7 +670,9 @@ mod tests {
         assert_eq!(split_tu, 0, "split_transform_flag");
 
         // cbf_luma (depth=0 → ctxInc=1)
-        let cbf_luma = dec.decode_bin(&mut dec_ctx[syntax::CBF_LUMA_CTX_OFFSET + 1]).unwrap();
+        let cbf_luma = dec
+            .decode_bin(&mut dec_ctx[syntax::CBF_LUMA_CTX_OFFSET + 1])
+            .unwrap();
         assert_eq!(cbf_luma, 1, "cbf_luma");
 
         // Decode coefficients
@@ -638,7 +684,10 @@ mod tests {
         for i in 0..1024 {
             if coeffs[i] != decoded_coeffs[i] {
                 if mismatches < 5 {
-                    eprintln!("  MISMATCH [{i}]: enc={}, dec={}", coeffs[i], decoded_coeffs[i]);
+                    eprintln!(
+                        "  MISMATCH [{i}]: enc={}, dec={}",
+                        coeffs[i], decoded_coeffs[i]
+                    );
                 }
                 mismatches += 1;
             }
@@ -727,18 +776,16 @@ mod tests {
                 let cabac_start = sh.data_offset;
                 let mut cabac =
                     crate::cabac::CabacDecoder::new(&nal_unit.rbsp[cabac_start..]).unwrap();
-                let mut contexts = crate::syntax::init_syntax_contexts(
-                    pps.init_qp + sh.slice_qp_delta,
-                );
+                let mut contexts =
+                    crate::syntax::init_syntax_contexts(pps.init_qp + sh.slice_qp_delta);
                 let mut dm = crate::syntax::CuDepthMap::new(
                     sps.pic_width,
                     sps.pic_height,
                     sps.min_cb_size(),
                 );
-                let ctu = crate::syntax::decode_ctu(
-                    &mut cabac, &mut contexts, &sps, &pps, 0, 0, &mut dm,
-                )
-                .unwrap();
+                let ctu =
+                    crate::syntax::decode_ctu(&mut cabac, &mut contexts, &sps, &pps, 0, 0, &mut dm)
+                        .unwrap();
 
                 // Show decoded CU info
                 for cu in &ctu.cus {
@@ -751,9 +798,7 @@ mod tests {
                         let nz = coeffs.iter().filter(|&&v| v != 0).count();
                         eprintln!(
                             "  Decoded CU(0,0): size={}, cbf=true, DC={}, nonzero={}",
-                            cu.size,
-                            coeffs[0],
-                            nz
+                            cu.size, coeffs[0], nz
                         );
                     } else {
                         eprintln!(

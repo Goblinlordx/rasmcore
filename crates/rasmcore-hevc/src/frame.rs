@@ -11,7 +11,7 @@ use crate::filter::{self, BoundaryStrength};
 use crate::nal::{self, NalIterator};
 use crate::params::{self, DecoderContext, Sps};
 use crate::predict::{self, RefSamples};
-use crate::syntax::{self, CuSyntax, PredMode};
+use crate::syntax::{self, CuSyntax, PredMode, TuSyntax};
 use crate::transform::reconstruct_residual as transform_reconstruct;
 use crate::types::{DecodedFrame, NalUnitType};
 
@@ -200,6 +200,9 @@ pub fn decode_frame_with_matrix(
     let mut wpp_saved_contexts: Vec<Option<Vec<syntax::ContextModelState>>> =
         vec![None; ctus_y as usize];
 
+    // Collect all CUs for deblocking boundary detection
+    let mut all_cus: Vec<CuSyntax> = Vec::new();
+
     'ctu_loop: for ctu_row in 0..ctus_y {
         // WPP: at the start of each row (except the first), restore saved contexts
         // from the previous row and re-init the CABAC engine from the entry point.
@@ -247,6 +250,7 @@ pub fn decode_frame_with_matrix(
             // Reconstruct each CU in this CTU
             for cu in &ctu.cus {
                 reconstruct_cu(cu, &sps, &pps, slice_qp, &mut fb, ctu_y, ctu_size)?;
+                all_cus.push(cu.clone());
             }
 
             // WPP: save context models after decoding the 2nd CTU (CtbX==1)
@@ -270,9 +274,9 @@ pub fn decode_frame_with_matrix(
         }
     }
 
-    // Apply deblocking filter
+    // Apply deblocking filter at all CU boundaries
     if !_slice_header.deblocking_filter_disabled {
-        apply_deblocking(&mut fb, &sps, slice_qp);
+        apply_deblocking(&mut fb, &sps, slice_qp, &all_cus);
     }
 
     // Apply SAO (if enabled)
@@ -515,49 +519,158 @@ fn reconstruct_cu(
     Ok(())
 }
 
+/// Boundary strength map for deblocking — stores Bs value for each 8x8-grid edge.
+/// Vertical edges: bs_vert[y_idx][x_idx] for the edge at x = x_idx * 8.
+/// Horizontal edges: bs_horiz[y_idx][x_idx] for the edge at y = y_idx * 8.
+struct BsMap {
+    bs_vert: Vec<Vec<u8>>,
+    bs_horiz: Vec<Vec<u8>>,
+    w_in_8: usize,
+    h_in_8: usize,
+}
+
+impl BsMap {
+    fn new(width: usize, height: usize) -> Self {
+        let w_in_8 = width / 8;
+        let h_in_8 = height / 8;
+        Self {
+            bs_vert: vec![vec![0u8; w_in_8 + 1]; h_in_8],
+            bs_horiz: vec![vec![0u8; w_in_8]; h_in_8 + 1],
+            w_in_8,
+            h_in_8,
+        }
+    }
+
+    /// Mark CU boundary edges (Bs=2 for I-frames).
+    fn mark_cu(&mut self, cu_x: usize, cu_y: usize, cu_size: usize) {
+        // Left vertical edge
+        if cu_x > 0 && cu_x % 8 == 0 {
+            let x_idx = cu_x / 8;
+            for y_off in (0..cu_size).step_by(8) {
+                let y8 = (cu_y + y_off) / 8;
+                if y8 < self.h_in_8 && x_idx <= self.w_in_8 {
+                    self.bs_vert[y8][x_idx] = 2;
+                }
+            }
+        }
+        // Top horizontal edge
+        if cu_y > 0 && cu_y % 8 == 0 {
+            let y_idx = cu_y / 8;
+            for x_off in (0..cu_size).step_by(8) {
+                let x8 = (cu_x + x_off) / 8;
+                if x8 < self.w_in_8 && y_idx <= self.h_in_8 {
+                    self.bs_horiz[y_idx][x8] = 2;
+                }
+            }
+        }
+    }
+
+    /// Mark TU boundary edges (Bs=1 if either side has non-zero coefficients).
+    /// Only marks edges that haven't already been set to Bs=2.
+    fn mark_tu_leaf(&mut self, tu_x: usize, tu_y: usize, tu_size: usize, has_coeffs: bool) {
+        // Left vertical edge of this leaf TU
+        if tu_x > 0 && tu_x % 8 == 0 {
+            let x_idx = tu_x / 8;
+            for y_off in (0..tu_size).step_by(8) {
+                let y8 = (tu_y + y_off) / 8;
+                if y8 < self.h_in_8
+                    && x_idx <= self.w_in_8
+                    && self.bs_vert[y8][x_idx] < 2
+                    && has_coeffs
+                {
+                    self.bs_vert[y8][x_idx] = self.bs_vert[y8][x_idx].max(1);
+                }
+            }
+        }
+        // Top horizontal edge of this leaf TU
+        if tu_y > 0 && tu_y % 8 == 0 {
+            let y_idx = tu_y / 8;
+            for x_off in (0..tu_size).step_by(8) {
+                let x8 = (tu_x + x_off) / 8;
+                if x8 < self.w_in_8
+                    && y_idx <= self.h_in_8
+                    && self.bs_horiz[y_idx][x8] < 2
+                    && has_coeffs
+                {
+                    self.bs_horiz[y_idx][x8] = self.bs_horiz[y_idx][x8].max(1);
+                }
+            }
+        }
+    }
+
+    /// Recursively walk TU tree and mark leaf TU boundaries.
+    fn mark_tu_tree(&mut self, tu: &TuSyntax) {
+        if tu.children.is_empty() {
+            // Leaf TU
+            self.mark_tu_leaf(tu.x as usize, tu.y as usize, tu.size as usize, tu.cbf_luma);
+        } else {
+            for child in &tu.children {
+                self.mark_tu_tree(child);
+            }
+        }
+    }
+}
+
 /// Apply deblocking filter to the reconstructed frame.
 ///
 /// HEVC Section 8.7.2: deblocking is applied at 8x8 grid-aligned edges
 /// that correspond to CU or TU boundaries. The boundary strength (Bs)
 /// determines filter strength: Bs=2 for intra CU boundaries, Bs=1 for
 /// TU boundaries with non-zero coefficients, Bs=0 otherwise.
-///
-/// Currently simplified: deblocking is applied at CTU boundaries only,
-/// which are guaranteed CU boundaries in an I-frame. A full implementation
-/// would track the actual CU/TU partition and apply deblocking at all
-/// CU and TU boundaries on the 8x8 grid.
-fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32) {
-    let ctu_size = sps.ctu_size() as usize;
+fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32, cus: &[CuSyntax]) {
     let stride = fb.width as usize;
+    let width = fb.width as usize;
+    let height = fb.height as usize;
 
-    // Apply vertical edges at CTU column boundaries.
-    // Each CTU boundary is a CU boundary → Bs=2 for intra.
-    for edge_x in (ctu_size..fb.width as usize).step_by(ctu_size) {
-        if edge_x >= 4 && edge_x + 3 < stride {
-            filter::deblock_vertical_edge(
-                &mut fb.y,
-                stride,
-                edge_x,
-                0,
-                fb.height as usize,
-                qp,
-                BoundaryStrength::for_intra_boundary(),
-            );
+    // Build boundary strength map from CU/TU structure.
+    let mut bs_map = BsMap::new(width, height);
+
+    for cu in cus {
+        // CU boundaries → Bs=2 for I-frames
+        bs_map.mark_cu(cu.x as usize, cu.y as usize, cu.size as usize);
+
+        // TU boundaries within this CU → Bs=1 if either side has coefficients
+        if let Some(tu) = &cu.tu {
+            bs_map.mark_tu_tree(tu);
         }
     }
 
-    // Apply horizontal edges at CTU row boundaries.
-    for edge_y in (ctu_size..fb.height as usize).step_by(ctu_size) {
-        if edge_y >= 4 && edge_y + 3 < fb.height as usize {
-            filter::deblock_horizontal_edge(
-                &mut fb.y,
-                stride,
-                0,
-                edge_y,
-                fb.width as usize,
-                qp,
-                BoundaryStrength::for_intra_boundary(),
-            );
+    // Process vertical edges first (HEVC Section 8.7.2.1 ordering).
+    for x_idx in 1..=bs_map.w_in_8 {
+        let edge_x = x_idx * 8;
+        if edge_x < 4 || edge_x + 3 >= stride {
+            continue;
+        }
+        // Process each 8x8 row segment with its specific Bs
+        for y_idx in 0..bs_map.h_in_8 {
+            let bs_val = bs_map.bs_vert[y_idx][x_idx];
+            if bs_val == 0 {
+                continue;
+            }
+            let bs = match bs_val {
+                2 => BoundaryStrength::Bs2,
+                _ => BoundaryStrength::Bs1,
+            };
+            filter::deblock_vertical_edge(&mut fb.y, stride, edge_x, y_idx * 8, 8, qp, bs);
+        }
+    }
+
+    // Process horizontal edges.
+    for y_idx in 1..=bs_map.h_in_8 {
+        let edge_y = y_idx * 8;
+        if edge_y < 4 || edge_y + 3 >= height {
+            continue;
+        }
+        for x_idx in 0..bs_map.w_in_8 {
+            let bs_val = bs_map.bs_horiz[y_idx][x_idx];
+            if bs_val == 0 {
+                continue;
+            }
+            let bs = match bs_val {
+                2 => BoundaryStrength::Bs2,
+                _ => BoundaryStrength::Bs1,
+            };
+            filter::deblock_horizontal_edge(&mut fb.y, stride, x_idx * 8, edge_y, 8, qp, bs);
         }
     }
 }
