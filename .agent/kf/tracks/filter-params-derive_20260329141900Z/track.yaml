@@ -1,0 +1,125 @@
+id: filter-params-derive_20260329141900Z
+title: FilterParams Derive Macro — Config Structs with Param Metadata
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    New #[derive(FilterParams)] proc macro that generates param metadata from
+    config structs. Migrate all filters to use typed config structs instead of
+    positional params. build.rs generates JSON param manifest at compile time.
+  context: |
+    Currently, filter param metadata (name, type, min, max, step, default) is
+    hand-coded in the demo's PARAM_META JavaScript object AND in the Rust
+    filter_registry's ParamDescriptor arrays. This is fragile and duplicated.
+
+    The FilterParams derive macro makes the config struct the single source of
+    truth. The struct fields define the params, #[param] attributes define
+    constraints, and doc comments become labels. Everything else is generated.
+  codebase_analysis: |
+    Current filter signatures:
+      pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError>
+
+    Target filter signatures:
+      #[derive(FilterParams)]
+      pub struct BlurParams {
+          #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
+          pub radius: f32,
+      }
+
+      #[register_filter(name = "blur", category = "spatial")]
+      pub fn blur(pixels: &[u8], info: &ImageInfo, params: BlurParams) -> Result<Vec<u8>, ImageError>
+
+    Existing infrastructure:
+    - rasmcore-macros crate (proc macros) — add FilterParams derive here
+    - build.rs — already scans #[register_filter], extend to read param structs
+    - filter_registry.rs — ParamDescriptor already exists, wire to derived metadata
+    - demo/src/pipeline.js — reads PARAM_META, will switch to generated manifest
+  acceptance_criteria:
+    - FilterParams derive macro generates ParamDescriptor array from struct fields
+    - '#[param]' attribute supports min, max, step, default for numbers
+    - '#[param]' attribute supports default for enums
+    - Doc comments on fields become param labels
+    - build.rs generates param-manifest.json with all filter param metadata
+    - All existing filters migrated to config struct pattern
+    - Adapter dispatch works with config structs
+    - All existing tests pass after migration
+    - Generated manifest includes name, category, and params for every registered filter
+  out_of_scope: |
+    Changing the demo UI (separate track). Runtime param validation.
+    Encoder/decoder config struct migration (can follow same pattern later).
+  technical_notes: |
+    derive(FilterParams) generates:
+      impl BlurParams {
+          pub fn param_descriptors() -> Vec<ParamDescriptor> { ... }
+      }
+      impl Default for BlurParams {
+          fn default() -> Self { BlurParams { radius: 3.0 } }
+      }
+
+    The #[param] attribute:
+      #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
+      pub radius: f32,
+
+    For enums:
+      #[param(default = "lanczos3")]
+      pub filter: ResizeFilter,
+
+    build.rs manifest generation:
+      Reads each #[register_filter] + its param struct → emits:
+      {
+        "filters": [
+          {
+            "name": "blur",
+            "category": "spatial",
+            "params": [
+              { "name": "radius", "type": "f32", "min": 0.0, "max": 100.0, "step": 0.5, "default": 3.0, "label": "Blur radius in pixels" }
+            ]
+          }
+        ]
+      }
+
+    Migration per filter:
+      1. Create FooParams struct with #[derive(FilterParams)]
+      2. Change fn signature from positional to struct
+      3. Update callers (tests, adapter, registry)
+      4. Verify tests pass
+plan:
+  - phase: Derive Macro
+    tasks:
+      - text: Add FilterParams derive macro to rasmcore-macros crate
+        done: false
+      - text: Implement param attribute parsing (min, max, step, default)
+        done: false
+      - text: Generate param_descriptors() method from struct fields
+        done: false
+      - text: Generate Default impl from param defaults
+        done: false
+      - text: Test derive on a sample struct (BlurParams)
+        done: false
+  - phase: Manifest Generation
+    tasks:
+      - text: Extend build.rs to parse param struct fields alongside register_filter
+        done: false
+      - text: Generate param-manifest.json with filter name, category, and typed params
+        done: false
+      - text: Include param labels from doc comments
+        done: false
+  - phase: Filter Migration
+    tasks:
+      - text: Create param structs for all spatial filters (BlurParams, SharpenParams, etc.)
+        done: false
+      - text: Create param structs for color, edge, and transform filters
+        done: false
+      - text: Update all filter function signatures to use config structs
+        done: false
+      - text: Update adapter dispatch for struct-based signatures
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify all existing tests pass after migration
+        done: false
+      - text: Verify generated manifest contains correct metadata for all filters
+        done: false
+extra: {}

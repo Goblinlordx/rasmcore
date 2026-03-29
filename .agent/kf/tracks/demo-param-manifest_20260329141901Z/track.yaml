@@ -1,0 +1,57 @@
+id: demo-param-manifest_20260329141901Z
+title: Demo Pipeline Builder — Auto-Discover Params from Generated Manifest
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Pipeline builder reads param-manifest.json (generated at build time from
+    FilterParams structs) instead of hand-coded PARAM_META. Every registered
+    filter with its params appears automatically in the UI.
+  context: |
+    The filter-params-derive track generates param-manifest.json at build time
+    containing every registered filter's metadata (name, category, params with
+    types, ranges, defaults, labels).
+
+    The pipeline builder currently has a hand-coded PARAM_META object in JS.
+    This track replaces it with a fetch of the generated manifest, making the
+    demo fully auto-discovered end-to-end.
+  acceptance_criteria:
+    - Pipeline builder loads param-manifest.json at startup
+    - All registered filters appear in palette with correct categories
+    - All params render correct controls (slider for numbers, dropdown for enums)
+    - Param ranges (min/max/step) from manifest drive slider bounds
+    - Default values from manifest populate initial slider positions
+    - Labels from manifest appear as param names in the UI
+    - New filter added via #[register_filter] + FilterParams struct → rebuild → appears in demo
+    - Code generation output (Get Code button) uses correct param names and types
+  out_of_scope: |
+    Encoder/decoder param manifests. Complex param types (arrays, nested structs).
+  technical_notes: |
+    Build chain:
+      cargo build → build.rs generates param-manifest.json → demo/build.sh copies to demo/sdk/
+      Pipeline builder fetches /sdk/param-manifest.json at startup
+
+    The manifest replaces PARAM_META entirely:
+      Before: const PARAM_META = { blur: [{ name: 'radius', ... }] };
+      After:  const manifest = await fetch('/sdk/param-manifest.json').then(r => r.json());
+              const PARAM_META = Object.fromEntries(manifest.filters.map(f => [f.name, f.params]));
+plan:
+  - phase: Manifest Integration
+    tasks:
+      - text: Update demo/build.sh to copy param-manifest.json from build output to demo/sdk/
+        done: false
+      - text: Replace hand-coded PARAM_META in pipeline.js with fetch of param-manifest.json
+        done: false
+      - text: Map manifest param types to UI controls (f32/u32 to slider, enum to dropdown)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify all operations appear with correct params after rebuild
+        done: false
+      - text: Verify new filter added via #[register_filter] appears in demo after rebuild
+        done: false
+      - text: Verify Get Code button generates correct param names from manifest
+        done: false
+extra: {}
