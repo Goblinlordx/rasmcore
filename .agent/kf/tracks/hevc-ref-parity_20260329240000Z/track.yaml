@@ -60,12 +60,12 @@ plan:
 - phase: WPP CABAC Re-initialization
   tasks:
   - text: Store entry_point_offsets from slice header in SliceHeader struct for use in CTU loop
-    done: false
+    done: true
   - text: 'Add context model save/restore in frame.rs CTU loop: save after CtbX==1, restore at CtbX==0 on new row (libde265
       slice.cc lines 4723-4747). Cite reference.'
-    done: false
+    done: true
   - text: Re-initialize CABAC decoder engine at each CTU row start using entry_point_offset to find correct byte position
-    done: false
+    done: true
   - text: Run bin trace test — all 619 gradient bins must now match reference
     done: false
 - phase: Validation
