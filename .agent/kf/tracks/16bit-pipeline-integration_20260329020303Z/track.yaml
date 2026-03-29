@@ -51,6 +51,9 @@ spec:
     - End-to-end test passes full 16-bit chain without precision loss
     - 16-bit equalize/normalize matches ImageMagick (MAE<1.0 at 8-bit downscale)
     - REFERENCE.md updated to document 16-bit IM parity
+    - BitDepthNode pipeline node allows explicit 16-to-8 or 8-to-16 conversion at any point
+    - BitDepthNode is NOOP when input already matches target depth (auto-removed by optimizer)
+    - Encoder implicitly downconverts 16-bit to 8-bit for 8-bit-only formats (JPEG, WebP, GIF)
     - All existing 8-bit tests continue to pass
   out_of_scope: |
     SIMD optimization for 16-bit resize (fast_image_resize handles this internally).
@@ -83,6 +86,17 @@ spec:
     6. Encode as 16-bit TIFF
     7. Verify: decode TIFF, check values match expected output
 
+    BitDepthNode design:
+    - BitDepthNode(target: 8 | 16) converts pixel format depth at any pipeline position
+    - If input format matches target depth, node is a NOOP
+    - Pipeline optimizer detects NOOPs and removes them during planning phase
+    - Encoder auto-inserts implicit BitDepthNode(8) before 8-bit-only formats
+      (JPEG, WebP, GIF) if the pipeline output is 16-bit
+    - Users who want speed on 16-bit input can insert BitDepthNode(8) early:
+      decode 16-bit TIFF -> to_8bit -> blur -> resize -> encode JPEG
+    - Users who want precision keep it late or omit it:
+      decode 16-bit TIFF -> blur -> resize -> equalize -> encode 16-bit PNG
+
     IM parity validation:
     - Decode 16-bit PNG
     - Apply equalize at 16-bit
@@ -111,6 +125,12 @@ plan:
       - text: Update filter nodes (blur, sharpen, etc.) for 16-bit format propagation
         done: false
       - text: Update SmartCropNode to handle 16-bit input (downsample for analysis)
+        done: false
+      - text: Add BitDepthNode for explicit 16-to-8 and 8-to-16 conversion at any pipeline point
+        done: false
+      - text: Add NOOP detection in pipeline optimizer (remove BitDepthNode when input matches target)
+        done: false
+      - text: Add implicit BitDepthNode(8) insertion before 8-bit-only encoders (JPEG, WebP, GIF)
         done: false
   - phase: End-to-End Validation
     tasks:
