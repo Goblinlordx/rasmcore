@@ -151,59 +151,106 @@ pub fn dither_floyd_steinberg(
         return Err(ImageError::InvalidParameters("palette is empty".into()));
     }
 
-    // f64 error diffusion matching ImageMagick Q16-HDRI:
-    //   - Accumulate error in f64
-    //   - Clamp pixel to [0, 255] before quantization AND before error computation
-    //   - Error = clamped_pixel - palette_color
-    //   - Left-to-right scan (no serpentine)
-    let mut buf: Vec<[f64; 3]> = Vec::with_capacity(n);
-    for i in 0..n {
-        buf.push([
-            pixels[i * 3] as f64,
-            pixels[i * 3 + 1] as f64,
-            pixels[i * 3 + 2] as f64,
-        ]);
-    }
+    // ImageMagick-compatible Floyd-Steinberg with:
+    //   - Q16 scale (0–65535) in f64 for error accumulation
+    //   - Serpentine scan (even rows L→R, odd rows R→L)
+    //   - Two-row error buffer (current + previous), swapped per row
+    //   - Error stored AFTER quantization, accumulated BEFORE next pixel
+    const Q: f64 = 65535.0;
+    let diffusion: f64 = 1.0;
+
+    // Palette at Q16
+    let pal_q16: Vec<[f64; 3]> = palette
+        .iter()
+        .map(|c| [c.r as f64 * 257.0, c.g as f64 * 257.0, c.b as f64 * 257.0])
+        .collect();
 
     let mut out = vec![0u8; n * 3];
 
+    // Two error rows: current (being computed) and previous (from last row)
+    let mut current = vec![[0.0f64; 3]; w];
+    let mut previous = vec![[0.0f64; 3]; w];
+
     for y in 0..h {
-        for x in 0..w {
-            let idx = y * w + x;
-            // Clamp pixel (matching IM's ClampPixel at QuantumRange)
-            let px = [
-                buf[idx][0].clamp(0.0, 255.0),
-                buf[idx][1].clamp(0.0, 255.0),
-                buf[idx][2].clamp(0.0, 255.0),
+        // Serpentine: even rows L→R (v=1), odd rows R→L (v=-1)
+        let forward = (y & 1) == 0;
+        let v: i32 = if forward { 1 } else { -1 };
+
+        for xi in 0..w {
+            let u = if forward { xi } else { w - 1 - xi };
+
+            // Start with original pixel at Q16
+            let idx = y * w + u;
+            let mut px = [
+                pixels[idx * 3] as f64 * 257.0,
+                pixels[idx * 3 + 1] as f64 * 257.0,
+                pixels[idx * 3 + 2] as f64 * 257.0,
             ];
 
-            let nearest = find_nearest(px[0] as i32, px[1] as i32, px[2] as i32, palette);
+            // Add 7/16 error from previous pixel in current row
+            if xi > 0 {
+                let prev_u = (u as i32 - v) as usize;
+                for c in 0..3 {
+                    px[c] += 7.0 * diffusion * current[prev_u][c] / 16.0;
+                }
+            }
+
+            // Add errors from previous row
+            if y > 0 {
+                // 1/16 from diagonal ahead
+                if xi < w - 1 {
+                    let next_u = (u as i32 + v) as usize;
+                    for c in 0..3 {
+                        px[c] += diffusion * previous[next_u][c] / 16.0;
+                    }
+                }
+                // 5/16 from directly above
+                for c in 0..3 {
+                    px[c] += 5.0 * diffusion * previous[u][c] / 16.0;
+                }
+                // 3/16 from diagonal behind
+                if xi > 0 {
+                    let prev_u = (u as i32 - v) as usize;
+                    for c in 0..3 {
+                        px[c] += 3.0 * diffusion * previous[prev_u][c] / 16.0;
+                    }
+                }
+            }
+
+            // ClampPixel
+            for c in 0..3 {
+                px[c] = px[c].clamp(0.0, Q);
+            }
+
+            // Nearest color at Q16
+            let mut best_idx = 0;
+            let mut best_dist = f64::MAX;
+            for (i, c) in pal_q16.iter().enumerate() {
+                let dr = px[0] - c[0];
+                let dg = px[1] - c[1];
+                let db = px[2] - c[2];
+                let dist = dr * dr + dg * dg + db * db;
+                if dist < best_dist {
+                    best_dist = dist;
+                    best_idx = i;
+                }
+            }
+
+            let nearest = palette[best_idx];
             out[idx * 3] = nearest.r;
             out[idx * 3 + 1] = nearest.g;
             out[idx * 3 + 2] = nearest.b;
 
-            // Error from clamped pixel (matching IM: pixel.red - color.red)
-            let err = [
-                px[0] - nearest.r as f64,
-                px[1] - nearest.g as f64,
-                px[2] - nearest.b as f64,
-            ];
-
+            // Store error for this pixel
             for c in 0..3 {
-                let e = err[c];
-                if x + 1 < w {
-                    buf[idx + 1][c] += e * 7.0 / 16.0;
-                }
-                if x > 0 && y + 1 < h {
-                    buf[(y + 1) * w + x - 1][c] += e * 3.0 / 16.0;
-                }
-                if y + 1 < h {
-                    buf[(y + 1) * w + x][c] += e * 5.0 / 16.0;
-                }
-                if x + 1 < w && y + 1 < h {
-                    buf[(y + 1) * w + x + 1][c] += e * 1.0 / 16.0;
-                }
+                current[u][c] = px[c] - pal_q16[best_idx][c];
             }
+        }
+
+        // Swap rows: current becomes previous
+        std::mem::swap(&mut current, &mut previous);
+        for c in current.iter_mut() {
+            *c = [0.0; 3];
         }
     }
 
@@ -799,23 +846,25 @@ mod parity {
     }
 
     /// Floyd-Steinberg first row: pixel-exact vs ImageMagick.
+    /// Floyd-Steinberg dithering: pixel-exact vs ImageMagick on multi-row images.
     ///
-    /// The first row of FS is identical across implementations because there's
-    /// no accumulated error from prior rows. This validates our core FS logic
-    /// (nearest-color + 7/16 right-error diffusion) matches IM exactly.
+    /// Matches IM's FS: serpentine scan, Q16 precision, two-row error buffer.
     #[test]
-    fn dither_fs_first_row_parity_vs_imagemagick() {
+    fn dither_fs_parity_vs_imagemagick() {
         assert!(magick_available(), "ImageMagick required");
 
-        // Single-row image: no below-row error propagation
-        let w = 32u32;
-        let h = 1;
+        // Test with B/W palette on grayscale gradient (16×16)
+        let w = 16u32;
+        let h = 16;
         let mut pixels = vec![0u8; (w * h * 3) as usize];
-        for x in 0..w as usize {
-            let v = (x * 255 / 31) as u8;
-            pixels[x * 3] = v;
-            pixels[x * 3 + 1] = v;
-            pixels[x * 3 + 2] = v;
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let v = (x * 255 / 15) as u8;
+                let idx = (y * w as usize + x) * 3;
+                pixels[idx] = v;
+                pixels[idx + 1] = v;
+                pixels[idx + 2] = v;
+            }
         }
 
         let palette = vec![
@@ -831,7 +880,7 @@ mod parity {
 
         let img_path = write_ppm(&pixels, w, h);
         let pal_path = write_ppm(&[0, 0, 0, 255, 255, 255], 2, 1);
-        let out_path = img_path.with_extension("fs1.rgb");
+        let out_path = img_path.with_extension("fs.rgb");
 
         let status = Command::new("magick")
             .arg(img_path.to_str().unwrap())
@@ -850,81 +899,10 @@ mod parity {
 
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
-        eprintln!("  FS first row vs ImageMagick: MAE={m:.4}, max_err={mx}");
+        eprintln!("  FS dither vs ImageMagick: MAE={m:.4}, max_err={mx}");
         assert!(
             m == 0.0 && mx == 0,
-            "FS first row must be pixel-exact vs ImageMagick: MAE={m:.4}, max_err={mx}"
-        );
-    }
-
-    /// Floyd-Steinberg multi-row: quality parity vs ImageMagick.
-    ///
-    /// FS error diffusion compounds across rows. IM Q16-HDRI uses 16-bit internal
-    /// precision for error accumulation, creating different f64 rounding patterns
-    /// than our 8-bit-scale f64 implementation. The first row matches exactly
-    /// (proven above); multi-row diverges by ±1 at boundaries near the threshold.
-    /// We validate both use the same FS algorithm by checking quality is within 1 dB.
-    #[test]
-    fn dither_fs_quality_vs_imagemagick() {
-        assert!(magick_available(), "ImageMagick required");
-
-        let w = 32u32;
-        let h = 32;
-        let mut pixels = vec![0u8; (w * h * 3) as usize];
-        for y in 0..h as usize {
-            for x in 0..w as usize {
-                let idx = (y * w as usize + x) * 3;
-                pixels[idx] = (x * 255 / 31) as u8;
-                pixels[idx + 1] = (y * 255 / 31) as u8;
-                pixels[idx + 2] = 128;
-            }
-        }
-
-        let palette = vec![
-            Rgb { r: 0, g: 0, b: 0 },
-            Rgb { r: 255, g: 0, b: 0 },
-            Rgb { r: 0, g: 255, b: 0 },
-            Rgb {
-                r: 255,
-                g: 255,
-                b: 255,
-            },
-        ];
-        let info = test_info(w, h);
-        let ours = dither_floyd_steinberg(&pixels, &info, &palette).unwrap();
-        let our_psnr = psnr(&pixels, &ours);
-
-        let img_path = write_ppm(&pixels, w, h);
-        let pal_path = write_ppm(
-            &[0, 0, 0, 255, 0, 0, 0, 255, 0, 255, 255, 255],
-            4,
-            1,
-        );
-        let out_path = img_path.with_extension("fsq.rgb");
-
-        let status = Command::new("magick")
-            .arg(img_path.to_str().unwrap())
-            .args(["-dither", "FloydSteinberg"])
-            .args(["-remap", pal_path.to_str().unwrap()])
-            .args(["-depth", "8"])
-            .arg(format!("rgb:{}", out_path.display()))
-            .output()
-            .unwrap();
-        assert!(status.status.success());
-        let im_out = std::fs::read(&out_path).unwrap();
-        let im_psnr = psnr(&pixels, &im_out);
-
-        let _ = std::fs::remove_file(&img_path);
-        let _ = std::fs::remove_file(&pal_path);
-        let _ = std::fs::remove_file(&out_path);
-
-        eprintln!(
-            "  FS quality: ours={our_psnr:.1}dB, IM={im_psnr:.1}dB, diff={:.1}dB",
-            (our_psnr - im_psnr).abs()
-        );
-        assert!(
-            (our_psnr - im_psnr).abs() < 1.0,
-            "FS PSNR should be within 1dB of IM: ours={our_psnr:.1} IM={im_psnr:.1}"
+            "FS dither must be pixel-exact vs ImageMagick: MAE={m:.4}, max_err={mx}"
         );
     }
 
