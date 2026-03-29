@@ -257,6 +257,93 @@ pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, Ima
     Ok(result)
 }
 
+/// Kernel shape for bokeh (lens) blur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BokehShape {
+    /// Uniform circular disc kernel.
+    Disc,
+    /// Uniform regular hexagonal kernel (simulates 6-blade aperture).
+    Hexagon,
+}
+
+/// Generate a flat disc kernel of the given radius.
+///
+/// All pixels whose center falls within the circle of `radius` get weight 1.0.
+/// Returns `(kernel, side_length)` where `side_length = 2 * radius + 1`.
+fn make_disc_kernel(radius: u32) -> (Vec<f32>, usize) {
+    let side = (radius * 2 + 1) as usize;
+    let center = radius as f32;
+    let r2 = (radius as f32 + 0.5) * (radius as f32 + 0.5);
+    let mut kernel = vec![0.0f32; side * side];
+
+    for y in 0..side {
+        for x in 0..side {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            if dx * dx + dy * dy <= r2 {
+                kernel[y * side + x] = 1.0;
+            }
+        }
+    }
+    (kernel, side)
+}
+
+/// Generate a flat regular hexagonal kernel of the given radius.
+///
+/// Uses the pointy-top hexagon inscribed in a circle of `radius`. A pixel
+/// is inside the hexagon if it satisfies all 6 half-plane constraints of the
+/// regular hexagon with circumradius `radius + 0.5`.
+fn make_hex_kernel(radius: u32) -> (Vec<f32>, usize) {
+    let side = (radius * 2 + 1) as usize;
+    let center = radius as f32;
+    let cr = radius as f32 + 0.5; // circumradius
+    let mut kernel = vec![0.0f32; side * side];
+
+    // Regular hexagon (pointy-top): a point (dx, dy) is inside if
+    // |dy| <= cr * sqrt(3)/2  AND  |dy| * 0.5 + |dx| * sqrt(3)/2 <= cr * sqrt(3)/2
+    let h = cr * (3.0_f32.sqrt() / 2.0);
+
+    for y in 0..side {
+        for x in 0..side {
+            let dx = (x as f32 - center).abs();
+            let dy = (y as f32 - center).abs();
+            if dy <= h && dy * 0.5 + dx * (3.0_f32.sqrt() / 2.0) <= h {
+                kernel[y * side + x] = 1.0;
+            }
+        }
+    }
+    (kernel, side)
+}
+
+/// Apply lens bokeh blur with a disc or hexagonal kernel.
+///
+/// Generates a uniform kernel of the specified shape and radius, then applies
+/// it via 2D convolution. Matches `cv2.filter2D` with the same kernel and
+/// `BORDER_REFLECT_101`.
+///
+/// `radius` is the kernel half-size in pixels (kernel side = 2*radius+1).
+/// Minimum radius is 1.
+#[rasmcore_macros::register_filter(name = "bokeh_blur", category = "spatial")]
+pub fn bokeh_blur(
+    pixels: &[u8],
+    info: &ImageInfo,
+    radius: u32,
+    shape: BokehShape,
+) -> Result<Vec<u8>, ImageError> {
+    if radius == 0 {
+        return Ok(pixels.to_vec());
+    }
+    let (kernel, side) = match shape {
+        BokehShape::Disc => make_disc_kernel(radius),
+        BokehShape::Hexagon => make_hex_kernel(radius),
+    };
+    let divisor: f32 = kernel.iter().sum();
+    if divisor == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+    convolve(pixels, info, &kernel, side, side, divisor)
+}
+
 /// Apply sharpening (unsharp mask).
 ///
 /// Computes: output = original + amount * (original - blurred)
