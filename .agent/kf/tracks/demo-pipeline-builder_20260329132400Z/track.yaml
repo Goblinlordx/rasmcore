@@ -5,166 +5,157 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Visual pipeline builder UI where users construct processing chains by adding
-    operation nodes from an auto-discovered palette. Each registered filter/transform/
-    codec appears automatically — no hard-coded UI. Live preview updates as the
+  summary: 'Visual pipeline builder UI where users construct processing chains by adding operation nodes from an auto-discovered
+    palette. Each registered filter/transform/ codec appears automatically — no hard-coded UI. Live preview updates as the
     chain is modified.
-  context: |
-    The rasmcore pipeline is a DAG of lazy-evaluated operations. The demo should
+
+    '
+  context: 'The rasmcore pipeline is a DAG of lazy-evaluated operations. The demo should
+
     make this architecture visible and interactive:
+
 
     [Load Image] → [Blur r=3] → [Brightness +0.1] → [Resize 800x600] → [JPEG q=85]
 
+
     Each node is a card the user can add, remove, reorder, and adjust parameters on.
+
     The result preview updates live as the chain changes.
 
+
     Critical design: the operation palette is AUTO-DISCOVERED from the SDK.
+
     The WIT pipeline interface exposes all registered operations. The UI reads
+
     the available operations at startup and generates parameter controls dynamically
+
     based on their type signatures. When someone adds a new #[register_filter]
+
     and rebuilds the WASM, the new operation appears in the palette without any
+
     UI code changes.
 
+
     This makes the pipeline builder an incredibly useful tool for exploring new
+
     filter/codec implementations during development.
-  codebase_analysis: |
-    The auto-generated fluent SDK (rcimage.ts) has all operation metadata:
+
+    '
+  codebase_analysis: 'The auto-generated fluent SDK (rcimage.ts) has all operation metadata:
+
     - Chainable methods: blur(radius: number), resize(width, height, filter), etc.
+
     - Terminal methods: toJpeg(config), toPng(config), etc.
+
     - Type info from jco .d.ts files
 
+
     For the palette, we need operation metadata (name, category, param types).
+
     This can come from:
+
     1. The generated RcImage class methods (parsed from .d.ts at build time)
+
     2. A runtime registry query: pipeline.listFilters() (already in WIT as list-filters)
+
     3. The StaticFilterRegistration metadata (name, category, param_count)
 
+
     The WIT already has supportedReadFormats() and supportedWriteFormats().
+
     The filter_registry has registered_filters() with name + category + param descriptors.
 
+
     For dynamic param controls:
+
     - number params → slider with min/max/default from ParamDescriptor
+
     - string params (enum-like) → dropdown
+
     - boolean → toggle
+
     - The ParamDescriptor already has min, max, default, description
+
+    '
   acceptance_criteria:
-    - Operations palette auto-populated from SDK (no hard-coded filter list)
-    - User can add any registered operation as a node in the chain
-    - Each node shows adjustable parameter controls (sliders, dropdowns, toggles)
-    - Nodes can be reordered via drag-and-drop
-    - Nodes can be removed
-    - Live preview updates as chain is modified (debounced re-evaluation)
-    - Export node at end of chain with format selection
-    - New filter added via #[register_filter] + rebuild appears in palette automatically
-    - Before/after comparison (toggle or slider)
-    - Performance timing per operation displayed
-    - Download button for final output
-  out_of_scope: |
-    DAG branching in UI (linear chain only for v1). Undo/redo stack.
+  - Operations palette auto-populated from SDK (no hard-coded filter list)
+  - User can add any registered operation as a node in the chain
+  - Each node shows adjustable parameter controls (sliders, dropdowns, toggles)
+  - Nodes can be reordered via drag-and-drop
+  - Nodes can be removed
+  - Live preview updates as chain is modified (debounced re-evaluation)
+  - Export node at end of chain with format selection
+  - New filter added via
+  - Before/after comparison (toggle or slider)
+  - Performance timing per operation displayed
+  - Download button for final output
+  out_of_scope: 'DAG branching in UI (linear chain only for v1). Undo/redo stack.
+
     Saving/loading pipeline configurations. Batch processing.
+
     Node graph visual editor (v1 is vertical stack, not node wires).
-  technical_notes: |
-    Architecture:
 
-    1. OPERATION DISCOVERY:
-       At startup, the UI calls:
-       - pipeline.supportedReadFormats() → input format badges
-       - pipeline.supportedWriteFormats() → export format options
-       - registered_filters() equivalent → filter palette
-
-       For filter params, use the FilterRegistry metadata (name, category,
-       ParamDescriptor with type/min/max/default/description).
-
-       Expose a WIT function or generate a JSON manifest at build time:
-         { filters: [{ name: "blur", category: "spatial", params: [{ name: "radius", type: "f32", min: 0, max: 100, default: 3 }] }] }
-
-    2. DYNAMIC PARAM CONTROLS:
-       For each param type, generate the appropriate UI control:
-       - f32/number → slider with min/max from descriptor
-       - u32/uint → integer input with min/max
-       - bool → toggle switch
-       - enum (ResizeFilter, Rotation, etc.) → dropdown
-       - color → color picker
-
-    3. PIPELINE EXECUTION:
-       When user modifies the chain, rebuild the pipeline:
-       const pipe = new ImagePipeline();
-       const src = pipe.read(imageData);
-       let node = src;
-       for (const op of chain) {
-         node = pipe[op.name](node, ...op.paramValues);
-       }
-       const preview = pipe.writePng(node, {}, undefined);
-       displayOnCanvas(preview);
-
-       Debounce to avoid re-evaluating on every slider tick.
-
-    4. UI LAYOUT:
-       ┌─────────────────────────────────────────────────┐
-       │  [Drop Image Here]              [Before/After]  │
-       │  ┌─────────────────┐  ┌──────────────────────┐ │
-       │  │ Operation Palette│  │                      │ │
-       │  │ ─── Spatial ─── │  │    Preview Canvas     │ │
-       │  │  + Blur          │  │                      │ │
-       │  │  + Sharpen       │  │                      │ │
-       │  │  + Median        │  │                      │ │
-       │  │ ─── Color ───── │  │                      │ │
-       │  │  + Hue Rotate    │  │                      │ │
-       │  │  + Saturate      │  │                      │ │
-       │  │  + Sepia         │  │                      │ │
-       │  │ ─── Enhance ─── │  │                      │ │
-       │  │  + Dehaze        │  │                      │ │
-       │  │  + Clarity       │  │                      │ │
-       │  │  ... (auto)      │  │                      │ │
-       │  └─────────────────┘  └──────────────────────┘ │
-       │                                                  │
-       │  Pipeline Chain:                                 │
-       │  ┌──────────────────────────────────────────┐   │
-       │  │ 1. Blur         [radius: ====3.0====] ✕ │   │
-       │  │ 2. Brightness   [amount: ===+0.1====] ✕ │   │
-       │  │ 3. Resize       [800 x 600] [lanczos3] ✕│   │
-       │  │ + Add Operation                          │   │
-       │  └──────────────────────────────────────────┘   │
-       │                                                  │
-       │  Export: [JPEG ▼] [Quality: ==85==] [Download]   │
-       │  Timing: blur 12ms | brightness 1ms | resize 8ms│
-       └─────────────────────────────────────────────────┘
+    '
+  technical_notes: "Architecture:\n\n1. OPERATION DISCOVERY:\n   At startup, the UI calls:\n   - pipeline.supportedReadFormats()\
+    \ → input format badges\n   - pipeline.supportedWriteFormats() → export format options\n   - registered_filters() equivalent\
+    \ → filter palette\n\n   For filter params, use the FilterRegistry metadata (name, category,\n   ParamDescriptor with\
+    \ type/min/max/default/description).\n\n   Expose a WIT function or generate a JSON manifest at build time:\n     { filters:\
+    \ [{ name: \"blur\", category: \"spatial\", params: [{ name: \"radius\", type: \"f32\", min: 0, max: 100, default: 3 }]\
+    \ }] }\n\n2. DYNAMIC PARAM CONTROLS:\n   For each param type, generate the appropriate UI control:\n   - f32/number →\
+    \ slider with min/max from descriptor\n   - u32/uint → integer input with min/max\n   - bool → toggle switch\n   - enum\
+    \ (ResizeFilter, Rotation, etc.) → dropdown\n   - color → color picker\n\n3. PIPELINE EXECUTION:\n   When user modifies\
+    \ the chain, rebuild the pipeline:\n   const pipe = new ImagePipeline();\n   const src = pipe.read(imageData);\n   let\
+    \ node = src;\n   for (const op of chain) {\n     node = pipe[op.name](node, ...op.paramValues);\n   }\n   const preview\
+    \ = pipe.writePng(node, {}, undefined);\n   displayOnCanvas(preview);\n\n   Debounce to avoid re-evaluating on every slider\
+    \ tick.\n\n4. UI LAYOUT:\n   ┌─────────────────────────────────────────────────┐\n   │  [Drop Image Here]            \
+    \  [Before/After]  │\n   │  ┌─────────────────┐  ┌──────────────────────┐ │\n   │  │ Operation Palette│  │           \
+    \           │ │\n   │  │ ─── Spatial ─── │  │    Preview Canvas     │ │\n   │  │  + Blur          │  │               \
+    \       │ │\n   │  │  + Sharpen       │  │                      │ │\n   │  │  + Median        │  │                   \
+    \   │ │\n   │  │ ─── Color ───── │  │                      │ │\n   │  │  + Hue Rotate    │  │                      │ │\n\
+    \   │  │  + Saturate      │  │                      │ │\n   │  │  + Sepia         │  │                      │ │\n   │\
+    \  │ ─── Enhance ─── │  │                      │ │\n   │  │  + Dehaze        │  │                      │ │\n   │  │  +\
+    \ Clarity       │  │                      │ │\n   │  │  ... (auto)      │  │                      │ │\n   │  └─────────────────┘\
+    \  └──────────────────────┘ │\n   │                                                  │\n   │  Pipeline Chain:        \
+    \                         │\n   │  ┌──────────────────────────────────────────┐   │\n   │  │ 1. Blur         [radius:\
+    \ ====3.0====] ✕ │   │\n   │  │ 2. Brightness   [amount: ===+0.1====] ✕ │   │\n   │  │ 3. Resize       [800 x 600] [lanczos3]\
+    \ ✕│   │\n   │  │ + Add Operation                          │   │\n   │  └──────────────────────────────────────────┘ \
+    \  │\n   │                                                  │\n   │  Export: [JPEG ▼] [Quality: ==85==] [Download]   │\n\
+    \   │  Timing: blur 12ms | brightness 1ms | resize 8ms│\n   └─────────────────────────────────────────────────┘\n"
 plan:
-  - phase: Operation Discovery
-    tasks:
-      - text: Add WIT function or build-time JSON manifest exposing filter metadata (name, category, params with types/ranges)
-        done: false
-      - text: Create palette component that auto-populates from discovered operations, grouped by category
-        done: false
-      - text: Verify new filter appears in palette after WASM rebuild (no UI code change)
-        done: false
-  - phase: Chain Builder UI
-    tasks:
-      - text: Create chain state model (ordered list of operation nodes with param values)
-        done: false
-      - text: Create operation node card component with dynamic param controls (slider, dropdown, toggle)
-        done: false
-      - text: Implement add operation (click from palette adds to chain)
-        done: false
-      - text: Implement remove operation (X button on node card)
-        done: false
-      - text: Implement reorder (drag-and-drop node cards)
-        done: false
-  - phase: Live Preview
-    tasks:
-      - text: Implement pipeline rebuild from chain state (debounced)
-        done: false
-      - text: Render preview on canvas with before/after toggle
-        done: false
-      - text: Display per-operation timing
-        done: false
-  - phase: Export + Polish
-    tasks:
-      - text: Create export panel with format picker (auto-discovered from supportedWriteFormats)
-        done: false
-      - text: Add download button for exported output
-        done: false
-      - text: Handle errors gracefully (invalid params, unsupported format combinations)
-        done: false
+- phase: Operation Discovery
+  tasks:
+  - text: Add WIT function or build-time JSON manifest exposing filter metadata (name, category, params with types/ranges)
+    done: true
+  - text: Create palette component that auto-populates from discovered operations, grouped by category
+    done: true
+  - text: Verify new filter appears in palette after WASM rebuild (no UI code change)
+    done: true
+- phase: Chain Builder UI
+  tasks:
+  - text: Create chain state model (ordered list of operation nodes with param values)
+    done: true
+  - text: Create operation node card component with dynamic param controls (slider, dropdown, toggle)
+    done: true
+  - text: Implement add operation (click from palette adds to chain)
+    done: true
+  - text: Implement remove operation (X button on node card)
+    done: true
+  - text: Implement reorder (drag-and-drop node cards)
+    done: true
+- phase: Live Preview
+  tasks:
+  - text: Implement pipeline rebuild from chain state (debounced)
+    done: true
+  - text: Render preview on canvas with before/after toggle
+    done: true
+  - text: Display per-operation timing
+    done: true
+- phase: Export + Polish
+  tasks:
+  - text: Create export panel with format picker (auto-discovered from supportedWriteFormats)
+    done: true
+  - text: Add download button for exported output
+    done: true
+  - text: Handle errors gracefully (invalid params, unsupported format combinations)
+    done: true
 extra: {}
