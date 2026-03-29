@@ -167,6 +167,45 @@ pub fn pixels_to_dynamic_image(
                 })?;
             Ok(DynamicImage::ImageLuma8(img))
         }
+        PixelFormat::Gray16 => {
+            let u16_pixels: Vec<u16> = pixels
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let img = image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(
+                info.width, info.height, u16_pixels,
+            )
+            .ok_or_else(|| {
+                ImageError::InvalidInput("pixel data size mismatch for Gray16".into())
+            })?;
+            Ok(DynamicImage::ImageLuma16(img))
+        }
+        PixelFormat::Rgb16 => {
+            let u16_pixels: Vec<u16> = pixels
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let img = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(
+                info.width, info.height, u16_pixels,
+            )
+            .ok_or_else(|| {
+                ImageError::InvalidInput("pixel data size mismatch for Rgb16".into())
+            })?;
+            Ok(DynamicImage::ImageRgb16(img))
+        }
+        PixelFormat::Rgba16 => {
+            let u16_pixels: Vec<u16> = pixels
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let img = image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
+                info.width, info.height, u16_pixels,
+            )
+            .ok_or_else(|| {
+                ImageError::InvalidInput("pixel data size mismatch for Rgba16".into())
+            })?;
+            Ok(DynamicImage::ImageRgba16(img))
+        }
         other => Err(ImageError::UnsupportedFormat(format!(
             "encoding from {other:?} pixel format not supported"
         ))),

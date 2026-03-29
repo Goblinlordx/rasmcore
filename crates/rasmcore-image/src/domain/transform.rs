@@ -138,6 +138,9 @@ pub fn convert_format(
         PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
         PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
         PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+        PixelFormat::Gray16 => (u16_to_le_bytes(img.to_luma16().as_raw()), PixelFormat::Gray16),
+        PixelFormat::Rgb16 => (u16_to_le_bytes(img.to_rgb16().as_raw()), PixelFormat::Rgb16),
+        PixelFormat::Rgba16 => (u16_to_le_bytes(img.to_rgba16().as_raw()), PixelFormat::Rgba16),
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "conversion to {other:?} not supported"
@@ -215,10 +218,47 @@ fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, Imag
         PixelFormat::Gray8 => image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
             .map(DynamicImage::ImageLuma8)
             .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
+        PixelFormat::Gray16 => {
+            let u16_pixels = le_bytes_to_u16(pixels);
+            image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(
+                info.width, info.height, u16_pixels,
+            )
+            .map(DynamicImage::ImageLuma16)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
+        }
+        PixelFormat::Rgb16 => {
+            let u16_pixels = le_bytes_to_u16(pixels);
+            image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(
+                info.width, info.height, u16_pixels,
+            )
+            .map(DynamicImage::ImageRgb16)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
+        }
+        PixelFormat::Rgba16 => {
+            let u16_pixels = le_bytes_to_u16(pixels);
+            image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
+                info.width, info.height, u16_pixels,
+            )
+            .map(DynamicImage::ImageRgba16)
+            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
+        }
         other => Err(ImageError::UnsupportedFormat(format!(
             "transform from {other:?} not supported"
         ))),
     }
+}
+
+/// Convert LE byte pairs to u16 values.
+fn le_bytes_to_u16(bytes: &[u8]) -> Vec<u16> {
+    bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect()
+}
+
+/// Convert u16 values to LE byte pairs.
+fn u16_to_le_bytes(values: &[u16]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 fn image_to_decoded(
@@ -230,6 +270,9 @@ fn image_to_decoded(
         PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
         PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
         PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+        PixelFormat::Gray16 => (u16_to_le_bytes(img.to_luma16().as_raw()), PixelFormat::Gray16),
+        PixelFormat::Rgb16 => (u16_to_le_bytes(img.to_rgb16().as_raw()), PixelFormat::Rgb16),
+        PixelFormat::Rgba16 => (u16_to_le_bytes(img.to_rgba16().as_raw()), PixelFormat::Rgba16),
         _ => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
     };
     Ok(DecodedImage {
