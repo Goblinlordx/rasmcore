@@ -160,17 +160,17 @@ plan:
 - phase: Two-Pass Encoding
   tasks:
   - text: Refactor encode_frame into two passes — Pass 1 collects stats, Pass 2 encodes with updated tables
-    done: false
+    done: true
   - text: Recompute LevelCostTable from updated probabilities between passes
-    done: false
+    done: true
   - text: Write probability update flags and values in bitstream header (refresh_entropy_probs=true)
-    done: false
+    done: true
 - phase: Validation
   tasks:
   - text: Verify probability tables differ from defaults for non-trivial images
-    done: false
+    done: true
   - text: Verify file sizes decrease compared to fixed-probability encoding
-    done: false
+    done: true
   - text: Verify quality ratio >= 0.75x cwebp at Q75 on gradient and photo content
-    done: false
+    done: true
 extra: {}
