@@ -404,6 +404,7 @@ macro_rules! builtin_filter {
 use super::filters;
 use super::histogram;
 use super::point_ops::{self, PointOp};
+use super::quantize;
 
 // Blur filters
 builtin_filter!(BlurFilter, "blur", FilterCategory::Blur,
@@ -727,6 +728,38 @@ builtin_filter!(AdaptiveThresholdFilter, "adaptive_threshold", FilterCategory::C
     }
 );
 
+// Color quantization and dithering
+builtin_filter!(QuantizeFilter, "quantize", FilterCategory::Color,
+    params: [ParamDescriptor::float("colors", 2.0, 256.0, 16.0).with_description("Number of palette colors")],
+    apply: |input| {
+        let colors = input.params.get_float("colors").unwrap_or(16.0) as usize;
+        let palette = quantize::median_cut(input.pixels, input.info, colors)?;
+        quantize::quantize(input.pixels, input.info, &palette)
+    }
+);
+
+builtin_filter!(DitherFSFilter, "dither_floyd_steinberg", FilterCategory::Color,
+    params: [ParamDescriptor::float("colors", 2.0, 256.0, 16.0).with_description("Number of palette colors")],
+    apply: |input| {
+        let colors = input.params.get_float("colors").unwrap_or(16.0) as usize;
+        let palette = quantize::median_cut(input.pixels, input.info, colors)?;
+        quantize::dither_floyd_steinberg(input.pixels, input.info, &palette)
+    }
+);
+
+builtin_filter!(DitherOrderedFilter, "dither_ordered", FilterCategory::Color,
+    params: [
+        ParamDescriptor::float("colors", 2.0, 256.0, 16.0).with_description("Number of palette colors"),
+        ParamDescriptor::float("matrix_size", 2.0, 8.0, 4.0).with_description("Bayer matrix size (2, 4, or 8)")
+    ],
+    apply: |input| {
+        let colors = input.params.get_float("colors").unwrap_or(16.0) as usize;
+        let matrix_size = input.params.get_float("matrix_size").unwrap_or(4.0) as usize;
+        let palette = quantize::median_cut(input.pixels, input.info, colors)?;
+        quantize::dither_ordered(input.pixels, input.info, &palette, matrix_size)
+    }
+);
+
 /// Register all built-in filters into a registry.
 fn register_builtin_filters(reg: &mut FilterRegistry) {
     reg.register(Box::new(BlurFilter));
@@ -754,6 +787,9 @@ fn register_builtin_filters(reg: &mut FilterRegistry) {
     reg.register(Box::new(OtsuThresholdFilter));
     reg.register(Box::new(TriangleThresholdFilter));
     reg.register(Box::new(AdaptiveThresholdFilter));
+    reg.register(Box::new(QuantizeFilter));
+    reg.register(Box::new(DitherFSFilter));
+    reg.register(Box::new(DitherOrderedFilter));
 }
 
 #[cfg(test)]
@@ -765,8 +801,8 @@ mod tests {
     fn registry_has_all_builtins() {
         let reg = FilterRegistry::with_builtins();
         assert!(
-            reg.len() >= 22,
-            "expected 22+ built-in filters, got {}",
+            reg.len() >= 25,
+            "expected 25+ built-in filters, got {}",
             reg.len()
         );
 
