@@ -1154,4 +1154,148 @@ mod tests {
         let alpha = u16::from_le_bytes([result.pixels[6], result.pixels[7]]);
         assert_eq!(alpha, 65535);
     }
+
+    // ─── 16-bit E2E chain test ─────────────────────────────────────────
+
+    #[test]
+    fn e2e_16bit_chain_gamma_brightness_resize_equalize() {
+        use crate::domain::histogram;
+        use crate::domain::point_ops;
+
+        // 1. Create a 16-bit Rgb16 gradient (32x32)
+        let (w, h) = (32u32, 32u32);
+        let mut pixels = Vec::with_capacity((w * h * 6) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let r = (x * 65535 / w.max(1)) as u16;
+                let g = (y * 65535 / h.max(1)) as u16;
+                let b = 32768u16;
+                pixels.extend_from_slice(&r.to_le_bytes());
+                pixels.extend_from_slice(&g.to_le_bytes());
+                pixels.extend_from_slice(&b.to_le_bytes());
+            }
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+
+        // 2. Apply gamma 2.2 (16-bit auto-dispatch)
+        let after_gamma = point_ops::gamma(&pixels, &info, 2.2).unwrap();
+        assert_eq!(after_gamma.len(), pixels.len());
+
+        // 3. Apply brightness +0.1 (16-bit auto-dispatch)
+        let after_bright = {
+            use crate::domain::filters;
+            filters::brightness(&after_gamma, &info, 0.1).unwrap()
+        };
+
+        // 4. Resize to 16x16 (fast_image_resize U16x3)
+        let resized = resize(&after_bright, &info, 16, 16, ResizeFilter::Lanczos3).unwrap();
+        assert_eq!(resized.info.width, 16);
+        assert_eq!(resized.info.height, 16);
+        assert_eq!(resized.info.format, PixelFormat::Rgb16);
+        assert_eq!(resized.pixels.len(), 16 * 16 * 6);
+
+        // 5. Equalize (16-bit histogram with 65536 bins)
+        let equalized =
+            histogram::equalize(&resized.pixels, &resized.info).unwrap();
+        assert_eq!(equalized.len(), resized.pixels.len());
+
+        // 6. Verify: read back u16 values, check range expanded
+        let values: Vec<u16> = equalized
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        let min_val = *values.iter().min().unwrap();
+        let max_val = *values.iter().max().unwrap();
+        // After equalization, range should span most of 0-65535
+        assert!(
+            max_val > 50000,
+            "equalized max should be near 65535, got {max_val}"
+        );
+        assert!(
+            min_val < 5000,
+            "equalized min should be near 0, got {min_val}"
+        );
+    }
+
+    #[test]
+    fn e2e_16bit_encode_decode_roundtrip_tiff() {
+        // Create 16-bit image
+        let (w, h) = (8u32, 8u32);
+        let mut pixels = Vec::new();
+        for i in 0..(w * h) {
+            let v = (i * 1023) as u16;
+            pixels.extend_from_slice(&v.to_le_bytes());
+            pixels.extend_from_slice(&(v / 2).to_le_bytes());
+            pixels.extend_from_slice(&(65535 - v).to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+
+        // Encode as 16-bit TIFF
+        let encoded = crate::domain::encoder::tiff::encode(
+            &pixels,
+            &info,
+            &crate::domain::encoder::tiff::TiffEncodeConfig::default(),
+        )
+        .unwrap();
+
+        // Decode back
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Rgb16);
+        assert_eq!(decoded.info.width, w);
+        assert_eq!(decoded.info.height, h);
+        assert_eq!(decoded.pixels, pixels, "16-bit TIFF roundtrip must be lossless");
+    }
+
+    #[test]
+    fn resize_rgb16_preserves_format() {
+        let mut pixels = Vec::new();
+        for i in 0..16u32 * 16 {
+            let v = (i * 257) as u16;
+            pixels.extend_from_slice(&v.to_le_bytes());
+            pixels.extend_from_slice(&v.to_le_bytes());
+            pixels.extend_from_slice(&v.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = resize(&pixels, &info, 8, 8, ResizeFilter::Bilinear).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgb16);
+        assert_eq!(result.info.width, 8);
+        assert_eq!(result.pixels.len(), 8 * 8 * 6);
+    }
+
+    #[test]
+    fn crop_rgb16_works() {
+        let mut pixels = Vec::new();
+        for i in 0..16u32 * 16 {
+            let v = (i * 100) as u16;
+            pixels.extend_from_slice(&v.to_le_bytes());
+            pixels.extend_from_slice(&v.to_le_bytes());
+            pixels.extend_from_slice(&v.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = crop(&pixels, &info, 2, 2, 8, 8).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgb16);
+        assert_eq!(result.info.width, 8);
+        assert_eq!(result.info.height, 8);
+        assert_eq!(result.pixels.len(), 8 * 8 * 6);
+    }
 }

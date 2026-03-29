@@ -90,19 +90,19 @@ plan:
 - phase: Pipeline Nodes
   tasks:
   - text: Update PointOpNode and FusedLutNode to dispatch 16-bit LUT paths
-    done: false
+    done: true
   - text: Update ColorOpNode and FusedClutNode for 16-bit format dispatch
-    done: false
+    done: true
   - text: Update filter nodes (blur, sharpen, etc.) for 16-bit format propagation
-    done: false
+    done: true
   - text: Update SmartCropNode to handle 16-bit input (downsample for analysis)
-    done: false
+    done: true
   - text: Add BitDepthNode for explicit 16-to-8 and 8-to-16 conversion at any pipeline point
-    done: false
+    done: true
   - text: Add NOOP detection in pipeline optimizer (remove BitDepthNode when input matches target)
-    done: false
+    done: true
   - text: Add implicit BitDepthNode(8) insertion before 8-bit-only encoders (JPEG, WebP, GIF)
-    done: false
+    done: true
 - phase: End-to-End Validation
   tasks:
   - text: Create 16-bit test PNG with full 0-65535 gradient range
