@@ -335,18 +335,22 @@ pub fn reconstruct_intra16(
         dc_coeffs[sb] = dct_tmp[sb][0];
     }
 
-    // Step 2: Forward WHT on DC coefficients → quantize Y2
+    // Step 2: Forward WHT on DC coefficients → trellis quantize Y2
     let mut wht_coeffs = [0i16; 16];
     dct::forward_wht(&dc_coeffs, &mut wht_coeffs);
     let mut y2_quantized = [0i16; 16];
-    quant::quantize_block(&wht_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
-    // TODO: trellis for Y2 block (TYPE_I16_DC=1) when full pipeline is validated
+    // Y2 trellis: TYPE_I16_DC=1, first=0, context=0 (no prior Y2 context)
+    let y2_nz = trellis_quantize_block(
+        &mut wht_coeffs,
+        &mut y2_quantized,
+        0, // ctx0: no prior context for Y2
+        1, // TYPE_I16_DC
+        &seg_quant.y2_dc,
+        lambda_trellis,
+        cost_table,
+    );
     result.y_dc_levels = y2_quantized;
-    result.nz |= if y2_quantized.iter().any(|&c| c != 0) {
-        1 << 24
-    } else {
-        0
-    };
+    result.nz |= if y2_nz { 1 << 24 } else { 0 };
 
     // Step 3: Quantize AC blocks with trellis + context tracking
     // Trellis modifies dct_tmp[sb] in-place: writes dequantized values back to raster positions.
@@ -379,10 +383,9 @@ pub fn reconstruct_intra16(
     }
 
     // Step 4: Inverse WHT → get reconstructed DC values
-    let mut y2_dequant = [0i16; 16];
-    quant::dequantize_block(&y2_quantized, &seg_quant.y2_dc, &mut y2_dequant);
+    // wht_coeffs already contains dequantized values from trellis (in raster order)
     let mut recon_dc = [0i16; 16];
-    dct::inverse_wht(&y2_dequant, &mut recon_dc);
+    dct::inverse_wht(&wht_coeffs, &mut recon_dc);
 
     // Step 5: Inverse DCT + add prediction for each sub-block
     // Note: trellis already dequantized AC in-place (dct_tmp[sb] has raster-order dequant values).
