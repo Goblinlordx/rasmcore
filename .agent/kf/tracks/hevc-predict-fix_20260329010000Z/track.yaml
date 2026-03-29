@@ -29,22 +29,23 @@ spec:
     \ (vertical), smooth the first column:\n    pred[y][0] = top[0] + ((left[y] - top_left) >> 1)\n  After angular prediction\
     \ for mode 10 (horizontal), smooth the first row:\n    pred[0][x] = left[0] + ((top[x] - top_left) >> 1)\n  Only for block\
     \ sizes < 32. Ref: libde265 v1.0.18 intrapred.cc lines 379-382, 417-420."
-plan: []
-extra: {}
 plan:
-  - phase: Prediction Fixes
-    tasks:
-      - text: "Fix DC mode filtering: change should_filter_ref_samples to return false for mode 1 (DC). Cite libde265 v1.0.18 intrapred.h line 195."
-        done: false
-      - text: "Add mode 26 (vertical) boundary smoothing for first column, size < 32. Cite libde265 v1.0.18 intrapred.cc lines 379-382."
-        done: false
-      - text: "Add mode 10 (horizontal) boundary smoothing for first row, size < 32. Cite libde265 v1.0.18 intrapred.cc lines 417-420."
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat unchanged at 48.1dB"
-        done: false
-      - text: "Verify all fixes have citation comments with libde265 version and line numbers"
-        done: false
-      - text: "clippy clean, fmt clean, cargo test -p rasmcore-hevc passes"
-        done: false
+- phase: Prediction Fixes
+  tasks:
+  - text: 'Fix DC mode filtering: change should_filter_ref_samples to return false for mode 1 (DC). Cite libde265 v1.0.18
+      intrapred.h line 195.'
+    done: true
+  - text: Add mode 26 (vertical) boundary smoothing for first column, size < 32. Cite libde265 v1.0.18 intrapred.cc lines
+      379-382.
+    done: true
+  - text: Add mode 10 (horizontal) boundary smoothing for first row, size < 32. Cite libde265 v1.0.18 intrapred.cc lines 417-420.
+    done: true
+- phase: Validation
+  tasks:
+  - text: Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat unchanged at 48.1dB
+    done: true
+  - text: Verify all fixes have citation comments with libde265 version and line numbers
+    done: true
+  - text: clippy clean, fmt clean, cargo test -p rasmcore-hevc passes
+    done: true
+extra: {}
