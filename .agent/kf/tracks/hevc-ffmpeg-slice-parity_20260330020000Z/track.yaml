@@ -1,0 +1,128 @@
+id: hevc-ffmpeg-slice-parity_20260330020000Z
+title: "HEVC Encoder/Decoder ffmpeg Parity — Slice Header Alignment + Deblocking Fix"
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Fix the two remaining HEVC reference alignment gaps: (1) encoder slice header
+    field sequence mismatch causing ffmpeg to decode differently from our decoder,
+    and (2) decoder deblocking filter arithmetic producing max_diff=10 vs ffmpeg
+    on the checker_256x256_q22 test case.
+  context: |
+    Encoder status: PSNR=55.4dB within our own encode-decode loop. Flat-128 is
+    byte-exact. Coefficient CABAC roundtrip proven correct (7/7 tests). But ffmpeg
+    decodes our encoder output differently (4077 Y-plane diffs). ffmpeg sees
+    cbf_luma=false for the first CTU while our decoder sees cbf_luma=true — this
+    means ffmpeg starts CABAC at a different byte offset in the slice data.
+
+    Decoder status: 3/4 test cases byte-exact (flat q22/q37, gradient 128x128).
+    Checker_256x256_q22 has PSNR=39.2dB, max_diff=10 — all diffs are at
+    deblocking filter boundaries (x=31, y=31 of each 32x32 CTU). Prediction
+    and IDCT are byte-exact without deblocking.
+
+    What was already investigated and ruled out:
+    - VPS/SPS parse correctly in ffmpeg (verified via ffprobe)
+    - Profile_tier_level constraint flags and level_idc are correct
+    - Coefficient CABAC encoding matches decoder exactly (7/7 roundtrip tests)
+    - deblocking_filter_override_flag fix applied (now read when control_present=true)
+    - Encoder uses same reconstruct_residual() path as decoder
+    - sign_data_hiding disabled (was causing sign flips)
+
+    The slice header misalignment is the critical remaining issue. The HEVC spec
+    Section 7.3.6.1 has many conditional fields. Our encoder/decoder agree on
+    which fields to write/read, but ffmpeg reads a different set.
+  codebase_analysis: |
+    Key files:
+    - encode/encoder.rs: write_slice_header() — encoder slice header serialization
+    - syntax.rs: parse_slice_header() — decoder slice header parsing (lines 164-297)
+    - encode/params_write.rs: default_pps() — PPS settings that control slice fields
+    - filter.rs: deblock_vertical_edge/horizontal_edge — deblocking filter
+
+    Encoder slice header writes (in order):
+    1. first_slice_segment_in_pic_flag (1 bit)
+    2. no_output_of_prior_pics_flag (1 bit, IDR)
+    3. slice_pic_parameter_set_id (ue)
+    4. slice_type (ue)
+    5. slice_qp_delta (se)
+    6. deblocking_filter_override_flag (1 bit, if control_present)
+    7. slice_loop_filter_across_slices_enabled_flag (1 bit, conditional)
+    8. byte_alignment (1-bit + padding)
+
+    ffmpeg's hevc_metadata BSF reports "Failed to read unit 3 (type 20)" — the
+    IDR NAL is considered malformed by ffmpeg's strict parser. But the lenient
+    decoder still produces output (just with wrong CABAC offset).
+
+    Deblocking: our decoder applies deblocking at CTU boundaries only (step_by
+    ctu_size). For I-frames with no TU split, this is correct — only CU boundaries
+    have Bs=2. The ±1 diffs are in the filter arithmetic (strong/weak decision
+    or the filter formula itself).
+  acceptance_criteria:
+    - Encoder output decodes identically in our decoder AND ffmpeg (0 Y-plane diffs)
+    - ffmpeg hevc_metadata BSF does not report errors on our encoder output
+    - Decoder checker_256x256_q22 achieves PSNR > 45dB (close to byte-exact)
+    - No regression on flat/gradient byte-exact decoder parity
+    - All existing tests pass
+  out_of_scope: |
+    Intra mode decision (angular mode search). Rate control. SAO encoding.
+    sign_data_hiding re-enablement. HEVC encoder quality vs x265 comparison.
+  technical_notes: |
+    Part 1 — Encoder slice header ffmpeg alignment:
+
+    Approach: Read ffmpeg's HEVC slice header parser source code (hevcdec.c or
+    hevc_ps.c) to identify exactly which fields it expects for an IDR I-slice
+    with our specific VPS/SPS/PPS settings. Compare field-by-field against our
+    write_slice_header(). The root cause is a missing or extra syntax element.
+
+    The most likely candidates:
+    a) A field between slice_type and slice_qp_delta that we skip (e.g.,
+       pic_order_cnt_lsb is NOT present for IDR, but maybe another field is)
+    b) SAO-related flags even when SAO is disabled in SPS
+    c) A conditional field we don't check (e.g., cabac_init_flag for I-slices)
+
+    Use WebFetch to read ffmpeg source:
+    https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/hevc/hevcdec.c
+    Search for hls_slice_header() or slice_header_parse().
+
+    Part 2 — Decoder deblocking filter:
+
+    The checker diffs are all at CTU boundary edges (x=31, y=31 for 32x32 CTUs).
+    The filter arithmetic (strong_filter or weak_filter function) produces ±1
+    different from ffmpeg at these edges. Read ffmpeg's hevc_filter.c deblocking
+    implementation and compare against our filter.rs strong/weak filter formulas.
+
+    Ref: ffmpeg libavcodec/hevc/filter.c — ff_hevc_deblocking_boundary_strengths,
+    deblocking_filter_CTB
+plan:
+  - phase: "Encoder Slice Header Fix"
+    tasks:
+      - text: "Fetch and read ffmpeg hevcdec.c slice header parsing to identify exact field sequence for IDR I-slice"
+        done: false
+      - text: "Compare ffmpeg's field list against our write_slice_header() — find missing/extra fields"
+        done: false
+      - text: "Fix encoder write_slice_header to match ffmpeg's expectations"
+        done: false
+      - text: "Verify ffmpeg hevc_metadata BSF no longer reports errors"
+        done: false
+      - text: "Verify 0 Y-plane diffs between our decoder and ffmpeg for encoder output"
+        done: false
+  - phase: "Decoder Deblocking Fix"
+    tasks:
+      - text: "Fetch and read ffmpeg hevc/filter.c deblocking implementation"
+        done: false
+      - text: "Compare filter arithmetic (strong and weak filter) against our filter.rs"
+        done: false
+      - text: "Fix any rounding or formula differences"
+        done: false
+      - text: "Verify checker_256x256_q22 max_diff decreases (target max_diff=0)"
+        done: false
+  - phase: "Validation"
+    tasks:
+      - text: "All encoder tests pass with PSNR > 40dB"
+        done: false
+      - text: "All decoder parity tests pass (4/4 byte-exact target)"
+        done: false
+      - text: "No regression on any existing test"
+        done: false
+extra: {}
