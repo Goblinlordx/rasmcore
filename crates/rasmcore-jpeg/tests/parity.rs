@@ -94,6 +94,53 @@ fn magick_available() -> bool {
         .unwrap_or(false)
 }
 
+/// mozjpeg cjpeg paths to search (brew installs to non-standard location).
+const MOZJPEG_PATHS: &[&str] = &[
+    "/opt/homebrew/opt/mozjpeg/bin/cjpeg",
+    "/usr/local/opt/mozjpeg/bin/cjpeg",
+    "/usr/bin/mozjpeg-cjpeg",
+];
+
+fn mozjpeg_cjpeg_path() -> Option<&'static str> {
+    for path in MOZJPEG_PATHS {
+        if std::path::Path::new(path).exists() {
+            return Some(path);
+        }
+    }
+    // Check if system cjpeg is mozjpeg
+    if let Ok(out) = Command::new("cjpeg").arg("-version").output() {
+        let version = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if version.contains("mozjpeg") || stderr.contains("mozjpeg") {
+            return Some("cjpeg");
+        }
+    }
+    None
+}
+
+/// Encode via mozjpeg cjpeg CLI. Returns None if mozjpeg not available.
+fn mozjpeg_encode(pixels: &[u8], w: u32, h: u32, quality: u32) -> Option<Vec<u8>> {
+    let cjpeg = mozjpeg_cjpeg_path()?;
+    let ppm_path = write_ppm(pixels, w, h);
+    let jpg_path = ppm_path.with_extension("moz.jpg");
+
+    let result = Command::new(cjpeg)
+        .args(["-quality", &quality.to_string()])
+        .args(["-outfile", jpg_path.to_str().unwrap()])
+        .arg(ppm_path.to_str().unwrap())
+        .output()
+        .ok()?;
+
+    let _ = std::fs::remove_file(&ppm_path);
+    if !result.status.success() {
+        let _ = std::fs::remove_file(&jpg_path);
+        return None;
+    }
+    let data = std::fs::read(&jpg_path).ok();
+    let _ = std::fs::remove_file(&jpg_path);
+    data
+}
+
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn write_ppm(pixels: &[u8], w: u32, h: u32) -> std::path::PathBuf {
@@ -1317,4 +1364,192 @@ fn trellis_encode_speed() {
         overhead < 5.0,
         "trellis overhead {overhead:.1}x exceeds 5x limit"
     );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// mozjpeg Reference Comparison — The Gold Standard for JPEG Trellis
+// ════════════════════��══════════════════════════════════════════════════════
+
+/// Compare our trellis encoder against mozjpeg (the gold standard) across
+/// quality levels. Measures quality (PSNR), size, and documents the gap.
+#[test]
+fn trellis_vs_mozjpeg_quality_sweep() {
+    let cjpeg = match mozjpeg_cjpeg_path() {
+        Some(p) => p,
+        None => {
+            eprintln!("SKIP: mozjpeg cjpeg not available");
+            eprintln!("  Install via: brew install mozjpeg");
+            return;
+        }
+    };
+    eprintln!("Using mozjpeg at: {cjpeg}");
+
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+
+    eprintln!("\n=== Our Trellis vs mozjpeg (256x256 gradient) ===");
+    eprintln!(
+        "{:<6} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Q", "Ours_sz", "Moz_sz", "Sz_ratio", "Ours_dB", "Moz_dB", "Q_ratio"
+    );
+
+    for quality in [25u8, 50, 75, 85, 95] {
+        let config = rasmcore_jpeg::EncodeConfig {
+            quality,
+            trellis: true,
+            optimize_huffman: true,
+            ..Default::default()
+        };
+        let (_, our_psnr, our_size) = encode_and_measure(&original, w, h, &config);
+
+        if let Some(moz_jpeg) = mozjpeg_encode(&original, w, h, quality as u32) {
+            let moz_decoded =
+                image::load_from_memory_with_format(&moz_jpeg, image::ImageFormat::Jpeg)
+                    .unwrap()
+                    .to_rgb8();
+            let moz_psnr = psnr(&original, moz_decoded.as_raw());
+            let moz_size = moz_jpeg.len();
+
+            let size_ratio = our_size as f64 / moz_size as f64;
+            let quality_ratio = if moz_psnr.is_infinite() {
+                1.0
+            } else {
+                our_psnr / moz_psnr
+            };
+
+            eprintln!(
+                "Q{:<5} {:>10} {:>10} {:>9.2}x {:>9.1}dB {:>9.1}dB {:>9.2}x",
+                quality, our_size, moz_size, size_ratio, our_psnr, moz_psnr, quality_ratio
+            );
+
+            // Our output must be decodable (already verified)
+            // Document the gap — don't assert parity since mozjpeg is the gold standard
+            // and we expect to be somewhat behind
+        } else {
+            eprintln!("Q{quality}: mozjpeg encode failed");
+        }
+    }
+}
+
+/// Direct head-to-head: our trellis+opt_huffman vs mozjpeg on multiple patterns.
+/// Reports size ratio and quality ratio for each.
+#[test]
+fn trellis_vs_mozjpeg_patterns() {
+    let cjpeg = match mozjpeg_cjpeg_path() {
+        Some(p) => p,
+        None => {
+            eprintln!("SKIP: mozjpeg not available");
+            return;
+        }
+    };
+    let _ = cjpeg;
+
+    let patterns: Vec<(&str, Vec<u8>, u32, u32)> = vec![
+        ("gradient_256", gradient_pixels(256, 256), 256, 256),
+        ("gradient_512", gradient_pixels(512, 512), 512, 512),
+        ("checker_128", checkerboard_pixels(128, 128, 8), 128, 128),
+        ("gradient_64", gradient_pixels(64, 64), 64, 64),
+    ];
+
+    eprintln!("\n=== Trellis+OptHuff vs mozjpeg — Multi-Pattern (Q85) ===");
+    eprintln!(
+        "{:<20} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Pattern", "Ours_sz", "Moz_sz", "Sz_ratio", "Ours_dB", "Moz_dB", "Q_ratio"
+    );
+
+    for (name, original, w, h) in &patterns {
+        let config = rasmcore_jpeg::EncodeConfig {
+            quality: 85,
+            trellis: true,
+            optimize_huffman: true,
+            ..Default::default()
+        };
+        let (_, our_psnr, our_size) = encode_and_measure(original, *w, *h, &config);
+
+        if let Some(moz_jpeg) = mozjpeg_encode(original, *w, *h, 85) {
+            let moz_decoded =
+                image::load_from_memory_with_format(&moz_jpeg, image::ImageFormat::Jpeg)
+                    .unwrap()
+                    .to_rgb8();
+            let moz_psnr = psnr(original, moz_decoded.as_raw());
+            let moz_size = moz_jpeg.len();
+
+            let size_ratio = our_size as f64 / moz_size as f64;
+            let quality_ratio = if moz_psnr.is_infinite() {
+                1.0
+            } else {
+                our_psnr / moz_psnr
+            };
+
+            eprintln!(
+                "{:<20} {:>10} {:>10} {:>9.2}x {:>9.1}dB {:>9.1}dB {:>9.2}x",
+                name, our_size, moz_size, size_ratio, our_psnr, moz_psnr, quality_ratio
+            );
+        }
+    }
+}
+
+/// Encode speed comparison: our trellis vs mozjpeg on 256x256.
+#[test]
+fn trellis_vs_mozjpeg_speed() {
+    let cjpeg = match mozjpeg_cjpeg_path() {
+        Some(p) => p,
+        None => {
+            eprintln!("SKIP: mozjpeg not available for speed comparison");
+            return;
+        }
+    };
+
+    let (w, h) = (256, 256);
+    let original = gradient_pixels(w, h);
+    let ppm_path = write_ppm(&original, w, h);
+
+    let config = rasmcore_jpeg::EncodeConfig {
+        quality: 85,
+        trellis: true,
+        optimize_huffman: true,
+        ..Default::default()
+    };
+
+    // Warm up
+    let _ = rasmcore_jpeg::encode(&original, w, h, rasmcore_jpeg::PixelFormat::Rgb8, &config);
+    let jpg_path = ppm_path.with_extension("speed.jpg");
+    let _ = Command::new(cjpeg)
+        .args(["-quality", "85", "-outfile"])
+        .arg(jpg_path.to_str().unwrap())
+        .arg(ppm_path.to_str().unwrap())
+        .output();
+
+    let iters = 10;
+
+    // Our encode
+    let start = std::time::Instant::now();
+    for _ in 0..iters {
+        let _ = rasmcore_jpeg::encode(&original, w, h, rasmcore_jpeg::PixelFormat::Rgb8, &config);
+    }
+    let our_time = start.elapsed();
+
+    // mozjpeg encode
+    let start = std::time::Instant::now();
+    for _ in 0..iters {
+        let _ = Command::new(cjpeg)
+            .args(["-quality", "85", "-outfile"])
+            .arg(jpg_path.to_str().unwrap())
+            .arg(ppm_path.to_str().unwrap())
+            .output();
+    }
+    let moz_time = start.elapsed();
+
+    let _ = std::fs::remove_file(&ppm_path);
+    let _ = std::fs::remove_file(&jpg_path);
+
+    let our_ms = our_time.as_secs_f64() * 1000.0 / iters as f64;
+    let moz_ms = moz_time.as_secs_f64() * 1000.0 / iters as f64;
+    let speed_ratio = our_ms / moz_ms;
+
+    eprintln!("\n=== Encode Speed: Ours vs mozjpeg (256x256, Q85, {iters} iters) ===");
+    eprintln!("  Our trellis:  {our_ms:.1}ms/encode");
+    eprintln!("  mozjpeg:      {moz_ms:.1}ms/encode");
+    eprintln!("  Ratio:        {speed_ratio:.2}x (>1 = we're slower)");
+    eprintln!("  Note: mozjpeg time includes process spawn overhead");
 }
