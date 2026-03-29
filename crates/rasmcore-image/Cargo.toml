@@ -57,6 +57,11 @@ dssim-core = "3.4"
 imgref = "1.12.0"
 rgb = "0.8.53"
 
+[build-dependencies]
+syn = { version = "2", features = ["full", "parsing", "visit"] }
+quote = "1"
+proc-macro2 = "1"
+
 [package.metadata.component]
 package = "rasmcore:image"
 target.path = "../../wit/image"

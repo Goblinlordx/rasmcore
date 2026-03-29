@@ -5,6 +5,17 @@ interface filters {
     use rasmcore:core/types.{buffer, image-info};
     use rasmcore:core/errors.{rasmcore-error};
 
+    // ─── Typed Filters ────────────────────────────────────────────────────
+    //
+    // Each filter has a precisely typed function signature.
+    // New filters are added by:
+    //   1. Write domain function + #[register_filter] attribute
+    //   2. Run build script to regenerate WIT + adapter from registry
+    //
+    // The build script reads all #[register_filter] annotations and
+    // generates both the WIT declarations and adapter dispatch code.
+    // See: scripts/generate-filter-wit.py (or build.rs)
+
     /// Apply gaussian blur
     blur: func(pixels: buffer, info: image-info, radius: f32) -> result<buffer, rasmcore-error>;
 
