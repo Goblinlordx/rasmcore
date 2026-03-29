@@ -377,6 +377,9 @@ pub fn pick_best_intra16(
     lambdas: &VP8SegmentLambdas,
     cost_table: &LevelCostTable,
     rd: &mut VP8ModeScore,
+    init_top_nz: &[u8; 4], // Y AC NZ from bottom row of MB above
+    init_left_nz: &[u8; 4], // Y AC NZ from right column of MB to left
+    dc_nz: u8,              // Y2 DC NZ context (top_ctx[0] + left_ctx[0])
 ) {
     let mut best_score: ScoreT = MAX_COST;
     let mut best_mode: i32 = -1;
@@ -420,11 +423,11 @@ pub fn pick_best_intra16(
         // Header cost
         rd_cur.h = rdo::mode_header_cost_16x16(mode_idx as u8) as ScoreT;
 
-        // Rate
-        let mut cost_top_nz = [0u8; 4];
-        let mut cost_left_nz = [0u8; 4];
+        // Rate — use real NZ context from neighboring MBs
+        let mut cost_top_nz = *init_top_nz;
+        let mut cost_left_nz = *init_left_nz;
         rd_cur.r =
-            get_cost_luma16(&rd_cur, cost_table, &mut cost_top_nz, &mut cost_left_nz, 0) as ScoreT;
+            get_cost_luma16(&rd_cur, cost_table, &mut cost_top_nz, &mut cost_left_nz, dc_nz) as ScoreT;
 
         // Flatness penalty
         if flat_src {
@@ -474,6 +477,8 @@ pub fn pick_best_intra4(
     max_i4_header_bits: i32,
     top_modes: &[u8; 4],  // above macroblock's bottom-row modes
     left_modes: &[u8; 4], // left macroblock's right-column modes
+    init_top_nz: &[u8; 4], // Y AC NZ from bottom row of MB above
+    init_left_nz: &[u8; 4], // Y AC NZ from right column of MB to left
 ) -> bool {
     let i16_score = rd.score;
 
@@ -486,8 +491,8 @@ pub fn pick_best_intra4(
     let mut best_modes = [0u8; 16]; // selected mode per sub-block
     let mut recon_16x16 = [0u8; 256]; // accumulate reconstructed pixels
     let mut total_header_bits: i32 = 0;
-    let mut top_nz = [0u8; 4];
-    let mut left_nz = [0u8; 4];
+    let mut top_nz = *init_top_nz;
+    let mut left_nz = *init_left_nz;
 
     for i4 in 0..16 {
         let sb_row = i4 / 4;
@@ -695,6 +700,8 @@ pub fn pick_best_uv(
     lambdas: &VP8SegmentLambdas,
     cost_table: &LevelCostTable,
     rd: &mut VP8ModeScore,
+    init_top_nz: &[u8; 4], // UV NZ from MB above [U0, U1, V0, V1]
+    init_left_nz: &[u8; 4], // UV NZ from MB to left [U0, U1, V0, V1]
 ) {
     let mut best_score: ScoreT = MAX_COST;
 
@@ -726,9 +733,9 @@ pub fn pick_best_uv(
         rd_uv.sd = 0; // No spectral distortion for UV
         rd_uv.h = rdo::VP8_FIXED_COSTS_UV[mode_idx] as ScoreT;
 
-        // Rate
-        let mut cost_top_nz = [0u8; 4];
-        let mut cost_left_nz = [0u8; 4];
+        // Rate — use real NZ context from neighboring MBs
+        let mut cost_top_nz = *init_top_nz;
+        let mut cost_left_nz = *init_left_nz;
         rd_uv.r = get_cost_uv(
             &recon_result.uv_levels,
             cost_table,
@@ -778,8 +785,8 @@ pub fn pick_best_uv(
         (sse_8x8(src_u, &recon_result.recon_u) + sse_8x8(src_v, &recon_result.recon_v)) as ScoreT;
     rd_best.sd = 0;
     rd_best.h = rdo::VP8_FIXED_COSTS_UV[rd.mode_uv as usize] as ScoreT;
-    let mut cost_top_nz = [0u8; 4];
-    let mut cost_left_nz = [0u8; 4];
+    let mut cost_top_nz = *init_top_nz;
+    let mut cost_left_nz = *init_left_nz;
     rd_best.r = get_cost_uv(
         &rd.uv_levels,
         cost_table,
@@ -832,12 +839,23 @@ pub fn vp8_decimate(
     above_y_full: &[u8; 20], // 16 + 4 extra for diagonal
     top_modes: &[u8; 4],
     left_modes: &[u8; 4],
+    top_nz: &[u8; 9],  // NZ context from MB above
+    left_nz: &[u8; 9], // NZ context from MB to left
 ) -> DecimateResult {
     let mut rd = VP8ModeScore::default();
+
+    // Extract sub-contexts from 9-element NZ arrays:
+    // [0] = Y2 DC, [1..5] = Y AC columns, [5..9] = UV [U0,U1,V0,V1]
+    let y_top_nz: [u8; 4] = [top_nz[1], top_nz[2], top_nz[3], top_nz[4]];
+    let y_left_nz: [u8; 4] = [left_nz[1], left_nz[2], left_nz[3], left_nz[4]];
+    let dc_nz = top_nz[0] + left_nz[0];
+    let uv_top_nz: [u8; 4] = [top_nz[5], top_nz[6], top_nz[7], top_nz[8]];
+    let uv_left_nz: [u8; 4] = [left_nz[5], left_nz[6], left_nz[7], left_nz[8]];
 
     // Phase 1: Evaluate I16x16
     pick_best_intra16(
         src_y, above_y, left_y, tl_y, seg_quant, lambdas, cost_table, &mut rd,
+        &y_top_nz, &y_left_nz, dc_nz,
     );
 
     // Phase 2: Evaluate I4x4 (if it can beat I16)
@@ -854,12 +872,15 @@ pub fn vp8_decimate(
         max_header,
         top_modes,
         left_modes,
+        &y_top_nz,
+        &y_left_nz,
     );
 
     // Phase 3: Evaluate UV
     pick_best_uv(
         src_u, src_v, above_u, above_v, left_u, left_v, tl_u, tl_v, seg_quant, lambdas, cost_table,
         &mut rd,
+        &uv_top_nz, &uv_left_nz,
     );
 
     let is_skipped = rd.nz == 0;
@@ -924,6 +945,9 @@ mod tests {
             &lambdas,
             &cost_table,
             &mut rd,
+            &[0u8; 4],
+            &[0u8; 4],
+            0,
         );
 
         // Flat block should pick DC mode (0)
@@ -959,6 +983,8 @@ mod tests {
             &lambdas,
             &cost_table,
             &mut rd,
+            &[0u8; 4],
+            &[0u8; 4],
         );
         assert!(rd.mode_uv >= 0 && rd.mode_uv < 4);
     }
@@ -1001,6 +1027,8 @@ mod tests {
             &above_y_full,
             &top_modes,
             &left_modes,
+            &[0u8; 9],
+            &[0u8; 9],
         );
 
         // Flat block: should be skip (all zeros)

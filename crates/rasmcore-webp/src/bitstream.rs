@@ -84,8 +84,15 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let mut left_bmode_enc: [u8; 4] = [0u8; 4];
 
     // ─── Pass 1: Mode decisions + coefficient quantization + stats ──────
+    // Maintain real NZ context across MBs — critical for accurate VP8Decimate
+    // cost estimation. Without this, every MB sees zero context, producing
+    // wrong trellis/cost decisions and ~18 dB quality loss.
+    let mut p1_top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
+    let mut p1_left_ctx: [u8; 9] = [0u8; 9];
+
     for mb_row in 0..mb_h as usize {
         left_bmode_enc = [0u8; 4];
+        p1_left_ctx = [0u8; 9];
         for mb_col in 0..mb_w as usize {
             let seg_id = seg_map.get(mb_col, mb_row);
             let seg_quant = seg_map.quant(seg_id);
@@ -95,9 +102,8 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
 
             // Run VP8Decimate (mode selection + trellis quantization + reconstruction)
             // Pass a dummy token writer — tokens will be written in Pass 2
+            // But pass REAL NZ context so VP8Decimate cost estimation is accurate
             let mut dummy_token = BoolWriter::with_capacity(0);
-            let mut dummy_top_ctx = [0u8; 9];
-            let mut dummy_left_ctx = [0u8; 9];
 
             let (mut mb, coeffs) = encode_macroblock(
                 &y_padded,
@@ -114,8 +120,8 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 &lambdas,
                 &cost_table,
                 &mut dummy_token,
-                &mut dummy_top_ctx,
-                &mut dummy_left_ctx,
+                &mut p1_top_ctx[mb_col],
+                &mut p1_left_ctx,
                 &top_bmode_enc[mb_col],
                 &left_bmode_enc,
             );
@@ -694,6 +700,7 @@ fn encode_macroblock(
     }
 
     // ─── VP8Decimate: libwebp-exact mode selection ──────────────────────
+    // Pass current NZ context from neighboring MBs for accurate cost estimation
     let result = decimate::vp8_decimate(
         &y_block,
         &u_block,
@@ -713,6 +720,8 @@ fn encode_macroblock(
         &above_y_full,
         top_bmode_ctx,
         left_bmode_ctx,
+        top_ctx,
+        left_ctx,
     );
 
     // Map DecimateResult to token encoder's expected format
