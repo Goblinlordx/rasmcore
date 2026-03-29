@@ -1,0 +1,79 @@
+id: webp-port-reconstruct-trellis_20260329112501Z
+title: VP8 Port — Reconstruct + Trellis (ReconstructIntra16/4/UV, TrellisQuantizeBlock)
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Port ReconstructIntra16/Intra4/UV and TrellisQuantizeBlock from libwebp.
+    TrellisQuantizeBlock is the single highest-impact function for quality
+    (~2-3dB improvement). Each function tested against C++ reference output.
+  context: |
+    libwebp's Reconstruct functions do: predict → subtract → DCT → quantize
+    (optionally via trellis DP) → dequantize → IDCT → add prediction → store.
+    Our current encode_macroblock does similar steps but with different
+    quantization (no trellis in mode evaluation) and different coefficient layout.
+    TrellisQuantizeBlock uses the cost engine from Track 1 for Viterbi DP.
+  codebase_analysis: |
+    Functions to port:
+    1. ReconstructIntra16(it, rd, dst, mode) — quant_enc.c:754
+       Predicts, computes 16 sub-block DCTs, quantizes, WHT for Y2, reconstructs.
+       Stores quantized coefficients in rd->y_dc_levels and rd->y_ac_levels.
+    2. ReconstructIntra4(it, levels, src, dst, mode) — quant_enc.c:805
+       Single 4x4 block: predict, DCT, quantize, reconstruct.
+    3. ReconstructUV(it, rd, dst, mode) — quant_enc.c:909
+       8 chroma blocks: predict, DCT, quantize, reconstruct.
+    4. TrellisQuantizeBlock(enc, in, out, ctx0, coeff_type, mtx, lambda) — quant_enc.c:572
+       Viterbi DP over 16 coefficients: for each position, evaluate candidates
+       (round-to-nearest, round-down, zero) with rate from level_cost tables
+       and distortion from squared error. Finds globally optimal quantization.
+
+    Data structures: VP8Matrix (q[], iq[], bias[], zthresh[]), VP8ModeScore
+  acceptance_criteria:
+    - ReconstructIntra16 produces identical y_dc_levels and y_ac_levels to C++ for test input
+    - ReconstructIntra4 produces identical quantized levels for test 4x4 block
+    - TrellisQuantizeBlock produces identical output to C++ for test coefficient sequences
+    - Each function unit-tested with known input/output pairs from C++ reference
+    - Quality improvement measurable when wired in (Track 3)
+  out_of_scope: |
+    Wiring into encode_macroblock (Track 3). PickBest functions (Track 3).
+  technical_notes: |
+    TrellisQuantizeBlock is the most complex function — 150+ lines of Viterbi DP.
+    Key algorithm:
+    - For each coefficient position (0-15), generate candidates (0, round, round-1)
+    - For each candidate, compute: distortion = (orig - recon)^2, rate from level_cost
+    - DP state = last nonzero context (0=zero, 1=one, 2=large)
+    - Score = rate * lambda + RD_DISTO_MULT * distortion
+    - Backtrack to find optimal levels
+
+    Uses VP8CalculateLevelCosts tables from Track 1.
+    Uses VP8Matrix for quantization (iq[], bias[], q[]).
+plan:
+  - phase: Reconstruct Functions
+    tasks:
+      - text: Port ReconstructIntra16 from quant_enc.c line 754
+        done: false
+      - text: Port ReconstructIntra4 from quant_enc.c line 805
+        done: false
+      - text: Port ReconstructUV from quant_enc.c line 909
+        done: false
+      - text: Unit test each with known input/output from C++ reference
+        done: false
+  - phase: Trellis Quantization
+    tasks:
+      - text: Port TrellisQuantizeBlock Viterbi DP from quant_enc.c line 572
+        done: false
+      - text: Port score state tracking and backtracking logic
+        done: false
+      - text: Unit test trellis output against C++ for test coefficient sequences
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Verify ReconstructIntra16 + trellis produces identical coefficients to C++
+        done: false
+      - text: Verify TrellisQuantizeBlock produces more zeros than simple quantization
+        done: false
+      - text: Measure quality delta vs non-trellis on test images
+        done: false
+extra: {}

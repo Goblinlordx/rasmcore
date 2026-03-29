@@ -1,0 +1,82 @@
+id: webp-port-cost-engine_20260329112500Z
+title: VP8 Port — Cost Engine (VP8EntropyCost→LevelCosts→GetResidualCost)
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Port the complete VP8 cost computation pipeline from libwebp, bottom-up.
+    Each function unit-tested against C++ reference values. Existing parity
+    tests skipped until Track 3 wires the full pipeline.
+  context: |
+    The cost engine is the foundation of all RD decisions. libwebp precomputes
+    per-level token costs from probability tables, then sums from these tables
+    during mode evaluation. Our current estimate_block_bits uses per-coefficient
+    approximation with a linear prob_cost that underestimates by 2x at common
+    probabilities. This track ports the exact cost pipeline so Tracks 2-3 can
+    use it for mode decisions.
+  codebase_analysis: |
+    Functions to port (in dependency order):
+    1. VP8LevelFixedCosts[2048] — static table from dsp/cost.c
+    2. VP8LevelCodes[67] — level encoding patterns from cost_enc.c
+    3. VariableLevelCost(level, probas) — per-level variable cost
+    4. VP8CalculateLevelCosts(proba) — precompute level_cost[type][band][ctx][level]
+    5. VP8GetResidualCost(ctx, res) — sum costs for a coefficient sequence
+    6. VP8GetCostLuma16/Luma4/UV — rate for full blocks using residual cost
+
+    Data structures needed:
+    - VP8Residual: coeffs pointer, last index, coeff_type
+    - level_cost table: [4 types][8 bands][3 ctx][MAX_VARIABLE_LEVEL+1]
+    - remapped_costs: [4 types][16 positions][3 ctx] → points into level_cost
+
+    Already ported: VP8EntropyCost[256], vp8_bit_cost() (from previous track)
+  acceptance_criteria:
+    - VP8LevelFixedCosts[2048] table matches libwebp byte-for-byte
+    - VP8CalculateLevelCosts produces identical level_cost tables for default probabilities
+    - VP8GetResidualCost returns identical values to C++ for test coefficient sequences
+    - VP8GetCostLuma16/Luma4/UV return identical values for test blocks
+    - Each function has unit tests validated against C++ computed reference values
+    - Existing parity tests marked #[ignore] with clear re-enable path
+  out_of_scope: |
+    Wiring into encode_macroblock (Track 3). Trellis quantization (Track 2).
+  technical_notes: |
+    Port order (bottom-up):
+    1. VP8LevelFixedCosts — 2048-entry static table, copy from dsp/cost.c
+    2. VP8LevelCodes — 67 entries of (pattern, bits) pairs from cost_enc.c
+    3. VariableLevelCost — small function using VP8LevelCodes + VP8BitCost
+    4. VP8CalculateLevelCosts — iterates [type][band][ctx], fills level_cost table
+    5. VP8GetResidualCost — walks coefficient sequence, sums from level_cost
+    6. VP8GetCostLuma16/Luma4/UV — orchestrates VP8GetResidualCost per block
+
+    Validation: for each function, compute expected output in Python using the
+    same tables and formulas, then assert exact match in Rust unit tests.
+    This validates the port without needing to compile/run C++.
+plan:
+  - phase: Static Tables
+    tasks:
+      - text: Port VP8LevelFixedCosts[2048] from dsp/cost.c
+        done: false
+      - text: Port VP8LevelCodes[67] from cost_enc.c
+        done: false
+      - text: Port VariableLevelCost(level, probas) from cost_enc.c
+        done: false
+      - text: Unit test all tables against Python-computed reference values
+        done: false
+  - phase: Cost Precomputation
+    tasks:
+      - text: Port VP8CalculateLevelCosts with level_cost[type][band][ctx][level] table
+        done: false
+      - text: Port remapped_costs[type][position][ctx] pointer table
+        done: false
+      - text: Unit test level_cost values for default VP8 probability tables
+        done: false
+  - phase: Rate Functions
+    tasks:
+      - text: Port VP8GetResidualCost(ctx, residual) from cost_enc.c
+        done: false
+      - text: Port VP8GetCostLuma16/Luma4/UV orchestration functions
+        done: false
+      - text: Mark existing parity tests #[ignore] with re-enable comment for Track 3
+        done: false
+extra: {}
