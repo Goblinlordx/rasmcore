@@ -479,9 +479,9 @@ pub fn pick_best_intra4(
             let above_right_arr: [u8; 4] = [above_4[4], above_4[5], above_4[6], above_4[7]];
             predict::predict_4x4(mode, &above_4_arr, &left_4, tl, &above_right_arr, &mut pred);
 
-            // Reconstruct with trellis
+            // Reconstruct with trellis (y_dc has DC step at [0], AC step at [1..15])
             let result = reconstruct::reconstruct_intra4(
-                &src_4x4, &pred, &seg_quant.y_ac,
+                &src_4x4, &pred, &seg_quant.y_dc,
                 lambdas.lambda_trellis_i4, cost_table, ctx,
             );
 
