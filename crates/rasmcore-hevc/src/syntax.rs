@@ -1009,7 +1009,7 @@ fn decode_residual_coeffs(
 ///
 /// Implements HEVC Table 9-39 context derivation based on log2TrafoSize,
 /// position within the sub-block, and coded sub-block neighbor flags.
-fn derive_sig_coeff_ctx(
+pub fn derive_sig_coeff_ctx(
     log2_traf_size: usize,
     c_idx: usize,
     scan_idx: usize,

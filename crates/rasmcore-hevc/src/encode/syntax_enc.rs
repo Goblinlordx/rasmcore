@@ -141,9 +141,10 @@ pub fn encode_cbf_chroma(
 
 /// Encode last significant coefficient X/Y position.
 ///
-/// Uses prefix (truncated unary, context-coded) + optional suffix (bypass).
+/// Exactly mirrors the decoder's `decode_last_sig_coeff_pos()` in syntax.rs.
+/// Uses the same context offset and shift formulas.
 ///
-/// Ref: x265 4.1 encoder/entropy.cpp — codeLastSignificantXY
+/// Ref: ITU-T H.265 Section 7.3.8.11 — last_sig_coeff_x/y_prefix
 pub fn encode_last_sig_coeff_pos(
     enc: &mut CabacEncoder,
     contexts: &mut [ContextModel],
@@ -151,129 +152,307 @@ pub fn encode_last_sig_coeff_pos(
     last_x: u32,
     last_y: u32,
 ) {
-    encode_last_sig_coeff_prefix(enc, contexts, log2_size, last_x, true);
-    encode_last_sig_coeff_prefix(enc, contexts, log2_size, last_y, false);
+    let max_prefix = (log2_size << 1) - 1;
 
-    // Suffix (bypass coded) for positions >= threshold
-    let threshold_x = last_sig_coeff_threshold(log2_size);
-    if last_x >= threshold_x {
-        let suffix_len = (last_x >> 1).max(1).ilog2();
-        let suffix = last_x - threshold_x;
-        for bit in (0..suffix_len).rev() {
-            enc.encode_bypass((suffix >> bit) & 1);
-        }
-    }
-    let threshold_y = last_sig_coeff_threshold(log2_size);
-    if last_y >= threshold_y {
-        let suffix_len = (last_y >> 1).max(1).ilog2();
-        let suffix = last_y - threshold_y;
-        for bit in (0..suffix_len).rev() {
-            enc.encode_bypass((suffix >> bit) & 1);
-        }
-    }
-}
+    // Context derivation — MUST match decoder exactly
+    // Ref: syntax.rs decode_last_sig_coeff_pos lines 1114-1115
+    let ctx_offset = 3 * (log2_size - 2) + ((log2_size - 1) >> 2);
+    let ctx_shift = (log2_size + 1) >> 2;
 
-fn last_sig_coeff_threshold(log2_size: usize) -> u32 {
-    // Threshold where suffix coding begins
-    match log2_size {
-        2 => 4,  // 4x4: no suffix needed
-        3 => 4,  // 8x8: suffix for pos >= 4
-        4 => 8,  // 16x16: suffix for pos >= 8
-        5 => 16, // 32x32: suffix for pos >= 16
-        _ => 4,
-    }
-}
-
-fn encode_last_sig_coeff_prefix(
-    enc: &mut CabacEncoder,
-    contexts: &mut [ContextModel],
-    log2_size: usize,
-    pos: u32,
-    is_x: bool,
-) {
-    // Context offset for X or Y prefix
-    let base_ctx = if is_x { 0 } else { 18 }; // LAST_SIG_COEFF_X/Y_PREFIX offsets
-    let ctx_offset = crate::syntax::LAST_SIG_X_CTX_OFFSET + base_ctx;
-
-    // Group index mapping (HEVC Table 9-34)
-    let group_idx = last_sig_group_idx(pos);
-
-    // Context shift depends on log2_size
-    let ctx_shift = if log2_size <= 2 { 0 } else { (log2_size - 2) >> 1 };
-
-    for i in 0..group_idx {
-        let ctx_idx = ctx_offset + (i as usize >> ctx_shift);
+    // Encode X prefix (truncated unary)
+    let last_x_prefix = pos_to_prefix(last_x);
+    for i in 0..last_x_prefix as usize {
+        let ctx_idx = crate::syntax::LAST_SIG_X_CTX_OFFSET + ctx_offset + (i >> ctx_shift);
         if ctx_idx < contexts.len() {
             enc.encode_bin(1, &mut contexts[ctx_idx]);
         }
     }
-    // Terminating 0 (if not at maximum)
-    let max_group = (log2_size << 1) - 1;
-    if (group_idx as usize) < max_group {
-        let ctx_idx = ctx_offset + (group_idx as usize >> ctx_shift);
+    if (last_x_prefix as usize) < max_prefix {
+        let ctx_idx = crate::syntax::LAST_SIG_X_CTX_OFFSET
+            + ctx_offset
+            + (last_x_prefix as usize >> ctx_shift);
         if ctx_idx < contexts.len() {
             enc.encode_bin(0, &mut contexts[ctx_idx]);
         }
     }
+
+    // Encode Y prefix
+    let last_y_prefix = pos_to_prefix(last_y);
+    for i in 0..last_y_prefix as usize {
+        let ctx_idx = crate::syntax::LAST_SIG_Y_CTX_OFFSET + ctx_offset + (i >> ctx_shift);
+        if ctx_idx < contexts.len() {
+            enc.encode_bin(1, &mut contexts[ctx_idx]);
+        }
+    }
+    if (last_y_prefix as usize) < max_prefix {
+        let ctx_idx = crate::syntax::LAST_SIG_Y_CTX_OFFSET
+            + ctx_offset
+            + (last_y_prefix as usize >> ctx_shift);
+        if ctx_idx < contexts.len() {
+            enc.encode_bin(0, &mut contexts[ctx_idx]);
+        }
+    }
+
+    // Encode X suffix (bypass) if prefix > 3
+    if last_x_prefix > 3 {
+        let suffix_len = (last_x_prefix >> 1) - 1;
+        let suffix = last_x - ((2 + (last_x_prefix & 1)) << suffix_len);
+        for bit in (0..suffix_len).rev() {
+            enc.encode_bypass((suffix >> bit) & 1);
+        }
+    }
+
+    // Encode Y suffix
+    if last_y_prefix > 3 {
+        let suffix_len = (last_y_prefix >> 1) - 1;
+        let suffix = last_y - ((2 + (last_y_prefix & 1)) << suffix_len);
+        for bit in (0..suffix_len).rev() {
+            enc.encode_bypass((suffix >> bit) & 1);
+        }
+    }
 }
 
-fn last_sig_group_idx(pos: u32) -> u32 {
-    // HEVC Table 9-34: maps position to group index
-    match pos {
-        0 => 0,
-        1 => 1,
-        2..=3 => 2,
-        4..=7 => 3 + (pos - 4) / 2,
-        8..=15 => 5 + (pos - 8) / 4,
-        16..=31 => 7 + (pos - 16) / 8,
-        _ => 9,
+/// Convert a last significant coefficient position to its prefix code.
+///
+/// Inverse of the decoder's mapping:
+///   prefix < 4: pos = prefix
+///   prefix >= 4: pos = ((2 + (prefix & 1)) << ((prefix >> 1) - 1)) + suffix
+///
+/// Ref: ITU-T H.265 Section 7.4.9.11
+fn pos_to_prefix(pos: u32) -> u32 {
+    // Positions 0-3 map directly to prefix 0-3
+    if pos < 4 {
+        return pos;
+    }
+    // For pos >= 4: find prefix such that the base of that prefix group <= pos
+    // Group bases: prefix 4→4, 5→6, 6→8, 7→12, 8→16, 9→24
+    let mut prefix = 4u32;
+    loop {
+        let suffix_len = (prefix >> 1) - 1;
+        let base = (2 + (prefix & 1)) << suffix_len;
+        let next_prefix = prefix + 1;
+        let next_base = (2 + (next_prefix & 1)) << ((next_prefix >> 1) - 1);
+        if pos < next_base {
+            return prefix;
+        }
+        prefix = next_prefix;
+        if prefix >= 20 {
+            return prefix; // safety limit
+        }
     }
 }
 
 /// Encode residual coefficients for a transform block.
 ///
-/// This is the encoding counterpart to `decode_residual_coeffs()` in syntax.rs.
-/// Encodes sig_coeff_flags, gt1/gt2 flags, sign bits, and remaining levels.
+/// Full encoding counterpart to `decode_residual_coeffs()` in syntax.rs.
+/// Mirrors the decoder's sub-block processing exactly in the encode direction.
 ///
 /// Ref: x265 4.1 encoder/entropy.cpp — codeCoeffNxN
+/// Ref: ITU-T H.265 Section 7.3.8.11
 pub fn encode_residual_coeffs(
     enc: &mut CabacEncoder,
     contexts: &mut [ContextModel],
     coeffs: &[i16],
     size: u32,
-    _sign_data_hiding_enabled: bool,
+    sign_data_hiding_enabled: bool,
 ) {
     let log2_size = (size as f32).log2() as usize;
+    let c_idx: usize = 0;
 
-    // Find last significant coefficient position
-    let scan = crate::syntax::build_scan_order(size as usize);
-    let mut last_scan_pos = None;
-    for (si, &(x, y)) in scan.iter().enumerate().rev() {
-        let pos = y * size as usize + x;
-        if pos < coeffs.len() && coeffs[pos] != 0 {
-            last_scan_pos = Some(si);
-            break;
+    let sb_width = if log2_size <= 2 { 1 } else { size as usize / 4 };
+    let sub_scan = crate::syntax::build_scan_order(sb_width);
+    let coeff_scan_4x4 = crate::syntax::build_scan_order(4);
+    let scan_4x4_size = if log2_size <= 2 { size as usize } else { 4 };
+
+    // Find last significant coefficient in sub-block scan order
+    let mut last_sub_scan_pos = 0usize;
+    let mut last_coeff_scan_pos = 0usize;
+    let mut found = false;
+    for (si, &(sx, sy)) in sub_scan.iter().enumerate() {
+        let bx = sx * (if log2_size <= 2 { 1 } else { 4 });
+        let by = sy * (if log2_size <= 2 { 1 } else { 4 });
+        for (ci, &(cx, cy)) in coeff_scan_4x4.iter().enumerate() {
+            if cx >= scan_4x4_size || cy >= scan_4x4_size { continue; }
+            let tx = bx + cx;
+            let ty = by + cy;
+            if tx < size as usize && ty < size as usize && coeffs[ty * size as usize + tx] != 0 {
+                last_sub_scan_pos = si;
+                last_coeff_scan_pos = ci;
+                found = true;
+            }
         }
     }
-
-    let last_scan_pos = match last_scan_pos {
-        Some(p) => p,
-        None => return, // No non-zero coefficients
-    };
-
-    let (last_x, last_y) = scan[last_scan_pos];
+    if !found { return; }
 
     // Encode last significant position
+    let (lsx, lsy) = sub_scan[last_sub_scan_pos];
+    let (lcx, lcy) = coeff_scan_4x4[last_coeff_scan_pos];
+    let last_x = if log2_size <= 2 { lcx } else { lsx * 4 + lcx };
+    let last_y = if log2_size <= 2 { lcy } else { lsy * 4 + lcy };
     encode_last_sig_coeff_pos(enc, contexts, log2_size, last_x as u32, last_y as u32);
 
-    // Sub-block processing follows the same structure as the decoder.
-    // For the initial encoder track, we validate the arithmetic engine works
-    // by encoding a known block and decoding it. The full coefficient coding
-    // (sub-block scan, sig flags, gt1/gt2, sign, remaining) mirrors syntax.rs
-    // decode_residual_coeffs exactly but in the encode direction.
-    //
-    // TODO: Full coefficient encoding implementation in the intra encode track.
-    // For now, the CABAC engine and basic syntax elements are validated.
+    #[rustfmt::skip]
+    let ctx_idx_map_4x4: [usize; 16] = [0,1,4,5,2,3,4,5,6,6,8,8,7,7,8,8];
+    let mut coded_sub_block_neighbors = vec![0u8; sb_width * sb_width];
+    let mut prev_c1 = 1u32;
+
+    for sub_idx in (0..=last_sub_scan_pos).rev() {
+        let (sub_x, sub_y) = sub_scan[sub_idx];
+        let is_last_sub = sub_idx == last_sub_scan_pos;
+        let is_dc_sub = sub_idx == 0;
+        let bx = sub_x * (if log2_size <= 2 { 1 } else { 4 });
+        let by = sub_y * (if log2_size <= 2 { 1 } else { 4 });
+        let coeff_end = if is_last_sub { last_coeff_scan_pos } else { 15 };
+
+        // Collect abs levels and signs from coefficient array
+        let mut abs_c = [0u32; 16];
+        let mut sign_c = [0u32; 16];
+        let mut has_nz = false;
+        for ci in 0..=coeff_end {
+            let (cx, cy) = coeff_scan_4x4[ci];
+            if cx >= scan_4x4_size || cy >= scan_4x4_size { continue; }
+            let tx = bx + cx; let ty = by + cy;
+            if tx < size as usize && ty < size as usize {
+                let v = coeffs[ty * size as usize + tx];
+                abs_c[ci] = v.unsigned_abs() as u32;
+                sign_c[ci] = if v < 0 { 1 } else { 0 };
+                if v != 0 { has_nz = true; }
+            }
+        }
+
+        // coded_sub_block_flag
+        let coded = if is_last_sub || is_dc_sub { true } else {
+            let prev_csbf = coded_sub_block_neighbors[sub_x + sub_y * sb_width];
+            let csbf_ctx = (prev_csbf & 1) | (prev_csbf >> 1);
+            let ctx = crate::syntax::CODED_SUB_BLOCK_FLAG_CTX_OFFSET
+                + csbf_ctx as usize + if c_idx != 0 { 2 } else { 0 };
+            enc.encode_bin(has_nz as u32, &mut contexts[ctx]);
+            has_nz
+        };
+        if coded {
+            if sub_x > 0 { coded_sub_block_neighbors[(sub_x-1) + sub_y*sb_width] |= 1; }
+            if sub_y > 0 { coded_sub_block_neighbors[sub_x + (sub_y-1)*sb_width] |= 2; }
+        }
+        if !coded { continue; }
+
+        let prev_csbf = coded_sub_block_neighbors[sub_x + sub_y * sb_width];
+
+        // sig_coeff_flags
+        let mut sig = [false; 16];
+        let mut num_sig = 0u32;
+        let mut first_sp: usize = 16;
+        let mut last_sp: usize = 0;
+        for ci in (0..=coeff_end).rev() {
+            let is_sig = abs_c[ci] != 0;
+            if is_last_sub && ci == last_coeff_scan_pos {
+                sig[ci] = true; num_sig += 1;
+                if ci < first_sp { first_sp = ci; }
+                if num_sig == 1 { last_sp = ci; }
+                continue;
+            }
+            if ci == 0 && num_sig == 0 && !is_dc_sub && !is_last_sub {
+                sig[ci] = true; num_sig += 1; first_sp = ci; last_sp = ci;
+                continue;
+            }
+            let (cx, cy) = coeff_scan_4x4[ci];
+            let sc = crate::syntax::derive_sig_coeff_ctx(
+                log2_size, c_idx, 0, cx, cy, sub_x, sub_y, prev_csbf, sb_width, &ctx_idx_map_4x4);
+            let ctx = crate::syntax::SIG_COEFF_CTX_OFFSET + sc.min(41);
+            enc.encode_bin(is_sig as u32, &mut contexts[ctx]);
+            sig[ci] = is_sig;
+            if is_sig {
+                num_sig += 1;
+                if ci < first_sp { first_sp = ci; }
+                if num_sig == 1 { last_sp = ci; }
+            }
+        }
+        if num_sig == 0 { continue; }
+
+        let sign_hidden = sign_data_hiding_enabled && (last_sp as isize - first_sp as isize) > 3;
+
+        // gt1 flags
+        let mut ctx_set = if sub_idx == 0 || c_idx > 0 { 0u32 } else { 2u32 };
+        if prev_c1 == 0 { ctx_set += 1; }
+        let mut g1ctx = 1u32;
+        let mut gt1_count = 0u32;
+        let mut first_gt1: Option<usize> = None;
+        for ci in (0..=coeff_end).rev() {
+            if !sig[ci] { continue; }
+            if gt1_count < 8 {
+                let gt1 = abs_c[ci] > 1;
+                let ctx = (crate::syntax::GT1_CTX_OFFSET + (ctx_set*4 + g1ctx.min(3)) as usize)
+                    .min(crate::syntax::GT1_CTX_OFFSET + 23);
+                enc.encode_bin(gt1 as u32, &mut contexts[ctx]);
+                if gt1 { if first_gt1.is_none() { first_gt1 = Some(ci); } g1ctx = 0; }
+                else if g1ctx > 0 && g1ctx < 3 { g1ctx += 1; }
+                gt1_count += 1;
+            }
+        }
+        prev_c1 = if g1ctx == 0 { 0 } else { 1 };
+
+        // gt2 flag
+        if let Some(g2ci) = first_gt1 {
+            let gt2 = abs_c[g2ci] > 2;
+            let ctx = (crate::syntax::GT2_CTX_OFFSET + ctx_set as usize)
+                .min(crate::syntax::GT2_CTX_OFFSET + 5);
+            enc.encode_bin(gt2 as u32, &mut contexts[ctx]);
+        }
+
+        // sign flags
+        for ci in (0..=coeff_end).rev() {
+            if sig[ci] {
+                if !(sign_hidden && ci == first_sp) {
+                    enc.encode_bypass(sign_c[ci]);
+                }
+            }
+        }
+
+        // coeff_abs_level_remaining
+        let mut first_8 = [false; 16];
+        { let mut cnt = 0u32;
+          for cj in (0..=coeff_end).rev() {
+              if sig[cj] { if cnt < 8 { first_8[cj] = true; } cnt += 1; }
+          }
+        }
+        let mut rice = 0u32;
+        for ci in (0..=coeff_end).rev() {
+            if !sig[ci] { continue; }
+            let (base, needs) = if first_8[ci] {
+                if Some(ci) == first_gt1 {
+                    let b = if abs_c[ci] > 2 { 3u32 } else { 2 };
+                    (b, abs_c[ci] > 2)
+                } else if abs_c[ci] > 1 { (2u32, true) }
+                else { (1u32, false) }
+            } else { (1u32, true) };
+            if needs {
+                let rem = abs_c[ci] - base;
+                encode_coeff_abs_level_remaining(enc, rem, rice);
+                if base + rem > 3 * (1u32 << rice) { rice = (rice + 1).min(4); }
+            }
+        }
+    }
+}
+
+/// Encode coeff_abs_level_remaining using truncated Rice + Exp-Golomb.
+fn encode_coeff_abs_level_remaining(enc: &mut CabacEncoder, value: u32, rice_param: u32) {
+    let threshold = 3u32 << rice_param;
+    if value < threshold {
+        let prefix = value >> rice_param;
+        for _ in 0..prefix { enc.encode_bypass(1); }
+        enc.encode_bypass(0);
+        for bit in (0..rice_param).rev() { enc.encode_bypass((value >> bit) & 1); }
+    } else {
+        // Exp-Golomb: 3 prefix ones then EG code
+        for _ in 0..3 { enc.encode_bypass(1); }
+        let adjusted = value - threshold;
+        let eg_val = adjusted + (1u32 << rice_param);
+        let eg_order = 32 - eg_val.leading_zeros() - 1;
+        for _ in 0..eg_order { enc.encode_bypass(1); }
+        enc.encode_bypass(0);
+        let suffix = eg_val - (1u32 << eg_order);
+        let suffix_len = eg_order + rice_param;
+        for bit in (0..suffix_len).rev() { enc.encode_bypass((suffix >> bit) & 1); }
+    }
 }
 
 #[cfg(test)]
