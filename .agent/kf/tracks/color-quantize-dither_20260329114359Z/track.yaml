@@ -5,55 +5,71 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Implement color quantization (median cut palette generation) and
+  summary: 'Implement color quantization (median cut palette generation) and
+
     dithering (Floyd-Steinberg error diffusion, ordered Bayer). Essential
+
     for GIF encoding, palette PNG, and retro/artistic effects.
-  context: |
-    No color quantization or dithering exists in rasmcore-image. These are
+
+    '
+  context: 'No color quantization or dithering exists in rasmcore-image. These are
+
     needed for GIF encoding (256-color palette), indexed PNG output, and
+
     artistic effects. Pillow, ImageMagick, and libvips all provide these.
-  codebase_analysis: |
-    Implementation goes in a new domain/quantize.rs module. The histogram
+
+    '
+  codebase_analysis: 'Implementation goes in a new domain/quantize.rs module. The histogram
+
     infrastructure in domain/histogram.rs provides per-channel histograms.
+
     Dithering is a point-op with error propagation (not LUT-collapsible).
+
     The GIF encoder (via image crate) currently uses its own quantization;
+
     this would provide a higher-quality alternative.
+
+    '
   acceptance_criteria:
-    - median_cut() generates optimal N-color palette from image (N=2..256)
-    - quantize() maps image to nearest palette color
-    - dither_floyd_steinberg() produces error-diffused quantized image
-    - dither_ordered() produces Bayer-matrix dithered image (2x2, 4x4, 8x8)
-    - Palette quality validated against Pillow Image.quantize(method=MEDIANCUT)
-    - Visual parity with ImageMagick -dither FloydSteinberg -colors N
-  out_of_scope: |
-    Octree quantization. Wu quantization. Neural-net quantization.
-  technical_notes: |
-    Median cut: recursively split color-space bounding boxes along axis
+  - median_cut() generates optimal N-color palette from image (N=2..256)
+  - quantize() maps image to nearest palette color
+  - dither_floyd_steinberg() produces error-diffused quantized image
+  - dither_ordered() produces Bayer-matrix dithered image (2x2, 4x4, 8x8)
+  - Palette quality validated against Pillow Image.quantize(method=MEDIANCUT)
+  - Visual parity with ImageMagick -dither FloydSteinberg -colors N
+  out_of_scope: 'Octree quantization. Wu quantization. Neural-net quantization.
+
+    '
+  technical_notes: 'Median cut: recursively split color-space bounding boxes along axis
+
     of greatest range. Floyd-Steinberg: serpentine scan with 7/16, 3/16,
+
     5/16, 1/16 error distribution. Ordered: threshold against Bayer matrix
+
     scaled to palette interval. All operate on RGB8.
+
+    '
 plan:
-  - phase: Palette Generation
-    tasks:
-      - text: Implement median_cut() color quantization algorithm
-        done: false
-      - text: Implement quantize() nearest-color mapping with palette
-        done: false
-      - text: Validate palette quality against Pillow MEDIANCUT on photo image
-        done: false
-  - phase: Dithering
-    tasks:
-      - text: Implement Floyd-Steinberg error-diffusion dithering with serpentine scan
-        done: false
-      - text: Implement ordered dithering with Bayer matrices (2x2, 4x4, 8x8)
-        done: false
-      - text: Visual comparison tests against ImageMagick dither output
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Register quantize and dither operations in FilterRegistry
-        done: false
-      - text: Add module to domain/mod.rs and document in REFERENCE.md
-        done: false
+- phase: Palette Generation
+  tasks:
+  - text: Implement median_cut() color quantization algorithm
+    done: true
+  - text: Implement quantize() nearest-color mapping with palette
+    done: true
+  - text: Validate palette quality against Pillow MEDIANCUT on photo image
+    done: true
+- phase: Dithering
+  tasks:
+  - text: Implement Floyd-Steinberg error-diffusion dithering with serpentine scan
+    done: true
+  - text: Implement ordered dithering with Bayer matrices (2x2, 4x4, 8x8)
+    done: true
+  - text: Visual comparison tests against ImageMagick dither output
+    done: true
+- phase: Integration
+  tasks:
+  - text: Register quantize and dither operations in FilterRegistry
+    done: true
+  - text: Add module to domain/mod.rs and document in REFERENCE.md
+    done: true
 extra: {}
