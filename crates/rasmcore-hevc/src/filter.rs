@@ -97,28 +97,34 @@ pub fn use_strong_filter(p: [i32; 4], q: [i32; 4], beta: i32, tc: i32) -> bool {
 pub fn deblock_strong(p: &mut [i32; 4], q: &mut [i32; 4], tc: i32) {
     let tc2 = 2 * tc;
 
+    // Compute ALL new values from ORIGINAL p/q before writing any.
+    // Ref: libde265 v1.0.18 deblock.cc — uses pnew[]/qnew[] temporaries
+    // to avoid read-after-write dependencies.
+    let (p0, p1, p2, p3) = (p[0], p[1], p[2], p[3]);
+    let (q0, q1, q2, q3) = (q[0], q[1], q[2], q[3]);
+
     p[0] = clip3(
-        p[0] - tc2,
-        p[0] + tc2,
-        (p[2] + 2 * p[1] + 2 * p[0] + 2 * q[0] + q[1] + 4) >> 3,
+        p0 - tc2,
+        p0 + tc2,
+        (p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4) >> 3,
     );
-    p[1] = clip3(p[1] - tc2, p[1] + tc2, (p[2] + p[1] + p[0] + q[0] + 2) >> 2);
+    p[1] = clip3(p1 - tc2, p1 + tc2, (p2 + p1 + p0 + q0 + 2) >> 2);
     p[2] = clip3(
-        p[2] - tc2,
-        p[2] + tc2,
-        (2 * p[3] + 3 * p[2] + p[1] + p[0] + q[0] + 4) >> 3,
+        p2 - tc2,
+        p2 + tc2,
+        (2 * p3 + 3 * p2 + p1 + p0 + q0 + 4) >> 3,
     );
 
     q[0] = clip3(
-        q[0] - tc2,
-        q[0] + tc2,
-        (p[1] + 2 * p[0] + 2 * q[0] + 2 * q[1] + q[2] + 4) >> 3,
+        q0 - tc2,
+        q0 + tc2,
+        (p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4) >> 3,
     );
-    q[1] = clip3(q[1] - tc2, q[1] + tc2, (p[0] + q[0] + q[1] + q[2] + 2) >> 2);
+    q[1] = clip3(q1 - tc2, q1 + tc2, (p0 + q0 + q1 + q2 + 2) >> 2);
     q[2] = clip3(
-        q[2] - tc2,
-        q[2] + tc2,
-        (p[0] + q[0] + q[1] + 3 * q[2] + 2 * q[3] + 4) >> 3,
+        q2 - tc2,
+        q2 + tc2,
+        (p0 + q0 + q1 + 3 * q2 + 2 * q3 + 4) >> 3,
     );
 }
 
@@ -126,28 +132,33 @@ pub fn deblock_strong(p: &mut [i32; 4], q: &mut [i32; 4], tc: i32) {
 ///
 /// Modifies p[0..1] and q[0..1]. Returns whether p[1] and q[1] were also modified.
 pub fn deblock_weak(p: &mut [i32; 4], q: &mut [i32; 4], tc: i32, filter_p1: bool, filter_q1: bool) {
-    let delta = (9 * (q[0] - p[0]) - 3 * (q[1] - p[1]) + 8) >> 4;
+    // Save original values before modification.
+    // Ref: libde265 v1.0.18 deblock.cc — delta_p/delta_q use original p0/q0.
+    let (p0, p1, p2) = (p[0], p[1], p[2]);
+    let (q0, q1, q2) = (q[0], q[1], q[2]);
+
+    let delta = (9 * (q0 - p0) - 3 * (q1 - p1) + 8) >> 4;
     let delta = clip3(-tc, tc, delta);
 
-    p[0] = clip_pixel(p[0] + delta);
-    q[0] = clip_pixel(q[0] - delta);
+    p[0] = clip_pixel(p0 + delta);
+    q[0] = clip_pixel(q0 - delta);
 
     if filter_p1 {
         let delta_p = clip3(
             -(tc >> 1),
             tc >> 1,
-            (((p[2] + p[0] + 1) >> 1) - p[1] + delta) >> 1,
+            (((p2 + p0 + 1) >> 1) - p1 + delta) >> 1,
         );
-        p[1] = clip_pixel(p[1] + delta_p);
+        p[1] = clip_pixel(p1 + delta_p);
     }
 
     if filter_q1 {
         let delta_q = clip3(
             -(tc >> 1),
             tc >> 1,
-            (((q[2] + q[0] + 1) >> 1) - q[1] - delta) >> 1,
+            (((q2 + q0 + 1) >> 1) - q1 - delta) >> 1,
         );
-        q[1] = clip_pixel(q[1] + delta_q);
+        q[1] = clip_pixel(q1 + delta_q);
     }
 }
 
