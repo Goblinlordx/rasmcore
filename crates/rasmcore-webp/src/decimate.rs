@@ -841,7 +841,10 @@ pub fn vp8_decimate(
     );
 
     // Phase 2: Evaluate I4x4 (if it can beat I16)
-    let max_header = 15000; // libwebp uses enc->max_i4_header_bits
+    // libwebp computes max_i4_header_bits based on partition 0 size limit.
+    // For single-partition: limit is ~512KB = 512*1024*8*256 = ~1B cost units.
+    // Per-MB budget: limit / num_mbs. We approximate with 256*16*16 = 65536.
+    let max_header = 65536;
     let is_i4 = pick_best_intra4(
         src_y,
         above_y_full,
