@@ -412,3 +412,51 @@ fn luv_matches_colour_science() {
     }
     assert!(max_err < 1e-6, "Luv error {max_err:.2e}");
 }
+
+// ─── Scharr + Laplacian Parity ──────────────────────────────────────────
+
+#[test]
+fn scharr_matches_opencv() {
+    let test_images = ["gradient_128", "checker_128", "sharp_edges_128", "photo_128"];
+    let info = info_128();
+    let mut worst_mae = 0.0f64;
+    let mut worst_max = 0u8;
+
+    for name in &test_images {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_scharr.raw"));
+        let ours = filters::scharr(&input, &info).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        worst_mae = worst_mae.max(e);
+        worst_max = worst_max.max(m);
+        eprintln!("Scharr {name:20}: MAE={e:.4}, max_err={m}");
+    }
+    eprintln!("Scharr summary: worst_MAE={worst_mae:.4}, worst_max={worst_max}");
+    assert!(worst_mae < 1.0, "Scharr MAE {worst_mae:.4} > 1.0");
+    assert!(worst_max <= 1, "Scharr max error {worst_max} > 1");
+}
+
+#[test]
+fn laplacian_matches_opencv() {
+    let test_images = ["gradient_128", "checker_128", "sharp_edges_128", "photo_128"];
+    let info = info_128();
+    let mut worst_mae = 0.0f64;
+    let mut worst_max = 0u8;
+
+    for name in &test_images {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_laplacian.raw"));
+        let ours = filters::laplacian(&input, &info).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        worst_mae = worst_mae.max(e);
+        worst_max = worst_max.max(m);
+        eprintln!("Laplacian {name:20}: MAE={e:.4}, max_err={m}");
+    }
+    eprintln!("Laplacian summary: worst_MAE={worst_mae:.4}, worst_max={worst_max}");
+    assert!(worst_mae < 1.0, "Laplacian MAE {worst_mae:.4} > 1.0");
+    assert!(worst_max <= 1, "Laplacian max error {worst_max} > 1");
+}

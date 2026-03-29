@@ -903,6 +903,157 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     Ok(out)
 }
 
+/// Scharr edge detection — more rotationally symmetric than Sobel.
+///
+/// Uses 3x3 Scharr kernels: Gx = [[-3,0,3],[-10,0,10],[-3,0,3]]
+/// Returns gradient magnitude (L2 norm of Gx and Gy).
+/// Reference: cv2.Scharr (OpenCV 4.13).
+pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| scharr(p8, i8));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let gray = to_grayscale(pixels, channels);
+    let padded = pad_reflect(&gray, w, h, 1, 1);
+    let pw = w + 2;
+    let mut out = vec![0u8; w * h];
+
+    for y in 0..h {
+        let r0 = y * pw;
+        let r1 = (y + 1) * pw;
+        let r2 = (y + 2) * pw;
+        for x in 0..w {
+            let p00 = padded[r0 + x] as f32;
+            let p01 = padded[r0 + x + 1] as f32;
+            let p02 = padded[r0 + x + 2] as f32;
+            let p10 = padded[r1 + x] as f32;
+            let p12 = padded[r1 + x + 2] as f32;
+            let p20 = padded[r2 + x] as f32;
+            let p21 = padded[r2 + x + 1] as f32;
+            let p22 = padded[r2 + x + 2] as f32;
+
+            // Scharr Gx = [[-3,0,3],[-10,0,10],[-3,0,3]]
+            let gx = -3.0 * p00 + 3.0 * p02 - 10.0 * p10 + 10.0 * p12 - 3.0 * p20 + 3.0 * p22;
+            // Scharr Gy = [[-3,-10,-3],[0,0,0],[3,10,3]]
+            let gy = -3.0 * p00 - 10.0 * p01 - 3.0 * p02 + 3.0 * p20 + 10.0 * p21 + 3.0 * p22;
+
+            out[y * w + x] = (gx * gx + gy * gy).sqrt().min(255.0) as u8;
+        }
+    }
+    Ok(out)
+}
+
+/// Laplacian — second-order derivative edge detection.
+///
+/// Uses 3x3 kernel: [[0,1,0],[1,-4,1],[0,1,0]].
+/// Returns absolute value of Laplacian, clamped to [0, 255].
+/// Reference: cv2.Laplacian (OpenCV 4.13).
+pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| laplacian(p8, i8));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let gray = to_grayscale(pixels, channels);
+    let padded = pad_reflect(&gray, w, h, 1, 1);
+    let pw = w + 2;
+    let mut out = vec![0u8; w * h];
+
+    for y in 0..h {
+        let r0 = y * pw;
+        let r1 = (y + 1) * pw;
+        let r2 = (y + 2) * pw;
+        for x in 0..w {
+            let p00 = padded[r0 + x] as f32;
+            let p02 = padded[r0 + x + 2] as f32;
+            let p11 = padded[r1 + x + 1] as f32;
+            let p20 = padded[r2 + x] as f32;
+            let p22 = padded[r2 + x + 2] as f32;
+
+            // OpenCV Laplacian ksize=3: kernel [2,0,2; 0,-8,0; 2,0,2]
+            let lap = 2.0 * p00 + 2.0 * p02 - 8.0 * p11 + 2.0 * p20 + 2.0 * p22;
+            out[y * w + x] = lap.abs().min(255.0) as u8;
+        }
+    }
+    Ok(out)
+}
+
+/// Euclidean distance transform — distance from each pixel to nearest zero pixel.
+///
+/// Input: grayscale image where 0 = background, >0 = foreground.
+/// Output: grayscale image where each pixel = distance to nearest background pixel.
+/// Uses two-pass Rosenfeld-Pfaltz algorithm.
+/// Reference: cv2.distanceTransform (OpenCV 4.13, DIST_L2).
+pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "distance transform requires Gray8".into(),
+        ));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let inf = (w + h) as f64;
+
+    // Initialize: 0 for background, infinity for foreground
+    let mut dist = vec![0.0f64; w * h];
+    for i in 0..w * h {
+        dist[i] = if pixels[i] == 0 { 0.0 } else { inf };
+    }
+
+    // Forward pass: top-left to bottom-right
+    for y in 0..h {
+        for x in 0..w {
+            if dist[y * w + x] == 0.0 {
+                continue;
+            }
+            if y > 0 {
+                dist[y * w + x] = dist[y * w + x].min(dist[(y - 1) * w + x] + 1.0);
+            }
+            if x > 0 {
+                dist[y * w + x] = dist[y * w + x].min(dist[y * w + x - 1] + 1.0);
+            }
+            // Diagonal
+            if y > 0 && x > 0 {
+                dist[y * w + x] = dist[y * w + x].min(dist[(y - 1) * w + x - 1] + std::f64::consts::SQRT_2);
+            }
+            if y > 0 && x < w - 1 {
+                dist[y * w + x] = dist[y * w + x].min(dist[(y - 1) * w + x + 1] + std::f64::consts::SQRT_2);
+            }
+        }
+    }
+
+    // Backward pass: bottom-right to top-left
+    for y in (0..h).rev() {
+        for x in (0..w).rev() {
+            if dist[y * w + x] == 0.0 {
+                continue;
+            }
+            if y < h - 1 {
+                dist[y * w + x] = dist[y * w + x].min(dist[(y + 1) * w + x] + 1.0);
+            }
+            if x < w - 1 {
+                dist[y * w + x] = dist[y * w + x].min(dist[y * w + x + 1] + 1.0);
+            }
+            if y < h - 1 && x < w - 1 {
+                dist[y * w + x] = dist[y * w + x].min(dist[(y + 1) * w + x + 1] + std::f64::consts::SQRT_2);
+            }
+            if y < h - 1 && x > 0 {
+                dist[y * w + x] = dist[y * w + x].min(dist[(y + 1) * w + x - 1] + std::f64::consts::SQRT_2);
+            }
+        }
+    }
+
+    Ok(dist)
+}
+
 /// Canny edge detection — produces binary edge map (0 or 255).
 ///
 /// Steps: 1) Gaussian blur, 2) Sobel gradient + direction,
