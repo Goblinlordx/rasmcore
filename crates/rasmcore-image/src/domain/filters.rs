@@ -4109,6 +4109,93 @@ pub fn pyr_up(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), I
     Ok((output, new_info))
 }
 
+// ── Displacement Map ──────────────────────────────────────────────────────
+
+/// Warp an image by a per-pixel displacement field, matching OpenCV `cv2.remap`
+/// with `INTER_LINEAR` interpolation and `BORDER_CONSTANT` (value=0).
+///
+/// `map_x` and `map_y` are f32 slices of length `width * height`. For each
+/// output pixel `(x, y)`, the source is sampled at `(map_x[y*w+x], map_y[y*w+x])`
+/// using bilinear interpolation. Out-of-bounds source coordinates produce black
+/// (zero) pixels.
+///
+/// Supports RGB8, RGBA8, Gray8. 16-bit formats are processed via 8-bit downscale.
+#[rasmcore_macros::register_filter(name = "displacement_map", category = "spatial")]
+pub fn displacement_map(
+    pixels: &[u8],
+    info: &ImageInfo,
+    map_x: &[f32],
+    map_y: &[f32],
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| displacement_map(px, i8, map_x, map_y));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let n = w * h;
+
+    if map_x.len() != n || map_y.len() != n {
+        return Err(ImageError::InvalidParameters(format!(
+            "displacement map size mismatch: expected {}x{}={}, got map_x={} map_y={}",
+            w,
+            h,
+            n,
+            map_x.len(),
+            map_y.len()
+        )));
+    }
+
+    let mut out = vec![0u8; pixels.len()];
+    let w_max = (w as f32) - 1.0;
+    let h_max = (h as f32) - 1.0;
+
+    for y in 0..h {
+        let row_off = y * w;
+        for x in 0..w {
+            let idx = row_off + x;
+            let sx = map_x[idx];
+            let sy = map_y[idx];
+
+            // BORDER_CONSTANT: out-of-bounds → 0 (already zeroed)
+            if sx < 0.0 || sy < 0.0 || sx > w_max || sy > h_max {
+                continue;
+            }
+
+            let x0 = sx.floor() as usize;
+            let y0 = sy.floor() as usize;
+            let x1 = (x0 + 1).min(w - 1);
+            let y1 = (y0 + 1).min(h - 1);
+            let fx = sx - x0 as f32;
+            let fy = sy - y0 as f32;
+
+            let out_off = idx * ch;
+            let w00 = (1.0 - fx) * (1.0 - fy);
+            let w10 = fx * (1.0 - fy);
+            let w01 = (1.0 - fx) * fy;
+            let w11 = fx * fy;
+
+            let off_tl = (y0 * w + x0) * ch;
+            let off_tr = (y0 * w + x1) * ch;
+            let off_bl = (y1 * w + x0) * ch;
+            let off_br = (y1 * w + x1) * ch;
+
+            for c in 0..ch {
+                let v = pixels[off_tl + c] as f32 * w00
+                    + pixels[off_tr + c] as f32 * w10
+                    + pixels[off_bl + c] as f32 * w01
+                    + pixels[off_br + c] as f32 * w11;
+                out[out_off + c] = v.round().min(255.0) as u8;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
