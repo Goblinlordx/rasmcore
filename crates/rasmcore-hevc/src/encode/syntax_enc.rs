@@ -434,24 +434,60 @@ pub fn encode_residual_coeffs(
 }
 
 /// Encode coeff_abs_level_remaining using truncated Rice + Exp-Golomb.
+///
+/// Must produce bytes that decode_coeff_abs_level_remaining reconstructs as `value`.
+///
+/// Decoder formula:
+///   prefix < 3: result = (prefix << rice_param) + suffix
+///   prefix >= 3: result = ((1 << (prefix-3)) + 2) << rice_param + suffix
+///
+/// Ref: syntax.rs decode_coeff_abs_level_remaining
 fn encode_coeff_abs_level_remaining(enc: &mut CabacEncoder, value: u32, rice_param: u32) {
-    let threshold = 3u32 << rice_param;
+    let threshold = 3u32 << rice_param; // = 3 * (1 << rice_param)
+
     if value < threshold {
+        // Truncated Rice: prefix = value >> rice_param, suffix = low rice_param bits
         let prefix = value >> rice_param;
-        for _ in 0..prefix { enc.encode_bypass(1); }
+        for _ in 0..prefix {
+            enc.encode_bypass(1);
+        }
         enc.encode_bypass(0);
-        for bit in (0..rice_param).rev() { enc.encode_bypass((value >> bit) & 1); }
+        // Rice suffix: rice_param bits of (value & mask)
+        let suffix = value & ((1u32 << rice_param) - 1);
+        for bit in (0..rice_param).rev() {
+            enc.encode_bypass((suffix >> bit) & 1);
+        }
     } else {
-        // Exp-Golomb: 3 prefix ones then EG code
-        for _ in 0..3 { enc.encode_bypass(1); }
-        let adjusted = value - threshold;
-        let eg_val = adjusted + (1u32 << rice_param);
-        let eg_order = 32 - eg_val.leading_zeros() - 1;
-        for _ in 0..eg_order { enc.encode_bypass(1); }
-        enc.encode_bypass(0);
-        let suffix = eg_val - (1u32 << eg_order);
-        let suffix_len = eg_order + rice_param;
-        for bit in (0..suffix_len).rev() { enc.encode_bypass((suffix >> bit) & 1); }
+        // Exp-Golomb escape.
+        // Decoder: result = ((1 << eg_order) + 2) << rice_param + suffix
+        // Find eg_order such that ((1<<eg_order)+2)<<rice <= value < ((1<<(eg_order+1))+2)<<rice
+        let mut eg_order = 0u32;
+        loop {
+            let range_start = ((1u32 << eg_order) + 2) << rice_param;
+            let next_start = ((1u32 << (eg_order + 1)) + 2) << rice_param;
+            if value < next_start {
+                // value is in this eg_order's range
+                let suffix = value - range_start;
+                let prefix = 3 + eg_order; // unary prefix length
+
+                // Encode unary prefix (prefix ones + 1 zero)
+                for _ in 0..prefix {
+                    enc.encode_bypass(1);
+                }
+                enc.encode_bypass(0);
+
+                // Encode suffix: (eg_order + rice_param) bits
+                let suffix_len = eg_order + rice_param;
+                for bit in (0..suffix_len).rev() {
+                    enc.encode_bypass((suffix >> bit) & 1);
+                }
+                return;
+            }
+            eg_order += 1;
+            if eg_order > 20 {
+                break; // safety
+            }
+        }
     }
 }
 

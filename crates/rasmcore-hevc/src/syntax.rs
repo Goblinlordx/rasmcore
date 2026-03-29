@@ -629,7 +629,7 @@ fn decode_transform_tree(
 /// - coeff_abs_level_greater2_flag (ctxSet)
 /// - signHidden optimization
 /// - Rice parameter adaptation
-fn decode_residual_coeffs(
+pub fn decode_residual_coeffs(
     cabac: &mut CabacDecoder,
     contexts: &mut [ContextModel],
     size: u32,

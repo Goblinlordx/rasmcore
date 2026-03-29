@@ -413,6 +413,121 @@ mod tests {
         assert_eq!(frame.height, height);
     }
 
+    /// Direct coefficient CABAC roundtrip test.
+    /// Encode known coefficients via encode_residual_coeffs, decode via
+    /// decode_residual_coeffs, compare. This isolates the coefficient
+    /// encoding from the full frame pipeline.
+    #[test]
+    fn coefficient_cabac_roundtrip() {
+        use crate::cabac::CabacDecoder;
+        use crate::encode::cabac_enc::CabacEncoder;
+        use crate::encode::syntax_enc;
+        use crate::syntax;
+
+        let qp = 26;
+
+        // Test multiple coefficient patterns
+        let test_cases: Vec<(&str, u32, Vec<i16>)> = vec![
+            ("dc_only_4x4", 4, {
+                let mut c = vec![0i16; 16];
+                c[0] = 5;
+                c
+            }),
+            ("two_coeffs_4x4", 4, {
+                let mut c = vec![0i16; 16];
+                c[0] = 10;
+                c[1] = -3;
+                c
+            }),
+            ("sparse_8x8", 8, {
+                let mut c = vec![0i16; 64];
+                c[0] = 10;
+                c[1] = -5;
+                c[8] = 3;
+                c
+            }),
+            ("dense_8x8", 8, {
+                let mut c = vec![0i16; 64];
+                c[0] = 100; c[1] = -50; c[2] = 25; c[3] = -10;
+                c[8] = 40; c[9] = -20; c[10] = 8;
+                c[16] = 15; c[17] = -7;
+                c[24] = 5;
+                c
+            }),
+            ("large_values_4x4", 4, {
+                let mut c = vec![0i16; 16];
+                c[0] = 200; c[1] = -150; c[2] = 80; c[3] = -30;
+                c[4] = 50; c[5] = -20; c[6] = 10;
+                c[8] = 15; c[9] = -5;
+                c
+            }),
+            ("dc_only_32x32", 32, {
+                let mut c = vec![0i16; 1024];
+                c[0] = 500;
+                c
+            }),
+            ("sparse_32x32", 32, {
+                let mut c = vec![0i16; 1024];
+                c[0] = 100; c[1] = -30; c[32] = 20; c[33] = -10;
+                c
+            }),
+        ];
+
+        for (name, size, coeffs) in &test_cases {
+            let mut enc_ctx = syntax::init_syntax_contexts(qp);
+            let mut enc = CabacEncoder::new();
+
+            syntax_enc::encode_residual_coeffs(&mut enc, &mut enc_ctx, coeffs, *size, false);
+            enc.encode_terminate(1);
+            let data = enc.finish_and_get_bytes();
+
+            eprintln!("{name}: encoded {} bytes", data.len());
+
+            // Decode
+            let mut dec = CabacDecoder::new(&data).unwrap();
+            let mut dec_ctx = syntax::init_syntax_contexts(qp);
+
+            let decoded = syntax::decode_residual_coeffs(
+                &mut dec,
+                &mut dec_ctx,
+                *size,
+                false, // sign_data_hiding_enabled
+            );
+
+            match decoded {
+                Ok(dec_coeffs) => {
+                    let mut mismatches = 0;
+                    for i in 0..coeffs.len() {
+                        if coeffs[i] != dec_coeffs[i] {
+                            if mismatches < 5 {
+                                eprintln!(
+                                    "  MISMATCH at [{i}]: encoded={}, decoded={}",
+                                    coeffs[i], dec_coeffs[i]
+                                );
+                            }
+                            mismatches += 1;
+                        }
+                    }
+                    if mismatches > 0 {
+                        eprintln!("  {mismatches} total mismatches in {name}");
+                    } else {
+                        eprintln!("  {name}: PERFECT roundtrip ✓");
+                    }
+                    // Verify terminate
+                    let term = dec.decode_terminate().unwrap();
+                    assert_eq!(term, 1, "{name}: terminate should be 1");
+                    assert_eq!(
+                        mismatches, 0,
+                        "{name}: coefficient roundtrip has {mismatches} mismatches"
+                    );
+                }
+                Err(e) => {
+                    panic!("{name}: decode_residual_coeffs failed: {e}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn encode_quality_with_residual() {
         let width = 64u32;
@@ -451,13 +566,18 @@ mod tests {
             bitstream.len()
         );
 
-        // Note: current encoder quality is limited by coefficient encoding roundtrip.
-        // The CABAC coefficient coding is structurally complete but may have
-        // context derivation mismatches with the decoder. This will be resolved
-        // by systematic bin-trace comparison against the decoder.
+        eprintln!(
+            "Encoder quality: PSNR={psnr:.1}dB, max_diff={max_diff}, bitstream={} bytes",
+            bitstream.len()
+        );
+
+        // Coefficient CABAC roundtrip is now perfect (7/7 test cases byte-exact).
+        // Full encoder quality depends on the mode decision and full pipeline
+        // matching the decoder's expectations. PSNR threshold will be tightened
+        // as the encoder matures.
         assert!(
-            bitstream.len() > 100,
-            "bitstream should contain encoded coefficients"
+            psnr > 5.0,
+            "PSNR should be > 5dB, got {psnr:.1}dB"
         );
     }
 
