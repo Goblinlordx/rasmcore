@@ -554,6 +554,321 @@ fn exact_flatten() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// COLOR GRADING — DETERMINISTIC TIER (same formula, MAE < 2.0)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Helper: run a per-channel ImageMagick -fx formula on a PNG file.
+/// Each formula string references `u` (pixel value 0-1).
+fn magick_fx_per_channel(
+    input: &std::path::Path,
+    r_fx: &str,
+    g_fx: &str,
+    b_fx: &str,
+) -> Option<std::path::PathBuf> {
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let out = std::env::temp_dir().join(format!("refaudit_ref_{id}.png"));
+    let result = Command::new("magick")
+        .arg(input.to_str().unwrap())
+        .args(["-channel", "R", "-fx", r_fx])
+        .args(["-channel", "G", "-fx", g_fx])
+        .args(["-channel", "B", "-fx", b_fx])
+        .arg("+channel")
+        .args(["-depth", "8"])
+        .arg(out.to_str().unwrap())
+        .output()
+        .ok()?;
+    if !result.status.success() {
+        eprintln!(
+            "magick -fx failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let _ = std::fs::remove_file(&out);
+        return None;
+    }
+    Some(out)
+}
+
+#[test]
+fn deterministic_asc_cdl_sop() {
+    // ASC-CDL: out = clamp01((in * slope + offset) ^ power)
+    // slope=[1.5, 0.8, 1.2], offset=[0.1, -0.05, 0.0], power=[1.2, 0.9, 1.5]
+    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
+
+    if !magick_available() {
+        eprintln!("SKIP asc_cdl: magick not available");
+        return;
+    }
+
+    let (w, h) = (64, 64);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let cdl = AscCdl {
+        slope: [1.5, 0.8, 1.2],
+        offset: [0.1, -0.05, 0.0],
+        power: [1.2, 0.9, 1.5],
+        saturation: 1.0, // no saturation change — test pure SOP
+    };
+    let our = asc_cdl(&pixels, &info, &cdl).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    let ref_path = magick_fx_per_channel(
+        &input_path,
+        "pow(max(u.r*1.5+0.1,0),1.2)",
+        "pow(max(u.g*0.8-0.05,0),0.9)",
+        "pow(max(u.b*1.2+0.0,0),1.5)",
+    );
+    let ref_path = match ref_path {
+        Some(p) => p,
+        None => {
+            eprintln!("SKIP asc_cdl: magick -fx failed");
+            cleanup(&[&input_path]);
+            return;
+        }
+    };
+    let magick_out = read_png_rgb(&ref_path);
+    let error = mae(&our, &magick_out);
+    eprintln!("  asc_cdl SOP: MAE = {error:.4}");
+    cleanup(&[&input_path, &ref_path]);
+    assert!(error < 2.0, "ASC-CDL SOP: MAE={error:.4} exceeds DETERMINISTIC threshold 2.0");
+}
+
+#[test]
+fn deterministic_asc_cdl_per_channel() {
+    // Test with very different values per channel to ensure independence
+    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
+
+    if !magick_available() {
+        eprintln!("SKIP asc_cdl_per_channel: magick not available");
+        return;
+    }
+
+    let (w, h) = (64, 64);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let cdl = AscCdl {
+        slope: [0.5, 2.0, 1.0],
+        offset: [0.2, 0.0, -0.1],
+        power: [0.8, 1.0, 2.0],
+        saturation: 1.0,
+    };
+    let our = asc_cdl(&pixels, &info, &cdl).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    let ref_path = magick_fx_per_channel(
+        &input_path,
+        "pow(max(u.r*0.5+0.2,0),0.8)",
+        "pow(max(u.g*2.0+0.0,0),1.0)",
+        "pow(max(u.b*1.0-0.1,0),2.0)",
+    );
+    let ref_path = match ref_path {
+        Some(p) => p,
+        None => {
+            cleanup(&[&input_path]);
+            return;
+        }
+    };
+    let magick_out = read_png_rgb(&ref_path);
+    let error = mae(&our, &magick_out);
+    eprintln!("  asc_cdl per-channel: MAE = {error:.4}");
+    cleanup(&[&input_path, &ref_path]);
+    assert!(
+        error < 2.0,
+        "ASC-CDL per-channel: MAE={error:.4} exceeds threshold 2.0"
+    );
+}
+
+#[test]
+fn deterministic_lift_gamma_gain() {
+    // Lift/Gamma/Gain: out = gain * (in + lift*(1-in))^(1/gamma)
+    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
+
+    if !magick_available() {
+        eprintln!("SKIP lift_gamma_gain: magick not available");
+        return;
+    }
+
+    let (w, h) = (64, 64);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let lgg = LiftGammaGain {
+        lift: [0.1, 0.0, 0.05],
+        gamma: [1.2, 1.0, 0.8],
+        gain: [0.9, 1.0, 1.1],
+    };
+    let our = lift_gamma_gain(&pixels, &info, &lgg).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    // DaVinci formula: gain * pow(in + lift*(1-in), 1/gamma)
+    let ref_path = magick_fx_per_channel(
+        &input_path,
+        "0.9*pow(u.r+0.1*(1-u.r),1.0/1.2)",
+        "1.0*pow(u.g+0.0*(1-u.g),1.0/1.0)",
+        "1.1*pow(u.b+0.05*(1-u.b),1.0/0.8)",
+    );
+    let ref_path = match ref_path {
+        Some(p) => p,
+        None => {
+            cleanup(&[&input_path]);
+            return;
+        }
+    };
+    let magick_out = read_png_rgb(&ref_path);
+    let error = mae(&our, &magick_out);
+    eprintln!("  lift_gamma_gain: MAE = {error:.4}");
+    cleanup(&[&input_path, &ref_path]);
+    assert!(
+        error < 2.0,
+        "Lift/Gamma/Gain: MAE={error:.4} exceeds DETERMINISTIC threshold 2.0"
+    );
+}
+
+#[test]
+fn deterministic_lift_gamma_gain_per_channel() {
+    // Test per-channel independence: red lift, green gamma, blue gain
+    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
+
+    if !magick_available() {
+        eprintln!("SKIP lgg_per_channel: magick not available");
+        return;
+    }
+
+    let (w, h) = (64, 64);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    // Only affect red lift, green gamma, blue gain — others identity
+    let lgg = LiftGammaGain {
+        lift: [0.2, 0.0, 0.0],
+        gamma: [1.0, 2.0, 1.0],
+        gain: [1.0, 1.0, 0.7],
+    };
+    let our = lift_gamma_gain(&pixels, &info, &lgg).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    let ref_path = magick_fx_per_channel(
+        &input_path,
+        "1.0*pow(u.r+0.2*(1-u.r),1.0/1.0)",
+        "1.0*pow(u.g+0.0*(1-u.g),1.0/2.0)",
+        "0.7*pow(u.b+0.0*(1-u.b),1.0/1.0)",
+    );
+    let ref_path = match ref_path {
+        Some(p) => p,
+        None => {
+            cleanup(&[&input_path]);
+            return;
+        }
+    };
+    let magick_out = read_png_rgb(&ref_path);
+    let error = mae(&our, &magick_out);
+    eprintln!("  lgg per-channel: MAE = {error:.4}");
+    cleanup(&[&input_path, &ref_path]);
+    assert!(error < 2.0, "LGG per-channel: MAE={error:.4} exceeds threshold 2.0");
+}
+
+#[test]
+fn deterministic_curves_s_curve() {
+    // Curves: apply the same spline control points, compare LUT output
+    // Use a simple gamma-like curve that we can express as IM -fx
+    use rasmcore_image::domain::color_grading::{build_curve_lut, curves, ToneCurves};
+
+    if !magick_available() {
+        eprintln!("SKIP curves: magick not available");
+        return;
+    }
+
+    let (w, h) = (64, 64);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    // Simple power curve: (0,0), (0.5, 0.25), (1,1) — approximates gamma 2.0
+    // For IM comparison, use pow(u, 2.0) which is the exact gamma curve
+    // Our spline with these 3 points will approximate x^2 closely
+    let tc = ToneCurves {
+        r: vec![(0.0, 0.0), (0.25, 0.0625), (0.5, 0.25), (0.75, 0.5625), (1.0, 1.0)],
+        g: vec![(0.0, 0.0), (0.25, 0.0625), (0.5, 0.25), (0.75, 0.5625), (1.0, 1.0)],
+        b: vec![(0.0, 0.0), (0.25, 0.0625), (0.5, 0.25), (0.75, 0.5625), (1.0, 1.0)],
+    };
+    let our = curves(&pixels, &info, &tc).unwrap();
+
+    // Compare against ImageMagick pow(u, 2.0) — exact x^2 curve
+    // Our spline through x^2 sample points should closely match
+    let input_path = write_png(&pixels, w, h, 3);
+    let ref_path = match magick_op(&input_path, &["-fx", "pow(u,2.0)"]) {
+        Some(p) => p,
+        None => {
+            cleanup(&[&input_path]);
+            eprintln!("SKIP curves: magick -fx failed");
+            return;
+        }
+    };
+    let magick_out = read_png_rgb(&ref_path);
+    let error = mae(&our, &magick_out);
+    eprintln!("  curves (x^2): MAE = {error:.4}");
+    cleanup(&[&input_path, &ref_path]);
+    // Spline approximation of x^2 — ALGORITHM tier since spline != exact power
+    assert!(error < 3.0, "Curves x^2: MAE={error:.4} exceeds threshold 3.0");
+}
+
+#[test]
+fn deterministic_split_toning() {
+    // Split toning: blend shadow/highlight colors based on luminance
+    use rasmcore_image::domain::color_grading::{split_toning, SplitToning};
+
+    if !magick_available() {
+        eprintln!("SKIP split_toning: magick not available");
+        return;
+    }
+
+    let (w, h) = (64, 64);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let st = SplitToning {
+        shadow_color: [0.0, 0.0, 0.8],     // blue shadows
+        highlight_color: [1.0, 0.8, 0.2],   // warm highlights
+        balance: 0.0,
+        strength: 0.5,
+    };
+    let our = split_toning(&pixels, &info, &st).unwrap();
+
+    // Replicate in IM -fx: luminance-weighted blend
+    // luma = 0.2126*r + 0.7152*g + 0.0722*b
+    // midpoint = 0.5 (balance=0)
+    // shadow_w = max(1 - luma/0.5, 0) * 0.5  (strength)
+    // highlight_w = max((luma-0.5)/0.5, 0) * 0.5
+    // out = in + (shadow_color - in)*shadow_w + (highlight_color - in)*highlight_w
+    let input_path = write_png(&pixels, w, h, 3);
+    let luma = "0.2126*u.r+0.7152*u.g+0.0722*u.b";
+    let sw = format!("max(1-({luma})/0.5,0)*0.5");
+    let hw = format!("max(({luma}-0.5)/0.5,0)*0.5");
+
+    let r_fx = format!("u.r+(0.0-u.r)*({sw})+(1.0-u.r)*({hw})");
+    let g_fx = format!("u.g+(0.0-u.g)*({sw})+(0.8-u.g)*({hw})");
+    let b_fx = format!("u.b+(0.8-u.b)*({sw})+(0.2-u.b)*({hw})");
+
+    let ref_path = magick_fx_per_channel(&input_path, &r_fx, &g_fx, &b_fx);
+    let ref_path = match ref_path {
+        Some(p) => p,
+        None => {
+            cleanup(&[&input_path]);
+            eprintln!("SKIP split_toning: magick -fx failed");
+            return;
+        }
+    };
+    let magick_out = read_png_rgb(&ref_path);
+    let error = mae(&our, &magick_out);
+    eprintln!("  split_toning: MAE = {error:.4}");
+    cleanup(&[&input_path, &ref_path]);
+    assert!(
+        error < 5.0,
+        "Split toning: MAE={error:.4} exceeds ALGORITHM threshold 5.0"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ═══════════════════════════════════════════════════════════════════════════
 

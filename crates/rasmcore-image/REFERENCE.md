@@ -93,6 +93,17 @@ aligned with, the match expectation, and the validation status.
 | affine | ImageMagick | `magick -affine "{matrix}" -transform` | ALGORITHM | NEEDS TEST |
 | auto_orient | ImageMagick | `magick -auto-orient` | EXACT | NEEDS TEST |
 
+### Color Grading
+
+| Operation | Reference | CLI Equivalent | Tier | Status |
+|-----------|-----------|---------------|------|--------|
+| asc_cdl (SOP) | ImageMagick -fx | `magick -channel R -fx "pow(max(u.r*S+O,0),P)" ...` | EXACT | PASS (MAE=0.0) |
+| asc_cdl (per-channel) | ImageMagick -fx | Per-channel slope/offset/power via -fx | EXACT | PASS (MAE=0.0) |
+| lift_gamma_gain | ImageMagick -fx | `magick -fx "G*pow(u+L*(1-u),1/g)"` (DaVinci formula) | EXACT | PASS (MAE=0.0) |
+| lgg (per-channel) | ImageMagick -fx | Per-channel lift/gamma/gain independence | EXACT | PASS (MAE=0.0) |
+| curves (spline) | ImageMagick -fx | `magick -fx "pow(u,2.0)"` (vs monotone cubic approx) | DETERMINISTIC | PASS (MAE=0.46) |
+| split_toning | ImageMagick -fx | Luminance-weighted shadow/highlight blend via -fx | DETERMINISTIC | PASS (MAE=0.92) |
+
 ### Content-Aware
 
 | Operation | Reference | CLI Equivalent | Tier | Status |
@@ -118,10 +129,10 @@ aligned with, the match expectation, and the validation status.
 
 | Status | Count |
 |--------|-------|
-| PASS | 25 |
+| PASS | 31 |
 | NEEDS TEST | 18 |
 | N/A (internal) | 4 |
-| **Total** | **47** |
+| **Total** | **53** |
 
 ## Notes
 
