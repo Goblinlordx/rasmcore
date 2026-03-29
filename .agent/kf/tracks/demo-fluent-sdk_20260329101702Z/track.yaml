@@ -118,6 +118,59 @@ spec:
       - rcvideo: backed by future rasmcore:video WASM component
       - Each gets its own chainable class (RcAudio, RcVideo)
       - All share @rasmcore/sdk package, imported individually
+
+    Output modes (current + future):
+
+      Current (v1 — buffered only):
+        const bytes: Uint8Array = await rcimage.load(data).blur(3).toJpeg({ quality: 85 });
+
+      Sink methods return Uint8Array (complete file in memory).
+      This is what the WIT write-jpeg(node) -> buffer provides.
+
+      Future additions (document now, implement later):
+        // Blob (for download links, object URLs)
+        const blob: Blob = await img.toJpegBlob({ quality: 85 });
+
+        // ReadableStream (for fetch Response, piping)
+        const stream: ReadableStream = img.toJpegStream({ quality: 85 });
+
+      Initially these would wrap the buffered output (pseudo-streaming).
+
+    Streaming I/O roadmap (true streaming, not pseudo):
+
+      Path 1 — WASI Preview 3 streams (preferred, pending spec):
+        WASI P3 proposes `stream<T>` as a first-class type in WIT.
+        When available, WIT sinks would become:
+          write-jpeg-stream: func(source: node-id, config) -> stream<buffer>
+        jco would generate native ReadableStream bindings automatically.
+        Timeline: WASI P3 is in design phase (2025-2026).
+
+      Path 2 — Callback-based chunked encoding (can implement now):
+        Add WIT callback interface:
+          resource jpeg-writer {
+            constructor(source: node-id, config: jpeg-write-config);
+            next-chunk: func() -> option<buffer>;
+          }
+        Host pulls chunks via next-chunk() in a loop.
+        SDK wraps as ReadableStream with pull() calling next-chunk().
+        Downside: requires Rust encoder to support incremental output.
+
+      Path 3 — Shared memory + Web Workers (browser-specific):
+        Use SharedArrayBuffer for zero-copy output.
+        WASM writes directly to shared memory, host reads as stream.
+        Requires cross-origin isolation headers (COOP/COEP).
+        Most complex but highest throughput for large images/video.
+
+      Recommendation: Start with Path 2 for image (encoders can be chunked
+      relatively easily). Path 1 for video/audio when WASI P3 lands.
+      Path 3 only if profiling shows memory copies are the bottleneck.
+
+    Streaming input (future):
+      Currently: rcimage.load(data) requires full Uint8Array in memory.
+      Future: rcimage.loadStream(readable) for progressive decode.
+      Requires WASM component to support incremental decode (decoder
+      accepts chunks, emits partial results). JPEG and PNG support
+      progressive decode natively. Would pair with Path 2 above.
 plan:
   - phase: Core Fluent API
     tasks:
