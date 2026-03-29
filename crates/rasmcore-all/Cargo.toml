@@ -1,0 +1,11 @@
+[package]
+name = "rasmcore-all"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "All rasmcore functionality — image processing infrastructure + all free filters + all free codecs"
+
+[dependencies]
+rasmcore-image = { path = "../rasmcore-image" }
+rasmcore-filters-std = { path = "../rasmcore-filters-std" }
+rasmcore-codecs-std = { path = "../rasmcore-codecs-std" }
