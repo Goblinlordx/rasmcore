@@ -232,6 +232,54 @@ pub fn gray_to_y(pixels: &[u8], width: u32, height: u32, matrix: &ColorMatrix) -
     }
 }
 
+/// Convert YCbCr to RGB8 matching ffmpeg 7.x libswscale table-based BT.709 conversion.
+///
+/// Reproduces the exact integer arithmetic of ffmpeg's `yuv420_rgb24_c` path
+/// (selected when converting YUV420P→RGB24 without rescaling). This uses the
+/// same table construction logic as `ff_yuv2rgb_c_init_tables()` with BT.709
+/// coefficients, computed inline rather than via actual lookup tables.
+///
+/// Ref: ffmpeg 7.1 libswscale/yuv2rgb.c — `ff_yuv2rgb_c_init_tables()`
+/// Ref: ffmpeg 7.1 libavutil/pixfmt.h — `SWS_CS_ITU709`
+///
+/// Note: Y=235,Cb=128,Cr=128 (white) maps to RGB(253,253,253), not (255,255,255).
+/// This is inherent to ffmpeg's integer rounding in the table construction.
+#[inline]
+pub fn ycbcr_to_rgb_ffmpeg_bt709(y: u8, cb: u8, cr: u8) -> (u8, u8, u8) {
+    // Q16 luma coefficient: floor((1<<16) * 255 / 219)
+    const CY: i64 = 76309;
+    // Chroma coefficients rescaled by 65536/CY (absorbs luma scaling into table)
+    // Original Q16: crv=117489, cbu=138438, cgu=13975, cgv=34925
+    // Ref: ffmpeg 7.1 libswscale/yuv2rgb.c ff_yuv2rgb_coeffs[SWS_CS_ITU709]
+    const CRV_SCALED: i64 = 100902; // trunc((117489 * 65536 + 32768) / 76309)
+    const CBU_SCALED: i64 = 118894; // trunc((138438 * 65536 + 32768) / 76309)
+    const CGU_SCALED: i64 = -12001; // trunc((-13975 * 65536 + 32768) / 76309)
+    const CGV_SCALED: i64 = -29993; // trunc((-34925 * 65536 + 32768) / 76309)
+    // Table base offset: 326 + YUVRGB_TABLE_HEADROOM(512) = 838
+    const YOFFS: i64 = 838;
+    // Luma table base: -(384<<16) - 512*CY - (16<<16)
+    const YB_BASE: i64 = -(384 << 16) - 512 * CY - (16 << 16); // -65284608
+
+    let yv = y as i64;
+    let cbv = cb as i64;
+    let crv = cr as i64;
+
+    // R: offset from Cr via table_rV
+    let r_off = YOFFS - (CRV_SCALED >> 9) + ((crv * CRV_SCALED) >> 16);
+    let r = ((YB_BASE + (r_off + yv) * CY + 0x8000) >> 16).clamp(0, 255) as u8;
+
+    // G: offset from Cb via table_gU + offset from Cr via table_gV
+    let gu_off = YOFFS - (CGU_SCALED >> 9) + ((cbv * CGU_SCALED) >> 16);
+    let gv_off = -(CGV_SCALED >> 9) + ((crv * CGV_SCALED) >> 16);
+    let g = ((YB_BASE + (gu_off + gv_off + yv) * CY + 0x8000) >> 16).clamp(0, 255) as u8;
+
+    // B: offset from Cb via table_bU
+    let b_off = YOFFS - (CBU_SCALED >> 9) + ((cbv * CBU_SCALED) >> 16);
+    let b = ((YB_BASE + (b_off + yv) * CY + 0x8000) >> 16).clamp(0, 255) as u8;
+
+    (r, g, b)
+}
+
 /// Convert YCbCr to RGB8 (inverse conversion).
 ///
 /// Takes separate Y, Cb, Cr values for a single pixel and returns (R, G, B).
@@ -429,6 +477,44 @@ mod tests {
         let pixels = [255u8];
         let yuv = gray_to_y(&pixels, 1, 1, &ColorMatrix::BT601);
         assert_eq!(yuv.y[0], 235, "gray white should map to Y=235");
+    }
+
+    // ── ffmpeg-exact BT.709 conversion ──
+
+    #[test]
+    fn ffmpeg_bt709_black() {
+        // Y=16, Cb=128, Cr=128 → RGB(0,0,0)
+        let (r, g, b) = ycbcr_to_rgb_ffmpeg_bt709(16, 128, 128);
+        assert_eq!((r, g, b), (0, 0, 0), "ffmpeg black");
+    }
+
+    #[test]
+    fn ffmpeg_bt709_white() {
+        // Y=235, Cb=128, Cr=128 → RGB(253,253,253) per ffmpeg table rounding
+        let (r, g, b) = ycbcr_to_rgb_ffmpeg_bt709(235, 128, 128);
+        assert_eq!((r, g, b), (253, 253, 253), "ffmpeg white");
+    }
+
+    #[test]
+    fn ffmpeg_bt709_y17_is_zero() {
+        // Y=17 should still map to 0 due to integer rounding
+        let (r, g, b) = ycbcr_to_rgb_ffmpeg_bt709(17, 128, 128);
+        assert_eq!((r, g, b), (0, 0, 0), "ffmpeg Y=17 should be black");
+    }
+
+    #[test]
+    fn ffmpeg_bt709_y18_is_one() {
+        let (r, g, b) = ycbcr_to_rgb_ffmpeg_bt709(18, 128, 128);
+        assert_eq!((r, g, b), (1, 1, 1), "ffmpeg Y=18 should be (1,1,1)");
+    }
+
+    #[test]
+    fn ffmpeg_bt709_mid_gray() {
+        // Y=126 (mid-range), Cb=128, Cr=128 → achromatic
+        let (r, g, b) = ycbcr_to_rgb_ffmpeg_bt709(126, 128, 128);
+        // All channels should be equal for achromatic input
+        assert_eq!(r, g);
+        assert_eq!(g, b);
     }
 
     // ── Integer-only verification ──

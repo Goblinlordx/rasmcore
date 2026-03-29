@@ -46,9 +46,12 @@ impl FrameBuffer {
         }
     }
 
-    /// Convert YCbCr 4:2:0 to RGB8 using the specified color matrix.
-    fn to_rgb(&self, matrix: &rasmcore_color::ColorMatrix) -> Vec<u8> {
-        let matrix = *matrix;
+    /// Convert YCbCr 4:2:0 to RGB8.
+    ///
+    /// If `matrix` is `Some`, uses the provided color matrix for conversion.
+    /// If `None`, uses the ffmpeg 7.x-exact BT.709 table-based conversion
+    /// (default for pixel-exact alignment with ffmpeg reference output).
+    fn to_rgb(&self, matrix: Option<&rasmcore_color::ColorMatrix>) -> Vec<u8> {
         let w = self.width as usize;
         let h = self.height as usize;
         let cw = self.chroma_width as usize;
@@ -59,7 +62,11 @@ impl FrameBuffer {
                 let y = self.y[row * w + col];
                 let cb = self.cb[(row / 2) * cw + (col / 2)];
                 let cr = self.cr[(row / 2) * cw + (col / 2)];
-                let (r, g, b) = rasmcore_color::ycbcr_to_rgb(y, cb, cr, &matrix);
+                let (r, g, b) = if let Some(m) = matrix {
+                    rasmcore_color::ycbcr_to_rgb(y, cb, cr, m)
+                } else {
+                    rasmcore_color::ycbcr_to_rgb_ffmpeg_bt709(y, cb, cr)
+                };
                 rgb.push(r);
                 rgb.push(g);
                 rgb.push(b);
@@ -273,8 +280,9 @@ pub fn decode_frame_with_matrix(
     // This is a placeholder — full SAO integration requires per-CTU params from syntax
 
     // Convert YCbCr to RGB
-    let rgb_matrix = color_matrix.unwrap_or(&rasmcore_color::ColorMatrix::BT709);
-    let pixels = fb.to_rgb(rgb_matrix);
+    // Default: ffmpeg 7.x-exact BT.709 conversion for pixel-exact reference alignment.
+    // Pass a custom ColorMatrix to override (e.g., for spec-pure BT.709 coefficients).
+    let pixels = fb.to_rgb(color_matrix);
 
     Ok(DecodedFrame {
         y_plane: fb.y.clone(),
@@ -623,7 +631,7 @@ mod tests {
     #[test]
     fn frame_buffer_to_rgb() {
         let fb = FrameBuffer::new(4, 4);
-        let rgb = fb.to_rgb(&rasmcore_color::ColorMatrix::BT709);
+        let rgb = fb.to_rgb(None);
         assert_eq!(rgb.len(), 4 * 4 * 3);
     }
 
