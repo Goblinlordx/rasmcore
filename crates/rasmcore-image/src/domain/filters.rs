@@ -155,6 +155,7 @@ pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, Ima
 ///
 /// Computes: output = original + amount * (original - blurred)
 /// Uses the SIMD-optimized blur internally.
+#[rasmcore_macros::register_filter(name = "sharpen", category = "spatial")]
 pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -244,6 +245,7 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
 /// Adjust brightness (-1.0 to 1.0).
 ///
 /// Uses the composable LUT infrastructure from `point_ops`.
+#[rasmcore_macros::register_filter(name = "brightness", category = "adjustment")]
 pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
@@ -261,6 +263,7 @@ pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8
 /// Adjust contrast (-1.0 to 1.0).
 ///
 /// Uses the composable LUT infrastructure from `point_ops`.
+#[rasmcore_macros::register_filter(name = "contrast", category = "adjustment")]
 pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
@@ -376,21 +379,25 @@ fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u
 }
 
 /// Rotate hue by `degrees` (0-360). Works on RGB8 and RGBA8 images.
+#[rasmcore_macros::register_filter(name = "hue_rotate", category = "color")]
 pub fn hue_rotate(pixels: &[u8], info: &ImageInfo, degrees: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::HueRotate(degrees))
 }
 
 /// Adjust saturation by `factor` (0=grayscale, 1=unchanged, 2=double).
+#[rasmcore_macros::register_filter(name = "saturate", category = "color")]
 pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::Saturate(factor))
 }
 
 /// Apply sepia tone with given `intensity` (0=none, 1=full sepia).
+#[rasmcore_macros::register_filter(name = "sepia", category = "color")]
 pub fn sepia(pixels: &[u8], info: &ImageInfo, intensity: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::Sepia(intensity.clamp(0.0, 1.0)))
 }
 
 /// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
+#[rasmcore_macros::register_filter(name = "colorize", category = "color")]
 pub fn colorize(
     pixels: &[u8],
     info: &ImageInfo,
@@ -430,6 +437,7 @@ pub mod kernels {
 /// Automatically detects separable (rank-1) kernels and uses two 1D passes
 /// for O(2K) instead of O(K^2) per pixel. Uses padded input buffer to
 /// eliminate per-pixel boundary checks for interior pixels.
+#[rasmcore_macros::register_filter(name = "convolve", category = "spatial")]
 pub fn convolve(
     pixels: &[u8],
     info: &ImageInfo,
@@ -721,6 +729,7 @@ fn reflect(v: i32, size: usize) -> usize {
 /// Uses histogram sliding-window (Huang algorithm) for radius > 2 giving
 /// O(1) amortized per pixel. Falls back to sorting for radius <= 2 where
 /// the small window makes sorting faster than histogram maintenance.
+#[rasmcore_macros::register_filter(name = "median", category = "spatial")]
 pub fn median(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
     if radius == 0 {
         return Ok(pixels.to_vec());
@@ -858,6 +867,7 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
 ///
 /// Uses unrolled 3x3 Sobel with padded input — no inner loop or
 /// match-based weight lookup. Direct coefficient access gives ~3x speedup.
+#[rasmcore_macros::register_filter(name = "sobel", category = "edge")]
 pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -1063,6 +1073,7 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
 ///
 /// Steps: 1) Gaussian blur, 2) Sobel gradient + direction,
 /// 3) Non-maximum suppression, 4) Hysteresis thresholding.
+#[rasmcore_macros::register_filter(name = "canny", category = "edge")]
 pub fn canny(
     pixels: &[u8],
     info: &ImageInfo,
@@ -1281,6 +1292,7 @@ fn to_grayscale_simd128(pixels: &[u8], channels: usize, pixel_count: usize) -> V
 // ─── Alpha Management ────────────────────────────────────────────────────
 
 /// Convert straight alpha to premultiplied alpha (RGBA8 only).
+#[rasmcore_macros::register_filter(name = "premultiply", category = "alpha")]
 pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
@@ -1298,6 +1310,7 @@ pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageErro
 }
 
 /// Convert premultiplied alpha to straight alpha (RGBA8 only).
+#[rasmcore_macros::register_filter(name = "unpremultiply", category = "alpha")]
 pub fn unpremultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(

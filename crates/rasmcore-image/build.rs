@@ -148,12 +148,19 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
             let category = extract_string_attr(line, "category");
 
             if let (Some(name), Some(category)) = (name, category) {
-                // Find the next pub fn line
+                // Find the next pub fn and collect its full signature (may span multiple lines)
                 let mut j = i + 1;
                 while j < lines.len() {
                     let fn_line = lines[j].trim();
                     if fn_line.starts_with("pub fn ") {
-                        if let Some(reg) = parse_fn_signature(fn_line, &name, &category) {
+                        // Collect lines until we find the closing ')' and '->'
+                        let mut full_sig = fn_line.to_string();
+                        while !full_sig.contains("->") && j + 1 < lines.len() {
+                            j += 1;
+                            full_sig.push(' ');
+                            full_sig.push_str(lines[j].trim());
+                        }
+                        if let Some(reg) = parse_fn_signature(&full_sig, &name, &category) {
                             filters.push(reg);
                         }
                         break;

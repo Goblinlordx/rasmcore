@@ -144,15 +144,15 @@ plan:
   - text: Create build.rs that reads inventory-collected filter metadata
     done: true
   - text: Generate WIT filter declarations from metadata (filters.wit fragment)
-    done: false
+    done: true
   - text: Generate WIT pipeline methods from metadata (pipeline.wit fragment)
-    done: false
+    done: true
   - text: Generate adapter dispatch code (impl filters::Guest)
-    done: false
+    done: true
   - text: Generate pipeline adapter dispatch (impl GuestImagePipeline filter methods)
-    done: false
+    done: true
   - text: Generate simple pipeline nodes for non-custom filters
-    done: false
+    done: true
 - phase: Filter Migration
   tasks:
   - text: Migrate all existing filters to use register_filter attribute
