@@ -1707,31 +1707,62 @@ pub fn guided_filter(
 }
 
 /// Box mean via integral image — O(1) per pixel regardless of radius.
+/// Box mean matching OpenCV's boxFilter with BORDER_REFLECT.
+/// Pads data with reflect border, computes f32 SAT, queries fixed-size window.
 fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
     let n = w * h;
+    let r = radius;
+    let ksize = 2 * r + 1;
 
-    // Build integral image (summed area table)
-    let mut sat = vec![0.0f64; (w + 1) * (h + 1)];
-    for y in 0..h {
-        for x in 0..w {
-            sat[(y + 1) * (w + 1) + (x + 1)] =
-                data[y * w + x] as f64 + sat[y * (w + 1) + (x + 1)] + sat[(y + 1) * (w + 1) + x]
-                    - sat[y * (w + 1) + x];
+    // Pad with BORDER_REFLECT (edge pixel duplicated)
+    let pw = w + 2 * r;
+    let ph = h + 2 * r;
+    let mut padded = vec![0.0f32; pw * ph];
+    for py in 0..ph {
+        // BORDER_REFLECT: idx < 0 → |idx+1|, idx >= size → 2*size - idx - 1
+        let sy = if py < r {
+            r - 1 - py // reflect with duplication
+        } else if py >= h + r {
+            2 * h - (py - r) - 1
+        } else {
+            py - r
+        };
+        for px in 0..pw {
+            let sx = if px < r {
+                r - 1 - px
+            } else if px >= w + r {
+                2 * w - (px - r) - 1
+            } else {
+                px - r
+            };
+            padded[py * pw + px] = data[sy * w + sx];
         }
     }
 
-    // Query box mean for each pixel
+    // Build SAT in f32
+    let mut sat = vec![0.0f32; (pw + 1) * (ph + 1)];
+    for y in 0..ph {
+        for x in 0..pw {
+            sat[(y + 1) * (pw + 1) + (x + 1)] = padded[y * pw + x]
+                + sat[y * (pw + 1) + (x + 1)]
+                + sat[(y + 1) * (pw + 1) + x]
+                - sat[y * (pw + 1) + x];
+        }
+    }
+
+    // Query: fixed ksize window centered on each original pixel
+    let count = (ksize * ksize) as f32;
     let mut result = vec![0.0f32; n];
     for y in 0..h {
-        let y0 = y.saturating_sub(radius);
-        let y1 = (y + radius + 1).min(h);
+        let y0 = y; // in padded coords, original pixel y is at py = y + r, window starts at y
+        let y1 = y + ksize;
         for x in 0..w {
-            let x0 = x.saturating_sub(radius);
-            let x1 = (x + radius + 1).min(w);
-            let count = (y1 - y0) * (x1 - x0);
-            let sum = sat[y1 * (w + 1) + x1] - sat[y0 * (w + 1) + x1] - sat[y1 * (w + 1) + x0]
-                + sat[y0 * (w + 1) + x0];
-            result[y * w + x] = (sum / count as f64) as f32;
+            let x0 = x;
+            let x1 = x + ksize;
+            let sum = sat[y1 * (pw + 1) + x1] - sat[y0 * (pw + 1) + x1]
+                - sat[y1 * (pw + 1) + x0]
+                + sat[y0 * (pw + 1) + x0];
+            result[y * w + x] = sum / count;
         }
     }
 

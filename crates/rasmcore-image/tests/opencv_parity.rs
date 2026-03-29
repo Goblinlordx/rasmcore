@@ -152,3 +152,40 @@ fn bilateral_max_error_analysis() {
     // 69% pixels exact, 12% off-by-1, 14% off-by-2, 5% off-by-3/4
     assert!(max_diff <= 4, "bilateral max error {max_diff} > 4");
 }
+
+#[test]
+fn guided_filter_matches_opencv() {
+    let input = load_fixture("gradient_64x64_gray.raw");
+    let reference = load_fixture("guided_64x64_r4_eps650.raw");
+
+    let info = ImageInfo {
+        width: 64,
+        height: 64,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    // OpenCV eps = 0.01 * 255 * 255 = 650.25 in pixel^2 units
+    // Our filter works in [0,1] space, so eps = 0.01
+    let ours = filters::guided_filter(&input, &info, 4, 0.01).unwrap();
+
+    let error = mae(&ours, &reference);
+    let quality = psnr(&ours, &reference);
+
+    eprintln!(
+        "Guided vs OpenCV: MAE={error:.2}, PSNR={quality:.1}dB, ours_range=[{},{}], ref_range=[{},{}]",
+        ours.iter().min().unwrap(), ours.iter().max().unwrap(),
+        reference.iter().min().unwrap(), reference.iter().max().unwrap(),
+    );
+
+    // Check max pixel error
+    let max_diff: i32 = ours.iter().zip(reference.iter())
+        .map(|(&a, &b)| (a as i32 - b as i32).abs())
+        .max().unwrap_or(0);
+    eprintln!("  Max pixel error: {max_diff}");
+
+    assert!(
+        error < 1.0,
+        "Guided filter MAE vs OpenCV {error:.2} > 1.0"
+    );
+}
