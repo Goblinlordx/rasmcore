@@ -69,10 +69,70 @@ spec:
     - All existing tests pass after migration
     - TypeScript SDK reflects only registered operations
     - Runtime registry queryable (list available filters/codecs)
+    - Third-party crate can register filters without modifying rasmcore source
+    - Third-party crate can register encoders/decoders without modifying rasmcore source
+    - Assembly crate pattern works (combine rasmcore + N plugin crates → one WASM)
+    - inventory/linkme collection works across crate boundaries in WASM target
   out_of_scope: |
-    Third-party plugin loading at runtime (dynamic .wasm plugins).
-    Hot-reloading of filters. GUI for filter creation.
+    Runtime dynamic plugin loading (hot-loading .wasm at runtime).
+    Hot-reloading of filters during execution. GUI for filter creation.
     Changing the domain function signatures (these stay as-is).
+    npm package publishing (separate track).
+
+  plugin_architecture: |
+    CROSS-CRATE PLUGIN SUPPORT:
+
+    Third parties can add custom filters/codecs WITHOUT modifying rasmcore source.
+    They create their own crate, depend on rasmcore-macros + rasmcore-image, and
+    register operations using the same proc macro attributes.
+
+    Example — third-party filter crate:
+
+      # my-filters/Cargo.toml
+      [dependencies]
+      rasmcore-image = "0.1"
+      rasmcore-macros = "0.1"
+
+      # my-filters/src/lib.rs
+      use rasmcore_macros::register_filter;
+      use rasmcore_image::domain::types::*;
+      use rasmcore_image::domain::error::ImageError;
+
+      #[register_filter(name = "custom_tone", category = "color",
+                         params = [("warmth", f32, 0.0, 1.0, 0.5)])]
+      pub fn custom_tone(pixels: &[u8], info: &ImageInfo, warmth: f32)
+          -> Result<Vec<u8>, ImageError> {
+          // custom logic — no rasmcore source modification needed
+      }
+
+    Example — assembly crate (combines rasmcore + plugins):
+
+      # my-image-app/Cargo.toml
+      [dependencies]
+      rasmcore-image = "0.1"
+      my-filters = { path = "../my-filters" }
+      my-codecs = { path = "../my-codecs" }  # custom codec support
+
+      # my-image-app/src/lib.rs
+      // Just pull in all registrations — build.rs collects across crates
+      pub use rasmcore_image;
+      pub use my_filters;
+      pub use my_codecs;
+
+    The assembly crate's build.rs (provided by rasmcore tooling) scans all
+    dependencies for registered operations and generates the unified WIT +
+    adapter + pipeline code. The resulting WASM component includes both
+    rasmcore built-in operations AND third-party additions.
+
+    This works via the inventory crate (distributed slices across crate boundaries)
+    or via a build-time manifest that each plugin crate emits.
+
+    Feature flag example — exclude built-in codecs:
+
+      [dependencies.rasmcore-image]
+      version = "0.1"
+      default-features = false
+      features = ["core-filters", "png", "jpeg"]  # no hevc, no webp
   technical_notes: |
     Architecture:
 
@@ -217,5 +277,17 @@ plan:
       - text: Verify WASM build with feature flags (enable/disable codecs)
         done: false
       - text: Verify TypeScript SDK reflects only registered operations
+        done: false
+  - phase: Cross-Crate Plugin Support
+    tasks:
+      - text: Verify inventory/linkme collection works across crate boundaries on wasm32-wasip1
+        done: false
+      - text: Create example plugin crate (example-filters) with one registered custom filter
+        done: false
+      - text: Create example assembly crate that combines rasmcore-image + example-filters
+        done: false
+      - text: Verify assembly crate builds to WASM with both built-in and custom filters in WIT
+        done: false
+      - text: Document plugin authoring guide (how to create a filter/codec crate)
         done: false
 extra: {}
