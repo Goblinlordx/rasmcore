@@ -1189,6 +1189,351 @@ pub fn blend(
     Ok(result)
 }
 
+// ─── CLAHE (Contrast Limited Adaptive Histogram Equalization) ──────────────
+
+/// Apply CLAHE — local adaptive contrast enhancement.
+///
+/// Divides the image into `tile_grid` x `tile_grid` tiles, equalizes each
+/// tile's histogram with a clip limit, then bilinear interpolates between
+/// tiles for smooth transitions. Grayscale only (convert first for color).
+///
+/// - `clip_limit`: contrast amplification limit (2.0-4.0 typical, higher = more contrast)
+/// - `tile_grid`: number of tiles per dimension (8 = 8x8 grid, OpenCV default)
+pub fn clahe(
+    pixels: &[u8],
+    info: &ImageInfo,
+    clip_limit: f32,
+    tile_grid: u32,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "CLAHE requires Gray8 input".into(),
+        ));
+    }
+    if tile_grid == 0 || clip_limit < 1.0 {
+        return Err(ImageError::InvalidParameters(
+            "tile_grid must be > 0, clip_limit must be >= 1.0".into(),
+        ));
+    }
+
+    let (w, h) = (info.width as usize, info.height as usize);
+    let grid = tile_grid as usize;
+    let tile_w = (w + grid - 1) / grid;
+    let tile_h = (h + grid - 1) / grid;
+
+    // Build per-tile CDF lookup tables
+    let mut tile_luts = vec![[0u8; 256]; grid * grid];
+
+    for ty in 0..grid {
+        for tx in 0..grid {
+            let x0 = tx * tile_w;
+            let y0 = ty * tile_h;
+            let x1 = (x0 + tile_w).min(w);
+            let y1 = (y0 + tile_h).min(h);
+            let tile_pixels = (x1 - x0) * (y1 - y0);
+            if tile_pixels == 0 {
+                continue;
+            }
+
+            // Histogram
+            let mut hist = [0u32; 256];
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    hist[pixels[y * w + x] as usize] += 1;
+                }
+            }
+
+            // Check for degenerate tile (all same value) before clipping
+            let distinct_values = hist.iter().filter(|&&h| h > 0).count();
+
+            // Clip histogram and redistribute
+            let clip = ((clip_limit * tile_pixels as f32) / 256.0).max(1.0) as u32;
+            let mut excess = 0u32;
+            for h in hist.iter_mut() {
+                if *h > clip {
+                    excess += *h - clip;
+                    *h = clip;
+                }
+            }
+            let incr = excess / 256;
+            let residual = (excess - incr * 256) as usize;
+            for (i, h) in hist.iter_mut().enumerate() {
+                *h += incr;
+                if i < residual {
+                    *h += 1;
+                }
+            }
+
+            // Build CDF → LUT
+            let lut = &mut tile_luts[ty * grid + tx];
+            if distinct_values <= 1 {
+                // Degenerate: all pixels same value → identity LUT
+                for i in 0..256 {
+                    lut[i] = i as u8;
+                }
+            } else {
+                let mut cdf = [0u32; 256];
+                cdf[0] = hist[0];
+                for i in 1..256 {
+                    cdf[i] = cdf[i - 1] + hist[i];
+                }
+                let cdf_min = cdf.iter().copied().find(|&v| v > 0).unwrap_or(0);
+                let denom = (tile_pixels as u32).saturating_sub(cdf_min).max(1);
+                for i in 0..256 {
+                    lut[i] = ((cdf[i].saturating_sub(cdf_min)) as u64 * 255 / denom as u64)
+                        .min(255) as u8;
+                }
+            }
+        }
+    }
+
+    // Apply with bilinear interpolation between tiles
+    let mut result = vec![0u8; pixels.len()];
+    for y in 0..h {
+        // Tile center coordinates
+        let fy = (y as f32 + 0.5) / tile_h as f32 - 0.5;
+        let ty0 = (fy.floor() as isize).clamp(0, grid as isize - 1) as usize;
+        let ty1 = (ty0 + 1).min(grid - 1);
+        let wy = fy - ty0 as f32;
+        let wy = wy.clamp(0.0, 1.0);
+
+        for x in 0..w {
+            let fx = (x as f32 + 0.5) / tile_w as f32 - 0.5;
+            let tx0 = (fx.floor() as isize).clamp(0, grid as isize - 1) as usize;
+            let tx1 = (tx0 + 1).min(grid - 1);
+            let wx = fx - tx0 as f32;
+            let wx = wx.clamp(0.0, 1.0);
+
+            let val = pixels[y * w + x] as usize;
+
+            // Bilinear interpolation of 4 tile LUTs
+            let tl = tile_luts[ty0 * grid + tx0][val] as f32;
+            let tr = tile_luts[ty0 * grid + tx1][val] as f32;
+            let bl = tile_luts[ty1 * grid + tx0][val] as f32;
+            let br = tile_luts[ty1 * grid + tx1][val] as f32;
+
+            let top = tl + wx * (tr - tl);
+            let bot = bl + wx * (br - bl);
+            let v = top + wy * (bot - top);
+
+            result[y * w + x] = v.round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    Ok(result)
+}
+
+// ─── Bilateral Filter ─────────────────────────────────────────────────────
+
+/// Edge-preserving bilateral filter.
+///
+/// Smooths flat regions while preserving edges by weighting neighbors based
+/// on both spatial distance and intensity similarity.
+///
+/// - `diameter`: filter size (use 0 for auto from sigma_space; typical 5-9)
+/// - `sigma_color`: filter sigma in the color/intensity space (10-150 typical)
+/// - `sigma_space`: filter sigma in coordinate space (10-150 typical)
+pub fn bilateral(
+    pixels: &[u8],
+    info: &ImageInfo,
+    diameter: u32,
+    sigma_color: f32,
+    sigma_space: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Gray8 && info.format != PixelFormat::Rgb8 {
+        return Err(ImageError::UnsupportedFormat(
+            "bilateral filter requires Gray8 or Rgb8".into(),
+        ));
+    }
+
+    let (w, h) = (info.width as usize, info.height as usize);
+    let channels = if info.format == PixelFormat::Gray8 { 1 } else { 3 };
+    let d = if diameter == 0 {
+        ((sigma_space * 3.0).ceil() as usize) * 2 + 1
+    } else {
+        diameter as usize | 1 // ensure odd
+    };
+    let radius = d / 2;
+
+    // Pre-compute spatial Gaussian weights
+    let inv_2_sigma_s2 = 1.0 / (2.0 * sigma_space * sigma_space);
+    let mut spatial_weights = vec![0.0f32; d * d];
+    for dy in 0..d {
+        for dx in 0..d {
+            let iy = dy as f32 - radius as f32;
+            let ix = dx as f32 - radius as f32;
+            spatial_weights[dy * d + dx] = (-((ix * ix + iy * iy) * inv_2_sigma_s2)).exp();
+        }
+    }
+
+    // Pre-compute color/range Gaussian LUT (for intensity diff 0..255*channels)
+    let inv_2_sigma_c2 = 1.0 / (2.0 * sigma_color * sigma_color);
+    let max_diff = 255.0 * 255.0 * channels as f32;
+    let range_lut_size = (max_diff.sqrt() as usize) + 1;
+    let mut range_lut = vec![0.0f32; range_lut_size + 1];
+    for i in 0..=range_lut_size {
+        let d2 = (i * i) as f32;
+        range_lut[i] = (-(d2 * inv_2_sigma_c2)).exp();
+    }
+
+    let mut result = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut weighted_sum = vec![0.0f32; channels];
+            let mut weight_sum = 0.0f32;
+
+            let center_off = (y * w + x) * channels;
+
+            for dy in 0..d {
+                let ny = y as isize + dy as isize - radius as isize;
+                let ny = ny.clamp(0, h as isize - 1) as usize;
+
+                for dx in 0..d {
+                    let nx = x as isize + dx as isize - radius as isize;
+                    let nx = nx.clamp(0, w as isize - 1) as usize;
+
+                    let n_off = (ny * w + nx) * channels;
+
+                    // Color distance
+                    let mut color_dist2 = 0i32;
+                    for c in 0..channels {
+                        let diff = pixels[center_off + c] as i32 - pixels[n_off + c] as i32;
+                        color_dist2 += diff * diff;
+                    }
+                    let color_dist = (color_dist2 as f32).sqrt() as usize;
+                    let range_w = if color_dist < range_lut.len() {
+                        range_lut[color_dist]
+                    } else {
+                        0.0
+                    };
+
+                    let w_total = spatial_weights[dy * d + dx] * range_w;
+                    weight_sum += w_total;
+
+                    for c in 0..channels {
+                        weighted_sum[c] += pixels[n_off + c] as f32 * w_total;
+                    }
+                }
+            }
+
+            let inv_weight = if weight_sum > 0.0 { 1.0 / weight_sum } else { 1.0 };
+            for c in 0..channels {
+                result[center_off + c] =
+                    (weighted_sum[c] * inv_weight).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+// ─── Guided Filter (He et al. 2010) ──────────────────────────────────────
+
+/// Edge-preserving guided filter.
+///
+/// O(N) complexity regardless of radius. Uses a guidance image (typically
+/// the input itself) to compute local linear model a*I+b that smooths
+/// while preserving edges in the guidance.
+///
+/// - `radius`: window radius (4-8 typical)
+/// - `epsilon`: regularization parameter (0.01-0.1 typical; smaller = more edge-preserving)
+///
+/// For self-guided filtering, the input is used as both source and guide.
+pub fn guided_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    radius: u32,
+    epsilon: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "guided filter requires Gray8 input".into(),
+        ));
+    }
+
+    let (w, h) = (info.width as usize, info.height as usize);
+    let r = radius as usize;
+    let eps = epsilon;
+
+    // Convert to f32
+    let input: Vec<f32> = pixels.iter().map(|&v| v as f32 / 255.0).collect();
+
+    // For self-guided: guide = input
+    let guide = &input;
+
+    // Box mean via integral image (O(1) per pixel)
+    let mean_i = box_mean(&input, w, h, r);
+    let mean_p = box_mean(&input, w, h, r); // p = input for self-guided
+
+    // mean(I*p)
+    let ip: Vec<f32> = input.iter().zip(guide.iter()).map(|(&a, &b)| a * b).collect();
+    let mean_ip = box_mean(&ip, w, h, r);
+
+    // mean(I*I)
+    let ii: Vec<f32> = guide.iter().map(|&v| v * v).collect();
+    let mean_ii = box_mean(&ii, w, h, r);
+
+    // Compute a and b for each window
+    let n = w * h;
+    let mut a = vec![0.0f32; n];
+    let mut b = vec![0.0f32; n];
+
+    for i in 0..n {
+        let cov_ip = mean_ip[i] - mean_i[i] * mean_p[i];
+        let var_i = mean_ii[i] - mean_i[i] * mean_i[i];
+        a[i] = cov_ip / (var_i + eps);
+        b[i] = mean_p[i] - a[i] * mean_i[i];
+    }
+
+    // Average a and b over window
+    let mean_a = box_mean(&a, w, h, r);
+    let mean_b = box_mean(&b, w, h, r);
+
+    // Output: mean_a * I + mean_b
+    let mut result = vec![0u8; n];
+    for i in 0..n {
+        let v = (mean_a[i] * guide[i] + mean_b[i]) * 255.0;
+        result[i] = v.round().clamp(0.0, 255.0) as u8;
+    }
+
+    Ok(result)
+}
+
+/// Box mean via integral image — O(1) per pixel regardless of radius.
+fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
+    let n = w * h;
+
+    // Build integral image (summed area table)
+    let mut sat = vec![0.0f64; (w + 1) * (h + 1)];
+    for y in 0..h {
+        for x in 0..w {
+            sat[(y + 1) * (w + 1) + (x + 1)] = data[y * w + x] as f64
+                + sat[y * (w + 1) + (x + 1)]
+                + sat[(y + 1) * (w + 1) + x]
+                - sat[y * (w + 1) + x];
+        }
+    }
+
+    // Query box mean for each pixel
+    let mut result = vec![0.0f32; n];
+    for y in 0..h {
+        let y0 = y.saturating_sub(radius);
+        let y1 = (y + radius + 1).min(h);
+        for x in 0..w {
+            let x0 = x.saturating_sub(radius);
+            let x1 = (x + radius + 1).min(w);
+            let count = (y1 - y0) * (x1 - x0);
+            let sum = sat[y1 * (w + 1) + x1] - sat[y0 * (w + 1) + x1]
+                - sat[y1 * (w + 1) + x0]
+                + sat[y0 * (w + 1) + x0];
+            result[y * w + x] = (sum / count as f64) as f32;
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1754,5 +2099,144 @@ mod optimization_tests {
             "median radius=3 on 512x512 took {:?}, expected < 500ms",
             elapsed
         );
+    }
+
+    // ─── CLAHE Tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn clahe_enhances_low_contrast() {
+        let info = ImageInfo {
+            width: 64,
+            height: 64,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Low-contrast input: values 100-155
+        let pixels: Vec<u8> = (0..(64 * 64)).map(|i| (100 + (i % 56)) as u8).collect();
+        let result = clahe(&pixels, &info, 2.0, 8).unwrap();
+
+        // CLAHE should expand dynamic range
+        let in_range = *pixels.iter().max().unwrap() as i32 - *pixels.iter().min().unwrap() as i32;
+        let out_range = *result.iter().max().unwrap() as i32 - *result.iter().min().unwrap() as i32;
+        assert!(
+            out_range > in_range,
+            "CLAHE should expand range: in={in_range}, out={out_range}"
+        );
+    }
+
+    #[test]
+    fn clahe_flat_image_stays_flat() {
+        let info = ImageInfo {
+            width: 32,
+            height: 32,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![128u8; 32 * 32];
+        let result = clahe(&pixels, &info, 2.0, 4).unwrap();
+        // Flat image should remain flat (within ±1 rounding)
+        for &v in &result {
+            assert!((v as i32 - 128).abs() <= 1, "flat pixel changed to {v}");
+        }
+    }
+
+    #[test]
+    fn clahe_rejects_non_gray() {
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        assert!(clahe(&vec![0u8; 48], &info, 2.0, 8).is_err());
+    }
+
+    // ─── Bilateral Filter Tests ───────────────────────────────────────────
+
+    #[test]
+    fn bilateral_preserves_edges() {
+        let info = ImageInfo {
+            width: 32,
+            height: 32,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Half black, half white
+        let mut pixels = vec![0u8; 32 * 32];
+        for y in 0..32 {
+            for x in 16..32 {
+                pixels[y * 32 + x] = 255;
+            }
+        }
+        let result = bilateral(&pixels, &info, 5, 50.0, 50.0).unwrap();
+
+        // Edge should be preserved: pixels at x=14 should still be dark, x=18 still bright
+        let mid_y = 16;
+        assert!(result[mid_y * 32 + 14] < 50, "left of edge should be dark");
+        assert!(result[mid_y * 32 + 18] > 200, "right of edge should be bright");
+    }
+
+    #[test]
+    fn bilateral_smooths_noise() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Noisy flat region
+        let pixels: Vec<u8> = (0..256)
+            .map(|i| (128i32 + ((i * 17 + 5) % 21) as i32 - 10).clamp(0, 255) as u8)
+            .collect();
+        let result = bilateral(&pixels, &info, 5, 25.0, 25.0).unwrap();
+
+        // Should reduce variance
+        let var_in: f64 = pixels.iter().map(|&v| (v as f64 - 128.0).powi(2)).sum::<f64>() / 256.0;
+        let mean_out = result.iter().map(|&v| v as f64).sum::<f64>() / 256.0;
+        let var_out: f64 = result.iter().map(|&v| (v as f64 - mean_out).powi(2)).sum::<f64>() / 256.0;
+        assert!(var_out < var_in, "bilateral should reduce variance: {var_out:.1} vs {var_in:.1}");
+    }
+
+    // ─── Guided Filter Tests ──────────────────────────────────────────────
+
+    #[test]
+    fn guided_filter_smooths() {
+        let info = ImageInfo {
+            width: 32,
+            height: 32,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        // Noisy flat region (128 ± noise)
+        let pixels: Vec<u8> = (0..(32 * 32))
+            .map(|i| (128i32 + ((i * 17 + 3) % 21) as i32 - 10).clamp(0, 255) as u8)
+            .collect();
+        let result = guided_filter(&pixels, &info, 4, 0.01).unwrap();
+
+        // Should reduce variance from mean
+        let mean_in = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let var_in: f64 = pixels.iter().map(|&v| (v as f64 - mean_in).powi(2)).sum::<f64>() / pixels.len() as f64;
+        let mean_out = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        let var_out: f64 = result.iter().map(|&v| (v as f64 - mean_out).powi(2)).sum::<f64>() / result.len() as f64;
+        assert!(
+            var_out < var_in,
+            "guided filter should reduce variance: {var_out:.1} vs {var_in:.1}"
+        );
+    }
+
+    #[test]
+    fn guided_filter_flat_identity() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![100u8; 16 * 16];
+        let result = guided_filter(&pixels, &info, 4, 0.01).unwrap();
+        // Flat input should produce flat output
+        for &v in &result {
+            assert!((v as i32 - 100).abs() <= 1, "flat pixel changed to {v}");
+        }
     }
 }
