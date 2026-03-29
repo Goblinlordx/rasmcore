@@ -9,6 +9,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+echo "=== 0. Installing demo dependencies ==="
+cd "$SCRIPT_DIR"
+npm install --silent 2>/dev/null || true
+cd "$PROJECT_ROOT"
+
 echo "=== 1. Building WASM component (release) ==="
 cd "$PROJECT_ROOT"
 cargo component build -p rasmcore-image --release

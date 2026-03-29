@@ -1,7 +1,7 @@
 title: Demo Pipeline Builder — Visual DAG Editor with Auto-Discovered Operations
 status: pending
 type: feature
-approved: false
+approved: true
 created: '2026-03-29'
 updated: '2026-03-29'
 deps:

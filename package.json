@@ -8,7 +8,7 @@
     "sdk:test": "node --test sdk/typescript/tests/",
     "demo:build": "./demo/build.sh",
     "demo:serve": "npx serve demo/",
-    "demo": "cd demo && npx vite"
+    "demo": "cd demo && npm install --silent && npx vite"
   },
   "devDependencies": {
     "@bytecodealliance/jco": "^1.17.5"
