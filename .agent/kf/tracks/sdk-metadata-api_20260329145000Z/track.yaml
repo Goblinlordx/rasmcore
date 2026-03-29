@@ -41,6 +41,10 @@ spec:
     - MetadataSnapshot.read(path) returns value at dot-path or undefined for valid but absent fields
     - keepMetadata() is chainable, opts in to passthrough of all source metadata
     - setMetadata(path, value) is chainable, adds/overrides a metadata field
+    - loadMetadata(obj) is chainable, bulk-sets metadata from a dump()-shaped object (inverse of dump)
+    - loadMetadata validates all containers and fields in the object, same error format as setMetadata
+    - loadMetadata works without keepMetadata (writes new metadata to clean output)
+    - loadMetadata + keepMetadata merges — loadMetadata fields override source fields
     - stripMetadata(path) is chainable, removes field or subtree (only meaningful after keepMetadata)
     - By default (no keepMetadata), output has NO metadata from source
     - setMetadata works without keepMetadata (adds new metadata to clean output)
@@ -56,7 +60,7 @@ spec:
     - Invalid container name errors with valid containers list (e.g., "asdf" is not a valid metadata container. Valid containers are exif, xmp, iptc, icc)
     - Invalid field name errors with valid fields list for that container (e.g., "FakeField" is not a valid EXIF field. Valid fields are Artist, Make, Model, ...)
     - Malformed path errors with expected format (e.g., Invalid metadata path "noperiod". Expected format container.Field, e.g. exif.Artist)
-    - Validation applies to read(), set(), and strip() — all three reject invalid paths with the same error format
+    - Validation applies to read(), set(), strip(), and loadMetadata() — all reject invalid paths/keys with the same error format
     - Works with JPEG, PNG, TIFF, WebP inputs
   out_of_scope: |
     Writing metadata to formats that don't support it (BMP, QOI, GIF).
@@ -87,6 +91,22 @@ spec:
       await rcimage.load(jpegBytes)
         .setMetadata('exif.Artist', 'rasmcore') // adds to otherwise-clean output
         .blur(3.0)
+        .toJpeg({ quality: 85 });
+
+      // BULK SET — loadMetadata() is the inverse of dump()
+      await rcimage.load(jpegBytes)
+        .loadMetadata({
+          exif: { Artist: 'rasmcore', Copyright: '2026' },
+          xmp: { Creator: 'rasmcore' }
+        })
+        .blur(3.0)
+        .toJpeg({ quality: 85 });
+
+      // Copy metadata between images
+      const meta = await rcimage.load(sourceBytes).metadata();
+      await rcimage.load(targetBytes)
+        .loadMetadata(meta.dump())           // bulk-set from source
+        .stripMetadata('exif.GPSLatitude')   // but remove GPS
         .toJpeg({ quality: 85 });
 
     Python equivalent (no closures needed):
@@ -120,6 +140,8 @@ spec:
          Pipeline node — marks source metadata for passthrough
        set-metadata: func(source: node-id, path: string, value: string) -> result<node-id, rasmcore-error>
          Pipeline node — records metadata override, applied at encode
+       load-metadata: func(source: node-id, json: string) -> result<node-id, rasmcore-error>
+         Pipeline node — bulk-set from JSON object (dump()-shaped), validates all keys
        strip-metadata: func(source: node-id, path: string) -> result<node-id, rasmcore-error>
          Pipeline node — records metadata removal, applied at encode
 
@@ -133,6 +155,7 @@ spec:
        - metadata() async method returning MetadataSnapshot (breaks chain)
        - keepMetadata() chainable method
        - setMetadata(path, value) chainable method
+       - loadMetadata(obj) chainable method (bulk-set, inverse of dump)
        - stripMetadata(path) chainable method
 
     Eager execution for metadata():
@@ -162,13 +185,15 @@ plan:
         done: false
       - text: Add set_metadata and strip_metadata pipeline nodes that modify MetadataSet
         done: false
+      - text: Add load_metadata that bulk-sets from JSON object with full validation
+        done: false
       - text: Test metadata dump/read on JPEG with EXIF + ICC
         done: false
   - phase: WIT + Adapter
     tasks:
       - text: Add metadata-snapshot resource with dump/read methods to pipeline WIT
         done: false
-      - text: Add keep-metadata, set-metadata, strip-metadata pipeline functions to WIT
+      - text: Add keep-metadata, set-metadata, load-metadata, strip-metadata pipeline functions to WIT
         done: false
       - text: Wire adapter dispatch for all metadata operations
         done: false
@@ -176,7 +201,7 @@ plan:
     tasks:
       - text: Update generate-fluent-sdk.cjs to generate metadata() async (chain-breaking)
         done: false
-      - text: Generate keepMetadata(), setMetadata(), stripMetadata() as chainable methods
+      - text: Generate keepMetadata(), setMetadata(), loadMetadata(), stripMetadata() as chainable methods
         done: false
       - text: Verify metadata() does not trigger pixel decode (eager header-only parse)
         done: false
@@ -203,5 +228,13 @@ plan:
       - text: Test invalid field name returns error listing valid fields for that container
         done: false
       - text: Test malformed path (no dot) returns error with expected format
+        done: false
+      - text: Test loadMetadata() bulk-sets from dump()-shaped object
+        done: false
+      - text: Test loadMetadata() validates all containers and fields, rejects invalid keys
+        done: false
+      - text: Test loadMetadata() + keepMetadata() merges (load overrides source)
+        done: false
+      - text: Test copy metadata between images via dump() + loadMetadata()
         done: false
 extra: {}
