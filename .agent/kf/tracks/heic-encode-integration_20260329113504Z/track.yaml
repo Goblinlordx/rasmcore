@@ -1,111 +1,116 @@
 id: heic-encode-integration_20260329113504Z
-title: "HEIC Encode Integration — Wire Encoder into Pipeline + Full Parity Suite"
+title: HEIC Encode Integration — Wire Encoder into Pipeline + Full Parity Suite
 type: feature
 status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Wire the HEVC encoder and ISOBMFF writer into rasmcore-image encoder dispatch.
-    Add full encode-decode parity tests validating pixel-exact roundtrip against
-    x265 + ffmpeg reference at multiple quality levels and image patterns.
-  context: |
-    With the HEVC encoder (tracks 1-3) and ISOBMFF writer (track 4) complete,
+  summary: 'Wire the HEVC encoder and ISOBMFF writer into rasmcore-image encoder dispatch. Add full encode-decode parity tests
+    validating pixel-exact roundtrip against x265 + ffmpeg reference at multiple quality levels and image patterns.
+
+    '
+  context: 'With the HEVC encoder (tracks 1-3) and ISOBMFF writer (track 4) complete,
+
     this track integrates everything into the rasmcore-image pipeline:
+
     - RGB input -> color conversion -> HEVC encode -> ISOBMFF container -> .heic output
+
     - .heic input -> ISOBMFF parse -> HEVC decode -> color conversion -> RGB output
 
+
     The key validation: our encode followed by our decode must produce EXACT pixel
+
     match with x265 encode followed by ffmpeg decode, given the same parameters.
-  codebase_analysis: |
-    Integration points:
+
+    '
+  codebase_analysis: 'Integration points:
+
     - crates/rasmcore-image/src/domain/encoder/mod.rs — add heic/heif format dispatch
+
     - crates/rasmcore-image/src/domain/encoder/ — new heic.rs module
+
     - wit/image/encoder.wit — add HevcEncodeConfig WIT type
+
     - crates/rasmcore-image/src/domain/decoder/mod.rs — already has decode_heif()
+
     - crates/rasmcore-image/src/domain/pipeline/nodes/sink.rs — add write_heic sink
 
+
     Existing encoder integration pattern (from AVIF):
+
     - AvifEncodeConfig with quality + speed
+
     - encode() function in domain encoder
+
     - WIT interface record
+
     - Pipeline sink function
+
+    '
   acceptance_criteria:
-    - encode("heic", pixels, config) produces valid HEIC file
-    - Roundtrip our_encode -> our_decode = pixel-exact (within QP loss)
-    - Roundtrip our_encode -> ffmpeg_decode = pixel-exact vs our_encode -> our_decode
-    - x265_encode -> our_decode vs our_encode -> our_decode = exact match at same QP
-    - Three-way validation passes (our_encode->our_decode, our_encode->ref_decode, ref_encode->ref_decode)
-    - Quality config (1-100) maps to QP correctly
-    - ICC profile preservation through encode-decode roundtrip
-    - WIT interface defined and domain encoder wired
-    - Pipeline sink (write_heic) functional
-    - All encode-decode parity tests pass for flat, gradient, checker at Q50 and Q80
-    - All FP-induced differences documented
-    - clippy clean, cargo test passes
-  out_of_scope: |
-    HEVC encoder internals (previous tracks). ISOBMFF writing (previous track).
+  - encode("heic", pixels, config) produces valid HEIC file
+  - Roundtrip our_encode -> our_decode = pixel-exact (within QP loss)
+  - Roundtrip our_encode -> ffmpeg_decode = pixel-exact vs our_encode -> our_decode
+  - x265_encode -> our_decode vs our_encode -> our_decode = exact match at same QP
+  - Three-way validation passes (our_encode->our_decode, our_encode->ref_decode, ref_encode->ref_decode)
+  - Quality config (1-100) maps to QP correctly
+  - ICC profile preservation through encode-decode roundtrip
+  - WIT interface defined and domain encoder wired
+  - Pipeline sink (write_heic) functional
+  - All encode-decode parity tests pass for flat, gradient, checker at Q50 and Q80
+  - All FP-induced differences documented
+  - clippy clean, cargo test passes
+  out_of_scope: 'HEVC encoder internals (previous tracks). ISOBMFF writing (previous track).
+
     Grid/tiled encoding (single-image only initially). Animation.
+
     SIMD optimization. Trellis quantization.
-  technical_notes: |
-    Integration follows the AVIF pattern:
 
-    1. Create HevcEncodeConfig (quality 1-100, maps to QP 0-51)
-    2. Create heic.rs encoder module in domain/encoder/
-    3. Wire into encoder dispatch: "heic" | "heif" => encode_heic()
-    4. Add WIT interface type in wit/image/encoder.wit
-    5. Add pipeline sink write_heic()
-
-    Encode pipeline:
-    - rasmcore_color::rgb_to_ycbcr_420(pixels, w, h, &ColorMatrix::BT709)
-    - rasmcore_hevc::encode(yuv, w, h, qp) -> hevc_bitstream
-    - rasmcore_isobmff::assemble_heic(hevc_bitstream, w, h, ...) -> heic_bytes
-
-    Parity test methodology:
-    - For each test image and quality level:
-      1. A = our_encode(img) -> our_decode -> pixels_A
-      2. B = our_encode(img) -> ffmpeg_decode -> pixels_B
-      3. C = x265_encode(img, same_QP) -> our_decode -> pixels_C
-      4. Assert A == B (our encoder is self-consistent)
-      5. Assert A == C (our encoder matches x265)
-      6. Document any diffs with root cause
-
-    Ref: crates/rasmcore-image/src/domain/encoder/avif.rs (integration pattern)
+    '
+  technical_notes: "Integration follows the AVIF pattern:\n\n1. Create HevcEncodeConfig (quality 1-100, maps to QP 0-51)\n\
+    2. Create heic.rs encoder module in domain/encoder/\n3. Wire into encoder dispatch: \"heic\" | \"heif\" => encode_heic()\n\
+    4. Add WIT interface type in wit/image/encoder.wit\n5. Add pipeline sink write_heic()\n\nEncode pipeline:\n- rasmcore_color::rgb_to_ycbcr_420(pixels,\
+    \ w, h, &ColorMatrix::BT709)\n- rasmcore_hevc::encode(yuv, w, h, qp) -> hevc_bitstream\n- rasmcore_isobmff::assemble_heic(hevc_bitstream,\
+    \ w, h, ...) -> heic_bytes\n\nParity test methodology:\n- For each test image and quality level:\n  1. A = our_encode(img)\
+    \ -> our_decode -> pixels_A\n  2. B = our_encode(img) -> ffmpeg_decode -> pixels_B\n  3. C = x265_encode(img, same_QP)\
+    \ -> our_decode -> pixels_C\n  4. Assert A == B (our encoder is self-consistent)\n  5. Assert A == C (our encoder matches\
+    \ x265)\n  6. Document any diffs with root cause\n\nRef: crates/rasmcore-image/src/domain/encoder/avif.rs (integration\
+    \ pattern)\n"
 plan:
-  - phase: "Encoder Module"
-    tasks:
-      - text: "Create HevcEncodeConfig with quality (1-100) and QP mapping"
-        done: false
-      - text: "Create domain/encoder/heic.rs with encode function"
-        done: false
-      - text: "Wire into encoder dispatch (heic/heif format strings)"
-        done: false
-  - phase: "Pipeline Integration"
-    tasks:
-      - text: "Add WIT interface type for hevc-encode-config in encoder.wit"
-        done: false
-      - text: "Add write_heic pipeline sink function"
-        done: false
-      - text: "Feature-gate behind nonfree-hevc flag"
-        done: false
-  - phase: "Parity Tests"
-    tasks:
-      - text: "Add encode-decode roundtrip test — our_encode -> our_decode for flat_64x64"
-        done: false
-      - text: "Add cross-decoder test — our_encode -> ffmpeg_decode, compare vs our_decode"
-        done: false
-      - text: "Add cross-encoder test — x265_encode vs our_encode at same QP, compare decoded output"
-        done: false
-      - text: "Add parity tests for gradient_128x128 and checker_256x256"
-        done: false
-      - text: "Add quality config test — verify Q50 and Q80 produce expected file sizes and PSNR"
-        done: false
-  - phase: "Validation"
-    tasks:
-      - text: "ICC profile roundtrip test — embed ICC, encode, decode, verify profile preserved"
-        done: false
-      - text: "Document all FP or rounding differences with citations"
-        done: false
-      - text: "clippy clean, cargo test passes"
-        done: false
+- phase: Encoder Module
+  tasks:
+  - text: Create HevcEncodeConfig with quality (1-100) and QP mapping
+    done: true
+  - text: Create domain/encoder/heic.rs with encode function
+    done: true
+  - text: Wire into encoder dispatch (heic/heif format strings)
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add WIT interface type for hevc-encode-config in encoder.wit
+    done: true
+  - text: Add write_heic pipeline sink function
+    done: true
+  - text: Feature-gate behind nonfree-hevc flag
+    done: true
+- phase: Parity Tests
+  tasks:
+  - text: Add encode-decode roundtrip test — our_encode -> our_decode for flat_64x64
+    done: true
+  - text: Add cross-decoder test — our_encode -> ffmpeg_decode, compare vs our_decode
+    done: true
+  - text: Add cross-encoder test — x265_encode vs our_encode at same QP, compare decoded output
+    done: true
+  - text: Add parity tests for gradient_128x128 and checker_256x256
+    done: true
+  - text: Add quality config test — verify Q50 and Q80 produce expected file sizes and PSNR
+    done: true
+- phase: Validation
+  tasks:
+  - text: ICC profile roundtrip test — embed ICC, encode, decode, verify profile preserved
+    done: true
+  - text: Document all FP or rounding differences with citations
+    done: true
+  - text: clippy clean, cargo test passes
+    done: true
 extra: {}
