@@ -203,30 +203,35 @@ pub fn ssd(original: &[u8], prediction: &[u8]) -> u64 {
 /// Walks all non-zero coefficients and sums token costs.
 /// Returns cost in 256-scaled units (256 = 1 bit).
 pub fn estimate_block_bits(quantized: &[i16; 16], block_type: u8) -> u32 {
+    // Find last non-zero coefficient
+    let last_nz = match quantized.iter().rposition(|&c| c != 0) {
+        Some(pos) => pos,
+        None => {
+            // All-zero block: just the EOB signal at position 0
+            let probs =
+                token::get_coeff_probs(block_type as usize, BANDS[0] as usize, 0);
+            return prob_cost(probs[0] as u32); // cost of signaling "zero/EOB"
+        }
+    };
+
     let mut total_cost = 0u32;
     let mut ctx: u8 = 0; // initial context: zero/eob
 
-    for i in 0..16 {
+    for i in 0..=last_nz {
         let band = BANDS[i];
-        let cost = estimate_token_cost(quantized[i], block_type, band, ctx);
-        total_cost += cost;
+        total_cost += estimate_token_cost(quantized[i], block_type, band, ctx);
 
-        // Update context for next coefficient
         ctx = match quantized[i].unsigned_abs() {
             0 => 0,
             1 => 1,
             _ => 2,
         };
+    }
 
-        // If all remaining are zero, add EOB cost and stop
-        if quantized[i] != 0 && quantized[i + 1..].iter().all(|&c| c == 0) {
-            // EOB at next position
-            if i + 1 < 16 {
-                let eob_band = BANDS[i + 1];
-                total_cost += estimate_token_cost(0, block_type, eob_band, ctx);
-            }
-            break;
-        }
+    // EOB after last non-zero
+    if last_nz + 1 < 16 {
+        let eob_band = BANDS[last_nz + 1];
+        total_cost += estimate_token_cost(0, block_type, eob_band, ctx);
     }
 
     total_cost

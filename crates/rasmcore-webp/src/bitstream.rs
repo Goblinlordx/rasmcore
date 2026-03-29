@@ -12,6 +12,7 @@ use crate::filter;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};
 use crate::ratecontrol::EncodeParams;
+use crate::rdo;
 use crate::segment::{self, SegmentMap};
 use crate::tables;
 use crate::token;
@@ -568,7 +569,7 @@ fn encode_macroblock(
     let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
 
     // ─── I16x16 mode evaluation (RD cost) ────────────────────────────────
-    let (i16_mode, i16_rd_cost) = predict::select_best_16x16_rd(
+    let (i16_mode, _) = predict::select_best_16x16_rd(
         &y_block,
         &above_y,
         &left_y,
@@ -590,23 +591,14 @@ fn encode_macroblock(
         &mut i16_pred,
     );
 
-    // I16x16 SAD (still needed for B_PRED comparison)
-    let i16_sad: u32 = y_block
-        .iter()
-        .zip(i16_pred.iter())
-        .map(|(&a, &b)| (a as i32 - b as i32).unsigned_abs())
-        .sum();
-
     // ─── B_PRED mode evaluation ─────────────────────────────────────────
     let mut b_modes = [0u8; 16];
-    let mut bpred_sad: u32 = 0;
     let mut bpred_preds = [[0u8; 16]; 16]; // per-block prediction
 
     for sb in 0..16 {
         let sb_row = sb / 4;
         let sb_col = sb % 4;
 
-        // Extract 4x4 source block
         let mut src_4x4 = [0u8; 16];
         for r in 0..4 {
             for c in 0..4 {
@@ -614,9 +606,6 @@ fn encode_macroblock(
             }
         }
 
-        // Get 4x4 prediction neighbors from the reconstructed frame.
-        // For sub-blocks within the MB, use the recon frame which has
-        // previously encoded blocks. The very first MB uses default values.
         let (above_4, left_4, al, ar) =
             get_4x4_neighbors(recon_y, y_stride, mb_col, mb_row, sb_row, sb_col);
 
@@ -626,20 +615,114 @@ fn encode_macroblock(
         let mut pred = [0u8; 16];
         predict::predict_4x4(mode, &above_4, &left_4, al, &ar, &mut pred);
         bpred_preds[sb] = pred;
-
-        let sad: u32 = src_4x4
-            .iter()
-            .zip(pred.iter())
-            .map(|(&a, &b)| (a as i32 - b as i32).unsigned_abs())
-            .sum();
-        bpred_sad += sad;
     }
 
-    // ─── Mode decision ──────────────────────────────────────────────────
-    // B_PRED has a mode signaling overhead (~12-15 bits per MB for 16 modes).
-    // Apply a small bias (~128 SAD units) to prefer simpler I16x16 mode
-    // when the quality difference is marginal.
-    let use_bpred = bpred_sad + 128 < i16_sad;
+    // ─── Mode decision: full RD cost comparison ─────────────────────────
+    // Trial-encode both B_PRED and I16x16 paths, compute reconstruction-based
+    // RD cost, and pick whichever has lower cost.
+
+    // B_PRED RD: DCT→quant→RDO→bits + dequant→IDCT→SSD
+    let mut bpred_ssd: u64 = 0;
+    let mut bpred_bits: u32 = rdo::mode_header_cost_16x16(4); // B_PRED MB header
+    for sb in 0..16 {
+        let sb_row = sb / 4;
+        let sb_col = sb % 4;
+        let mut src_4x4 = [0u8; 16];
+        for r in 0..4 {
+            for c in 0..4 {
+                src_4x4[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+            }
+        }
+        // Mode header cost for this sub-block's 4x4 mode
+        bpred_bits += rdo::mode_header_cost_4x4(b_modes[sb]);
+
+        // Forward DCT + quantize + RDO prune
+        let mut coeffs = [0i16; 16];
+        dct::forward_dct(&src_4x4, &bpred_preds[sb], &mut coeffs);
+        let mut quantized = [0i16; 16];
+        quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut quantized);
+        rdo::rdo_prune_block(&mut quantized, &coeffs, &seg_quant.y_dc, 3, lambda);
+
+        // Estimate encoding cost (block_type 3 = Y-with-DC for B_PRED)
+        bpred_bits += rdo::estimate_block_bits(&quantized, 3);
+
+        // Reconstruct to measure SSD
+        let mut dequant = [0i16; 16];
+        quant::dequantize_block(&quantized, &seg_quant.y_dc, &mut dequant);
+        let mut recon_block = [0u8; 16];
+        dct::inverse_dct(&dequant, &bpred_preds[sb], &mut recon_block);
+
+        for i in 0..16 {
+            let d = src_4x4[i] as i32 - recon_block[i] as i32;
+            bpred_ssd += (d * d) as u64;
+        }
+    }
+    let bpred_rd = rdo::rd_cost(bpred_ssd, bpred_bits, lambda);
+
+    // I16x16 RD: same trial encode approach for fair comparison
+    let mut i16_ssd: u64 = 0;
+    let mut i16_bits: u32 = rdo::mode_header_cost_16x16(i16_mode as u8);
+    let mut i16_trial_ac = [[0i16; 16]; 16];
+    let mut i16_dc_coeffs = [0i16; 16];
+    for sb in 0..16 {
+        let sb_row = sb / 4;
+        let sb_col = sb % 4;
+        let mut src_4x4 = [0u8; 16];
+        let mut ref_4x4 = [0u8; 16];
+        for r in 0..4 {
+            for c in 0..4 {
+                src_4x4[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                ref_4x4[r * 4 + c] = i16_pred[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+            }
+        }
+        let mut coeffs = [0i16; 16];
+        dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
+        i16_dc_coeffs[sb] = coeffs[0];
+        let mut quantized = [0i16; 16];
+        quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
+        rdo::rdo_prune_block(&mut quantized, &coeffs, &seg_quant.y_ac, 0, lambda);
+        quantized[0] = 0; // DC goes to Y2
+        i16_trial_ac[sb] = quantized;
+        i16_bits += rdo::estimate_block_bits(&quantized, 0);
+    }
+    // Y2 block (WHT of DC coefficients)
+    let mut y2_trial = [0i16; 16];
+    dct::forward_wht(&i16_dc_coeffs, &mut y2_trial);
+    let mut y2_trial_q = [0i16; 16];
+    quant::quantize_block(&y2_trial, &seg_quant.y2_dc, &mut y2_trial_q);
+    rdo::rdo_prune_block(&mut y2_trial_q, &y2_trial, &seg_quant.y2_dc, 1, lambda);
+    i16_bits += rdo::estimate_block_bits(&y2_trial_q, 1);
+
+    // Reconstruct I16x16 to measure SSD
+    let mut y2_dequant_trial = [0i16; 16];
+    quant::dequantize_block(&y2_trial_q, &seg_quant.y2_dc, &mut y2_dequant_trial);
+    let mut recon_dc_trial = [0i16; 16];
+    dct::inverse_wht(&y2_dequant_trial, &mut recon_dc_trial);
+    for sb in 0..16 {
+        let sb_row = sb / 4;
+        let sb_col = sb % 4;
+        let mut dequant = [0i16; 16];
+        quant::dequantize_block(&i16_trial_ac[sb], &seg_quant.y_ac, &mut dequant);
+        dequant[0] = recon_dc_trial[sb];
+        let mut ref_4x4 = [0u8; 16];
+        for r in 0..4 {
+            for c in 0..4 {
+                ref_4x4[r * 4 + c] = i16_pred[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+            }
+        }
+        let mut recon_block = [0u8; 16];
+        dct::inverse_dct(&dequant, &ref_4x4, &mut recon_block);
+        for r in 0..4 {
+            for c in 0..4 {
+                let orig = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c] as i32;
+                let rec = recon_block[r * 4 + c] as i32;
+                i16_ssd += ((orig - rec) * (orig - rec)) as u64;
+            }
+        }
+    }
+    let i16_rd = rdo::rd_cost(i16_ssd, i16_bits, lambda);
+
+    let use_bpred = bpred_rd < i16_rd;
     let final_y_mode: u8 = if use_bpred { 4 } else { i16_mode as u8 };
 
     // ─── Coefficient encoding ───────────────────────────────────────────
