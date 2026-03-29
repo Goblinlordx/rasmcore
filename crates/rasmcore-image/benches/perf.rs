@@ -151,6 +151,141 @@ fn decoder_benchmarks(c: &mut Criterion) {
                 b.iter(|| ref_tools::magick_decode(&p));
             });
         }
+
+        // TIFF decode
+        let tiff_path = ensure_input("tiff", size);
+        let tiff_data = std::fs::read(&tiff_path).unwrap();
+
+        group.bench_with_input(
+            BenchmarkId::new("tiff/rasmcore", size),
+            &tiff_data,
+            |b, data| {
+                b.iter(|| decoder::decode(data).unwrap());
+            },
+        );
+
+        if ref_tools::has_tool("magick") {
+            let p = tiff_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("tiff/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_decode(&p));
+            });
+        }
+
+        if ref_tools::has_tool("vips") {
+            let p = tiff_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("tiff/libvips", size), |b| {
+                b.iter(|| ref_tools::vips_decode(&p));
+            });
+        }
+
+        // GIF decode
+        let gif_path = ensure_input("gif", size);
+        let gif_data = std::fs::read(&gif_path).unwrap();
+
+        group.bench_with_input(
+            BenchmarkId::new("gif/rasmcore", size),
+            &gif_data,
+            |b, data| {
+                b.iter(|| decoder::decode(data).unwrap());
+            },
+        );
+
+        if ref_tools::has_tool("magick") {
+            let p = gif_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("gif/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_decode(&p));
+            });
+        }
+
+        // BMP decode
+        let bmp_path = ensure_input("bmp", size);
+        let bmp_data = std::fs::read(&bmp_path).unwrap();
+
+        group.bench_with_input(
+            BenchmarkId::new("bmp/rasmcore", size),
+            &bmp_data,
+            |b, data| {
+                b.iter(|| decoder::decode(data).unwrap());
+            },
+        );
+
+        if ref_tools::has_tool("magick") {
+            let p = bmp_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("bmp/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_decode(&p));
+            });
+        }
+
+        // QOI decode
+        let qoi_path = ensure_input("qoi", size);
+        let qoi_data = std::fs::read(&qoi_path).unwrap();
+
+        group.bench_with_input(
+            BenchmarkId::new("qoi/rasmcore", size),
+            &qoi_data,
+            |b, data| {
+                b.iter(|| decoder::decode(data).unwrap());
+            },
+        );
+
+        // AVIF decode (skip if codec not compiled in)
+        let avif_path = ensure_input("avif", size);
+        let avif_data = std::fs::read(&avif_path).unwrap();
+
+        if decoder::decode(&avif_data).is_ok() {
+            group.bench_with_input(
+                BenchmarkId::new("avif/rasmcore", size),
+                &avif_data,
+                |b, data| {
+                    b.iter(|| decoder::decode(data).unwrap());
+                },
+            );
+
+            if ref_tools::has_tool("magick") {
+                let p = avif_path.to_str().unwrap().to_string();
+                group.bench_function(BenchmarkId::new("avif/imagemagick", size), |b| {
+                    b.iter(|| ref_tools::magick_decode(&p));
+                });
+            }
+
+            if ref_tools::has_tool("vips") {
+                let p = avif_path.to_str().unwrap().to_string();
+                group.bench_function(BenchmarkId::new("avif/libvips", size), |b| {
+                    b.iter(|| ref_tools::vips_decode(&p));
+                });
+            }
+        }
+    }
+
+    // HEVC decode (requires nonfree-hevc feature)
+    #[cfg(feature = "nonfree-hevc")]
+    {
+        for &size in &[256u32, 512] {
+            let heic_path = ensure_input("heic", size);
+            let heic_data = std::fs::read(&heic_path).unwrap();
+            let pixel_count = (size * size) as u64;
+            group.throughput(Throughput::Elements(pixel_count));
+
+            group.bench_with_input(
+                BenchmarkId::new("heic/rasmcore", size),
+                &heic_data,
+                |b, data| {
+                    b.iter(|| decoder::decode(data).unwrap());
+                },
+            );
+
+            if ref_tools::has_tool("ffmpeg") {
+                let p = heic_path.to_str().unwrap().to_string();
+                group.bench_function(BenchmarkId::new("heic/ffmpeg", size), |b| {
+                    b.iter(|| {
+                        ref_tools::run_timed(
+                            "ffmpeg",
+                            &["-i", &p, "-f", "rawvideo", "-y", "/dev/null"],
+                        )
+                    });
+                });
+            }
+        }
     }
 
     group.finish();
@@ -164,8 +299,34 @@ fn encoder_benchmarks(c: &mut Criterion) {
     for &size in &[256u32, 512, 1024] {
         let png_path = ensure_input("png", size);
         let png_data = std::fs::read(&png_path).unwrap();
-        let dec = decoder::decode(&png_data).unwrap();
+        let raw_dec = decoder::decode(&png_data).unwrap();
         let png_path_str = png_path.to_str().unwrap().to_string();
+
+        // Ensure 8-bit for encoders that don't support 16-bit
+        let dec = if raw_dec.info.format == PixelFormat::Rgb16
+            || raw_dec.info.format == PixelFormat::Rgba16
+        {
+            let pixels_8: Vec<u8> = raw_dec
+                .pixels
+                .chunks_exact(2)
+                .map(|c| (u16::from_le_bytes([c[0], c[1]]) >> 8) as u8)
+                .collect();
+            let info_8 = ImageInfo {
+                format: if raw_dec.info.format == PixelFormat::Rgb16 {
+                    PixelFormat::Rgb8
+                } else {
+                    PixelFormat::Rgba8
+                },
+                ..raw_dec.info
+            };
+            DecodedImage {
+                pixels: pixels_8,
+                info: info_8,
+                icc_profile: raw_dec.icc_profile,
+            }
+        } else {
+            raw_dec
+        };
 
         group.throughput(Throughput::Elements((size * size) as u64));
 
@@ -221,6 +382,72 @@ fn encoder_benchmarks(c: &mut Criterion) {
             group.bench_function(BenchmarkId::new("png/libvips", size), |b| {
                 b.iter(|| ref_tools::vips_encode(&p, "png", None));
             });
+        }
+
+        // TIFF encode (lossless)
+        group.bench_function(BenchmarkId::new("tiff/rasmcore", size), |b| {
+            b.iter(|| encoder::encode(&dec.pixels, &dec.info, "tiff", None).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("tiff/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_encode(&p, "tiff", None));
+            });
+        }
+
+        if ref_tools::has_tool("vips") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("tiff/libvips", size), |b| {
+                b.iter(|| ref_tools::vips_encode(&p, "tiff", None));
+            });
+        }
+
+        // AVIF encode (lossy, quality sweep — skip if codec not compiled in)
+        if encoder::encode(&dec.pixels, &dec.info, "avif", Some(85)).is_ok() {
+            for &quality in &[75u8, 85, 95] {
+                let label = format!("{size}/q{quality}");
+
+                group.bench_function(BenchmarkId::new("avif/rasmcore", &label), |b| {
+                    b.iter(|| {
+                        encoder::encode(&dec.pixels, &dec.info, "avif", Some(quality)).unwrap()
+                    });
+                });
+
+                if ref_tools::has_tool("magick") {
+                    let p = png_path_str.clone();
+                    group.bench_function(BenchmarkId::new("avif/imagemagick", &label), |b| {
+                        b.iter(|| ref_tools::magick_encode(&p, "avif", Some(quality)));
+                    });
+                }
+            }
+        }
+
+        // QOI encode (lossless, no quality param)
+        group.bench_function(BenchmarkId::new("qoi/rasmcore", size), |b| {
+            b.iter(|| encoder::encode(&dec.pixels, &dec.info, "qoi", None).unwrap());
+        });
+    }
+
+    // HEVC encode (requires nonfree-hevc feature)
+    #[cfg(feature = "nonfree-hevc")]
+    {
+        for &size in &[256u32, 512] {
+            let png_path = ensure_input("png", size);
+            let png_data = std::fs::read(&png_path).unwrap();
+            let dec = decoder::decode(&png_data).unwrap();
+
+            group.throughput(Throughput::Elements((size * size) as u64));
+
+            for &quality in &[75u8, 85, 95] {
+                let label = format!("{size}/q{quality}");
+
+                group.bench_function(BenchmarkId::new("heic/rasmcore", &label), |b| {
+                    b.iter(|| {
+                        encoder::encode(&dec.pixels, &dec.info, "heic", Some(quality)).unwrap()
+                    });
+                });
+            }
         }
     }
 
