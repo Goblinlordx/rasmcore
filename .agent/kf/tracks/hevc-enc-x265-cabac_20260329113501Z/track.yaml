@@ -1,0 +1,121 @@
+id: hevc-enc-x265-cabac_20260329113501Z
+title: "x265 Port — CABAC Arithmetic Encoder + Context Models"
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Direct port of x265 4.1 CABAC entropy encoder to Rust. Covers the binary
+    arithmetic coding engine, all 159 context models, coefficient coding, and
+    syntax element binarization. Validated bin-by-bin against x265 trace output.
+  context: |
+    CABAC encoding is the reverse of the decoder we built — instead of reading bins
+    from a bitstream, we write bins to produce a bitstream. The arithmetic engine
+    maintains range/low state and outputs bytes as the range narrows.
+
+    The decoder experience showed that context model initialization and state
+    transitions must match exactly. The encoder uses the same context tables
+    (Tables 9-5 through 9-37) and state machine. We already have the decoder's
+    context infrastructure; the encoder adds the encoding direction.
+
+    This is the most complex single component. Every syntax element (split_cu_flag,
+    pred_mode, cbf, sig_coeff_flag, coeff_abs_greater1/2, etc.) has specific
+    binarization and context derivation rules that must match x265 exactly.
+  codebase_analysis: |
+    x265 4.1 source files to port:
+    - encoder/entropy.cpp/h — CABAC encoder: encodeBin(), encodeBinEP(),
+      encodeBinTrm(), all syntax element coding functions (codeSplitFlag,
+      codePredMode, codeCoeffNxN, etc.)
+    - common/contexts.h — Context model definitions, init values, state tables
+
+    Existing decoder infrastructure in rasmcore-hevc:
+    - cabac/decoder.rs — CabacDecoder (the inverse operation)
+    - cabac/context.rs — ContextModel, init tables (reusable for encoder)
+    - cabac/tables.rs — RANGE_TAB_LPS, RENORM_TABLE (decoder-side, encoder uses
+      different tables but same state machine)
+    - syntax.rs — Context offsets (SPLIT_CU_CTX_OFFSET, etc.) — shared
+
+    Ref: x265 4.1 encoder/entropy.cpp (~4000 lines)
+  acceptance_criteria:
+    - CABAC encoder produces valid bitstream decodable by our CABAC decoder
+    - Encode-then-decode roundtrip preserves all syntax element values
+    - Coefficient coding (codeCoeffNxN) matches x265 output for known coefficient blocks
+    - Context state after encoding a known sequence matches x265 context state
+    - Bin-by-bin trace comparison against x265 for a simple test case (flat 64x64)
+    - Any differences documented with x265 4.1 entropy.cpp line citations
+    - clippy clean, cargo test passes
+  out_of_scope: |
+    Bitstream writer (previous track). Intra prediction. Transform/quantization.
+    Full CTU encoding loop. Rate control. ISOBMFF container.
+  technical_notes: |
+    Port strategy (follows x265 entropy.cpp structure):
+
+    1. CABAC arithmetic engine: port encodeBin(), encodeBinEP(),
+       encodeBinTrm(), finish(). These are the core arithmetic operations
+       that maintain range/low and output bytes.
+
+    2. Context model encoding: reuse the decoder's ContextModel type.
+       The encoder uses the same state transition (MPS probability update)
+       but in the encoding direction (range subdivision, not comparison).
+
+    3. Syntax element functions — port in dependency order:
+       a. codeSplitFlag, codePredMode, codePartSize (CU structure)
+       b. codePrevIntraLumaDir, codeIntraDir (intra modes)
+       c. codeTransformSkipFlags, codeQtCbfLuma, codeQtCbfChroma (transform)
+       d. codeCoeffNxN (coefficient coding — the most complex function)
+       e. codeLastSignificantXY (last significant position)
+
+    4. Validation approach:
+       - Use the CABAC trace feature from the decoder to capture bin sequences
+       - Encode a known input, decode it, compare bin traces
+       - For coefficient coding: encode known coefficient arrays, decode,
+         verify exact coefficient match
+
+    The x265 CABAC uses the same RANGE_TAB_LPS and state transition as our
+    decoder. The encoding direction reverses the range subdivision:
+    - Decoder: compare offset against range split point
+    - Encoder: choose range subdivision based on the symbol to encode
+
+    Ref: x265 4.1 encoder/entropy.cpp — encodeBin() at line ~120
+    Ref: x265 4.1 common/contexts.h — context model definitions
+plan:
+  - phase: "Arithmetic Engine"
+    tasks:
+      - text: "Port x265 CABAC arithmetic encoder — encodeBin, encodeBinEP, encodeBinTrm, finish"
+        done: false
+      - text: "Add test — encode known bin sequence, verify output bytes match expected"
+        done: false
+      - text: "Add roundtrip test — encode bins, decode with CabacDecoder, verify all bins match"
+        done: false
+  - phase: "CU Structure Coding"
+    tasks:
+      - text: "Port codeSplitFlag, codePredMode, codePartSize, codePredInfo (intra mode syntax)"
+        done: false
+      - text: "Port codePrevIntraLumaDir, codeIntraDirLumaAng, codeIntraDirChroma"
+        done: false
+      - text: "Add test — encode CU structure for DC-only 32x32 CU, decode back, verify"
+        done: false
+  - phase: "Transform and CBF Coding"
+    tasks:
+      - text: "Port codeTransformSkipFlags, codeQtCbfLuma, codeQtCbfChroma, codeQtRootCbf"
+        done: false
+      - text: "Port codeDeltaQP if needed for CU-level QP adjustment"
+        done: false
+  - phase: "Coefficient Coding"
+    tasks:
+      - text: "Port codeLastSignificantXY (last significant coefficient position)"
+        done: false
+      - text: "Port codeCoeffNxN (the core coefficient coding function — sig flags, gt1, gt2, sign, remaining)"
+        done: false
+      - text: "Add test — encode known 8x8 coefficient block, decode, verify exact coefficient match"
+        done: false
+      - text: "Add test — encode 32x32 coefficient block with many non-zero coefficients"
+        done: false
+  - phase: "Validation"
+    tasks:
+      - text: "Full encode-decode roundtrip test — encode a complete I-slice CTU, decode with our decoder"
+        done: false
+      - text: "Document any differences with x265 4.1 citations"
+        done: false
+extra: {}

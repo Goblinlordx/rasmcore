@@ -1,0 +1,162 @@
+id: hevc-enc-x265-intra_20260329113502Z
+title: "x265 Port — Intra Encode Pipeline (Prediction, Transform, Quant, Mode Decision)"
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Direct port of x265 4.1 intra encoding pipeline to Rust. Covers forward DCT/DST,
+    forward quantization, intra prediction mode search, RDO mode decision, CTU/CU/TU
+    recursion, loop filter, and frame-level encode orchestration. Produces a complete
+    valid HEVC I-frame bitstream. Validated for exact pixel match against x265.
+  context: |
+    With bitstream infrastructure (track 1) and CABAC encoder (track 2) complete,
+    this track wires the full intra encoding pipeline. The port follows x265's class
+    hierarchy: Encoder -> FrameEncoder -> Analysis -> Search -> Predict.
+
+    For I-frame-only encoding (HEIC use case), we skip all inter prediction, motion
+    estimation, B-frame logic, and lookahead. This removes ~60% of x265 source.
+
+    Key constraint: EXACT pixel match with x265 when encoding the same input with
+    the same parameters. This means porting the exact integer math for:
+    - Intra prediction (35 modes, reference sample construction)
+    - Forward DCT/DST (butterfly or matrix multiply, same as decoder but forward)
+    - Forward quantization (rounding, dead-zone, scaling)
+    - Mode decision (SAD/SATD costs, RDO selection)
+    - Deblocking filter (in-loop, affects reconstruction)
+    - SAO (parameter estimation and application)
+  codebase_analysis: |
+    x265 4.1 source files to port:
+    - common/predict.cpp/h — predIntraLumaAng(), initAdiPattern(), reference fill
+    - common/intrapred.cpp — C reference 35 angular modes
+    - common/pixel.cpp — SAD, SATD, SSE for mode cost evaluation
+    - common/quant.cpp/h — transformNxN(), quantBlock(), invtransformNxN()
+    - common/dct.cpp — Forward DCT 4/8/16/32, forward DST 4x4
+    - common/cudata.cpp/h — CU data structure, partition geometry
+    - encoder/search.cpp/h — checkIntra(), estIntraPredQT(), encodeResAndCalcRd()
+    - encoder/analysis.cpp/h — compressCTU(), CU quad-tree recursion
+    - encoder/frameencoder.cpp/h — Frame-level encode, CTU row processing
+    - encoder/encoder.cpp/h — Top-level API, frame dispatch
+    - common/deblock.cpp/h — Deblocking filter (encode-side)
+    - encoder/sao.cpp/h — SAO parameter estimation
+    - encoder/framefilter.cpp/h — Post-encode filtering
+    - encoder/ratecontrol.cpp/h — QP selection (CQP mode initially)
+    - encoder/rdcost.h — Lambda, RD cost calculation
+
+    Existing infrastructure:
+    - rasmcore-dct: forward_dct_4x4, forward_dct_8x8, forward_dct_32x32 (missing 16x16)
+    - rasmcore-hevc/predict.rs: decoder-side prediction (reference for encoder)
+    - rasmcore-hevc/filter.rs: decoder-side deblocking (reference for encoder)
+    - rasmcore-hevc/transform/dequant.rs: dequantization tables
+    - rasmcore-color: rgb_to_ycbcr_420 with BT.709 matrix
+  acceptance_criteria:
+    - forward_dct_16x16 and forward_dst_4x4 produce exact match with x265 for known inputs
+    - Forward quantization matches x265 at QP=22 and QP=37 for known coefficient arrays
+    - Intra mode decision selects same modes as x265 for test images (flat, gradient, checker)
+    - Complete encode of flat_64x64 produces a bitstream decodable by our decoder AND ffmpeg
+    - Encode then decode (our encoder -> our decoder) produces pixel-exact output vs input (within QP loss)
+    - Encode then decode (our encoder -> ffmpeg) produces pixel-exact output vs our decoder output
+    - x265 encode then our decode vs our encode then our decode produces exact match at same QP
+    - Any FP-induced or rounding differences documented with x265 4.1 file/line citation
+    - clippy clean, cargo test passes
+  out_of_scope: |
+    Inter prediction, motion estimation, B-frames, P-frames.
+    Multi-pass encoding, adaptive QP per CTU (initial version uses CQP).
+    SIMD optimization (C reference implementations first, SIMD in a follow-up track).
+    ISOBMFF container writing (separate track).
+    Trellis quantization (optimization, can be added later).
+  technical_notes: |
+    Port strategy — follow x265 encode pipeline top-down:
+
+    Phase 1: Forward transforms and quantization
+    - Port forward_dct_16x16 to rasmcore-dct (the only missing size)
+    - Port forward_dst_4x4 to rasmcore-dct
+    - Port forward quantization (quant.cpp quantBlock) to rasmcore-hevc
+    - Validate each with roundtrip tests (forward->inverse = identity within quant)
+
+    Phase 2: Intra prediction for encoding
+    - Adapt predict.rs to work in encode direction (generate all 35 mode candidates)
+    - Port SAD/SATD from pixel.cpp for mode cost evaluation
+    - Port reference sample construction (initAdiPattern from predict.cpp)
+
+    Phase 3: Mode decision
+    - Port checkIntra() and estIntraPredQT() from search.cpp
+    - Port RD cost calculation from rdcost.h
+    - CU quad-tree recursion from analysis.cpp compressCTU()
+
+    Phase 4: Frame-level pipeline
+    - Port frameencoder.cpp CTU row processing (single-threaded initially)
+    - Port encoder.cpp top-level encode function
+    - Wire bitstream + CABAC + intra pipeline into complete encode
+
+    Phase 5: Loop filters for reconstruction
+    - Port encode-side deblocking from deblock.cpp
+    - Port SAO parameter estimation from sao.cpp
+    - Apply in-loop filtering for proper reconstruction
+
+    Phase 6: Full validation
+    - Encode test images (flat, gradient, checker) at QP=22 and QP=37
+    - Compare output bitstreams against x265 reference
+    - Decode with both our decoder and ffmpeg, verify pixel match
+
+    Note: The decoder's predict.rs already implements all 35 intra modes.
+    For encoding, we need the same prediction + mode cost evaluation + selection.
+    We can reuse the decoder's prediction functions directly.
+
+    Ref: x265 4.1 source — encoder/search.cpp, encoder/analysis.cpp
+    Ref: x265 4.1 source — common/quant.cpp, common/predict.cpp
+plan:
+  - phase: "Forward Transforms"
+    tasks:
+      - text: "Port forward_dct_16x16 to rasmcore-dct using HEVC Table 8-6 butterfly (matching x265 dct.cpp)"
+        done: false
+      - text: "Port forward_dst_4x4 to rasmcore-dct using HEVC Table 8-5 (matching x265 dct.cpp)"
+        done: false
+      - text: "Add roundtrip parity tests for both new transforms"
+        done: false
+  - phase: "Forward Quantization"
+    tasks:
+      - text: "Port x265 quant.cpp quantBlock() — forward quantization with dead-zone rounding"
+        done: false
+      - text: "Add parity test — quantize then dequantize at QP=22 and QP=37, verify against x265"
+        done: false
+  - phase: "Intra Mode Analysis"
+    tasks:
+      - text: "Port SAD/SATD primitives from x265 pixel.cpp for mode cost evaluation"
+        done: false
+      - text: "Port intra mode candidate generation and rough mode search (checkIntra)"
+        done: false
+      - text: "Port RDO refinement (estIntraPredQT) for final mode selection"
+        done: false
+      - text: "Add test — verify mode selection matches x265 for flat/gradient/checker blocks"
+        done: false
+  - phase: "CTU Encoding Loop"
+    tasks:
+      - text: "Port CU quad-tree recursion from analysis.cpp compressCTU()"
+        done: false
+      - text: "Port residual encoding path — transform, quant, CABAC coefficient coding"
+        done: false
+      - text: "Wire intra prediction + residual + CABAC into complete CTU encode"
+        done: false
+  - phase: "Frame-Level Encode"
+    tasks:
+      - text: "Port frame encoder orchestration — CTU row loop, WPP context management"
+        done: false
+      - text: "Port encode-side deblocking and SAO from x265 deblock.cpp and sao.cpp"
+        done: false
+      - text: "Wire complete encode pipeline — RGB input to HEVC bitstream output"
+        done: false
+  - phase: "Pixel-Exact Validation"
+    tasks:
+      - text: "Encode flat_64x64 at QP=22 and QP=37 — decode with our decoder, verify valid output"
+        done: false
+      - text: "Encode flat_64x64 — decode with ffmpeg, compare against our decoder output (exact match)"
+        done: false
+      - text: "Encode gradient_128x128 and checker_256x256 — full parity validation"
+        done: false
+      - text: "Compare our encode output against x265 encode output at same QP — document any differences"
+        done: false
+      - text: "Document all FP or rounding differences with x265 4.1 citations"
+        done: false
+extra: {}
