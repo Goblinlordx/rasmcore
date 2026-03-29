@@ -5,113 +5,127 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Extend spatial filters (blur, sharpen, convolve, median), color operations
-    (hue rotate, saturate, sepia, colorize), alpha operations (premultiply,
-    flatten, blend modes), and 3D color LUT to 16-bit pixel formats.
-  context: |
-    With 16-bit I/O (foundation track) and point ops/histogram (point-ops track)
+  summary: 'Extend spatial filters (blur, sharpen, convolve, median), color operations (hue rotate, saturate, sepia, colorize),
+    alpha operations (premultiply, flatten, blend modes), and 3D color LUT to 16-bit pixel formats.
+
+    '
+  context: 'With 16-bit I/O (foundation track) and point ops/histogram (point-ops track)
+
     complete, the remaining processing operations need 16-bit support. Spatial
+
     filters and color operations are essential for complete 16-bit editing chains.
 
-    Key insight: most filters already compute in f32 internally, so the main work
-    is 16-bit I/O marshalling (u16 byte pairs to/from f32), not new algorithms.
-    The 3D color LUT already stores f32 data — only the I/O wrapper changes.
-  codebase_analysis: |
-    Filters (filters.rs):
-    - blur: delegates to libblur. Need to check if libblur supports u16 input,
-      otherwise convert u16->f32->blur->f32->u16.
-    - sharpen: USM = orig + amount*(orig - blur). f32 arithmetic. Just needs I/O.
-    - convolve: reflect-padded 2D convolution. f32 arithmetic. Just needs I/O.
-    - median: local histogram-based. 256-bin histogram becomes 65536-bin for u16.
-    - sobel/canny: grayscale-only. Accept Gray16 input, produce Gray16 output.
-    - premultiply: (c * a + 127) / 255 for u8. For u16: (c * a + 32767) / 65535.
-    - unpremultiply: (c * 255 + a/2) / a for u8. For u16: (c * 65535 + a/2) / a.
-    - flatten: f32 alpha blend. Just needs I/O.
-    - blend modes: f32 formulas. Just needs I/O normalization (u16/65535.0).
-    - add_alpha/remove_alpha: byte manipulation, straightforward for 16-bit.
 
-    Color LUT (color_lut.rs):
-    - ColorLut3D stores [f32; 3] per grid point. lookup() works in [0,1] range.
-    - apply() reads u8 pixels, normalizes to [0,1], looks up, denormalizes.
-    - For u16: normalize as u16/65535.0, denormalize as val*65535.0+0.5.
-    - ColorOp (HueRotate, Saturate, Sepia, Colorize): all work in [0,1] f32.
-      Just needs I/O wrapper.
+    Key insight: most filters already compute in f32 internally, so the main work
+
+    is 16-bit I/O marshalling (u16 byte pairs to/from f32), not new algorithms.
+
+    The 3D color LUT already stores f32 data — only the I/O wrapper changes.
+
+    '
+  codebase_analysis: "Filters (filters.rs):\n- blur: delegates to libblur. Need to check if libblur supports u16 input,\n\
+    \  otherwise convert u16->f32->blur->f32->u16.\n- sharpen: USM = orig + amount*(orig - blur). f32 arithmetic. Just needs\
+    \ I/O.\n- convolve: reflect-padded 2D convolution. f32 arithmetic. Just needs I/O.\n- median: local histogram-based. 256-bin\
+    \ histogram becomes 65536-bin for u16.\n- sobel/canny: grayscale-only. Accept Gray16 input, produce Gray16 output.\n-\
+    \ premultiply: (c * a + 127) / 255 for u8. For u16: (c * a + 32767) / 65535.\n- unpremultiply: (c * 255 + a/2) / a for\
+    \ u8. For u16: (c * 65535 + a/2) / a.\n- flatten: f32 alpha blend. Just needs I/O.\n- blend modes: f32 formulas. Just\
+    \ needs I/O normalization (u16/65535.0).\n- add_alpha/remove_alpha: byte manipulation, straightforward for 16-bit.\n\n\
+    Color LUT (color_lut.rs):\n- ColorLut3D stores [f32; 3] per grid point. lookup() works in [0,1] range.\n- apply() reads\
+    \ u8 pixels, normalizes to [0,1], looks up, denormalizes.\n- For u16: normalize as u16/65535.0, denormalize as val*65535.0+0.5.\n\
+    - ColorOp (HueRotate, Saturate, Sepia, Colorize): all work in [0,1] f32.\n  Just needs I/O wrapper.\n"
   acceptance_criteria:
-    - blur, sharpen, convolve, median work on Rgb16/Rgba16/Gray16 input
-    - Sobel and Canny accept Gray16 input and produce Gray16 output
-    - All 9 blend modes work on 16-bit inputs
-    - premultiply/unpremultiply use (c*a+32767)/65535 for 16-bit
-    - flatten/alpha_composite work on Rgba16 input
-    - add_alpha/remove_alpha work for 16-bit formats
-    - ColorLut3D.apply() works on Rgb16/Rgba16 input
-    - ColorOp (hue_rotate, saturate, sepia, colorize) work on 16-bit
-    - All operations auto-dispatch based on pixel format
-    - All existing 8-bit tests continue to pass
-  out_of_scope: |
-    New filter algorithms (bilateral, CLAHE, NLM) — separate feature tracks.
+  - blur, sharpen, convolve, median work on Rgb16/Rgba16/Gray16 input
+  - Sobel and Canny accept Gray16 input and produce Gray16 output
+  - All 9 blend modes work on 16-bit inputs
+  - premultiply/unpremultiply use (c*a+32767)/65535 for 16-bit
+  - flatten/alpha_composite work on Rgba16 input
+  - add_alpha/remove_alpha work for 16-bit formats
+  - ColorLut3D.apply() works on Rgb16/Rgba16 input
+  - ColorOp (hue_rotate, saturate, sepia, colorize) work on 16-bit
+  - All operations auto-dispatch based on pixel format
+  - All existing 8-bit tests continue to pass
+  out_of_scope: 'New filter algorithms (bilateral, CLAHE, NLM) — separate feature tracks.
+
     SIMD optimization for 16-bit paths — future optimization track.
+
     16-bit grayscale conversion weights (use same BT.709/BT.601 as 8-bit).
-  technical_notes: |
-    Most filters compute in f32 internally. The 16-bit path is:
+
+    '
+  technical_notes: 'Most filters compute in f32 internally. The 16-bit path is:
+
     1. Read u16 byte pairs from Vec<u8>
+
     2. Normalize to f32 (divide by 65535.0)
+
     3. Apply existing f32 algorithm (blur kernel, blend formula, etc.)
+
     4. Denormalize to u16 (multiply by 65535.0, round, clamp)
+
     5. Write u16 byte pairs back to Vec<u8>
 
+
     Exceptions requiring dedicated 16-bit logic:
+
     - median: histogram-based, needs [u32; 65536] local histogram (256KB)
+
     - premultiply/unpremultiply: integer arithmetic, different constants
 
+
     libblur support: check if libblur accepts u16 buffers. If not, convert
+
     u16->f32 before blur, f32->u16 after. The f32 path preserves full precision.
 
+
     Helper functions needed:
+
     - read_u16_pixels(bytes: &[u8]) -> impl Iterator<Item = u16>
+
     - write_u16_pixels(values: impl Iterator<Item = u16>) -> Vec<u8>
+
     - Or use bytemuck for zero-copy reinterpretation
+
+    '
 plan:
-  - phase: I/O Helpers
-    tasks:
-      - text: Add u16 pixel read/write helpers (or bytemuck cast) for Rgb16/Rgba16/Gray16
-        done: false
-      - text: Add f32 normalization helpers for 16-bit (u16_to_f32, f32_to_u16)
-        done: false
-  - phase: Spatial Filters
-    tasks:
-      - text: Add 16-bit blur support (check libblur u16, fallback to f32 path)
-        done: false
-      - text: Add 16-bit sharpen (USM) using 16-bit blur
-        done: false
-      - text: Add 16-bit convolve with reflect-edge padding
-        done: false
-      - text: Add 16-bit median with 65536-bin local histogram
-        done: false
-      - text: Add 16-bit sobel and canny (Gray16 input/output)
-        done: false
-  - phase: Color and Alpha Operations
-    tasks:
-      - text: Add 16-bit ColorLut3D.apply() with u16/65535.0 normalization
-        done: false
-      - text: Add 16-bit ColorOp support (hue_rotate, saturate, sepia, colorize)
-        done: false
-      - text: Add 16-bit premultiply and unpremultiply with (c*a+32767)/65535
-        done: false
-      - text: Add 16-bit flatten/alpha_composite_over
-        done: false
-      - text: Add 16-bit blend modes (all 9, using u16/65535.0 normalization)
-        done: false
-      - text: Add 16-bit add_alpha and remove_alpha
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test blur roundtrip (16-bit blur with sigma=0 should be identity)
-        done: false
-      - text: Test blend modes at 16-bit against W3C spec formulas
-        done: false
-      - text: Test premultiply/unpremultiply roundtrip at 16-bit
-        done: false
-      - text: Verify all existing 8-bit tests still pass
-        done: false
+- phase: I/O Helpers
+  tasks:
+  - text: Add u16 pixel read/write helpers (or bytemuck cast) for Rgb16/Rgba16/Gray16
+    done: true
+  - text: Add f32 normalization helpers for 16-bit (u16_to_f32, f32_to_u16)
+    done: true
+- phase: Spatial Filters
+  tasks:
+  - text: Add 16-bit blur support (check libblur u16, fallback to f32 path)
+    done: true
+  - text: Add 16-bit sharpen (USM) using 16-bit blur
+    done: true
+  - text: Add 16-bit convolve with reflect-edge padding
+    done: true
+  - text: Add 16-bit median with 65536-bin local histogram
+    done: true
+  - text: Add 16-bit sobel and canny (Gray16 input/output)
+    done: true
+- phase: Color and Alpha Operations
+  tasks:
+  - text: Add 16-bit ColorLut3D.apply() with u16/65535.0 normalization
+    done: true
+  - text: Add 16-bit ColorOp support (hue_rotate, saturate, sepia, colorize)
+    done: true
+  - text: Add 16-bit premultiply and unpremultiply with (c*a+32767)/65535
+    done: true
+  - text: Add 16-bit flatten/alpha_composite_over
+    done: true
+  - text: Add 16-bit blend modes (all 9, using u16/65535.0 normalization)
+    done: true
+  - text: Add 16-bit add_alpha and remove_alpha
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test blur roundtrip (16-bit blur with sigma=0 should be identity)
+    done: true
+  - text: Test blend modes at 16-bit against W3C spec formulas
+    done: true
+  - text: Test premultiply/unpremultiply roundtrip at 16-bit
+    done: true
+  - text: Verify all existing 8-bit tests still pass
+    done: true
 extra: {}
