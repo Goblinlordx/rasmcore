@@ -4130,7 +4130,9 @@ pub fn displacement_map(
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| displacement_map(px, i8, map_x, map_y));
+        return process_via_8bit(pixels, info, |px, i8| {
+            displacement_map(px, i8, map_x, map_y)
+        });
     }
 
     let w = info.width as usize;
@@ -7165,7 +7167,10 @@ mod spatial_tests {
             }
         }
         let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
-        assert_eq!(result, pixels, "identity displacement should reproduce input");
+        assert_eq!(
+            result, pixels,
+            "identity displacement should reproduce input"
+        );
     }
 
     #[test]
