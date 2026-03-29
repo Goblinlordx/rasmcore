@@ -39,3 +39,6 @@ hevc-test-vectors_20260328130000Z:
 
 # Update subsystem tracks to also depend on test vectors
 # (These tracks already have deps in their meta.yaml — adding test-vectors)
+
+# WebP RD math alignment — no deps
+webp-rd-cwebp-align_20260329225317Z: []

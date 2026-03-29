@@ -1,0 +1,133 @@
+id: webp-rd-cwebp-align_20260329225317Z
+title: "WebP VP8 Rate-Distortion Math — Full cwebp Alignment"
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Wire in three computed-but-unused RD parameters (i4_penalty, min_disto,
+    sns_strength), fix is_flat_source_16 to use variance instead of range,
+    and resolve the Q95 trellis regression caused by kWeightTrellis at low QP.
+  context: |
+    After NZ context propagation and kWeightTrellis/sharpening addition,
+    photo quality improved from 0.66x to 0.83-0.92x cwebp at Q50-Q75.
+    Three remaining math discrepancies vs libwebp quant_enc.c:
+
+    1. i4_penalty (rdo.rs:677) — computed as 1000*q_i4^2 but never applied.
+       In libwebp, added to rd_best.score in PickBestIntra4 to penalize
+       B_PRED mode selection over I16.
+
+    2. min_disto (rdo.rs:678) — computed as 20*y1_q0 but never used.
+       In libwebp, if I16 distortion < min_disto, I4 evaluation is skipped
+       entirely (the I16 result is already good enough).
+
+    3. sns_strength = 0 (rdo.rs:673) — libwebp default is 50 for method>=4.
+       This controls tlambda which weights spectral distortion (SD) in mode
+       scoring. With sns_strength=0, SD contributes near-zero to RD score,
+       removing frequency-aware mode selection.
+
+    4. is_flat_source_16 (decimate.rs:289) — uses simple max-min <= 20 range
+       check. libwebp uses statistical variance E[X^2] - E[X]^2.
+
+    5. Q95 regression — kWeightTrellis (added in prior track) causes 1024x1024
+       gradient PSNR to drop from 30.2 to 14.3 dB. The frequency-dependent
+       weighting interacts with prediction quality at low QP. Confirmed by
+       reverting kWeightTrellis to weight=1 at Q95 which recovers to 26.0 dB.
+  codebase_analysis: |
+    Key files:
+    - crates/rasmcore-webp/src/rdo.rs — VP8SegmentLambdas struct (lines 588-613),
+      compute_segment_lambdas (lines 620-693). i4_penalty, min_disto, tlambda
+      are all defined as struct fields, computed correctly, but i4_penalty and
+      min_disto have zero references in the codebase.
+
+    - crates/rasmcore-webp/src/decimate.rs — pick_best_intra16 (line 371),
+      pick_best_intra4 (line 466), vp8_decimate (line 816). The I4 vs I16
+      comparison happens via lambda_mode scoring. i4_penalty should be added
+      to rd_best.h in pick_best_intra4 initialization. min_disto should gate
+      the pick_best_intra4 call in vp8_decimate.
+
+    - crates/rasmcore-webp/src/reconstruct.rs — trellis_quantize_block uses
+      K_WEIGHT_TRELLIS. The Q95 regression occurs because at low QP, the 30x
+      DC weight makes trellis distortion dominate rate, producing suboptimal
+      coefficient choices for smooth gradient content.
+
+    - libwebp reference: quant_enc.c SetSegmentParams (lambda formulas),
+      PickBestIntra4 (i4_penalty at line 1088), PickBestIntra16 (min_disto
+      check), IsFlatSource16 (variance computation).
+  acceptance_criteria:
+    - i4_penalty applied to I4 cumulative score in pick_best_intra4, matching libwebp PickBestIntra4
+    - min_disto gates I4 evaluation in vp8_decimate — skip pick_best_intra4 when I16 distortion < min_disto
+    - sns_strength set to 50, enabling spectral distortion (SD) in pick_best_intra16 and pick_best_intra4
+    - is_flat_source_16 uses variance instead of range, matching libwebp IsFlatSource16
+    - Q95 1024x1024 gradient PSNR >= 20 dB (no catastrophic regression)
+    - Photo content Q75 ratios remain >= 0.75x cwebp (edge, perlin, mixed)
+    - All 139 unit tests + 11 encode/decode tests pass
+    - All non-solid parity tests pass
+  out_of_scope: |
+    StatLoop (multi-pass QP adjustment). Adaptive segmentation (per-region QP).
+    VP8OptimizeChroma. These are larger features tracked separately.
+  technical_notes: |
+    Implementation approach:
+
+    1. i4_penalty — In pick_best_intra4, add lambdas.i4_penalty to rd_best.h
+       after initialization (line ~483). This increases the header cost of
+       choosing I4, making I16 win more often when quality difference is small.
+       In libwebp: rd_best->score += dqm->i4_penalty_
+
+    2. min_disto — In vp8_decimate, before calling pick_best_intra4, check if
+       rd.d < lambdas.min_disto as ScoreT. If so, skip I4 entirely. In
+       libwebp: if (rd->D < (score_t)dqm->min_disto_) return
+
+    3. sns_strength — Change from 0 to 50 in compute_segment_lambdas. This
+       makes tlambda = (50*q_i4)>>5, enabling the SD term in mode scoring.
+       The SD term uses tdisto (Hadamard-domain weighted distortion) scaled
+       by mult_8b(tlambda, tdisto). The comment says it caused quality
+       regression — test carefully and calibrate if needed.
+
+    4. is_flat_source_16 — Replace range check with:
+       sum = sum of all 256 pixels (as u32)
+       sum_sq = sum of all 256 pixels squared (as u64)
+       variance = (sum_sq >> 8) - ((sum * sum) >> 16)
+       Return variance < threshold (fetch exact libwebp value via web)
+
+    5. Q95 regression investigation:
+       a) Profile trellis path scores at QP=9 for gradient content
+       b) Check if accumulated weighted distortion creates extreme score
+          imbalances between rate and distortion at low QP
+       c) Consider QP-dependent weight scaling or clamping for low QP
+       d) Compare trellis coefficient choices vs simple quantization at Q95
+plan:
+  - phase: Wire Unused Parameters
+    tasks:
+      - text: Apply i4_penalty to rd_best.h in pick_best_intra4 initialization
+        done: false
+      - text: Add min_disto gate in vp8_decimate before pick_best_intra4 call
+        done: false
+      - text: Verify I4 vs I16 mode decisions change correctly with penalty and gate
+        done: false
+  - phase: Spectral Distortion
+    tasks:
+      - text: Set sns_strength to 50 in compute_segment_lambdas enabling real tlambda
+        done: false
+      - text: Verify SD term contributes to RD scores in pick_best_intra16 and pick_best_intra4
+        done: false
+      - text: Calibrate sns_strength if quality regresses (try 25 and 50 and 75)
+        done: false
+  - phase: Flatness and Variance
+    tasks:
+      - text: Replace is_flat_source_16 range check with variance computation matching libwebp
+        done: false
+      - text: Determine libwebp FLATNESS_THRESHOLD value and use it
+        done: false
+  - phase: Q95 Regression
+    tasks:
+      - text: Root-cause Q95 regression by profiling trellis scores at QP=9 for gradient content
+        done: false
+      - text: Check trellis score accumulation for overflow or extreme values at low QP
+        done: false
+      - text: Implement fix for Q95 regression
+        done: false
+      - text: Verify Q95 >= 20 dB on 1024x1024 gradient and photo ratios >= 0.75x
+        done: false
+extra: {}
