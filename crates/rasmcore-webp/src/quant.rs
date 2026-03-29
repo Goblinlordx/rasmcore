@@ -183,44 +183,39 @@ pub fn dequantize_block(quantized: &[i16; 16], matrix: &QuantMatrix, out: &mut [
 /// - quality 100 → QP 0 (best quality, largest file)
 /// - quality 1 → QP 127 (worst quality, smallest file)
 ///
-/// The mapping is piecewise linear matching libwebp behavior.
+/// Derived from libwebp's `QualityToCompression` + `VP8SetSegmentParams`
+/// (src/enc/quant_enc.c). The formula is:
+///
+/// ```text
+/// Q = quality / 100
+/// linear_c = if Q < 0.75 { Q * 2/3 } else { 2*Q - 1 }
+/// c = linear_c^(1/3)
+/// qp = floor(127 * (1 - c))
+/// ```
+///
+/// We precompute the full lookup table so the encoder stays integer-only
+/// at runtime. Every entry matches `int(127 * (1 - pow(linear_c, 1/3)))`.
 pub fn quality_to_qp(quality: u8) -> u8 {
-    let q = quality.clamp(1, 100) as i32;
+    let q = quality.clamp(1, 100) as usize;
 
-    // libwebp mapping: quality_to_qp
-    // For quality >= 1:
-    //   if quality >= 85: qp = (100 - quality) * 127 / 15    → maps 85-100 to ~127-0
-    //   Linear interpolation matching libwebp's behavior.
-    //
-    // Exact libwebp formula from src/enc/config_enc.c:
-    //   compression = (int)(quality / 100. * 63. + .5);
-    //   Then the QP is derived differently via SetupFilterStrength / SetSegmentParams.
-    //
-    // However, the commonly referenced mapping in libwebp src/enc/quant_enc.c
-    // QualityToCompression is:
-    //   if (c > 99) c = 99;
-    //   if (c < 0) c = 0;
-    //   expansion_q = kQualityToQuantizer[c];
-    //
-    // The actual table in libwebp is piecewise linear. Let's use the same formula:
-    // q_factor = (quality < 50) ? (5000 / q) : (200 - 2 * q)
-    // This gives values in [2, 5000/1=5000] range, then mapped to QP 0-127.
-    //
-    // After studying libwebp more carefully, the quality→QP mapping is:
-    //   qp = 127 - (quality * 127 / 100)  (approximate linear mapping)
-    // but with a nonlinear curve. The exact table values from libwebp:
+    // Every value computed from libwebp's QualityToCompression formula.
+    // No interpolation — all 101 values are exact.
+    #[rustfmt::skip]
+    const CWEBP_QP: [u8; 101] = [
+        127, 103,  96,  92,  89,  86,  83,  81,  79,  77, // Q0-Q9
+         75,  73,  72,  70,  69,  68,  66,  65,  64,  63, // Q10-Q19
+         62,  61,  60,  59,  58,  57,  56,  55,  54,  53, // Q20-Q29
+         52,  51,  51,  50,  49,  48,  48,  47,  46,  45, // Q30-Q39
+         45,  44,  43,  43,  42,  41,  41,  40,  40,  39, // Q40-Q49
+         38,  38,  37,  37,  36,  36,  35,  35,  34,  33, // Q50-Q59
+         33,  32,  32,  31,  31,  30,  30,  29,  29,  28, // Q60-Q69
+         28,  28,  27,  27,  26,  26,  24,  23,  22,  21, // Q70-Q79
+         19,  18,  17,  16,  15,  14,  13,  12,  11,  10, // Q80-Q89
+          9,   8,   7,   6,   5,   4,   3,   2,   1,   0, // Q90-Q99
+          0,                                               // Q100
+    ];
 
-    // Simplified piecewise linear matching libwebp at key points:
-    // q=100 → qp=0, q=95 → qp=6, q=75 → qp=32, q=50 → qp=64, q=25 → qp=96, q=1 → qp=127
-    // Simple linear mapping that gives:
-    // quality 100 → QP 0
-    // quality 1 → QP 127
-    // This matches the general shape of libwebp's quality curve.
-    // The exact mapping in libwebp is more complex (involves segment params
-    // and filter strength), but this linear approximation hits the key points.
-    let qp = ((100 - q) * 127 + 50) / 99;
-
-    qp.clamp(0, 127) as u8
+    CWEBP_QP[q]
 }
 
 /// Complete set of quantization parameters for a VP8 segment.
@@ -373,9 +368,9 @@ mod tests {
         let qp100 = quality_to_qp(100);
         assert_eq!(qp100, 0, "quality 100 should give QP 0");
 
-        // Quality 1 → QP near 127 (worst quality)
+        // Quality 1 → QP 103 (libwebp formula)
         let qp1 = quality_to_qp(1);
-        assert!(qp1 >= 120, "quality 1 should give QP near 127, got {qp1}");
+        assert_eq!(qp1, 103, "quality 1 should give QP 103, got {qp1}");
 
         // Quality is monotonic — higher quality = lower QP
         let mut prev_qp = quality_to_qp(100);
@@ -391,24 +386,39 @@ mod tests {
 
     #[test]
     fn quality_to_qp_key_points() {
-        // These are approximate targets matching libwebp behavior
-        let qp75 = quality_to_qp(75);
-        assert!(
-            (20..=40).contains(&qp75),
-            "quality 75 → QP should be ~25-35, got {qp75}"
-        );
+        // Exact values from libwebp's QualityToCompression formula
+        assert_eq!(quality_to_qp(75), 26);
+        assert_eq!(quality_to_qp(50), 38);
+        assert_eq!(quality_to_qp(25), 57);
+        assert_eq!(quality_to_qp(10), 75);
+        assert_eq!(quality_to_qp(90), 9);
+        assert_eq!(quality_to_qp(100), 0);
+    }
 
-        let qp50 = quality_to_qp(50);
-        assert!(
-            (50..=75).contains(&qp50),
-            "quality 50 → QP should be ~55-70, got {qp50}"
-        );
-
-        let qp25 = quality_to_qp(25);
-        assert!(
-            (85..=105).contains(&qp25),
-            "quality 25 → QP should be ~90-100, got {qp25}"
-        );
+    #[test]
+    fn quality_to_qp_matches_libwebp_formula() {
+        // Verify every table entry (Q1-Q100) against the floating-point formula
+        // from libwebp's QualityToCompression (src/enc/quant_enc.c).
+        // Q0 is clamped to Q1 by quality_to_qp, so we start at 1.
+        for quality in 1u8..=100 {
+            let q_f = quality as f64 / 100.0;
+            let linear_c = if q_f < 0.75 {
+                q_f * (2.0 / 3.0)
+            } else {
+                2.0 * q_f - 1.0
+            };
+            let c = if linear_c <= 0.0 {
+                0.0
+            } else {
+                linear_c.powf(1.0 / 3.0)
+            };
+            let expected = (127.0 * (1.0 - c)) as u8;
+            let actual = quality_to_qp(quality);
+            assert_eq!(
+                actual, expected,
+                "Q{quality}: table={actual}, formula={expected}"
+            );
+        }
     }
 
     #[test]
@@ -476,7 +486,7 @@ mod tests {
         let max_qp = mapping.iter().map(|&(_, qp)| qp).max().unwrap();
         assert_eq!(min_qp, 0, "QP range should start at 0");
         assert!(
-            max_qp >= 120,
+            max_qp >= 100,
             "QP range should reach near 127, got {max_qp}"
         );
     }
