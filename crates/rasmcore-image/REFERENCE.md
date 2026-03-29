@@ -394,6 +394,30 @@ when the cause is proven and documented:
 | Triangle threshold | OpenCV 4.13 | F32_ROUNDING | ≤1 | 5 canonical images, histogram geometry boundary |
 | Adaptive threshold (mean) | OpenCV 4.13 | EXACT | 0 | 7 canonical images (see below) |
 | Adaptive threshold (Gaussian) | OpenCV 4.13 | F32_ROUNDING | <5% mismatch | 7 images, Gaussian kernel precision |
+| Erode (rect/cross/ellipse) | OpenCV 4.13 | EXACT | 0 | 3 images × 3 shapes × 3 sizes = 27 tests |
+| Dilate (rect/cross/ellipse) | OpenCV 4.13 | EXACT | 0 | 3 images × 3 shapes × 3 sizes = 27 tests |
+| Morph open/close/gradient | OpenCV 4.13 | EXACT | 0 | sharp_edges_128, rect 5×5 |
+| Morph tophat/blackhat | OpenCV 4.13 | EXACT | 0 | sharp_edges_128, rect 5×5 |
+
+### Morphological Operations — Pixel-Exact
+
+**Reference:** `cv2.erode`, `cv2.dilate`, `cv2.morphologyEx` (OpenCV 4.13)
+
+All morphological operations are pixel-exact with OpenCV across the full test matrix:
+- **3 images** (gradient_128, checker_128, sharp_edges_128)
+- **3 shapes** (Rect, Cross, Ellipse)
+- **3 kernel sizes** (3×3, 5×5, 7×7)
+- **54 erode/dilate tests**: 0 mismatches on all
+- **5 compound ops** (open, close, gradient, tophat, blackhat): 0 mismatches on all
+
+**Alignment details (verified against OpenCV 4.13 source):**
+- Structuring element: `getStructuringElement(MORPH_ELLIPSE)` uses scanline fill
+  with `j = round(sqrt(c² * (1 - dy²/r²)))` — NOT `dx²+dy² ≤ 1` inscribed ellipse
+- Border: `BORDER_REFLECT_101` (OpenCV default for erode/dilate)
+- Erode: per-pixel minimum over SE neighborhood
+- Dilate: per-pixel maximum over SE neighborhood
+- Compound: open=erode→dilate, close=dilate→erode, gradient=dilate-erode,
+  tophat=src-open, blackhat=close-src
 
 ### Adaptive Thresholding — Otsu, Triangle, Local Mean/Gaussian
 

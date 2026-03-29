@@ -2039,17 +2039,44 @@ fn make_structuring_element(shape: MorphShape, kw: usize, kh: usize) -> Vec<bool
     let mut se = vec![false; kw * kh];
     let cx = kw / 2;
     let cy = kh / 2;
-    for y in 0..kh {
-        for x in 0..kw {
-            se[y * kw + x] = match shape {
-                MorphShape::Rect => true,
-                MorphShape::Cross => x == cx || y == cy,
-                MorphShape::Ellipse => {
-                    let dx = (x as f32 - cx as f32) / cx.max(1) as f32;
-                    let dy = (y as f32 - cy as f32) / cy.max(1) as f32;
-                    dx * dx + dy * dy <= 1.0
+    match shape {
+        MorphShape::Rect => {
+            for v in &mut se {
+                *v = true;
+            }
+        }
+        MorphShape::Cross => {
+            for y in 0..kh {
+                for x in 0..kw {
+                    se[y * kw + x] = x == cx || y == cy;
                 }
-            };
+            }
+        }
+        MorphShape::Ellipse => {
+            // Exact match with OpenCV getStructuringElement(MORPH_ELLIPSE).
+            // From OpenCV source (morph.dispatch.cpp):
+            //   r = ksize.height/2, c = ksize.width/2
+            //   inv_r2 = 1.0/(r*r)
+            //   for row i: j = c if dy==0, else round(sqrt(c²*(1 - dy²*inv_r2)))
+            //   fill from c-j to c+j
+            let r = (kh / 2) as f64;
+            let c = (kw / 2) as f64;
+            let inv_r2 = if r > 0.0 { 1.0 / (r * r) } else { 0.0 };
+            for y in 0..kh {
+                let dy = y as f64 - r;
+                let j = if dy != 0.0 {
+                    let t = c * c * (1.0 - dy * dy * inv_r2);
+                    (t.max(0.0).sqrt()).round() as isize
+                } else {
+                    c as isize
+                }
+                .max(0) as usize;
+                let x_start = cx.saturating_sub(j);
+                let x_end = (cx + j + 1).min(kw);
+                for x in x_start..x_end {
+                    se[y * kw + x] = true;
+                }
+            }
         }
     }
     se

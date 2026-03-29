@@ -889,3 +889,87 @@ fn adaptive_gaussian_matches_opencv() {
         );
     }
 }
+
+// ─── Morphology Parity ──────────────────────────────────────────────────
+
+#[test]
+fn erode_dilate_match_opencv() {
+    let info = info_128();
+    let test_images = ["gradient_128", "checker_128", "sharp_edges_128"];
+    let shapes: &[(&str, filters::MorphShape)] = &[
+        ("rect", filters::MorphShape::Rect),
+        ("cross", filters::MorphShape::Cross),
+        ("ellipse", filters::MorphShape::Ellipse),
+    ];
+    let ksizes: &[u32] = &[3, 5, 7];
+
+    let mut worst_mae = 0.0f64;
+    let mut worst_max = 0u8;
+    let mut total_tests = 0;
+
+    for name in &test_images {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+
+        for &(shape_name, shape) in shapes {
+            for &ks in ksizes {
+                // Erode
+                let ref_erode = load_fixture(&format!("{name}_erode_{shape_name}_{ks}.raw"));
+                let our_erode = filters::erode(&input, &info, ks, shape).unwrap();
+                let e = mae(&our_erode, &ref_erode);
+                let m = max_error(&our_erode, &ref_erode);
+                worst_mae = worst_mae.max(e);
+                worst_max = worst_max.max(m);
+                total_tests += 1;
+
+                if m > 0 {
+                    eprintln!("Erode {name} {shape_name} {ks}: MAE={e:.4}, max={m}");
+                }
+                assert!(m <= 1, "Erode {name} {shape_name} {ks}: max_err={m} > 1");
+
+                // Dilate
+                let ref_dilate = load_fixture(&format!("{name}_dilate_{shape_name}_{ks}.raw"));
+                let our_dilate = filters::dilate(&input, &info, ks, shape).unwrap();
+                let e = mae(&our_dilate, &ref_dilate);
+                let m = max_error(&our_dilate, &ref_dilate);
+                worst_mae = worst_mae.max(e);
+                worst_max = worst_max.max(m);
+                total_tests += 1;
+
+                if m > 0 {
+                    eprintln!("Dilate {name} {shape_name} {ks}: MAE={e:.4}, max={m}");
+                }
+                assert!(m <= 1, "Dilate {name} {shape_name} {ks}: max_err={m} > 1");
+            }
+        }
+    }
+
+    eprintln!(
+        "\nMorphology summary: {total_tests} tests, worst MAE={worst_mae:.4}, worst max={worst_max}"
+    );
+}
+
+#[test]
+fn morph_compound_ops_match_opencv() {
+    let info = info_128();
+    let input = load_fixture("sharp_edges_128_gray.raw");
+
+    let ops: &[(
+        &str,
+        fn(&[u8], &ImageInfo, u32, filters::MorphShape) -> Result<Vec<u8>, _>,
+    )] = &[
+        ("open", filters::morph_open as _),
+        ("close", filters::morph_close as _),
+        ("gradient", filters::morph_gradient as _),
+        ("tophat", filters::morph_tophat as _),
+        ("blackhat", filters::morph_blackhat as _),
+    ];
+
+    for &(op_name, op_fn) in ops {
+        let reference = load_fixture(&format!("sharp_edges_128_morph_{op_name}_rect_5.raw"));
+        let ours = op_fn(&input, &info, 5, filters::MorphShape::Rect).unwrap();
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("Morph {op_name:10}: MAE={e:.4}, max_err={m}");
+        assert!(m <= 1, "Morph {op_name}: max_err={m} > 1");
+    }
+}

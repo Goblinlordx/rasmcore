@@ -5,53 +5,70 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Add comprehensive OpenCV parity tests for all 7 morphological operations
+  summary: 'Add comprehensive OpenCV parity tests for all 7 morphological operations
+
     (erode, dilate, open, close, gradient, tophat, blackhat) with all 3
+
     structuring element shapes. Currently zero reference tests exist.
-  context: |
-    Morphological operations are fully implemented (erode, dilate, morph_open,
+
+    '
+  context: 'Morphological operations are fully implemented (erode, dilate, morph_open,
+
     morph_close, morph_gradient, morph_tophat, morph_blackhat) with Rect,
+
     Ellipse, and Cross structuring elements. However, NONE have reference
+
     parity tests against OpenCV. This is a validation gap — we cannot
+
     confirm correctness without reference comparison.
-  codebase_analysis: |
-    Implementation in domain/filters.rs. All 7 ops use a common
+
+    '
+  codebase_analysis: 'Implementation in domain/filters.rs. All 7 ops use a common
+
     structuring element iteration pattern. Three SE shapes: Rect (all ones),
+
     Ellipse (inscribed ellipse), Cross (+ shape). OpenCV provides identical
+
     operations via cv2.erode/dilate/morphologyEx with cv2.getStructuringElement.
+
+    '
   acceptance_criteria:
-    - Pixel-exact match vs OpenCV for erode with Rect/Ellipse/Cross at radius 1,3,5
-    - Pixel-exact match vs OpenCV for dilate with all 3 shapes
-    - Pixel-exact match for open, close, gradient, tophat, blackhat
-    - Tests cover gradient, checkerboard, and binary mask images
-    - Results documented in REFERENCE.md
-  out_of_scope: |
-    New morphological operations. Hit-or-miss. Skeletonization.
-  technical_notes: |
-    Use venv Python with OpenCV to generate reference outputs inline (same
+  - Pixel-exact match vs OpenCV for erode with Rect/Ellipse/Cross at radius 1,3,5
+  - Pixel-exact match vs OpenCV for dilate with all 3 shapes
+  - Pixel-exact match for open, close, gradient, tophat, blackhat
+  - Tests cover gradient, checkerboard, and binary mask images
+  - Results documented in REFERENCE.md
+  out_of_scope: 'New morphological operations. Hit-or-miss. Skeletonization.
+
+    '
+  technical_notes: 'Use venv Python with OpenCV to generate reference outputs inline (same
+
     pattern as filter_reference_parity.rs). Key alignment: border handling
+
     must match OpenCV BORDER_REFLECT_101. Structuring element generation
+
     must match cv2.getStructuringElement exactly.
+
+    '
 plan:
-  - phase: Test Infrastructure
-    tasks:
-      - text: Create morphology parity test file with OpenCV reference generation helpers
-        done: false
-      - text: Verify structuring element generation matches cv2.getStructuringElement for Rect, Ellipse, Cross
-        done: false
-  - phase: Parity Tests
-    tasks:
-      - text: Add erode parity tests (3 shapes x 3 radii x 3 images)
-        done: false
-      - text: Add dilate parity tests (same matrix)
-        done: false
-      - text: Add open/close/gradient/tophat/blackhat parity tests
-        done: false
-      - text: Fix any pixel differences found during testing
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Update REFERENCE.md with morphology parity results and alignment details
-        done: false
+- phase: Test Infrastructure
+  tasks:
+  - text: Create morphology parity test file with OpenCV reference generation helpers
+    done: true
+  - text: Verify structuring element generation matches cv2.getStructuringElement for Rect, Ellipse, Cross
+    done: true
+- phase: Parity Tests
+  tasks:
+  - text: Add erode parity tests (3 shapes x 3 radii x 3 images)
+    done: true
+  - text: Add dilate parity tests (same matrix)
+    done: true
+  - text: Add open/close/gradient/tophat/blackhat parity tests
+    done: true
+  - text: Fix any pixel differences found during testing
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Update REFERENCE.md with morphology parity results and alignment details
+    done: true
 extra: {}
