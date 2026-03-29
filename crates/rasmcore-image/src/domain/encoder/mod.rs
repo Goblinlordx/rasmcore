@@ -3,6 +3,7 @@ pub mod bmp;
 pub mod dds;
 pub mod fits;
 pub mod gif;
+pub mod heic;
 pub mod ico;
 pub mod jp2;
 pub mod jpeg;
@@ -39,8 +40,8 @@ pub fn registered_encoders() -> Vec<&'static StaticEncoderRegistration> {
 }
 
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
-    "dds", "jp2", "fits",
+    "png", "jpeg", "webp", "gif", "tiff", "avif", "heic", "bmp", "ico", "qoi", "tga", "hdr",
+    "pnm", "exr", "dds", "jp2", "fits",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -84,6 +85,12 @@ pub fn encode(
                 ..Default::default()
             };
             avif::encode(pixels, info, &config)
+        }
+        "heic" | "heif" => {
+            let config = heic::HeicEncodeConfig {
+                quality: quality.unwrap_or(75),
+            };
+            heic::encode(pixels, info, &config)
         }
         "tiff" | "tif" => {
             let config = tiff::TiffEncodeConfig::default();
