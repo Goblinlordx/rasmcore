@@ -5,57 +5,62 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Replace the hardcoded B_PRED decision (bpred_sad + 128 < i16_sad) with
+  summary: 'Replace the hardcoded B_PRED decision (bpred_sad + 128 < i16_sad) with
+
     full RD cost comparison. Encode both I16x16 and B_PRED fully, compare
+
     total RD cost (SSD + lambda * bits).
-  context: |
-    Spec audit Bug #2. The 128-unit SAD bias is arbitrary — it may force
+
+    '
+  context: 'Spec audit Bug #2. The 128-unit SAD bias is arbitrary — it may force
+
     I16x16 when B_PRED would produce better quality, or allow B_PRED when
+
     I16x16 is more efficient. cwebp uses full RD evaluation for this decision.
-  codebase_analysis: |
-    bitstream.rs line 642: use_bpred = bpred_sad + 128 < i16_sad
+
+    '
+  codebase_analysis: 'bitstream.rs line 642: use_bpred = bpred_sad + 128 < i16_sad
+
     The B_PRED path already computes all 16 sub-block coefficients (lines 650-663).
+
     The I16x16 path already computes all coefficients (lines 680-694).
+
     Both paths produce quantized coefficients — just need to compute total RD
+
     cost for each and compare.
+
+    '
   acceptance_criteria:
-    - B_PRED vs I16x16 chosen by minimum RD cost (not SAD + bias)
-    - Photo content (Perlin texture) PSNR improves by at least 2dB
-    - Mode distribution changes visibly (more B_PRED on texture, more I16x16 on smooth)
-    - All tests pass
+  - B_PRED vs I16x16 chosen by minimum RD cost (not SAD + bias)
+  - Photo content (Perlin texture) PSNR improves by at least 2dB
+  - Mode distribution changes visibly (more B_PRED on texture, more I16x16 on smooth)
+  - All tests pass
   out_of_scope: Per-4x4 RD mode selection (that is Track 3).
-  technical_notes: |
-    Approach: after computing both B_PRED and I16x16 coefficients (which the
-    encoder already does), compute total RD cost for each:
-      rd_bpred = ssd(original, recon_bpred) + lambda * bits_bpred
-      rd_i16x16 = ssd(original, recon_i16x16) + lambda * bits_i16x16
-    
-    bits_bpred includes 16 sub-block mode headers + all coefficients.
-    bits_i16x16 includes 1 mode header + Y2 block + all AC blocks.
-    
-    Pick whichever has lower RD cost.
+  technical_notes: "Approach: after computing both B_PRED and I16x16 coefficients (which the\nencoder already does), compute\
+    \ total RD cost for each:\n  rd_bpred = ssd(original, recon_bpred) + lambda * bits_bpred\n  rd_i16x16 = ssd(original,\
+    \ recon_i16x16) + lambda * bits_i16x16\n\nbits_bpred includes 16 sub-block mode headers + all coefficients.\nbits_i16x16\
+    \ includes 1 mode header + Y2 block + all AC blocks.\n\nPick whichever has lower RD cost.\n"
 plan:
-  - phase: Cost Computation
-    tasks:
-      - text: Compute full RD cost for B_PRED path (SSD + mode headers + coefficient bits)
-        done: false
-      - text: Compute full RD cost for I16x16 path (SSD + Y2 bits + AC bits)
-        done: false
-      - text: Replace hardcoded bias with RD cost comparison
-        done: false
-  - phase: Reconstruction
-    tasks:
-      - text: Ensure both paths compute reconstruction for SSD measurement
-        done: false
-      - text: Only reconstruct the CHOSEN path into the reference buffer
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Photo content PSNR improves by at least 2dB
-        done: false
-      - text: Gradient content quality does not regress
-        done: false
-      - text: All parity tests pass
-        done: false
+- phase: Cost Computation
+  tasks:
+  - text: Compute full RD cost for B_PRED path (SSD + mode headers + coefficient bits)
+    done: true
+  - text: Compute full RD cost for I16x16 path (SSD + Y2 bits + AC bits)
+    done: true
+  - text: Replace hardcoded bias with RD cost comparison
+    done: true
+- phase: Reconstruction
+  tasks:
+  - text: Ensure both paths compute reconstruction for SSD measurement
+    done: true
+  - text: Only reconstruct the CHOSEN path into the reference buffer
+    done: true
+- phase: Validation
+  tasks:
+  - text: Photo content PSNR improves by at least 2dB
+    done: true
+  - text: Gradient content quality does not regress
+    done: true
+  - text: All parity tests pass
+    done: true
 extra: {}
