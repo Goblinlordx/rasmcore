@@ -505,11 +505,165 @@ impl filters::Guest for Component {
         )
         .map_err(to_wit_error)
     }
-}
 
-// Note: convolve, median, sobel, canny WIT adapter methods will be added when
-// bindings are regenerated from the updated filters.wit. The domain functions
-// are ready at domain::filters::{convolve, median, sobel, canny}.
+    fn hue_rotate(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        degrees: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::hue_rotate(&pixels, &di, degrees).map_err(to_wit_error)
+    }
+
+    fn saturate(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        factor: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::saturate(&pixels, &di, factor).map_err(to_wit_error)
+    }
+
+    fn sepia(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        intensity: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::sepia(&pixels, &di, intensity).map_err(to_wit_error)
+    }
+
+    fn colorize(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        target_r: u8,
+        target_g: u8,
+        target_b: u8,
+        amount: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::colorize(&pixels, &di, [target_r, target_g, target_b], amount)
+            .map_err(to_wit_error)
+    }
+
+    fn convolve(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        kernel: Vec<f32>,
+        kernel_width: u32,
+        kernel_height: u32,
+        divisor: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::convolve(
+            &pixels,
+            &di,
+            &kernel,
+            kernel_width as usize,
+            kernel_height as usize,
+            divisor,
+        )
+        .map_err(to_wit_error)
+    }
+
+    fn median(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        radius: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::median(&pixels, &di, radius).map_err(to_wit_error)
+    }
+
+    fn sobel(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::sobel(&pixels, &di).map_err(to_wit_error)
+    }
+
+    fn canny(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        low_threshold: f32,
+        high_threshold: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::canny(&pixels, &di, low_threshold, high_threshold).map_err(to_wit_error)
+    }
+
+    fn premultiply(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::premultiply(&pixels, &di).map_err(to_wit_error)
+    }
+
+    fn unpremultiply(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::unpremultiply(&pixels, &di).map_err(to_wit_error)
+    }
+
+    fn flatten(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        bg_r: u8,
+        bg_g: u8,
+        bg_b: u8,
+    ) -> Result<(Vec<u8>, types::ImageInfo), RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        let (result, new_info) =
+            domain::filters::flatten(&pixels, &di, [bg_r, bg_g, bg_b]).map_err(to_wit_error)?;
+        Ok((result, to_wit_image_info(&new_info)))
+    }
+
+    fn add_alpha(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        alpha: u8,
+    ) -> Result<(Vec<u8>, types::ImageInfo), RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        let (result_pixels, result_info) =
+            domain::filters::add_alpha(&pixels, &di, alpha).map_err(to_wit_error)?;
+        Ok((result_pixels, to_wit_image_info(&result_info)))
+    }
+
+    fn remove_alpha(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+    ) -> Result<(Vec<u8>, types::ImageInfo), RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        let (result_pixels, result_info) =
+            domain::filters::remove_alpha(&pixels, &di).map_err(to_wit_error)?;
+        Ok((result_pixels, to_wit_image_info(&result_info)))
+    }
+
+    fn blend(
+        fg: Vec<u8>,
+        fg_info: types::ImageInfo,
+        bg: Vec<u8>,
+        bg_info: types::ImageInfo,
+        mode: filters::BlendMode,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_fg = to_domain_image_info(&fg_info);
+        let domain_bg = to_domain_image_info(&bg_info);
+        let domain_mode = match mode {
+            filters::BlendMode::Multiply => domain::filters::BlendMode::Multiply,
+            filters::BlendMode::Screen => domain::filters::BlendMode::Screen,
+            filters::BlendMode::Overlay => domain::filters::BlendMode::Overlay,
+            filters::BlendMode::Darken => domain::filters::BlendMode::Darken,
+            filters::BlendMode::Lighten => domain::filters::BlendMode::Lighten,
+            filters::BlendMode::SoftLight => domain::filters::BlendMode::SoftLight,
+            filters::BlendMode::HardLight => domain::filters::BlendMode::HardLight,
+            filters::BlendMode::Difference => domain::filters::BlendMode::Difference,
+            filters::BlendMode::Exclusion => domain::filters::BlendMode::Exclusion,
+        };
+        domain::filters::blend(&fg, &domain_fg, &bg, &domain_bg, domain_mode)
+            .map_err(to_wit_error)
+    }
+}
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {
     match o {

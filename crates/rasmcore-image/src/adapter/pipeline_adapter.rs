@@ -234,9 +234,48 @@ impl GuestImagePipeline for PipelineResource {
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 
-    // Note: convolve, median, sobel, canny pipeline adapter methods will be
-    // wired when WIT bindings are regenerated. Pipeline nodes are ready at:
-    //   filters::{ConvolveNode, MedianNode, SobelNode, CannyNode}
+    fn convolve(
+        &self,
+        source: NodeId,
+        kernel: Vec<f32>,
+        kernel_width: u32,
+        kernel_height: u32,
+        divisor: f32,
+    ) -> Result<NodeId, RasmcoreError> {
+        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let node = filters::ConvolveNode::new(
+            source,
+            src_info,
+            kernel,
+            kernel_width as usize,
+            kernel_height as usize,
+            divisor,
+        );
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+    }
+
+    fn median(&self, source: NodeId, radius: u32) -> Result<NodeId, RasmcoreError> {
+        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let node = filters::MedianNode::new(source, src_info, radius);
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+    }
+
+    fn sobel(&self, source: NodeId) -> Result<NodeId, RasmcoreError> {
+        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let node = filters::SobelNode::new(source, src_info);
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+    }
+
+    fn canny(
+        &self,
+        source: NodeId,
+        low_threshold: f32,
+        high_threshold: f32,
+    ) -> Result<NodeId, RasmcoreError> {
+        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let node = filters::CannyNode::new(source, src_info, low_threshold, high_threshold);
+        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+    }
 
     fn composite(&self, fg: NodeId, bg: NodeId, x: i32, y: i32) -> Result<NodeId, RasmcoreError> {
         let graph = self.graph.borrow();

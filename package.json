@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "sdk:generate": "scripts/generate-ts-sdk.sh",
-    "sdk:test": "node --test sdk/typescript/tests/"
+    "sdk:test": "node --test sdk/typescript/tests/",
+    "demo:build": "./demo/build.sh",
+    "demo:serve": "npx serve demo/"
   },
   "devDependencies": {
     "@bytecodealliance/jco": "^1.17.5"

@@ -65,19 +65,19 @@ interface filters {
     /// Remove alpha channel from RGBA8, producing RGB8
     remove-alpha: func(pixels: buffer, info: image-info) -> result<tuple<buffer, image-info>, rasmcore-error>;
 
+    /// Blend modes for compositing
+    enum blend-mode {
+        multiply,
+        screen,
+        overlay,
+        darken,
+        lighten,
+        soft-light,
+        hard-light,
+        difference,
+        exclusion,
+    }
+
     /// Blend two same-size images using the specified blend mode
     blend: func(fg: buffer, fg-info: image-info, bg: buffer, bg-info: image-info, mode: blend-mode) -> result<buffer, rasmcore-error>;
-}
-
-/// Blend modes for compositing
-enum blend-mode {
-    multiply,
-    screen,
-    overlay,
-    darken,
-    lighten,
-    soft-light,
-    hard-light,
-    difference,
-    exclusion,
 }
