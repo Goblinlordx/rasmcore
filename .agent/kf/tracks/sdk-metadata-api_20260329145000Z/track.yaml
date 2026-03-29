@@ -47,10 +47,12 @@ spec:
     - stripMetadata without keepMetadata is a silent no-op (nothing to strip)
     - Modified metadata embedded in output when calling toJpeg/toPng/etc.
     - Formats without metadata support (BMP, QOI) silently ignore metadata ops
-    - EXIF fields accessible via dot-path (artist, make, model, gps.latitude, etc.)
-    - ICC profile accessible (icc.profile_name, icc.color_space)
-    - XMP fields accessible (xmp.creator, xmp.rating, etc.)
-    - IPTC fields accessible (iptc.headline, iptc.keywords, etc.)
+    - Dot-paths match dump() structure — container.Field (e.g., exif.Artist, xmp.Creator)
+    - EXIF fields accessible (exif.Artist, exif.Make, exif.Model, exif.GPSLatitude, etc.)
+    - ICC profile accessible (icc.ProfileName, icc.ColorSpace)
+    - XMP fields accessible (xmp.Creator, xmp.Rating, xmp.Description, etc.)
+    - IPTC fields accessible (iptc.Headline, iptc.Keywords, etc.)
+    - A single file may contain multiple metadata containers (EXIF + XMP + IPTC + ICC)
     - Works with JPEG, PNG, TIFF, WebP inputs
   out_of_scope: |
     Writing metadata to formats that don't support it (BMP, QOI, GIF).
@@ -61,20 +63,25 @@ spec:
 
       // READ — async, breaks the chain
       const meta = await rcimage.load(jpegBytes).metadata();
-      meta.dump()           // -> { exif: { artist, make, ... }, icc: {...}, xmp: {...} }
-      meta.read('exif.artist')  // -> 'John Doe' | undefined
+      meta.dump()
+      // -> { exif: { Artist: '...', Make: '...', GPSLatitude: '...', ... },
+      //      xmp:  { Creator: '...', Rating: 3, ... },
+      //      iptc: { Headline: '...', Keywords: [...], ... },
+      //      icc:  { ProfileName: '...', ColorSpace: '...' } }
+      meta.read('exif.Artist')  // -> 'John Doe' | undefined
 
       // WRITE — chainable, deferred to encode time
       await rcimage.load(jpegBytes)
-        .keepMetadata()                        // opt-in: carry source metadata through
-        .stripMetadata('exif.gps')             // remove GPS (only works with keepMetadata)
-        .setMetadata('exif.artist', 'rasmcore') // override artist
+        .keepMetadata()                          // opt-in: carry source metadata through
+        .stripMetadata('exif.GPSLatitude')       // remove GPS fields
+        .stripMetadata('exif.GPSLongitude')
+        .setMetadata('exif.Artist', 'rasmcore')  // override artist
         .blur(3.0)
         .toJpeg({ quality: 85 });
 
       // Without keepMetadata — clean output + new metadata only
       await rcimage.load(jpegBytes)
-        .setMetadata('exif.artist', 'rasmcore') // adds to otherwise-clean output
+        .setMetadata('exif.Artist', 'rasmcore') // adds to otherwise-clean output
         .blur(3.0)
         .toJpeg({ quality: 85 });
 
@@ -83,13 +90,13 @@ spec:
       # Read
       meta = await rcimage.load(jpeg_bytes).metadata()
       print(meta.dump())
-      print(meta.read('exif.artist'))
+      print(meta.read('exif.Artist'))
 
       # Write — identical chainable pattern
       result = await (rcimage.load(jpeg_bytes)
           .keep_metadata()
-          .strip_metadata('exif.gps')
-          .set_metadata('exif.artist', 'rasmcore')
+          .strip_metadata('exif.GPSLatitude')
+          .set_metadata('exif.Artist', 'rasmcore')
           .blur(3.0)
           .to_jpeg(quality=85))
 
@@ -129,8 +136,13 @@ spec:
       No pixel decode. Fast for inspection use cases.
 
     Dot-path resolution:
-      'exif.gps.latitude' -> parse EXIF -> find GPS IFD -> find latitude tag
-      Implemented as nested JSON key traversal on the Rust side.
+      Paths are exactly two levels: container.Field (e.g., 'exif.Artist',
+      'xmp.Creator', 'icc.ProfileName'). The first segment selects the
+      metadata container (exif, xmp, iptc, icc). The second segment is
+      the field name within that container. Field names use the canonical
+      PascalCase tag names from each standard (EXIF tag names, XMP property
+      names, IPTC dataset names). Only supported/known fields are exposed —
+      unknown tags are omitted from dump() and unresolvable via read().
 plan:
   - phase: Rust Metadata Query
     tasks:
