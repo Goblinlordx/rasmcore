@@ -741,8 +741,8 @@ mod parity {
 
     fn write_ppm(pixels: &[u8], w: u32, h: u32) -> std::path::PathBuf {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir()
-            .join(format!("rasmcore_quant_{}_{id}.ppm", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("rasmcore_quant_{}_{id}.ppm", std::process::id()));
         let mut f = std::fs::File::create(&path).unwrap();
         write!(f, "P6\n{w} {h}\n255\n").unwrap();
         f.write_all(pixels).unwrap();
@@ -949,8 +949,7 @@ mod parity {
         }
 
         // Average brightness preservation
-        let orig_avg: f64 =
-            pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let orig_avg: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let ours_avg: f64 = ours.iter().map(|&v| v as f64).sum::<f64>() / ours.len() as f64;
         let diff = (ours_avg - orig_avg).abs();
         eprintln!("  FS brightness: orig={orig_avg:.1}, ours={ours_avg:.1}, diff={diff:.1}");
