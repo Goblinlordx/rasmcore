@@ -79,12 +79,7 @@ impl VP8Proba {
         initial_ctx: usize,
     ) -> bool {
         // Use the standalone function that operates on the stats array directly
-        record_coeffs_impl(
-            &mut self.stats[coeff_type],
-            coeffs,
-            first,
-            initial_ctx,
-        )
+        record_coeffs_impl(&mut self.stats[coeff_type], coeffs, first, initial_ctx)
     }
 
     /// Record residuals for an entire macroblock.
@@ -288,10 +283,7 @@ fn record_coeffs_impl(
             let mut i = 0usize;
             while pattern != 0 {
                 if pattern & 1 != 0 {
-                    VP8Proba::record_stats(
-                        bits & (2 << i) != 0,
-                        &mut stats[band][ctx][3 + i],
-                    );
+                    VP8Proba::record_stats(bits & (2 << i) != 0, &mut stats[band][ctx][3 + i]);
                 }
                 i += 1;
                 pattern >>= 1;
@@ -379,7 +371,10 @@ mod tests {
         let has_nz = proba.record_coeffs(&coeffs, 0, 3, 0);
         assert!(!has_nz, "all-zero block should return false");
         // Should have recorded an EOB at band 0, ctx 0, node 0
-        assert!(proba.stats[3][0][0][0] > 0, "should have recorded EOB stats");
+        assert!(
+            proba.stats[3][0][0][0] > 0,
+            "should have recorded EOB stats"
+        );
     }
 
     #[test]

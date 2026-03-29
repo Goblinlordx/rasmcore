@@ -161,6 +161,18 @@ pub fn get_coeff_probs(block_type: usize, band: usize, ctx: usize) -> &'static [
     &DEFAULT_COEFF_PROBS[offset..offset + 11]
 }
 
+/// Look up the 11-element probability slice from a flat table (custom probabilities).
+#[inline]
+pub fn get_coeff_probs_from(
+    flat: &[u8; 1056],
+    block_type: usize,
+    band: usize,
+    ctx: usize,
+) -> &[u8] {
+    let offset = block_type * 264 + band * 33 + ctx * 11;
+    &flat[offset..offset + 11]
+}
+
 /// Get the flat default coefficient probability table (1056 bytes).
 /// Layout: [4 types][8 bands][3 ctx][11 probas] flattened.
 pub fn get_default_coeff_probs_flat() -> &'static [u8; 1056] {
@@ -188,6 +200,17 @@ pub fn encode_block(
     plane_type: u8,
     complexity: usize,
 ) -> bool {
+    encode_block_with_probs(bw, coeffs, plane_type, complexity, &DEFAULT_COEFF_PROBS)
+}
+
+/// Encode a block using custom probability tables (for two-pass encoding).
+pub fn encode_block_with_probs(
+    bw: &mut BoolWriter,
+    coeffs: &[i16; 16],
+    plane_type: u8,
+    complexity: usize,
+    probs_flat: &[u8; 1056],
+) -> bool {
     let block_type = plane_type as usize;
     let start = if plane_type == 0 { 1 } else { 0 };
 
@@ -207,7 +230,7 @@ pub fn encode_block(
     for i in start..16 {
         let coeff = coeffs[ZIGZAG[i]];
         let band = BANDS[i] as usize;
-        let probs = get_coeff_probs(block_type, band, ctx);
+        let probs = get_coeff_probs_from(probs_flat, block_type, band, ctx);
         let past_last = i as i32 > last_nz;
 
         if past_last && coeff == 0 {

@@ -12,6 +12,7 @@ use crate::dct;
 use crate::decimate;
 use crate::filter;
 use crate::predict;
+use crate::proba::VP8Proba;
 use crate::quant::{self, SegmentQuant};
 use crate::ratecontrol::EncodeParams;
 use crate::rdo;
@@ -19,6 +20,14 @@ use crate::segment::{self, SegmentMap};
 use crate::tables;
 use crate::token;
 use rasmcore_color::YuvImage;
+
+/// Buffered coefficient data for one macroblock (for two-pass encoding).
+struct MBCoeffs {
+    is_i16: bool,
+    y_dc_levels: [i16; 16],
+    y_ac_levels: [[i16; 16]; 16],
+    uv_levels: [[i16; 16]; 8],
+}
 
 /// Encode a VP8 key frame from YUV420 data.
 ///
@@ -48,40 +57,49 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
         params.qp_y,
     );
 
-    // Encode all macroblocks — collect modes and token data
+    // ═══ TWO-PASS ENCODING ═══════════════════════════════════════════════
+    //
+    // Pass 1: Run VP8Decimate for all MBs → mode decisions + coefficients.
+    //         Buffer coefficient data + collect token statistics.
+    // Finalize: Compute optimized probability tables from statistics.
+    // Pass 2: Write token stream using updated probabilities.
+
     let mut mb_infos = Vec::with_capacity((mb_w * mb_h) as usize);
-    let mut token_writer = BoolWriter::with_capacity(padded_w * padded_h);
+    let mut mb_coeffs: Vec<MBCoeffs> = Vec::with_capacity((mb_w * mb_h) as usize);
 
     // Reconstructed planes for prediction reference
     let mut recon_y = vec![128u8; padded_w * padded_h];
     let mut recon_u = vec![128u8; uv_pad_w * uv_pad_h];
     let mut recon_v = vec![128u8; uv_pad_w * uv_pad_h];
 
-    // Precompute cost table once per frame (depends only on fixed probability tables)
+    // Precompute cost table (initially from default probabilities)
     let probs = cost_engine::reshape_probs();
     let cost_table = LevelCostTable::compute(&probs);
 
-    // Complexity context tracking (matches decoder's top[]/left[] arrays)
-    // 9 entries per MB: [0]=Y2, [1..5]=Y cols, [5..7]=U cols, [7..9]=V cols
-    let mut top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
-    let mut left_ctx: [u8; 9] = [0u8; 9];
+    // Probability adaptation state
+    let mut vp8_proba = VP8Proba::new();
 
-    // B_PRED mode context tracking for VP8Decimate I4 evaluation
+    // B_PRED mode context tracking
     let mut top_bmode_enc: Vec<[u8; 4]> = vec![[0u8; 4]; mb_w as usize];
     let mut left_bmode_enc: [u8; 4] = [0u8; 4];
 
+    // ─── Pass 1: Mode decisions + coefficient quantization + stats ──────
     for mb_row in 0..mb_h as usize {
-        left_ctx = [0u8; 9]; // reset left context at start of each row
         left_bmode_enc = [0u8; 4];
         for mb_col in 0..mb_w as usize {
             let seg_id = seg_map.get(mb_col, mb_row);
             let seg_quant = seg_map.quant(seg_id);
-            // Derive segment QP and lambdas
             let seg_qp = (params.qp_y as i16 + seg_map.qp_deltas[seg_id as usize] as i16)
                 .clamp(0, 127) as u8;
             let lambdas = rdo::compute_segment_lambdas(seg_qp);
 
-            let mut mb = encode_macroblock(
+            // Run VP8Decimate (mode selection + trellis quantization + reconstruction)
+            // Pass a dummy token writer — tokens will be written in Pass 2
+            let mut dummy_token = BoolWriter::with_capacity(0);
+            let mut dummy_top_ctx = [0u8; 9];
+            let mut dummy_left_ctx = [0u8; 9];
+
+            let (mut mb, coeffs) = encode_macroblock(
                 &y_padded,
                 &u_padded,
                 &v_padded,
@@ -95,12 +113,26 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 seg_quant,
                 &lambdas,
                 &cost_table,
-                &mut token_writer,
-                &mut top_ctx[mb_col],
-                &mut left_ctx,
+                &mut dummy_token,
+                &mut dummy_top_ctx,
+                &mut dummy_left_ctx,
                 &top_bmode_enc[mb_col],
                 &left_bmode_enc,
             );
+
+            // Collect statistics for probability adaptation
+            let mut stats_top = [0u8; 9];
+            let mut stats_left = [0u8; 9];
+            vp8_proba.record_residuals(
+                coeffs.is_i16,
+                &coeffs.y_dc_levels,
+                &coeffs.y_ac_levels,
+                &coeffs.uv_levels,
+                &mut stats_top,
+                &mut stats_left,
+            );
+
+            mb_coeffs.push(coeffs);
 
             // Update B_PRED mode context
             if mb.y_mode == 4 {
@@ -122,13 +154,8 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
             }
             mb.segment = seg_id;
             mb_infos.push(mb);
-            // Reconstruction is now done inside encode_macroblock using the
-            // same trellis-quantized coefficients that were written to the token stream.
         }
 
-        // Apply loop filter to this MB row after all MBs in the row are
-        // reconstructed. This matches the decoder's timing: filter runs after
-        // each row, before the next row uses these pixels as prediction ref.
         filter::apply_loop_filter_row(
             &mut recon_y,
             padded_w,
@@ -137,6 +164,38 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
             params.filter_level,
             params.filter_sharpness,
             params.filter_type,
+        );
+    }
+
+    // ─── Finalize: Compute optimized probability tables ─────────────────
+    vp8_proba.finalize_token_probas();
+    let updated_probs_flat = vp8_proba.flatten_coeffs();
+
+    // ─── Pass 2: Write token stream with updated probabilities ──────────
+    let mut token_writer = BoolWriter::with_capacity(padded_w * padded_h);
+    let mut top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
+    let mut left_ctx: [u8; 9] = [0u8; 9];
+
+    for (idx, (mb, coeffs)) in mb_infos.iter().zip(mb_coeffs.iter()).enumerate() {
+        let mb_col = mb.mb_x as usize;
+        let mb_row = mb.mb_y as usize;
+        if mb_col == 0 {
+            left_ctx = [0u8; 9];
+        }
+
+        let is_i16 = mb.y_mode != 4;
+        let all_zero = mb.skip;
+
+        encode_mb_tokens(
+            &mut token_writer,
+            is_i16,
+            all_zero,
+            &coeffs.y_dc_levels,
+            &coeffs.y_ac_levels,
+            &coeffs.uv_levels,
+            &updated_probs_flat,
+            &mut top_ctx[mb_col],
+            &mut left_ctx,
         );
     }
 
@@ -153,8 +212,10 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
             params.filter_type,
         );
     }
-    // Build first partition (macroblock modes + segmentation header)
-    let first_partition = encode_first_partition(&mb_infos, mb_w, mb_h, params, &seg_map);
+
+    // Build first partition with updated probability tables
+    let first_partition =
+        encode_first_partition(&mb_infos, mb_w, mb_h, params, &seg_map, &vp8_proba);
 
     // Assemble frame
     assemble_frame(width, height, &first_partition, &token_data)
@@ -207,6 +268,7 @@ fn encode_first_partition(
     _mb_h: u32,
     params: &EncodeParams,
     seg_map: &SegmentMap,
+    proba: &VP8Proba,
 ) -> Vec<u8> {
     let mut bw = BoolWriter::with_capacity(1024);
 
@@ -273,17 +335,32 @@ fn encode_first_partition(
     }
 
     // Refresh entropy probs (RFC 6386 Section 9.7)
-    bw.put_bit(128, false); // refresh_entropy_probs = false
+    bw.put_bit(128, proba.dirty); // refresh_entropy_probs = true if probabilities changed
 
     // Refresh last frame buffer
     // For key frames, refresh_last is implicit (always true)
 
     // Token probability updates (RFC 6386 Section 13.4)
-    // Write false for each flag using the proper update probabilities.
-    // High probability values (near 255) mean "update is very unlikely",
-    // which lets the bool coder compress "false" flags into very few bits.
-    for &prob in &token::COEFF_UPDATE_PROBS {
-        bw.put_bit(prob, false);
+    // For each [type][band][ctx][node], signal whether the probability is updated.
+    // If updated, write the 8-bit new probability value.
+    let default_probs = cost_engine::reshape_probs();
+    let mut update_idx = 0;
+    for t in 0..4 {
+        for b in 0..8 {
+            for c in 0..3 {
+                for p in 0..11 {
+                    let update_prob = token::COEFF_UPDATE_PROBS[update_idx];
+                    let new_p = proba.coeffs[t][b][c][p];
+                    let old_p = default_probs[t][b][c][p];
+                    let is_updated = new_p != old_p;
+                    bw.put_bit(update_prob, is_updated);
+                    if is_updated {
+                        bw.put_literal(8, new_p as u32);
+                    }
+                    update_idx += 1;
+                }
+            }
+        }
     }
 
     // mb_no_coeff_skip (RFC 6386 Section 9.10, verified against libvpx)
@@ -577,7 +654,7 @@ fn encode_macroblock(
     left_ctx: &mut [u8; 9],
     top_bmode_ctx: &[u8; 4],
     left_bmode_ctx: &[u8; 4],
-) -> MacroblockInfo {
+) -> (MacroblockInfo, MBCoeffs) {
     let y_off = mb_row * 16 * y_stride + mb_col * 16;
     let uv_off = mb_row * 8 * uv_stride + mb_col * 8;
 
@@ -874,7 +951,7 @@ fn encode_macroblock(
         }
     }
 
-    MacroblockInfo {
+    let mb_info = MacroblockInfo {
         mb_x: mb_col as u32,
         mb_y: mb_row as u32,
         y_mode: final_y_mode,
@@ -882,6 +959,115 @@ fn encode_macroblock(
         uv_mode,
         segment: 0,
         skip: all_zero,
+    };
+    let coeffs = MBCoeffs {
+        is_i16: !use_bpred,
+        y_dc_levels: y2_quantized,
+        y_ac_levels: y_coeffs,
+        uv_levels: uv_quantized,
+    };
+    (mb_info, coeffs)
+}
+
+/// Encode coefficient tokens for one macroblock using given probability tables.
+/// This is the Pass 2 token writing function that uses updated probabilities.
+fn encode_mb_tokens(
+    token_bw: &mut BoolWriter,
+    is_i16: bool,
+    all_zero: bool,
+    y_dc_levels: &[i16; 16],
+    y_ac_levels: &[[i16; 16]; 16],
+    uv_levels: &[[i16; 16]; 8],
+    probs_flat: &[u8; 1056],
+    top_ctx: &mut [u8; 9],
+    left_ctx: &mut [u8; 9],
+) {
+    if all_zero {
+        if is_i16 {
+            top_ctx[0] = 0;
+            left_ctx[0] = 0;
+        }
+        for i in 1..9 {
+            top_ctx[i] = 0;
+            left_ctx[i] = 0;
+        }
+        return;
+    }
+
+    if !is_i16 {
+        // B_PRED: no Y2 block. Encode Y blocks with type=3 (Y-with-DC)
+        for y in 0..4 {
+            let mut left = left_ctx[y + 1];
+            for x in 0..4 {
+                let sb = y * 4 + x;
+                let complexity = (top_ctx[x + 1] + left).min(2) as usize;
+                let has = token::encode_block_with_probs(
+                    token_bw,
+                    &y_ac_levels[sb],
+                    3,
+                    complexity,
+                    probs_flat,
+                );
+                let ctx_val = if has { 1 } else { 0 };
+                left = ctx_val;
+                top_ctx[x + 1] = ctx_val;
+            }
+            left_ctx[y + 1] = left;
+        }
+    } else {
+        // I16x16: Y2 block + Y-AC blocks
+        let y2_complexity = (top_ctx[0] + left_ctx[0]).min(2) as usize;
+        let y2_has =
+            token::encode_block_with_probs(token_bw, y_dc_levels, 1, y2_complexity, probs_flat);
+        top_ctx[0] = if y2_has { 1 } else { 0 };
+        left_ctx[0] = if y2_has { 1 } else { 0 };
+
+        for y in 0..4 {
+            let mut left = left_ctx[y + 1];
+            for x in 0..4 {
+                let sb = y * 4 + x;
+                let complexity = (top_ctx[x + 1] + left).min(2) as usize;
+                let has = token::encode_block_with_probs(
+                    token_bw,
+                    &y_ac_levels[sb],
+                    0,
+                    complexity,
+                    probs_flat,
+                );
+                let ctx_val = if has { 1 } else { 0 };
+                left = ctx_val;
+                top_ctx[x + 1] = ctx_val;
+            }
+            left_ctx[y + 1] = left;
+        }
+    }
+
+    // Chroma
+    for y in 0..2 {
+        let mut left = left_ctx[y + 5];
+        for x in 0..2 {
+            let sb = y * 2 + x;
+            let complexity = (top_ctx[x + 5] + left).min(2) as usize;
+            let has =
+                token::encode_block_with_probs(token_bw, &uv_levels[sb], 2, complexity, probs_flat);
+            let ctx_val = if has { 1 } else { 0 };
+            left = ctx_val;
+            top_ctx[x + 5] = ctx_val;
+        }
+        left_ctx[y + 5] = left;
+    }
+    for y in 0..2 {
+        let mut left = left_ctx[y + 7];
+        for x in 0..2 {
+            let sb = 4 + y * 2 + x;
+            let complexity = (top_ctx[x + 7] + left).min(2) as usize;
+            let has =
+                token::encode_block_with_probs(token_bw, &uv_levels[sb], 2, complexity, probs_flat);
+            let ctx_val = if has { 1 } else { 0 };
+            left = ctx_val;
+            top_ctx[x + 7] = ctx_val;
+        }
+        left_ctx[y + 7] = left;
     }
 }
 
