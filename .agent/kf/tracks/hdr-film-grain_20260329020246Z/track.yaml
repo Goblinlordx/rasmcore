@@ -1,0 +1,43 @@
+id: hdr-film-grain_20260329020246Z
+title: HDR Tone Mapping + Film Grain Simulation
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Reinhard/Drago/filmic tone mapping operators for HDR→SDR conversion, plus
+    physically-plausible film grain simulation (Perlin noise with configurable size,
+    amount, and color/monochrome modes).
+  context: HDR content needs tone mapping to display on SDR screens. Reinhard (simple
+    global), Drago (logarithmic adaptive), and filmic (ACES S-curve) are the standard
+    operators. Film grain simulation is a top aesthetic request — Lightroom, Resolve,
+    and VSCO all offer it. Perlin or simplex noise with luminance-dependent intensity
+    produces convincing grain.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - Reinhard and Drago tone mapping matching OpenCV output
+  - Filmic/ACES tone curve with configurable parameters
+  - Film grain with configurable size, amount, and color/mono mode
+  - Grain intensity varies by luminance (more in midtones)
+  out_of_scope: HDR merge from bracketed exposures. Mantiuk operator. Film halation.
+  technical_notes: 'Reinhard: L_out = L_in / (1 + L_in). Drago: L_out = log(1 + L_in)
+    / log(1 + L_max) with bias parameter. Filmic/ACES: S-curve approximation per Narkowicz
+    2015 or Hable/Uncharted 2. Film grain: generate 2D Perlin noise field, scale by
+    luminance (more grain in midtones), blend additively with configurable amount
+    and size.'
+plan:
+- phase: HDR + Grain
+  tasks:
+  - text: Implement Reinhard global tone mapping operator
+    done: false
+  - text: Implement Drago logarithmic tone mapping with bias parameter
+    done: false
+  - text: Implement filmic/ACES S-curve tone mapping
+    done: false
+  - text: Implement film grain via Perlin noise with luminance-dependent intensity
+    done: false
+  - text: Test tone mapping operators against OpenCV reference
+    done: false
+  - text: Test grain is visually plausible and deterministic
+    done: false
+extra: {}

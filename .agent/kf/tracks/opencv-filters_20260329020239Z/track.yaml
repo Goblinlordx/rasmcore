@@ -1,0 +1,43 @@
+id: opencv-filters_20260329020239Z
+title: OpenCV-Tier Filters — CLAHE, Bilateral, Guided Filter
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Three high-value filters absent from all Rust image libraries: CLAHE (adaptive
+    contrast), bilateral filter (edge-preserving smoothing), and guided filter (He
+    et al. 2010). All are well-documented algorithms with clear specifications.'
+  context: CLAHE is the most requested contrast operation absent from Pillow, libvips,
+    and all Rust crates. Bilateral filter is the foundation of edge-preserving processing.
+    Guided filter is O(N) regardless of radius and enables smoothing, detail enhancement,
+    feathering, and haze removal. All three are OpenCV staples but not available in
+    typical image processing libraries.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - CLAHE produces visible local contrast enhancement with configurable clip limit
+    and tile size
+  - Bilateral filter preserves edges while smoothing flat regions
+  - Guided filter produces edge-preserving smoothing with O(N) complexity
+  - All three tested against OpenCV output with PSNR >= 40dB
+  out_of_scope: GPU acceleration. SIMD optimization (separate track). Weighted median
+    filter.
+  technical_notes: 'CLAHE: divide image into tiles (default 8x8), equalize each with
+    clip limit, bilinear interpolate between tiles. Bilateral: for each pixel, weight
+    neighbors by spatial Gaussian AND range Gaussian (intensity similarity). Guided
+    filter: He et al. 2010 — compute local linear model a*I+b from guidance image,
+    average over windows. All operate on grayscale or per-channel RGB.'
+plan:
+- phase: CLAHE
+  tasks:
+  - text: Add CLAHE with configurable clip limit and tile grid size
+    done: false
+  - text: Add bilateral filter with spatial sigma, range sigma parameters
+    done: false
+  - text: Add guided filter (He et al. 2010) with epsilon and radius parameters
+    done: false
+  - text: Unit test all three against known reference outputs
+    done: false
+  - text: Parity test CLAHE against OpenCV output
+    done: false
+extra: {}

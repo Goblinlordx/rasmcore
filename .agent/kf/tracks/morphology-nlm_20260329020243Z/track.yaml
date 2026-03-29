@@ -1,0 +1,40 @@
+id: morphology-nlm_20260329020243Z
+title: Morphological Operations + Non-Local Means Denoising
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'OpenCV-tier operations: full morphological suite (erode, dilate, open,
+    close, gradient, top-hat, black-hat) with configurable structuring elements, plus
+    non-local means denoising (patch-based, state-of-art for Gaussian noise).'
+  context: Morphological operations are essential for document processing, medical
+    imaging, and mask refinement. Non-local means (NLM) denoising compares patches
+    across the image to denoise, producing much better results than Gaussian or median
+    filtering. Both are OpenCV staples absent from typical image libraries.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - Erode/dilate/open/close with rect, ellipse, and cross structuring elements
+  - Morphological gradient, top-hat, and black-hat operations
+  - NLM denoising with configurable patch size, search window, and filter strength
+  - NLM tested against OpenCV output
+  out_of_scope: Skeletonization. Geodesic morphology. BM3D denoising.
+  technical_notes: 'Morphology: implement via min/max filter with arbitrary structuring
+    element (rect, ellipse, cross). Open = erode then dilate, close = dilate then
+    erode. NLM: for each pixel, compare NxN patches in search window, weight by patch
+    similarity (exp(-d^2/h^2)), average weighted pixels. Optimized via integral images
+    for sum-of-squared-differences.'
+plan:
+- phase: Morphological + Denoising
+  tasks:
+  - text: Implement erode and dilate with configurable structuring element (rect/ellipse/cross)
+    done: false
+  - text: Implement open, close, gradient, top-hat, black-hat as composed operations
+    done: false
+  - text: Implement non-local means denoising with integral image optimization
+    done: false
+  - text: Unit test morphology matches OpenCV for known inputs
+    done: false
+  - text: Test NLM denoising PSNR improvement on noisy synthetic images
+    done: false
+extra: {}
