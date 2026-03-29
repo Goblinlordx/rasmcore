@@ -1,0 +1,64 @@
+id: webp-i4-context-costs_20260329110701Z
+title: VP8 I4 Context-Dependent Mode Costs — VP8FixedCostsI4[10][10][10]
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Port the 10x10x10 VP8FixedCostsI4 context-dependent mode cost table and
+    wire into 4x4 sub-block mode selection. Currently we use flat per-mode costs.
+  context: |
+    libwebp's PickBestIntra4 uses GetCostModeI4 which looks up VP8FixedCostsI4
+    indexed by [top_mode][left_mode][candidate_mode]. This makes the mode cost
+    depend on neighboring block modes — DC mode is cheap after DC, but expensive
+    after a diagonal mode. Our mode_header_cost_4x4 ignores context entirely.
+  codebase_analysis: |
+    libwebp cost_enc.c line 106: VP8FixedCostsI4[NUM_BMODES][NUM_BMODES][NUM_BMODES]
+    = 10x10x10 = 1000 entries (uint16_t).
+
+    GetCostModeI4 (quant_enc.c ~line 1049):
+    - top = (y==0) ? preds from above MB : modes[i4 - 4]
+    - left = (x==0) ? preds from left MB : modes[i4 - 1]
+    - return VP8FixedCostsI4[top][left]
+
+    Our predict.rs select_best_4x4_rd:
+    - Uses mode_header_cost_4x4(mode) which returns flat per-mode cost
+    - No context dependency on neighboring modes
+  acceptance_criteria:
+    - VP8FixedCostsI4[10][10][10] table ported from cost_enc.c
+    - select_best_4x4_rd uses context-dependent mode costs
+    - GetCostModeI4 logic matches libwebp (top/left neighbor lookup)
+    - Quality improves on textured content with B_PRED
+    - All parity tests pass
+    - Target byte-for-byte match with cwebp (only FP differences allowed)
+  out_of_scope: |
+    Trellis quantization. Multi-pass StatLoop.
+  technical_notes: |
+    Read cost_enc.c lines 106-221 for the full VP8FixedCostsI4 table.
+    Read quant_enc.c GetCostModeI4 for the context lookup logic.
+
+    The 1000-entry table is static const — embed directly in Rust.
+    Pass top_mode and left_mode to select_best_4x4_rd.
+    For the first sub-block in each row/column, use the MB-level predictor
+    context from the recon buffer.
+plan:
+  - phase: Cost Table
+    tasks:
+      - text: Port VP8FixedCostsI4[10][10][10] from cost_enc.c (1000 entries)
+        done: false
+      - text: Implement get_cost_mode_i4(top, left) returning per-mode cost slice
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Pass top_mode/left_mode context to select_best_4x4_rd
+        done: false
+      - text: Update encode_macroblock to track and propagate I4 mode context
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Quality improves on textured B_PRED content
+        done: false
+      - text: All parity tests pass with tighter thresholds
+        done: false
+extra: {}
