@@ -998,14 +998,8 @@ fn displacement_map_barrel_all_images_match_opencv() {
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
         eprintln!("displace_barrel {name:20}: MAE={e:.4}, max_err={m}");
-        assert!(
-            e < 0.5,
-            "displace_barrel {name}: MAE={e:.4} >= 0.5"
-        );
-        assert!(
-            m <= 1,
-            "displace_barrel {name}: max_err={m} > 1"
-        );
+        assert!(e < 0.5, "displace_barrel {name}: MAE={e:.4} >= 0.5");
+        assert!(m <= 1, "displace_barrel {name}: max_err={m} > 1");
     }
 }
 
@@ -1023,13 +1017,73 @@ fn displacement_map_wave_all_images_match_opencv() {
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
         eprintln!("displace_wave {name:20}: MAE={e:.4}, max_err={m}");
-        assert!(
-            e < 0.5,
-            "displace_wave {name}: MAE={e:.4} >= 0.5"
-        );
-        assert!(
-            m <= 1,
-            "displace_wave {name}: max_err={m} > 1"
-        );
+        assert!(e < 0.5, "displace_wave {name}: MAE={e:.4} >= 0.5");
+        assert!(m <= 1, "displace_wave {name}: max_err={m} > 1");
+    }
+}
+
+// ─── Bokeh Blur Parity ──────────────────────────────────────────────────
+
+#[test]
+fn bokeh_disc_r3_all_images_match_opencv() {
+    let info = info_128();
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_bokeh_disc_3.raw"));
+        let ours = filters::bokeh_blur(&input, &info, 3, filters::BokehShape::Disc).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("bokeh_disc_3 {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(e < 0.5, "bokeh_disc_3 {name}: MAE={e:.4} >= 0.5");
+        assert!(m <= 1, "bokeh_disc_3 {name}: max_err={m} > 1");
+    }
+}
+
+#[test]
+fn bokeh_disc_r7_all_images_match_opencv() {
+    let info = info_128();
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_bokeh_disc_7.raw"));
+        let ours = filters::bokeh_blur(&input, &info, 7, filters::BokehShape::Disc).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("bokeh_disc_7 {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(e < 0.5, "bokeh_disc_7 {name}: MAE={e:.4} >= 0.5");
+        assert!(m <= 1, "bokeh_disc_7 {name}: max_err={m} > 1");
+    }
+}
+
+#[test]
+fn bokeh_hex_r3_all_images_match_opencv() {
+    let info = info_128();
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_bokeh_hex_3.raw"));
+        let ours = filters::bokeh_blur(&input, &info, 3, filters::BokehShape::Hexagon).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("bokeh_hex_3 {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(e < 0.5, "bokeh_hex_3 {name}: MAE={e:.4} >= 0.5");
+        assert!(m <= 1, "bokeh_hex_3 {name}: max_err={m} > 1");
+    }
+}
+
+#[test]
+fn bokeh_hex_r7_all_images_match_opencv() {
+    let info = info_128();
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_bokeh_hex_7.raw"));
+        let ours = filters::bokeh_blur(&input, &info, 7, filters::BokehShape::Hexagon).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("bokeh_hex_7 {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(e < 0.5, "bokeh_hex_7 {name}: MAE={e:.4} >= 0.5");
+        assert!(m <= 1, "bokeh_hex_7 {name}: max_err={m} > 1");
     }
 }

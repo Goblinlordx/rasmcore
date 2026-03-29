@@ -4917,6 +4917,81 @@ mod tests {
             assert!(v <= 1, "difference with self should be ~0, got {v}");
         }
     }
+
+    // ── Bokeh Blur Tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn bokeh_disc_zero_radius_is_identity() {
+        let (px, info) = make_image(8, 8);
+        let result = bokeh_blur(&px, &info, 0, BokehShape::Disc).unwrap();
+        assert_eq!(result, px);
+    }
+
+    #[test]
+    fn bokeh_disc_kernel_is_circular() {
+        let (kernel, side) = make_disc_kernel(3);
+        assert_eq!(side, 7);
+        // Center should be 1.0
+        assert_eq!(kernel[3 * 7 + 3], 1.0);
+        // Corners should be 0.0 (outside circle)
+        assert_eq!(kernel[0], 0.0);
+        assert_eq!(kernel[6], 0.0);
+        assert_eq!(kernel[6 * 7], 0.0);
+        assert_eq!(kernel[6 * 7 + 6], 0.0);
+        // Edge midpoints should be 1.0 (inside circle)
+        assert_eq!(kernel[0 * 7 + 3], 1.0); // top center
+        assert_eq!(kernel[3 * 7 + 0], 1.0); // left center
+    }
+
+    #[test]
+    fn bokeh_hex_kernel_is_hexagonal() {
+        let (kernel, side) = make_hex_kernel(3);
+        assert_eq!(side, 7);
+        // Center should be 1.0
+        assert_eq!(kernel[3 * 7 + 3], 1.0);
+        // Top/bottom centers should be 1.0
+        assert_eq!(kernel[0 * 7 + 3], 1.0);
+        assert_eq!(kernel[6 * 7 + 3], 1.0);
+        // Hex kernel should differ from disc at some corner-adjacent pixels
+        let (disc_k, _) = make_disc_kernel(3);
+        let differs = kernel.iter().zip(disc_k.iter()).any(|(h, d)| h != d);
+        assert!(differs, "hex and disc kernels should differ");
+    }
+
+    #[test]
+    fn bokeh_flat_image_unchanged() {
+        // A flat image convolved with any normalized kernel should stay flat
+        let w = 16u32;
+        let h = 16u32;
+        let pixels = vec![100u8; (w * h) as usize];
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = bokeh_blur(&pixels, &info, 3, BokehShape::Disc).unwrap();
+        for (i, &v) in result.iter().enumerate() {
+            assert!(
+                (v as i16 - 100).abs() <= 1,
+                "pixel {i} should be ~100, got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn bokeh_rgba_supported() {
+        let pixels: Vec<u8> = (0..64).map(|i| (i * 4) as u8).collect();
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = bokeh_blur(&pixels, &info, 1, BokehShape::Hexagon);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 64);
+    }
 }
 
 #[cfg(test)]
