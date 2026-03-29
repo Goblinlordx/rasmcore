@@ -1,0 +1,101 @@
+id: demo-composition-ui_20260330001201Z
+title: Demo Composition UI — Multi-Image Layer Panel
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add a layer panel to the demo pipeline builder for loading multiple images,
+    compositing with blend modes, and offset positioning. Each layer is a
+    separate image source that feeds into the pipeline DAG.
+  context: |
+    The pipeline builder currently supports single-image linear chains only.
+    The composite operation is explicitly skipped in the palette. With the
+    multi-image pipeline track providing blend mode support in the pipeline
+    and fluent SDK, the demo needs a UI to exercise these capabilities.
+
+    Common use cases:
+      - Watermarking (overlay logo on photo)
+      - Photo collage (multiple images arranged on canvas)
+      - Layer effects (blend modes between images)
+      - Before/after comparison (side-by-side or overlay)
+
+    Design: a layer panel on the left side where users can add image layers.
+    Each layer has its own source image and can have its own filter chain.
+    Layers are composited in order (bottom to top) with configurable blend
+    mode and offset per layer.
+  acceptance_criteria:
+    - Users can load multiple images as separate layers
+    - Each layer shows a thumbnail preview
+    - Layers can be reordered (drag-and-drop)
+    - Each layer has blend mode selector (dropdown with all 9 modes + over)
+    - Each layer has x/y offset controls
+    - Each layer can have its own filter chain applied before compositing
+    - Live preview shows the composited result
+    - Layer visibility toggle (eye icon)
+    - Remove layer button
+    - Base layer (bottom) has no blend mode (it is the background)
+    - Get Code button generates correct multi-image SDK code
+  out_of_scope: |
+    Layer opacity slider (beyond blend mode). Layer masks.
+    Canvas resize/crop for final output dimensions.
+    Drag-to-position layers on the canvas (use numeric x/y controls).
+  technical_notes: |
+    UI layout change:
+      Add a Layers panel (collapsible) between the palette and the chain area.
+      Each layer card shows: thumbnail, name, blend mode dropdown, x/y inputs,
+      visibility toggle, remove button.
+
+    Pipeline construction:
+      Base layer: pipe.read(layer0.bytes) -> apply layer0 chain
+      Layer 1: pipe.read(layer1.bytes) -> apply layer1 chain
+      Composite: pipe.composite(layer1_node, base_node, x, y, blend_mode)
+      Layer 2: pipe.read(layer2.bytes) -> apply layer2 chain
+      Composite: pipe.composite(layer2_node, composite1_node, x, y, blend_mode)
+      ... and so on, folding layers bottom-to-top
+
+    Code generation for multi-image:
+      const base = rcimage.load(layer0Bytes).blur(3);
+      const overlay = rcimage.load(layer1Bytes).brightness(0.2);
+      const result = base
+        .composite(overlay, { x: 10, y: 10, blend: 'multiply' })
+        .toJpeg({ quality: 85 });
+plan:
+  - phase: Layer Model
+    tasks:
+      - text: Create layer state model (id, name, imageBytes, chain, blendMode, x, y, visible)
+        done: false
+      - text: Add layer panel UI with add/remove/reorder controls
+        done: false
+      - text: Add image upload per layer (click or drag-drop on layer card)
+        done: false
+      - text: Show thumbnail preview per layer
+        done: false
+  - phase: Layer Controls
+    tasks:
+      - text: Add blend mode dropdown per layer (over + 9 blend modes)
+        done: false
+      - text: Add x/y offset number inputs per layer
+        done: false
+      - text: Add visibility toggle (eye icon) per layer
+        done: false
+      - text: Add per-layer filter chain (reuse existing chain builder for each layer)
+        done: false
+  - phase: Composition Pipeline
+    tasks:
+      - text: Build multi-layer pipeline in worker (fold layers bottom-to-top with composite)
+        done: false
+      - text: Live preview updates when any layer changes (debounced)
+        done: false
+      - text: Export composited result with format selection
+        done: false
+      - text: Update Get Code to generate multi-image SDK code
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify two-layer composite with blend mode produces correct output
+        done: false
+      - text: Verify layer reorder changes composite order
+        done: false
+extra: {}

@@ -1,0 +1,105 @@
+id: multi-image-pipeline_20260330001200Z
+title: Multi-Image Pipeline — Blend Modes in Composite + Fluent SDK Support
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add blend mode parameter to pipeline composite node and WIT interface.
+    Expose composite() and blend() in the fluent SDK so users can combine
+    multiple images in a single chain.
+  context: |
+    Multi-image composition is a core image processing capability — watermarking,
+    collages, layered effects, HDR stacking. The raw blend mode math (9 modes)
+    and Porter-Duff composite are fully implemented in domain/filters.rs and
+    domain/composite.rs. But the pipeline interface only exposes basic
+    composite(fg, bg, x, y) with no blend mode selection, and the fluent SDK
+    has no multi-image methods at all.
+
+    Target API:
+      const result = rcimage.load(bgBytes)
+        .composite(rcimage.load(fgBytes).blur(2.0), { x: 10, y: 10, blend: 'over' })
+        .toJpeg({ quality: 85 });
+
+    The inner rcimage.load(fg).blur() chain evaluates lazily within the same
+    pipeline DAG — both image sources feed into a single CompositeNode.
+  codebase_analysis: |
+    Existing:
+      domain/composite.rs — alpha_composite_over() with offset, clipping, tests
+      domain/filters.rs — BlendMode enum (9 modes), blend() function, blend_channel()
+      domain/filters.rs — premultiply, unpremultiply, flatten, add_alpha, remove_alpha
+      domain/pipeline/nodes/composite.rs — CompositeNode (hardcoded to Porter-Duff over)
+      wit/image/pipeline.wit — composite(fg, bg, x, y) -> node-id
+      wit/image/filters.wit — blend-mode enum already defined
+
+    Missing:
+      Pipeline composite does not accept blend mode parameter
+      CompositeNode only calls alpha_composite_over, not blend modes
+      Fluent SDK (rcimage.ts) has no multi-image methods
+      generate-fluent-sdk.cjs skips composite (SPECIAL_METHODS set)
+  acceptance_criteria:
+    - Pipeline composite accepts optional blend mode parameter
+    - All 9 blend modes usable via pipeline (multiply, screen, overlay, darken, lighten, soft-light, hard-light, difference, exclusion)
+    - Default blend mode is Porter-Duff over (backwards compatible)
+    - Fluent SDK exposes composite(other, opts) where other is an RcImage
+    - Inner RcImage chain (the foreground) evaluates within the same pipeline
+    - Composite options include x, y offset and blend mode
+    - Works with RGBA images (premultiply handled internally)
+    - Works with RGB images (auto-adds alpha if needed for blend)
+    - Code generation (Get Code) handles composite correctly
+  out_of_scope: |
+    Demo UI for composition (separate track). Mask-based composition.
+    Layer opacity control (beyond what blend modes provide).
+    Panorama stitching or HDR merge algorithms.
+  technical_notes: |
+    WIT change:
+      composite(fg: node-id, bg: node-id, x: s32, y: s32, mode: option<blend-mode>) -> node-id
+      The blend-mode enum already exists in filters.wit — import it in pipeline.wit.
+      option<blend-mode> with None meaning Porter-Duff over (default).
+
+    CompositeNode change:
+      Add BlendMode field. When mode is Some, use blend() with offset handling
+      instead of alpha_composite_over(). Need to handle offset + different-size
+      images for blend modes (currently blend() requires same-size).
+
+    Fluent SDK:
+      composite(other: RcImage, opts?: { x?: number, y?: number, blend?: BlendMode }): RcImage
+      The other RcImage shares the same internal Pipeline instance.
+      Implementation: merge the other's nodeId into this pipeline's composite call.
+
+    SDK generator change:
+      Remove composite from SPECIAL_METHODS. Generate it with the RcImage
+      parameter type instead of NodeId.
+plan:
+  - phase: Pipeline Blend Mode Integration
+    tasks:
+      - text: Add optional blend-mode parameter to composite in pipeline.wit
+        done: false
+      - text: Update CompositeNode to accept BlendMode and dispatch to blend() or alpha_composite_over()
+        done: false
+      - text: Handle offset + different-size images for blend modes (pad/crop to match)
+        done: false
+      - text: Update pipeline adapter to pass blend mode from WIT to CompositeNode
+        done: false
+      - text: Test composite with each blend mode via pipeline
+        done: false
+  - phase: Fluent SDK
+    tasks:
+      - text: Add composite(other, opts) method to RcImage in generate-fluent-sdk.cjs
+        done: false
+      - text: Handle shared pipeline instance — other RcImage merges into same pipeline
+        done: false
+      - text: Update code generation to handle composite with RcImage argument
+        done: false
+      - text: Test fluent SDK composite chain in TypeScript
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify default composite (no blend mode) is backwards compatible
+        done: false
+      - text: Verify all 9 blend modes produce correct output via pipeline
+        done: false
+      - text: Verify WASM component build succeeds with updated WIT
+        done: false
+extra: {}
