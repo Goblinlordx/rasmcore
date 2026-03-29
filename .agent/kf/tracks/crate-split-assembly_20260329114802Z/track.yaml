@@ -1,0 +1,97 @@
+id: crate-split-assembly_20260329114802Z
+title: Crate Split — Assembly Pattern + Meta-Crates + Bare Infrastructure Test
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Create rasmcore-all meta-crate (filters-std + codecs-std), prove the bare
+    infrastructure build works (zero filters/codecs, only custom plugins), and
+    document the assembly pattern for users.
+  context: |
+    With filters and codecs extracted into separate crates, the assembly pattern
+    becomes the primary way to build rasmcore:
+
+    Full build (default):
+      depend on rasmcore-all → gets everything free
+
+    Minimal build:
+      depend on rasmcore-image + rasmcore-codec-png + rasmcore-filter-spatial
+      → only PNG and spatial filters, nothing else compiled
+
+    Custom build:
+      depend on rasmcore-image + my-custom-filter + my-custom-codec
+      → zero built-ins, only your code
+
+    This track proves all three patterns work and documents them.
+  acceptance_criteria:
+    - rasmcore-all meta-crate works (depends on filters-std + codecs-std)
+    - Bare infrastructure build compiles (rasmcore-image with no filter/codec deps)
+    - Bare infra + example-custom-filter builds and registers only custom filter
+    - Selective build works (rasmcore-image + codec-png + filter-spatial only)
+    - WASM component builds for all 3 patterns (full, minimal, custom)
+    - jco transpile produces SDK reflecting only included operations
+    - Documentation covers all assembly patterns
+  out_of_scope: |
+    Publishing to crates.io. CI/CD for per-crate publishing.
+  technical_notes: |
+    Meta-crates:
+
+    crates/rasmcore-filters-std/
+      [dependencies]
+      rasmcore-filter-spatial = { path = "../rasmcore-filter-spatial" }
+      rasmcore-filter-color = { path = "../rasmcore-filter-color" }
+      rasmcore-filter-edge = { path = "../rasmcore-filter-edge" }
+      rasmcore-filter-enhance = { path = "../rasmcore-filter-enhance" }
+      rasmcore-filter-histogram = { path = "../rasmcore-filter-histogram" }
+      rasmcore-filter-alpha = { path = "../rasmcore-filter-alpha" }
+      rasmcore-filter-advanced = { path = "../rasmcore-filter-advanced" }
+
+    crates/rasmcore-codecs-std/
+      [dependencies]
+      rasmcore-codec-png = { path = "../rasmcore-codec-png" }
+      rasmcore-codec-jpeg = { path = "../rasmcore-codec-jpeg" }
+      ... (all 13)
+
+    crates/rasmcore-all/
+      [dependencies]
+      rasmcore-image = { path = "../rasmcore-image" }
+      rasmcore-filters-std = { path = "../rasmcore-filters-std" }
+      rasmcore-codecs-std = { path = "../rasmcore-codecs-std" }
+
+    Acid tests:
+
+    1. Full: depend on rasmcore-all → WASM has all operations
+    2. Minimal: depend on rasmcore-image + codec-png + filter-spatial
+       → WASM has only blur/sharpen/convolve/median + PNG
+    3. Custom: depend on rasmcore-image + example-custom-filter
+       → WASM has only invert_red (zero built-ins)
+plan:
+  - phase: Meta-Crates
+    tasks:
+      - text: Create rasmcore-filters-std meta-crate (depends on all 7 filter crates)
+        done: false
+      - text: Create rasmcore-codecs-std meta-crate (depends on all 13 codec crates)
+        done: false
+      - text: Create rasmcore-all meta-crate (filters-std + codecs-std + rasmcore-image)
+        done: false
+  - phase: Assembly Tests
+    tasks:
+      - text: Test full build via rasmcore-all — all operations in WASM
+        done: false
+      - text: Test minimal build — rasmcore-image + codec-png + filter-spatial only
+        done: false
+      - text: Test custom-only build — rasmcore-image + example-custom-filter, zero built-ins
+        done: false
+      - text: Verify jco transpile reflects only included operations for each build
+        done: false
+  - phase: Documentation
+    tasks:
+      - text: Document assembly pattern in README (full, minimal, custom examples)
+        done: false
+      - text: Document how to create a new filter crate (step-by-step guide)
+        done: false
+      - text: Document how to create a new codec crate (step-by-step guide)
+        done: false
+extra: {}

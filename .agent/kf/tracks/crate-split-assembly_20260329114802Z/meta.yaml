@@ -1,0 +1,9 @@
+title: Crate Split — Assembly Pattern + Meta-Crates + Bare Infrastructure Test
+status: pending
+type: refactor
+approved: false
+created: '2026-03-29'
+updated: '2026-03-29'
+deps:
+- crate-split-filters_20260329114800Z
+- crate-split-codecs_20260329114801Z

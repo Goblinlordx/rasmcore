@@ -1,0 +1,130 @@
+id: crate-split-codecs_20260329114801Z
+title: Crate Split — Extract Codecs into Individual Crates
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Move each encoder/decoder into its own crate (13 codecs). Each uses
+    #[register_encoder/#register_decoder]. Meta-crate rasmcore-codecs-std
+    pulls in all free codecs. Individual codecs excludable by not depending on them.
+  context: |
+    Codecs are individual (not grouped) because each has unique heavy dependencies:
+    - jpeg: rasmcore-jpeg (custom codec), image crate
+    - webp: rasmcore-webp (custom codec)
+    - avif: rav1e/dav1d via image crate
+    - jxl: jxl-oxide
+    - jp2: justjp2
+    - svg: resvg (large dependency tree)
+    - fits: rasmcore-fits
+
+    Users may want to exclude specific codecs to reduce binary size:
+    - No SVG → saves ~2MB (resvg)
+    - No AVIF → saves encoding overhead
+    - No JXL → saves jxl-oxide dependency
+  codebase_analysis: |
+    Current encoder/ directory: 13 format modules (avif, bmp, dds, fits, gif,
+    ico, jp2, jpeg, png, qoi, tiff, webp + native_trivial).
+
+    Current decoder/ is a single mod.rs (~600 lines) with format detection +
+    dispatch to image crate or custom decoders (jxl, jp2, heif, svg, fits).
+
+    Each codec crate would contain both encode and decode for its format,
+    using #[register_encoder] and #[register_decoder].
+
+    Dependencies per codec:
+    - png: image crate (png feature)
+    - jpeg: rasmcore-jpeg + image crate
+    - webp: rasmcore-webp
+    - gif: image crate (gif feature)
+    - tiff: tiff crate
+    - avif: image crate (avif feature)
+    - bmp: image crate or rasmcore-bmp
+    - ico: image crate
+    - qoi: image crate or rasmcore-qoi
+    - jxl: jxl-oxide
+    - jp2: justjp2
+    - svg: resvg (decode only, no encode)
+    - fits: rasmcore-fits
+  acceptance_criteria:
+    - 13 codec crates created in workspace
+    - Each encoder uses #[register_encoder], each decoder uses #[register_decoder]
+    - rasmcore-codecs-std meta-crate depends on all free codec crates
+    - rasmcore-image depends on rasmcore-codecs-std by default
+    - Format detection works across registered decoders
+    - All encode/decode tests pass after migration
+    - WASM component builds with all codecs
+    - Binary size documented per-codec (for users choosing subsets)
+  out_of_scope: |
+    Adding new codecs. Changing codec APIs. Non-free codecs (HEVC stays as-is).
+  technical_notes: |
+    Codec crate pattern:
+
+    crates/rasmcore-codec-png/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, image (png feature), inventory
+      src/lib.rs:
+        #[register_encoder(name = "png", format = "png", mime = "image/png")]
+        pub fn encode_png(...) -> Result<Vec<u8>, ImageError> { ... }
+
+        #[register_decoder(name = "png", formats = "png")]
+        pub fn decode_png(...) -> Result<DecodedImage, ImageError> { ... }
+
+    Format detection: rasmcore-image core keeps detect_format() which checks
+    magic bytes. Registered decoders provide their format names. The dispatch
+    function iterates registered decoders to find one matching the detected format.
+
+    Migration per codec:
+    1. Create crate with correct image feature flags
+    2. Move encode function from encoder/{format}.rs
+    3. Move decode logic from decoder/mod.rs (format-specific section)
+    4. Add #[register_encoder] and #[register_decoder]
+    5. Add to workspace, verify tests pass
+plan:
+  - phase: Light Codecs (no heavy deps)
+    tasks:
+      - text: Create rasmcore-codec-png crate (encode + decode via image crate)
+        done: false
+      - text: Create rasmcore-codec-bmp crate
+        done: false
+      - text: Create rasmcore-codec-ico crate
+        done: false
+      - text: Create rasmcore-codec-qoi crate
+        done: false
+      - text: Verify all 4 light codecs register and work
+        done: false
+  - phase: Heavy Codecs
+    tasks:
+      - text: Create rasmcore-codec-jpeg crate (rasmcore-jpeg + image crate)
+        done: false
+      - text: Create rasmcore-codec-webp crate (rasmcore-webp)
+        done: false
+      - text: Create rasmcore-codec-tiff crate (tiff crate)
+        done: false
+      - text: Create rasmcore-codec-gif crate
+        done: false
+      - text: Create rasmcore-codec-avif crate
+        done: false
+  - phase: Specialized Codecs
+    tasks:
+      - text: Create rasmcore-codec-jxl crate (jxl-oxide, decode only)
+        done: false
+      - text: Create rasmcore-codec-jp2 crate (justjp2)
+        done: false
+      - text: Create rasmcore-codec-svg crate (resvg, decode only)
+        done: false
+      - text: Create rasmcore-codec-fits crate (rasmcore-fits)
+        done: false
+  - phase: Meta-Crate + Verification
+    tasks:
+      - text: Create rasmcore-codecs-std meta-crate depending on all 13 codec crates
+        done: false
+      - text: Update rasmcore-image to depend on rasmcore-codecs-std
+        done: false
+      - text: Remove old encoder/decoder code from rasmcore-image (replace with re-exports)
+        done: false
+      - text: Verify all encode/decode tests pass
+        done: false
+      - text: Verify WASM component builds with all codecs
+        done: false
+extra: {}

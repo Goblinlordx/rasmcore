@@ -1,0 +1,152 @@
+id: crate-split-filters_20260329114800Z
+title: Crate Split — Extract Filters into Category Crates
+type: refactor
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Move filters from monolithic filters.rs (5800 lines) into 7 category crates.
+    Each crate uses #[register_filter] for the extensibility system. Meta-crate
+    rasmcore-filters-std pulls in all standard filters.
+  context: |
+    filters.rs is 5800+ lines containing 30+ filter implementations. Breaking
+    these into per-category crates makes rasmcore eat its own dog food — our
+    built-in filters use the exact same extensibility system as third-party plugins.
+
+    Users can then choose which filter groups to include:
+      rasmcore-filters-std       → all standard filters (convenience)
+      rasmcore-filter-spatial    → just blur, sharpen, convolve, median
+      rasmcore-filter-color      → just hue_rotate, saturate, sepia, colorize
+
+    The proc macro + inventory registration system is already proven. Each crate
+    just needs to depend on rasmcore-macros + rasmcore-image (for types).
+  codebase_analysis: |
+    Current filters.rs contains these groups (by category):
+
+    Spatial (blur, sharpen, convolve, median, gaussian_blur_cv):
+      ~400 lines + libblur dependency
+
+    Color (hue_rotate, saturate, sepia, colorize):
+      ~100 lines, delegates to color_lut.rs ColorOp
+
+    Edge (sobel, canny, scharr, laplacian, distance_transform):
+      ~300 lines, grayscale-based
+
+    Enhance (dehaze, clarity, pyramid_detail_remap, retinex_ssr/msr/msrcr):
+      ~800 lines, depends on blur + guided_filter
+
+    Histogram (equalize, normalize, auto_level, contrast_stretch — in histogram.rs):
+      Already in separate module, ~450 lines
+
+    Alpha (premultiply, unpremultiply, flatten, add_alpha, remove_alpha, blend):
+      ~300 lines
+
+    Advanced (bilateral, guided_filter, clahe, nlm_denoise, morphology):
+      ~1000 lines, each is substantial
+
+    Shared helpers: validate_format, is_16bit, process_via_8bit, pad_reflect,
+    box_mean, downsample_2x, upsample_2x — these stay in rasmcore-image as
+    public utilities that filter crates can import.
+
+    Dependencies:
+    - blur depends on libblur
+    - sharpen depends on blur
+    - dehaze depends on blur + guided_filter
+    - clarity depends on blur (or gaussian_blur_cv)
+    - retinex depends on gaussian_blur_cv (which depends on convolve)
+    - Most filters depend on validate_format, is_16bit, process_via_8bit
+  acceptance_criteria:
+    - 7 filter category crates created in workspace
+    - Each filter function moved to its crate with #[register_filter] attribute
+    - Shared helpers (validate_format, is_16bit, etc.) exposed as public API from rasmcore-image
+    - rasmcore-filters-std meta-crate depends on all 7 category crates
+    - rasmcore-image depends on rasmcore-filters-std by default
+    - All existing tests pass after migration
+    - inventory registration works across all filter crates
+    - build.rs codegen picks up filters from all crates
+    - WASM component builds with all filters
+  out_of_scope: |
+    Codec extraction (separate track). Moving tests to per-crate.
+    Changing filter APIs or behavior. Adding new filters.
+  technical_notes: |
+    Crate structure:
+
+    crates/rasmcore-filter-spatial/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, libblur, inventory
+      src/lib.rs: pub fn blur, sharpen, convolve, median, gaussian_blur_cv
+
+    crates/rasmcore-filter-color/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, inventory
+      src/lib.rs: pub fn hue_rotate, saturate, sepia, colorize (delegates to color_lut)
+
+    crates/rasmcore-filter-edge/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, inventory
+      src/lib.rs: pub fn sobel, canny, scharr, laplacian
+
+    crates/rasmcore-filter-enhance/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, rasmcore-filter-spatial, inventory
+      src/lib.rs: pub fn dehaze, clarity, pyramid_detail_remap, retinex_ssr/msr/msrcr
+
+    crates/rasmcore-filter-histogram/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, inventory
+      src/lib.rs: pub fn equalize, normalize, auto_level, clahe, contrast_stretch
+
+    crates/rasmcore-filter-alpha/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, inventory
+      src/lib.rs: pub fn premultiply, unpremultiply, flatten, add_alpha, remove_alpha, blend
+
+    crates/rasmcore-filter-advanced/
+      Cargo.toml: depends on rasmcore-macros, rasmcore-image, inventory
+      src/lib.rs: pub fn bilateral, guided_filter, nlm_denoise, morphology ops
+
+    crates/rasmcore-filters-std/
+      Cargo.toml: depends on all 7 filter crates (meta-crate, no code)
+      src/lib.rs: pub use rasmcore_filter_spatial; pub use rasmcore_filter_color; ...
+
+    Migration per filter:
+    1. Create crate Cargo.toml with correct deps
+    2. Move pub fn + helpers to crate src/lib.rs
+    3. Keep #[register_filter] attribute (already there)
+    4. In old filters.rs, replace with: pub use rasmcore_filter_spatial::blur;
+    5. Verify tests pass
+plan:
+  - phase: Infrastructure
+    tasks:
+      - text: Extract shared filter helpers (validate_format, is_16bit, process_via_8bit, pad_reflect, box_mean) as public API from rasmcore-image
+        done: false
+      - text: Create rasmcore-filter-spatial crate with blur, sharpen, convolve, median, gaussian_blur_cv
+        done: false
+      - text: Verify spatial filters compile and register via inventory from separate crate
+        done: false
+  - phase: Core Filter Crates
+    tasks:
+      - text: Create rasmcore-filter-color crate (hue_rotate, saturate, sepia, colorize)
+        done: false
+      - text: Create rasmcore-filter-edge crate (sobel, canny, scharr, laplacian)
+        done: false
+      - text: Create rasmcore-filter-alpha crate (premultiply, unpremultiply, flatten, add/remove_alpha, blend)
+        done: false
+      - text: Create rasmcore-filter-histogram crate (equalize, normalize, auto_level, clahe, contrast_stretch)
+        done: false
+  - phase: Advanced + Enhance
+    tasks:
+      - text: Create rasmcore-filter-advanced crate (bilateral, guided_filter, nlm_denoise, morphology)
+        done: false
+      - text: Create rasmcore-filter-enhance crate (dehaze, clarity, pyramid_detail_remap, retinex)
+        done: false
+      - text: Wire cross-crate dependencies (enhance depends on spatial for blur)
+        done: false
+  - phase: Meta-Crate + Verification
+    tasks:
+      - text: Create rasmcore-filters-std meta-crate that depends on all 7 filter crates
+        done: false
+      - text: Update rasmcore-image to depend on rasmcore-filters-std (re-exports all filters)
+        done: false
+      - text: Remove old filter code from filters.rs (replace with re-exports)
+        done: false
+      - text: Verify all 468+ lib tests pass after migration
+        done: false
+      - text: Verify WASM component build succeeds with all filter crates
+        done: false
+extra: {}
