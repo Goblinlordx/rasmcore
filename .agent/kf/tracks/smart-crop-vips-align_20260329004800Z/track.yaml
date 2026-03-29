@@ -5,110 +5,121 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Replace our smart crop algorithms with libvips-exact implementations: iterative
+  summary: 'Replace our smart crop algorithms with libvips-exact implementations: iterative
+
     slice removal for entropy mode, and Laplacian + skin color + saturation scoring
+
     with Gaussian blur for attention mode. Goal is crop position match within 1px
+
     of vips smartcrop on identical inputs.
-  context: |
-    Current implementation uses different algorithms than libvips (SAT sliding window
+
+    '
+  context: 'Current implementation uses different algorithms than libvips (SAT sliding window
+
     vs slice removal for entropy; Sobel-only vs Laplacian+skin+saturation for attention).
+
     Both produce equivalent results on synthetic patterns (variance within 0.1%) but
+
     may diverge on natural images with faces, skin tones, or saturated colors.
 
+
     libvips attention mode includes three scoring signals that we lack:
+
     1. Laplacian edge detection (not Sobel) on Y channel after XYZ conversion
+
     2. Skin color detection (Euclidean distance in normalized XYZ from {-0.78, -0.57, -0.44})
+
     3. Saturation scoring (CIE LAB a* channel)
 
+
     libvips entropy mode uses iterative slice removal (~8 iterations) which is simpler
+
     and faster than our SAT approach for this use case.
-  codebase_analysis: |
-    smart_crop.rs currently has:
+
+    '
+  codebase_analysis: 'smart_crop.rs currently has:
+
     - entropy_score_map(): per-cell Shannon entropy via local histograms → SAT → sliding window
+
     - attention_score_map(): Sobel gradient magnitude → SAT → sliding window
+
     - summed_area_table(): O(1) window sum queries
 
+
     To match vips entropy: replace SAT approach with iterative slice trimming.
+
     Each iteration computes entropy of a left/right (or top/bottom) edge slice,
+
     discards the lower-entropy side. ~8 iterations to converge.
 
+
     To match vips attention: need rasmcore-color XYZ/LAB conversion (may already
+
     exist or need addition). Downsample to ~32px, compute Laplacian + skin + saturation
+
     score images, sum them, Gaussian blur, find max point, center crop.
 
+
     rasmcore-color has BT.601 YCbCr but may not have CIE XYZ or LAB. Check.
+
+    '
   acceptance_criteria:
-    - Entropy mode uses iterative slice removal (~8 iterations) matching vips
-    - Attention mode computes Laplacian edge + skin detection + saturation scoring
-    - Attention downsamples to ~32px for analysis (matching vips)
-    - Attention uses Gaussian blur as spatial integrator (not SAT)
-    - Skin detection uses normalized XYZ distance from {-0.78, -0.57, -0.44}
-    - Saturation uses CIE LAB a* channel
-    - Crop position matches vips within 1px on test patterns
-    - Existing smart_crop API unchanged (SmartCropStrategy enum, same function signature)
-    - All existing smart_crop tests still pass
-    - vips reference test shows variance match within 0.01%
-  out_of_scope: |
-    vips ATTENTION_LOW/ATTENTION_HIGH modes. Alpha channel premultiplication
+  - Entropy mode uses iterative slice removal (~8 iterations) matching vips
+  - Attention mode computes Laplacian edge + skin detection + saturation scoring
+  - Attention downsamples to ~32px for analysis (matching vips)
+  - Attention uses Gaussian blur as spatial integrator (not SAT)
+  - Skin detection uses normalized XYZ distance from {-0.78, -0.57, -0.44}
+  - Saturation uses CIE LAB a* channel
+  - Crop position matches vips within 1px on test patterns
+  - Existing smart_crop API unchanged (SmartCropStrategy enum, same function signature)
+  - All existing smart_crop tests still pass
+  - vips reference test shows variance match within 0.01%
+  out_of_scope: 'vips ATTENTION_LOW/ATTENTION_HIGH modes. Alpha channel premultiplication
+
     (assume straight alpha). Custom weighting between edge/skin/saturation signals.
-  technical_notes: |
-    Entropy — iterative slice removal:
-      excess_w = width - target_w
-      excess_h = height - target_h
-      slice_size = max(ceil(excess_w / 8), ceil(excess_h / 8))
 
-      while crop region > target:
-        if width needs trimming:
-          left_entropy = entropy(left slice of slice_size width)
-          right_entropy = entropy(right slice of slice_size width)
-          discard lower-entropy side
-        if height needs trimming:
-          top_entropy = entropy(top slice)
-          bottom_entropy = entropy(bottom slice)
-          discard lower-entropy side
-
-    Attention — multi-signal scoring:
-      1. Downsample to ~32px (hscale = 32.0 / width)
-      2. Convert to CIE XYZ
-      3. Edge: Laplacian [0,-1,0; -1,4,-1; 0,-1,0] on Y channel, abs() * 5.0
-      4. Skin: normalize XYZ to unit vector, distance from {-0.78, -0.57, -0.44},
-         score = max(0, -100 * dist + 100), mask where Y <= 5.0
-      5. Saturation: XYZ → LAB, extract a* channel, mask where Y <= 5.0
-      6. Sum edge + skin + saturation
-      7. Gaussian blur with sigma = sqrt(crop_w_scaled^2 + crop_h_scaled^2) / 10
-      8. Find max point, scale to original coords, center crop
+    '
+  technical_notes: "Entropy — iterative slice removal:\n  excess_w = width - target_w\n  excess_h = height - target_h\n  slice_size\
+    \ = max(ceil(excess_w / 8), ceil(excess_h / 8))\n\n  while crop region > target:\n    if width needs trimming:\n     \
+    \ left_entropy = entropy(left slice of slice_size width)\n      right_entropy = entropy(right slice of slice_size width)\n\
+    \      discard lower-entropy side\n    if height needs trimming:\n      top_entropy = entropy(top slice)\n      bottom_entropy\
+    \ = entropy(bottom slice)\n      discard lower-entropy side\n\nAttention — multi-signal scoring:\n  1. Downsample to ~32px\
+    \ (hscale = 32.0 / width)\n  2. Convert to CIE XYZ\n  3. Edge: Laplacian [0,-1,0; -1,4,-1; 0,-1,0] on Y channel, abs()\
+    \ * 5.0\n  4. Skin: normalize XYZ to unit vector, distance from {-0.78, -0.57, -0.44},\n     score = max(0, -100 * dist\
+    \ + 100), mask where Y <= 5.0\n  5. Saturation: XYZ → LAB, extract a* channel, mask where Y <= 5.0\n  6. Sum edge + skin\
+    \ + saturation\n  7. Gaussian blur with sigma = sqrt(crop_w_scaled^2 + crop_h_scaled^2) / 10\n  8. Find max point, scale\
+    \ to original coords, center crop\n"
 plan:
-  - phase: Entropy Alignment
-    tasks:
-      - text: Replace SAT sliding window with iterative slice removal for entropy mode
-        done: false
-      - text: Implement per-slice Shannon entropy computation
-        done: false
-      - text: Verify entropy crop position matches vips within 1px on test patterns
-        done: false
-  - phase: Attention Alignment
-    tasks:
-      - text: Add RGB-to-XYZ and XYZ-to-LAB color conversion (if not in rasmcore-color)
-        done: false
-      - text: Replace Sobel with Laplacian edge detection (3x3 kernel [0,-1,0;-1,4,-1;0,-1,0])
-        done: false
-      - text: Implement skin detection (normalized XYZ distance from skin color vector)
-        done: false
-      - text: Implement saturation scoring (LAB a* channel with dark-pixel mask)
-        done: false
-      - text: Sum edge + skin + saturation, Gaussian blur, find max, center crop
-        done: false
-      - text: Downsample to ~32px before analysis (matching vips)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Entropy crop matches vips within 1px on 3+ test patterns
-        done: false
-      - text: Attention crop matches vips within 1px on 3+ test patterns
-        done: false
-      - text: All existing smart_crop tests pass unchanged
-        done: false
-      - text: New test with skin-colored region verifies skin detection works
-        done: false
+- phase: Entropy Alignment
+  tasks:
+  - text: Replace SAT sliding window with iterative slice removal for entropy mode
+    done: true
+  - text: Implement per-slice Shannon entropy computation
+    done: true
+  - text: Verify entropy crop position matches vips within 1px on test patterns
+    done: true
+- phase: Attention Alignment
+  tasks:
+  - text: Add RGB-to-XYZ and XYZ-to-LAB color conversion (if not in rasmcore-color)
+    done: true
+  - text: Replace Sobel with Laplacian edge detection (3x3 kernel [0,-1,0;-1,4,-1;0,-1,0])
+    done: true
+  - text: Implement skin detection (normalized XYZ distance from skin color vector)
+    done: true
+  - text: Implement saturation scoring (LAB a* channel with dark-pixel mask)
+    done: true
+  - text: Sum edge + skin + saturation, Gaussian blur, find max, center crop
+    done: true
+  - text: Downsample to ~32px before analysis (matching vips)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Entropy crop matches vips within 1px on 3+ test patterns
+    done: true
+  - text: Attention crop matches vips within 1px on 3+ test patterns
+    done: true
+  - text: All existing smart_crop tests pass unchanged
+    done: true
+  - text: New test with skin-colored region verifies skin detection works
+    done: true
 extra: {}
