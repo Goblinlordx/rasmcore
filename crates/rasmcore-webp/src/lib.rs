@@ -32,6 +32,7 @@ pub mod tables;
 // Encoder assembly modules (internal for now)
 pub mod bitstream;
 pub mod cost_engine;
+pub mod reconstruct;
 pub mod block;
 pub mod config;
 pub mod container;

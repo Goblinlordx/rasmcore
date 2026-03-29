@@ -10,7 +10,7 @@
 use crate::token;
 
 /// Reshape the flat DEFAULT_COEFF_PROBS[1056] into [4][8][3][11].
-fn reshape_probs() -> [[[[u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES] {
+pub fn reshape_probs() -> [[[[u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES] {
     let flat = token::get_default_coeff_probs_flat();
     let mut out = [[[[0u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES];
     let mut idx = 0;
