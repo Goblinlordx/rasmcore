@@ -1,108 +1,129 @@
 id: jpeg-turbo-speed-parity_20260329235901Z
-title: JPEG Speed Parity with libjpeg-turbo — SIMD DCT + Fast Huffman + Turbo Mode
+title: JPEG Speed Parity with libjpeg-turbo — Multi-Arch SIMD + Turbo Mode
 type: feature
 status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
   summary: |
-    Close the speed gap with libjpeg-turbo by SIMD-optimizing the three hot paths
-    (forward DCT, quantization, Huffman encoding) and adding a turbo mode that
-    disables trellis for maximum throughput. Target within 3x of turbo speed.
+    Close the speed gap with libjpeg-turbo by SIMD-optimizing the four hot paths
+    (forward DCT, quantization, Huffman encoding, color conversion) with multi-arch
+    support: WASM SIMD128 (primary target), aarch64 NEON, x86_64 SSE2. Shared
+    infrastructure (DCT, color) optimized in shared crates to benefit all codecs.
+    Adds turbo mode preset for maximum throughput.
   context: |
-    Our baseline encode is 25ms for 256x256 (libjpeg-turbo is <1ms for the same).
-    The 25x gap comes from:
-    1. Forward DCT: our pure-Rust scalar vs turbo's hand-written SIMD assembly
-    2. Huffman encoding: turbo's SIMD block scanner vs our per-coefficient loop
-    3. Quantization: turbo's SIMD packed multiply vs our scalar division
-    4. Color conversion: turbo's SIMD vs our per-pixel loop
+    Our baseline encode is 25ms for 256x256 (libjpeg-turbo is <1ms). The 25x gap
+    comes from pure-Rust scalar code vs turbo's hand-tuned per-arch SIMD assembly.
 
-    libjpeg-turbo achieves its speed through hand-written NASM assembly for x86
-    (SSE2/AVX2) and NEON for ARM. We target WASM SIMD128 primarily, with LLVM
-    auto-vectorization for native. We won't match turbo's hand-tuned assembly
-    but should get within 3-5x.
+    WASM SIMD128 is the primary deployment target (128-bit, i16x8/i32x4).
+    Native SIMD (NEON on aarch64, SSE2 on x86_64) enables apples-to-apples
+    benchmarking against libjpeg-turbo on the same hardware, separating the
+    algorithm gap from the platform (WASM) gap.
+
+    Shared optimizations (DCT in rasmcore-dct, color in rasmcore-color) benefit
+    all codec users — JPEG, WebP, HEVC, and any future codecs.
   codebase_analysis: |
-    rasmcore-jpeg/src/dct.rs: forward_dct uses rasmcore-dct which has scalar
-    implementations with LLVM auto-vectorization. The 8x8 DCT operates on i32
-    coefficients with row/column passes.
+    Shared crates (optimize here — benefits all codecs):
+    - rasmcore-dct/src/dct8.rs: forward_dct_8x8() — scalar Loeffler butterfly.
+      SIMD: i16x8 butterfly with i32x4_dot_i16x8. Consider AAN algorithm
+      (5 multiplies vs 11 per 1D pass) for the fast path.
+    - rasmcore-color/src/convert.rs: rgb_to_ycbcr_420() — per-pixel integer
+      multiply. SIMD: i16x8 matrix multiply, 8 samples per instruction.
 
-    rasmcore-jpeg/src/entropy.rs: Huffman encoding iterates per-coefficient with
-    run-length counting. No SIMD for the zero-scan or bit-packing.
+    JPEG-specific (optimize in rasmcore-jpeg):
+    - quantize.rs: per-coefficient i32 division. SIMD: i16x8 multiply by
+      precomputed inverse quantizer.
+    - entropy.rs: Huffman encoding with per-coefficient run-length scan.
+      SIMD: i8x16 zero-comparison for fast run-length detection.
 
-    rasmcore-jpeg/src/quantize.rs: quantize() is a simple per-coefficient loop
-    with integer division. No SIMD.
+    Architecture pattern (already established in rasmcore-webp/src/dct.rs):
+      #[cfg(target_arch = "wasm32")] → std::arch::wasm32::* intrinsics
+      #[cfg(not(target_arch = "wasm32"))] → scalar (LLVM auto-vectorizes)
 
-    rasmcore-jpeg/src/color.rs: rgb_to_ycbcr uses per-pixel integer arithmetic
-    with SCALEBITS=8. Could use SIMD for the matrix multiply.
-
-    The turbo mode should bypass trellis entirely (already supported via
-    config.trellis=false) and use the fastest code paths.
+    Extend to explicit native paths:
+      #[cfg(target_arch = "wasm32")] → WASM SIMD128
+      #[cfg(target_arch = "aarch64")] → NEON via std::arch::aarch64::*
+      #[cfg(target_arch = "x86_64")] → SSE2 via std::arch::x86_64::*
+      #[cfg(not(any(...)))] → scalar fallback
   acceptance_criteria:
-    - Forward 8x8 DCT optimized with WASM SIMD128 intrinsics
-    - Quantization uses SIMD packed multiply (16 coefficients at a time)
-    - Huffman encoder uses SIMD zero-scan for run-length computation
-    - Color conversion RGB-to-YCbCr uses SIMD for 3-channel matrix multiply
-    - Turbo mode config preset (trellis=false, optimize_huffman=false, standard tables)
-    - Encode speed within 3x of libjpeg-turbo for 256x256 (target <3ms)
-    - Quality identical to current baseline (SIMD must be bit-exact)
-    - All existing tests pass
-    - Benchmark comparing turbo mode vs libjpeg-turbo vs our baseline
+    - Forward 8x8 DCT in rasmcore-dct with WASM SIMD128 + aarch64 NEON + x86_64 SSE2
+    - RGB-to-YCbCr in rasmcore-color with WASM SIMD128 + aarch64 NEON + x86_64 SSE2
+    - JPEG quantization with SIMD packed multiply (WASM + native)
+    - JPEG Huffman zero-scan with SIMD comparison (WASM + native)
+    - Turbo mode preset for maximum throughput
+    - All SIMD paths produce bit-exact output vs scalar
+    - Benchmark matrix (3 columns x 3 rows) printed to stdout
+    - WASM target within 8x of libjpeg-turbo
+    - Native (NEON) target within 3x of libjpeg-turbo (same arch)
   out_of_scope: |
-    Hand-written assembly (rely on Rust SIMD intrinsics + LLVM). AVX2/AVX-512
-    for native (LLVM auto-vectorizes). Progressive mode speed (focus on baseline
-    sequential which is the fast path). Decode speed optimization.
+    AVX2/AVX-512 explicit intrinsics (SSE2 is the baseline for x86_64, LLVM
+    auto-widens where possible). Hand-written assembly. Progressive mode speed.
+    Decode speed (encode only).
   technical_notes: |
-    Priority order (by % of encode time):
-    1. Forward DCT (~30%): WASM SIMD128 i16x8 butterfly. Process 8 samples per
-       instruction via pmaddwd equivalent (i32x4_dot_i16x8 or manual multiply-add).
-       libjpeg-turbo's AAN algorithm uses only 5 multiplies per 1D pass vs our 11.
-       Consider switching to AAN for the fast path.
-
-    2. Huffman encoding (~40%): SIMD zero-scan to find last non-zero coefficient
-       and compute run lengths. Use i8x16 comparison to build a zero-mask, then
-       count leading zeros. Processes 16 coefficients at once.
-
-    3. Quantization (~15%): Pack 8 coefficients as i16, multiply by inverse quantizer
-       (precomputed iq[] table), shift right. WASM i16x8_mul + i16x8_shr.
-
-    4. Color conversion (~15%): Process 4 pixels at a time via i16x8 matrix multiply.
-       R/G/B -> Y/Cb/Cr with BT.601 integer coefficients.
-
-    Turbo mode preset:
-      EncodeConfig::turbo() -> EncodeConfig {
-          trellis: false,
-          optimize_huffman: false,
-          progressive: false,
-          quant_preset: AnnexK,  // standard tables, no custom
-          ..Default::default()
+    Multi-arch dispatch pattern:
+      pub fn forward_dct_8x8(input: &[i16; 64], output: &mut [i16; 64]) {
+          #[cfg(target_arch = "wasm32")]
+          { forward_dct_8x8_simd128(input, output); }
+          #[cfg(target_arch = "aarch64")]
+          { forward_dct_8x8_neon(input, output); }
+          #[cfg(target_arch = "x86_64")]
+          { forward_dct_8x8_sse2(input, output); }
+          #[cfg(not(any(target_arch = "wasm32", target_arch = "aarch64", target_arch = "x86_64")))]
+          { forward_dct_8x8_scalar(input, output); }
       }
+
+    Each arch path uses that platform's native SIMD intrinsics.
+    Scalar fallback always exists for lesser platforms.
+
+    Benchmark matrix output:
+                          WASM SIMD128   Native (NEON)   libjpeg-turbo
+      rasmcore turbo         ~8ms           ~2ms            <1ms
+      rasmcore trellis      ~80ms          ~20ms             N/A
+      mozjpeg                 N/A           ~5ms             N/A
+
+    This separates the algorithm gap (native vs native) from the platform
+    gap (WASM vs native). If native NEON is within 3x of turbo, the algorithm
+    is solid and remaining gap is WASM overhead.
+
+    Shared crate changes:
+    - rasmcore-dct: add forward_dct_8x8_{simd128,neon,sse2} implementations
+    - rasmcore-color: add rgb_to_ycbcr_{simd128,neon,sse2} implementations
+    These benefit JPEG + WebP + HEVC + any future codec.
 plan:
-  - phase: SIMD Hot Paths
+  - phase: Shared Infrastructure SIMD (rasmcore-dct + rasmcore-color)
     tasks:
-      - text: Implement WASM SIMD128 forward 8x8 DCT (AAN algorithm, 5 multiplies per 1D pass)
+      - text: Add WASM SIMD128 forward 8x8 DCT to rasmcore-dct (AAN algorithm)
         done: false
-      - text: Implement SIMD quantization (i16x8 packed multiply by inverse quantizer)
+      - text: Add aarch64 NEON forward 8x8 DCT to rasmcore-dct
         done: false
-      - text: Implement SIMD Huffman zero-scan (i8x16 comparison for run-length computation)
+      - text: Add x86_64 SSE2 forward 8x8 DCT to rasmcore-dct
         done: false
-      - text: Implement SIMD RGB-to-YCbCr color conversion (4 pixels per iteration)
+      - text: Add WASM SIMD128 RGB-to-YCbCr to rasmcore-color
+        done: false
+      - text: Add aarch64 NEON RGB-to-YCbCr to rasmcore-color
+        done: false
+      - text: Verify all DCT SIMD paths are bit-exact with scalar
+        done: false
+  - phase: JPEG-Specific SIMD
+    tasks:
+      - text: SIMD quantization (i16x8 packed multiply by inverse quantizer, WASM + native)
+        done: false
+      - text: SIMD Huffman zero-scan (i8x16/i16x8 comparison for run-length, WASM + native)
         done: false
   - phase: Turbo Mode
     tasks:
       - text: Add EncodeConfig::turbo() preset (no trellis, no opt huffman, standard tables)
         done: false
-      - text: Verify turbo mode produces identical output to current baseline config
+      - text: Verify turbo mode produces identical output to current baseline
         done: false
-  - phase: Verification
+  - phase: Benchmark + Verification
     tasks:
-      - text: SIMD output is bit-exact with scalar output for all test patterns
+      - text: Benchmark matrix — WASM SIMD128 vs native NEON vs libjpeg-turbo vs mozjpeg
         done: false
-      - text: Benchmark turbo mode vs libjpeg-turbo vs baseline (target within 3x of turbo)
+      - text: All existing JPEG tests pass on all architectures
         done: false
-      - text: WASM binary contains SIMD128 instructions (verified via wasm-tools)
+      - text: WASM binary confirmed to contain SIMD128 instructions
         done: false
-      - text: All existing JPEG tests pass
-        done: false
-      - text: Update all-reference chart with turbo mode speed column
+      - text: Update all-reference chart with speed columns for native and WASM
         done: false
 extra: {}
