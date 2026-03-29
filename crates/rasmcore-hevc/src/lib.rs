@@ -19,7 +19,7 @@ pub mod transform;
 pub mod types;
 
 pub use error::HevcError;
-pub use frame::decode_frame;
+pub use frame::{decode_frame, decode_frame_with_matrix};
 pub use nal::{NalIterator, parse_nal_unit};
 pub use params::{DecoderContext, Pps, Sps, Vps};
 pub use types::{DecodedFrame, NalUnit, NalUnitType};

@@ -46,9 +46,9 @@ impl FrameBuffer {
         }
     }
 
-    /// Convert YCbCr 4:2:0 to RGB8.
-    fn to_rgb(&self) -> Vec<u8> {
-        let matrix = rasmcore_color::ColorMatrix::BT709;
+    /// Convert YCbCr 4:2:0 to RGB8 using the specified color matrix.
+    fn to_rgb(&self, matrix: &rasmcore_color::ColorMatrix) -> Vec<u8> {
+        let matrix = *matrix;
         let w = self.width as usize;
         let h = self.height as usize;
         let cw = self.chroma_width as usize;
@@ -81,6 +81,19 @@ impl FrameBuffer {
 pub fn decode_frame(
     bitstream: &[u8],
     hvcc_nals: Option<&[rasmcore_isobmff::NalArray]>,
+) -> Result<DecodedFrame, HevcError> {
+    decode_frame_with_matrix(bitstream, hvcc_nals, None)
+}
+
+/// Decode an HEVC I-frame with an optional custom color matrix for YCbCr→RGB.
+///
+/// If `color_matrix` is `None`, the standard BT.709 limited-range matrix is used.
+/// Pass a custom matrix to match a specific reference implementation's conversion
+/// (e.g., ffmpeg's libswscale coefficients for test parity).
+pub fn decode_frame_with_matrix(
+    bitstream: &[u8],
+    hvcc_nals: Option<&[rasmcore_isobmff::NalArray]>,
+    color_matrix: Option<&rasmcore_color::ColorMatrix>,
 ) -> Result<DecodedFrame, HevcError> {
     let mut ctx = DecoderContext::new();
 
@@ -260,7 +273,8 @@ pub fn decode_frame(
     // This is a placeholder — full SAO integration requires per-CTU params from syntax
 
     // Convert YCbCr to RGB
-    let pixels = fb.to_rgb();
+    let rgb_matrix = color_matrix.unwrap_or(&rasmcore_color::ColorMatrix::BT709);
+    let pixels = fb.to_rgb(rgb_matrix);
 
     Ok(DecodedFrame {
         y_plane: fb.y.clone(),
@@ -571,7 +585,7 @@ mod tests {
     #[test]
     fn frame_buffer_to_rgb() {
         let fb = FrameBuffer::new(4, 4);
-        let rgb = fb.to_rgb();
+        let rgb = fb.to_rgb(&rasmcore_color::ColorMatrix::BT709);
         assert_eq!(rgb.len(), 4 * 4 * 3);
     }
 
