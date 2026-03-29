@@ -142,7 +142,7 @@ plan:
 - phase: Build Script Codegen
   tasks:
   - text: Create build.rs that reads inventory-collected filter metadata
-    done: false
+    done: true
   - text: Generate WIT filter declarations from metadata (filters.wit fragment)
     done: false
   - text: Generate WIT pipeline methods from metadata (pipeline.wit fragment)
