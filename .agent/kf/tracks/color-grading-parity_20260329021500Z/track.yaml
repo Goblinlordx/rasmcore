@@ -5,65 +5,89 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Add reference parity tests for all 4 color grading operations against
+  summary: 'Add reference parity tests for all 4 color grading operations against
+
     ImageMagick. Validates ASC-CDL, lift/gamma/gain, split toning, and curves
+
     using the same pattern as existing filter parity tests in reference_audit.rs.
-  context: |
-    The pro-color-grading track added 4 operations with unit tests but no
+
+    '
+  context: 'The pro-color-grading track added 4 operations with unit tests but no
+
     reference validation against external tools. The existing reference_audit.rs
+
     pattern validates operations against ImageMagick using MAE thresholds.
+
     Color grading ops need the same treatment.
-  codebase_analysis: |
-    reference_audit.rs pattern uses gradient_rgb(64,64), write_png, run both
+
+    '
+  codebase_analysis: 'reference_audit.rs pattern uses gradient_rgb(64,64), write_png, run both
+
     rasmcore and ImageMagick CLI, compute MAE, assert threshold. Helpers exist
+
     for magick_available(), write_png(), magick_op(), mae(), check_parity_rgb().
 
+
     ImageMagick equivalents for color grading use -fx (pixel expression evaluator)
+
     to implement the exact mathematical formula. This gives DETERMINISTIC tier
+
     validation since identical formulas should produce MAE < 2.0.
 
+
     ASC-CDL formula in -fx syntax is pow(clamp(u*slope+offset,0,1),power).
+
     Lift/gamma/gain DaVinci formula is gain*pow(u+lift*(1-u),1.0/gamma).
+
     Curves can be tested by comparing our 256-entry LUT against IM -fx evaluated
+
     at all 256 input levels.
+
+    '
   acceptance_criteria:
-    - ASC-CDL slope/offset/power validated against ImageMagick -fx formula
-    - Lift/gamma/gain validated against ImageMagick -fx with DaVinci formula
-    - Curves validated against ImageMagick -fx spline evaluation
-    - Split toning validated against ImageMagick -fx luminance blend formula
-    - All tests in REFERENCE.md with tier classification
-    - All tests skip gracefully when ImageMagick unavailable
-  out_of_scope: |
-    CLUT baking parity (unit tests cover this). Progressive tolerance refinement.
-  technical_notes: |
-    For ASC-CDL, use ImageMagick -fx with the full SOP formula per channel.
+  - ASC-CDL slope/offset/power validated against ImageMagick -fx formula
+  - Lift/gamma/gain validated against ImageMagick -fx with DaVinci formula
+  - Curves validated against ImageMagick -fx spline evaluation
+  - Split toning validated against ImageMagick -fx luminance blend formula
+  - All tests in REFERENCE.md with tier classification
+  - All tests skip gracefully when ImageMagick unavailable
+  out_of_scope: 'CLUT baking parity (unit tests cover this). Progressive tolerance refinement.
+
+    '
+  technical_notes: 'For ASC-CDL, use ImageMagick -fx with the full SOP formula per channel.
+
     For lift/gamma/gain, -fx implements the exact DaVinci Resolve formula.
+
     For curves, compare our monotone cubic spline LUT output against IM -fx.
+
     For split toning, -fx implements the luminance-weighted blend formula.
+
     Expected tiers are DETERMINISTIC (MAE < 2.0) for formula-based ops and
+
     ALGORITHM (MAE < 5.0) for split toning (luminance weight differences).
+
+    '
 plan:
-  - phase: ASC-CDL Parity
-    tasks:
-      - text: Test ASC-CDL full SOP pipeline against ImageMagick -fx formula
-        done: false
-      - text: Test ASC-CDL with per-channel different slope/offset/power values
-        done: false
-  - phase: Lift/Gamma/Gain Parity
-    tasks:
-      - text: Test lift/gamma/gain against ImageMagick -fx with DaVinci formula
-        done: false
-      - text: Test per-channel independence (red lift, green gamma, blue gain)
-        done: false
-  - phase: Curves and Split Toning Parity
-    tasks:
-      - text: Test S-curve against ImageMagick -fx spline evaluation
-        done: false
-      - text: Test split toning against ImageMagick -fx luminance blend
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Update REFERENCE.md with all 4 operations and tier classifications
-        done: false
+- phase: ASC-CDL Parity
+  tasks:
+  - text: Test ASC-CDL full SOP pipeline against ImageMagick -fx formula
+    done: true
+  - text: Test ASC-CDL with per-channel different slope/offset/power values
+    done: true
+- phase: Lift/Gamma/Gain Parity
+  tasks:
+  - text: Test lift/gamma/gain against ImageMagick -fx with DaVinci formula
+    done: true
+  - text: Test per-channel independence (red lift, green gamma, blue gain)
+    done: true
+- phase: Curves and Split Toning Parity
+  tasks:
+  - text: Test S-curve against ImageMagick -fx spline evaluation
+    done: true
+  - text: Test split toning against ImageMagick -fx luminance blend
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Update REFERENCE.md with all 4 operations and tier classifications
+    done: true
 extra: {}
