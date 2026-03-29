@@ -1656,10 +1656,9 @@ mod debug_tests {
         assert!(mae < 5.0, "solid gray MAE should be < 5, got {mae:.1}");
     }
 
-    /// Test grayscale gradient — NOTE: fails due to encoder multi-MCU bug, not decoder.
-    /// Decoder is verified correct via image crate interop (MAE 0.04).
-    /// Our encoder output is valid (image crate decodes it).
-    /// Decoder multi-MCU Huffman alignment issue under investigation.
+    /// Test grayscale gradient (16x16 = 4 MCUs).
+    /// Previously had a multi-MCU encoder bug; fixed and now passes with PSNR > 25 dB.
+    /// Pixel-exact decode parity vs djpeg confirmed in tests/parity.rs.
     #[test]
 
     fn decode_gray_gradient_reasonable_psnr() {
@@ -1693,8 +1692,8 @@ mod debug_tests {
             10.0 * (255.0_f64 * 255.0 / mse).log10()
         };
         assert!(
-            psnr > 25.0,
-            "gray gradient PSNR should be > 25dB, got {psnr:.1}dB"
+            psnr > 35.0,
+            "gray gradient PSNR should be > 35dB, got {psnr:.1}dB"
         );
     }
 }
