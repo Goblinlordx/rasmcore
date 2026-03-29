@@ -1,0 +1,51 @@
+id: hevc-refsample-bounds_20260329090000Z
+title: HEVC Reference Sample Bounds + Per-CTU-Row Deblocking
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Fix reference sample gathering to respect reconstructed region bounds (HEVC Section 8.4.4.2.2), and apply deblocking
+    per CTU row so subsequent rows use deblocked top references. Root cause of the +1 Y error at CTU boundaries.
+  context: 'Previous investigation confirmed: (1) CTU(0,0) is Y-plane byte-exact, (2) CTU(1,0) has +1 at every pixel. Root
+    cause found: reference sample gathering reads left[32..63] from uninitialized frame buffer (128) instead of substituting
+    with last available value (60). Per HEVC Section 8.4.4.2.2, unavailable samples must be replaced with nearest available.
+    Additionally, deblocking must be applied per CTU row so row N+1 uses deblocked references from row N.'
+  codebase_analysis: 'predict.rs: added from_frame_with_bounds() that limits ref gathering to reconstructed region and substitutes
+    unavailable samples. frame.rs: updated reconstruct_cu to pass CTU bounds. Remaining: deblocking needs to move from post-frame
+    to per-CTU-row. With bounds fix alone: gradient improved from 14126 to 11186 Y diffs, PSNR 17.8→19.5dB.'
+  acceptance_criteria:
+  - Y plane byte-exact for gradient_128x128_q22 (0 diffs)
+  - Y plane byte-exact for flat_64x64 q22/q37 (no regression)
+  - All 9 RGB parity tests pass with PSNR > 25dB
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: Chroma decode. RGB conversion alignment.
+  technical_notes: "Two fixes, partially implemented by subagent:\n\nFix 1 (DONE): Reference sample bounds in predict.rs\n\
+    \  Added from_frame_with_bounds() that takes recon_right and recon_bottom\n  parameters. Samples beyond bounds substituted\
+    \ with last available value.\n  This reduced gradient Y diffs from 14126 to 11186.\n\nFix 2 (NEEDED): Per-CTU-row deblocking\
+    \ in frame.rs\n  Move deblocking from post-frame pass to inside the CTU row loop.\n  After each row of CTUs is decoded,\
+    \ apply deblocking to that row so\n  the next row reads deblocked top references. This matches the HEVC\n  spec where\
+    \ deblocking is part of the per-CTU decode loop.\n  Ref: libde265 v1.0.18 — deblocking applied per-CTU-row."
+plan: []
+extra: {}
+plan:
+  - phase: Reference Sample Bounds (Done)
+    tasks:
+      - text: "Verify from_frame_with_bounds() correctly substitutes unavailable samples"
+        done: true
+      - text: "Verify reconstruct_cu passes correct CTU bounds"
+        done: true
+  - phase: Per-CTU-Row Deblocking
+    tasks:
+      - text: "Move deblocking from post-frame to per-CTU-row inside the decode loop"
+        done: false
+      - text: "After each row of CTUs, deblock horizontal edges at CTU row boundary and vertical edges within the row"
+        done: false
+      - text: "Verify gradient Y diffs decrease further toward 0"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "yuv_parity_gradient passes (0 Y diffs)"
+        done: false
+      - text: "All parity tests pass, clippy clean, fmt clean"
+        done: false
