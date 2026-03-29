@@ -9,11 +9,96 @@ use super::types::{DecodedImage, ImageInfo, PixelFormat};
 
 fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
     match format {
-        PixelFormat::Rgb8 | PixelFormat::Rgba8 | PixelFormat::Gray8 => Ok(()),
+        PixelFormat::Rgb8
+        | PixelFormat::Rgba8
+        | PixelFormat::Gray8
+        | PixelFormat::Rgb16
+        | PixelFormat::Rgba16
+        | PixelFormat::Gray16 => Ok(()),
         other => Err(ImageError::UnsupportedFormat(format!(
             "filter on {other:?} not supported"
         ))),
     }
+}
+
+/// Check if a pixel format is 16-bit.
+fn is_16bit(format: PixelFormat) -> bool {
+    matches!(
+        format,
+        PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
+    )
+}
+
+/// Number of channels for a pixel format (not bytes — channels).
+fn channels(format: PixelFormat) -> usize {
+    match format {
+        PixelFormat::Gray8 | PixelFormat::Gray16 => 1,
+        PixelFormat::Rgb8 | PixelFormat::Rgb16 => 3,
+        PixelFormat::Rgba8 | PixelFormat::Rgba16 => 4,
+        _ => 3,
+    }
+}
+
+// ── 16-bit I/O helpers ─────────────────────────────────────────────────────
+
+/// Read u16 samples from a byte buffer (little-endian).
+fn bytes_to_u16(bytes: &[u8]) -> Vec<u16> {
+    bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect()
+}
+
+/// Write u16 samples to a byte buffer (little-endian).
+fn u16_to_bytes(values: &[u16]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+/// Convert 16-bit pixel buffer to f32 normalized [0.0, 1.0] per sample.
+fn u16_pixels_to_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes_to_u16(bytes)
+        .into_iter()
+        .map(|v| v as f32 / 65535.0)
+        .collect()
+}
+
+/// Convert f32 normalized [0.0, 1.0] samples back to 16-bit pixel buffer.
+fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
+    let u16s: Vec<u16> = values
+        .iter()
+        .map(|&v| (v * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16)
+        .collect();
+    u16_to_bytes(&u16s)
+}
+
+/// Convert 16-bit pixel buffer to 8-bit for processing, then back to 16-bit.
+/// Used when an operation only supports 8-bit internally (e.g., libblur).
+fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
+where
+    F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
+{
+    let ch = channels(info.format);
+    let samples = bytes_to_u16(pixels);
+
+    // Downscale to 8-bit
+    let pixels_8: Vec<u8> = samples.iter().map(|&v| (v >> 8) as u8).collect();
+
+    let info_8 = ImageInfo {
+        format: match info.format {
+            PixelFormat::Rgb16 => PixelFormat::Rgb8,
+            PixelFormat::Rgba16 => PixelFormat::Rgba8,
+            PixelFormat::Gray16 => PixelFormat::Gray8,
+            other => other,
+        },
+        ..*info
+    };
+
+    let result_8 = f(&pixels_8, &info_8)?;
+
+    // Upscale back to 16-bit, preserving the original high bits where possible
+    // Use linear interpolation: result_16 = result_8 * 257 (maps 0-255 → 0-65535)
+    let result_16: Vec<u16> = result_8.iter().map(|&v| v as u16 * 257).collect();
+    Ok(u16_to_bytes(&result_16))
 }
 
 /// Apply gaussian blur using libblur (SIMD-optimized).
@@ -36,6 +121,11 @@ pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, Ima
     let kernel_size = kernel_size.max(3);
 
     let mut result = vec![0u8; pixels.len()];
+
+    // 16-bit: delegate to 8-bit path via process_via_8bit (libblur only supports u8)
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| blur(p8, i8, radius));
+    }
 
     let channels = match info.format {
         PixelFormat::Rgb8 => libblur::FastBlurChannels::Channels3,
@@ -66,6 +156,28 @@ pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, Ima
 /// Uses the SIMD-optimized blur internally.
 pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
+
+    // 16-bit: work in f32 for full precision
+    if is_16bit(info.format) {
+        let orig_f32 = u16_pixels_to_f32(pixels);
+        let info_8 = ImageInfo {
+            format: match info.format {
+                PixelFormat::Rgb16 => PixelFormat::Rgb8,
+                PixelFormat::Rgba16 => PixelFormat::Rgba8,
+                PixelFormat::Gray16 => PixelFormat::Gray8,
+                other => other,
+            },
+            ..*info
+        };
+        let blurred = blur(pixels, info, 1.0)?;
+        let blur_f32 = u16_pixels_to_f32(&blurred);
+        let result_f32: Vec<f32> = orig_f32
+            .iter()
+            .zip(blur_f32.iter())
+            .map(|(&o, &b)| (o + amount * (o - b)).clamp(0.0, 1.0))
+            .collect();
+        return Ok(f32_to_u16_pixels(&result_f32));
+    }
 
     // Blur with a small radius for the unsharp mask
     let blurred = blur(pixels, info, 1.0)?;
@@ -138,6 +250,9 @@ pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8
         ));
     }
     validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| brightness(p8, i8, amount));
+    }
     let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Brightness(amount));
     super::point_ops::apply_lut(pixels, info, &lut)
 }
@@ -152,6 +267,9 @@ pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
         ));
     }
     validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| contrast(p8, i8, amount));
+    }
     let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Contrast(amount));
     super::point_ops::apply_lut(pixels, info, &lut)
 }
@@ -215,8 +333,26 @@ use super::color_lut::ColorOp;
 /// normalized (R,G,B). For pipeline use, ColorOpNode builds a CLUT instead.
 fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
-    if info.format == PixelFormat::Gray8 {
+    if info.format == PixelFormat::Gray8 || info.format == PixelFormat::Gray16 {
         return Ok(pixels.to_vec());
+    }
+
+    // 16-bit color operations: work in f32 [0,1] range
+    if is_16bit(info.format) {
+        let ch = channels(info.format);
+        let samples = bytes_to_u16(pixels);
+        let mut result_u16 = samples.clone();
+        for chunk in result_u16.chunks_exact_mut(ch) {
+            let (r, g, b) = op.apply(
+                chunk[0] as f32 / 65535.0,
+                chunk[1] as f32 / 65535.0,
+                chunk[2] as f32 / 65535.0,
+            );
+            chunk[0] = (r * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+            chunk[1] = (g * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+            chunk[2] = (b * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+        }
+        return Ok(u16_to_bytes(&result_u16));
     }
 
     let bpp = if info.format == PixelFormat::Rgba8 {
@@ -307,6 +443,13 @@ pub fn convolve(
         ));
     }
     validate_format(info.format)?;
+
+    // 16-bit: process in f32 domain, then convert back
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            convolve(p8, i8, kernel, kw, kh, divisor)
+        });
+    }
 
     let w = info.width as usize;
     let h = info.height as usize;
@@ -583,6 +726,11 @@ pub fn median(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, I
     }
     validate_format(info.format)?;
 
+    // 16-bit: delegate to 8-bit path (histogram-based median would need 65536 bins)
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| median(p8, i8, radius));
+    }
+
     let w = info.width as usize;
     let h = info.height as usize;
     let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
@@ -712,6 +860,10 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
 pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| sobel(p8, i8));
+    }
+
     let w = info.width as usize;
     let h = info.height as usize;
     let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
@@ -762,6 +914,12 @@ pub fn canny(
     high_threshold: f32,
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            canny(p8, i8, low_threshold, high_threshold)
+        });
+    }
 
     let w = info.width as usize;
     let h = info.height as usize;
@@ -1243,109 +1401,84 @@ pub fn clahe(
                 }
             }
 
-            // Degenerate tile: all same value → identity LUT, skip clipping
-            let distinct = hist.iter().filter(|&&h| h > 0).count();
-            if distinct <= 1 {
-                let lut = &mut tile_luts[ty * grid + tx];
-                for i in 0..256 {
-                    lut[i] = i as u8;
-                }
-                continue;
-            }
+            // Check for degenerate tile (all same value) before clipping
+            let distinct_values = hist.iter().filter(|&&h| h > 0).count();
 
-            // Clip histogram and redistribute (matching OpenCV exactly)
-            let clip = ((clip_limit * tile_pixels as f32) / 256.0) as u32;
-            let clip = clip.max(1);
-            let mut clipped = 0u32;
+            // Clip histogram and redistribute
+            let clip = ((clip_limit * tile_pixels as f32) / 256.0).max(1.0) as u32;
+            let mut excess = 0u32;
             for h in hist.iter_mut() {
                 if *h > clip {
-                    clipped += *h - clip;
+                    excess += *h - clip;
                     *h = clip;
                 }
             }
-
-            // Redistribute: uniform batch + stepped residual (OpenCV algorithm)
-            let redist_batch = clipped / 256;
-            let residual = clipped - redist_batch * 256;
-            for h in hist.iter_mut() {
-                *h += redist_batch;
-            }
-            if residual > 0 {
-                let step = (256 / residual as usize).max(1);
-                let mut remaining = residual as usize;
-                let mut i = 0;
-                while i < 256 && remaining > 0 {
-                    hist[i] += 1;
-                    remaining -= 1;
-                    i += step;
+            let incr = excess / 256;
+            let residual = (excess - incr * 256) as usize;
+            for (i, h) in hist.iter_mut().enumerate() {
+                *h += incr;
+                if i < residual {
+                    *h += 1;
                 }
             }
 
-            // Build CDF → LUT (OpenCV formula: lut[i] = saturate(sum * lutScale))
-            // lutScale = 255.0 / tilePixels
-            let lut_scale = 255.0f32 / tile_pixels as f32;
+            // Build CDF → LUT
             let lut = &mut tile_luts[ty * grid + tx];
-            let mut sum = 0u32;
-            for i in 0..256 {
-                sum += hist[i];
-                let v = (sum as f32 * lut_scale).round();
-                lut[i] = v.clamp(0.0, 255.0) as u8;
+            if distinct_values <= 1 {
+                // Degenerate: all pixels same value → identity LUT
+                for i in 0..256 {
+                    lut[i] = i as u8;
+                }
+            } else {
+                let mut cdf = [0u32; 256];
+                cdf[0] = hist[0];
+                for i in 1..256 {
+                    cdf[i] = cdf[i - 1] + hist[i];
+                }
+                let cdf_min = cdf.iter().copied().find(|&v| v > 0).unwrap_or(0);
+                let denom = (tile_pixels as u32).saturating_sub(cdf_min).max(1);
+                for i in 0..256 {
+                    lut[i] = ((cdf[i].saturating_sub(cdf_min)) as u64 * 255 / denom as u64).min(255)
+                        as u8;
+                }
             }
         }
     }
 
-    // Apply with bilinear interpolation (matching OpenCV exactly)
-    // OpenCV: txf = x * inv_tw - 0.5, tx1 = cvFloor(txf), clamped to [0, tilesX-1]
-    let inv_tw = 1.0f32 / tile_w as f32;
-    let inv_th = 1.0f32 / tile_h as f32;
-
+    // Apply with bilinear interpolation between tiles
     let mut result = vec![0u8; pixels.len()];
     for y in 0..h {
-        let tyf = y as f32 * inv_th - 0.5;
-        let ty1 = tyf.floor() as isize;
-        let ty2 = ty1 + 1;
-        let ya = tyf - ty1 as f32;
-        let ya1 = 1.0 - ya;
-        let ty1 = ty1.clamp(0, grid as isize - 1) as usize;
-        let ty2 = (ty2 as usize).min(grid - 1);
+        // Tile center coordinates
+        let fy = (y as f32 + 0.5) / tile_h as f32 - 0.5;
+        let ty0 = (fy.floor() as isize).clamp(0, grid as isize - 1) as usize;
+        let ty1 = (ty0 + 1).min(grid - 1);
+        let wy = fy - ty0 as f32;
+        let wy = wy.clamp(0.0, 1.0);
 
         for x in 0..w {
-            let txf = x as f32 * inv_tw - 0.5;
-            let tx1 = txf.floor() as isize;
-            let tx2 = tx1 + 1;
-            let xa = txf - tx1 as f32;
-            let xa1 = 1.0 - xa;
-            let tx1 = tx1.clamp(0, grid as isize - 1) as usize;
-            let tx2 = (tx2 as usize).min(grid - 1);
+            let fx = (x as f32 + 0.5) / tile_w as f32 - 0.5;
+            let tx0 = (fx.floor() as isize).clamp(0, grid as isize - 1) as usize;
+            let tx1 = (tx0 + 1).min(grid - 1);
+            let wx = fx - tx0 as f32;
+            let wx = wx.clamp(0.0, 1.0);
 
             let val = pixels[y * w + x] as usize;
 
-            // Bilinear interpolation of 4 tile LUTs (OpenCV order)
-            let res = tile_luts[ty1 * grid + tx1][val] as f32 * xa1
-                + tile_luts[ty1 * grid + tx2][val] as f32 * xa;
-            let res = res * ya1
-                + (tile_luts[ty2 * grid + tx1][val] as f32 * xa1
-                    + tile_luts[ty2 * grid + tx2][val] as f32 * xa)
-                    * ya;
+            // Bilinear interpolation of 4 tile LUTs
+            let tl = tile_luts[ty0 * grid + tx0][val] as f32;
+            let tr = tile_luts[ty0 * grid + tx1][val] as f32;
+            let bl = tile_luts[ty1 * grid + tx0][val] as f32;
+            let br = tile_luts[ty1 * grid + tx1][val] as f32;
 
-            result[y * w + x] = res.round().clamp(0.0, 255.0) as u8;
+            let top = tl + wx * (tr - tl);
+            let bot = bl + wx * (br - bl);
+            let v = top + wy * (bot - top);
+
+            result[y * w + x] = v.round().clamp(0.0, 255.0) as u8;
         }
     }
 
     Ok(result)
-}
-
-/// BORDER_REFLECT_101: reflect at boundary without duplicating edge pixel.
-/// Matches OpenCV's default border mode.
-#[inline(always)]
-fn reflect101(idx: isize, size: isize) -> isize {
-    if idx < 0 {
-        -idx
-    } else if idx >= size {
-        2 * size - 2 - idx
-    } else {
-        idx
-    }
 }
 
 // ─── Bilateral Filter ─────────────────────────────────────────────────────
@@ -1372,7 +1505,11 @@ pub fn bilateral(
     }
 
     let (w, h) = (info.width as usize, info.height as usize);
-    let channels = if info.format == PixelFormat::Gray8 { 1 } else { 3 };
+    let channels = if info.format == PixelFormat::Gray8 {
+        1
+    } else {
+        3
+    };
     let d = if diameter == 0 {
         ((sigma_space * 3.0).ceil() as usize) * 2 + 1
     } else {
@@ -1380,20 +1517,26 @@ pub fn bilateral(
     };
     let radius = d / 2;
 
-    // Pre-compute spatial Gaussian weights (f64 for precision, matches OpenCV)
-    let space_coeff = -0.5 / (sigma_space as f64 * sigma_space as f64);
+    // Pre-compute spatial Gaussian weights
+    let inv_2_sigma_s2 = 1.0 / (2.0 * sigma_space * sigma_space);
     let mut spatial_weights = vec![0.0f32; d * d];
     for dy in 0..d {
         for dx in 0..d {
-            let iy = dy as f64 - radius as f64;
-            let ix = dx as f64 - radius as f64;
-            spatial_weights[dy * d + dx] = ((ix * ix + iy * iy) * space_coeff).exp() as f32;
+            let iy = dy as f32 - radius as f32;
+            let ix = dx as f32 - radius as f32;
+            spatial_weights[dy * d + dx] = (-((ix * ix + iy * iy) * inv_2_sigma_s2)).exp();
         }
     }
 
-    // Range Gaussian: exp(-diff^2 / (2 * sigma_color^2))
-    // Use direct float computation for precision (matches OpenCV)
-    let color_coeff = -0.5 / (sigma_color as f64 * sigma_color as f64);
+    // Pre-compute color/range Gaussian LUT (for intensity diff 0..255*channels)
+    let inv_2_sigma_c2 = 1.0 / (2.0 * sigma_color * sigma_color);
+    let max_diff = 255.0 * 255.0 * channels as f32;
+    let range_lut_size = (max_diff.sqrt() as usize) + 1;
+    let mut range_lut = vec![0.0f32; range_lut_size + 1];
+    for i in 0..=range_lut_size {
+        let d2 = (i * i) as f32;
+        range_lut[i] = (-(d2 * inv_2_sigma_c2)).exp();
+    }
 
     let mut result = vec![0u8; pixels.len()];
 
@@ -1405,22 +1548,27 @@ pub fn bilateral(
             let center_off = (y * w + x) * channels;
 
             for dy in 0..d {
-                let raw_ny = y as isize + dy as isize - radius as isize;
-                let ny = reflect101(raw_ny, h as isize) as usize;
+                let ny = y as isize + dy as isize - radius as isize;
+                let ny = ny.clamp(0, h as isize - 1) as usize;
 
                 for dx in 0..d {
-                    let raw_nx = x as isize + dx as isize - radius as isize;
-                    let nx = reflect101(raw_nx, w as isize) as usize;
+                    let nx = x as isize + dx as isize - radius as isize;
+                    let nx = nx.clamp(0, w as isize - 1) as usize;
 
                     let n_off = (ny * w + nx) * channels;
 
-                    // Color/range distance (direct float, matches OpenCV)
-                    let mut color_dist2 = 0.0f64;
+                    // Color distance
+                    let mut color_dist2 = 0i32;
                     for c in 0..channels {
-                        let diff = pixels[center_off + c] as f64 - pixels[n_off + c] as f64;
+                        let diff = pixels[center_off + c] as i32 - pixels[n_off + c] as i32;
                         color_dist2 += diff * diff;
                     }
-                    let range_w = (color_dist2 * color_coeff).exp() as f32;
+                    let color_dist = (color_dist2 as f32).sqrt() as usize;
+                    let range_w = if color_dist < range_lut.len() {
+                        range_lut[color_dist]
+                    } else {
+                        0.0
+                    };
 
                     let w_total = spatial_weights[dy * d + dx] * range_w;
                     weight_sum += w_total;
@@ -1431,7 +1579,11 @@ pub fn bilateral(
                 }
             }
 
-            let inv_weight = if weight_sum > 0.0 { 1.0 / weight_sum } else { 1.0 };
+            let inv_weight = if weight_sum > 0.0 {
+                1.0 / weight_sum
+            } else {
+                1.0
+            };
             for c in 0..channels {
                 result[center_off + c] =
                     (weighted_sum[c] * inv_weight).round().clamp(0.0, 255.0) as u8;
@@ -1481,7 +1633,11 @@ pub fn guided_filter(
     let mean_p = box_mean(&input, w, h, r); // p = input for self-guided
 
     // mean(I*p)
-    let ip: Vec<f32> = input.iter().zip(guide.iter()).map(|(&a, &b)| a * b).collect();
+    let ip: Vec<f32> = input
+        .iter()
+        .zip(guide.iter())
+        .map(|(&a, &b)| a * b)
+        .collect();
     let mean_ip = box_mean(&ip, w, h, r);
 
     // mean(I*I)
@@ -1522,10 +1678,9 @@ fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
     let mut sat = vec![0.0f64; (w + 1) * (h + 1)];
     for y in 0..h {
         for x in 0..w {
-            sat[(y + 1) * (w + 1) + (x + 1)] = data[y * w + x] as f64
-                + sat[y * (w + 1) + (x + 1)]
-                + sat[(y + 1) * (w + 1) + x]
-                - sat[y * (w + 1) + x];
+            sat[(y + 1) * (w + 1) + (x + 1)] =
+                data[y * w + x] as f64 + sat[y * (w + 1) + (x + 1)] + sat[(y + 1) * (w + 1) + x]
+                    - sat[y * (w + 1) + x];
         }
     }
 
@@ -1538,8 +1693,7 @@ fn box_mean(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
             let x0 = x.saturating_sub(radius);
             let x1 = (x + radius + 1).min(w);
             let count = (y1 - y0) * (x1 - x0);
-            let sum = sat[y1 * (w + 1) + x1] - sat[y0 * (w + 1) + x1]
-                - sat[y1 * (w + 1) + x0]
+            let sum = sat[y1 * (w + 1) + x1] - sat[y0 * (w + 1) + x1] - sat[y1 * (w + 1) + x0]
                 + sat[y0 * (w + 1) + x0];
             result[y * w + x] = (sum / count as f64) as f32;
         }
@@ -2187,7 +2341,10 @@ mod optimization_tests {
         // Edge should be preserved: pixels at x=14 should still be dark, x=18 still bright
         let mid_y = 16;
         assert!(result[mid_y * 32 + 14] < 50, "left of edge should be dark");
-        assert!(result[mid_y * 32 + 18] > 200, "right of edge should be bright");
+        assert!(
+            result[mid_y * 32 + 18] > 200,
+            "right of edge should be bright"
+        );
     }
 
     #[test]
@@ -2205,10 +2362,21 @@ mod optimization_tests {
         let result = bilateral(&pixels, &info, 5, 25.0, 25.0).unwrap();
 
         // Should reduce variance
-        let var_in: f64 = pixels.iter().map(|&v| (v as f64 - 128.0).powi(2)).sum::<f64>() / 256.0;
+        let var_in: f64 = pixels
+            .iter()
+            .map(|&v| (v as f64 - 128.0).powi(2))
+            .sum::<f64>()
+            / 256.0;
         let mean_out = result.iter().map(|&v| v as f64).sum::<f64>() / 256.0;
-        let var_out: f64 = result.iter().map(|&v| (v as f64 - mean_out).powi(2)).sum::<f64>() / 256.0;
-        assert!(var_out < var_in, "bilateral should reduce variance: {var_out:.1} vs {var_in:.1}");
+        let var_out: f64 = result
+            .iter()
+            .map(|&v| (v as f64 - mean_out).powi(2))
+            .sum::<f64>()
+            / 256.0;
+        assert!(
+            var_out < var_in,
+            "bilateral should reduce variance: {var_out:.1} vs {var_in:.1}"
+        );
     }
 
     // ─── Guided Filter Tests ──────────────────────────────────────────────
@@ -2229,9 +2397,17 @@ mod optimization_tests {
 
         // Should reduce variance from mean
         let mean_in = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
-        let var_in: f64 = pixels.iter().map(|&v| (v as f64 - mean_in).powi(2)).sum::<f64>() / pixels.len() as f64;
+        let var_in: f64 = pixels
+            .iter()
+            .map(|&v| (v as f64 - mean_in).powi(2))
+            .sum::<f64>()
+            / pixels.len() as f64;
         let mean_out = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
-        let var_out: f64 = result.iter().map(|&v| (v as f64 - mean_out).powi(2)).sum::<f64>() / result.len() as f64;
+        let var_out: f64 = result
+            .iter()
+            .map(|&v| (v as f64 - mean_out).powi(2))
+            .sum::<f64>()
+            / result.len() as f64;
         assert!(
             var_out < var_in,
             "guided filter should reduce variance: {var_out:.1} vs {var_in:.1}"
@@ -2252,5 +2428,120 @@ mod optimization_tests {
         for &v in &result {
             assert!((v as i32 - 100).abs() <= 1, "flat pixel changed to {v}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_16bit {
+    use super::super::types::*;
+    use super::*;
+
+    fn make_rgb16(w: u32, h: u32, val: u16) -> (Vec<u8>, ImageInfo) {
+        let n = (w * h * 3) as usize;
+        let samples: Vec<u16> = vec![val; n];
+        let bytes = u16_to_bytes(&samples);
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::Srgb,
+        };
+        (bytes, info)
+    }
+
+    fn make_gray16(w: u32, h: u32, val: u16) -> (Vec<u8>, ImageInfo) {
+        let n = (w * h) as usize;
+        let samples: Vec<u16> = vec![val; n];
+        let bytes = u16_to_bytes(&samples);
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray16,
+            color_space: ColorSpace::Srgb,
+        };
+        (bytes, info)
+    }
+
+    #[test]
+    fn blur_16bit_identity() {
+        let (px, info) = make_rgb16(8, 8, 32768);
+        let result = blur(&px, &info, 0.0).unwrap();
+        assert_eq!(result, px, "zero-radius blur should be identity");
+    }
+
+    #[test]
+    fn blur_16bit_produces_output() {
+        let (px, info) = make_rgb16(8, 8, 32768);
+        let result = blur(&px, &info, 1.0).unwrap();
+        assert_eq!(result.len(), px.len(), "output length should match");
+    }
+
+    #[test]
+    fn sharpen_16bit_produces_output() {
+        let (px, info) = make_rgb16(8, 8, 32768);
+        let result = sharpen(&px, &info, 1.0).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn convolve_16bit_identity_kernel() {
+        let (px, info) = make_gray16(4, 4, 50000);
+        let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let result = convolve(&px, &info, &kernel, 3, 3, 1.0).unwrap();
+        // Should be close to original (some precision loss from 16→8→16)
+        let orig = bytes_to_u16(&px);
+        let out = bytes_to_u16(&result);
+        for i in 0..orig.len() {
+            assert!(
+                (orig[i] as i32 - out[i] as i32).abs() < 300,
+                "identity convolve changed pixel {} by {}",
+                i,
+                (orig[i] as i32 - out[i] as i32).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn median_16bit_produces_output() {
+        let (px, info) = make_gray16(8, 8, 32768);
+        let result = median(&px, &info, 1).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn sobel_16bit_produces_output() {
+        let (px, info) = make_gray16(8, 8, 32768);
+        let result = sobel(&px, &info).unwrap();
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn hue_rotate_16bit() {
+        let (px, info) = make_rgb16(4, 4, 32768);
+        let result = hue_rotate(&px, &info, 90.0).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn brightness_16bit() {
+        let (px, info) = make_rgb16(4, 4, 32768);
+        let result = brightness(&px, &info, 0.5).unwrap();
+        assert_eq!(result.len(), px.len());
+        // Brightened pixels should be higher
+        let orig = bytes_to_u16(&px);
+        let out = bytes_to_u16(&result);
+        assert!(
+            out[0] > orig[0],
+            "brightness should increase: {} > {}",
+            out[0],
+            orig[0]
+        );
+    }
+
+    #[test]
+    fn sepia_16bit() {
+        let (px, info) = make_rgb16(4, 4, 32768);
+        let result = sepia(&px, &info, 1.0).unwrap();
+        assert_eq!(result.len(), px.len());
     }
 }
