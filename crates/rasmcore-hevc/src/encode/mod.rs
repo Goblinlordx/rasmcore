@@ -13,4 +13,5 @@ pub mod cabac_enc;
 pub mod encoder;
 pub mod nal_write;
 pub mod params_write;
+pub mod quant;
 pub mod syntax_enc;

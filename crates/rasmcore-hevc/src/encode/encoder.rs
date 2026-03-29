@@ -10,9 +10,10 @@ use super::bitwrite::BitstreamWriter;
 use super::cabac_enc::CabacEncoder;
 use super::nal_write::assemble_annex_b;
 use super::params_write::{default_pps, default_sps, default_vps, write_pps, write_sps, write_vps};
+use super::quant;
 use super::syntax_enc;
-use crate::cabac::ContextModel;
 use crate::error::HevcError;
+use crate::predict::{self, RefSamples};
 use crate::syntax;
 use crate::types::NalUnitType;
 
@@ -161,78 +162,203 @@ fn height_in_ctus(sps: &crate::params::Sps) -> u32 {
 }
 
 /// Encode all CTUs in the slice via CABAC.
+///
+/// For each CTU: DC prediction → compute residual → forward DCT → quantize →
+/// encode via CABAC → reconstruct (for neighbor references).
 fn encode_slice_data(
     y_plane: &[u8],
     width: u32,
     height: u32,
     sps: &crate::params::Sps,
-    _pps: &crate::params::Pps,
+    pps: &crate::params::Pps,
     qp: i32,
 ) -> Result<Vec<u8>, HevcError> {
     let ctu_size = sps.ctu_size();
     let ctus_x = width.div_ceil(ctu_size);
     let ctus_y = height.div_ceil(ctu_size);
+    let w = width as usize;
 
     let mut cabac = CabacEncoder::new();
     let mut contexts = syntax::init_syntax_contexts(qp);
+
+    // Reconstructed frame buffer — stores reconstructed pixels for neighbor prediction
+    let mut recon = vec![128u8; (width * height) as usize];
 
     for ctu_row in 0..ctus_y {
         for ctu_col in 0..ctus_x {
             let ctu_x = ctu_col * ctu_size;
             let ctu_y = ctu_row * ctu_size;
-            let cu_size = ctu_size.min(width - ctu_x).min(height - ctu_y);
+            let cu_size = ctu_size as usize;
 
-            // Encode CU: no split, single CU = CTU size
-            // split_cu_flag = 0 (no split, at max depth)
-            // For a single-CU CTU, split_cu_flag is not coded when
-            // CU size == CTU size and depth == 0 and max_depth allows no split.
-            // With our SPS (log2_diff=1), the CTU can split once.
-            // We encode split_cu_flag = 0 to signal no split.
-            let ctx_idx = 0; // split_cu_flag context for depth 0
+            // split_cu_flag = 0 (no split)
+            let ctx_idx = 0;
             syntax_enc::encode_split_cu_flag(&mut cabac, &mut contexts, ctx_idx, false);
 
             // Intra prediction mode: DC (mode 1)
-            // prev_intra_luma_pred_flag = 1 (use MPM)
-            // For the first CU with no neighbors: MPM candidates = [Planar(0), DC(1), VER(26)]
-            // mpm_idx = 1 → DC
-            syntax_enc::encode_intra_luma_mode(&mut cabac, &mut contexts, 1); // mpm_idx=1=DC
+            // mpm_idx=1 → DC for all CUs (simplified mode decision)
+            syntax_enc::encode_intra_luma_mode(&mut cabac, &mut contexts, 1);
 
-            // Intra chroma pred mode: DM (derived from luma)
+            // Intra chroma pred mode: DM
             syntax_enc::encode_intra_chroma_mode(&mut cabac, &mut contexts, 4);
 
-            // Transform tree: single TU = CU size, no split
-            // cbf_chroma (before split decision for depth 0)
-            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false); // Cb
-            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false); // Cr
+            // cbf_chroma = false (luma only for now)
+            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false);
+            syntax_enc::encode_cbf_chroma(&mut cabac, &mut contexts, 0, false);
+
+            // Step 1: Generate DC prediction from reconstructed neighbors
+            let avail_top = ctu_y > 0;
+            let avail_left = ctu_x > 0;
+            let avail_tl = ctu_x > 0 && ctu_y > 0;
+
+            let refs = RefSamples::from_frame(
+                ctu_x as usize,
+                ctu_y as usize,
+                cu_size,
+                &recon,
+                w,
+                avail_top,
+                avail_left,
+                avail_tl,
+            );
+
+            let predicted = predict::predict_intra(
+                1, // DC mode
+                &refs,
+                cu_size,
+                sps.strong_intra_smoothing_enabled,
+            );
+
+            // Step 2: Compute residual (original - prediction)
+            let mut residual_pixels = vec![0i16; cu_size * cu_size];
+            for row in 0..cu_size {
+                for col in 0..cu_size {
+                    let fx = ctu_x as usize + col;
+                    let fy = ctu_y as usize + row;
+                    if fx < w && fy < height as usize {
+                        let orig = y_plane[fy * w + fx] as i16;
+                        let pred = predicted[row * cu_size + col] as i16;
+                        residual_pixels[row * cu_size + col] = orig - pred;
+                    }
+                }
+            }
+
+            // Step 3: Forward DCT
+            let log2_size = (cu_size as f32).log2() as u8;
+            let mut dct_coeffs = vec![0i16; cu_size * cu_size];
+            match cu_size {
+                4 => {
+                    let input: [i16; 16] = residual_pixels[..16].try_into().unwrap();
+                    let output: &mut [i16; 16] = (&mut dct_coeffs[..16]).try_into().unwrap();
+                    rasmcore_dct::forward_dct_4x4(&input, output);
+                }
+                8 => {
+                    let input: [i16; 64] = residual_pixels[..64].try_into().unwrap();
+                    let output: &mut [i16; 64] = (&mut dct_coeffs[..64]).try_into().unwrap();
+                    rasmcore_dct::forward_dct_8x8(&input, output);
+                }
+                16 => {
+                    let input: [i16; 256] = residual_pixels[..256].try_into().unwrap();
+                    let output: &mut [i16; 256] = (&mut dct_coeffs[..256]).try_into().unwrap();
+                    rasmcore_dct::forward_dct_16x16(&input, output);
+                }
+                32 => {
+                    let input: [i16; 1024] = residual_pixels[..1024].try_into().unwrap();
+                    let output: &mut [i16; 1024] = (&mut dct_coeffs[..1024]).try_into().unwrap();
+                    rasmcore_dct::forward_dct_32x32(&input, output);
+                }
+                _ => {} // Unsupported size — leave zeros
+            }
+
+            // Step 4: Forward quantization
+            let mut quant_levels = vec![0i16; cu_size * cu_size];
+            quant::quantize_block(&dct_coeffs, &mut quant_levels, log2_size, qp, 8);
+            let has_residual = quant::has_nonzero(&quant_levels);
 
             // cbf_luma
-            let has_residual = has_nonzero_residual(y_plane, width, ctu_x, ctu_y, cu_size, qp);
             syntax_enc::encode_cbf_luma(&mut cabac, &mut contexts, 0, has_residual);
 
-            // For now: skip residual coding (cbf_luma = false in most cases)
-            // Full coefficient encoding will be added in the residual phase
+            // Step 5: Encode coefficients via CABAC (if non-zero)
+            if has_residual {
+                syntax_enc::encode_residual_coeffs(
+                    &mut cabac,
+                    &mut contexts,
+                    &quant_levels,
+                    ctu_size,
+                    pps.sign_data_hiding_enabled,
+                );
+            }
 
-            // end_of_slice_segment_flag (terminate bin)
+            // Step 6: Reconstruct (for neighbor prediction in subsequent CTUs)
+            // Dequantize → inverse DCT → add prediction → clip → store
+            if has_residual {
+                let mut recon_coeffs = quant_levels.clone();
+                crate::transform::dequant::dequantize_block(
+                    &mut recon_coeffs,
+                    log2_size,
+                    qp,
+                    8,
+                );
+
+                let mut recon_residual = vec![0i16; cu_size * cu_size];
+                match cu_size {
+                    4 => {
+                        let input: [i16; 16] = recon_coeffs[..16].try_into().unwrap();
+                        let output: &mut [i16; 16] =
+                            (&mut recon_residual[..16]).try_into().unwrap();
+                        rasmcore_dct::inverse_dct_4x4(&input, output);
+                    }
+                    8 => {
+                        let input: [i16; 64] = recon_coeffs[..64].try_into().unwrap();
+                        let output: &mut [i16; 64] =
+                            (&mut recon_residual[..64]).try_into().unwrap();
+                        rasmcore_dct::inverse_dct_8x8(&input, output);
+                    }
+                    16 => {
+                        let input: [i16; 256] = recon_coeffs[..256].try_into().unwrap();
+                        let output: &mut [i16; 256] =
+                            (&mut recon_residual[..256]).try_into().unwrap();
+                        rasmcore_dct::inverse_dct_16x16(&input, output);
+                    }
+                    32 => {
+                        let input: [i16; 1024] = recon_coeffs[..1024].try_into().unwrap();
+                        let output: &mut [i16; 1024] =
+                            (&mut recon_residual[..1024]).try_into().unwrap();
+                        rasmcore_dct::inverse_dct_32x32(&input, output);
+                    }
+                    _ => {}
+                }
+
+                for row in 0..cu_size {
+                    for col in 0..cu_size {
+                        let fx = ctu_x as usize + col;
+                        let fy = ctu_y as usize + row;
+                        if fx < w && fy < height as usize {
+                            let pred = predicted[row * cu_size + col] as i16;
+                            let res = recon_residual[row * cu_size + col];
+                            recon[fy * w + fx] = (pred + res).clamp(0, 255) as u8;
+                        }
+                    }
+                }
+            } else {
+                // No residual — prediction is the reconstruction
+                for row in 0..cu_size {
+                    for col in 0..cu_size {
+                        let fx = ctu_x as usize + col;
+                        let fy = ctu_y as usize + row;
+                        if fx < w && fy < height as usize {
+                            recon[fy * w + fx] = predicted[row * cu_size + col];
+                        }
+                    }
+                }
+            }
+
+            // end_of_slice_segment_flag
             let is_last_ctu = ctu_row == ctus_y - 1 && ctu_col == ctus_x - 1;
             cabac.encode_terminate(is_last_ctu as u32);
         }
     }
 
     Ok(cabac.finish_and_get_bytes())
-}
-
-/// Quick check if a CU has non-zero residual after DC prediction + quantization.
-/// For the initial encoder, we always signal cbf_luma=false to produce a
-/// prediction-only bitstream (simplest valid output).
-fn has_nonzero_residual(
-    _y_plane: &[u8],
-    _width: u32,
-    _ctu_x: u32,
-    _ctu_y: u32,
-    _cu_size: u32,
-    _qp: i32,
-) -> bool {
-    false // No residual for now — prediction-only output
 }
 
 #[cfg(test)]
