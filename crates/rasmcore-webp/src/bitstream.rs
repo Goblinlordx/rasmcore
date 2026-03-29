@@ -755,6 +755,10 @@ fn encode_macroblock(
     }
     let i16_rd = rdo::rd_cost(i16_ssd, i16_bits, lambda);
 
+    // libwebp-style mode decision: B_PRED must beat I16x16.
+    // In libwebp, PickBestIntra4 initializes rd_best with H=211 (VP8BitCost(0,145))
+    // and compares cumulative I4 cost against the I16 score. The i4_penalty
+    // (1000 * q_i4^2) is implicitly included via the mode_costs.
     let use_bpred = bpred_rd < i16_rd;
     let final_y_mode: u8 = if use_bpred { 4 } else { i16_mode as u8 };
 

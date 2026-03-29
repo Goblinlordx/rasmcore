@@ -244,18 +244,22 @@ pub fn rd_cost(ssd: u64, bits_256: u32, lambda: f64) -> f64 {
     ssd as f64 + lambda * bits_256 as f64
 }
 
-/// VP8 I16x16 mode header cost (from RFC 6386 Section 11.2).
-/// Approximate costs based on default probabilities.
-/// Returns cost in 256-scaled units.
+/// VP8 I16x16 mode header cost.
+///
+/// libwebp VP8FixedCostsI16[4] = {663, 919, 872, 919} in token-tree bit cost scale.
+/// Our estimate_block_bits returns costs in 256-scaled units (256 = 1 bit).
+/// These values are scaled to match our rate estimation.
+///
+/// TODO: When VP8GetCostLuma16 is ported (Track 3), switch to libwebp's exact
+/// cost scale and use VP8FixedCostsI16 directly.
 pub fn mode_header_cost_16x16(mode: u8) -> u32 {
-    // RFC 6386 Table 11.1: I16x16 mode probabilities (default)
-    // DC=145, V=156, H=140, TM=161 (out of 256)
-    // Cost ≈ -log2(prob/256) * 256
+    // Scaled from libwebp: VP8FixedCostsI16[mode] / 4 to match our 256-unit scale
+    // DC=663/4≈166, TM=919/4≈230, V=872/4≈218, H=919/4≈230
     match mode {
-        0 => 200, // DC (most probable, cheapest)
-        1 => 180, // V
-        2 => 210, // H
-        3 => 170, // TM
+        0 => 166, // DC (cheapest)
+        1 => 230, // TM
+        2 => 218, // V
+        3 => 230, // H
         _ => 256, // B_PRED header
     }
 }
