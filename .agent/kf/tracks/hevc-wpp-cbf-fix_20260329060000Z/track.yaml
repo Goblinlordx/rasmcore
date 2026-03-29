@@ -1,0 +1,68 @@
+id: hevc-wpp-cbf-fix_20260329060000Z
+title: HEVC WPP cbf_luma Context Fix — Byte-Exact Y Plane
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Fix WPP context save/restore that causes cbf_luma=1 on rows that should have cbf_luma=0. Reference has 4 cbf_luma=1
+    (row 0 only), our decoder has 8 (4 extra from WPP rows). CTU(0,0) Y plane is byte-exact; the remaining errors all stem
+    from this single WPP context bug.
+  context: 'Previous investigation proved: (1) flat images are Y-plane byte-exact, (2) gradient CTU(0,0) is Y-plane byte-exact,
+    (3) gradient WPP rows incorrectly decode cbf_luma=1 when reference has cbf_luma=0. The reference has exactly 4 cbf_luma=1
+    (all row 0), but our decoder produces 8 (4 phantom residuals from WPP rows). The WPP CABAC engine reinit values match
+    the reference perfectly (verified: 0xfec4, 0x3cd9, 0x45eb). The WPP context save position (ctu_col==1, before terminate)
+    matches libde265. The bug is in the context MODEL STATES being wrong at the save point.'
+  codebase_analysis: 'WPP code: crates/rasmcore-hevc/src/frame.rs lines 180-250. Context save at line 235 (ctu_col==1). Context
+    restore at line 189. CBF_LUMA context: syntax.rs offsets 12-13 (2 contexts). Bin trace test at tests/bin_trace.rs verifies
+    532 bins match for row 0 (states + results). The per-CTU-row CABAC bin trace for WPP rows is NOT yet verified — the current
+    bin trace test doesn''t account for WPP reinit. Adding a WPP-aware bin trace that verifies each row independently will
+    immediately reveal which context state diverges.'
+  acceptance_criteria:
+  - Y plane byte-exact for gradient_128x128_q22 (0 diffs in yuv_parity test)
+  - Y plane byte-exact for flat_64x64_q22 and q37 (no regression)
+  - All 9 RGB parity tests pass with PSNR > 25dB
+  - Reference cbf_luma=1 count for gradient matches (exactly 4)
+  - clippy clean, fmt clean, cargo test passes
+  out_of_scope: RGB conversion alignment (separate concern). Chroma decode.
+  technical_notes: "Debugging approach:\n\nPhase 1 — WPP-Aware Bin Trace:\n  Modify the bin trace test to handle WPP: at each\
+    \ row boundary, reinit\n  the CABAC engine from entry_point_offsets and restore saved contexts\n  (matching frame.rs logic).\
+    \ Generate a reference bin trace for row 1\n  from libde265 and compare bin-by-bin. The first diverging bin will\n  reveal\
+    \ which context state is wrong after WPP restore.\n\nPhase 2 — Context State Dump:\n  At the ctu_col==1 save point, dump\
+    \ ALL 131 context states (state+mps).\n  Compare against what libde265 has at the same point. Use the libde265\n  trace\
+    \ with LogCABAC to extract context states, or build a custom\n  libde265 dump.\n\nPhase 3 — Fix:\n  Once the diverging\
+    \ context is identified, trace back to find WHY it\n  has the wrong state. Likely causes: (a) a context is updated by\
+    \ a syntax\n  element that we decode differently, (b) the c1/prev_c1 carry-over between\n  sub-blocks modifies a context\
+    \ we don't expect, (c) the terminate decode\n  between CTU(0,0) and CTU(1,0) affects engine state that impacts context.\n\
+    \nPhase 4 — Validation:\n  Run yuv_parity tests — gradient must show 0 Y diffs."
+plan: []
+extra: {}
+plan:
+  - phase: WPP-Aware Bin Trace
+    tasks:
+      - text: "Build libde265 reference bin trace for gradient row 1 (bins starting at CTU(0,32))"
+        done: false
+      - text: "Update bin_trace test to support WPP — reinit CABAC and restore contexts at row boundaries"
+        done: false
+      - text: "Compare our row 1 bins against reference — find first divergence"
+        done: false
+  - phase: Context State Analysis
+    tasks:
+      - text: "Dump all 131 context states at ctu_col==1 save point and compare against reference"
+        done: false
+      - text: "Identify which specific context has wrong state+mps after WPP restore"
+        done: false
+  - phase: Fix
+    tasks:
+      - text: "Fix the identified context state divergence to match libde265 v1.0.18"
+        done: false
+      - text: "Run yuv_parity_gradient — verify 0 Y diffs"
+        done: false
+  - phase: Validation
+    tasks:
+      - text: "All yuv_parity tests pass (0 Y diffs for flat and gradient)"
+        done: false
+      - text: "All 9 RGB parity tests pass with PSNR > 25dB"
+        done: false
+      - text: "clippy clean, fmt clean, cargo test passes"
+        done: false
