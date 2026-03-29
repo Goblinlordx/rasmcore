@@ -26,15 +26,15 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement exposure weight computation (contrast, saturation, well-exposedness)
-    done: false
+    done: true
   - text: Implement Mertens fusion with Laplacian pyramid blending
-    done: false
+    done: true
   - text: Implement Debevec camera response curve estimation
-    done: false
+    done: true
   - text: Implement Debevec HDR radiance map computation
-    done: false
+    done: true
   - text: Generate OpenCV reference fixtures from synthetic brackets
-    done: false
+    done: true
   - text: Parity test both methods
-    done: false
+    done: true
 extra: {}

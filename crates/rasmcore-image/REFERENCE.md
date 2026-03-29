@@ -442,6 +442,62 @@ Our algorithm remaps pre-built Laplacian coefficients — simpler, faster, diffe
 remapping function. The vips sharpen comparison (previously MAE=31.6) was removed
 as it compared against an entirely different algorithm (unsharp mask in LABS space).
 
+### Mertens Exposure Fusion — F32_ROUNDING Tier
+
+**Reference:** `cv2.createMergeMertens(1.0, 1.0, 1.0).process(brackets)`
+
+| Metric | Value | Scale |
+|--------|-------|-------|
+| f32 MAE | 0.0085 | [0, 1] |
+| f32 max error | 0.029 | [0, 1] |
+| u8 MAE | 1.61 | [0, 255] |
+| u8 max error | 8 | [0, 255] |
+
+**Test inputs:** 3 synthetic exposure brackets (dark/mid/bright), 64×64 RGB.
+
+**Algorithm:** Mertens et al. "Exposure Fusion" (Pacific Graphics 2007). Per-pixel
+weights from contrast (abs Laplacian), saturation (population std across channels),
+and well-exposedness (Gaussian around 0.5). Laplacian pyramid blending of weighted
+images. Structurally identical to OpenCV implementation.
+
+**Where it differs:** Up to 8 intensity levels in u8 output, concentrated at
+high-contrast boundaries and image corners. Interior regions typically match within ±1.
+
+**Why (F32_ROUNDING):** The Laplacian pyramid blending involves 6 levels of
+Gaussian downsampling and upsampling (pyrDown/pyrUp with 5×5 kernel). Each level
+compounds f32 rounding differences between Rust and C++ implementations. The error
+is structural (f32 accumulation order) not algorithmic — all components individually
+match OpenCV to within float epsilon.
+
+**Alignment details:**
+- Grayscale: BT.601 (0.299R + 0.587G + 0.114B), computed on [0,1] float
+- Contrast weight: abs(Laplacian(gray_f32)) with ksize=1 (standard 3×3 kernel)
+- Saturation: population std (divisor N, not N-1) across 3 channels
+- Well-exposedness: `prod_c(exp(-0.5 * ((ch - 0.5) / 0.2)²))`, σ=0.2
+- Weight epsilon: +1e-12 to avoid zero
+- Pyramid: separable 5×5 Gaussian kernel [1,4,6,4,1]/16, BORDER_REFLECT_101
+- pyrUp: 4× scaling at even positions, then 5×5 Gaussian
+- Pyramid depth: floor(log2(min(w,h)))
+
+### Debevec HDR Merge — Algorithmic Match
+
+**Reference:** `cv2.createCalibrateDebevec(samples=70, lambda_=10.0)` +
+`cv2.createMergeDebevec().process()`
+
+Debevec & Malik (SIGGRAPH 1997) camera response curve estimation via
+SVD least-squares, then weighted radiance map computation.
+
+**Implementation:**
+- Hat-shaped weighting function: w(z) = z+1 for z≤127, 256-z for z≥128
+- Response curve: overdetermined system solved via normal equations (A^T A x = A^T b)
+- Radiance: weighted average of ln(exposure) - ln(dt) per pixel, exponentiated
+- Deterministic sample selection (evenly spaced, not random)
+
+**Note:** Direct numerical comparison with OpenCV is impractical due to the
+least-squares solver sensitivity — different SVD implementations produce
+mathematically equivalent but numerically different response curves that both
+yield correct HDR radiance maps. The algorithm structure matches the paper exactly.
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:

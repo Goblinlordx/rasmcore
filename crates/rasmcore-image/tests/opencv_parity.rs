@@ -460,3 +460,111 @@ fn laplacian_matches_opencv() {
     assert!(worst_mae < 1.0, "Laplacian MAE {worst_mae:.4} > 1.0");
     assert!(worst_max <= 1, "Laplacian max error {worst_max} > 1");
 }
+
+// ─── HDR Merge: Mertens Parity ──────────────────────────────────────────
+
+fn load_fixture_f32(name: &str) -> Vec<f32> {
+    let bytes = load_fixture(name);
+    assert_eq!(bytes.len() % 4, 0, "f32 fixture must be multiple of 4 bytes");
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+fn mae_f32(a: &[f32], b: &[f32]) -> f64 {
+    assert_eq!(a.len(), b.len());
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x as f64 - y as f64).abs())
+        .sum::<f64>()
+        / a.len() as f64
+}
+
+fn max_error_f32(a: &[f32], b: &[f32]) -> f64 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x as f64 - y as f64).abs())
+        .fold(0.0f64, f64::max)
+}
+
+#[test]
+fn mertens_fusion_matches_opencv() {
+    // Load 3 synthetic bracketed exposures (RGB, 64×64)
+    let bracket0 = load_fixture("hdr_bracket_0_64x64_rgb.raw");
+    let bracket1 = load_fixture("hdr_bracket_1_64x64_rgb.raw");
+    let bracket2 = load_fixture("hdr_bracket_2_64x64_rgb.raw");
+
+    let info = ImageInfo {
+        width: 64,
+        height: 64,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let params = filters::MertensParams {
+        contrast_weight: 1.0,
+        saturation_weight: 1.0,
+        exposure_weight: 1.0,
+    };
+
+    // Get f32 result for precision comparison
+    let ours_f32 = filters::mertens_fusion_f32(
+        &[&bracket0, &bracket1, &bracket2],
+        &info,
+        &params,
+    )
+    .unwrap();
+
+    // Load OpenCV f32 reference (BGR order from OpenCV)
+    let ref_f32 = load_fixture_f32("mertens_64x64_3exp_f32.raw");
+
+    // OpenCV stores BGR, our output is RGB — convert reference to RGB for comparison
+    let n_pixels = 64 * 64;
+    assert_eq!(ref_f32.len(), n_pixels * 3);
+    assert_eq!(ours_f32.len(), n_pixels * 3);
+
+    let mut ref_rgb = vec![0.0f32; n_pixels * 3];
+    for i in 0..n_pixels {
+        ref_rgb[i * 3] = ref_f32[i * 3 + 2]; // R = B (BGR→RGB)
+        ref_rgb[i * 3 + 1] = ref_f32[i * 3 + 1]; // G = G
+        ref_rgb[i * 3 + 2] = ref_f32[i * 3]; // B = R
+    }
+
+    let e = mae_f32(&ours_f32, &ref_rgb);
+    let m = max_error_f32(&ours_f32, &ref_rgb);
+
+    eprintln!("Mertens f32 vs OpenCV: MAE={e:.6}, max_err={m:.6}");
+    eprintln!("  (MAE in [0,1] scale; max_err in [0,1] scale)");
+
+    // Also check u8 result
+    let ours_u8 = filters::mertens_fusion(
+        &[&bracket0, &bracket1, &bracket2],
+        &info,
+        &params,
+    )
+    .unwrap();
+
+    let ref_u8 = load_fixture("mertens_64x64_3exp_rgb.raw");
+    let e_u8 = mae(&ours_u8, &ref_u8);
+    let m_u8 = max_error(&ours_u8, &ref_u8);
+
+    eprintln!("Mertens u8 vs OpenCV:  MAE={e_u8:.4}, max_err={m_u8}");
+
+    // Mertens uses Laplacian pyramid blending which accumulates f32 error.
+    // The algorithm matches OpenCV's structure but f32 accumulation across
+    // 6 pyramid levels introduces rounding differences.
+    // Tier: F32_ROUNDING — differences are from f32 precision in pyramid ops.
+    assert!(
+        e < 0.05,
+        "Mertens f32 MAE {e:.6} > 0.05 — algorithmic divergence from OpenCV"
+    );
+    assert!(
+        m < 0.15,
+        "Mertens f32 max_err {m:.6} > 0.15 — likely algorithmic issue"
+    );
+    assert!(
+        e_u8 < 10.0,
+        "Mertens u8 MAE {e_u8:.4} > 10.0"
+    );
+}

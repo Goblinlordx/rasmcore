@@ -586,6 +586,32 @@ builtin_filter!(GuidedFilterEntry, "guided_filter", FilterCategory::Denoise,
     }
 );
 
+// HDR merge operations (multi-image — single-image apply returns error)
+builtin_filter!(MertensFusionFilter, "mertens_fusion", FilterCategory::Composite,
+    params: [
+        ParamDescriptor::float("contrast_weight", 0.0, 10.0, 1.0).with_description("Contrast metric weight"),
+        ParamDescriptor::float("saturation_weight", 0.0, 10.0, 1.0).with_description("Saturation metric weight"),
+        ParamDescriptor::float("exposure_weight", 0.0, 10.0, 1.0).with_description("Well-exposedness metric weight")
+    ],
+    apply: |_input| {
+        Err(ImageError::InvalidInput(
+            "mertens_fusion requires multiple images — use filters::mertens_fusion() directly".into()
+        ))
+    }
+);
+
+builtin_filter!(DebevecHdrFilter, "debevec_hdr", FilterCategory::Composite,
+    params: [
+        ParamDescriptor::uint("samples", 10, 500, 70).with_description("Sample pixels for response curve"),
+        ParamDescriptor::float("lambda", 0.1, 100.0, 10.0).with_description("Smoothness regularization")
+    ],
+    apply: |_input| {
+        Err(ImageError::InvalidInput(
+            "debevec_hdr requires multiple images + exposure times — use filters::debevec_response_curve() and filters::debevec_hdr_merge() directly".into()
+        ))
+    }
+);
+
 /// Register all built-in filters into a registry.
 fn register_builtin_filters(reg: &mut FilterRegistry) {
     reg.register(Box::new(BlurFilter));
@@ -608,6 +634,8 @@ fn register_builtin_filters(reg: &mut FilterRegistry) {
     reg.register(Box::new(ClaheFilter));
     reg.register(Box::new(BilateralFilter));
     reg.register(Box::new(GuidedFilterEntry));
+    reg.register(Box::new(MertensFusionFilter));
+    reg.register(Box::new(DebevecHdrFilter));
 }
 
 #[cfg(test)]
@@ -618,11 +646,12 @@ mod tests {
     #[test]
     fn registry_has_all_builtins() {
         let reg = FilterRegistry::with_builtins();
-        assert!(reg.len() >= 20, "expected 20+ built-in filters, got {}", reg.len());
+        assert!(reg.len() >= 22, "expected 22+ built-in filters, got {}", reg.len());
 
         // Spot-check key filters exist
         for name in ["blur", "sharpen", "clahe", "bilateral", "guided_filter", "sobel", "canny",
-                      "gamma", "brightness", "contrast", "invert", "sepia", "equalize"] {
+                      "gamma", "brightness", "contrast", "invert", "sepia", "equalize",
+                      "mertens_fusion", "debevec_hdr"] {
             assert!(reg.get(name).is_some(), "missing built-in filter: {name}");
         }
     }
