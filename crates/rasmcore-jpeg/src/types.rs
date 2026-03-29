@@ -63,11 +63,27 @@ pub struct CustomQuantTables {
 ///
 /// Designed to expose every JPEG parameter upfront so subsequent
 /// implementation tracks can add support incrementally without API changes.
+///
+/// **Default behavior** (turbo=false): enables trellis quantization,
+/// optimized Huffman tables, and EOB optimization for mozjpeg-quality output.
+///
+/// **Turbo mode** (turbo=true): disables all multi-pass optimizations for
+/// 3-10x faster encoding. Produces libjpeg-equivalent output.
 #[derive(Debug, Clone)]
 pub struct EncodeConfig {
     /// Quality level 1-100. Maps to quantization table scaling.
     /// Default: 85.
     pub quality: u8,
+
+    /// Turbo mode: skip all multi-pass optimizations for maximum speed.
+    ///
+    /// When `true`: forces single-pass encode with standard Huffman tables,
+    /// no trellis, no EOB optimization. Overrides `trellis`, `optimize_huffman`,
+    /// and `eob_optimize` to `false`.
+    ///
+    /// When `false` (default): respects individual optimization flags.
+    /// Default: false.
+    pub turbo: bool,
 
     /// Emit progressive JPEG (spectral selection + successive approximation).
     /// Default: false (sequential/baseline).
@@ -86,17 +102,17 @@ pub struct EncodeConfig {
     pub restart_interval: Option<u16>,
 
     /// Two-pass Huffman optimization (compute optimal tables from actual data).
-    /// Default: false (use standard tables).
+    /// Default: true (mozjpeg-quality output).
     pub optimize_huffman: bool,
 
     /// Trellis quantization (rate-distortion optimization per DCT block).
     /// Produces smaller files at same quality but slower encode.
-    /// Default: false.
+    /// Default: true (mozjpeg-quality output).
     pub trellis: bool,
 
     /// EOB block-level optimization — zero entire blocks where encoding cost
     /// exceeds distortion penalty. Requires `optimize_huffman: true`.
-    /// Default: false.
+    /// Default: true (mozjpeg-quality output).
     pub eob_optimize: bool,
 
     /// Sample precision (8-bit baseline or 12-bit extended).
@@ -115,13 +131,14 @@ impl Default for EncodeConfig {
     fn default() -> Self {
         Self {
             quality: 85,
+            turbo: false,
             progressive: false,
             subsampling: ChromaSubsampling::Quarter420,
             arithmetic_coding: false,
             restart_interval: None,
-            optimize_huffman: false,
-            trellis: false,
-            eob_optimize: false,
+            optimize_huffman: true,
+            trellis: true,
+            eob_optimize: true,
             sample_precision: SamplePrecision::Eight,
             quant_preset: crate::quantize::QuantPreset::default(),
             custom_quant_tables: None,
@@ -140,17 +157,24 @@ impl EncodeConfig {
     pub fn turbo(quality: u8) -> Self {
         Self {
             quality,
-            progressive: false,
-            subsampling: ChromaSubsampling::Quarter420,
-            arithmetic_coding: false,
-            restart_interval: None,
-            optimize_huffman: false,
-            trellis: false,
-            eob_optimize: false,
-            sample_precision: SamplePrecision::Eight,
+            turbo: true,
             quant_preset: crate::quantize::QuantPreset::AnnexK,
-            custom_quant_tables: None,
+            ..Default::default()
         }
+    }
+
+    /// Returns the effective config after applying turbo overrides.
+    ///
+    /// When `turbo=true`, forces `trellis=false`, `optimize_huffman=false`,
+    /// `eob_optimize=false`.
+    pub fn effective(&self) -> Self {
+        let mut c = self.clone();
+        if c.turbo {
+            c.trellis = false;
+            c.optimize_huffman = false;
+            c.eob_optimize = false;
+        }
+        c
     }
 
     /// Quality preset: balanced quality with optimizations.

@@ -72,6 +72,9 @@ pub fn encode(
         )));
     }
 
+    // Apply turbo overrides (turbo=true disables trellis, optimize_huffman, eob_optimize)
+    let config = &config.effective();
+
     let quality = config.quality.clamp(1, 100);
     let is_gray = format == PixelFormat::Gray8;
     let twelve_bit = config.sample_precision == SamplePrecision::Twelve;
@@ -1269,15 +1272,28 @@ mod tests {
     fn default_config_values() {
         let config = EncodeConfig::default();
         assert_eq!(config.quality, 85);
+        assert!(!config.turbo);
         assert!(!config.progressive);
         assert_eq!(config.subsampling, ChromaSubsampling::Quarter420);
         assert!(!config.arithmetic_coding);
         assert!(config.restart_interval.is_none());
-        assert!(!config.optimize_huffman);
-        assert!(!config.trellis);
+        // Default enables all optimizations (mozjpeg-quality output)
+        assert!(config.optimize_huffman);
+        assert!(config.trellis);
+        assert!(config.eob_optimize);
         assert_eq!(config.sample_precision, SamplePrecision::Eight);
         assert_eq!(config.quant_preset, crate::quantize::QuantPreset::Robidoux);
         assert!(config.custom_quant_tables.is_none());
+    }
+
+    #[test]
+    fn turbo_config_disables_optimizations() {
+        let config = EncodeConfig::turbo(75);
+        assert!(config.turbo);
+        let eff = config.effective();
+        assert!(!eff.trellis);
+        assert!(!eff.optimize_huffman);
+        assert!(!eff.eob_optimize);
     }
 
     #[test]
@@ -1677,4 +1693,62 @@ fn eob_optimize_sequential_no_regression() {
             "Q{quality}: EOB optimized output not decodable"
         );
     }
+}
+
+#[test]
+fn turbo_vs_default_speed_and_validity() {
+    // Verify turbo mode is significantly faster and produces valid output
+    let mut pixels = Vec::with_capacity(256 * 256 * 3);
+    for y in 0..256u16 {
+        for x in 0..256u16 {
+            let v = ((x * 255) / 255) as u8;
+            let noise = ((x.wrapping_mul(17).wrapping_add(y.wrapping_mul(31))) % 30) as u8;
+            pixels.push(v.wrapping_add(noise));
+            pixels.push(v.wrapping_sub(noise.min(v)));
+            pixels.push(128);
+        }
+    }
+
+    // Turbo mode
+    let turbo_start = std::time::Instant::now();
+    let turbo_jpeg = encode(
+        &pixels, 256, 256, PixelFormat::Rgb8,
+        &EncodeConfig::turbo(75),
+    ).unwrap();
+    let turbo_time = turbo_start.elapsed();
+
+    // Default mode (trellis + optimize_huffman)
+    let default_start = std::time::Instant::now();
+    let default_jpeg = encode(
+        &pixels, 256, 256, PixelFormat::Rgb8,
+        &EncodeConfig { quality: 75, ..Default::default() },
+    ).unwrap();
+    let default_time = default_start.elapsed();
+
+    let speedup = default_time.as_secs_f64() / turbo_time.as_secs_f64().max(0.0001);
+    eprintln!(
+        "turbo={:.1}ms default={:.1}ms speedup={speedup:.1}x | turbo_size={} default_size={}",
+        turbo_time.as_secs_f64() * 1000.0,
+        default_time.as_secs_f64() * 1000.0,
+        turbo_jpeg.len(),
+        default_jpeg.len(),
+    );
+
+    // Both must be valid
+    assert!(image::load_from_memory_with_format(&turbo_jpeg, image::ImageFormat::Jpeg).is_ok());
+    assert!(image::load_from_memory_with_format(&default_jpeg, image::ImageFormat::Jpeg).is_ok());
+
+    // Turbo should be faster (at least 2x in debug mode, typically 3-10x in release)
+    assert!(
+        speedup > 1.5,
+        "turbo should be at least 1.5x faster, got {speedup:.1}x"
+    );
+
+    // Default should produce smaller files (trellis is more efficient)
+    assert!(
+        default_jpeg.len() < turbo_jpeg.len(),
+        "default (optimized) should be smaller: {} vs {}",
+        default_jpeg.len(),
+        turbo_jpeg.len()
+    );
 }
