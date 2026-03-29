@@ -122,6 +122,122 @@ fn parity_checker_256x256_q22_pixels() {
     assert!(cmp.passes_psnr(25.0));
 }
 
+// ─── YUV Parity Tests — Byte-exact Y plane comparison ─────────────────────
+
+#[test]
+fn yuv_parity_flat_64x64_q22() {
+    if !fixtures_available() {
+        return;
+    }
+    let frame = decode_test_case("flat_64x64_q22").unwrap();
+    let ref_yuv = load_reference_yuv("flat_64x64_q22").unwrap();
+    let y_size = (frame.width * frame.height) as usize;
+    let ref_y = &ref_yuv[..y_size];
+
+    let diffs: Vec<_> = frame
+        .y_plane
+        .iter()
+        .zip(ref_y.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .take(20)
+        .map(|(i, (&a, &b))| {
+            let x = i % frame.width as usize;
+            let y = i / frame.width as usize;
+            (x, y, a as i16 - b as i16)
+        })
+        .collect();
+
+    let total_diffs = frame
+        .y_plane
+        .iter()
+        .zip(ref_y.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+
+    eprintln!(
+        "flat_64x64_q22 Y parity: {}/{} bytes differ",
+        total_diffs, y_size
+    );
+    if !diffs.is_empty() {
+        eprintln!("  First diffs: {:?}", diffs);
+    }
+    assert_eq!(
+        total_diffs, 0,
+        "Y plane not byte-exact: {} bytes differ",
+        total_diffs
+    );
+}
+
+#[test]
+fn yuv_parity_flat_64x64_q37() {
+    if !fixtures_available() {
+        return;
+    }
+    let frame = decode_test_case("flat_64x64_q37").unwrap();
+    let ref_yuv = load_reference_yuv("flat_64x64_q37").unwrap();
+    let y_size = (frame.width * frame.height) as usize;
+    let ref_y = &ref_yuv[..y_size];
+
+    let total_diffs = frame
+        .y_plane
+        .iter()
+        .zip(ref_y.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+
+    eprintln!(
+        "flat_64x64_q37 Y parity: {}/{} bytes differ",
+        total_diffs, y_size
+    );
+    assert_eq!(total_diffs, 0, "Y plane not byte-exact");
+}
+
+#[test]
+fn yuv_parity_gradient_128x128_q22() {
+    if !fixtures_available() {
+        return;
+    }
+    let frame = decode_test_case("gradient_128x128_q22").unwrap();
+    let ref_yuv = load_reference_yuv("gradient_128x128_q22").unwrap();
+    let y_size = (frame.width * frame.height) as usize;
+    let ref_y = &ref_yuv[..y_size];
+
+    let diffs: Vec<_> = frame
+        .y_plane
+        .iter()
+        .zip(ref_y.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .take(20)
+        .map(|(i, (&a, &b))| {
+            let x = i % frame.width as usize;
+            let y = i / frame.width as usize;
+            (x, y, a, b, a as i16 - b as i16)
+        })
+        .collect();
+
+    let total_diffs = frame
+        .y_plane
+        .iter()
+        .zip(ref_y.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+
+    eprintln!(
+        "gradient_128x128_q22 Y parity: {}/{} bytes differ",
+        total_diffs, y_size
+    );
+    if !diffs.is_empty() {
+        eprintln!("  First diffs (x, y, ours, ref, delta): {:?}", diffs);
+    }
+    assert_eq!(
+        total_diffs, 0,
+        "Y plane not byte-exact: {} bytes differ",
+        total_diffs
+    );
+}
+
 #[test]
 
 fn parity_all_cases_decode() {

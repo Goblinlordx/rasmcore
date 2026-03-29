@@ -140,6 +140,8 @@ pub struct NalUnit {
 pub struct DecodedFrame {
     /// Pixel data (RGB8 format).
     pub pixels: Vec<u8>,
+    /// Luma (Y) plane — raw reconstructed samples before YCbCr→RGB conversion.
+    pub y_plane: Vec<u8>,
     /// Frame width in pixels.
     pub width: u32,
     /// Frame height in pixels.

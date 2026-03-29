@@ -263,6 +263,7 @@ pub fn decode_frame(
     let pixels = fb.to_rgb();
 
     Ok(DecodedFrame {
+        y_plane: fb.y.clone(),
         pixels,
         width: sps.pic_width,
         height: sps.pic_height,
