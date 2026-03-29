@@ -103,7 +103,7 @@ aligned with, the match expectation, and the validation status.
 | lgg (per-channel) | ImageMagick -fx | Per-channel lift/gamma/gain independence | EXACT | PASS (MAE=0.0) |
 | curves (identity) | Self (formula) | Linear 2-point curve = identity | EXACT | PASS (MAE=0.0) |
 | curves (pow) | ImageMagick -fx | `magick -fx "pow(u,2.0)"` (same formula, f64) | EXACT | PASS (MAE=0.0) |
-| split_toning | ImageMagick -fx | Luminance-weighted blend via -fx | ALGORITHM | PASS (MAE=0.92, Q16-HDRI; see note) |
+| split_toning | ImageMagick -fx | Luminance-weighted blend via -fx | EXACT | PASS (MAE=0.0) |
 
 ### Content-Aware
 
@@ -144,13 +144,13 @@ rasmcore operates at 8-bit. For histogram-based operations (equalize, normalize)
 creates rounding differences visible as MAE 7-12. The algorithms are identical; the
 precision difference is intrinsic.
 
-### Split Toning Q16-HDRI Precision
+### Per-Channel -fx Cross-Contamination
 
-Split toning MAE=0.92 vs IM is caused by Q16-HDRI intermediate quantization.
-Our f32 implementation matches the f64 formula evaluation exactly (MAE=0.0 vs f64 reference).
-IM's chain: u8→Q16 (65535 levels)→f64 -fx→Q16→u8 introduces rounding cascades
-at Q16 boundaries that differ from our u8→f32→u8 path. 5592/12288 pixels differ
-by ±1–5 levels. The formula is identical; only intermediate precision differs.
+When using sequential `-channel R -fx ... -channel G -fx ...`, ImageMagick modifies
+pixels in-place between channels. If the G formula references `u.r`, it sees the
+already-modified R value. Our reference tests process each channel independently
+from the original image (separate invocations + `-separate` + `-combine`) to avoid
+this. All color grading operations achieve MAE=0.0 with this correct methodology.
 
 ### Per-channel vs Intensity
 

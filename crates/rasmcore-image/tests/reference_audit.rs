@@ -557,8 +557,14 @@ fn exact_flatten() {
 // COLOR GRADING — DETERMINISTIC TIER (same formula, MAE < 2.0)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Helper: run a per-channel ImageMagick -fx formula on a PNG file.
-/// Each formula string references `u` (pixel value 0-1).
+/// Helper: run per-channel ImageMagick -fx formulas on a PNG file.
+///
+/// Processes each channel independently from the ORIGINAL image to avoid
+/// cross-channel contamination. Sequential `-channel R -fx ... -channel G -fx ...`
+/// modifies pixels in-place, so G's `u.r` sees the modified R, not the original.
+///
+/// Uses `-separate` to extract each modified channel as grayscale, then
+/// `-combine` to reassemble the RGB image.
 fn magick_fx_per_channel(
     input: &std::path::Path,
     r_fx: &str,
@@ -566,20 +572,53 @@ fn magick_fx_per_channel(
     b_fx: &str,
 ) -> Option<std::path::PathBuf> {
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let r_tmp = std::env::temp_dir().join(format!("refaudit_r_{id}.png"));
+    let g_tmp = std::env::temp_dir().join(format!("refaudit_g_{id}.png"));
+    let b_tmp = std::env::temp_dir().join(format!("refaudit_b_{id}.png"));
     let out = std::env::temp_dir().join(format!("refaudit_ref_{id}.png"));
+
+    // Process each channel: apply -fx then extract the modified channel as grayscale
+    for (ch_idx, fx, tmp) in [("0", r_fx, &r_tmp), ("1", g_fx, &g_tmp), ("2", b_fx, &b_tmp)] {
+        let ch_name = match ch_idx {
+            "0" => "R",
+            "1" => "G",
+            _ => "B",
+        };
+        let result = Command::new("magick")
+            .arg(input.to_str().unwrap())
+            .args(["-channel", ch_name, "-fx", fx, "+channel"])
+            .args(["-channel", ch_name, "-separate", "+channel"])
+            .args(["-depth", "8"])
+            .arg(tmp.to_str().unwrap())
+            .output()
+            .ok()?;
+        if !result.status.success() {
+            eprintln!(
+                "magick -fx ({ch_name}) failed: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            for t in [&r_tmp, &g_tmp, &b_tmp] {
+                let _ = std::fs::remove_file(t);
+            }
+            return None;
+        }
+    }
+
+    // Combine 3 grayscale channels into one RGB image
     let result = Command::new("magick")
-        .arg(input.to_str().unwrap())
-        .args(["-channel", "R", "-fx", r_fx])
-        .args(["-channel", "G", "-fx", g_fx])
-        .args(["-channel", "B", "-fx", b_fx])
-        .arg("+channel")
-        .args(["-depth", "8"])
+        .arg(r_tmp.to_str().unwrap())
+        .arg(g_tmp.to_str().unwrap())
+        .arg(b_tmp.to_str().unwrap())
+        .args(["-set", "colorspace", "sRGB", "-combine", "-depth", "8"])
         .arg(out.to_str().unwrap())
         .output()
         .ok()?;
+    for t in [&r_tmp, &g_tmp, &b_tmp] {
+        let _ = std::fs::remove_file(t);
+    }
     if !result.status.success() {
         eprintln!(
-            "magick -fx failed: {}",
+            "magick -combine failed: {}",
             String::from_utf8_lossy(&result.stderr)
         );
         let _ = std::fs::remove_file(&out);
@@ -843,7 +882,7 @@ fn deterministic_curves_lut() {
 #[test]
 fn exact_split_toning() {
     // Split toning: validate against ImageMagick -fx using the exact same formula.
-    // Document any differences from IM's Q16-HDRI internal precision.
+    // Each channel processed independently from the original image.
     use rasmcore_image::domain::color_grading::{split_toning, SplitToning};
 
     if !magick_available() {
@@ -863,7 +902,7 @@ fn exact_split_toning() {
     };
     let our = split_toning(&pixels, &info, &st).unwrap();
 
-    // IM -fx with the exact same formula
+    // IM -fx with the exact same formula, each channel from the ORIGINAL image
     let input_path = write_png(&pixels, w, h, 3);
     let luma = "0.2126*u.r+0.7152*u.g+0.0722*u.b";
     let sw = format!("max(1-({luma})/0.5,0)*0.5");
@@ -885,63 +924,12 @@ fn exact_split_toning() {
     let magick_out = read_png_rgb(&ref_path);
     let error = mae(&our, &magick_out);
     eprintln!("  split_toning vs IM: MAE = {error:.4}");
-
-    // Also compute with f64 precision (matching IM's Q16-HDRI)
-    let mut f64_output = vec![0u8; pixels.len()];
-    for i in (0..pixels.len()).step_by(3) {
-        let r = pixels[i] as f64 / 255.0;
-        let g = pixels[i + 1] as f64 / 255.0;
-        let b = pixels[i + 2] as f64 / 255.0;
-        let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        let midpoint = 0.5f64;
-        let shadow_w = (1.0 - luma / midpoint).max(0.0).min(1.0) * 0.5;
-        let highlight_w = ((luma - midpoint) / (1.0 - midpoint)).max(0.0).min(1.0) * 0.5;
-        f64_output[i] = ((r + (0.0 - r) * shadow_w + (1.0 - r) * highlight_w) * 255.0)
-            .round()
-            .clamp(0.0, 255.0) as u8;
-        f64_output[i + 1] = ((g + (0.0 - g) * shadow_w + (0.8 - g) * highlight_w) * 255.0)
-            .round()
-            .clamp(0.0, 255.0) as u8;
-        f64_output[i + 2] = ((b + (0.8 - b) * shadow_w + (0.2 - b) * highlight_w) * 255.0)
-            .round()
-            .clamp(0.0, 255.0) as u8;
-    }
-
-    let f64_vs_im = mae(&f64_output, &magick_out);
-    let f64_vs_our = mae(&f64_output, &our);
-    eprintln!("  split_toning f64 vs IM: MAE = {f64_vs_im:.4}");
-    eprintln!("  split_toning f64 vs ours: MAE = {f64_vs_our:.4}");
-
     cleanup(&[&input_path, &ref_path]);
 
-    // Our f32 impl should match f64 within ±0 (same rounding at u8 level)
+    // Must be EXACT match — same formula, same precision path, each channel independent
     assert!(
-        f64_vs_our < 1.0,
-        "Our f32 impl diverges from f64 formula: MAE={f64_vs_our:.4}"
-    );
-
-    // Document IM Q16-HDRI precision difference
-    if error > 0.0 {
-        let mut diffs = 0u32;
-        let mut max_diff = 0u8;
-        for i in 0..our.len().min(magick_out.len()) {
-            let d = (our[i] as i16 - magick_out[i] as i16).unsigned_abs() as u8;
-            if d > 0 {
-                diffs += 1;
-                max_diff = max_diff.max(d);
-            }
-        }
-        eprintln!(
-            "    IM Q16-HDRI mismatch: {diffs} pixels differ, max ±{max_diff} \
-             (IM computes in 64-bit float, rounds intermediates at 16-bit)"
-        );
-    }
-
-    // Accept IM Q16-HDRI ±1 difference — our formula is correct
-    assert!(
-        error < 2.0,
-        "Split toning vs IM: MAE={error:.4} exceeds ±1 tolerance \
-         (expected Q16-HDRI precision difference only)"
+        error < 0.01,
+        "Split toning: MAE={error:.4} — must be EXACT match with IM -fx"
     );
 }
 
