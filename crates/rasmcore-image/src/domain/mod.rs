@@ -12,5 +12,6 @@ pub mod metadata_set;
 pub mod metadata_xmp;
 pub mod pipeline;
 pub mod point_ops;
+pub mod smart_crop;
 pub mod transform;
 pub mod types;

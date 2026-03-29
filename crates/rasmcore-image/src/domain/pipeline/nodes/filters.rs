@@ -644,3 +644,66 @@ impl ImageNode for ContrastStretchNode {
         AccessPattern::RandomAccess
     }
 }
+
+// ─── Smart Crop Node ────────────────────────────────────────────────────────
+
+/// Smart crop node — content-aware crop using entropy or attention strategy.
+pub struct SmartCropNode {
+    upstream: u32,
+    source_info: ImageInfo,
+    target_w: u32,
+    target_h: u32,
+    strategy: crate::domain::smart_crop::SmartCropStrategy,
+}
+
+impl SmartCropNode {
+    pub fn new(
+        upstream: u32,
+        source_info: ImageInfo,
+        target_w: u32,
+        target_h: u32,
+        strategy: crate::domain::smart_crop::SmartCropStrategy,
+    ) -> Self {
+        Self {
+            upstream,
+            source_info,
+            target_w,
+            target_h,
+            strategy,
+        }
+    }
+}
+
+impl ImageNode for SmartCropNode {
+    fn info(&self) -> ImageInfo {
+        ImageInfo {
+            width: self.target_w,
+            height: self.target_h,
+            ..self.source_info.clone()
+        }
+    }
+
+    fn compute_region(
+        &self,
+        _request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
+        let src_pixels = upstream_fn(self.upstream, full_src)?;
+        let result = crate::domain::smart_crop::smart_crop(
+            &src_pixels,
+            &self.source_info,
+            self.target_w,
+            self.target_h,
+            self.strategy,
+        )?;
+        Ok(result.pixels)
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::uniform(u32::MAX) // needs full image for analysis
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::RandomAccess
+    }
+}
