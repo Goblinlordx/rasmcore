@@ -1,0 +1,99 @@
+id: reference-test-harness_20260329041200Z
+title: Reference Test Harness — Unified Setup, Standard Images, Single Entry Point
+type: chore
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: |
+    Create unified scripts for installing all reference tools, generating all
+    fixtures, and running all reference/parity tests with a single command.
+    Migrate inline test image generation to use the standard fixture images.
+  context: |
+    The project has 5+ test files requiring 8+ external tools (ImageMagick, cwebp,
+    cjpeg, ffmpeg, x265, Python+numpy+Pillow+OpenCV), 3 separate fixture generation
+    scripts, and no unified setup. Each test file independently checks tool
+    availability and skips gracefully, but there is no way to know if your
+    environment is fully configured or to set it up in one step.
+
+    Recently added standard input images (gradient_64x64.png, photo_256x256.png)
+    in tests/fixtures/generated/inputs/ should be used by all reference tests
+    instead of each test generating synthetic gradients inline.
+  codebase_analysis: |
+    External tools needed across all test files:
+    - magick (ImageMagick 7): reference_audit.rs, parity.rs (jpeg, codec-parity), wasm_bench
+    - cwebp: rasmcore-webp/tests/parity.rs
+    - cjpeg/djpeg: rasmcore-jpeg/tests/parity.rs, generate-reference.sh
+    - ffmpeg/ffprobe: tests/fixtures/hevc/generate.sh
+    - x265: tests/fixtures/hevc/generate.sh
+    - Python 3 venv (numpy, Pillow, opencv-python-headless): filter_reference_parity.rs, opencv_parity.rs
+
+    Fixture generation scripts:
+    - tests/fixtures/generate.sh (Docker-based, ImageMagick)
+    - tests/fixtures/generate-reference.sh (local tools, FITS/HEIC/JPEG arith)
+    - tests/fixtures/hevc/generate.sh (x265+ffmpeg)
+
+    Standard input images already exist at tests/fixtures/generated/inputs/:
+    - gradient_64x64.png (+ .bmp, .gif, .jpeg, .qoi, .tiff, .webp)
+    - photo_256x256.png (+ .jpeg)
+
+    reference_audit.rs generates gradient_rgb(64,64) inline instead of loading
+    the fixture. filter_reference_parity.rs uses Python to generate test data.
+  acceptance_criteria:
+    - scripts/setup-references.sh installs all external tools (brew on macOS, apt on Linux)
+    - scripts/setup-references.sh creates Python venv with all dependencies
+    - scripts/setup-references.sh runs all fixture generation scripts
+    - scripts/run-reference-tests.sh runs ALL reference/parity tests across all crates
+    - reference_audit.rs loads gradient_64x64.png and photo_256x256.png from fixtures
+    - Both scripts are documented in REFERENCE.md
+    - scripts/setup-references.sh is idempotent (safe to run multiple times)
+  out_of_scope: |
+    CI/CD pipeline changes. Docker-based setup. Modifying test logic or tolerances.
+  technical_notes: |
+    setup-references.sh flow:
+    1. Detect OS (macOS/Linux)
+    2. Check and install tools: magick, cwebp, cjpeg, ffmpeg, x265, vips (optional)
+    3. Create Python venv at tests/fixtures/.venv with numpy, Pillow, opencv-python-headless
+    4. Run tests/fixtures/generate.sh
+    5. Run tests/fixtures/generate-reference.sh
+    6. Run tests/fixtures/hevc/generate.sh (if x265 available)
+    7. Print summary of what is available
+
+    run-reference-tests.sh flow:
+    1. Check setup-references.sh has been run
+    2. cargo test -p rasmcore-image --test reference_audit
+    3. cargo test -p rasmcore-image --test filter_reference_parity
+    4. cargo test -p rasmcore-image --test opencv_parity
+    5. cargo test -p rasmcore-jpeg --test parity
+    6. cargo test -p rasmcore-webp --test parity
+    7. cargo test -p rasmcore-hevc --test parity (if fixtures exist)
+    8. cargo test -p codec-parity --test reference_parity (if fixtures exist)
+    9. Print pass/fail summary
+
+    For reference_audit.rs migration: replace gradient_rgb(w,h) calls with
+    loading tests/fixtures/generated/inputs/gradient_64x64.png via the image
+    crate. Keep the inline generator as fallback when fixtures are missing.
+plan:
+  - phase: Setup Script
+    tasks:
+      - text: Create scripts/setup-references.sh with OS detection and tool installation (brew/apt)
+        done: false
+      - text: Add Python venv creation with numpy, Pillow, opencv-python-headless
+        done: false
+      - text: Orchestrate all 3 fixture generation scripts from setup-references.sh
+        done: false
+  - phase: Run Script
+    tasks:
+      - text: Create scripts/run-reference-tests.sh that runs all reference test suites
+        done: false
+      - text: Print per-suite pass/fail summary with tool availability status
+        done: false
+  - phase: Standard Images Integration
+    tasks:
+      - text: Migrate reference_audit.rs to load gradient_64x64.png and photo_256x256.png from fixtures
+        done: false
+      - text: Fall back to inline generation when fixtures missing (backward compatible)
+        done: false
+      - text: Update REFERENCE.md with setup and run instructions
+        done: false
+extra: {}
