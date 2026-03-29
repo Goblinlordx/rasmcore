@@ -1,0 +1,34 @@
+# Product Guidelines — rasmcore
+#
+# Project-specific constraints and decisions that inform all tracks.
+
+language:
+  - Pure Rust only — no C/C++ FFI, no bindgen, no cc crate
+  - All code must compile to both native (x86_64/aarch64) and wasm32-wasip1
+  - No std::fs, std::net, or std::process in library crates (WASM-incompatible)
+
+safety:
+  - Minimize unsafe — only for SIMD intrinsics and WIT-generated bindings
+  - Every unsafe block must have a SAFETY comment explaining invariants
+  - Prefer safe abstractions over raw pointer manipulation
+
+architecture:
+  - WASM Component Model (WASI 0.2) is the primary distribution format
+  - WIT interfaces define all public API contracts
+  - Demand-driven tile pipeline — no full-image memory loading
+  - Dual-level API — pipeline resource + stateless compute kernels
+
+codecs:
+  - Every native codec must pass three-way reference validation (see codec-validation.md)
+  - Bit-exact parity with reference implementations where applicable
+  - Patent-encumbered codecs (HEVC, AV1) use sidecar plugin pattern
+
+performance:
+  - SIMD required for all image processing kernels (SSE4.2/NEON/WASM128)
+  - Zero-copy where possible in pipeline data flow
+  - Benchmark against libvips/ImageMagick for feature-parity operations
+
+quality:
+  - Zero compiler warnings — all crates must compile with no warnings
+  - Clippy clean — cargo clippy --workspace -- -D warnings must pass
+  - Tests co-located in mod tests {} blocks, integration tests in tests/
