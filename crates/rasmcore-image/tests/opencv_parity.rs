@@ -1118,8 +1118,8 @@ fn vignette_gaussian_all_images_match_imagemagick() {
         total_mae += e;
         total_max = total_max.max(m);
         eprintln!("vignette {name:20}: MAE={e:.4}, max_err={m}");
-        assert!(e < 2.0, "vignette {name}: MAE={e:.4} >= 2.0");
-        assert!(m <= 15, "vignette {name}: max_err={m} > 15");
+        assert!(e < 1.5, "vignette {name}: MAE={e:.4} >= 1.5");
+        assert!(m <= 5, "vignette {name}: max_err={m} > 5");
     }
 
     let avg_mae = total_mae / TEST_IMAGES.len() as f64;
