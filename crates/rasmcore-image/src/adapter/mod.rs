@@ -590,18 +590,12 @@ impl filters::Guest for Component {
         domain::filters::canny(&pixels, &di, low_threshold, high_threshold).map_err(to_wit_error)
     }
 
-    fn premultiply(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-    ) -> Result<Vec<u8>, RasmcoreError> {
+    fn premultiply(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {
         let di = to_domain_image_info(&info);
         domain::filters::premultiply(&pixels, &di).map_err(to_wit_error)
     }
 
-    fn unpremultiply(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-    ) -> Result<Vec<u8>, RasmcoreError> {
+    fn unpremultiply(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {
         let di = to_domain_image_info(&info);
         domain::filters::unpremultiply(&pixels, &di).map_err(to_wit_error)
     }
@@ -660,8 +654,7 @@ impl filters::Guest for Component {
             filters::BlendMode::Difference => domain::filters::BlendMode::Difference,
             filters::BlendMode::Exclusion => domain::filters::BlendMode::Exclusion,
         };
-        domain::filters::blend(&fg, &domain_fg, &bg, &domain_bg, domain_mode)
-            .map_err(to_wit_error)
+        domain::filters::blend(&fg, &domain_fg, &bg, &domain_bg, domain_mode).map_err(to_wit_error)
     }
 }
 

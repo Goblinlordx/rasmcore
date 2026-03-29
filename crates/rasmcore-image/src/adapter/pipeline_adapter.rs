@@ -242,7 +242,11 @@ impl GuestImagePipeline for PipelineResource {
         kernel_height: u32,
         divisor: f32,
     ) -> Result<NodeId, RasmcoreError> {
-        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let src_info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
         let node = filters::ConvolveNode::new(
             source,
             src_info,
@@ -255,13 +259,21 @@ impl GuestImagePipeline for PipelineResource {
     }
 
     fn median(&self, source: NodeId, radius: u32) -> Result<NodeId, RasmcoreError> {
-        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let src_info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
         let node = filters::MedianNode::new(source, src_info, radius);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 
     fn sobel(&self, source: NodeId) -> Result<NodeId, RasmcoreError> {
-        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let src_info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
         let node = filters::SobelNode::new(source, src_info);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
@@ -272,7 +284,11 @@ impl GuestImagePipeline for PipelineResource {
         low_threshold: f32,
         high_threshold: f32,
     ) -> Result<NodeId, RasmcoreError> {
-        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let src_info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
         let node = filters::CannyNode::new(source, src_info, low_threshold, high_threshold);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
