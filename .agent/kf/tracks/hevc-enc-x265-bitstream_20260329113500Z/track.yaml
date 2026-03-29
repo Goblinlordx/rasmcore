@@ -1,107 +1,119 @@
 id: hevc-enc-x265-bitstream_20260329113500Z
-title: "x265 Port — Bitstream Writer, NAL Packaging, VPS/SPS/PPS Serialization"
+title: x265 Port — Bitstream Writer, NAL Packaging, VPS/SPS/PPS Serialization
 type: feature
 status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Direct port of x265 4.1 bitstream infrastructure to Rust. Covers RBSP bitstream
-    writer, NAL unit packaging with emulation prevention, and VPS/SPS/PPS/slice
-    header serialization. Foundation for all subsequent HEVC encoder tracks.
-  context: |
-    This is a direct port of x265 4.1 source code, not a clean-room spec implementation.
+  summary: 'Direct port of x265 4.1 bitstream infrastructure to Rust. Covers RBSP bitstream writer, NAL unit packaging with
+    emulation prevention, and VPS/SPS/PPS/slice header serialization. Foundation for all subsequent HEVC encoder tracks.
+
+    '
+  context: 'This is a direct port of x265 4.1 source code, not a clean-room spec implementation.
+
     The decoder experience showed that spec-driven development led to alignment bugs —
+
     porting the exact integer math from the reference avoids this entirely.
 
+
     Every component must be individually validated against x265 output. The goal is
+
     EXACT match — same parameters in, same bytes out. Any unavoidable differences
+
     (there should be none with integer math) must be documented with root cause.
-  codebase_analysis: |
-    x265 4.1 source files to port:
+
+    '
+  codebase_analysis: 'x265 4.1 source files to port:
+
     - common/bitstream.cpp/h — RBSP byte-aligned bitstream writer
+
     - encoder/nal.cpp/h — NAL unit packaging, Annex B start codes, emulation prevention
+
     - common/slice.cpp/h — Slice header structures
+
     - encoder/encoder.cpp — VPS/SPS/PPS generation (initVPS, initSPS, initPPS methods)
+
     - encoder/entropy.cpp — VPS/SPS/PPS RBSP serialization (codeVPS, codeSPS, codePPS)
+
     - common/param.cpp/h — Encoder parameters (for deriving SPS/PPS fields)
+
     - common/constants.cpp/h — Scan orders, partition tables, QP tables
+
     - common/common.h — Core type definitions
 
+
     Existing decoder infrastructure in rasmcore-hevc:
+
     - params.rs: parse_vps/sps/pps (can verify roundtrip)
+
     - nal.rs: NalIterator, parse_nal_unit (can verify output)
+
     - bitread.rs: HevcBitReader (read counterpart)
 
+
     Reference: x265 4.1 source at bitbucket.org/multicoreware/x265_git
+
+    '
   acceptance_criteria:
-    - Bitstream writer produces byte-identical output to x265 for known input sequences
-    - NAL writer inserts emulation prevention bytes correctly (verified by our decoder parsing back)
-    - VPS/SPS/PPS roundtrip test passes — write with encoder, parse back with decoder, all fields match
-    - Slice header serialization matches x265 output byte-for-byte for I-slice with known parameters
-    - Scan order tables and constant tables match x265 exactly
-    - Any differences documented with x265 4.1 file/line citation and root cause
-    - clippy clean, cargo test passes
-  out_of_scope: |
-    CABAC arithmetic engine (next track). Intra prediction. Transform/quantization.
+  - Bitstream writer produces byte-identical output to x265 for known input sequences
+  - NAL writer inserts emulation prevention bytes correctly (verified by our decoder parsing back)
+  - VPS/SPS/PPS roundtrip test passes — write with encoder, parse back with decoder, all fields match
+  - Slice header serialization matches x265 output byte-for-byte for I-slice with known parameters
+  - Scan order tables and constant tables match x265 exactly
+  - Any differences documented with x265 4.1 file/line citation and root cause
+  - clippy clean, cargo test passes
+  out_of_scope: 'CABAC arithmetic engine (next track). Intra prediction. Transform/quantization.
+
     Rate control. Loop filters. ISOBMFF container.
-  technical_notes: |
-    Port strategy:
-    1. Start with common/bitstream.cpp — RBSP writer (put_bits, write_byte, flush)
-    2. Port common/constants.cpp — scan tables, QP tables, partition geometry
-    3. Port encoder/nal.cpp — NAL unit assembly with emulation prevention
-    4. Port the VPS/SPS/PPS serialization from entropy.cpp (codeVPS/codeSPS/codePPS)
-    5. Port slice header serialization
 
-    Validation per component:
-    - Bitstream writer: write known bit patterns, compare output bytes
-    - NAL: write VPS/SPS/PPS, parse back with our decoder, diff all fields
-    - Generate reference VPS/SPS/PPS bytes using x265 CLI for a known config,
-      extract from the bitstream, compare byte-by-byte against our serialization
-
-    The decoder's existing SPS/PPS parser is the gold-standard verifier — if our
-    encoder's output parses back correctly, it's correct.
-
-    Ref: x265 4.1 source — encoder/entropy.cpp, common/bitstream.cpp, encoder/nal.cpp
+    '
+  technical_notes: "Port strategy:\n1. Start with common/bitstream.cpp — RBSP writer (put_bits, write_byte, flush)\n2. Port\
+    \ common/constants.cpp — scan tables, QP tables, partition geometry\n3. Port encoder/nal.cpp — NAL unit assembly with\
+    \ emulation prevention\n4. Port the VPS/SPS/PPS serialization from entropy.cpp (codeVPS/codeSPS/codePPS)\n5. Port slice\
+    \ header serialization\n\nValidation per component:\n- Bitstream writer: write known bit patterns, compare output bytes\n\
+    - NAL: write VPS/SPS/PPS, parse back with our decoder, diff all fields\n- Generate reference VPS/SPS/PPS bytes using x265\
+    \ CLI for a known config,\n  extract from the bitstream, compare byte-by-byte against our serialization\n\nThe decoder's\
+    \ existing SPS/PPS parser is the gold-standard verifier — if our\nencoder's output parses back correctly, it's correct.\n\
+    \nRef: x265 4.1 source — encoder/entropy.cpp, common/bitstream.cpp, encoder/nal.cpp\n"
 plan:
-  - phase: "Core Types and Constants"
-    tasks:
-      - text: "Port x265 common types, scan order tables, and QP tables to a new encoder module in rasmcore-hevc"
-        done: false
-      - text: "Verify scan tables match x265 exactly (comparison test)"
-        done: false
-  - phase: "Bitstream Writer"
-    tasks:
-      - text: "Port x265 bitstream.cpp RBSP writer (put_bits, write_byte, flush, byte alignment)"
-        done: false
-      - text: "Add unit tests — write known bit sequences, verify output bytes match x265"
-        done: false
-  - phase: "NAL Unit Writer"
-    tasks:
-      - text: "Port x265 nal.cpp — NAL header, Annex B start codes, emulation prevention byte insertion"
-        done: false
-      - text: "Add roundtrip test — write NAL, parse back with NalIterator, verify payload"
-        done: false
-  - phase: "Parameter Set Serialization"
-    tasks:
-      - text: "Port VPS serialization from x265 entropy.cpp codeVPS()"
-        done: false
-      - text: "Port SPS serialization from x265 entropy.cpp codeSPS()"
-        done: false
-      - text: "Port PPS serialization from x265 entropy.cpp codePPS()"
-        done: false
-      - text: "Add roundtrip tests — write VPS/SPS/PPS, parse back with decoder, diff all fields"
-        done: false
-  - phase: "Slice Header"
-    tasks:
-      - text: "Port I-slice header serialization from x265 entropy.cpp codeSliceHeader()"
-        done: false
-      - text: "Add test — write slice header for I-slice, parse back with decoder parse_slice_header()"
-        done: false
-  - phase: "Byte-Exact Validation"
-    tasks:
-      - text: "Generate reference VPS/SPS/PPS/slice bytes from x265 CLI, compare byte-by-byte"
-        done: false
-      - text: "Document any differences with citation and root cause"
-        done: false
+- phase: Core Types and Constants
+  tasks:
+  - text: Port x265 common types, scan order tables, and QP tables to a new encoder module in rasmcore-hevc
+    done: true
+  - text: Verify scan tables match x265 exactly (comparison test)
+    done: true
+- phase: Bitstream Writer
+  tasks:
+  - text: Port x265 bitstream.cpp RBSP writer (put_bits, write_byte, flush, byte alignment)
+    done: true
+  - text: Add unit tests — write known bit sequences, verify output bytes match x265
+    done: true
+- phase: NAL Unit Writer
+  tasks:
+  - text: Port x265 nal.cpp — NAL header, Annex B start codes, emulation prevention byte insertion
+    done: true
+  - text: Add roundtrip test — write NAL, parse back with NalIterator, verify payload
+    done: true
+- phase: Parameter Set Serialization
+  tasks:
+  - text: Port VPS serialization from x265 entropy.cpp codeVPS()
+    done: true
+  - text: Port SPS serialization from x265 entropy.cpp codeSPS()
+    done: true
+  - text: Port PPS serialization from x265 entropy.cpp codePPS()
+    done: true
+  - text: Add roundtrip tests — write VPS/SPS/PPS, parse back with decoder, diff all fields
+    done: true
+- phase: Slice Header
+  tasks:
+  - text: Port I-slice header serialization from x265 entropy.cpp codeSliceHeader()
+    done: true
+  - text: Add test — write slice header for I-slice, parse back with decoder parse_slice_header()
+    done: true
+- phase: Byte-Exact Validation
+  tasks:
+  - text: Generate reference VPS/SPS/PPS/slice bytes from x265 CLI, compare byte-by-byte
+    done: true
+  - text: Document any differences with citation and root cause
+    done: true
 extra: {}
