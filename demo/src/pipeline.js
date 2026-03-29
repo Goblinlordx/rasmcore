@@ -477,3 +477,70 @@ document.getElementById('download-btn').addEventListener('click', () => {
   a.download = `rasmcore-pipeline.${format}`;
   a.click();
 });
+
+// ─── Code Generation ────────────────────────────────────────────────────────
+
+function generateCode() {
+  const format = document.getElementById('export-format').value;
+  const quality = parseInt(document.getElementById('quality').value);
+
+  const lines = [];
+  lines.push(`import { rcimage } from '@rasmcore/sdk';`);
+  lines.push('');
+  lines.push('const result = rcimage.load(imageBytes)');
+
+  for (const node of chain) {
+    const args = node.op.params.map(p => {
+      const val = node.paramValues[p.name];
+      if (p.type === 'enum' || typeof val === 'string') return `'${val}'`;
+      return val;
+    });
+    const argStr = args.length > 0 ? args.join(', ') : '';
+    lines.push(`  .${node.op.name}(${argStr})`);
+  }
+
+  // Terminal method
+  const formatMap = {
+    jpeg: { method: 'toJpeg', config: `{ quality: ${quality} }` },
+    png:  { method: 'toPng', config: '{}' },
+    webp: { method: 'toWebp', config: `{ quality: ${quality} }` },
+  };
+  const fmt = formatMap[format] || formatMap.jpeg;
+  lines.push(`  .${fmt.method}(${fmt.config});`);
+
+  return lines.join('\n');
+}
+
+function highlightCode(code) {
+  return code
+    .replace(/\b(import|from|const)\b/g, '<span class="kw">$1</span>')
+    .replace(/'([^']+)'/g, "'<span class=\"str\">$1</span>'")
+    .replace(/\b(\d+\.?\d*)\b/g, '<span class="num">$1</span>')
+    .replace(/\.(\w+)\(/g, '.<span class="fn">$1</span>(');
+}
+
+const codeModal = document.getElementById('code-modal');
+const codeOutput = document.getElementById('code-output');
+
+document.getElementById('code-btn').addEventListener('click', () => {
+  const code = generateCode();
+  codeOutput.innerHTML = highlightCode(code);
+  codeModal.classList.add('open');
+});
+
+document.getElementById('close-modal-btn').addEventListener('click', () => {
+  codeModal.classList.remove('open');
+});
+
+codeModal.addEventListener('click', (e) => {
+  if (e.target === codeModal) codeModal.classList.remove('open');
+});
+
+document.getElementById('copy-code-btn').addEventListener('click', () => {
+  const code = generateCode();
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById('copy-code-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 1500);
+  });
+});
