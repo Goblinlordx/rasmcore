@@ -390,6 +390,66 @@ when the cause is proven and documented:
 | Inpaint NS (gradient) | OpenCV 4.13 | EXACT | 0 | 32×32, 6×6 hole |
 | Mertens fusion | OpenCV 4.13 | F32_ROUNDING | ≤2 u8 (6/7 images) | 7 canonical images, 128×128 color brackets |
 | Mertens fusion (checker) | OpenCV 4.13 | F32_ROUNDING | ≤29 u8 | Near-zero weight_sum amplifies f32 diff (see below) |
+| Otsu threshold | OpenCV 4.13 | EXACT | 0 | 5 canonical images |
+| Triangle threshold | OpenCV 4.13 | F32_ROUNDING | ≤1 | 5 canonical images, histogram geometry boundary |
+| Adaptive threshold (mean) | OpenCV 4.13 | EXACT | 0 | 7 canonical images (see below) |
+| Adaptive threshold (Gaussian) | OpenCV 4.13 | F32_ROUNDING | <5% mismatch | 7 images, Gaussian kernel precision |
+
+### Adaptive Thresholding — Otsu, Triangle, Local Mean/Gaussian
+
+**Reference:** `cv2.threshold(..., THRESH_OTSU / THRESH_TRIANGLE)`,
+`cv2.adaptiveThreshold(ADAPTIVE_THRESH_MEAN_C / ADAPTIVE_THRESH_GAUSSIAN_C)`
+
+#### Otsu — Pixel-Exact
+
+Inter-class variance maximization. Exact match with OpenCV on all tested images.
+
+| Image | Ours | OpenCV | Match |
+|-------|------|--------|-------|
+| gradient_128 | 126 | 126 | Exact |
+| checker_128 | 25 | 25 | Exact |
+| noisy_flat_128 | 127 | 127 | Exact |
+| photo_128 | 127 | 127 | Exact |
+| highcontrast_128 | 132 | 132 | Exact |
+
+#### Triangle — ±1
+
+Histogram geometry method. Within ±1 of OpenCV due to boundary handling
+differences in the perpendicular distance computation.
+
+#### Adaptive Mean — Pixel-Exact (0 mismatches on all 7 images)
+
+Three implementation details required for exact match with OpenCV
+(verified against OpenCV 4.13 source, `modules/imgproc/src/thresh.cpp`):
+
+1. **Integer box mean with BORDER_REPLICATE** — OpenCV uses
+   `boxFilter(src, CV_8U, ksize, BORDER_REPLICATE)`, not BORDER_REFLECT_101.
+   Uses integer SAT (sum area table) with i64 accumulation.
+
+2. **Rounded integer division** — OpenCV `boxFilter` with `CV_8U` output uses
+   `saturate_cast<uchar>` which rounds via `(int)(x + 0.5)`, equivalent to
+   `(sum + area/2) / area`. Not truncation.
+
+3. **Signed threshold comparison** — OpenCV does NOT saturate `mean - C` to 0.
+   When `mean < C`, the threshold is negative and `pixel > negative_thresh` is
+   always true (even pixel=0 > thresh=-2). Our implementation uses `i16`
+   arithmetic to match: `(pixel as i16) > (mean as i16 - C)`.
+
+| Image | Mismatches | Match |
+|-------|-----------|-------|
+| gradient_128 | 0/16384 | Exact |
+| checker_128 | 0/16384 | Exact |
+| noisy_flat_128 | 0/16384 | Exact |
+| sharp_edges_128 | 0/16384 | Exact |
+| photo_128 | 0/16384 | Exact |
+| flat_128 | 0/16384 | Exact |
+| highcontrast_128 | 0/16384 | Exact |
+
+#### Adaptive Gaussian — <5% pixel mismatch
+
+Uses separable Gaussian blur with sigma derived from block_size
+(`sigma = 0.3 * ((block_size - 1) * 0.5 - 1) + 0.8`). Mismatches arise from
+f64 Gaussian kernel precision vs OpenCV's fixed-point implementation.
 
 ### Inpainting — Telea FMM + Navier-Stokes FMM
 
