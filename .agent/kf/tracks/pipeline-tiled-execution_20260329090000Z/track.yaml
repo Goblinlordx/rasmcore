@@ -3,168 +3,119 @@ title: Pipeline Tiled Execution — Fix Nodes to Use Region Requests Instead of 
 type: bug
 status: pending
 created: 2026-03-29
-updated: "2026-03-29"
+updated: '2026-03-29'
 spec:
-  summary: |
-    Every pipeline node currently requests the full image from upstream
+  summary: 'Every pipeline node currently requests the full image from upstream
+
     regardless of what region was requested. Fix all nodes to request only
+
     request + overlap, enabling true tiled/streaming execution with spatial
+
     caching. This is the core architectural differentiator.
-  context: |
-    The pipeline was designed from the start for demand-driven tiled execution:
-    - NodeGraph.request_region(node_id, rect) passes the rect through
-    - SpatialCache stores/serves arbitrary rectangular regions with ref-counting
-    - Each node declares Overlap (kernel radius) and AccessPattern (sequential,
-      local neighborhood, random access, global two-pass)
-    - Rect::difference_all computes missing sub-regions for partial cache hits
 
-    But EVERY node implementation ignores the request parameter and does:
-      let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-      let src = upstream_fn(self.upstream, full)?;
-
-    This defeats the entire tiled architecture. A 100-megapixel image processed
-    through 5 filter nodes allocates 5 full copies in memory simultaneously,
-    instead of processing 256x256 tiles with only tile-sized buffers alive.
-
-    This is not a feature request — it is a correctness bug. The nodes violate
-    their own declared AccessPattern contracts.
-  codebase_analysis: |
-    Node categories by required fix complexity:
-
-    ZERO OVERLAP (trivial — just pass request through):
-    - PointOpNode, FusedLutNode: Overlap::zero(), AccessPattern::Sequential
-      Fix: upstream_fn(self.upstream, request) — pixel-for-pixel mapping
-    - BrightnessNode, ContrastNode: same as PointOpNode (macro-generated)
-    - GrayscaleNode: Sequential, no overlap
-
-    LOCAL NEIGHBORHOOD (expand request by kernel radius):
-    - BlurNode: Overlap::uniform(10) — request needs 10px padding
-    - SharpenNode: Overlap::uniform(2)
-    - ConvolveNode: Overlap::uniform(kw.max(kh)/2)
-    - MedianNode: Overlap::uniform(radius)
-    - SobelNode: Overlap::uniform(1)
-    - CannyNode: Overlap::uniform(3)
-    Fix: upstream_fn(self.upstream, request.expand(overlap).clamp(full))
-    Then crop the result back to the original request rect.
-
-    GLOBAL TWO-PASS (genuinely need full image — leave as-is):
-    - HistogramEqualizeNode: Overlap::uniform(u32::MAX), GlobalTwoPass
-    - NormalizeNode, AutoLevelNode: same
-    These correctly need the full image for the first pass (histogram
-    computation) before producing any output. However, a smarter impl
-    could do: pass 1 = stream full image for histogram, pass 2 = tile
-    the actual transformation.
-
-    RANDOM ACCESS (transforms — need upstream region mapping):
-    - ResizeNode: output tile maps to a different upstream region
-    - RotateNode, AffineNode, FlipNode: same
-    Fix: compute the upstream rect corresponding to the output request
-    using the inverse transform, then request that specific rect.
-
-    COMPOSITE (two inputs):
-    - CompositeNode: needs overlapping regions from both fg and bg
-    Fix: request the same rect from both upstream nodes.
-
-    Files to modify:
-    - crates/rasmcore-image/src/domain/pipeline/nodes/filters.rs
-    - crates/rasmcore-image/src/domain/pipeline/nodes/transform.rs
-    - crates/rasmcore-image/src/domain/pipeline/nodes/source.rs (if applicable)
+    '
+  context: "The pipeline was designed from the start for demand-driven tiled execution:\n- NodeGraph.request_region(node_id,\
+    \ rect) passes the rect through\n- SpatialCache stores/serves arbitrary rectangular regions with ref-counting\n- Each\
+    \ node declares Overlap (kernel radius) and AccessPattern (sequential,\n  local neighborhood, random access, global two-pass)\n\
+    - Rect::difference_all computes missing sub-regions for partial cache hits\n\nBut EVERY node implementation ignores the\
+    \ request parameter and does:\n  let full = Rect::new(0, 0, self.source_info.width, self.source_info.height);\n  let src\
+    \ = upstream_fn(self.upstream, full)?;\n\nThis defeats the entire tiled architecture. A 100-megapixel image processed\n\
+    through 5 filter nodes allocates 5 full copies in memory simultaneously,\ninstead of processing 256x256 tiles with only\
+    \ tile-sized buffers alive.\n\nThis is not a feature request — it is a correctness bug. The nodes violate\ntheir own declared\
+    \ AccessPattern contracts.\n"
+  codebase_analysis: "Node categories by required fix complexity:\n\nZERO OVERLAP (trivial — just pass request through):\n\
+    - PointOpNode, FusedLutNode: Overlap::zero(), AccessPattern::Sequential\n  Fix: upstream_fn(self.upstream, request) —\
+    \ pixel-for-pixel mapping\n- BrightnessNode, ContrastNode: same as PointOpNode (macro-generated)\n- GrayscaleNode: Sequential,\
+    \ no overlap\n\nLOCAL NEIGHBORHOOD (expand request by kernel radius):\n- BlurNode: Overlap::uniform(10) — request needs\
+    \ 10px padding\n- SharpenNode: Overlap::uniform(2)\n- ConvolveNode: Overlap::uniform(kw.max(kh)/2)\n- MedianNode: Overlap::uniform(radius)\n\
+    - SobelNode: Overlap::uniform(1)\n- CannyNode: Overlap::uniform(3)\nFix: upstream_fn(self.upstream, request.expand(overlap).clamp(full))\n\
+    Then crop the result back to the original request rect.\n\nGLOBAL TWO-PASS (genuinely need full image — leave as-is):\n\
+    - HistogramEqualizeNode: Overlap::uniform(u32::MAX), GlobalTwoPass\n- NormalizeNode, AutoLevelNode: same\nThese correctly\
+    \ need the full image for the first pass (histogram\ncomputation) before producing any output. However, a smarter impl\n\
+    could do: pass 1 = stream full image for histogram, pass 2 = tile\nthe actual transformation.\n\nRANDOM ACCESS (transforms\
+    \ — need upstream region mapping):\n- ResizeNode: output tile maps to a different upstream region\n- RotateNode, AffineNode,\
+    \ FlipNode: same\nFix: compute the upstream rect corresponding to the output request\nusing the inverse transform, then\
+    \ request that specific rect.\n\nCOMPOSITE (two inputs):\n- CompositeNode: needs overlapping regions from both fg and\
+    \ bg\nFix: request the same rect from both upstream nodes.\n\nFiles to modify:\n- crates/rasmcore-image/src/domain/pipeline/nodes/filters.rs\n\
+    - crates/rasmcore-image/src/domain/pipeline/nodes/transform.rs\n- crates/rasmcore-image/src/domain/pipeline/nodes/source.rs\
+    \ (if applicable)\n"
   acceptance_criteria:
-    - Zero-overlap nodes (point ops, grayscale) request exactly the incoming rect
-    - Local-neighborhood nodes request rect expanded by their declared overlap
-    - Expanded upstream result is cropped back to output rect before returning
-    - Transform nodes compute inverse-mapped upstream rect
-    - GlobalTwoPass nodes retain full-image request (documented exception)
-    - Rect.expand(overlap) and Rect.clamp(bounds) helpers added to pipeline crate
-    - SpatialCache correctly serves partial regions (existing tests verify this)
-    - Memory test demonstrates tiled execution uses bounded memory for large images
-    - All existing pipeline graph tests pass
-    - All existing filter parity tests pass (correctness unchanged)
-    - WASM build succeeds
-  out_of_scope: |
-    - Two-pass optimization for histogram nodes (future track)
+  - Zero-overlap nodes (point ops, grayscale) request exactly the incoming rect
+  - Local-neighborhood nodes request rect expanded by their declared overlap
+  - Expanded upstream result is cropped back to output rect before returning
+  - Transform nodes compute inverse-mapped upstream rect
+  - GlobalTwoPass nodes retain full-image request (documented exception)
+  - Rect.expand(overlap) and Rect.clamp(bounds) helpers added to pipeline crate
+  - SpatialCache correctly serves partial regions (existing tests verify this)
+  - Memory test demonstrates tiled execution uses bounded memory for large images
+  - All existing pipeline graph tests pass
+  - All existing filter parity tests pass (correctness unchanged)
+  - WASM build succeeds
+  out_of_scope: '- Two-pass optimization for histogram nodes (future track)
+
     - Adaptive tile sizing based on memory pressure
+
     - Parallel tile execution (WASM is single-threaded)
+
     - Tile-aware encoder output (progressive JPEG, tiled TIFF)
-  technical_notes: |
-    Implementation pattern for local-neighborhood nodes:
 
-    fn compute_region(&self, request: Rect, upstream_fn: ...) -> Result<Vec<u8>> {
-        let overlap = self.overlap();
-        let full_bounds = Rect::new(0, 0, self.source_info.width, self.source_info.height);
-
-        // Expand request by overlap, clamp to image bounds
-        let upstream_rect = request.expand_uniform(overlap.left).clamp(full_bounds);
-
-        // Fetch only the needed region from upstream
-        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;
-
-        // Apply filter to the fetched region (uses upstream_rect dimensions)
-        let filtered = apply_filter(&src_pixels, upstream_rect.width, upstream_rect.height, ...);
-
-        // Crop back to the originally requested rect
-        crop_region(&filtered, upstream_rect, request, bpp)
-    }
-
-    Helper: crop_region extracts the sub-rectangle from the filtered buffer
-    that corresponds to the original request (removing the overlap padding).
-
-    For the simple_filter_node! macro: change the generated compute_region
-    to use the pattern above instead of requesting full_src.
-
-    Rect helpers needed (add to rasmcore-pipeline/src/rect.rs):
-    - expand_uniform(amount: u32) -> Rect (add amount to each side)
-    - clamp(bounds: Rect) -> Rect (intersect with bounds)
-
-    Memory verification test:
-    Create a 10000x10000 pipeline (100MP) with cache budget of 10MB.
-    Request a 256x256 tile from the final node. Verify:
-    1. Total memory allocated < cache budget + tile buffer sizes
-    2. Output is correct (matches full-image execution for that tile)
-    3. SpatialCache evicts intermediate tiles as they are consumed
+    '
+  technical_notes: "Implementation pattern for local-neighborhood nodes:\n\nfn compute_region(&self, request: Rect, upstream_fn:\
+    \ ...) -> Result<Vec<u8>> {\n    let overlap = self.overlap();\n    let full_bounds = Rect::new(0, 0, self.source_info.width,\
+    \ self.source_info.height);\n\n    // Expand request by overlap, clamp to image bounds\n    let upstream_rect = request.expand_uniform(overlap.left).clamp(full_bounds);\n\
+    \n    // Fetch only the needed region from upstream\n    let src_pixels = upstream_fn(self.upstream, upstream_rect)?;\n\
+    \n    // Apply filter to the fetched region (uses upstream_rect dimensions)\n    let filtered = apply_filter(&src_pixels,\
+    \ upstream_rect.width, upstream_rect.height, ...);\n\n    // Crop back to the originally requested rect\n    crop_region(&filtered,\
+    \ upstream_rect, request, bpp)\n}\n\nHelper: crop_region extracts the sub-rectangle from the filtered buffer\nthat corresponds\
+    \ to the original request (removing the overlap padding).\n\nFor the simple_filter_node! macro: change the generated compute_region\n\
+    to use the pattern above instead of requesting full_src.\n\nRect helpers needed (add to rasmcore-pipeline/src/rect.rs):\n\
+    - expand_uniform(amount: u32) -> Rect (add amount to each side)\n- clamp(bounds: Rect) -> Rect (intersect with bounds)\n\
+    \nMemory verification test:\nCreate a 10000x10000 pipeline (100MP) with cache budget of 10MB.\nRequest a 256x256 tile\
+    \ from the final node. Verify:\n1. Total memory allocated < cache budget + tile buffer sizes\n2. Output is correct (matches\
+    \ full-image execution for that tile)\n3. SpatialCache evicts intermediate tiles as they are consumed\n"
 plan:
-  - phase: Rect Helpers
-    tasks:
-      - text: Add Rect.expand_uniform(amount) to rasmcore-pipeline rect.rs
-        done: false
-      - text: Add Rect.clamp(bounds) to rasmcore-pipeline rect.rs
-        done: false
-      - text: Add crop_region helper to extract sub-rect from pixel buffer
-        done: false
-  - phase: Zero-Overlap Nodes
-    tasks:
-      - text: Fix simple_filter_node! macro to pass request instead of full_src for Overlap::zero()
-        done: false
-      - text: Fix PointOpNode and FusedLutNode to pass request through
-        done: false
-      - text: Fix GrayscaleNode to pass request through
-        done: false
-  - phase: Local-Neighborhood Nodes
-    tasks:
-      - text: Fix BlurNode to request rect + 10px overlap, crop result
-        done: false
-      - text: Fix ConvolveNode, MedianNode, SobelNode, CannyNode similarly
-        done: false
-      - text: Fix SharpenNode (calls blur internally — needs upstream overlap propagation)
-        done: false
-  - phase: Transform Nodes
-    tasks:
-      - text: Fix CropNode to compute upstream sub-rect (trivial — offset + request)
-        done: false
-      - text: Fix ResizeNode to compute inverse-mapped upstream rect
-        done: false
-      - text: Fix FlipNode, RotateNode to compute inverse-mapped upstream rect
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Memory test - 10000x10000 pipeline with 10MB cache, request 256x256 tile
-        done: false
-      - text: Correctness test - tiled output matches full-image output pixel-for-pixel
-        done: false
-      - text: All existing pipeline graph tests pass
-        done: false
-      - text: All existing filter parity tests pass
-        done: false
-      - text: WASM build succeeds
-        done: false
+- phase: Rect Helpers
+  tasks:
+  - text: Add Rect.expand_uniform(amount) to rasmcore-pipeline rect.rs
+    done: true
+  - text: Add Rect.clamp(bounds) to rasmcore-pipeline rect.rs
+    done: true
+  - text: Add crop_region helper to extract sub-rect from pixel buffer
+    done: true
+- phase: Zero-Overlap Nodes
+  tasks:
+  - text: Fix simple_filter_node! macro to pass request instead of full_src for Overlap::zero()
+    done: true
+  - text: Fix PointOpNode and FusedLutNode to pass request through
+    done: true
+  - text: Fix GrayscaleNode to pass request through
+    done: true
+- phase: Local-Neighborhood Nodes
+  tasks:
+  - text: Fix BlurNode to request rect + 10px overlap, crop result
+    done: true
+  - text: Fix ConvolveNode, MedianNode, SobelNode, CannyNode similarly
+    done: true
+  - text: Fix SharpenNode (calls blur internally — needs upstream overlap propagation)
+    done: true
+- phase: Transform Nodes
+  tasks:
+  - text: Fix CropNode to compute upstream sub-rect (trivial — offset + request)
+    done: true
+  - text: Fix ResizeNode to compute inverse-mapped upstream rect
+    done: true
+  - text: Fix FlipNode, RotateNode to compute inverse-mapped upstream rect
+    done: false
+- phase: Verification
+  tasks:
+  - text: Memory test - 10000x10000 pipeline with 10MB cache, request 256x256 tile
+    done: true
+  - text: Correctness test - tiled output matches full-image output pixel-for-pixel
+    done: true
+  - text: All existing pipeline graph tests pass
+    done: true
+  - text: All existing filter parity tests pass
+    done: true
+  - text: WASM build succeeds
+    done: true
 extra: {}
