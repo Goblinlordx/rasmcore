@@ -237,7 +237,11 @@ pub fn parse_slice_header(
     let mut slice_beta_offset = pps.beta_offset;
     let mut slice_tc_offset = pps.tc_offset;
 
-    if pps.deblocking_filter_control_present && pps.deblocking_filter_override_enabled {
+    // HEVC Section 7.3.6.1: deblocking_filter_override_flag is present when
+    // deblocking_filter_control_present_flag is true, REGARDLESS of
+    // deblocking_filter_override_enabled_flag in PPS.
+    // Ref: ITU-T H.265 Section 7.3.6.1 — slice_segment_header()
+    if pps.deblocking_filter_control_present {
         let deblocking_filter_override = r.read_flag()?;
         if deblocking_filter_override {
             deblocking_filter_disabled = r.read_flag()?;

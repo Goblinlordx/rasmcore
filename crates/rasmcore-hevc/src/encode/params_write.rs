@@ -20,7 +20,11 @@ fn write_profile_tier_level(w: &mut BitstreamWriter, ptl: &ProfileTierLevel, max
     w.write_flag(ptl.general_tier_flag);
     w.write_bits(ptl.general_profile_idc as u32, 5);
 
-    // general_profile_compatibility_flags — 32 individual flag bits
+    // general_profile_compatibility_flags — 32 individual flag bits.
+    // HEVC spec writes flag[j] for j=0..31 in order. Flag[j] at bit j means
+    // the j-th profile is compatible. Both our encoder and decoder store
+    // flag[j] in bit j of the u32 (LSB=flag[0]).
+    // The bitstream writes flag[0] first (MSB of first byte).
     for i in 0..32 {
         w.write_flag((ptl.general_profile_compatibility_flags >> i) & 1 != 0);
     }
