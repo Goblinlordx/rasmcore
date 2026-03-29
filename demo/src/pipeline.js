@@ -21,6 +21,23 @@ try {
   throw e;
 }
 
+// ─── Auto-Discover Export Formats ───────────────────────────────────────────
+
+try {
+  const writeFormats = sdk.pipeline.supportedWriteFormats();
+  const formatSelect = document.getElementById('export-format');
+  if (writeFormats && writeFormats.length > 0) {
+    formatSelect.innerHTML = '';
+    for (const fmt of writeFormats) {
+      const opt = document.createElement('option');
+      opt.value = fmt; opt.textContent = fmt.toUpperCase();
+      formatSelect.appendChild(opt);
+    }
+  }
+} catch (e) {
+  console.warn('Could not auto-discover write formats:', e.message);
+}
+
 // ─── Operation Metadata (auto-loaded from generated manifest) ───────────────
 
 // Convert manifest snake_case names to Pipeline camelCase method names
@@ -184,13 +201,16 @@ let chain = [];
 let nextId = 0;
 let editingNodeId = null; // Currently editing node (null = none)
 let dragSrcIdx = null; // Drag source index
+let showingOriginal = false; // Before/after toggle state
 
 const chainEl = document.getElementById('chain');
 const dropHint = document.getElementById('drop-hint');
 const previewCanvas = document.getElementById('preview-canvas');
+const originalCanvas = document.getElementById('original-canvas');
 const previewInfo = document.getElementById('preview-info');
 const totalTimeEl = document.getElementById('total-time');
 const fileInput = document.getElementById('file-input');
+const compareBtn = document.getElementById('compare-btn');
 
 // ─── Image Loading ──────────────────────────────────────────────────────────
 
@@ -225,6 +245,21 @@ async function loadFile(file) {
     previewInfo.textContent = `${file.name} | ${(imageBytes.length/1024).toFixed(0)}KB`;
   }
 
+  // Render original for before/after comparison
+  try {
+    const blob = new Blob([imageBytes], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      originalCanvas.width = img.width;
+      originalCanvas.height = img.height;
+      originalCanvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  } catch (_) {}
+
+  compareBtn.style.display = 'inline-block';
   dropHint.style.display = 'block';
   applyFullChain();
 }
@@ -529,6 +564,16 @@ function applyFullChain() {
     console.error(e);
   }
 }
+
+// ─── Before/After Comparison ────────────────────────────────────────────────
+
+compareBtn.addEventListener('click', () => {
+  showingOriginal = !showingOriginal;
+  previewCanvas.style.display = showingOriginal ? 'none' : 'block';
+  originalCanvas.style.display = showingOriginal ? 'block' : 'none';
+  compareBtn.textContent = showingOriginal ? 'Show Result' : 'Before/After';
+  compareBtn.style.background = showingOriginal ? '#8b5cf6' : '#333';
+});
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 

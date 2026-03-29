@@ -108,7 +108,11 @@
 
     <div class="preview">
       <canvas id="preview-canvas"></canvas>
-      <div class="preview-info" id="preview-info">Drop an image to start</div>
+      <canvas id="original-canvas" style="display:none"></canvas>
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <div class="preview-info" id="preview-info">Drop an image to start</div>
+        <button id="compare-btn" class="sm" style="background:#333;display:none">Before/After</button>
+      </div>
       <div id="total-time"></div>
     </div>
   </div>
