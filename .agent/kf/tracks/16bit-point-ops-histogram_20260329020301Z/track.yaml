@@ -108,21 +108,21 @@ plan:
 - phase: 16-Bit Histogram
   tasks:
   - text: Define Histogram16 type and implement histogram_u16() for Rgb16/Rgba16/Gray16
-    done: false
+    done: true
   - text: Implement equalize_lut_u16() and equalize() auto-dispatch for 16-bit
-    done: false
+    done: true
   - text: Implement stretch_lut_u16() and normalize/auto_level/contrast_stretch for 16-bit
-    done: false
+    done: true
   - text: Implement statistics_u16() (min, max, mean, stddev at 16-bit)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Compare 16-bit equalize output against ImageMagick (expect MAE<1.0 at 8-bit downscale)
-    done: false
+    done: true
   - text: Compare 16-bit normalize output against ImageMagick (expect MAE<1.0)
-    done: false
+    done: true
   - text: Test LUT fusion correctness (fused matches sequential for 16-bit)
-    done: false
+    done: true
   - text: Verify all existing 8-bit tests still pass (auto-dispatch does not regress)
-    done: false
+    done: true
 extra: {}
