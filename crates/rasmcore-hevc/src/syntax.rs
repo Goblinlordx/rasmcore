@@ -1002,24 +1002,6 @@ fn decode_residual_coeffs(
         }
     }
 
-    #[cfg(feature = "trace")]
-    {
-        let non_zero: Vec<_> = coeffs
-            .iter()
-            .enumerate()
-            .filter(|&(_, &c)| c != 0)
-            .map(|(i, &c)| (i % size as usize, i / size as usize, c))
-            .collect();
-        if !non_zero.is_empty() {
-            eprintln!(
-                "  COEFFS: size={}, non_zero={}: {:?}",
-                size,
-                non_zero.len(),
-                &non_zero[..non_zero.len().min(10)]
-            );
-        }
-    }
-
     Ok(coeffs)
 }
 

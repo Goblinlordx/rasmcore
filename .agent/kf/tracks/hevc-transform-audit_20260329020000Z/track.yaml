@@ -34,32 +34,31 @@ spec:
     \     against libde265 v1.0.18 transform.cc fallback implementation\n  c) Intermediate precision — HEVC spec uses i32\
     \ for dequantized coefficients\n     throughout the transform; check for i16 truncation anywhere in the chain\n\nPhase\
     \ 3 — Validation:\n  Run all 9 parity tests. Gradient and checker must reach 25dB+."
-plan: []
-extra: {}
 plan:
-  - phase: Coefficient Tracing
-    tasks:
-      - text: "Add debug dump of dequantized 32x32 coefficient grid for CTU(0,0) of gradient_128x128_q22"
-        done: false
-      - text: "Extract libde265 dequantized coefficients for the same CTU from trace output"
-        done: false
-      - text: "Compare coefficient positions and values — identify first divergence"
-        done: false
-  - phase: Fix Identified Issues
-    tasks:
-      - text: "Fix coefficient positioning if scan-order-to-grid mapping is wrong"
-        done: false
-      - text: "Fix IDCT matrix coefficients if any differ from libde265 v1.0.18 transform.cc"
-        done: false
-      - text: "Fix any intermediate precision (i16 truncation) issues found"
-        done: false
-      - text: "Add post-IDCT spatial residual dump and compare against reference"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat 48.1dB"
-        done: false
-      - text: "All fixes cited with libde265 v1.0.18 source locations"
-        done: false
-      - text: "clippy clean, fmt clean, cargo test passes"
-        done: false
+- phase: Coefficient Tracing
+  tasks:
+  - text: Add debug dump of dequantized 32x32 coefficient grid for CTU(0,0) of gradient_128x128_q22
+    done: true
+  - text: Extract libde265 dequantized coefficients for the same CTU from trace output
+    done: true
+  - text: Compare coefficient positions and values — identify first divergence
+    done: true
+- phase: Fix Identified Issues
+  tasks:
+  - text: Fix coefficient positioning if scan-order-to-grid mapping is wrong
+    done: true
+  - text: Fix IDCT matrix coefficients if any differ from libde265 v1.0.18 transform.cc
+    done: true
+  - text: Fix any intermediate precision (i16 truncation) issues found
+    done: true
+  - text: Add post-IDCT spatial residual dump and compare against reference
+    done: true
+- phase: Validation
+  tasks:
+  - text: Run all 9 parity tests — gradient > 25dB, checker > 25dB, flat 48.1dB
+    done: true
+  - text: All fixes cited with libde265 v1.0.18 source locations
+    done: true
+  - text: clippy clean, fmt clean, cargo test passes
+    done: true
+extra: {}

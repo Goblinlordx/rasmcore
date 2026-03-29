@@ -75,6 +75,7 @@ pub fn inverse_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
 }
 
 /// Forward 32x32 DCT: spatial → frequency domain.
+#[allow(dead_code)]
 pub fn forward_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
     let mut tmp = [0i32; 1024];
 

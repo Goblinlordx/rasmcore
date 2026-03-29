@@ -431,18 +431,6 @@ fn reconstruct_cu(
                 None, // No custom scaling list
                 0,    // Default matrix ID
             )?;
-            #[cfg(feature = "trace")]
-            if cu.x == 0 && cu.y == 0 {
-                eprintln!(
-                    "  RESIDUAL CTU(0,0): first 16 values: {:?}",
-                    &residual_buf[..16]
-                );
-                eprintln!(
-                    "  RESIDUAL CTU(0,0): row0 cols 0,1,2,3,31: [{},{},{},{},{}]",
-                    residual_buf[0], residual_buf[1], residual_buf[2],
-                    residual_buf[3], residual_buf[31]
-                );
-            }
             residual_buf
         } else {
             vec![0i16; size * size]
