@@ -211,12 +211,15 @@ pub fn trellis_quantize_block(
         }
     }
 
-    // Clear output
+    // Clear output (raster order)
     if coeff_type == 0 {
-        // TYPE_I16_AC: preserve position 0
+        // TYPE_I16_AC: preserve DC at position 0
         for i in 1..16 {
             coeffs_in[KZIGZAG[i]] = 0;
-            coeffs_out[i] = 0;
+        }
+        // Clear all raster positions except 0 for output
+        for j in 1..16 {
+            coeffs_out[j] = 0;
         }
     } else {
         *coeffs_in = [0i16; 16];
@@ -238,11 +241,12 @@ pub fn trellis_quantize_block(
     loop {
         let node = &nodes[n][best_node];
         let j = KZIGZAG[n];
-        coeffs_out[n] = if node.sign != 0 { -node.level } else { node.level };
+        let signed_level = if node.sign != 0 { -node.level } else { node.level };
+        coeffs_out[j] = signed_level; // store in raster order (matching quant/dequant)
         if node.level != 0 {
             nz = true;
         }
-        coeffs_in[j] = coeffs_out[n] * matrix.q[j] as i16; // dequantize for reconstruction
+        coeffs_in[j] = signed_level * matrix.q[j] as i16; // dequantize for reconstruction
         best_node = node.prev as usize;
         if n == first {
             break;

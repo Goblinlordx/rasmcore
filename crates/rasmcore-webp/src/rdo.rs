@@ -135,10 +135,13 @@ pub fn vp8_level_fixed_cost(level: usize) -> u16 {
     if level <= 67 {
         return 0; // handled by LevelCostTable
     }
-    // Approximate: extra bits cost ~10 bits per doubling of level
-    // The exact table has values from 2816 (level 256) to 7761 (level 2047)
-    let extra_bits = 16 - (level as u32).leading_zeros();
-    (extra_bits * 256) as u16
+    // Approximate: extra bits cost for levels above MAX_VARIABLE_LEVEL.
+    // The exact libwebp VP8LevelFixedCosts table has values from ~1700 (level 68)
+    // to ~7761 (level 2047). We approximate using bit length.
+    let bit_len = 32 - (level as u32).leading_zeros(); // 7..11 for 68..2047
+    // Each extra bit above the base cost adds ~256 units (1 bit in 256-scale)
+    // Base: level 68 costs ~1700 (about 6.6 bits)
+    (bit_len.saturating_mul(256)) as u16
 }
 
 /// Cost of encoding a boolean — approximate version for backward compat.

@@ -7,7 +7,9 @@
 
 use crate::block::{self, MacroblockInfo};
 use crate::boolcoder::BoolWriter;
+use crate::cost_engine::{self, LevelCostTable};
 use crate::dct;
+use crate::decimate;
 use crate::filter;
 use crate::predict;
 use crate::quant::{self, SegmentQuant};
@@ -55,43 +57,34 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let mut recon_u = vec![128u8; uv_pad_w * uv_pad_h];
     let mut recon_v = vec![128u8; uv_pad_w * uv_pad_h];
 
+    // Precompute cost table once per frame (depends only on fixed probability tables)
+    let probs = cost_engine::reshape_probs();
+    let cost_table = LevelCostTable::compute(&probs);
+
     // Complexity context tracking (matches decoder's top[]/left[] arrays)
     // 9 entries per MB: [0]=Y2, [1..5]=Y cols, [5..7]=U cols, [7..9]=V cols
     let mut top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
     let mut left_ctx: [u8; 9] = [0u8; 9];
 
+    // B_PRED mode context tracking for VP8Decimate I4 evaluation
+    let mut top_bmode_enc: Vec<[u8; 4]> = vec![[0u8; 4]; mb_w as usize];
+    let mut left_bmode_enc: [u8; 4] = [0u8; 4];
+
     for mb_row in 0..mb_h as usize {
         left_ctx = [0u8; 9]; // reset left context at start of each row
+        left_bmode_enc = [0u8; 4];
         for mb_col in 0..mb_w as usize {
             let seg_id = seg_map.get(mb_col, mb_row);
             let seg_quant = seg_map.quant(seg_id);
-            // Derive RDO lambda from segment QP
+            // Derive segment QP and lambdas
             let seg_qp = (params.qp_y as i16 + seg_map.qp_deltas[seg_id as usize] as i16)
                 .clamp(0, 127) as u8;
-            let lambda = crate::rdo::lambda_from_qp(seg_qp);
+            let lambdas = rdo::compute_segment_lambdas(seg_qp);
 
             let mut mb = encode_macroblock(
                 &y_padded,
                 &u_padded,
                 &v_padded,
-                &recon_y,
-                &recon_u,
-                &recon_v,
-                padded_w,
-                uv_pad_w,
-                mb_col,
-                mb_row,
-                seg_quant,
-                lambda,
-                &mut token_writer,
-                &mut top_ctx[mb_col],
-                &mut left_ctx,
-            );
-            mb.segment = seg_id;
-            mb_infos.push(mb);
-
-            // Update reconstructed planes (for next macroblock's prediction)
-            reconstruct_macroblock(
                 &mut recon_y,
                 &mut recon_u,
                 &mut recon_v,
@@ -99,12 +92,35 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
                 uv_pad_w,
                 mb_col,
                 mb_row,
-                &y_padded,
-                &u_padded,
-                &v_padded,
                 seg_quant,
-                mb_infos.last().unwrap(),
+                &lambdas,
+                &cost_table,
+                &mut token_writer,
+                &mut top_ctx[mb_col],
+                &mut left_ctx,
+                &top_bmode_enc[mb_col],
+                &left_bmode_enc,
             );
+
+            // Update B_PRED mode context
+            if mb.y_mode == 4 {
+                for col in 0..4 {
+                    top_bmode_enc[mb_col][col] = mb.b_modes[12 + col];
+                }
+                for row in 0..4 {
+                    left_bmode_enc[row] = mb.b_modes[row * 4 + 3];
+                }
+            } else {
+                let ctx_mode = match mb.y_mode {
+                    1 => 2, 2 => 3, 3 => 1, _ => 0,
+                };
+                top_bmode_enc[mb_col] = [ctx_mode; 4];
+                left_bmode_enc = [ctx_mode; 4];
+            }
+            mb.segment = seg_id;
+            mb_infos.push(mb);
+            // Reconstruction is now done inside encode_macroblock using the
+            // same trellis-quantized coefficients that were written to the token stream.
         }
 
         // Apply loop filter to this MB row after all MBs in the row are
@@ -537,289 +553,37 @@ fn encode_intra_uv_mode(bw: &mut BoolWriter, mode: u8) {
     }
 }
 
-/// Encode a single macroblock: choose prediction, compute residual, DCT, quantize + RDO prune.
+/// Encode a single macroblock using VP8Decimate pipeline (libwebp-exact).
+/// Also writes reconstructed pixels to recon planes for prediction reference.
 fn encode_macroblock(
     y_plane: &[u8],
     u_plane: &[u8],
     v_plane: &[u8],
-    recon_y: &[u8],
-    recon_u: &[u8],
-    recon_v: &[u8],
+    recon_y: &mut [u8],
+    recon_u: &mut [u8],
+    recon_v: &mut [u8],
     y_stride: usize,
     uv_stride: usize,
     mb_col: usize,
     mb_row: usize,
     seg_quant: &SegmentQuant,
-    lambda: f64,
+    lambdas: &rdo::VP8SegmentLambdas,
+    cost_table: &LevelCostTable,
     token_bw: &mut BoolWriter,
     top_ctx: &mut [u8; 9],
     left_ctx: &mut [u8; 9],
+    top_bmode_ctx: &[u8; 4],
+    left_bmode_ctx: &[u8; 4],
 ) -> MacroblockInfo {
     let y_off = mb_row * 16 * y_stride + mb_col * 16;
     let uv_off = mb_row * 8 * uv_stride + mb_col * 8;
 
-    // Extract 16×16 luma block from source
+    // Extract source blocks
     let mut y_block = [0u8; 256];
     for r in 0..16 {
         y_block[r * 16..r * 16 + 16]
             .copy_from_slice(&y_plane[y_off + r * y_stride..y_off + r * y_stride + 16]);
     }
-
-    // Get prediction neighbors from reconstructed frame
-    let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
-
-    // ─── I16x16 mode evaluation (RD cost) ────────────────────────────────
-    let (i16_mode, _) = predict::select_best_16x16_rd(
-        &y_block,
-        &above_y,
-        &left_y,
-        above_left_y,
-        mb_row > 0,
-        mb_col > 0,
-        &seg_quant.y_ac,
-        lambda,
-    );
-
-    let mut i16_pred = [0u8; 256];
-    predict::predict_16x16(
-        i16_mode,
-        &above_y,
-        &left_y,
-        above_left_y,
-        mb_row > 0,
-        mb_col > 0,
-        &mut i16_pred,
-    );
-
-    // ─── B_PRED mode evaluation with sequential reconstruction ──────────
-    // Each sub-block's mode is selected using RD cost, and the reconstruction
-    // is written to a scratch buffer so subsequent sub-blocks use correct neighbors.
-    let mut b_modes = [0u8; 16];
-    let mut bpred_preds = [[0u8; 16]; 16];
-
-    // Copy current recon_y region into scratch buffer for sequential updates
-    let mut scratch_y = recon_y.to_vec();
-
-    for sb in 0..16 {
-        let sb_row = sb / 4;
-        let sb_col = sb % 4;
-
-        let mut src_4x4 = [0u8; 16];
-        for r in 0..4 {
-            for c in 0..4 {
-                src_4x4[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-            }
-        }
-
-        // Get neighbors from scratch buffer (has reconstructed previous sub-blocks)
-        let (above_4, left_4, al, ar) =
-            get_4x4_neighbors(&scratch_y, y_stride, mb_col, mb_row, sb_row, sb_col);
-
-        // RD mode selection: try top SATD candidates with full encode trial
-        let mode = predict::select_best_4x4_rd(
-            &src_4x4,
-            &above_4,
-            &left_4,
-            al,
-            &ar,
-            &seg_quant.y_dc,
-            lambda,
-        );
-        b_modes[sb] = mode as u8;
-
-        let mut pred = [0u8; 16];
-        predict::predict_4x4(mode, &above_4, &left_4, al, &ar, &mut pred);
-        bpred_preds[sb] = pred;
-
-        // Reconstruct this sub-block into scratch buffer for next sub-block's neighbors
-        let mut coeffs = [0i16; 16];
-        dct::forward_dct(&src_4x4, &pred, &mut coeffs);
-        let mut quantized = [0i16; 16];
-        quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut quantized);
-        let mut dequant_tmp = [0i16; 16];
-        quant::dequantize_block(&quantized, &seg_quant.y_dc, &mut dequant_tmp);
-        let mut recon_block = [0u8; 16];
-        dct::inverse_dct(&dequant_tmp, &pred, &mut recon_block);
-
-        for r in 0..4 {
-            for c in 0..4 {
-                let row = mb_row * 16 + sb_row * 4 + r;
-                let col = mb_col * 16 + sb_col * 4 + c;
-                scratch_y[row * y_stride + col] = recon_block[r * 4 + c];
-            }
-        }
-    }
-
-    // ─── Mode decision: full RD cost comparison ─────────────────────────
-    // Trial-encode both B_PRED and I16x16 paths, compute reconstruction-based
-    // RD cost, and pick whichever has lower cost.
-
-    // B_PRED RD: DCT→quant→RDO→bits + dequant→IDCT→SSD
-    let mut bpred_ssd: u64 = 0;
-    let mut bpred_bits: u32 = rdo::mode_header_cost_16x16(4); // B_PRED MB header
-    for sb in 0..16 {
-        let sb_row = sb / 4;
-        let sb_col = sb % 4;
-        let mut src_4x4 = [0u8; 16];
-        for r in 0..4 {
-            for c in 0..4 {
-                src_4x4[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-            }
-        }
-        // Mode header cost for this sub-block's 4x4 mode
-        bpred_bits += rdo::mode_header_cost_4x4(b_modes[sb]);
-
-        // Forward DCT + quantize + RDO prune
-        let mut coeffs = [0i16; 16];
-        dct::forward_dct(&src_4x4, &bpred_preds[sb], &mut coeffs);
-        let mut quantized = [0i16; 16];
-        quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut quantized);
-        rdo::rdo_prune_block(&mut quantized, &coeffs, &seg_quant.y_dc, 3, lambda);
-
-        // Estimate encoding cost (block_type 3 = Y-with-DC for B_PRED)
-        bpred_bits += rdo::estimate_block_bits(&quantized, 3);
-
-        // Reconstruct to measure SSD
-        let mut dequant = [0i16; 16];
-        quant::dequantize_block(&quantized, &seg_quant.y_dc, &mut dequant);
-        let mut recon_block = [0u8; 16];
-        dct::inverse_dct(&dequant, &bpred_preds[sb], &mut recon_block);
-
-        for i in 0..16 {
-            let d = src_4x4[i] as i32 - recon_block[i] as i32;
-            bpred_ssd += (d * d) as u64;
-        }
-    }
-    let bpred_rd = rdo::rd_cost(bpred_ssd, bpred_bits, lambda);
-
-    // I16x16 RD: same trial encode approach for fair comparison
-    let mut i16_ssd: u64 = 0;
-    let mut i16_bits: u32 = rdo::mode_header_cost_16x16(i16_mode as u8);
-    let mut i16_trial_ac = [[0i16; 16]; 16];
-    let mut i16_dc_coeffs = [0i16; 16];
-    for sb in 0..16 {
-        let sb_row = sb / 4;
-        let sb_col = sb % 4;
-        let mut src_4x4 = [0u8; 16];
-        let mut ref_4x4 = [0u8; 16];
-        for r in 0..4 {
-            for c in 0..4 {
-                src_4x4[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-                ref_4x4[r * 4 + c] = i16_pred[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-            }
-        }
-        let mut coeffs = [0i16; 16];
-        dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
-        i16_dc_coeffs[sb] = coeffs[0];
-        let mut quantized = [0i16; 16];
-        quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
-        rdo::rdo_prune_block(&mut quantized, &coeffs, &seg_quant.y_ac, 0, lambda);
-        quantized[0] = 0; // DC goes to Y2
-        i16_trial_ac[sb] = quantized;
-        i16_bits += rdo::estimate_block_bits(&quantized, 0);
-    }
-    // Y2 block (WHT of DC coefficients)
-    let mut y2_trial = [0i16; 16];
-    dct::forward_wht(&i16_dc_coeffs, &mut y2_trial);
-    let mut y2_trial_q = [0i16; 16];
-    quant::quantize_block(&y2_trial, &seg_quant.y2_dc, &mut y2_trial_q);
-    rdo::rdo_prune_block(&mut y2_trial_q, &y2_trial, &seg_quant.y2_dc, 1, lambda);
-    i16_bits += rdo::estimate_block_bits(&y2_trial_q, 1);
-
-    // Reconstruct I16x16 to measure SSD
-    let mut y2_dequant_trial = [0i16; 16];
-    quant::dequantize_block(&y2_trial_q, &seg_quant.y2_dc, &mut y2_dequant_trial);
-    let mut recon_dc_trial = [0i16; 16];
-    dct::inverse_wht(&y2_dequant_trial, &mut recon_dc_trial);
-    for sb in 0..16 {
-        let sb_row = sb / 4;
-        let sb_col = sb % 4;
-        let mut dequant = [0i16; 16];
-        quant::dequantize_block(&i16_trial_ac[sb], &seg_quant.y_ac, &mut dequant);
-        dequant[0] = recon_dc_trial[sb];
-        let mut ref_4x4 = [0u8; 16];
-        for r in 0..4 {
-            for c in 0..4 {
-                ref_4x4[r * 4 + c] = i16_pred[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-            }
-        }
-        let mut recon_block = [0u8; 16];
-        dct::inverse_dct(&dequant, &ref_4x4, &mut recon_block);
-        for r in 0..4 {
-            for c in 0..4 {
-                let orig = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c] as i32;
-                let rec = recon_block[r * 4 + c] as i32;
-                i16_ssd += ((orig - rec) * (orig - rec)) as u64;
-            }
-        }
-    }
-    let i16_rd = rdo::rd_cost(i16_ssd, i16_bits, lambda);
-
-    // libwebp-style mode decision: B_PRED must beat I16x16.
-    // In libwebp, PickBestIntra4 initializes rd_best with H=211 (VP8BitCost(0,145))
-    // and compares cumulative I4 cost against the I16 score. The i4_penalty
-    // (1000 * q_i4^2) is implicitly included via the mode_costs.
-    let use_bpred = bpred_rd < i16_rd;
-    let final_y_mode: u8 = if use_bpred { 4 } else { i16_mode as u8 };
-
-    // ─── Coefficient encoding ───────────────────────────────────────────
-    let mut y_coeffs = [[0i16; 16]; 16];
-    let mut y2_quantized = [0i16; 16];
-
-    if use_bpred {
-        // B_PRED: each block encodes all 16 coefficients (DC at pos 0, no Y2)
-        for sb in 0..16 {
-            let sb_row = sb / 4;
-            let sb_col = sb % 4;
-            let mut src_block = [0u8; 16];
-            for r in 0..4 {
-                for c in 0..4 {
-                    src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-                }
-            }
-            let mut coeffs = [0i16; 16];
-            dct::forward_dct(&src_block, &bpred_preds[sb], &mut coeffs);
-            // B_PRED: DC at pos 0 uses y_dc quantizer (DC_TABLE), AC uses AC_TABLE
-            quant::quantize_block(&coeffs, &seg_quant.y_dc, &mut y_coeffs[sb]);
-            // RDO: prune costly coefficients (block_type 3 = Y-with-DC for B_PRED)
-            crate::rdo::rdo_prune_block(&mut y_coeffs[sb], &coeffs, &seg_quant.y_dc, 3, lambda);
-        }
-        // No Y2 block for B_PRED
-    } else {
-        // I16x16: DC goes to Y2 block
-        let mut y_dc_coeffs = [0i16; 16];
-        for sb in 0..16 {
-            let sb_row = sb / 4;
-            let sb_col = sb % 4;
-            let mut src_block = [0u8; 16];
-            let mut ref_block = [0u8; 16];
-            for r in 0..4 {
-                for c in 0..4 {
-                    src_block[r * 4 + c] = y_block[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-                    ref_block[r * 4 + c] = i16_pred[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
-                }
-            }
-            let mut coeffs = [0i16; 16];
-            dct::forward_dct(&src_block, &ref_block, &mut coeffs);
-            y_dc_coeffs[sb] = coeffs[0];
-            let mut quantized = [0i16; 16];
-            quant::quantize_block(&coeffs, &seg_quant.y_ac, &mut quantized);
-            // RDO: prune costly AC coefficients (block_type 0 = Y-AC after Y2)
-            crate::rdo::rdo_prune_block(&mut quantized, &coeffs, &seg_quant.y_ac, 0, lambda);
-            quantized[0] = 0; // DC goes to Y2
-            y_coeffs[sb] = quantized;
-        }
-        let mut y2_coeffs = [0i16; 16];
-        dct::forward_wht(&y_dc_coeffs, &mut y2_coeffs);
-        quant::quantize_block(&y2_coeffs, &seg_quant.y2_dc, &mut y2_quantized);
-        // RDO: prune costly Y2 coefficients (block_type 1 = Y2)
-        crate::rdo::rdo_prune_block(&mut y2_quantized, &y2_coeffs, &seg_quant.y2_dc, 1, lambda);
-    }
-
-    // ─── Chroma (same for both modes) ───────────────────────────────────
-    let (above_u, left_u, above_left_u) = get_uv_neighbors(recon_u, uv_stride, mb_col, mb_row);
-    let (above_v, left_v, above_left_v) = get_uv_neighbors(recon_v, uv_stride, mb_col, mb_row);
-
     let mut u_block = [0u8; 64];
     let mut v_block = [0u8; 64];
     for r in 0..8 {
@@ -829,70 +593,44 @@ fn encode_macroblock(
             .copy_from_slice(&v_plane[uv_off + r * uv_stride..uv_off + r * uv_stride + 8]);
     }
 
-    let uv_mode = predict::select_best_8x8(
-        &u_block,
-        &above_u,
-        &left_u,
-        above_left_u,
-        mb_row > 0,
-        mb_col > 0,
-    );
+    // Get prediction neighbors from reconstructed frame
+    let (above_y, left_y, above_left_y) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
+    let (above_u, left_u, above_left_u) = get_uv_neighbors(recon_u, uv_stride, mb_col, mb_row);
+    let (above_v, left_v, above_left_v) = get_uv_neighbors(recon_v, uv_stride, mb_col, mb_row);
 
-    let mut pred_u = [0u8; 64];
-    let mut pred_v = [0u8; 64];
-    predict::predict_8x8(
-        uv_mode,
-        &above_u,
-        &left_u,
-        above_left_u,
-        mb_row > 0,
-        mb_col > 0,
-        &mut pred_u,
-    );
-    predict::predict_8x8(
-        uv_mode,
-        &above_v,
-        &left_v,
-        above_left_v,
-        mb_row > 0,
-        mb_col > 0,
-        &mut pred_v,
-    );
-
-    let mut uv_quantized = [[0i16; 16]; 8];
-    let mut uv_idx = 0;
-    for (plane_block, pred_block) in [(&u_block, &pred_u), (&v_block, &pred_v)] {
-        for sb in 0..4 {
-            let sb_row = sb / 2;
-            let sb_col = sb % 2;
-            let mut src_4x4 = [0u8; 16];
-            let mut ref_4x4 = [0u8; 16];
-            for r in 0..4 {
-                for c in 0..4 {
-                    src_4x4[r * 4 + c] = plane_block[(sb_row * 4 + r) * 8 + sb_col * 4 + c];
-                    ref_4x4[r * 4 + c] = pred_block[(sb_row * 4 + r) * 8 + sb_col * 4 + c];
-                }
+    // Build above_y_full: 16 above pixels + 4 extra for diagonal I4 modes
+    let mut above_y_full = [127u8; 20];
+    above_y_full[..16].copy_from_slice(&above_y);
+    if mb_row > 0 {
+        let above_row = mb_row * 16 - 1;
+        let right_start = mb_col * 16 + 16;
+        if right_start + 4 <= y_stride {
+            for i in 0..4 {
+                above_y_full[16 + i] = recon_y[above_row * y_stride + right_start + i];
             }
-            let mut coeffs = [0i16; 16];
-            dct::forward_dct(&src_4x4, &ref_4x4, &mut coeffs);
-            quant::quantize_block(&coeffs, &seg_quant.uv_ac, &mut uv_quantized[uv_idx]);
-            // RDO: prune costly UV coefficients (block_type 2 = UV)
-            crate::rdo::rdo_prune_block(
-                &mut uv_quantized[uv_idx],
-                &coeffs,
-                &seg_quant.uv_ac,
-                2,
-                lambda,
-            );
-            uv_idx += 1;
+        } else {
+            above_y_full[16..20].fill(above_y[15]);
         }
     }
 
-    let all_zero = y2_quantized.iter().all(|&c| c == 0)
-        && y_coeffs.iter().all(|block| block.iter().all(|&c| c == 0))
-        && uv_quantized
-            .iter()
-            .all(|block| block.iter().all(|&c| c == 0));
+    // ─── VP8Decimate: libwebp-exact mode selection ──────────────────────
+    let result = decimate::vp8_decimate(
+        &y_block, &u_block, &v_block,
+        &above_y, &left_y, above_left_y,
+        &above_u, &above_v, &left_u, &left_v, above_left_u, above_left_v,
+        seg_quant, lambdas, cost_table,
+        &above_y_full, top_bmode_ctx, left_bmode_ctx,
+    );
+
+    // Map DecimateResult to token encoder's expected format
+    let use_bpred = result.is_i4;
+    let final_y_mode: u8 = if use_bpred { 4 } else { result.rd.mode_i16 as u8 };
+    let b_modes = result.rd.modes_i4;
+    let y_coeffs = result.rd.y_ac_levels;
+    let y2_quantized = result.rd.y_dc_levels;
+    let uv_quantized = result.rd.uv_levels;
+    let uv_mode = result.rd.mode_uv as u8;
+    let all_zero = result.is_skipped;
 
     // ─── Token encoding ─────────────────────────────────────────────────
     if all_zero {
@@ -971,12 +709,129 @@ fn encode_macroblock(
         }
     }
 
+    // ─── Reconstruction: write to recon planes using the SAME coefficients ─
+    // This ensures the prediction reference matches what the decoder will produce.
+    if use_bpred {
+        // B_PRED: sequential 4x4 reconstruction
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
+            let (above_4, left_4, al, ar) =
+                get_4x4_neighbors(recon_y, y_stride, mb_col, mb_row, sb_row, sb_col);
+            let mode = predict::Intra4Mode::from_u8(b_modes[sb]);
+            let mut pred = [0u8; 16];
+            predict::predict_4x4(mode, &above_4, &left_4, al, &ar, &mut pred);
+
+            // Dequantize the trellis-quantized coefficients
+            let mut dequant_coeff = [0i16; 16];
+            quant::dequantize_block(&y_coeffs[sb], &seg_quant.y_dc, &mut dequant_coeff);
+            let mut recon_block = [0u8; 16];
+            dct::inverse_dct(&dequant_coeff, &pred, &mut recon_block);
+
+            for r in 0..4 {
+                for c in 0..4 {
+                    let row = mb_row * 16 + sb_row * 4 + r;
+                    let col = mb_col * 16 + sb_col * 4 + c;
+                    recon_y[row * y_stride + col] = recon_block[r * 4 + c];
+                }
+            }
+        }
+    } else {
+        // I16x16: predict → dequantize Y2 → IWHT → dequantize AC + insert DC → IDCT
+        let (above_y_r, left_y_r, al_y_r) = get_y_neighbors(recon_y, y_stride, mb_col, mb_row);
+        let y_mode_enum = match final_y_mode {
+            0 => predict::Intra16Mode::DC,
+            1 => predict::Intra16Mode::V,
+            2 => predict::Intra16Mode::H,
+            _ => predict::Intra16Mode::TM,
+        };
+        let mut pred_y = [0u8; 256];
+        predict::predict_16x16(y_mode_enum, &above_y_r, &left_y_r, al_y_r,
+            mb_row > 0, mb_col > 0, &mut pred_y);
+
+        // Dequantize Y2 (DC) and inverse WHT
+        let mut y2_dequant = [0i16; 16];
+        quant::dequantize_block(&y2_quantized, &seg_quant.y2_dc, &mut y2_dequant);
+        let mut recon_dc = [0i16; 16];
+        dct::inverse_wht(&y2_dequant, &mut recon_dc);
+
+        for sb in 0..16 {
+            let sb_row = sb / 4;
+            let sb_col = sb % 4;
+            // Dequantize AC with the trellis-quantized levels
+            let mut dequant_coeff = [0i16; 16];
+            quant::dequantize_block(&y_coeffs[sb], &seg_quant.y_ac, &mut dequant_coeff);
+            dequant_coeff[0] = recon_dc[sb]; // Insert reconstructed DC
+            let mut ref_block = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    ref_block[r * 4 + c] = pred_y[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            let mut recon_block = [0u8; 16];
+            dct::inverse_dct(&dequant_coeff, &ref_block, &mut recon_block);
+            for r in 0..4 {
+                for c in 0..4 {
+                    let row = mb_row * 16 + sb_row * 4 + r;
+                    let col = mb_col * 16 + sb_col * 4 + c;
+                    recon_y[row * y_stride + col] = recon_block[r * 4 + c];
+                }
+            }
+        }
+    }
+
+    // Chroma reconstruction
+    {
+        let (above_u_r, left_u_r, al_u_r) = get_uv_neighbors(recon_u, uv_stride, mb_col, mb_row);
+        let (above_v_r, left_v_r, al_v_r) = get_uv_neighbors(recon_v, uv_stride, mb_col, mb_row);
+        let uv_mode_enum = match uv_mode {
+            0 => predict::ChromaMode::DC,
+            1 => predict::ChromaMode::V,
+            2 => predict::ChromaMode::H,
+            _ => predict::ChromaMode::TM,
+        };
+        let mut pred_u_r = [0u8; 64];
+        let mut pred_v_r = [0u8; 64];
+        predict::predict_8x8(uv_mode_enum, &above_u_r, &left_u_r, al_u_r,
+            mb_row > 0, mb_col > 0, &mut pred_u_r);
+        predict::predict_8x8(uv_mode_enum, &above_v_r, &left_v_r, al_v_r,
+            mb_row > 0, mb_col > 0, &mut pred_v_r);
+
+        for (ch, (pred_plane, recon_plane)) in [
+            (&pred_u_r, &mut *recon_u as &mut [u8]),
+            (&pred_v_r, &mut *recon_v as &mut [u8]),
+        ].into_iter().enumerate() {
+            for sb in 0..4 {
+                let sb_row = sb / 2;
+                let sb_col = sb % 2;
+                let block_idx = ch * 4 + sb;
+                let mut dequant_coeff = [0i16; 16];
+                quant::dequantize_block(&uv_quantized[block_idx], &seg_quant.uv_ac, &mut dequant_coeff);
+                let mut ref_block = [0u8; 16];
+                for r in 0..4 {
+                    for c in 0..4 {
+                        ref_block[r * 4 + c] = pred_plane[(sb_row * 4 + r) * 8 + sb_col * 4 + c];
+                    }
+                }
+                let mut recon_block = [0u8; 16];
+                dct::inverse_dct(&dequant_coeff, &ref_block, &mut recon_block);
+                for r in 0..4 {
+                    for c in 0..4 {
+                        let row = mb_row * 8 + sb_row * 4 + r;
+                        let col = mb_col * 8 + sb_col * 4 + c;
+                        recon_plane[row * uv_stride + col] = recon_block[r * 4 + c];
+                    }
+                }
+            }
+        }
+    }
+
     MacroblockInfo {
         mb_x: mb_col as u32,
         mb_y: mb_row as u32,
         y_mode: final_y_mode,
         b_modes,
-        uv_mode: uv_mode as u8,
+        uv_mode,
         segment: 0,
         skip: all_zero,
     }
