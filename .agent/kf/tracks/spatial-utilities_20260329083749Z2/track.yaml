@@ -25,13 +25,13 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement connected component labeling (4-connectivity and 8-connectivity)
-    done: false
+    done: true
   - text: Implement flood fill with configurable tolerance and connectivity
-    done: false
+    done: true
   - text: Implement Gaussian pyramid (pyrDown/pyrUp)
-    done: false
+    done: true
   - text: Implement Laplacian pyramid construction and reconstruction
-    done: false
+    done: true
   - text: Generate OpenCV reference fixtures and parity tests
-    done: false
+    done: true
 extra: {}
