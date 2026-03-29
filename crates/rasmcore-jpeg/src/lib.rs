@@ -242,11 +242,8 @@ pub fn encode(
             h_blocks * v_blocks + 2
         };
 
-        let mcu_data = encode_blocks_with_tables(
-            &blocks,
-            config.restart_interval,
-            blocks_per_mcu,
-            || {
+        let mcu_data =
+            encode_blocks_with_tables(&blocks, config.restart_interval, blocks_per_mcu, || {
                 if is_gray {
                     entropy::InterleavedMcuEncoder::new_gray_custom(&dc_luma_len, &ac_luma_len)
                 } else {
@@ -257,8 +254,7 @@ pub fn encode(
                         &ac_chroma_len,
                     )
                 }
-            },
-        );
+            });
         let stuffed = markers::byte_stuff(&mcu_data);
         out.extend_from_slice(&stuffed);
     } else {
@@ -696,7 +692,11 @@ fn collect_frequencies(
     luma_qt: &[u16; 64],
     chroma_qt: &[u16; 64],
     use_trellis: bool,
-) -> (entropy::FrequencyCounter, entropy::FrequencyCounter, Vec<(usize, [i16; 64])>) {
+) -> (
+    entropy::FrequencyCounter,
+    entropy::FrequencyCounter,
+    Vec<(usize, [i16; 64])>,
+) {
     let (mcu_w, mcu_h) = if is_gray {
         (8u32, 8u32)
     } else {

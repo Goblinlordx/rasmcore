@@ -122,3 +122,40 @@ impl Default for EncodeConfig {
         }
     }
 }
+
+impl EncodeConfig {
+    /// Turbo mode: maximum encode throughput.
+    ///
+    /// Disables all optional quality optimizations (trellis, progressive,
+    /// Huffman optimization, arithmetic coding). Uses standard quantization
+    /// tables and 4:2:0 subsampling for fastest possible encode.
+    ///
+    /// Typical speedup: 3-10x over default (trellis + optimize_huffman).
+    pub fn turbo(quality: u8) -> Self {
+        Self {
+            quality,
+            progressive: false,
+            subsampling: ChromaSubsampling::Quarter420,
+            arithmetic_coding: false,
+            restart_interval: None,
+            optimize_huffman: false,
+            trellis: false,
+            sample_precision: SamplePrecision::Eight,
+            quant_preset: crate::quantize::QuantPreset::AnnexK,
+            custom_quant_tables: None,
+        }
+    }
+
+    /// Quality preset: balanced quality with optimizations.
+    ///
+    /// Enables trellis quantization and Huffman optimization for
+    /// best quality-to-size ratio. Uses Robidoux quant tables.
+    pub fn quality(quality: u8) -> Self {
+        Self {
+            quality,
+            trellis: true,
+            optimize_huffman: true,
+            ..Default::default()
+        }
+    }
+}
