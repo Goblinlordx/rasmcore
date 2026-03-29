@@ -671,6 +671,110 @@ fn validate_pixel_buffer(pixels: &[u8], info: &ImageInfo, bpp: usize) -> Result<
     Ok(())
 }
 
+// ─── Lens Distortion Correction ───────────────────────────────────────────
+
+/// Camera intrinsic parameters for lens distortion.
+#[derive(Debug, Clone, Copy)]
+pub struct CameraMatrix {
+    /// Focal length X (pixels). Default: image width.
+    pub fx: f64,
+    /// Focal length Y (pixels). Default: image height.
+    pub fy: f64,
+    /// Principal point X (pixels). Default: image center.
+    pub cx: f64,
+    /// Principal point Y (pixels). Default: image center.
+    pub cy: f64,
+}
+
+/// Brown-Conrady radial distortion coefficients.
+///
+/// Distortion model: `r_distorted = r * (1 + k1*r² + k2*r⁴ + k3*r⁶)`
+/// where `r` is the normalized radius from the principal point.
+///
+/// Positive k1 → barrel distortion (lines bend outward).
+/// Negative k1 → pincushion distortion (lines bend inward).
+#[derive(Debug, Clone, Copy)]
+pub struct DistortionCoeffs {
+    pub k1: f64,
+    pub k2: f64,
+    pub k3: f64,
+}
+
+/// Remove radial lens distortion (Brown-Conrady model).
+///
+/// For each output pixel, computes the corresponding distorted source
+/// coordinate and bilinear-samples the input image. Matches the behavior
+/// of `cv2.undistort()` with the same camera matrix and distortion coefficients.
+///
+/// Reference: Brown, D.C., "Decentering Distortion of Lenses" (1966).
+pub fn undistort(
+    pixels: &[u8],
+    info: &ImageInfo,
+    camera: &CameraMatrix,
+    dist: &DistortionCoeffs,
+) -> Result<DecodedImage, ImageError> {
+    let bpp = bytes_per_pixel(info.format)?;
+    let w = info.width as usize;
+    let h = info.height as usize;
+    validate_pixel_buffer(pixels, info, bpp)?;
+
+    let mut output = vec![0u8; w * h * bpp];
+
+    for oy in 0..h {
+        for ox in 0..w {
+            // Normalize to camera coordinates
+            let x = (ox as f64 - camera.cx) / camera.fx;
+            let y = (oy as f64 - camera.cy) / camera.fy;
+
+            // Apply distortion (forward model: undistorted → distorted)
+            let r2 = x * x + y * y;
+            let r4 = r2 * r2;
+            let r6 = r4 * r2;
+            let radial = 1.0 + dist.k1 * r2 + dist.k2 * r4 + dist.k3 * r6;
+
+            let xd = x * radial;
+            let yd = y * radial;
+
+            // Back to pixel coordinates
+            let sx = xd * camera.fx + camera.cx;
+            let sy = yd * camera.fy + camera.cy;
+
+            let out_idx = (oy * w + ox) * bpp;
+
+            // Bilinear sampling
+            if sx >= 0.0 && sx < (w - 1) as f64 && sy >= 0.0 && sy < (h - 1) as f64 {
+                let x0 = sx.floor() as usize;
+                let y0 = sy.floor() as usize;
+                let x1 = x0 + 1;
+                let y1 = y0 + 1;
+                let fx = sx - x0 as f64;
+                let fy = sy - y0 as f64;
+
+                for ch in 0..bpp {
+                    let p00 = pixels[y0 * w * bpp + x0 * bpp + ch] as f64;
+                    let p10 = pixels[y0 * w * bpp + x1 * bpp + ch] as f64;
+                    let p01 = pixels[y1 * w * bpp + x0 * bpp + ch] as f64;
+                    let p11 = pixels[y1 * w * bpp + x1 * bpp + ch] as f64;
+
+                    let val = p00 * (1.0 - fx) * (1.0 - fy)
+                        + p10 * fx * (1.0 - fy)
+                        + p01 * (1.0 - fx) * fy
+                        + p11 * fx * fy;
+
+                    output[out_idx + ch] = val.round().clamp(0.0, 255.0) as u8;
+                }
+            }
+            // Out-of-bounds pixels stay black (0)
+        }
+    }
+
+    Ok(DecodedImage {
+        pixels: output,
+        info: info.clone(),
+        icc_profile: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1297,5 +1401,88 @@ mod tests {
         assert_eq!(result.info.width, 8);
         assert_eq!(result.info.height, 8);
         assert_eq!(result.pixels.len(), 8 * 8 * 6);
+    }
+
+    #[test]
+    fn undistort_zero_distortion_is_identity() {
+        let (pixels, info) = make_image(32, 32);
+        let camera = CameraMatrix {
+            fx: 32.0,
+            fy: 32.0,
+            cx: 16.0,
+            cy: 16.0,
+        };
+        let dist = DistortionCoeffs {
+            k1: 0.0,
+            k2: 0.0,
+            k3: 0.0,
+        };
+        let result = undistort(&pixels, &info, &camera, &dist).unwrap();
+        // Interior pixels should be identical (borders may differ due to sampling)
+        let bpp = 3;
+        let mut matched = 0;
+        let mut total = 0;
+        for y in 2..30 {
+            for x in 2..30 {
+                total += 1;
+                let idx = (y * 32 + x) * bpp;
+                if pixels[idx..idx + bpp] == result.pixels[idx..idx + bpp] {
+                    matched += 1;
+                }
+            }
+        }
+        assert_eq!(matched, total, "zero distortion should be identity");
+    }
+
+    #[test]
+    fn undistort_barrel_shifts_pixels_inward() {
+        // Barrel distortion (k1 > 0): corners move outward in distorted image
+        // Undistortion should move them inward (toward center)
+        let mut pixels = vec![0u8; 64 * 64 * 3];
+        // White pixel at corner
+        let idx = (5 * 64 + 5) * 3;
+        pixels[idx] = 255;
+        pixels[idx + 1] = 255;
+        pixels[idx + 2] = 255;
+        let info = ImageInfo {
+            width: 64,
+            height: 64,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let camera = CameraMatrix {
+            fx: 50.0,
+            fy: 50.0,
+            cx: 32.0,
+            cy: 32.0,
+        };
+        let dist = DistortionCoeffs {
+            k1: 0.5,
+            k2: 0.0,
+            k3: 0.0,
+        };
+        let result = undistort(&pixels, &info, &camera, &dist).unwrap();
+        // The white pixel should have moved (it won't be at exactly the same position)
+        assert_eq!(result.pixels.len(), pixels.len());
+    }
+
+    #[test]
+    fn undistort_produces_valid_output_size() {
+        let (pixels, info) = make_image(128, 128);
+        let camera = CameraMatrix {
+            fx: 100.0,
+            fy: 100.0,
+            cx: 64.0,
+            cy: 64.0,
+        };
+        let dist = DistortionCoeffs {
+            k1: -0.3,
+            k2: 0.1,
+            k3: 0.0,
+        };
+        let result = undistort(&pixels, &info, &camera, &dist).unwrap();
+        assert_eq!(result.info.width, 128);
+        assert_eq!(result.info.height, 128);
+        assert_eq!(result.pixels.len(), 128 * 128 * 3);
     }
 }

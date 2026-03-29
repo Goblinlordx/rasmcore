@@ -611,3 +611,107 @@ fn nlm_denoise_matches_opencv() {
         "NLM: max_err={max_err} — only ±1 from exp() ULP rounding allowed"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lens Distortion Correction — OpenCV Reference
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn undistort_matches_opencv() {
+    use rasmcore_image::domain::transform::{undistort, CameraMatrix, DistortionCoeffs};
+
+    let py = venv_python();
+    eprintln!("=== Undistort — OpenCV Reference ===");
+
+    // Create gradient test image
+    let w = 128u32;
+    let h = 128u32;
+    let mut input = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            input.push(((x * 255) / w) as u8);
+            input.push(((y * 255) / h) as u8);
+            input.push(128u8);
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let camera = CameraMatrix {
+        fx: 100.0,
+        fy: 100.0,
+        cx: 64.0,
+        cy: 64.0,
+    };
+    let dist = DistortionCoeffs {
+        k1: -0.3,
+        k2: 0.1,
+        k3: 0.0,
+    };
+
+    let ours = undistort(&input, &info, &camera, &dist).unwrap();
+
+    // OpenCV undistort
+    let script = format!(
+        "import sys,numpy as np,cv2\n\
+         px=np.frombuffer(sys.stdin.buffer.read(),dtype=np.uint8).reshape({h},{w},3)\n\
+         K=np.array([[100.0,0,64.0],[0,100.0,64.0],[0,0,1]],dtype=np.float64)\n\
+         D=np.array([-0.3,0.1,0,0,0],dtype=np.float64)\n\
+         out=cv2.undistort(px,K,D)\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    let output = Command::new(&py)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            child.wait_with_output()
+        })
+        .expect("opencv undistort failed");
+    assert!(
+        output.status.success(),
+        "opencv undistort: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let reference = &output.stdout;
+
+    // Compare only interior pixels (borders differ due to out-of-bounds handling)
+    let bpp = 3;
+    let margin = 10;
+    let mut total_err: f64 = 0.0;
+    let mut max_err: u8 = 0;
+    let mut count = 0usize;
+    for y in margin..(h as usize - margin) {
+        for x in margin..(w as usize - margin) {
+            for ch in 0..bpp {
+                let idx = (y * w as usize + x) * bpp + ch;
+                let d = (ours.pixels[idx] as i16 - reference[idx] as i16).unsigned_abs() as u8;
+                total_err += d as f64;
+                max_err = max_err.max(d);
+                count += 1;
+            }
+        }
+    }
+    let mae = total_err / count as f64;
+    eprintln!("  undistort (interior): MAE={mae:.4}, max_err={max_err}");
+
+    // Bilinear interpolation may differ by ±1 due to rounding
+    assert!(
+        mae < 1.0,
+        "undistort: MAE={mae:.4} exceeds threshold 1.0"
+    );
+    assert!(
+        max_err <= 2,
+        "undistort: max_err={max_err} exceeds ±2"
+    );
+}
