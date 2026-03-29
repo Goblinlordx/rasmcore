@@ -4737,7 +4737,8 @@ pub fn mertens_fusion(
 
     // Step 3: Laplacian pyramid blending
     // Pyramid depth: log2(min(w,h))
-    let maxlevel = ((w.min(h) as f64).log2()) as usize;
+    // Match OpenCV: int(logf(float(min(w,h))) / logf(2.0f))
+    let maxlevel = ((w.min(h) as f32).ln() / 2.0f32.ln()) as usize;
 
     // Build weight Gaussian pyramids and image Laplacian pyramids
     let weight_pyrs: Vec<Vec<Vec<f32>>> = weights
@@ -4837,7 +4838,8 @@ pub fn mertens_fusion_f32(
         }
     }
 
-    let maxlevel = ((w.min(h) as f64).log2()) as usize;
+    // Match OpenCV: int(logf(float(min(w,h))) / logf(2.0f))
+    let maxlevel = ((w.min(h) as f32).ln() / 2.0f32.ln()) as usize;
 
     let weight_pyrs: Vec<Vec<Vec<f32>>> = weights
         .iter()

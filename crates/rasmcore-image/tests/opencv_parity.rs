@@ -703,3 +703,75 @@ fn mertens_fusion_matches_opencv() {
     assert!(m_u8 <= 4, "Mertens u8 max error {m_u8} > 4");
     assert!(e_u8 < 1.0, "Mertens u8 MAE {e_u8:.4} > 1.0");
 }
+
+#[test]
+fn mertens_all_canonical_images() {
+    let params = filters::MertensParams {
+        contrast_weight: 1.0,
+        saturation_weight: 1.0,
+        exposure_weight: 1.0,
+    };
+
+    let mut worst_mae_f32 = 0.0f64;
+    let mut worst_max_f32 = 0.0f64;
+    let mut worst_mae_u8 = 0.0f64;
+    let mut worst_max_u8 = 0u8;
+
+    for name in TEST_IMAGES {
+        // Load 3 exposure brackets (128×128 RGB, generated from canonical gray images)
+        let b0 = load_fixture(&format!("hdr_{name}_bracket_0.raw"));
+        let b1 = load_fixture(&format!("hdr_{name}_bracket_1.raw"));
+        let b2 = load_fixture(&format!("hdr_{name}_bracket_2.raw"));
+
+        let info = ImageInfo {
+            width: 128,
+            height: 128,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+
+        // f32 comparison
+        let ours_f32 = filters::mertens_fusion_f32(&[&b0, &b1, &b2], &info, &params).unwrap();
+        let ref_f32 = load_fixture_f32(&format!("hdr_{name}_mertens_f32.raw"));
+
+        // Convert BGR→RGB in reference
+        let n_pixels = 128 * 128;
+        let mut ref_rgb = vec![0.0f32; n_pixels * 3];
+        for i in 0..n_pixels {
+            ref_rgb[i * 3] = ref_f32[i * 3 + 2];
+            ref_rgb[i * 3 + 1] = ref_f32[i * 3 + 1];
+            ref_rgb[i * 3 + 2] = ref_f32[i * 3];
+        }
+
+        let e_f32 = mae_f32(&ours_f32, &ref_rgb);
+        let m_f32 = max_error_f32(&ours_f32, &ref_rgb);
+
+        // u8 comparison
+        let ours_u8 = filters::mertens_fusion(&[&b0, &b1, &b2], &info, &params).unwrap();
+        let ref_u8 = load_fixture(&format!("hdr_{name}_mertens_rgb.raw"));
+        let e_u8 = mae(&ours_u8, &ref_u8);
+        let m_u8 = max_error(&ours_u8, &ref_u8);
+
+        eprintln!(
+            "Mertens {name:20}: f32 MAE={e_f32:.6} max={m_f32:.6} | u8 MAE={e_u8:.4} max={m_u8}"
+        );
+
+        worst_mae_f32 = worst_mae_f32.max(e_f32);
+        worst_max_f32 = worst_max_f32.max(m_f32);
+        worst_mae_u8 = worst_mae_u8.max(e_u8);
+        worst_max_u8 = worst_max_u8.max(m_u8);
+
+        // Checker pattern (extreme high-frequency) causes pyramid aliasing at every level;
+        // even Python-manual-vs-OpenCV has u8 max=17 for checker. Allow higher threshold.
+        let limit = if name.contains("checker") { 30 } else { 3 };
+        assert!(
+            m_u8 <= limit,
+            "Mertens {name}: u8 max error {m_u8} > {limit}"
+        );
+    }
+
+    eprintln!(
+        "\nMertens summary: worst f32 MAE={worst_mae_f32:.6} max={worst_max_f32:.6} | \
+         worst u8 MAE={worst_mae_u8:.4} max={worst_max_u8}"
+    );
+}

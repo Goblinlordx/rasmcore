@@ -617,7 +617,13 @@ fn encode_macroblock(
 
         // RD mode selection: try top SATD candidates with full encode trial
         let mode = predict::select_best_4x4_rd(
-            &src_4x4, &above_4, &left_4, al, &ar, &seg_quant.y_dc, lambda,
+            &src_4x4,
+            &above_4,
+            &left_4,
+            al,
+            &ar,
+            &seg_quant.y_dc,
+            lambda,
         );
         b_modes[sb] = mode as u8;
 

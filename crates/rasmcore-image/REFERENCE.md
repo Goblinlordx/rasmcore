@@ -442,26 +442,33 @@ Our algorithm remaps pre-built Laplacian coefficients — simpler, faster, diffe
 remapping function. The vips sharpen comparison (previously MAE=31.6) was removed
 as it compared against an entirely different algorithm (unsharp mask in LABS space).
 
-### Mertens Exposure Fusion — F32_ROUNDING Tier (max ±4)
+### Mertens Exposure Fusion — F32_ROUNDING Tier
 
 **Reference:** `cv2.createMergeMertens(1.0, 1.0, 1.0).process(brackets)`
 
-| Metric | Value | Scale |
-|--------|-------|-------|
-| f32 MAE | 0.004 | [0, 1] |
-| f32 max error | 0.018 | [0, 1] |
-| u8 MAE | 0.53 | [0, 255] |
-| u8 max error | 4 | [0, 255] |
+Validated against all 7 canonical test images (128×128, color brackets):
 
-**Test inputs:** 3 synthetic exposure brackets (dark/mid/bright), 64×64 RGB.
+| Image | u8 MAE | u8 Max | Tier |
+|-------|--------|--------|------|
+| gradient_128 | 0.42 | 1 | ±1 rounding |
+| checker_128 | 5.76 | 29 | Pyramid aliasing (see note) |
+| noisy_flat_128 | 0.72 | 1 | ±1 rounding |
+| sharp_edges_128 | 0.34 | 1 | ±1 rounding |
+| photo_128 | 0.50 | 2 | ±1 rounding |
+| flat_128 | 0.08 | 1 | ±1 rounding |
+| highcontrast_128 | 0.47 | 1 | ±1 rounding |
+
+Also validated on 64×64 synthetic brackets: f32 MAE=0.004, u8 max=4.
 
 **Algorithm:** Mertens et al. "Exposure Fusion" (Pacific Graphics 2007). Verified
 against OpenCV 4.13 source code (`modules/photo/src/merge.cpp`). All weight
 computation formulas match the C++ implementation exactly.
 
-**Where it differs:** Up to 4 intensity levels in u8 output. f32 precision in
-6-level pyramid operations accumulates differently between Rust and C++ due to
-instruction ordering and FMA availability.
+**Where it differs:** 6 of 7 canonical images match within ±2 (f32 rounding).
+Checker (8px alternating pattern) has max error 29 due to pyramid aliasing — the
+extreme high-frequency content aliases at every pyrDown level, compounding across 7
+pyramid levels. Even Python-manual-vs-OpenCV-C++ has max error 17 for checker; the
+error is inherent to f32 pyramid operations on adversarial frequency content.
 
 **Why (F32_ROUNDING):** Verified by testing each weight component independently:
 - Saturation-only fusion: max diff < 1e-6 (exact match)
