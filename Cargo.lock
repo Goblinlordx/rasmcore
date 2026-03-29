@@ -874,6 +874,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-custom-filter"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
 name = "exr"
 version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

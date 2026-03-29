@@ -22,6 +22,7 @@ members = [
     "crates/rasmcore-macros",
     "tests/wasm-integration",
     "tests/codec-parity",
+    "examples/custom-filter",
 ]
 
 [workspace.package]

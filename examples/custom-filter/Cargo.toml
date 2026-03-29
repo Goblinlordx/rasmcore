@@ -1,0 +1,10 @@
+[package]
+name = "example-custom-filter"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rasmcore-macros = { path = "../../crates/rasmcore-macros" }
+rasmcore-image = { path = "../../crates/rasmcore-image" }
+inventory = "0.3"

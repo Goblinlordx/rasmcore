@@ -106,8 +106,8 @@ pub fn register_filter(attr: TokenStream, item: TokenStream) -> TokenStream {
         // Filter registration metadata
         #[doc(hidden)]
         #[allow(non_upper_case_globals)]
-        pub static #reg_ident: crate::domain::filter_registry::StaticFilterRegistration =
-            crate::domain::filter_registry::StaticFilterRegistration {
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticFilterRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticFilterRegistration {
                 name: #filter_name,
                 category: #filter_category,
                 param_count: #param_count,
@@ -171,8 +171,8 @@ pub fn register_encoder(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #[doc(hidden)]
         #[allow(non_upper_case_globals)]
-        pub static #reg_ident: crate::domain::encoder::StaticEncoderRegistration =
-            crate::domain::encoder::StaticEncoderRegistration {
+        pub static #reg_ident: ::rasmcore_image::domain::encoder::StaticEncoderRegistration =
+            ::rasmcore_image::domain::encoder::StaticEncoderRegistration {
                 name: #name,
                 format: #format,
                 mime: #mime,
@@ -228,8 +228,8 @@ pub fn register_decoder(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #[doc(hidden)]
         #[allow(non_upper_case_globals)]
-        pub static #reg_ident: crate::domain::decoder::StaticDecoderRegistration =
-            crate::domain::decoder::StaticDecoderRegistration {
+        pub static #reg_ident: ::rasmcore_image::domain::decoder::StaticDecoderRegistration =
+            ::rasmcore_image::domain::decoder::StaticDecoderRegistration {
                 name: #name,
                 formats: #formats,
                 fn_name: stringify!(#fn_name),

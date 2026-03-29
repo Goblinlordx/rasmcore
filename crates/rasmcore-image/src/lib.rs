@@ -1,3 +1,6 @@
+// Allow proc macros to use ::rasmcore_image:: paths from within this crate
+extern crate self as rasmcore_image;
+
 /// rasmcore-image: Image processing WASM component
 ///
 /// Architecture: Ports/Adapters (Hexagonal)
