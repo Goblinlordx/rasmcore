@@ -866,55 +866,98 @@ fn connected_components_matches_opencv() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Vignette — Exact parity against numpy reference
+// Vignette (Gaussian) — Close match against ImageMagick
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// Run ImageMagick's vignette on raw RGB8 data and return the result.
+fn im_vignette(pixels: &[u8], w: u32, h: u32, sigma: f32, ox: u32, oy: u32) -> Vec<u8> {
+    let output = Command::new("magick")
+        .args([
+            "-size",
+            &format!("{w}x{h}"),
+            "-depth",
+            "8",
+            "rgb:-",
+            "-background",
+            "black",
+            &format!("-vignette"),
+            &format!("0x{sigma}+{ox}+{oy}"),
+            "-depth",
+            "8",
+            "rgb:-",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(pixels).unwrap();
+            child.wait_with_output()
+        })
+        .expect("magick vignette failed");
+    assert!(
+        output.status.success(),
+        "magick vignette: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
 #[test]
-fn exact_vignette_rgb8_against_numpy() {
-    let w = 32u32;
-    let h = 24u32;
-    let strength = 0.6f32;
-    let falloff = 2.0f32;
+fn close_vignette_gaussian_against_imagemagick() {
+    // Skip if magick not available
+    if Command::new("magick").arg("--version").output().is_err() {
+        eprintln!("  SKIP — magick not installed");
+        return;
+    }
+
+    let w = 128u32;
+    let h = 128u32;
+    let sigma = 20.0f32;
+    let ox = 10u32;
+    let oy = 10u32;
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
-    let ours = filters::vignette(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
-    let script = format!(
-        "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w},3).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  for c in range(3):\n   px[row,col,c]=int(np.clip(round(px[row,col,c]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
-    );
-    assert_exact("vignette rgb8", &ours, &run_python_ref(&script));
+
+    let ours = filters::vignette(&pixels, &info, sigma, ox, oy, w, h, 0, 0).unwrap();
+    let reference = im_vignette(&pixels, w, h, sigma, ox, oy);
+
+    assert_close("vignette gaussian vs IM 128x128", &ours, &reference, 2.0);
 }
 
 #[test]
-fn exact_vignette_gray8_against_numpy() {
-    let w = 16u32;
-    let h = 16u32;
-    let strength = 0.5f32;
-    let falloff = 1.5f32;
-    let mut pixels = Vec::with_capacity((w * h) as usize);
-    for y in 0..h {
+fn close_vignette_gaussian_256_against_imagemagick() {
+    if Command::new("magick").arg("--version").output().is_err() {
+        eprintln!("  SKIP — magick not installed");
+        return;
+    }
+
+    let w = 256u32;
+    let h = 256u32;
+    let sigma = 30.0f32;
+    let ox = 20u32;
+    let oy = 20u32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let ours = filters::vignette(&pixels, &info, sigma, ox, oy, w, h, 0, 0).unwrap();
+    let reference = im_vignette(&pixels, w, h, sigma, ox, oy);
+
+    assert_close("vignette gaussian vs IM 256x256", &ours, &reference, 2.0);
+}
+
+#[test]
+fn vignette_gaussian_alpha_preserved() {
+    let w = 32u32;
+    let h = 32u32;
+    let mut pixels = Vec::with_capacity((w * h * 4) as usize);
+    for _y in 0..h {
         for x in 0..w {
             pixels.push(((x * 255) / w) as u8);
-        }
-    }
-    let info = info_gray8(w, h);
-    let ours = filters::vignette(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
-    let script = format!(
-        "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w}).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  px[row,col]=int(np.clip(round(px[row,col]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
-    );
-    assert_exact("vignette gray8", &ours, &run_python_ref(&script));
-}
-
-#[test]
-fn exact_vignette_rgba8_alpha_preserved() {
-    let w = 8u32;
-    let h = 8u32;
-    let mut pixels = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        for x in 0..w {
-            pixels.push(((x * 255) / w) as u8); // R
-            pixels.push(((y * 255) / h) as u8); // G
-            pixels.push(128);                    // B
-            pixels.push(200);                    // A — should be unchanged
+            pixels.push(128);
+            pixels.push(64);
+            pixels.push(200); // alpha
         }
     }
     let info = ImageInfo {
@@ -923,26 +966,57 @@ fn exact_vignette_rgba8_alpha_preserved() {
         format: PixelFormat::Rgba8,
         color_space: ColorSpace::Srgb,
     };
-    let strength = 0.8f32;
-    let falloff = 2.5f32;
-    let ours = filters::vignette(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
-
-    // Verify alpha is unchanged
+    let result = filters::vignette(&pixels, &info, 10.0, 5, 5, w, h, 0, 0).unwrap();
     for i in 0..(w * h) as usize {
-        assert_eq!(ours[i * 4 + 3], 200, "alpha must be preserved at pixel {i}");
+        assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved at pixel {i}");
     }
+    eprintln!("  vignette gaussian alpha: preserved ✓");
+}
 
-    // Verify RGB+A matches numpy reference (alpha preserved in Python too)
+// ═══════════════════════════════════════════════════════════════════════════
+// Vignette (power-law) — Exact parity against numpy reference
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_vignette_powerlaw_rgb8_against_numpy() {
+    let w = 32u32;
+    let h = 24u32;
+    let strength = 0.6f32;
+    let falloff = 2.0f32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let ours = filters::vignette_powerlaw(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
     let script = format!(
-        "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w},4).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  for c in range(3):\n   px[row,col,c]=int(np.clip(round(px[row,col,c]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
+        "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w},3).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  for c in range(3):\n   px[row,col,c]=int(np.clip(round(px[row,col,c]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
     );
-    assert_exact("vignette rgba8", &ours, &run_python_ref(&script));
+    assert_exact("vignette powerlaw rgb8", &ours, &run_python_ref(&script));
 }
 
 #[test]
-fn vignette_zero_strength_is_identity() {
+fn exact_vignette_powerlaw_gray8_against_numpy() {
+    let w = 16u32;
+    let h = 16u32;
+    let strength = 0.5f32;
+    let falloff = 1.5f32;
+    let mut pixels = Vec::with_capacity((w * h) as usize);
+    for _y in 0..h {
+        for x in 0..w {
+            pixels.push(((x * 255) / w) as u8);
+        }
+    }
+    let info = info_gray8(w, h);
+    let ours = filters::vignette_powerlaw(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
+    let script = format!(
+        "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w}).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  px[row,col]=int(np.clip(round(px[row,col]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
+    );
+    assert_exact("vignette powerlaw gray8", &ours, &run_python_ref(&script));
+}
+
+#[test]
+fn vignette_powerlaw_zero_strength_is_identity() {
     let pixels = make_gradient_rgb(16, 16);
     let info = info_rgb8(16, 16);
-    let result = filters::vignette(&pixels, &info, 0.0, 2.0, 16, 16, 0, 0).unwrap();
-    assert_exact("vignette(0)", &result, &pixels);
+    let result =
+        filters::vignette_powerlaw(&pixels, &info, 0.0, 2.0, 16, 16, 0, 0).unwrap();
+    assert_exact("vignette_powerlaw(0)", &result, &pixels);
 }
