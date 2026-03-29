@@ -24,7 +24,8 @@ pub enum PointOp {
     Posterize(u8),
     /// Clamp to [min, max] range. `LUT[i] = i.clamp(min, max)`
     Clamp(u8, u8),
-    /// Brightness offset (-1.0 to 1.0). `LUT[i] = (i + offset).clamp(0, 255)`
+    /// Brightness offset (-1.0 to 1.0). `LUT[i] = (i + amount*255).clamp(0, 255)`
+    /// Matches ImageMagick `-brightness-contrast Bx0` where B = amount * 100.
     Brightness(f32),
     /// Contrast adjustment (-1.0 to 1.0). `LUT[i] = (factor*(i-128)+128).clamp(0,255)`
     Contrast(f32),
@@ -63,7 +64,7 @@ pub fn build_lut(op: &PointOp) -> [u8; 256] {
             }
         }
         PointOp::Brightness(amount) => {
-            let offset = (*amount * 128.0) as i16;
+            let offset = (*amount * 255.0).round() as i16;
             for (i, entry) in lut.iter_mut().enumerate() {
                 *entry = (i as i16 + offset).clamp(0, 255) as u8;
             }
@@ -304,7 +305,7 @@ mod tests {
     #[test]
     fn lut_brightness_positive() {
         let lut = build_lut(&PointOp::Brightness(0.5));
-        assert_eq!(lut[0], 64); // 0 + 64 = 64
+        assert_eq!(lut[0], 128); // 0 + round(0.5*255) = 128
         assert_eq!(lut[255], 255); // clamped
     }
 

@@ -133,7 +133,7 @@ fn equalize_lut(h: &Histogram, pixel_count: u64) -> [u8; 256] {
         cdf[i] = cdf[i - 1] + h[i] as u64;
     }
 
-    // Find first non-zero CDF value
+    // Find first non-zero CDF value (standard histogram equalization formula)
     let cdf_min = cdf.iter().find(|&&v| v > 0).copied().unwrap_or(0);
     let denom = pixel_count - cdf_min;
 
@@ -152,11 +152,12 @@ fn equalize_lut(h: &Histogram, pixel_count: u64) -> [u8; 256] {
     lut
 }
 
-/// Normalize — linear stretch using percentile clipping (0.5% / 99.5%).
+/// Normalize — linear stretch matching ImageMagick `-normalize`.
 ///
-/// Matches ImageMagick `-normalize` behavior.
+/// Clips the darkest 2% and brightest 1% of pixels, then linearly stretches
+/// the remaining range to [0, 255].
 pub fn normalize(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
-    contrast_stretch(pixels, info, 0.5, 0.5)
+    contrast_stretch(pixels, info, 2.0, 1.0)
 }
 
 /// Auto-level — linear stretch from actual min to actual max (no clipping).

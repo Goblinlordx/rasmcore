@@ -275,10 +275,10 @@ impl ColorOp {
     pub fn apply(&self, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
         match self {
             ColorOp::HueRotate(degrees) => {
-                let (h, s, v) = rgb_to_hsv(r, g, b);
+                let (h, s, l) = rgb_to_hsl(r, g, b);
                 let new_h = (h + degrees) % 360.0;
                 let new_h = if new_h < 0.0 { new_h + 360.0 } else { new_h };
-                hsv_to_rgb(new_h, s, v)
+                hsl_to_rgb(new_h, s, l)
             }
             ColorOp::Saturate(factor) => {
                 let (h, s, l) = rgb_to_hsl(r, g, b);
