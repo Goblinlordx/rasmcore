@@ -198,8 +198,11 @@ pub fn encode(
             config.trellis,
         );
     } else if config.optimize_huffman {
-        // Two-pass optimized Huffman: collect frequencies → build tables → encode
-        let (luma_freq, chroma_freq, blocks) = collect_frequencies(
+        // Multi-pass optimized Huffman:
+        // Pass 1: trellis with standard Huffman tables → collect frequencies
+        // Pass 2: build optimal tables → re-trellis with accurate rates → re-count
+        // Pass 3: encode with final optimal tables
+        let (luma_freq, chroma_freq, mut blocks, raw_dct) = collect_frequencies(
             &ycbcr,
             is_gray,
             config.subsampling,
@@ -214,6 +217,109 @@ pub fn encode(
         } else {
             chroma_freq.build_optimal_tables()
         };
+
+        // Pass 2: re-trellis with accurate rate estimates from optimal tables
+        if config.trellis {
+            let ac_luma_arr: [u8; 256] = ac_luma_len.clone().try_into().unwrap_or([0u8; 256]);
+            let ac_chroma_arr: [u8; 256] = ac_chroma_len.clone().try_into().unwrap_or([0u8; 256]);
+
+            let mut luma_freq2 = entropy::FrequencyCounter::new();
+            let mut cb_freq2 = entropy::FrequencyCounter::new();
+            let mut cr_freq2 = entropy::FrequencyCounter::new();
+
+            for (idx, (comp, dct_coeffs)) in raw_dct.iter().enumerate() {
+                let (qt, is_luma, ac_codes) = if *comp == 0 {
+                    (&luma_qt, true, &ac_luma_arr)
+                } else {
+                    (&chroma_qt, false, &ac_chroma_arr)
+                };
+                let lambda = trellis::default_lambda(qt);
+                let zz = trellis::trellis_quantize_with_codes(
+                    dct_coeffs, qt, lambda, is_luma, Some(ac_codes),
+                );
+
+                match comp {
+                    0 => luma_freq2.count_block(&zz),
+                    1 => cb_freq2.count_block(&zz),
+                    _ => cr_freq2.count_block(&zz),
+                }
+                blocks[idx] = (*comp, zz);
+            }
+
+            // Rebuild optimal tables from re-trellis'd coefficients
+            let (dc_luma_len2, ac_luma_len2) = luma_freq2.build_optimal_tables();
+            let (dc_chroma_len2, ac_chroma_len2) = if is_gray {
+                (vec![0u8; 12], vec![0u8; 256])
+            } else {
+                let mut chroma_freq2 = entropy::FrequencyCounter::new();
+                for i in 0..12 {
+                    chroma_freq2.dc_freq[i] = cb_freq2.dc_freq[i] + cr_freq2.dc_freq[i];
+                }
+                for i in 0..256 {
+                    chroma_freq2.ac_freq[i] = cb_freq2.ac_freq[i] + cr_freq2.ac_freq[i];
+                }
+                chroma_freq2.build_optimal_tables()
+            };
+
+            // Use the refined tables
+            // (shadow the outer bindings for the encode step below)
+            let dc_luma_len = dc_luma_len2;
+            let ac_luma_len = ac_luma_len2;
+            let dc_chroma_len = dc_chroma_len2;
+            let ac_chroma_len = ac_chroma_len2;
+
+            // Write optimized DHT markers
+            markers::write_dht(&mut out, 0, 0, &dc_luma_len);
+            markers::write_dht(&mut out, 1, 0, &ac_luma_len);
+            if !is_gray {
+                markers::write_dht(&mut out, 0, 1, &dc_chroma_len);
+                markers::write_dht(&mut out, 1, 1, &ac_chroma_len);
+            }
+
+            // SOS
+            if is_gray {
+                markers::write_sos(&mut out, &[(1, 0, 0)]);
+            } else {
+                markers::write_sos(&mut out, &[(1, 0, 0), (2, 1, 1), (3, 1, 1)]);
+            }
+
+            // Encode with final optimal tables
+            let (h_blocks, v_blocks) = if is_gray {
+                (1usize, 1usize)
+            } else {
+                color::subsampling_factors(config.subsampling)
+            };
+            let blocks_per_mcu = if is_gray {
+                h_blocks * v_blocks
+            } else {
+                h_blocks * v_blocks + 2
+            };
+
+            let mcu_data = encode_blocks_with_tables(
+                &blocks,
+                config.restart_interval,
+                blocks_per_mcu,
+                || {
+                    if is_gray {
+                        entropy::InterleavedMcuEncoder::new_gray_custom(&dc_luma_len, &ac_luma_len)
+                    } else {
+                        entropy::InterleavedMcuEncoder::new_ycbcr_custom(
+                            &dc_luma_len, &ac_luma_len,
+                            &dc_chroma_len, &ac_chroma_len,
+                        )
+                    }
+                },
+            );
+            let stuffed = markers::byte_stuff(&mcu_data);
+            out.extend_from_slice(&stuffed);
+
+            markers::write_eoi(&mut out);
+            return Ok(out);
+        }
+
+        // Non-trellis path: just use pass-1 tables (no re-trellis needed)
+        let dc_luma_len = dc_luma_len;
+        let ac_luma_len = ac_luma_len;
 
         // Write optimized DHT markers
         markers::write_dht(&mut out, 0, 0, &dc_luma_len);
@@ -696,6 +802,7 @@ fn collect_frequencies(
     entropy::FrequencyCounter,
     entropy::FrequencyCounter,
     Vec<(usize, [i16; 64])>,
+    Vec<(usize, [i32; 64])>, // raw DCT coefficients for re-trellis
 ) {
     let (mcu_w, mcu_h) = if is_gray {
         (8u32, 8u32)
@@ -714,7 +821,9 @@ fn collect_frequencies(
     let mut luma_freq = entropy::FrequencyCounter::new();
     let mut cb_freq = entropy::FrequencyCounter::new();
     let mut cr_freq = entropy::FrequencyCounter::new();
-    let mut blocks = Vec::with_capacity(mcu_rows * mcu_cols * (h_blocks * v_blocks + 2));
+    let cap = mcu_rows * mcu_cols * (h_blocks * v_blocks + if is_gray { 0 } else { 2 });
+    let mut blocks = Vec::with_capacity(cap);
+    let mut raw_dct = Vec::with_capacity(cap);
 
     for mcu_row in 0..mcu_rows {
         for mcu_col in 0..mcu_cols {
@@ -740,6 +849,7 @@ fn collect_frequencies(
                     };
                     luma_freq.count_block(&zz);
                     blocks.push((0, zz));
+                    raw_dct.push((0, dct_out));
                 }
             }
 
@@ -769,6 +879,7 @@ fn collect_frequencies(
                     };
                     freq.count_block(&zz);
                     blocks.push((comp_idx, zz));
+                    raw_dct.push((comp_idx, dct_out));
                 }
             }
         }
@@ -784,7 +895,7 @@ fn collect_frequencies(
         chroma_freq.ac_freq[i] = cb_freq.ac_freq[i] + cr_freq.ac_freq[i];
     }
 
-    (luma_freq, chroma_freq, blocks)
+    (luma_freq, chroma_freq, blocks, raw_dct)
 }
 
 /// Second pass: encode pre-quantized blocks with the given encoder factory.
