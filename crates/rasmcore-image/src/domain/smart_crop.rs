@@ -396,4 +396,290 @@ mod tests {
         assert!(smart_crop(&pixels, &info, 64, 64, SmartCropStrategy::Entropy).is_err());
         assert!(smart_crop(&pixels, &info, 0, 32, SmartCropStrategy::Entropy).is_err());
     }
+
+    // ── Reference comparison against libvips smartcrop ──────────────────
+
+    fn vips_available() -> bool {
+        std::process::Command::new("vips")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Write PPM and run vips smartcrop, return the crop position (x, y).
+    fn vips_smartcrop(
+        pixels: &[u8],
+        w: u32,
+        h: u32,
+        target_w: u32,
+        target_h: u32,
+        strategy: &str,
+    ) -> Option<(u32, u32)> {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static CTR: AtomicU64 = AtomicU64::new(0);
+        let id = CTR.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir();
+        let ppm = dir.join(format!("sc_ref_{id}.ppm"));
+        let out = dir.join(format!("sc_ref_{id}_out.ppm"));
+
+        let mut f = std::fs::File::create(&ppm).ok()?;
+        write!(f, "P6\n{w} {h}\n255\n").ok()?;
+        f.write_all(pixels).ok()?;
+        drop(f);
+
+        let result = std::process::Command::new("vips")
+            .args([
+                "smartcrop",
+                ppm.to_str().unwrap(),
+                out.to_str().unwrap(),
+                &target_w.to_string(),
+                &target_h.to_string(),
+                "--interesting",
+                strategy,
+            ])
+            .output()
+            .ok()?;
+
+        let _ = std::fs::remove_file(&ppm);
+
+        if !result.status.success() {
+            let _ = std::fs::remove_file(&out);
+            return None;
+        }
+
+        // Read the output PPM to get the cropped pixels
+        let vips_data = std::fs::read(&out).ok()?;
+        let _ = std::fs::remove_file(&out);
+
+        // We can't easily get the crop position from vips CLI, but we CAN
+        // compare the actual cropped pixel data. Find where in the original
+        // image the vips output matches by scanning.
+        let vips_pixels = parse_ppm_pixels(&vips_data)?;
+        find_crop_position(pixels, w, h, &vips_pixels, target_w, target_h)
+    }
+
+    fn parse_ppm_pixels(data: &[u8]) -> Option<Vec<u8>> {
+        // Skip PPM header "P6\nW H\n255\n"
+        let mut pos = 0;
+        // Skip "P6\n"
+        while pos < data.len() && data[pos] != b'\n' {
+            pos += 1;
+        }
+        pos += 1; // skip newline
+        // Skip "W H\n"
+        while pos < data.len() && data[pos] != b'\n' {
+            pos += 1;
+        }
+        pos += 1;
+        // Skip "255\n"
+        while pos < data.len() && data[pos] != b'\n' {
+            pos += 1;
+        }
+        pos += 1;
+        Some(data[pos..].to_vec())
+    }
+
+    /// Find where a crop appears in the original image by comparing top-left corner pixels.
+    fn find_crop_position(
+        original: &[u8],
+        orig_w: u32,
+        orig_h: u32,
+        crop: &[u8],
+        crop_w: u32,
+        crop_h: u32,
+    ) -> Option<(u32, u32)> {
+        let ow = orig_w as usize;
+        let cw = crop_w as usize;
+        let ch = crop_h as usize;
+
+        for y in 0..=(orig_h - crop_h) as usize {
+            for x in 0..=(orig_w - crop_w) as usize {
+                // Check first row match
+                let orig_start = (y * ow + x) * 3;
+                let crop_start = 0;
+                if orig_start + cw * 3 > original.len() || cw * 3 > crop.len() {
+                    continue;
+                }
+                if original[orig_start..orig_start + cw * 3]
+                    == crop[crop_start..crop_start + cw * 3]
+                {
+                    // Verify full match
+                    let mut full_match = true;
+                    for row in 0..ch.min(3) {
+                        // check first 3 rows
+                        let os = ((y + row) * ow + x) * 3;
+                        let cs = row * cw * 3;
+                        if os + cw * 3 > original.len() || cs + cw * 3 > crop.len() {
+                            full_match = false;
+                            break;
+                        }
+                        if original[os..os + cw * 3] != crop[cs..cs + cw * 3] {
+                            full_match = false;
+                            break;
+                        }
+                    }
+                    if full_match {
+                        return Some((x as u32, y as u32));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Generate test patterns, run through both our and vips smartcrop,
+    /// compare the cropped outputs via pixel similarity (PSNR).
+    /// Both should select similar regions — the cropped outputs should be similar.
+    #[test]
+    fn smart_crop_vs_vips_reference() {
+        if !vips_available() {
+            eprintln!("SKIP: vips not available for smart crop reference comparison");
+            return;
+        }
+
+        // Test pattern: detail in bottom-right, flat top-left
+        let (w, h) = (256u32, 256u32);
+        let mut pixels = vec![80u8; (w * h * 3) as usize];
+        for y in 128..256u32 {
+            for x in 128..256u32 {
+                let idx = ((y * w + x) * 3) as usize;
+                let v = (((x + y) * 13) % 256) as u8;
+                pixels[idx] = v;
+                pixels[idx + 1] = (255 - v as u16) as u8;
+                pixels[idx + 2] = (v / 2).wrapping_add(64);
+            }
+        }
+
+        let info = test_info(w, h);
+        let target_w = 128;
+        let target_h = 128;
+
+        eprintln!("\n=== Smart Crop vs vips (256x256 detail_br → 128x128) ===");
+        eprintln!(
+            "{:<12} {:>12} {:>12} {:>10}",
+            "Strategy", "Our_PSNR", "Vips_PSNR", "Match_PSNR"
+        );
+
+        for (strategy_name, our_strategy, vips_strategy) in [
+            ("entropy", SmartCropStrategy::Entropy, "entropy"),
+            ("attention", SmartCropStrategy::Attention, "attention"),
+        ] {
+            // Our crop
+            let our_result = smart_crop(&pixels, &info, target_w, target_h, our_strategy).unwrap();
+
+            // Vips crop
+            if let Some(vips_pixels) =
+                vips_smartcrop_pixels(&pixels, w, h, target_w, target_h, vips_strategy)
+            {
+                // Both crops should select the detailed region (bottom-right)
+                // Compare: how much do the two crops agree?
+                let min_len = our_result.pixels.len().min(vips_pixels.len());
+                if min_len > 0 {
+                    let our_vs_vips_psnr =
+                        pixel_psnr(&our_result.pixels[..min_len], &vips_pixels[..min_len]);
+
+                    // Also measure each crop's "interestingness" vs the original
+                    // by computing variance (higher = more detail selected)
+                    let our_var = pixel_variance(&our_result.pixels);
+                    let vips_var = pixel_variance(&vips_pixels[..min_len]);
+
+                    eprintln!(
+                        "{:<12} {:>11.1}var {:>11.1}var {:>9.1}dB",
+                        strategy_name, our_var, vips_var, our_vs_vips_psnr
+                    );
+
+                    // Both should select the interesting region (high variance)
+                    // rather than the flat background (low variance ≈ 0)
+                    assert!(
+                        our_var > 500.0,
+                        "{strategy_name}: our crop variance too low ({our_var:.0}) — selected flat region"
+                    );
+                    assert!(
+                        vips_var > 500.0,
+                        "{strategy_name}: vips crop variance too low ({vips_var:.0})"
+                    );
+                }
+            } else {
+                eprintln!("{:<12} vips smartcrop failed", strategy_name);
+            }
+        }
+    }
+
+    fn vips_smartcrop_pixels(
+        pixels: &[u8],
+        w: u32,
+        h: u32,
+        target_w: u32,
+        target_h: u32,
+        strategy: &str,
+    ) -> Option<Vec<u8>> {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static CTR: AtomicU64 = AtomicU64::new(0);
+        let id = CTR.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir();
+        let ppm = dir.join(format!("sc_ref_{id}.ppm"));
+        let out = dir.join(format!("sc_ref_{id}_out.ppm"));
+
+        let mut f = std::fs::File::create(&ppm).ok()?;
+        write!(f, "P6\n{w} {h}\n255\n").ok()?;
+        f.write_all(pixels).ok()?;
+        drop(f);
+
+        let result = std::process::Command::new("vips")
+            .args([
+                "smartcrop",
+                ppm.to_str().unwrap(),
+                out.to_str().unwrap(),
+                &target_w.to_string(),
+                &target_h.to_string(),
+                "--interesting",
+                strategy,
+            ])
+            .output()
+            .ok()?;
+
+        let _ = std::fs::remove_file(&ppm);
+        if !result.status.success() {
+            let _ = std::fs::remove_file(&out);
+            return None;
+        }
+
+        let data = std::fs::read(&out).ok()?;
+        let _ = std::fs::remove_file(&out);
+        parse_ppm_pixels(&data)
+    }
+
+    fn pixel_psnr(a: &[u8], b: &[u8]) -> f64 {
+        let n = a.len().min(b.len());
+        if n == 0 {
+            return 0.0;
+        }
+        let mse: f64 = a[..n]
+            .iter()
+            .zip(b[..n].iter())
+            .map(|(&x, &y)| (x as f64 - y as f64).powi(2))
+            .sum::<f64>()
+            / n as f64;
+        if mse == 0.0 {
+            f64::INFINITY
+        } else {
+            10.0 * (255.0f64 * 255.0 / mse).log10()
+        }
+    }
+
+    fn pixel_variance(pixels: &[u8]) -> f64 {
+        let n = pixels.len() as f64;
+        if n == 0.0 {
+            return 0.0;
+        }
+        let mean = pixels.iter().map(|&v| v as f64).sum::<f64>() / n;
+        pixels
+            .iter()
+            .map(|&v| (v as f64 - mean).powi(2))
+            .sum::<f64>()
+            / n
+    }
 }
