@@ -147,6 +147,82 @@ pub const VP8_FIXED_COSTS_I4: [[[u16; 10]; 10]; 10] = [
      [305, 1167, 1358, 899, 1587, 1587, 987, 1988, 1332, 501]],
 ];
 
+// ─── Spectral distortion (from quant_enc.c) ─────────────────────────────
+
+/// Frequency-domain weights for spectral distortion (kWeightY from libwebp).
+/// Higher weights for lower frequencies (DC and low AC).
+const K_WEIGHT_Y: [u16; 16] = [38, 32, 20, 9, 32, 28, 17, 7, 20, 17, 10, 4, 9, 7, 4, 2];
+
+/// Compute weighted SATD for a 4x4 block (spectral distortion).
+/// Ported from libwebp dsp/enc.c VP8TDisto4x4.
+///
+/// Applies forward Hadamard transform to both src and ref residuals,
+/// then sums weighted absolute differences of transform coefficients.
+fn tdisto_4x4(a: &[u8; 16], b: &[u8; 16]) -> u32 {
+    // Simple Hadamard (WHT-like) transform on the 4x4 difference
+    let mut diff = [0i32; 16];
+    for i in 0..16 {
+        diff[i] = a[i] as i32 - b[i] as i32;
+    }
+
+    // Row transform (4-point Hadamard on each row)
+    let mut tmp = [0i32; 16];
+    for r in 0..4 {
+        let a0 = diff[r * 4] + diff[r * 4 + 3];
+        let a1 = diff[r * 4 + 1] + diff[r * 4 + 2];
+        let a2 = diff[r * 4 + 1] - diff[r * 4 + 2];
+        let a3 = diff[r * 4] - diff[r * 4 + 3];
+        tmp[r * 4] = a0 + a1;
+        tmp[r * 4 + 1] = a3 + a2;
+        tmp[r * 4 + 2] = a0 - a1;
+        tmp[r * 4 + 3] = a3 - a2;
+    }
+
+    // Column transform + weighted sum
+    let mut sum = 0u32;
+    for c in 0..4 {
+        let a0 = tmp[c] + tmp[12 + c];
+        let a1 = tmp[4 + c] + tmp[8 + c];
+        let a2 = tmp[4 + c] - tmp[8 + c];
+        let a3 = tmp[c] - tmp[12 + c];
+        let b0 = a0 + a1;
+        let b1 = a3 + a2;
+        let b2 = a0 - a1;
+        let b3 = a3 - a2;
+
+        sum += (b0.unsigned_abs() * K_WEIGHT_Y[c] as u32) >> 5;
+        sum += (b1.unsigned_abs() * K_WEIGHT_Y[4 + c] as u32) >> 5;
+        sum += (b2.unsigned_abs() * K_WEIGHT_Y[8 + c] as u32) >> 5;
+        sum += (b3.unsigned_abs() * K_WEIGHT_Y[12 + c] as u32) >> 5;
+    }
+    sum
+}
+
+/// Compute spectral distortion for a 16x16 block (sum of 4x4 TDisto).
+fn tdisto_16x16(src: &[u8; 256], dst: &[u8; 256]) -> u32 {
+    let mut total = 0u32;
+    for sb_row in 0..4 {
+        for sb_col in 0..4 {
+            let mut a = [0u8; 16];
+            let mut b = [0u8; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    a[r * 4 + c] = src[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                    b[r * 4 + c] = dst[(sb_row * 4 + r) * 16 + sb_col * 4 + c];
+                }
+            }
+            total += tdisto_4x4(&a, &b);
+        }
+    }
+    total
+}
+
+/// MULT_8B macro from libwebp: (a * b + 128) >> 8
+#[inline]
+fn mult_8b(a: i32, b: u32) -> i64 {
+    ((a as i64 * b as i64) + 128) >> 8
+}
+
 // ─── SSE helper functions ────────────────────────────────────────────────
 
 /// Sum of squared errors for 16x16 block.
@@ -332,7 +408,14 @@ pub fn pick_best_intra16(
 
         // Distortion
         rd_cur.d = sse_16x16(src_16x16, &recon_result.recon) as ScoreT;
-        rd_cur.sd = 0; // Skip spectral distortion (tlambda=0)
+        rd_cur.sd = if lambdas.tlambda > 0 {
+            mult_8b(
+                lambdas.tlambda,
+                tdisto_16x16(src_16x16, &recon_result.recon),
+            )
+        } else {
+            0
+        };
 
         // Header cost
         rd_cur.h = rdo::mode_header_cost_16x16(mode_idx as u8) as ScoreT;
@@ -507,7 +590,11 @@ pub fn pick_best_intra4(
             // RD evaluation
             let mut rd_tmp = VP8ModeScore::default();
             rd_tmp.d = sse_4x4(&src_4x4, &result.recon) as ScoreT;
-            rd_tmp.sd = 0;
+            rd_tmp.sd = if lambdas.tlambda > 0 {
+                mult_8b(lambdas.tlambda, tdisto_4x4(&src_4x4, &result.recon))
+            } else {
+                0
+            };
             rd_tmp.h = mode_costs[mode_idx] as ScoreT;
 
             // Flatness penalty

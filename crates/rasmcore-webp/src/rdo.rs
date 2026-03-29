@@ -603,6 +603,9 @@ pub struct VP8SegmentLambdas {
     pub lambda_trellis_i16: i32,
     /// Lambda for UV trellis: q_uv² << 1
     pub lambda_trellis_uv: i32,
+    /// Spectral distortion lambda: (tlambda_scale * q_i4) >> 5
+    /// Used as: SD = MULT_8B(tlambda, VP8TDisto(src, dst, kWeightY))
+    pub tlambda: i32,
     /// Penalty for using I4 mode: 1000 * q_i4²
     pub i4_penalty: ScoreT,
     /// Minimum distortion for filtering: 20 * y1_q[0]
@@ -661,6 +664,13 @@ pub fn compute_segment_lambdas(qp: u8) -> VP8SegmentLambdas {
     check(&mut lambda_trellis_i16);
     check(&mut lambda_trellis_uv);
 
+    // Spectral distortion lambda: (sns_strength * q_i4) >> 5
+    // libwebp uses enc->config->sns_strength (default 50 for method >= 4)
+    // We use a fixed sns_strength of 50 to match default libwebp behavior.
+    let sns_strength = 50i32;
+    let mut tlambda = (sns_strength * q_i4) >> 5;
+    check(&mut tlambda);
+
     let i4_penalty = 1000 * q_i4 as ScoreT * q_i4 as ScoreT;
     let min_disto = 20 * y1_q0;
 
@@ -673,6 +683,7 @@ pub fn compute_segment_lambdas(qp: u8) -> VP8SegmentLambdas {
         lambda_trellis_i4,
         lambda_trellis_i16,
         lambda_trellis_uv,
+        tlambda,
         i4_penalty,
         min_disto,
     }
