@@ -5,47 +5,65 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: |
-    Implement histogram matching (specification) to transfer the tonal
+  summary: 'Implement histogram matching (specification) to transfer the tonal
+
     distribution of a reference image onto a source image. Validated
+
     pixel-exact against OpenCV.
-  context: |
-    Current histogram ops include equalize, normalize, auto_level, CLAHE,
+
+    '
+  context: 'Current histogram ops include equalize, normalize, auto_level, CLAHE,
+
     and contrast_stretch. Missing histogram matching — a standard operation
+
     for color/tone transfer between images, essential for panorama stitching
+
     preprocessing, style transfer, and medical image normalization.
-  codebase_analysis: |
-    Histogram infrastructure in domain/histogram.rs provides histogram(),
+
+    '
+  codebase_analysis: 'Histogram infrastructure in domain/histogram.rs provides histogram(),
+
     equalize(), normalize(), and auto_level(). Histogram matching builds on
+
     CDF computation (already used by equalize). New function goes in
+
     histogram.rs. OpenCV does not have a built-in histogram matching
+
     function, but the algorithm is well-defined (CDF inversion mapping)
+
     and can be validated against numpy/skimage.
+
+    '
   acceptance_criteria:
-    - histogram_match() maps source image CDF to target image CDF per channel
-    - Works on grayscale and RGB images
-    - Pixel-exact against numpy reference implementation
-    - Registered in FilterRegistry (takes reference histogram as parameter)
-  out_of_scope: |
-    Multi-image histogram blending. Partial histogram matching. Color transfer algorithms (Reinhard).
-  technical_notes: |
-    Algorithm: (1) compute CDF of source and target, (2) for each source
+  - histogram_match() maps source image CDF to target image CDF per channel
+  - Works on grayscale and RGB images
+  - Pixel-exact against numpy reference implementation
+  - Registered in FilterRegistry (takes reference histogram as parameter)
+  out_of_scope: 'Multi-image histogram blending. Partial histogram matching. Color transfer algorithms (Reinhard).
+
+    '
+  technical_notes: 'Algorithm: (1) compute CDF of source and target, (2) for each source
+
     intensity, find target intensity where CDFs match (inverse CDF mapping),
+
     (3) build LUT, (4) apply LUT. This is LUT-collapsible for pipeline
+
     fusion. Reference: numpy CDF inversion at f64 precision.
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Implement histogram_match() with CDF inversion LUT
-        done: false
-      - text: Support grayscale and per-channel RGB matching
-        done: false
-      - text: Add numpy-based parity test (CDF inversion reference)
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Register in FilterRegistry with target_histogram parameter
-        done: false
-      - text: Document in REFERENCE.md with parity results
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement histogram_match() with CDF inversion LUT
+    done: true
+  - text: Support grayscale and per-channel RGB matching
+    done: true
+  - text: Add numpy-based parity test (CDF inversion reference)
+    done: true
+- phase: Integration
+  tasks:
+  - text: Register in FilterRegistry with target_histogram parameter
+    done: true
+  - text: Document in REFERENCE.md with parity results
+    done: true
 extra: {}
