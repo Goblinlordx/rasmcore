@@ -101,6 +101,14 @@ where
     Ok(u16_to_bytes(&result_16))
 }
 
+/// Parameters for Gaussian blur.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct BlurParams {
+    /// Blur radius in pixels
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
+    pub radius: f32,
+}
+
 /// Apply gaussian blur using libblur (SIMD-optimized).
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on

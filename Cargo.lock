@@ -2584,6 +2584,7 @@ dependencies = [
  "quick-xml",
  "quote",
  "rasmcore-bmp",
+ "rasmcore-color",
  "rasmcore-fits",
  "rasmcore-hevc",
  "rasmcore-isobmff",
