@@ -29,6 +29,9 @@ pub fn resize(
         PixelFormat::Rgb8 => fir::PixelType::U8x3,
         PixelFormat::Rgba8 => fir::PixelType::U8x4,
         PixelFormat::Gray8 => fir::PixelType::U8,
+        PixelFormat::Rgb16 => fir::PixelType::U16x3,
+        PixelFormat::Rgba16 => fir::PixelType::U16x4,
+        PixelFormat::Gray16 => fir::PixelType::U16,
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "resize from {other:?} not supported by SIMD backend"
@@ -357,17 +360,43 @@ pub fn rotate_arbitrary(
                 let fx = sx - x0 as f64;
                 let fy = sy - y0 as f64;
 
-                for c in 0..bpp {
-                    let p00 = pixels[y0 * w * bpp + x0 * bpp + c] as f64;
-                    let p10 = pixels[y0 * w * bpp + x1 * bpp + c] as f64;
-                    let p01 = pixels[y1 * w * bpp + x0 * bpp + c] as f64;
-                    let p11 = pixels[y1 * w * bpp + x1 * bpp + c] as f64;
+                let is_16 = matches!(
+                    info.format,
+                    PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
+                );
+                if is_16 {
+                    // 16-bit: each channel is 2 bytes LE
+                    let bytes_per_chan = 2;
+                    let channels = bpp / 2;
+                    for c in 0..channels {
+                        let off = c * bytes_per_chan;
+                        let read16 = |y: usize, x: usize| -> f64 {
+                            let idx = y * w * bpp + x * bpp + off;
+                            u16::from_le_bytes([pixels[idx], pixels[idx + 1]]) as f64
+                        };
+                        let val = read16(y0, x0) * (1.0 - fx) * (1.0 - fy)
+                            + read16(y0, x1) * fx * (1.0 - fy)
+                            + read16(y1, x0) * (1.0 - fx) * fy
+                            + read16(y1, x1) * fx * fy;
+                        let v16 = val.round().clamp(0.0, 65535.0) as u16;
+                        let bytes = v16.to_le_bytes();
+                        output[out_idx + off] = bytes[0];
+                        output[out_idx + off + 1] = bytes[1];
+                    }
+                } else {
+                    // 8-bit: each channel is 1 byte
+                    for c in 0..bpp {
+                        let p00 = pixels[y0 * w * bpp + x0 * bpp + c] as f64;
+                        let p10 = pixels[y0 * w * bpp + x1 * bpp + c] as f64;
+                        let p01 = pixels[y1 * w * bpp + x0 * bpp + c] as f64;
+                        let p11 = pixels[y1 * w * bpp + x1 * bpp + c] as f64;
 
-                    let val = p00 * (1.0 - fx) * (1.0 - fy)
-                        + p10 * fx * (1.0 - fy)
-                        + p01 * (1.0 - fx) * fy
-                        + p11 * fx * fy;
-                    output[out_idx + c] = val.round().clamp(0.0, 255.0) as u8;
+                        let val = p00 * (1.0 - fx) * (1.0 - fy)
+                            + p10 * fx * (1.0 - fy)
+                            + p01 * (1.0 - fx) * fy
+                            + p11 * fx * fy;
+                        output[out_idx + c] = val.round().clamp(0.0, 255.0) as u8;
+                    }
                 }
             } else {
                 // Background fill
@@ -621,6 +650,9 @@ fn bytes_per_pixel(format: PixelFormat) -> Result<usize, ImageError> {
         PixelFormat::Rgb8 => Ok(3),
         PixelFormat::Rgba8 => Ok(4),
         PixelFormat::Gray8 => Ok(1),
+        PixelFormat::Gray16 => Ok(2),
+        PixelFormat::Rgb16 => Ok(6),
+        PixelFormat::Rgba16 => Ok(8),
         _ => Err(ImageError::UnsupportedFormat(format!(
             "{format:?} not supported for geometric transforms"
         ))),
