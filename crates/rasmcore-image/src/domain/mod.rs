@@ -1,3 +1,4 @@
+pub mod codec;
 pub mod color;
 pub mod color_grading;
 pub mod color_lut;
