@@ -38,7 +38,7 @@ spec:
   acceptance_criteria:
     - metadata() is async, returns MetadataSnapshot (breaks the chain)
     - MetadataSnapshot.dump() returns full nested object from headers (no pixel decode)
-    - MetadataSnapshot.read(path) returns value at dot-path or undefined
+    - MetadataSnapshot.read(path) returns value at dot-path or undefined for valid but absent fields
     - keepMetadata() is chainable, opts in to passthrough of all source metadata
     - setMetadata(path, value) is chainable, adds/overrides a metadata field
     - stripMetadata(path) is chainable, removes field or subtree (only meaningful after keepMetadata)
@@ -53,6 +53,10 @@ spec:
     - XMP fields accessible (xmp.Creator, xmp.Rating, xmp.Description, etc.)
     - IPTC fields accessible (iptc.Headline, iptc.Keywords, etc.)
     - A single file may contain multiple metadata containers (EXIF + XMP + IPTC + ICC)
+    - Invalid container name errors with valid containers list (e.g., "asdf" is not a valid metadata container. Valid containers are exif, xmp, iptc, icc)
+    - Invalid field name errors with valid fields list for that container (e.g., "FakeField" is not a valid EXIF field. Valid fields are Artist, Make, Model, ...)
+    - Malformed path errors with expected format (e.g., Invalid metadata path "noperiod". Expected format container.Field, e.g. exif.Artist)
+    - Validation applies to read(), set(), and strip() — all three reject invalid paths with the same error format
     - Works with JPEG, PNG, TIFF, WebP inputs
   out_of_scope: |
     Writing metadata to formats that don't support it (BMP, QOI, GIF).
@@ -150,6 +154,10 @@ plan:
         done: false
       - text: Add metadata_read function with dot-path resolution into parsed metadata
         done: false
+      - text: Add path validation — reject invalid container, invalid field, malformed path with descriptive errors
+        done: false
+      - text: Define supported field registries per container (EXIF tags, XMP properties, IPTC datasets, ICC fields)
+        done: false
       - text: Add keep_metadata pipeline node that flags source metadata for passthrough
         done: false
       - text: Add set_metadata and strip_metadata pipeline nodes that modify MetadataSet
@@ -189,5 +197,11 @@ plan:
       - text: Test keepMetadata() + setMetadata() overrides existing field
         done: false
       - text: Test stripMetadata() without keepMetadata is a no-op
+        done: false
+      - text: Test invalid container name returns error listing valid containers
+        done: false
+      - text: Test invalid field name returns error listing valid fields for that container
+        done: false
+      - text: Test malformed path (no dot) returns error with expected format
         done: false
 extra: {}
