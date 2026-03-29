@@ -168,3 +168,104 @@ fn guided_all_images_match_opencv() {
     let avg_mae = total_mae / count as f64;
     eprintln!("\nGuided summary: avg_MAE={avg_mae:.4}, worst_max_err={total_max}");
 }
+
+// ─── Color Science Parity ─────────────────────────────────────────────────
+
+use rasmcore_image::domain::color_spaces;
+
+#[test]
+fn lab_conversion_matches_opencv() {
+    let input = load_fixture("color_gradient_128_rgb.raw");
+    let reference_lab = load_fixture("color_gradient_128_lab.raw");
+
+    let info = ImageInfo {
+        width: 128, height: 128,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let our_lab = color_spaces::image_rgb_to_lab(&input, &info).unwrap();
+
+    // OpenCV Lab: L in [0,255] (L*255/100), a/b in [0,255] (offset +128)
+    // Our Lab: L in [0,100], a/b in [-128,127]
+    // Convert ours to OpenCV convention for comparison
+    let n = (128 * 128) as usize;
+    let mut max_err = 0u8;
+    let mut total_err = 0.0f64;
+    for i in 0..n {
+        let our_l = (our_lab[i * 3] * 255.0 / 100.0).round().clamp(0.0, 255.0) as u8;
+        let our_a = (our_lab[i * 3 + 1] + 128.0).round().clamp(0.0, 255.0) as u8;
+        let our_b = (our_lab[i * 3 + 2] + 128.0).round().clamp(0.0, 255.0) as u8;
+
+        let ref_l = reference_lab[i * 3];
+        let ref_a = reference_lab[i * 3 + 1];
+        let ref_b = reference_lab[i * 3 + 2];
+
+        let dl = (our_l as i16 - ref_l as i16).unsigned_abs() as u8;
+        let da = (our_a as i16 - ref_a as i16).unsigned_abs() as u8;
+        let db = (our_b as i16 - ref_b as i16).unsigned_abs() as u8;
+        let err = dl.max(da).max(db);
+        max_err = max_err.max(err);
+        total_err += dl as f64 + da as f64 + db as f64;
+    }
+    let mae = total_err / (n * 3) as f64;
+
+    eprintln!("Lab vs OpenCV: MAE={mae:.4}, max_err={max_err}");
+    assert!(mae < 2.0, "Lab MAE {mae:.4} > 2.0 vs OpenCV");
+    assert!(max_err <= 3, "Lab max error {max_err} > 3 vs OpenCV");
+}
+
+#[test]
+fn perspective_warp_matches_opencv() {
+    let input = load_fixture("gradient_128_gray.raw");
+    let reference = load_fixture("gradient_128_perspective.raw");
+
+    let info = ImageInfo {
+        width: 128, height: 128,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let src = [(0.0f32, 0.0), (127.0, 0.0), (127.0, 127.0), (0.0, 127.0)];
+    let dst = [(10.0f32, 10.0), (117.0, 5.0), (120.0, 122.0), (8.0, 120.0)];
+
+    let ours = color_spaces::perspective_warp(&input, &info, &src, &dst, 128, 128).unwrap();
+
+    // Compare only non-zero pixels (border pixels may differ in how out-of-bounds is handled)
+    let mut total_err = 0.0f64;
+    let mut count = 0u64;
+    let mut max_err = 0u8;
+    for i in 0..ours.len() {
+        if reference[i] > 0 && ours[i] > 0 {
+            let err = (ours[i] as i16 - reference[i] as i16).unsigned_abs() as u8;
+            max_err = max_err.max(err);
+            total_err += err as f64;
+            count += 1;
+        }
+    }
+    let mae = if count > 0 { total_err / count as f64 } else { 0.0 };
+
+    eprintln!("Perspective vs OpenCV: MAE={mae:.4}, max_err={max_err}, compared={count}/{}", ours.len());
+    assert!(mae < 2.0, "Perspective MAE {mae:.4} > 2.0 vs OpenCV");
+}
+
+#[test]
+fn gray_world_wb_matches_reference() {
+    let input = load_fixture("blue_tinted_64_rgb.raw");
+    let reference = load_fixture("blue_tinted_64_grayworld.raw");
+
+    let info = ImageInfo {
+        width: 64, height: 64,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let ours = color_spaces::white_balance_gray_world(&input, &info).unwrap();
+
+    let error = mae(&ours, &reference);
+    let max_err = max_error(&ours, &reference);
+
+    eprintln!("Gray-world WB: MAE={error:.4}, max_err={max_err}");
+    assert!(error < 1.0, "Gray-world MAE {error:.4} > 1.0");
+    assert!(max_err <= 1, "Gray-world max error {max_err} > 1");
+}
