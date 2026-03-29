@@ -269,3 +269,55 @@ fn gray_world_wb_matches_reference() {
     assert!(error < 1.0, "Gray-world MAE {error:.4} > 1.0");
     assert!(max_err <= 1, "Gray-world max error {max_err} > 1");
 }
+
+// ─── OKLab + Bradford Parity (colour-science 0.4.7) ─────────────────────
+
+#[test]
+fn oklab_matches_colour_science() {
+    // Reference values from colour-science 0.4.7 (colour.XYZ_to_Oklab)
+    let test_cases: &[(&str, (f32, f32, f32), (f32, f32, f32))] = &[
+        ("red",    (1.0, 0.0, 0.0), (0.627926, 0.224888, 0.125805)),
+        ("green",  (0.0, 1.0, 0.0), (0.866452, -0.233921, 0.179422)),
+        ("blue",   (0.0, 0.0, 1.0), (0.452033, -0.032352, -0.311621)),
+        ("gray",   (0.5, 0.5, 0.5), (0.598182, 0.000001, -0.000068)),
+        ("custom", (0.5, 0.3, 0.8), (0.541759, 0.089488, -0.166634)),
+        ("white",  (1.0, 1.0, 1.0), (1.000002, 0.000002, -0.000114)),
+        ("black",  (0.0, 0.0, 0.0), (0.000000, 0.000000, 0.000000)),
+    ];
+
+    let mut max_err: f32 = 0.0;
+    for (name, (r, g, b), (ref_l, ref_a, ref_b)) in test_cases {
+        let (l, a, bv) = color_spaces::rgb_to_oklab(*r, *g, *b);
+        let err = (l - ref_l).abs().max((a - ref_a).abs()).max((bv - ref_b).abs());
+        max_err = max_err.max(err);
+        eprintln!("OKLab {name:8}: L={l:.6} a={a:.6} b={bv:.6} (ref: {ref_l:.6},{ref_a:.6},{ref_b:.6}) err={err:.6}");
+    }
+
+    assert!(max_err < 0.001, "OKLab max error {max_err:.6} > 0.001 vs colour-science");
+}
+
+#[test]
+fn bradford_matches_colour_science() {
+    // Reference: colour-science 0.4.7, Von Kries method with Bradford transform
+    // D65->D50: XYZ(0.5, 0.4, 0.3) → (0.518086, 0.405866, 0.226963)
+    let (x, y, z) = color_spaces::bradford_adapt(
+        0.5, 0.4, 0.3,
+        color_spaces::Illuminant::D65,
+        color_spaces::Illuminant::D50,
+    );
+    eprintln!("Bradford D65->D50: X={x:.6} Y={y:.6} Z={z:.6}");
+    eprintln!("  Reference:       X=0.518086 Y=0.405866 Z=0.226963");
+    let err = (x - 0.518086f32).abs().max((y - 0.405866).abs()).max((z - 0.226963).abs());
+    assert!(err < 0.01, "Bradford D65->D50 error {err:.6} > 0.01");
+
+    // D65->A: XYZ(0.5, 0.4, 0.3) → (0.606172, 0.425971, 0.096777)
+    let (x, y, z) = color_spaces::bradford_adapt(
+        0.5, 0.4, 0.3,
+        color_spaces::Illuminant::D65,
+        color_spaces::Illuminant::A,
+    );
+    eprintln!("Bradford D65->A:   X={x:.6} Y={y:.6} Z={z:.6}");
+    eprintln!("  Reference:       X=0.606172 Y=0.425971 Z=0.096777");
+    let err = (x - 0.606172f32).abs().max((y - 0.425971).abs()).max((z - 0.096777).abs());
+    assert!(err < 0.01, "Bradford D65->A error {err:.6} > 0.01");
+}
