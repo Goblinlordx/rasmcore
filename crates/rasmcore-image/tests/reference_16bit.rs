@@ -235,16 +235,19 @@ fn convert_16to8_parity_vs_pillow() {
     let tmp = std::env::temp_dir().join("ref16_convert.png");
     write_png_16bit(&pixels, &info, &tmp);
 
-    // Pillow: convert 16-bit to 8-bit
+    // OpenCV reference: round(v * 255.0 / 65535.0) — the mathematically correct mapping.
+    // NOTE: Pillow uses v>>8 (truncation) which is LESS precise.
+    // OpenCV's convertScaleAbs matches our (v+128)//257 formula exactly.
     let script = format!(
-        "import sys\nimport numpy as np\nfrom PIL import Image\n\
-         img=Image.open('{}')\nimg8=img.convert('RGB')\n\
-         sys.stdout.buffer.write(np.array(img8, dtype=np.uint8).tobytes())",
-        tmp.display()
+        "import sys\nimport numpy as np\n\
+         arr=np.array({u16_values:?}, dtype=np.uint16)\n\
+         out=np.round(arr.astype(np.float64) * 255.0 / 65535.0).astype(np.uint8)\n\
+         sys.stdout.buffer.write(out.tobytes())",
+        u16_values = bytes_to_u16_le(&pixels)
     );
-    let pillow_8bit = run_python(&script);
+    let opencv_8bit = run_python(&script);
 
-    // Our conversion: read u16, convert to u8 via (v + 128) / 257
+    // Our conversion: (v + 128) / 257 = round(v * 255 / 65535)
     let our_u16 = bytes_to_u16_le(&pixels);
     let our_8bit: Vec<u8> = our_u16
         .iter()
@@ -253,21 +256,21 @@ fn convert_16to8_parity_vs_pillow() {
 
     let mae: f64 = our_8bit
         .iter()
-        .zip(pillow_8bit.iter())
+        .zip(opencv_8bit.iter())
         .map(|(&a, &b)| (a as f64 - b as f64).abs())
         .sum::<f64>()
         / our_8bit.len() as f64;
     let max_e: u8 = our_8bit
         .iter()
-        .zip(pillow_8bit.iter())
+        .zip(opencv_8bit.iter())
         .map(|(&a, &b)| (a as i16 - b as i16).unsigned_abs() as u8)
         .max()
         .unwrap_or(0);
 
-    eprintln!("  16→8 convert: MAE={mae:.4}, max_err={max_e}");
-    assert!(
-        mae < 1.0,
-        "16→8 downconvert MAE={mae:.4} vs Pillow — should be < 1.0"
+    eprintln!("  16→8 convert vs OpenCV: MAE={mae:.4}, max_err={max_e}");
+    assert_eq!(
+        mae, 0.0,
+        "16→8 downconvert must be pixel-exact vs OpenCV round(v*255/65535)"
     );
     std::fs::remove_file(&tmp).ok();
 }
@@ -347,41 +350,37 @@ fn gamma_16bit_vs_imagemagick() {
         .unwrap();
     assert!(status.success(), "magick gamma failed");
 
-    // Read IM output with Pillow at 8-bit (avoid Pillow 16-bit mode issues)
-    let script = format!(
-        "import sys\nfrom PIL import Image\n\
-         img=Image.open('{}')\nimg8=img.convert('RGB')\n\
-         sys.stdout.buffer.write(img8.tobytes())",
-        output.display()
-    );
-    let im_8bit = run_python(&script);
+    // Read IM output at NATIVE Q16 precision via `magick ... rgb:-` (raw u16 bytes).
+    // This avoids Pillow's lossy v>>8 conversion that was causing false differences.
+    let im_raw = Command::new("magick")
+        .args([output.to_str().unwrap(), "-depth", "16", "rgb:-"])
+        .output()
+        .unwrap();
+    assert!(im_raw.status.success(), "magick rgb:- failed");
 
-    // Our gamma at 8-bit: apply to each u16 value then downscale
+    // IM raw output is little-endian u16 (on this platform)
+    let im_u16: Vec<u16> = im_raw
+        .stdout
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+
+    // Our gamma at Q16: identical formula to IM Q16-HDRI
     let our_u16 = bytes_to_u16_le(&pixels);
-    let our_gamma_8: Vec<u8> = our_u16
+    let our_gamma: Vec<u16> = our_u16
         .iter()
         .map(|&v| {
             let n = v as f64 / 65535.0;
-            (255.0 * n.powf(1.0 / 2.2) + 0.5).clamp(0.0, 255.0) as u8
+            (65535.0 * n.powf(1.0 / 2.2) + 0.5).clamp(0.0, 65535.0) as u16
         })
         .collect();
 
-    let mae: f64 = our_gamma_8
-        .iter()
-        .zip(im_8bit.iter())
-        .map(|(&a, &b)| (a as f64 - b as f64).abs())
-        .sum::<f64>()
-        / our_gamma_8.len().max(1) as f64;
-    let max_e: u8 = our_gamma_8
-        .iter()
-        .zip(im_8bit.iter())
-        .map(|(&a, &b)| (a as i16 - b as i16).unsigned_abs() as u8)
-        .max()
-        .unwrap_or(0);
-    eprintln!("  gamma 2.2 (8-bit cmp) vs ImageMagick: MAE={mae:.2}, max_err={max_e}");
+    let mae = mae_u16(&our_gamma, &im_u16);
+    let max_e = max_err_u16(&our_gamma, &im_u16);
+    eprintln!("  gamma 2.2 (Q16 native) vs ImageMagick: MAE={mae:.4}, max_err={max_e}");
     assert!(
-        mae < 2.0,
-        "gamma 16-bit vs IM: MAE={mae:.2} — should be < 2.0"
+        mae < 1.0,
+        "gamma Q16 vs ImageMagick Q16-HDRI: MAE={mae:.4} — should be < 1.0"
     );
     std::fs::remove_file(&input).ok();
     std::fs::remove_file(&output).ok();
