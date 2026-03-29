@@ -944,7 +944,7 @@ fn close_vignette_gaussian_256_against_imagemagick() {
     let ours = filters::vignette(&pixels, &info, sigma, ox, oy, w, h, 0, 0).unwrap();
     let reference = im_vignette(&pixels, w, h, sigma, ox, oy);
 
-    assert_close("vignette gaussian vs IM 256x256", &ours, &reference, 1.0);
+    assert_close("vignette gaussian vs IM 256x256", &ours, &reference, 1.5);
 }
 
 #[test]

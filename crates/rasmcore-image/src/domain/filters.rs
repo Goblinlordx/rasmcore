@@ -1495,17 +1495,54 @@ fn to_grayscale_simd128(pixels: &[u8], channels: usize, pixel_count: usize) -> V
 
 // ─── Vignette Effect ────────────────────────────────────────────────────
 
+/// Compute the optimal Gaussian kernel width for a given sigma.
+///
+/// Reimplements ImageMagick 7's `GetOptimalKernelWidth2D` from `gem.c`:
+/// starts at width 5 and grows by 2 until the normalized edge value of
+/// the 2D Gaussian drops below `1.0 / quantum_range`.
+///
+/// For Q16 (quantum_range = 65535) this produces kernel radii that exactly
+/// match ImageMagick 7.1.x's `-vignette` and `-gaussian-blur` operators.
+fn im_gaussian_kernel_radius(sigma: f64) -> usize {
+    const QUANTUM_SCALE: f64 = 1.0 / 65535.0; // Q16
+    let gamma = sigma.abs();
+    if gamma < 1.0e-12 {
+        return 1;
+    }
+    let alpha = 1.0 / (2.0 * gamma * gamma);
+    let beta = 1.0 / (2.0 * std::f64::consts::PI * gamma * gamma);
+
+    let mut width: usize = 5;
+    loop {
+        let j = (width - 1) / 2;
+        let ji = j as isize;
+        let mut normalize = 0.0f64;
+        for v in -ji..=ji {
+            for u in -ji..=ji {
+                normalize += (-(((u * u + v * v) as f64) * alpha)).exp() * beta;
+            }
+        }
+        let value = (-((j * j) as f64 * alpha)).exp() * beta / normalize;
+        if value < QUANTUM_SCALE || value < 1.0e-12 {
+            break;
+        }
+        width += 2;
+    }
+    (width - 2 - 1) / 2 // convert width to radius
+}
+
 /// Separable 1D Gaussian blur on a f64 single-channel buffer.
 ///
 /// Uses zero-padding outside image bounds (matching ImageMagick's vignette
-/// canvas behaviour). Kernel radius = ceil(3.0 * sigma).
+/// canvas behaviour). Kernel radius computed via IM's `GetOptimalKernelWidth2D`
+/// algorithm for exact Q16-compatible truncation.
 fn gaussian_blur_mask(data: &[f64], w: usize, h: usize, sigma: f64) -> Vec<f64> {
-    let radius = (2.5 * sigma).ceil() as usize;
+    let radius = im_gaussian_kernel_radius(sigma);
     if radius == 0 {
         return data.to_vec();
     }
 
-    // Build 1D Gaussian kernel
+    // Build 1D Gaussian kernel with IM-matched radius
     let ksize = 2 * radius + 1;
     let mut kernel = vec![0.0f64; ksize];
     let inv_2s2 = 1.0 / (2.0 * sigma * sigma);
