@@ -1,0 +1,61 @@
+id: jpeg-parity-audit_20260329114357Z
+title: JPEG Parity Audit — Pixel-Exact Decode, Multi-MCU Fix, Threshold Tightening
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Audit and fix JPEG encode/decode parity: add pixel-exact decode tests against libjpeg-turbo, fix multi-MCU grayscale
+    encoder bug, fix arithmetic decoder panic on truncated streams, tighten MAE thresholds from 4.0-8.0 to provably minimal
+    values.'
+  context: 'JPEG encoder/decoder has comprehensive test coverage (28+ tests, three-way parity) but all use statistical thresholds
+    (MAE 4.0-8.0, PSNR > 15-25 dB). No tests verify pixel-exact decode match against libjpeg-turbo. Known bugs: multi-MCU
+    grayscale encoder issue (documented at decode.rs:1659), arithmetic decoder panics on truncated QM-coder data instead of
+    returning error.'
+  codebase_analysis: 'Encoder: crates/rasmcore-jpeg/src/lib.rs (1780 lines). Decoder: src/decode.rs (2216 lines). Tests: tests/parity.rs
+    (three-way parity). Multi-MCU bug affects grayscale gradient encoding — decoder verified correct via cross-decode, encoder
+    output valid but multi-MCU Huffman alignment off. Arithmetic panic at decode.rs around line 2069. Progressive cross-decode
+    threshold at 8.0 MAE is the loosest.'
+  acceptance_criteria:
+  - Pixel-exact decode tests pass for solid-color and gradient JPEG inputs encoded by libjpeg-turbo
+  - Multi-MCU grayscale encode/decode roundtrip PSNR > 35 dB (currently fails at 25 dB)
+  - Truncated arithmetic JPEG stream returns Err, not panic
+  - All MAE thresholds tightened to actual measured value + margin of 1.0
+  - REFERENCE_VALIDATION.md updated with tightened thresholds and new pixel-exact results
+  out_of_scope: JPEG lossless mode. New quantization presets. Encoder speed optimization. EXIF metadata preservation.
+  technical_notes: 'Approach: (1) Add pixel-exact decode parity tests — encode with libjpeg-turbo then decode with both our
+    decoder and libjpeg, compare byte-for-byte. Start with solid color and simple gradient inputs where JPEG loss is deterministic.
+    (2) Fix multi-MCU grayscale by tracing Huffman DC/AC encoding per-MCU and comparing with reference. (3) Replace arithmetic
+    decoder panic with proper error return. (4) For each existing threshold test, measure actual MAE and tighten to actual+1.'
+plan:
+  - phase: Pixel-Exact Decode Parity
+    tasks:
+      - text: Generate reference JPEGs via libjpeg-turbo cjpeg (solid color, gradient, checkerboard) at Q75/Q95 baseline 4:2:0 and 4:4:4
+        done: false
+      - text: Decode each with our decoder and libjpeg-turbo djpeg, compare byte-for-byte
+        done: false
+      - text: Investigate and document any decode pixel differences
+        done: false
+      - text: Add pixel-exact decode parity tests to tests/parity.rs
+        done: false
+  - phase: Multi-MCU Grayscale Fix
+    tasks:
+      - text: Reproduce multi-MCU grayscale failure with minimal 8x16 gradient (2 MCUs)
+        done: false
+      - text: Trace per-MCU DC differential encoding vs libjpeg reference
+        done: false
+      - text: Fix encoder Huffman alignment for multi-MCU grayscale
+        done: false
+      - text: Verify roundtrip PSNR > 35 dB
+        done: false
+  - phase: Robustness + Threshold Tightening
+    tasks:
+      - text: Replace arithmetic decoder panic with Result::Err on truncated QM-coder data
+        done: false
+      - text: Measure actual MAE for each existing threshold test and record results
+        done: false
+      - text: Tighten all MAE assertions to measured_value + 1.0 margin
+        done: false
+      - text: Update REFERENCE_VALIDATION.md JPEG section with results
+        done: false
+extra: {}
