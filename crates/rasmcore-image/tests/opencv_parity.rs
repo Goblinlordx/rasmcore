@@ -226,8 +226,8 @@ fn perspective_warp_matches_opencv() {
         color_space: ColorSpace::Srgb,
     };
 
-    let src = [(0.0f32, 0.0), (127.0, 0.0), (127.0, 127.0), (0.0, 127.0)];
-    let dst = [(10.0f32, 10.0), (117.0, 5.0), (120.0, 122.0), (8.0, 120.0)];
+    let src = [(0.0f64, 0.0), (127.0, 0.0), (127.0, 127.0), (0.0, 127.0)];
+    let dst = [(10.0f64, 10.0), (117.0, 5.0), (120.0, 122.0), (8.0, 120.0)];
 
     let ours = color_spaces::perspective_warp(&input, &info, &src, &dst, 128, 128).unwrap();
 
@@ -275,7 +275,7 @@ fn gray_world_wb_matches_reference() {
 #[test]
 fn oklab_matches_colour_science() {
     // Reference values from colour-science 0.4.7 (colour.XYZ_to_Oklab)
-    let test_cases: &[(&str, (f32, f32, f32), (f32, f32, f32))] = &[
+    let test_cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
         ("red",    (1.0, 0.0, 0.0), (0.627926, 0.224888, 0.125805)),
         ("green",  (0.0, 1.0, 0.0), (0.866452, -0.233921, 0.179422)),
         ("blue",   (0.0, 0.0, 1.0), (0.452033, -0.032352, -0.311621)),
@@ -285,7 +285,7 @@ fn oklab_matches_colour_science() {
         ("black",  (0.0, 0.0, 0.0), (0.000000, 0.000000, 0.000000)),
     ];
 
-    let mut max_err: f32 = 0.0;
+    let mut max_err: f64 = 0.0;
     for (name, (r, g, b), (ref_l, ref_a, ref_b)) in test_cases {
         let (l, a, bv) = color_spaces::rgb_to_oklab(*r, *g, *b);
         let err = (l - ref_l).abs().max((a - ref_a).abs()).max((bv - ref_b).abs());
@@ -307,7 +307,7 @@ fn bradford_matches_colour_science() {
     );
     eprintln!("Bradford D65->D50: X={x:.6} Y={y:.6} Z={z:.6}");
     eprintln!("  Reference:       X=0.518086 Y=0.405866 Z=0.226963");
-    let err = (x - 0.518086f32).abs().max((y - 0.405866).abs()).max((z - 0.226963).abs());
+    let err = (x - 0.518086f64).abs().max((y - 0.405866).abs()).max((z - 0.226963).abs());
     assert!(err < 0.01, "Bradford D65->D50 error {err:.6} > 0.01");
 
     // D65->A: XYZ(0.5, 0.4, 0.3) → (0.606172, 0.425971, 0.096777)
@@ -318,6 +318,6 @@ fn bradford_matches_colour_science() {
     );
     eprintln!("Bradford D65->A:   X={x:.6} Y={y:.6} Z={z:.6}");
     eprintln!("  Reference:       X=0.606172 Y=0.425971 Z=0.096777");
-    let err = (x - 0.606172f32).abs().max((y - 0.425971).abs()).max((z - 0.096777).abs());
+    let err = (x - 0.606172f64).abs().max((y - 0.425971).abs()).max((z - 0.096777).abs());
     assert!(err < 0.01, "Bradford D65->A error {err:.6} > 0.01");
 }

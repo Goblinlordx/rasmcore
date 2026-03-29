@@ -139,7 +139,7 @@ fn oklab_differences_are_fp_precision() {
 
     use rasmcore_image::domain::color_spaces;
 
-    let test_colors: &[(f32, f32, f32, f64, f64, f64)] = &[
+    let test_colors: &[(f64, f64, f64, f64, f64, f64)] = &[
         // (r, g, b, ref_L, ref_a, ref_b) from colour-science f64
         (1.0, 0.0, 0.0, 0.627926, 0.224888, 0.125805),
         (0.0, 1.0, 0.0, 0.866452, -0.233921, 0.179422),
@@ -155,9 +155,9 @@ fn oklab_differences_are_fp_precision() {
 
     for &(r, g, b, ref_l, ref_a, ref_b) in test_colors {
         let (l, a, bv) = color_spaces::rgb_to_oklab(r, g, b);
-        let err_l = (l as f64 - ref_l).abs();
-        let err_a = (a as f64 - ref_a).abs();
-        let err_b = (bv as f64 - ref_b).abs();
+        let err_l = (l  - ref_l).abs();
+        let err_a = (a  - ref_a).abs();
+        let err_b = (bv  - ref_b).abs();
         let err = err_l.max(err_a).max(err_b);
         max_err = max_err.max(err);
 
@@ -193,7 +193,7 @@ fn bradford_differences_are_fp_precision() {
     use rasmcore_image::domain::color_spaces::{self, Illuminant};
 
     // Reference: colour-science 0.4.7 (f64 computation)
-    let test_cases: &[(f32, f32, f32, Illuminant, Illuminant, f64, f64, f64)] = &[
+    let test_cases: &[(f64, f64, f64, Illuminant, Illuminant, f64, f64, f64)] = &[
         // D65->D50: XYZ(0.5, 0.4, 0.3) → (0.518086, 0.405866, 0.226963)
         (0.5, 0.4, 0.3, Illuminant::D65, Illuminant::D50, 0.518086, 0.405866, 0.226963),
         // D65->A: XYZ(0.5, 0.4, 0.3) → (0.606172, 0.425971, 0.096777)
@@ -204,10 +204,10 @@ fn bradford_differences_are_fp_precision() {
 
     for &(x, y, z, from, to, ref_x, ref_y, ref_z) in test_cases {
         let (ox, oy, oz) = color_spaces::bradford_adapt(x, y, z, from, to);
-        let err = (ox as f64 - ref_x)
+        let err = (ox  - ref_x)
             .abs()
-            .max((oy as f64 - ref_y).abs())
-            .max((oz as f64 - ref_z).abs());
+            .max((oy  - ref_y).abs())
+            .max((oz  - ref_z).abs());
         max_err = max_err.max(err);
     }
 
