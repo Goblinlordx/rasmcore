@@ -182,6 +182,17 @@ pub struct CropParams {
     pub height: u32,
 }
 
+/// Parameters for vignette effect.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct VignetteParams {
+    /// Darkening strength (0=none, 1=fully black at corners)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub strength: f32,
+    /// Radial falloff exponent (higher = sharper transition)
+    #[param(min = 0.5, max = 5.0, step = 0.1, default = 2.0)]
+    pub falloff: f32,
+}
+
 /// Apply gaussian blur using libblur (SIMD-optimized).
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on
@@ -1378,6 +1389,85 @@ fn to_grayscale_simd128(pixels: &[u8], channels: usize, pixel_count: usize) -> V
     }
 
     gray
+}
+
+// ─── Vignette Effect ────────────────────────────────────────────────────
+
+/// Radial vignette darkening effect.
+///
+/// Multiplies each pixel by a radial gradient factor that falls off from
+/// center to corners. The formula:
+///   dist = sqrt((x - cx)^2 + (y - cy)^2)
+///   t    = (dist / max_dist) ^ falloff
+///   factor = 1.0 - strength * t
+///   pixel' = pixel * factor
+///
+/// `full_width`/`full_height` specify the full image dimensions (for tiled
+/// execution). `offset_x`/`offset_y` give this tile's position within the
+/// full image. For non-tiled usage, set offsets to 0 and full dims = info dims.
+#[rasmcore_macros::register_filter(name = "vignette", category = "enhancement")]
+pub fn vignette(
+    pixels: &[u8],
+    info: &ImageInfo,
+    strength: f32,
+    falloff: f32,
+    full_width: u32,
+    full_height: u32,
+    offset_x: u32,
+    offset_y: u32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            vignette(p8, i8, strength, falloff, full_width, full_height, offset_x, offset_y)
+        });
+    }
+
+    let ch = channels(info.format);
+    let color_ch = if ch == 4 { 3 } else { ch }; // skip alpha
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let fw = full_width as f64;
+    let fh = full_height as f64;
+    let cx = fw / 2.0;
+    let cy = fh / 2.0;
+    let max_dist = (cx * cx + cy * cy).sqrt();
+    let strength_d = strength as f64;
+    let falloff_d = falloff as f64;
+
+    let mut result = pixels.to_vec();
+
+    for row in 0..h {
+        let abs_y = (offset_y as usize + row) as f64 + 0.5;
+        let dy = abs_y - cy;
+        let dy2 = dy * dy;
+        for col in 0..w {
+            let abs_x = (offset_x as usize + col) as f64 + 0.5;
+            let dx = abs_x - cx;
+            let dist = (dx * dx + dy2).sqrt();
+            let t = (dist / max_dist).powf(falloff_d);
+            let factor = 1.0 - strength_d * t;
+
+            let idx = (row * w + col) * ch;
+            for c in 0..color_ch {
+                let v = result[idx + c] as f64 * factor;
+                result[idx + c] = v.round().clamp(0.0, 255.0) as u8;
+            }
+            // alpha channel (if present) is preserved unchanged
+        }
+    }
+
+    Ok(result)
+}
+
+/// Convenience wrapper for non-tiled vignette (full image at once).
+pub fn vignette_full(
+    pixels: &[u8],
+    info: &ImageInfo,
+    strength: f32,
+    falloff: f32,
+) -> Result<Vec<u8>, ImageError> {
+    vignette(pixels, info, strength, falloff, info.width, info.height, 0, 0)
 }
 
 // ─── Alpha Management ────────────────────────────────────────────────────
