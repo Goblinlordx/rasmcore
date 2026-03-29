@@ -49,8 +49,11 @@ spec:
     - Every operation has a parity test comparing output against the reference
     - tests/fixtures/generate.sh updated to produce all reference outputs
     - Reference comparison document listing each operation + its reference + MAE threshold
-    - All parity tests pass (MAE within documented threshold per operation)
-    - Operations where we intentionally diverge from the reference have documented rationale
+    - Exact-match operations (invert, threshold, posterize, clamp, flatten, add/remove alpha, premultiply, unpremultiply) produce BIT-IDENTICAL output to ImageMagick
+    - Deterministic-math operations (gamma, brightness, contrast, blend modes) produce identical output when using the same formula — any difference is a bug to fix
+    - Algorithm-dependent operations (blur, median, equalize) match within +-1 per channel with documented reason for each difference (kernel rounding, edge handling, CDF normalization)
+    - Different-by-design operations (smart_crop, sobel vs edge) document WHY the algorithm differs and validate equivalent outcome
+    - Operations where we intentionally diverge have documented rationale explaining the specific cause of each differing pixel
   out_of_scope: |
     Fixing operations that fail parity (separate bug tracks per operation).
     Adding new operations. Performance comparison (separate track).
@@ -106,12 +109,33 @@ spec:
     5. Assert MAE < threshold (varies per operation — blur is forgiving, invert is exact)
     6. Document the reference and threshold in a reference table
 
-    MAE thresholds (expected):
-      Exact ops (invert, threshold, posterize): MAE < 0.5
-      Linear ops (brightness, contrast, gamma): MAE < 2.0
-      Spatial ops (blur, sharpen, median): MAE < 5.0
-      Complex ops (canny, equalize, hue_rotate): MAE < 10.0
-      Geometry ops (rotate_arbitrary, affine): MAE < 3.0 (interpolation differences)
+    Match expectations by category:
+
+      EXACT (must be bit-identical — any difference is a bug):
+        invert, threshold, posterize, clamp, flatten, add_alpha, remove_alpha,
+        premultiply, unpremultiply, blend modes (Multiply, Screen, etc. when
+        using same integer formula)
+        → Assert: MAE == 0.0 (zero tolerance)
+
+      DETERMINISTIC MATH (identical output if same formula):
+        gamma (LUT from same powf), brightness (same offset), contrast (same factor),
+        grayscale (same BT.709 weights), sepia (same matrix coefficients)
+        → Assert: MAE == 0.0 if formulas match, otherwise fix our formula to match
+        → If ImageMagick uses a different formula, document which and match theirs
+
+      ALGORITHM-DEPENDENT (+-1 per channel, documented reason per pixel):
+        blur (Gaussian kernel size rounding, edge clamp vs reflect),
+        sharpen (unsharp mask radius), median (histogram vs sort, border handling),
+        equalize (CDF integer rounding), normalize (percentile calculation),
+        hue_rotate/saturate (f32 vs f64 HSV precision)
+        → Assert: MAE <= 1.0, with documented reason for any non-zero pixel
+        → If MAE > 1.0, create a bug track to investigate
+
+      DIFFERENT BY DESIGN (document rationale, validate equivalent outcome):
+        smart_crop (iterative slice vs other), sobel (our 3x3 vs magick edge),
+        canny (parameter mapping differences)
+        → Assert: functionally equivalent (same region selected, same edges found)
+        → Document the algorithm difference in REFERENCE.md
 plan:
   - phase: Reference Documentation
     tasks:
