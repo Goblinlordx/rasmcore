@@ -693,7 +693,7 @@ pub fn convolve(
                         sum += kernel[ky * kw + kx] * padded[px_off] as f32;
                     }
                 }
-                out[(y * w + x) * channels + c] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+                out[(y * w + x) * channels + c] = (sum * inv_div).round().clamp(0.0, 255.0) as u8;
             }
         }
     }
@@ -875,7 +875,7 @@ fn convolve_separable(
             for ky in 0..col_k.len() {
                 sum += col_k[ky] * tmp[((y + pad - rh + ky) * w + x) * channels + c];
             }
-            out[idx] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+            out[idx] = (sum * inv_div).round().clamp(0.0, 255.0) as u8;
         }
     }
 
@@ -888,7 +888,8 @@ fn convolve_separable(
                     for ky in 0..col_k.len() {
                         sum += col_k[ky] * tmp[((y + pad - rh + ky) * w + x) * channels + c];
                     }
-                    out[(y * w + x) * channels + c] = (sum * inv_div).clamp(0.0, 255.0) as u8;
+                    out[(y * w + x) * channels + c] =
+                        (sum * inv_div).round().clamp(0.0, 255.0) as u8;
                 }
             }
         }
@@ -1649,7 +1650,15 @@ pub fn vignette_full(
     y_inset: u32,
 ) -> Result<Vec<u8>, ImageError> {
     vignette(
-        pixels, info, sigma, x_inset, y_inset, info.width, info.height, 0, 0,
+        pixels,
+        info,
+        sigma,
+        x_inset,
+        y_inset,
+        info.width,
+        info.height,
+        0,
+        0,
     )
 }
 
@@ -1672,7 +1681,16 @@ pub fn vignette_powerlaw(
     validate_format(info.format)?;
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            vignette_powerlaw(p8, i8, strength, falloff, full_width, full_height, offset_x, offset_y)
+            vignette_powerlaw(
+                p8,
+                i8,
+                strength,
+                falloff,
+                full_width,
+                full_height,
+                offset_x,
+                offset_y,
+            )
         });
     }
 
