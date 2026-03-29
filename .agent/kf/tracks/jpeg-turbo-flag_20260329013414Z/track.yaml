@@ -1,0 +1,46 @@
+id: jpeg-turbo-flag_20260329013414Z
+title: JPEG Turbo Flag — Fast Encode Mode Bypassing Multi-Pass Optimizations
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: 'Add turbo flag to EncodeConfig that disables multi-pass trellis, EOB optimization,
+    and optimized Huffman for maximum encode speed. When turbo=true: single-pass encode
+    with standard tables, no trellis. Default turbo=false enables all optimizations.'
+  context: 'Full mozjpeg-quality encoding requires multiple passes (trellis, Huffman
+    optimization, re-trellis, EOB optimization) which can be 5-10x slower than single-pass.
+    Some use cases need fast encoding (real-time, thumbnails, previews). The turbo
+    flag provides a clean API for this: turbo=true gives libjpeg-equivalent speed,
+    turbo=false (default) gives mozjpeg-equivalent quality.'
+  codebase_analysis: ''
+  acceptance_criteria:
+  - turbo=true encodes at least 3x faster than turbo=false
+  - turbo=false (default) enables trellis + optimize_huffman + eob_opt
+  - turbo=true produces valid JPEGs decodable by all reference decoders
+  - All existing tests pass
+  out_of_scope: ''
+  technical_notes: 'Add turbo: bool to EncodeConfig (default false). When turbo=true:
+    (1) disable trellis quantization, (2) use standard Huffman tables (no two-pass),
+    (3) skip EOB optimization. When turbo=false (default): enable trellis + optimize_huffman
+    + eob_opt automatically. This replaces the current separate trellis/optimize_huffman
+    booleans as the primary user-facing quality control. The individual flags remain
+    for fine-grained control.'
+plan:
+- phase: API Design
+  tasks:
+  - text: 'Add turbo: bool to EncodeConfig (default false)'
+    done: false
+  - text: When turbo=false (default), auto-enable trellis + optimize_huffman + eob_opt
+    done: false
+  - text: When turbo=true, force single-pass with standard tables, no trellis
+    done: false
+- phase: Verification
+  tasks:
+  - text: turbo=true at least 3x faster than default
+    done: false
+  - text: Both modes produce valid decodable JPEGs
+    done: false
+  - text: All existing tests pass
+    done: false
+extra: {}
