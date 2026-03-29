@@ -4292,3 +4292,992 @@ mod retinex_tests {
         assert!(stats[0].max >= 250, "max should be near 255, got {}", stats[0].max);
     }
 }
+
+// ─── HDR Merge: Mertens Exposure Fusion + Debevec ────────────────────────────
+
+/// Parameters for Mertens exposure fusion.
+#[derive(Debug, Clone)]
+pub struct MertensParams {
+    /// Weight for contrast metric (default 1.0).
+    pub contrast_weight: f32,
+    /// Weight for saturation metric (default 1.0).
+    pub saturation_weight: f32,
+    /// Weight for well-exposedness metric (default 1.0).
+    pub exposure_weight: f32,
+}
+
+impl Default for MertensParams {
+    fn default() -> Self {
+        Self {
+            contrast_weight: 1.0,
+            saturation_weight: 1.0,
+            exposure_weight: 1.0,
+        }
+    }
+}
+
+/// Mertens exposure fusion — blends multiple exposures without HDR intermediate.
+///
+/// Takes a list of same-size RGB8 images and produces a fused result.
+/// Uses Laplacian pyramid blending with per-pixel weights based on
+/// contrast, saturation, and well-exposedness.
+///
+/// Reference: OpenCV cv2.createMergeMertens (photo/src/merge.cpp).
+/// Algorithm: Mertens et al. "Exposure Fusion" (Pacific Graphics 2007).
+pub fn mertens_fusion(
+    images: &[&[u8]],
+    info: &ImageInfo,
+    params: &MertensParams,
+) -> Result<Vec<u8>, ImageError> {
+    if images.len() < 2 {
+        return Err(ImageError::InvalidInput("need at least 2 images".into()));
+    }
+    if info.format != PixelFormat::Rgb8 {
+        return Err(ImageError::UnsupportedFormat(
+            "mertens fusion requires Rgb8 input".into(),
+        ));
+    }
+    let (w, h) = (info.width as usize, info.height as usize);
+    let n = w * h;
+    let expected_len = n * 3;
+    for img in images {
+        if img.len() != expected_len {
+            return Err(ImageError::InvalidInput("image size mismatch".into()));
+        }
+    }
+
+    let n_images = images.len();
+
+    // Convert images to f32 [0,1] (3-channel interleaved)
+    let images_f: Vec<Vec<f32>> = images
+        .iter()
+        .map(|img| img.iter().map(|&v| v as f32 / 255.0).collect())
+        .collect();
+
+    // Step 1: Compute per-pixel weights for each image
+    let mut weights: Vec<Vec<f32>> = Vec::with_capacity(n_images);
+    for img_f in &images_f {
+        let weight = compute_mertens_weight(img_f, w, h, params);
+        weights.push(weight);
+    }
+
+    // Step 2: Normalize weights (sum to 1 per pixel)
+    for px in 0..n {
+        let sum: f32 = weights.iter().map(|w| w[px]).sum();
+        if sum > 0.0 {
+            for w in &mut weights {
+                w[px] /= sum;
+            }
+        }
+    }
+
+    // Step 3: Laplacian pyramid blending
+    // Pyramid depth: log2(min(w,h))
+    let maxlevel = ((w.min(h) as f64).log2()) as usize;
+
+    // Build weight Gaussian pyramids and image Laplacian pyramids
+    let weight_pyrs: Vec<Vec<Vec<f32>>> = weights
+        .iter()
+        .map(|w| gaussian_pyramid_gray(w, info.width, info.height, maxlevel))
+        .collect();
+
+    let image_lap_pyrs: Vec<Vec<(Vec<f32>, u32, u32)>> = images_f
+        .iter()
+        .map(|img| laplacian_pyramid_rgb(img, info.width, info.height, maxlevel))
+        .collect();
+
+    // Step 4: Merge at each level
+    let mut merged_pyr: Vec<(Vec<f32>, u32, u32)> = Vec::with_capacity(maxlevel + 1);
+    for level in 0..=maxlevel {
+        let (_, lw, lh) = image_lap_pyrs[0][level];
+        let lpx = (lw * lh) as usize;
+        let mut merged = vec![0.0f32; lpx * 3];
+
+        for i in 0..n_images {
+            let (ref lap, _, _) = image_lap_pyrs[i][level];
+            let weight = &weight_pyrs[i][level];
+            for px in 0..lpx {
+                let wt = weight[px];
+                merged[px * 3] += wt * lap[px * 3];
+                merged[px * 3 + 1] += wt * lap[px * 3 + 1];
+                merged[px * 3 + 2] += wt * lap[px * 3 + 2];
+            }
+        }
+        merged_pyr.push((merged, lw, lh));
+    }
+
+    // Step 5: Collapse the merged Laplacian pyramid
+    let (mut result, mut rw, mut rh) = merged_pyr.pop().unwrap();
+    for level in (0..maxlevel).rev() {
+        let (ref lap, lw, lh) = merged_pyr[level];
+        let upsampled = pyr_up_rgb(&result, rw, rh, lw, lh);
+        result = Vec::with_capacity((lw * lh) as usize * 3);
+        let lpx = (lw * lh) as usize;
+        for px in 0..(lpx * 3) {
+            result.push(upsampled[px] + lap[px]);
+        }
+        rw = lw;
+        rh = lh;
+    }
+
+    // Convert back to u8, clamp
+    let mut output = vec![0u8; n * 3];
+    for i in 0..(n * 3) {
+        output[i] = (result[i] * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+
+    Ok(output)
+}
+
+/// Mertens fusion returning f32 output in [0,1] range (for precision testing).
+pub fn mertens_fusion_f32(
+    images: &[&[u8]],
+    info: &ImageInfo,
+    params: &MertensParams,
+) -> Result<Vec<f32>, ImageError> {
+    if images.len() < 2 {
+        return Err(ImageError::InvalidInput("need at least 2 images".into()));
+    }
+    if info.format != PixelFormat::Rgb8 {
+        return Err(ImageError::UnsupportedFormat(
+            "mertens fusion requires Rgb8 input".into(),
+        ));
+    }
+    let (w, h) = (info.width as usize, info.height as usize);
+    let n = w * h;
+    let expected_len = n * 3;
+    for img in images {
+        if img.len() != expected_len {
+            return Err(ImageError::InvalidInput("image size mismatch".into()));
+        }
+    }
+
+    let n_images = images.len();
+    let images_f: Vec<Vec<f32>> = images
+        .iter()
+        .map(|img| img.iter().map(|&v| v as f32 / 255.0).collect())
+        .collect();
+
+    let mut weights: Vec<Vec<f32>> = Vec::with_capacity(n_images);
+    for img_f in &images_f {
+        let weight = compute_mertens_weight(img_f, w, h, params);
+        weights.push(weight);
+    }
+
+    for px in 0..n {
+        let sum: f32 = weights.iter().map(|w| w[px]).sum();
+        if sum > 0.0 {
+            for w in &mut weights {
+                w[px] /= sum;
+            }
+        }
+    }
+
+    let maxlevel = ((w.min(h) as f64).log2()) as usize;
+
+    let weight_pyrs: Vec<Vec<Vec<f32>>> = weights
+        .iter()
+        .map(|w| gaussian_pyramid_gray(w, info.width, info.height, maxlevel))
+        .collect();
+
+    let image_lap_pyrs: Vec<Vec<(Vec<f32>, u32, u32)>> = images_f
+        .iter()
+        .map(|img| laplacian_pyramid_rgb(img, info.width, info.height, maxlevel))
+        .collect();
+
+    let mut merged_pyr: Vec<(Vec<f32>, u32, u32)> = Vec::with_capacity(maxlevel + 1);
+    for level in 0..=maxlevel {
+        let (_, lw, lh) = image_lap_pyrs[0][level];
+        let lpx = (lw * lh) as usize;
+        let mut merged = vec![0.0f32; lpx * 3];
+
+        for i in 0..n_images {
+            let (ref lap, _, _) = image_lap_pyrs[i][level];
+            let weight = &weight_pyrs[i][level];
+            for px in 0..lpx {
+                let wt = weight[px];
+                merged[px * 3] += wt * lap[px * 3];
+                merged[px * 3 + 1] += wt * lap[px * 3 + 1];
+                merged[px * 3 + 2] += wt * lap[px * 3 + 2];
+            }
+        }
+        merged_pyr.push((merged, lw, lh));
+    }
+
+    let (mut result, mut rw, mut rh) = merged_pyr.pop().unwrap();
+    for level in (0..maxlevel).rev() {
+        let (ref lap, lw, lh) = merged_pyr[level];
+        let upsampled = pyr_up_rgb(&result, rw, rh, lw, lh);
+        result = Vec::with_capacity((lw * lh) as usize * 3);
+        let lpx = (lw * lh) as usize;
+        for px in 0..(lpx * 3) {
+            result.push(upsampled[px] + lap[px]);
+        }
+        rw = lw;
+        rh = lh;
+    }
+
+    Ok(result)
+}
+
+/// Compute Mertens weight map for a single image.
+/// Input is f32 RGB in [0,1], interleaved. Returns one weight per pixel.
+fn compute_mertens_weight(img_f: &[f32], w: usize, h: usize, params: &MertensParams) -> Vec<f32> {
+    let n = w * h;
+    let sigma = 0.2f32;
+
+    // Convert to grayscale [0,1] — BT.601: 0.299R + 0.587G + 0.114B
+    let mut gray = vec![0.0f32; n];
+    for i in 0..n {
+        let r = img_f[i * 3];
+        let g = img_f[i * 3 + 1];
+        let b = img_f[i * 3 + 2];
+        gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+
+    // Contrast: abs(Laplacian(gray)) — standard 3×3 kernel [[0,1,0],[1,-4,1],[0,1,0]]
+    let mut contrast = vec![0.0f32; n];
+    for y in 0..h {
+        for x in 0..w {
+            // Border: replicate (BORDER_DEFAULT in OpenCV for Laplacian)
+            let yp = if y > 0 { y - 1 } else { 0 };
+            let yn = if y + 1 < h { y + 1 } else { h - 1 };
+            let xp = if x > 0 { x - 1 } else { 0 };
+            let xn = if x + 1 < w { x + 1 } else { w - 1 };
+
+            let center = gray[y * w + x];
+            let lap = gray[yp * w + x] + gray[yn * w + x]
+                + gray[y * w + xp] + gray[y * w + xn]
+                - 4.0 * center;
+            contrast[y * w + x] = lap.abs();
+        }
+    }
+
+    // Saturation: population std across channels
+    let mut saturation = vec![0.0f32; n];
+    for i in 0..n {
+        let r = img_f[i * 3];
+        let g = img_f[i * 3 + 1];
+        let b = img_f[i * 3 + 2];
+        let mu = (r + g + b) / 3.0;
+        let var = ((r - mu) * (r - mu) + (g - mu) * (g - mu) + (b - mu) * (b - mu)) / 3.0;
+        saturation[i] = var.sqrt();
+    }
+
+    // Well-exposedness: product over channels of exp(-0.5 * ((ch - 0.5) / sigma)^2)
+    let mut well_exp = vec![1.0f32; n];
+    for i in 0..n {
+        for c in 0..3 {
+            let ch = img_f[i * 3 + c];
+            let d = (ch - 0.5) / sigma;
+            well_exp[i] *= (-0.5 * d * d).exp();
+        }
+    }
+
+    // Combined weight
+    let mut weight = vec![0.0f32; n];
+    for i in 0..n {
+        let mut w = 1.0f32;
+        if params.contrast_weight != 0.0 {
+            w *= contrast[i].powf(params.contrast_weight);
+        }
+        if params.saturation_weight != 0.0 {
+            w *= saturation[i].powf(params.saturation_weight);
+        }
+        if params.exposure_weight != 0.0 {
+            w *= well_exp[i].powf(params.exposure_weight);
+        }
+        weight[i] = w + 1e-12; // avoid zero weights
+    }
+
+    weight
+}
+
+// ─── Gaussian/Laplacian Pyramid (OpenCV-compatible) ──────────────────────────
+
+/// OpenCV-compatible 5×5 Gaussian kernel for pyrDown: [1,4,6,4,1]/16
+const PYR_KERNEL: [f32; 5] = [1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0];
+
+/// pyrDown for single-channel f32 image.
+/// Applies 5×5 Gaussian blur then subsamples by 2 in each dimension.
+/// Border handling: BORDER_REFLECT_101 (default OpenCV border for pyrDown).
+fn pyr_down_gray(src: &[f32], sw: u32, sh: u32) -> (Vec<f32>, u32, u32) {
+    let sw = sw as usize;
+    let sh = sh as usize;
+    let dw = (sw + 1) / 2;
+    let dh = (sh + 1) / 2;
+    let sws = sw as isize;
+    let shs = sh as isize;
+
+    // Horizontal pass → temp (sh × dw)
+    let mut tmp = vec![0.0f32; sh * dw];
+    for y in 0..sh {
+        for dx in 0..dw {
+            let sx = (dx * 2) as isize;
+            let mut sum = 0.0f32;
+            for k in 0..5isize {
+                let col = reflect101_safe(sx + k - 2, sws);
+                sum += PYR_KERNEL[k as usize] * src[y * sw + col];
+            }
+            tmp[y * dw + dx] = sum;
+        }
+    }
+
+    // Vertical pass → dst (dh × dw)
+    let mut dst = vec![0.0f32; dh * dw];
+    for dy in 0..dh {
+        let sy = (dy * 2) as isize;
+        for x in 0..dw {
+            let mut sum = 0.0f32;
+            for k in 0..5isize {
+                let row = reflect101_safe(sy + k - 2, shs);
+                sum += PYR_KERNEL[k as usize] * tmp[row * dw + x];
+            }
+            dst[dy * dw + x] = sum;
+        }
+    }
+
+    (dst, dw as u32, dh as u32)
+}
+
+/// pyrDown for 3-channel f32 image (interleaved RGB).
+fn pyr_down_rgb(src: &[f32], sw: u32, sh: u32) -> (Vec<f32>, u32, u32) {
+    let sw = sw as usize;
+    let sh = sh as usize;
+    let dw = (sw + 1) / 2;
+    let dh = (sh + 1) / 2;
+    let sws = sw as isize;
+    let shs = sh as isize;
+
+    // Horizontal pass
+    let mut tmp = vec![0.0f32; sh * dw * 3];
+    for y in 0..sh {
+        for dx in 0..dw {
+            let sx = (dx * 2) as isize;
+            let mut sum = [0.0f32; 3];
+            for k in 0..5isize {
+                let col = reflect101_safe(sx + k - 2, sws);
+                let wt = PYR_KERNEL[k as usize];
+                sum[0] += wt * src[(y * sw + col) * 3];
+                sum[1] += wt * src[(y * sw + col) * 3 + 1];
+                sum[2] += wt * src[(y * sw + col) * 3 + 2];
+            }
+            tmp[(y * dw + dx) * 3] = sum[0];
+            tmp[(y * dw + dx) * 3 + 1] = sum[1];
+            tmp[(y * dw + dx) * 3 + 2] = sum[2];
+        }
+    }
+
+    // Vertical pass
+    let mut dst = vec![0.0f32; dh * dw * 3];
+    for dy in 0..dh {
+        let sy = (dy * 2) as isize;
+        for x in 0..dw {
+            let mut sum = [0.0f32; 3];
+            for k in 0..5isize {
+                let row = reflect101_safe(sy + k - 2, shs);
+                let wt = PYR_KERNEL[k as usize];
+                sum[0] += wt * tmp[(row * dw + x) * 3];
+                sum[1] += wt * tmp[(row * dw + x) * 3 + 1];
+                sum[2] += wt * tmp[(row * dw + x) * 3 + 2];
+            }
+            dst[(dy * dw + x) * 3] = sum[0];
+            dst[(dy * dw + x) * 3 + 1] = sum[1];
+            dst[(dy * dw + x) * 3 + 2] = sum[2];
+        }
+    }
+
+    (dst, dw as u32, dh as u32)
+}
+
+/// pyrUp for single-channel f32 — upsample by 2 then apply 5×5 Gaussian × 4.
+fn pyr_up_gray(src: &[f32], sw: u32, sh: u32, dw: u32, dh: u32) -> Vec<f32> {
+    let sw = sw as usize;
+    let sh = sh as usize;
+    let dw = dw as usize;
+    let dh = dh as usize;
+    let dws = dw as isize;
+    let dhs = dh as isize;
+
+    // Insert zeros: place src pixels at even positions, zeros at odd
+    let mut upsampled = vec![0.0f32; dh * dw];
+    for y in 0..sh {
+        for x in 0..sw {
+            if y * 2 < dh && x * 2 < dw {
+                upsampled[y * 2 * dw + x * 2] = src[y * sw + x] * 4.0;
+            }
+        }
+    }
+
+    // Apply 5×5 Gaussian filter (separable)
+    let mut tmp = vec![0.0f32; dh * dw];
+    for y in 0..dh {
+        for x in 0..dw {
+            let mut sum = 0.0f32;
+            for k in 0..5isize {
+                let col = reflect101_safe(x as isize + k - 2, dws);
+                sum += PYR_KERNEL[k as usize] * upsampled[y * dw + col];
+            }
+            tmp[y * dw + x] = sum;
+        }
+    }
+
+    let mut dst = vec![0.0f32; dh * dw];
+    for y in 0..dh {
+        for x in 0..dw {
+            let mut sum = 0.0f32;
+            for k in 0..5isize {
+                let row = reflect101_safe(y as isize + k - 2, dhs);
+                sum += PYR_KERNEL[k as usize] * tmp[row * dw + x];
+            }
+            dst[y * dw + x] = sum;
+        }
+    }
+
+    dst
+}
+
+/// pyrUp for 3-channel f32 (interleaved RGB).
+fn pyr_up_rgb(src: &[f32], sw: u32, sh: u32, dw: u32, dh: u32) -> Vec<f32> {
+    let sw = sw as usize;
+    let sh = sh as usize;
+    let dw = dw as usize;
+    let dh = dh as usize;
+    let dws = dw as isize;
+    let dhs = dh as isize;
+
+    // Insert zeros with 4× scaling at even positions
+    let mut upsampled = vec![0.0f32; dh * dw * 3];
+    for y in 0..sh {
+        for x in 0..sw {
+            if y * 2 < dh && x * 2 < dw {
+                let di = (y * 2 * dw + x * 2) * 3;
+                let si = (y * sw + x) * 3;
+                upsampled[di] = src[si] * 4.0;
+                upsampled[di + 1] = src[si + 1] * 4.0;
+                upsampled[di + 2] = src[si + 2] * 4.0;
+            }
+        }
+    }
+
+    // Horizontal pass
+    let mut tmp = vec![0.0f32; dh * dw * 3];
+    for y in 0..dh {
+        for x in 0..dw {
+            let mut sum = [0.0f32; 3];
+            for k in 0..5isize {
+                let col = reflect101_safe(x as isize + k - 2, dws);
+                let wt = PYR_KERNEL[k as usize];
+                sum[0] += wt * upsampled[(y * dw + col) * 3];
+                sum[1] += wt * upsampled[(y * dw + col) * 3 + 1];
+                sum[2] += wt * upsampled[(y * dw + col) * 3 + 2];
+            }
+            tmp[(y * dw + x) * 3] = sum[0];
+            tmp[(y * dw + x) * 3 + 1] = sum[1];
+            tmp[(y * dw + x) * 3 + 2] = sum[2];
+        }
+    }
+
+    // Vertical pass
+    let mut dst = vec![0.0f32; dh * dw * 3];
+    for y in 0..dh {
+        for x in 0..dw {
+            let mut sum = [0.0f32; 3];
+            for k in 0..5isize {
+                let row = reflect101_safe(y as isize + k - 2, dhs);
+                let wt = PYR_KERNEL[k as usize];
+                sum[0] += wt * tmp[(row * dw + x) * 3];
+                sum[1] += wt * tmp[(row * dw + x) * 3 + 1];
+                sum[2] += wt * tmp[(row * dw + x) * 3 + 2];
+            }
+            dst[(y * dw + x) * 3] = sum[0];
+            dst[(y * dw + x) * 3 + 1] = sum[1];
+            dst[(y * dw + x) * 3 + 2] = sum[2];
+        }
+    }
+
+    dst
+}
+
+/// BORDER_REFLECT_101 with clamping for small sizes.
+/// Handles the case where a single reflection is insufficient (e.g., idx=-2 with size=2).
+#[inline]
+fn reflect101_safe(idx: isize, size: isize) -> usize {
+    if size <= 1 {
+        return 0;
+    }
+    let mut i = idx;
+    // Bring into range [-(size-1), 2*(size-1)] first
+    let cycle = 2 * (size - 1);
+    if i < 0 {
+        i = -i;
+    }
+    if i >= cycle {
+        i %= cycle;
+    }
+    if i >= size {
+        i = cycle - i;
+    }
+    i as usize
+}
+
+/// Build Gaussian pyramid for a single-channel f32 image.
+/// Returns levels+1 images: [original, level1, level2, ...].
+fn gaussian_pyramid_gray(src: &[f32], w: u32, h: u32, levels: usize) -> Vec<Vec<f32>> {
+    let mut pyr = Vec::with_capacity(levels + 1);
+    pyr.push(src.to_vec());
+    let mut cw = w;
+    let mut ch = h;
+    for _ in 0..levels {
+        let (down, nw, nh) = pyr_down_gray(pyr.last().unwrap(), cw, ch);
+        cw = nw;
+        ch = nh;
+        pyr.push(down);
+    }
+    pyr
+}
+
+/// Build Laplacian pyramid for a 3-channel f32 image.
+/// Returns levels+1 entries: levels Laplacian layers + 1 low-res residual.
+/// Each entry is (pixels, width, height).
+fn laplacian_pyramid_rgb(
+    src: &[f32],
+    w: u32,
+    h: u32,
+    levels: usize,
+) -> Vec<(Vec<f32>, u32, u32)> {
+    // Build Gaussian pyramid first
+    let mut gpyr: Vec<(Vec<f32>, u32, u32)> = Vec::with_capacity(levels + 1);
+    gpyr.push((src.to_vec(), w, h));
+    let mut cw = w;
+    let mut ch = h;
+    for _ in 0..levels {
+        let (down, nw, nh) = pyr_down_rgb(gpyr.last().unwrap().0.as_slice(), cw, ch);
+        cw = nw;
+        ch = nh;
+        gpyr.push((down, nw, nh));
+    }
+
+    // Laplacian = Gaussian[i] - pyrUp(Gaussian[i+1])
+    let mut lpyr: Vec<(Vec<f32>, u32, u32)> = Vec::with_capacity(levels + 1);
+    for i in 0..levels {
+        let (ref g_curr, gw, gh) = gpyr[i];
+        let (ref g_next, nw, nh) = gpyr[i + 1];
+        let upsampled = pyr_up_rgb(g_next, nw, nh, gw, gh);
+        let npx = (gw * gh) as usize * 3;
+        let mut diff = Vec::with_capacity(npx);
+        for j in 0..npx {
+            diff.push(g_curr[j] - upsampled[j]);
+        }
+        lpyr.push((diff, gw, gh));
+    }
+    // Last level is the low-res residual
+    let (ref last, lw, lh) = gpyr[levels];
+    lpyr.push((last.clone(), lw, lh));
+
+    lpyr
+}
+
+// ─── Debevec HDR Merge ──────────────────────────────────────────────────────
+
+/// Parameters for Debevec HDR merge.
+#[derive(Debug, Clone)]
+pub struct DebevecParams {
+    /// Number of sample pixels (default 70).
+    pub samples: usize,
+    /// Smoothness regularization lambda (default 10.0).
+    pub lambda: f32,
+}
+
+impl Default for DebevecParams {
+    fn default() -> Self {
+        Self {
+            samples: 70,
+            lambda: 10.0,
+        }
+    }
+}
+
+/// Estimate camera response curve using Debevec & Malik's method.
+///
+/// Takes bracketed exposures (u8 images) and exposure times.
+/// Returns 256-entry response curve per channel (natural log of exposure).
+///
+/// Reference: Debevec & Malik "Recovering High Dynamic Range Radiance Maps
+/// from Photographs" (SIGGRAPH 1997).
+/// Matches OpenCV cv2.createCalibrateDebevec.
+pub fn debevec_response_curve(
+    images: &[&[u8]],
+    info: &ImageInfo,
+    exposure_times: &[f32],
+    params: &DebevecParams,
+) -> Result<Vec<[f32; 256]>, ImageError> {
+    if images.len() < 2 || images.len() != exposure_times.len() {
+        return Err(ImageError::InvalidInput(
+            "need matching images and exposure times".into(),
+        ));
+    }
+    if info.format != PixelFormat::Rgb8 {
+        return Err(ImageError::UnsupportedFormat(
+            "debevec requires Rgb8 input".into(),
+        ));
+    }
+
+    let (w, h) = (info.width as usize, info.height as usize);
+    let n = w * h;
+    let n_images = images.len();
+
+    // Select sample pixels (deterministic, evenly spaced)
+    let n_samples = params.samples.min(n);
+    let step = n / n_samples;
+    let sample_indices: Vec<usize> = (0..n_samples).map(|i| i * step).collect();
+
+    let channels = 3;
+    let mut response_curves = Vec::with_capacity(channels);
+
+    for ch in 0..channels {
+        // Solve for response curve g(z) where g(z) = ln(exposure)
+        // Using SVD-based least squares from Debevec paper
+        let n_eq = n_samples * n_images + 256 + 1; // data + smoothness + constraint
+        let n_unknowns = 256 + n_samples; // g(0..255) + ln(E_i)
+
+        // Build overdetermined system A*x = b
+        let mut a = vec![0.0f64; n_eq * n_unknowns];
+        let mut b = vec![0.0f64; n_eq];
+
+        let mut eq = 0;
+
+        // Data equations: w(z) * [g(z) - ln(dt) - ln(E)] = 0
+        for (s, &si) in sample_indices.iter().enumerate() {
+            for (img, &dt) in images.iter().zip(exposure_times.iter()) {
+                let z = img[si * 3 + ch] as usize;
+                let wt = hat_weight(z);
+
+                a[eq * n_unknowns + z] = wt;              // g(z) coefficient
+                a[eq * n_unknowns + 256 + s] = -wt;       // -ln(E_i) coefficient
+                b[eq] = wt * (dt as f64).ln();              // w(z) * ln(dt)
+                eq += 1;
+            }
+        }
+
+        // Smoothness equations: lambda * w(z) * [g(z-1) - 2*g(z) + g(z+1)] = 0
+        let lam = params.lambda as f64;
+        for z in 1..255 {
+            let wt = hat_weight(z);
+            a[eq * n_unknowns + (z - 1)] = lam * wt;
+            a[eq * n_unknowns + z] = -2.0 * lam * wt;
+            a[eq * n_unknowns + (z + 1)] = lam * wt;
+            b[eq] = 0.0;
+            eq += 1;
+        }
+
+        // Fix g(128) = 0 (constraint for midpoint)
+        a[eq * n_unknowns + 128] = 1.0;
+        b[eq] = 0.0;
+        eq += 1;
+
+        // Solve via normal equations: A^T A x = A^T b
+        let x = solve_least_squares(&a, &b, eq, n_unknowns);
+
+        let mut curve = [0.0f32; 256];
+        for z in 0..256 {
+            curve[z] = x[z] as f32;
+        }
+        response_curves.push(curve);
+    }
+
+    Ok(response_curves)
+}
+
+/// Debevec HDR merge — compute radiance map from bracketed exposures + response curve.
+///
+/// Returns f32 HDR radiance map (3-channel interleaved, linear values).
+pub fn debevec_hdr_merge(
+    images: &[&[u8]],
+    info: &ImageInfo,
+    exposure_times: &[f32],
+    response: &[[f32; 256]],
+) -> Result<Vec<f32>, ImageError> {
+    if images.len() < 2 || images.len() != exposure_times.len() {
+        return Err(ImageError::InvalidInput(
+            "need matching images and exposure times".into(),
+        ));
+    }
+    if response.len() != 3 {
+        return Err(ImageError::InvalidInput(
+            "response must have 3 channels".into(),
+        ));
+    }
+    if info.format != PixelFormat::Rgb8 {
+        return Err(ImageError::UnsupportedFormat(
+            "debevec requires Rgb8 input".into(),
+        ));
+    }
+
+    let (w, h) = (info.width as usize, info.height as usize);
+    let n = w * h;
+
+    let mut hdr = vec![0.0f32; n * 3];
+
+    for i in 0..n {
+        for ch in 0..3 {
+            let mut num = 0.0f64;
+            let mut den = 0.0f64;
+
+            for (img, &dt) in images.iter().zip(exposure_times.iter()) {
+                let z = img[i * 3 + ch] as usize;
+                let wt = hat_weight(z);
+                let ln_dt = (dt as f64).ln();
+                num += wt * (response[ch][z] as f64 - ln_dt);
+                den += wt;
+            }
+
+            hdr[i * 3 + ch] = if den > 0.0 {
+                (num / den).exp() as f32
+            } else {
+                0.0
+            };
+        }
+    }
+
+    Ok(hdr)
+}
+
+/// Hat-shaped weighting function for Debevec method.
+/// w(z) = z + 1 for z <= 127, 256 - z for z >= 128.
+/// Gives highest weight to mid-tone pixels.
+#[inline]
+fn hat_weight(z: usize) -> f64 {
+    if z <= 127 {
+        (z + 1) as f64
+    } else {
+        (256 - z) as f64
+    }
+}
+
+/// Solve overdetermined linear system via normal equations (A^T A x = A^T b).
+/// Uses Cholesky-like Gaussian elimination on the normal equations.
+fn solve_least_squares(a: &[f64], b: &[f64], m: usize, n: usize) -> Vec<f64> {
+    // Form A^T A (n×n) and A^T b (n)
+    let mut ata = vec![0.0f64; n * n];
+    let mut atb = vec![0.0f64; n];
+
+    for i in 0..n {
+        for j in i..n {
+            let mut sum = 0.0f64;
+            for k in 0..m {
+                sum += a[k * n + i] * a[k * n + j];
+            }
+            ata[i * n + j] = sum;
+            ata[j * n + i] = sum;
+        }
+        let mut sum = 0.0f64;
+        for k in 0..m {
+            sum += a[k * n + i] * b[k];
+        }
+        atb[i] = sum;
+    }
+
+    // Gaussian elimination with partial pivoting
+    let mut aug = vec![0.0f64; n * (n + 1)];
+    for i in 0..n {
+        for j in 0..n {
+            aug[i * (n + 1) + j] = ata[i * n + j];
+        }
+        aug[i * (n + 1) + n] = atb[i];
+    }
+
+    for col in 0..n {
+        // Partial pivoting
+        let mut max_row = col;
+        let mut max_val = aug[col * (n + 1) + col].abs();
+        for row in (col + 1)..n {
+            let v = aug[row * (n + 1) + col].abs();
+            if v > max_val {
+                max_val = v;
+                max_row = row;
+            }
+        }
+        if max_row != col {
+            for j in 0..=n {
+                let tmp = aug[col * (n + 1) + j];
+                aug[col * (n + 1) + j] = aug[max_row * (n + 1) + j];
+                aug[max_row * (n + 1) + j] = tmp;
+            }
+        }
+
+        let pivot = aug[col * (n + 1) + col];
+        if pivot.abs() < 1e-15 {
+            continue;
+        }
+
+        for row in (col + 1)..n {
+            let factor = aug[row * (n + 1) + col] / pivot;
+            for j in col..=n {
+                aug[row * (n + 1) + j] -= factor * aug[col * (n + 1) + j];
+            }
+        }
+    }
+
+    // Back substitution
+    let mut x = vec![0.0f64; n];
+    for i in (0..n).rev() {
+        let mut sum = aug[i * (n + 1) + n];
+        for j in (i + 1)..n {
+            sum -= aug[i * (n + 1) + j] * x[j];
+        }
+        let diag = aug[i * (n + 1) + i];
+        x[i] = if diag.abs() > 1e-15 { sum / diag } else { 0.0 };
+    }
+
+    x
+}
+
+#[cfg(test)]
+mod hdr_tests {
+    use super::*;
+    use super::super::types::ColorSpace;
+
+    fn test_info_rgb(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn mertens_two_images() {
+        let w = 16u32;
+        let h = 16u32;
+        let dark = vec![64u8; (w * h * 3) as usize];
+        let bright = vec![192u8; (w * h * 3) as usize];
+        let info = test_info_rgb(w, h);
+        let result = mertens_fusion(&[&dark, &bright], &info, &MertensParams::default()).unwrap();
+        assert_eq!(result.len(), (w * h * 3) as usize);
+        // Result should be a blend between dark and bright
+        let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(mean > 60.0 && mean < 200.0, "mean={mean}");
+    }
+
+    #[test]
+    fn mertens_preserves_uniform() {
+        let w = 16u32;
+        let h = 16u32;
+        // If all images are the same, result should be approximately that image
+        let mid = vec![128u8; (w * h * 3) as usize];
+        let info = test_info_rgb(w, h);
+        let result = mertens_fusion(&[&mid, &mid], &info, &MertensParams::default()).unwrap();
+        for &v in &result {
+            assert!((v as i16 - 128).abs() <= 1, "expected ~128, got {v}");
+        }
+    }
+
+    #[test]
+    fn mertens_needs_at_least_two() {
+        let info = test_info_rgb(16, 16);
+        let img = vec![128u8; 16 * 16 * 3];
+        assert!(mertens_fusion(&[&img], &info, &MertensParams::default()).is_err());
+    }
+
+    #[test]
+    fn debevec_response_curve_basic() {
+        let w = 16u32;
+        let h = 16u32;
+        let n = (w * h) as usize;
+        // Create simple bracketed exposures
+        let mut dark = vec![0u8; n * 3];
+        let mut bright = vec![0u8; n * 3];
+        for i in 0..n {
+            let v = (i % 200) as u8;
+            for c in 0..3 {
+                dark[i * 3 + c] = (v / 2).max(1);
+                bright[i * 3 + c] = (v).min(254).max(1);
+            }
+        }
+        let info = test_info_rgb(w, h);
+        let params = DebevecParams { samples: 30, lambda: 10.0 };
+        let response = debevec_response_curve(
+            &[&dark, &bright],
+            &info,
+            &[0.5, 2.0],
+            &params,
+        ).unwrap();
+        assert_eq!(response.len(), 3);
+        // Response should be monotonically increasing (approximately)
+        // g(128) should be near 0 (our constraint)
+        assert!(response[0][128].abs() < 0.1, "g(128)={}", response[0][128]);
+    }
+
+    #[test]
+    fn debevec_hdr_merge_basic() {
+        let w = 8u32;
+        let h = 8u32;
+        let n = (w * h) as usize;
+        let mut dark = vec![0u8; n * 3];
+        let mut bright = vec![0u8; n * 3];
+        for i in 0..n {
+            for c in 0..3 {
+                dark[i * 3 + c] = 64;
+                bright[i * 3 + c] = 200;
+            }
+        }
+        let info = test_info_rgb(w, h);
+        // Simple linear response curve
+        let mut response = [[0.0f32; 256]; 3];
+        for ch in 0..3 {
+            for z in 0..256 {
+                response[ch][z] = ((z as f32 + 1.0) / 128.0).ln();
+            }
+        }
+        let hdr = debevec_hdr_merge(
+            &[&dark, &bright],
+            &info,
+            &[0.25, 4.0],
+            &response,
+        ).unwrap();
+        assert_eq!(hdr.len(), n * 3);
+        // All values should be positive
+        assert!(hdr.iter().all(|&v| v > 0.0));
+    }
+
+    #[test]
+    fn pyramid_roundtrip() {
+        // pyrUp(pyrDown(img)) should approximate img (low-pass)
+        let w = 16u32;
+        let h = 16u32;
+        let n = (w * h) as usize;
+        let mut src = vec![0.0f32; n];
+        for i in 0..n {
+            src[i] = (i as f32) / (n as f32);
+        }
+        let (down, dw, dh) = pyr_down_gray(&src, w, h);
+        let up = pyr_up_gray(&down, dw, dh, w, h);
+        // Should be close to original (low-pass filtered version)
+        let mae: f64 = src
+            .iter()
+            .zip(up.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / n as f64;
+        assert!(mae < 0.1, "pyramid roundtrip MAE too high: {mae}");
+    }
+
+    #[test]
+    fn reflect101_safe_test() {
+        assert_eq!(reflect101_safe(-1, 10), 1);
+        assert_eq!(reflect101_safe(-2, 10), 2);
+        assert_eq!(reflect101_safe(0, 10), 0);
+        assert_eq!(reflect101_safe(9, 10), 9);
+        assert_eq!(reflect101_safe(10, 10), 8);
+        assert_eq!(reflect101_safe(11, 10), 7);
+        // Small size edge cases
+        assert_eq!(reflect101_safe(-2, 2), 0);
+        assert_eq!(reflect101_safe(-3, 2), 1);
+        assert_eq!(reflect101_safe(2, 2), 0);
+        assert_eq!(reflect101_safe(3, 2), 1);
+        assert_eq!(reflect101_safe(-1, 1), 0);
+        assert_eq!(reflect101_safe(5, 1), 0);
+    }
+}
