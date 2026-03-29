@@ -389,9 +389,9 @@ pub fn pick_best_intra16(
         let mut pred = [0u8; 256];
         predict::predict_16x16(mode, above, left, top_left, true, true, &mut pred);
 
-        // Reconstruct with trellis
-        let mut top_nz = [0u8; 4];
-        let mut left_nz = [0u8; 4];
+        // Reconstruct with trellis — use real NZ context from neighboring MBs
+        let mut top_nz = *init_top_nz;
+        let mut left_nz = *init_left_nz;
         let recon_result = reconstruct::reconstruct_intra16(
             src_16x16,
             &pred,
@@ -711,9 +711,9 @@ pub fn pick_best_uv(
         predict::predict_8x8(mode, above_u, left_u, tl_u, true, true, &mut pred_u);
         predict::predict_8x8(mode, above_v, left_v, tl_v, true, true, &mut pred_v);
 
-        // Reconstruct
-        let mut top_nz = [0u8; 4];
-        let mut left_nz = [0u8; 4];
+        // Reconstruct — use real NZ context from neighboring MBs
+        let mut top_nz = *init_top_nz;
+        let mut left_nz = *init_left_nz;
         let recon_result = reconstruct::reconstruct_uv(
             src_u,
             src_v,
@@ -766,8 +766,8 @@ pub fn pick_best_uv(
     predict::predict_8x8(best_uv_mode, above_u, left_u, tl_u, true, true, &mut pred_u);
     predict::predict_8x8(best_uv_mode, above_v, left_v, tl_v, true, true, &mut pred_v);
 
-    let mut top_nz = [0u8; 4];
-    let mut left_nz = [0u8; 4];
+    let mut top_nz_reeval = *init_top_nz;
+    let mut left_nz_reeval = *init_left_nz;
     let recon_result = reconstruct::reconstruct_uv(
         src_u,
         src_v,
@@ -776,8 +776,8 @@ pub fn pick_best_uv(
         seg_quant,
         lambdas.lambda_trellis_uv,
         cost_table,
-        &mut top_nz,
-        &mut left_nz,
+        &mut top_nz_reeval,
+        &mut left_nz_reeval,
     );
 
     let mut rd_best = VP8ModeScore::default();
