@@ -1,0 +1,97 @@
+id: webp-quality-refinements_20260329163302Z
+title: VP8 Quality Refinements — Y2 Trellis, Spectral Distortion, DC Diffusion
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Enable several quality refinements that are currently disabled or missing:
+    Y2 trellis quantization, spectral distortion weighting (tlambda),
+    DC error diffusion for chroma, and dynamic max_i4_header_bits.
+    Combined ~1-2 dB improvement.
+  context: |
+    After the VP8Decimate port, several quality features are stubbed out:
+    1. Y2 (WHT DC) block uses simple quantization, not trellis (TODO at reconstruct.rs:343)
+    2. Spectral distortion (SD) always set to 0 in mode evaluation (decimate.rs:335)
+    3. No DC error diffusion for chroma blocks (libwebp CorrectDCValues)
+    4. max_i4_header_bits hardcoded to 15000 (decimate.rs:757)
+
+    These are all incremental improvements that can be ported independently
+    from the probability table work.
+  codebase_analysis: |
+    Y2 trellis:
+    - reconstruct.rs line 343: TODO comment, uses quant::quantize_block instead of trellis
+    - TrellisQuantizeBlock already exists and works for AC blocks
+    - Y2 needs TYPE_I16_DC=1, first=0, uses seg_quant.y2_dc matrix
+    - libwebp: VP8EncQuantizeBlockWHT uses same trellis as AC blocks
+
+    Spectral distortion:
+    - decimate.rs lines 335, 510, 639: rd_cur.sd = 0
+    - libwebp: SD = MULT_8B(tlambda, VP8TDisto16x16/4x4(src, dst, kWeightY))
+    - tlambda = (tlambda_scale * q_i4) >> 5, where tlambda_scale = sns_strength (0-100)
+    - VP8TDisto: SATD of weighted DCT difference (frequency-domain distortion)
+    - kWeightY = [38, 32, 20, 9, 32, 28, 17, 7, 20, 17, 10, 4, 9, 7, 4, 2]
+
+    DC error diffusion:
+    - libwebp quant_enc.c lines 830-900: CorrectDCValues + StoreDiffusionErrors
+    - Adjusts chroma DC coefficients based on quantization error of neighboring blocks
+    - Uses C1=7, C2=8, DSHIFT=4 diffusion weights
+    - Reduces banding in smooth chroma regions
+
+    max_i4_header_bits:
+    - libwebp vp8i_enc.h: max_i4_header_bits = 256 * 16 * 16 * ... (computed from frame size)
+    - Our hardcoded 15000 is conservative; dynamic calculation matches libwebp behavior
+  acceptance_criteria:
+    - Y2 block uses trellis quantization via TrellisQuantizeBlock with TYPE_I16_DC
+    - Spectral distortion computed and included in I16 and I4 RD scoring
+    - DC error diffusion applied to chroma blocks (CorrectDCValues port)
+    - max_i4_header_bits computed dynamically from frame dimensions
+    - PSNR improves by at least 0.5 dB on gradient_256 Q75 test
+    - All 132 unit tests + 11 encode/decode tests pass
+    - 16/17 parity tests continue to pass (solid_color edge case acceptable)
+  out_of_scope: |
+    Probability table updates (separate track). Multi-pass encoding.
+    SNS (spatial noise shaping) strength configuration.
+  technical_notes: |
+    Y2 trellis: Change reconstruct_intra16 to call trellis_quantize_block
+    for Y2 with coeff_type=1 (TYPE_I16_DC), first=0, matrix=seg_quant.y2_dc.
+    Context for Y2 trellis: use dc_nz from previous frame row.
+
+    Spectral distortion: Port VP8TDisto4x4 (weighted SATD in frequency domain).
+    Compute as MULT_8B(tlambda, TDisto(src, recon, kWeightY)).
+    Add tlambda to VP8SegmentLambdas computation.
+
+    DC error diffusion: Track per-chroma-block quantization error.
+    Propagate errors right and down using C1/C2 weights.
+    Add derr[2][3] to VP8ModeScore or pass separately.
+plan:
+  - phase: Y2 Trellis
+    tasks:
+      - text: Enable trellis for Y2 block in reconstruct_intra16 (TYPE_I16_DC=1, first=0)
+        done: false
+      - text: Update reconstruction path to use trellis-dequantized Y2 coefficients
+        done: false
+      - text: Unit test Y2 trellis produces valid coefficients
+        done: false
+  - phase: Spectral Distortion
+    tasks:
+      - text: Port VP8TDisto4x4 (weighted SATD with kWeightY frequency weights)
+        done: false
+      - text: Add tlambda computation to VP8SegmentLambdas
+        done: false
+      - text: Wire SD into PickBestIntra16 and PickBestIntra4 mode evaluation
+        done: false
+  - phase: DC Diffusion and Misc
+    tasks:
+      - text: Port CorrectDCValues for chroma DC error diffusion
+        done: false
+      - text: Compute max_i4_header_bits dynamically from frame dimensions
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Verify PSNR improvement on gradient_256 Q75 (target >= 0.5 dB gain)
+        done: false
+      - text: Verify all existing tests pass
+        done: false
+extra: {}

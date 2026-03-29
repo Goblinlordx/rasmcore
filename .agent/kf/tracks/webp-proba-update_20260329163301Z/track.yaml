@@ -1,0 +1,120 @@
+id: webp-proba-update_20260329163301Z
+title: VP8 Coefficient Probability Adaptation — Single-Pass Stats + Table Update
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Port VP8RecordCoeffs statistics gathering and coefficient probability table
+    updates from libwebp. Currently we use fixed default probability tables for
+    both cost estimation and token encoding. libwebp collects actual coefficient
+    statistics and computes optimized tables, then signals refresh_entropy_probs=true
+    in the bitstream header. This is the single biggest remaining quality gap.
+  context: |
+    Current quality ratio is 0.55-0.70x cwebp. Our file sizes are often LARGER
+    than cwebp while achieving LOWER quality (gradient_256 Q75: 2032 bytes / 24.5dB
+    vs cwebp 876 bytes / 42.4dB). This means the boolean coder wastes bits encoding
+    coefficients with inaccurate probability tables, AND the trellis makes suboptimal
+    RD decisions because cost estimates are wrong.
+
+    libwebp flow:
+    1. Encode all macroblocks, collecting token statistics via VP8RecordCoeffs
+    2. After frame, compute optimal probability tables from statistics
+    3. Optionally re-encode with updated tables (StatLoop)
+    4. Signal updated tables in bitstream via refresh_entropy_probs=true
+
+    For Phase 1, we implement single-pass adaptation (no StatLoop):
+    - Record coefficient statistics during encoding
+    - After encoding, compute updated probability tables
+    - Re-run VP8CalculateLevelCosts with updated tables
+    - Re-encode the frame with correct tables
+    - Signal updated tables in bitstream
+  codebase_analysis: |
+    Current state:
+    - token.rs: DEFAULT_COEFF_PROBS[4][8][3][11] — fixed tables from libvpx
+    - cost_engine.rs: LevelCostTable::compute(&probs) — precomputes from fixed probs
+    - bitstream.rs line 276: refresh_entropy_probs = false (never updates)
+    - bitstream.rs line 283-286: COEFF_UPDATE_PROBS — writes false for all updates
+
+    libwebp source (cost_enc.c):
+    - VP8RecordCoeffs (line 293): accumulates stats[type][band][ctx][node] counters
+    - VP8RecordStats: simple counter increment (count[0]++ or count[1]++)
+    - After frame: VP8CalculateLevelCosts recomputes level_cost tables
+
+    libwebp source (frame_enc.c):
+    - VP8EncTokenLoop: main encoding loop with probability adaptation
+    - CalcTokenProba: converts accumulated stats to probability values
+    - FinalizeTokenProbas: decides which probabilities to update in bitstream
+
+    Key data structures:
+    - stats[NUM_TYPES][NUM_BANDS][NUM_CTX][NUM_PROBAS]: u32 counters (2 per node)
+    - proba.coeffs[4][8][3][11]: u8 probability values
+    - COEFF_UPDATE_PROBS[4][8][3][11]: probability of each update being signaled
+  acceptance_criteria:
+    - VP8RecordCoeffs collects per-coefficient statistics during encoding
+    - CalcTokenProba computes optimized probability tables from statistics
+    - FinalizeTokenProbas decides which updates to signal in bitstream
+    - LevelCostTable recomputed with updated probabilities for accurate RD
+    - refresh_entropy_probs signaled correctly when tables are updated
+    - Updated probability values written to bitstream per COEFF_UPDATE_PROBS
+    - Quality ratio improves to >= 0.75x cwebp at Q75 (up from 0.55-0.70x)
+    - File sizes decrease or become comparable to cwebp
+    - All 132 unit tests + 11 encode/decode tests pass
+  out_of_scope: |
+    Multi-pass StatLoop (iterating encoding multiple times). Adaptive segment
+    probability updates. Inter-frame probability carryover.
+  technical_notes: |
+    Implementation approach (two-pass within single frame):
+    Pass 1: Encode all MBs, collect token statistics (don't write final bitstream)
+    Pass 2: Compute updated probabilities, re-encode with correct tables
+
+    Alternative (single-pass with post-hoc update):
+    - Buffer all tokens during encoding
+    - After frame: compute optimal probabilities from buffered tokens
+    - Write bitstream header with updated probabilities
+    - Write buffered tokens using updated boolean coder probabilities
+
+    The single-pass approach is simpler but requires buffering all tokens.
+    libwebp uses the two-pass approach (VP8EncTokenLoop).
+
+    Port order:
+    1. VP8RecordCoeffs — statistics accumulation
+    2. CalcTokenProba — statistics to probabilities conversion
+    3. FinalizeTokenProbas — decide which updates to signal
+    4. Wire into encode_frame as two-pass
+    5. Update bitstream header to signal probability updates
+plan:
+  - phase: Statistics Collection
+    tasks:
+      - text: Port VP8RecordCoeffs from cost_enc.c — accumulate [type][band][ctx][node] counters
+        done: false
+      - text: Add stats accumulation call alongside token encoding in encode_macroblock
+        done: false
+      - text: Unit test stats accumulation against known coefficient sequences
+        done: false
+  - phase: Probability Computation
+    tasks:
+      - text: Port CalcTokenProba — convert counters to probability values (count0 * 255 / total)
+        done: false
+      - text: Port FinalizeTokenProbas — decide which updates to signal based on cost savings
+        done: false
+      - text: Unit test probability computation against reference values
+        done: false
+  - phase: Two-Pass Encoding
+    tasks:
+      - text: Refactor encode_frame into two passes — Pass 1 collects stats, Pass 2 encodes with updated tables
+        done: false
+      - text: Recompute LevelCostTable from updated probabilities between passes
+        done: false
+      - text: Write probability update flags and values in bitstream header (refresh_entropy_probs=true)
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Verify probability tables differ from defaults for non-trivial images
+        done: false
+      - text: Verify file sizes decrease compared to fixed-probability encoding
+        done: false
+      - text: Verify quality ratio >= 0.75x cwebp at Q75 on gradient and photo content
+        done: false
+extra: {}
