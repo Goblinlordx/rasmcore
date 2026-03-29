@@ -350,11 +350,17 @@ pub fn predict_intra(
 ) -> Vec<u8> {
     let log2_size = (size as f32).log2() as u8;
 
-    // Determine which reference samples to use (filtered or unfiltered)
-    let use_refs = if use_strong_smoothing(refs, size, strong_smoothing_enabled) {
-        refs.strong_smooth(size)
-    } else if should_filter_refs(mode, log2_size) {
-        refs.filter(size)
+    // Determine which reference samples to use (filtered or unfiltered).
+    // Per HEVC Section 8.4.4.2.3 and libde265 v1.0.18 intrapred.h lines 191-250:
+    // first check filterFlag (should_filter_refs), then within the filter path,
+    // check if strong smoothing should be used instead of the regular 3-tap filter.
+    // Strong smoothing is a SUB-CASE of filtering, NOT a separate path.
+    let use_refs = if should_filter_refs(mode, log2_size) {
+        if use_strong_smoothing(refs, size, strong_smoothing_enabled) {
+            refs.strong_smooth(size)
+        } else {
+            refs.filter(size)
+        }
     } else {
         refs.clone()
     };

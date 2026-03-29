@@ -300,6 +300,7 @@ fn resolve_intra_pred_mode(
     _size: u32,
     fb: &FrameBuffer,
     _sps: &Sps,
+    ctu_y: u32,
 ) -> u8 {
     let w = fb.width as usize;
 
@@ -317,12 +318,22 @@ fn resolve_intra_pred_mode(
         1 // DC when unavailable
     };
 
-    let cand_b = if y > 0 {
+    // For the above neighbor: if the above pixel is in a different CTU row,
+    // use DC(1) as the default. This matches libde265 v1.0.18 behavior where
+    // cross-CTU-row mode lookups use the initialized default (DC) rather than
+    // the stored mode from the previous row. This is critical for WPP streams
+    // where rows may be decoded independently.
+    let cand_b = if y > 0 && (y - 1) >= ctu_y {
+        // Above pixel is within the current CTU row — use stored mode
         let px = x as usize;
         let py = (y - 1) as usize;
         fb.intra_modes[py * w + px]
+    } else if y > 0 {
+        // Above pixel is in the previous CTU row — use DC default
+        // Ref: libde265 v1.0.18 trace shows candB=1 (DC) for cross-row lookups
+        1 // DC
     } else {
-        1 // DC when unavailable
+        1 // DC when unavailable (y=0)
     };
 
     // Build MPM candidate list.
@@ -395,7 +406,7 @@ fn reconstruct_cu(
     // Resolve intra prediction mode via MPM candidate list.
     // Ref: libde265 v1.0.18 slice.cc — derive_IntraPredMode, HEVC Section 8.4.2.
     let raw_mode = cu.intra_luma_modes.first().copied().unwrap_or(1);
-    let luma_mode = resolve_intra_pred_mode(raw_mode, cu.x, cu.y, cu.size, fb, sps);
+    let luma_mode = resolve_intra_pred_mode(raw_mode, cu.x, cu.y, cu.size, fb, sps, ctu_y);
 
     // Store the resolved mode in the frame buffer for neighbor lookups
     store_intra_mode(fb, cu.x, cu.y, cu.size, luma_mode);
