@@ -5,123 +5,132 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Validate 16-bit decode, processing, and encode against external references
-    (Pillow, OpenCV, ImageMagick). Confirms our 16-bit pipeline produces correct
-    output for I/O, point ops, histogram ops, and bit-depth conversion.
-  context: |
-    The 16-bit pipeline is implemented (foundation, point-ops, histogram, pipeline
+  summary: 'Validate 16-bit decode, processing, and encode against external references (Pillow, OpenCV, ImageMagick). Confirms
+    our 16-bit pipeline produces correct output for I/O, point ops, histogram ops, and bit-depth conversion.
+
+    '
+  context: 'The 16-bit pipeline is implemented (foundation, point-ops, histogram, pipeline
+
     integration tracks all complete). However, all current 16-bit tests are
+
     self-referential (roundtrip, identity checks). We never compare against an
+
     external reference to validate correctness.
 
+
     Key validation gaps:
+
     1. Decode: Are we reading 16-bit PNG/TIFF values correctly? (endianness, scaling)
+
     2. Processing: Does gamma/equalize/normalize at 16-bit match a known-good impl?
+
     3. Bit-depth conversion: Does our 16→8 downconvert match what references produce?
+
     4. Full chain: Does decode→process→encode at 16-bit match an external pipeline?
 
+
     Now that we process at 16-bit, the ImageMagick Q16-HDRI precision gap is
+
     eliminated — IM becomes a valid reference for 16-bit histogram ops.
-  codebase_analysis: |
-    Current 16-bit test coverage (all self-referential):
+
+    '
+  codebase_analysis: 'Current 16-bit test coverage (all self-referential):
+
     - point_ops.rs: lut_u16_gamma_identity, lut_u16_invert_roundtrip, compose_luts_u16
+
     - histogram.rs: histogram_u16_gray16_counts, equalize_gray16_spreads, normalize_gray16
+
     - transform.rs: e2e_16bit_chain, roundtrip_tiff, resize_rgb16, crop_rgb16
+
     - encoder/tiff.rs: roundtrip_rgb16, roundtrip_gray16
+
     - encoder/png.rs: roundtrip_rgb16
 
+
     Reference audit tests (reference_audit.rs) only test 8-bit against ImageMagick.
+
     No 16-bit reference comparison exists anywhere.
 
+
     Python dependencies for reference:
+
     - Pillow: reads/writes 16-bit PNG natively, 8-bit processing
+
     - OpenCV: cv2.imread(IMREAD_UNCHANGED) preserves 16-bit
+
     - numpy: exact formula replication at any bit depth
+
     - ImageMagick: Q16-HDRI processes at 16-bit (now matching our depth)
 
+
     Test infrastructure: reference_audit.rs has magick_available(), write_png(),
+
     read_png_rgb(), magick_op(), mae() helpers. Need python_available() and
+
     run_python_ref() for Pillow/numpy tests.
+
+    '
   acceptance_criteria:
-    - Decode parity test passes for 16-bit PNG (our values == Pillow values, MAE=0.0)
-    - Decode parity test passes for 16-bit TIFF (our values == Pillow values, MAE=0.0)
-    - Gamma at 16-bit matches ImageMagick output (MAE<1.0 at u16 scale)
-    - Equalize at 16-bit matches ImageMagick output (MAE<1.0 at u16 scale, key improvement from Q8 MAE=11.5)
-    - Normalize at 16-bit matches ImageMagick output (MAE<1.0, key improvement from Q8 MAE=7.6)
-    - Gamma chain via numpy produces MAE=0.0 (exact formula match at 16-bit)
-    - 16-to-8 downconvert matches Pillow within MAE<1.0
-    - Full pipeline chain (decode 16-bit -> gamma -> equalize -> encode) matches IM within MAE<1.0
-    - All tests skip gracefully when Python/IM not available
-    - All existing tests continue to pass
-  out_of_scope: |
-    Validating 16-bit spatial filters (blur, sharpen) — filters-color track not yet complete.
+  - Decode parity test passes for 16-bit PNG (our values == Pillow values, MAE=0.0)
+  - Decode parity test passes for 16-bit TIFF (our values == Pillow values, MAE=0.0)
+  - Gamma at 16-bit matches ImageMagick output (MAE<1.0 at u16 scale)
+  - Equalize at 16-bit matches ImageMagick output (MAE<1.0 at u16 scale, key improvement from Q8 MAE=11.5)
+  - Normalize at 16-bit matches ImageMagick output (MAE<1.0, key improvement from Q8 MAE=7.6)
+  - Gamma chain via numpy produces MAE=0.0 (exact formula match at 16-bit)
+  - 16-to-8 downconvert matches Pillow within MAE<1.0
+  - Full pipeline chain (decode 16-bit -> gamma -> equalize -> encode) matches IM within MAE<1.0
+  - All tests skip gracefully when Python/IM not available
+  - All existing tests continue to pass
+  out_of_scope: 'Validating 16-bit spatial filters (blur, sharpen) — filters-color track not yet complete.
+
     Validating 16-bit blend modes or color ops — same reason.
-    Adding 16-bit support to operations that don't have it yet.
-  technical_notes: |
-    Test approach: generate a known 16-bit test image programmatically in Rust,
-    save as 16-bit PNG via our encoder, then:
 
-    1. DECODE PARITY: Read the PNG with Pillow, dump pixel values, compare.
-       Python: Image.open().convert('I;16') or numpy array from PNG.
-       Compare u16 values directly. Expect MAE=0.0.
+    Adding 16-bit support to operations that don''t have it yet.
 
-    2. PROCESSING PARITY (IM): Process the 16-bit PNG through ImageMagick:
-       magick input16.png -gamma 2.2 output16.png
-       magick input16.png -equalize output16.png
-       magick input16.png -normalize output16.png
-       Read both outputs, compare u16 values. Expect MAE<1.0 (both at Q16).
-
-    3. PROCESSING PARITY (numpy): Apply gamma in numpy at 16-bit:
-       out = np.round(65535 * (img/65535)**(1/2.2)).clip(0, 65535).astype(np.uint16)
-       Compare with our output. Expect MAE=0.0 (exact same formula).
-
-    4. BIT-DEPTH CONVERSION: Our Rgb16→Rgb8 vs Pillow quantize.
-       Pillow: img16.point(lambda x: x >> 8) or img16.convert('RGB')
-       Our: (value + 128) / 257. Expect MAE<1.0 (rounding strategy may differ +-1).
-
-    5. FULL CHAIN: decode 16-bit TIFF -> gamma 2.2 -> equalize -> encode 16-bit PNG.
-       Compare against: magick input.tiff -gamma 2.2 -equalize output.png -depth 16.
-       Expect MAE<1.0 for the full chain.
-
-    Test image: 64x64 Rgb16 gradient with R=x*1023, G=y*1023, B=32768.
-    Full range 0-65535 in R/G channels. Encodes well to lossless PNG/TIFF.
-
-    Helper functions:
-    - python_available(): check python3 + PIL + numpy
-    - write_png_16bit(): encode 16-bit Rgb16 pixels to PNG file
-    - run_python(): execute Python script, return stdout
-    - read_png_16bit(): decode 16-bit PNG to u16 values
-    - mae_u16(): mean absolute error at u16 scale
+    '
+  technical_notes: "Test approach: generate a known 16-bit test image programmatically in Rust,\nsave as 16-bit PNG via our\
+    \ encoder, then:\n\n1. DECODE PARITY: Read the PNG with Pillow, dump pixel values, compare.\n   Python: Image.open().convert('I;16')\
+    \ or numpy array from PNG.\n   Compare u16 values directly. Expect MAE=0.0.\n\n2. PROCESSING PARITY (IM): Process the\
+    \ 16-bit PNG through ImageMagick:\n   magick input16.png -gamma 2.2 output16.png\n   magick input16.png -equalize output16.png\n\
+    \   magick input16.png -normalize output16.png\n   Read both outputs, compare u16 values. Expect MAE<1.0 (both at Q16).\n\
+    \n3. PROCESSING PARITY (numpy): Apply gamma in numpy at 16-bit:\n   out = np.round(65535 * (img/65535)**(1/2.2)).clip(0,\
+    \ 65535).astype(np.uint16)\n   Compare with our output. Expect MAE=0.0 (exact same formula).\n\n4. BIT-DEPTH CONVERSION:\
+    \ Our Rgb16→Rgb8 vs Pillow quantize.\n   Pillow: img16.point(lambda x: x >> 8) or img16.convert('RGB')\n   Our: (value\
+    \ + 128) / 257. Expect MAE<1.0 (rounding strategy may differ +-1).\n\n5. FULL CHAIN: decode 16-bit TIFF -> gamma 2.2 ->\
+    \ equalize -> encode 16-bit PNG.\n   Compare against: magick input.tiff -gamma 2.2 -equalize output.png -depth 16.\n \
+    \  Expect MAE<1.0 for the full chain.\n\nTest image: 64x64 Rgb16 gradient with R=x*1023, G=y*1023, B=32768.\nFull range\
+    \ 0-65535 in R/G channels. Encodes well to lossless PNG/TIFF.\n\nHelper functions:\n- python_available(): check python3\
+    \ + PIL + numpy\n- write_png_16bit(): encode 16-bit Rgb16 pixels to PNG file\n- run_python(): execute Python script, return\
+    \ stdout\n- read_png_16bit(): decode 16-bit PNG to u16 values\n- mae_u16(): mean absolute error at u16 scale\n"
 plan:
-  - phase: Test Infrastructure
-    tasks:
-      - text: Add python_available() helper checking python3, PIL, numpy availability
-        done: false
-      - text: Add write_png_16bit() helper to write Rgb16 pixels as 16-bit PNG via our encoder
-        done: false
-      - text: Add mae_u16() helper for mean absolute error at u16 scale (0-65535)
-        done: false
-      - text: Add generate_gradient_16bit() to create deterministic 64x64 Rgb16 test image
-        done: false
-  - phase: Decode and Conversion Parity
-    tasks:
-      - text: Test 16-bit PNG decode parity vs Pillow (read same file, compare u16 values)
-        done: false
-      - text: Test 16-bit TIFF decode parity vs Pillow
-        done: false
-      - text: Test 16-to-8 downconvert parity vs Pillow (our (v+128)/257 vs Pillow quantize)
-        done: false
-  - phase: Processing and Full-Chain Parity
-    tasks:
-      - text: Test gamma 2.2 at 16-bit vs numpy exact formula (expect MAE=0.0)
-        done: false
-      - text: Test gamma 2.2 at 16-bit vs ImageMagick -gamma (expect MAE<1.0)
-        done: false
-      - text: Test equalize at 16-bit vs ImageMagick -equalize (expect MAE<1.0, vs Q8 MAE=11.5)
-        done: false
-      - text: Test normalize at 16-bit vs ImageMagick -normalize (expect MAE<1.0, vs Q8 MAE=7.6)
-        done: false
-      - text: Test full chain (decode 16-bit -> gamma -> equalize -> encode) vs IM pipeline
-        done: false
+- phase: Test Infrastructure
+  tasks:
+  - text: Add python_available() helper checking python3, PIL, numpy availability
+    done: true
+  - text: Add write_png_16bit() helper to write Rgb16 pixels as 16-bit PNG via our encoder
+    done: true
+  - text: Add mae_u16() helper for mean absolute error at u16 scale (0-65535)
+    done: true
+  - text: Add generate_gradient_16bit() to create deterministic 64x64 Rgb16 test image
+    done: true
+- phase: Decode and Conversion Parity
+  tasks:
+  - text: Test 16-bit PNG decode parity vs Pillow (read same file, compare u16 values)
+    done: true
+  - text: Test 16-bit TIFF decode parity vs Pillow
+    done: true
+  - text: Test 16-to-8 downconvert parity vs Pillow (our (v+128)/257 vs Pillow quantize)
+    done: true
+- phase: Processing and Full-Chain Parity
+  tasks:
+  - text: Test gamma 2.2 at 16-bit vs numpy exact formula (expect MAE=0.0)
+    done: true
+  - text: Test gamma 2.2 at 16-bit vs ImageMagick -gamma (expect MAE<1.0)
+    done: true
+  - text: Test equalize at 16-bit vs ImageMagick -equalize (expect MAE<1.0, vs Q8 MAE=11.5)
+    done: true
+  - text: Test normalize at 16-bit vs ImageMagick -normalize (expect MAE<1.0, vs Q8 MAE=7.6)
+    done: true
+  - text: Test full chain (decode 16-bit -> gamma -> equalize -> encode) vs IM pipeline
+    done: true
 extra: {}
