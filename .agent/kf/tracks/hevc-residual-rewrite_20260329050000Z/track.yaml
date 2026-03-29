@@ -35,32 +35,34 @@ spec:
     \ from abs_levels value.\n   Ref: libde265 v1.0.18 slice.cc lines 3360-3397.\n\n6. RICE PARAM ADAPTATION: Must happen\
     \ in list order to match reference state.\n   Ref: libde265 v1.0.18 slice.cc lines 3367-3377.\n\nAlso update YCbCr to\
     \ RGB to match ffmpeg coefficients for full parity."
-plan: []
-extra: {}
 plan:
-  - phase: Rewrite Coefficient Assembly
-    tasks:
-      - text: "Restructure decode_residual_coeffs to collect significant coefficients into a list with scan positions, then process in list order matching libde265 v1.0.18 slice.cc lines 3164-3430. Cite reference."
-        done: false
-      - text: "Fix gt1 decoding to process first min(8, nCoeff) coefficients in list order. Cite libde265 v1.0.18 slice.cc line 3269."
-        done: false
-      - text: "Fix gt2 candidate selection to use first gt1=1 in list order. Cite libde265 v1.0.18 slice.cc line 3283."
-        done: false
-      - text: "Fix sign decoding order: list order 0..nCoeff-2, then signHidden for last. Cite libde265 v1.0.18 slice.cc lines 3312-3327."
-        done: false
-      - text: "Fix remaining decode with coeff_has_max_base_level tracking. Cite libde265 v1.0.18 slice.cc lines 3360-3397."
-        done: false
-  - phase: YCbCr to RGB Alignment
-    tasks:
-      - text: "Update BT709 matrix coefficients to match ffmpeg 7.1 output exactly"
-        done: false
-  - phase: Validation
-    tasks:
-      - text: "yuv_parity_flat_64x64_q22 and q37 pass (0 Y diffs)"
-        done: false
-      - text: "yuv_parity_gradient_128x128_q22 passes (0 Y diffs)"
-        done: false
-      - text: "All 9 RGB parity tests pass with PSNR > 25dB"
-        done: false
-      - text: "clippy clean, fmt clean, cargo test passes"
-        done: false
+- phase: Rewrite Coefficient Assembly
+  tasks:
+  - text: Restructure decode_residual_coeffs to collect significant coefficients into a list with scan positions, then process
+      in list order matching libde265 v1.0.18 slice.cc lines 3164-3430. Cite reference.
+    done: true
+  - text: Fix gt1 decoding to process first min(8, nCoeff) coefficients in list order. Cite libde265 v1.0.18 slice.cc line
+      3269.
+    done: true
+  - text: Fix gt2 candidate selection to use first gt1=1 in list order. Cite libde265 v1.0.18 slice.cc line 3283.
+    done: true
+  - text: 'Fix sign decoding order: list order 0..nCoeff-2, then signHidden for last. Cite libde265 v1.0.18 slice.cc lines
+      3312-3327.'
+    done: true
+  - text: Fix remaining decode with coeff_has_max_base_level tracking. Cite libde265 v1.0.18 slice.cc lines 3360-3397.
+    done: true
+- phase: YCbCr to RGB Alignment
+  tasks:
+  - text: Update BT709 matrix coefficients to match ffmpeg 7.1 output exactly
+    done: false
+- phase: Validation
+  tasks:
+  - text: yuv_parity_flat_64x64_q22 and q37 pass (0 Y diffs)
+    done: false
+  - text: yuv_parity_gradient_128x128_q22 passes (0 Y diffs)
+    done: false
+  - text: All 9 RGB parity tests pass with PSNR > 25dB
+    done: false
+  - text: clippy clean, fmt clean, cargo test passes
+    done: false
+extra: {}
