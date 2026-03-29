@@ -40,8 +40,8 @@ pub fn registered_encoders() -> Vec<&'static StaticEncoderRegistration> {
 }
 
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tiff", "avif", "heic", "bmp", "ico", "qoi", "tga", "hdr",
-    "pnm", "exr", "dds", "jp2", "fits",
+    "png", "jpeg", "webp", "gif", "tiff", "avif", "heic", "bmp", "ico", "qoi", "tga", "hdr", "pnm",
+    "exr", "dds", "jp2", "fits",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).

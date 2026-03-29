@@ -50,10 +50,19 @@ fn main() {
     }
 
     // Print summary to stderr (visible during build)
-    eprintln!("rasmcore build.rs: Found {} registered filter(s):", filters.len());
+    eprintln!(
+        "rasmcore build.rs: Found {} registered filter(s):",
+        filters.len()
+    );
     for f in &filters {
         let params: Vec<String> = f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect();
-        eprintln!("  {} ({}): {}({})", f.name, f.category, f.fn_name, params.join(", "));
+        eprintln!(
+            "  {} ({}): {}({})",
+            f.name,
+            f.category,
+            f.fn_name,
+            params.join(", ")
+        );
     }
 
     // Generate WIT declarations (printed to stderr for review)
@@ -90,11 +99,7 @@ fn main() {
 
     for f in &filters {
         let fn_name = &f.fn_name;
-        let params_sig: Vec<String> = f
-            .params
-            .iter()
-            .map(|(n, t)| format!("{n}: {t}"))
-            .collect();
+        let params_sig: Vec<String> = f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect();
         let params_call: Vec<String> = f.params.iter().map(|(n, _)| n.clone()).collect();
 
         let full_sig = if params_sig.is_empty() {
@@ -122,11 +127,7 @@ fn main() {
         adapter_code.push_str("}\n\n");
     }
 
-    fs::write(
-        out_dir.join("generated_filter_adapter.rs"),
-        &adapter_code,
-    )
-    .unwrap();
+    fs::write(out_dir.join("generated_filter_adapter.rs"), &adapter_code).unwrap();
 
     eprintln!(
         "rasmcore build.rs: Generated adapter code at {}/generated_filter_adapter.rs",
@@ -141,7 +142,12 @@ fn main() {
         // Match filter to its param struct by name convention: blur → BlurParams
         let struct_name = format!(
             "{}Params",
-            f.name.chars().next().unwrap().to_uppercase().collect::<String>()
+            f.name
+                .chars()
+                .next()
+                .unwrap()
+                .to_uppercase()
+                .collect::<String>()
                 + &f.name[1..]
         );
         let params = param_structs.get(&struct_name);
@@ -153,23 +159,25 @@ fn main() {
 
         if let Some(fields) = params {
             for (j, field) in fields.iter().enumerate() {
-                if j > 0 { manifest.push(','); }
-                let hint_json = if field.hint.is_empty() {
-                    String::new()
-                } else {
-                    format!(",\"hint\":\"{}\"", field.hint)
-                };
+                if j > 0 {
+                    manifest.push(',');
+                }
                 manifest.push_str(&format!(
-                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\"{}}}",
+                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\"}}",
                     field.name, field.param_type,
-                    field.min, field.max, field.step, field.default_val, field.label, hint_json
+                    field.min, field.max, field.step, field.default_val, field.label
                 ));
             }
-            if !fields.is_empty() { manifest.push('\n'); manifest.push_str("      "); }
+            if !fields.is_empty() {
+                manifest.push('\n');
+                manifest.push_str("      ");
+            }
         } else if !f.params.is_empty() {
             // Fallback: use function signature params with default ranges
             for (j, (pname, ptype)) in f.params.iter().enumerate() {
-                if j > 0 { manifest.push(','); }
+                if j > 0 {
+                    manifest.push(',');
+                }
                 let (min, max, step, def) = default_range_for_type(ptype);
                 manifest.push_str(&format!(
                     "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"\"}}",
@@ -181,14 +189,19 @@ fn main() {
         }
 
         manifest.push_str("]\n    }");
-        if i < filters.len() - 1 { manifest.push(','); }
+        if i < filters.len() - 1 {
+            manifest.push(',');
+        }
         manifest.push('\n');
     }
 
     manifest.push_str("  ]\n}\n");
 
     fs::write(out_dir.join("param-manifest.json"), &manifest).unwrap();
-    eprintln!("rasmcore build.rs: Generated param-manifest.json ({} filters)", filters.len());
+    eprintln!(
+        "rasmcore build.rs: Generated param-manifest.json ({} filters)",
+        filters.len()
+    );
 }
 
 /// Parsed filter registration.
@@ -311,7 +324,6 @@ struct ParamField {
     step: String,
     default_val: String,
     label: String,
-    hint: String,
 }
 
 fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String, Vec<ParamField>> {
@@ -324,7 +336,9 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
         if line.contains("derive") && line.contains("ConfigParams") {
             // Next non-comment line should be "pub struct FooParams {"
             let mut j = i + 1;
-            while j < lines.len() && (lines[j].trim().starts_with("//") || lines[j].trim().is_empty()) {
+            while j < lines.len()
+                && (lines[j].trim().starts_with("//") || lines[j].trim().is_empty())
+            {
                 j += 1;
             }
             if j < lines.len() && lines[j].trim().starts_with("pub struct ") {
@@ -338,11 +352,14 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                 // Parse fields until closing brace
                 let mut fields = Vec::new();
                 let mut doc_comment = String::new();
-                let mut param_attrs: (String, String, String, String, String) = ("null".into(), "null".into(), "null".into(), String::new(), String::new());
+                let mut param_attrs: (String, String, String, String) =
+                    ("null".into(), "null".into(), "null".into(), String::new());
                 j += 1;
                 while j < lines.len() {
                     let fl = lines[j].trim();
-                    if fl == "}" { break; }
+                    if fl == "}" {
+                        break;
+                    }
 
                     if fl.starts_with("///") {
                         doc_comment = fl.trim_start_matches("///").trim().to_string();
@@ -359,7 +376,6 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                                     "max" => param_attrs.1 = v.to_string(),
                                     "step" => param_attrs.2 = v.to_string(),
                                     "default" => param_attrs.3 = v.to_string(),
-                                    "hint" => param_attrs.4 = v.to_string(),
                                     _ => {}
                                 }
                             }
@@ -383,10 +399,10 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                                 step: param_attrs.2.clone(),
                                 default_val: default,
                                 label: doc_comment.clone(),
-                                hint: param_attrs.4.clone(),
                             });
                             doc_comment.clear();
-                            param_attrs = ("null".into(), "null".into(), "null".into(), String::new(), String::new());
+                            param_attrs =
+                                ("null".into(), "null".into(), "null".into(), String::new());
                         }
                     }
                     j += 1;

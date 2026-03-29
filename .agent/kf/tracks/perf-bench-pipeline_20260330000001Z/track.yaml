@@ -1,139 +1,192 @@
 id: perf-bench-pipeline_20260330000001Z
-title: "Performance Benchmark Pipeline — Decoders, Encoders, Filters vs Reference Tools"
+title: Performance Benchmark Pipeline — Decoders, Encoders, Filters vs Reference Tools
 type: feature
 status: pending
 created: 2026-03-30
-updated: 2026-03-30
+updated: '2026-03-29'
 spec:
-  summary: |
-    Criterion-based benchmark suite comparing rasmcore decoder/encoder/filter
+  summary: 'Criterion-based benchmark suite comparing rasmcore decoder/encoder/filter
+
     performance against reference tools (ImageMagick, libvips, OpenCV, cwebp,
+
     libjpeg-turbo, ffmpeg). Organized into decoder, encoder, and filter/transform
+
     groups. Supports running any subset or the full suite, with JSON/Markdown
+
     report generation.
-  context: |
-    The project currently has hand-written benchmarks (std::time::Instant) in
+
+    '
+  context: 'The project currently has hand-written benchmarks (std::time::Instant) in
+
     crates/rasmcore-image/tests/bench.rs and parity tests scattered across
+
     multiple test files. There is no unified way to compare our performance
+
     against reference implementations, run a subset of benchmarks, or generate
+
     a report. We need a proper Criterion-based benchmark harness that measures
+
     our code vs the reference tools on the same inputs and produces comparable
+
     throughput numbers.
-  codebase_analysis: |
-    Existing infrastructure:
+
+    '
+  codebase_analysis: 'Existing infrastructure:
+
     - bench.rs uses manual Instant timing (no statistical rigor)
+
     - scripts/setup-references.sh installs magick, cwebp, libjpeg-turbo, ffmpeg, x265, Python venv
+
     - scripts/run-reference-tests.sh runs parity tests but not perf benchmarks
+
     - Parity tests exist for JPEG (parity.rs), WebP (parity.rs), HEVC (parity.rs)
+
     - Filter parity tests in opencv_parity.rs, filter_reference_parity.rs
+
     - tests/codec-parity/ has shared helpers (mae, psnr, gradient_rgb, etc.)
+
     - No criterion dependency anywhere in workspace
 
+
     Reference tools available:
+
     - ImageMagick (magick convert) — decode, encode, filter chains
+
     - libvips (vipsthumbnail, vips) — decode, encode, filter pipelines
+
     - cwebp/dwebp — WebP encode/decode
+
     - libjpeg-turbo (djpeg/cjpeg) — JPEG encode/decode
+
     - ffmpeg — HEVC decode, general codec ops
+
     - Python OpenCV — filter operations
 
+
     Codec APIs:
+
     - rasmcore-jpeg: encode(pixels, w, h, format, config), decode(data)
+
     - rasmcore-webp: encode_pixels(pixels, info, config)
+
     - rasmcore-image: decode(data), encode(pixels, info, fmt, quality)
+
     - rasmcore-hevc: feature-gated decode
+
     - Transforms: resize, crop, rotate, flip
+
     - Filters: blur, sharpen, grayscale, bilateral, clahe, guided, mertens, etc.
+
+    '
   acceptance_criteria:
-    - Criterion benchmark groups for decoders (JPEG, PNG, WebP, HEVC)
-    - Criterion benchmark groups for encoders (JPEG, PNG, WebP)
-    - Criterion benchmark groups for filters/transforms (blur, sharpen, resize, bilateral, clahe, guided)
-    - Pipeline benchmarks comparing multi-op chains vs vips and ImageMagick
-    - Each benchmark measures both rasmcore and reference tool on same input
-    - cargo bench --bench perf runs the full suite
-    - cargo bench --bench perf -- decoder runs only decoder benchmarks
-    - cargo bench --bench perf -- encoder/jpeg runs a single encoder
-    - JSON and Markdown report generation from Criterion output
-    - Report script that collects all results into a single comparison table
-  out_of_scope: |
-    - WASM benchmarks (native only for this track)
+  - Criterion benchmark groups for decoders (JPEG, PNG, WebP, HEVC)
+  - Criterion benchmark groups for encoders (JPEG, PNG, WebP)
+  - Criterion benchmark groups for filters/transforms (blur, sharpen, resize, bilateral, clahe, guided)
+  - Pipeline benchmarks comparing multi-op chains vs vips and ImageMagick
+  - Each benchmark measures both rasmcore and reference tool on same input
+  - cargo bench --bench perf runs the full suite
+  - cargo bench --bench perf -- decoder runs only decoder benchmarks
+  - cargo bench --bench perf -- encoder/jpeg runs a single encoder
+  - JSON and Markdown report generation from Criterion output
+  - Report script that collects all results into a single comparison table
+  out_of_scope: '- WASM benchmarks (native only for this track)
+
     - Perceptual quality metrics (SSIM, butteraugli) — those are parity tests
+
     - Modifying any existing codec or filter implementation
+
     - CI/CD integration (local-only for now)
-  technical_notes: |
-    Use Criterion.rs for statistical benchmarking. Reference tools are invoked
+
+    '
+  technical_notes: 'Use Criterion.rs for statistical benchmarking. Reference tools are invoked
+
     via std::process::Command (shell out to magick, vips, cwebp, etc.).
+
     Benchmark inputs are the canonical test images at multiple sizes (256, 512,
+
     1024, 2048). Fixture generation is idempotent via hash checks.
 
+
     For pipeline benchmarks, compare equivalent operation chains:
+
     - decode JPEG + resize 50% + sharpen + encode JPEG q85
+
     - decode PNG + bilateral + clahe + encode PNG
+
     These are run as single commands in vips/magick and as our pipeline API.
 
+
     Group structure in Criterion:
+
     - decoder/{jpeg,png,webp,hevc}/{256,512,1024}
+
     - encoder/{jpeg,png,webp}/{256,512,1024}/{q75,q85,q95}
+
     - filter/{blur,sharpen,resize,bilateral,clahe,guided}/{256,512,1024}
+
     - pipeline/{decode-resize-sharpen-encode,decode-bilateral-clahe-encode}/{256,1024}
 
+
     Report script reads Criterion JSON from target/criterion/ and produces
+
     a Markdown table and JSON summary comparing rasmcore vs each reference.
+
+    '
 plan:
-  - phase: "Setup"
-    tasks:
-      - text: "Add criterion dev-dependency to workspace Cargo.toml and rasmcore-image"
-        done: false
-      - text: "Create benches/perf.rs benchmark harness with Criterion main and group structure"
-        done: false
-      - text: "Create benches/inputs/ fixture generator (256/512/1024/2048 JPEG/PNG/WebP from canonical images)"
-        done: false
-      - text: "Add helper module for invoking reference tools via Command (magick, vips, cwebp, djpeg, ffmpeg)"
-        done: false
-  - phase: "Decoder Benchmarks"
-    tasks:
-      - text: "JPEG decode benchmark — rasmcore vs libjpeg-turbo (djpeg) vs ImageMagick vs libvips at 256/512/1024"
-        done: false
-      - text: "PNG decode benchmark — rasmcore vs ImageMagick vs libvips at 256/512/1024"
-        done: false
-      - text: "WebP decode benchmark — rasmcore vs dwebp vs ImageMagick vs libvips at 256/512/1024"
-        done: false
-      - text: "HEVC decode benchmark — rasmcore vs ffmpeg at 256/512 (feature-gated)"
-        done: false
-  - phase: "Encoder Benchmarks"
-    tasks:
-      - text: "JPEG encode benchmark — rasmcore vs cjpeg vs ImageMagick vs libvips at 256/512/1024 x q75/q85/q95"
-        done: false
-      - text: "PNG encode benchmark — rasmcore vs ImageMagick vs libvips at 256/512/1024"
-        done: false
-      - text: "WebP encode benchmark — rasmcore vs cwebp vs ImageMagick vs libvips at 256/512/1024 x q75/q85"
-        done: false
-  - phase: "Filter/Transform Benchmarks"
-    tasks:
-      - text: "Resize benchmark — rasmcore vs ImageMagick vs libvips (Lanczos3, 50% downscale) at 512/1024/2048"
-        done: false
-      - text: "Blur benchmark — rasmcore vs ImageMagick vs libvips (Gaussian r=3) at 512/1024"
-        done: false
-      - text: "Sharpen benchmark — rasmcore vs ImageMagick vs libvips (unsharp mask) at 512/1024"
-        done: false
-      - text: "Bilateral filter benchmark — rasmcore vs OpenCV (via Python) at 256/512"
-        done: false
-      - text: "CLAHE benchmark — rasmcore vs OpenCV (via Python) at 256/512"
-        done: false
-  - phase: "Pipeline Benchmarks"
-    tasks:
-      - text: "Pipeline A — decode JPEG + resize 50% + sharpen + encode JPEG q85 — rasmcore vs vips vs magick"
-        done: false
-      - text: "Pipeline B — decode PNG + bilateral r=5 + CLAHE + encode PNG — rasmcore vs vips vs magick"
-        done: false
-      - text: "Pipeline C — decode JPEG + grayscale + resize 25% + encode WebP q80 — rasmcore vs vips vs magick"
-        done: false
-  - phase: "Report Generation"
-    tasks:
-      - text: "Create scripts/bench-report.py that reads Criterion JSON and generates Markdown comparison table"
-        done: false
-      - text: "Add cargo bench wrapper script (scripts/run-benchmarks.sh) with subset selection flags"
-        done: false
-      - text: "Generate initial baseline report and commit as benches/BASELINE.md"
-        done: false
+- phase: Setup
+  tasks:
+  - text: Add criterion dev-dependency to workspace Cargo.toml and rasmcore-image
+    done: true
+  - text: Create benches/perf.rs benchmark harness with Criterion main and group structure
+    done: true
+  - text: Create benches/inputs/ fixture generator (256/512/1024/2048 JPEG/PNG/WebP from canonical images)
+    done: true
+  - text: Add helper module for invoking reference tools via Command (magick, vips, cwebp, djpeg, ffmpeg)
+    done: true
+- phase: Decoder Benchmarks
+  tasks:
+  - text: JPEG decode benchmark — rasmcore vs libjpeg-turbo (djpeg) vs ImageMagick vs libvips at 256/512/1024
+    done: true
+  - text: PNG decode benchmark — rasmcore vs ImageMagick vs libvips at 256/512/1024
+    done: true
+  - text: WebP decode benchmark — rasmcore vs dwebp vs ImageMagick vs libvips at 256/512/1024
+    done: true
+  - text: HEVC decode benchmark — rasmcore vs ffmpeg at 256/512 (feature-gated)
+    done: true
+- phase: Encoder Benchmarks
+  tasks:
+  - text: JPEG encode benchmark — rasmcore vs cjpeg vs ImageMagick vs libvips at 256/512/1024 x q75/q85/q95
+    done: true
+  - text: PNG encode benchmark — rasmcore vs ImageMagick vs libvips at 256/512/1024
+    done: true
+  - text: WebP encode benchmark — rasmcore vs cwebp vs ImageMagick vs libvips at 256/512/1024 x q75/q85
+    done: true
+- phase: Filter/Transform Benchmarks
+  tasks:
+  - text: Resize benchmark — rasmcore vs ImageMagick vs libvips (Lanczos3, 50% downscale) at 512/1024/2048
+    done: true
+  - text: Blur benchmark — rasmcore vs ImageMagick vs libvips (Gaussian r=3) at 512/1024
+    done: true
+  - text: Sharpen benchmark — rasmcore vs ImageMagick vs libvips (unsharp mask) at 512/1024
+    done: true
+  - text: Bilateral filter benchmark — rasmcore vs OpenCV (via Python) at 256/512
+    done: true
+  - text: CLAHE benchmark — rasmcore vs OpenCV (via Python) at 256/512
+    done: true
+- phase: Pipeline Benchmarks
+  tasks:
+  - text: Pipeline A — decode JPEG + resize 50% + sharpen + encode JPEG q85 — rasmcore vs vips vs magick
+    done: true
+  - text: Pipeline B — decode PNG + bilateral r=5 + CLAHE + encode PNG — rasmcore vs vips vs magick
+    done: true
+  - text: Pipeline C — decode JPEG + grayscale + resize 25% + encode WebP q80 — rasmcore vs vips vs magick
+    done: true
+- phase: Report Generation
+  tasks:
+  - text: Create scripts/bench-report.py that reads Criterion JSON and generates Markdown comparison table
+    done: true
+  - text: Add cargo bench wrapper script (scripts/run-benchmarks.sh) with subset selection flags
+    done: true
+  - text: Generate initial baseline report and commit as benches/BASELINE.md
+    done: true
 extra: {}

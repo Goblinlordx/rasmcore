@@ -67,11 +67,7 @@ pub fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
 /// Process a 16-bit image by downsampling to 8-bit, applying an 8-bit function,
 /// then upsampling back to 16-bit. Used as a fallback when a filter doesn't
 /// have a native 16-bit path.
-pub fn process_via_8bit<F>(
-    pixels: &[u8],
-    info: &ImageInfo,
-    f: F,
-) -> Result<Vec<u8>, ImageError>
+pub fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
 where
     F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
 {
@@ -105,13 +101,7 @@ where
 }
 
 /// Pad an image with reflected borders (BORDER_REFLECT_101).
-pub fn pad_reflect(
-    pixels: &[u8],
-    w: usize,
-    h: usize,
-    channels: usize,
-    pad: usize,
-) -> Vec<u8> {
+pub fn pad_reflect(pixels: &[u8], w: usize, h: usize, channels: usize, pad: usize) -> Vec<u8> {
     let pw = w + 2 * pad;
     let ph = h + 2 * pad;
     let mut padded = vec![0u8; pw * ph * channels];

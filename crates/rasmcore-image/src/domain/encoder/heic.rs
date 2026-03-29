@@ -40,7 +40,7 @@ pub fn encode(
     config: &HeicEncodeConfig,
 ) -> Result<Vec<u8>, ImageError> {
     use rasmcore_color::ColorMatrix;
-    use rasmcore_hevc::encode::encoder::{encode_iframe, EncodeConfig};
+    use rasmcore_hevc::encode::encoder::{EncodeConfig, encode_iframe};
 
     let width = info.width;
     let height = info.height;
@@ -199,7 +199,10 @@ mod tests {
     fn quality_to_qp_mapping() {
         assert_eq!(quality_to_qp(100), 4);
         let qp50 = quality_to_qp(50);
-        assert!(qp50 >= 26 && qp50 <= 28, "QP at Q50 should be ~27, got {qp50}");
+        assert!(
+            qp50 >= 26 && qp50 <= 28,
+            "QP at Q50 should be ~27, got {qp50}"
+        );
         assert_eq!(quality_to_qp(1), 51);
         // Monotonic
         for q in 1..100 {
@@ -239,7 +242,7 @@ mod tests {
     #[test]
     fn encode_decode_roundtrip() {
         use crate::domain::types::{ColorSpace, PixelFormat};
-        use rasmcore_hevc::encode::encoder::{encode_iframe, EncodeConfig};
+        use rasmcore_hevc::encode::encoder::{EncodeConfig, encode_iframe};
 
         let width = 64u32;
         let height = 64u32;
@@ -269,8 +272,15 @@ mod tests {
             height,
             &rasmcore_color::ColorMatrix::BT709,
         );
-        let annex_b = encode_iframe(&yuv.y, &yuv.u, &yuv.v, width, height, &EncodeConfig { qp: 26 })
-            .expect("HEVC encode failed");
+        let annex_b = encode_iframe(
+            &yuv.y,
+            &yuv.u,
+            &yuv.v,
+            width,
+            height,
+            &EncodeConfig { qp: 26 },
+        )
+        .expect("HEVC encode failed");
         let decoded = rasmcore_hevc::decode(&annex_b, &[]).expect("HEVC decode failed");
 
         assert_eq!(decoded.width, width);
