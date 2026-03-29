@@ -85,12 +85,12 @@ pub fn inverse_dct_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let o0 = C4[1] * c1 + C4[3] * c3;
         let o1 = C4[3] * c1 - C4[1] * c3;
 
-        // Shift by 7 after row pass (HEVC spec: shift1 = 7)
+        // Shift by 7, then clip to i16 range (HEVC Section 8.6.4.2)
         let add = 64; // 1 << 6
-        tmp[s] = (e0 + o0 + add) >> 7;
-        tmp[s + 1] = (e1 + o1 + add) >> 7;
-        tmp[s + 2] = (e1 - o1 + add) >> 7;
-        tmp[s + 3] = (e0 - o0 + add) >> 7;
+        tmp[s] = ((e0 + o0 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 1] = ((e1 + o1 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 2] = ((e1 - o1 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 3] = ((e0 - o0 + add) >> 7).clamp(-32768, 32767);
     }
 
     // Column pass

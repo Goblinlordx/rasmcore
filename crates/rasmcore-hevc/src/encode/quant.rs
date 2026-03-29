@@ -100,7 +100,8 @@ mod tests {
         assert!(
             dc_diff < 300,
             "DC roundtrip: original={}, reconstructed={}, diff={dc_diff}",
-            coeffs[0], reconstructed[0]
+            coeffs[0],
+            reconstructed[0]
         );
     }
 
@@ -109,7 +110,10 @@ mod tests {
         let coeffs = [0i16; 64];
         let mut output = [99i16; 64];
         quantize_block(&coeffs, &mut output, 3, 26, 8);
-        assert!(output.iter().all(|&v| v == 0), "zero input should produce zero output");
+        assert!(
+            output.iter().all(|&v| v == 0),
+            "zero input should produce zero output"
+        );
     }
 
     #[test]
@@ -138,10 +142,16 @@ mod tests {
         quantize_block(&coeffs, &mut output, 2, 22, 8);
 
         if output[0] != 0 {
-            assert!(output[0] > 0, "positive input should produce positive output");
+            assert!(
+                output[0] > 0,
+                "positive input should produce positive output"
+            );
         }
         if output[1] != 0 {
-            assert!(output[1] < 0, "negative input should produce negative output");
+            assert!(
+                output[1] < 0,
+                "negative input should produce negative output"
+            );
         }
     }
 

@@ -17,11 +17,7 @@ use crate::types::NalUnitType;
 /// 3. RBSP with emulation prevention bytes inserted
 ///
 /// Ref: x265 4.1 encoder/nal.cpp — writeNalUnitHeader + encodeNAL
-pub fn assemble_nal_unit(
-    nal_type: NalUnitType,
-    rbsp: &[u8],
-    use_long_start_code: bool,
-) -> Vec<u8> {
+pub fn assemble_nal_unit(nal_type: NalUnitType, rbsp: &[u8], use_long_start_code: bool) -> Vec<u8> {
     let nuh_layer_id: u8 = 0;
     let nuh_temporal_id_plus1: u8 = 1;
 

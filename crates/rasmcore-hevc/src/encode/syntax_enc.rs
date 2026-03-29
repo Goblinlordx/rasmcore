@@ -44,11 +44,7 @@ pub fn encode_part_mode_intra(
 /// If mode is not in MPM list: flag=0 + rem_mode (5 bypass bits)
 ///
 /// Ref: x265 4.1 encoder/entropy.cpp — codeIntraDirLumaAng
-pub fn encode_intra_luma_mode(
-    enc: &mut CabacEncoder,
-    contexts: &mut [ContextModel],
-    raw_mode: u8,
-) {
+pub fn encode_intra_luma_mode(enc: &mut CabacEncoder, contexts: &mut [ContextModel], raw_mode: u8) {
     if raw_mode < 3 {
         // MPM mode: flag=1, then mpm_idx via truncated unary bypass
         let ctx_idx = PREV_INTRA_PRED_CTX_OFFSET;
@@ -272,7 +268,9 @@ pub fn encode_residual_coeffs(
         let bx = sx * (if log2_size <= 2 { 1 } else { 4 });
         let by = sy * (if log2_size <= 2 { 1 } else { 4 });
         for (ci, &(cx, cy)) in coeff_scan_4x4.iter().enumerate() {
-            if cx >= scan_4x4_size || cy >= scan_4x4_size { continue; }
+            if cx >= scan_4x4_size || cy >= scan_4x4_size {
+                continue;
+            }
             let tx = bx + cx;
             let ty = by + cy;
             if tx < size as usize && ty < size as usize && coeffs[ty * size as usize + tx] != 0 {
@@ -282,7 +280,9 @@ pub fn encode_residual_coeffs(
             }
         }
     }
-    if !found { return; }
+    if !found {
+        return;
+    }
 
     // Encode last significant position
     let (lsx, lsy) = sub_scan[last_sub_scan_pos];
@@ -310,30 +310,44 @@ pub fn encode_residual_coeffs(
         let mut has_nz = false;
         for ci in 0..=coeff_end {
             let (cx, cy) = coeff_scan_4x4[ci];
-            if cx >= scan_4x4_size || cy >= scan_4x4_size { continue; }
-            let tx = bx + cx; let ty = by + cy;
+            if cx >= scan_4x4_size || cy >= scan_4x4_size {
+                continue;
+            }
+            let tx = bx + cx;
+            let ty = by + cy;
             if tx < size as usize && ty < size as usize {
                 let v = coeffs[ty * size as usize + tx];
                 abs_c[ci] = v.unsigned_abs() as u32;
                 sign_c[ci] = if v < 0 { 1 } else { 0 };
-                if v != 0 { has_nz = true; }
+                if v != 0 {
+                    has_nz = true;
+                }
             }
         }
 
         // coded_sub_block_flag
-        let coded = if is_last_sub || is_dc_sub { true } else {
+        let coded = if is_last_sub || is_dc_sub {
+            true
+        } else {
             let prev_csbf = coded_sub_block_neighbors[sub_x + sub_y * sb_width];
             let csbf_ctx = (prev_csbf & 1) | (prev_csbf >> 1);
             let ctx = crate::syntax::CODED_SUB_BLOCK_FLAG_CTX_OFFSET
-                + csbf_ctx as usize + if c_idx != 0 { 2 } else { 0 };
+                + csbf_ctx as usize
+                + if c_idx != 0 { 2 } else { 0 };
             enc.encode_bin(has_nz as u32, &mut contexts[ctx]);
             has_nz
         };
         if coded {
-            if sub_x > 0 { coded_sub_block_neighbors[(sub_x-1) + sub_y*sb_width] |= 1; }
-            if sub_y > 0 { coded_sub_block_neighbors[sub_x + (sub_y-1)*sb_width] |= 2; }
+            if sub_x > 0 {
+                coded_sub_block_neighbors[(sub_x - 1) + sub_y * sb_width] |= 1;
+            }
+            if sub_y > 0 {
+                coded_sub_block_neighbors[sub_x + (sub_y - 1) * sb_width] |= 2;
+            }
         }
-        if !coded { continue; }
+        if !coded {
+            continue;
+        }
 
         let prev_csbf = coded_sub_block_neighbors[sub_x + sub_y * sb_width];
 
@@ -345,46 +359,84 @@ pub fn encode_residual_coeffs(
         for ci in (0..=coeff_end).rev() {
             let is_sig = abs_c[ci] != 0;
             if is_last_sub && ci == last_coeff_scan_pos {
-                sig[ci] = true; num_sig += 1;
-                if ci < first_sp { first_sp = ci; }
-                if num_sig == 1 { last_sp = ci; }
+                sig[ci] = true;
+                num_sig += 1;
+                if ci < first_sp {
+                    first_sp = ci;
+                }
+                if num_sig == 1 {
+                    last_sp = ci;
+                }
                 continue;
             }
             if ci == 0 && num_sig == 0 && !is_dc_sub && !is_last_sub {
-                sig[ci] = true; num_sig += 1; first_sp = ci; last_sp = ci;
+                sig[ci] = true;
+                num_sig += 1;
+                first_sp = ci;
+                last_sp = ci;
                 continue;
             }
             let (cx, cy) = coeff_scan_4x4[ci];
             let sc = crate::syntax::derive_sig_coeff_ctx(
-                log2_size, c_idx, 0, cx, cy, sub_x, sub_y, prev_csbf, sb_width, &ctx_idx_map_4x4);
+                log2_size,
+                c_idx,
+                0,
+                cx,
+                cy,
+                sub_x,
+                sub_y,
+                prev_csbf,
+                sb_width,
+                &ctx_idx_map_4x4,
+            );
             let ctx = crate::syntax::SIG_COEFF_CTX_OFFSET + sc.min(41);
             enc.encode_bin(is_sig as u32, &mut contexts[ctx]);
             sig[ci] = is_sig;
             if is_sig {
                 num_sig += 1;
-                if ci < first_sp { first_sp = ci; }
-                if num_sig == 1 { last_sp = ci; }
+                if ci < first_sp {
+                    first_sp = ci;
+                }
+                if num_sig == 1 {
+                    last_sp = ci;
+                }
             }
         }
-        if num_sig == 0 { continue; }
+        if num_sig == 0 {
+            continue;
+        }
 
         let sign_hidden = sign_data_hiding_enabled && (last_sp as isize - first_sp as isize) > 3;
 
         // gt1 flags
-        let mut ctx_set = if sub_idx == 0 || c_idx > 0 { 0u32 } else { 2u32 };
-        if prev_c1 == 0 { ctx_set += 1; }
+        let mut ctx_set = if sub_idx == 0 || c_idx > 0 {
+            0u32
+        } else {
+            2u32
+        };
+        if prev_c1 == 0 {
+            ctx_set += 1;
+        }
         let mut g1ctx = 1u32;
         let mut gt1_count = 0u32;
         let mut first_gt1: Option<usize> = None;
         for ci in (0..=coeff_end).rev() {
-            if !sig[ci] { continue; }
+            if !sig[ci] {
+                continue;
+            }
             if gt1_count < 8 {
                 let gt1 = abs_c[ci] > 1;
-                let ctx = (crate::syntax::GT1_CTX_OFFSET + (ctx_set*4 + g1ctx.min(3)) as usize)
+                let ctx = (crate::syntax::GT1_CTX_OFFSET + (ctx_set * 4 + g1ctx.min(3)) as usize)
                     .min(crate::syntax::GT1_CTX_OFFSET + 23);
                 enc.encode_bin(gt1 as u32, &mut contexts[ctx]);
-                if gt1 { if first_gt1.is_none() { first_gt1 = Some(ci); } g1ctx = 0; }
-                else if g1ctx > 0 && g1ctx < 3 { g1ctx += 1; }
+                if gt1 {
+                    if first_gt1.is_none() {
+                        first_gt1 = Some(ci);
+                    }
+                    g1ctx = 0;
+                } else if g1ctx > 0 && g1ctx < 3 {
+                    g1ctx += 1;
+                }
                 gt1_count += 1;
             }
         }
@@ -409,25 +461,40 @@ pub fn encode_residual_coeffs(
 
         // coeff_abs_level_remaining
         let mut first_8 = [false; 16];
-        { let mut cnt = 0u32;
-          for cj in (0..=coeff_end).rev() {
-              if sig[cj] { if cnt < 8 { first_8[cj] = true; } cnt += 1; }
-          }
+        {
+            let mut cnt = 0u32;
+            for cj in (0..=coeff_end).rev() {
+                if sig[cj] {
+                    if cnt < 8 {
+                        first_8[cj] = true;
+                    }
+                    cnt += 1;
+                }
+            }
         }
         let mut rice = 0u32;
         for ci in (0..=coeff_end).rev() {
-            if !sig[ci] { continue; }
+            if !sig[ci] {
+                continue;
+            }
             let (base, needs) = if first_8[ci] {
                 if Some(ci) == first_gt1 {
                     let b = if abs_c[ci] > 2 { 3u32 } else { 2 };
                     (b, abs_c[ci] > 2)
-                } else if abs_c[ci] > 1 { (2u32, true) }
-                else { (1u32, false) }
-            } else { (1u32, true) };
+                } else if abs_c[ci] > 1 {
+                    (2u32, true)
+                } else {
+                    (1u32, false)
+                }
+            } else {
+                (1u32, true)
+            };
             if needs {
                 let rem = abs_c[ci] - base;
                 encode_coeff_abs_level_remaining(enc, rem, rice);
-                if base + rem > 3 * (1u32 << rice) { rice = (rice + 1).min(4); }
+                if base + rem > 3 * (1u32 << rice) {
+                    rice = (rice + 1).min(4);
+                }
             }
         }
     }
@@ -580,7 +647,9 @@ mod tests {
 
             let mut dec = CabacDecoder::new(&data).unwrap();
             let mut dec_ctx = syntax::init_syntax_contexts(qp);
-            let flag = dec.decode_bin(&mut dec_ctx[CHROMA_PRED_CTX_OFFSET]).unwrap();
+            let flag = dec
+                .decode_bin(&mut dec_ctx[CHROMA_PRED_CTX_OFFSET])
+                .unwrap();
             assert_eq!(flag, 0, "DM mode should have flag=0");
             assert_eq!(dec.decode_terminate().unwrap(), 1);
         }
@@ -595,7 +664,9 @@ mod tests {
 
             let mut dec = CabacDecoder::new(&data).unwrap();
             let mut dec_ctx = syntax::init_syntax_contexts(qp);
-            let flag = dec.decode_bin(&mut dec_ctx[CHROMA_PRED_CTX_OFFSET]).unwrap();
+            let flag = dec
+                .decode_bin(&mut dec_ctx[CHROMA_PRED_CTX_OFFSET])
+                .unwrap();
             assert_eq!(flag, 1, "explicit chroma mode should have flag=1");
             let b0 = dec.decode_bypass().unwrap();
             let b1 = dec.decode_bypass().unwrap();

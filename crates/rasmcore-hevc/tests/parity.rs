@@ -343,13 +343,19 @@ fn yuv_diag_checker_256x256_q22() {
     // Show specific row 0 values for first 64 pixels
     eprintln!("\nRow 0, first 64 pixels:");
     eprint!("  REF: ");
-    for x in 0..64 { eprint!("{:3} ", ref_y[x]); }
+    for x in 0..64 {
+        eprint!("{:3} ", ref_y[x]);
+    }
     eprintln!();
     eprint!("  OUR: ");
-    for x in 0..64 { eprint!("{:3} ", our_y[x]); }
+    for x in 0..64 {
+        eprint!("{:3} ", our_y[x]);
+    }
     eprintln!();
     eprint!("  DIF: ");
-    for x in 0..64 { eprint!("{:3} ", our_y[x] as i16 - ref_y[x] as i16); }
+    for x in 0..64 {
+        eprint!("{:3} ", our_y[x] as i16 - ref_y[x] as i16);
+    }
     eprintln!();
 
     // Show first 20 differing pixels

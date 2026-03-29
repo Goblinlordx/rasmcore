@@ -7,9 +7,9 @@
 //! Ref: ITU-T H.265 Sections 7.3.2.1 (VPS), 7.3.2.2 (SPS), 7.3.2.3 (PPS)
 
 use super::bitwrite::BitstreamWriter;
-use crate::params::{Pps, ProfileTierLevel, Sps, Vps};
 #[cfg(test)]
 use crate::params::ConformanceWindow;
+use crate::params::{Pps, ProfileTierLevel, Sps, Vps};
 
 /// Write profile_tier_level() to the bitstream.
 ///
@@ -262,9 +262,9 @@ pub fn default_sps(width: u32, height: u32) -> Sps {
         bit_depth_luma: 8,
         bit_depth_chroma: 8,
         log2_max_pic_order_cnt_lsb: 4,
-        log2_min_luma_coding_block_size: 4, // min CU = 16
+        log2_min_luma_coding_block_size: 4,          // min CU = 16
         log2_diff_max_min_luma_coding_block_size: 1, // max CU = 32
-        log2_min_luma_transform_block_size: 2, // min TU = 4
+        log2_min_luma_transform_block_size: 2,       // min TU = 4
         log2_diff_max_min_luma_transform_block_size: 3, // max TU = 32
         max_transform_hierarchy_depth_inter: 0,
         max_transform_hierarchy_depth_intra: 1,
@@ -324,9 +324,9 @@ fn default_profile() -> ProfileTierLevel {
     ProfileTierLevel {
         general_profile_space: 0,
         general_tier_flag: false,
-        general_profile_idc: 3, // Main Still Picture
+        general_profile_idc: 3,                      // Main Still Picture
         general_profile_compatibility_flags: 1 << 3, // bit 3 = Main Still Picture
-        general_level_idc: 60, // Level 2.0 (sufficient for small stills)
+        general_level_idc: 60,                       // Level 2.0 (sufficient for small stills)
     }
 }
 

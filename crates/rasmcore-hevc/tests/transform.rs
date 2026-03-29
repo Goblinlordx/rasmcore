@@ -326,7 +326,10 @@ fn residual_pipeline_clips_to_bit_depth() {
     // HEVC Section 8.6.2: residuals clip to [-(1<<(BitDepth+1)), (1<<(BitDepth+1))-1].
     // For 8-bit: [-512, 511], NOT [-128, 127].
     for &v in &output {
-        assert!(v >= -512 && v <= 511, "residual {v} out of 8-bit range [-512,511]");
+        assert!(
+            v >= -512 && v <= 511,
+            "residual {v} out of 8-bit range [-512,511]"
+        );
     }
 }
 

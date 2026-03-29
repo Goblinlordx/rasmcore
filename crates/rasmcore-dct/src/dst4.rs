@@ -26,10 +26,13 @@ pub fn inverse_dst_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let c3 = input[s + 3] as i32;
 
         let add = 64; // 1 << 6
-        tmp[s] = (D4[0] * c0 + D4[1] * c1 + D4[2] * c2 + D4[3] * c3 + add) >> 7;
-        tmp[s + 1] = (D4[2] * c0 + D4[2] * c1 - D4[2] * c3 + add) >> 7;
-        tmp[s + 2] = (D4[3] * c0 - D4[0] * c1 - D4[2] * c2 + D4[1] * c3 + add) >> 7;
-        tmp[s + 3] = (D4[1] * c0 - D4[3] * c1 + D4[2] * c2 - D4[0] * c3 + add) >> 7;
+        tmp[s] =
+            ((D4[0] * c0 + D4[1] * c1 + D4[2] * c2 + D4[3] * c3 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 1] = ((D4[2] * c0 + D4[2] * c1 - D4[2] * c3 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 2] =
+            ((D4[3] * c0 - D4[0] * c1 - D4[2] * c2 + D4[1] * c3 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 3] =
+            ((D4[1] * c0 - D4[3] * c1 + D4[2] * c2 - D4[0] * c3 + add) >> 7).clamp(-32768, 32767);
     }
 
     // Column pass

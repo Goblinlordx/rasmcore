@@ -240,15 +240,16 @@ pub fn inverse_dct_8x8(input: &[i16; 64], output: &mut [i16; 64]) {
         let o2 = O8[2] * c[1] - O8[0] * c[3] + O8[3] * c[5] + O8[1] * c[7];
         let o3 = O8[3] * c[1] - O8[2] * c[3] + O8[1] * c[5] - O8[0] * c[7];
 
+        // Shift by 7, then clip to i16 range (HEVC Section 8.6.4.2)
         let add = 64; // 1 << 6
-        tmp[s] = (e0 + o0 + add) >> 7;
-        tmp[s + 1] = (e1 + o1 + add) >> 7;
-        tmp[s + 2] = (e2 + o2 + add) >> 7;
-        tmp[s + 3] = (e3 + o3 + add) >> 7;
-        tmp[s + 4] = (e3 - o3 + add) >> 7;
-        tmp[s + 5] = (e2 - o2 + add) >> 7;
-        tmp[s + 6] = (e1 - o1 + add) >> 7;
-        tmp[s + 7] = (e0 - o0 + add) >> 7;
+        tmp[s] = ((e0 + o0 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 1] = ((e1 + o1 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 2] = ((e2 + o2 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 3] = ((e3 + o3 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 4] = ((e3 - o3 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 5] = ((e2 - o2 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 6] = ((e1 - o1 + add) >> 7).clamp(-32768, 32767);
+        tmp[s + 7] = ((e0 - o0 + add) >> 7).clamp(-32768, 32767);
     }
 
     // Column pass

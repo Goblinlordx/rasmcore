@@ -1,11 +1,169 @@
 //! 32x32 integer inverse DCT (HEVC spec, ITU-T H.265 Table 8-6).
 //!
-//! Uses the exact 32x32 transform matrix from the HEVC specification.
-//! Ref: libde265 v1.0.18 fallback-dct.cc lines 512-544 — mat_dct[32][32].
+//! Uses partial butterfly decomposition matching ffmpeg/libde265 for
+//! bit-exact results. The 32-point butterfly decomposes into:
+//!   - 16-point even sub-transform (even-indexed coefficients)
+//!   - 16-point odd computation (odd-indexed coefficients)
+//! Each level further decomposes until reaching 4-point base case.
 
-/// HEVC 32-point DCT matrix (Table 8-6).
-/// Each row k defines the basis function for frequency index k.
-/// Ref: libde265 v1.0.18 fallback-dct.cc lines 512-544.
+/// Even coefficients for 4-point sub-transform.
+const E4: [i32; 4] = [64, 83, 64, 36];
+
+/// Odd coefficients for 8-point sub-transform.
+const O8: [i32; 4] = [89, 75, 50, 18];
+
+/// Odd coefficients for 16-point sub-transform.
+const O16: [i32; 8] = [90, 87, 80, 70, 57, 43, 25, 9];
+
+/// Odd coefficients for 32-point transform (from rows 1,3,5,...,31 of Table 8-6).
+/// Each row: [col0..col15] of the odd-indexed transform matrix rows.
+#[rustfmt::skip]
+const O32: [[i32; 16]; 16] = [
+    [ 90, 90, 88, 85, 82, 78, 73, 67, 61, 54, 46, 38, 31, 22, 13,  4],
+    [ 90, 82, 67, 46, 22, -4,-31,-54,-73,-85,-90,-88,-78,-61,-38,-13],
+    [ 88, 67, 31,-13,-54,-82,-90,-78,-46, -4, 38, 73, 90, 85, 61, 22],
+    [ 85, 46,-13,-67,-90,-73,-22, 38, 82, 88, 54, -4,-61,-90,-78,-31],
+    [ 82, 22,-54,-90,-61, 13, 78, 85, 31,-46,-90,-67,  4, 73, 88, 38],
+    [ 78, -4,-82,-73, 13, 85, 67,-22,-88,-61, 31, 90, 54,-38,-90,-46],
+    [ 73,-31,-90,-22, 78, 67,-38,-90,-13, 82, 61,-46,-88, -4, 85, 54],
+    [ 67,-54,-78, 38, 85,-22,-90,  4, 90, 13,-88,-31, 82, 46,-73,-61],
+    [ 61,-73,-46, 82, 31,-88,-13, 90, -4,-90, 22, 85,-38,-78, 54, 67],
+    [ 54,-85, -4, 88,-46,-61, 82, 13,-90, 38, 67,-78,-22, 90,-31,-73],
+    [ 46,-90, 38, 54,-90, 31, 61,-88, 22, 67,-85, 13, 73,-82,  4, 78],
+    [ 38,-88, 73, -4,-67, 90,-46,-31, 85,-78, 13, 61,-90, 54, 22,-82],
+    [ 31,-78, 90,-61,  4, 54,-88, 82,-38,-22, 73,-90, 67,-13,-46, 85],
+    [ 22,-61, 85,-90, 73,-38, -4, 46,-78, 90,-82, 54,-13,-31, 67,-88],
+    [ 13,-38, 61,-78, 88,-90, 85,-73, 54,-31,  4, 22,-46, 67,-82, 90],
+    [  4,-13, 22,-31, 38,-46, 54,-61, 67,-73, 78,-82, 85,-88, 90,-90],
+];
+
+/// 1D 32-point inverse DCT using partial butterfly.
+///
+/// Ref: ffmpeg libavcodec/hevc/dsp_template.c, libde265 fallback-dct.cc
+fn idct32_1d(src: &[i32]) -> [i32; 32] {
+    // === Odd part (16 outputs from 16 odd-indexed inputs) ===
+    let mut o = [0i32; 16];
+    for k in 0..16 {
+        let mut sum = 0i32;
+        for i in 0..16 {
+            sum += O32[k][i] * src[2 * i + 1];
+        }
+        o[k] = sum;
+    }
+
+    // === Even part: 16-point IDCT on even-indexed inputs ===
+    // Even-odd part (8 outputs from odd-indexed even inputs)
+    let eo = [
+        O16[0] * src[2]
+            + O16[1] * src[6]
+            + O16[2] * src[10]
+            + O16[3] * src[14]
+            + O16[4] * src[18]
+            + O16[5] * src[22]
+            + O16[6] * src[26]
+            + O16[7] * src[30],
+        O16[1] * src[2] - O16[4] * src[6] - O16[7] * src[10] - O16[5] * src[14] - O16[2] * src[18]
+            + O16[0] * src[22]
+            + O16[3] * src[26]
+            + O16[6] * src[30],
+        O16[2] * src[2] - O16[7] * src[6] - O16[3] * src[10]
+            + O16[6] * src[14]
+            + O16[0] * src[18]
+            + O16[4] * src[22]
+            - O16[1] * src[26]
+            - O16[5] * src[30],
+        O16[3] * src[2] - O16[5] * src[6] + O16[6] * src[10] + O16[0] * src[14]
+            - O16[7] * src[18]
+            - O16[1] * src[22]
+            + O16[4] * src[26]
+            + O16[2] * src[30],
+        O16[4] * src[2] - O16[2] * src[6] + O16[0] * src[10] - O16[7] * src[14] - O16[3] * src[18]
+            + O16[6] * src[22]
+            + O16[5] * src[26]
+            - O16[1] * src[30],
+        O16[5] * src[2] - O16[0] * src[6] + O16[4] * src[10] + O16[1] * src[14]
+            - O16[6] * src[18]
+            - O16[2] * src[22]
+            + O16[7] * src[26]
+            + O16[3] * src[30],
+        O16[6] * src[2] - O16[3] * src[6] + O16[1] * src[10] - O16[4] * src[14]
+            + O16[5] * src[18]
+            + O16[7] * src[22]
+            - O16[0] * src[26]
+            + O16[2] * src[30],
+        O16[7] * src[2] - O16[6] * src[6] + O16[5] * src[10] - O16[4] * src[14] + O16[3] * src[18]
+            - O16[2] * src[22]
+            + O16[1] * src[26]
+            - O16[0] * src[30],
+    ];
+
+    // Even-even part (4 outputs from even-indexed even inputs)
+    let eeo = [
+        O8[0] * src[4] + O8[1] * src[12] + O8[2] * src[20] + O8[3] * src[28],
+        O8[1] * src[4] - O8[3] * src[12] - O8[0] * src[20] - O8[2] * src[28],
+        O8[2] * src[4] - O8[0] * src[12] + O8[3] * src[20] + O8[1] * src[28],
+        O8[3] * src[4] - O8[2] * src[12] + O8[1] * src[20] - O8[0] * src[28],
+    ];
+
+    // Even-even-even (2 outputs)
+    let eeeo0 = E4[1] * src[8] + E4[3] * src[24];
+    let eeeo1 = E4[3] * src[8] - E4[1] * src[24];
+    let eeee0 = E4[0] * src[0] + E4[0] * src[16];
+    let eeee1 = E4[0] * src[0] - E4[0] * src[16];
+
+    let eee = [eeee0 + eeeo0, eeee1 + eeeo1, eeee1 - eeeo1, eeee0 - eeeo0];
+
+    let mut ee = [0i32; 8];
+    for k in 0..4 {
+        ee[k] = eee[k] + eeo[k];
+        ee[7 - k] = eee[k] - eeo[k];
+    }
+
+    let mut e = [0i32; 16];
+    for k in 0..8 {
+        e[k] = ee[k] + eo[k];
+        e[15 - k] = ee[k] - eo[k];
+    }
+
+    // === Combine even and odd ===
+    let mut result = [0i32; 32];
+    for k in 0..16 {
+        result[k] = e[k] + o[k];
+        result[31 - k] = e[k] - o[k];
+    }
+    result
+}
+
+/// Inverse 32x32 DCT: frequency → spatial domain.
+///
+/// Uses partial butterfly decomposition for bit-exact matching with
+/// ffmpeg and libde265. Row pass shift: 7. Column pass shift: 12.
+pub fn inverse_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
+    let mut tmp = [0i32; 1024];
+
+    // Row pass
+    for row in 0..32 {
+        let s = row * 32;
+        let src: [i32; 32] = core::array::from_fn(|j| input[s + j] as i32);
+        let dst = idct32_1d(&src);
+        let add = 64; // 1 << 6
+        for col in 0..32 {
+            tmp[s + col] = ((dst[col] + add) >> 7).clamp(-32768, 32767);
+        }
+    }
+
+    // Column pass
+    for col in 0..32 {
+        let src: [i32; 32] = core::array::from_fn(|i| tmp[i * 32 + col]);
+        let dst = idct32_1d(&src);
+        let add = 2048; // 1 << 11
+        for row in 0..32 {
+            output[row * 32 + col] = ((dst[row] + add) >> 12) as i16;
+        }
+    }
+}
+
+/// HEVC 32-point DCT matrix (Table 8-6) — kept for forward transform.
 #[rustfmt::skip]
 const MAT_DCT: [[i8; 32]; 32] = [
     [ 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
@@ -42,38 +200,6 @@ const MAT_DCT: [[i8; 32]; 32] = [
     [  4,-13, 22,-31, 38,-46, 54,-61, 67,-73, 78,-82, 85,-88, 90,-90, 90,-90, 88,-85, 82,-78, 73,-67, 61,-54, 46,-38, 31,-22, 13, -4],
 ];
 
-/// Inverse 32x32 DCT: frequency → spatial domain.
-///
-/// Uses direct matrix multiplication for correctness, matching the HEVC reference.
-/// Row pass shift: 7 (fixed per spec).
-/// Column pass shift: 12 (= 20 - bit_depth for 8-bit).
-pub fn inverse_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
-    let mut tmp = [0i32; 1024];
-
-    // Row pass: tmp[row][col] = (sum_k(mat[k][col] * input[row][k]) + 64) >> 7
-    for row in 0..32 {
-        let s = row * 32;
-        for col in 0..32 {
-            let mut sum = 0i64;
-            for k in 0..32 {
-                sum += MAT_DCT[k][col] as i64 * input[s + k] as i64;
-            }
-            tmp[s + col] = ((sum + 64) >> 7) as i32;
-        }
-    }
-
-    // Column pass: output[row][col] = (sum_k(mat[k][row] * tmp[k][col]) + 2048) >> 12
-    for col in 0..32 {
-        for row in 0..32 {
-            let mut sum = 0i64;
-            for k in 0..32 {
-                sum += MAT_DCT[k][row] as i64 * tmp[k * 32 + col] as i64;
-            }
-            output[row * 32 + col] = ((sum + 2048) >> 12) as i16;
-        }
-    }
-}
-
 /// Forward 32x32 DCT: spatial → frequency domain.
 #[allow(dead_code)]
 pub fn forward_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
@@ -87,7 +213,6 @@ pub fn forward_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
             for col in 0..32 {
                 sum += MAT_DCT[freq][col] as i64 * input[s + col] as i64;
             }
-            // Forward shift1 = log2(32) + bit_depth - 9 = 5 + 8 - 9 = 4 for 8-bit
             tmp[s + freq] = ((sum + 8) >> 4) as i32;
         }
     }
@@ -99,7 +224,6 @@ pub fn forward_dct_32x32(input: &[i16; 1024], output: &mut [i16; 1024]) {
             for row in 0..32 {
                 sum += MAT_DCT[freq][row] as i64 * tmp[row * 32 + col] as i64;
             }
-            // Forward shift2 = log2(32) + 6 = 11
             output[freq * 32 + col] = ((sum + 1024) >> 11) as i16;
         }
     }
@@ -124,16 +248,12 @@ mod tests {
         let mut output = [0i16; 1024];
         inverse_dct_32x32(&input, &mut output);
 
-        // Expected spatial residual row 0 (from Python matrix multiply):
-        // [-128, -127, -125, -123, -121, -119, -117, -115, ...]
+        // Expected spatial residual row 0:
         let expected_row0 = [
             -128, -127, -125, -123, -121, -119, -117, -115, -113, -111, -109, -107, -105, -103,
             -101, -99, -97, -95, -93, -91, -89, -87, -85, -83, -81, -79, -77, -75, -73, -71, -69,
             -68,
         ];
-
-        eprintln!("IDCT output row 0: {:?}", &output[..32]);
-        eprintln!("Expected:          {:?}", &expected_row0);
 
         for (i, (&got, &exp)) in output[..32].iter().zip(expected_row0.iter()).enumerate() {
             assert!(

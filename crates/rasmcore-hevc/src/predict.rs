@@ -40,23 +40,25 @@ fn should_filter_refs(mode: u8, log2_size: u8) -> bool {
     if log2_size <= 2 {
         return false; // Never filter for 4x4
     }
-    // For larger blocks, filter when mode is near DC/Planar
-    // Simplified: filter threshold based on block size
+    // For larger blocks, filter when mode distance exceeds threshold.
+    // Table 8-3: intraHorVerDistThres = [7, 1, 0] for log2 = 3, 4, 5+
     let threshold = match log2_size {
         3 => 7, // 8x8: filter modes within 7 of vertical/horizontal
         4 => 1, // 16x16: filter almost all except near-diagonal
         _ => 0, // 32x32: always filter
     };
-    // Planar always uses filtered references.
-    // DC (mode 1) does NOT use filtered references — it applies its own boundary filter.
-    // Ref: libde265 v1.0.18 intrapred.h line 195, HEVC Section 8.4.4.2.3.
+    // Planar (0) always uses filtered references.
     if mode == 0 {
         return true;
     }
+    // DC (1) does NOT use filtered references — DC prediction applies its own
+    // boundary filter (for sizes < 32). For size 32, the prediction is a flat
+    // DC fill with no edge filter. Filtering the references would change the
+    // DC average, breaking ffmpeg parity.
     if mode == 1 {
         return false;
     }
-    // Check distance from horizontal (10) and vertical (26) modes
+    // Angular modes: check distance from horizontal (10) and vertical (26)
     let dist_h = (mode as i32 - 10).unsigned_abs();
     let dist_v = (mode as i32 - 26).unsigned_abs();
     let min_dist = dist_h.min(dist_v);
