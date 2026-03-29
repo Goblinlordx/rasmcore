@@ -648,7 +648,7 @@ fn nlm_denoise_matches_opencv() {
 
 #[test]
 fn undistort_matches_opencv() {
-    use rasmcore_image::domain::transform::{undistort, CameraMatrix, DistortionCoeffs};
+    use rasmcore_image::domain::transform::{CameraMatrix, DistortionCoeffs, undistort};
 
     let py = venv_python();
     eprintln!("=== Undistort — OpenCV Reference ===");

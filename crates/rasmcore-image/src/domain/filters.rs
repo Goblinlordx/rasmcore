@@ -2798,11 +2798,7 @@ fn gaussian_kernel_1d(ksize: usize, sigma: f32) -> Vec<f32> {
 ///
 /// Reference: Jobson, Rahman, Woodell — "Properties and Performance of a
 /// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
-pub fn retinex_ssr(
-    pixels: &[u8],
-    info: &ImageInfo,
-    sigma: f32,
-) -> Result<Vec<u8>, ImageError> {
+pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -2864,11 +2860,7 @@ pub fn retinex_ssr(
 /// Reference: Jobson, Rahman, Woodell — "A Multiscale Retinex for Bridging
 /// the Gap Between Color Images and the Human Observation of Scenes"
 /// (IEEE Trans. Image Processing, 1997)
-pub fn retinex_msr(
-    pixels: &[u8],
-    info: &ImageInfo,
-    sigmas: &[f32],
-) -> Result<Vec<u8>, ImageError> {
+pub fn retinex_msr(pixels: &[u8], info: &ImageInfo, sigmas: &[f32]) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -4273,7 +4265,10 @@ mod retinex_tests {
             pixels[i * 3 + 2] = 120;
         }
         let info = ImageInfo {
-            width: w, height: h, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb,
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
         };
         let result = retinex_ssr(&pixels, &info, 80.0).unwrap();
 
@@ -4321,7 +4316,10 @@ mod retinex_tests {
             pixels[i * 4 + 3] = 200;
         }
         let info = ImageInfo {
-            width: w, height: h, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb,
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
         };
         let result = retinex_msrcr(&pixels, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
         for i in 0..(w * h) as usize {
@@ -4335,8 +4333,16 @@ mod retinex_tests {
         let result = retinex_msrcr(&px, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
         let stats = crate::domain::histogram::statistics(&result, &info).unwrap();
         // Normalized output should span most of 0-255
-        assert!(stats[0].min <= 5, "min should be near 0, got {}", stats[0].min);
-        assert!(stats[0].max >= 250, "max should be near 255, got {}", stats[0].max);
+        assert!(
+            stats[0].min <= 5,
+            "min should be near 0, got {}",
+            stats[0].min
+        );
+        assert!(
+            stats[0].max >= 250,
+            "max should be near 255, got {}",
+            stats[0].max
+        );
     }
 }
 

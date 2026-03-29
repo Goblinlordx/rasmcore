@@ -803,8 +803,8 @@ pub fn undistort(
 
             let sx = iu >> INTER_BITS; // integer pixel X
             let sy = iv >> INTER_BITS; // integer pixel Y
-            let fxy = ((iv & (INTER_TAB_SIZE - 1)) * INTER_TAB_SIZE
-                + (iu & (INTER_TAB_SIZE - 1))) as usize;
+            let fxy = ((iv & (INTER_TAB_SIZE - 1)) * INTER_TAB_SIZE + (iu & (INTER_TAB_SIZE - 1)))
+                as usize;
 
             let out_idx = (oy * w + ox) * bpp;
 
