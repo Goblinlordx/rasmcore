@@ -1,0 +1,109 @@
+id: hevc-checker-parity_20260329105000Z
+title: "HEVC Checker Parity — Systematic Investigation and Fix for checker_256x256_q22"
+type: bug
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Investigate and fix the checker_256x256_q22 HEVC parity test failure (PSNR=24.4dB, max_diff=71).
+    All other test cases are byte-exact (flat q22/q37, gradient 128x128). The checker pattern
+    stresses CU/TU splitting, diverse intra modes, and dense coefficient sub-blocks.
+  context: |
+    The HEVC decoder achieves byte-exact (PSNR=inf) output for flat_64x64 (q22, q37) and
+    gradient_128x128_q22 against ffmpeg 7.1 reference. The checker_256x256_q22 is the sole
+    remaining failure at PSNR=24.4dB with max_diff=71 (188133/196608 mismatched pixels).
+
+    Key differences that make checker harder:
+    - 256x256 = 4x4 CTU grid (16 CTUs) vs gradient's 2x2 (4 CTUs)
+    - 4 WPP rows vs gradient's 2
+    - High-frequency alternating pattern forces aggressive CU splitting (8x8, 16x16 CUs)
+    - Dense non-zero coefficients in many sub-blocks per TU
+    - Diverse intra prediction modes (angular, not just DC/planar)
+    - Possible TU quad-tree splits (MaxTrafoDepth > 0)
+
+    Previous attempt to rewrite coefficient ordering (reverse scan -> forward list) was
+    REVERTED because libde265 v1.0.18 also processes in reverse scan order. That is NOT
+    the root cause.
+  codebase_analysis: |
+    Primary files:
+    - crates/rasmcore-hevc/src/syntax.rs — CU/TU splitting, residual coding, CABAC contexts
+    - crates/rasmcore-hevc/src/frame.rs — CTU loop, WPP, MPM resolution, reconstruction
+    - crates/rasmcore-hevc/src/predict.rs — intra prediction for all modes/sizes
+    - crates/rasmcore-hevc/src/filter.rs — deblocking filter
+    - crates/rasmcore-hevc/tests/parity.rs — test that asserts PSNR > 25.0dB
+
+    CABAC research track documented 7 context derivation areas. Most were fixed, but
+    potential remaining issues include:
+    - gt1 inter-sub-block carry (lastSubblock_greater1Ctx between sub-blocks)
+    - Context derivation edge cases in 32x32 or 16x16 TUs not exercised by flat/gradient
+
+    The investigation must be empirical — compare against libde265 reference output
+    to localize the divergence point, not guess from spec reading alone.
+  acceptance_criteria:
+    - checker_256x256_q22 passes parity test (PSNR > 25.0dB minimum, ideally byte-exact)
+    - No regression on flat_64x64_q22, flat_64x64_q37, gradient_128x128_q22 (must stay byte-exact)
+    - All YUV parity tests pass
+    - All fixes cited with libde265 v1.0.18 reference
+    - clippy clean, cargo test passes
+  out_of_scope: |
+    Inter prediction (B/P slices). SAO filter. HEVC encoder.
+    Chroma plane byte-exact parity (focus on Y plane first).
+  technical_notes: |
+    Investigation approach (systematic, not guessing):
+
+    1. Per-CTU-row Y-plane diff analysis — identify which CTU row first diverges
+       from reference. This localizes the error to a specific CTU.
+
+    2. CABAC bin trace for the first divergent CTU — use the trace feature to
+       compare bin-by-bin against libde265. The first bin mismatch reveals
+       whether the error is in CABAC context state or upstream (wrong CU structure).
+
+    3. If bins match but pixels don't — the error is in prediction, transform,
+       or reconstruction. Compare coefficient values, prediction samples, and
+       reconstructed samples for the divergent block.
+
+    4. If bins diverge — trace backward to find what context state diverged.
+       Check WPP save/restore, CU depth tracking, or cbf context inheritance.
+
+    5. Generate reference data using libde265 with DE265_LOG_TRACE for the
+       checker test case (similar to existing flat/gradient reference data).
+
+    Ref: libde265 v1.0.18 built from source with trace logging.
+    Ref: ffmpeg 7.1 for golden YUV/RGB output.
+plan:
+  - phase: "Localization"
+    tasks:
+      - text: "Generate checker_256x256_q22 reference YUV from ffmpeg and per-CTU-row diff analysis to identify first divergent CTU row"
+        done: false
+      - text: "Generate libde265 trace output for checker_256x256_q22 (bin trace + coefficient dump)"
+        done: false
+      - text: "Add per-CTU-row PSNR diagnostic to parity test for checker to show where errors concentrate"
+        done: false
+  - phase: "Root Cause Identification"
+    tasks:
+      - text: "Compare CABAC bins for first divergent CTU against libde265 reference — identify first mismatch"
+        done: false
+      - text: "If bins match, compare coefficient/prediction/reconstruction values for divergent blocks"
+        done: false
+      - text: "If bins diverge, trace context state back to find the root cause (WPP, CU depth, cbf, etc.)"
+        done: false
+      - text: "Document root cause with libde265 v1.0.18 line references"
+        done: false
+  - phase: "Fix Implementation"
+    tasks:
+      - text: "Implement the fix based on identified root cause"
+        done: false
+      - text: "Verify fix does not regress flat/gradient byte-exact parity"
+        done: false
+      - text: "Run full parity suite — all 4 test cases"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Verify checker_256x256_q22 meets acceptance criteria (PSNR > 25dB)"
+        done: false
+      - text: "Run all HEVC tests (cargo test -p rasmcore-hevc)"
+        done: false
+      - text: "clippy + fmt clean"
+        done: false
+extra: {}
