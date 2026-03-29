@@ -1,9 +1,17 @@
 # Workflow — rasmcore
-version: "1.0"
+tdd:
+  strictness: strict
+
+commits:
+  strategy: conventional
+
+review: optional
 
 verification:
-  command: "./scripts/validate.sh"
-  description: "Format check (rustfmt), lint (clippy), domain tests, parity tests, WASM build"
+  checkpoints: track_completion
+  commands:
+    - "./scripts/validate.sh"
+  description: "Format check (rustfmt), lint (clippy -D warnings), domain tests, parity tests, WASM build"
 
 phases:
   - name: implementation
