@@ -1,130 +1,76 @@
 id: kf-metadata-styleguide_20260329230501Z
-title: "Kiloforge Metadata Alignment and Rust Style Guide"
+title: Kiloforge Metadata Alignment and Rust Style Guide
 type: chore
 status: pending
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-03-29'
 spec:
-  summary: |
-    Align kf metadata structure with expected conventions (tdd strict,
+  summary: 'Align kf metadata structure with expected conventions (tdd strict,
+
     commit strategy, product guidelines) and create a comprehensive Rust
+
     style guide in code_styleguides/rust.md.
-  context: |
-    Our .agent/kf/ metadata is incomplete compared to the expected kf-setup
-    output structure. The reference project (commit-invaders) has:
-    - workflow.yaml with tdd.strictness, commits.strategy, review, verification
-    - product-guidelines.yaml
-    - code_styleguides/{language}.md per primary language
-    - .gitignore in .agent/kf/
 
-    Our project has:
-    - workflow.yaml: only version, verification command, and phases — missing
-      tdd config, commit strategy, review policy
-    - No product-guidelines.yaml
-    - code_styleguides/ only has codec-validation.md (domain-specific), no
-      Rust language style guide
-    - No .gitignore in .agent/kf/
-
-    The Rust style guide is critical because developers and agents need
-    consistent guidance on naming, organization, error handling, unsafe
-    usage, WASM considerations, and the zero-warning policy.
-  codebase_analysis: |
-    Current workflow.yaml:
-      version: "1.0"
-      verification:
-        command: "./scripts/validate.sh"
-        description: "Format check, lint, domain tests, parity tests, WASM build"
-      phases:
-        - name: implementation (current: true)
-        - name: integration
-
-    Expected workflow.yaml structure (from kf-setup skill and reference):
-      tdd:
-        strictness: strict
-      commits:
-        strategy: conventional
-      review: optional
-      verification:
-        checkpoints: track_completion
-        commands:
-          - "./scripts/validate.sh"
-
-    Existing code patterns (from scanning codebase):
-    - snake_case for functions/variables (standard Rust)
-    - Modules organized by domain (codec, filter, pipeline)
-    - Tests co-located in mod tests {} blocks
-    - Error types per crate using thiserror
-    - WASM target: wasm32-wasip1 with cargo-component
-    - No unsafe code policy (pure Rust codecs)
-    - SIMD via std::arch::wasm32 intrinsics where available
+    '
+  context: "Our .agent/kf/ metadata is incomplete compared to the expected kf-setup\noutput structure. The reference project\
+    \ (commit-invaders) has:\n- workflow.yaml with tdd.strictness, commits.strategy, review, verification\n- product-guidelines.yaml\n\
+    - code_styleguides/{language}.md per primary language\n- .gitignore in .agent/kf/\n\nOur project has:\n- workflow.yaml:\
+    \ only version, verification command, and phases — missing\n  tdd config, commit strategy, review policy\n- No product-guidelines.yaml\n\
+    - code_styleguides/ only has codec-validation.md (domain-specific), no\n  Rust language style guide\n- No .gitignore in\
+    \ .agent/kf/\n\nThe Rust style guide is critical because developers and agents need\nconsistent guidance on naming, organization,\
+    \ error handling, unsafe\nusage, WASM considerations, and the zero-warning policy.\n"
+  codebase_analysis: "Current workflow.yaml:\n  version: \"1.0\"\n  verification:\n    command: \"./scripts/validate.sh\"\n\
+    \    description: \"Format check, lint, domain tests, parity tests, WASM build\"\n  phases:\n    - name: implementation\
+    \ (current: true)\n    - name: integration\n\nExpected workflow.yaml structure (from kf-setup skill and reference):\n\
+    \  tdd:\n    strictness: strict\n  commits:\n    strategy: conventional\n  review: optional\n  verification:\n    checkpoints:\
+    \ track_completion\n    commands:\n      - \"./scripts/validate.sh\"\n\nExisting code patterns (from scanning codebase):\n\
+    - snake_case for functions/variables (standard Rust)\n- Modules organized by domain (codec, filter, pipeline)\n- Tests\
+    \ co-located in mod tests {} blocks\n- Error types per crate using thiserror\n- WASM target: wasm32-wasip1 with cargo-component\n\
+    - No unsafe code policy (pure Rust codecs)\n- SIMD via std::arch::wasm32 intrinsics where available\n"
   acceptance_criteria:
-    - workflow.yaml includes tdd.strictness strict and commits.strategy conventional
-    - product-guidelines.yaml exists with project-specific guidance
-    - code_styleguides/rust.md exists with comprehensive Rust conventions
-    - Rust style guide covers naming, organization, error handling, testing, WASM, SIMD, and zero-warning policy
-    - .agent/kf/.gitignore excludes transient files (lock files, temp)
-    - Existing codec-validation.md style guide preserved
-  out_of_scope: |
-    Enforcing style guide rules in CI (that is the zero-warnings track).
+  - workflow.yaml includes tdd.strictness strict and commits.strategy conventional
+  - product-guidelines.yaml exists with project-specific guidance
+  - code_styleguides/rust.md exists with comprehensive Rust conventions
+  - Rust style guide covers naming, organization, error handling, testing, WASM, SIMD, and zero-warning policy
+  - .agent/kf/.gitignore excludes transient files (lock files, temp)
+  - Existing codec-validation.md style guide preserved
+  out_of_scope: 'Enforcing style guide rules in CI (that is the zero-warnings track).
+
     Modifying any source code. This track only creates/updates kf metadata.
-  technical_notes: |
-    1. workflow.yaml — Restructure to match expected schema:
-       tdd:
-         strictness: strict
-       commits:
-         strategy: conventional
-       review: optional
-       verification:
-         checkpoints: track_completion
-         commands:
-           - "./scripts/validate.sh"
-       phases:
-         - name: implementation
-           current: true
-         - name: integration
 
-    2. product-guidelines.yaml — Document project-specific constraints:
-       - Pure Rust only (no C/C++ FFI)
-       - WASM-first (all code must compile to wasm32-wasip1)
-       - Codec parity requirements (reference validation)
-       - SIMD required for all image processing kernels
-       - Zero-copy where possible in pipeline
-
-    3. code_styleguides/rust.md — Comprehensive guide covering:
-       - Naming: snake_case functions, CamelCase types, SCREAMING_SNAKE constants
-       - Module organization: domain-driven, co-located tests
-       - Error handling: thiserror for library errors, anyhow avoided
-       - Testing: unit tests in mod tests {}, integration tests in tests/
-       - WASM considerations: no std::fs, no threads (use wasi-threads),
-         memory-conscious allocations
-       - SIMD: std::arch::wasm32 intrinsics, cfg(target_arch) gating
-       - Zero-warning policy: no unused imports, no dead code, no
-         unnecessary casts. Prefix genuinely unused with _
-       - Clippy: all default lints enforced, key lints listed
-       - Documentation: doc comments on public API only, not internal
-
-    4. .agent/kf/.gitignore — Exclude:
-       - *.lock (merge lock artifacts)
-       - _reports/*.tmp
+    '
+  technical_notes: "1. workflow.yaml — Restructure to match expected schema:\n   tdd:\n     strictness: strict\n   commits:\n\
+    \     strategy: conventional\n   review: optional\n   verification:\n     checkpoints: track_completion\n     commands:\n\
+    \       - \"./scripts/validate.sh\"\n   phases:\n     - name: implementation\n       current: true\n     - name: integration\n\
+    \n2. product-guidelines.yaml — Document project-specific constraints:\n   - Pure Rust only (no C/C++ FFI)\n   - WASM-first\
+    \ (all code must compile to wasm32-wasip1)\n   - Codec parity requirements (reference validation)\n   - SIMD required\
+    \ for all image processing kernels\n   - Zero-copy where possible in pipeline\n\n3. code_styleguides/rust.md — Comprehensive\
+    \ guide covering:\n   - Naming: snake_case functions, CamelCase types, SCREAMING_SNAKE constants\n   - Module organization:\
+    \ domain-driven, co-located tests\n   - Error handling: thiserror for library errors, anyhow avoided\n   - Testing: unit\
+    \ tests in mod tests {}, integration tests in tests/\n   - WASM considerations: no std::fs, no threads (use wasi-threads),\n\
+    \     memory-conscious allocations\n   - SIMD: std::arch::wasm32 intrinsics, cfg(target_arch) gating\n   - Zero-warning\
+    \ policy: no unused imports, no dead code, no\n     unnecessary casts. Prefix genuinely unused with _\n   - Clippy: all\
+    \ default lints enforced, key lints listed\n   - Documentation: doc comments on public API only, not internal\n\n4. .agent/kf/.gitignore\
+    \ — Exclude:\n   - *.lock (merge lock artifacts)\n   - _reports/*.tmp\n"
 plan:
-  - phase: Metadata Alignment
-    tasks:
-      - text: Restructure workflow.yaml with tdd strict, conventional commits, verification commands
-        done: false
-      - text: Create product-guidelines.yaml with project constraints (pure Rust, WASM-first, codec parity, SIMD)
-        done: false
-      - text: Create .agent/kf/.gitignore for transient artifacts
-        done: false
-  - phase: Rust Style Guide
-    tasks:
-      - text: Create code_styleguides/rust.md with naming conventions and module organization
-        done: false
-      - text: Add error handling, testing, and documentation sections
-        done: false
-      - text: Add WASM and SIMD sections specific to this project
-        done: false
-      - text: Add zero-warning policy and clippy lint expectations
-        done: false
-      - text: Verify style guide is consistent with existing codebase patterns
-        done: false
+- phase: Metadata Alignment
+  tasks:
+  - text: Restructure workflow.yaml with tdd strict, conventional commits, verification commands
+    done: true
+  - text: Create product-guidelines.yaml with project constraints (pure Rust, WASM-first, codec parity, SIMD)
+    done: true
+  - text: Create .agent/kf/.gitignore for transient artifacts
+    done: true
+- phase: Rust Style Guide
+  tasks:
+  - text: Create code_styleguides/rust.md with naming conventions and module organization
+    done: true
+  - text: Add error handling, testing, and documentation sections
+    done: true
+  - text: Add WASM and SIMD sections specific to this project
+    done: true
+  - text: Add zero-warning policy and clippy lint expectations
+    done: true
+  - text: Verify style guide is consistent with existing codebase patterns
+    done: true
 extra: {}
