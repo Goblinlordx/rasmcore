@@ -21,15 +21,15 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement Delta E 76 (Euclidean Lab distance)
-    done: false
+    done: true
   - text: Implement Delta E 94 with configurable kL/kC/kH
-    done: false
+    done: true
   - text: Implement Delta E 2000 (CIEDE2000 full formula with rotation)
-    done: false
+    done: true
   - text: Implement CIE LCH to/from Lab (polar conversion)
-    done: false
+    done: true
   - text: Implement CIE Luv to/from XYZ (D65)
-    done: false
+    done: true
   - text: Generate colour-science reference values and parity tests
-    done: false
+    done: true
 extra: {}
