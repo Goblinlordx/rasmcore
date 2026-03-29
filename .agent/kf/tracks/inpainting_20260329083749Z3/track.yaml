@@ -25,13 +25,13 @@ plan:
 - phase: Implementation + Validation
   tasks:
   - text: Implement Fast Marching Method for distance ordering
-    done: false
+    done: true
   - text: Implement Telea inpainting (FMM + weighted interpolation)
-    done: false
+    done: true
   - text: Implement Navier-Stokes inpainting (iterative Laplacian smoothing)
-    done: false
+    done: true
   - text: Generate OpenCV reference fixtures with test masks
-    done: false
+    done: true
   - text: Parity test both methods against OpenCV
-    done: false
+    done: true
 extra: {}
