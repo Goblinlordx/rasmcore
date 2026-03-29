@@ -1,12 +1,13 @@
-//! Pure Rust HEVC/H.265 intra-frame decoder.
+//! Pure Rust HEVC/H.265 intra-frame codec.
 //!
-//! Decodes HEVC I-frames as used in HEIC still images.
-//! Scoped to intra-only decode — no inter prediction, no DPB.
+//! Decodes and encodes HEVC I-frames as used in HEIC still images.
+//! Scoped to intra-only — no inter prediction, no DPB.
 //!
 //! This crate is part of the "nonfree" distribution due to HEVC patent encumbrance.
 
 pub mod bitread;
 pub mod cabac;
+pub mod encode;
 pub mod error;
 pub mod filter;
 pub mod frame;
