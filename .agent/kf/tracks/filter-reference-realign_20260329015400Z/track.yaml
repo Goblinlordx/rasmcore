@@ -5,130 +5,147 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Replace ImageMagick as reference for 18 remaining NEEDS TEST operations with
-    closer-match references (numpy formulas, OpenCV, Pillow, W3C spec). Achieves
-    MAE=0.0 for formula ops, MAE<1.0 for spatial/geometry ops.
-  context: |
-    The filter-magick-exact-match track validated 14 operations against ImageMagick 7.
-    For equalize and normalize, IM's Q16-HDRI (64-bit float) processing creates
+  summary: 'Replace ImageMagick as reference for 18 remaining NEEDS TEST operations with closer-match references (numpy formulas,
+    OpenCV, Pillow, W3C spec). Achieves MAE=0.0 for formula ops, MAE<1.0 for spatial/geometry ops.
+
+    '
+  context: 'The filter-magick-exact-match track validated 14 operations against ImageMagick 7.
+
+    For equalize and normalize, IM''s Q16-HDRI (64-bit float) processing creates
+
     inherent precision mismatches (MAE 7-12) that cannot be eliminated without
-    matching IM's internal bit depth. The remaining 18 NEEDS TEST operations face
+
+    matching IM''s internal bit depth. The remaining 18 NEEDS TEST operations face
+
     the same issue if validated against IM.
 
+
     Better references exist that operate at 8-bit (matching our pipeline):
+
     - numpy/scipy: exact formula replication, guaranteed 0.0 MAE
+
     - OpenCV: 8-bit path, identical spatial algorithms (Sobel, Canny, filter2D)
+
     - Pillow (PIL): 8-bit, same LUT-based histogram ops
+
     - W3C CSS Compositing Level 1: authoritative spec for our blend mode formulas
 
+
     Our blend modes specifically implement the W3C spec (SoftLight uses the D(Cb)
+
     function, Overlay thresholds on backdrop), NOT Photoshop or SVG 1.1 variants.
-  codebase_analysis: |
-    18 operations in REFERENCE.md have status NEEDS TEST:
+
+    '
+  codebase_analysis: '18 operations in REFERENCE.md have status NEEDS TEST:
+
     - Point ops: clamp
+
     - Color ops: sepia, colorize
+
     - Spatial: sharpen, convolve, sobel, canny
+
     - Histogram: contrast_stretch
+
     - Alpha: premultiply, unpremultiply, add_alpha, remove_alpha, alpha_composite_over
+
     - Blend modes: Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion
+
     - Geometry: affine, auto_orient
 
+
     Tests live in crates/rasmcore-image/tests/reference_audit.rs. The existing
+
     pattern uses check_parity_rgb() which shells out to magick CLI. New tests will
+
     use Python scripts (numpy/OpenCV/Pillow) as reference generators.
 
+
     Key implementation details affecting reference choice:
+
     - sepia: Microsoft matrix [0.393,0.769,0.189;0.349,0.686,0.168;0.272,0.534,0.131]
+
     - colorize: BT.709 luma (0.2126, 0.7152, 0.0722)
+
     - sobel/canny: reflect-edge padding (BORDER_REFLECT_101 in OpenCV terms)
+
     - convolve: reflect-edge padding, separability detection
+
     - blend modes: W3C CSS Compositing Level 1 (NOT Photoshop SoftLight)
+
     - premultiply: (c * a + 127) / 255 integer rounding
+
     - sharpen: unsharp mask with libblur Gaussian, EdgeMode::Clamp
+
+    '
   acceptance_criteria:
-    - All 18 operations validated against their best-match reference
-    - Formula ops (sepia, colorize, premultiply, unpremultiply, blend modes, clamp, add/remove alpha) achieve MAE=0.0
-    - Spatial ops (convolve, sobel) achieve MAE<0.5
-    - Algorithm ops (sharpen, canny, affine) achieve MAE<2.0
-    - Contrast_stretch and alpha_composite achieve MAE<0.5
-    - auto_orient achieves MAE=0.0
-    - REFERENCE.md updated with new reference for each operation and PASS status
-    - Python reference scripts checked in under tests/ or invoked inline
-    - All existing tests continue to pass
-  out_of_scope: |
-    Fixing implementation bugs found during validation (separate bug tracks).
+  - All 18 operations validated against their best-match reference
+  - Formula ops (sepia, colorize, premultiply, unpremultiply, blend modes, clamp, add/remove alpha) achieve MAE=0.0
+  - Spatial ops (convolve, sobel) achieve MAE<0.5
+  - Algorithm ops (sharpen, canny, affine) achieve MAE<2.0
+  - Contrast_stretch and alpha_composite achieve MAE<0.5
+  - auto_orient achieves MAE=0.0
+  - REFERENCE.md updated with new reference for each operation and PASS status
+  - Python reference scripts checked in under tests/ or invoked inline
+  - All existing tests continue to pass
+  out_of_scope: 'Fixing implementation bugs found during validation (separate bug tracks).
+
     Changing ImageMagick references for already-PASS operations.
+
     Adding new operations not currently in REFERENCE.md.
-  technical_notes: |
-    Reference hierarchy by operation type:
 
-    1. SELF-VALIDATION (trivial ops): clamp, add_alpha, remove_alpha
-       - Unit test with known input/output pairs. No external tool needed.
-
-    2. NUMPY FORMULA REPLICATION (MAE=0.0 guaranteed):
-       - sepia, colorize, premultiply, unpremultiply, blend modes (9)
-       - Python script implements exact same formula at 8-bit
-       - Script invoked from Rust test via std::process::Command
-
-    3. OPENCV (spatial/geometry, MAE<1.0):
-       - convolve (filter2D + BORDER_REFLECT_101)
-       - sobel (Sobel + BORDER_REFLECT_101 + L2 magnitude)
-       - canny (pre-blur sigma=1.4 + Canny L2gradient=True)
-       - sharpen (GaussianBlur sigma=1.0 + USM arithmetic, BORDER_REPLICATE)
-       - affine (warpAffine + INTER_LINEAR + BORDER_CONSTANT)
-
-    4. PILLOW (histogram/alpha, MAE<0.5):
-       - contrast_stretch (ImageOps.autocontrast)
-       - alpha_composite (Image.alpha_composite)
-       - auto_orient (ImageOps.exif_transpose)
-
-    Test infrastructure:
-    - Add python_ref_available() helper (checks python3 + numpy + cv2 + PIL)
-    - Add run_python_ref() helper to execute inline Python and read output PNG
-    - Each test generates input, runs our op, runs Python ref, compares MAE
-    - Tests skip gracefully if Python deps unavailable (like magick_available())
+    '
+  technical_notes: "Reference hierarchy by operation type:\n\n1. SELF-VALIDATION (trivial ops): clamp, add_alpha, remove_alpha\n\
+    \   - Unit test with known input/output pairs. No external tool needed.\n\n2. NUMPY FORMULA REPLICATION (MAE=0.0 guaranteed):\n\
+    \   - sepia, colorize, premultiply, unpremultiply, blend modes (9)\n   - Python script implements exact same formula at\
+    \ 8-bit\n   - Script invoked from Rust test via std::process::Command\n\n3. OPENCV (spatial/geometry, MAE<1.0):\n   -\
+    \ convolve (filter2D + BORDER_REFLECT_101)\n   - sobel (Sobel + BORDER_REFLECT_101 + L2 magnitude)\n   - canny (pre-blur\
+    \ sigma=1.4 + Canny L2gradient=True)\n   - sharpen (GaussianBlur sigma=1.0 + USM arithmetic, BORDER_REPLICATE)\n   - affine\
+    \ (warpAffine + INTER_LINEAR + BORDER_CONSTANT)\n\n4. PILLOW (histogram/alpha, MAE<0.5):\n   - contrast_stretch (ImageOps.autocontrast)\n\
+    \   - alpha_composite (Image.alpha_composite)\n   - auto_orient (ImageOps.exif_transpose)\n\nTest infrastructure:\n- Add\
+    \ python_ref_available() helper (checks python3 + numpy + cv2 + PIL)\n- Add run_python_ref() helper to execute inline\
+    \ Python and read output PNG\n- Each test generates input, runs our op, runs Python ref, compares MAE\n- Tests skip gracefully\
+    \ if Python deps unavailable (like magick_available())\n"
 plan:
-  - phase: Test Infrastructure
-    tasks:
-      - text: Add python_ref_available() check for python3, numpy, opencv-python, Pillow
-        done: false
-      - text: Add run_python_ref() helper that executes inline Python script and returns output pixels
-        done: false
-  - phase: Formula Operations (MAE=0.0)
-    tasks:
-      - text: Test clamp with known input/output pairs (self-validation)
-        done: false
-      - text: Test sepia against numpy Microsoft matrix formula
-        done: false
-      - text: Test colorize against numpy BT.709 luma formula
-        done: false
-      - text: Test premultiply and unpremultiply against numpy integer rounding formula
-        done: false
-      - text: Test all 9 blend modes against numpy W3C CSS Compositing Level 1 formulas
-        done: false
-      - text: Test add_alpha and remove_alpha with known input/output pairs
-        done: false
-  - phase: Spatial and Geometry Operations (MAE<2.0)
-    tasks:
-      - text: Test convolve against OpenCV filter2D with BORDER_REFLECT_101
-        done: false
-      - text: Test sobel against OpenCV Sobel with L2 magnitude and BORDER_REFLECT_101
-        done: false
-      - text: Test canny against OpenCV Canny with L2gradient and pre-blur sigma=1.4
-        done: false
-      - text: Test sharpen against OpenCV GaussianBlur + USM with BORDER_REPLICATE
-        done: false
-      - text: Test affine/rotate against OpenCV warpAffine with INTER_LINEAR
-        done: false
-  - phase: Histogram, Alpha, and Documentation
-    tasks:
-      - text: Test contrast_stretch against Pillow ImageOps.autocontrast
-        done: false
-      - text: Test alpha_composite_over against Pillow Image.alpha_composite
-        done: false
-      - text: Test auto_orient against Pillow ImageOps.exif_transpose
-        done: false
-      - text: Update REFERENCE.md with new references, CLI equivalents, and PASS status for all 18 ops
-        done: false
+- phase: Test Infrastructure
+  tasks:
+  - text: Add python_ref_available() check for python3, numpy, opencv-python, Pillow
+    done: true
+  - text: Add run_python_ref() helper that executes inline Python script and returns output pixels
+    done: true
+- phase: Formula Operations (MAE=0.0)
+  tasks:
+  - text: Test clamp with known input/output pairs (self-validation)
+    done: true
+  - text: Test sepia against numpy Microsoft matrix formula
+    done: true
+  - text: Test colorize against numpy BT.709 luma formula
+    done: true
+  - text: Test premultiply and unpremultiply against numpy integer rounding formula
+    done: true
+  - text: Test all 9 blend modes against numpy W3C CSS Compositing Level 1 formulas
+    done: true
+  - text: Test add_alpha and remove_alpha with known input/output pairs
+    done: true
+- phase: Spatial and Geometry Operations (MAE<2.0)
+  tasks:
+  - text: Test convolve against OpenCV filter2D with BORDER_REFLECT_101
+    done: true
+  - text: Test sobel against OpenCV Sobel with L2 magnitude and BORDER_REFLECT_101
+    done: true
+  - text: Test canny against OpenCV Canny with L2gradient and pre-blur sigma=1.4
+    done: true
+  - text: Test sharpen against OpenCV GaussianBlur + USM with BORDER_REPLICATE
+    done: true
+  - text: Test affine/rotate against OpenCV warpAffine with INTER_LINEAR
+    done: true
+- phase: Histogram, Alpha, and Documentation
+  tasks:
+  - text: Test contrast_stretch against Pillow ImageOps.autocontrast
+    done: true
+  - text: Test alpha_composite_over against Pillow Image.alpha_composite
+    done: true
+  - text: Test auto_orient against Pillow ImageOps.exif_transpose
+    done: true
+  - text: Update REFERENCE.md with new references, CLI equivalents, and PASS status for all 18 ops
+    done: true
 extra: {}
