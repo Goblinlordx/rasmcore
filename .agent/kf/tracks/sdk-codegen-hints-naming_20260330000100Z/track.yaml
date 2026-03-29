@@ -3,153 +3,129 @@ title: Param Hints + Multi-Language SDK Naming Convention Support
 type: feature
 status: pending
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-03-29'
 spec:
-  summary: >
-    Add freeform hint field to #[param] attribute for UI rendering hints, and
-    add --naming snake|camel flag to fluent SDK generator for multi-language
-    support. Standard hints use rc. namespace prefix; third parties use any
-    prefix they want.
-  context: |
-    The codegen pipeline flows: #[param] proc macro → build.rs →
+  summary: 'Add freeform hint field to #[param] attribute for UI rendering hints, and add --naming snake|camel flag to fluent
+    SDK generator for multi-language support. Standard hints use rc. namespace prefix; third parties use any prefix they want.
+
+    '
+  context: 'The codegen pipeline flows: #[param] proc macro → build.rs →
+
     param-manifest.json → SDK generator → demo UI.
 
+
     Problem 1: Complex param types ([u8; 3] for RGB color, Vec<f32> for kernels)
-    are currently filtered out of the demo UI because there's no way to tell the
+
+    are currently filtered out of the demo UI because there''s no way to tell the
+
     UI what control to render. A freeform hint field solves this — the manifest
+
     declares what the param IS semantically, the UI decides how to render it.
 
+
     Problem 2: The fluent SDK generator only emits camelCase (JS/TS). Python and
+
     other languages use snake_case. The generator needs a naming convention flag
+
     to support multi-language SDK generation.
 
+
     Both features touch the same codegen pipeline end-to-end.
-  codebase_analysis: |
-    Proc macro (rasmcore-macros/src/lib.rs):
-      ConfigParams derive at line 212. Parses #[param(min, max, step, default)]
-      at lines 255-275. Generates ParamDescriptorJson structs at lines 300-310.
-      Adding hint is mechanical — one new field in the tuple, one match arm.
 
-    Build.rs (rasmcore-image/build.rs):
-      ParamField struct at line 301 has: name, param_type, min, max, step,
-      default_val, label. parse_config_params_structs() at line 311 extracts
-      fields. param-manifest.json generated at line 136. Adding hint requires
-      extending ParamField struct and JSON format string.
-
-    Filter registry (rasmcore-image/src/domain/filter_registry.rs):
-      ParamDescriptorJson struct at line 268 — add hint: String field.
-
-    SDK generator (scripts/generate-fluent-sdk.cjs):
-      Parses .d.ts, emits TypeScript. Method names come from jco (camelCase).
-      Adding --naming flag requires camelToSnake conversion function and
-      applying it to method names, param names, and class name.
-
-    Demo UI (demo/src/pipeline.js):
-      Currently filters out complex types. With hints, it can map rc.color_rgb
-      to <input type="color">, rc.kernel to a matrix editor, etc.
+    '
+  codebase_analysis: "Proc macro (rasmcore-macros/src/lib.rs):\n  ConfigParams derive at line 212. Parses #[param(min, max,\
+    \ step, default)]\n  at lines 255-275. Generates ParamDescriptorJson structs at lines 300-310.\n  Adding hint is mechanical\
+    \ — one new field in the tuple, one match arm.\n\nBuild.rs (rasmcore-image/build.rs):\n  ParamField struct at line 301\
+    \ has: name, param_type, min, max, step,\n  default_val, label. parse_config_params_structs() at line 311 extracts\n \
+    \ fields. param-manifest.json generated at line 136. Adding hint requires\n  extending ParamField struct and JSON format\
+    \ string.\n\nFilter registry (rasmcore-image/src/domain/filter_registry.rs):\n  ParamDescriptorJson struct at line 268\
+    \ — add hint: String field.\n\nSDK generator (scripts/generate-fluent-sdk.cjs):\n  Parses .d.ts, emits TypeScript. Method\
+    \ names come from jco (camelCase).\n  Adding --naming flag requires camelToSnake conversion function and\n  applying it\
+    \ to method names, param names, and class name.\n\nDemo UI (demo/src/pipeline.js):\n  Currently filters out complex types.\
+    \ With hints, it can map rc.color_rgb\n  to <input type=\"color\">, rc.kernel to a matrix editor, etc.\n"
   acceptance_criteria:
-    - '#[param(hint = "rc.color_rgb")] compiles and populates manifest'
-    - hint field appears in param-manifest.json as freeform string
-    - hint field defaults to empty string when not specified
-    - Standard rc. hints defined and documented in code
-    - Demo UI renders color picker for rc.color_rgb hint
-    - Demo UI renders angle dial or slider for rc.angle_deg hint
-    - Demo UI falls back to type-based inference for unknown hints
-    - Demo UI skips params with no hint and unrenderable type (current behavior preserved)
-    - Third-party hints (e.g., myapp.gradient_stops) pass through to manifest unchanged
-    - SDK generator accepts --naming camel (default) and --naming snake flags
-    - With --naming snake, method names convert from camelCase to snake_case
-    - With --naming snake, param names convert from camelCase to snake_case
-    - Generated SDK is syntactically valid TypeScript (camel) or Python-style naming (snake)
-  out_of_scope: |
-    Full Python SDK wrapper generation (just naming conversion for now).
+  - '#[param(hint = "rc.color_rgb")] compiles and populates manifest'
+  - hint field appears in param-manifest.json as freeform string
+  - hint field defaults to empty string when not specified
+  - Standard rc. hints defined and documented in code
+  - Demo UI renders color picker for rc.color_rgb hint
+  - Demo UI renders angle dial or slider for rc.angle_deg hint
+  - Demo UI falls back to type-based inference for unknown hints
+  - Demo UI skips params with no hint and unrenderable type (current behavior preserved)
+  - Third-party hints (e.g., myapp.gradient_stops) pass through to manifest unchanged
+  - SDK generator accepts --naming camel (default) and --naming snake flags
+  - With --naming snake, method names convert from camelCase to snake_case
+  - With --naming snake, param names convert from camelCase to snake_case
+  - Generated SDK is syntactically valid TypeScript (camel) or Python-style naming (snake)
+  out_of_scope: 'Full Python SDK wrapper generation (just naming conversion for now).
+
     Demo UI controls for all hint types (start with color_rgb, angle_deg,
+
     percentage; others are documented but UI deferred).
+
     Encoder/decoder param hints.
-  technical_notes: |
-    Hint namespacing convention:
-      rc.         — rasmcore standard hints, rendered by our demo UI
-      <any>.      — third-party hints, freeform, passed through unchanged
-      (no prefix) — legacy/simple hints, treated as unnamespaced
 
-    Standard rc. hint vocabulary:
-      rc.color_rgb   — [u8; 3] → color picker
-      rc.color_rgba  — [u8; 4] → color picker + alpha
-      rc.angle_deg   — f32 → circular dial / slider 0-360
-      rc.angle_rad   — f32 → circular dial / slider 0-2π
-      rc.percentage  — f32 → slider 0-100%
-      rc.kernel      — &[f32] + width/height → matrix grid editor
-      rc.curve       — &[(f32,f32)] → curve editor
-      rc.point       — (u32,u32) → click-on-image picker
-      rc.rect        — (u32,u32,u32,u32) → drag-on-image rectangle
-      rc.path        — String → file picker
-      rc.text        — String → text input
-
-    Usage in Rust:
-      #[derive(ConfigParams)]
-      pub struct ColorizeParams {
-          #[param(hint = "rc.color_rgb", default = "128,128,128")]
-          pub target: [u8; 3],
-          #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
-          pub amount: f32,
-      }
-
-    Manifest output:
-      {"name":"target","type":"[u8; 3]","hint":"rc.color_rgb","default":[128,128,128],...}
-
-    SDK generator --naming flag:
-      node scripts/generate-fluent-sdk.cjs --naming camel  (default, JS/TS)
-      node scripts/generate-fluent-sdk.cjs --naming snake  (Python-style)
-
-      camelToSnake: hueRotate → hue_rotate, toJpeg → to_jpeg
-      Applies to: method names, the class name (RcImage → rc_image or RcImage)
+    '
+  technical_notes: "Hint namespacing convention:\n  rc.         — rasmcore standard hints, rendered by our demo UI\n  <any>.\
+    \      — third-party hints, freeform, passed through unchanged\n  (no prefix) — legacy/simple hints, treated as unnamespaced\n\
+    \nStandard rc. hint vocabulary:\n  rc.color_rgb   — [u8; 3] → color picker\n  rc.color_rgba  — [u8; 4] → color picker\
+    \ + alpha\n  rc.angle_deg   — f32 → circular dial / slider 0-360\n  rc.angle_rad   — f32 → circular dial / slider 0-2π\n\
+    \  rc.percentage  — f32 → slider 0-100%\n  rc.kernel      — &[f32] + width/height → matrix grid editor\n  rc.curve   \
+    \    — &[(f32,f32)] → curve editor\n  rc.point       — (u32,u32) → click-on-image picker\n  rc.rect        — (u32,u32,u32,u32)\
+    \ → drag-on-image rectangle\n  rc.path        — String → file picker\n  rc.text        — String → text input\n\nUsage\
+    \ in Rust:\n  #[derive(ConfigParams)]\n  pub struct ColorizeParams {\n      #[param(hint = \"rc.color_rgb\", default =\
+    \ \"128,128,128\")]\n      pub target: [u8; 3],\n      #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]\n  \
+    \    pub amount: f32,\n  }\n\nManifest output:\n  {\"name\":\"target\",\"type\":\"[u8; 3]\",\"hint\":\"rc.color_rgb\"\
+    ,\"default\":[128,128,128],...}\n\nSDK generator --naming flag:\n  node scripts/generate-fluent-sdk.cjs --naming camel\
+    \  (default, JS/TS)\n  node scripts/generate-fluent-sdk.cjs --naming snake  (Python-style)\n\n  camelToSnake: hueRotate\
+    \ → hue_rotate, toJpeg → to_jpeg\n  Applies to: method names, the class name (RcImage → rc_image or RcImage)\n"
 plan:
-  - phase: Hint Infrastructure
-    tasks:
-      - text: Add hint field to ParamDescriptorJson in filter_registry.rs
-        done: false
-      - text: Add hint parsing to ConfigParams derive macro in rasmcore-macros/src/lib.rs
-        done: false
-      - text: Add hint field to ParamField struct in build.rs
-        done: false
-      - text: Add hint to param-manifest.json generation in build.rs
-        done: false
-      - text: Add hint parsing to build.rs parse_config_params_structs()
-        done: false
-      - text: Add rc.color_rgb hint to ColorizeParams target field
-        done: false
-      - text: Verify param-manifest.json includes hint field after rebuild
-        done: false
-  - phase: Demo UI Hint Rendering
-    tasks:
-      - text: Update pipeline.js to stop filtering complex types when hint is present
-        done: false
-      - text: Add color picker control for rc.color_rgb hint
-        done: false
-      - text: Add angle/percentage slider variants for rc.angle_deg and rc.percentage hints
-        done: false
-      - text: Verify unknown hints fall back to skip (no regression)
-        done: false
-  - phase: SDK Naming Convention
-    tasks:
-      - text: Add --naming camel|snake CLI flag to generate-fluent-sdk.cjs
-        done: false
-      - text: Implement camelToSnake conversion function
-        done: false
-      - text: Apply naming conversion to method names and param names in generated SDK
-        done: false
-      - text: Verify --naming camel produces identical output to current (no regression)
-        done: false
-      - text: Verify --naming snake produces valid snake_case SDK
-        done: false
-  - phase: Verification
-    tasks:
-      - text: cargo test --workspace --lib passes
-        done: false
-      - text: cargo component build -p rasmcore-image succeeds
-        done: false
-      - text: param-manifest.json contains hint field for annotated params
-        done: false
-      - text: Demo UI renders color picker for colorize target param
-        done: false
+- phase: Hint Infrastructure
+  tasks:
+  - text: Add hint field to ParamDescriptorJson in filter_registry.rs
+    done: true
+  - text: Add hint parsing to ConfigParams derive macro in rasmcore-macros/src/lib.rs
+    done: true
+  - text: Add hint field to ParamField struct in build.rs
+    done: true
+  - text: Add hint to param-manifest.json generation in build.rs
+    done: true
+  - text: Add hint parsing to build.rs parse_config_params_structs()
+    done: true
+  - text: Add rc.color_rgb hint to ColorizeParams target field
+    done: true
+  - text: Verify param-manifest.json includes hint field after rebuild
+    done: true
+- phase: Demo UI Hint Rendering
+  tasks:
+  - text: Update pipeline.js to stop filtering complex types when hint is present
+    done: true
+  - text: Add color picker control for rc.color_rgb hint
+    done: true
+  - text: Add angle/percentage slider variants for rc.angle_deg and rc.percentage hints
+    done: true
+  - text: Verify unknown hints fall back to skip (no regression)
+    done: true
+- phase: SDK Naming Convention
+  tasks:
+  - text: Add --naming camel|snake CLI flag to generate-fluent-sdk.cjs
+    done: true
+  - text: Implement camelToSnake conversion function
+    done: true
+  - text: Apply naming conversion to method names and param names in generated SDK
+    done: true
+  - text: Verify --naming camel produces identical output to current (no regression)
+    done: true
+  - text: Verify --naming snake produces valid snake_case SDK
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo test --workspace --lib passes
+    done: true
+  - text: cargo component build -p rasmcore-image succeeds
+    done: true
+  - text: param-manifest.json contains hint field for annotated params
+    done: true
+  - text: Demo UI renders color picker for colorize target param
+    done: true
 extra: {}
