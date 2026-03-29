@@ -1,0 +1,125 @@
+id: sdk-metadata-api_20260329145000Z
+title: SDK Metadata API — Read, Set, Strip, Dump via Chainable Dot-Path Access
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: >
+    Add metadata access to the fluent rcimage SDK. Eager read/dump operations
+    parse headers without decoding pixels. Chainable set/strip operations
+    modify metadata that flows to the output encoder.
+  context: |
+    Image metadata (EXIF, ICC, XMP, IPTC) is embedded in JPEG, PNG, TIFF, WebP
+    files. The WIT pipeline already supports MetadataSet on write operations,
+    and the decoder extracts ICC profiles. But the fluent SDK has no way to
+    read or modify metadata.
+
+    The API uses dot-path string access because metadata fields are format-
+    dependent and dynamic — EXIF alone has hundreds of tags, XMP is arbitrary
+    XML. Static typing isn't feasible at the SDK level.
+
+    Key design: metadata.read() and metadata.dump() are EAGER — they execute
+    immediately by parsing file headers, without decoding pixels. This makes
+    them fast for inspection use cases (reading EXIF before deciding to process).
+  acceptance_criteria:
+    - metadata.dump() returns full nested object from file headers (eager, no pixel decode)
+    - metadata.read(path) returns value at dot-path (e.g., exif.artist) (eager)
+    - metadata.read(path) returns undefined for missing fields
+    - metadata.set(path, value) is chainable (returns RcImage)
+    - metadata.strip(path) removes field or subtree, is chainable
+    - metadata.stripAll() removes all metadata, is chainable
+    - Modified metadata embedded in output when calling toJpeg/toPng/etc.
+    - Formats without metadata support (BMP, QOI) silently ignore metadata ops
+    - EXIF fields accessible (artist, make, model, gps, datetime, etc.)
+    - ICC profile accessible (profile_name, color_space)
+    - XMP fields accessible (creator, rating, description, etc.)
+    - IPTC fields accessible (headline, keywords, etc.)
+    - Works with JPEG, PNG, TIFF, WebP inputs
+  out_of_scope: |
+    Writing metadata to formats that don't support it (BMP, QOI, GIF).
+    Editing ICC profiles (only preserve/strip). Creating new ICC profiles.
+    Full XMP editing (read + basic set only). IPTC editing beyond basic fields.
+  technical_notes: |
+    SDK API on RcImage:
+
+      // Read operations (eager — parse headers only)
+      .metadata.dump() -> object
+        Returns: { exif: { artist, make, model, gps: { latitude, longitude }, ... },
+                   icc: { profile_name, color_space },
+                   xmp: { creator, rating, ... },
+                   iptc: { headline, keywords } }
+
+      .metadata.read(path: string) -> any
+        path examples: 'exif.artist', 'exif.gps.latitude', 'icc.profile_name', 'xmp.creator'
+        Returns the value or undefined if not present.
+
+      // Modify operations (chainable — returns RcImage)
+      .metadata.set(path: string, value: any) -> RcImage
+      .metadata.strip(path: string) -> RcImage
+      .metadata.stripAll() -> RcImage
+
+    Implementation layers:
+
+    1. WASM/Rust: rasmcore-image already has:
+       - metadata.rs: ExifOrientation, parse_exif(), parse_xmp()
+       - metadata_iptc.rs: IPTC parsing
+       - metadata_set.rs: MetadataSet struct
+       - decoder extracts ICC profile as Option<Vec<u8>>
+       - encoder embeds ICC + EXIF via embed_icc_profile(), embed_exif()
+
+    2. WIT: Add metadata query functions to pipeline interface:
+       metadata-dump: func(source: node-id) -> result<string, rasmcore-error>
+         Returns JSON string of all parsed metadata
+       metadata-read: func(source: node-id, path: string) -> result<option<string>, rasmcore-error>
+         Returns JSON value at path
+       metadata-set: func(source: node-id, path: string, value: string) -> result<node-id, rasmcore-error>
+       metadata-strip: func(source: node-id, path: string) -> result<node-id, rasmcore-error>
+
+    3. SDK codegen: generate-fluent-sdk.cjs generates the .metadata namespace
+       on RcImage from the WIT methods.
+
+    Eager execution for read/dump:
+      The pipeline node for metadata-dump doesn't need pixel computation.
+      It reads the source node's raw bytes and parses headers only.
+      This is fast — EXIF is in the first few KB of a JPEG.
+
+    Dot-path resolution:
+      'exif.gps.latitude' → parse EXIF → find GPS IFD → find latitude tag
+      Implemented as nested JSON key traversal on the Rust side.
+plan:
+  - phase: Rust Metadata Query
+    tasks:
+      - text: Add metadata_dump function that parses all metadata from raw image bytes to JSON
+        done: false
+      - text: Add metadata_read function with dot-path resolution
+        done: false
+      - text: Add metadata_set and metadata_strip functions that modify MetadataSet
+        done: false
+      - text: Test metadata dump/read on JPEG with EXIF + ICC
+        done: false
+  - phase: WIT + Adapter
+    tasks:
+      - text: Add metadata-dump, metadata-read, metadata-set, metadata-strip to pipeline WIT
+        done: false
+      - text: Wire adapter dispatch for metadata operations
+        done: false
+  - phase: SDK Integration
+    tasks:
+      - text: Update generate-fluent-sdk.cjs to generate .metadata namespace on RcImage
+        done: false
+      - text: Implement dump(), read(path), set(path, value), strip(path), stripAll()
+        done: false
+      - text: Verify eager execution (dump/read don't trigger pixel decode)
+        done: false
+  - phase: Testing
+    tasks:
+      - text: Test read EXIF fields from JPEG (artist, make, gps)
+        done: false
+      - text: Test read ICC profile from PNG
+        done: false
+      - text: Test set + strip + encode preserves/removes metadata correctly
+        done: false
+      - text: Test dump() returns complete nested structure
+        done: false
+extra: {}
