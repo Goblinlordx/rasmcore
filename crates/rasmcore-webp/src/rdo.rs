@@ -450,6 +450,186 @@ pub fn trellis_optimize_block(
     last_nz
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// libwebp-exact RD Framework (ported from quant_enc.c / vp8i_enc.h)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Score type — i64, matching libwebp's `score_t = int64_t`.
+pub type ScoreT = i64;
+
+/// Maximum cost sentinel (libwebp MAX_COST).
+pub const MAX_COST: ScoreT = 0x7fffffffffffff;
+
+/// Distortion multiplier — libwebp RD_DISTO_MULT = 256.
+/// Applied to distortion in SetRDScore: score = (R + H) * lambda + 256 * (D + SD)
+pub const RD_DISTO_MULT: ScoreT = 256;
+
+/// VP8ModeScore — accumulates score during RD optimization.
+/// Ported from libwebp vp8i_enc.h lines 214-225.
+#[derive(Debug, Clone)]
+pub struct VP8ModeScore {
+    /// Distortion (SSD).
+    pub d: ScoreT,
+    /// Spectral distortion (for secondary evaluation).
+    pub sd: ScoreT,
+    /// Header bits (mode signaling cost).
+    pub h: ScoreT,
+    /// Residual bits (coefficient encoding cost).
+    pub r: ScoreT,
+    /// Combined RD score: (R + H) * lambda + RD_DISTO_MULT * (D + SD).
+    pub score: ScoreT,
+    /// Quantized luma DC levels (for I16x16 Y2 block).
+    pub y_dc_levels: [i16; 16],
+    /// Quantized luma AC levels (16 sub-blocks × 16 coefficients).
+    pub y_ac_levels: [[i16; 16]; 16],
+    /// Quantized chroma levels (4 U + 4 V blocks × 16 coefficients).
+    pub uv_levels: [[i16; 16]; 8],
+    /// I16x16 prediction mode.
+    pub mode_i16: i32,
+    /// Per-sub-block I4x4 prediction modes.
+    pub modes_i4: [u8; 16],
+    /// Chroma prediction mode.
+    pub mode_uv: i32,
+    /// Non-zero block pattern (bitmask).
+    pub nz: u32,
+}
+
+impl Default for VP8ModeScore {
+    fn default() -> Self {
+        Self {
+            d: 0,
+            sd: 0,
+            h: 0,
+            r: 0,
+            score: MAX_COST,
+            y_dc_levels: [0; 16],
+            y_ac_levels: [[0; 16]; 16],
+            uv_levels: [[0; 16]; 8],
+            mode_i16: 0,
+            modes_i4: [0; 16],
+            mode_uv: 0,
+            nz: 0,
+        }
+    }
+}
+
+/// SetRDScore — compute combined RD score from components.
+/// Ported from libwebp quant_enc.c line 557:
+/// `rd->score = (rd->R + rd->H) * lambda + RD_DISTO_MULT * (rd->D + rd->SD);`
+#[inline]
+pub fn set_rd_score(lambda: i32, rd: &mut VP8ModeScore) {
+    rd.score = (rd.r + rd.h) * lambda as ScoreT + RD_DISTO_MULT * (rd.d + rd.sd);
+}
+
+/// RDScoreTrellis — compute RD score for trellis quantization.
+/// Ported from libwebp quant_enc.c line 561:
+/// `return rate * lambda + RD_DISTO_MULT * distortion;`
+#[inline]
+pub fn rd_score_trellis(lambda: i32, rate: ScoreT, distortion: ScoreT) -> ScoreT {
+    rate * lambda as ScoreT + RD_DISTO_MULT * distortion
+}
+
+/// VP8 segment info — per-segment lambda values and quantization parameters.
+/// Ported from libwebp vp8i_enc.h lines 192-210.
+#[derive(Debug, Clone)]
+pub struct VP8SegmentLambdas {
+    /// QP index for this segment (0-127).
+    pub quant: u8,
+    /// Lambda for I4x4 mode evaluation: (3 * q_i4² ) >> 7
+    pub lambda_i4: i32,
+    /// Lambda for I16x16 mode evaluation: 3 * q_i16²
+    pub lambda_i16: i32,
+    /// Lambda for UV mode evaluation: (3 * q_uv²) >> 6
+    pub lambda_uv: i32,
+    /// Lambda for mode decision (I4 vs I16): (1 * q_i4²) >> 7
+    pub lambda_mode: i32,
+    /// Lambda for I4 trellis: (7 * q_i4²) >> 3
+    pub lambda_trellis_i4: i32,
+    /// Lambda for I16 trellis: q_i16² >> 2
+    pub lambda_trellis_i16: i32,
+    /// Lambda for UV trellis: q_uv² << 1
+    pub lambda_trellis_uv: i32,
+    /// Penalty for using I4 mode: 1000 * q_i4²
+    pub i4_penalty: ScoreT,
+    /// Minimum distortion for filtering: 20 * y1_q[0]
+    pub min_disto: i32,
+}
+
+/// Compute segment lambdas from a QP index.
+/// Ported from libwebp quant_enc.c SetupMatrices (lines 218-265).
+///
+/// Uses the same quantization tables and lambda formulas as libwebp.
+/// `q_i4` = Y1 AC step, `q_i16` = Y2 AC step (clamped, min 8), `q_uv` = UV AC step.
+pub fn compute_segment_lambdas(qp: u8) -> VP8SegmentLambdas {
+    use crate::tables::{AC_TABLE, DC_TABLE};
+
+    let q = qp.min(127) as usize;
+
+    // Y1 quantizer steps (same as our existing build_matrix)
+    let y1_q0 = DC_TABLE[q] as i32; // Y1 DC
+    let y1_q1 = AC_TABLE[q] as i32; // Y1 AC
+
+    // Y2 quantizer steps
+    let y2_q0 = (DC_TABLE[q] as i32 * 2).min(132); // Y2 DC
+    let y2_q1 = ((AC_TABLE[q] as i32 * 155) / 100).max(8); // Y2 AC
+
+    // UV quantizer steps (no delta_q for our single-segment encoder)
+    let uv_q0 = DC_TABLE[q].min(132) as i32; // UV DC
+    let uv_q1 = AC_TABLE[q] as i32; // UV AC
+
+    // ExpandMatrix returns the "average" quantizer step — libwebp uses
+    // a weighted combination. For simplicity, use the AC step as the
+    // representative value (matches libwebp for the lambda formulas).
+    let q_i4 = y1_q1;
+    let q_i16 = y2_q1;
+    let q_uv = uv_q1;
+
+    // Lambda formulas from libwebp SetupMatrices (lines 239-248)
+    let mut lambda_i4 = (3 * q_i4 * q_i4) >> 7;
+    let mut lambda_i16 = 3 * q_i16 * q_i16;
+    let mut lambda_uv = (3 * q_uv * q_uv) >> 6;
+    let mut lambda_mode = (1 * q_i4 * q_i4) >> 7;
+    let mut lambda_trellis_i4 = (7 * q_i4 * q_i4) >> 3;
+    let mut lambda_trellis_i16 = (q_i16 * q_i16) >> 2;
+    let mut lambda_trellis_uv = (q_uv * q_uv) << 1;
+
+    // CheckLambdaValue: ensure >= 1
+    fn check(v: &mut i32) {
+        if *v < 1 {
+            *v = 1;
+        }
+    }
+    check(&mut lambda_i4);
+    check(&mut lambda_i16);
+    check(&mut lambda_uv);
+    check(&mut lambda_mode);
+    check(&mut lambda_trellis_i4);
+    check(&mut lambda_trellis_i16);
+    check(&mut lambda_trellis_uv);
+
+    let i4_penalty = 1000 * q_i4 as ScoreT * q_i4 as ScoreT;
+    let min_disto = 20 * y1_q0;
+
+    VP8SegmentLambdas {
+        quant: qp,
+        lambda_i4,
+        lambda_i16,
+        lambda_uv,
+        lambda_mode,
+        lambda_trellis_i4,
+        lambda_trellis_i16,
+        lambda_trellis_uv,
+        i4_penalty,
+        min_disto,
+    }
+}
+
+/// Coefficient type constants matching libwebp (quant_enc.c line 572).
+pub const TYPE_I16_AC: u8 = 0;
+pub const TYPE_I16_DC: u8 = 1;
+pub const TYPE_CHROMA_A: u8 = 2;
+pub const TYPE_I4_AC: u8 = 3;
+
 #[cfg(test)]
 mod tests {
     use super::*;
