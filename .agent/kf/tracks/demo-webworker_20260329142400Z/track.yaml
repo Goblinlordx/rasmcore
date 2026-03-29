@@ -5,167 +5,130 @@ status: pending
 created: '2026-03-29'
 updated: '2026-03-29'
 spec:
-  summary: >
-    Move all WASM pipeline processing to a Web Worker so the UI never freezes.
-    Single-slot queue ensures only the latest chain config runs, with a processing
-    indicator and no duplicate in-flight operations.
-  context: |
-    Currently the demo runs all WASM processing on the main thread. Large images
-    or complex chains freeze the UI during processing — slider drags stutter,
-    the page becomes unresponsive.
+  summary: 'Move all WASM pipeline processing to a Web Worker so the UI never freezes. Single-slot queue ensures only the
+    latest chain config runs, with a processing indicator and no duplicate in-flight operations.
 
-    Moving to a Web Worker:
-    - UI stays 100% responsive during processing
-    - Processing indicator shows when worker is busy
-    - Single-slot queue: new requests replace any pending (not accumulate)
-    - ArrayBuffer transfer is zero-copy (Transferable)
+    '
+  context: "Currently the demo runs all WASM processing on the main thread. Large images\nor complex chains freeze the UI\
+    \ during processing — slider drags stutter,\nthe page becomes unresponsive.\n\nMoving to a Web Worker:\n- UI stays 100%\
+    \ responsive during processing\n- Processing indicator shows when worker is busy\n- Single-slot queue: new requests replace\
+    \ any pending (not accumulate)\n- ArrayBuffer transfer is zero-copy (Transferable)\n\nThe single-slot queue design:\n\
+    - Slot 1 (active): currently processing in worker — never interrupted\n- Slot 2 (queued): latest chain config — replaces\
+    \ on every new user action\n- When active finishes → if queued exists, promote and run; else idle\n- This ensures the\
+    \ worker always processes the most recent user intent,\n  never wastes time on stale intermediate states\n"
+  codebase_analysis: 'Current processing in demo/src/pipeline.js:
 
-    The single-slot queue design:
-    - Slot 1 (active): currently processing in worker — never interrupted
-    - Slot 2 (queued): latest chain config — replaces on every new user action
-    - When active finishes → if queued exists, promote and run; else idle
-    - This ensures the worker always processes the most recent user intent,
-      never wastes time on stale intermediate states
-  codebase_analysis: |
-    Current processing in demo/src/pipeline.js:
     - processChain() creates Pipeline, builds chain, encodes PNG
+
     - applyFullChain() does the same at full resolution
+
     - previewEditing() runs on thumbnail
+
     - All synchronous on main thread
 
+
     Worker architecture — two dedicated workers:
+
     - demo/src/main-worker.js: always running, full-res apply + export
+
     - demo/src/preview-worker.js: ephemeral, thumbnail preview during edit mode
+
     - Preview worker created when user enters edit, terminated on Apply/Cancel
+
     - Each worker loads its own SDK instance (WASM module shared via cache)
+
     - Communication: postMessage with Transferable ArrayBuffer
+
     - No SharedArrayBuffer needed (simpler, no COOP/COEP headers required)
 
+
     Benefits of separate workers:
+
     - Thumbnail preview never blocks full-res processing
+
     - Full-res apply never blocks UI or preview
-    - Preview worker doesn't consume memory when not editing
+
+    - Preview worker doesn''t consume memory when not editing
+
     - Each has its own single-slot queue
+
+    '
   acceptance_criteria:
-    - All pipeline processing runs in Web Worker (zero main thread blocking)
-    - Processing indicator visible while worker is busy (spinner or progress bar)
-    - Single-slot queue — new chain config replaces any pending, never accumulates
-    - UI remains responsive during large image processing
-    - Thumbnail preview also runs in worker (fast, but still off-thread)
-    - Full-resolution apply runs in worker
-    - Export/download runs in worker
-    - ArrayBuffer transfer used for image data (zero-copy)
-    - Worker initialization shows loading state until SDK is ready
-    - Error from worker displayed in UI (not silent failure)
-  out_of_scope: |
-    SharedArrayBuffer streaming.
+  - All pipeline processing runs in Web Worker (zero main thread blocking)
+  - Processing indicator visible while worker is busy (spinner or progress bar)
+  - Single-slot queue — new chain config replaces any pending, never accumulates
+  - UI remains responsive during large image processing
+  - Thumbnail preview also runs in worker (fast, but still off-thread)
+  - Full-resolution apply runs in worker
+  - Export/download runs in worker
+  - ArrayBuffer transfer used for image data (zero-copy)
+  - Worker initialization shows loading state until SDK is ready
+  - Error from worker displayed in UI (not silent failure)
+  out_of_scope: 'SharedArrayBuffer streaming.
+
     Progress reporting during single operation (would need WASM cooperation).
-  technical_notes: |
-    Worker protocol (postMessage):
 
-    Main → Worker:
-      { type: 'init' }
-        Worker loads SDK, responds { type: 'ready' }
-
-      { type: 'load', imageBytes: ArrayBuffer }
-        Worker stores image + creates thumbnail
-        Responds { type: 'loaded', info: { width, height, format } }
-
-      { type: 'process', chain: [{ op: 'blur', params: { radius: 3 } }, ...], mode: 'thumb' | 'full' }
-        Worker builds pipeline from chain, encodes PNG
-        Responds { type: 'result', png: ArrayBuffer, timings: [...], totalMs: N, mode }
-
-      { type: 'export', chain: [...], format: 'jpeg', quality: 85 }
-        Worker encodes in requested format
-        Responds { type: 'exported', data: ArrayBuffer, mime: 'image/jpeg' }
-
-    Worker → Main:
-      { type: 'ready' }
-      { type: 'loaded', info }
-      { type: 'result', png, timings, totalMs, mode }
-      { type: 'exported', data, mime }
-      { type: 'error', message }
-
-    Single-slot queue implementation:
-      let activeRequest = null;   // currently being processed
-      let queuedRequest = null;   // latest pending (replaces on new)
-      let isProcessing = false;
-
-      function requestProcess(chain, mode) {
-        if (isProcessing) {
-          queuedRequest = { chain, mode };  // replace, don't accumulate
-          return;
-        }
-        isProcessing = true;
-        activeRequest = { chain, mode };
-        worker.postMessage({ type: 'process', ...activeRequest });
-      }
-
-      worker.onmessage = (e) => {
-        if (e.data.type === 'result') {
-          isProcessing = false;
-          renderResult(e.data);
-          if (queuedRequest) {
-            const next = queuedRequest;
-            queuedRequest = null;
-            requestProcess(next.chain, next.mode);
-          }
-        }
-      };
-
-    Processing indicator:
-      Show spinner/pulsing border on preview canvas while isProcessing.
-      Hide when result arrives.
-      If queued: show "Queued..." text alongside spinner.
-
-    ArrayBuffer transfer:
-      worker.postMessage({ type: 'load', imageBytes }, [imageBytes]);
-      // imageBytes is transferred (zero-copy), becomes detached on main thread
-
-      // Worker responds:
-      self.postMessage({ type: 'result', png }, [png]);
-      // png ArrayBuffer transferred back to main thread
+    '
+  technical_notes: "Worker protocol (postMessage):\n\nMain → Worker:\n  { type: 'init' }\n    Worker loads SDK, responds {\
+    \ type: 'ready' }\n\n  { type: 'load', imageBytes: ArrayBuffer }\n    Worker stores image + creates thumbnail\n    Responds\
+    \ { type: 'loaded', info: { width, height, format } }\n\n  { type: 'process', chain: [{ op: 'blur', params: { radius:\
+    \ 3 } }, ...], mode: 'thumb' | 'full' }\n    Worker builds pipeline from chain, encodes PNG\n    Responds { type: 'result',\
+    \ png: ArrayBuffer, timings: [...], totalMs: N, mode }\n\n  { type: 'export', chain: [...], format: 'jpeg', quality: 85\
+    \ }\n    Worker encodes in requested format\n    Responds { type: 'exported', data: ArrayBuffer, mime: 'image/jpeg' }\n\
+    \nWorker → Main:\n  { type: 'ready' }\n  { type: 'loaded', info }\n  { type: 'result', png, timings, totalMs, mode }\n\
+    \  { type: 'exported', data, mime }\n  { type: 'error', message }\n\nSingle-slot queue implementation:\n  let activeRequest\
+    \ = null;   // currently being processed\n  let queuedRequest = null;   // latest pending (replaces on new)\n  let isProcessing\
+    \ = false;\n\n  function requestProcess(chain, mode) {\n    if (isProcessing) {\n      queuedRequest = { chain, mode };\
+    \  // replace, don't accumulate\n      return;\n    }\n    isProcessing = true;\n    activeRequest = { chain, mode };\n\
+    \    worker.postMessage({ type: 'process', ...activeRequest });\n  }\n\n  worker.onmessage = (e) => {\n    if (e.data.type\
+    \ === 'result') {\n      isProcessing = false;\n      renderResult(e.data);\n      if (queuedRequest) {\n        const\
+    \ next = queuedRequest;\n        queuedRequest = null;\n        requestProcess(next.chain, next.mode);\n      }\n    }\n\
+    \  };\n\nProcessing indicator:\n  Show spinner/pulsing border on preview canvas while isProcessing.\n  Hide when result\
+    \ arrives.\n  If queued: show \"Queued...\" text alongside spinner.\n\nArrayBuffer transfer:\n  worker.postMessage({ type:\
+    \ 'load', imageBytes }, [imageBytes]);\n  // imageBytes is transferred (zero-copy), becomes detached on main thread\n\n\
+    \  // Worker responds:\n  self.postMessage({ type: 'result', png }, [png]);\n  // png ArrayBuffer transferred back to\
+    \ main thread\n"
 plan:
-  - phase: Worker Foundation
-    tasks:
-      - text: Create demo/src/main-worker.js — loads SDK, handles full-res process + export
-        done: false
-      - text: Create demo/src/preview-worker.js — loads SDK, handles thumbnail preview only
-        done: false
-      - text: Implement process message handler (build pipeline from chain config, return PNG)
-        done: false
-      - text: Implement export message handler (encode in requested format)
-        done: false
-      - text: Use Transferable ArrayBuffer for zero-copy image data transfer
-        done: false
-  - phase: Main Thread Integration
-    tasks:
-      - text: Refactor pipeline.js — main-worker always running, preview-worker ephemeral
-        done: false
-      - text: Implement single-slot queue per worker (replace pending, drain on completion)
-        done: false
-      - text: Create/terminate preview-worker on edit open/close
-        done: false
-      - text: Add processing indicator (spinner/pulsing) on preview canvas and main canvas
-        done: false
-      - text: Show queued state when new request arrives during processing
-        done: false
-  - phase: Migration
-    tasks:
-      - text: Move thumbnail preview processing to preview-worker
-        done: false
-      - text: Move full-resolution apply to main-worker
-        done: false
-      - text: Move export/download to main-worker
-        done: false
-      - text: Remove all synchronous pipeline calls from main thread
-        done: false
-  - phase: Polish
-    tasks:
-      - text: Handle worker errors gracefully (display in UI, don't crash)
-        done: false
-      - text: Show loading state during initial SDK load in worker
-        done: false
-      - text: Verify UI stays responsive during large image processing (no jank)
-        done: false
+- phase: Worker Foundation
+  tasks:
+  - text: Create demo/src/main-worker.js — loads SDK, handles full-res process + export
+    done: true
+  - text: Create demo/src/preview-worker.js — loads SDK, handles thumbnail preview only
+    done: true
+  - text: Implement process message handler (build pipeline from chain config, return PNG)
+    done: true
+  - text: Implement export message handler (encode in requested format)
+    done: true
+  - text: Use Transferable ArrayBuffer for zero-copy image data transfer
+    done: true
+- phase: Main Thread Integration
+  tasks:
+  - text: Refactor pipeline.js — main-worker always running, preview-worker ephemeral
+    done: true
+  - text: Implement single-slot queue per worker (replace pending, drain on completion)
+    done: true
+  - text: Create/terminate preview-worker on edit open/close
+    done: true
+  - text: Add processing indicator (spinner/pulsing) on preview canvas and main canvas
+    done: true
+  - text: Show queued state when new request arrives during processing
+    done: true
+- phase: Migration
+  tasks:
+  - text: Move thumbnail preview processing to preview-worker
+    done: true
+  - text: Move full-resolution apply to main-worker
+    done: true
+  - text: Move export/download to main-worker
+    done: true
+  - text: Remove all synchronous pipeline calls from main thread
+    done: true
+- phase: Polish
+  tasks:
+  - text: Handle worker errors gracefully (display in UI, don't crash)
+    done: true
+  - text: Show loading state during initial SDK load in worker
+    done: true
+  - text: Verify UI stays responsive during large image processing (no jank)
+    done: true
 extra: {}
