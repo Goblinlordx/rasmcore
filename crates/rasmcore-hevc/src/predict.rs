@@ -47,8 +47,14 @@ fn should_filter_refs(mode: u8, log2_size: u8) -> bool {
         4 => 1, // 16x16: filter almost all except near-diagonal
         _ => 0, // 32x32: always filter
     };
-    if mode == 0 || mode == 1 {
-        return true; // Always filter for Planar and DC
+    // Planar always uses filtered references.
+    // DC (mode 1) does NOT use filtered references — it applies its own boundary filter.
+    // Ref: libde265 v1.0.18 intrapred.h line 195, HEVC Section 8.4.4.2.3.
+    if mode == 0 {
+        return true;
+    }
+    if mode == 1 {
+        return false;
     }
     // Check distance from horizontal (10) and vertical (26) modes
     let dist_h = (mode as i32 - 10).unsigned_abs();
@@ -59,38 +65,32 @@ fn should_filter_refs(mode: u8, log2_size: u8) -> bool {
 
 /// Strong intra smoothing flag (ITU-T H.265 Section 8.4.4.2.3).
 /// Applied for 32x32 blocks when the reference samples are relatively smooth.
+///
+/// Uses the endpoint test from the HEVC spec: checks if the midpoint of each
+/// reference array deviates significantly from the bilinear interpolation
+/// between the corner and the far endpoint (at index 2*nT).
+///
+/// Ref: libde265 v1.0.18 intrapred.h lines 217-222.
 fn use_strong_smoothing(refs: &RefSamples, size: usize, strong_enabled: bool) -> bool {
     if !strong_enabled || size != 32 {
         return false;
     }
-    // Check if reference samples are "smooth" — bilinear interpolation threshold
-    let top_left = refs.top_left as i32;
-    let top_right = refs.top[size - 1] as i32;
-    let bottom_left = refs.left[size - 1] as i32;
+    let threshold = 1i32 << (refs.bit_depth - 5);
+    let p0 = refs.top_left as i32;
 
-    let threshold = 1 << (refs.bit_depth - 5);
+    // Check top reference: abs(topLeft + top[2*nT-1] - 2*top[nT-1])
+    // Ref: libde265 v1.0.18 intrapred.h line 220 — abs(p[0]+p[64]-2*p[32])
+    let top_end = refs.top[2 * size - 1] as i32;
+    let top_mid = refs.top[size - 1] as i32;
+    let top_smooth = (p0 + top_end - 2 * top_mid).abs() < threshold;
 
-    let top_diff: i32 = (0..size)
-        .map(|i| {
-            let expected =
-                ((size - 1 - i) as i32 * top_left + (i + 1) as i32 * top_right + size as i32 / 2)
-                    / size as i32;
-            (refs.top[i] as i32 - expected).abs()
-        })
-        .max()
-        .unwrap_or(0);
+    // Check left reference: abs(topLeft + left[2*nT-1] - 2*left[nT-1])
+    // Ref: libde265 v1.0.18 intrapred.h line 221 — abs(p[0]+p[-64]-2*p[-32])
+    let left_end = refs.left[2 * size - 1] as i32;
+    let left_mid = refs.left[size - 1] as i32;
+    let left_smooth = (p0 + left_end - 2 * left_mid).abs() < threshold;
 
-    let left_diff: i32 = (0..size)
-        .map(|i| {
-            let expected =
-                ((size - 1 - i) as i32 * top_left + (i + 1) as i32 * bottom_left + size as i32 / 2)
-                    / size as i32;
-            (refs.left[i] as i32 - expected).abs()
-        })
-        .max()
-        .unwrap_or(0);
-
-    top_diff < threshold && left_diff < threshold
+    top_smooth && left_smooth
 }
 
 /// Reference samples gathered from neighboring reconstructed pixels.
@@ -210,22 +210,34 @@ impl RefSamples {
     }
 
     /// Apply strong intra smoothing (bilinear interpolation for 32x32).
+    ///
+    /// Interpolates between top_left and the FAR endpoints (at index 2*nT-1),
+    /// using 6-bit precision: pF[i] = p[0] + ((i * (p[2*nT] - p[0]) + 32) >> 6).
+    ///
+    /// Ref: libde265 v1.0.18 intrapred.h lines 227-235.
     pub fn strong_smooth(&self, size: usize) -> Self {
         let mut smoothed = self.clone();
-        let tl = self.top_left as i32;
-        let tr = self.top[size - 1] as i32;
-        let bl = self.left[size - 1] as i32;
+        let p0 = self.top_left as i32;
+        // Use the far endpoint at 2*size-1 (not size-1)
+        let top_far = self.top[2 * size - 1] as i32;
+        let left_far = self.left[2 * size - 1] as i32;
+        let n = 2 * size; // Total interpolation range (64 for nT=32)
 
-        for i in 0..size {
-            smoothed.top[i] = (((size - 1 - i) as i32 * tl + (i + 1) as i32 * tr + size as i32 / 2)
-                / size as i32)
-                .clamp(0, 255) as u8;
-            smoothed.left[i] = (((size - 1 - i) as i32 * tl
-                + (i + 1) as i32 * bl
-                + size as i32 / 2)
-                / size as i32)
-                .clamp(0, 255) as u8;
+        // Interpolate top and left using the exact libde265 formula:
+        // pF[i] = p[0] + ((i * (p[2*nT] - p[0]) + 32) >> 6)
+        // where i goes from 1 to 63 (for nT=32), and the shift is always 6.
+        // Ref: libde265 v1.0.18 intrapred.h lines 232-235.
+        for i in 1..n {
+            smoothed.top[i - 1] =
+                (p0 + ((i as i32 * (top_far - p0) + 32) >> 6)).clamp(0, 255) as u8;
         }
+        smoothed.top[n - 1] = top_far as u8;
+
+        for i in 1..n {
+            smoothed.left[i - 1] =
+                (p0 + ((i as i32 * (left_far - p0) + 32) >> 6)).clamp(0, 255) as u8;
+        }
+        smoothed.left[n - 1] = left_far as u8;
 
         smoothed
     }
@@ -376,6 +388,27 @@ fn predict_angular(mode: u8, refs: &RefSamples, size: usize) -> Vec<u8> {
                     }
                 }
             }
+        }
+    }
+
+    // Boundary smoothing for pure vertical (mode 26) and pure horizontal (mode 10).
+    // These modes copy reference samples directly, so the boundary between the
+    // predicted block and the perpendicular reference can be harsh. The spec
+    // applies a smoothing filter to the first column (mode 26) or first row (mode 10).
+    // Only for block sizes < 32.
+    // Ref: libde265 v1.0.18 intrapred.cc lines 379-382 (mode 26),
+    //      libde265 v1.0.18 intrapred.cc lines 417-420 (mode 10).
+    if mode == 26 && size < 32 {
+        // Vertical mode: smooth first column using left reference
+        for y in 0..size {
+            let val = refs.top[0] as i32 + ((refs.left[y] as i32 - refs.top_left as i32) >> 1);
+            pred[y * size] = val.clamp(0, 255) as u8;
+        }
+    } else if mode == 10 && size < 32 {
+        // Horizontal mode: smooth first row using top reference
+        for x in 0..size {
+            let val = refs.left[0] as i32 + ((refs.top[x] as i32 - refs.top_left as i32) >> 1);
+            pred[x] = val.clamp(0, 255) as u8;
         }
     }
 
