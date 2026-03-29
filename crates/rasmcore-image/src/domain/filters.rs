@@ -1943,6 +1943,17 @@ pub fn morph_blackhat(
 
 // ─── Non-Local Means Denoising ────────────────────────────────────────────
 
+/// NLM algorithm variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NlmAlgorithm {
+    /// Match OpenCV's `fastNlMeansDenoising` — self-pixel weight = max(other weights),
+    /// weight = exp(-SSD / (N * h²)). Default.
+    #[default]
+    OpenCv,
+    /// Classic Buades et al. 2005 — uniform weighting including self-pixel.
+    Classic,
+}
+
 /// Non-local means denoising parameters.
 #[derive(Debug, Clone, Copy)]
 pub struct NlmParams {
@@ -1952,6 +1963,8 @@ pub struct NlmParams {
     pub patch_size: u32,
     /// Search window size (must be odd). Default: 21.
     pub search_size: u32,
+    /// Algorithm variant. Default: OpenCv (matches cv2.fastNlMeansDenoising).
+    pub algorithm: NlmAlgorithm,
 }
 
 impl Default for NlmParams {
@@ -1960,6 +1973,7 @@ impl Default for NlmParams {
             h: 10.0,
             patch_size: 7,
             search_size: 21,
+            algorithm: NlmAlgorithm::OpenCv,
         }
     }
 }
@@ -1967,9 +1981,15 @@ impl Default for NlmParams {
 /// Non-local means denoising for grayscale images.
 ///
 /// For each pixel, computes a weighted average of all pixels in the search
-/// window, where weights depend on patch similarity (Gaussian-weighted SSD).
+/// window, where weights depend on patch similarity.
 ///
-/// Reference: Buades et al., "A Non-Local Algorithm for Image Denoising" (2005).
+/// With `NlmAlgorithm::OpenCv` (default): matches `cv2.fastNlMeansDenoising`.
+/// The self-pixel weight is set to `max(other_weights)` instead of `exp(0)=1`,
+/// preventing the reference pixel from dominating the average.
+///
+/// With `NlmAlgorithm::Classic`: standard Buades et al. 2005 formulation.
+///
+/// Weight formula: `exp(-SSD / (patch_area * h²))`.
 pub fn nlm_denoise(
     pixels: &[u8],
     info: &ImageInfo,
@@ -1984,10 +2004,11 @@ pub fn nlm_denoise(
     let h = info.height as usize;
     let ps = params.patch_size as usize;
     let ss = params.search_size as usize;
-    let pr = ps / 2; // patch radius
-    let sr = ss / 2; // search radius
+    let pr = ps / 2;
+    let sr = ss / 2;
     let h2 = params.h * params.h;
     let patch_area = (ps * ps) as f32;
+    let opencv_mode = params.algorithm == NlmAlgorithm::OpenCv;
 
     let mut out = vec![0u8; w * h];
 
@@ -1995,8 +2016,8 @@ pub fn nlm_denoise(
         for x in 0..w {
             let mut weight_sum: f32 = 0.0;
             let mut pixel_sum: f32 = 0.0;
+            let mut max_weight: f32 = 0.0;
 
-            // Search window
             let sy_start = (y as i32 - sr as i32).max(0) as usize;
             let sy_end = (y + sr + 1).min(h);
             let sx_start = (x as i32 - sr as i32).max(0) as usize;
@@ -2004,22 +2025,48 @@ pub fn nlm_denoise(
 
             for sy in sy_start..sy_end {
                 for sx in sx_start..sx_end {
-                    // Compute patch SSD
+                    // Skip self-pixel in OpenCV mode (add it separately)
+                    if opencv_mode && sy == y && sx == x {
+                        continue;
+                    }
+
                     let mut ssd: f32 = 0.0;
                     for py in 0..ps {
-                        for px in 0..ps {
-                            let y1 = reflect101(y as isize + py as isize - pr as isize, h as isize) as usize;
-                            let x1 = reflect101(x as isize + px as isize - pr as isize, w as isize) as usize;
-                            let y2 = reflect101(sy as isize + py as isize - pr as isize, h as isize) as usize;
-                            let x2 = reflect101(sx as isize + px as isize - pr as isize, w as isize) as usize;
+                        for ppx in 0..ps {
+                            let y1 = reflect101(
+                                y as isize + py as isize - pr as isize,
+                                h as isize,
+                            ) as usize;
+                            let x1 = reflect101(
+                                x as isize + ppx as isize - pr as isize,
+                                w as isize,
+                            ) as usize;
+                            let y2 = reflect101(
+                                sy as isize + py as isize - pr as isize,
+                                h as isize,
+                            ) as usize;
+                            let x2 = reflect101(
+                                sx as isize + ppx as isize - pr as isize,
+                                w as isize,
+                            ) as usize;
                             let d = pixels[y1 * w + x1] as f32 - pixels[y2 * w + x2] as f32;
                             ssd += d * d;
                         }
                     }
                     let weight = (-ssd / (patch_area * h2)).exp();
+                    if opencv_mode && weight > max_weight {
+                        max_weight = weight;
+                    }
                     weight_sum += weight;
                     pixel_sum += weight * pixels[sy * w + sx] as f32;
                 }
+            }
+
+            // OpenCV mode: self-pixel gets max(other_weights) instead of exp(0)=1
+            if opencv_mode {
+                let self_weight = max_weight.max(f32::MIN_POSITIVE);
+                weight_sum += self_weight;
+                pixel_sum += self_weight * pixels[y * w + x] as f32;
             }
 
             out[y * w + x] = if weight_sum > 0.0 {
@@ -3572,6 +3619,7 @@ mod nlm_tests {
             h: 20.0,
             patch_size: 5,
             search_size: 11,
+            ..Default::default()
         };
         let result = nlm_denoise(&px, &info, &params).unwrap();
 

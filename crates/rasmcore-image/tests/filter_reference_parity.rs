@@ -561,6 +561,7 @@ fn nlm_denoise_matches_opencv() {
         h: 20.0,
         patch_size: 7,
         search_size: 21,
+        ..Default::default() // OpenCv algorithm (matches cv2.fastNlMeansDenoising)
     };
     let ours = filters::nlm_denoise(&input, &info, &params).unwrap();
 
