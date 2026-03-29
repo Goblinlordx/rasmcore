@@ -2330,6 +2330,83 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-filter-advanced"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filter-alpha"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filter-color"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filter-edge"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filter-enhance"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filter-histogram"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filter-spatial"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "libblur",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-filters-std"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-filter-advanced",
+ "rasmcore-filter-alpha",
+ "rasmcore-filter-color",
+ "rasmcore-filter-edge",
+ "rasmcore-filter-enhance",
+ "rasmcore-filter-histogram",
+ "rasmcore-filter-spatial",
+]
+
+[[package]]
 name = "rasmcore-fits"
 version = "0.1.0"
 

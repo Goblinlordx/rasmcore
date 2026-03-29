@@ -1,0 +1,12 @@
+[package]
+name = "rasmcore-filter-spatial"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Spatial filters for rasmcore: blur, sharpen, convolve, median"
+
+[dependencies]
+rasmcore-macros = { path = "../rasmcore-macros" }
+rasmcore-image = { path = "../rasmcore-image" }
+inventory = "0.3"
+libblur = "0.15"

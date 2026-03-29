@@ -9,6 +9,7 @@ pub mod decoder;
 pub mod encoder;
 pub mod error;
 pub mod filter_registry;
+pub mod filter_utils;
 pub mod filters;
 pub mod histogram;
 pub mod inpainting;
