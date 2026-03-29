@@ -1,0 +1,15 @@
+id: vignette-effect_20260329172426Z
+title: Vignette Effect — Radial Gradient Multiply
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Radial vignette darkening effect validated against ImageMagick.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}

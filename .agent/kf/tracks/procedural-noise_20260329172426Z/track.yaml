@@ -1,0 +1,15 @@
+id: procedural-noise_20260329172426Z
+title: Procedural Noise — Perlin and Simplex Generation
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Deterministic noise generation with statistical validation.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}

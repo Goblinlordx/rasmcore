@@ -1,0 +1,15 @@
+id: displacement-map_20260329172426Z
+title: Displacement Map — Pixel Warping by Vector Field
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Pixel warping by dx/dy map validated against OpenCV remap.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}

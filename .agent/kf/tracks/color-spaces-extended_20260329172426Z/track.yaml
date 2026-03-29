@@ -1,0 +1,15 @@
+id: color-spaces-extended_20260329172426Z
+title: ProPhoto RGB and Adobe RGB Color Space Conversions
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Professional color spaces validated against colour-science 0.4.7.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}

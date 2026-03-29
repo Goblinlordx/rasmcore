@@ -1,0 +1,15 @@
+id: radial-blur_20260329172426Z
+title: Radial Zoom Blur — Radial Motion from Center Point
+type: feature
+status: pending
+created: '2026-03-29'
+updated: '2026-03-29'
+spec:
+  summary: Zoom blur effect validated against ImageMagick radial-blur.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
