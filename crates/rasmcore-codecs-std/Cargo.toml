@@ -1,0 +1,21 @@
+[package]
+name = "rasmcore-codecs-std"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "All standard rasmcore codecs — meta-crate pulling in all free codecs"
+
+[dependencies]
+rasmcore-codec-png = { path = "../rasmcore-codec-png" }
+rasmcore-codec-jpeg = { path = "../rasmcore-codec-jpeg" }
+rasmcore-codec-webp = { path = "../rasmcore-codec-webp" }
+rasmcore-codec-gif = { path = "../rasmcore-codec-gif" }
+rasmcore-codec-tiff = { path = "../rasmcore-codec-tiff" }
+rasmcore-codec-avif = { path = "../rasmcore-codec-avif" }
+rasmcore-codec-bmp = { path = "../rasmcore-codec-bmp" }
+rasmcore-codec-ico = { path = "../rasmcore-codec-ico" }
+rasmcore-codec-qoi = { path = "../rasmcore-codec-qoi" }
+rasmcore-codec-jxl = { path = "../rasmcore-codec-jxl" }
+rasmcore-codec-jp2 = { path = "../rasmcore-codec-jp2" }
+rasmcore-codec-svg = { path = "../rasmcore-codec-svg" }
+rasmcore-codec-fits = { path = "../rasmcore-codec-fits" }

@@ -1,0 +1,10 @@
+[package]
+name = "rasmcore-codec-ico"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+rasmcore-macros = { path = "../rasmcore-macros" }
+rasmcore-image = { path = "../rasmcore-image" }
+inventory = "0.3"

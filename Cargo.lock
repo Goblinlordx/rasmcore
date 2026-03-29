@@ -2315,6 +2315,142 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-codec-avif"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-bmp"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-fits"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-gif"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-ico"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-jp2"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-jpeg"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-jxl"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-png"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-qoi"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-svg"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-tiff"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codec-webp"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-image",
+ "rasmcore-macros",
+]
+
+[[package]]
+name = "rasmcore-codecs-std"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-codec-avif",
+ "rasmcore-codec-bmp",
+ "rasmcore-codec-fits",
+ "rasmcore-codec-gif",
+ "rasmcore-codec-ico",
+ "rasmcore-codec-jp2",
+ "rasmcore-codec-jpeg",
+ "rasmcore-codec-jxl",
+ "rasmcore-codec-png",
+ "rasmcore-codec-qoi",
+ "rasmcore-codec-svg",
+ "rasmcore-codec-tiff",
+ "rasmcore-codec-webp",
+]
+
+[[package]]
 name = "rasmcore-color"
 version = "0.1.0"
 
