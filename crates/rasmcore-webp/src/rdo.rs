@@ -246,23 +246,18 @@ pub fn rd_cost(ssd: u64, bits_256: u32, lambda: f64) -> f64 {
 
 /// VP8 I16x16 mode header cost.
 ///
-/// libwebp VP8FixedCostsI16[4] = {663, 919, 872, 919} in token-tree bit cost scale.
-/// Our estimate_block_bits returns costs in 256-scaled units (256 = 1 bit).
-/// These values are scaled to match our rate estimation.
+/// VP8 I16x16 mode header cost — exact from libwebp cost_enc.c line 105.
+/// Scale: 256 units = 1 bit (same as VP8EntropyCost and estimate_block_bits).
 ///
-/// TODO: When VP8GetCostLuma16 is ported (Track 3), switch to libwebp's exact
-/// cost scale and use VP8FixedCostsI16 directly.
+/// Includes VP8BitCost(1, 145) = 312 for the is_i16 flag.
+/// Index: DC=0, TM=1, V=2, H=3.
 pub fn mode_header_cost_16x16(mode: u8) -> u32 {
-    // Scaled from libwebp: VP8FixedCostsI16[mode] / 4 to match our 256-unit scale
-    // DC=663/4≈166, TM=919/4≈230, V=872/4≈218, H=919/4≈230
-    match mode {
-        0 => 166, // DC (cheapest)
-        1 => 230, // TM
-        2 => 218, // V
-        3 => 230, // H
-        _ => 256, // B_PRED header
-    }
+    const VP8_FIXED_COSTS_I16: [u32; 4] = [663, 919, 872, 919];
+    VP8_FIXED_COSTS_I16[mode.min(3) as usize]
 }
+
+/// VP8 UV mode header cost — exact from libwebp cost_enc.c line 103.
+pub const VP8_FIXED_COSTS_UV: [u32; 4] = [302, 984, 439, 642];
 
 /// VP8 B_PRED 4x4 mode header cost (from RFC 6386 Section 11.3).
 /// Returns cost in 256-scaled units.
