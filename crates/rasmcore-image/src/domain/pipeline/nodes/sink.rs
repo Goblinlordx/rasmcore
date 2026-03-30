@@ -168,8 +168,7 @@ pub fn write_ico(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageEr
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
-    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
-    encoder::ico::encode(&img, &info, &encoder::ico::IcoEncodeConfig)
+    encoder::ico::encode_pixels(&pixels, &info, &encoder::ico::IcoEncodeConfig)
 }
 
 /// Write a node's output as QOI.

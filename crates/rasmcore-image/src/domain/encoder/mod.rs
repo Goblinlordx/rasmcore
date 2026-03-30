@@ -3,6 +3,7 @@ pub mod bmp;
 pub mod dds;
 pub mod fits;
 pub mod gif;
+pub mod hdr;
 pub mod heic;
 pub mod ico;
 pub mod jp2;
@@ -111,10 +112,7 @@ pub fn encode(
             let img = pixels_to_dynamic_image(pixels, info)?;
             bmp::encode(&img, info, &bmp::BmpEncodeConfig)
         }
-        "ico" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            ico::encode(&img, info, &ico::IcoEncodeConfig)
-        }
+        "ico" => ico::encode_pixels(pixels, info, &ico::IcoEncodeConfig),
         #[cfg(feature = "native-qoi")]
         "qoi" => native_trivial::encode_qoi(pixels, info),
         #[cfg(not(feature = "native-qoi"))]
@@ -129,11 +127,7 @@ pub fn encode(
             let img = pixels_to_dynamic_image(pixels, info)?;
             encode_via_image_format(&img, image::ImageFormat::Tga)
         }
-        "hdr" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            let rgb32f = DynamicImage::ImageRgb32F(img.to_rgb32f());
-            encode_via_image_format(&rgb32f, image::ImageFormat::Hdr)
-        }
+        "hdr" => hdr::encode_pixels(pixels, info, &hdr::HdrEncodeConfig),
         #[cfg(feature = "native-pnm")]
         "pnm" | "ppm" | "pgm" | "pbm" => native_trivial::encode_pnm(pixels, info),
         #[cfg(not(feature = "native-pnm"))]

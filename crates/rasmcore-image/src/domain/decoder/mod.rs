@@ -70,6 +70,14 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     {
         return Some("ico".to_string());
     }
+    // HDR (Radiance RGBE)
+    if header.len() >= 10 && (header.starts_with(b"#?RADIANCE") || header.starts_with(b"#?RGBE")) {
+        return Some("hdr".to_string());
+    }
+    // EXR (OpenEXR magic)
+    if header.len() >= 4 && header[..4] == [0x76, 0x2F, 0x31, 0x01] {
+        return Some("exr".to_string());
+    }
     image::guess_format(header)
         .ok()
         .and_then(|fmt| format_to_str(fmt))
@@ -278,6 +286,21 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if data.len() >= 4 && &data[..4] == [0x44, 0x44, 0x53, 0x20] {
         // DDS magic: "DDS " (0x44445320)
         return decode_dds_native(data);
+    }
+
+    // ICO — extract embedded PNG and decode it
+    if data.len() >= 6
+        && data[0] == 0
+        && data[1] == 0
+        && (data[2] == 1 || data[2] == 2)
+        && data[3] == 0
+    {
+        return decode_native_ico(data);
+    }
+
+    // HDR (Radiance RGBE) — magic "#?RADIANCE" or "#?RGBE"
+    if data.len() >= 10 && (data.starts_with(b"#?RADIANCE") || data.starts_with(b"#?RGBE")) {
+        return decode_native_hdr(data);
     }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
@@ -1137,6 +1160,131 @@ fn decode_native_gif(data: &[u8]) -> Result<DecodedImage, ImageError> {
             width: screen_width,
             height: screen_height,
             format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+/// Decode ICO by extracting the first embedded PNG image.
+///
+/// ICO format: 6-byte header + 16-byte directory entries + image data.
+/// We extract the first entry and decode it (PNG-in-ICO is the modern standard).
+fn decode_native_ico(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    if data.len() < 22 {
+        return Err(ImageError::InvalidInput("ICO: file too short".into()));
+    }
+    let count = u16::from_le_bytes([data[4], data[5]]) as usize;
+    if count == 0 {
+        return Err(ImageError::InvalidInput("ICO: no entries".into()));
+    }
+
+    // Read first directory entry (16 bytes at offset 6)
+    let entry_offset = 6;
+    let image_size = u32::from_le_bytes([
+        data[entry_offset + 8],
+        data[entry_offset + 9],
+        data[entry_offset + 10],
+        data[entry_offset + 11],
+    ]) as usize;
+    let image_offset = u32::from_le_bytes([
+        data[entry_offset + 12],
+        data[entry_offset + 13],
+        data[entry_offset + 14],
+        data[entry_offset + 15],
+    ]) as usize;
+
+    if image_offset + image_size > data.len() {
+        return Err(ImageError::InvalidInput(
+            "ICO: image data out of bounds".into(),
+        ));
+    }
+
+    let image_data = &data[image_offset..image_offset + image_size];
+
+    // Check if it's a PNG (modern ICO) or BMP (legacy ICO)
+    if image_data.len() >= 8 && &image_data[..4] == &[0x89, 0x50, 0x4E, 0x47] {
+        // PNG embedded — decode directly
+        decode(image_data)
+    } else {
+        Err(ImageError::UnsupportedFormat(
+            "ICO: only PNG-in-ICO is supported (BMP-in-ICO not implemented)".into(),
+        ))
+    }
+}
+
+/// Decode Radiance HDR (.hdr) format to RGB8.
+///
+/// Parses the header for dimensions, reads RGBE scanlines,
+/// and converts to 8-bit sRGB output.
+fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let text = std::str::from_utf8(data)
+        .map_err(|_| ImageError::InvalidInput("HDR: invalid UTF-8 header".into()))?;
+
+    // Find the resolution line after the blank line
+    let mut width = 0u32;
+    let mut height = 0u32;
+    let mut data_start = 0;
+
+    for (i, line) in text.lines().enumerate() {
+        if line.starts_with("-Y ") || line.starts_with("+Y ") {
+            // Parse resolution: "-Y height +X width" or "+Y height +X width"
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 {
+                height = parts[1]
+                    .parse()
+                    .map_err(|_| ImageError::InvalidInput("HDR: bad height".into()))?;
+                width = parts[3]
+                    .parse()
+                    .map_err(|_| ImageError::InvalidInput("HDR: bad width".into()))?;
+            }
+            // Data starts after this line
+            data_start = text[..].find(line).unwrap() + line.len() + 1;
+            break;
+        }
+    }
+
+    if width == 0 || height == 0 {
+        return Err(ImageError::InvalidInput(
+            "HDR: no resolution line found".into(),
+        ));
+    }
+
+    let pixel_data = &data[data_start..];
+    let npixels = (width * height) as usize;
+    let mut pixels = Vec::with_capacity(npixels * 3);
+
+    // Read RGBE pixels (4 bytes each, uncompressed)
+    for i in 0..npixels {
+        let offset = i * 4;
+        if offset + 4 > pixel_data.len() {
+            // Pad remaining with black
+            pixels.extend_from_slice(&[0, 0, 0]);
+            continue;
+        }
+        let r = pixel_data[offset];
+        let g = pixel_data[offset + 1];
+        let b = pixel_data[offset + 2];
+        let e = pixel_data[offset + 3] as i32;
+
+        if e == 0 {
+            pixels.extend_from_slice(&[0, 0, 0]);
+        } else {
+            // RGBE → linear: channel * 2^(e-128-8)
+            let scale = 2.0f32.powi(e - 128 - 8);
+            let rf = (r as f32 * scale * 255.0).round().clamp(0.0, 255.0) as u8;
+            let gf = (g as f32 * scale * 255.0).round().clamp(0.0, 255.0) as u8;
+            let bf = (b as f32 * scale * 255.0).round().clamp(0.0, 255.0) as u8;
+            pixels.extend_from_slice(&[rf, gf, bf]);
+        }
+    }
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width,
+            height,
+            format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         },
         icc_profile: None,
