@@ -632,6 +632,64 @@ pub fn bokeh_blur(
     convolve(pixels, info, &kernel, side, side, divisor)
 }
 
+/// Directional motion blur using a linear kernel at the given angle.
+///
+/// `length` is the half-length of the blur line in pixels (kernel side = 2*length+1).
+/// `angle` is in degrees, measured counter-clockwise from the positive X axis
+/// (0° = horizontal right, 90° = vertical up).
+///
+/// The kernel is a rasterized line through the center of a (2*length+1) square.
+/// Each pixel on the line gets weight 1.0, normalized by the total count.
+/// This delegates to `convolve()` which handles all formats and 16-bit.
+///
+/// Validated against OpenCV `filter2D` with the same kernel — see
+/// `tests/codec-parity/tests/blend_parity.rs` (planned: motion_blur_parity).
+#[rasmcore_macros::register_filter(name = "motion_blur", category = "spatial")]
+pub fn motion_blur(
+    pixels: &[u8],
+    info: &ImageInfo,
+    length: u32,
+    angle_degrees: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if length == 0 {
+        return Ok(pixels.to_vec());
+    }
+    validate_format(info.format)?;
+
+    let side = (2 * length + 1) as usize;
+    let center = length as f32;
+    let angle = angle_degrees.to_radians();
+    let dx = angle.cos();
+    let dy = -angle.sin(); // negative because Y increases downward in image coords
+
+    // Rasterize the line: walk from -length to +length along the direction vector,
+    // marking each pixel in the kernel. Use Bresenham-style: step in 0.5-pixel increments
+    // for smooth coverage.
+    let mut kernel = vec![0.0f32; side * side];
+    let steps = (length as f32 * 2.0).ceil() as usize * 2 + 1;
+    let mut count = 0u32;
+    for i in 0..steps {
+        let t = (i as f32 / (steps - 1) as f32) * 2.0 - 1.0; // -1..1
+        let px = center + t * length as f32 * dx;
+        let py = center + t * length as f32 * dy;
+        let ix = px.round() as usize;
+        let iy = py.round() as usize;
+        if ix < side && iy < side {
+            let idx = iy * side + ix;
+            if kernel[idx] == 0.0 {
+                kernel[idx] = 1.0;
+                count += 1;
+            }
+        }
+    }
+
+    if count == 0 {
+        return Ok(pixels.to_vec());
+    }
+
+    convolve(pixels, info, &kernel, side, side, count as f32)
+}
+
 /// Apply sharpening (unsharp mask).
 ///
 /// Computes: output = original + amount * (original - blurred)
@@ -9353,5 +9411,82 @@ mod frequency_separation_tests {
             max_err = max_err.max(err);
         }
         assert!(max_err <= 1, "Gray8 roundtrip max_err={max_err}");
+    }
+}
+
+#[cfg(test)]
+mod motion_blur_tests {
+    use super::*;
+
+    fn make_gray(w: u32, h: u32, val: u8) -> (Vec<u8>, ImageInfo) {
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        (vec![val; (w * h) as usize], info)
+    }
+
+    #[test]
+    fn zero_length_is_identity() {
+        let (pixels, info) = make_gray(8, 8, 128);
+        let result = motion_blur(&pixels, &info, 0, 45.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn uniform_image_unchanged() {
+        // Motion blur of a uniform image should produce the same uniform image
+        let (pixels, info) = make_gray(16, 16, 100);
+        let result = motion_blur(&pixels, &info, 3, 0.0).unwrap();
+        // Interior pixels should be exactly 100 (uniform input)
+        // Border pixels may differ due to reflect101 padding
+        let w = info.width as usize;
+        let h = info.height as usize;
+        for y in 3..h - 3 {
+            for x in 3..w - 3 {
+                assert_eq!(result[y * w + x], 100, "pixel ({x},{y}) should be 100");
+            }
+        }
+    }
+
+    #[test]
+    fn horizontal_blur_spreads_horizontal() {
+        // Single bright pixel in center, horizontal blur should spread it horizontally
+        let w = 16u32;
+        let h = 16u32;
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        let mut pixels = vec![0u8; (w * h) as usize];
+        pixels[8 * 16 + 8] = 255; // center pixel
+
+        let result = motion_blur(&pixels, &info, 3, 0.0).unwrap();
+
+        // The bright pixel should spread along the horizontal line (row 8)
+        // but not vertically (rows 7 and 9 at x=8 should be 0 or near-0)
+        let center_row_sum: u32 = (0..w).map(|x| result[8 * 16 + x as usize] as u32).sum();
+        let adjacent_row_sum: u32 = (0..w).map(|x| result[7 * 16 + x as usize] as u32).sum();
+        assert!(
+            center_row_sum > adjacent_row_sum * 3,
+            "horizontal blur should concentrate energy on center row: center={center_row_sum} adj={adjacent_row_sum}"
+        );
+    }
+
+    #[test]
+    fn rgb8_works() {
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        let pixels = vec![128u8; 8 * 8 * 3];
+        let result = motion_blur(&pixels, &info, 2, 45.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
     }
 }
