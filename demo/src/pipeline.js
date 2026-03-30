@@ -411,6 +411,11 @@ worker.onmessage = (e) => {
 
     setProcessing(false);
 
+    // Show Before/After button once we have a result to compare
+    if (e.data.mode === 'full' && compareBtn) {
+      compareBtn.style.display = '';
+    }
+
     // Drain single-slot queue
     if (queuedRequest) {
       const next = queuedRequest;
@@ -854,14 +859,16 @@ function schedulePreview() {
 }
 
 function previewEditing() {
-  if (!imageBytes || editingNodeId === null) return;
+  const layer = activeLayer();
+  if (!layer?.imageBytes || editingNodeId === null) return;
   requestWorker({ type: 'process', chain: serializeChain(), mode: 'thumb' });
 }
 
 // ─── Full Processing (on Apply) ─────────────────────────────────────────────
 
 function applyFullChain() {
-  if (!imageBytes) return;
+  const layer = activeLayer();
+  if (!layer?.imageBytes) return;
   requestWorker({ type: 'process', chain: serializeChain(), mode: 'full' });
 }
 
