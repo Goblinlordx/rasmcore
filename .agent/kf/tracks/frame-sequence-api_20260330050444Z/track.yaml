@@ -1,0 +1,152 @@
+id: frame-sequence-api_20260330050444Z
+title: "Frame-Aware Pipeline — Source, Sink, Picking, and Sequence Type"
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Extend the pipeline graph with frame-aware source/sink nodes so that
+    multi-frame images (GIF, WebP, TIFF) stream through the existing filter
+    chain. Frame picking, range selection, and sequence collection are source/
+    sink configuration — existing filter nodes are unchanged.
+  context: |
+    The multi-frame read API (frame_count, decode_frame, decode_all_frames)
+    exists in the domain layer but is disconnected from the pipeline graph.
+    Users want to express operations like "load GIF, pick frame 3, sharpen,
+    encode as PNG" or "load GIF, apply blur to all frames, encode as animated
+    GIF" as a single pipeline graph rather than manual frame loops.
+
+    The libvips approach (tall-strip stacking) is elegant but causes spatial
+    filter bleed across frame boundaries. Instead, frame awareness lives at the
+    graph edges: FrameSource selects/emits frames, existing nodes process each
+    frame unchanged, FrameSink collects results into a FrameSequence.
+  codebase_analysis: |
+    PIPELINE (pipeline/graph.rs):
+      - ImageNode trait: info(), compute_region(), overlap(), access_pattern()
+      - NodeGraph: Vec<Box<dyn ImageNode>> + SpatialCache
+      - Demand-driven: sink requests region -> pulls through filter chain -> source provides
+      - Single-image only — one pass through the graph per execution
+
+    EXISTING SOURCE NODES:
+      - SourceNode in pipeline/graph.rs wraps a DecodedImage
+      - Provides pixels via compute_region(), no frame awareness
+
+    MULTI-FRAME DECODER API (decoder/mod.rs):
+      - frame_count(data) -> Result<u32>
+      - decode_frame(data, index) -> Result<(DecodedImage, FrameInfo)>
+      - decode_all_frames(data) -> Result<Vec<(DecodedImage, FrameInfo)>>
+
+    FRAME TYPES (types.rs):
+      - FrameInfo { index, delay_ms, disposal, width, height, x_offset, y_offset }
+      - DisposalMethod { None, Background, Previous }
+
+    WIT INTERFACE:
+      - decoder.wit: detect-format, decode, decode-as, supported-formats
+      - No frame types, no frame functions, no pipeline frame awareness
+      - adapter/mod.rs: to_wit_image_info, to_wit_pixel_format helpers
+
+    KEY DESIGN DECISION:
+      Frame awareness at the edges only. FrameSource emits frames one at a time,
+      the executor loops, existing filter nodes process each frame as a normal
+      image, FrameSink collects (DecodedImage, FrameInfo) pairs. No changes to
+      any filter node.
+  acceptance_criteria:
+    - FrameSelection enum with Single, Pick, Range, All variants
+    - FrameSource node that wraps multi-frame decode with frame selection
+    - FrameSequence domain type with canvas dimensions and ordered frames
+    - Pipeline executor sequence mode that loops over selected frames
+    - Single(N) selection produces a single DecodedImage (not a sequence)
+    - Pick/Range/All selection produces a FrameSequence via FrameSink
+    - Existing single-image pipeline behavior unchanged (backward compat)
+    - WIT types for frame-info, disposal-method, frame-selection
+    - WIT functions for frame-count, decode-frame, decode-all-frames
+    - Adapter wiring for all new WIT functions
+  out_of_scope: |
+    Multi-frame encoding (separate track multiframe-encode).
+    Animation playback/compositing/rendering.
+    Multi-source composition (interleaving frames from different files).
+    Custom timing overrides on FrameSelection (future FrameSelection variant).
+    Animated WebP decode in pipeline (can be added later to FrameSource).
+  technical_notes: |
+    New types in types.rs:
+      pub enum FrameSelection {
+          Single(u32),
+          Pick(Vec<u32>),
+          Range(u32, u32),  // start..end exclusive
+          All,
+      }
+
+      pub struct FrameSequence {
+          pub frames: Vec<(DecodedImage, FrameInfo)>,
+          pub canvas_width: u32,
+          pub canvas_height: u32,
+      }
+
+    FrameSource node (pipeline/frame_source.rs):
+      - Wraps raw image bytes + FrameSelection
+      - On each executor iteration, yields the next selected frame
+      - Implements ImageNode: info() returns current frame's ImageInfo
+      - compute_region() returns current frame's pixels for the requested region
+
+    Executor sequence mode (pipeline/graph.rs):
+      - NodeGraph::execute_sequence(source, selection) -> FrameSequence
+      - For each selected frame index:
+        1. FrameSource loads frame via decode_frame(data, idx)
+        2. Graph runs one full pass (existing demand-driven pull)
+        3. Sink captures (result_pixels, FrameInfo) into FrameSequence
+      - Single mode: just calls execute() as today, returns DecodedImage
+
+    WIT additions:
+      - decoder.wit: frame-info record, disposal-method enum,
+        frame-count, decode-frame, decode-all-frames functions
+      - pipeline.wit: frame-selection variant, execute-sequence function
+      - adapter wiring follows existing to_wit_*/to_domain_* pattern
+plan:
+  - phase: Domain Types
+    tasks:
+      - text: "Add FrameSelection enum to types.rs (Single, Pick, Range, All)"
+        done: false
+      - text: "Add FrameSequence struct to types.rs with frames vec and canvas dimensions"
+        done: false
+      - text: "Add FrameSequence constructors: new(), push_frame(), from_decoded()"
+        done: false
+  - phase: Pipeline Frame Source
+    tasks:
+      - text: "Create pipeline/frame_source.rs with FrameSourceNode"
+        done: false
+      - text: "FrameSourceNode holds raw data + FrameSelection, yields frames on iteration"
+        done: false
+      - text: "Implement ImageNode trait for FrameSourceNode (delegates to current frame)"
+        done: false
+  - phase: Pipeline Executor Sequence Mode
+    tasks:
+      - text: "Add NodeGraph::execute_sequence() that loops over selected frames"
+        done: false
+      - text: "Each iteration: FrameSource advances frame, graph runs, sink captures"
+        done: false
+      - text: "Single(N) mode returns DecodedImage directly (no FrameSequence wrapper)"
+        done: false
+  - phase: WIT Interface and Adapter
+    tasks:
+      - text: "Add disposal-method enum and frame-info record to decoder.wit"
+        done: false
+      - text: "Add frame-count, decode-frame, decode-all-frames to decoder.wit"
+        done: false
+      - text: "Add frame-selection and execute-sequence to pipeline.wit"
+        done: false
+      - text: "Wire adapter functions with to_wit_frame_info, to_domain_frame_selection"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "Test single-frame pick: source(gif, Single(3)) -> sharpen -> produces one image"
+        done: false
+      - text: "Test all-frames: source(gif, All) -> blur -> produces FrameSequence with 3 frames"
+        done: false
+      - text: "Test range: source(gif, Range(0,2)) -> produces 2-frame sequence"
+        done: false
+      - text: "Test backward compat: existing single-image pipeline unchanged"
+        done: false
+      - text: "cargo build with WIT codegen succeeds"
+        done: false
+extra: {}
