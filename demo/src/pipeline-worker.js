@@ -135,10 +135,17 @@ function exportImage(chain, format, quality) {
       node = pipe[step.name](node, ...args);
     }
 
-    let output, mime;
-    if (format === 'jpeg') { output = pipe.writeJpeg(node, { quality }, undefined); mime = 'image/jpeg'; }
-    else if (format === 'webp') { output = pipe.writeWebp(node, { quality }, undefined); mime = 'image/webp'; }
-    else { output = pipe.writePng(node, {}, undefined); mime = 'image/png'; }
+    // Use generic write() for all formats — supports all 17 backend formats
+    const MIME_MAP = {
+      jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+      tiff: 'image/tiff', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',
+      qoi: 'application/octet-stream', heic: 'image/heic', tga: 'application/octet-stream',
+      hdr: 'application/octet-stream', pnm: 'application/octet-stream',
+      exr: 'application/octet-stream', dds: 'application/octet-stream',
+      jp2: 'image/jp2', fits: 'application/octet-stream',
+    };
+    const output = pipe.write(node, format, quality > 0 ? quality : undefined, undefined);
+    const mime = MIME_MAP[format] || 'application/octet-stream';
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'exported', data: buf, mime, format }, [buf]);

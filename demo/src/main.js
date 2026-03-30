@@ -19,6 +19,24 @@ try {
   Pipeline = sdk.pipeline.ImagePipeline;
   statusEl.textContent = 'SDK ready';
   statusEl.style.color = '#4ade80';
+
+  // Auto-discover export formats from the WASM backend
+  try {
+    const writeFormats = sdk.pipeline.supportedWriteFormats();
+    const formatSelect = document.getElementById('export-format');
+    if (writeFormats && writeFormats.length > 0) {
+      formatSelect.innerHTML = '';
+      for (const fmt of writeFormats) {
+        const opt = document.createElement('option');
+        opt.value = fmt;
+        opt.textContent = fmt.toUpperCase();
+        if (fmt === 'jpeg') opt.selected = true;
+        formatSelect.appendChild(opt);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not auto-discover write formats:', e.message);
+  }
 } catch (e) {
   statusEl.textContent = `SDK failed: ${e.message}`;
   statusEl.style.color = '#f87171';
@@ -222,19 +240,17 @@ document.getElementById('download-btn').addEventListener('click', () => {
     node = pipe.resize(node, resizeWidth, Math.round(imageHeight * ratio), 'lanczos3');
   }
 
-  // Encode in selected format
-  let outputBytes;
-  let mimeType;
-  if (format === 'jpeg') {
-    outputBytes = pipe.writeJpeg(node, { quality }, undefined);
-    mimeType = 'image/jpeg';
-  } else if (format === 'webp') {
-    outputBytes = pipe.writeWebp(node, { quality }, undefined);
-    mimeType = 'image/webp';
-  } else {
-    outputBytes = pipe.writePng(node, {}, undefined);
-    mimeType = 'image/png';
-  }
+  // Encode in selected format using generic write() — supports all backend formats
+  const MIME_MAP = {
+    jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+    tiff: 'image/tiff', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',
+    qoi: 'application/octet-stream', heic: 'image/heic', tga: 'application/octet-stream',
+    hdr: 'application/octet-stream', pnm: 'application/octet-stream',
+    exr: 'application/octet-stream', dds: 'application/octet-stream',
+    jp2: 'image/jp2', fits: 'application/octet-stream',
+  };
+  const outputBytes = pipe.write(node, format, quality > 0 ? quality : undefined, undefined);
+  const mimeType = MIME_MAP[format] || 'application/octet-stream';
 
   // Trigger download
   const blob = new Blob([outputBytes], { type: mimeType });

@@ -198,6 +198,7 @@ const worker = new Worker(new URL('./pipeline-worker.js', import.meta.url), { ty
 let workerReady = false;
 let isProcessing = false;
 let queuedRequest = null; // Single-slot queue: latest pending request
+let imageInfo = null;     // { width, height } from loaded image
 
 worker.postMessage({ type: 'init' });
 
