@@ -867,7 +867,7 @@ fn has_tool(name: &str) -> bool {
 #[test]
 fn parity_shrink_on_load_psnr() {
     // Scaled JPEG decode should produce PSNR > 40dB vs full decode + Lanczos resize
-    let fixture = fixtures_dir().join("photo_256x256.jpeg");
+    let fixture = fixtures_dir().join("inputs/photo_256x256.jpeg");
     if !fixture.exists() {
         eprintln!("Skipping shrink-on-load parity: fixture not found");
         return;
@@ -932,7 +932,7 @@ fn parity_smart_resize_vs_imagemagick() {
         eprintln!("Skipping ImageMagick parity: magick not found");
         return;
     }
-    let fixture = fixtures_dir().join("photo_256x256.jpeg");
+    let fixture = fixtures_dir().join("inputs/photo_256x256.jpeg");
     if !fixture.exists() {
         eprintln!("Skipping: fixture not found");
         return;

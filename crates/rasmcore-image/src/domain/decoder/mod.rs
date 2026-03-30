@@ -246,6 +246,14 @@ fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// applies a residual Lanczos3 resize to hit the exact target.
 ///
 /// For non-JPEG input, decodes normally then resizes.
+///
+/// # Implementation note
+///
+/// The DCT-domain downscaling uses LL&M-based reduced IDCT butterflies,
+/// which are algorithmically equivalent to but not pixel-identical with
+/// libjpeg-turbo's iSlow reduced IDCT (used by ImageMagick). Typical
+/// divergence vs ImageMagick is ~35dB PSNR — visually indistinguishable
+/// for thumbnailing. See `dct.rs` for detailed divergence analysis.
 pub fn smart_resize(
     data: &[u8],
     target_w: u32,
