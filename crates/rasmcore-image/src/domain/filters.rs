@@ -495,6 +495,74 @@ pub struct FloodFillParams {
     pub connectivity: u32,
 }
 
+/// Parameters for gamma correction.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct GammaParams {
+    /// Gamma value (>1 brightens, <1 darkens)
+    #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
+    pub gamma_value: f32,
+}
+
+/// Parameters for posterize.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct PosterizeParams {
+    /// Number of discrete levels per channel
+    #[param(min = 2, max = 255, step = 1, default = 8)]
+    pub levels: u8,
+}
+
+/// Parameters for flatten (alpha compositing onto background).
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct FlattenParams {
+    /// Background red component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub bg_r: u8,
+    /// Background green component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub bg_g: u8,
+    /// Background blue component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub bg_b: u8,
+}
+
+/// Parameters for color quantization.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct QuantizeParams {
+    /// Maximum number of palette colors
+    #[param(min = 2, max = 256, step = 1, default = 256)]
+    pub max_colors: u32,
+}
+
+/// Parameters for Floyd-Steinberg dithering.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DitherFSParams {
+    /// Maximum number of palette colors
+    #[param(min = 2, max = 256, step = 1, default = 256)]
+    pub max_colors: u32,
+}
+
+/// Parameters for ordered (Bayer) dithering.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DitherOrderedParams {
+    /// Maximum number of palette colors
+    #[param(min = 2, max = 256, step = 1, default = 256)]
+    pub max_colors: u32,
+    /// Bayer matrix size (2, 4, 8, or 16)
+    #[param(min = 2, max = 16, step = 2, default = 4)]
+    pub map_size: u32,
+}
+
+/// Parameters for white balance temperature adjustment.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct WhiteBalanceTemperatureParams {
+    /// Color temperature in Kelvin
+    #[param(min = 2000.0, max = 12000.0, step = 100.0, default = 6500.0)]
+    pub temperature: f32,
+    /// Tint adjustment
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub tint: f32,
+}
+
 /// Apply gaussian blur using libblur (SIMD-optimized).
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on
@@ -5969,6 +6037,146 @@ pub fn flood_fill_registered(
         connectivity,
     )?;
     Ok(result)
+}
+
+// ─── Core Filter Registrations (point ops, histogram, threshold, color) ─────
+//
+// These wrappers register existing functions through #[register_filter] so they
+// appear in param-manifest.json and are discoverable by WASM consumers / SDK.
+
+/// Gamma correction (user-facing, LUT-collapsible).
+#[rasmcore_macros::register_filter(name = "gamma", category = "adjustment")]
+pub fn gamma_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    gamma_value: f32,
+) -> Result<Vec<u8>, ImageError> {
+    super::point_ops::gamma(pixels, info, gamma_value)
+}
+
+/// Invert / negate all channels (user-facing, LUT-collapsible).
+#[rasmcore_macros::register_filter(name = "invert", category = "adjustment")]
+pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    super::point_ops::invert(pixels, info)
+}
+
+/// Posterize to N discrete levels per channel (user-facing, LUT-collapsible).
+#[rasmcore_macros::register_filter(name = "posterize", category = "adjustment")]
+pub fn posterize_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    levels: u8,
+) -> Result<Vec<u8>, ImageError> {
+    super::point_ops::posterize(pixels, info, levels)
+}
+
+/// Histogram equalization — maximize contrast via CDF remapping.
+#[rasmcore_macros::register_filter(name = "equalize", category = "enhancement")]
+pub fn equalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    super::histogram::equalize(pixels, info)
+}
+
+/// Normalize — linear contrast stretch with 2% black/1% white clipping.
+#[rasmcore_macros::register_filter(name = "normalize", category = "enhancement")]
+pub fn normalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    super::histogram::normalize(pixels, info)
+}
+
+/// Auto-level — linear stretch from actual min to actual max (no clipping).
+#[rasmcore_macros::register_filter(name = "auto_level", category = "enhancement")]
+pub fn auto_level_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    super::histogram::auto_level(pixels, info)
+}
+
+/// Otsu auto-threshold — compute optimal threshold then binarize.
+#[rasmcore_macros::register_filter(name = "otsu_threshold", category = "threshold")]
+pub fn otsu_threshold_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let t = otsu_threshold(pixels, info)?;
+    threshold_binary(pixels, info, t, 255)
+}
+
+/// Triangle auto-threshold — compute optimal threshold then binarize.
+#[rasmcore_macros::register_filter(name = "triangle_threshold", category = "threshold")]
+pub fn triangle_threshold_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
+    let t = triangle_threshold(pixels, info)?;
+    threshold_binary(pixels, info, t, 255)
+}
+
+/// Convert to grayscale using BT.709 weights.
+#[rasmcore_macros::register_filter(name = "grayscale", category = "color")]
+pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let decoded = grayscale(pixels, info)?;
+    Ok(decoded.pixels)
+}
+
+/// Flatten RGBA to RGB by compositing onto a solid background color.
+#[rasmcore_macros::register_filter(name = "flatten", category = "alpha")]
+pub fn flatten_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    bg_r: u8,
+    bg_g: u8,
+    bg_b: u8,
+) -> Result<Vec<u8>, ImageError> {
+    let (rgb, _info) = flatten(pixels, info, [bg_r, bg_g, bg_b])?;
+    Ok(rgb)
+}
+
+/// Color quantization via median-cut palette reduction.
+#[rasmcore_macros::register_filter(name = "quantize", category = "color")]
+pub fn quantize_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    max_colors: u32,
+) -> Result<Vec<u8>, ImageError> {
+    let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
+    super::quantize::quantize(pixels, info, &palette)
+}
+
+/// Floyd-Steinberg error-diffusion dithering with median-cut palette.
+#[rasmcore_macros::register_filter(name = "dither_floyd_steinberg", category = "color")]
+pub fn dither_floyd_steinberg_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    max_colors: u32,
+) -> Result<Vec<u8>, ImageError> {
+    let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
+    super::quantize::dither_floyd_steinberg(pixels, info, &palette)
+}
+
+/// Ordered (Bayer) dithering with median-cut palette.
+#[rasmcore_macros::register_filter(name = "dither_ordered", category = "color")]
+pub fn dither_ordered_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    max_colors: u32,
+    map_size: u32,
+) -> Result<Vec<u8>, ImageError> {
+    let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
+    super::quantize::dither_ordered(pixels, info, &palette, map_size as usize)
+}
+
+/// Gray world white balance — equalize channel averages.
+#[rasmcore_macros::register_filter(name = "white_balance_gray_world", category = "color")]
+pub fn white_balance_gray_world_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
+    super::color_spaces::white_balance_gray_world(pixels, info)
+}
+
+/// Temperature-based white balance adjustment.
+#[rasmcore_macros::register_filter(name = "white_balance_temperature", category = "color")]
+pub fn white_balance_temperature_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    temperature: f32,
+    tint: f32,
+) -> Result<Vec<u8>, ImageError> {
+    super::color_spaces::white_balance_temperature(pixels, info, temperature as f64, tint as f64)
 }
 
 // ─── Procedural Noise Generation ────────────────────────────────────────────
