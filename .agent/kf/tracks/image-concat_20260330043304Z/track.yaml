@@ -5,71 +5,86 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Add image concatenation operations — horizontal append, vertical append,
-    and grid layout — matching libvips arrayjoin and IM append functionality.
-  context: |
-    libvips has arrayjoin (grid layout), join (2 images), and insert.
+  summary: 'Add image concatenation operations — horizontal append, vertical append, and grid layout — matching libvips arrayjoin
+    and IM append functionality.
+
+    '
+  context: 'libvips has arrayjoin (grid layout), join (2 images), and insert.
+
     ImageMagick has append (+append / -append) and montage.
+
     rasmcore has no way to combine multiple images side-by-side or in grids.
+
     This is useful for comparison views, contact sheets, sprite sheets, and
+
     before/after layouts.
-  codebase_analysis: |
-    No concatenation functions exist in the codebase. Related code:
+
+    '
+  codebase_analysis: 'No concatenation functions exist in the codebase. Related code:
+
     - pad() in transform.rs adds borders — could reuse for spacing
+
     - alpha_composite_over() places one image on another — different use case
+
     - Pipeline is single-image: nodes process one image at a time
 
+
     For grid layout, need to handle:
+
     - Images of different sizes (resize to match, or pad with background)
+
     - Configurable gap/spacing between images
+
     - Background fill color for gaps and size mismatches
 
+
     These are multi-image operations that take Vec<DecodedImage> as input.
+
     Can be implemented as standalone functions in transform.rs.
+
+    '
   acceptance_criteria:
-    - concat_horizontal(images, gap, bg_color) joins images left-to-right
-    - concat_vertical(images, gap, bg_color) joins images top-to-bottom
-    - concat_grid(images, columns, gap, bg_color) arranges in grid with N columns
-    - Handles images of different sizes (scales to match tallest/widest)
-    - Configurable gap size and background color
-    - All functions exposed through domain API
-  out_of_scope: |
-    Filter registration (multi-image ops need pipeline multi-input).
+  - concat_horizontal(images, gap, bg_color) joins images left-to-right
+  - concat_vertical(images, gap, bg_color) joins images top-to-bottom
+  - concat_grid(images, columns, gap, bg_color) arranges in grid with N columns
+  - Handles images of different sizes (scales to match tallest/widest)
+  - Configurable gap size and background color
+  - All functions exposed through domain API
+  out_of_scope: 'Filter registration (multi-image ops need pipeline multi-input).
+
     Montage with labels/captions. Sprite sheet with metadata output.
+
     Complex layouts (only horizontal, vertical, and grid).
-  technical_notes: |
-    Implementation in transform.rs or new domain/concat.rs:
-    - concat_horizontal: calculate total width, max height, allocate output,
-      copy each image at appropriate x offset, pad shorter images with bg
-    - concat_vertical: similar but stack vertically
-    - concat_grid: calculate columns x rows, cell size = max(w) x max(h),
-      copy each image centered in its cell
-    For size mismatch: resize smaller images to match cell dimensions using
-    existing resize() function, or pad with background color.
+
+    '
+  technical_notes: "Implementation in transform.rs or new domain/concat.rs:\n- concat_horizontal: calculate total width, max\
+    \ height, allocate output,\n  copy each image at appropriate x offset, pad shorter images with bg\n- concat_vertical:\
+    \ similar but stack vertically\n- concat_grid: calculate columns x rows, cell size = max(w) x max(h),\n  copy each image\
+    \ centered in its cell\nFor size mismatch: resize smaller images to match cell dimensions using\nexisting resize() function,\
+    \ or pad with background color.\n"
 plan:
-  - phase: Core Operations
-    tasks:
-      - text: "Implement concat_horizontal with gap and bg_color support"
-        done: false
-      - text: "Implement concat_vertical with gap and bg_color support"
-        done: false
-      - text: "Implement concat_grid with columns, gap, and bg_color"
-        done: false
-  - phase: Size Handling
-    tasks:
-      - text: "Handle different-size images via padding (center in cell)"
-        done: false
-      - text: "Support optional resize-to-fit mode (scale to match cell)"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "Test horizontal concat with 3 same-size images"
-        done: false
-      - text: "Test vertical concat with different-height images"
-        done: false
-      - text: "Test grid layout with 6 images in 3-column grid"
-        done: false
-      - text: "Test gap and background color rendering"
-        done: false
+- phase: Core Operations
+  tasks:
+  - text: Implement concat_horizontal with gap and bg_color support
+    done: true
+  - text: Implement concat_vertical with gap and bg_color support
+    done: true
+  - text: Implement concat_grid with columns, gap, and bg_color
+    done: true
+- phase: Size Handling
+  tasks:
+  - text: Handle different-size images via padding (center in cell)
+    done: true
+  - text: Support optional resize-to-fit mode (scale to match cell)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test horizontal concat with 3 same-size images
+    done: true
+  - text: Test vertical concat with different-height images
+    done: true
+  - text: Test grid layout with 6 images in 3-column grid
+    done: true
+  - text: Test gap and background color rendering
+    done: true
 extra: {}
