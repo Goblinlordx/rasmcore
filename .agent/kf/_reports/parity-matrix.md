@@ -1,6 +1,6 @@
 # Feature Parity Matrix — rasmcore vs libvips vs ImageMagick
 
-> Living document. Updated: 2026-03-28
+> Living document. Updated: 2026-03-30
 > Each row is a potential implementation track.
 
 ## Legend
@@ -25,27 +25,31 @@
 | Format | rasmcore | libvips | ImageMagick | Priority | Notes |
 |--------|----------|---------|-------------|----------|-------|
 | PNG | done | R/W | R/W | - | Via `image` crate |
-| JPEG | done | R/W | R/W | - | Via `image` crate |
-| GIF | done | R/W | R/W | - | Decode only, no animation |
-| WebP | done | R/W | R/W | - | Via `image` crate |
-| BMP | done | via magick | R/W | - | Via `image` crate |
-| TIFF | done | R/W | R/W | - | Via `image` crate |
+| JPEG | done | R/W | R/W | - | Native (rasmcore-jpeg) + `image` crate |
+| GIF | done | R/W | R/W | - | Static only, no animation |
+| WebP | done | R/W | R/W | - | Via `image-webp` crate |
+| BMP | done | via magick | R/W | - | Native (rasmcore-bmp) |
+| TIFF | done | R/W | R/W | - | Via `tiff` crate |
 | AVIF | done | R/W (via HEIF) | R/W | - | Via `image` crate |
-| QOI | done | - | - | - | Unique to rasmcore |
+| QOI | done | - | - | - | Native (rasmcore-qoi). Unique to rasmcore |
 | ICO | done | via magick | R/W | - | Via `image` crate |
-| HEIF/HEIC | - | R/W | R/W | P1 | Needed for Apple ecosystem |
-| JPEG XL (JXL) | - | R/W | R/W | P1 | Modern replacement for JPEG |
-| SVG | - | R (librsvg) | R/W | P2 | Rasterization only |
-| PDF | - | R (poppler) | R/W | P2 | Page rasterization |
-| PSD | - | via magick | R/W | P3 | Photoshop files |
-| EXR | - | R | R/W | P3 | HDR/VFX |
-| Raw (CR2, NEF, ARW) | - | R (libraw) | R | P3 | Camera raw |
-| PPM/PGM/PBM | - | R/W | R/W | P3 | Simple interchange |
-| JPEG 2000 | - | R/W | R/W | P3 | Medical/satellite imaging |
-| TGA | - | via magick | R/W | P3 | Legacy game art |
-| HDR (Radiance) | - | R/W | R/W | P3 | HDR imaging |
+| TGA | done | via magick | R/W | - | Native (rasmcore-tga) |
+| HDR/Radiance | done | R/W | R/W | - | Via `image` crate |
+| PNM (PPM/PGM/PBM/PAM) | done | R/W | R/W | - | Native (rasmcore-pnm) |
+| OpenEXR | done | R | R/W | - | Via `exr` crate |
+| DDS | done | via magick | R/W | - | Native encoder/decoder |
+| JPEG XL (JXL) | done | R/W | - | - | Via `jxl-oxide` (pure Rust) |
+| JPEG 2000 (JP2) | done | R/W | R/W | - | Via `justjp2` (pure Rust) |
+| HEIF/HEIC | done | R/W | R/W | - | Feature-gated (nonfree-hevc) |
+| FITS | done | R/W | R/W | - | Native (rasmcore-fits) |
+| SVG | done | R (librsvg) | R/W | - | Via `resvg` (pure Rust rasterizer) |
+| Animated GIF | partial | R/W | R/W | P1 | First frame only; no multi-frame |
+| Animated WebP | partial | R/W | R/W | P1 | First frame only; no multi-frame |
+| PSD | - | via magick | R/W | P2 | Photoshop files |
+| PDF | - | R (poppler) | R/W | P2 | Document format, different domain |
+| Raw (CR2, NEF, ARW) | - | R (libraw) | R | P3 | No pure Rust decoder |
 
-**Summary:** 9/20+ decode formats. Missing P1: HEIF, JXL.
+**Summary:** 18/24 decode formats fully implemented. Only animation and niche formats remain.
 
 ---
 
@@ -53,20 +57,26 @@
 
 | Format | rasmcore | libvips | ImageMagick | Priority | Notes |
 |--------|----------|---------|-------------|----------|-------|
-| PNG | done | R/W | R/W | - | Per-format config in progress |
-| JPEG | done | R/W | R/W | - | Per-format config in progress |
-| WebP | done | R/W | R/W | - | Per-format config in progress |
-| GIF | - | R/W | R/W | P0 | Very common output format |
-| TIFF | - | R/W | R/W | P1 | Publishing, scanning, GIS |
-| AVIF | - | R/W | R/W | P1 | Modern web format, great compression |
-| HEIF/HEIC | - | R/W | R/W | P1 | Apple ecosystem |
-| JPEG XL (JXL) | - | R/W | R/W | P1 | Modern replacement, progressive |
-| BMP | - | via magick | R/W | P3 | Legacy |
-| ICO | - | via magick | R/W | P3 | Favicon generation |
-| SVG | - | - | R/W | P3 | Vector output |
-| PDF | - | via magick | R/W | P3 | Document output |
+| PNG | done | R/W | R/W | - | Via `image` crate |
+| JPEG | done | R/W | R/W | - | Native (rasmcore-jpeg) |
+| WebP | done | R/W | R/W | - | Native (rasmcore-webp, lossy+lossless) |
+| GIF | done | R/W | R/W | - | Via `image` crate + NeuQuant |
+| TIFF | done | R/W | R/W | - | Via `tiff` crate (LZW/Deflate/PackBits) |
+| AVIF | done | R/W | R/W | - | Via `image` crate (rav1e backend) |
+| BMP | done | via magick | R/W | - | Native (rasmcore-bmp) |
+| ICO | done | via magick | R/W | - | Via `image` crate |
+| QOI | done | - | - | - | Native (rasmcore-qoi). Unique to rasmcore |
+| TGA | done | via magick | R/W | - | Native (rasmcore-tga) |
+| HDR/Radiance | done | R/W | R/W | - | Native encoder |
+| PNM | done | R/W | R/W | - | Native (rasmcore-pnm) |
+| OpenEXR | done | - | R/W | - | Via `exr` crate |
+| DDS | done | via magick | R/W | - | Native encoder |
+| JPEG 2000 (JP2) | done | R/W | R/W | - | Via `justjp2` |
+| FITS | done | R/W | R/W | - | Native (rasmcore-fits) |
+| HEIF/HEIC | done | R/W | R/W | - | Feature-gated (nonfree-hevc) |
+| JPEG XL (JXL) | partial | R/W | - | P1 | Decode done; encode scaffold only |
 
-**Summary:** 3/12+ encode formats. Missing P0: GIF. Missing P1: TIFF, AVIF, HEIF, JXL.
+**Summary:** 16/18 encode formats fully implemented. Only JXL encode scaffold remains.
 
 ---
 
@@ -83,9 +93,9 @@
 | MKS 2013/2021 | - | yes | - | P3 | Magic Kernel Sharp |
 | Nohalo | - | yes | - | P3 | Edge-preserving |
 | Shrink-on-load | - | yes (JPEG/TIFF/JP2K) | yes (JPEG) | P1 | Major perf optimization |
-| Thumbnail (smart) | - | yes | yes | P1 | Resize+crop in one step |
+| Thumbnail (smart) | done | yes | yes | - | smart_crop in content_aware.rs |
 
-**Summary:** 4/10 resize algorithms. Missing P1: shrink-on-load, smart thumbnail.
+**Summary:** 5/10 resize algorithms. Missing P1: shrink-on-load.
 
 ---
 
@@ -93,55 +103,126 @@
 
 | Operation | rasmcore | libvips | ImageMagick | Priority | Notes |
 |-----------|----------|---------|-------------|----------|-------|
-| Resize | done | yes | yes | - | |
+| Resize | done | yes | yes | - | fast_image_resize (SIMD) |
 | Crop (extract area) | done | yes | yes | - | |
-| Rotate 90/180/270 | done | yes (rot) | yes | - | |
+| Rotate 90/180/270 | done | yes (rot) | yes | - | 8x8 block transpose |
 | Flip H/V | done | yes | yes (flip/flop) | - | |
 | Pixel format convert | done | yes | yes | - | |
-| Arbitrary rotation | - | yes (rotate) | yes (rotate) | P1 | Any angle, with background fill |
-| Affine transform | - | yes (affine) | yes (affine) | P2 | General 2D transform matrix |
-| Smart crop | - | yes (smartcrop) | yes (trim) | P1 | Content-aware crop |
-| Embed/extend (pad) | - | yes (embed) | yes (extent) | P1 | Add borders/padding |
-| Auto-orient (EXIF) | - | yes (autorot) | yes (auto-orient) | P0 | Rotate based on EXIF |
-| Shear | - | yes (via affine) | yes (shear) | P3 | |
-| Perspective/distort | - | - | yes (distort) | P3 | |
-| Liquid rescale | - | - | yes (liquid-rescale) | P3 | Seam carving |
-| Trim/autocrop | - | yes (find_trim) | yes (trim) | P2 | Remove uniform borders |
+| Auto-orient (EXIF) | done | yes (autorot) | yes (auto-orient) | - | auto_orient + auto_orient_from_exif |
+| Arbitrary rotation | done | yes (rotate) | yes (rotate) | - | rotate_arbitrary with bilinear interp |
+| Embed/extend (pad) | done | yes (embed) | yes (extent) | - | pad(top, left, bottom, right, fill) |
+| Trim/autocrop | done | yes (find_trim) | yes (trim) | - | trim with threshold |
+| Affine transform | done | yes (affine) | yes (affine) | - | 2x3 matrix |
+| Lens undistort | done | - | - | - | OpenCV-compatible distortion correction |
+| Smart crop | done | yes (smartcrop) | yes (trim) | - | Content-aware crop (smart_crop.rs) |
+| Seam carve (width) | done | - | yes (liquid-rescale) | - | Content-aware resize |
+| Seam carve (height) | done | - | yes (liquid-rescale) | - | Content-aware resize |
+| Shear | - | yes (via affine) | yes (shear) | P3 | Can be done via affine transform |
+| Perspective/distort | done | - | yes (distort) | - | perspective_warp (3x3 homography) |
 
-**Summary:** 5/14 geometric ops. Missing P0: auto-orient. Missing P1: arbitrary rotation, smart crop, embed/pad.
+**Summary:** 14/16 geometric ops. Only shear missing (P3, achievable via existing affine).
 
 ---
 
 ## 5. Filters & Effects
 
-| Operation | rasmcore | libvips | ImageMagick | Priority | Notes |
-|-----------|----------|---------|-------------|----------|-------|
-| Gaussian blur | done | yes (gaussblur) | yes (gaussian) | - | |
-| Sharpen (unsharp mask) | done | yes (sharpen) | yes (unsharp) | - | |
-| Brightness adjust | done | yes (linear) | yes (brightness) | - | |
-| Contrast adjust | done | yes (linear) | yes (contrast) | - | |
-| Grayscale | done | yes (colourspace) | yes (colorspace) | - | |
-| Gamma correction | - | yes (gamma) | yes (gamma) | P1 | Essential color tool |
-| Levels/curves | - | yes (maplut) | yes (level) | P1 | Tone mapping |
-| Invert/negate | - | yes (invert) | yes (negate) | P1 | Simple but essential |
-| Histogram equalize | - | yes (hist_equal) | yes (equalize) | P1 | Auto-contrast |
-| CLAHE (local contrast) | - | yes (hist_local) | yes (CLAHE) | P2 | Adaptive local contrast |
-| Canny edge detect | - | yes (canny) | yes (canny) | P2 | |
-| Sobel edge detect | - | yes (sobel) | yes (edge) | P2 | |
-| Median filter | - | yes (median/rank) | yes (median) | P2 | Noise reduction |
-| Custom convolution | - | yes (conv) | yes (convolve) | P2 | User-defined kernels |
-| Morphology (erode/dilate) | - | yes (morph) | yes (morphology) | P2 | |
-| Threshold (binary) | - | yes (threshold) | yes (threshold) | P1 | Binary image creation |
-| Posterize | - | - | yes (posterize) | P3 | Reduce color levels |
-| Solarize | - | - | yes (solarize) | P3 | |
-| Oil paint | - | - | yes (oil-paint) | P3 | Artistic |
-| Charcoal | - | - | yes (charcoal) | P3 | Artistic |
-| Emboss | - | yes (via conv) | yes (emboss) | P3 | |
-| Vignette | - | - | yes (vignette) | P3 | |
-| Motion blur | - | - | yes (motion-blur) | P3 | |
-| Noise generation | - | yes (gaussnoise) | yes (noise) | P3 | |
+### 5a. Registered Filters (49 total — visible to WASM/SDK/UI)
 
-**Summary:** 5/24 filters. Missing P1: gamma, levels, invert, histogram equalize, threshold.
+| Operation | rasmcore | libvips | ImageMagick | Category | Notes |
+|-----------|----------|---------|-------------|----------|-------|
+| Gaussian blur | done | yes (gaussblur) | yes (gaussian) | spatial | SIMD via libblur |
+| Bokeh blur | done | - | - | spatial | Disc/hex/octagon/star shapes |
+| Motion blur | done | - | yes (motion-blur) | spatial | Directional blur |
+| Zoom blur | done | - | - | spatial | Radial zoom from center |
+| Gaussian blur (OpenCV) | done | - | - | spatial | Separate sigma_x/sigma_y |
+| Sharpen (unsharp mask) | done | yes (sharpen) | yes (unsharp) | spatial | |
+| Convolve (custom kernel) | done | yes (conv) | yes (convolve) | spatial | |
+| Median filter | done | yes (median/rank) | yes (median) | spatial | Histogram-based |
+| Bilateral filter | done | yes (bilateral) | - | spatial | OpenCV parity (exact) |
+| Guided filter | done | - | - | spatial | He et al. 2010 |
+| Displacement map | done | - | yes (distort) | spatial | |
+| Brightness | done | yes (linear) | yes (brightness) | adjustment | LUT-collapsible |
+| Contrast | done | yes (linear) | yes (contrast) | adjustment | LUT-collapsible |
+| Hue rotate | done | yes (colourspace) | yes | color | HSV-based |
+| Saturate | done | yes (colourspace) | yes (modulate) | color | |
+| Sepia | done | - | yes (sepia-tone) | color | |
+| Colorize | done | - | yes (colorize) | color | |
+| Sobel edge | done | yes (sobel) | yes (edge) | edge | |
+| Scharr edge | done | - | - | edge | More accurate than Sobel |
+| Laplacian edge | done | - | yes (laplacian) | edge | |
+| Canny edge | done | yes (canny) | yes (canny) | edge | |
+| CLAHE | done | yes (hist_local) | yes (CLAHE) | enhancement | OpenCV parity (MAE < 0.5) |
+| Dehaze | done | - | - | enhancement | Dark channel prior |
+| Clarity | done | - | - | enhancement | Frequency separation |
+| Frequency low/high | done | - | - | enhancement | Gaussian decomposition |
+| Pyramid detail remap | done | - | - | enhancement | Laplacian pyramid |
+| Vignette (gaussian) | done | - | yes (vignette) | enhancement | |
+| Vignette (power-law) | done | - | - | enhancement | Alternative falloff |
+| Retinex SSR/MSR/MSRCR | done | - | - | enhancement | 3 variants |
+| NLM denoise | done | - | yes (non-local-means) | enhancement | |
+| Premultiply/unpremultiply | done | yes (premultiply) | - | alpha | |
+| Morphology (7 ops) | done | yes (morph) | yes (morphology) | morphology | Erode/dilate/open/close/gradient/tophat/blackhat |
+| Threshold binary | done | yes (threshold) | yes (threshold) | threshold | |
+| Adaptive threshold | done | - | yes (-adaptive-threshold) | threshold | Mean or Gaussian |
+| Perlin noise | done | yes (gaussnoise) | yes (+noise) | generator | |
+| Simplex noise | done | - | - | generator | |
+| Flood fill | done | yes (draw_flood) | yes (floodfill) | tool | |
+| Perspective warp | done | - | yes (distort) | advanced | 3x3 homography |
+| Perspective correct | done | - | - | advanced | |
+
+### 5b. Implemented But Unregistered (invisible to WASM/SDK/UI)
+
+These functions exist and are tested but lack `#[register_filter]` annotations. Tracked for registration in `register-filters-core` and `register-filters-pro` tracks.
+
+| Operation | Source File | Category | Notes |
+|-----------|-----------|----------|-------|
+| **gamma** | point_ops.rs | adjustment | LUT-collapsible |
+| **invert/negate** | point_ops.rs | adjustment | LUT-collapsible |
+| **posterize** | point_ops.rs | adjustment | LUT-collapsible |
+| **equalize** | histogram.rs | enhancement | Histogram equalization |
+| **normalize** | histogram.rs | enhancement | Contrast normalization |
+| **auto_level** | histogram.rs | enhancement | Auto contrast stretch |
+| **histogram_match** | histogram.rs | enhancement | Match target histogram |
+| **contrast_stretch** | histogram.rs | enhancement | |
+| **otsu_threshold** | filters.rs | threshold | Auto-compute + apply |
+| **triangle_threshold** | filters.rs | threshold | Auto-compute + apply |
+| **grayscale** | filters.rs | color | RGB to Gray8 |
+| **flatten** | filters.rs | alpha | Composite over solid bg |
+| **add_alpha / remove_alpha** | filters.rs | alpha | Channel manipulation |
+| **blend (16 modes)** | filters.rs | compositing | Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion, ColorDodge, ColorBurn, VividLight, LinearDodge, LinearBurn, LinearLight, PinLight |
+| **ASC CDL** | color_grading.rs | grading | Industry-standard color correction |
+| **lift/gamma/gain** | color_grading.rs | grading | Professional 3-way grading |
+| **split toning** | color_grading.rs | grading | Highlight/shadow tinting |
+| **curves** | color_grading.rs | grading | Spline-based tone curves |
+| **tonemap Reinhard** | color_grading.rs | tonemapping | HDR to SDR |
+| **tonemap Drago** | color_grading.rs | tonemapping | HDR to SDR |
+| **tonemap Filmic** | color_grading.rs | tonemapping | HDR to SDR |
+| **film grain** | color_grading.rs | effect | Procedural grain overlay |
+| **white balance (gray world)** | color_spaces.rs | color | Auto white balance |
+| **white balance (temperature)** | color_spaces.rs | color | Manual Kelvin/tint |
+| **quantize (median cut)** | quantize.rs | color | Color reduction |
+| **dither (Floyd-Steinberg)** | quantize.rs | color | Error diffusion |
+| **dither (ordered/Bayer)** | quantize.rs | color | Ordered dithering |
+| **smart_crop** | smart_crop.rs | transform | Content-aware crop |
+| **seam_carve (width/height)** | content_aware.rs | transform | Content-aware resize |
+| **selective_color** | content_aware.rs | color | Photoshop-style selective adjustment |
+| **inpaint** | inpainting.rs | tool | Multi-image (mask required) |
+| **alpha_composite_over** | composite.rs | compositing | Porter-Duff over |
+| **mertens_fusion** | filters.rs | HDR | Multi-image exposure fusion |
+| **debevec_hdr_merge** | filters.rs | HDR | Multi-image HDR recovery |
+
+**Total implemented operations: 49 registered + ~34 unregistered = 83+ filters/operations.**
+
+### 5c. Truly Missing Filters
+
+| Operation | libvips | ImageMagick | Priority | Notes |
+|-----------|---------|-------------|----------|-------|
+| Solarize | - | yes | P3 | Partial inversion above threshold |
+| Emboss | yes (via conv) | yes (emboss) | P3 | Achievable via existing convolve |
+| Oil paint | - | yes (oil-paint) | P3 | Artistic effect |
+| Charcoal/sketch | - | yes (charcoal) | P3 | Artistic effect |
+
+**Summary:** Only 4 truly missing filters, all P3 artistic effects.
 
 ---
 
@@ -149,21 +230,29 @@
 
 | Operation | rasmcore | libvips | ImageMagick | Priority | Notes |
 |-----------|----------|---------|-------------|----------|-------|
-| sRGB | done | yes | yes | - | Only color space supported |
-| ICC profile read | - | yes (icc_import) | yes | P0 | Correct color reproduction |
-| ICC profile embed | - | yes (icc_export) | yes | P0 | Output color accuracy |
-| ICC transform | - | yes (icc_transform) | yes | P1 | Device-to-device |
-| CMYK | - | yes | yes | P1 | Print workflows |
-| Lab (CIELAB) | - | yes | yes | P2 | Perceptual operations |
-| HSV/HSL | - | yes | yes | P2 | Intuitive color manipulation |
-| XYZ | - | yes | yes | P3 | Color science |
-| Linear sRGB (scRGB) | partial (type exists) | yes | yes | P1 | HDR, compositing |
-| Display P3 | partial (type exists) | yes | - | P2 | Wide gamut displays |
-| BT.709 / BT.2020 | partial (type exists) | yes | yes | P2 | Video color spaces |
-| Oklab/Oklch | - | yes | - | P2 | Modern perceptual space |
-| Color difference (dE) | - | yes (dE76/dE00) | - | P3 | Quality metrics |
+| sRGB | done | yes | yes | - | Default color space |
+| ICC profile extract (JPEG) | done | yes | yes | - | color.rs |
+| ICC profile extract (PNG) | done | yes | yes | - | color.rs |
+| ICC to sRGB transform | done | yes (icc_transform) | yes | - | icc_to_srgb() |
+| Lab (CIELAB) | done | yes | yes | - | rgb_to_lab / lab_to_rgb + image-level |
+| Oklab/Oklch | done | yes | - | - | Direct + via XYZ paths |
+| ProPhoto RGB | done | yes | yes | - | Bidirectional conversion |
+| Adobe RGB | done | yes | yes | - | Bidirectional conversion |
+| LCH | done | yes | yes | - | lab_to_lch / lch_to_lab |
+| Luv | done | yes | - | - | via XYZ |
+| XYZ | done | yes | yes | - | Via Lab/Oklab conversions |
+| Bradford chromatic adapt | done | yes | yes | - | Illuminant adaptation |
+| Delta E (76, 94, 2000) | done | yes (dE76/dE00) | - | - | All 3 standard metrics |
+| White balance (gray world) | done | - | - | - | Auto white balance |
+| White balance (temperature) | done | - | - | - | Kelvin + tint control |
+| 3D Color LUT | done | yes | yes | - | Compose, absorb 1D pre/post |
+| HSV/HSL | done | yes | yes | - | Via hue_rotate, saturate operations |
+| Linear sRGB | partial | yes | yes | P2 | Type exists, limited use |
+| Display P3 | partial | yes | - | P2 | Type exists, limited use |
+| BT.709 / BT.2020 | partial | yes | yes | P2 | Type exists, HEVC uses BT.709 |
+| CMYK (full pipeline) | - | yes | yes | P1 | Print workflows |
 
-**Summary:** 1/13 color ops. Missing P0: ICC read/embed. Missing P1: ICC transform, CMYK, linear sRGB.
+**Summary:** 17/21 color operations. Missing P1: full CMYK pipeline.
 
 ---
 
@@ -171,14 +260,14 @@
 
 | Operation | rasmcore | libvips | ImageMagick | Priority | Notes |
 |-----------|----------|---------|-------------|----------|-------|
-| Alpha composite (over) | - | yes | yes | P0 | Basic layer compositing |
-| Porter-Duff modes | - | yes (13 modes) | yes | P1 | Full compositing algebra |
-| Blend modes (multiply, screen, overlay...) | - | yes (11 modes) | yes (40+ modes) | P1 | Photo editing |
-| Watermark overlay | - | yes (composite) | yes (composite) | P1 | Common use case |
+| Alpha composite (over) | done | yes | yes | - | Porter-Duff over (composite.rs) |
+| Blend modes (16 modes) | done | yes (11 modes) | yes (40+ modes) | - | Multiply, Screen, Overlay, Darken, Lighten, SoftLight, HardLight, Difference, Exclusion, ColorDodge, ColorBurn, VividLight, LinearDodge, LinearBurn, LinearLight, PinLight |
+| Flatten (alpha over bg) | done | yes | yes | - | flatten() with bg_r/g/b |
+| Premultiply/unpremultiply | done | yes | - | - | Registered filters |
 | Image concatenation | - | yes (arrayjoin) | yes (append) | P2 | Side-by-side, grid |
 | Montage/contact sheet | - | - | yes (montage) | P3 | |
 
-**Summary:** 0/6 compositing ops. Missing P0: alpha composite.
+**Summary:** 4/6 compositing ops. rasmcore has 16 blend modes vs libvips 11.
 
 ---
 
@@ -190,10 +279,9 @@
 | Draw line | - | yes (draw_line) | yes | P2 | |
 | Draw circle | - | yes (draw_circle) | yes | P2 | |
 | Text rendering | - | yes (text) | yes (annotate) | P2 | |
-| Flood fill | - | yes (draw_flood) | yes (floodfill) | P3 | |
-| Bezier/path | - | - | yes (draw) | P3 | |
+| Flood fill | done | yes (draw_flood) | yes (floodfill) | - | Registered filter |
 
-**Summary:** 0/6 drawing ops. All P2-P3.
+**Summary:** 1/5 drawing ops. All missing are P2.
 
 ---
 
@@ -201,14 +289,15 @@
 
 | Operation | rasmcore | libvips | ImageMagick | Priority | Notes |
 |-----------|----------|---------|-------------|----------|-------|
-| EXIF read | - | yes | yes | P0 | Basic image metadata |
-| EXIF write/strip | - | yes | yes | P1 | Privacy, file size |
-| XMP read/write | - | - | yes | P3 | Extended metadata |
-| IPTC read/write | - | - | yes | P3 | News/stock photo |
-| Multi-page/frame read | - | yes | yes | P1 | TIFF pages, GIF frames |
-| Animation support | - | yes (GIF, WebP) | yes (GIF, WebP, APNG) | P2 | Animated images |
+| EXIF read | done | yes | yes | - | read_exif() + has_exif() |
+| EXIF write | done | yes | yes | - | write_exif() |
+| XMP read/write | done | - | yes | - | parse_xmp() + serialize_xmp() |
+| IPTC read/write | done | - | yes | - | parse_iptc() + serialize_iptc() |
+| MetadataSet (unified API) | done | - | - | - | metadata_read(), metadata_dump_json() |
+| Multi-page/frame read | - | yes | yes | P1 | TIFF pages, GIF/WebP frames |
+| Animation support | - | yes (GIF, WebP) | yes (GIF, WebP, APNG) | P1 | Research track created |
 
-**Summary:** 0/6 metadata ops. Missing P0: EXIF read.
+**Summary:** 5/7 metadata ops. Missing P1: multi-page/animation.
 
 ---
 
@@ -216,84 +305,90 @@
 
 | Capability | rasmcore | libvips | ImageMagick | Priority | Notes |
 |------------|----------|---------|-------------|----------|-------|
-| Streaming/scanline processing | - | yes (demand-driven) | - | P1 | Avoids full-image-in-memory |
-| SIMD acceleration | - | yes (Highway) | yes (OpenMP) | P2 | 3-4x speedup on filters |
-| Shrink-on-load (JPEG DCT) | - | yes | yes | P1 | Major perf for thumbnailing |
-| Thread pool | - | yes | yes (OpenMP) | P2 | Parallel tile processing |
-| Operation caching | - | yes | yes (pixel cache) | P3 | Avoid recomputation |
-| Chainable pipeline API | - | yes (method chaining) | yes (mogrify) | P1 | Ergonomic multi-op workflows |
+| Demand-driven tile pipeline | done | yes (demand-driven) | - | - | Pull-based with spatial cache |
+| SIMD acceleration | done | yes (Highway) | yes (OpenMP) | - | libblur, fast_image_resize, explicit WASM128 |
 | WASM Component Model | done | - | - | - | Unique advantage |
 | Multi-language SDKs | done | - | - | - | Via WIT bindings |
 | Small bundle size | done | - (15MB) | - (15MB) | - | Unique advantage |
-| No SharedArrayBuffer req | done | - (required) | done | - | Browser compatibility |
+| LUT fusion optimizer | done | - | - | - | Collapses consecutive per-pixel ops |
+| No-op filter elision | done | - | - | - | Skip identity-parameter filters |
+| Shrink-on-load (JPEG DCT) | - | yes | yes | P1 | Major perf for thumbnailing |
+| Thread pool | - | yes | yes (OpenMP) | P2 | Parallel tile processing |
 
 ---
 
-## Priority Summary
+## 11. ImageMagick Format Catalog Analysis
+
+ImageMagick claims ~260 format entries. The actual breakdown:
+
+| Category | Count | Examples | Relevance |
+|----------|-------|---------|-----------|
+| **Core raster** | ~12 | PNG, JPEG, WebP, GIF, TIFF, BMP, TGA, ICO | Must-have (all done in rasmcore) |
+| **Modern web** | ~6 | AVIF, HEIC, JXL, WebP, JP2, UltraHDR | Critical (5/6 done) |
+| **Professional** | ~12 | EXR, DPX, CIN, PSD, DDS, SGI, HDR | Niche but valued (4/12 done) |
+| **Camera RAW** | ~30 | CR2, NEF, ARW, DNG (all via libraw delegate) | All read-only, all C delegates |
+| **Scientific** | ~6 | FITS, DICOM, Analyze, VICAR | Niche (FITS done) |
+| **Legacy/historical** | ~30 | PCX, XPM, WBMP, Sun Raster, MacPaint, ZX Spectrum, PalmDB | Obsolete — skip |
+| **Vector/document** | ~10 | SVG, PDF, PS, EPS, AI | Different domain (SVG rasterize done) |
+| **Video containers** | ~10 | AVI, MP4, MOV (frame extraction via ffmpeg) | Not image formats |
+| **IM-internal/aliases** | ~60 | MIFF, MPC, PNG8/24/32/48/64, raw pixel dumps (RGB/RGBA/BGRA/CMYK/GRAY) | Not real formats |
+| **Pseudo-formats** | ~15 | xc:, gradient:, plasma:, label:, pattern: | Generators, not files |
+| **Output-only** | ~12 | HTML, JSON, YAML, Braille, fax, SIXEL | Serialization |
+| **Fonts** | ~5 | TTF, OTF (rasterize glyphs) | Not image formats |
+
+**Real distinct image formats: ~80-90.** Of those, ~30 are legacy/historical with near-zero demand.
+
+libvips supports ~25 format families natively (JPEG, PNG, WebP, GIF, TIFF, HEIC, AVIF, JXL, JP2, PPM, HDR, SVG, PDF, FITS, EXR, MATLAB, Analyze, Camera RAW via libraw, DeepZoom, OpenSlide, UltraHDR, CSV, VIPS native), falling back to IM for the rest.
+
+**rasmcore coverage: 20/26 meaningful Tier 1-3 format families.**
+
+---
+
+## Priority Summary (Updated 2026-03-30)
 
 ### P0 — Critical for Adoption
-1. **GIF encode** — Very common output format
-2. **Auto-orient (EXIF)** — Images display rotated without this
-3. **ICC profile read/embed** — Color accuracy for any serious use
-4. **Alpha composite (over)** — Basic layer compositing
-5. **EXIF metadata read** — Basic image info (dimensions from header, orientation, camera)
+All P0 items are now DONE:
+- ~~GIF encode~~ done
+- ~~Auto-orient (EXIF)~~ done
+- ~~ICC profile read/embed~~ done
+- ~~Alpha composite (over)~~ done
+- ~~EXIF metadata read~~ done
 
 ### P1 — High Value
-6. AVIF encode — Modern web format, superior compression
-7. TIFF encode — Publishing, scanning, GIS workflows
-8. HEIF/HEIC decode+encode — Apple ecosystem
-9. JXL decode+encode — Next-gen format
-10. Gamma correction — Essential color tool
-11. Invert/negate — Simple but essential filter
-12. Threshold (binary) — Binary image creation
-13. Levels/curves — Tone mapping
-14. Histogram equalize — Auto-contrast
-15. Arbitrary angle rotation — Common transform
-16. Smart crop — Content-aware crop
-17. Embed/pad — Add borders
-18. Shrink-on-load — Major perf for thumbnailing
-19. Streaming pipeline — Architectural improvement for large images
-20. Chainable pipeline API — Ergonomic SDK improvement
-21. Porter-Duff blend modes — Photo editing compositing
-22. Watermark overlay — Common use case
-23. EXIF write/strip — Privacy, file size
-24. Multi-page read — TIFF pages, GIF frames
-25. CMYK color space — Print workflows
-26. Linear sRGB — HDR, compositing
+1. **Shrink-on-load** — Major perf optimization for thumbnailing
+2. **Multi-page/frame read** — TIFF pages, GIF/WebP frames
+3. **Animation support** — Animated GIF/WebP/APNG (research track created)
+4. **CMYK full pipeline** — Print workflows
+5. **JXL encode** — Next-gen format (scaffold exists)
+6. Register ~30 unregistered filters (2 tracks created)
 
 ### P2 — Medium
-27. Lanczos2, Mitchell filters
-28. CLAHE, Canny, Sobel, median, convolution, morphology
-29. HSV/HSL, Lab, Oklab color spaces
-30. Image concatenation, drawing ops, text
-31. Affine transform, trim/autocrop
-32. Animation support, SIMD, thread pool
+7. Lanczos2, Mitchell-Netravali resize filters
+8. Draw primitives (line, rect, circle, text)
+9. Image concatenation / arrayjoin
+10. Linear sRGB / Display P3 full pipeline
+11. Thread pool for parallel tile processing
 
 ### P3 — Low / Niche
-33. Artistic effects (oil paint, charcoal, emboss, solarize)
-34. EXR, Raw, PSD, JPEG 2000, HDR formats
-35. Flood fill, bezier paths
-36. XMP/IPTC metadata
-37. Perspective distort, liquid rescale
+12. Artistic effects (solarize, emboss, oil paint, charcoal)
+13. Shear transform
+14. Camera RAW (blocked by no pure-Rust decoder)
+15. PSD, DPX, CIN, DICOM
 
 ---
 
-## Recommended Implementation Order
+## rasmcore Unique Advantages
 
-**Phase 1 — Close P0 gaps (5 items)**
-These block real-world adoption. Ship these before marketing.
-
-**Phase 2 — Core P1 formats (items 6-9)**
-AVIF, TIFF, HEIF, JXL encode — each is a separate per-format codec track.
-
-**Phase 3 — P1 operations (items 10-16)**
-Essential filters and transforms that users expect from any image library.
-
-**Phase 4 — P1 architecture (items 17-20)**
-Streaming, shrink-on-load, pipeline API — these are cross-cutting improvements.
-
-**Phase 5 — P1 compositing & color (items 21-26)**
-Blending, ICC profiles, CMYK — unlocks photo editing and print workflows.
-
-**Phase 6+ — P2/P3 as demand warrants**
-Prioritize based on user feedback and competitive pressure.
+| Advantage | Detail |
+|-----------|--------|
+| **Pure Rust / WASM** | Compiles to wasm32-wasip2, runs in browsers and edge compute |
+| **No C dependencies** | Core codecs are pure Rust — no FFI vulnerabilities |
+| **QOI format** | Native support — neither IM nor vips has it |
+| **DDS read+write** | Both IM and vips have limited DDS support |
+| **16 blend modes** | More than libvips (11), validated against vips + ImageMagick |
+| **Professional grading** | ASC CDL, lift/gamma/gain, curves — uncommon in image libraries |
+| **Content-aware ops** | Smart crop + seam carve + selective color + inpainting |
+| **Color science** | Lab, Oklab, ProPhoto, Adobe RGB, LCH, Luv, Delta E (76/94/2000) |
+| **3D Color LUTs** | Compose, absorb 1D, bake from grading ops |
+| **Component Model** | WIT interfaces enable cross-language composability |
+| **83+ total operations** | 49 registered + 34 unregistered implementations |
