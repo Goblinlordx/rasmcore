@@ -6767,8 +6767,17 @@ pub fn draw_rect_filter(
     filled: bool,
 ) -> Result<Vec<u8>, ImageError> {
     let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
-    let (result, _) =
-        super::draw::draw_rect(pixels, info, x, y, rect_width, rect_height, color, stroke_width, filled)?;
+    let (result, _) = super::draw::draw_rect(
+        pixels,
+        info,
+        x,
+        y,
+        rect_width,
+        rect_height,
+        color,
+        stroke_width,
+        filled,
+    )?;
     Ok(result)
 }
 
@@ -10237,6 +10246,168 @@ pub fn selective_color_registered(
         lightness,
     };
     super::content_aware::selective_color(pixels, info, &params)
+}
+
+// ─── Artistic Filters ────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Solarize — invert pixels above threshold for a partial-negative effect
+pub struct SolarizeParams {
+    /// Threshold (0-255): pixels above this are inverted
+    #[param(min = 0, max = 255, step = 1, default = 128)]
+    pub threshold: u8,
+}
+
+#[rasmcore_macros::register_filter(name = "solarize", category = "effect")]
+pub fn solarize(pixels: &[u8], info: &ImageInfo, threshold: u8) -> Result<Vec<u8>, ImageError> {
+    super::point_ops::solarize(pixels, info, threshold)
+}
+
+#[rasmcore_macros::register_filter(name = "emboss", category = "effect")]
+pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    // Standard emboss kernel: directional highlight along the diagonal
+    #[rustfmt::skip]
+    let kernel: [f32; 9] = [
+        -2.0, -1.0,  0.0,
+        -1.0,  1.0,  1.0,
+         0.0,  1.0,  2.0,
+    ];
+    convolve(pixels, info, &kernel, 3, 3, 1.0)
+}
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Oil paint effect — neighborhood mode filter
+pub struct OilPaintParams {
+    /// Radius of the neighborhood (1-10)
+    #[param(min = 1, max = 10, step = 1, default = 3)]
+    pub radius: u32,
+}
+
+/// Oil painting effect: for each pixel, find the most frequent intensity
+/// in the neighborhood and output that pixel's color.
+#[rasmcore_macros::register_filter(name = "oil_paint", category = "effect")]
+pub fn oil_paint(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| oil_paint(p8, i8, radius));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let r = radius as usize;
+
+    // Quantize to 20 intensity bins for mode detection
+    const BINS: usize = 20;
+    let mut out = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut count = [0u32; BINS];
+            let mut sum_r = [0u32; BINS];
+            let mut sum_g = [0u32; BINS];
+            let mut sum_b = [0u32; BINS];
+
+            let y0 = y.saturating_sub(r);
+            let y1 = (y + r + 1).min(h);
+            let x0 = x.saturating_sub(r);
+            let x1 = (x + r + 1).min(w);
+
+            for ny in y0..y1 {
+                for nx in x0..x1 {
+                    let idx = (ny * w + nx) * ch;
+                    let intensity = if ch >= 3 {
+                        // Approximate luminance
+                        ((pixels[idx] as u32 * 77
+                            + pixels[idx + 1] as u32 * 150
+                            + pixels[idx + 2] as u32 * 29
+                            + 128)
+                            >> 8) as u8
+                    } else {
+                        pixels[idx]
+                    };
+                    let bin = (intensity as usize * (BINS - 1)) / 255;
+                    count[bin] += 1;
+                    if ch >= 3 {
+                        sum_r[bin] += pixels[idx] as u32;
+                        sum_g[bin] += pixels[idx + 1] as u32;
+                        sum_b[bin] += pixels[idx + 2] as u32;
+                    } else {
+                        sum_r[bin] += pixels[idx] as u32;
+                    }
+                }
+            }
+
+            // Find the bin with the highest count (mode)
+            let mut max_bin = 0;
+            let mut max_count = 0;
+            for (i, &c) in count.iter().enumerate() {
+                if c > max_count {
+                    max_count = c;
+                    max_bin = i;
+                }
+            }
+
+            let oidx = (y * w + x) * ch;
+            if max_count > 0 {
+                if ch >= 3 {
+                    out[oidx] = (sum_r[max_bin] / max_count) as u8;
+                    out[oidx + 1] = (sum_g[max_bin] / max_count) as u8;
+                    out[oidx + 2] = (sum_b[max_bin] / max_count) as u8;
+                    if ch == 4 {
+                        out[oidx + 3] = pixels[oidx + 3]; // preserve alpha
+                    }
+                } else {
+                    out[oidx] = (sum_r[max_bin] / max_count) as u8;
+                }
+            } else {
+                out[oidx..oidx + ch].copy_from_slice(&pixels[oidx..oidx + ch]);
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Charcoal sketch effect — edge detection + blur + invert
+pub struct CharcoalParams {
+    /// Blur radius for smoothing the edge image
+    #[param(min = 0.0, max = 10.0, step = 0.1, default = 1.0)]
+    pub radius: f32,
+    /// Edge detection sensitivity (Gaussian sigma for Sobel pre-blur)
+    #[param(min = 0.1, max = 5.0, step = 0.1, default = 0.5)]
+    pub sigma: f32,
+}
+
+/// Charcoal sketch: Sobel edge detection → Gaussian blur → invert.
+/// Produces a pencil/charcoal drawing effect.
+#[rasmcore_macros::register_filter(name = "charcoal", category = "effect")]
+pub fn charcoal(
+    pixels: &[u8],
+    info: &ImageInfo,
+    radius: f32,
+    sigma: f32,
+) -> Result<Vec<u8>, ImageError> {
+    // 1. Optional pre-blur to control edge sensitivity
+    let smoothed = if sigma > 0.0 {
+        blur(pixels, info, sigma)?
+    } else {
+        pixels.to_vec()
+    };
+
+    // 2. Edge detection via Sobel
+    let edges = sobel(&smoothed, info)?;
+
+    // 3. Post-blur to soften the edges
+    let blurred = if radius > 0.0 {
+        blur(&edges, info, radius)?
+    } else {
+        edges
+    };
+
+    // 4. Invert to get dark lines on white background
+    super::point_ops::invert(&blurred, info)
 }
 
 #[cfg(test)]

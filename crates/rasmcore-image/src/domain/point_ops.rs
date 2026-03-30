@@ -35,6 +35,8 @@ pub enum PointOp {
     Brightness(f32),
     /// Contrast adjustment (-1.0 to 1.0). `LUT[i] = (factor*(i-128)+128).clamp(0,255)`
     Contrast(f32),
+    /// Solarize: invert values above threshold. `LUT[i] = if i > threshold { 255 - i } else { i }`
+    Solarize(u8),
 }
 
 /// Build a 256-entry LUT for a single point operation.
@@ -84,6 +86,12 @@ pub fn build_lut(op: &PointOp) -> [u8; 256] {
             for (i, entry) in lut.iter_mut().enumerate() {
                 let v = factor * (i as f32 - 128.0) + 128.0;
                 *entry = v.clamp(0.0, 255.0) as u8;
+            }
+        }
+        PointOp::Solarize(threshold) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let v = i as u8;
+                *entry = if v > *threshold { 255 - v } else { v };
             }
         }
     }
@@ -251,6 +259,17 @@ pub fn build_lut_u16(op: &PointOp) -> Vec<u16> {
                 *entry = v.clamp(0.0, MAX16) as u16;
             }
         }
+        PointOp::Solarize(threshold) => {
+            // Scale 8-bit threshold to 16-bit: threshold * 257
+            let threshold16 = *threshold as u32 * 257;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = if (i as u32) > threshold16 {
+                    (65535 - i) as u16
+                } else {
+                    i as u16
+                };
+            }
+        }
     }
     lut
 }
@@ -356,6 +375,11 @@ pub fn invert(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Binary threshold at the given level.
 pub fn threshold(pixels: &[u8], info: &ImageInfo, level: u8) -> Result<Vec<u8>, ImageError> {
     apply_op(pixels, info, &PointOp::Threshold(level))
+}
+
+/// Solarize: invert pixels above threshold, creating a partial-negative effect.
+pub fn solarize(pixels: &[u8], info: &ImageInfo, threshold: u8) -> Result<Vec<u8>, ImageError> {
+    apply_op(pixels, info, &PointOp::Solarize(threshold))
 }
 
 /// Posterize to N discrete levels per channel.
