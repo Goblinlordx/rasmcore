@@ -166,23 +166,25 @@ const D65_Y: f64 = 1.0;
 const D65_Z: f64 = 1.0890577507598784;
 
 /// sRGB to XYZ matrix (D65, IEC 61966-2-1).
-/// Uses the same precision as colour-science for reference alignment.
+/// Full 16-digit precision from colour-science 0.4.7:
+///   colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ
 fn rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let rl = srgb_to_linear(r);
     let gl = srgb_to_linear(g);
     let bl = srgb_to_linear(b);
-    let x = 0.4124 * rl + 0.3576 * gl + 0.1805 * bl;
-    let y = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
-    let z = 0.0193 * rl + 0.1192 * gl + 0.9505 * bl;
+    let x = 0.4123907992735076 * rl + 0.3575843393838780 * gl + 0.1804807884018343 * bl;
+    let y = 0.2126390058715102 * rl + 0.7151686787677560 * gl + 0.0721923153607337 * bl;
+    let z = 0.0193308187155918 * rl + 0.1191947797946260 * gl + 0.9505321522496607 * bl;
     (x, y, z)
 }
 
 /// XYZ to sRGB.
-/// Uses the same precision as colour-science for reference alignment.
+/// Full 16-digit precision inverse matrix from colour-science 0.4.7:
+///   numpy.linalg.inv(colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ)
 fn xyz_to_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
-    let rl = 3.2406 * x - 1.5372 * y - 0.4986 * z;
-    let gl = -0.9689 * x + 1.8758 * y + 0.0415 * z;
-    let bl = 0.0557 * x - 0.2040 * y + 1.0570 * z;
+    let rl = 3.2409699419045226 * x - 1.5373831775700939 * y - 0.4986107602930034 * z;
+    let gl = -0.9692436362808796 * x + 1.8759675015077202 * y + 0.0415550574071756 * z;
+    let bl = 0.0556300796969936 * x - 0.2039769588889765 * y + 1.0569715142428786 * z;
     (linear_to_srgb(rl), linear_to_srgb(gl), linear_to_srgb(bl))
 }
 
@@ -985,21 +987,23 @@ mod tests {
     #[test]
     fn prophoto_srgb_roundtrip() {
         // sRGB → ProPhoto → sRGB should be near-identity for in-gamut colors
-        // Tolerance limited by 4-decimal sRGB XYZ matrices in the existing codebase
+        // With full-precision sRGB matrices, roundtrip error is limited by
+        // Bradford chromatic adaptation chain (D65→D50→D65 = 4 matrix multiplies)
         let (pr, pg, pb) = srgb_to_prophoto(0.6, 0.4, 0.2);
         let (r, g, b) = prophoto_to_srgb(pr, pg, pb);
-        assert!((r - 0.6).abs() < 0.001, "R roundtrip: {r}");
-        assert!((g - 0.4).abs() < 0.001, "G roundtrip: {g}");
-        assert!((b - 0.2).abs() < 0.001, "B roundtrip: {b}");
+        assert!((r - 0.6).abs() < 1e-4, "R roundtrip: {r}");
+        assert!((g - 0.4).abs() < 1e-4, "G roundtrip: {g}");
+        assert!((b - 0.2).abs() < 1e-4, "B roundtrip: {b}");
     }
 
     #[test]
     fn prophoto_white_is_white() {
         // ProPhoto (1,1,1) → sRGB should be near (1,1,1) via Bradford D50→D65
+        // Tolerance limited by Bradford adaptation precision (~1e-4)
         let (r, g, b) = prophoto_to_srgb(1.0, 1.0, 1.0);
-        assert!((r - 1.0).abs() < 0.02, "R: {r}");
-        assert!((g - 1.0).abs() < 0.02, "G: {g}");
-        assert!((b - 1.0).abs() < 0.02, "B: {b}");
+        assert!((r - 1.0).abs() < 2e-4, "R: {r}");
+        assert!((g - 1.0).abs() < 2e-4, "G: {g}");
+        assert!((b - 1.0).abs() < 2e-4, "B: {b}");
     }
 
     // ── Adobe RGB Tests ─────────────────────────────────────────────────
@@ -1036,22 +1040,21 @@ mod tests {
     #[test]
     fn adobe_srgb_roundtrip() {
         // sRGB → Adobe → sRGB should be near-identity
-        // Tolerance limited by 4-decimal sRGB XYZ matrices
+        // Both D65 → no Bradford chain → limited by matrix inverse precision
         let (ar, ag, ab) = srgb_to_adobe(0.6, 0.4, 0.2);
         let (r, g, b) = adobe_to_srgb(ar, ag, ab);
-        assert!((r - 0.6).abs() < 0.001, "R roundtrip: {r}");
-        assert!((g - 0.4).abs() < 0.001, "G roundtrip: {g}");
-        assert!((b - 0.2).abs() < 0.001, "B roundtrip: {b}");
+        assert!((r - 0.6).abs() < 1e-7, "R roundtrip: {r}");
+        assert!((g - 0.4).abs() < 1e-7, "G roundtrip: {g}");
+        assert!((b - 0.2).abs() < 1e-7, "B roundtrip: {b}");
     }
 
     #[test]
     fn adobe_white_is_white() {
-        // Adobe (1,1,1) → sRGB should be near (1,1,1) — both D65
-        // Tolerance limited by sRGB matrix precision (4 decimals)
+        // Adobe (1,1,1) → sRGB should be (1,1,1) — both D65, no adaptation
         let (r, g, b) = adobe_to_srgb(1.0, 1.0, 1.0);
-        assert!((r - 1.0).abs() < 0.01, "R: {r}");
-        assert!((g - 1.0).abs() < 0.01, "G: {g}");
-        assert!((b - 1.0).abs() < 0.01, "B: {b}");
+        assert!((r - 1.0).abs() < 1e-10, "R: {r}");
+        assert!((g - 1.0).abs() < 1e-10, "G: {g}");
+        assert!((b - 1.0).abs() < 1e-10, "B: {b}");
     }
 
     #[test]
