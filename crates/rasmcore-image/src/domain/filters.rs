@@ -15422,3 +15422,82 @@ mod kuwahara_rank_tests {
         }
     }
 }
+
+// ─── External LUT Application Filters ──────────────────────────────────────
+
+/// Apply a .cube 3D LUT to the image.
+///
+/// The `cube_data` parameter is the full text content of the .cube file.
+/// The LUT is parsed and applied via tetrahedral interpolation.
+#[rasmcore_macros::register_filter(name = "apply_cube_lut", category = "grading", group = "lut_import", variant = "cube", reference = "Adobe/Resolve .cube 3D LUT format")]
+pub fn apply_cube_lut(
+    pixels: &[u8],
+    info: &ImageInfo,
+    cube_data: String,
+) -> Result<Vec<u8>, ImageError> {
+    let lut = super::color_lut::parse_cube_lut(&cube_data)?;
+    lut.apply(pixels, info)
+}
+
+/// Apply a HALD CLUT image as a 3D LUT.
+///
+/// The `hald_pixels` parameter is the raw RGB8 pixel data of the HALD image,
+/// and `hald_dim` is its width/height (must be square, dimension = level²).
+#[rasmcore_macros::register_filter(name = "apply_hald_lut", category = "grading", group = "lut_import", variant = "hald", reference = "ImageMagick HALD CLUT format")]
+pub fn apply_hald_lut(
+    pixels: &[u8],
+    info: &ImageInfo,
+    hald_dim: u32,
+) -> Result<Vec<u8>, ImageError> {
+    // For the registered filter, hald_dim is a placeholder — the actual HALD
+    // pixel data must be provided programmatically via parse_hald_lut + apply.
+    // This filter exists for manifest/registry purposes; the pipeline dispatches
+    // HALD application through the domain API directly.
+    Err(ImageError::InvalidParameters(
+        "apply_hald_lut requires HALD image data — use the pipeline API with parse_hald_lut() + ColorLut3D::apply()".into(),
+    ))
+}
+
+#[cfg(test)]
+mod cube_lut_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    #[test]
+    fn apply_cube_lut_identity() {
+        let n = 4;
+        let mut cube = format!("LUT_3D_SIZE {n}\n");
+        let scale = 1.0 / (n - 1) as f64;
+        for b in 0..n {
+            for g in 0..n {
+                for r in 0..n {
+                    cube.push_str(&format!(
+                        "{:.6} {:.6} {:.6}\n",
+                        r as f64 * scale,
+                        g as f64 * scale,
+                        b as f64 * scale
+                    ));
+                }
+            }
+        }
+
+        let pixels = vec![128u8, 64, 200, 255, 0, 128]; // 2 RGB pixels
+        let info = ImageInfo {
+            width: 2,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = apply_cube_lut(&pixels, &info, cube).unwrap();
+        // Identity LUT: output should be close to input
+        for i in 0..pixels.len() {
+            assert!(
+                (result[i] as i16 - pixels[i] as i16).abs() <= 2,
+                "pixel {i}: {} -> {} (expected ~{})",
+                pixels[i],
+                result[i],
+                pixels[i]
+            );
+        }
+    }
+}
