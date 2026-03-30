@@ -7,127 +7,191 @@ updated: '2026-03-31'
 spec:
   summary: |
     Extract all code generation logic from build.rs into a dedicated
-    rasmcore-codegen crate. Clean separation: parse (syn AST) -> types
-    (structured data) -> gen (output modules). Fully parse #[param(...)]
-    via syn::parse::Parse instead of string splitting.
+    rasmcore-codegen crate. Parse all registration types via syn AST into
+    structured data, then generate all outputs from that data. Full test
+    coverage for parsing and generation.
   context: |
-    The build.rs refactor replaced regex with syn AST parsing, but the
-    code is still a 1000-line monolith mixing parsing, data types, and
-    generation. Extracting into a crate gives testability, isolation,
-    and extensibility. Each generator (manifest, WIT, adapter, pipeline
-    nodes) becomes its own module. The #[param()] attribute parsing is
-    the last remaining string-based piece — it should use a proper
-    syn::parse::Parse impl.
+    The build.rs is a 1000-line monolith mixing parsing, data modeling, and
+    code generation. It handles 6 registration types across multiple source
+    files. Extracting into a crate gives us testability, isolation, and
+    extensibility. Each parser and generator becomes its own module with
+    its own tests.
+
+    Registration types that must be parsed:
+    1. register_filter — 115 filters with params, overlap, group/variant
+    2. register_generator — 6 generators (noise, gradient, etc.)
+    3. register_compositor — 4 compositors (blend modes)
+    4. register_mapper — 2 mappers (coordinate transforms)
+    5. ConfigParams derive — struct field metadata (min/max/step/default/hint)
+    6. param attribute — #[param(min=0, max=1, ...)] on struct fields
+
+    The #[param(...)] attribute is the last string-parsed piece — it must
+    get a proper syn::parse::Parse implementation.
   codebase_analysis: |
-    CURRENT STATE (crates/rasmcore-image/build.rs, ~1000 lines):
-    - Parse: syn-based filter/struct extraction (good, needs extraction)
-    - Types: FilterReg, SimpleReg, ParamField, ParsedStruct (inline structs)
-    - Gen: adapter code, pipeline nodes, WIT, manifest (all push_str)
-    - #[param(min=0, max=1)] still split via string manipulation
+    CURRENT BUILD.RS STRUCTURE:
+    - parse_registered_filters() — syn AST walk for register_filter
+    - parse_registered_by_kind() — syn AST walk for generator/compositor/mapper
+    - parse_config_params_raw() — syn AST walk for ConfigParams structs
+    - split_param_attrs() — STRING-BASED #[param(...)] splitting (FRAGILE)
+    - 4 generation blocks: adapter, pipeline nodes, WIT, manifest
+    - Helper functions: type_to_string, to_pascal_case, to_wit_type, etc.
 
-    TARGET CRATE STRUCTURE:
-    crates/rasmcore-codegen/
-      Cargo.toml          — depends on syn, quote, serde, serde_json
-      src/lib.rs           — pub API
-      src/types.rs         — FilterReg, ParamField, SimpleReg, etc.
-      src/parse/mod.rs     — parse_filters(), parse_config_params()
-      src/parse/filters.rs — walk ItemFn for register_filter
-      src/parse/params.rs  — walk ItemStruct for ConfigParams
-      src/parse/param_attr.rs — syn::parse::Parse for #[param(...)]
-      src/gen/mod.rs       — GenerationContext
-      src/gen/manifest.rs  — param-manifest.json
-      src/gen/wit.rs       — WIT declarations
-      src/gen/adapter.rs   — Rust filter adapter
-      src/gen/pipeline.rs  — Pipeline node structs
+    DATA TYPES:
+    - FilterReg: name, category, group, variant, reference, overlap, fn_name, params
+    - SimpleReg: name, category, group, variant, reference
+    - ParamField: name, param_type, min, max, step, default_val, label, hint
+    - ParsedStruct: fields, config_hint
 
-    BUILD.RS becomes ~50 lines:
-      use rasmcore_codegen::{parse, gen};
-      let filters = parse::filters(&filters_source);
-      let params = parse::config_params(&param_types_source, &filters_source);
-      gen::manifest(&filters, &params, &out_dir);
-      gen::adapter(&filters, &out_dir);
-      gen::pipeline_nodes(&filters, &out_dir);
+    PROC MACROS (rasmcore-macros, NOT changing):
+    - register_filter — produces StaticFilterRegistration + inventory::submit
+    - register_encoder — produces StaticEncoderRegistration
+    - register_decoder — produces StaticDecoderRegistration
+    - ConfigParams derive — produces param_descriptors() + Default impl
   acceptance_criteria:
-    - New crate rasmcore-codegen with parse/, types.rs, gen/ modules
-    - All parsing logic moved from build.rs to rasmcore-codegen::parse
-    - All type definitions moved to rasmcore-codegen::types
-    - All generation logic moved to rasmcore-codegen::gen
-    - "#[param(min = 0.0, max = 1.0, ...)]" fully parsed via syn::parse::Parse (no string splitting)
-    - build.rs reduced to thin orchestrator (~50 lines)
-    - Unit tests for parse module (parse known source snippets, verify structured output)
-    - Unit tests for gen module (give structured data, verify generated code)
-    - param-manifest.json output identical to pre-refactor
+    - New crate crates/rasmcore-codegen/ with parse, types, gen modules
+    - parse/filters.rs handles register_filter with all attributes
+    - parse/simple_regs.rs handles register_generator, register_compositor, register_mapper
+    - parse/config_params.rs handles ConfigParams structs with nested type resolution
+    - parse/param_attr.rs implements syn::parse::Parse for #[param()] (no string splitting)
+    - types.rs defines FilterReg, SimpleReg, ParamField, ParsedStruct
+    - gen/manifest.rs generates param-manifest.json via serde_json
+    - gen/adapter.rs generates Rust filter adapter dispatch
+    - gen/pipeline.rs generates pipeline node structs
+    - gen/wit.rs generates WIT filter declarations
+    - build.rs reduced to thin orchestrator using rasmcore-codegen API
+    - "Unit tests: parse a known #[register_filter] fn snippet, verify FilterReg output"
+    - "Unit tests: parse a known ConfigParams struct, verify ParamField output"
+    - "Unit tests: parse #[param(min = 0.0, max = 1.0, hint = \"rc.angle\")] via syn, verify values"
+    - "Unit tests: generate manifest JSON from known FilterReg, verify schema"
+    - "Unit tests: generate adapter code from known FilterReg, verify compiles"
+    - "Integration test: full build produces identical param-manifest.json"
     - All existing tests pass unchanged
   out_of_scope: |
-    New generation targets (TypeScript SDK, etc.). Proc macro changes.
-    WIT auto-sync automation. Runtime behavior changes.
+    Proc macro changes (rasmcore-macros). New registration types.
+    WIT auto-sync pipeline. TypeScript SDK generation (future).
+    Encoder/decoder build.rs parsing (not needed, proc-macro-only).
   technical_notes: |
-    #[param(...)] FULL SYN PARSING:
+    CRATE STRUCTURE:
+    crates/rasmcore-codegen/
+      Cargo.toml
+      src/
+        lib.rs              — pub parse, types, gen modules
+        types.rs            — FilterReg, SimpleReg, ParamField, ParsedStruct
+        parse/
+          mod.rs            — pub fn parse_source_files(paths) -> CodegenData
+          filters.rs        — register_filter extraction from syn::ItemFn
+          simple_regs.rs    — register_generator/compositor/mapper extraction
+          config_params.rs  — ConfigParams struct + field extraction
+          param_attr.rs     — syn::parse::Parse impl for #[param(...)]
+        gen/
+          mod.rs            — pub fn generate(data, out_dir)
+          manifest.rs       — param-manifest.json
+          adapter.rs        — generated_filter_adapter.rs
+          pipeline.rs       — generated_pipeline_nodes.rs
+          wit.rs            — WIT declarations (stderr or file)
+          helpers.rs        — to_pascal_case, to_wit_type, to_owned_type
 
-    Define a parseable struct:
-    ```rust
+    #[param(...)] SYN PARSER:
+
     struct ParamAttr {
-        min: Option<syn::Lit>,
-        max: Option<syn::Lit>,
-        step: Option<syn::Lit>,
-        default: Option<syn::Lit>,
-        hint: Option<syn::LitStr>,
+        min: Option<LitValue>,
+        max: Option<LitValue>,
+        step: Option<LitValue>,
+        default: Option<LitValue>,
+        hint: Option<String>,
     }
 
-    impl syn::parse::Parse for ParamAttr {
-        fn parse(input: ParseStream) -> syn::Result<Self> {
-            // Parse comma-separated key = value pairs
-            // Each value is a syn::Lit (handles numbers, strings, bools)
+    enum LitValue {
+        Float(f64),
+        Int(i64),
+        Bool(bool),
+        Str(String),
+        Null,
+    }
+
+    impl Parse for ParamAttr {
+        fn parse(input: ParseStream) -> Result<Self> {
+            // Parse comma-separated: key = literal pairs
+            // Uses syn::Ident for key, syn::Lit for value
+            // Handles: min = 0.0, max = 1.0, hint = "rc.angle_deg"
         }
     }
-    ```
 
-    Then in the struct parser:
-    ```rust
-    let param_attr: ParamAttr = attr.parse_args()?;
-    ```
+    BUILD.RS becomes:
+    use rasmcore_codegen::{parse, gen};
+    let data = parse::parse_source_files(&[
+        filters_path, param_types_path, composite_path
+    ]);
+    gen::generate(&data, &out_dir);
 
-    This replaces string splitting entirely — syn handles quoting,
-    escaping, number parsing, and error reporting.
-
-    CRATE DEPENDENCY:
-    rasmcore-codegen depends on: syn, quote, proc-macro2, serde, serde_json
-    rasmcore-image build-depends on: rasmcore-codegen
-    (removes syn/quote/proc-macro2 from rasmcore-image build-deps)
+    TEST STRATEGY:
+    - Parse tests use inline Rust source strings
+    - Gen tests use known FilterReg/ParamField data, verify output strings
+    - Integration test: parse actual filters.rs, verify count matches
 plan:
   - phase: Crate Scaffold
     tasks:
-      - text: Create crates/rasmcore-codegen with Cargo.toml, src/lib.rs, src/types.rs
+      - text: Create crates/rasmcore-codegen with Cargo.toml (syn, quote, serde, serde_json)
         done: false
-      - text: Define FilterReg, SimpleReg, ParamField, ParsedStruct in types.rs
+      - text: Define types.rs with FilterReg, SimpleReg, ParamField, ParsedStruct, LitValue
         done: false
       - text: Add rasmcore-codegen as build-dependency of rasmcore-image
         done: false
   - phase: Parse Module
     tasks:
-      - text: Create parse/mod.rs, parse/filters.rs — move filter AST extraction
+      - text: Implement parse/filters.rs — register_filter AST extraction
         done: false
-      - text: Create parse/params.rs — move ConfigParams struct extraction
+      - text: Implement parse/simple_regs.rs — generator/compositor/mapper extraction
         done: false
-      - text: Create parse/param_attr.rs — full syn::parse::Parse for #[param(...)]
+      - text: Implement parse/config_params.rs — ConfigParams struct and field extraction
         done: false
-      - text: Unit tests for parse module (known source snippets)
+      - text: Implement parse/param_attr.rs — syn::parse::Parse for #[param()] with LitValue
+        done: false
+      - text: Implement parse/mod.rs — parse_source_files() top-level API
+        done: false
+  - phase: Parse Tests
+    tasks:
+      - text: Test parse register_filter from inline source snippet
+        done: false
+      - text: Test parse register_generator/compositor/mapper from snippet
+        done: false
+      - text: Test parse ConfigParams struct with #[param()] attributes
+        done: false
+      - text: Test parse #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5, hint = "rc.x")]
+        done: false
+      - text: Test parse nested ConfigParams (ColorRgb embedded in filter params)
+        done: false
+      - text: Test parse edge cases (no params, String params, slice params, missing attributes)
         done: false
   - phase: Gen Module
     tasks:
-      - text: Create gen/manifest.rs — param-manifest.json generation
+      - text: Implement gen/manifest.rs — param-manifest.json from structured data
         done: false
-      - text: Create gen/adapter.rs — Rust filter adapter code generation
+      - text: Implement gen/adapter.rs — filter adapter Rust code generation
         done: false
-      - text: Create gen/pipeline.rs — Pipeline node struct generation
+      - text: Implement gen/pipeline.rs — pipeline node struct generation
         done: false
-      - text: Create gen/wit.rs — WIT declaration generation
+      - text: Implement gen/wit.rs — WIT declaration generation
+        done: false
+      - text: Implement gen/helpers.rs — to_pascal_case, to_wit_type, to_owned_type
+        done: false
+  - phase: Gen Tests
+    tasks:
+      - text: Test manifest JSON generation from known FilterReg (verify schema, field values)
+        done: false
+      - text: Test adapter code generation from known FilterReg (verify valid Rust)
+        done: false
+      - text: Test pipeline node generation (verify struct fields match params)
+        done: false
+      - text: Test WIT generation (verify type mapping, kebab-case names)
         done: false
   - phase: Integration
     tasks:
-      - text: Rewrite build.rs as thin orchestrator using rasmcore-codegen
+      - text: Rewrite build.rs as thin orchestrator calling rasmcore-codegen
         done: false
-      - text: Verify param-manifest.json identical to pre-refactor
+      - text: Verify param-manifest.json identical to pre-refactor (diff test)
+        done: false
+      - text: Verify generated adapter and pipeline code compiles
         done: false
       - text: Full cargo test pass
         done: false
