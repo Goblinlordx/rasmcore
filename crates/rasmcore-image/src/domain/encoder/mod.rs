@@ -1,6 +1,7 @@
 pub mod avif;
 pub mod bmp;
 pub mod dds;
+pub mod exr;
 pub mod fits;
 pub mod gif;
 pub mod hdr;
@@ -135,11 +136,7 @@ pub fn encode(
             let img = pixels_to_dynamic_image(pixels, info)?;
             encode_via_image_format(&img, image::ImageFormat::Pnm)
         }
-        "exr" | "openexr" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            let rgba32f = DynamicImage::ImageRgba32F(img.to_rgba32f());
-            encode_via_image_format(&rgba32f, image::ImageFormat::OpenExr)
-        }
+        "exr" | "openexr" => exr::encode_pixels(pixels, info, &exr::ExrEncodeConfig),
         "dds" => dds::encode_dds(pixels, info),
         "jp2" | "j2k" | "jpeg2000" => {
             let config = jp2::Jp2EncodeConfig::default();

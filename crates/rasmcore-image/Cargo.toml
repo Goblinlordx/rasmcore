@@ -14,9 +14,7 @@ libblur = "0.15"
 moxcms = "0.8"
 wit-bindgen-rt = "0.41.0"
 png = "0.17"
-image = { workspace = true, features = [
-    "exr",
-] }
+image = { workspace = true, features = [] }
 rasmcore-fits = { path = "../rasmcore-fits" }
 rasmcore-jpeg = { path = "../rasmcore-jpeg" }
 exif = { version = "0.6.1", package = "kamadak-exif" }
@@ -26,6 +24,7 @@ tiff = "0.11"
 gif = "0.14"
 color_quant = "1.1"
 image-webp = "0.2"
+exr = "1.74"
 jxl-oxide = "0.12"
 justjp2 = { version = "0.1", default-features = false }
 resvg = "0.44"

@@ -303,6 +303,11 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
         return decode_native_hdr(data);
     }
 
+    // EXR (OpenEXR) — magic 0x762F3101
+    if data.len() >= 4 && data[..4] == [0x76, 0x2F, 0x31, 0x01] {
+        return decode_native_exr(data);
+    }
+
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
     let format = detect_pixel_format(&img);
@@ -1218,30 +1223,34 @@ fn decode_native_ico(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// Parses the header for dimensions, reads RGBE scanlines,
 /// and converts to 8-bit sRGB output.
 fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError> {
-    let text = std::str::from_utf8(data)
-        .map_err(|_| ImageError::InvalidInput("HDR: invalid UTF-8 header".into()))?;
-
-    // Find the resolution line after the blank line
+    // Parse header as bytes — only the header is ASCII, pixel data is binary
     let mut width = 0u32;
     let mut height = 0u32;
     let mut data_start = 0;
 
-    for (i, line) in text.lines().enumerate() {
-        if line.starts_with("-Y ") || line.starts_with("+Y ") {
-            // Parse resolution: "-Y height +X width" or "+Y height +X width"
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 {
-                height = parts[1]
-                    .parse()
-                    .map_err(|_| ImageError::InvalidInput("HDR: bad height".into()))?;
-                width = parts[3]
-                    .parse()
-                    .map_err(|_| ImageError::InvalidInput("HDR: bad width".into()))?;
+    // Scan line-by-line through the header (terminated by \n)
+    let mut pos = 0;
+    while pos < data.len() {
+        // Find end of line
+        let line_end = data[pos..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .unwrap_or(data.len() - pos);
+        let line = &data[pos..pos + line_end];
+
+        if let Ok(line_str) = std::str::from_utf8(line) {
+            if line_str.starts_with("-Y ") || line_str.starts_with("+Y ") {
+                let parts: Vec<&str> = line_str.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    height = parts[1].parse().unwrap_or(0);
+                    width = parts[3].parse().unwrap_or(0);
+                }
+                data_start = pos + line_end + 1; // skip past \n
+                break;
             }
-            // Data starts after this line
-            data_start = text[..].find(line).unwrap() + line.len() + 1;
-            break;
         }
+
+        pos += line_end + 1; // skip past \n
     }
 
     if width == 0 || height == 0 {
@@ -1331,6 +1340,85 @@ fn decode_native_webp(data: &[u8]) -> Result<DecodedImage, ImageError> {
             icc_profile: None,
         })
     }
+}
+
+/// Decode EXR (OpenEXR) using the exr crate directly.
+///
+/// Reads the first layer as flat f32 samples, converts to RGBA8.
+fn decode_native_exr(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    use exr::prelude::*;
+
+    // Read as flat samples — simplest approach, no closure lifetime issues
+    let image = read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .all_channels()
+        .all_layers()
+        .all_attributes()
+        .from_buffered(std::io::Cursor::new(data))
+        .map_err(|e| ImageError::InvalidInput(format!("EXR: {e}")))?;
+
+    if image.layer_data.is_empty() {
+        return Err(ImageError::InvalidInput("EXR: no layers".into()));
+    }
+    let layer = &image.layer_data[0];
+    let w = layer.size.width() as u32;
+    let h = layer.size.height() as u32;
+    let npixels = (w * h) as usize;
+
+    // Find R, G, B, A channels by name (case-insensitive)
+    let find_channel = |name: &str| -> Option<usize> {
+        layer
+            .channel_data
+            .list
+            .iter()
+            .position(|c| c.name.to_string().eq_ignore_ascii_case(name))
+    };
+
+    let r_idx = find_channel("R").or_else(|| find_channel("r"));
+    let g_idx = find_channel("G").or_else(|| find_channel("g"));
+    let b_idx = find_channel("B").or_else(|| find_channel("b"));
+    let a_idx = find_channel("A").or_else(|| find_channel("a"));
+
+    let get_f32_sample = |ch_idx: Option<usize>, px: usize, default: f32| -> f32 {
+        match ch_idx {
+            Some(idx) => {
+                let samples = &layer.channel_data.list[idx].sample_data;
+                match samples {
+                    FlatSamples::F32(v) => v.get(px).copied().unwrap_or(default),
+                    FlatSamples::F16(v) => v.get(px).map(|f| f.to_f32()).unwrap_or(default),
+                    FlatSamples::U32(v) => v
+                        .get(px)
+                        .map(|&u| u as f32 / u32::MAX as f32)
+                        .unwrap_or(default),
+                }
+            }
+            None => default,
+        }
+    };
+
+    let mut pixels = Vec::with_capacity(npixels * 4);
+    for i in 0..npixels {
+        let r = get_f32_sample(r_idx, i, 0.0);
+        let g = get_f32_sample(g_idx, i, 0.0);
+        let b = get_f32_sample(b_idx, i, 0.0);
+        let a = get_f32_sample(a_idx, i, 1.0);
+        pixels.push((r.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        pixels.push((g.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        pixels.push((b.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        pixels.push((a.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+    }
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
 }
 
 /// Decode DDS (DirectDraw Surface) natively.

@@ -912,6 +912,7 @@ dependencies = [
  "half",
  "lebe",
  "miniz_oxide",
+ "rayon-core",
  "smallvec",
  "zune-inflate",
 ]
@@ -1371,7 +1372,6 @@ checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
- "exr",
  "image-webp 0.2.4",
  "moxcms",
  "num-traits",
@@ -2487,6 +2487,7 @@ dependencies = [
  "color_quant",
  "criterion",
  "dssim-core",
+ "exr",
  "fast_image_resize",
  "gif 0.14.1",
  "image",
