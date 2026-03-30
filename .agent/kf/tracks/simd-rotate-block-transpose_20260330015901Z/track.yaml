@@ -1,116 +1,81 @@
 id: simd-rotate-block-transpose_20260330015901Z
-title: "WASM SIMD128 — Block Transpose for rotate_90/270"
+title: WASM SIMD128 — Block Transpose for rotate_90/270
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Implement cache-friendly 8x8 block transpose with WASM SIMD128 for
-    rotate_90/270 to fix super-linear scaling at large image sizes.
-  context: |
-    Benchmark results (2026-03-30) show rotate_90 scaling super-linearly:
-      256->512: 6.9x (expected 4x for 4x pixels)
-      512->1024: 11.5x (expected 4x)
+  summary: 'Implement cache-friendly 8x8 block transpose with WASM SIMD128 for rotate_90/270 to fix super-linear scaling at
+    large image sizes.
 
-    At 1024x1024, rotate_90 takes 3.8ms. The super-linear scaling is caused
-    by cache thrashing during the column-to-row transpose — at larger sizes,
-    each column access strides across cache lines, causing L1/L2 misses.
-
-    This track depends on drop-image-transforms_20260330010101Z which
-    replaces the image::DynamicImage wrapper with direct buffer operations.
-    Once raw buffer access is available, block transpose can be applied.
-  codebase_analysis: |
-    Current implementation (transform.rs:105-117):
-      rotate() -> pixels_to_image() -> img.rotate90() -> image_to_decoded()
-
-    Overhead sources:
-      1. pixels.to_vec() allocation in pixels_to_image (line 221)
-      2. image crate's naive transpose (no blocking)
-      3. into_raw() extraction in image_to_decoded (line 285)
-      4. Potential format conversion (to_rgb8 etc.)
-
-    After drop-image-transforms lands, rotate will operate on raw &[u8].
-    The transpose becomes a direct buffer operation.
-
-    Block transpose algorithm:
-      Process the image in 8x8 tiles. For each tile, load 8 rows into
-      registers, transpose in-register, write to output columns.
-      This keeps memory access sequential within each tile, fitting in
-      L1 cache regardless of total image size.
-
-    WASM SIMD128 approach for RGB8 (3 bytes/pixel):
-      8x8 tile = 8 rows of 24 bytes each. Load as u8x16 pairs,
-      deinterleave RGB, transpose each channel's 8x8 block using
-      byte shuffle (i8x16_swizzle), reinterleave, store to output.
-
-    For RGBA8 (4 bytes/pixel):
-      8x8 tile = 8 rows of 32 bytes each. Process as pairs of i32x4
-      (each i32 = one RGBA pixel). Transpose is simpler — standard
-      8x8 i32 transpose using unpacklo/unpackhi patterns.
+    '
+  context: "Benchmark results (2026-03-30) show rotate_90 scaling super-linearly:\n  256->512: 6.9x (expected 4x for 4x pixels)\n\
+    \  512->1024: 11.5x (expected 4x)\n\nAt 1024x1024, rotate_90 takes 3.8ms. The super-linear scaling is caused\nby cache\
+    \ thrashing during the column-to-row transpose — at larger sizes,\neach column access strides across cache lines, causing\
+    \ L1/L2 misses.\n\nThis track depends on drop-image-transforms_20260330010101Z which\nreplaces the image::DynamicImage\
+    \ wrapper with direct buffer operations.\nOnce raw buffer access is available, block transpose can be applied.\n"
+  codebase_analysis: "Current implementation (transform.rs:105-117):\n  rotate() -> pixels_to_image() -> img.rotate90() ->\
+    \ image_to_decoded()\n\nOverhead sources:\n  1. pixels.to_vec() allocation in pixels_to_image (line 221)\n  2. image crate's\
+    \ naive transpose (no blocking)\n  3. into_raw() extraction in image_to_decoded (line 285)\n  4. Potential format conversion\
+    \ (to_rgb8 etc.)\n\nAfter drop-image-transforms lands, rotate will operate on raw &[u8].\nThe transpose becomes a direct\
+    \ buffer operation.\n\nBlock transpose algorithm:\n  Process the image in 8x8 tiles. For each tile, load 8 rows into\n\
+    \  registers, transpose in-register, write to output columns.\n  This keeps memory access sequential within each tile,\
+    \ fitting in\n  L1 cache regardless of total image size.\n\nWASM SIMD128 approach for RGB8 (3 bytes/pixel):\n  8x8 tile\
+    \ = 8 rows of 24 bytes each. Load as u8x16 pairs,\n  deinterleave RGB, transpose each channel's 8x8 block using\n  byte\
+    \ shuffle (i8x16_swizzle), reinterleave, store to output.\n\nFor RGBA8 (4 bytes/pixel):\n  8x8 tile = 8 rows of 32 bytes\
+    \ each. Process as pairs of i32x4\n  (each i32 = one RGBA pixel). Transpose is simpler — standard\n  8x8 i32 transpose\
+    \ using unpacklo/unpackhi patterns.\n"
   acceptance_criteria:
-    - rotate_90 and rotate_270 use block transpose on raw buffers
-    - WASM SIMD128 used for in-tile transpose operations
-    - Scaling is near-linear (< 5x for 4x pixels at 512->1024)
-    - rotate_90 benchmark at 1024 shows measurable speedup vs current 3.8ms
-    - rotate_180 uses simple buffer reversal (no transpose needed)
-    - All existing transform parity tests pass
-    - Scalar fallback for non-WASM targets
-  out_of_scope: |
-    Native arch SIMD (aarch64, x86_64).
+  - rotate_90 and rotate_270 use block transpose on raw buffers
+  - WASM SIMD128 used for in-tile transpose operations
+  - Scaling is near-linear (< 5x for 4x pixels at 512->1024)
+  - rotate_90 benchmark at 1024 shows measurable speedup vs current 3.8ms
+  - rotate_180 uses simple buffer reversal (no transpose needed)
+  - All existing transform parity tests pass
+  - Scalar fallback for non-WASM targets
+  out_of_scope: 'Native arch SIMD (aarch64, x86_64).
+
     flip_horizontal/flip_vertical (already fast, linear scaling).
+
     rotate_arbitrary (different algorithm, uses bilinear interpolation).
+
     The DynamicImage removal itself (that is drop-image-transforms).
-  technical_notes: |
-    Tile size choice:
-      8x8 is standard for cache-oblivious transpose. For RGB8 (24 bytes/row),
-      an 8x8 tile is 192 bytes — fits in a single L1 cache line set.
-      For RGBA8 (32 bytes/row), 8x8 is 256 bytes — still L1 friendly.
 
-    RGBA8 transpose (simpler case):
-      Each pixel is 4 bytes = one i32 lane. An 8x8 tile of pixels is 8
-      rows of i32x4 pairs (2 vectors per row, 16 vectors total).
-      Standard matrix transpose: unpacklo/unpackhi at 32-bit granularity.
-
-    RGB8 transpose (complex case):
-      3 bytes per pixel doesn't align to SIMD lanes. Two approaches:
-        a) Deinterleave to planar (RRRRGGGGBBBB), transpose each plane,
-           reinterleave. More shuffles but clean transpose.
-        b) Pad to RGBA, transpose as RGBA, strip alpha. Wastes 33% bandwidth
-           but uses the simpler RGBA path.
-      Option (b) is likely faster due to simpler shuffle patterns.
-
-    Edge tiles:
-      Images not divisible by 8 need partial tile handling. Process full
-      tiles with SIMD, handle remainder rows/columns with scalar code.
-
-    rotate_90 vs rotate_270:
-      rotate_90 = transpose + flip_vertical
-      rotate_270 = transpose + flip_horizontal
-      The transpose is the expensive part; the flip is a trivial O(n) pass.
+    '
+  technical_notes: "Tile size choice:\n  8x8 is standard for cache-oblivious transpose. For RGB8 (24 bytes/row),\n  an 8x8\
+    \ tile is 192 bytes — fits in a single L1 cache line set.\n  For RGBA8 (32 bytes/row), 8x8 is 256 bytes — still L1 friendly.\n\
+    \nRGBA8 transpose (simpler case):\n  Each pixel is 4 bytes = one i32 lane. An 8x8 tile of pixels is 8\n  rows of i32x4\
+    \ pairs (2 vectors per row, 16 vectors total).\n  Standard matrix transpose: unpacklo/unpackhi at 32-bit granularity.\n\
+    \nRGB8 transpose (complex case):\n  3 bytes per pixel doesn't align to SIMD lanes. Two approaches:\n    a) Deinterleave\
+    \ to planar (RRRRGGGGBBBB), transpose each plane,\n       reinterleave. More shuffles but clean transpose.\n    b) Pad\
+    \ to RGBA, transpose as RGBA, strip alpha. Wastes 33% bandwidth\n       but uses the simpler RGBA path.\n  Option (b)\
+    \ is likely faster due to simpler shuffle patterns.\n\nEdge tiles:\n  Images not divisible by 8 need partial tile handling.\
+    \ Process full\n  tiles with SIMD, handle remainder rows/columns with scalar code.\n\nrotate_90 vs rotate_270:\n  rotate_90\
+    \ = transpose + flip_vertical\n  rotate_270 = transpose + flip_horizontal\n  The transpose is the expensive part; the\
+    \ flip is a trivial O(n) pass.\n"
 plan:
-  - phase: "Block Transpose Core"
-    tasks:
-      - text: "Implement scalar 8x8 block transpose for RGBA8 (baseline, no SIMD)"
-        done: false
-      - text: "Add WASM SIMD128 8x8 transpose for RGBA8 using i32x4 unpack pattern"
-        done: false
-      - text: "Implement RGB8 transpose via pad-to-RGBA + RGBA transpose + strip-alpha"
-        done: false
-      - text: "Handle edge tiles (partial rows/columns at image boundaries)"
-        done: false
-  - phase: "Rotate Integration"
-    tasks:
-      - text: "Wire rotate_90 as block_transpose + flip_vertical on raw buffer"
-        done: false
-      - text: "Wire rotate_270 as block_transpose + flip_horizontal on raw buffer"
-        done: false
-      - text: "Wire rotate_180 as simple full-buffer reversal (no transpose)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All existing transform parity tests pass (rotate_90, 180, 270)"
-        done: false
-      - text: "Benchmark rotate_90 at 256/512/1024 — verify near-linear scaling (< 5x per 4x pixels)"
-        done: false
+- phase: Block Transpose Core
+  tasks:
+  - text: Implement scalar 8x8 block transpose for RGBA8 (baseline, no SIMD)
+    done: true
+  - text: Add WASM SIMD128 8x8 transpose for RGBA8 using i32x4 unpack pattern
+    done: true
+  - text: Implement RGB8 transpose via pad-to-RGBA + RGBA transpose + strip-alpha
+    done: true
+  - text: Handle edge tiles (partial rows/columns at image boundaries)
+    done: true
+- phase: Rotate Integration
+  tasks:
+  - text: Wire rotate_90 as block_transpose + flip_vertical on raw buffer
+    done: true
+  - text: Wire rotate_270 as block_transpose + flip_horizontal on raw buffer
+    done: true
+  - text: Wire rotate_180 as simple full-buffer reversal (no transpose)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All existing transform parity tests pass (rotate_90, 180, 270)
+    done: true
+  - text: Benchmark rotate_90 at 256/512/1024 — verify near-linear scaling (< 5x per 4x pixels)
+    done: true
 extra: {}
