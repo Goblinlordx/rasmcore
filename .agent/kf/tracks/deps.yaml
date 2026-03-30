@@ -68,3 +68,7 @@ drop-image-gif-direct_20260330020802Z: []
 
 # JPEG CMYK/YCCK decode gap
 jpeg-cmyk-decode_20260330023000Z: []
+
+# Filter registration — independent, no deps
+register-filters-core_20260330041359Z: []
+register-filters-pro_20260330041400Z: []
