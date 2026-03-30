@@ -1,0 +1,138 @@
+id: register-filters-core_20260330041359Z
+title: Register Unregistered Core Filters (Point Ops, Histogram, Threshold, Color)
+type: chore
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Register 15 implemented-but-invisible filters with #[register_filter] + ConfigParams:
+    gamma, invert, posterize, equalize, normalize, auto_level, otsu/triangle threshold,
+    grayscale, flatten, quantize, dither (2), white balance (2).
+  context: |
+    Per product.yaml registration-before-completion requirement, every filter must have
+    #[register_filter] annotation and appear in param-manifest.json to be visible to
+    WASM consumers, the SDK, and the demo UI. Currently 49 filters are registered but
+    ~27 additional implementations exist as pub fn without registration. This track
+    covers the 15 most fundamental ones.
+
+    Codecs are fully registered — all 16 encode formats and 18 decode formats have
+    proper dispatch in SUPPORTED_FORMATS, encoder/decoder modules, and
+    supported_formats() functions. No codec registration work needed.
+  codebase_analysis: |
+    UNREGISTERED FUNCTIONS TO REGISTER (15 total):
+
+    point_ops.rs — LUT-collapsible per-pixel operations:
+      1. gamma(pixels, info, gamma_value: f32)         → ConfigParams {gamma_value: f32 [0.1..10.0, default 1.0]}
+      2. invert(pixels, info)                           → no params, category "adjustment"
+      3. posterize(pixels, info, levels: u8)             → ConfigParams {levels: u8 [2..255, default 8]}
+
+    histogram.rs — global histogram operations:
+      4. equalize(pixels, info)                          → no params, category "enhancement"
+      5. normalize(pixels, info)                         → no params, category "enhancement"
+      6. auto_level(pixels, info)                        → no params, category "enhancement"
+
+    filters.rs — auto-threshold wrappers:
+      7. otsu_threshold(pixels, info) → u8              → wrapper computes + applies threshold
+      8. triangle_threshold(pixels, info) → u8          → wrapper computes + applies threshold
+
+    filters.rs — color/alpha:
+      9. grayscale(pixels, info)                         → no params, category "color"
+     10. flatten(pixels, info, bg_color)                 → ConfigParams {bg_r, bg_g, bg_b: u8 [0..255]}
+
+    quantize.rs — color reduction:
+     11. quantize(pixels, info, palette)                 → ConfigParams {max_colors: u32 [2..256, default 256]}
+     12. dither_floyd_steinberg(pixels, info, palette)   → ConfigParams {max_colors: u32 [2..256, default 256]}
+     13. dither_ordered(pixels, info, map_size)           → ConfigParams {map_size: u32 [2,4,8,16], default 4}
+
+    color_spaces.rs — white balance:
+     14. white_balance_gray_world(pixels, info)           → no params, category "color"
+     15. white_balance_temperature(pixels, info, t, tint) → ConfigParams {temperature: f32 [2000..12000], tint: f32 [-1..1]}
+
+    REGISTRATION PATTERN (existing example from filters.rs):
+      - Add #[derive(ConfigParams)] struct with #[param(...)] fields
+      - Add #[rasmcore_macros::register_filter(name = "...", category = "...")]
+      - Wrapper fn takes FilterInput, extracts params, calls underlying fn
+      - Build script auto-discovers annotations → generates WIT + adapter glue
+
+    NOTES:
+      - gamma, invert, posterize are LUT-collapsible (set is_lut_collapsible = true)
+      - otsu/triangle return u8 threshold values; registered wrappers should compute
+        threshold then apply it (matching OpenCV THRESH_OTSU/THRESH_TRIANGLE behavior)
+      - quantize/dither need a wrapper that runs median_cut() internally to build
+        the palette from max_colors, then applies quantization
+  acceptance_criteria:
+    - All 15 functions have #[register_filter] annotations with correct name and category
+    - ConfigParams structs with #[param(...)] fields for parameterized ops
+    - All 15 appear in generated param-manifest.json after cargo build
+    - LUT-collapsible flag set where applicable (gamma, invert, posterize)
+    - Existing unit tests pass (cargo test)
+    - No new crate dependencies added
+  out_of_scope: |
+    New SIMD paths — these already auto-vectorize via LUT or are non-hot-path.
+    New parity tests — existing correctness tests cover the underlying functions.
+    Multi-image filters (blend, inpaint) — deferred to pipeline architecture work.
+    Pro grading filters (curves, CDL, etc.) — separate track register-filters-pro.
+  technical_notes: |
+    All 15 functions are already implemented, tested, and correct. This track is
+    purely about adding the registration annotations and ConfigParams structs to
+    make them discoverable through the WASM API.
+
+    For quantize/dither: the existing functions take a pre-built palette. The
+    registered wrapper should accept max_colors, call median_cut() to build the
+    palette, then call the underlying function. This matches the user-facing
+    expectation (user specifies color count, not palette).
+
+    For otsu/triangle: the existing functions return a u8 threshold value. The
+    registered wrapper should compute the threshold, then call threshold_binary()
+    to produce a binary image.
+plan:
+  - phase: Point Operations (LUT-collapsible)
+    tasks:
+      - text: "Register gamma — ConfigParams {gamma_value: f32}, category adjustment, LUT-collapsible"
+        done: false
+      - text: "Register invert — no params, category adjustment, LUT-collapsible"
+        done: false
+      - text: "Register posterize — ConfigParams {levels: u8}, category adjustment, LUT-collapsible"
+        done: false
+  - phase: Histogram Operations
+    tasks:
+      - text: "Register equalize — no params, category enhancement"
+        done: false
+      - text: "Register normalize — no params, category enhancement"
+        done: false
+      - text: "Register auto_level — no params, category enhancement"
+        done: false
+  - phase: Auto-Threshold Wrappers
+    tasks:
+      - text: "Register otsu_threshold — wrapper computes threshold then applies via threshold_binary"
+        done: false
+      - text: "Register triangle_threshold — same pattern as otsu"
+        done: false
+  - phase: Color and Alpha
+    tasks:
+      - text: "Register grayscale — no params, category color"
+        done: false
+      - text: "Register flatten — ConfigParams {bg_r, bg_g, bg_b: u8}, category alpha"
+        done: false
+  - phase: Quantize and Dither
+    tasks:
+      - text: "Register quantize — ConfigParams {max_colors: u32}, wrapper calls median_cut + quantize"
+        done: false
+      - text: "Register dither_floyd_steinberg — ConfigParams {max_colors: u32}, wrapper calls median_cut + dither"
+        done: false
+      - text: "Register dither_ordered — ConfigParams {map_size: u32}, category color"
+        done: false
+  - phase: White Balance
+    tasks:
+      - text: "Register white_balance_gray_world — no params, category color"
+        done: false
+      - text: "Register white_balance_temperature — ConfigParams {temperature: f32, tint: f32}, category color"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "cargo build — verify all 15 new filters appear in param-manifest.json"
+        done: false
+      - text: "cargo test — all existing tests pass, no regressions"
+        done: false
+extra: {}
