@@ -2143,6 +2143,50 @@ fn property_zoom_blur_uniform() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Gradient & Pattern Generators
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn close_gradient_linear_vs_im() {
+    // IM: magick -size 64x64 gradient:black-white output.png
+    // Our gradient_linear at angle=90 (top-to-bottom) should match
+    if !magick_available() {
+        eprintln!("SKIP gradient_linear: magick not available");
+        return;
+    }
+
+    let pixels =
+        rasmcore_image::domain::filters::gradient_linear(64, 64, 0, 0, 0, 255, 255, 255, 90.0);
+
+    // Generate IM reference
+    let ref_path = std::path::PathBuf::from("/tmp/rasmcore_grad_im.png");
+    let status = std::process::Command::new("magick")
+        .args([
+            "-size",
+            "64x64",
+            "gradient:black-white",
+            "-depth",
+            "8",
+            ref_path.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    if !status.success() {
+        eprintln!("SKIP gradient_linear: magick gradient failed");
+        return;
+    }
+    let im_pixels = read_png_rgb(&ref_path);
+    let _ = std::fs::remove_file(&ref_path);
+
+    let error = mae(&pixels, &im_pixels);
+    eprintln!("  gradient_linear top-to-bottom: MAE = {error:.4}");
+    assert!(
+        error < 2.0,
+        "CLOSE: gradient_linear vs IM gradient MAE should be < 2.0, got {error:.4}"
+    );
+}
+
 #[test]
 fn reference_audit_summary() {
     eprintln!("\n=== REFERENCE AUDIT SUMMARY ===");
