@@ -1,134 +1,87 @@
 id: simd-dehaze-affine-vectorize_20260330015902Z
-title: "WASM SIMD128 — Dehaze Recovery + Affine Bilinear Vectorization"
+title: WASM SIMD128 — Dehaze Recovery + Affine Bilinear Vectorization
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Vectorize the dehaze per-pixel recovery loop and affine bilinear
-    interpolation inner loop with f32x4 WASM SIMD128.
-  context: |
-    Benchmark results (2026-03-30):
-      dehaze: 62ms at 256, 256ms at 512
-      affine: 375us at 256, 1.5ms at 512, 10.7ms at 1024
+  summary: 'Vectorize the dehaze per-pixel recovery loop and affine bilinear interpolation inner loop with f32x4 WASM SIMD128.
 
-    Both functions have scalar inner loops that are straightforward f32x4
-    vectorization targets. Dehaze is the higher-impact target (62ms vs
-    375us), but both share the same implementation pattern.
-
-    WASM is the primary target — native arch SIMD is out of scope.
-  codebase_analysis: |
-    dehaze recovery loop (filters.rs:4265-4279):
-      for each pixel:
-        for c in 0..3:
-          ic = pixels[pi + c] as f32 / 255.0
-          jc = (ic - atm[c]) / t + atm[c]
-          result[pi + c] = (jc * 255.0).clamp(0, 255) as u8
-
-      This is a textbook f32x4 vectorization target:
-        - Load 4 u8 values -> widen to f32x4
-        - Subtract atmospheric light (f32x4_sub)
-        - Divide by transmission (f32x4_div or f32x4_mul with reciprocal)
-        - Add atmospheric light back
-        - Scale, clamp, narrow back to u8
-
-      Can process 4 channels at once (R,G,B + 1 padding) or batch
-      4 pixels' same channel. The 3-channel structure suggests processing
-      4 pixels (12 values) as 3x f32x4 operations.
-
-    dehaze dark channel computation (filters.rs:4184-4203):
-      Nested loop over patch_radius neighborhood. This is harder to
-      vectorize (irregular memory access pattern). Skip for this track.
-
-    affine bilinear interpolation (transform.rs:618-651):
-      for each output pixel:
-        compute source coords (f64 matrix multiply)
-        if in_bounds:
-          for ch in 0..bpp:
-            val = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy
-            output[...] = val.round().clamp(0, 255) as u8
-
-      Vectorization approach:
-        - Source coord computation uses f64 — keep scalar (f64x2 only gives 2 lanes)
-        - Bilinear blend: process 4 channels (RGBA) as f32x4
-        - Weight computation: fx, fy, (1-fx), (1-fy) are shared across channels
-        - The 4-tap weighted sum is ideal for f32x4 multiply-accumulate
-
-    perspective_warp (filters.rs:2974-3067):
-      Already uses fixed-point integer arithmetic with weight tables.
-      The per-channel weighted sum (i32x4 multiply-accumulate) is the
-      SIMD opportunity, but the function is already well-optimized.
-      Include as stretch goal only if time permits.
+    '
+  context: "Benchmark results (2026-03-30):\n  dehaze: 62ms at 256, 256ms at 512\n  affine: 375us at 256, 1.5ms at 512, 10.7ms\
+    \ at 1024\n\nBoth functions have scalar inner loops that are straightforward f32x4\nvectorization targets. Dehaze is the\
+    \ higher-impact target (62ms vs\n375us), but both share the same implementation pattern.\n\nWASM is the primary target\
+    \ — native arch SIMD is out of scope.\n"
+  codebase_analysis: "dehaze recovery loop (filters.rs:4265-4279):\n  for each pixel:\n    for c in 0..3:\n      ic = pixels[pi\
+    \ + c] as f32 / 255.0\n      jc = (ic - atm[c]) / t + atm[c]\n      result[pi + c] = (jc * 255.0).clamp(0, 255) as u8\n\
+    \n  This is a textbook f32x4 vectorization target:\n    - Load 4 u8 values -> widen to f32x4\n    - Subtract atmospheric\
+    \ light (f32x4_sub)\n    - Divide by transmission (f32x4_div or f32x4_mul with reciprocal)\n    - Add atmospheric light\
+    \ back\n    - Scale, clamp, narrow back to u8\n\n  Can process 4 channels at once (R,G,B + 1 padding) or batch\n  4 pixels'\
+    \ same channel. The 3-channel structure suggests processing\n  4 pixels (12 values) as 3x f32x4 operations.\n\ndehaze\
+    \ dark channel computation (filters.rs:4184-4203):\n  Nested loop over patch_radius neighborhood. This is harder to\n\
+    \  vectorize (irregular memory access pattern). Skip for this track.\n\naffine bilinear interpolation (transform.rs:618-651):\n\
+    \  for each output pixel:\n    compute source coords (f64 matrix multiply)\n    if in_bounds:\n      for ch in 0..bpp:\n\
+    \        val = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy\n        output[...] = val.round().clamp(0,\
+    \ 255) as u8\n\n  Vectorization approach:\n    - Source coord computation uses f64 — keep scalar (f64x2 only gives 2 lanes)\n\
+    \    - Bilinear blend: process 4 channels (RGBA) as f32x4\n    - Weight computation: fx, fy, (1-fx), (1-fy) are shared\
+    \ across channels\n    - The 4-tap weighted sum is ideal for f32x4 multiply-accumulate\n\nperspective_warp (filters.rs:2974-3067):\n\
+    \  Already uses fixed-point integer arithmetic with weight tables.\n  The per-channel weighted sum (i32x4 multiply-accumulate)\
+    \ is the\n  SIMD opportunity, but the function is already well-optimized.\n  Include as stretch goal only if time permits.\n"
   acceptance_criteria:
-    - Dehaze recovery loop uses f32x4 WASM SIMD128 for per-pixel reconstruction
-    - Affine bilinear interpolation uses f32x4 for the 4-tap weighted blend
-    - Dehaze benchmark at 256 shows measurable speedup (target < 50ms from ~62ms)
-    - Affine benchmark at 1024 shows measurable speedup (target < 8ms from ~10.7ms)
-    - All existing dehaze and affine parity/unit tests pass
-    - Scalar fallback for non-WASM targets
-  out_of_scope: |
-    Native arch SIMD (aarch64, x86_64).
+  - Dehaze recovery loop uses f32x4 WASM SIMD128 for per-pixel reconstruction
+  - Affine bilinear interpolation uses f32x4 for the 4-tap weighted blend
+  - Dehaze benchmark at 256 shows measurable speedup (target < 50ms from ~62ms)
+  - Affine benchmark at 1024 shows measurable speedup (target < 8ms from ~10.7ms)
+  - All existing dehaze and affine parity/unit tests pass
+  - Scalar fallback for non-WASM targets
+  out_of_scope: 'Native arch SIMD (aarch64, x86_64).
+
     Dehaze dark channel computation (patch loop, complex memory access).
+
     Dehaze guided filter (already uses separable convolution with SIMD).
+
     perspective_warp (already fixed-point optimized, diminishing returns).
+
     Algorithmic changes to dehaze or affine (this is pure SIMD vectorization).
-  technical_notes: |
-    Dehaze recovery vectorization strategy:
-      Process 4 pixels at a time. For RGB8 (3 channels):
-        - Load 12 u8 values (4 pixels * 3 channels)
-        - Deinterleave to 3x f32x4 (R0R1R2R3, G0G1G2G3, B0B1B2B3)
-        - Apply recovery formula per-channel vector:
-            R_out = (R_in / 255.0 - atm_r) / t + atm_r
-        - Reinterleave and store as 12 u8
 
-      The deinterleave/reinterleave is the tricky part. For RGB8, use
-      i8x16_swizzle to separate channels. Alternatively, process one
-      channel at a time across 4 consecutive pixels (stride-3 loads).
-
-      Transmission 't' varies per-pixel, so must be loaded per iteration.
-      Atmospheric light 'atm' is constant — splat once.
-
-    Affine bilinear vectorization strategy:
-      For RGBA8 (4 channels = 4 lanes):
-        - Load 4 source pixels (p00, p10, p01, p11) each as f32x4
-        - Compute weights: w00=(1-fx)*(1-fy), w10=fx*(1-fy), etc.
-        - Splat each weight to f32x4
-        - Multiply-accumulate: result = p00*w00 + p10*w10 + p01*w01 + p11*w11
-        - Round, clamp, narrow to u8x4
-
-      For RGB8 (3 channels):
-        - Same approach but only use 3 lanes of f32x4 (4th lane is padding)
-        - Or pad to RGBA temporarily
-
-      This gives ~4x throughput for the blend but the coordinate computation
-      remains scalar. Profile to determine if the blend is actually the
-      bottleneck vs. the coordinate math + bounds checking.
+    '
+  technical_notes: "Dehaze recovery vectorization strategy:\n  Process 4 pixels at a time. For RGB8 (3 channels):\n    - Load\
+    \ 12 u8 values (4 pixels * 3 channels)\n    - Deinterleave to 3x f32x4 (R0R1R2R3, G0G1G2G3, B0B1B2B3)\n    - Apply recovery\
+    \ formula per-channel vector:\n        R_out = (R_in / 255.0 - atm_r) / t + atm_r\n    - Reinterleave and store as 12\
+    \ u8\n\n  The deinterleave/reinterleave is the tricky part. For RGB8, use\n  i8x16_swizzle to separate channels. Alternatively,\
+    \ process one\n  channel at a time across 4 consecutive pixels (stride-3 loads).\n\n  Transmission 't' varies per-pixel,\
+    \ so must be loaded per iteration.\n  Atmospheric light 'atm' is constant — splat once.\n\nAffine bilinear vectorization\
+    \ strategy:\n  For RGBA8 (4 channels = 4 lanes):\n    - Load 4 source pixels (p00, p10, p01, p11) each as f32x4\n    -\
+    \ Compute weights: w00=(1-fx)*(1-fy), w10=fx*(1-fy), etc.\n    - Splat each weight to f32x4\n    - Multiply-accumulate:\
+    \ result = p00*w00 + p10*w10 + p01*w01 + p11*w11\n    - Round, clamp, narrow to u8x4\n\n  For RGB8 (3 channels):\n   \
+    \ - Same approach but only use 3 lanes of f32x4 (4th lane is padding)\n    - Or pad to RGBA temporarily\n\n  This gives\
+    \ ~4x throughput for the blend but the coordinate computation\n  remains scalar. Profile to determine if the blend is\
+    \ actually the\n  bottleneck vs. the coordinate math + bounds checking.\n"
 plan:
-  - phase: "Dehaze SIMD"
-    tasks:
-      - text: "Vectorize dehaze recovery loop with f32x4 WASM SIMD128 (process 4 pixels at a time)"
-        done: false
-      - text: "Add RGB deinterleave/reinterleave helper using i8x16_swizzle for 4-pixel batches"
-        done: false
-      - text: "Handle remainder pixels (image size not divisible by 4) with scalar fallback"
-        done: false
-      - text: "Verify dehaze parity tests pass and benchmark shows improvement"
-        done: false
-  - phase: "Affine SIMD"
-    tasks:
-      - text: "Vectorize affine bilinear 4-tap blend with f32x4 for RGBA8 (4 channels per vector)"
-        done: false
-      - text: "Add RGB8 support via 3-lane f32x4 with masked 4th lane"
-        done: false
-      - text: "Profile to confirm blend is bottleneck vs coordinate computation"
-        done: false
-      - text: "Verify affine parity tests pass and benchmark shows improvement"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All existing dehaze and affine parity/unit tests pass"
-        done: false
-      - text: "Run enhancement/dehaze and geometric/affine benchmarks — verify speedup targets met"
-        done: false
+- phase: Dehaze SIMD
+  tasks:
+  - text: Vectorize dehaze recovery loop with f32x4 WASM SIMD128 (process 4 pixels at a time)
+    done: true
+  - text: Add RGB deinterleave/reinterleave helper using i8x16_swizzle for 4-pixel batches
+    done: true
+  - text: Handle remainder pixels (image size not divisible by 4) with scalar fallback
+    done: true
+  - text: Verify dehaze parity tests pass and benchmark shows improvement
+    done: true
+- phase: Affine SIMD
+  tasks:
+  - text: Vectorize affine bilinear 4-tap blend with f32x4 for RGBA8 (4 channels per vector)
+    done: true
+  - text: Add RGB8 support via 3-lane f32x4 with masked 4th lane
+    done: true
+  - text: Profile to confirm blend is bottleneck vs coordinate computation
+    done: true
+  - text: Verify affine parity tests pass and benchmark shows improvement
+    done: true
+- phase: Verification
+  tasks:
+  - text: All existing dehaze and affine parity/unit tests pass
+    done: true
+  - text: Run enhancement/dehaze and geometric/affine benchmarks — verify speedup targets met
+    done: true
 extra: {}
