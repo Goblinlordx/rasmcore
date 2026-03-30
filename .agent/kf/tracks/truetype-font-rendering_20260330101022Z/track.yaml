@@ -1,126 +1,108 @@
 id: truetype-font-rendering_20260330101022Z
-title: "TrueType/OpenType Font Rendering via fontdue"
+title: TrueType/OpenType Font Rendering via fontdue
 type: feature
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Replace bitmap-only draw_text with fontdue-based TrueType/OTF rendering.
-    Keep bitmap font as fallback when no font file provided. Add font_size_pt,
-    line wrapping, and multi-line support. Pure Rust, WASM-compatible.
-  context: |
-    The current draw_text uses an embedded 8x16 bitmap VGA font — ASCII only,
+  summary: 'Replace bitmap-only draw_text with fontdue-based TrueType/OTF rendering. Keep bitmap font as fallback when no
+    font file provided. Add font_size_pt, line wrapping, and multi-line support. Pure Rust, WASM-compatible.
+
+    '
+  context: 'The current draw_text uses an embedded 8x16 bitmap VGA font — ASCII only,
+
     fixed-width, no anti-aliasing. This is unusable for production annotations,
+
     watermarks, or any user-visible text. Every competing product (ImageMagick
+
     via Pango/FreeType, Pillow via FreeType, libvips via Pango) supports
+
     TrueType font rendering.
 
+
     fontdue is a pure-Rust, no_std-compatible font rasterizer that compiles
+
     to WASM. It handles TrueType and OpenType fonts with sub-pixel positioning
+
     and anti-aliased glyph rendering. No system dependencies.
-  codebase_analysis: |
-    Current implementation:
-    - draw.rs:263-356 — draw_text() with embedded 8x16 bitmap font
-    - font_8x16.bin — 95 glyphs (ASCII 32-126), 16 bytes each
-    - filters.rs DrawTextParams — x, y, scale, color (uses ColorRgba param type)
-    - draw_text_filter registered as "draw_text" in "draw" category
-    - WIT: draw-text function in filters.wit with text parameter
 
-    Integration points:
-    - draw_text() is called by draw_text_filter() in filters.rs
-    - The filter is registered and appears in param-manifest.json
-    - Pipeline node system can dispatch draw_text via filter name
-    - Demo UI renders draw_text controls from manifest
-
-    Font loading approach:
-    - Font data passed as &[u8] (loaded by caller from file/embedded)
-    - No filesystem access needed (WASM-compatible)
-    - Default: use embedded bitmap font when no font data provided
-    - A small embedded TrueType font (e.g., DejaVu Sans subset) could be
-      bundled as a default for basic use cases
-
-    Dependencies:
-    - fontdue crate (pure Rust, WASM-compatible, ~50KB)
-    - No system font enumeration needed
+    '
+  codebase_analysis: "Current implementation:\n- draw.rs:263-356 — draw_text() with embedded 8x16 bitmap font\n- font_8x16.bin\
+    \ — 95 glyphs (ASCII 32-126), 16 bytes each\n- filters.rs DrawTextParams — x, y, scale, color (uses ColorRgba param type)\n\
+    - draw_text_filter registered as \"draw_text\" in \"draw\" category\n- WIT: draw-text function in filters.wit with text\
+    \ parameter\n\nIntegration points:\n- draw_text() is called by draw_text_filter() in filters.rs\n- The filter is registered\
+    \ and appears in param-manifest.json\n- Pipeline node system can dispatch draw_text via filter name\n- Demo UI renders\
+    \ draw_text controls from manifest\n\nFont loading approach:\n- Font data passed as &[u8] (loaded by caller from file/embedded)\n\
+    - No filesystem access needed (WASM-compatible)\n- Default: use embedded bitmap font when no font data provided\n- A small\
+    \ embedded TrueType font (e.g., DejaVu Sans subset) could be\n  bundled as a default for basic use cases\n\nDependencies:\n\
+    - fontdue crate (pure Rust, WASM-compatible, ~50KB)\n- No system font enumeration needed\n"
   acceptance_criteria:
-    - draw_text() accepts optional font data (&[u8]) for TrueType/OTF fonts
-    - When font data provided, renders with fontdue at specified point size
-    - When no font data provided, falls back to existing 8x16 bitmap font
-    - Anti-aliased glyph rendering with alpha blending
-    - font_size_pt parameter controls text size in points (default 16.0)
-    - Multi-line support via newline characters
-    - Line wrapping when text exceeds image width (optional, off by default)
-    - Supports RGB8, RGBA8, Gray8 output
-    - All ASCII printable characters render correctly
-    - Unicode basic multilingual plane characters render (if present in font)
-    - Existing draw_text tests still pass (bitmap fallback)
-    - New tests with embedded DejaVu Sans subset
-    - WIT draw-text-ttf function added with font data parameter
-    - WASM-compatible (no filesystem, no system fonts)
-  out_of_scope: |
-    System font enumeration or loading by name.
+  - draw_text() accepts optional font data (&[u8]) for TrueType/OTF fonts
+  - When font data provided, renders with fontdue at specified point size
+  - When no font data provided, falls back to existing 8x16 bitmap font
+  - Anti-aliased glyph rendering with alpha blending
+  - font_size_pt parameter controls text size in points (default 16.0)
+  - Multi-line support via newline characters
+  - Line wrapping when text exceeds image width (optional, off by default)
+  - Supports RGB8, RGBA8, Gray8 output
+  - All ASCII printable characters render correctly
+  - Unicode basic multilingual plane characters render (if present in font)
+  - Existing draw_text tests still pass (bitmap fallback)
+  - New tests with embedded DejaVu Sans subset
+  - WIT draw-text-ttf function added with font data parameter
+  - WASM-compatible (no filesystem, no system fonts)
+  out_of_scope: 'System font enumeration or loading by name.
+
     Complex text layout (RTL, bidi, shaping).
+
     Text-on-path or curved text.
+
     Rich text (mixed fonts/sizes/colors in one call).
+
     Font subsetting or embedding optimization.
-  technical_notes: |
-    fontdue API:
-      let font = fontdue::Font::from_bytes(data, settings)?;
-      let (metrics, bitmap) = font.rasterize(char, px_size);
-      // bitmap is Vec<u8> with alpha coverage values
 
-    The rasterized glyph bitmap is then alpha-blended onto the image
-    at the correct position using metrics.xmin, metrics.ymin for offset.
-
-    For multi-line: split on '\n', advance y by line_height (ascent - descent + gap).
-
-    Font size: fontdue uses pixel size internally. Convert pt to px:
-      px = pt * (target_dpi / 72.0)
-    Default DPI: 96 (web standard).
-
-    Embedded default font: consider bundling a small subset of DejaVu Sans
-    (~30KB for ASCII + Latin-1) as a const &[u8] for when users don't
-    provide their own font. This avoids the "no font = bitmap only" cliff.
-
-    DrawTextParams changes:
-    - Add font_size_pt: f32 (default 16.0)
-    - The filter registration keeps the same name "draw_text"
-    - Font data is passed through the pipeline, not via ConfigParams
-      (binary data doesn't fit in scalar params)
-    - A new draw_text_ttf filter variant could accept font_data as a
-      separate buffer parameter via the WIT interface
+    '
+  technical_notes: "fontdue API:\n  let font = fontdue::Font::from_bytes(data, settings)?;\n  let (metrics, bitmap) = font.rasterize(char,\
+    \ px_size);\n  // bitmap is Vec<u8> with alpha coverage values\n\nThe rasterized glyph bitmap is then alpha-blended onto\
+    \ the image\nat the correct position using metrics.xmin, metrics.ymin for offset.\n\nFor multi-line: split on '\\n', advance\
+    \ y by line_height (ascent - descent + gap).\n\nFont size: fontdue uses pixel size internally. Convert pt to px:\n  px\
+    \ = pt * (target_dpi / 72.0)\nDefault DPI: 96 (web standard).\n\nEmbedded default font: consider bundling a small subset\
+    \ of DejaVu Sans\n(~30KB for ASCII + Latin-1) as a const &[u8] for when users don't\nprovide their own font. This avoids\
+    \ the \"no font = bitmap only\" cliff.\n\nDrawTextParams changes:\n- Add font_size_pt: f32 (default 16.0)\n- The filter\
+    \ registration keeps the same name \"draw_text\"\n- Font data is passed through the pipeline, not via ConfigParams\n \
+    \ (binary data doesn't fit in scalar params)\n- A new draw_text_ttf filter variant could accept font_data as a\n  separate\
+    \ buffer parameter via the WIT interface\n"
 plan:
-  - phase: Foundation
-    tasks:
-      - text: Add fontdue dependency to rasmcore-image Cargo.toml
-        done: false
-      - text: Create draw_text_ttf() function in draw.rs accepting font data + font_size_pt
-        done: false
-      - text: Implement glyph rasterization loop with fontdue, alpha-blend onto image
-        done: false
-      - text: Add multi-line support (split on newline, advance y by line height)
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Update draw_text() to accept optional font data, fall back to bitmap when None
-        done: false
-      - text: Add draw_text_ttf filter registration with font_size_pt param
-        done: false
-      - text: Add draw-text-ttf WIT function with font data buffer parameter
-        done: false
-      - text: Wire adapter for draw-text-ttf
-        done: false
-  - phase: Testing
-    tasks:
-      - text: Test bitmap fallback still works (existing tests pass)
-        done: false
-      - text: Test TrueType rendering with embedded DejaVu Sans subset — verify glyph positions and anti-aliasing
-        done: false
-      - text: Test multi-line rendering (newline splits, line height)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify WASM compilation (cargo component check)
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Add fontdue dependency to rasmcore-image Cargo.toml
+    done: true
+  - text: Create draw_text_ttf() function in draw.rs accepting font data + font_size_pt
+    done: true
+  - text: Implement glyph rasterization loop with fontdue, alpha-blend onto image
+    done: true
+  - text: Add multi-line support (split on newline, advance y by line height)
+    done: true
+- phase: Integration
+  tasks:
+  - text: Update draw_text() to accept optional font data, fall back to bitmap when None
+    done: true
+  - text: Add draw_text_ttf filter registration with font_size_pt param
+    done: true
+  - text: Add draw-text-ttf WIT function with font data buffer parameter
+    done: true
+  - text: Wire adapter for draw-text-ttf
+    done: true
+- phase: Testing
+  tasks:
+  - text: Test bitmap fallback still works (existing tests pass)
+    done: true
+  - text: Test TrueType rendering with embedded DejaVu Sans subset — verify glyph positions and anti-aliasing
+    done: true
+  - text: Test multi-line rendering (newline splits, line height)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify WASM compilation (cargo component check)
+    done: true
 extra: {}
