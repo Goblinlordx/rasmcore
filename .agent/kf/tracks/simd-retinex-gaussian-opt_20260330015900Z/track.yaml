@@ -1,0 +1,127 @@
+id: simd-retinex-gaussian-opt_20260330015900Z
+title: "WASM SIMD128 — Retinex Gaussian Optimization (stackable box blur + vectorized log-diff)"
+type: chore
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Replace the 481-tap separable Gaussian in retinex_ssr/msr/msrcr with a
+    3-pass stackable box blur (O(1) per pixel regardless of sigma) and
+    vectorize the log-difference normalization loop with f32x4 WASM SIMD128.
+  context: |
+    Benchmark results (2026-03-30) show retinex_ssr at 301ms for 256x256 —
+    the slowest operation in the entire filter suite. This is too slow for
+    interactive use and is the top optimization priority.
+
+    The bottleneck is gaussian_blur_cv() with sigma=80, which generates a
+    481-tap (round(80*6+1)|1) separable Gaussian kernel. Even though the
+    separable convolution inner loop already uses f32x4 SIMD, 481 taps per
+    pixel per channel is inherently expensive.
+
+    The project compiles to wasm32-wasip1 with +simd128 enabled. WASM is the
+    primary target — native arch SIMD is out of scope for this track.
+  codebase_analysis: |
+    Call chain:
+      retinex_ssr() -> gaussian_blur_cv(sigma=80) -> convolve(2D_kernel)
+        -> is_separable() detects separability -> convolve_separable()
+
+    gaussian_blur_cv (filters.rs:4634):
+      - Generates 2D kernel (481x481 = 231,361 floats!) then checks separability
+      - Wasteful: we know Gaussian is always separable, skip the 2D step
+      - Kernel size = round(sigma * 6 + 1) | 1 = 481 for sigma=80
+
+    convolve_separable (filters.rs:1030):
+      - Inner loop already uses f32x4 WASM SIMD for accumulation
+      - But 481 multiply-accumulates per output pixel per channel is O(K*N)
+      - For 256x256 RGB: 256*256*3*481*2 = ~189M multiply-accumulates
+
+    retinex log-diff loop (filters.rs:4719-4729):
+      - Scalar: processes one channel at a time
+      - ln() calls per channel, then subtraction
+      - Normalization loop (4732-4739) also scalar
+
+    retinex_msr (4768) and retinex_msrcr (4834) call gaussian_blur_cv
+    multiple times (one per sigma scale), compounding the cost.
+
+    Existing SIMD pattern in codebase:
+      #[cfg(target_arch = "wasm32")] { wasm_simd_impl() }
+      #[cfg(not(target_arch = "wasm32"))] { scalar_impl() }
+  acceptance_criteria:
+    - gaussian_blur_cv with large sigma uses stackable box blur (3-pass) instead of 481-tap separable convolution
+    - Box blur approximation quality validated against current Gaussian output (PSNR >= 35dB for sigma >= 20)
+    - retinex log-difference loop vectorized with f32x4 WASM SIMD128
+    - retinex normalization loop vectorized with f32x4 WASM SIMD128
+    - retinex_ssr benchmark at 256 shows >= 5x speedup (target < 60ms, from ~301ms)
+    - retinex_msr and retinex_msrcr also benefit (they call the same Gaussian path)
+    - All existing retinex parity/unit tests pass
+    - Small sigma (< 20) still uses the exact separable path for precision
+  out_of_scope: |
+    Native arch SIMD (aarch64 NEON, x86_64 SSE/AVX) — WASM is the primary target.
+    Replacing the convolve_separable inner loop itself (already SIMD).
+    Other filters that use Gaussian blur (vignette, etc.) — they use small sigma
+    values where the separable path is already fast.
+    Changes to the public retinex API signatures.
+  technical_notes: |
+    Stackable box blur approximation:
+      3 sequential box blur passes approximate a Gaussian (central limit theorem).
+      Box blur radius for each pass: r = sqrt((sigma^2 * 12 / 3 + 1) / 4)
+      Each box blur pass is O(1) per pixel using a sliding sum (running average).
+      Total: O(6*N) regardless of sigma, vs O(2*K*N) for separable Gaussian.
+
+    For sigma=80, K=481, this is a 160x algorithmic reduction in work per pixel.
+
+    The box blur can be implemented with a simple prefix sum approach:
+      For each row: running sum with add-front/subtract-back
+      For each column: same running sum pattern
+      Repeat 3 times
+
+    The running sum inner loop processes one pixel at a time but the
+    add/subtract is trivially vectorizable across RGB channels with SIMD.
+
+    Log-difference vectorization:
+      The ln() function is the bottleneck in the per-pixel loop. WASM SIMD128
+      has no native ln() intrinsic. Options:
+        1. Fast polynomial ln() approximation (IEEE 754 bit tricks + polynomial)
+        2. Process channels with f32x4 using scalar ln() per lane
+        3. Use the identity: log(a) - log(b) = log(a/b), reducing 2 ln() to 1
+
+      Option 1 gives best SIMD throughput. A 4th-order polynomial approximation
+      of ln(x) achieves < 0.001% relative error for the [1, 255] range.
+
+    Quality threshold:
+      Box blur approximation diverges from true Gaussian at small sigma.
+      Use the exact separable path for sigma < 20 (kernel size < 121 taps,
+      already fast enough). Switch to box blur for sigma >= 20.
+plan:
+  - phase: "Box Blur Foundation"
+    tasks:
+      - text: "Implement sliding-sum box blur for a single channel (row pass + column pass, O(1)/pixel)"
+        done: false
+      - text: "Implement 3-pass stackable box blur that approximates Gaussian (compute box radii from sigma)"
+        done: false
+      - text: "Add WASM SIMD128 to box blur inner loops (f32x4 for RGB channel accumulation)"
+        done: false
+      - text: "Validate box blur approximation quality vs true Gaussian (PSNR >= 35dB for sigma >= 20)"
+        done: false
+  - phase: "Retinex Vectorization"
+    tasks:
+      - text: "Implement fast f32x4 polynomial ln() approximation for WASM SIMD128 (4th-order, < 0.001% error in [1,255])"
+        done: false
+      - text: "Vectorize retinex log-difference loop with f32x4 (4 channels or 4 pixels at a time)"
+        done: false
+      - text: "Vectorize retinex min/max normalization loop with f32x4"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Route gaussian_blur_cv to box blur path when sigma >= 20, keep exact separable for sigma < 20"
+        done: false
+      - text: "Verify retinex_msr and retinex_msrcr benefit from the same optimization (multi-scale calls)"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All existing retinex parity and unit tests pass"
+        done: false
+      - text: "Run enhancement/retinex_ssr benchmark — target < 60ms at 256 (from ~301ms baseline)"
+        done: false
+extra: {}
