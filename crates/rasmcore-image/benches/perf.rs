@@ -18,7 +18,7 @@ use rasmcore_image::domain::filters::{
     AdaptiveMethod, BlendMode, BokehShape, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
 };
 use rasmcore_image::domain::types::*;
-use rasmcore_image::domain::{decoder, encoder, filters, transform};
+use rasmcore_image::domain::{color_grading, content_aware, decoder, encoder, filters, transform};
 
 // ─── Fixture Helpers ─────────────────────────────────────────────────────
 
@@ -1950,6 +1950,123 @@ fn cli_encoder_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── Pro Filter Benchmarks ──────────────────────────────────────────────
+
+fn pro_filter_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pro_filter");
+    group.sample_size(20);
+
+    for &size in &[256u32, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // ── Color Grading ────────────────────────────────────────────
+
+        let cdl = color_grading::AscCdl {
+            slope: [1.2, 0.9, 1.1],
+            offset: [0.05, -0.03, 0.0],
+            power: [0.9, 1.1, 1.0],
+            saturation: 1.0,
+        };
+        group.bench_function(BenchmarkId::new("asc_cdl", size), |b| {
+            b.iter(|| color_grading::asc_cdl(&dec.pixels, &dec.info, &cdl).unwrap());
+        });
+
+        let lgg = color_grading::LiftGammaGain {
+            lift: [0.05, -0.02, 0.0],
+            gamma: [0.8, 1.2, 1.0],
+            gain: [1.1, 0.95, 1.0],
+        };
+        group.bench_function(BenchmarkId::new("lift_gamma_gain", size), |b| {
+            b.iter(|| color_grading::lift_gamma_gain(&dec.pixels, &dec.info, &lgg).unwrap());
+        });
+
+        let st = color_grading::SplitToning::default();
+        group.bench_function(BenchmarkId::new("split_toning", size), |b| {
+            b.iter(|| color_grading::split_toning(&dec.pixels, &dec.info, &st).unwrap());
+        });
+
+        let tc = color_grading::ToneCurves {
+            r: vec![(0.0, 0.0), (0.25, 0.15), (0.75, 0.85), (1.0, 1.0)],
+            g: vec![(0.0, 0.0), (1.0, 1.0)],
+            b: vec![(0.0, 0.0), (1.0, 1.0)],
+        };
+        group.bench_function(BenchmarkId::new("curves", size), |b| {
+            b.iter(|| color_grading::curves(&dec.pixels, &dec.info, &tc).unwrap());
+        });
+
+        let grain = color_grading::FilmGrainParams {
+            amount: 0.3,
+            size: 1.5,
+            color: false,
+            seed: 42,
+        };
+        group.bench_function(BenchmarkId::new("film_grain", size), |b| {
+            b.iter(|| color_grading::film_grain(&dec.pixels, &dec.info, &grain).unwrap());
+        });
+
+        // ── Tonemapping ──────────────────────────────────────────────
+
+        group.bench_function(BenchmarkId::new("tonemap_reinhard", size), |b| {
+            b.iter(|| color_grading::tonemap_reinhard(&dec.pixels, &dec.info).unwrap());
+        });
+
+        let drago = color_grading::DragoParams::default();
+        group.bench_function(BenchmarkId::new("tonemap_drago", size), |b| {
+            b.iter(|| color_grading::tonemap_drago(&dec.pixels, &dec.info, &drago).unwrap());
+        });
+
+        let filmic = color_grading::FilmicParams::default();
+        group.bench_function(BenchmarkId::new("tonemap_filmic", size), |b| {
+            b.iter(|| color_grading::tonemap_filmic(&dec.pixels, &dec.info, &filmic).unwrap());
+        });
+
+        // ── Content-Aware ────────────────────────────────────────────
+
+        let sel = content_aware::SelectiveColorParams {
+            hue_range: content_aware::HueRange {
+                center: 0.0,
+                width: 60.0,
+            },
+            hue_shift: 30.0,
+            saturation: 1.5,
+            lightness: 0.0,
+        };
+        group.bench_function(BenchmarkId::new("selective_color", size), |b| {
+            b.iter(|| content_aware::selective_color(&dec.pixels, &dec.info, &sel).unwrap());
+        });
+
+        // Smart crop — crop to 75% size
+        let crop_w = size * 3 / 4;
+        let crop_h = size * 3 / 4;
+        group.bench_function(BenchmarkId::new("smart_crop", size), |b| {
+            b.iter(|| {
+                filters::smart_crop_registered(&dec.pixels, &dec.info, crop_w, crop_h).unwrap()
+            });
+        });
+
+        // Seam carving — only at 256 (too slow for 1024)
+        if size <= 256 {
+            let seam_target = size * 3 / 4;
+            group.bench_function(BenchmarkId::new("seam_carve_width", size), |b| {
+                b.iter(|| {
+                    content_aware::seam_carve_width(&dec.pixels, &dec.info, seam_target).unwrap()
+                });
+            });
+            group.bench_function(BenchmarkId::new("seam_carve_height", size), |b| {
+                b.iter(|| {
+                    content_aware::seam_carve_height(&dec.pixels, &dec.info, seam_target).unwrap()
+                });
+            });
+        }
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     decoder_benchmarks,
@@ -1966,6 +2083,7 @@ criterion_group!(
     alpha_blend_benchmarks,
     pipeline_benchmarks,
     cli_decoder_benchmarks,
-    cli_encoder_benchmarks
+    cli_encoder_benchmarks,
+    pro_filter_benchmarks
 );
 criterion_main!(benches);
