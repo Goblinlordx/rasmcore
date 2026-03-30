@@ -1,89 +1,101 @@
 id: param-parity-encoders_20260331000001Z
-title: "Phase 1+2 — Encoder Parameter Parity & Multi-Setting Validation"
+title: Phase 1+2 — Encoder Parameter Parity & Multi-Setting Validation
 type: chore
 status: pending
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-03-30'
 spec:
-  summary: >
-    Audit encoder params against IM/ffmpeg reference, fix mismatches, then
-    validate each encoder at 3+ quality/compression settings with pixel-level
-    comparison against reference output.
-  context: |
-    Current state from audit:
-    - JPEG: tested at q=1,50,75,85,100 for monotonic quality curve, but NOT
-      directly compared against IM's quality scale (our q=85 may not match IM q=85)
-    - PNG: all compression levels tested pixel-exact (good)
-    - WebP: NO quality parity tests at all
-    - TIFF: 16-bit roundtrip tested, compression types (LZW, CCITT) NOT tested
-    - GIF: dimensions/roundtrip tested, animation timing NOT tested
-    - APNG: basic frame count/delay tested vs ffmpeg, disposal modes limited
+  summary: 'Audit encoder params against IM/ffmpeg reference, fix mismatches, then validate each encoder at 3+ quality/compression
+    settings with pixel-level comparison against reference output.
 
-    Phase 1: For each encoder, document our parameter names/ranges vs the
-    reference implementation's. Identify any scale mismatches.
-    Phase 2: For each encoder, create tests that encode at 3+ different
-    settings, decode with the reference tool, and compare output.
-  codebase_analysis: |
-    Encoder configs (from encoder/*.rs):
+    '
+  context: "Current state from audit:\n- JPEG: tested at q=1,50,75,85,100 for monotonic quality curve, but NOT\n  directly\
+    \ compared against IM's quality scale (our q=85 may not match IM q=85)\n- PNG: all compression levels tested pixel-exact\
+    \ (good)\n- WebP: NO quality parity tests at all\n- TIFF: 16-bit roundtrip tested, compression types (LZW, CCITT) NOT\
+    \ tested\n- GIF: dimensions/roundtrip tested, animation timing NOT tested\n- APNG: basic frame count/delay tested vs ffmpeg,\
+    \ disposal modes limited\n\nPhase 1: For each encoder, document our parameter names/ranges vs the\nreference implementation's.\
+    \ Identify any scale mismatches.\nPhase 2: For each encoder, create tests that encode at 3+ different\nsettings, decode\
+    \ with the reference tool, and compare output.\n"
+  codebase_analysis: 'Encoder configs (from encoder/*.rs):
+
     - JPEG: JpegEncodeConfig { quality: u8, progressive: bool }
+
     - PNG: PngEncodeConfig { compression_level: u8, filter_type: PngFilterType }
+
     - WebP: via rasmcore-webp crate, quality parameter
+
     - TIFF: TiffEncodeConfig { compression: TiffCompression }
+
     - GIF: GifEncodeConfig { repeat: u16 }
+
     - APNG: PngEncodeConfig (reused)
 
+
     Reference tools available: magick (IM 7.1), ffmpeg 7.1, cwebp
+
+    '
   acceptance_criteria:
-    - JPEG quality scale documented vs IM quality scale (any offset identified)
-    - JPEG tested at q=25,50,75,95 with IM decode comparison (PSNR within 1 dB)
-    - WebP tested at q=25,50,75,95 with cwebp/dwebp comparison
-    - TIFF LZW and Deflate compression tested for pixel-exact roundtrip
-    - GIF animation timing tested (encode 3 frames with different delays, verify via ffprobe)
-    - APNG disposal modes tested (None, Background, Previous) vs ffmpeg
-    - Parameter names and ranges documented in code_styleguides/encoder-params.md
-  out_of_scope: |
-    Changing encoder implementations. Adding new encoder formats.
+  - JPEG quality scale documented vs IM quality scale (any offset identified)
+  - JPEG tested at q=25,50,75,95 with IM decode comparison (PSNR within 1 dB)
+  - WebP tested at q=25,50,75,95 with cwebp/dwebp comparison
+  - TIFF LZW and Deflate compression tested for pixel-exact roundtrip
+  - GIF animation timing tested (encode 3 frames with different delays, verify via ffprobe)
+  - APNG disposal modes tested (None, Background, Previous) vs ffmpeg
+  - Parameter names and ranges documented in code_styleguides/encoder-params.md
+  out_of_scope: 'Changing encoder implementations. Adding new encoder formats.
+
     Perceptual quality optimization (separate concern).
-  technical_notes: |
-    For JPEG quality scale comparison:
+
+    '
+  technical_notes: 'For JPEG quality scale comparison:
+
     - Encode same image at q=50 with our encoder and IM
+
     - Decode both with a third tool (e.g., djpeg or our own decoder)
+
     - Compare PSNR of both decoded outputs vs original
+
     - If scales diverge, document the mapping
 
+
     For WebP:
+
     - cwebp -q 75 input.png -o ref.webp
+
     - Our encode at q=75
+
     - dwebp both, compare pixels
+
+    '
 plan:
-  - phase: Parameter Audit
-    tasks:
-      - text: Document JPEG quality scale (our 1-100 vs IM 1-100) with file size comparison at 5 quality points
-        done: false
-      - text: Document WebP quality scale vs cwebp quality scale
-        done: false
-      - text: Document TIFF compression options (ours vs IM) and PNG compression levels
-        done: false
-      - text: Document GIF/APNG animation parameters vs ffmpeg/IM equivalents
-        done: false
-  - phase: Multi-Setting Encode Validation
-    tasks:
-      - text: JPEG multi-quality validation — encode at q=25,50,75,95, decode via IM, compare PSNR within 1 dB
-        done: false
-      - text: WebP multi-quality validation — encode at q=25,50,75,95, decode via dwebp, compare pixels
-        done: false
-      - text: TIFF compression roundtrip — test LZW, Deflate, None for pixel-exact output
-        done: false
-      - text: GIF animation timing — encode 3 frames at 50ms,100ms,200ms delays, verify via ffprobe
-        done: false
-      - text: APNG disposal mode validation — test None/Background/Previous disposal vs ffmpeg decode
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Write code_styleguides/encoder-params.md with parameter mapping tables
-        done: false
-      - text: Document any identified scale mismatches with remediation notes
-        done: false
-      - text: Update existing parity test tolerances based on findings
-        done: false
+- phase: Parameter Audit
+  tasks:
+  - text: Document JPEG quality scale (our 1-100 vs IM 1-100) with file size comparison at 5 quality points
+    done: true
+  - text: Document WebP quality scale vs cwebp quality scale
+    done: true
+  - text: Document TIFF compression options (ours vs IM) and PNG compression levels
+    done: true
+  - text: Document GIF/APNG animation parameters vs ffmpeg/IM equivalents
+    done: true
+- phase: Multi-Setting Encode Validation
+  tasks:
+  - text: JPEG multi-quality validation — encode at q=25,50,75,95, decode via IM, compare PSNR within 1 dB
+    done: true
+  - text: WebP multi-quality validation — encode at q=25,50,75,95, decode via dwebp, compare pixels
+    done: true
+  - text: TIFF compression roundtrip — test LZW, Deflate, None for pixel-exact output
+    done: true
+  - text: GIF animation timing — encode 3 frames at 50ms,100ms,200ms delays, verify via ffprobe
+    done: true
+  - text: APNG disposal mode validation — test None/Background/Previous disposal vs ffmpeg decode
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Write code_styleguides/encoder-params.md with parameter mapping tables
+    done: true
+  - text: Document any identified scale mismatches with remediation notes
+    done: true
+  - text: Update existing parity test tolerances based on findings
+    done: true
 extra: {}
