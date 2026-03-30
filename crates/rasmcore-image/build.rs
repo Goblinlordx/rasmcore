@@ -632,7 +632,7 @@ fn to_pascal_case(snake: &str) -> String {
 }
 
 fn to_wit_name(rust_name: &str) -> String {
-    rust_name.replace('_', "-")
+    rust_name.trim_start_matches('_').replace('_', "-")
 }
 
 fn to_wit_type(rust_type: &str) -> String {

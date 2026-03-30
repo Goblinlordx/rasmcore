@@ -34,7 +34,7 @@ const TYPE_MAP = {
 };
 
 function toWitType(rustType) { return TYPE_MAP[rustType] || 'f32'; }
-function toWitName(rustName) { return rustName.replace(/_/g, '-'); }
+function toWitName(rustName) { return rustName.replace(/^_+/, '').replace(/_/g, '-'); }
 
 function parseRegisteredFilters(source) {
   const lines = source.split('\n');
