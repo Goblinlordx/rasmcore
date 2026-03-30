@@ -1,0 +1,79 @@
+id: param-parity-transforms_20260331000002Z
+title: "Phase 1+2 — Transform Parameter Parity & Multi-Setting Validation"
+type: chore
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: >
+    Audit transform params against IM/OpenCV, then validate each transform
+    at 3+ different parameter values with reference comparison.
+  context: |
+    Current state: resize is well-tested against IM for Lanczos3 and a few
+    other filters. Crop, rotate, flip have basic roundtrip tests. But most
+    transforms are NOT tested with multiple parameter variations against
+    a reference — e.g., resize at 3 different target sizes with 3 different
+    filters, rotate at 45/90/135/270, crop at different regions.
+  codebase_analysis: |
+    Transforms (from transform.rs):
+    - resize(width, height, filter) — 13 filter algorithms
+    - crop(x, y, width, height)
+    - rotate(angle) — 90/180/270 fast path + arbitrary
+    - flip(horizontal, vertical)
+    - pad(left, top, right, bottom, fill_color)
+    - trim(threshold)
+    - affine(matrix, output_size)
+    - auto_orient() — EXIF-based
+
+    Existing parity: resize vs IM (Lanczos3 at one size), rotate 90/180/270
+    vs IM, crop basic. Missing: multiple sizes, multiple filters, arbitrary
+    rotation angles, pad colors, trim thresholds.
+  acceptance_criteria:
+    - resize tested at 3 sizes (upscale, downscale, same) x 3 filters (nearest, lanczos3, mitchell) vs IM
+    - crop tested at 3 different regions vs IM -crop
+    - rotate tested at 90, 180, 270, and 45 degrees vs IM -rotate
+    - flip horizontal and vertical tested vs IM -flip/-flop
+    - pad tested with 2 different border sizes and colors vs IM -border
+    - All comparisons MAE documented with tolerances
+  out_of_scope: |
+    Adding new transform algorithms. Changing existing implementations.
+    Performance benchmarking.
+  technical_notes: |
+    Reference commands:
+    - magick input.png -resize 128x128 -filter Lanczos output.png
+    - magick input.png -crop 50x50+10+10 +repage output.png
+    - magick input.png -rotate 45 -background black output.png
+    - magick input.png -flip output.png / -flop output.png
+    - magick input.png -border 10x10 -bordercolor red output.png
+plan:
+  - phase: Parameter Audit
+    tasks:
+      - text: Document resize filter names (ours vs IM) and verify scale behavior matches
+        done: false
+      - text: Document rotate angle convention (ours vs IM CW/CCW) and background fill
+        done: false
+      - text: Document crop coordinate system (ours vs IM x+y+WxH)
+        done: false
+  - phase: Multi-Setting Validation
+    tasks:
+      - text: Resize multi-setting — 3 sizes x 3 filters, compare vs IM at each combo
+        done: false
+      - text: Crop multi-region — 3 different crop rectangles, compare vs IM -crop
+        done: false
+      - text: Rotate multi-angle — 90, 180, 270, 45 degrees, compare vs IM -rotate
+        done: false
+      - text: Flip horizontal + vertical, compare vs IM -flip/-flop (pixel-exact)
+        done: false
+      - text: Pad multi-setting — 2 border sizes with different colors, compare vs IM -border
+        done: false
+  - phase: Documentation
+    tasks:
+      - text: Write parameter mapping table for transforms vs IM equivalents
+        done: false
+      - text: Document MAE tolerances for each transform at each setting
+        done: false
+      - text: Identify and document any convention differences (e.g., rotation direction)
+        done: false
+      - text: Update code_styleguides with transform parameter conventions
+        done: false
+extra: {}
