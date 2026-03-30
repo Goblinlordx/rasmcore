@@ -968,7 +968,11 @@ fn vignette_gaussian_alpha_preserved() {
     };
     let result = filters::vignette(&pixels, &info, 10.0, 5, 5, w, h, 0, 0).unwrap();
     for i in 0..(w * h) as usize {
-        assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved at pixel {i}");
+        assert_eq!(
+            result[i * 4 + 3],
+            200,
+            "alpha must be preserved at pixel {i}"
+        );
     }
     eprintln!("  vignette gaussian alpha: preserved ✓");
 }
@@ -1016,7 +1020,134 @@ fn exact_vignette_powerlaw_gray8_against_numpy() {
 fn vignette_powerlaw_zero_strength_is_identity() {
     let pixels = make_gradient_rgb(16, 16);
     let info = info_rgb8(16, 16);
-    let result =
-        filters::vignette_powerlaw(&pixels, &info, 0.0, 2.0, 16, 16, 0, 0).unwrap();
+    let result = filters::vignette_powerlaw(&pixels, &info, 0.0, 2.0, 16, 16, 0, 0).unwrap();
     assert_exact("vignette_powerlaw(0)", &result, &pixels);
+}
+
+// ─── Frequency Separation ─────────────────────────────────────────────────
+//
+// Reference: scipy.ndimage.gaussian_filter for the blur component.
+// High-pass = np.clip(original - blur + 128, 0, 255).
+// Roundtrip: original = low + high - 128 (clamped).
+
+#[test]
+fn frequency_low_vs_scipy() {
+    // Test against scipy Gaussian blur reference
+    let w = 32u32;
+    let h = 32;
+    let sigma = 4.0f32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let ours = filters::frequency_low(&pixels, &info, sigma).unwrap();
+
+    // Python reference: scipy gaussian_filter per channel
+    let script = format!(
+        r#"
+import sys, numpy as np
+from scipy.ndimage import gaussian_filter
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w},3)
+out = np.zeros_like(px)
+for c in range(3):
+    # scipy uses reflect (half-sample symmetric) like libblur's Clamp mode
+    out[:,:,c] = np.clip(gaussian_filter(px[:,:,c].astype(np.float64), sigma={sigma}, mode='nearest') + 0.5, 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'scipy'") {
+            eprintln!("  frequency_low_vs_scipy: SKIP (scipy not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+    let reference = output.stdout;
+
+    // libblur uses a different border mode than scipy, so allow MAE < 2.0
+    // (differences only at image borders due to padding mode mismatch)
+    let mae = mean_absolute_error(&ours, &reference);
+    let max_err = max_absolute_error(&ours, &reference);
+    eprintln!("  frequency_low vs scipy: MAE={mae:.4}, max_err={max_err}");
+    assert!(
+        mae < 2.0,
+        "frequency_low: MAE={mae:.4} too high vs scipy (border mode diff expected < 2.0)"
+    );
+}
+
+#[test]
+fn frequency_high_vs_numpy() {
+    // High-pass = original - blur + 128, verified against numpy arithmetic
+    let w = 32u32;
+    let h = 32;
+    let sigma = 4.0f32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let low = filters::frequency_low(&pixels, &info, sigma).unwrap();
+    let high = filters::frequency_high(&pixels, &info, sigma).unwrap();
+
+    // Verify high-pass matches np.clip(original - low + 128, 0, 255)
+    let mut expected_high = vec![0u8; pixels.len()];
+    for i in 0..pixels.len() {
+        let diff = pixels[i] as i16 - low[i] as i16 + 128;
+        expected_high[i] = diff.clamp(0, 255) as u8;
+    }
+    assert_exact(
+        "frequency_high vs (orig - low + 128)",
+        &high,
+        &expected_high,
+    );
+}
+
+#[test]
+fn frequency_separation_roundtrip_exact() {
+    // Validate: low + high - 128 = original (within ±1 for blur rounding)
+    let w = 64u32;
+    let h = 64;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    for sigma in [1.0f32, 4.0, 10.0, 25.0] {
+        let low = filters::frequency_low(&pixels, &info, sigma).unwrap();
+        let high = filters::frequency_high(&pixels, &info, sigma).unwrap();
+
+        let mut max_err: i16 = 0;
+        for i in 0..pixels.len() {
+            let reconstructed = (low[i] as i16 + high[i] as i16 - 128).clamp(0, 255);
+            let err = (reconstructed - pixels[i] as i16).abs();
+            max_err = max_err.max(err);
+        }
+        eprintln!("  roundtrip sigma={sigma}: max_err={max_err}");
+        assert!(
+            max_err <= 1,
+            "frequency roundtrip sigma={sigma}: max_err={max_err} > 1"
+        );
+    }
+}
+
+#[test]
+fn frequency_high_flat_image_is_neutral() {
+    // A constant image should produce all-128 high-pass
+    let info = info_rgb8(32, 32);
+    let pixels = vec![100u8; 32 * 32 * 3];
+
+    let high = filters::frequency_high(&pixels, &info, 5.0).unwrap();
+    assert_exact("frequency_high(flat)", &high, &vec![128u8; pixels.len()]);
 }
