@@ -5,157 +5,113 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Implement Elliptical Weighted Average (EWA) resampling with Robidoux filter
-    kernel to replace bilinear interpolation in all distortion filters. Achieves
-    pixel-exact parity with ImageMagick -distort operations (MAE < 1.0 vs current
-    4.35 for polar). Single shared ewa module, integrated into all 8 distortion
-    filters in filters.rs.
-  context: >
-    Distortion filters (swirl, polar, depolar, wave, ripple, barrel, spherize,
-    displacement_map) currently use bilinear interpolation — a 4-pixel fixed-grid
-    sampler. ImageMagick uses EWA resampling with a Robidoux filter, which adapts
-    the sampling region to the local distortion via the Jacobian matrix. This
-    produces alias-free results even under heavy downsampling or anisotropic
-    distortion. The polar filter currently has MAE 4.35 vs IM despite matching
-    the exact coordinate formula — the residual is entirely from bilinear vs EWA
-    resampling quality.
-  codebase_analysis: |
-    BILINEAR PATTERN (5 identical closures in filters.rs):
-      swirl (line 12792), polar (13088), depolar (13219), wave (13359), ripple (13502)
-      All use the exact same closure: floor, fractional, 4-corner blend, border=black.
+  summary: 'Implement Elliptical Weighted Average (EWA) resampling with Robidoux filter kernel to replace bilinear interpolation
+    in all distortion filters. Achieves pixel-exact parity with ImageMagick -distort operations (MAE < 1.0 vs current 4.35
+    for polar). Single shared ewa module, integrated into all 8 distortion filters in filters.rs.
 
-    VARIANTS (3 filters with different bilinear):
-      barrel (line 13038): edge-clamp instead of black border
-      displacement_map (line 6564): pre-computed weights w00/w10/w01/w11
-      spherize (line 12930): inline bilinear in per-pixel loop
+    '
+  context: 'Distortion filters (swirl, polar, depolar, wave, ripple, barrel, spherize, displacement_map) currently use bilinear
+    interpolation — a 4-pixel fixed-grid sampler. ImageMagick uses EWA resampling with a Robidoux filter, which adapts the
+    sampling region to the local distortion via the Jacobian matrix. This produces alias-free results even under heavy downsampling
+    or anisotropic distortion. The polar filter currently has MAE 4.35 vs IM despite matching the exact coordinate formula
+    — the residual is entirely from bilinear vs EWA resampling quality.
 
-    TRANSFORM.RS (not in scope for this track):
-      affine (line 1155): WASM SIMD f32x4 vectorized bilinear
-      perspective_warp (line 4039): OpenCV fixed-point i32 bilinear
-      undistort (line 1416): OpenCV fixed-point bilinear
-      These use different interpolation paradigms; EWA integration deferred.
-
-    NO EXISTING EWA/KERNEL INFRASTRUCTURE:
-      ResizeFilter enum has Nearest/Bilinear/Bicubic/Lanczos3 (in types.rs)
-      resize() delegates to fast_image_resize crate — no local kernel code
-      filter_utils.rs has format helpers only, no interpolation
-
-    JACOBIAN COMPLEXITY PER DISTORTION:
-      swirl: rotation matrix varies with radius → 2x2 Jacobian from chain rule
-      polar/depolar: analytical from sin/cos derivatives
-      wave: trivial — displacement in one axis only, J = [[1,0],[dsin/dx,1]]
-      ripple: radial displacement, J from d(r*sin)/dx, d(r*sin)/dy
-      barrel: radial polynomial, J from d(r*(1+k1*r^2))/dx
-      spherize: radial power law, similar to barrel
-      displacement_map: numerical approximation (no analytical form)
+    '
+  codebase_analysis: "BILINEAR PATTERN (5 identical closures in filters.rs):\n  swirl (line 12792), polar (13088), depolar\
+    \ (13219), wave (13359), ripple (13502)\n  All use the exact same closure: floor, fractional, 4-corner blend, border=black.\n\
+    \nVARIANTS (3 filters with different bilinear):\n  barrel (line 13038): edge-clamp instead of black border\n  displacement_map\
+    \ (line 6564): pre-computed weights w00/w10/w01/w11\n  spherize (line 12930): inline bilinear in per-pixel loop\n\nTRANSFORM.RS\
+    \ (not in scope for this track):\n  affine (line 1155): WASM SIMD f32x4 vectorized bilinear\n  perspective_warp (line\
+    \ 4039): OpenCV fixed-point i32 bilinear\n  undistort (line 1416): OpenCV fixed-point bilinear\n  These use different\
+    \ interpolation paradigms; EWA integration deferred.\n\nNO EXISTING EWA/KERNEL INFRASTRUCTURE:\n  ResizeFilter enum has\
+    \ Nearest/Bilinear/Bicubic/Lanczos3 (in types.rs)\n  resize() delegates to fast_image_resize crate — no local kernel code\n\
+    \  filter_utils.rs has format helpers only, no interpolation\n\nJACOBIAN COMPLEXITY PER DISTORTION:\n  swirl: rotation\
+    \ matrix varies with radius → 2x2 Jacobian from chain rule\n  polar/depolar: analytical from sin/cos derivatives\n  wave:\
+    \ trivial — displacement in one axis only, J = [[1,0],[dsin/dx,1]]\n  ripple: radial displacement, J from d(r*sin)/dx,\
+    \ d(r*sin)/dy\n  barrel: radial polynomial, J from d(r*(1+k1*r^2))/dx\n  spherize: radial power law, similar to barrel\n\
+    \  displacement_map: numerical approximation (no analytical form)\n"
   acceptance_criteria:
-    - Shared EWA resampling module in domain/ewa.rs with public sample function
-    - Robidoux cubic filter kernel matching IM default (cylindrical 2-lobe)
-    - Jacobian-based ellipse computation for adaptive sampling region
-    - All 8 distortion filters in filters.rs upgraded from bilinear to EWA
-    - Polar distortion MAE vs IM < 1.0 (currently 4.35 with bilinear)
-    - Wave distortion MAE vs IM < 1.0 (currently < 2.0)
-    - Swirl distortion MAE vs IM < 1.0
-    - EWA with zero distortion (identity Jacobian) degrades gracefully to point-sample
-    - amplitude=0 identity tests still pass for wave and ripple
-    - polar->depolar roundtrip still passes
-    - SIMD inner loop for weight accumulation (WASM SIMD128 + scalar fallback)
-    - No performance regression > 3x vs bilinear for typical 512x512 images
-  out_of_scope: >
-    EWA for transform.rs filters (affine, perspective_warp, undistort) — these use
-    different interpolation paradigms (SIMD f32x4, OpenCV fixed-point) and need
-    separate integration. Lanczos/Mitchell alternative kernels. GPU acceleration.
+  - Shared EWA resampling module in domain/ewa.rs with public sample function
+  - Robidoux cubic filter kernel matching IM default (cylindrical 2-lobe)
+  - Jacobian-based ellipse computation for adaptive sampling region
+  - All 8 distortion filters in filters.rs upgraded from bilinear to EWA
+  - Polar distortion MAE vs IM < 1.0 (currently 4.35 with bilinear)
+  - Wave distortion MAE vs IM < 1.0 (currently < 2.0)
+  - Swirl distortion MAE vs IM < 1.0
+  - EWA with zero distortion (identity Jacobian) degrades gracefully to point-sample
+  - amplitude=0 identity tests still pass for wave and ripple
+  - polar->depolar roundtrip still passes
+  - SIMD inner loop for weight accumulation (WASM SIMD128 + scalar fallback)
+  - No performance regression > 3x vs bilinear for typical 512x512 images
+  out_of_scope: 'EWA for transform.rs filters (affine, perspective_warp, undistort) — these use different interpolation paradigms
+    (SIMD f32x4, OpenCV fixed-point) and need separate integration. Lanczos/Mitchell alternative kernels. GPU acceleration.
     zoom_blur (uses ray accumulation, not point-sample distortion).
-  technical_notes: |
-    EWA ALGORITHM (from Heckbert 1989, as implemented by IM):
-      For each output pixel at (ox, oy):
-      1. Compute source coords (sx, sy) via inverse distortion
-      2. Compute Jacobian J = [[dsx/dox, dsx/doy], [dsy/dox, dsy/doy]]
-      3. From J, compute ellipse: A = J[0][0]^2 + J[1][0]^2,
-         B = J[0][0]*J[0][1] + J[1][0]*J[1][1], C = J[0][1]^2 + J[1][1]^2
-      4. Compute ellipse bounding box and clamp support radius
-      5. For each source pixel (ix, iy) within the ellipse:
-         - Compute Q = A*(ix-sx)^2 + 2*B*(ix-sx)*(iy-sy) + C*(iy-sy)^2
-         - weight = robidoux_kernel(sqrt(Q / F)) where F = A*C - B^2
-         - accumulate: color += pixel[iy][ix] * weight; total_weight += weight
-      6. Result = color / total_weight
 
-    ROBIDOUX FILTER KERNEL (cylindrical cubic):
-      B = 0.3782, C = 0.3109 (Nicolas Robidoux optimal values)
-      For r in [0, 1]: ((12-9B-6C)*r^3 + (-18+12B+6C)*r^2 + (6-2B)) / 6
-      For r in [1, 2]: ((-B-6C)*r^3 + (6B+30C)*r^2 + (-12B-48C)*r + (8B+24C)) / 6
-      For r > 2: 0
-
-    JACOBIAN DERIVATION PER FILTER:
-      Each distortion filter computes (sx, sy) = f(ox, oy). The Jacobian is:
-        J = [[df_x/dox, df_x/doy],
-             [df_y/dox, df_y/doy]]
-      For analytical distortions, these derivatives are computed in closed form.
-      For displacement_map, use numerical finite differences:
-        J[0][0] ≈ (f_x(ox+h, oy) - f_x(ox-h, oy)) / (2h)
-
-    API DESIGN:
-      pub struct EwaSampler<'a> { pixels, w, h, ch, wi, hi }
-      impl EwaSampler {
-        pub fn sample(&self, sx: f32, sy: f32, jacobian: [[f32; 2]; 2], c: usize) -> f32;
-        pub fn sample_pixel(&self, sx: f32, sy: f32, jacobian: [[f32; 2]; 2]) -> [f32; 4];
-      }
-      // Jacobian helper per distortion type
-      pub fn jacobian_polar(ox: f32, oy: f32, cx: f32, cy: f32, ...) -> [[f32; 2]; 2];
-      pub fn jacobian_swirl(ox: f32, oy: f32, ...) -> [[f32; 2]; 2];
-
-    REFERENCE SOURCE:
-      IM distort.c: InversePolarDistort, AffineDistort sections
-      IM resample.c: ScaleResampleFilter, ResamplePixelColor
-      IM resize.c: Robidoux filter definition
+    '
+  technical_notes: "EWA ALGORITHM (from Heckbert 1989, as implemented by IM):\n  For each output pixel at (ox, oy):\n  1.\
+    \ Compute source coords (sx, sy) via inverse distortion\n  2. Compute Jacobian J = [[dsx/dox, dsx/doy], [dsy/dox, dsy/doy]]\n\
+    \  3. From J, compute ellipse: A = J[0][0]^2 + J[1][0]^2,\n     B = J[0][0]*J[0][1] + J[1][0]*J[1][1], C = J[0][1]^2 +\
+    \ J[1][1]^2\n  4. Compute ellipse bounding box and clamp support radius\n  5. For each source pixel (ix, iy) within the\
+    \ ellipse:\n     - Compute Q = A*(ix-sx)^2 + 2*B*(ix-sx)*(iy-sy) + C*(iy-sy)^2\n     - weight = robidoux_kernel(sqrt(Q\
+    \ / F)) where F = A*C - B^2\n     - accumulate: color += pixel[iy][ix] * weight; total_weight += weight\n  6. Result =\
+    \ color / total_weight\n\nROBIDOUX FILTER KERNEL (cylindrical cubic):\n  B = 0.3782, C = 0.3109 (Nicolas Robidoux optimal\
+    \ values)\n  For r in [0, 1]: ((12-9B-6C)*r^3 + (-18+12B+6C)*r^2 + (6-2B)) / 6\n  For r in [1, 2]: ((-B-6C)*r^3 + (6B+30C)*r^2\
+    \ + (-12B-48C)*r + (8B+24C)) / 6\n  For r > 2: 0\n\nJACOBIAN DERIVATION PER FILTER:\n  Each distortion filter computes\
+    \ (sx, sy) = f(ox, oy). The Jacobian is:\n    J = [[df_x/dox, df_x/doy],\n         [df_y/dox, df_y/doy]]\n  For analytical\
+    \ distortions, these derivatives are computed in closed form.\n  For displacement_map, use numerical finite differences:\n\
+    \    J[0][0] ≈ (f_x(ox+h, oy) - f_x(ox-h, oy)) / (2h)\n\nAPI DESIGN:\n  pub struct EwaSampler<'a> { pixels, w, h, ch,\
+    \ wi, hi }\n  impl EwaSampler {\n    pub fn sample(&self, sx: f32, sy: f32, jacobian: [[f32; 2]; 2], c: usize) -> f32;\n\
+    \    pub fn sample_pixel(&self, sx: f32, sy: f32, jacobian: [[f32; 2]; 2]) -> [f32; 4];\n  }\n  // Jacobian helper per\
+    \ distortion type\n  pub fn jacobian_polar(ox: f32, oy: f32, cx: f32, cy: f32, ...) -> [[f32; 2]; 2];\n  pub fn jacobian_swirl(ox:\
+    \ f32, oy: f32, ...) -> [[f32; 2]; 2];\n\nREFERENCE SOURCE:\n  IM distort.c: InversePolarDistort, AffineDistort sections\n\
+    \  IM resample.c: ScaleResampleFilter, ResamplePixelColor\n  IM resize.c: Robidoux filter definition\n"
 plan:
-  - phase: EWA Engine Core
-    tasks:
-      - text: Create domain/ewa.rs module with Robidoux filter kernel function
-        done: false
-      - text: Implement ellipse parameter computation from 2x2 Jacobian matrix
-        done: false
-      - text: Implement EWA sampling loop — iterate pixels within ellipse, weight by kernel, accumulate
-        done: false
-      - text: Add EwaSampler struct with sample() and sample_pixel() methods
-        done: false
-      - text: Unit tests for kernel values, ellipse computation, and identity-Jacobian behavior
-        done: false
-  - phase: Jacobian Derivation
-    tasks:
-      - text: Derive and implement analytical Jacobian for polar and depolar
-        done: false
-      - text: Derive and implement analytical Jacobian for wave and ripple
-        done: false
-      - text: Derive and implement analytical Jacobian for swirl
-        done: false
-      - text: Derive and implement analytical Jacobian for barrel and spherize
-        done: false
-      - text: Implement numerical Jacobian for displacement_map (finite differences)
-        done: false
-  - phase: Filter Integration
-    tasks:
-      - text: Replace bilinear with EWA in polar and depolar filters
-        done: false
-      - text: Replace bilinear with EWA in wave and ripple filters
-        done: false
-      - text: Replace bilinear with EWA in swirl filter
-        done: false
-      - text: Replace bilinear with EWA in barrel, spherize, and displacement_map filters
-        done: false
-      - text: Verify all identity/roundtrip tests still pass
-        done: false
-  - phase: SIMD & Parity Verification
-    tasks:
-      - text: Add WASM SIMD128 inner loop for EWA weight accumulation
-        done: false
-      - text: IM parity test — polar MAE < 1.0 vs magick -distort Polar
-        done: false
-      - text: IM parity test — wave MAE < 1.0 vs magick -wave
-        done: false
-      - text: IM parity test — swirl MAE < 1.0 vs magick -swirl
-        done: false
-      - text: Performance benchmark — EWA vs bilinear, verify < 3x slowdown on 512x512
-        done: false
+- phase: EWA Engine Core
+  tasks:
+  - text: Create domain/ewa.rs module with Robidoux filter kernel function
+    done: true
+  - text: Implement ellipse parameter computation from 2x2 Jacobian matrix
+    done: true
+  - text: Implement EWA sampling loop — iterate pixels within ellipse, weight by kernel, accumulate
+    done: true
+  - text: Add EwaSampler struct with sample() and sample_pixel() methods
+    done: true
+  - text: Unit tests for kernel values, ellipse computation, and identity-Jacobian behavior
+    done: true
+- phase: Jacobian Derivation
+  tasks:
+  - text: Derive and implement analytical Jacobian for polar and depolar
+    done: true
+  - text: Derive and implement analytical Jacobian for wave and ripple
+    done: true
+  - text: Derive and implement analytical Jacobian for swirl
+    done: true
+  - text: Derive and implement analytical Jacobian for barrel and spherize
+    done: true
+  - text: Implement numerical Jacobian for displacement_map (finite differences)
+    done: true
+- phase: Filter Integration
+  tasks:
+  - text: Replace bilinear with EWA in polar and depolar filters
+    done: true
+  - text: Replace bilinear with EWA in wave and ripple filters
+    done: true
+  - text: Replace bilinear with EWA in swirl filter
+    done: true
+  - text: Replace bilinear with EWA in barrel, spherize, and displacement_map filters
+    done: true
+  - text: Verify all identity/roundtrip tests still pass
+    done: true
+- phase: SIMD & Parity Verification
+  tasks:
+  - text: Add WASM SIMD128 inner loop for EWA weight accumulation
+    done: true
+  - text: IM parity test — polar MAE < 1.0 vs magick -distort Polar
+    done: true
+  - text: IM parity test — wave MAE < 1.0 vs magick -wave
+    done: true
+  - text: IM parity test — swirl MAE < 1.0 vs magick -swirl
+    done: true
+  - text: Performance benchmark — EWA vs bilinear, verify < 3x slowdown on 512x512
+    done: true
 extra: {}
