@@ -5,98 +5,143 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add Kuwahara (edge-preserving painterly smoothing) and generalized rank
+  summary: 'Add Kuwahara (edge-preserving painterly smoothing) and generalized rank
+
     filter (local min/max/mean/median by radius and rank). Both are standard
+
     ImageMagick/vips spatial operations. Validated against IM -kuwahara and
+
     -statistic references.
-  context: |
-    Kuwahara is a popular edge-preserving smoothing filter that produces a
-    painterly effect. It divides each pixel's neighborhood into quadrants,
+
+    '
+  context: 'Kuwahara is a popular edge-preserving smoothing filter that produces a
+
+    painterly effect. It divides each pixel''s neighborhood into quadrants,
+
     computes mean and variance per quadrant, and selects the quadrant with
+
     lowest variance. This is more sophisticated than oil_paint and matches
-    IM's -kuwahara. The rank filter generalizes the existing median filter
+
+    IM''s -kuwahara. The rank filter generalizes the existing median filter
+
     to support any rank (min, max, mean, or arbitrary percentile), matching
-    IM's -statistic and vips_rank. These fill the last major spatial filter gaps.
-  codebase_analysis: |
-    EXISTING SPATIAL FILTERS:
+
+    IM''s -statistic and vips_rank. These fill the last major spatial filter gaps.
+
+    '
+  codebase_analysis: 'EXISTING SPATIAL FILTERS:
+
     - blur (libblur, Gaussian): SIMD, registered
+
     - median: histogram-based, registered — rank=50% only
+
     - bilateral: edge-preserving, registered — different algorithm from Kuwahara
+
     - oil_paint: histogram-mode filter — simpler/different from Kuwahara
+
     - guided_filter: edge-preserving — different algorithm
+
     - convolve: generic kernel — not adaptive like Kuwahara
 
+
     MEDIAN IMPLEMENTATION (filters.rs):
+
     - Uses histogram-based approach for O(1) per-pixel (sliding window)
+
     - Could be generalized to rank filter by selecting different percentile
 
+
     WHERE TO ADD:
+
     - Kuwahara: new function in filters.rs, O(r^2) per pixel (4 quadrant stats)
+
     - Rank filter: generalize existing median or new implementation
+
     - Both registered with ConfigParams
+
     - Target crate: rasmcore-filter-spatial
 
+
     SIMD:
+
     - Kuwahara: SIMD for quadrant mean/variance computation
+
     - Rank filter: histogram-based approach naturally vectorizes per-row updates
+
+    '
   acceptance_criteria:
-    - kuwahara filter registered with radius param, produces edge-preserving smooth
-    - rank_filter registered with radius and rank params (0.0=min, 0.5=median, 1.0=max)
-    - rank_filter at rank=0.5 matches existing median filter output
-    - rank_filter at rank=0.0 produces local minimum (erosion-like)
-    - rank_filter at rank=1.0 produces local maximum (dilation-like)
-    - Kuwahara reference parity vs IM -kuwahara within ALGORITHM tier (MAE < 5.0)
-    - Rank filter min/max parity vs IM -statistic Minimum/Maximum within CLOSE tier
-    - Both support RGB8 and RGBA8 (alpha preserved)
-    - SIMD inner loops for both filters
-    - Re-exported via rasmcore-filter-spatial crate
-  out_of_scope: |
-    Anisotropic Kuwahara (orientation-aware). Multi-scale Kuwahara.
+  - kuwahara filter registered with radius param, produces edge-preserving smooth
+  - rank_filter registered with radius and rank params (0.0=min, 0.5=median, 1.0=max)
+  - rank_filter at rank=0.5 matches existing median filter output
+  - rank_filter at rank=0.0 produces local minimum (erosion-like)
+  - rank_filter at rank=1.0 produces local maximum (dilation-like)
+  - Kuwahara reference parity vs IM -kuwahara within ALGORITHM tier (MAE < 5.0)
+  - Rank filter min/max parity vs IM -statistic Minimum/Maximum within CLOSE tier
+  - Both support RGB8 and RGBA8 (alpha preserved)
+  - SIMD inner loops for both filters
+  - Re-exported via rasmcore-filter-spatial crate
+  out_of_scope: 'Anisotropic Kuwahara (orientation-aware). Multi-scale Kuwahara.
+
     Weighted rank filter. 3D rank filter for video.
-  technical_notes: |
-    KUWAHARA:
+
+    '
+  technical_notes: 'KUWAHARA:
+
     - For each pixel, define 4 overlapping quadrants of size (r+1)x(r+1)
+
     - Quadrants: top-left, top-right, bottom-left, bottom-right
+
     - Compute mean RGB and variance per quadrant
+
     - Output = mean of quadrant with lowest variance
+
     - Variance = sum((pixel - mean)^2) / count, computed per channel
+
     - SIMD: compute 4 quadrant sums in parallel using integral image
+
     - IM equivalent: -kuwahara {radius}
 
+
     RANK FILTER:
+
     - Generalization of median: sort neighborhood, pick rank-th element
+
     - rank=0.0 -> minimum, rank=0.5 -> median, rank=1.0 -> maximum
+
     - Histogram-based: maintain sliding histogram, find rank by cumsum
+
     - For rank=0 or rank=1, optimize with min/max sliding window (deque)
+
     - IM equivalent: -statistic Minimum/Maximum/Median {radius}x{radius}
+
+    '
 plan:
-  - phase: Kuwahara Filter
-    tasks:
-      - text: Implement kuwahara with quadrant mean/variance selection, SIMD inner loop
-        done: false
-      - text: Register with ConfigParams (radius, default 3)
-        done: false
-      - text: Test edge preservation (sharp edges stay sharp, flat regions smooth)
-        done: false
-      - text: IM parity test vs -kuwahara, assert ALGORITHM tier (MAE < 5.0)
-        done: false
-  - phase: Rank Filter
-    tasks:
-      - text: Implement rank_filter with histogram-based sliding window
-        done: false
-      - text: Register with ConfigParams (radius, rank 0.0-1.0)
-        done: false
-      - text: Test rank=0.5 matches existing median, rank=0/1 produces min/max
-        done: false
-      - text: IM parity test vs -statistic Minimum/Maximum, assert CLOSE tier
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Re-export both via rasmcore-filter-spatial crate
-        done: false
-      - text: Verify param-manifest.json includes both new filters
-        done: false
-      - text: Full cargo test pass
-        done: false
+- phase: Kuwahara Filter
+  tasks:
+  - text: Implement kuwahara with quadrant mean/variance selection, SIMD inner loop
+    done: true
+  - text: Register with ConfigParams (radius, default 3)
+    done: true
+  - text: Test edge preservation (sharp edges stay sharp, flat regions smooth)
+    done: true
+  - text: IM parity test vs -kuwahara, assert ALGORITHM tier (MAE < 5.0)
+    done: true
+- phase: Rank Filter
+  tasks:
+  - text: Implement rank_filter with histogram-based sliding window
+    done: true
+  - text: Register with ConfigParams (radius, rank 0.0-1.0)
+    done: true
+  - text: Test rank=0.5 matches existing median, rank=0/1 produces min/max
+    done: true
+  - text: IM parity test vs -statistic Minimum/Maximum, assert CLOSE tier
+    done: true
+- phase: Verification
+  tasks:
+  - text: Re-export both via rasmcore-filter-spatial crate
+    done: true
+  - text: Verify param-manifest.json includes both new filters
+    done: true
+  - text: Full cargo test pass
+    done: true
 extra: {}
