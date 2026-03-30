@@ -1,0 +1,89 @@
+id: animation-pipeline-research_20260330041802Z
+title: "Research: Animation Pipeline Design (GIF/WebP/APNG)"
+type: research
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Investigate multi-frame pipeline support for animated GIF, animated WebP, and
+    APNG — frame sequencing, disposal methods, timing, compositing, and integration
+    with existing decode/encode paths.
+  context: |
+    rasmcore currently decodes only the first frame of animated formats. Both
+    ImageMagick and libvips support full animation read/write. Animation is the
+    largest remaining gap for real-world format parity — animated GIFs and WebPs
+    are ubiquitous on the web.
+  codebase_analysis: |
+    Current state:
+    - GIF decode: reads first frame only (gif crate supports frame iteration)
+    - WebP decode: reads first frame (image-webp crate handles animation)
+    - PNG: no APNG support in image crate
+    - No animation types in domain model (ImageInfo has no frame count/delay)
+    - Pipeline is single-frame: decode -> filter -> encode
+    - Encoder dispatch produces single-frame output
+
+    Key questions this research must answer:
+    1. How should animated images flow through the filter pipeline?
+       - Per-frame: apply filters to each frame independently
+       - Temporal: some operations span frames (e.g., temporal denoising)
+    2. How should frame metadata (delay, disposal, blend) be represented?
+    3. Should the pipeline support frame-level random access?
+    4. What changes to ImageInfo, DecodedImage, and encoder APIs are needed?
+    5. How do disposal methods (GIF: none/background/previous) map to compositing?
+    6. Can animated encode reuse existing format encoders with frame-loop wrapper?
+    7. WASM memory implications — can we stream frames or must all be in memory?
+  acceptance_criteria:
+    - Design document produced at .agent/kf/_reports/animation-pipeline-design.md
+    - Domain type proposals for AnimatedImage, Frame, FrameMetadata
+    - API surface proposal for read_animated() / write_animated()
+    - Assessment of gif, image-webp, and png crate animation APIs
+    - Memory budget analysis for typical animated GIF (100 frames, 500x500)
+    - Recommended implementation order (which format first, incremental delivery)
+    - No source code changes
+  out_of_scope: |
+    Implementing animation support — this is research only.
+    Video codec frame handling (ffmpeg, HEVC) — separate domain.
+    SVG animation (SMIL) — different technology.
+  technical_notes: |
+    Reference implementation APIs to study:
+    - libvips: vips_gifsave() / gifload_source() with n-pages
+    - ImageMagick: -coalesce, -deconstruct, -layers optimize
+    - gif crate: DecodeOptions::read_info() -> Frames iterator
+    - image-webp: AnimDecoder frame iteration
+plan:
+  - phase: Format Survey
+    tasks:
+      - text: "Document GIF animation model (disposal methods, delay, local color tables)"
+        done: false
+      - text: "Document WebP animation model (ANIM/ANMF chunks, blend modes)"
+        done: false
+      - text: "Document APNG model (fcTL, fdAT chunks, disposal/blend ops)"
+        done: false
+      - text: "Survey gif, image-webp, and png crate animation APIs"
+        done: false
+  - phase: Architecture Design
+    tasks:
+      - text: "Propose domain types: AnimatedImage, Frame, FrameMetadata"
+        done: false
+      - text: "Propose decoder API: read_animated() returning frame iterator or collection"
+        done: false
+      - text: "Propose encoder API: write_animated() accepting frame sequence"
+        done: false
+      - text: "Design per-frame filter application strategy"
+        done: false
+      - text: "Analyze memory budget for streaming vs buffered approaches"
+        done: false
+  - phase: Integration Assessment
+    tasks:
+      - text: "Assess impact on existing ImageInfo and DecodedImage types"
+        done: false
+      - text: "Assess WASM Component Model constraints (memory, streaming)"
+        done: false
+      - text: "Recommend implementation order and incremental delivery plan"
+        done: false
+  - phase: Report
+    tasks:
+      - text: "Write .agent/kf/_reports/animation-pipeline-design.md"
+        done: false
+extra: {}

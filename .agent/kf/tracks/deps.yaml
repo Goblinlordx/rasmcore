@@ -72,3 +72,9 @@ jpeg-cmyk-decode_20260330023000Z: []
 # Filter registration — independent, no deps
 register-filters-core_20260330041359Z: []
 register-filters-pro_20260330041400Z: []
+
+# Parity report refresh — no deps
+parity-refresh_20260330041801Z: []
+
+# Animation pipeline research — no deps
+animation-pipeline-research_20260330041802Z: []
