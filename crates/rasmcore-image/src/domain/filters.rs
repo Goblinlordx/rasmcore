@@ -9205,3 +9205,153 @@ mod blend_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod frequency_separation_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn make_rgb(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
+        // Gradient pattern with some variation
+        let n = (w * h * 3) as usize;
+        let mut pixels = vec![0u8; n];
+        for y in 0..h {
+            for x in 0..w {
+                let idx = ((y * w + x) * 3) as usize;
+                pixels[idx] = ((x * 255) / w.max(1)) as u8; // R: horizontal gradient
+                pixels[idx + 1] = ((y * 255) / h.max(1)) as u8; // G: vertical gradient
+                pixels[idx + 2] = 128; // B: constant
+            }
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        (pixels, info)
+    }
+
+    #[test]
+    fn roundtrip_rgb8() {
+        let (pixels, info) = make_rgb(32, 32);
+        let sigma = 4.0;
+
+        let low = frequency_low(&pixels, &info, sigma).unwrap();
+        let high = frequency_high(&pixels, &info, sigma).unwrap();
+
+        assert_eq!(low.len(), pixels.len());
+        assert_eq!(high.len(), pixels.len());
+
+        // Reconstruct: original = low + high - 128
+        let mut max_err = 0i16;
+        for i in 0..pixels.len() {
+            let reconstructed = low[i] as i16 + high[i] as i16 - 128;
+            let clamped = reconstructed.clamp(0, 255) as u8;
+            let err = (clamped as i16 - pixels[i] as i16).abs();
+            max_err = max_err.max(err);
+        }
+        // Allow ±1 for rounding in Gaussian blur
+        assert!(
+            max_err <= 1,
+            "roundtrip error too high: max_err={max_err} (expected ≤ 1)"
+        );
+    }
+
+    #[test]
+    fn roundtrip_rgba8() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let mut pixels = vec![0u8; 16 * 16 * 4];
+        for i in 0..pixels.len() / 4 {
+            pixels[i * 4] = 100; // R
+            pixels[i * 4 + 1] = 150; // G
+            pixels[i * 4 + 2] = 200; // B
+            pixels[i * 4 + 3] = 255; // A
+        }
+
+        let sigma = 3.0;
+        let low = frequency_low(&pixels, &info, sigma).unwrap();
+        let high = frequency_high(&pixels, &info, sigma).unwrap();
+
+        // Check alpha preserved in high-pass
+        for i in 0..pixels.len() / 4 {
+            assert_eq!(high[i * 4 + 3], 255, "alpha must be preserved in high-pass");
+        }
+
+        // Roundtrip for color channels
+        let mut max_err = 0i16;
+        for i in 0..pixels.len() {
+            if i % 4 == 3 {
+                continue; // skip alpha
+            }
+            let reconstructed = (low[i] as i16 + high[i] as i16 - 128).clamp(0, 255);
+            let err = (reconstructed - pixels[i] as i16).abs();
+            max_err = max_err.max(err);
+        }
+        assert!(max_err <= 1, "RGBA roundtrip max_err={max_err}");
+    }
+
+    #[test]
+    fn zero_sigma_identity() {
+        let (pixels, info) = make_rgb(8, 8);
+
+        // sigma=0 → low = original, high = all 128
+        let low = frequency_low(&pixels, &info, 0.0).unwrap();
+        let high = frequency_high(&pixels, &info, 0.0).unwrap();
+
+        assert_eq!(low, pixels, "sigma=0 low-pass should equal original");
+        assert!(
+            high.iter().all(|&v| v == 128),
+            "sigma=0 high-pass should be all 128"
+        );
+    }
+
+    #[test]
+    fn high_pass_centered_on_flat_image() {
+        // A flat image should produce a flat high-pass at exactly 128
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![100u8; 16 * 16 * 3];
+
+        let high = frequency_high(&pixels, &info, 5.0).unwrap();
+
+        // For a flat image, blur = original, so high = orig - blur + 128 = 128
+        for (i, &v) in high.iter().enumerate() {
+            assert!(
+                (v as i16 - 128).abs() <= 1,
+                "flat image high-pass pixel {i} = {v}, expected ~128"
+            );
+        }
+    }
+
+    #[test]
+    fn gray8_roundtrip() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels: Vec<u8> = (0..256).map(|i| (i % 256) as u8).collect();
+
+        let low = frequency_low(&pixels, &info, 2.0).unwrap();
+        let high = frequency_high(&pixels, &info, 2.0).unwrap();
+
+        let mut max_err = 0i16;
+        for i in 0..pixels.len() {
+            let reconstructed = (low[i] as i16 + high[i] as i16 - 128).clamp(0, 255);
+            let err = (reconstructed - pixels[i] as i16).abs();
+            max_err = max_err.max(err);
+        }
+        assert!(max_err <= 1, "Gray8 roundtrip max_err={max_err}");
+    }
+}
