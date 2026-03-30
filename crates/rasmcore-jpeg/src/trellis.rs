@@ -718,9 +718,7 @@ pub fn eob_optimize_blocks(
 
     // Backtrack: zero blocks from last_block backward (mozjpeg lines 1281-1292)
     let mut zeroed_count = 0usize;
-    if last_block > 0 {
-        last_block -= 1;
-    }
+    last_block = last_block.saturating_sub(1);
     let mut bi = n as i64 - 1;
     while bi >= 0 {
         while bi > last_block as i64 {
@@ -784,7 +782,7 @@ fn estimate_block_ac_rate(coeffs: &[i16; 64], ac_code_lengths: &[u8]) -> u32 {
 
     // EOB if we didn't end on a non-zero at position 63
     if zero_run > 0 {
-        if ac_code_lengths.len() > 0 && ac_code_lengths[0x00] > 0 {
+        if !ac_code_lengths.is_empty() && ac_code_lengths[0x00] > 0 {
             total_bits += ac_code_lengths[0x00] as u32;
         } else {
             total_bits += 4;

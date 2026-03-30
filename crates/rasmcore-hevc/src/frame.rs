@@ -544,7 +544,7 @@ impl BsMap {
     /// Mark CU boundary edges (Bs=2 for I-frames).
     fn mark_cu(&mut self, cu_x: usize, cu_y: usize, cu_size: usize) {
         // Left vertical edge
-        if cu_x > 0 && cu_x % 8 == 0 {
+        if cu_x > 0 && cu_x.is_multiple_of(8) {
             let x_idx = cu_x / 8;
             for y_off in (0..cu_size).step_by(8) {
                 let y8 = (cu_y + y_off) / 8;
@@ -554,7 +554,7 @@ impl BsMap {
             }
         }
         // Top horizontal edge
-        if cu_y > 0 && cu_y % 8 == 0 {
+        if cu_y > 0 && cu_y.is_multiple_of(8) {
             let y_idx = cu_y / 8;
             for x_off in (0..cu_size).step_by(8) {
                 let x8 = (cu_x + x_off) / 8;
@@ -569,7 +569,7 @@ impl BsMap {
     /// Only marks edges that haven't already been set to Bs=2.
     fn mark_tu_leaf(&mut self, tu_x: usize, tu_y: usize, tu_size: usize, has_coeffs: bool) {
         // Left vertical edge of this leaf TU
-        if tu_x > 0 && tu_x % 8 == 0 {
+        if tu_x > 0 && tu_x.is_multiple_of(8) {
             let x_idx = tu_x / 8;
             for y_off in (0..tu_size).step_by(8) {
                 let y8 = (tu_y + y_off) / 8;
@@ -583,7 +583,7 @@ impl BsMap {
             }
         }
         // Top horizontal edge of this leaf TU
-        if tu_y > 0 && tu_y % 8 == 0 {
+        if tu_y > 0 && tu_y.is_multiple_of(8) {
             let y_idx = tu_y / 8;
             for x_off in (0..tu_size).step_by(8) {
                 let x8 = (tu_x + x_off) / 8;
@@ -617,7 +617,7 @@ impl BsMap {
 /// that correspond to CU or TU boundaries. The boundary strength (Bs)
 /// determines filter strength: Bs=2 for intra CU boundaries, Bs=1 for
 /// TU boundaries with non-zero coefficients, Bs=0 otherwise.
-fn apply_deblocking(fb: &mut FrameBuffer, sps: &Sps, qp: i32, cus: &[CuSyntax]) {
+fn apply_deblocking(fb: &mut FrameBuffer, _sps: &Sps, qp: i32, cus: &[CuSyntax]) {
     let stride = fb.width as usize;
     let width = fb.width as usize;
     let height = fb.height as usize;

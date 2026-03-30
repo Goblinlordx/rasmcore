@@ -314,8 +314,8 @@ pub fn trellis_optimize<C: TrellisContext>(
 
     // Backtrack to extract optimal levels
     // First, zero everything after EOB position
-    for i in best_eob_pos..block_size {
-        output[i] = 0;
+    for val in &mut output[best_eob_pos..block_size] {
+        *val = 0;
     }
 
     // Backtrack from best_eob_state at best_eob_pos

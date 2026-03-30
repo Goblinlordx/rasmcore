@@ -337,8 +337,6 @@ pub fn encode(
         }
 
         // Non-trellis path: just use pass-1 tables (no re-trellis needed)
-        let dc_luma_len = dc_luma_len;
-        let ac_luma_len = ac_luma_len;
 
         // Write optimized DHT markers
         markers::write_dht(&mut out, 0, 0, &dc_luma_len);
@@ -421,6 +419,7 @@ pub fn encode(
 /// 3. Cb AC coefficients 1-63
 /// 4. Cr AC coefficients 1-63
 /// 5. Y AC coefficients 6-63 (high frequency)
+#[allow(clippy::too_many_arguments)]
 fn encode_progressive(
     out: &mut Vec<u8>,
     ycbcr: &color::YcbcrImage,
@@ -587,6 +586,7 @@ fn compute_all_dct_coefficients(
 /// For interleaved scans (multiple components), encodes in MCU-interleaved
 /// order per ITU-T T.81. For non-interleaved scans (single component),
 /// encodes in component raster order per ITU-T T.81 A.2.3.
+#[allow(clippy::too_many_arguments)]
 fn encode_progressive_scan(
     all_coeffs: &std::collections::HashMap<u8, Vec<[i16; 64]>>,
     comp_ids: &[u8],
@@ -596,7 +596,7 @@ fn encode_progressive_scan(
     subsampling: ChromaSubsampling,
     _restart_interval: Option<u16>,
     mcu_cols: usize,
-    mcu_rows: usize,
+    _mcu_rows: usize,
     img_width: u32,
     img_height: u32,
 ) -> Vec<u8> {
@@ -810,6 +810,7 @@ fn encode_coefficient_bits(writer: &mut rasmcore_bitio::BitWriter, value: i32, c
 /// First pass: quantize all blocks and collect Huffman symbol frequencies.
 /// Returns (luma_counter, chroma_counter, all_quantized_blocks).
 /// Each quantized block is stored as (component_index, [i16; 64]) in MCU order.
+#[allow(clippy::type_complexity)]
 fn collect_frequencies(
     ycbcr: &color::YcbcrImage,
     is_gray: bool,

@@ -291,6 +291,12 @@ pub struct QmEncoder {
     buf: Vec<u8>, // output buffer
 }
 
+impl Default for QmEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QmEncoder {
     pub fn new() -> Self {
         Self {
@@ -320,7 +326,7 @@ impl QmEncoder {
     pub fn encode(&mut self, st: &mut u8, bit: u8) {
         let sv = *st;
         let entry = ARITAB[(sv & 0x7F) as usize];
-        let qe = (entry & 0xFFFF) as u32;
+        let qe = entry & 0xFFFF;
         let nl = ((entry >> 16) & 0x7F) as u8;
         let nm = ((entry >> 24) & 0x7F) as u8;
         let switch_mps = (entry >> 23) & 1 != 0;
@@ -629,6 +635,12 @@ pub struct JpegArithEncoder {
     ac_kx: [u8; NUM_ARITH_TBLS],
 }
 
+impl Default for JpegArithEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JpegArithEncoder {
     pub fn new() -> Self {
         Self {
@@ -684,7 +696,7 @@ impl JpegArithEncoder {
                 temp >>= 1;
             }
             self.qm.encode(&mut self.dc_stats[tbl][st], 0); // stop
-            m = (m << 1) | 1;
+            let _ = (m << 1) | 1;
         } else {
             self.qm.encode(&mut self.dc_stats[tbl][st], 0);
         }
@@ -717,7 +729,7 @@ impl JpegArithEncoder {
         // Magnitude bit pattern
         st += 14;
         let bits_in_v = if v > 0 {
-            32 - (v as u32).leading_zeros()
+            32 - v.leading_zeros()
         } else {
             0
         };

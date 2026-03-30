@@ -282,7 +282,7 @@ pub fn default_sps(width: u32, height: u32) -> Sps {
 }
 
 /// Create default PPS for I-frame-only HEIC encoding.
-pub fn default_pps(qp: i32) -> Pps {
+pub fn default_pps(_qp: i32) -> Pps {
     Pps {
         pps_id: 0,
         sps_id: 0,

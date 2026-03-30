@@ -811,6 +811,7 @@ fn upsample_plane(
 /// Called from `jpeg_decode` when SOF2 is encountered. The first SOS has
 /// already been parsed; `pos` points past it. We process that scan, then
 /// continue parsing markers for subsequent scans until EOI.
+#[allow(clippy::too_many_arguments)]
 fn decode_progressive(
     data: &[u8],
     pos: &mut usize,
@@ -1074,6 +1075,7 @@ fn decode_progressive(
 }
 
 /// Process a single progressive scan, filling coefficient buffers.
+#[allow(clippy::too_many_arguments)]
 fn decode_progressive_scan(
     entropy_data: &[u8],
     frame: &JpegFrame,
@@ -1180,7 +1182,7 @@ fn decode_progressive_scan(
         let xi = (frame.width as usize * h_samp + h_max * 8 - 1) / (h_max * 8);
         let yi = (frame.height as usize * v_samp + v_max * 8 - 1) / (v_max * 8);
         // Buffer dimensions (may be larger due to MCU padding)
-        let buf_block_cols = mcu_cols * h_samp;
+        let _buf_block_cols = mcu_cols * h_samp;
         let blocks_per_mcu = h_samp * v_samp;
 
         for block_row in 0..yi {
@@ -1222,6 +1224,7 @@ thread_local! {
 
 /// Decode/refine one 8x8 block in a progressive scan.
 /// Dispatches to DC-first, DC-refine, AC-first, or AC-refine based on Ss/Se/Ah.
+#[allow(clippy::too_many_arguments)]
 fn decode_progressive_block(
     reader: &mut BitReader,
     existing: &[i16; 64],

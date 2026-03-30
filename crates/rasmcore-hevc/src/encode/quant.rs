@@ -7,6 +7,7 @@
 //! Ref: ITU-T H.265 Section 8.6.3 (inverse, from which forward is derived)
 
 /// Inverse quantization scale factors (same as dequant, for roundtrip validation).
+#[allow(dead_code)]
 const LEVEL_SCALE: [i32; 6] = [40, 45, 51, 57, 64, 72];
 
 /// Forward quantization scale factors — reciprocals of LEVEL_SCALE, scaled by (1<<20).

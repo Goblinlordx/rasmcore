@@ -225,7 +225,7 @@ fn pos_to_prefix(pos: u32) -> u32 {
     let mut prefix = 4u32;
     loop {
         let suffix_len = (prefix >> 1) - 1;
-        let base = (2 + (prefix & 1)) << suffix_len;
+        let _base = (2 + (prefix & 1)) << suffix_len;
         let next_prefix = prefix + 1;
         let next_base = (2 + (next_prefix & 1)) << ((next_prefix >> 1) - 1);
         if pos < next_base {
@@ -452,10 +452,8 @@ pub fn encode_residual_coeffs(
 
         // sign flags
         for ci in (0..=coeff_end).rev() {
-            if sig[ci] {
-                if !(sign_hidden && ci == first_sp) {
-                    enc.encode_bypass(sign_c[ci]);
-                }
+            if sig[ci] && !(sign_hidden && ci == first_sp) {
+                enc.encode_bypass(sign_c[ci]);
             }
         }
 
