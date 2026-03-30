@@ -16360,9 +16360,9 @@ pub fn apply_cube_lut(
     reference = "ImageMagick HALD CLUT format"
 )]
 pub fn apply_hald_lut(
-    pixels: &[u8],
-    info: &ImageInfo,
-    hald_dim: u32,
+    _pixels: &[u8],
+    _info: &ImageInfo,
+    _hald_dim: u32,
 ) -> Result<Vec<u8>, ImageError> {
     // For the registered filter, hald_dim is a placeholder — the actual HALD
     // pixel data must be provided programmatically via parse_hald_lut + apply.

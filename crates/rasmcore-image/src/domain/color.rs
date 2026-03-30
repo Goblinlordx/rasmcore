@@ -495,7 +495,7 @@ pub fn icc_to_srgb(
 
     let dst_profile = ColorProfile::new_srgb();
 
-    let (src_layout, dst_layout, dst_format) = match info.format {
+    let (src_layout, dst_layout, _dst_format) = match info.format {
         PixelFormat::Rgb8 => (Layout::Rgb, Layout::Rgb, PixelFormat::Rgb8),
         PixelFormat::Rgba8 => (Layout::Rgba, Layout::Rgba, PixelFormat::Rgba8),
         PixelFormat::Cmyka8 => (Layout::Cmyka, Layout::Rgba, PixelFormat::Rgba8),

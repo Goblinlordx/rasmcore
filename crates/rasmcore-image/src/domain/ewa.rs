@@ -262,7 +262,6 @@ struct EllipseCoeffs {
     a: f64,
     b: f64,
     c: f64,
-    ulimit: f64,
     vlimit: f64,
     uwidth: f64,
     slope: f64,
@@ -311,7 +310,6 @@ fn compute_ellipse(j: &Jacobian) -> Option<EllipseCoeffs> {
         return None;
     }
 
-    let ulimit = (c * f / ac_bb4).sqrt();
     let vlimit = (a * f / ac_bb4).sqrt();
     let uwidth = (f / a).sqrt();
     let slope = -b / (2.0 * a);
@@ -323,7 +321,6 @@ fn compute_ellipse(j: &Jacobian) -> Option<EllipseCoeffs> {
         a: a * scale,
         b: b * scale,
         c: c * scale,
-        ulimit,
         vlimit,
         uwidth,
         slope,

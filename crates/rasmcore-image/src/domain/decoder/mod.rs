@@ -574,9 +574,6 @@ pub fn decode_preserve_cmyk(data: &[u8]) -> Result<DecodedImage, ImageError> {
 
 /// Convert decoded image pixels to a different pixel format.
 fn convert_pixels(decoded: DecodedImage, target: PixelFormat) -> Result<DecodedImage, ImageError> {
-    let w = decoded.info.width as usize;
-    let h = decoded.info.height as usize;
-    let n = w * h;
     let src = &decoded.pixels;
 
     let pixels = match (decoded.info.format, target) {

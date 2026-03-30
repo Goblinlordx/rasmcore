@@ -42,6 +42,16 @@ else
   FAILED=1
 fi
 
+echo "=== 2b. Build warnings check ==="
+BUILD_OUTPUT=$(cargo build --workspace 2>&1)
+if echo "$BUILD_OUTPUT" | grep -q "^warning:"; then
+  echo "  FAIL — compiler warnings detected:"
+  echo "$BUILD_OUTPUT" | grep "^warning:" | head -10
+  FAILED=1
+else
+  echo "  PASS"
+fi
+
 echo "=== 3. Domain tests ==="
 if cargo test --workspace --lib 2>&1; then
   echo "  PASS"
@@ -107,6 +117,18 @@ if command -v npx &>/dev/null && [ -f "package.json" ] && [ -d "tests/fixtures/g
   fi
 else
   echo "  SKIP — requires npx, package.json, and fixtures"
+fi
+
+echo "=== 8. Demo build ==="
+if command -v npm &>/dev/null && [ -d "demo" ] && [ -f "demo/package.json" ]; then
+  if (cd demo && npm install --silent 2>/dev/null && npx vite build 2>&1); then
+    echo "  PASS"
+  else
+    echo "  FAIL — demo build failed"
+    FAILED=1
+  fi
+else
+  echo "  SKIP — requires npm and demo/ directory"
 fi
 
 echo ""

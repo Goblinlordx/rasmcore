@@ -184,7 +184,6 @@ fn gaussian_kernel() -> Vec<f64> {
 /// SSIM for a single channel (f64 samples, row-major w×h).
 fn ssim_channel(a: &[f64], b: &[f64], w: usize, h: usize) -> f64 {
     let kernel = gaussian_kernel();
-    let half = SSIM_WINDOW / 2;
     let mut ssim_sum = 0.0;
     let mut count = 0u64;
 
