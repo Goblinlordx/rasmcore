@@ -200,4 +200,14 @@ interface filters {
 
     /// High-pass (detail) layer — original minus blur, offset to mid-gray.
     frequency-high: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+
+    // ─── Procedural Noise Generators ────────────────────────────────────
+
+    /// Generate Perlin noise image (Gray8). Deterministic given same seed.
+    /// Scale controls zoom (0.01-0.1 typical), octaves controls detail (1-8).
+    perlin-noise: func(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> buffer;
+
+    /// Generate Simplex noise image (Gray8). Deterministic given same seed.
+    /// Scale controls zoom (0.01-0.1 typical), octaves controls detail (1-8).
+    simplex-noise: func(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> buffer;
 }

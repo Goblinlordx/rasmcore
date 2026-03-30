@@ -4369,7 +4369,10 @@ pub fn dehaze(
             let diff = f32x4_sub(ic, atm_v);
             let jc = f32x4_add(f32x4_mul(diff, inv_t), atm_v);
             // Convert back: round(jc * 255), clamp [0, 255]
-            let out = f32x4_min(scale_255, f32x4_max(zero, f32x4_add(f32x4_mul(jc, scale_255), half)));
+            let out = f32x4_min(
+                scale_255,
+                f32x4_max(zero, f32x4_add(f32x4_mul(jc, scale_255), half)),
+            );
 
             result[pi] = f32x4_extract_lane::<0>(out) as u8;
             result[pi + 1] = f32x4_extract_lane::<1>(out) as u8;
@@ -4747,9 +4750,7 @@ fn box_blur_radii_for_gaussian(sigma: f32) -> [usize; 3] {
     let wu = wl + 2; // next odd
 
     // how many passes use wl vs wu to best approximate the target variance
-    let m = ((12.0 * sigma * sigma
-        - (3 * wl * wl + 12 * wl + 9) as f32)
-        / (4 * (wl + 2)) as f32)
+    let m = ((12.0 * sigma * sigma - (3 * wl * wl + 12 * wl + 9) as f32) / (4 * (wl + 2)) as f32)
         .round() as usize;
 
     let mut radii = [0usize; 3];
@@ -4995,7 +4996,10 @@ pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8
             vals[1] = f32x4_extract_lane::<1>(ratio).ln();
             vals[2] = f32x4_extract_lane::<2>(ratio).ln();
             vals[3] = f32x4_extract_lane::<3>(ratio).ln();
-            v128_store(retinex[i..].as_mut_ptr() as *mut v128, f32x4(vals[0], vals[1], vals[2], vals[3]));
+            v128_store(
+                retinex[i..].as_mut_ptr() as *mut v128,
+                f32x4(vals[0], vals[1], vals[2], vals[3]),
+            );
             for &v in &vals {
                 min_val = min_val.min(v);
                 max_val = max_val.max(v);
@@ -5826,6 +5830,371 @@ pub fn flood_fill_registered(
         connectivity,
     )?;
     Ok(result)
+}
+
+// ─── Procedural Noise Generation ────────────────────────────────────────────
+//
+// Improved Perlin noise (Perlin 2002) and OpenSimplex noise (2014).
+// Both are seeded, deterministic, and produce Gray8 output.
+// Reference: Ken Perlin "Improving Noise" (SIGGRAPH 2002).
+
+/// Build a seeded permutation table (256 entries, doubled for wrapping).
+fn build_perm_table(seed: u64) -> [u8; 512] {
+    let mut perm = [0u8; 256];
+    for i in 0..256 {
+        perm[i] = i as u8;
+    }
+    // Fisher-Yates shuffle with a simple LCG seeded from the user seed
+    let mut state = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    for i in (1..256).rev() {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let j = (state >> 33) as usize % (i + 1);
+        perm.swap(i, j);
+    }
+    let mut table = [0u8; 512];
+    for i in 0..512 {
+        table[i] = perm[i & 255];
+    }
+    table
+}
+
+/// Fade curve: 6t^5 - 15t^4 + 10t^3 (Perlin improved noise)
+#[inline]
+fn fade(t: f64) -> f64 {
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+#[inline]
+fn lerp(t: f64, a: f64, b: f64) -> f64 {
+    a + t * (b - a)
+}
+
+/// Gradient function for improved Perlin noise.
+/// Uses hash to select from 12 gradient directions (Perlin 2002).
+#[inline]
+fn grad_perlin(hash: u8, x: f64, y: f64) -> f64 {
+    match hash & 0x3 {
+        0 => x + y,
+        1 => -x + y,
+        2 => x - y,
+        _ => -x - y,
+    }
+}
+
+/// Single-octave improved Perlin noise at (x, y). Returns [-1, 1].
+fn perlin_2d(perm: &[u8; 512], x: f64, y: f64) -> f64 {
+    let xi = x.floor() as i32 & 255;
+    let yi = y.floor() as i32 & 255;
+    let xf = x - x.floor();
+    let yf = y - y.floor();
+    let u = fade(xf);
+    let v = fade(yf);
+
+    let aa = perm[(perm[xi as usize] as i32 + yi) as usize & 511];
+    let ab = perm[(perm[xi as usize] as i32 + yi + 1) as usize & 511];
+    let ba = perm[(perm[(xi + 1) as usize & 255] as i32 + yi) as usize & 511];
+    let bb = perm[(perm[(xi + 1) as usize & 255] as i32 + yi + 1) as usize & 511];
+
+    lerp(
+        v,
+        lerp(u, grad_perlin(aa, xf, yf), grad_perlin(ba, xf - 1.0, yf)),
+        lerp(
+            u,
+            grad_perlin(ab, xf, yf - 1.0),
+            grad_perlin(bb, xf - 1.0, yf - 1.0),
+        ),
+    )
+}
+
+// ── OpenSimplex 2D ──────────────────────────────────────────────────────────
+
+const SIMPLEX_STRETCH: f64 = -0.211324865405187; // (1/sqrt(3) - 1) / 2
+const SIMPLEX_SQUISH: f64 = 0.366025403784439; // (sqrt(3) - 1) / 2
+
+/// Gradient table for OpenSimplex 2D (8 directions).
+const SIMPLEX_GRADS: [(f64, f64); 8] = [
+    (1.0, 0.0),
+    (-1.0, 0.0),
+    (0.0, 1.0),
+    (0.0, -1.0),
+    (0.7071067811865476, 0.7071067811865476),
+    (-0.7071067811865476, 0.7071067811865476),
+    (0.7071067811865476, -0.7071067811865476),
+    (-0.7071067811865476, -0.7071067811865476),
+];
+
+/// Single-octave OpenSimplex noise at (x, y). Returns approximately [-1, 1].
+fn simplex_2d(perm: &[u8; 512], x: f64, y: f64) -> f64 {
+    let stretch = (x + y) * SIMPLEX_STRETCH;
+    let xs = x + stretch;
+    let ys = y + stretch;
+
+    let xsb = xs.floor() as i32;
+    let ysb = ys.floor() as i32;
+
+    let squish = (xsb + ysb) as f64 * SIMPLEX_SQUISH;
+    let xb = xsb as f64 + squish;
+    let yb = ysb as f64 + squish;
+
+    let dx0 = x - xb;
+    let dy0 = y - yb;
+
+    let xins = xs - xsb as f64;
+    let yins = ys - ysb as f64;
+
+    let mut value = 0.0f64;
+
+    // Contribution from (0, 0)
+    let at0 = 2.0 - dx0 * dx0 - dy0 * dy0;
+    if at0 > 0.0 {
+        let at0 = at0 * at0;
+        let gi = perm[(perm[xsb as usize & 255] as i32 + ysb) as usize & 511] as usize & 7;
+        value += at0 * at0 * (SIMPLEX_GRADS[gi].0 * dx0 + SIMPLEX_GRADS[gi].1 * dy0);
+    }
+
+    // Contribution from (1, 0)
+    let dx1 = dx0 - 1.0 - SIMPLEX_SQUISH;
+    let dy1 = dy0 - SIMPLEX_SQUISH;
+    let at1 = 2.0 - dx1 * dx1 - dy1 * dy1;
+    if at1 > 0.0 {
+        let at1 = at1 * at1;
+        let gi = perm[(perm[(xsb + 1) as usize & 255] as i32 + ysb) as usize & 511] as usize & 7;
+        value += at1 * at1 * (SIMPLEX_GRADS[gi].0 * dx1 + SIMPLEX_GRADS[gi].1 * dy1);
+    }
+
+    // Contribution from (0, 1)
+    let dx2 = dx0 - SIMPLEX_SQUISH;
+    let dy2 = dy0 - 1.0 - SIMPLEX_SQUISH;
+    let at2 = 2.0 - dx2 * dx2 - dy2 * dy2;
+    if at2 > 0.0 {
+        let at2 = at2 * at2;
+        let gi = perm[(perm[xsb as usize & 255] as i32 + ysb + 1) as usize & 511] as usize & 7;
+        value += at2 * at2 * (SIMPLEX_GRADS[gi].0 * dx2 + SIMPLEX_GRADS[gi].1 * dy2);
+    }
+
+    // Contribution from (1, 1) — only if in the upper triangle
+    if xins + yins > 1.0 {
+        let dx3 = dx0 - 1.0 - 2.0 * SIMPLEX_SQUISH;
+        let dy3 = dy0 - 1.0 - 2.0 * SIMPLEX_SQUISH;
+        let at3 = 2.0 - dx3 * dx3 - dy3 * dy3;
+        if at3 > 0.0 {
+            let at3 = at3 * at3;
+            let gi =
+                perm[(perm[(xsb + 1) as usize & 255] as i32 + ysb + 1) as usize & 511] as usize & 7;
+            value += at3 * at3 * (SIMPLEX_GRADS[gi].0 * dx3 + SIMPLEX_GRADS[gi].1 * dy3);
+        }
+    }
+
+    // Scale to approximately [-1, 1]
+    value * 47.0
+}
+
+// ── fBm (Fractional Brownian Motion) ────────────────────────────────────────
+
+/// Layer multiple octaves of noise for natural-looking results.
+fn fbm<F>(noise_fn: F, x: f64, y: f64, octaves: u32, lacunarity: f64, persistence: f64) -> f64
+where
+    F: Fn(f64, f64) -> f64,
+{
+    let mut value = 0.0f64;
+    let mut amplitude = 1.0f64;
+    let mut frequency = 1.0f64;
+    let mut max_amp = 0.0f64;
+
+    for _ in 0..octaves {
+        value += noise_fn(x * frequency, y * frequency) * amplitude;
+        max_amp += amplitude;
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+
+    value / max_amp // normalize to [-1, 1]
+}
+
+// ── Public Generator Functions ──────────────────────────────────────────────
+
+/// Generate a Perlin noise image (Gray8).
+///
+/// - `width`, `height`: output dimensions
+/// - `seed`: PRNG seed for deterministic output
+/// - `scale`: coordinate scale (larger = more zoomed out, typical: 0.01–0.1)
+/// - `octaves`: fBm octave count (1 = smooth, 4-8 = detailed)
+///
+/// Returns a Gray8 pixel buffer. Each pixel is in [0, 255].
+#[rasmcore_macros::register_filter(name = "perlin_noise", category = "generator")]
+pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
+    let perm = build_perm_table(seed);
+    let octaves = octaves.max(1).min(16);
+    let mut pixels = vec![0u8; (width * height) as usize];
+
+    for y in 0..height {
+        for x in 0..width {
+            let nx = x as f64 * scale;
+            let ny = y as f64 * scale;
+            let n = fbm(|fx, fy| perlin_2d(&perm, fx, fy), nx, ny, octaves, 2.0, 0.5);
+            // Map [-1, 1] → [0, 255]
+            pixels[(y * width + x) as usize] = ((n * 0.5 + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    }
+    pixels
+}
+
+/// Generate a Simplex noise image (Gray8).
+///
+/// - `width`, `height`: output dimensions
+/// - `seed`: PRNG seed for deterministic output
+/// - `scale`: coordinate scale (larger = more zoomed out, typical: 0.01–0.1)
+/// - `octaves`: fBm octave count (1 = smooth, 4-8 = detailed)
+///
+/// Returns a Gray8 pixel buffer. Each pixel is in [0, 255].
+#[rasmcore_macros::register_filter(name = "simplex_noise", category = "generator")]
+pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
+    let perm = build_perm_table(seed);
+    let octaves = octaves.max(1).min(16);
+    let mut pixels = vec![0u8; (width * height) as usize];
+
+    for y in 0..height {
+        for x in 0..width {
+            let nx = x as f64 * scale;
+            let ny = y as f64 * scale;
+            let n = fbm(
+                |fx, fy| simplex_2d(&perm, fx, fy),
+                nx,
+                ny,
+                octaves,
+                2.0,
+                0.5,
+            );
+            pixels[(y * width + x) as usize] = ((n * 0.5 + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    }
+    pixels
+}
+
+#[cfg(test)]
+mod noise_tests {
+    use super::*;
+
+    #[test]
+    fn perlin_deterministic() {
+        let a = perlin_noise(64, 64, 42, 0.05, 4);
+        let b = perlin_noise(64, 64, 42, 0.05, 4);
+        assert_eq!(a, b, "same seed should produce identical output");
+    }
+
+    #[test]
+    fn simplex_deterministic() {
+        let a = simplex_noise(64, 64, 42, 0.05, 4);
+        let b = simplex_noise(64, 64, 42, 0.05, 4);
+        assert_eq!(a, b, "same seed should produce identical output");
+    }
+
+    #[test]
+    fn perlin_different_seeds_differ() {
+        let a = perlin_noise(64, 64, 1, 0.05, 4);
+        let b = perlin_noise(64, 64, 2, 0.05, 4);
+        assert_ne!(a, b, "different seeds should produce different output");
+    }
+
+    #[test]
+    fn simplex_different_seeds_differ() {
+        let a = simplex_noise(64, 64, 1, 0.05, 4);
+        let b = simplex_noise(64, 64, 2, 0.05, 4);
+        assert_ne!(a, b, "different seeds should produce different output");
+    }
+
+    #[test]
+    fn perlin_output_dimensions() {
+        let px = perlin_noise(128, 64, 0, 0.05, 4);
+        assert_eq!(px.len(), 128 * 64);
+    }
+
+    #[test]
+    fn simplex_output_dimensions() {
+        let px = simplex_noise(128, 64, 0, 0.05, 4);
+        assert_eq!(px.len(), 128 * 64);
+    }
+
+    #[test]
+    fn perlin_statistical_properties() {
+        let px = perlin_noise(256, 256, 42, 0.02, 6);
+        let mean = px.iter().map(|&v| v as f64).sum::<f64>() / px.len() as f64;
+        let stddev =
+            (px.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / px.len() as f64).sqrt();
+
+        eprintln!("Perlin 256x256: mean={mean:.1}, stddev={stddev:.1}");
+        // Mean should be roughly centered (~128 ± 30)
+        assert!(
+            mean > 90.0 && mean < 170.0,
+            "Perlin mean={mean:.1} outside expected range"
+        );
+        // Should have meaningful variation (not all one value)
+        assert!(
+            stddev > 10.0,
+            "Perlin stddev={stddev:.1} too low — not enough variation"
+        );
+    }
+
+    #[test]
+    fn simplex_statistical_properties() {
+        let px = simplex_noise(256, 256, 42, 0.02, 6);
+        let mean = px.iter().map(|&v| v as f64).sum::<f64>() / px.len() as f64;
+        let stddev =
+            (px.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / px.len() as f64).sqrt();
+
+        eprintln!("Simplex 256x256: mean={mean:.1}, stddev={stddev:.1}");
+        assert!(
+            mean > 90.0 && mean < 170.0,
+            "Simplex mean={mean:.1} outside expected range"
+        );
+        assert!(
+            stddev > 10.0,
+            "Simplex stddev={stddev:.1} too low — not enough variation"
+        );
+    }
+
+    #[test]
+    fn perlin_uses_full_range() {
+        let px = perlin_noise(256, 256, 42, 0.01, 8);
+        let min = *px.iter().min().unwrap();
+        let max = *px.iter().max().unwrap();
+        eprintln!("Perlin range: [{min}, {max}]");
+        // Should span a reasonable range
+        assert!(max - min > 100, "Perlin range too narrow: [{min}, {max}]");
+    }
+
+    #[test]
+    fn simplex_uses_full_range() {
+        let px = simplex_noise(256, 256, 42, 0.01, 8);
+        let min = *px.iter().min().unwrap();
+        let max = *px.iter().max().unwrap();
+        eprintln!("Simplex range: [{min}, {max}]");
+        assert!(max - min > 100, "Simplex range too narrow: [{min}, {max}]");
+    }
+
+    #[test]
+    fn single_octave_is_smooth() {
+        // Single octave should produce very smooth output (low high-frequency content)
+        let px = perlin_noise(64, 64, 42, 0.05, 1);
+        let mut total_diff = 0u64;
+        for y in 0..64 {
+            for x in 1..64 {
+                total_diff +=
+                    (px[y * 64 + x] as i16 - px[y * 64 + x - 1] as i16).unsigned_abs() as u64;
+            }
+        }
+        let avg_diff = total_diff as f64 / (64.0 * 63.0);
+        eprintln!("Single octave avg adjacent diff: {avg_diff:.2}");
+        // Adjacent pixels should differ by small amounts for smooth noise
+        assert!(
+            avg_diff < 10.0,
+            "single octave too rough: avg_diff={avg_diff:.2}"
+        );
+    }
 }
 
 #[cfg(test)]

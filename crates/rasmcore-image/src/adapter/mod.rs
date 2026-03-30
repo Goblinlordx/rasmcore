@@ -1012,6 +1012,14 @@ impl filters::Guest for Component {
         let di = to_domain_image_info(&info);
         domain::filters::frequency_high(&pixels, &di, sigma).map_err(to_wit_error)
     }
+
+    fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
+        domain::filters::perlin_noise(width, height, seed, scale, octaves)
+    }
+
+    fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
+        domain::filters::simplex_noise(width, height, seed, scale, octaves)
+    }
 }
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {
