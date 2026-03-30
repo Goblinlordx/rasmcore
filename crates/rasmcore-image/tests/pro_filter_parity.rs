@@ -676,3 +676,83 @@ sys.stdout.buffer.write(bytes(out))
     let reference = run_python_ref(&script);
     assert_close("selective_color", &ours, &reference, 1.0);
 }
+
+#[test]
+fn parity_vibrance() {
+    let (w, h) = (64, 64);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let ours = rasmcore_image::domain::filters::vibrance(&pixels, &info, 40.0).unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np
+px = np.frombuffer(bytes({pixels:?}), dtype=np.uint8).reshape(-1, 3).astype(np.float64) / 255.0
+amount = 40.0
+out = np.empty_like(px)
+for i in range(len(px)):
+    r, g, b = px[i]
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    sat = (mx - mn) / mx if mx > 0 else 0.0
+    scale = (amount / 100.0) * (1.0 - sat)
+    # Convert to HSL
+    if mx == mn:
+        h, s, l = 0.0, 0.0, (mx + mn) / 2.0
+    else:
+        l = (mx + mn) / 2.0
+        d = mx - mn
+        s = d / (2.0 - mx - mn) if l > 0.5 else d / (mx + mn)
+        if mx == r:
+            h = (g - b) / d + (6.0 if g < b else 0.0)
+        elif mx == g:
+            h = (b - r) / d + 2.0
+        else:
+            h = (r - g) / d + 4.0
+        h /= 6.0
+    new_s = max(0.0, min(1.0, s * (1.0 + scale)))
+    # HSL to RGB
+    if new_s == 0:
+        out[i] = [l, l, l]
+    else:
+        def hue2rgb(p, q, t):
+            if t < 0: t += 1
+            if t > 1: t -= 1
+            if t < 1/6: return p + (q - p) * 6 * t
+            if t < 1/2: return q
+            if t < 2/3: return p + (q - p) * (2/3 - t) * 6
+            return p
+        q = l * (1 + new_s) if l < 0.5 else l + new_s - l * new_s
+        p = 2 * l - q
+        out[i] = [hue2rgb(p, q, h + 1/3), hue2rgb(p, q, h), hue2rgb(p, q, h - 1/3)]
+sys.stdout.buffer.write(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8).tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_close("vibrance", &ours, &reference, 1.5);
+}
+
+#[test]
+fn parity_channel_mixer() {
+    let (w, h) = (64, 64);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let ours = rasmcore_image::domain::filters::channel_mixer(
+        &pixels, &info, 0.8, 0.1, 0.1, 0.1, 0.8, 0.1, 0.1, 0.1, 0.8,
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np
+px = np.frombuffer(bytes({pixels:?}), dtype=np.uint8).reshape(-1, 3).astype(np.float64) / 255.0
+m = np.array([[0.8, 0.1, 0.1], [0.1, 0.8, 0.1], [0.1, 0.1, 0.8]])
+out = np.clip(px @ m.T, 0, 1)
+sys.stdout.buffer.write(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8).tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_close("channel_mixer", &ours, &reference, 0.5);
+}

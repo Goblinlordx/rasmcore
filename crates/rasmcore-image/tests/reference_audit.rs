@@ -1210,6 +1210,77 @@ fn algorithm_barrel() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Color manipulation filters
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_channel_mixer_identity() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            rasmcore_image::domain::filters::channel_mixer(
+                px, info, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
+            )
+            .unwrap()
+        },
+        // IM identity color-matrix
+        &["-color-matrix", "1 0 0 0 1 0 0 0 1"],
+        "channel_mixer identity",
+    ) {
+        assert!(
+            error < 0.01,
+            "EXACT: channel_mixer identity MAE should be ~0, got {error:.4}"
+        );
+    }
+}
+
+#[test]
+fn close_channel_mixer_swap_rg() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            rasmcore_image::domain::filters::channel_mixer(
+                px, info, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            )
+            .unwrap()
+        },
+        &["-color-matrix", "0 1 0 1 0 0 0 0 1"],
+        "channel_mixer swap RG",
+    ) {
+        assert!(
+            error < 2.0,
+            "CLOSE: channel_mixer swap RG MAE should be < 2.0, got {error:.4}"
+        );
+    }
+}
+
+#[test]
+fn close_gradient_map_bw() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            rasmcore_image::domain::filters::gradient_map(
+                px,
+                info,
+                "0.0:000000,1.0:FFFFFF".to_string(),
+            )
+            .unwrap()
+        },
+        &["-grayscale", "Rec709Luminance"],
+        "gradient_map B/W vs grayscale",
+    ) {
+        // BW gradient map should be close to IM grayscale (same BT.709 coefficients)
+        assert!(
+            error < 2.0,
+            "CLOSE: gradient_map BW vs grayscale MAE should be < 2.0, got {error:.4}"
+        );
+    }
+}
+
 #[test]
 fn reference_audit_summary() {
     if !magick_available() {
