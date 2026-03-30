@@ -1,156 +1,99 @@
 id: parity-missing-filters_20260330032101Z
-title: "Parity Tests — Missing Reference Validation for Edge, Threshold, Pyramid, Displacement"
+title: Parity Tests — Missing Reference Validation for Edge, Threshold, Pyramid, Displacement
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Add reference parity tests for operations that have benchmarks but lack
-    output validation against a known-good reference implementation.
-  context: |
-    The benchmark suite covers 32+ operations, but 8 have no parity validation
-    at all. Without validation, benchmarks measure speed but cannot confirm
-    correctness. This track fills the validation gaps.
+  summary: 'Add reference parity tests for operations that have benchmarks but lack output validation against a known-good
+    reference implementation.
 
-    The codebase has 3 existing parity test systems:
-      1. reference_audit.rs — ImageMagick output comparison (MAE-based)
-      2. filter_reference_parity.rs — Python/NumPy/OpenCV formula validation
-      3. opencv_parity.rs — OpenCV 4.13 fixture-based comparison
-
-    Each new test should use the most appropriate system. For operations with
-    ImageMagick equivalents, use reference_audit patterns. For operations
-    that require OpenCV (adaptive threshold, pyrUp, remap), use the
-    opencv_parity or filter_reference_parity patterns.
-  codebase_analysis: |
-    Operations with benchmarks but NO parity validation:
-
-    1. canny — has benchmark, no parity test
-       Reference: ImageMagick -canny 0x1+10%+30% OR OpenCV Canny()
-       Best approach: ImageMagick (simpler, already in reference_audit)
-
-    2. scharr — has benchmark, no parity test
-       Reference: OpenCV Scharr() — IM -morphology Convolve Scharr is close
-       Best approach: OpenCV fixture (exact kernel match)
-
-    3. laplacian — has benchmark, no parity test
-       Reference: OpenCV Laplacian() — standard 3x3 kernel
-       Best approach: OpenCV fixture (exact kernel match)
-
-    4. adaptive_threshold — has benchmark, no parity test
-       Reference: OpenCV adaptiveThreshold() (Gaussian method)
-       Best approach: OpenCV fixture (exact algorithm match)
-
-    5. pyr_up — has benchmark, no parity test (pyr_down HAS one)
-       Reference: OpenCV pyrUp()
-       Best approach: OpenCV fixture (exact Gaussian kernel match)
-
-    6. displacement_map — has benchmark, no parity test
-       Reference: OpenCV remap() with identical map arrays
-       Best approach: Python/OpenCV script to generate reference output
-
-    7. mertens_fusion — has benchmark, no parity test
-       Reference: OpenCV MergeMertens (exact algorithm)
-       Best approach: Python/OpenCV script to generate reference output
-
-    8. contrast — has benchmark + reference_audit test, but the reference_audit
-       test may not cover the exact parameter range used in benchmarks.
-       Verify existing coverage is sufficient.
-
-    Existing parity test patterns:
-
-    reference_audit.rs pattern:
-      fn test_foo() {
-          let (input, info) = load_test_image();
-          let result = filters::foo(&input, &info, params).unwrap();
-          let reference = magick_foo(&input_path, params);
-          assert_mae_below(&result, &reference, threshold);
-      }
-
-    opencv_parity.rs pattern:
-      fn test_foo() {
-          let input = load_raw_fixture("test_image_128.raw");
-          let info = gray_info(128, 128);
-          let result = filters::foo(&input, &info).unwrap();
-          let expected = load_raw_fixture("opencv_foo_output.raw");
-          assert_eq!(result.pixels, expected);  // exact match
-      }
-
-    filter_reference_parity.rs pattern:
-      fn test_foo() {
-          let (input, info) = load_test_image();
-          let result = filters::foo(&input, &info, params).unwrap();
-          let expected = run_python("scripts/reference_foo.py", &input_path);
-          let mae = compute_mae(&result, &expected);
-          assert!(mae < 1.0, "MAE too high: {mae}");
-      }
+    '
+  context: "The benchmark suite covers 32+ operations, but 8 have no parity validation\nat all. Without validation, benchmarks\
+    \ measure speed but cannot confirm\ncorrectness. This track fills the validation gaps.\n\nThe codebase has 3 existing\
+    \ parity test systems:\n  1. reference_audit.rs — ImageMagick output comparison (MAE-based)\n  2. filter_reference_parity.rs\
+    \ — Python/NumPy/OpenCV formula validation\n  3. opencv_parity.rs — OpenCV 4.13 fixture-based comparison\n\nEach new test\
+    \ should use the most appropriate system. For operations with\nImageMagick equivalents, use reference_audit patterns.\
+    \ For operations\nthat require OpenCV (adaptive threshold, pyrUp, remap), use the\nopencv_parity or filter_reference_parity\
+    \ patterns.\n"
+  codebase_analysis: "Operations with benchmarks but NO parity validation:\n\n1. canny — has benchmark, no parity test\n \
+    \  Reference: ImageMagick -canny 0x1+10%+30% OR OpenCV Canny()\n   Best approach: ImageMagick (simpler, already in reference_audit)\n\
+    \n2. scharr — has benchmark, no parity test\n   Reference: OpenCV Scharr() — IM -morphology Convolve Scharr is close\n\
+    \   Best approach: OpenCV fixture (exact kernel match)\n\n3. laplacian — has benchmark, no parity test\n   Reference:\
+    \ OpenCV Laplacian() — standard 3x3 kernel\n   Best approach: OpenCV fixture (exact kernel match)\n\n4. adaptive_threshold\
+    \ — has benchmark, no parity test\n   Reference: OpenCV adaptiveThreshold() (Gaussian method)\n   Best approach: OpenCV\
+    \ fixture (exact algorithm match)\n\n5. pyr_up — has benchmark, no parity test (pyr_down HAS one)\n   Reference: OpenCV\
+    \ pyrUp()\n   Best approach: OpenCV fixture (exact Gaussian kernel match)\n\n6. displacement_map — has benchmark, no parity\
+    \ test\n   Reference: OpenCV remap() with identical map arrays\n   Best approach: Python/OpenCV script to generate reference\
+    \ output\n\n7. mertens_fusion — has benchmark, no parity test\n   Reference: OpenCV MergeMertens (exact algorithm)\n \
+    \  Best approach: Python/OpenCV script to generate reference output\n\n8. contrast — has benchmark + reference_audit test,\
+    \ but the reference_audit\n   test may not cover the exact parameter range used in benchmarks.\n   Verify existing coverage\
+    \ is sufficient.\n\nExisting parity test patterns:\n\nreference_audit.rs pattern:\n  fn test_foo() {\n      let (input,\
+    \ info) = load_test_image();\n      let result = filters::foo(&input, &info, params).unwrap();\n      let reference =\
+    \ magick_foo(&input_path, params);\n      assert_mae_below(&result, &reference, threshold);\n  }\n\nopencv_parity.rs pattern:\n\
+    \  fn test_foo() {\n      let input = load_raw_fixture(\"test_image_128.raw\");\n      let info = gray_info(128, 128);\n\
+    \      let result = filters::foo(&input, &info).unwrap();\n      let expected = load_raw_fixture(\"opencv_foo_output.raw\"\
+    );\n      assert_eq!(result.pixels, expected);  // exact match\n  }\n\nfilter_reference_parity.rs pattern:\n  fn test_foo()\
+    \ {\n      let (input, info) = load_test_image();\n      let result = filters::foo(&input, &info, params).unwrap();\n\
+    \      let expected = run_python(\"scripts/reference_foo.py\", &input_path);\n      let mae = compute_mae(&result, &expected);\n\
+    \      assert!(mae < 1.0, \"MAE too high: {mae}\");\n  }\n"
   acceptance_criteria:
-    - Parity test for canny against ImageMagick -canny (MAE < 10 for binary edge map)
-    - Parity test for scharr against OpenCV Scharr (exact or MAE < 1)
-    - Parity test for laplacian against OpenCV Laplacian (exact or MAE < 1)
-    - Parity test for adaptive_threshold (Gaussian) against OpenCV adaptiveThreshold (exact)
-    - Parity test for pyr_up against OpenCV pyrUp (MAE < 1)
-    - Parity test for displacement_map against OpenCV remap (MAE < 1)
-    - Parity test for mertens_fusion against OpenCV MergeMertens (MAE < 2)
-    - All new parity tests pass when reference tools are available
-    - Tests gracefully skip when reference tools (Python venv, ImageMagick) are absent
-  out_of_scope: |
-    Operations that already have parity validation (sobel, premultiply, blend
+  - Parity test for canny against ImageMagick -canny (MAE < 10 for binary edge map)
+  - Parity test for scharr against OpenCV Scharr (exact or MAE < 1)
+  - Parity test for laplacian against OpenCV Laplacian (exact or MAE < 1)
+  - Parity test for adaptive_threshold (Gaussian) against OpenCV adaptiveThreshold (exact)
+  - Parity test for pyr_up against OpenCV pyrUp (MAE < 1)
+  - Parity test for displacement_map against OpenCV remap (MAE < 1)
+  - Parity test for mertens_fusion against OpenCV MergeMertens (MAE < 2)
+  - All new parity tests pass when reference tools are available
+  - Tests gracefully skip when reference tools (Python venv, ImageMagick) are absent
+  out_of_scope: 'Operations that already have parity validation (sobel, premultiply, blend
+
     modes, vignette, retinex, dehaze, clarity, pyr_down, perspective_warp).
+
     Benchmark additions (that is the companion track).
+
     Adding new filter implementations or fixing bugs found by parity tests
+
     (if a test reveals a bug, file a separate track).
-  technical_notes: |
-    For OpenCV-based tests, the developer should generate reference fixtures
-    using a Python script (similar to existing scripts in tests/fixtures/).
-    The script should:
-      1. Load the standard test image (tests/fixtures/generated/inputs/photo_256x256.png
-         or tests/fixtures/opencv/*.raw)
-      2. Apply the OpenCV operation with identical parameters
-      3. Save the output as a raw fixture file
 
-    For canny: the ImageMagick -canny output is a binary edge map.
-    Our canny also produces a binary edge map. MAE threshold should be
-    generous (< 10) because edge detection is sensitive to implementation
-    differences in non-maxima suppression and hysteresis.
-
-    For mertens_fusion: OpenCV MergeMertens uses the same algorithm
-    (Laplacian pyramid blending). Generate 3 exposure-bracketed images
-    from the same source (multiply by 0.5, 1.0, 1.5) and compare outputs.
-
-    For displacement_map: generate a simple barrel distortion map
-    (same as in the benchmark) and compare against OpenCV remap() with
-    INTER_LINEAR interpolation.
-
-    Test file placement:
-      - ImageMagick-based tests -> tests/reference_audit.rs (existing)
-      - OpenCV-based tests -> tests/filter_reference_parity.rs (existing)
-      - New Python scripts -> tests/fixtures/scripts/ (new directory if needed)
+    '
+  technical_notes: "For OpenCV-based tests, the developer should generate reference fixtures\nusing a Python script (similar\
+    \ to existing scripts in tests/fixtures/).\nThe script should:\n  1. Load the standard test image (tests/fixtures/generated/inputs/photo_256x256.png\n\
+    \     or tests/fixtures/opencv/*.raw)\n  2. Apply the OpenCV operation with identical parameters\n  3. Save the output\
+    \ as a raw fixture file\n\nFor canny: the ImageMagick -canny output is a binary edge map.\nOur canny also produces a binary\
+    \ edge map. MAE threshold should be\ngenerous (< 10) because edge detection is sensitive to implementation\ndifferences\
+    \ in non-maxima suppression and hysteresis.\n\nFor mertens_fusion: OpenCV MergeMertens uses the same algorithm\n(Laplacian\
+    \ pyramid blending). Generate 3 exposure-bracketed images\nfrom the same source (multiply by 0.5, 1.0, 1.5) and compare\
+    \ outputs.\n\nFor displacement_map: generate a simple barrel distortion map\n(same as in the benchmark) and compare against\
+    \ OpenCV remap() with\nINTER_LINEAR interpolation.\n\nTest file placement:\n  - ImageMagick-based tests -> tests/reference_audit.rs\
+    \ (existing)\n  - OpenCV-based tests -> tests/filter_reference_parity.rs (existing)\n  - New Python scripts -> tests/fixtures/scripts/\
+    \ (new directory if needed)\n"
 plan:
-  - phase: "Edge Detection Parity"
-    tasks:
-      - text: "Add canny parity test against ImageMagick -canny in reference_audit.rs (MAE < 10)"
-        done: false
-      - text: "Add scharr parity test against OpenCV Scharr via Python reference script"
-        done: false
-      - text: "Add laplacian parity test against OpenCV Laplacian via Python reference script"
-        done: false
-  - phase: "Threshold and Pyramid Parity"
-    tasks:
-      - text: "Add adaptive_threshold (Gaussian) parity test against OpenCV adaptiveThreshold"
-        done: false
-      - text: "Add pyr_up parity test against OpenCV pyrUp (inverse of existing pyr_down test)"
-        done: false
-  - phase: "Geometric and Fusion Parity"
-    tasks:
-      - text: "Add displacement_map parity test against OpenCV remap with barrel distortion map"
-        done: false
-      - text: "Add mertens_fusion parity test against OpenCV MergeMertens with 3 synthetic exposures"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Run all parity tests with reference tools available — verify all pass"
-        done: false
-      - text: "Run parity tests WITHOUT reference tools — verify graceful skip"
-        done: false
+- phase: Edge Detection Parity
+  tasks:
+  - text: Add canny parity test against ImageMagick -canny in reference_audit.rs (MAE < 10)
+    done: true
+  - text: Add scharr parity test against OpenCV Scharr via Python reference script
+    done: true
+  - text: Add laplacian parity test against OpenCV Laplacian via Python reference script
+    done: true
+- phase: Threshold and Pyramid Parity
+  tasks:
+  - text: Add adaptive_threshold (Gaussian) parity test against OpenCV adaptiveThreshold
+    done: true
+  - text: Add pyr_up parity test against OpenCV pyrUp (inverse of existing pyr_down test)
+    done: true
+- phase: Geometric and Fusion Parity
+  tasks:
+  - text: Add displacement_map parity test against OpenCV remap with barrel distortion map
+    done: true
+  - text: Add mertens_fusion parity test against OpenCV MergeMertens with 3 synthetic exposures
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run all parity tests with reference tools available — verify all pass
+    done: true
+  - text: Run parity tests WITHOUT reference tools — verify graceful skip
+    done: true
 extra: {}
