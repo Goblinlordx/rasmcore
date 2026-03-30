@@ -13249,7 +13249,9 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
                 };
                 let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), dy_sq_v));
                 let mut tmp_r = [0.0f32; 4];
-                unsafe { v128_store(tmp_r.as_mut_ptr() as *mut v128, r); }
+                unsafe {
+                    v128_store(tmp_r.as_mut_ptr() as *mut v128, r);
+                }
                 for p in 0..4 {
                     let dxp = (x + p) as f32 - cx;
                     let radius = tmp_r[p];
@@ -13321,7 +13323,9 @@ pub fn wave(
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| wave(px, i8, amplitude, wavelength, vertical));
+        return process_via_8bit(pixels, info, |px, i8| {
+            wave(px, i8, amplitude, wavelength, vertical)
+        });
     }
 
     let w = info.width as usize;
@@ -13331,7 +13335,11 @@ pub fn wave(
     let hi = h as i32;
     let is_vert = vertical >= 0.5;
     let two_pi = std::f32::consts::TAU;
-    let wl = if wavelength.abs() < 1e-6 { 1.0 } else { wavelength };
+    let wl = if wavelength.abs() < 1e-6 {
+        1.0
+    } else {
+        wavelength
+    };
 
     let mut out = vec![0u8; pixels.len()];
 
@@ -13388,22 +13396,19 @@ pub fn wave(
                 // Horizontal: shift y based on sin(x)
                 let mut x = 0;
                 while x + 4 <= w {
-                    let xf = unsafe {
-                        f32x4(
-                            x as f32,
-                            (x + 1) as f32,
-                            (x + 2) as f32,
-                            (x + 3) as f32,
-                        )
-                    };
+                    let xf =
+                        unsafe { f32x4(x as f32, (x + 1) as f32, (x + 2) as f32, (x + 3) as f32) };
                     let phase = f32x4_mul(xf, two_pi_wl_v);
                     let mut tmp_phase = [0.0f32; 4];
-                    unsafe { v128_store(tmp_phase.as_mut_ptr() as *mut v128, phase); }
+                    unsafe {
+                        v128_store(tmp_phase.as_mut_ptr() as *mut v128, phase);
+                    }
                     for p in 0..4 {
                         let sy = yf + amplitude * tmp_phase[p].sin();
                         let off = (y * w + x + p) * ch;
                         for c in 0..ch {
-                            out[off + c] = sample((x + p) as f32, sy, c).round().clamp(0.0, 255.0) as u8;
+                            out[off + c] =
+                                sample((x + p) as f32, sy, c).round().clamp(0.0, 255.0) as u8;
                         }
                     }
                     x += 4;
@@ -13473,7 +13478,11 @@ pub fn ripple(
     let cx = center_x * w as f32;
     let cy = center_y * h as f32;
     let two_pi = std::f32::consts::TAU;
-    let wl = if wavelength.abs() < 1e-6 { 1.0 } else { wavelength };
+    let wl = if wavelength.abs() < 1e-6 {
+        1.0
+    } else {
+        wavelength
+    };
 
     let mut out = vec![0u8; pixels.len()];
 
@@ -13518,7 +13527,9 @@ pub fn ripple(
                 };
                 let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), dy_sq_v));
                 let mut tmp_r = [0.0f32; 4];
-                unsafe { v128_store(tmp_r.as_mut_ptr() as *mut v128, r); }
+                unsafe {
+                    v128_store(tmp_r.as_mut_ptr() as *mut v128, r);
+                }
                 for p in 0..4 {
                     let dxp = (x + p) as f32 - cx;
                     let rp = tmp_r[p];
@@ -14036,13 +14047,9 @@ mod distortion_effect_tests {
             }
         }
         let path = std::env::temp_dir().join("rasmcore_distortion_parity.png");
-        let encoded = crate::domain::encoder::encode(
-            &pixels,
-            &rgb_info(w, h),
-            "png",
-            Default::default(),
-        )
-        .unwrap();
+        let encoded =
+            crate::domain::encoder::encode(&pixels, &rgb_info(w, h), "png", Default::default())
+                .unwrap();
         std::fs::write(&path, &encoded).unwrap();
         (path, pixels)
     }
@@ -14175,16 +14182,78 @@ mod distortion_effect_tests {
     }
 }
 
+// ─── Gaussian blur in f32 for Kuwahara ────────────────────────────────────
+
+/// Separable Gaussian blur operating entirely in f32 precision.
+/// Used by Kuwahara to match IM's Q16-HDRI blur accuracy.
+/// `krad` is the kernel half-width (IM uses radius directly, not 3*sigma).
+fn gaussian_blur_f32(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    ch: usize,
+    krad: usize,
+    sigma: f64,
+) -> Vec<f32> {
+    // Build 1D Gaussian kernel — IM uses radius as the kernel half-width
+    let ksize = 2 * krad + 1;
+    let mut kernel = vec![0.0f64; ksize];
+    let s2 = 2.0 * sigma * sigma;
+    let mut ksum = 0.0;
+    for i in 0..ksize {
+        let d = i as f64 - krad as f64;
+        kernel[i] = (-d * d / s2).exp();
+        ksum += kernel[i];
+    }
+    for k in &mut kernel {
+        *k /= ksum;
+    }
+
+    let n = w * h * ch;
+    // Convert input to f32
+    let input: Vec<f32> = pixels.iter().map(|&v| v as f32).collect();
+
+    // Horizontal pass (edge-clamp border)
+    let mut tmp = vec![0.0f32; n];
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..ch {
+                let mut sum = 0.0f64;
+                for ki in 0..ksize {
+                    let sx = (x as i32 + ki as i32 - krad as i32).clamp(0, w as i32 - 1) as usize;
+                    sum += kernel[ki] * input[(y * w + sx) * ch + c] as f64;
+                }
+                tmp[(y * w + x) * ch + c] = sum as f32;
+            }
+        }
+    }
+
+    // Vertical pass (edge-clamp border)
+    let mut out = vec![0.0f32; n];
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..ch {
+                let mut sum = 0.0f64;
+                for ki in 0..ksize {
+                    let sy = (y as i32 + ki as i32 - krad as i32).clamp(0, h as i32 - 1) as usize;
+                    sum += kernel[ki] * tmp[(sy * w + x) * ch + c] as f64;
+                }
+                out[(y * w + x) * ch + c] = sum as f32;
+            }
+        }
+    }
+    out
+}
+
 // ─── Kuwahara Filter ──────────────────────────────────────────────────────
 
 /// Kuwahara edge-preserving smoothing filter.
 ///
-/// Divides each pixel's neighborhood into 4 overlapping quadrants of size
-/// `(radius+1) x (radius+1)`. Computes mean RGB and variance per quadrant,
-/// and outputs the mean of the quadrant with the lowest variance.
-/// Produces a painterly smoothing effect while preserving edges.
-///
-/// Equivalent to ImageMagick `-kuwahara {radius}`.
+/// Matches ImageMagick `-kuwahara {radius}` algorithm:
+/// 1. Pre-blur the input with Gaussian (radius, sigma=radius)
+/// 2. For each pixel, evaluate 4 non-overlapping quadrants of size (radius+1)²
+/// 3. Compute luma-only variance per quadrant (BT.709)
+/// 4. Output = center pixel of the lowest-variance quadrant (from blurred image)
 #[rasmcore_macros::register_filter(name = "kuwahara", category = "spatial")]
 pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
     if radius == 0 {
@@ -14199,106 +14268,113 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
     let w = info.width as usize;
     let h = info.height as usize;
     let ch = channels(info.format);
-    let r = radius as i32;
+    let width = (radius + 1) as i32; // quadrant side length
 
-    // Build integral images for sum and sum-of-squares per channel
-    // This allows O(1) quadrant mean/variance computation
+    // Step 1: Pre-blur with Gaussian in f32 precision (matches IM's Q16-HDRI blur)
+    // IM default sigma = radius - 0.5, kernel half-width = radius
+    let sigma = (radius as f64 - 0.5).max(0.5);
+    let blurred_f32 = gaussian_blur_f32(pixels, w, h, ch, radius as usize, sigma);
+    // Quantize back to u8 for output
+    let blurred: Vec<u8> = blurred_f32
+        .iter()
+        .map(|&v| v.round().clamp(0.0, 255.0) as u8)
+        .collect();
+
+    // Step 2: Build luma integral images for O(1) variance computation
     let iw = w + 1;
-    let ih = h + 1;
-    let mut sum = vec![0.0f64; iw * ih * ch];
-    let mut sq_sum = vec![0.0f64; iw * ih * ch];
+    let mut luma_sum = vec![0.0f64; iw * (h + 1)];
+    let mut luma_sq_sum = vec![0.0f64; iw * (h + 1)];
 
-    // Compute integral images
     for y in 0..h {
         for x in 0..w {
-            let px_off = (y * w + x) * ch;
-            let i_off = ((y + 1) * iw + (x + 1)) * ch;
-            let i_up = (y * iw + (x + 1)) * ch;
-            let i_left = ((y + 1) * iw + x) * ch;
-            let i_diag = (y * iw + x) * ch;
-            for c in 0..ch {
-                let v = pixels[px_off + c] as f64;
-                sum[i_off + c] = v + sum[i_up + c] + sum[i_left + c] - sum[i_diag + c];
-                sq_sum[i_off + c] =
-                    v * v + sq_sum[i_up + c] + sq_sum[i_left + c] - sq_sum[i_diag + c];
-            }
+            let off = (y * w + x) * ch;
+            // BT.709 luma computed from f32-precision blurred data
+            let luma = if ch >= 3 {
+                0.212656 * blurred_f32[off] as f64
+                    + 0.715158 * blurred_f32[off + 1] as f64
+                    + 0.072186 * blurred_f32[off + 2] as f64
+            } else {
+                blurred_f32[off] as f64
+            };
+            let i = (y + 1) * iw + (x + 1);
+            luma_sum[i] = luma + luma_sum[y * iw + (x + 1)] + luma_sum[(y + 1) * iw + x]
+                - luma_sum[y * iw + x];
+            luma_sq_sum[i] =
+                luma * luma + luma_sq_sum[y * iw + (x + 1)] + luma_sq_sum[(y + 1) * iw + x]
+                    - luma_sq_sum[y * iw + x];
         }
     }
 
     // Helper: compute sum over rectangle [y0..y1, x0..x1] from integral image
-    let rect_sum = |img: &[f64], x0: usize, y0: usize, x1: usize, y1: usize, c: usize| -> f64 {
-        img[(y1 * iw + x1) * ch + c] - img[(y0 * iw + x1) * ch + c] - img[(y1 * iw + x0) * ch + c]
-            + img[(y0 * iw + x0) * ch + c]
+    let rect_sum = |img: &[f64], x0: usize, y0: usize, x1: usize, y1: usize| -> f64 {
+        img[y1 * iw + x1] - img[y0 * iw + x1] - img[y1 * iw + x0] + img[y0 * iw + x0]
     };
 
     let mut out = vec![0u8; pixels.len()];
 
     for y in 0..h {
         for x in 0..w {
-            let out_off = (y * w + x) * ch;
-
-            // Define 4 quadrants (clamped to image bounds)
-            // Each quadrant is (r+1) x (r+1) and overlaps at the center pixel
-            let quadrants = [
-                // top-left: [y-r..y+1, x-r..x+1]
-                (
-                    (x as i32 - r).max(0) as usize,
-                    (y as i32 - r).max(0) as usize,
-                    (x + 1).min(w),
-                    (y + 1).min(h),
-                ),
-                // top-right: [y-r..y+1, x..x+r+1]
-                (
-                    x,
-                    (y as i32 - r).max(0) as usize,
-                    (x as i32 + r + 1).min(w as i32) as usize,
-                    (y + 1).min(h),
-                ),
-                // bottom-left: [y..y+r+1, x-r..x+1]
-                (
-                    (x as i32 - r).max(0) as usize,
-                    y,
-                    (x + 1).min(w),
-                    (y as i32 + r + 1).min(h as i32) as usize,
-                ),
-                // bottom-right: [y..y+r+1, x..x+r+1]
-                (
-                    x,
-                    y,
-                    (x as i32 + r + 1).min(w as i32) as usize,
-                    (y as i32 + r + 1).min(h as i32) as usize,
-                ),
+            // IM quadrants: 4 non-overlapping regions of size width×width
+            // Q0: top-left,   Q1: top-right
+            // Q2: bottom-left, Q3: bottom-right
+            let quadrants: [(i32, i32); 4] = [
+                (x as i32 - width + 1, y as i32 - width + 1), // Q0: top-left
+                (x as i32, y as i32 - width + 1),             // Q1: top-right
+                (x as i32 - width + 1, y as i32),             // Q2: bottom-left
+                (x as i32, y as i32),                         // Q3: bottom-right
             ];
 
-            let mut best_var = f64::MAX;
-            let mut best_mean = [0.0f64; 4];
+            let mut min_var = f64::MAX;
+            let mut best_cx = x as f32;
+            let mut best_cy = y as f32;
 
-            for &(x0, y0, x1, y1) in &quadrants {
+            for &(qx, qy) in &quadrants {
+                // Clamp quadrant to image bounds
+                let x0 = qx.max(0) as usize;
+                let y0 = qy.max(0) as usize;
+                let x1 = (qx + width).min(w as i32) as usize;
+                let y1 = (qy + width).min(h as i32) as usize;
                 let count = ((x1 - x0) * (y1 - y0)) as f64;
                 if count == 0.0 {
                     continue;
                 }
-                let inv_count = 1.0 / count;
 
-                let mut var_total = 0.0;
-                let mut mean_ch = [0.0f64; 4];
-                for c in 0..ch {
-                    let s = rect_sum(&sum, x0, y0, x1, y1, c);
-                    let sq = rect_sum(&sq_sum, x0, y0, x1, y1, c);
-                    let m = s * inv_count;
-                    let v = sq * inv_count - m * m;
-                    mean_ch[c] = m;
-                    var_total += v;
-                }
+                // Luma variance via integral images
+                let s = rect_sum(&luma_sum, x0, y0, x1, y1);
+                let sq = rect_sum(&luma_sq_sum, x0, y0, x1, y1);
+                let mean = s / count;
+                let variance = sq - mean * s; // = sum((luma - mean)²)
 
-                if var_total < best_var {
-                    best_var = var_total;
-                    best_mean = mean_ch;
+                if variance < min_var {
+                    min_var = variance;
+                    // IM output: center pixel of winning quadrant (float coords)
+                    // IM uses: target.x + target.width/2.0
+                    best_cx = qx as f32 + width as f32 / 2.0;
+                    best_cy = qy as f32 + width as f32 / 2.0;
                 }
             }
 
+            // Bilinear interpolation at sub-pixel center (matches IM's InterpolatePixelChannels)
+            let sx = best_cx.clamp(0.0, (w - 1) as f32);
+            let sy = best_cy.clamp(0.0, (h - 1) as f32);
+            let x0i = sx.floor() as usize;
+            let y0i = sy.floor() as usize;
+            let x1i = (x0i + 1).min(w - 1);
+            let y1i = (y0i + 1).min(h - 1);
+            let fx = sx - x0i as f32;
+            let fy = sy - y0i as f32;
+
+            let out_off = (y * w + x) * ch;
             for c in 0..ch {
-                out[out_off + c] = best_mean[c].round().clamp(0.0, 255.0) as u8;
+                let p00 = blurred[(y0i * w + x0i) * ch + c] as f32;
+                let p10 = blurred[(y0i * w + x1i) * ch + c] as f32;
+                let p01 = blurred[(y1i * w + x0i) * ch + c] as f32;
+                let p11 = blurred[(y1i * w + x1i) * ch + c] as f32;
+                let v = p00 * (1.0 - fx) * (1.0 - fy)
+                    + p10 * fx * (1.0 - fy)
+                    + p01 * (1.0 - fx) * fy
+                    + p11 * fx * fy;
+                out[out_off + c] = v.round().clamp(0.0, 255.0) as u8;
             }
         }
     }
