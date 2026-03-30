@@ -5,114 +5,168 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add 3 core photo-editing color filters with SIMD (WASM SIMD128), registration
+  summary: 'Add 3 core photo-editing color filters with SIMD (WASM SIMD128), registration
+
     via register_filter macro, and ImageMagick/reference parity tests. Standard
+
     tools missing from the color manipulation category.
-  context: |
-    The color filter category has 17 registered filters (brightness, contrast,
+
+    '
+  context: 'The color filter category has 17 registered filters (brightness, contrast,
+
     gamma, saturate, hue_rotate, sepia, etc.) but lacks three common tools found
+
     in every professional photo editor: channel mixer, vibrance, and gradient map.
+
     Channel mixer enables creative color grading by cross-mixing RGB channels.
+
     Vibrance is perceptually weighted saturation (boosts muted colors more than
+
     already-saturated ones). Gradient map remaps luminance to a color gradient
+
     for stylized color grading looks.
-  codebase_analysis: |
-    FILTER REGISTRATION PATTERN (same as other color filters):
+
+    '
+  codebase_analysis: 'FILTER REGISTRATION PATTERN (same as other color filters):
+
     - ConfigParams struct with min/max/step/default
+
     - register_filter with category = "color"
+
     - Implementation as point op in filters.rs or point_ops.rs
+
     - Re-exported via crates/rasmcore-filter-color
 
+
     EXISTING RELATED FILTERS:
+
     - saturate: HSV saturation multiplier (simple, not perceptually weighted)
+
     - hue_rotate: HSV hue shift
+
     - selective_color: CMYK-style per-range color adjustment
+
     - colorize: Applies hue/saturation to grayscale
+
     - grayscale: BT.709 luminance extraction (SIMD path exists)
 
+
     SIMD PATTERN FOR POINT OPS:
+
     - Point ops (brightness, contrast, gamma) auto-vectorize via LLVM
+
     - For complex ops: explicit WASM SIMD128 with f32x4 lanes
+
     - Pattern: load 4 pixels -> convert to f32 -> compute -> clamp -> store u8
 
+
     PARITY INFRASTRUCTURE:
+
     - reference_audit.rs has check_parity_rgb() for IM comparison
+
     - pro_filter_parity.rs has NumPy/reference comparison patterns
+
     - For channel mixer: IM -color-matrix or custom -fx expressions
+
     - For vibrance: No direct IM equivalent, compare against Darktable or custom NumPy
 
+
     TARGET CRATE: crates/rasmcore-filter-color (re-exports from domain)
+
+    '
   acceptance_criteria:
-    - channel_mixer filter registered with 3x3 matrix params (rr,rg,rb,gr,gg,gb,br,bg,bb), applies RGB cross-mix
-    - vibrance filter registered with amount param (-100 to 100), boosts low-saturation pixels more
-    - gradient_map filter registered with color stops param, remaps luminance to gradient
-    - All 3 filters use WASM SIMD128 for inner loops with scalar fallback
-    - All 3 have #[register_filter] + ConfigParams with proper param hints
-    - channel_mixer identity test — identity matrix (1,0,0,0,1,0,0,0,1) produces identical output
-    - vibrance at amount=0 produces identical output; positive amount increases saturation of muted colors
-    - gradient_map with black-to-white gradient produces grayscale equivalent
-    - Reference parity test for channel_mixer vs IM -color-matrix (EXACT tier)
-    - Reference parity test for vibrance vs custom NumPy reference (CLOSE tier)
-    - Reference parity test for gradient_map vs IM -clut (ALGORITHM tier)
-    - All 3 re-exported via rasmcore-filter-color crate
-    - cargo test passes, param-manifest.json includes all 3 new filters
-  out_of_scope: |
-    Selective vibrance (per-color-range). HSL-based channel mixer.
+  - channel_mixer filter registered with 3x3 matrix params (rr,rg,rb,gr,gg,gb,br,bg,bb), applies RGB cross-mix
+  - vibrance filter registered with amount param (-100 to 100), boosts low-saturation pixels more
+  - gradient_map filter registered with color stops param, remaps luminance to gradient
+  - All 3 filters use WASM SIMD128 for inner loops with scalar fallback
+  - All 3 have
+  - channel_mixer identity test — identity matrix (1,0,0,0,1,0,0,0,1) produces identical output
+  - vibrance at amount=0 produces identical output; positive amount increases saturation of muted colors
+  - gradient_map with black-to-white gradient produces grayscale equivalent
+  - Reference parity test for channel_mixer vs IM -color-matrix (EXACT tier)
+  - Reference parity test for vibrance vs custom NumPy reference (CLOSE tier)
+  - Reference parity test for gradient_map vs IM -clut (ALGORITHM tier)
+  - All 3 re-exported via rasmcore-filter-color crate
+  - cargo test passes, param-manifest.json includes all 3 new filters
+  out_of_scope: 'Selective vibrance (per-color-range). HSL-based channel mixer.
+
     Animated gradient maps. LUT-based channel mixing (covered by color_lut).
-  technical_notes: |
-    CHANNEL MIXER:
+
+    '
+  technical_notes: 'CHANNEL MIXER:
+
     - 3x3 matrix multiplication on RGB: out_r = rr*r + rg*g + rb*b, etc.
+
     - Clamp output to [0, 255]
+
     - SIMD: process 4 pixels per iteration, f32x4 multiply-add
+
     - IM equivalent: -color-matrix "rr rg rb 0 / gr gg gb 0 / br bg bb 0 / 0 0 0 1"
+
     - ConfigParams: 9 f32 params with defaults forming identity matrix
 
+
     VIBRANCE:
+
     - For each pixel: compute current saturation (max(r,g,b) - min(r,g,b)) / max
+
     - Scale factor = amount * (1.0 - current_saturation)
+
     - Boost saturation by scale_factor (more boost for desaturated pixels)
+
     - Convert to HSV, multiply S by (1.0 + scale_factor), convert back
+
     - SIMD: f32x4 for saturation computation and scaling
+
     - No direct IM equivalent; reference: Darktable or NumPy implementation
 
+
     GRADIENT MAP:
+
     - Compute luminance per pixel (BT.709: 0.2126R + 0.7152G + 0.0722B)
+
     - Normalize luminance to [0.0, 1.0]
+
     - Interpolate between color stops at the luminance position
+
     - Color stops: list of (position: f32, color: ColorRgb) pairs
+
     - SIMD: vectorize luminance computation (same as grayscale SIMD path)
+
     - IM equivalent: create gradient CLUT image, apply with -clut
+
     - ConfigParams: gradient stops as string param "0.0:#000000,1.0:#FFFFFF"
+
+    '
 plan:
-  - phase: Channel Mixer
-    tasks:
-      - text: Implement channel_mixer as 3x3 RGB matrix multiply with SIMD f32x4 inner loop
-        done: false
-      - text: Register with ConfigParams (9 f32 params, identity defaults), param hints for matrix entries
-        done: false
-      - text: Test identity matrix preservation, single-channel isolation, clamp behavior
-        done: false
-      - text: IM parity test via -color-matrix, assert EXACT tier
-        done: false
-  - phase: Vibrance
-    tasks:
-      - text: Implement vibrance with perceptual saturation weighting (boost muted more)
-        done: false
-      - text: Register with ConfigParams (amount: f32, -100 to 100, default 0)
-        done: false
-      - text: Test identity at amount=0, verify low-sat pixels change more than high-sat
-        done: false
-      - text: Reference parity test against NumPy implementation, assert CLOSE tier
-        done: false
-  - phase: Gradient Map
-    tasks:
-      - text: Implement gradient_map with BT.709 luminance and linear color stop interpolation
-        done: false
-      - text: Register with ConfigParams (stops string param), parse color stops
-        done: false
-      - text: Test black-to-white gradient produces grayscale, custom gradient produces expected colors
-        done: false
-      - text: IM parity test via -clut with gradient image, assert ALGORITHM tier
-        done: false
+- phase: Channel Mixer
+  tasks:
+  - text: Implement channel_mixer as 3x3 RGB matrix multiply with SIMD f32x4 inner loop
+    done: true
+  - text: Register with ConfigParams (9 f32 params, identity defaults), param hints for matrix entries
+    done: true
+  - text: Test identity matrix preservation, single-channel isolation, clamp behavior
+    done: true
+  - text: IM parity test via -color-matrix, assert EXACT tier
+    done: true
+- phase: Vibrance
+  tasks:
+  - text: Implement vibrance with perceptual saturation weighting (boost muted more)
+    done: true
+  - text: 'Register with ConfigParams (amount: f32, range -100 to 100, default 0)'
+    done: true
+  - text: Test identity at amount=0, verify low-sat pixels change more than high-sat
+    done: true
+  - text: Reference parity test against NumPy implementation, assert CLOSE tier
+    done: true
+- phase: Gradient Map
+  tasks:
+  - text: Implement gradient_map with BT.709 luminance and linear color stop interpolation
+    done: true
+  - text: Register with ConfigParams (stops string param), parse color stops
+    done: true
+  - text: Test black-to-white gradient produces grayscale, custom gradient produces expected colors
+    done: true
+  - text: IM parity test via -clut with gradient image, assert ALGORITHM tier
+    done: true
 extra: {}
