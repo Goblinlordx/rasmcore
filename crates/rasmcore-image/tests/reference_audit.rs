@@ -1160,10 +1160,7 @@ fn exact_levels() {
         &["-level", "10%,90%,1.5"],
         "levels_10_90_1.5",
     ) {
-        assert!(
-            error < 1.0,
-            "levels MAE = {error:.4} (expected < 1.0)"
-        );
+        assert!(error < 1.0, "levels MAE = {error:.4} (expected < 1.0)");
     }
 }
 
@@ -1210,8 +1207,7 @@ fn exact_sigmoidal_contrast_soften() {
         64,
         64,
         |px, info| {
-            rasmcore_image::domain::filters::sigmoidal_contrast(px, info, 5.0, 50.0, false)
-                .unwrap()
+            rasmcore_image::domain::filters::sigmoidal_contrast(px, info, 5.0, 50.0, false).unwrap()
         },
         &["+sigmoidal-contrast", "5x50%"],
         "sigmoidal_soften_5x50",
@@ -1423,19 +1419,20 @@ fn algorithm_swirl() {
 
 #[test]
 fn algorithm_barrel() {
-    // IM -distort Barrel uses different normalization than ours.
-    // We normalize to diagonal; IM normalizes to half the minimum dimension.
-    // ALGORITHM tier: same polynomial model, different normalization.
+    // IM -distort Barrel "A B C D": Rs = (A*r³ + B*r² + C*r + D) * r
+    // Our barrel(k1, k2): Rs = r * (1 + k1*r² + k2*r⁴) = r + k1*r³ + k2*r⁵
+    // So our k1 maps to IM's B coefficient: args "0 k1 0 1"
+    // Both use IM-style normalization: rscale = 2/min(w,h).
     if let Some(error) = check_parity_rgb(
         64,
         64,
         |px, info| rasmcore_image::domain::filters::barrel(px, info, 0.3, 0.0).unwrap(),
-        &["-distort", "Barrel", "0.3 0.0 0.0 1.0"],
+        &["-distort", "Barrel", "0.0 0.3 0.0 1.0"],
         "barrel_k1_0.3",
     ) {
         assert!(
-            error < 15.0,
-            "barrel MAE = {error:.4} (expected < 15.0, ALGORITHM tier: normalization differs)"
+            error < 5.0,
+            "barrel MAE = {error:.4} (expected < 5.0, ALGORITHM tier)"
         );
     }
 }

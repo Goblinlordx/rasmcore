@@ -6822,7 +6822,13 @@ pub fn levels(
     gamma: f32,
 ) -> Result<Vec<u8>, ImageError> {
     // Convert percentage to fraction
-    super::point_ops::levels(pixels, info, black_point / 100.0, white_point / 100.0, gamma)
+    super::point_ops::levels(
+        pixels,
+        info,
+        black_point / 100.0,
+        white_point / 100.0,
+        gamma,
+    )
 }
 
 #[derive(rasmcore_macros::ConfigParams)]
@@ -12741,9 +12747,10 @@ pub fn halftone(
 }
 
 /// Swirl: rotate pixels around center with angle decreasing by distance.
-/// For each output pixel, compute polar coords from center, rotate by
-/// `angle * (1 - r/radius)` for `r < radius`, then bilinear sample source.
-/// Equivalent to ImageMagick `-swirl {degrees}`.
+/// Matches ImageMagick `-swirl {degrees}`:
+/// - Default radius = max(width/2, height/2)
+/// - Factor = 1 - sqrt(distance²) / radius, then angle = degrees * factor²
+/// - Aspect ratio scaling for non-square images
 #[rasmcore_macros::register_filter(name = "swirl", category = "distortion")]
 pub fn swirl(
     pixels: &[u8],
@@ -12764,14 +12771,20 @@ pub fn swirl(
     let hf = h as f32;
     let cx = wf * 0.5;
     let cy = hf * 0.5;
-    let rad = if radius <= 0.0 {
-        (cx * cx + cy * cy).sqrt()
-    } else {
-        radius
-    };
+    // IM: radius = max(center.x, center.y)
+    let rad = if radius <= 0.0 { cx.max(cy) } else { radius };
     let angle_rad = angle.to_radians();
     let wi = w as i32;
     let hi = h as i32;
+
+    // IM: aspect ratio scaling for non-square images
+    let (scale_x, scale_y) = if w > h {
+        (1.0f32, wf / hf)
+    } else if h > w {
+        (hf / wf, 1.0f32)
+    } else {
+        (1.0, 1.0)
+    };
 
     let mut out = vec![0u8; pixels.len()];
 
@@ -12788,19 +12801,16 @@ pub fn swirl(
                 0.0
             }
         };
-        let v = fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+        fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
             + fetch(x0 + 1, y0) * fx * (1.0 - fy)
             + fetch(x0, y0 + 1) * (1.0 - fx) * fy
-            + fetch(x0 + 1, y0 + 1) * fx * fy;
-        v
+            + fetch(x0 + 1, y0 + 1) * fx * fy
     };
 
     #[cfg(target_arch = "wasm32")]
     {
         use std::arch::wasm32::*;
 
-        let cx_v = f32x4_splat(cx);
-        let cy_v = f32x4_splat(cy);
         let rad_v = f32x4_splat(rad);
         let angle_v = f32x4_splat(angle_rad);
         let one_v = f32x4_splat(1.0);
@@ -12808,24 +12818,24 @@ pub fn swirl(
 
         for y in 0..h {
             let yf = y as f32;
-            let dy_v = f32x4_splat(yf - cy);
+            let dy_scaled = scale_y * (yf - cy);
+            let dy_v = f32x4_splat(dy_scaled);
             let mut x = 0;
             while x + 4 <= w {
-                // Load 4 x-coords
                 let dx = unsafe {
                     f32x4(
-                        x as f32 - cx,
-                        (x + 1) as f32 - cx,
-                        (x + 2) as f32 - cx,
-                        (x + 3) as f32 - cx,
+                        scale_x * (x as f32 - cx),
+                        scale_x * ((x + 1) as f32 - cx),
+                        scale_x * ((x + 2) as f32 - cx),
+                        scale_x * ((x + 3) as f32 - cx),
                     )
                 };
-                let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), f32x4_mul(dy_v, dy_v)));
-                // t = max(1 - r/radius, 0)
-                let t = f32x4_max(f32x4_sub(one_v, f32x4_div(r, rad_v)), zero_v);
-                let rot = f32x4_mul(angle_v, t);
+                // distance = sqrt(dx² + dy²)
+                let dist = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), f32x4_mul(dy_v, dy_v)));
+                // factor = max(1 - dist/radius, 0); rot = angle * factor²
+                let t = f32x4_max(f32x4_sub(one_v, f32x4_div(dist, rad_v)), zero_v);
+                let rot = f32x4_mul(angle_v, f32x4_mul(t, t));
 
-                // Extract and process each pixel
                 for p in 0..4 {
                     let rot_p = f32x4_extract_lane::<0>(match p {
                         0 => rot,
@@ -12853,11 +12863,10 @@ pub fn swirl(
                     });
                     let cos_r = rot_p.cos();
                     let sin_r = rot_p.sin();
-                    let px_x = (x + p) as f32;
-                    let dxp = px_x - cx;
-                    let dyp = yf - cy;
-                    let sx = cos_r * dxp - sin_r * dyp + cx;
-                    let sy = sin_r * dxp + cos_r * dyp + cy;
+                    let dxp = scale_x * ((x + p) as f32 - cx);
+                    let dyp = scale_y * (yf - cy);
+                    let sx = (cos_r * dxp - sin_r * dyp) / scale_x + cx;
+                    let sy = (sin_r * dxp + cos_r * dyp) / scale_y + cy;
 
                     let off = (y * w + x + p) * ch;
                     for c in 0..ch {
@@ -12866,17 +12875,16 @@ pub fn swirl(
                 }
                 x += 4;
             }
-            // Remainder
             while x < w {
-                let dx = x as f32 - cx;
-                let dy = yf - cy;
-                let r = (dx * dx + dy * dy).sqrt();
-                let t = (1.0 - r / rad).max(0.0);
-                let rot_angle = angle_rad * t;
+                let dx = scale_x * (x as f32 - cx);
+                let dy = scale_y * (yf - cy);
+                let dist = (dx * dx + dy * dy).sqrt();
+                let t = (1.0 - dist / rad).max(0.0);
+                let rot_angle = angle_rad * t * t;
                 let cos_r = rot_angle.cos();
                 let sin_r = rot_angle.sin();
-                let sx = cos_r * dx - sin_r * dy + cx;
-                let sy = sin_r * dx + cos_r * dy + cy;
+                let sx = (cos_r * dx - sin_r * dy) / scale_x + cx;
+                let sy = (sin_r * dx + cos_r * dy) / scale_y + cy;
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
                     out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -12890,16 +12898,18 @@ pub fn swirl(
     {
         for y in 0..h {
             let yf = y as f32;
-            let dy = yf - cy;
+            let dy = scale_y * (yf - cy);
             for x in 0..w {
-                let dx = x as f32 - cx;
-                let r = (dx * dx + dy * dy).sqrt();
-                let t = (1.0 - r / rad).max(0.0);
-                let rot_angle = angle_rad * t;
+                let dx = scale_x * (x as f32 - cx);
+                let dist = (dx * dx + dy * dy).sqrt();
+                let t = (1.0 - dist / rad).max(0.0);
+                // IM: rotation = degrees * factor²
+                let rot_angle = angle_rad * t * t;
                 let cos_r = rot_angle.cos();
                 let sin_r = rot_angle.sin();
-                let sx = cos_r * dx - sin_r * dy + cx;
-                let sy = sin_r * dx + cos_r * dy + cy;
+                // IM: undo aspect scaling when mapping back to pixel coords
+                let sx = (cos_r * dx - sin_r * dy) / scale_x + cx;
+                let sy = (sin_r * dx + cos_r * dy) / scale_y + cy;
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
                     out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -12988,7 +12998,7 @@ pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
 /// `r_distorted = r * (1 + k1*r² + k2*r⁴)`.
 /// `k1 > 0` = barrel, `k1 < 0` = pincushion.
 /// This is the inverse of the `undistort` correction filter.
-/// Equivalent to ImageMagick `-distort Barrel "k1 k2 0 1"`.
+/// Matches ImageMagick `-distort Barrel` normalization: `rscale = 2/min(w,h)`.
 #[rasmcore_macros::register_filter(name = "barrel", category = "distortion")]
 pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
@@ -13002,8 +13012,8 @@ pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u
     let ch = channels(info.format);
     let cx = w as f64 * 0.5;
     let cy = h as f64 * 0.5;
-    // Normalize radius so that corners map to r=1
-    let norm = (cx * cx + cy * cy).sqrt();
+    // IM normalization: rscale = 2/min(w,h), so norm = min(w,h)/2
+    let norm = (w as f64).min(h as f64) * 0.5;
     let wi = w as i32;
     let hi = h as i32;
 
@@ -13028,12 +13038,11 @@ pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u
             let fy = sy - y0 as f32;
 
             for c in 0..ch {
+                // Edge-clamp border (matches IM's default virtual pixel method)
                 let fetch = |px: i32, py: i32| -> f32 {
-                    if px >= 0 && px < wi && py >= 0 && py < hi {
-                        pixels[(py as usize * w + px as usize) * ch + c] as f32
-                    } else {
-                        0.0
-                    }
+                    let cx = px.clamp(0, wi - 1) as usize;
+                    let cy = py.clamp(0, hi - 1) as usize;
+                    pixels[(cy * w + cx) * ch + c] as f32
                 };
                 let v = fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
                     + fetch(x0 + 1, y0) * fx * (1.0 - fy)
