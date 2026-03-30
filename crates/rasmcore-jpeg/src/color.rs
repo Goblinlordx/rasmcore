@@ -157,52 +157,38 @@ pub fn ycbcr_to_rgb_fixed(y: i32, cb: i32, cr: i32) -> (u8, u8, u8) {
     )
 }
 
-/// Convert CMYK values to RGB.
+/// Blinn's 8x8 multiply: approximation of (a * b / 255) matching libjpeg-turbo.
+#[inline]
+fn blinn_8x8(a: u8, b: u8) -> u8 {
+    let t = a as i32 * b as i32 + 128;
+    ((t + (t >> 8)) >> 8) as u8
+}
+
+/// Convert raw CMYK plane values to RGB.
 ///
-/// Standard CMYK→RGB: R = (255-C) * (255-K) / 255, etc.
-/// Input values are in 0-255 range (already un-inverted if Adobe).
+/// Used when Adobe APP14 color_transform=0 (raw CMYK, no YCbCr encoding).
+/// Formula: R = blinn(C, K), G = blinn(M, K), B = blinn(Y, K)
+/// (plane values are already in the right form for multiplication)
 #[inline]
 pub fn cmyk_to_rgb(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
-    let r = ((255 - c as u16) * (255 - k as u16) / 255) as u8;
-    let g = ((255 - m as u16) * (255 - k as u16) / 255) as u8;
-    let b = ((255 - y as u16) * (255 - k as u16) / 255) as u8;
-    (r, g, b)
+    (blinn_8x8(c, k), blinn_8x8(m, k), blinn_8x8(y, k))
 }
 
 /// Convert YCCK (YCbCr + K) to RGB.
 ///
-/// Adobe YCCK: the original CMYK values are inverted (255-val), then the
-/// inverted C,M,Y are encoded as YCbCr. K stays as-is (also inverted).
+/// Matches zune-jpeg/libjpeg-turbo exactly:
+///   1. YCbCr→RGB on first 3 components gives (R, G, B)
+///   2. Final: R_out = blinn(255 - R, K), same for G, B
 ///
-/// Decode path:
-///   1. YCbCr→RGB recovers the inverted CMY values (c', m', y')
-///   2. C = 255 - c', M = 255 - m', Y = 255 - y', K = 255 - k'
-///   3. CMYK→RGB: R = (255-C)*(255-K)/255 = c' * k' / 255 ... wait
-///
-/// Actually, the standard approach (matching libjpeg-turbo):
-///   After YCbCr→RGB we get (c', m', y') which are inverted ink values.
-///   K channel (k') is also inverted.
-///   RGB = CMYK→RGB with C=255-c', M=255-m', Y=255-y', K=255-k'
-///   R = (255 - (255-c')) * ... no, simpler:
-///   R = c' * k' / 255   (because c' = 255-C, k' = 255-K, and
-///       R = (255-C)*(255-K)/255 = c' * k' / 255)
+/// The K channel value is the raw decoded plane value (cast to u8).
 #[inline]
 pub fn ycck_to_rgb(y_val: i32, cb: i32, cr: i32, k: u8) -> (u8, u8, u8) {
-    let (c_inv, m_inv, y_inv) = ycbcr_to_rgb_fixed(y_val, cb, cr);
-    // In Adobe YCCK: YCbCr encodes inverted CMY (255-C, 255-M, 255-Y).
-    // K channel stores inverted K (255-K).
-    // Convert back: C = 255 - c_inv, K = 255 - k
-    // CMYK→RGB: R = (255-C)*(255-K)/255 = c_inv * (255-k) / 255... no
-    // Actually test both interpretations.
-    // Standard: R = (1 - C)*(1 - K) = ((255-C)/255) * ((255-K)/255) * 255
-    //         = c_inv * (255 - k) / 255   ... if K is non-inverted
-    //   OR    = c_inv * k / 255           ... if K is inverted (255-K)
-    // Try: K is the actual K value (NOT inverted) in the stream:
-    let k_inv = 255 - k; // convert from stored (255-K) to K
-    let r = ((c_inv as u32 * k_inv as u32 + 127) / 255) as u8;
-    let g = ((m_inv as u32 * k_inv as u32 + 127) / 255) as u8;
-    let b = ((y_inv as u32 * k_inv as u32 + 127) / 255) as u8;
-    (r, g, b)
+    let (r, g, b) = ycbcr_to_rgb_fixed(y_val, cb, cr);
+    (
+        blinn_8x8(255 - r, k),
+        blinn_8x8(255 - g, k),
+        blinn_8x8(255 - b, k),
+    )
 }
 
 /// Downsample a full-resolution plane with dithered rounding.

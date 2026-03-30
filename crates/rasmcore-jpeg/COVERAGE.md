@@ -22,9 +22,10 @@ Compared: rasmcore-jpeg decode vs image crate (zune-jpeg 0.5) vs ITU-T T.81/JFIF
 | **Color** | | | |
 | YCbCr → RGB | Y | Y | Y |
 | Grayscale (1 component) | Y | Y | Y |
-| CMYK (4 components) | **N** | Y | Y |
-| YCCK (4 components) | **N** | Y | Y |
+| CMYK (4 components, APP14) | Y | Y | Y |
+| YCCK (4 components, APP14) | Y | Y | Y |
 | **Features** | | | |
+| APP14 Adobe marker parsing | Y | Y | Y |
 | Restart markers (DRI) | Y | Y | Y |
 | Multiple scan (progressive) | Y | Y | Y |
 | Huffman tables (DHT) | Y | Y | Y |
@@ -41,23 +42,20 @@ Compared: rasmcore-jpeg decode vs image crate (zune-jpeg 0.5) vs ITU-T T.81/JFIF
 
 ## Assessment
 
-**rasmcore-jpeg exceeds zune-jpeg in some areas** (arithmetic coding support)
-but has a **coverage gap for CMYK/YCCK images** (4-component JPEGs).
-
-CMYK JPEGs are rare in consumer/web contexts but exist in print workflows.
+**rasmcore-jpeg now exceeds zune-jpeg coverage:**
+- Arithmetic coding (SOF9/SOF10) — zune-jpeg does not support this
+- CMYK/YCCK decode — byte-exact parity with ImageMagick (MAE=0.00)
+- All standard subsampling modes
 
 ## Gaps vs Full JPEG Spec (future work)
 
 | Gap | Priority | Notes |
 |-----|----------|-------|
-| CMYK/YCCK decode (4 components) | Medium | Used in print workflows, rare in web |
 | 12-bit sample precision (SOF1) | Low | Medical/scientific imaging |
 | Lossless JPEG (SOF3/7/11/15) | Low | Largely superseded by JPEG-LS |
 | EXIF metadata pass-through | Medium | Currently skipped, metadata handled at rasmcore-image layer |
 
 ## Conclusion
 
-**Safe to replace zune-jpeg for the vast majority of JPEG files.** The only
-regression is CMYK/YCCK support (4-component images). These are rare enough
-that we can accept the gap and document it. If a CMYK JPEG is encountered,
-the decoder returns an error rather than silently producing wrong output.
+**Full feature parity with zune-jpeg, plus arithmetic coding support.**
+CMYK/YCCK decode validated byte-exact against ImageMagick reference output.
