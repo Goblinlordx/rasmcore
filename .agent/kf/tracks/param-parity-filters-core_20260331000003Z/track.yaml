@@ -1,103 +1,139 @@
 id: param-parity-filters-core_20260331000003Z
-title: "Phase 1+2 — Core Filter Parameter Parity & Multi-Setting Validation"
+title: Phase 1+2 — Core Filter Parameter Parity & Multi-Setting Validation
 type: chore
 status: pending
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-03-30'
 spec:
-  summary: >
-    Audit core filter params (blur, edge, morphology, color, enhancement)
-    against IM/OpenCV. For each filter group, test 3+ parameter combos
-    and compare output vs reference.
-  context: |
-    Many filters have single-setting parity tests (e.g., blur at radius=3
+  summary: 'Audit core filter params (blur, edge, morphology, color, enhancement) against IM/OpenCV. For each filter group,
+    test 3+ parameter combos and compare output vs reference.
+
+    '
+  context: 'Many filters have single-setting parity tests (e.g., blur at radius=3
+
     vs OpenCV). But the goal is to validate across parameter ranges —
+
     does blur at radius=1, 5, 15 all match the reference? Does Canny
+
     with different thresholds match? This catches scale/range issues
+
     that single-point tests miss.
 
+
     Current coverage (from audit):
+
     - blur: tested vs OpenCV at one radius
+
     - morphology: tested vs OpenCV at one kernel size
+
     - edge detection: tested vs OpenCV at default params
+
     - color ops: tested vs Python numpy at one setting each
+
     - enhancement: brightness/contrast/gamma tested vs OpenCV at one value
-  codebase_analysis: |
-    Filter groups to audit (by category):
+
+    '
+  codebase_analysis: 'Filter groups to audit (by category):
+
     SPATIAL (blur group): blur, bokeh_blur, motion_blur, zoom_blur, gaussian_blur_cv
+
     EDGE: sobel, scharr, laplacian, canny
+
     MORPHOLOGY: erode, dilate, morph_open/close/gradient/tophat/blackhat
+
     COLOR: hue_rotate, saturate, sepia, colorize, grayscale
+
     ADJUSTMENT: brightness, contrast, gamma, levels, posterize
+
     ENHANCEMENT: equalize, normalize, auto_level, clahe, dehaze
+
     DENOISE: median, bilateral, guided_filter, nlm_denoise
 
+
     Reference tools: magick (IM 7.1), OpenCV via Python venv
+
+    '
   acceptance_criteria:
-    - Blur group tested at radius=1,5,15 vs IM/OpenCV (MAE < 1.0 each)
-    - Edge detection tested at 2+ threshold combos vs OpenCV
-    - Morphology tested at kernel_size=3,5,7 vs IM -morphology
-    - Color ops tested at 3+ values (e.g., hue_rotate at 45,90,180) vs Python ref
-    - Adjustment ops tested at 3+ values (e.g., gamma 0.5,1.0,2.2) vs IM
-    - Enhancement ops tested at 2+ parameter combos vs IM/OpenCV
-    - Denoise tested at 2+ strength values vs OpenCV
-    - All MAE results documented with per-setting tolerances
-  out_of_scope: |
-    Artistic/effect filters (separate track if needed).
+  - Blur group tested at radius=1,5,15 vs IM/OpenCV (MAE < 1.0 each)
+  - Edge detection tested at 2+ threshold combos vs OpenCV
+  - Morphology tested at kernel_size=3,5,7 vs IM -morphology
+  - Color ops tested at 3+ values (e.g., hue_rotate at 45,90,180) vs Python ref
+  - Adjustment ops tested at 3+ values (e.g., gamma 0.5,1.0,2.2) vs IM
+  - Enhancement ops tested at 2+ parameter combos vs IM/OpenCV
+  - Denoise tested at 2+ strength values vs OpenCV
+  - All MAE results documented with per-setting tolerances
+  out_of_scope: 'Artistic/effect filters (separate track if needed).
+
     Distortion filters (separate concern).
+
     Grading filters (in compositor track).
+
     Fixing filter implementations (document gaps, fix in follow-up tracks).
-  technical_notes: |
-    Test approach per filter group:
+
+    '
+  technical_notes: 'Test approach per filter group:
+
     1. Generate a canonical 64x64 gradient test image
+
     2. Apply filter at setting A with our code -> output_A_ours
+
     3. Apply filter at setting A with reference -> output_A_ref
+
     4. Compare MAE(output_A_ours, output_A_ref)
+
     5. Repeat for settings B, C
+
     6. Record all MAEs in a structured table
 
+
     Reference commands:
+
     - magick input.png -blur 0x5 output.png (Gaussian blur sigma=5)
+
     - magick input.png -morphology Erode Diamond:1 output.png
+
     - magick input.png -modulate 100,100,150 output.png (hue rotate)
+
     - Python: cv2.Canny(img, low, high)
+
+    '
 plan:
-  - phase: Blur & Spatial
-    tasks:
-      - text: Blur multi-radius (1,5,15) vs IM -blur / OpenCV GaussianBlur
-        done: false
-      - text: Motion blur multi-setting (length=5,15, angle=0,45,90) vs IM -motion-blur
-        done: false
-      - text: Median multi-radius (1,3,5) vs IM -median / OpenCV medianBlur
-        done: false
-      - text: Bilateral multi-setting (sigma_color=25,75, sigma_space=25,75) vs OpenCV bilateralFilter
-        done: false
-  - phase: Edge & Morphology
-    tasks:
-      - text: Canny multi-threshold (50/150, 100/200, 30/100) vs OpenCV Canny
-        done: false
-      - text: Sobel/Scharr/Laplacian vs OpenCV at default params (verify existing parity holds)
-        done: false
-      - text: Morphology multi-kernel (3,5,7) x (erode,dilate,open,close) vs IM -morphology
-        done: false
-  - phase: Color & Adjustment
-    tasks:
-      - text: Hue rotate multi-angle (45,90,180,270) vs Python HSV rotation
-        done: false
-      - text: Brightness/contrast multi-value (-0.5,0,+0.5) vs IM -brightness-contrast
-        done: false
-      - text: Gamma multi-value (0.5,1.0,2.2) vs IM -gamma
-        done: false
-      - text: Levels multi-setting (black=20,white=235 and black=50,white=200) vs IM -level
-        done: false
-  - phase: Enhancement & Denoise
-    tasks:
-      - text: CLAHE multi-setting (clip=2,4, grid=8,16) vs OpenCV createCLAHE
-        done: false
-      - text: Equalize/normalize vs IM -equalize/-normalize (verify pixel-exact or document MAE)
-        done: false
-      - text: NLM denoise multi-strength (h=5,10,20) vs OpenCV fastNlMeansDenoising
-        done: false
-      - text: Compile all MAE results into a structured validation report
-        done: false
+- phase: Blur & Spatial
+  tasks:
+  - text: Blur multi-radius (1,5,15) vs IM -blur / OpenCV GaussianBlur
+    done: true
+  - text: Motion blur multi-setting (length=5,15, angle=0,45,90) vs IM -motion-blur
+    done: true
+  - text: Median multi-radius (1,3,5) vs IM -median / OpenCV medianBlur
+    done: true
+  - text: Bilateral multi-setting (sigma_color=25,75, sigma_space=25,75) vs OpenCV bilateralFilter
+    done: true
+- phase: Edge & Morphology
+  tasks:
+  - text: Canny multi-threshold (50/150, 100/200, 30/100) vs OpenCV Canny
+    done: true
+  - text: Sobel/Scharr/Laplacian vs OpenCV at default params (verify existing parity holds)
+    done: true
+  - text: Morphology multi-kernel (3,5,7) x (erode,dilate,open,close) vs IM -morphology
+    done: true
+- phase: Color & Adjustment
+  tasks:
+  - text: Hue rotate multi-angle (45,90,180,270) vs Python HSV rotation
+    done: true
+  - text: Brightness/contrast multi-value (-0.5,0,+0.5) vs IM -brightness-contrast
+    done: true
+  - text: Gamma multi-value (0.5,1.0,2.2) vs IM -gamma
+    done: true
+  - text: Levels multi-setting (black=20,white=235 and black=50,white=200) vs IM -level
+    done: true
+- phase: Enhancement & Denoise
+  tasks:
+  - text: CLAHE multi-setting (clip=2,4, grid=8,16) vs OpenCV createCLAHE
+    done: true
+  - text: Equalize/normalize vs IM -equalize/-normalize (verify pixel-exact or document MAE)
+    done: true
+  - text: NLM denoise multi-strength (h=5,10,20) vs OpenCV fastNlMeansDenoising
+    done: true
+  - text: Compile all MAE results into a structured validation report
+    done: true
 extra: {}
