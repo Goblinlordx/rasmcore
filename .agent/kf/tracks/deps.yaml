@@ -89,3 +89,6 @@ p3-artistic-filters_20260330043305Z: []
 
 # Pro filter validation — no blocking deps (register-filters-pro already completed)
 validate-pro-filters_20260330044600Z: []
+
+# Filter param hints — independent, metadata-only changes
+filter-param-hints_20260330063250Z: []
