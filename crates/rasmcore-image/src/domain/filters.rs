@@ -4337,18 +4337,62 @@ pub fn dehaze(
 
     // Step 5: Recover scene — J = (I - A) / max(t, t_min) + A
     let mut result = vec![0u8; pixels.len()];
-    for y in 0..h {
-        for x in 0..w {
-            let i = y * w + x;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+        let inv_255 = f32x4_splat(1.0 / 255.0);
+        let scale_255 = f32x4_splat(255.0);
+        let half = f32x4_splat(0.5);
+        let zero = f32x4_splat(0.0);
+        let t_min_v = f32x4_splat(t_min);
+
+        // Process one pixel at a time using f32x4 for RGB channels + padding
+        // This vectorizes the 3-channel arithmetic (R, G, B, 0) in one SIMD op
+        let atm_v = f32x4(atm[0], atm[1], atm[2], 0.0);
+
+        for i in 0..n {
             let t = refined[i].max(t_min);
+            let inv_t = f32x4_splat(1.0 / t);
+            let pi = i * channels;
+
+            // Load RGB as f32x4
+            let px = f32x4(
+                pixels[pi] as f32,
+                pixels[pi + 1] as f32,
+                pixels[pi + 2] as f32,
+                0.0,
+            );
+            // ic = px / 255.0
+            let ic = f32x4_mul(px, inv_255);
+            // jc = (ic - atm) / t + atm = (ic - atm) * inv_t + atm
+            let diff = f32x4_sub(ic, atm_v);
+            let jc = f32x4_add(f32x4_mul(diff, inv_t), atm_v);
+            // Convert back: round(jc * 255), clamp [0, 255]
+            let out = f32x4_min(scale_255, f32x4_max(zero, f32x4_add(f32x4_mul(jc, scale_255), half)));
+
+            result[pi] = f32x4_extract_lane::<0>(out) as u8;
+            result[pi + 1] = f32x4_extract_lane::<1>(out) as u8;
+            result[pi + 2] = f32x4_extract_lane::<2>(out) as u8;
+            if channels == 4 {
+                result[pi + 3] = pixels[pi + 3];
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for i in 0..n {
+            let t = refined[i].max(t_min);
+            let inv_t = 1.0 / t;
             let pi = i * channels;
             for c in 0..3 {
                 let ic = pixels[pi + c] as f32 / 255.0;
-                let jc = (ic - atm[c]) / t + atm[c];
-                result[pi + c] = (jc * 255.0).round().clamp(0.0, 255.0) as u8;
+                let jc = (ic - atm[c]) * inv_t + atm[c];
+                result[pi + c] = (jc * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
             }
             if channels == 4 {
-                result[pi + 3] = pixels[pi + 3]; // alpha
+                result[pi + 3] = pixels[pi + 3];
             }
         }
     }
