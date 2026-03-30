@@ -5,100 +5,141 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add BC1-BC7 (DXT1-DXT5) block compression decode to the existing DDS decoder
+  summary: 'Add BC1-BC7 (DXT1-DXT5) block compression decode to the existing DDS decoder
+
     using the texpresso crate. Currently only uncompressed DDS is supported.
+
     Includes reference parity tests against DirectXTex/texconv.
-  context: |
-    The DDS decoder currently only handles uncompressed pixel formats (R8G8B8,
+
+    '
+  context: 'The DDS decoder currently only handles uncompressed pixel formats (R8G8B8,
+
     A8R8G8B8, L8). BCn block compression is the standard for GPU textures in
+
     game engines, 3D tools, and asset pipelines. Without BCn decode, DDS support
+
     is incomplete for real-world use. The texpresso crate provides pure Rust,
+
     WASM-compatible BC1-BC7 decompression.
-  codebase_analysis: |
-    CURRENT DDS DECODER (decoder/mod.rs lines 1503-1603):
+
+    '
+  codebase_analysis: 'CURRENT DDS DECODER (decoder/mod.rs lines 1503-1603):
+
     - Parses DDS header: magic, height, width, pitch, pixel format flags
+
     - Handles only uncompressed via pf_flags & 0x40 (DDPF_RGB) check
+
     - Reads pf_rgb_bit_count for 24-bit (RGB) and 32-bit (RGBA)
+
     - Outputs RGB8 or RGBA8 with BGRA->RGBA byte swizzle
+
     - FourCC field (pf_fourcc at offset 84) is read but NOT dispatched
 
+
     WHAT NEEDS TO CHANGE:
+
     - Parse FourCC field for DXT1/DXT3/DXT5 magic bytes
+
     - Parse DX10 header extension for BC4/BC5/BC6H/BC7
+
     - Read compressed block data (4x4 pixel blocks)
+
     - Decompress via texpresso into RGBA8
+
     - Add to existing decode path with fallback to uncompressed
 
+
     DDS ENCODER (encoder/dds.rs):
+
     - Currently writes uncompressed BGRA8 only
+
     - BCn encode is out of scope for this track (could be future work)
 
+
     WASM: texpresso is pure Rust, no C deps, WASM-safe.
+
+    '
   acceptance_criteria:
-    - BC1 (DXT1) textures decode to RGBA8 with correct 1-bit alpha
-    - BC2 (DXT3) textures decode to RGBA8 with explicit 4-bit alpha
-    - BC3 (DXT5) textures decode to RGBA8 with interpolated alpha
-    - BC4 textures decode to Gray8 (single-channel)
-    - BC5 textures decode to RGB8 (two-channel normal maps)
-    - BC7 textures decode to RGBA8 (high-quality RGBA)
-    - Uncompressed DDS decode unchanged (backward compatible)
-    - Reference parity test — our BC1/BC3/BC7 decode matches texconv output (pixel-exact or MAE < 0.01)
-    - Test with real-world DDS fixtures from standard test suites
-    - detect_format() correctly identifies BCn DDS files
-  out_of_scope: |
-    BCn encode (DDS compression). BC6H HDR decode (float output).
+  - BC1 (DXT1) textures decode to RGBA8 with correct 1-bit alpha
+  - BC2 (DXT3) textures decode to RGBA8 with explicit 4-bit alpha
+  - BC3 (DXT5) textures decode to RGBA8 with interpolated alpha
+  - BC4 textures decode to Gray8 (single-channel)
+  - BC5 textures decode to RGB8 (two-channel normal maps)
+  - BC7 textures decode to RGBA8 (high-quality RGBA)
+  - Uncompressed DDS decode unchanged (backward compatible)
+  - Reference parity test — our BC1/BC3/BC7 decode matches texconv output (pixel-exact or MAE < 0.01)
+  - Test with real-world DDS fixtures from standard test suites
+  - detect_format() correctly identifies BCn DDS files
+  out_of_scope: 'BCn encode (DDS compression). BC6H HDR decode (float output).
+
     Cubemap or volume texture support. Mipmap chain handling.
-  technical_notes: |
-    FourCC detection:
+
+    '
+  technical_notes: 'FourCC detection:
+
     - DXT1 = 0x31545844, DXT3 = 0x33545844, DXT5 = 0x35545844
+
     - DX10 header: if fourcc == "DX10", read 20-byte extension for DXGI_FORMAT
+
     - BC4/BC5/BC7 use DX10 header with DXGI_FORMAT enum values
 
+
     Block layout: BCn uses 4x4 pixel blocks.
+
     - BC1/BC4: 8 bytes per block (64 bits)
+
     - BC2/BC3/BC5/BC7: 16 bytes per block (128 bits)
+
     - Total blocks = ceil(width/4) * ceil(height/4)
+
     - Non-multiple-of-4 dimensions: pad with transparent/black
 
+
     texpresso API:
+
     - texpresso::Format::Bc1.decompress(block_data, width, height, output_rgba)
+
     - Output is always RGBA8 (4 bytes per pixel)
 
+
     Reference validation:
+
     - Use texconv (DirectXTex CLI) or ImageMagick (recent versions support DDS BCn)
+
     - Compare: our_decode(bcn_dds) vs texconv_decode(bcn_dds) — pixel-exact for BC1/BC3/BC7
+
+    '
 plan:
-  - phase: BCn Decompression Core
-    tasks:
-      - text: Add texpresso crate dependency to workspace
-        done: false
-      - text: Parse DDS FourCC field and detect BC1/BC2/BC3 (DXT1/DXT3/DXT5) formats
-        done: false
-      - text: Parse DX10 header extension for BC4/BC5/BC7 DXGI_FORMAT values
-        done: false
-      - text: Implement BC1 decompression path (read blocks, decompress via texpresso, output RGBA8)
-        done: false
-  - phase: Extended BCn Formats
-    tasks:
-      - text: Implement BC2/BC3 decompression (explicit and interpolated alpha)
-        done: false
-      - text: Implement BC4 (grayscale) and BC5 (normal map) decompression
-        done: false
-      - text: Implement BC7 decompression (high-quality RGBA)
-        done: false
-      - text: Handle non-multiple-of-4 dimensions with proper padding
-        done: false
-  - phase: Reference Parity Tests
-    tasks:
-      - text: Create BC1/BC3/BC7 test fixtures via texconv or reference tool
-        done: false
-      - text: Reference parity test — our decode vs texconv output, pixel-exact or MAE < 0.01
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Backward compat — existing uncompressed DDS decode unchanged
-        done: false
-      - text: Full cargo test pass, detect_format() identifies BCn DDS correctly
-        done: false
+- phase: BCn Decompression Core
+  tasks:
+  - text: Add texpresso crate dependency to workspace
+    done: true
+  - text: Parse DDS FourCC field and detect BC1/BC2/BC3 (DXT1/DXT3/DXT5) formats
+    done: true
+  - text: Parse DX10 header extension for BC4/BC5/BC7 DXGI_FORMAT values
+    done: true
+  - text: Implement BC1 decompression path (read blocks, decompress via texpresso, output RGBA8)
+    done: true
+- phase: Extended BCn Formats
+  tasks:
+  - text: Implement BC2/BC3 decompression (explicit and interpolated alpha)
+    done: true
+  - text: Implement BC4 (grayscale) and BC5 (normal map) decompression
+    done: true
+  - text: Implement BC7 decompression (high-quality RGBA)
+    done: true
+  - text: Handle non-multiple-of-4 dimensions with proper padding
+    done: true
+- phase: Reference Parity Tests
+  tasks:
+  - text: Create BC1/BC3/BC7 test fixtures via texconv or reference tool
+    done: true
+  - text: Reference parity test — our decode vs texconv output, pixel-exact or MAE < 0.01
+    done: true
+- phase: Verification
+  tasks:
+  - text: Backward compat — existing uncompressed DDS decode unchanged
+    done: true
+  - text: Full cargo test pass, detect_format() identifies BCn DDS correctly
+    done: true
 extra: {}
