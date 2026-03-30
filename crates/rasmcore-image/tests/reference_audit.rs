@@ -1591,8 +1591,8 @@ fn close_modulate_brightness_50() {
         "modulate brightness=50",
     ) {
         assert!(
-            error < 2.0,
-            "CLOSE: modulate brightness=50 MAE should be < 2.0, got {error:.4}"
+            error < 0.01,
+            "EXACT: modulate brightness=50 MAE should be < 0.01, got {error:.4}"
         );
     }
 }

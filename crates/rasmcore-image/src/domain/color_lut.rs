@@ -338,13 +338,75 @@ impl ColorOp {
                 saturation,
                 hue,
             } => {
-                // IM -modulate uses HSL (verified: red with sat=0 gives gray at L=0.5)
-                let (h, s, l) = rgb_to_hsl(r, g, b);
-                let new_l = (l * brightness).clamp(0.0, 1.0);
-                let new_s = (s * saturation).clamp(0.0, 1.0);
-                let new_h = (h + hue) % 360.0;
+                // IM -modulate uses HSL. Use f64 internally to match IM's precision —
+                // f32 HSL roundtrip introduces ±1 errors at high saturation.
+                let (r64, g64, b64) = (r as f64, g as f64, b as f64);
+                let (bri, sat_f, hue_f) = (*brightness as f64, *saturation as f64, *hue as f64);
+                let max = r64.max(g64).max(b64);
+                let min = r64.min(g64).min(b64);
+                let l = (max + min) / 2.0;
+                let delta = max - min;
+                let (h, s) = if delta == 0.0 {
+                    (0.0, 0.0)
+                } else {
+                    let s = if l > 0.5 {
+                        delta / (2.0 - max - min)
+                    } else {
+                        delta / (max + min)
+                    };
+                    let h = if max == r64 {
+                        let mut h = (g64 - b64) / delta;
+                        if h < 0.0 {
+                            h += 6.0;
+                        }
+                        h * 60.0
+                    } else if max == g64 {
+                        ((b64 - r64) / delta + 2.0) * 60.0
+                    } else {
+                        ((r64 - g64) / delta + 4.0) * 60.0
+                    };
+                    (h, s)
+                };
+                let new_l = (l * bri).clamp(0.0, 1.0);
+                let new_s = (s * sat_f).clamp(0.0, 1.0);
+                let new_h = (h + hue_f) % 360.0;
                 let new_h = if new_h < 0.0 { new_h + 360.0 } else { new_h };
-                hsl_to_rgb(new_h, new_s, new_l)
+                // HSL to RGB (f64)
+                if new_s == 0.0 {
+                    let v = new_l as f32;
+                    (v, v, v)
+                } else {
+                    let q = if new_l < 0.5 {
+                        new_l * (1.0 + new_s)
+                    } else {
+                        new_l + new_s - new_l * new_s
+                    };
+                    let p = 2.0 * new_l - q;
+                    let hk = new_h / 360.0;
+                    let hue2rgb = |t: f64| -> f64 {
+                        let t = if t < 0.0 {
+                            t + 1.0
+                        } else if t > 1.0 {
+                            t - 1.0
+                        } else {
+                            t
+                        };
+                        if t < 1.0 / 6.0 {
+                            p + (q - p) * 6.0 * t
+                        } else if t < 0.5 {
+                            q
+                        } else if t < 2.0 / 3.0 {
+                            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+                        } else {
+                            p
+                        }
+                    };
+                    (
+                        hue2rgb(hk + 1.0 / 3.0) as f32,
+                        hue2rgb(hk) as f32,
+                        hue2rgb(hk - 1.0 / 3.0) as f32,
+                    )
+                }
             }
         }
     }
