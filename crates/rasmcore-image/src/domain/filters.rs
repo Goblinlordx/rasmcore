@@ -652,7 +652,7 @@ pub struct WhiteBalanceTemperatureParams {
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on
 /// x86 (SSE/AVX), ARM (NEON), and WASM (SIMD128).
-#[rasmcore_macros::register_filter(name = "blur", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "blur", category = "spatial", group = "blur", reference = "Gaussian convolution")]
 pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError> {
     if radius < 0.0 {
         return Err(ImageError::InvalidParameters(
@@ -764,7 +764,7 @@ fn make_hex_kernel(radius: u32) -> (Vec<f32>, usize) {
 ///
 /// `radius` is the kernel half-size in pixels (kernel side = 2*radius+1).
 /// Minimum radius is 1.
-#[rasmcore_macros::register_filter(name = "bokeh_blur", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "bokeh_blur", category = "spatial", group = "blur", variant = "bokeh", reference = "physical optic disc/polygon aperture model")]
 pub fn bokeh_blur(
     pixels: &[u8],
     info: &ImageInfo,
@@ -797,7 +797,7 @@ pub fn bokeh_blur(
 ///
 /// Validated against OpenCV `filter2D` with the same kernel — see
 /// `tests/codec-parity/tests/blend_parity.rs` (planned: motion_blur_parity).
-#[rasmcore_macros::register_filter(name = "motion_blur", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "motion_blur", category = "spatial", group = "blur", variant = "motion", reference = "linear kernel simulating camera motion")]
 pub fn motion_blur(
     pixels: &[u8],
     info: &ImageInfo,
@@ -858,7 +858,7 @@ pub fn motion_blur(
 ///   (0.0 = no blur, 0.1 = subtle, 1.0 = full ray to center)
 ///
 /// Reference: GEGL `operations/common-gpl3+/motion-blur-zoom.c`
-#[rasmcore_macros::register_filter(name = "zoom_blur", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "zoom_blur", category = "spatial", group = "blur", variant = "zoom", reference = "radial kernel simulating lens zoom")]
 pub fn zoom_blur(
     pixels: &[u8],
     info: &ImageInfo,
@@ -957,7 +957,7 @@ pub fn zoom_blur(
 ///
 /// Computes: output = original + amount * (original - blurred)
 /// Uses the SIMD-optimized blur internally.
-#[rasmcore_macros::register_filter(name = "sharpen", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "sharpen", category = "spatial", reference = "unsharp mask")]
 pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -1047,7 +1047,7 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
 /// Adjust brightness (-1.0 to 1.0).
 ///
 /// Uses the composable LUT infrastructure from `point_ops`.
-#[rasmcore_macros::register_filter(name = "brightness", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "brightness", category = "adjustment", reference = "additive brightness offset")]
 pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
@@ -1065,7 +1065,7 @@ pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8
 /// Adjust contrast (-1.0 to 1.0).
 ///
 /// Uses the composable LUT infrastructure from `point_ops`.
-#[rasmcore_macros::register_filter(name = "contrast", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "contrast", category = "adjustment", reference = "multiplicative contrast")]
 pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
@@ -1181,19 +1181,19 @@ fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u
 }
 
 /// Rotate hue by `degrees` (0-360). Works on RGB8 and RGBA8 images.
-#[rasmcore_macros::register_filter(name = "hue_rotate", category = "color")]
+#[rasmcore_macros::register_filter(name = "hue_rotate", category = "color", reference = "HSV hue rotation")]
 pub fn hue_rotate(pixels: &[u8], info: &ImageInfo, degrees: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::HueRotate(degrees))
 }
 
 /// Adjust saturation by `factor` (0=grayscale, 1=unchanged, 2=double).
-#[rasmcore_macros::register_filter(name = "saturate", category = "color")]
+#[rasmcore_macros::register_filter(name = "saturate", category = "color", reference = "HSV saturation scaling")]
 pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::Saturate(factor))
 }
 
 /// Apply sepia tone with given `intensity` (0=none, 1=full sepia).
-#[rasmcore_macros::register_filter(name = "sepia", category = "color")]
+#[rasmcore_macros::register_filter(name = "sepia", category = "color", reference = "sepia tone matrix")]
 pub fn sepia(pixels: &[u8], info: &ImageInfo, intensity: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::Sepia(intensity.clamp(0.0, 1.0)))
 }
@@ -1208,7 +1208,7 @@ pub struct ColorizeParams {
 }
 
 /// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
-#[rasmcore_macros::register_filter(name = "colorize", category = "color")]
+#[rasmcore_macros::register_filter(name = "colorize", category = "color", reference = "linear color tint blend")]
 pub fn colorize(
     pixels: &[u8],
     info: &ImageInfo,
@@ -1265,7 +1265,7 @@ pub struct ChannelMixerParams {
 ///
 /// Identity matrix (1,0,0, 0,1,0, 0,0,1) produces unchanged output.
 /// IM equivalent: `-color-matrix "rr rg rb 0 / gr gg gb 0 / br bg bb 0 / 0 0 0 1"`
-#[rasmcore_macros::register_filter(name = "channel_mixer", category = "color")]
+#[rasmcore_macros::register_filter(name = "channel_mixer", category = "color", reference = "RGB channel matrix multiplication")]
 pub fn channel_mixer(
     pixels: &[u8],
     info: &ImageInfo,
@@ -1301,7 +1301,7 @@ pub struct VibranceParams {
 /// Unlike `saturate` which applies a uniform multiplier, vibrance weights
 /// the boost inversely by current saturation — muted colors get more boost,
 /// already-vivid colors get less. amount=0 is identity.
-#[rasmcore_macros::register_filter(name = "vibrance", category = "color")]
+#[rasmcore_macros::register_filter(name = "vibrance", category = "color", reference = "saturation-weighted chroma boost")]
 pub fn vibrance(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     apply_color_op(pixels, info, &ColorOp::Vibrance(amount))
 }
@@ -1387,7 +1387,7 @@ fn interpolate_gradient(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
 /// Computes BT.709 luminance per pixel, then interpolates the gradient
 /// stops to produce an output color. Black-to-white gradient produces
 /// grayscale equivalent.
-#[rasmcore_macros::register_filter(name = "gradient_map", category = "color")]
+#[rasmcore_macros::register_filter(name = "gradient_map", category = "color", reference = "luminance-to-gradient color mapping")]
 pub fn gradient_map(pixels: &[u8], info: &ImageInfo, stops: String) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     let gradient_stops = parse_gradient_stops(&stops)?;
@@ -1490,7 +1490,7 @@ fn parse_sparse_points(points: &str) -> Result<Vec<(f32, f32, [u8; 3])>, ImageEr
 ///
 /// Each pixel color is a weighted average of all control points, where
 /// weight = 1 / distance^power. IM equivalent: -sparse-color Shepard "..."
-#[rasmcore_macros::register_filter(name = "sparse_color", category = "color")]
+#[rasmcore_macros::register_filter(name = "sparse_color", category = "color", reference = "Shepard interpolation from sparse points")]
 pub fn sparse_color(
     pixels: &[u8],
     info: &ImageInfo,
@@ -1575,7 +1575,7 @@ pub struct ModulateParams {
 /// IM equivalent: -modulate brightness,saturation,hue
 /// Uses HSB (same as HSV where B=V=max(R,G,B)), not HSL.
 /// Identity at (100, 100, 0).
-#[rasmcore_macros::register_filter(name = "modulate", category = "color")]
+#[rasmcore_macros::register_filter(name = "modulate", category = "color", reference = "luma-preserving HSL modulation")]
 pub fn modulate(
     pixels: &[u8],
     info: &ImageInfo,
@@ -1891,7 +1891,7 @@ pub mod kernels {
 /// Automatically detects separable (rank-1) kernels and uses two 1D passes
 /// for O(2K) instead of O(K^2) per pixel. Uses padded input buffer to
 /// eliminate per-pixel boundary checks for interior pixels.
-#[rasmcore_macros::register_filter(name = "convolve", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "convolve", category = "spatial", reference = "custom NxN kernel convolution")]
 pub fn convolve(
     pixels: &[u8],
     info: &ImageInfo,
@@ -2184,7 +2184,7 @@ fn reflect(v: i32, size: usize) -> usize {
 /// Uses histogram sliding-window (Huang algorithm) for radius > 2 giving
 /// O(1) amortized per pixel. Falls back to sorting for radius <= 2 where
 /// the small window makes sorting faster than histogram maintenance.
-#[rasmcore_macros::register_filter(name = "median", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "median", category = "spatial", group = "denoise", variant = "median", reference = "median rank filter")]
 pub fn median(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
     if radius == 0 {
         return Ok(pixels.to_vec());
@@ -2322,7 +2322,7 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
 ///
 /// Uses unrolled 3x3 Sobel with padded input — no inner loop or
 /// match-based weight lookup. Direct coefficient access gives ~3x speedup.
-#[rasmcore_macros::register_filter(name = "sobel", category = "edge")]
+#[rasmcore_macros::register_filter(name = "sobel", category = "edge", group = "edge_detect", variant = "sobel", reference = "Sobel 1968 gradient operator")]
 pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -2374,7 +2374,7 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Uses 3x3 Scharr kernels: Gx = [[-3,0,3],[-10,0,10],[-3,0,3]]
 /// Returns gradient magnitude (L2 norm of Gx and Gy).
 /// Reference: cv2.Scharr (OpenCV 4.13).
-#[rasmcore_macros::register_filter(name = "scharr", category = "edge")]
+#[rasmcore_macros::register_filter(name = "scharr", category = "edge", group = "edge_detect", variant = "scharr", reference = "Scharr 2000 rotationally symmetric gradient")]
 pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2419,7 +2419,7 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Uses 3x3 kernel: [[0,1,0],[1,-4,1],[0,1,0]].
 /// Returns absolute value of Laplacian, clamped to [0, 255].
 /// Reference: cv2.Laplacian (OpenCV 4.13).
-#[rasmcore_macros::register_filter(name = "laplacian", category = "edge")]
+#[rasmcore_macros::register_filter(name = "laplacian", category = "edge", group = "edge_detect", variant = "laplacian", reference = "second-order derivative operator")]
 pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2530,7 +2530,7 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
 ///
 /// Steps: 1) Gaussian blur, 2) Sobel gradient + direction,
 /// 3) Non-maximum suppression, 4) Hysteresis thresholding.
-#[rasmcore_macros::register_filter(name = "canny", category = "edge")]
+#[rasmcore_macros::register_filter(name = "canny", category = "edge", group = "edge_detect", variant = "canny", reference = "Canny 1986 multi-stage edge detector")]
 pub fn canny(
     pixels: &[u8],
     info: &ImageInfo,
@@ -2948,7 +2948,7 @@ fn build_aa_ellipse_mask(w: usize, h: usize, cx: f64, cy: f64, rx: f64, ry: f64)
 /// tiled execution. For non-tiled usage, set tile offsets to 0 and full dims
 /// to the image dimensions.
 #[allow(clippy::too_many_arguments)]
-#[rasmcore_macros::register_filter(name = "vignette", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "vignette", category = "enhancement", group = "vignette", reference = "Gaussian radial darkening")]
 pub fn vignette(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3040,7 +3040,7 @@ pub fn vignette_full(
 /// This is a computationally cheap alternative to the Gaussian vignette
 /// with a different aesthetic (smooth polynomial falloff vs. Gaussian).
 #[allow(clippy::too_many_arguments)]
-#[rasmcore_macros::register_filter(name = "vignette_powerlaw", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "vignette_powerlaw", category = "enhancement", group = "vignette", variant = "powerlaw", reference = "power-law radial falloff")]
 pub fn vignette_powerlaw(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3106,7 +3106,7 @@ pub fn vignette_powerlaw(
 // ─── Alpha Management ────────────────────────────────────────────────────
 
 /// Convert straight alpha to premultiplied alpha (RGBA8 only).
-#[rasmcore_macros::register_filter(name = "premultiply", category = "alpha")]
+#[rasmcore_macros::register_filter(name = "premultiply", category = "alpha", group = "alpha", variant = "premultiply", reference = "premultiplied alpha conversion")]
 pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
@@ -3124,7 +3124,7 @@ pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageErro
 }
 
 /// Convert premultiplied alpha to straight alpha (RGBA8 only).
-#[rasmcore_macros::register_filter(name = "unpremultiply", category = "alpha")]
+#[rasmcore_macros::register_filter(name = "unpremultiply", category = "alpha", group = "alpha", variant = "unpremultiply", reference = "straight alpha conversion")]
 pub fn unpremultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
@@ -3973,7 +3973,7 @@ fn cv_round(v: f64) -> i32 {
 /// were set). If you have a forward mapping, invert it first.
 ///
 /// Reference: OpenCV 4.x modules/imgproc/src/imgwarp.cpp warpPerspective
-#[rasmcore_macros::register_filter(name = "perspective_warp", category = "advanced")]
+#[rasmcore_macros::register_filter(name = "perspective_warp", category = "advanced", group = "perspective", variant = "warp", reference = "3x3 homography transformation")]
 pub fn perspective_warp(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4077,7 +4077,7 @@ pub fn perspective_warp(
 /// - `strength`: correction strength 0.0 (none) to 1.0 (full correction)
 ///
 /// The output has the same dimensions and format as the input.
-#[rasmcore_macros::register_filter(name = "perspective_correct", category = "advanced")]
+#[rasmcore_macros::register_filter(name = "perspective_correct", category = "advanced", group = "perspective", variant = "correct", reference = "automatic perspective rectification")]
 pub fn perspective_correct(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4298,7 +4298,7 @@ fn line_intersection(l1: &LineSegment, l2: &LineSegment) -> Option<(f32, f32)> {
 ///
 /// - `clip_limit`: contrast amplification limit (2.0-4.0 typical, higher = more contrast)
 /// - `tile_grid`: number of tiles per dimension (8 = 8x8 grid, OpenCV default)
-#[rasmcore_macros::register_filter(name = "clahe", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "clahe", category = "enhancement", reference = "Zuiderveld 1994 contrast-limited adaptive histogram equalization")]
 pub fn clahe(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4445,7 +4445,7 @@ fn reflect101(idx: isize, size: isize) -> isize {
 /// - `diameter`: filter size (use 0 for auto from sigma_space; typical 5-9)
 /// - `sigma_color`: filter sigma in the color/intensity space (10-150 typical)
 /// - `sigma_space`: filter sigma in coordinate space (10-150 typical)
-#[rasmcore_macros::register_filter(name = "bilateral", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "bilateral", category = "spatial", group = "denoise", variant = "bilateral", reference = "Tomasi & Manduchi 1998")]
 pub fn bilateral(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4579,7 +4579,7 @@ pub fn bilateral(
 /// - `epsilon`: regularization parameter (0.01-0.1 typical; smaller = more edge-preserving)
 ///
 /// For self-guided filtering, the input is used as both source and guide.
-#[rasmcore_macros::register_filter(name = "guided_filter", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "guided_filter", category = "spatial", group = "denoise", variant = "guided", reference = "He et al. 2010 guided image filtering")]
 pub fn guided_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -5160,7 +5160,7 @@ fn nlm_denoise_classic(
 /// - `patch_radius`: local patch size for dark channel (typical: 7-15)
 /// - `omega`: haze removal strength 0.0-1.0 (typical: 0.95)
 /// - `t_min`: minimum transmission to avoid noise amplification (typical: 0.1)
-#[rasmcore_macros::register_filter(name = "dehaze", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "dehaze", category = "enhancement", reference = "He et al. 2009 dark channel prior dehazing")]
 pub fn dehaze(
     pixels: &[u8],
     info: &ImageInfo,
@@ -5340,7 +5340,7 @@ pub fn dehaze(
 ///
 /// - `amount`: enhancement strength (0.0-2.0 typical, 1.0 = full effect)
 /// - `sigma`: blur radius for local contrast (30-50 typical)
-#[rasmcore_macros::register_filter(name = "clarity", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "clarity", category = "enhancement", reference = "midtone-weighted local contrast")]
 pub fn clarity(
     pixels: &[u8],
     info: &ImageInfo,
@@ -5545,7 +5545,7 @@ pub fn shadow_highlight(
 /// - `sigma`: Gaussian blur radius controlling the separation frequency.
 ///   Higher sigma puts more detail into the low-pass (smoother high-pass).
 ///   Typical values: 2-10 for skin retouching, 10-30 for artistic effects.
-#[rasmcore_macros::register_filter(name = "frequency_low", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "frequency_low", category = "enhancement", group = "frequency", variant = "low", reference = "Gaussian low-pass separation")]
 pub fn frequency_low(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if sigma <= 0.0 {
@@ -5566,7 +5566,7 @@ pub fn frequency_low(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<
 /// - `sigma`: Gaussian blur radius controlling the separation frequency.
 ///   Higher sigma captures finer detail in the high-pass.
 ///   Typical values: 2-10 for skin retouching, 10-30 for artistic effects.
-#[rasmcore_macros::register_filter(name = "frequency_high", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "frequency_high", category = "enhancement", group = "frequency", variant = "high", reference = "Gaussian high-pass separation")]
 pub fn frequency_high(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if sigma <= 0.0 {
@@ -5625,7 +5625,7 @@ pub fn frequency_high(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec
 ///
 /// - `sigma`: detail remapping strength (0.2 = strong enhancement, 1.0 = neutral, 3.0 = smooth)
 /// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
-#[rasmcore_macros::register_filter(name = "pyramid_detail_remap", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "pyramid_detail_remap", category = "enhancement", reference = "Laplacian pyramid detail enhancement")]
 pub fn pyramid_detail_remap(
     pixels: &[u8],
     info: &ImageInfo,
@@ -5937,7 +5937,7 @@ fn gaussian_blur_box_approx(
 /// Future path: this could replace `blur()` as the primary Gaussian implementation
 /// if full OpenCV alignment is desired across all filters. SIMD optimization can
 /// be added later and validated against this reference-aligned output.
-#[rasmcore_macros::register_filter(name = "gaussian_blur_cv", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "gaussian_blur_cv", category = "spatial", group = "blur", variant = "gaussian_cv", reference = "OpenCV-compatible separable Gaussian")]
 pub fn gaussian_blur_cv(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6005,7 +6005,7 @@ fn gaussian_kernel_1d(ksize: usize, sigma: f32) -> Vec<f32> {
 ///
 /// Reference: Jobson, Rahman, Woodell — "Properties and Performance of a
 /// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
-#[rasmcore_macros::register_filter(name = "retinex_ssr", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "retinex_ssr", category = "enhancement", group = "retinex", variant = "ssr", reference = "Land 1977 single-scale Retinex")]
 pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     let channels = match info.format {
@@ -6637,7 +6637,7 @@ pub fn pyr_up(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), I
 /// (zero) pixels.
 ///
 /// Supports RGB8, RGBA8, Gray8. 16-bit formats are processed via 8-bit downscale.
-#[rasmcore_macros::register_filter(name = "displacement_map", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "displacement_map", category = "spatial", reference = "displacement mapping")]
 pub fn displacement_map(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6733,7 +6733,7 @@ fn morph_shape_from_u32(v: u32) -> MorphShape {
 }
 
 /// Morphological erosion (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "erode", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "erode", category = "morphology", group = "morphology", variant = "erode", reference = "binary erosion")]
 pub fn erode_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6744,7 +6744,7 @@ pub fn erode_registered(
 }
 
 /// Morphological dilation (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "dilate", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "dilate", category = "morphology", group = "morphology", variant = "dilate", reference = "binary dilation")]
 pub fn dilate_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6755,7 +6755,7 @@ pub fn dilate_registered(
 }
 
 /// Morphological opening (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "morph_open", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "morph_open", category = "morphology", group = "morphology", variant = "open", reference = "erosion then dilation")]
 pub fn morph_open_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6766,7 +6766,7 @@ pub fn morph_open_registered(
 }
 
 /// Morphological closing (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "morph_close", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "morph_close", category = "morphology", group = "morphology", variant = "close", reference = "dilation then erosion")]
 pub fn morph_close_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6777,7 +6777,7 @@ pub fn morph_close_registered(
 }
 
 /// Morphological gradient (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "morph_gradient", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "morph_gradient", category = "morphology", group = "morphology", variant = "gradient", reference = "dilation minus erosion")]
 pub fn morph_gradient_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6788,7 +6788,7 @@ pub fn morph_gradient_registered(
 }
 
 /// Morphological top-hat (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "morph_tophat", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "morph_tophat", category = "morphology", group = "morphology", variant = "tophat", reference = "input minus opening")]
 pub fn morph_tophat_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6799,7 +6799,7 @@ pub fn morph_tophat_registered(
 }
 
 /// Morphological black-hat (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "morph_blackhat", category = "morphology")]
+#[rasmcore_macros::register_filter(name = "morph_blackhat", category = "morphology", group = "morphology", variant = "blackhat", reference = "closing minus input")]
 pub fn morph_blackhat_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6810,7 +6810,7 @@ pub fn morph_blackhat_registered(
 }
 
 /// Non-local means denoising (user-facing wrapper with scalar params).
-#[rasmcore_macros::register_filter(name = "nlm_denoise", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "nlm_denoise", category = "enhancement", group = "denoise", variant = "nlm", reference = "Buades et al. 2005 non-local means")]
 pub fn nlm_denoise_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6831,7 +6831,7 @@ pub fn nlm_denoise_registered(
 }
 
 /// Multi-scale Retinex (user-facing wrapper with 3 fixed sigma scales).
-#[rasmcore_macros::register_filter(name = "retinex_msr", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "retinex_msr", category = "enhancement", group = "retinex", variant = "msr", reference = "Jobson et al. 1997 multi-scale Retinex")]
 pub fn retinex_msr_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6843,7 +6843,7 @@ pub fn retinex_msr_registered(
 }
 
 /// Multi-scale Retinex with color restoration (user-facing wrapper).
-#[rasmcore_macros::register_filter(name = "retinex_msrcr", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "retinex_msrcr", category = "enhancement", group = "retinex", variant = "msrcr", reference = "Jobson et al. 1997 multi-scale Retinex with color restoration")]
 pub fn retinex_msrcr_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6863,7 +6863,7 @@ pub fn retinex_msrcr_registered(
 }
 
 /// Adaptive threshold (user-facing wrapper with u32 method param).
-#[rasmcore_macros::register_filter(name = "adaptive_threshold", category = "threshold")]
+#[rasmcore_macros::register_filter(name = "adaptive_threshold", category = "threshold", group = "threshold", variant = "adaptive", reference = "local block-based adaptive threshold")]
 pub fn adaptive_threshold_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6880,7 +6880,7 @@ pub fn adaptive_threshold_registered(
 }
 
 /// Flood fill (user-facing wrapper returning buffer only).
-#[rasmcore_macros::register_filter(name = "flood_fill", category = "tool")]
+#[rasmcore_macros::register_filter(name = "flood_fill", category = "tool", reference = "seed-based flood fill")]
 pub fn flood_fill_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6908,7 +6908,7 @@ pub fn flood_fill_registered(
 // appear in param-manifest.json and are discoverable by WASM consumers / SDK.
 
 /// Gamma correction (user-facing, LUT-collapsible).
-#[rasmcore_macros::register_filter(name = "gamma", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "gamma", category = "adjustment", reference = "power-law gamma correction")]
 pub fn gamma_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6918,13 +6918,13 @@ pub fn gamma_registered(
 }
 
 /// Invert / negate all channels (user-facing, LUT-collapsible).
-#[rasmcore_macros::register_filter(name = "invert", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "invert", category = "adjustment", reference = "channel value inversion")]
 pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     super::point_ops::invert(pixels, info)
 }
 
 /// Posterize to N discrete levels per channel (user-facing, LUT-collapsible).
-#[rasmcore_macros::register_filter(name = "posterize", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "posterize", category = "adjustment", reference = "bit-depth reduction")]
 pub fn posterize_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6949,7 +6949,7 @@ pub struct LevelsParams {
 
 /// Levels adjustment: remap [black, white] input range with gamma curve.
 /// Matches ImageMagick `-level black%,white%,gamma`.
-#[rasmcore_macros::register_filter(name = "levels", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "levels", category = "adjustment", reference = "input/output level remapping")]
 pub fn levels(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6983,7 +6983,7 @@ pub struct SigmoidalContrastParams {
 
 /// Sigmoidal contrast: S-curve contrast adjustment.
 /// Matches ImageMagick `-sigmoidal-contrast strengthxmidpoint%`.
-#[rasmcore_macros::register_filter(name = "sigmoidal_contrast", category = "adjustment")]
+#[rasmcore_macros::register_filter(name = "sigmoidal_contrast", category = "adjustment", reference = "sigmoidal transfer function contrast")]
 pub fn sigmoidal_contrast(
     pixels: &[u8],
     info: &ImageInfo,
@@ -6995,32 +6995,32 @@ pub fn sigmoidal_contrast(
 }
 
 /// Histogram equalization — maximize contrast via CDF remapping.
-#[rasmcore_macros::register_filter(name = "equalize", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "equalize", category = "enhancement", reference = "histogram equalization")]
 pub fn equalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     super::histogram::equalize(pixels, info)
 }
 
 /// Normalize — linear contrast stretch with 2% black/1% white clipping.
-#[rasmcore_macros::register_filter(name = "normalize", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "normalize", category = "enhancement", reference = "min-max normalization to full range")]
 pub fn normalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     super::histogram::normalize(pixels, info)
 }
 
 /// Auto-level — linear stretch from actual min to actual max (no clipping).
-#[rasmcore_macros::register_filter(name = "auto_level", category = "enhancement")]
+#[rasmcore_macros::register_filter(name = "auto_level", category = "enhancement", reference = "automatic black/white point")]
 pub fn auto_level_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     super::histogram::auto_level(pixels, info)
 }
 
 /// Otsu auto-threshold — compute optimal threshold then binarize.
-#[rasmcore_macros::register_filter(name = "otsu_threshold", category = "threshold")]
+#[rasmcore_macros::register_filter(name = "otsu_threshold", category = "threshold", group = "threshold", variant = "otsu", reference = "Otsu 1979 automatic bimodal threshold")]
 pub fn otsu_threshold_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let t = otsu_threshold(pixels, info)?;
     threshold_binary(pixels, info, t, 255)
 }
 
 /// Triangle auto-threshold — compute optimal threshold then binarize.
-#[rasmcore_macros::register_filter(name = "triangle_threshold", category = "threshold")]
+#[rasmcore_macros::register_filter(name = "triangle_threshold", category = "threshold", group = "threshold", variant = "triangle", reference = "Zack et al. 1977 triangle method")]
 pub fn triangle_threshold_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7030,14 +7030,14 @@ pub fn triangle_threshold_registered(
 }
 
 /// Convert to grayscale using BT.709 weights.
-#[rasmcore_macros::register_filter(name = "grayscale", category = "color")]
+#[rasmcore_macros::register_filter(name = "grayscale", category = "color", reference = "luminance-weighted desaturation")]
 pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let decoded = grayscale(pixels, info)?;
     Ok(decoded.pixels)
 }
 
 /// Flatten RGBA to RGB by compositing onto a solid background color.
-#[rasmcore_macros::register_filter(name = "flatten", category = "alpha")]
+#[rasmcore_macros::register_filter(name = "flatten", category = "alpha", group = "alpha", variant = "flatten", reference = "composite onto background color")]
 pub fn flatten_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7050,7 +7050,7 @@ pub fn flatten_registered(
 }
 
 /// Color quantization via median-cut palette reduction.
-#[rasmcore_macros::register_filter(name = "quantize", category = "color")]
+#[rasmcore_macros::register_filter(name = "quantize", category = "color", group = "quantize", reference = "median cut palette quantization")]
 pub fn quantize_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7061,7 +7061,7 @@ pub fn quantize_registered(
 }
 
 /// Floyd-Steinberg error-diffusion dithering with median-cut palette.
-#[rasmcore_macros::register_filter(name = "dither_floyd_steinberg", category = "color")]
+#[rasmcore_macros::register_filter(name = "dither_floyd_steinberg", category = "color", group = "quantize", variant = "dither_floyd_steinberg", reference = "Floyd & Steinberg 1976 error diffusion")]
 pub fn dither_floyd_steinberg_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7072,7 +7072,7 @@ pub fn dither_floyd_steinberg_registered(
 }
 
 /// Ordered (Bayer) dithering with median-cut palette.
-#[rasmcore_macros::register_filter(name = "dither_ordered", category = "color")]
+#[rasmcore_macros::register_filter(name = "dither_ordered", category = "color", group = "quantize", variant = "dither_ordered", reference = "Bayer matrix ordered dithering")]
 pub fn dither_ordered_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7084,7 +7084,7 @@ pub fn dither_ordered_registered(
 }
 
 /// Gray world white balance — equalize channel averages.
-#[rasmcore_macros::register_filter(name = "white_balance_gray_world", category = "color")]
+#[rasmcore_macros::register_filter(name = "white_balance_gray_world", category = "color", group = "white_balance", variant = "gray_world", reference = "gray world assumption")]
 pub fn white_balance_gray_world_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7093,7 +7093,7 @@ pub fn white_balance_gray_world_registered(
 }
 
 /// Temperature-based white balance adjustment.
-#[rasmcore_macros::register_filter(name = "white_balance_temperature", category = "color")]
+#[rasmcore_macros::register_filter(name = "white_balance_temperature", category = "color", group = "white_balance", variant = "temperature", reference = "Planckian locus color temperature")]
 pub fn white_balance_temperature_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7443,7 +7443,7 @@ fn fbm_f32(
 ///
 /// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
 /// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
-#[rasmcore_macros::register_filter(name = "perlin_noise", category = "generator")]
+#[rasmcore_macros::register_filter(name = "perlin_noise", category = "generator", group = "noise_gen", variant = "perlin", reference = "Perlin 1985 gradient noise")]
 pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
@@ -7484,7 +7484,7 @@ pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32
 ///
 /// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
 /// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
-#[rasmcore_macros::register_filter(name = "simplex_noise", category = "generator")]
+#[rasmcore_macros::register_filter(name = "simplex_noise", category = "generator", group = "noise_gen", variant = "simplex", reference = "Perlin 2001 simplex noise")]
 pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
@@ -7530,7 +7530,7 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
 // ─── Draw Primitives (registered wrappers) ───────────────────────────────
 
 /// Draw a line on the image. Color components are 0-255.
-#[rasmcore_macros::register_filter(name = "draw_line", category = "draw")]
+#[rasmcore_macros::register_filter(name = "draw_line", category = "draw", group = "draw", variant = "line", reference = "Bresenham/anti-aliased line")]
 pub fn draw_line_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7550,7 +7550,7 @@ pub fn draw_line_filter(
 }
 
 /// Draw a rectangle on the image. Set filled=true for solid fill.
-#[rasmcore_macros::register_filter(name = "draw_rect", category = "draw")]
+#[rasmcore_macros::register_filter(name = "draw_rect", category = "draw", group = "draw", variant = "rect", reference = "filled/outlined rectangle")]
 pub fn draw_rect_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7581,7 +7581,7 @@ pub fn draw_rect_filter(
 }
 
 /// Draw a circle on the image. Set filled=true for solid fill.
-#[rasmcore_macros::register_filter(name = "draw_circle", category = "draw")]
+#[rasmcore_macros::register_filter(name = "draw_circle", category = "draw", group = "draw", variant = "circle", reference = "filled/outlined circle")]
 pub fn draw_circle_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7602,7 +7602,7 @@ pub fn draw_circle_filter(
 }
 
 /// Draw text on the image using the embedded 8x16 bitmap font.
-#[rasmcore_macros::register_filter(name = "draw_text", category = "draw")]
+#[rasmcore_macros::register_filter(name = "draw_text", category = "draw", group = "draw", variant = "text", reference = "bitmap 8x16 text rendering")]
 pub fn draw_text_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -9391,7 +9391,7 @@ pub fn triangle_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageEr
 /// Apply binary threshold to a grayscale image.
 ///
 /// Pixels >= threshold become max_value, pixels < threshold become 0.
-#[rasmcore_macros::register_filter(name = "threshold_binary", category = "threshold")]
+#[rasmcore_macros::register_filter(name = "threshold_binary", category = "threshold", group = "threshold", variant = "binary", reference = "fixed-level binary threshold")]
 pub fn threshold_binary(
     pixels: &[u8],
     info: &ImageInfo,
@@ -10652,7 +10652,7 @@ pub struct AscCdlParams {
     pub power_b: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "asc_cdl", category = "grading")]
+#[rasmcore_macros::register_filter(name = "asc_cdl", category = "grading", reference = "ASC CDL slope/offset/power color decision list")]
 #[allow(clippy::too_many_arguments)]
 pub fn asc_cdl_registered(
     pixels: &[u8],
@@ -10744,7 +10744,7 @@ pub struct LiftGammaGainParams {
     pub gain_b: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "lift_gamma_gain", category = "grading")]
+#[rasmcore_macros::register_filter(name = "lift_gamma_gain", category = "grading", reference = "three-way color corrector (shadows/midtones/highlights)")]
 #[allow(clippy::too_many_arguments)]
 pub fn lift_gamma_gain_registered(
     pixels: &[u8],
@@ -10811,7 +10811,7 @@ fn hue_to_rgb_tint(hue_deg: f32) -> [f32; 3] {
     [r1, g1, b1]
 }
 
-#[rasmcore_macros::register_filter(name = "split_toning", category = "grading")]
+#[rasmcore_macros::register_filter(name = "split_toning", category = "grading", reference = "shadow/highlight hue tinting")]
 pub fn split_toning_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -10896,7 +10896,7 @@ pub struct CurvesMasterParams {
     pub points: String,
 }
 
-#[rasmcore_macros::register_filter(name = "curves_master", category = "grading")]
+#[rasmcore_macros::register_filter(name = "curves_master", category = "grading", group = "curves", variant = "master", reference = "spline-interpolated tone curve (all channels)")]
 pub fn curves_master(
     pixels: &[u8],
     info: &ImageInfo,
@@ -10919,7 +10919,7 @@ pub struct CurvesRedParams {
     pub points: String,
 }
 
-#[rasmcore_macros::register_filter(name = "curves_red", category = "grading")]
+#[rasmcore_macros::register_filter(name = "curves_red", category = "grading", group = "curves", variant = "red", reference = "spline-interpolated tone curve (red channel)")]
 pub fn curves_red(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
@@ -10939,7 +10939,7 @@ pub struct CurvesGreenParams {
     pub points: String,
 }
 
-#[rasmcore_macros::register_filter(name = "curves_green", category = "grading")]
+#[rasmcore_macros::register_filter(name = "curves_green", category = "grading", group = "curves", variant = "green", reference = "spline-interpolated tone curve (green channel)")]
 pub fn curves_green(
     pixels: &[u8],
     info: &ImageInfo,
@@ -10963,7 +10963,7 @@ pub struct CurvesBlueParams {
     pub points: String,
 }
 
-#[rasmcore_macros::register_filter(name = "curves_blue", category = "grading")]
+#[rasmcore_macros::register_filter(name = "curves_blue", category = "grading", group = "curves", variant = "blue", reference = "spline-interpolated tone curve (blue channel)")]
 pub fn curves_blue(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
@@ -10991,7 +10991,7 @@ pub struct FilmGrainParams {
     pub seed: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "film_grain", category = "effect")]
+#[rasmcore_macros::register_filter(name = "film_grain", category = "effect", reference = "photographic film grain overlay")]
 pub fn film_grain_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11010,7 +11010,7 @@ pub fn film_grain_registered(
 
 // ─── Pro Filters: Tone Mapping ───────────────────────────────────────────────
 
-#[rasmcore_macros::register_filter(name = "tonemap_reinhard", category = "tonemapping")]
+#[rasmcore_macros::register_filter(name = "tonemap_reinhard", category = "tonemapping", group = "tonemap", variant = "reinhard", reference = "Reinhard et al. 2002 photographic tone reproduction")]
 pub fn tonemap_reinhard_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     super::color_grading::tonemap_reinhard(pixels, info)
 }
@@ -11023,7 +11023,7 @@ pub struct TonemapDragoParams {
     pub bias: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "tonemap_drago", category = "tonemapping")]
+#[rasmcore_macros::register_filter(name = "tonemap_drago", category = "tonemapping", group = "tonemap", variant = "drago", reference = "Drago et al. 2003 logarithmic tone mapping")]
 pub fn tonemap_drago_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11053,7 +11053,7 @@ pub struct TonemapFilmicParams {
     pub toe_numerator: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "tonemap_filmic", category = "tonemapping")]
+#[rasmcore_macros::register_filter(name = "tonemap_filmic", category = "tonemapping", group = "tonemap", variant = "filmic", reference = "Hable 2010 Uncharted 2 filmic curve")]
 pub fn tonemap_filmic_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11086,7 +11086,7 @@ pub struct SmartCropParams {
     pub target_height: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "smart_crop", category = "transform")]
+#[rasmcore_macros::register_filter(name = "smart_crop", category = "transform", reference = "saliency-based automatic crop")]
 pub fn smart_crop_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11111,7 +11111,7 @@ pub struct SeamCarveWidthParams {
     pub target_width: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "seam_carve_width", category = "transform")]
+#[rasmcore_macros::register_filter(name = "seam_carve_width", category = "transform", group = "seam_carve", variant = "width", reference = "Avidan & Shamir 2007 content-aware width resize")]
 pub fn seam_carve_width_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11129,7 +11129,7 @@ pub struct SeamCarveHeightParams {
     pub target_height: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "seam_carve_height", category = "transform")]
+#[rasmcore_macros::register_filter(name = "seam_carve_height", category = "transform", group = "seam_carve", variant = "height", reference = "Avidan & Shamir 2007 content-aware height resize")]
 pub fn seam_carve_height_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11165,7 +11165,7 @@ pub struct SelectiveColorParams {
     pub lightness: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "selective_color", category = "color")]
+#[rasmcore_macros::register_filter(name = "selective_color", category = "color", reference = "hue-range-targeted color adjustment")]
 pub fn selective_color_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -11197,12 +11197,12 @@ pub struct SolarizeParams {
     pub threshold: u8,
 }
 
-#[rasmcore_macros::register_filter(name = "solarize", category = "effect")]
+#[rasmcore_macros::register_filter(name = "solarize", category = "effect", reference = "Man Ray solarization effect")]
 pub fn solarize(pixels: &[u8], info: &ImageInfo, threshold: u8) -> Result<Vec<u8>, ImageError> {
     super::point_ops::solarize(pixels, info, threshold)
 }
 
-#[rasmcore_macros::register_filter(name = "emboss", category = "effect")]
+#[rasmcore_macros::register_filter(name = "emboss", category = "effect", reference = "3D relief embossing via directional kernel")]
 pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     // Standard emboss kernel: directional highlight along the diagonal
     #[rustfmt::skip]
@@ -11224,7 +11224,7 @@ pub struct OilPaintParams {
 
 /// Oil painting effect: for each pixel, find the most frequent intensity
 /// in the neighborhood and output that pixel's color.
-#[rasmcore_macros::register_filter(name = "oil_paint", category = "effect")]
+#[rasmcore_macros::register_filter(name = "oil_paint", category = "effect", reference = "Kuwahara-variant oil painting simulation")]
 pub fn oil_paint(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -11325,7 +11325,7 @@ pub struct CharcoalParams {
 /// we use Sobel which produces visually similar but numerically different
 /// edge maps. The normalize step is intentionally omitted because it
 /// amplifies the edge detector difference (MAE 24→239 with normalize).
-#[rasmcore_macros::register_filter(name = "charcoal", category = "effect")]
+#[rasmcore_macros::register_filter(name = "charcoal", category = "effect", reference = "charcoal drawing edge effect")]
 pub fn charcoal(
     pixels: &[u8],
     info: &ImageInfo,
@@ -12868,7 +12868,7 @@ mod zoom_blur_tests {
 
 /// Pixelate (mosaic): divide image into blocks, fill each with block average.
 /// Equivalent to ImageMagick `-scale {1/n}% -scale {n*100}%`.
-#[rasmcore_macros::register_filter(name = "pixelate", category = "effect")]
+#[rasmcore_macros::register_filter(name = "pixelate", category = "effect", reference = "block mosaic pixelation")]
 pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -12928,7 +12928,7 @@ pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<
 /// Halftone: simulate CMYK dot-screen print effect.
 /// Converts to CMYK, applies rotated threshold grids per channel at standard
 /// press angles (C=15°, M=75°, Y=0°, K=45°), then converts back to RGB.
-#[rasmcore_macros::register_filter(name = "halftone", category = "effect")]
+#[rasmcore_macros::register_filter(name = "halftone", category = "effect", reference = "CMYK-style halftone dot pattern")]
 pub fn halftone(
     pixels: &[u8],
     info: &ImageInfo,
@@ -13035,7 +13035,7 @@ pub fn halftone(
 /// - Default radius = max(width/2, height/2)
 /// - Factor = 1 - sqrt(distance²) / radius, then angle = degrees * factor²
 /// - Aspect ratio scaling for non-square images
-#[rasmcore_macros::register_filter(name = "swirl", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "swirl", category = "distortion", reference = "vortex rotation distortion")]
 pub fn swirl(
     pixels: &[u8],
     info: &ImageInfo,
@@ -13096,7 +13096,7 @@ pub fn swirl(
 /// Spherize: apply spherical projection for bulge/pinch effect.
 /// `amount > 0` = bulge (fisheye), `amount < 0` = pinch.
 /// `amount = 0` is identity.
-#[rasmcore_macros::register_filter(name = "spherize", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "spherize", category = "distortion", reference = "spherical bulge distortion")]
 pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -13151,7 +13151,7 @@ pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
 /// `k1 > 0` = barrel, `k1 < 0` = pincushion.
 /// This is the inverse of the `undistort` correction filter.
 /// Matches ImageMagick `-distort Barrel` normalization: `rscale = 2/min(w,h)`.
-#[rasmcore_macros::register_filter(name = "barrel", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "barrel", category = "distortion", reference = "Brown-Conrady radial distortion model")]
 pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -13200,7 +13200,7 @@ pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u
 /// - Output y-axis represents radius (0 to max_radius across height)
 ///
 /// Equivalent to ImageMagick `-distort Polar "max_radius"`.
-#[rasmcore_macros::register_filter(name = "polar", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "polar", category = "distortion", group = "distort_polar", variant = "to_polar", reference = "Cartesian to polar coordinate transform")]
 pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -13247,7 +13247,7 @@ pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// then look up in the polar-space input image.
 ///
 /// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
-#[rasmcore_macros::register_filter(name = "depolar", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "depolar", category = "distortion", group = "distort_polar", variant = "from_polar", reference = "polar to Cartesian coordinate transform")]
 pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -13300,7 +13300,7 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// vertical wave shifts columns left/right.
 ///
 /// Equivalent to ImageMagick `-wave {amplitude}x{wavelength}`.
-#[rasmcore_macros::register_filter(name = "wave", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "wave", category = "distortion", reference = "sinusoidal wave displacement")]
 pub fn wave(
     pixels: &[u8],
     info: &ImageInfo,
@@ -13352,7 +13352,7 @@ pub fn wave(
 /// each pixel moves along its radial direction by `amplitude * sin(2π * r / wavelength)`.
 ///
 /// Equivalent to ImageMagick concentric wave effect.
-#[rasmcore_macros::register_filter(name = "ripple", category = "distortion")]
+#[rasmcore_macros::register_filter(name = "ripple", category = "distortion", reference = "concentric ripple displacement")]
 pub fn ripple(
     pixels: &[u8],
     info: &ImageInfo,
@@ -14081,7 +14081,7 @@ fn gaussian_blur_f32(
 /// 2. For each pixel, evaluate 4 non-overlapping quadrants of size (radius+1)²
 /// 3. Compute luma-only variance per quadrant (BT.709)
 /// 4. Output = center pixel of the lowest-variance quadrant (from blurred image)
-#[rasmcore_macros::register_filter(name = "kuwahara", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "kuwahara", category = "spatial", reference = "Kuwahara 1976 edge-preserving smoothing")]
 pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
     if radius == 0 {
         return Ok(pixels.to_vec());
@@ -14214,7 +14214,7 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
 ///
 /// Uses histogram sliding-window (Huang algorithm) for O(1) amortized per pixel.
 /// Equivalent to ImageMagick `-statistic Minimum/Maximum/Median`.
-#[rasmcore_macros::register_filter(name = "rank_filter", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "rank_filter", category = "spatial", reference = "generalized rank/order statistic filter")]
 pub fn rank_filter(
     pixels: &[u8],
     info: &ImageInfo,
