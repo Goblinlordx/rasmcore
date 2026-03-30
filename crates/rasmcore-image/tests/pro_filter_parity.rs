@@ -258,26 +258,65 @@ fn parity_curves_master() {
     };
     let ours = color_grading::curves(&pixels, &info, &tc).unwrap();
 
-    // Build LUT in Python via linear interpolation (close enough for parity check)
-    let script_no_scipy = format!(
+    // Build LUT in Python via Fritsch-Carlson monotone cubic Hermite (same algorithm as Rust)
+    let script_pchip = format!(
         r#"
 import sys, numpy as np
 
 px = np.frombuffer(bytes({pixels:?}), dtype=np.uint8).reshape(-1, 3)
-# Build LUT using simple linear interpolation between control points
-points = [(0.0, 0.0), (0.25, 0.15), (0.75, 0.85), (1.0, 1.0)]
-xs = np.array([p[0] for p in points])
-ys = np.array([p[1] for p in points])
-lut_x = np.linspace(0, 1, 256)
-lut_y = np.interp(lut_x, xs, ys)
-lut = np.clip(lut_y * 255.0 + 0.5, 0, 255).astype(np.uint8)
+pts = sorted([(0.0, 0.0), (0.25, 0.15), (0.75, 0.85), (1.0, 1.0)], key=lambda p: p[0])
+xs = np.array([p[0] for p in pts])
+ys = np.array([p[1] for p in pts])
+n = len(pts)
+
+# Fritsch-Carlson monotone cubic Hermite tangents
+deltas = np.diff(ys) / np.maximum(np.diff(xs), 1e-6)
+m = np.zeros(n)
+m[0] = deltas[0]
+m[-1] = deltas[-1]
+for i in range(1, n - 1):
+    m[i] = (deltas[i - 1] + deltas[i]) * 0.5
+
+# Monotonicity constraint
+for i in range(n - 1):
+    if abs(deltas[i]) < 1e-6:
+        m[i] = 0.0
+        m[i + 1] = 0.0
+    else:
+        alpha = m[i] / deltas[i]
+        beta = m[i + 1] / deltas[i]
+        tau = alpha * alpha + beta * beta
+        if tau > 9.0:
+            t = 3.0 / np.sqrt(tau)
+            m[i] = t * alpha * deltas[i]
+            m[i + 1] = t * beta * deltas[i]
+
+# Evaluate LUT at 256 positions
+lut = np.zeros(256, dtype=np.uint8)
+for idx in range(256):
+    x = idx / 255.0
+    # Find segment
+    seg = np.searchsorted(xs, x, side='right') - 1
+    seg = max(0, min(seg, n - 2))
+    x0, x1 = xs[seg], xs[seg + 1]
+    y0, y1 = ys[seg], ys[seg + 1]
+    h = max(x1 - x0, 1e-6)
+    t = (x - x0) / h
+    t2, t3 = t * t, t * t * t
+    h00 = 2*t3 - 3*t2 + 1
+    h10 = t3 - 2*t2 + t
+    h01 = -2*t3 + 3*t2
+    h11 = t3 - t2
+    y = h00*y0 + h10*h*m[seg] + h01*y1 + h11*h*m[seg+1]
+    lut[idx] = max(0, min(255, int(y * 255.0 + 0.5)))
+
 out = lut[px]
 sys.stdout.buffer.write(out.tobytes())
 "#
     );
-    let reference = run_python_ref(&script_no_scipy);
-    // Linear interp vs monotone cubic will differ slightly — allow MAE < 2.0
-    assert_close("curves_master", &ours, &reference, 2.0);
+    let reference = run_python_ref(&script_pchip);
+    // Same algorithm (Fritsch-Carlson) in both — should be near-exact
+    assert_close("curves_master", &ours, &reference, 0.5);
 }
 
 #[test]
