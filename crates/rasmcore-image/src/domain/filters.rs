@@ -690,6 +690,101 @@ pub fn motion_blur(
     convolve(pixels, info, &kernel, side, side, count as f32)
 }
 
+/// Radial zoom blur — motion streak radiating from a center point.
+///
+/// Each pixel is blurred along the ray from the pixel to the center.
+/// Pixels near the center stay sharp; pixels far from center get more blur.
+///
+/// - `center_x`, `center_y`: blur center as fractions of image dimensions (0.5 = center)
+/// - `strength`: number of samples along the ray (higher = smoother, 1 = no blur)
+/// - `amount`: how far along the ray to sample (0.0 = no blur, 1.0 = full length)
+#[rasmcore_macros::register_filter(name = "radial_blur", category = "spatial")]
+pub fn radial_blur(
+    pixels: &[u8],
+    info: &ImageInfo,
+    center_x: f32,
+    center_y: f32,
+    strength: u32,
+    amount: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if strength <= 1 || amount <= 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            radial_blur(p8, i8, center_x, center_y, strength, amount)
+        });
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let cx = center_x * w as f32;
+    let cy = center_y * h as f32;
+    let samples = strength.clamp(2, 128) as usize;
+
+    let mut out = vec![0u8; w * h * ch];
+
+    for py in 0..h {
+        for px in 0..w {
+            let dx = px as f32 - cx;
+            let dy = py as f32 - cy;
+
+            // Sample along the ray from pixel toward center
+            let mut accum = vec![0.0f32; ch];
+            let mut total_weight = 0.0f32;
+
+            for s in 0..samples {
+                let t = (s as f32 / (samples - 1) as f32) * amount;
+                let sx = px as f32 - dx * t;
+                let sy = py as f32 - dy * t;
+
+                // Bilinear interpolation
+                let x0 = sx.floor() as i32;
+                let y0 = sy.floor() as i32;
+
+                if x0 < 0 || y0 < 0 || x0 >= (w as i32 - 1) || y0 >= (h as i32 - 1) {
+                    // Out of bounds — use nearest edge pixel
+                    let ex = sx.round().clamp(0.0, (w - 1) as f32) as usize;
+                    let ey = sy.round().clamp(0.0, (h - 1) as f32) as usize;
+                    let base = (ey * w + ex) * ch;
+                    for c in 0..ch {
+                        accum[c] += pixels[base + c] as f32;
+                    }
+                } else {
+                    let x0 = x0 as usize;
+                    let y0 = y0 as usize;
+                    let fx = sx - sx.floor();
+                    let fy = sy - sy.floor();
+                    let w00 = (1.0 - fx) * (1.0 - fy);
+                    let w10 = fx * (1.0 - fy);
+                    let w01 = (1.0 - fx) * fy;
+                    let w11 = fx * fy;
+
+                    for c in 0..ch {
+                        let v00 = pixels[(y0 * w + x0) * ch + c] as f32;
+                        let v10 = pixels[(y0 * w + x0 + 1) * ch + c] as f32;
+                        let v01 = pixels[((y0 + 1) * w + x0) * ch + c] as f32;
+                        let v11 = pixels[((y0 + 1) * w + x0 + 1) * ch + c] as f32;
+                        accum[c] += v00 * w00 + v10 * w10 + v01 * w01 + v11 * w11;
+                    }
+                }
+                total_weight += 1.0;
+            }
+
+            let dst = (py * w + px) * ch;
+            for c in 0..ch {
+                out[dst + c] = (accum[c] / total_weight + 0.5).clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 /// Apply sharpening (unsharp mask).
 ///
 /// Computes: output = original + amount * (original - blurred)
@@ -10368,5 +10463,104 @@ mod motion_blur_tests {
         let pixels = vec![128u8; 8 * 8 * 3];
         let result = motion_blur(&pixels, &info, 2, 45.0).unwrap();
         assert_eq!(result.len(), pixels.len());
+    }
+}
+
+#[cfg(test)]
+mod radial_blur_tests {
+    use super::*;
+
+    fn make_gray(w: u32, h: u32, val: u8) -> (Vec<u8>, ImageInfo) {
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        (vec![val; (w * h) as usize], info)
+    }
+
+    #[test]
+    fn zero_strength_is_identity() {
+        let (px, info) = make_gray(32, 32, 128);
+        let result = radial_blur(&px, &info, 0.5, 0.5, 1, 0.5).unwrap();
+        assert_eq!(result, px);
+    }
+
+    #[test]
+    fn zero_amount_is_identity() {
+        let (px, info) = make_gray(32, 32, 128);
+        let result = radial_blur(&px, &info, 0.5, 0.5, 10, 0.0).unwrap();
+        assert_eq!(result, px);
+    }
+
+    #[test]
+    fn preserves_dimensions() {
+        let (px, info) = make_gray(64, 48, 128);
+        let result = radial_blur(&px, &info, 0.5, 0.5, 10, 0.5).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn uniform_image_stays_uniform() {
+        let (px, info) = make_gray(32, 32, 100);
+        let result = radial_blur(&px, &info, 0.5, 0.5, 20, 1.0).unwrap();
+        // Averaging uniform pixels should give uniform output (within rounding)
+        for &v in &result {
+            assert!(
+                (v as i16 - 100).abs() <= 1,
+                "uniform image should stay uniform, got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn center_pixel_is_unchanged() {
+        // Place a distinctive pattern; the center pixel should barely change
+        // because all samples converge to the center
+        let w = 32u32;
+        let h = 32u32;
+        let mut px = vec![0u8; (w * h) as usize];
+        // Set center pixel
+        px[16 * w as usize + 16] = 200;
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        let result = radial_blur(&px, &info, 0.5, 0.5, 10, 0.5).unwrap();
+        // Center pixel samples itself N times → stays close to original
+        let center_val = result[16 * w as usize + 16];
+        assert!(
+            center_val >= 150,
+            "center pixel should stay bright, got {center_val}"
+        );
+    }
+
+    #[test]
+    fn rgb_preserves_channels() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Rgb8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        let px = vec![128u8; 16 * 16 * 3];
+        let result = radial_blur(&px, &info, 0.5, 0.5, 5, 0.3).unwrap();
+        assert_eq!(result.len(), 16 * 16 * 3);
+    }
+
+    #[test]
+    fn rgba_preserves_channels() {
+        let info = ImageInfo {
+            width: 16,
+            height: 16,
+            format: PixelFormat::Rgba8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        let px = vec![128u8; 16 * 16 * 4];
+        let result = radial_blur(&px, &info, 0.5, 0.5, 5, 0.3).unwrap();
+        assert_eq!(result.len(), 16 * 16 * 4);
     }
 }

@@ -3,13 +3,51 @@ title: Radial Zoom Blur — Radial Motion from Center Point
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-30'
 spec:
-  summary: Zoom blur effect validated against ImageMagick radial-blur.
-  context: ''
-  codebase_analysis: ''
-  acceptance_criteria: []
-  out_of_scope: ''
-  technical_notes: ''
-plan: []
+  summary: Zoom blur radiating from a center point, validated against ImageMagick radial-blur.
+  context: 'Radial/zoom blur creates a motion streak effect radiating outward from a
+
+    center point. Each pixel is blurred along its ray to/from the center.
+
+    Pixels near the center are sharp; pixels far from center are more blurred.
+
+    '
+  codebase_analysis: 'motion_blur exists using kernel + convolve. Radial blur is different: per-pixel
+
+    sampling along radial direction. Existing infrastructure: validate_format,
+
+    is_16bit/process_via_8bit, channels(), register_filter + ConfigParams.
+
+    '
+  acceptance_criteria:
+  - radial_blur function producing zoom blur from center point
+  - Configurable center (cx, cy), strength (number of samples), and amount
+  - Supports RGB8, RGBA8, Gray8 with 16-bit fallback
+  - Registered with register_filter + ConfigParams
+  - WIT declaration and adapter wiring
+  - Unit tests for identity, dimensions, center sharpness, edge blur
+  out_of_scope: Spin/rotational blur, GPU acceleration
+  technical_notes: 'Algorithm: for each pixel, sample N points along the ray from pixel to center.
+
+    Average the samples. Strength controls N (more samples = smoother blur).
+
+    Amount controls how far along the ray to sample (0 = no blur, 1 = full).
+
+    Bilinear interpolation for sub-pixel sampling.
+
+    '
+plan:
+- title: Implementation
+  tasks:
+  - title: Implement radial_blur with per-pixel ray sampling and bilinear interpolation
+    done: true
+  - title: Register with register_filter + ConfigParams, add WIT + adapter
+    done: true
+- title: Testing
+  tasks:
+  - title: Add unit tests (identity, dimensions, format support, center sharpness)
+    done: true
+  - title: Run cargo test and verify
+    done: true
 extra: {}

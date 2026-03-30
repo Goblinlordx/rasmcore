@@ -203,6 +203,10 @@ interface filters {
 
     // ─── Procedural Noise Generators ────────────────────────────────────
 
+    /// Radial zoom blur — motion streak radiating from a center point.
+    /// Center (0.5, 0.5) = image center. Strength = sample count. Amount = blur extent.
+    radial-blur: func(pixels: buffer, info: image-info, center-x: f32, center-y: f32, strength: u32, amount: f32) -> result<buffer, rasmcore-error>;
+
     /// Generate Perlin noise image (Gray8). Deterministic given same seed.
     /// Scale controls zoom (0.01-0.1 typical), octaves controls detail (1-8).
     perlin-noise: func(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> buffer;
