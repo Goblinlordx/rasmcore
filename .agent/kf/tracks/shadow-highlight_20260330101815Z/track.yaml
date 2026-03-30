@@ -1,0 +1,88 @@
+id: shadow-highlight_20260330101815Z
+title: "Shadow/Highlight Adjustment"
+type: feature
+status: pending
+created: 2026-03-30
+updated: 2026-03-30
+spec:
+  summary: >
+    Add shadow/highlight local tone adjustment — independently lighten shadows
+    and darken highlights. The last major missing Photoshop Image > Adjustments
+    operation.
+  context: |
+    Photoshop's Shadow/Highlight is one of its most-used adjustments for
+    recovering detail in over/underexposed images. It works by detecting
+    local luminance and applying different tone curves to shadow vs highlight
+    regions. Unlike global brightness/contrast, it preserves mid-tones.
+    No direct ImageMagick equivalent exists — vips has lab-based approaches.
+  codebase_analysis: |
+    - Existing tone adjustments: brightness, contrast, gamma, levels, curves,
+      sigmoidal_contrast, auto_level, equalize, normalize — all GLOBAL
+    - split_toning exists but tints by hue, doesn't adjust luminance
+    - tonemap_reinhard/drago/filmic exist for HDR but are global tonemappers
+    - ColorLut3D infrastructure could bake shadow/highlight as a 3D LUT
+    - blur() available for computing local luminance (low-frequency component)
+    - frequency_high/low separation already exists for similar decomposition
+    - Bilateral filter exists for edge-preserving smoothing (useful for mask)
+  acceptance_criteria:
+    - shadow_highlight filter registered with shadow_amount, highlight_amount, radius params
+    - shadow_amount=0 and highlight_amount=0 is identity
+    - Shadows lightened without blowing out highlights
+    - Highlights darkened without crushing shadows
+    - Edge-aware (no halo artifacts at strong settings)
+    - Supports RGB8, RGBA8, Gray8 (alpha preserved)
+    - Reference validation against manual Photoshop comparison or GIMP equivalent
+    - ConfigParams with proper param hints
+  out_of_scope: |
+    Per-channel shadow/highlight. Tone width / color correction sub-controls
+    (Photoshop's advanced mode). HDR toning.
+  technical_notes: |
+    Algorithm (Photoshop-style local tone mapping):
+    1. Convert to luminance channel (BT.709)
+    2. Blur luminance with large radius (edge-preserving via bilateral or gaussian)
+       to get local brightness map
+    3. For each pixel, compute shadow weight = smoothstep(0, threshold, local_lum)
+       and highlight weight = smoothstep(threshold, 1, local_lum)
+    4. Apply tonal boost/cut: shadow regions get lightened, highlight regions darkened
+    5. Blend back with original using the weight masks
+
+    Alternative simpler approach: unsharp-mask-style local contrast
+    - low_freq = blur(image, radius)
+    - shadow_boost = max(0, low_freq - image) * shadow_amount
+    - highlight_cut = max(0, image - low_freq) * highlight_amount
+    - output = image + shadow_boost - highlight_cut
+
+    Reference: GIMP Colors > Shadows-Highlights uses a similar bilateral approach.
+    Validate via GIMP Script-Fu or by visual comparison with known PS output.
+plan:
+  - phase: "Core Implementation"
+    tasks:
+      - text: "Implement shadow_highlight() using luminance-based local tone mapping"
+        done: false
+      - text: "Add edge-aware luminance blur (bilateral or large-radius gaussian)"
+        done: false
+      - text: "Implement shadow weight and highlight weight mask computation"
+        done: false
+      - text: "Apply tonal boost/cut based on weight masks"
+        done: false
+  - phase: "Registration & Parameters"
+    tasks:
+      - text: "Register shadow_highlight filter with ConfigParams (shadow_amount, highlight_amount, radius)"
+        done: false
+      - text: "Test identity at (0, 0, any_radius)"
+        done: false
+      - text: "Test shadow-only boost (shadow=50, highlight=0) lightens darks without affecting highlights"
+        done: false
+      - text: "Test highlight-only cut (shadow=0, highlight=50) darkens brights without affecting shadows"
+        done: false
+  - phase: "Validation & Integration"
+    tasks:
+      - text: "Visual comparison test against GIMP Shadows-Highlights output"
+        done: false
+      - text: "Verify no halo artifacts at strong settings (shadow=100, radius=50)"
+        done: false
+      - text: "Re-export from rasmcore-filter-enhance crate"
+        done: false
+      - text: "Full cargo test pass, verify param-manifest.json"
+        done: false
+extra: {}

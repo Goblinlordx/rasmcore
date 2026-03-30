@@ -1,0 +1,106 @@
+id: ps-parity-validation_20260330101818Z
+title: "Photoshop-tier Filter Reference Validation Suite"
+type: chore
+status: pending
+created: 2026-03-30
+updated: 2026-03-30
+spec:
+  summary: >
+    Add IM/vips reference parity tests for all Photoshop-equivalent filters
+    that currently lack validation. 69 of 105 registered filters have no
+    reference parity test. This track covers the highest-value subset.
+  context: |
+    We have 105 registered filters but only 36 have IM/vips parity tests in
+    reference_audit.rs. Many core Photoshop-equivalent operations (vibrance,
+    channel_mixer, motion_blur, bilateral, erode/dilate, frequency_high,
+    perspective_warp, gradient_map) are implemented but untested against
+    external references. This is the biggest gap — not missing implementations,
+    but missing validation. Filters without parity tests should be marked
+    "not yet validated against a reference" until tested.
+  codebase_analysis: |
+    EXISTING PARITY TEST FRAMEWORK:
+    - reference_audit.rs with check_parity_rgb() helper
+    - Tiers: EXACT (<0.01), DETERMINISTIC (<2.0), ALGORITHM (<5.0-15.0)
+    - Graceful skip when IM unavailable
+    - 36 tests currently passing
+
+    HIGH-VALUE UNTESTED FILTERS (PS equivalents):
+    - vibrance: no IM equivalent, but can test extremes (0 = identity)
+    - channel_mixer: IM -color-matrix (identity test exists, need non-trivial)
+    - motion_blur: IM -motion-blur
+    - gradient_map: IM -clut with gradient
+    - bilateral: OpenCV parity (no IM equivalent)
+    - erode/dilate: IM -morphology Erode/Dilate
+    - frequency_high: composite subtract approach
+    - perspective_warp: IM -distort Perspective
+    - adaptive_threshold: IM -lat
+    - clahe: no IM (OpenCV only)
+    - canny: IM -canny
+    - gaussian_blur_cv: IM -gaussian-blur
+    - zoom_blur: no IM equivalent
+    - bokeh_blur: no IM equivalent
+  acceptance_criteria:
+    - IM parity tests added for motion_blur, erode, dilate, gradient_map, gaussian_blur_cv, canny, adaptive_threshold, perspective_warp
+    - Identity/property tests for filters without IM equivalent (vibrance, bilateral, zoom_blur, bokeh_blur, clahe, frequency_high)
+    - All untested PS-equivalent filters either have a parity test or are documented as "not yet validated" with justification
+    - Existing 36 parity tests still pass
+    - No regressions in cargo test
+  out_of_scope: |
+    Testing all 105 registered filters. Testing draw_* filters (not PS adjustments).
+    Testing codec-specific filters. Performance benchmarks.
+  technical_notes: |
+    IM COMMANDS FOR EACH FILTER:
+    - motion_blur: -motion-blur {angle}x{length}+0
+    - erode: -morphology Erode Disk:1
+    - dilate: -morphology Dilate Disk:1
+    - gradient_map: -clut (with gradient image as CLUT)
+    - gaussian_blur_cv: -gaussian-blur 0x{sigma}
+    - canny: -canny 0x{sigma}+{low}%+{high}%
+    - adaptive_threshold: -lat {size}x{size}+{offset}%
+    - perspective_warp: -distort Perspective "x0,y0,x0',y0' x1,y1,x1',y1' ..."
+
+    For filters without IM equivalent, use property-based tests:
+    - Identity at neutral parameters
+    - Monotonicity (stronger params = stronger effect)
+    - Format consistency (output same format as input)
+    - Dimension preservation
+plan:
+  - phase: "IM Parity Tests (High Priority)"
+    tasks:
+      - text: "motion_blur parity vs IM -motion-blur (ALGORITHM tier)"
+        done: false
+      - text: "erode parity vs IM -morphology Erode (ALGORITHM tier)"
+        done: false
+      - text: "dilate parity vs IM -morphology Dilate (ALGORITHM tier)"
+        done: false
+      - text: "gaussian_blur_cv parity vs IM -gaussian-blur (ALGORITHM tier)"
+        done: false
+  - phase: "IM Parity Tests (Medium Priority)"
+    tasks:
+      - text: "canny parity vs IM -canny (ALGORITHM tier)"
+        done: false
+      - text: "adaptive_threshold parity vs IM -lat (ALGORITHM tier)"
+        done: false
+      - text: "gradient_map parity vs IM -clut with gradient (ALGORITHM tier)"
+        done: false
+      - text: "perspective_warp parity vs IM -distort Perspective (ALGORITHM tier)"
+        done: false
+  - phase: "Property Tests (No IM Equivalent)"
+    tasks:
+      - text: "vibrance identity at 0, monotonicity, saturation protection test"
+        done: false
+      - text: "bilateral identity at sigma=0, edge preservation test"
+        done: false
+      - text: "frequency_high reconstruction test (low + high - 128 = original)"
+        done: false
+      - text: "zoom_blur identity at factor=0, radial pattern test"
+        done: false
+  - phase: "Documentation & Cleanup"
+    tasks:
+      - text: "Mark all remaining untested PS-equivalent filters as not yet validated"
+        done: false
+      - text: "Update reference_audit_summary test with coverage stats"
+        done: false
+      - text: "Full cargo test pass"
+        done: false
+extra: {}

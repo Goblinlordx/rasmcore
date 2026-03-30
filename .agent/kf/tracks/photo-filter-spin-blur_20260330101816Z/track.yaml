@@ -1,0 +1,83 @@
+id: photo-filter-spin-blur_20260330101816Z
+title: "Photo Filter & Spin Blur"
+type: feature
+status: pending
+created: 2026-03-30
+updated: 2026-03-30
+spec:
+  summary: >
+    Add Photo Filter (warming/cooling color overlay) and Spin Blur (rotational
+    blur around center). Two small missing Photoshop filters bundled together.
+  context: |
+    Photo Filter applies a color wash (like a camera lens filter) — warm (orange),
+    cool (blue), or custom color at a given density. Spin Blur rotates the image
+    radially around a center point, simulating rotational motion. We have zoom_blur
+    (linear toward center) but not spin (rotational around center).
+  codebase_analysis: |
+    PHOTO FILTER:
+    - split_toning() exists but applies different hues to shadows vs highlights
+    - colorize() exists but desaturates first then overlays — different from PS
+    - PS Photo Filter is simpler: blend(original, solid_color, density) in luminosity mode
+    - Can be implemented as a LUT-based color op or simple alpha blend
+
+    SPIN BLUR:
+    - zoom_blur() exists at filters.rs:861 — samples along ray TOWARD center
+    - Spin blur needs sampling along ARC around center (angular displacement)
+    - motion_blur() exists — directional linear blur, different axis
+    - IM command: -radial-blur angle (rotational, not zoom)
+  acceptance_criteria:
+    - photo_filter registered with color (RGB), density (0-100%), preserve_luminosity (bool)
+    - photo_filter with density=0 is identity
+    - IM parity test vs -fill color -colorize density (DETERMINISTIC tier, MAE < 2.0)
+    - spin_blur registered with center_x, center_y, angle (degrees)
+    - spin_blur with angle=0 is identity
+    - IM parity test vs -radial-blur angle (ALGORITHM tier, MAE < 15.0)
+    - Both support RGB8, RGBA8 (alpha preserved)
+    - ConfigParams with proper param hints
+  out_of_scope: |
+    Tilt-shift blur. Path blur. Iris blur.
+  technical_notes: |
+    PHOTO FILTER:
+    - Simple approach: output = lerp(pixel, color, density)
+    - preserve_luminosity: convert to HSL, keep L from original, take H/S from blended
+    - IM reference: magick input -fill "rgb(R,G,B)" -colorize density% output
+    - LUT-composable if implemented as ColorOp
+
+    SPIN BLUR:
+    - For each pixel at (x,y), compute angle and distance from center
+    - Sample N points along arc: (cx + r*cos(theta + i*dtheta), cy + r*sin(theta + i*dtheta))
+    - Average samples with Gaussian weighting
+    - IM reference: magick input -radial-blur angle output
+    - Note: IM -radial-blur rotates the entire image, angle is max rotation at edges
+plan:
+  - phase: "Photo Filter"
+    tasks:
+      - text: "Implement photo_filter() with color blend and optional luminosity preservation"
+        done: false
+      - text: "Register with ConfigParams (color_r, color_g, color_b, density, preserve_luminosity)"
+        done: false
+      - text: "Test identity at density=0, test warm filter (255,200,100) at 50%"
+        done: false
+      - text: "IM parity test vs -fill -colorize (MAE < 2.0)"
+        done: false
+  - phase: "Spin Blur"
+    tasks:
+      - text: "Implement spin_blur() with angular sampling around center point"
+        done: false
+      - text: "Register with ConfigParams (center_x, center_y, angle)"
+        done: false
+      - text: "Test identity at angle=0, verify rotational blur pattern"
+        done: false
+      - text: "IM parity test vs -radial-blur (MAE < 15.0)"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Verify both in param-manifest.json"
+        done: false
+      - text: "Re-export from appropriate crate"
+        done: false
+      - text: "Full cargo test pass"
+        done: false
+      - text: "Benchmark both at 256x256"
+        done: false
+extra: {}
