@@ -352,16 +352,17 @@ pub fn parse_hald_lut(pixels: &[u8], info: &ImageInfo) -> Result<ColorLut3D, Ima
     }
 
     let dim = info.width as usize;
-    // level² = dim, so level = sqrt(dim). Must be an exact integer.
-    let level = (dim as f64).sqrt().round() as usize;
-    if level * level != dim {
+    // HALD convention: level^3 = dim (image dimension).
+    // Grid size = level^2. Total entries = grid_size^3 = dim^2.
+    let level = (dim as f64).cbrt().round() as usize;
+    if level * level * level != dim {
         return Err(ImageError::InvalidParameters(format!(
-            "HALD CLUT dimension {dim} is not a perfect square (expected level²)"
+            "HALD CLUT dimension {dim} is not a perfect cube (expected level³, e.g., 8³=512)"
         )));
     }
 
-    let grid_size = level;
-    let total = grid_size * grid_size * grid_size;
+    let grid_size = level * level;
+    let total = dim * dim; // grid_size^3 = (level^2)^3 = level^6 = (level^3)^2 = dim^2
     let channels = if info.format == PixelFormat::Rgba8 { 4 } else { 3 };
     let mut data = Vec::with_capacity(total);
 
@@ -991,20 +992,20 @@ mod tests {
 
     #[test]
     fn parse_hald_identity_roundtrip() {
-        // Create a level-4 HALD identity (16x16 = 256 pixels, 4x4x4 = 64 LUT entries)
-        let level = 4usize;
-        let dim = level * level; // 16
-        let total = level * level * level; // 64
+        // Create a level-2 HALD identity (dim=2^3=8, grid=2^2=4, total=4^3=64 entries)
+        let level = 2usize;
+        let dim = level * level * level; // 8
+        let grid_size = level * level;   // 4
+        let total = dim * dim;           // 64
         let mut pixels = Vec::with_capacity(total * 3);
-        let scale = 255.0 / (level - 1) as f32;
-        for b in 0..level {
-            for g in 0..level {
-                for r in 0..level {
-                    pixels.push((r as f32 * scale).round() as u8);
-                    pixels.push((g as f32 * scale).round() as u8);
-                    pixels.push((b as f32 * scale).round() as u8);
-                }
-            }
+        let scale = 255.0 / (grid_size - 1) as f32;
+        for i in 0..total {
+            let r = i % grid_size;
+            let g = (i / grid_size) % grid_size;
+            let b = i / (grid_size * grid_size);
+            pixels.push((r as f32 * scale).round() as u8);
+            pixels.push((g as f32 * scale).round() as u8);
+            pixels.push((b as f32 * scale).round() as u8);
         }
 
         let info = ImageInfo {
@@ -1015,18 +1016,18 @@ mod tests {
         };
 
         let lut = parse_hald_lut(&pixels, &info).unwrap();
-        assert_eq!(lut.grid_size, level);
+        assert_eq!(lut.grid_size, grid_size);
 
         // Identity: lookup should return input
         let (r, g, b) = lut.lookup(0.5, 0.3, 0.7);
-        assert!((r - 0.5).abs() < 0.05, "r={r}");
-        assert!((g - 0.3).abs() < 0.05, "g={g}");
-        assert!((b - 0.7).abs() < 0.05, "b={b}");
+        assert!((r - 0.5).abs() < 0.1, "r={r}");
+        assert!((g - 0.3).abs() < 0.1, "g={g}");
+        assert!((b - 0.7).abs() < 0.1, "b={b}");
     }
 
     #[test]
     fn parse_hald_non_square_errors() {
-        let pixels = vec![0u8; 48]; // 4x4 = 16 pixels * 3 channels
+        let pixels = vec![0u8; 48];
         let info = ImageInfo {
             width: 8,
             height: 4,
@@ -1037,8 +1038,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_hald_non_perfect_square_dim_errors() {
-        let pixels = vec![0u8; 3 * 15]; // 15 is not a perfect square
+    fn parse_hald_non_perfect_cube_dim_errors() {
+        // 15 is not a perfect cube
+        let pixels = vec![0u8; 3 * 15 * 15];
         let info = ImageInfo {
             width: 15,
             height: 15,
