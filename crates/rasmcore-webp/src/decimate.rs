@@ -287,10 +287,11 @@ fn is_flat(levels: &[[i16; 16]], thresh: i16) -> bool {
 
 /// Check if source 16x16 block has low variance (flat).
 fn is_flat_source_16(src: &[u8; 256]) -> bool {
-    // Sum-of-squares flatness check matching libwebp IsFlatSource16:
-    // flat if sum(x^2) < 16*16*2 = 512
-    let score: u32 = src.iter().map(|&v| (v as u32) * (v as u32)).sum();
-    score < 512
+    // Variance-based flatness: block is flat if all pixel values
+    // are within a small range (low variance).
+    let min = *src.iter().min().unwrap();
+    let max = *src.iter().max().unwrap();
+    (max - min) <= 20
 }
 
 // ─── Cost functions (GetCostLuma16/4/UV) ─────────────────────────────────

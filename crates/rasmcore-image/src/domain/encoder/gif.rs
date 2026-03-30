@@ -76,10 +76,12 @@ pub fn encode_pixels(
             .set_repeat(repeat)
             .map_err(|e| ImageError::ProcessingFailed(format!("GIF repeat: {e}")))?;
 
-        let mut frame = gif::Frame::default();
-        frame.width = width;
-        frame.height = height;
-        frame.buffer = std::borrow::Cow::Borrowed(&indices);
+        let mut frame = gif::Frame {
+            width,
+            height,
+            buffer: std::borrow::Cow::Borrowed(&indices),
+            ..Default::default()
+        };
 
         if let Some(ti) = transparent_index {
             frame.transparent = Some(ti);
