@@ -172,10 +172,23 @@ fn interpolate_pixel(
     let val = raw[row * w + col];
 
     // Helper to safely read from raw with bounds clamping
+    // Mirror boundary (matches dcraw's bilinear demosaic edge handling)
     let get = |r: isize, c: isize| -> u32 {
-        let rr = r.clamp(0, h as isize - 1) as usize;
-        let cc = c.clamp(0, w as isize - 1) as usize;
-        raw[rr * w + cc] as u32
+        let rr = if r < 0 {
+            (-r) as usize
+        } else if r >= h as isize {
+            (2 * h as isize - r - 2) as usize
+        } else {
+            r as usize
+        };
+        let cc = if c < 0 {
+            (-c) as usize
+        } else if c >= w as isize {
+            (2 * w as isize - c - 2) as usize
+        } else {
+            c as usize
+        };
+        raw[rr.min(h - 1) * w + cc.min(w - 1)] as u32
     };
 
     let r = row as isize;

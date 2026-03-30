@@ -6,7 +6,7 @@
 //! TIFF container → raw extraction → demosaic → color pipeline → RGB output.
 
 use crate::RawError;
-use crate::color::{apply_color_pipeline, build_camera_to_srgb};
+use crate::color::{apply_color_pipeline, build_color_coeffs};
 use crate::demosaic::{CfaPattern, demosaic_bilinear};
 use crate::ljpeg;
 use crate::tiff::*;
@@ -80,17 +80,32 @@ pub fn is_dng(data: &[u8]) -> bool {
 /// - `is_16bit`: true if source was 16-bit (output is still 8-bit for compatibility)
 pub fn decode_dng(data: &[u8]) -> Result<DngDecodeResult, RawError> {
     let tiff = TiffContainer::parse(data)?;
-
-    // Find the raw image IFD. DNG files typically have:
-    // - IFD0: thumbnail or full-size preview
-    // - SubIFD: raw sensor data (NewSubFileType = 0)
-    // We need the IFD with CFA data.
     let metadata = find_raw_ifd_and_parse(&tiff)?;
 
-    // Extract raw sensor data
-    let raw_u16 = extract_raw_data(&tiff, &metadata)?;
+    // Build dcraw-compatible color coefficients
+    let coeffs = build_color_coeffs(&metadata.color_matrix, &metadata.as_shot_neutral)
+        .ok_or_else(|| RawError::InvalidFormat("singular color matrix".into()))?;
 
-    // Demosaic
+    // Extract raw sensor data
+    let mut raw_u16 = extract_raw_data(&tiff, &metadata)?;
+
+    // dcraw pipeline: WB and black-subtract BEFORE demosaic
+    // 1. Subtract black level
+    // 2. Multiply by pre_mul (dcraw-style WB)
+    // 3. Clip to white level
+    let black = metadata.black_level as u32;
+    let clip_max = (metadata.white_level as u32).saturating_sub(black);
+    apply_wb_before_demosaic(
+        &mut raw_u16,
+        metadata.width,
+        metadata.height,
+        metadata.cfa_pattern,
+        &coeffs.pre_mul,
+        black,
+        clip_max,
+    );
+
+    // Demosaic (bilinear, matching dcraw -q 0)
     let rgb16 = demosaic_bilinear(
         &raw_u16,
         metadata.width,
@@ -98,23 +113,17 @@ pub fn decode_dng(data: &[u8]) -> Result<DngDecodeResult, RawError> {
         metadata.cfa_pattern,
     )?;
 
-    // Build color pipeline
-    let camera_to_srgb = build_camera_to_srgb(&metadata.color_matrix)
-        .ok_or_else(|| RawError::InvalidFormat("singular ColorMatrix1 — cannot invert".into()))?;
-
-    // Compute white balance multipliers from AsShotNeutral
-    let wb = compute_white_balance(&metadata.as_shot_neutral);
-
-    // Apply color pipeline → RGB8 output
+    // Apply color matrix + gamma → RGB8 output
+    // WB is already applied, so pass neutral WB [1,1,1] and black=0
     let pixels = apply_color_pipeline(
         &rgb16,
         metadata.width,
         metadata.height,
-        &camera_to_srgb,
-        &wb,
-        metadata.black_level,
-        metadata.white_level,
-        true, // 8-bit output
+        &coeffs.cam_to_srgb,
+        &[1.0, 1.0, 1.0], // WB already applied
+        0.0,              // black already subtracted
+        clip_max as f64,  // normalize against clip range
+        true,
     );
 
     Ok(DngDecodeResult {
@@ -129,7 +138,22 @@ pub fn decode_dng(data: &[u8]) -> Result<DngDecodeResult, RawError> {
 pub fn decode_dng_16bit(data: &[u8]) -> Result<DngDecodeResult, RawError> {
     let tiff = TiffContainer::parse(data)?;
     let metadata = find_raw_ifd_and_parse(&tiff)?;
-    let raw_u16 = extract_raw_data(&tiff, &metadata)?;
+    let coeffs = build_color_coeffs(&metadata.color_matrix, &metadata.as_shot_neutral)
+        .ok_or_else(|| RawError::InvalidFormat("singular color matrix".into()))?;
+
+    let mut raw_u16 = extract_raw_data(&tiff, &metadata)?;
+    let black = metadata.black_level as u32;
+    let clip_max = (metadata.white_level as u32).saturating_sub(black);
+    apply_wb_before_demosaic(
+        &mut raw_u16,
+        metadata.width,
+        metadata.height,
+        metadata.cfa_pattern,
+        &coeffs.pre_mul,
+        black,
+        clip_max,
+    );
+
     let rgb16 = demosaic_bilinear(
         &raw_u16,
         metadata.width,
@@ -137,19 +161,15 @@ pub fn decode_dng_16bit(data: &[u8]) -> Result<DngDecodeResult, RawError> {
         metadata.cfa_pattern,
     )?;
 
-    let camera_to_srgb = build_camera_to_srgb(&metadata.color_matrix)
-        .ok_or_else(|| RawError::InvalidFormat("singular ColorMatrix1 — cannot invert".into()))?;
-    let wb = compute_white_balance(&metadata.as_shot_neutral);
-
     let pixels = apply_color_pipeline(
         &rgb16,
         metadata.width,
         metadata.height,
-        &camera_to_srgb,
-        &wb,
-        metadata.black_level,
-        metadata.white_level,
-        false, // 16-bit output
+        &coeffs.cam_to_srgb,
+        &[1.0, 1.0, 1.0],
+        0.0,
+        clip_max as f64,
+        false,
     );
 
     Ok(DngDecodeResult {
@@ -160,6 +180,43 @@ pub fn decode_dng_16bit(data: &[u8]) -> Result<DngDecodeResult, RawError> {
     })
 }
 
+/// Apply white balance and black subtraction to raw Bayer data before demosaicing.
+/// Follows dcraw's approach: each pixel is scaled by the pre_mul for its CFA channel.
+fn apply_wb_before_demosaic(
+    raw: &mut [u16],
+    width: u32,
+    height: u32,
+    pattern: CfaPattern,
+    pre_mul: &[f64; 3],
+    black: u32,
+    clip_max: u32,
+) {
+    let w = width as usize;
+    let h = height as usize;
+    // Map CFA positions to channel indices (R=0, G=1, B=2)
+    let cfa_map = cfa_channel_map(pattern);
+
+    for row in 0..h {
+        for col in 0..w {
+            let idx = row * w + col;
+            let channel = cfa_map[row & 1][col & 1];
+            let val = (raw[idx] as u32).saturating_sub(black);
+            let scaled = (val as f64 * pre_mul[channel]).round() as u32;
+            raw[idx] = scaled.min(clip_max) as u16;
+        }
+    }
+}
+
+/// Map 2×2 CFA pattern positions to channel indices [R=0, G=1, B=2].
+fn cfa_channel_map(pattern: CfaPattern) -> [[usize; 2]; 2] {
+    match pattern {
+        CfaPattern::Rggb => [[0, 1], [1, 2]],
+        CfaPattern::Bggr => [[2, 1], [1, 0]],
+        CfaPattern::Grbg => [[1, 0], [2, 1]],
+        CfaPattern::Gbrg => [[1, 2], [0, 1]],
+    }
+}
+
 /// Result of DNG decoding.
 pub struct DngDecodeResult {
     pub pixels: Vec<u8>,
@@ -168,9 +225,8 @@ pub struct DngDecodeResult {
     pub bits_per_sample: u16,
 }
 
-/// Compute white balance multipliers from AsShotNeutral.
-/// AsShotNeutral gives the per-channel response to a neutral color.
-/// WB multipliers = 1/neutral, normalized so the green channel = 1.0.
+/// Compute white balance multipliers from AsShotNeutral (legacy, for tests).
+#[cfg(test)]
 fn compute_white_balance(neutral: &[f64; 3]) -> [f64; 3] {
     if neutral[0] == 0.0 || neutral[1] == 0.0 || neutral[2] == 0.0 {
         return [1.0, 1.0, 1.0]; // fallback: no WB adjustment

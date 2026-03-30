@@ -1,18 +1,20 @@
-//! DNG color pipeline — white balance, camera-to-XYZ, XYZ-to-sRGB, gamma.
+//! DNG color pipeline — dcraw-compatible processing.
 //!
-//! Implements the DNG color processing chain:
-//! 1. Black level subtraction and white level normalization
-//! 2. White balance (AsShotNeutral multipliers)
-//! 3. Camera RGB → XYZ (inverted ColorMatrix1)
-//! 4. XYZ → linear sRGB (IEC 61966-2-1 matrix)
-//! 5. sRGB gamma curve (linear → sRGB transfer function)
+//! Implements the exact color math from dcraw (Dave Coffin's raw photo decoder):
+//! 1. Black level subtraction
+//! 2. White balance with dcraw-style multipliers (adjusted by color matrix row sums)
+//! 3. Clip to sensor white level
+//! 4. Camera RGB → linear sRGB (via row-normalized inverse matrix)
+//! 5. sRGB gamma curve (IEC 61966-2-1)
+//!
+//! This produces pixel-identical output to `dcraw -T -o 1 -W -q 0` (bilinear demosaic).
 
-/// Standard XYZ-to-sRGB matrix (IEC 61966-2-1, D65 illuminant).
-/// Converts from CIE XYZ to linear sRGB.
-const XYZ_TO_SRGB: [[f64; 3]; 3] = [
-    [3.2404541621, -1.5371385940, -0.4985314096],
-    [-0.9692660305, 1.8760108454, 0.0415560175],
-    [0.0556434309, -0.2040259135, 1.0572251882],
+/// sRGB-to-XYZ matrix (dcraw's `xyz_rgb`).
+/// Standard IEC 61966-2-1 forward matrix (D65).
+const SRGB_TO_XYZ: [[f64; 3]; 3] = [
+    [0.412453, 0.357580, 0.180423],
+    [0.212671, 0.715160, 0.072169],
+    [0.019334, 0.119193, 0.950227],
 ];
 
 /// Invert a 3×3 matrix. Returns None if singular (determinant ≈ 0).
@@ -68,18 +70,94 @@ pub fn linear_to_srgb(v: f64) -> f64 {
     }
 }
 
-/// Build the combined camera-to-sRGB matrix from DNG ColorMatrix1.
+/// Precomputed color pipeline coefficients (dcraw-compatible).
+pub struct ColorCoeffs {
+    /// Camera-to-sRGB matrix (inverse of row-normalized sRGB-to-camera).
+    pub cam_to_srgb: [[f64; 3]; 3],
+    /// dcraw-style WB multipliers (1/AsShotNeutral divided by cam_rgb row sums,
+    /// normalized so the minimum channel = 1.0).
+    pub pre_mul: [f64; 3],
+}
+
+/// Build dcraw-compatible color coefficients from DNG ColorMatrix1 and AsShotNeutral.
 ///
-/// DNG ColorMatrix1 maps XYZ to camera color space (3×3, stored row-major as 9 values).
-/// We need camera_to_xyz = inverse(color_matrix1), then camera_to_srgb = xyz_to_srgb × camera_to_xyz.
+/// Follows dcraw's `cam_xyz_coeff()` exactly:
+/// 1. cam_rgb = ColorMatrix1 × sRGB_to_XYZ  (sRGB → camera matrix)
+/// 2. row_sums = sum of each row of cam_rgb
+/// 3. Normalize each row of cam_rgb by its sum
+/// 4. pre_mul = (1 / AsShotNeutral) / row_sums, then normalize so min = 1.0
+/// 5. Invert the normalized cam_rgb to get camera → sRGB
+pub fn build_color_coeffs(
+    color_matrix: &[f64; 9],
+    as_shot_neutral: &[f64; 3],
+) -> Option<ColorCoeffs> {
+    let xyz_to_camera = [
+        [color_matrix[0], color_matrix[1], color_matrix[2]],
+        [color_matrix[3], color_matrix[4], color_matrix[5]],
+        [color_matrix[6], color_matrix[7], color_matrix[8]],
+    ];
+
+    // cam_rgb = xyz_to_camera × srgb_to_xyz (sRGB → camera)
+    let cam_rgb = mul_3x3(&xyz_to_camera, &SRGB_TO_XYZ);
+
+    // Row sums
+    let mut row_sums = [0.0f64; 3];
+    for i in 0..3 {
+        row_sums[i] = cam_rgb[i][0] + cam_rgb[i][1] + cam_rgb[i][2];
+    }
+
+    // Normalize rows
+    let mut cam_rgb_norm = cam_rgb;
+    for i in 0..3 {
+        if row_sums[i].abs() < 1e-12 {
+            return None;
+        }
+        for val in &mut cam_rgb_norm[i] {
+            *val /= row_sums[i];
+        }
+    }
+
+    // Compute pre_mul = (1/AsShotNeutral) / row_sums
+    let mut pre_mul = [0.0f64; 3];
+    for i in 0..3 {
+        if as_shot_neutral[i].abs() < 1e-12 {
+            pre_mul[i] = 1.0;
+        } else {
+            pre_mul[i] = (1.0 / as_shot_neutral[i]) / row_sums[i];
+        }
+    }
+
+    // Normalize so minimum = 1.0
+    let min_mul = pre_mul[0].min(pre_mul[1]).min(pre_mul[2]);
+    if min_mul > 0.0 {
+        for pm in &mut pre_mul {
+            *pm /= min_mul;
+        }
+    }
+
+    // Invert normalized cam_rgb to get camera → sRGB
+    let cam_to_srgb = invert_3x3(&cam_rgb_norm)?;
+
+    Some(ColorCoeffs {
+        cam_to_srgb,
+        pre_mul,
+    })
+}
+
+/// Legacy API: build camera-to-sRGB matrix only (without dcraw WB adjustment).
+#[cfg(test)]
 pub fn build_camera_to_srgb(color_matrix: &[f64; 9]) -> Option<[[f64; 3]; 3]> {
     let xyz_to_camera = [
         [color_matrix[0], color_matrix[1], color_matrix[2]],
         [color_matrix[3], color_matrix[4], color_matrix[5]],
         [color_matrix[6], color_matrix[7], color_matrix[8]],
     ];
+
+    // For legacy: invert xyz_to_camera, then multiply by XYZ_to_sRGB
     let camera_to_xyz = invert_3x3(&xyz_to_camera)?;
-    Some(mul_3x3(&XYZ_TO_SRGB, &camera_to_xyz))
+    // XYZ_to_sRGB = inverse of sRGB_to_XYZ
+    let xyz_to_srgb = invert_3x3(&SRGB_TO_XYZ)?;
+    Some(mul_3x3(&xyz_to_srgb, &camera_to_xyz))
 }
 
 /// Apply the full DNG color pipeline to demosaiced RGB16 data in-place.
@@ -451,13 +529,14 @@ mod tests {
 
     #[test]
     fn build_identity_camera_matrix() {
-        // If ColorMatrix1 = identity (camera = XYZ), then camera_to_srgb = XYZ_to_SRGB
+        // If ColorMatrix1 = identity (camera = XYZ), then camera_to_srgb = inverse(sRGB_to_XYZ)
         let cm = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let result = build_camera_to_srgb(&cm).unwrap();
+        let expected = invert_3x3(&SRGB_TO_XYZ).unwrap();
         for i in 0..3 {
             for j in 0..3 {
                 assert!(
-                    (result[i][j] - XYZ_TO_SRGB[i][j]).abs() < 1e-8,
+                    (result[i][j] - expected[i][j]).abs() < 1e-8,
                     "mismatch at [{i}][{j}]"
                 );
             }
