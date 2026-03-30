@@ -528,6 +528,7 @@ impl GuestImagePipeline for PipelineResource {
         let cfg = domain::encoder::jpeg::JpegEncodeConfig {
             quality: config.quality.unwrap_or(85),
             progressive: config.progressive.unwrap_or(false),
+            turbo: false,
         };
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
         sink::write_jpeg(
@@ -721,9 +722,8 @@ impl GuestImagePipeline for PipelineResource {
         // Simple JSON parsing: iterate the resolved entries.
         // For now, just store the raw JSON and let resolve() handle it.
         // Actually, parse with the simple parser we have.
-        let entries = parse_metadata_json(&json).map_err(|e| {
-            RasmcoreError::InvalidInput(format!("Invalid metadata JSON: {e}"))
-        })?;
+        let entries = parse_metadata_json(&json)
+            .map_err(|e| RasmcoreError::InvalidInput(format!("Invalid metadata JSON: {e}")))?;
         for (container, field, value) in entries {
             ops.loads.push((container, field, value));
         }
