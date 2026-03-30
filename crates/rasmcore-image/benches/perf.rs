@@ -896,10 +896,31 @@ fn transform_benchmarks(c: &mut Criterion) {
             b.iter(|| transform::pad(&dec.pixels, &dec.info, 10, 10, 10, 10, &fill).unwrap());
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("pad/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-bordercolor", "black", "-border", "10"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
+
         // Trim
         group.bench_function(BenchmarkId::new("trim/rasmcore", size), |b| {
             b.iter(|| transform::trim(&dec.pixels, &dec.info, 10).unwrap());
         });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("trim/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-trim"], "png", None));
+            });
+        }
     }
 
     group.finish();
@@ -958,11 +979,31 @@ fn color_tone_benchmarks(c: &mut Criterion) {
             b.iter(|| filters::contrast(&px, &inf, 0.5).unwrap());
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("contrast/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(&p, &["-sigmoidal-contrast", "5,50%"], "png", None)
+                });
+            });
+        }
+
         // Hue rotate
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("hue_rotate/rasmcore", size), |b| {
             b.iter(|| filters::hue_rotate(&px, &inf, 90.0).unwrap());
         });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            // IM -modulate: brightness,saturation,hue (hue is 0-200 scale, 100=no change)
+            // 90 degrees = 25% of 360 = +50 on IM scale = 150
+            group.bench_function(BenchmarkId::new("hue_rotate/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(&p, &["-modulate", "100,100,150"], "png", None)
+                });
+            });
+        }
 
         // Saturate
         let px = pixels.clone();
@@ -970,11 +1011,28 @@ fn color_tone_benchmarks(c: &mut Criterion) {
             b.iter(|| filters::saturate(&px, &inf, 1.5).unwrap());
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            // IM -modulate: 100=no brightness change, 150=1.5x saturation, 100=no hue change
+            group.bench_function(BenchmarkId::new("saturate/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(&p, &["-modulate", "100,150,100"], "png", None)
+                });
+            });
+        }
+
         // Sepia
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("sepia/rasmcore", size), |b| {
             b.iter(|| filters::sepia(&px, &inf, 0.8).unwrap());
         });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("sepia/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-sepia-tone", "80%"], "png", None));
+            });
+        }
     }
 
     group.finish();
@@ -1029,15 +1087,57 @@ fn edge_detection_benchmarks(c: &mut Criterion) {
             b.iter(|| filters::scharr(&gray_pixels, &gray_info).unwrap());
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("scharr/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-colorspace", "Gray", "-morphology", "Convolve", "Scharr"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
+
         // Laplacian
         group.bench_function(BenchmarkId::new("laplacian/rasmcore", size), |b| {
             b.iter(|| filters::laplacian(&gray_pixels, &gray_info).unwrap());
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("laplacian/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-colorspace", "Gray", "-morphology", "Convolve", "Laplacian:0"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
+
         // Canny
         group.bench_function(BenchmarkId::new("canny/rasmcore", size), |b| {
             b.iter(|| filters::canny(&gray_pixels, &gray_info, 50.0, 150.0).unwrap());
         });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("canny/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-colorspace", "Gray", "-canny", "0x1+10%+30%"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
     }
 
     group.finish();
@@ -1077,6 +1177,20 @@ fn threshold_benchmarks(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("otsu/rasmcore", size), |b| {
             b.iter(|| filters::otsu_threshold(&gray_pixels, &gray_info).unwrap());
         });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("otsu/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-colorspace", "Gray", "-auto-threshold", "OTSU"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
 
         // Triangle threshold
         group.bench_function(BenchmarkId::new("triangle/rasmcore", size), |b| {
@@ -1169,6 +1283,13 @@ fn alpha_blend_benchmarks(c: &mut Criterion) {
             });
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("blend_multiply/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_composite(&p, &p, "Multiply", "png"));
+            });
+        }
+
         group.bench_function(BenchmarkId::new("blend_screen/rasmcore", size), |b| {
             b.iter(|| {
                 filters::blend(
@@ -1178,6 +1299,13 @@ fn alpha_blend_benchmarks(c: &mut Criterion) {
             });
         });
 
+        if ref_tools::has_tool("magick") {
+            let p = png_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("blend_screen/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_composite(&p, &p, "Screen", "png"));
+            });
+        }
+
         // Vignette powerlaw
         group.bench_function(BenchmarkId::new("vignette_powerlaw/rasmcore", size), |b| {
             b.iter(|| {
@@ -1185,6 +1313,13 @@ fn alpha_blend_benchmarks(c: &mut Criterion) {
                     .unwrap()
             });
         });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("vignette/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-vignette", "0x10"], "png", None));
+            });
+        }
 
         // Pyramid down/up (Gray8 only)
         {
