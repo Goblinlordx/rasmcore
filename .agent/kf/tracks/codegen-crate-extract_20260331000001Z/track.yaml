@@ -1,0 +1,134 @@
+id: codegen-crate-extract_20260331000001Z
+title: Extract rasmcore-codegen Crate — Parse, Types, Generate
+type: refactor
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Extract all code generation logic from build.rs into a dedicated
+    rasmcore-codegen crate. Clean separation: parse (syn AST) -> types
+    (structured data) -> gen (output modules). Fully parse #[param(...)]
+    via syn::parse::Parse instead of string splitting.
+  context: |
+    The build.rs refactor replaced regex with syn AST parsing, but the
+    code is still a 1000-line monolith mixing parsing, data types, and
+    generation. Extracting into a crate gives testability, isolation,
+    and extensibility. Each generator (manifest, WIT, adapter, pipeline
+    nodes) becomes its own module. The #[param()] attribute parsing is
+    the last remaining string-based piece — it should use a proper
+    syn::parse::Parse impl.
+  codebase_analysis: |
+    CURRENT STATE (crates/rasmcore-image/build.rs, ~1000 lines):
+    - Parse: syn-based filter/struct extraction (good, needs extraction)
+    - Types: FilterReg, SimpleReg, ParamField, ParsedStruct (inline structs)
+    - Gen: adapter code, pipeline nodes, WIT, manifest (all push_str)
+    - #[param(min=0, max=1)] still split via string manipulation
+
+    TARGET CRATE STRUCTURE:
+    crates/rasmcore-codegen/
+      Cargo.toml          — depends on syn, quote, serde, serde_json
+      src/lib.rs           — pub API
+      src/types.rs         — FilterReg, ParamField, SimpleReg, etc.
+      src/parse/mod.rs     — parse_filters(), parse_config_params()
+      src/parse/filters.rs — walk ItemFn for register_filter
+      src/parse/params.rs  — walk ItemStruct for ConfigParams
+      src/parse/param_attr.rs — syn::parse::Parse for #[param(...)]
+      src/gen/mod.rs       — GenerationContext
+      src/gen/manifest.rs  — param-manifest.json
+      src/gen/wit.rs       — WIT declarations
+      src/gen/adapter.rs   — Rust filter adapter
+      src/gen/pipeline.rs  — Pipeline node structs
+
+    BUILD.RS becomes ~50 lines:
+      use rasmcore_codegen::{parse, gen};
+      let filters = parse::filters(&filters_source);
+      let params = parse::config_params(&param_types_source, &filters_source);
+      gen::manifest(&filters, &params, &out_dir);
+      gen::adapter(&filters, &out_dir);
+      gen::pipeline_nodes(&filters, &out_dir);
+  acceptance_criteria:
+    - New crate rasmcore-codegen with parse/, types.rs, gen/ modules
+    - All parsing logic moved from build.rs to rasmcore-codegen::parse
+    - All type definitions moved to rasmcore-codegen::types
+    - All generation logic moved to rasmcore-codegen::gen
+    - "#[param(min = 0.0, max = 1.0, ...)]" fully parsed via syn::parse::Parse (no string splitting)
+    - build.rs reduced to thin orchestrator (~50 lines)
+    - Unit tests for parse module (parse known source snippets, verify structured output)
+    - Unit tests for gen module (give structured data, verify generated code)
+    - param-manifest.json output identical to pre-refactor
+    - All existing tests pass unchanged
+  out_of_scope: |
+    New generation targets (TypeScript SDK, etc.). Proc macro changes.
+    WIT auto-sync automation. Runtime behavior changes.
+  technical_notes: |
+    #[param(...)] FULL SYN PARSING:
+
+    Define a parseable struct:
+    ```rust
+    struct ParamAttr {
+        min: Option<syn::Lit>,
+        max: Option<syn::Lit>,
+        step: Option<syn::Lit>,
+        default: Option<syn::Lit>,
+        hint: Option<syn::LitStr>,
+    }
+
+    impl syn::parse::Parse for ParamAttr {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            // Parse comma-separated key = value pairs
+            // Each value is a syn::Lit (handles numbers, strings, bools)
+        }
+    }
+    ```
+
+    Then in the struct parser:
+    ```rust
+    let param_attr: ParamAttr = attr.parse_args()?;
+    ```
+
+    This replaces string splitting entirely — syn handles quoting,
+    escaping, number parsing, and error reporting.
+
+    CRATE DEPENDENCY:
+    rasmcore-codegen depends on: syn, quote, proc-macro2, serde, serde_json
+    rasmcore-image build-depends on: rasmcore-codegen
+    (removes syn/quote/proc-macro2 from rasmcore-image build-deps)
+plan:
+  - phase: Crate Scaffold
+    tasks:
+      - text: Create crates/rasmcore-codegen with Cargo.toml, src/lib.rs, src/types.rs
+        done: false
+      - text: Define FilterReg, SimpleReg, ParamField, ParsedStruct in types.rs
+        done: false
+      - text: Add rasmcore-codegen as build-dependency of rasmcore-image
+        done: false
+  - phase: Parse Module
+    tasks:
+      - text: Create parse/mod.rs, parse/filters.rs — move filter AST extraction
+        done: false
+      - text: Create parse/params.rs — move ConfigParams struct extraction
+        done: false
+      - text: Create parse/param_attr.rs — full syn::parse::Parse for #[param(...)]
+        done: false
+      - text: Unit tests for parse module (known source snippets)
+        done: false
+  - phase: Gen Module
+    tasks:
+      - text: Create gen/manifest.rs — param-manifest.json generation
+        done: false
+      - text: Create gen/adapter.rs — Rust filter adapter code generation
+        done: false
+      - text: Create gen/pipeline.rs — Pipeline node struct generation
+        done: false
+      - text: Create gen/wit.rs — WIT declaration generation
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Rewrite build.rs as thin orchestrator using rasmcore-codegen
+        done: false
+      - text: Verify param-manifest.json identical to pre-refactor
+        done: false
+      - text: Full cargo test pass
+        done: false
+extra: {}

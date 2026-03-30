@@ -147,8 +147,6 @@ build-hygiene_20260330114507Z: []
 
 codegen-build-rs-refactor_20260330120510Z: []
 
-# Parameter parity audit tracks — all independent
-param-parity-encoders_20260331000001Z: []
-param-parity-transforms_20260331000002Z: []
-param-parity-filters-core_20260331000003Z: []
-param-parity-compositors-grading_20260331000004Z: []
+codegen-crate-extract_20260331000001Z: []
+
+codegen-crate-extract_20260331000001Z: []
