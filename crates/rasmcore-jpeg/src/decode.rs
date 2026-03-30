@@ -131,6 +131,26 @@ impl HuffmanTable {
 
 /// Decode a JPEG byte stream to raw pixels.
 pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
+    jpeg_decode_impl(data, 1)
+}
+
+/// Decode a JPEG at reduced resolution. `scale_denom` = 1 (full), 2, 4, or 8.
+pub fn jpeg_decode_scaled(
+    data: &[u8],
+    scale_denom: u8,
+) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
+    if !matches!(scale_denom, 1 | 2 | 4 | 8) {
+        return Err(EncodeError::DecodeFailed(
+            "scale_denom must be 1, 2, 4, or 8".into(),
+        ));
+    }
+    jpeg_decode_impl(data, scale_denom)
+}
+
+fn jpeg_decode_impl(
+    data: &[u8],
+    scale_denom: u8,
+) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
     let mut pos;
 
     // Verify SOI
@@ -235,20 +255,37 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                     )?
                 } else {
                     let entropy_data = extract_entropy_data(data, &mut pos);
-                    decode_scan(
-                        &entropy_data,
-                        frm,
-                        &scan,
-                        &quant_tables,
-                        &dc_tables,
-                        &ac_tables,
-                        restart_interval,
-                        adobe_transform,
-                    )?
+                    if scale_denom > 1 {
+                        decode_scan_scaled(
+                            &entropy_data,
+                            frm,
+                            &scan,
+                            &quant_tables,
+                            &dc_tables,
+                            &ac_tables,
+                            restart_interval,
+                            adobe_transform,
+                            scale_denom,
+                        )?
+                    } else {
+                        decode_scan(
+                            &entropy_data,
+                            frm,
+                            &scan,
+                            &quant_tables,
+                            &dc_tables,
+                            &ac_tables,
+                            restart_interval,
+                            adobe_transform,
+                        )?
+                    }
                 };
 
                 let is_gray = frm.components.len() == 1;
-                return Ok((pixels, frm.width as u32, frm.height as u32, is_gray));
+                let sd = scale_denom as u32;
+                let out_w = (frm.width as u32 + sd - 1) / sd;
+                let out_h = (frm.height as u32 + sd - 1) / sd;
+                return Ok((pixels, out_w, out_h, is_gray));
             }
             // APP14 (Adobe) marker — detect CMYK/YCCK color transform
             0xEE => {
@@ -699,6 +736,158 @@ fn decode_scan(
     }
 
     planes_to_pixels(&planes, &plane_widths, frame, w, h, adobe_transform)
+}
+
+// ─── Scaled Decode (shrink-on-load) ──────────────────────────────────────────
+
+/// Decode a baseline JPEG scan at reduced resolution using DCT-domain downscaling.
+///
+/// `scale_denom` must be 2, 4, or 8. Each 8x8 DCT block produces a
+/// (8/scale)×(8/scale) output block, yielding an image at 1/scale resolution.
+fn decode_scan_scaled(
+    entropy_data: &[u8],
+    frame: &JpegFrame,
+    scan: &ScanHeader,
+    quant_tables: &[Option<[u16; 64]>; 4],
+    dc_tables: &[Option<HuffmanTable>; 4],
+    ac_tables: &[Option<HuffmanTable>; 4],
+    _restart_interval: u16,
+    adobe_transform: AdobeColorTransform,
+    scale_denom: u8,
+) -> Result<Vec<u8>, EncodeError> {
+    let block_size = (8 / scale_denom) as usize; // 4, 2, or 1
+    let w = frame.width as usize;
+    let h = frame.height as usize;
+    let out_w = (w + scale_denom as usize - 1) / scale_denom as usize;
+    let out_h = (h + scale_denom as usize - 1) / scale_denom as usize;
+    let is_gray = frame.components.len() == 1;
+
+    let (h_max, v_max) = if is_gray {
+        (1u8, 1u8)
+    } else {
+        let hm = frame.components.iter().map(|c| c.h_sampling).max().unwrap_or(1);
+        let vm = frame.components.iter().map(|c| c.v_sampling).max().unwrap_or(1);
+        (hm, vm)
+    };
+
+    let mcu_w = (h_max as usize) * 8;
+    let mcu_h = (v_max as usize) * 8;
+    let mcu_cols = (w + mcu_w - 1) / mcu_w;
+    let mcu_rows = (h + mcu_h - 1) / mcu_h;
+
+    let mut padded_data = entropy_data.to_vec();
+    padded_data.extend_from_slice(&[0x00; 32]);
+    let mut reader = BitReader::new(&padded_data, BitOrder::MsbFirst);
+    let mut dc_pred = vec![0i32; frame.components.len()];
+
+    // Scaled plane dimensions
+    let mut planes: Vec<Vec<i16>> = frame
+        .components
+        .iter()
+        .map(|c| {
+            let pw = mcu_cols * c.h_sampling as usize * block_size;
+            let ph = mcu_rows * c.v_sampling as usize * block_size;
+            vec![0i16; pw * ph]
+        })
+        .collect();
+
+    let plane_widths: Vec<usize> = frame
+        .components
+        .iter()
+        .map(|c| mcu_cols * c.h_sampling as usize * block_size)
+        .collect();
+
+    // Decode MCUs with scaled IDCT
+    for mcu_row in 0..mcu_rows {
+        for mcu_col in 0..mcu_cols {
+            for (ci, comp) in frame.components.iter().enumerate() {
+                let sel = &scan.component_selectors[ci];
+                let dc_table = dc_tables[sel.dc_table_id as usize]
+                    .as_ref()
+                    .ok_or_else(|| {
+                        EncodeError::DecodeFailed(format!("missing DC table {}", sel.dc_table_id))
+                    })?;
+                let ac_table = ac_tables[sel.ac_table_id as usize]
+                    .as_ref()
+                    .ok_or_else(|| {
+                        EncodeError::DecodeFailed(format!("missing AC table {}", sel.ac_table_id))
+                    })?;
+                let qt = quant_tables[comp.quant_table_id as usize]
+                    .as_ref()
+                    .ok_or_else(|| {
+                        EncodeError::DecodeFailed(format!(
+                            "missing quant table {}",
+                            comp.quant_table_id
+                        ))
+                    })?;
+
+                for v_block in 0..comp.v_sampling as usize {
+                    for h_block in 0..comp.h_sampling as usize {
+                        // Decode one 8x8 block (entropy coding is always 8x8)
+                        let mut coeffs = [0i16; 64];
+                        decode_block(
+                            &mut reader,
+                            dc_table,
+                            ac_table,
+                            &mut dc_pred[ci],
+                            &mut coeffs,
+                        )?;
+
+                        // Dequantize
+                        let mut dequant = [0i32; 64];
+                        quantize::dequantize(&coeffs, qt, &mut dequant);
+
+                        // Scaled IDCT → reduced block
+                        let block_x =
+                            mcu_col * comp.h_sampling as usize * block_size + h_block * block_size;
+                        let block_y =
+                            mcu_row * comp.v_sampling as usize * block_size + v_block * block_size;
+                        let pw = plane_widths[ci];
+
+                        match scale_denom {
+                            2 => {
+                                let mut spatial = [0i16; 16];
+                                dct::inverse_dct_half(&dequant, &mut spatial);
+                                for row in 0..4 {
+                                    for col in 0..4 {
+                                        let py = block_y + row;
+                                        let px = block_x + col;
+                                        if py < planes[ci].len() / pw && px < pw {
+                                            planes[ci][py * pw + px] =
+                                                spatial[row * 4 + col];
+                                        }
+                                    }
+                                }
+                            }
+                            4 => {
+                                let mut spatial = [0i16; 4];
+                                dct::inverse_dct_quarter(&dequant, &mut spatial);
+                                for row in 0..2 {
+                                    for col in 0..2 {
+                                        let py = block_y + row;
+                                        let px = block_x + col;
+                                        if py < planes[ci].len() / pw && px < pw {
+                                            planes[ci][py * pw + px] =
+                                                spatial[row * 2 + col];
+                                        }
+                                    }
+                                }
+                            }
+                            8 => {
+                                let pixel = dct::inverse_dct_eighth(&dequant);
+                                if block_y < planes[ci].len() / pw && block_x < pw {
+                                    planes[ci][block_y * pw + block_x] = pixel as i16;
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    planes_to_pixels(&planes, &plane_widths, frame, out_w, out_h, adobe_transform)
 }
 
 // ─── Planes to Pixels (shared output conversion) ──────────────────────────
