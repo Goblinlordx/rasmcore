@@ -5,87 +5,126 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add tilt-shift blur (selective focus with graduated blur band) and lens blur
+  summary: 'Add tilt-shift blur (selective focus with graduated blur band) and lens blur
+
     (depth-of-field simulation with disc/polygon bokeh kernel). Two creative blur
+
     effects present in PS and IM but missing from our spatial filter set.
-  context: |
-    Tilt-shift creates a miniature/diorama effect by keeping a horizontal or
+
+    '
+  context: 'Tilt-shift creates a miniature/diorama effect by keeping a horizontal or
+
     vertical band in focus while progressively blurring above and below.
+
     Lens blur simulates camera depth-of-field with a shaped bokeh kernel
+
     (circular disc or polygon) rather than Gaussian. We have bokeh_blur
+
     (basic disc kernel) but not the full lens blur with depth map support,
+
     and no tilt-shift at all.
-  codebase_analysis: |
-    EXISTING BLUR FILTERS:
+
+    '
+  codebase_analysis: 'EXISTING BLUR FILTERS:
+
     - blur (Gaussian, SIMD) — uniform blur
+
     - bokeh_blur — circular disc kernel, registered
+
     - motion_blur — directional linear, registered
+
     - zoom_blur — radial toward center, registered
+
     - spin_blur — rotational around center, registered
 
+
     TILT-SHIFT APPROACH:
+
     - Generate a blur mask (gradient: full blur at top/bottom, zero at focus band)
+
     - For each pixel: output = lerp(original, blurred, mask_value)
+
     - Parameters: focus_y (center of sharp band), band_height, blur_radius
+
     - Can reuse existing Gaussian blur for the blurred version
 
+
     LENS BLUR APPROACH:
+
     - Convolve with shaped kernel (disc, hexagon, octagon)
+
     - bokeh_blur exists but uses simple disc; extend with polygon shapes
+
     - Optional depth map: vary kernel size per pixel based on depth
+
     - PS Lens Blur parameters: radius, blade_count (polygon sides), rotation
+
+    '
   acceptance_criteria:
-    - tilt_shift registered with focus_position (0-1), band_size (0-1), blur_radius, angle
-    - Sharp band preserved exactly (no blur in focus region)
-    - Gradual falloff from sharp to blurred at band edges
-    - lens_blur registered with radius, blade_count (0=disc, 5-8=polygon), rotation
-    - lens_blur with blade_count=0 matches bokeh_blur output
-    - Both support RGB8 and RGBA8
-    - IM parity for tilt_shift vs graduated blur composite (ALGORITHM tier)
-    - Test identity when blur_radius=0
-  out_of_scope: |
-    Depth map input for tilt-shift (separate concern).
+  - tilt_shift registered with focus_position (0-1), band_size (0-1), blur_radius, angle
+  - Sharp band preserved exactly (no blur in focus region)
+  - Gradual falloff from sharp to blurred at band edges
+  - lens_blur registered with radius, blade_count (0=disc, 5-8=polygon), rotation
+  - lens_blur with blade_count=0 matches bokeh_blur output
+  - Both support RGB8 and RGBA8
+  - IM parity for tilt_shift vs graduated blur composite (ALGORITHM tier)
+  - Test identity when blur_radius=0
+  out_of_scope: 'Depth map input for tilt-shift (separate concern).
+
     Iris blur (elliptical focus region). Path-based blur.
+
     Real-time preview / interactive adjustment.
-  technical_notes: |
-    TILT SHIFT:
+
+    '
+  technical_notes: 'TILT SHIFT:
+
     - blur_mask[y] = smoothstep(distance_from_focus_band / transition_width)
+
     - Apply Gaussian blur at max_radius to get fully_blurred version
+
     - output[x,y] = lerp(original[x,y], blurred[x,y], blur_mask[y])
+
     - angle param rotates the focus band orientation
 
+
     LENS BLUR:
+
     - Generate kernel: disc (filled circle) or regular polygon (N sides)
+
     - For polygon: blade_count sides, rotated by rotation degrees
+
     - Normalize kernel weights to sum to 1.0
+
     - Convolve image with shaped kernel (reuse convolve infrastructure)
+
     - SIMD: kernel is separable only for disc; polygon requires full 2D convolve
+
+    '
 plan:
-  - phase: Tilt-Shift
-    tasks:
-      - text: Implement tilt_shift with graduated blur mask and Gaussian blur
-        done: false
-      - text: Support horizontal, vertical, and angled focus band orientation
-        done: false
-      - text: Register with ConfigParams (focus_position, band_size, blur_radius, angle)
-        done: false
-      - text: Test sharp band preservation and gradual falloff
-        done: false
-  - phase: Lens Blur
-    tasks:
-      - text: Implement polygon kernel generator (disc for 0 sides, regular polygon for N)
-        done: false
-      - text: Implement lens_blur convolution with shaped kernel
-        done: false
-      - text: Register with ConfigParams (radius, blade_count, rotation)
-        done: false
-      - text: Test disc mode matches bokeh_blur, polygon produces shaped highlights
-        done: false
-  - phase: Verification
-    tasks:
-      - text: IM parity test for tilt_shift (ALGORITHM tier)
-        done: false
-      - text: Both in param-manifest.json, cargo test pass
-        done: false
+- phase: Tilt-Shift
+  tasks:
+  - text: Implement tilt_shift with graduated blur mask and Gaussian blur
+    done: true
+  - text: Support horizontal, vertical, and angled focus band orientation
+    done: true
+  - text: Register with ConfigParams (focus_position, band_size, blur_radius, angle)
+    done: true
+  - text: Test sharp band preservation and gradual falloff
+    done: true
+- phase: Lens Blur
+  tasks:
+  - text: Implement polygon kernel generator (disc for 0 sides, regular polygon for N)
+    done: true
+  - text: Implement lens_blur convolution with shaped kernel
+    done: true
+  - text: Register with ConfigParams (radius, blade_count, rotation)
+    done: true
+  - text: Test disc mode matches bokeh_blur, polygon produces shaped highlights
+    done: true
+- phase: Verification
+  tasks:
+  - text: IM parity test for tilt_shift (ALGORITHM tier)
+    done: true
+  - text: Both in param-manifest.json, cargo test pass
+    done: true
 extra: {}
