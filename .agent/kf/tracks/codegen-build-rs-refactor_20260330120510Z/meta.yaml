@@ -1,5 +1,5 @@
 title: Refactor build.rs — Replace Regex Parsing with syn AST
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-30'

@@ -5,130 +5,100 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Replace fragile regex-based filter parsing in build.rs with syn AST
+  summary: 'Replace fragile regex-based filter parsing in build.rs with syn AST
+
     parsing. Fix param-manifest.json generation to use serde_json. Remove
+
     dead codegen. Automate WIT filter declaration sync.
-  context: |
-    The build.rs script parses filters.rs using regex/string matching to
+
+    '
+  context: 'The build.rs script parses filters.rs using regex/string matching to
+
     extract filter registrations, ConfigParams structs, and function
+
     signatures. This is fragile: it breaks on comments in wrong places,
+
     complex types, multi-line signatures, and formatting changes. Meanwhile,
+
     the proc macros (rasmcore-macros) already use syn+quote correctly. The
+
     build.rs should use the same approach.
 
+
     Additionally:
+
     - param-manifest.json is built with string concatenation instead of serde_json
+
     - A generated adapter file (generated_filter_adapter.rs) is never included
+
     - WIT filter declarations are printed to stderr for manual copy — no automation
-  codebase_analysis: |
-    BUILD.RS FRAGILITIES (crates/rasmcore-image/build.rs):
-    1. Filter detection: regex on "register_filter(" with "name" in line
-       - Breaks if attribute spans lines, or if "name" appears in comments
-    2. Function sig extraction: string splitting on commas
-       - Breaks on generic types like HashMap<K, V> or tuple params
-    3. ConfigParams parsing: "derive" && "ConfigParams" string match
-       - Breaks if struct uses non-standard formatting
-    4. JSON building: format!() + push_str concatenation
-       - Prone to missing quotes, bad escaping, malformed output
-    5. Type mapping: hardcoded match on type name strings
-       - No exhaustive handling, silent fallthrough
 
-    PROC MACROS (crates/rasmcore-macros/src/lib.rs):
-    - Already use syn::parse for AST parsing — CORRECT approach
-    - quote! for code generation — CORRECT approach
-    - These should NOT be changed
-
-    DEAD CODE:
-    - generated_filter_adapter.rs is written to OUT_DIR but never included
-    - WIT stderr output is not consumed by any automation
-
-    KEY INSIGHT: syn can parse a full Rust file as syn::File, then walk
-    the AST to find #[register_filter] attributes on functions. This is
-    the same thing the proc macro does, but at the file level.
+    '
+  codebase_analysis: "BUILD.RS FRAGILITIES (crates/rasmcore-image/build.rs):\n1. Filter detection: regex on \"register_filter(\"\
+    \ with \"name\" in line\n   - Breaks if attribute spans lines, or if \"name\" appears in comments\n2. Function sig extraction:\
+    \ string splitting on commas\n   - Breaks on generic types like HashMap<K, V> or tuple params\n3. ConfigParams parsing:\
+    \ \"derive\" && \"ConfigParams\" string match\n   - Breaks if struct uses non-standard formatting\n4. JSON building: format!()\
+    \ + push_str concatenation\n   - Prone to missing quotes, bad escaping, malformed output\n5. Type mapping: hardcoded match\
+    \ on type name strings\n   - No exhaustive handling, silent fallthrough\n\nPROC MACROS (crates/rasmcore-macros/src/lib.rs):\n\
+    - Already use syn::parse for AST parsing — CORRECT approach\n- quote! for code generation — CORRECT approach\n- These\
+    \ should NOT be changed\n\nDEAD CODE:\n- generated_filter_adapter.rs is written to OUT_DIR but never included\n- WIT stderr\
+    \ output is not consumed by any automation\n\nKEY INSIGHT: syn can parse a full Rust file as syn::File, then walk\nthe\
+    \ AST to find #[register_filter] attributes on functions. This is\nthe same thing the proc macro does, but at the file\
+    \ level.\n"
   acceptance_criteria:
-    - build.rs uses syn::parse_file() to parse filters.rs as AST
-    - Filter registrations extracted by walking syn::ItemFn with matching attributes
-    - ConfigParams structs extracted by walking syn::ItemStruct with matching derives
-    - param-manifest.json generated via serde_json::to_string_pretty()
-    - Dead codegen removed (generated_filter_adapter.rs, stderr WIT output)
-    - All 113+ filters still appear in param-manifest.json after rebuild
-    - No functional changes to runtime behavior
-    - Build still completes in reasonable time (syn parse adds ~200ms)
-    - Existing tests pass unchanged
-  out_of_scope: |
-    Proc macro changes (already correct). New filter registration features.
+  - build.rs uses syn::parse_file() to parse filters.rs as AST
+  - Filter registrations extracted by walking syn::ItemFn with matching attributes
+  - ConfigParams structs extracted by walking syn::ItemStruct with matching derives
+  - param-manifest.json generated via serde_json::to_string_pretty()
+  - Dead codegen removed (generated_filter_adapter.rs, stderr WIT output)
+  - All 113+ filters still appear in param-manifest.json after rebuild
+  - No functional changes to runtime behavior
+  - Build still completes in reasonable time (syn parse adds ~200ms)
+  - Existing tests pass unchanged
+  out_of_scope: 'Proc macro changes (already correct). New filter registration features.
+
     WIT auto-generation pipeline (separate track if needed). Runtime changes.
-  technical_notes: |
-    APPROACH:
 
-    1. Add syn and serde_json as build-dependencies:
-       [build-dependencies]
-       syn = { version = "2", features = ["full", "parsing"] }
-       serde_json = "1"
-       serde = { version = "1", features = ["derive"] }
-
-    2. Parse filters.rs as AST:
-       let source = std::fs::read_to_string("src/domain/filters.rs")?;
-       let file = syn::parse_file(&source)?;
-
-    3. Walk the AST to find registered filters:
-       for item in &file.items {
-           if let syn::Item::Fn(func) = item {
-               for attr in &func.attrs {
-                   if attr.path().is_ident("rasmcore_macros") || ... {
-                       // Extract name, category from attribute args
-                       // Extract params from func.sig.inputs
-                   }
-               }
-           }
-       }
-
-    4. Walk AST to find ConfigParams structs:
-       if let syn::Item::Struct(s) = item {
-           for attr in &s.attrs {
-               if is_derive_config_params(attr) {
-                   // Extract fields, #[param(...)] attributes
-               }
-           }
-       }
-
-    5. Build manifest with serde:
-       #[derive(Serialize)]
-       struct FilterManifest { filters: Vec<FilterEntry> }
-       let json = serde_json::to_string_pretty(&manifest)?;
-
-    BUILD TIME IMPACT:
-    - syn parse of ~12K line file: ~100-200ms
-    - Acceptable for build.rs (runs once per build, not per compilation unit)
-    - Much less than proc macro compilation overhead we already pay
+    '
+  technical_notes: "APPROACH:\n\n1. Add syn and serde_json as build-dependencies:\n   [build-dependencies]\n   syn = { version\
+    \ = \"2\", features = [\"full\", \"parsing\"] }\n   serde_json = \"1\"\n   serde = { version = \"1\", features = [\"derive\"\
+    ] }\n\n2. Parse filters.rs as AST:\n   let source = std::fs::read_to_string(\"src/domain/filters.rs\")?;\n   let file\
+    \ = syn::parse_file(&source)?;\n\n3. Walk the AST to find registered filters:\n   for item in &file.items {\n       if\
+    \ let syn::Item::Fn(func) = item {\n           for attr in &func.attrs {\n               if attr.path().is_ident(\"rasmcore_macros\"\
+    ) || ... {\n                   // Extract name, category from attribute args\n                   // Extract params from\
+    \ func.sig.inputs\n               }\n           }\n       }\n   }\n\n4. Walk AST to find ConfigParams structs:\n   if\
+    \ let syn::Item::Struct(s) = item {\n       for attr in &s.attrs {\n           if is_derive_config_params(attr) {\n  \
+    \             // Extract fields, #[param(...)] attributes\n           }\n       }\n   }\n\n5. Build manifest with serde:\n\
+    \   #[derive(Serialize)]\n   struct FilterManifest { filters: Vec<FilterEntry> }\n   let json = serde_json::to_string_pretty(&manifest)?;\n\
+    \nBUILD TIME IMPACT:\n- syn parse of ~12K line file: ~100-200ms\n- Acceptable for build.rs (runs once per build, not per\
+    \ compilation unit)\n- Much less than proc macro compilation overhead we already pay\n"
 plan:
-  - phase: Foundation
-    tasks:
-      - text: Add syn, serde, serde_json as build-dependencies in Cargo.toml
-        done: false
-      - text: Create FilterEntry and ParamEntry serde structs for manifest
-        done: false
-  - phase: AST-Based Parsing
-    tasks:
-      - text: Replace regex filter detection with syn::parse_file + AST walk
-        done: false
-      - text: Extract filter name/category from attribute arguments via syn
-        done: false
-      - text: Extract function parameters from syn::FnArg with proper type handling
-        done: false
-      - text: Extract ConfigParams structs and #[param] field attributes via syn
-        done: false
-  - phase: Manifest Generation
-    tasks:
-      - text: Replace string concatenation JSON with serde_json serialization
-        done: false
-      - text: Remove dead codegen (generated_filter_adapter.rs, stderr WIT output)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify param-manifest.json output matches previous output (diff test)
-        done: false
-      - text: Full cargo test pass, all 113+ filters still registered
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Add syn, serde, serde_json as build-dependencies in Cargo.toml
+    done: true
+  - text: Create FilterEntry and ParamEntry serde structs for manifest
+    done: true
+- phase: AST-Based Parsing
+  tasks:
+  - text: Replace regex filter detection with syn::parse_file + AST walk
+    done: true
+  - text: Extract filter name/category from attribute arguments via syn
+    done: true
+  - text: Extract function parameters from syn::FnArg with proper type handling
+    done: true
+  - text: Extract ConfigParams structs and
+    done: true
+- phase: Manifest Generation
+  tasks:
+  - text: Replace string concatenation JSON with serde_json serialization
+    done: true
+  - text: Remove dead codegen (generated_filter_adapter.rs, stderr WIT output)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify param-manifest.json output matches previous output (diff test)
+    done: true
+  - text: Full cargo test pass, all 113+ filters still registered
+    done: true
 extra: {}
