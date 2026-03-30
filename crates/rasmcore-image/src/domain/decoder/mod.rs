@@ -2092,4 +2092,161 @@ mod tests {
     fn supported_formats_includes_svg() {
         assert!(SUPPORTED_FORMATS.contains(&"svg"));
     }
+
+    // ─── Multi-Frame Tests ────────────────────────────────────────────────
+
+    /// Build a 3-frame animated GIF (4x4 pixels, different colors per frame).
+    fn make_animated_gif() -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut encoder = gif::Encoder::new(&mut buf, 4, 4, &[]).unwrap();
+            encoder.set_repeat(gif::Repeat::Infinite).unwrap();
+            let colors: [[u8; 3]; 3] = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
+            for (i, color) in colors.iter().enumerate() {
+                let mut pixels: Vec<u8> = Vec::with_capacity(4 * 4 * 4);
+                for _ in 0..16 {
+                    pixels.extend_from_slice(&[color[0], color[1], color[2], 255]);
+                }
+                let mut frame = gif::Frame::from_rgba(4, 4, &mut pixels);
+                frame.delay = (i as u16 + 1) * 10; // 100ms, 200ms, 300ms
+                encoder.write_frame(&frame).unwrap();
+            }
+        }
+        buf
+    }
+
+    /// Build a 2-page TIFF (4x4 RGB8, different fill colors).
+    fn make_multipage_tiff() -> Vec<u8> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut encoder = tiff::encoder::TiffEncoder::new(&mut buf).unwrap();
+            // Page 1: red
+            let red: Vec<u8> = (0..16).flat_map(|_| [255u8, 0, 0]).collect();
+            encoder
+                .write_image::<tiff::encoder::colortype::RGB8>(4, 4, &red)
+                .unwrap();
+            // Page 2: blue
+            let blue: Vec<u8> = (0..16).flat_map(|_| [0u8, 0, 255]).collect();
+            encoder
+                .write_image::<tiff::encoder::colortype::RGB8>(4, 4, &blue)
+                .unwrap();
+        }
+        buf.into_inner()
+    }
+
+    #[test]
+    fn gif_frame_count_animated() {
+        let data = make_animated_gif();
+        assert_eq!(frame_count(&data).unwrap(), 3);
+    }
+
+    #[test]
+    fn gif_decode_frame_metadata() {
+        let data = make_animated_gif();
+        let (img, info) = decode_frame(&data, 0).unwrap();
+        assert_eq!(img.info.width, 4);
+        assert_eq!(img.info.height, 4);
+        assert_eq!(img.info.format, PixelFormat::Rgba8);
+        assert_eq!(info.index, 0);
+        assert_eq!(info.delay_ms, 100);
+        // First pixel of frame 0 should be red
+        assert_eq!(img.pixels[0], 255);
+        assert_eq!(img.pixels[1], 0);
+        assert_eq!(img.pixels[2], 0);
+    }
+
+    #[test]
+    fn gif_decode_frame_1_green() {
+        let data = make_animated_gif();
+        let (img, info) = decode_frame(&data, 1).unwrap();
+        assert_eq!(info.index, 1);
+        assert_eq!(info.delay_ms, 200);
+        // First pixel of frame 1 should be green
+        assert_eq!(img.pixels[0], 0);
+        assert_eq!(img.pixels[1], 255);
+        assert_eq!(img.pixels[2], 0);
+    }
+
+    #[test]
+    fn gif_decode_frame_out_of_range() {
+        let data = make_animated_gif();
+        assert!(decode_frame(&data, 5).is_err());
+    }
+
+    #[test]
+    fn gif_decode_all_frames() {
+        let data = make_animated_gif();
+        let frames = decode_all_frames(&data).unwrap();
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[2].1.delay_ms, 300);
+    }
+
+    #[test]
+    fn tiff_page_count_multipage() {
+        let data = make_multipage_tiff();
+        assert_eq!(frame_count(&data).unwrap(), 2);
+    }
+
+    #[test]
+    fn tiff_decode_frame_page0_red() {
+        let data = make_multipage_tiff();
+        let (img, info) = decode_frame(&data, 0).unwrap();
+        assert_eq!(img.info.width, 4);
+        assert_eq!(img.info.format, PixelFormat::Rgb8);
+        assert_eq!(info.index, 0);
+        assert_eq!(info.delay_ms, 0);
+        // Red page
+        assert_eq!(img.pixels[0], 255);
+        assert_eq!(img.pixels[1], 0);
+        assert_eq!(img.pixels[2], 0);
+    }
+
+    #[test]
+    fn tiff_decode_frame_page1_blue() {
+        let data = make_multipage_tiff();
+        let (img, info) = decode_frame(&data, 1).unwrap();
+        assert_eq!(info.index, 1);
+        // Blue page
+        assert_eq!(img.pixels[0], 0);
+        assert_eq!(img.pixels[1], 0);
+        assert_eq!(img.pixels[2], 255);
+    }
+
+    #[test]
+    fn tiff_decode_frame_out_of_range() {
+        let data = make_multipage_tiff();
+        assert!(decode_frame(&data, 5).is_err());
+    }
+
+    #[test]
+    fn single_frame_png_frame_count_is_1() {
+        let data = make_png(8, 8);
+        assert_eq!(frame_count(&data).unwrap(), 1);
+    }
+
+    #[test]
+    fn single_frame_png_decode_frame_0() {
+        let data = make_png(8, 8);
+        let (img, info) = decode_frame(&data, 0).unwrap();
+        assert_eq!(img.info.width, 8);
+        assert_eq!(info.index, 0);
+        assert_eq!(info.delay_ms, 0);
+    }
+
+    #[test]
+    fn single_frame_png_decode_frame_1_errors() {
+        let data = make_png(8, 8);
+        assert!(decode_frame(&data, 1).is_err());
+    }
+
+    #[test]
+    fn backward_compat_decode_still_returns_first_frame() {
+        let gif_data = make_animated_gif();
+        let single = decode(&gif_data).unwrap();
+        let (frame0, _) = decode_frame(&gif_data, 0).unwrap();
+        // Both should produce the same first-frame image
+        assert_eq!(single.info.width, frame0.info.width);
+        assert_eq!(single.info.height, frame0.info.height);
+        assert_eq!(single.pixels, frame0.pixels);
+    }
 }
