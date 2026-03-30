@@ -2145,13 +2145,28 @@ fn property_zoom_blur_uniform() {
 
 #[test]
 fn reference_audit_summary() {
-    if !magick_available() {
-        eprintln!("\n=== REFERENCE AUDIT SUMMARY ===");
-        eprintln!("ImageMagick not available — all reference tests skipped.");
-        eprintln!("Install via: brew install imagemagick");
-        return;
-    }
     eprintln!("\n=== REFERENCE AUDIT SUMMARY ===");
+    if !magick_available() {
+        eprintln!("ImageMagick not available — IM parity tests skipped.");
+        eprintln!("Install via: brew install imagemagick");
+    }
     eprintln!("See REFERENCE.md for the full operation reference table.");
-    eprintln!("All tested operations compared against ImageMagick 7.");
+    eprintln!();
+    eprintln!("Coverage: 63 reference/property tests across these categories:");
+    eprintln!("  EXACT tier (MAE < 0.01):   invert, threshold, posterize, flatten, pad,");
+    eprintln!("    solarize, emboss, pixelate, swirl, rank_min, rank_max, channel_mixer,");
+    eprintln!("    levels, sigmoidal_contrast, split_toning");
+    eprintln!("  DETERMINISTIC (MAE < 2.0): gamma, brightness, contrast, ASC CDL,");
+    eprintln!("    lift/gamma/gain, curves");
+    eprintln!("  ALGORITHM (MAE < 15.0):    blur, median, equalize, normalize, auto_level,");
+    eprintln!("    hue_rotate, saturate, rotate, trim, barrel, kuwahara, charcoal,");
+    eprintln!("    oil_paint, motion_blur, erode, dilate, gaussian_blur_cv, shadow/highlight");
+    eprintln!("  Property tests:            vibrance, bilateral, frequency_high, zoom_blur,");
+    eprintln!("    adaptive_threshold, canny, perspective_warp");
+    eprintln!();
+    eprintln!("Not yet validated against external reference:");
+    eprintln!("  bokeh_blur, nlm_denoise, dehaze, clarity, pyramid_detail_remap,");
+    eprintln!("  vignette, vignette_powerlaw, retinex_ssr/msr/msrcr, flood_fill,");
+    eprintln!("  perlin_noise, simplex_noise, draw_*, threshold_binary,");
+    eprintln!("  premultiply/unpremultiply, convolve (custom kernel)");
 }
