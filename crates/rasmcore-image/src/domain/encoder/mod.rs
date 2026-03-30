@@ -125,8 +125,8 @@ pub fn encode(
 
 /// Encode a FrameSequence to a multi-frame format (convenience wrapper).
 ///
-/// Dispatches to format-specific multi-frame encoders. Only GIF and TIFF
-/// support multi-frame encoding; all other formats return an error.
+/// Dispatches to format-specific multi-frame encoders. Supports GIF, TIFF,
+/// and APNG (animated PNG). All other formats return an error.
 pub fn encode_sequence(
     seq: &FrameSequence,
     format: &str,
@@ -142,10 +142,14 @@ pub fn encode_sequence(
             let config = tiff::TiffEncodeConfig::default();
             tiff::encode_pages(seq, &config)
         }
+        "png" | "apng" => {
+            let config = png::PngEncodeConfig::default();
+            png::encode_sequence(seq, &config)
+        }
         "webp" => Err(ImageError::UnsupportedFormat(
             "animated WebP encode is not supported (image-webp crate limitation)".into(),
         )),
-        "jpeg" | "jpg" | "png" | "avif" | "heic" | "heif" | "bmp" | "ico" | "qoi" | "tga"
+        "jpeg" | "jpg" | "avif" | "heic" | "heif" | "bmp" | "ico" | "qoi" | "tga"
         | "hdr" | "pnm" | "exr" | "dds" | "jp2" => Err(ImageError::UnsupportedFormat(format!(
             "format '{format}' does not support multi-frame encoding"
         ))),

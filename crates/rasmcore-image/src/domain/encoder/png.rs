@@ -1,5 +1,7 @@
 use crate::domain::error::ImageError;
-use crate::domain::types::{ImageInfo, PixelFormat};
+use crate::domain::types::{
+    DisposalMethod, FrameSequence, ImageInfo, PixelFormat,
+};
 
 /// PNG filter type selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -105,6 +107,94 @@ pub fn encode(
             writer
                 .write_image_data(pixels)
                 .map_err(|e| ImageError::ProcessingFailed(format!("PNG: {e}")))?;
+        }
+    }
+    Ok(buf)
+}
+
+/// Encode a FrameSequence to APNG (animated PNG).
+///
+/// All frames are encoded as RGBA8 at 8-bit depth. Per-frame delay, disposal,
+/// and offset metadata from FrameInfo is preserved in fcTL chunks.
+pub fn encode_sequence(
+    seq: &FrameSequence,
+    config: &PngEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
+    if seq.is_empty() {
+        return Err(ImageError::InvalidInput(
+            "cannot encode empty frame sequence as APNG".into(),
+        ));
+    }
+
+    let num_frames = seq.frames.len() as u32;
+    let mut buf = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut buf, seq.canvas_width, seq.canvas_height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(map_compression(config.compression_level));
+        encoder.set_filter(map_filter(config.filter_type));
+        encoder.set_adaptive_filter(map_adaptive(config.filter_type));
+        encoder
+            .set_animated(num_frames, 0)
+            .map_err(|e| ImageError::ProcessingFailed(format!("APNG: {e}")))?;
+
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| ImageError::ProcessingFailed(format!("APNG: {e}")))?;
+
+        for (image, frame_info) in &seq.frames {
+            // Convert to RGBA8 for uniform encoding
+            let rgba = match image.info.format {
+                PixelFormat::Rgba8 => image.pixels.clone(),
+                PixelFormat::Rgb8 => image
+                    .pixels
+                    .chunks_exact(3)
+                    .flat_map(|c| [c[0], c[1], c[2], 255])
+                    .collect(),
+                PixelFormat::Gray8 => image
+                    .pixels
+                    .iter()
+                    .flat_map(|&g| [g, g, g, 255])
+                    .collect(),
+                _ => {
+                    return Err(ImageError::UnsupportedFormat(
+                        "APNG encode requires RGB8, RGBA8, or Gray8 frames".into(),
+                    ));
+                }
+            };
+
+            // Set per-frame metadata
+            let delay_num = frame_info.delay_ms as u16;
+            let delay_den = 1000u16;
+            writer
+                .set_frame_delay(delay_num, delay_den)
+                .map_err(|e| ImageError::ProcessingFailed(format!("APNG frame delay: {e}")))?;
+
+            writer
+                .set_frame_dimension(frame_info.width, frame_info.height)
+                .map_err(|e| ImageError::ProcessingFailed(format!("APNG frame dim: {e}")))?;
+
+            writer
+                .set_frame_position(frame_info.x_offset, frame_info.y_offset)
+                .map_err(|e| ImageError::ProcessingFailed(format!("APNG frame pos: {e}")))?;
+
+            let dispose_op = match frame_info.disposal {
+                DisposalMethod::None => png::DisposeOp::None,
+                DisposalMethod::Background => png::DisposeOp::Background,
+                DisposalMethod::Previous => png::DisposeOp::Previous,
+            };
+            writer
+                .set_dispose_op(dispose_op)
+                .map_err(|e| ImageError::ProcessingFailed(format!("APNG dispose: {e}")))?;
+
+            writer
+                .set_blend_op(png::BlendOp::Source)
+                .map_err(|e| ImageError::ProcessingFailed(format!("APNG blend: {e}")))?;
+
+            writer
+                .write_image_data(&rgba)
+                .map_err(|e| ImageError::ProcessingFailed(format!("APNG frame data: {e}")))?;
         }
     }
     Ok(buf)
@@ -448,5 +538,101 @@ mod tests {
             result1, result2,
             "encoding same input twice must produce byte-identical output"
         );
+    }
+
+    // ─── APNG Encode Tests ─────────────────────────────────────────────
+
+    fn make_test_frame_sequence() -> FrameSequence {
+        use crate::domain::types::{ColorSpace, DecodedImage, FrameInfo};
+        let mut seq = FrameSequence::new(4, 4);
+        let colors: [[u8; 4]; 3] = [
+            [255, 0, 0, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+        ];
+        for (i, color) in colors.iter().enumerate() {
+            let pixels: Vec<u8> = (0..16).flat_map(|_| *color).collect();
+            seq.push(
+                DecodedImage {
+                    pixels,
+                    info: ImageInfo {
+                        width: 4,
+                        height: 4,
+                        format: PixelFormat::Rgba8,
+                        color_space: ColorSpace::Srgb,
+                    },
+                    icc_profile: None,
+                },
+                FrameInfo {
+                    index: i as u32,
+                    delay_ms: 100,
+                    disposal: DisposalMethod::None,
+                    width: 4,
+                    height: 4,
+                    x_offset: 0,
+                    y_offset: 0,
+                },
+            );
+        }
+        seq
+    }
+
+    #[test]
+    fn apng_encode_produces_valid_output() {
+        let seq = make_test_frame_sequence();
+        let config = PngEncodeConfig::default();
+        let data = encode_sequence(&seq, &config).unwrap();
+        // Should start with PNG signature
+        assert_eq!(&data[..4], &[0x89, 0x50, 0x4E, 0x47]);
+        // Decoding should find 3 frames
+        let count = crate::domain::decoder::frame_count(&data).unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn apng_roundtrip_frame_count_preserved() {
+        let seq = make_test_frame_sequence();
+        let config = PngEncodeConfig::default();
+        let encoded = encode_sequence(&seq, &config).unwrap();
+        let frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
+        assert_eq!(frames.len(), 3);
+    }
+
+    #[test]
+    fn apng_roundtrip_delay_preserved() {
+        let seq = make_test_frame_sequence();
+        let config = PngEncodeConfig::default();
+        let encoded = encode_sequence(&seq, &config).unwrap();
+        let frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
+        for (_, info) in &frames {
+            assert_eq!(info.delay_ms, 100);
+        }
+    }
+
+    #[test]
+    fn apng_roundtrip_pixels_preserved() {
+        let seq = make_test_frame_sequence();
+        let config = PngEncodeConfig::default();
+        let encoded = encode_sequence(&seq, &config).unwrap();
+        let frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
+        // Frame 0: red
+        assert_eq!(frames[0].0.pixels[0], 255); // R
+        assert_eq!(frames[0].0.pixels[1], 0);   // G
+        assert_eq!(frames[0].0.pixels[2], 0);   // B
+        // Frame 1: green
+        assert_eq!(frames[1].0.pixels[0], 0);
+        assert_eq!(frames[1].0.pixels[1], 255);
+        assert_eq!(frames[1].0.pixels[2], 0);
+        // Frame 2: blue
+        assert_eq!(frames[2].0.pixels[0], 0);
+        assert_eq!(frames[2].0.pixels[1], 0);
+        assert_eq!(frames[2].0.pixels[2], 255);
+    }
+
+    #[test]
+    fn apng_encode_empty_sequence_errors() {
+        let seq = FrameSequence::new(4, 4);
+        let config = PngEncodeConfig::default();
+        assert!(encode_sequence(&seq, &config).is_err());
     }
 }
