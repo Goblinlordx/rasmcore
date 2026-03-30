@@ -105,11 +105,11 @@ plan:
 - phase: Enable native trivial codecs and drop image features
   tasks:
   - text: Add native-trivial to default features in Cargo.toml
-    done: false
+    done: true
   - text: Drop bmp, qoi, tga, pnm from image features
-    done: false
+    done: true
   - text: Verify all parity tests still pass without image features
-    done: false
+    done: true
 - phase: JPEG decode coverage audit and swap
   tasks:
   - text: 'JPEG decode coverage audit: compare rasmcore-jpeg decode vs image/zune-jpeg (progressive, CMYK, 12-bit, restart
@@ -149,9 +149,9 @@ plan:
 - phase: Drop AVIF and TIFF from image
   tasks:
   - text: Remove AVIF encode/decode paths (return UnsupportedFormat), drop avif feature
-    done: false
+    done: true
   - text: Drop tiff from image features (already using tiff crate directly)
-    done: false
+    done: true
 - phase: Cleanup and verification
   tasks:
   - text: 'Update image features to only: webp, dds, exr, ico, hdr'
