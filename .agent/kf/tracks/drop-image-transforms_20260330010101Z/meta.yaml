@@ -1,5 +1,5 @@
 title: Replace image::DynamicImage in transform.rs with raw buffer ops
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-30'
