@@ -2598,6 +2598,303 @@ fn exact_mask_apply_gradient() {
     );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TRANSFORM MULTI-SETTING VALIDATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn transform_resize_multi() {
+    // Test resize at 3 sizes × 3 filters vs ImageMagick.
+    // IM filter names: Point (nearest), Triangle (bilinear), Catrom (bicubic), Lanczos
+    if !magick_available() {
+        eprintln!("SKIP resize_multi: magick not available");
+        return;
+    }
+
+    let (w, h) = (64u32, 64u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    let cases = [
+        // (target_w, target_h, our_filter, im_filter, label, max_mae)
+        (
+            32,
+            32,
+            ResizeFilter::Lanczos3,
+            "Lanczos",
+            "downscale_lanczos",
+            2.0,
+        ),
+        (
+            128,
+            128,
+            ResizeFilter::Lanczos3,
+            "Lanczos",
+            "upscale_lanczos",
+            2.0,
+        ),
+        (
+            48,
+            48,
+            ResizeFilter::Bilinear,
+            "Triangle",
+            "downscale_bilinear",
+            2.0,
+        ),
+        (
+            128,
+            128,
+            ResizeFilter::Bilinear,
+            "Triangle",
+            "upscale_bilinear",
+            2.0,
+        ),
+        (
+            32,
+            32,
+            ResizeFilter::Nearest,
+            "Point",
+            "downscale_nearest",
+            2.0,
+        ),
+        (
+            128,
+            128,
+            ResizeFilter::Nearest,
+            "Point",
+            "upscale_nearest",
+            2.0,
+        ),
+        (
+            48,
+            48,
+            ResizeFilter::Bicubic,
+            "Catrom",
+            "downscale_bicubic",
+            3.0,
+        ),
+        (
+            96,
+            96,
+            ResizeFilter::Bicubic,
+            "Catrom",
+            "upscale_bicubic",
+            3.0,
+        ),
+    ];
+
+    for (tw, th, our_filter, im_filter, label, max_mae) in &cases {
+        let our_result =
+            rasmcore_image::domain::transform::resize(&pixels, &info, *tw, *th, *our_filter)
+                .unwrap();
+
+        let im_size = format!("{}x{}!", tw, th);
+        if let Some(ref_path) = magick_op(&input_path, &["-resize", &im_size, "-filter", im_filter])
+        {
+            let magick_output = read_png_rgb(&ref_path);
+            let error = mae(&our_result.pixels, &magick_output);
+            eprintln!("  resize {label}: MAE = {error:.4}");
+            assert!(
+                error < *max_mae,
+                "resize {label} MAE = {error:.4} (expected < {max_mae})"
+            );
+            cleanup(&[&ref_path]);
+        }
+    }
+    cleanup(&[&input_path]);
+}
+
+#[test]
+fn transform_crop_multi() {
+    // Test 3 different crop regions vs IM -crop
+    if !magick_available() {
+        eprintln!("SKIP crop_multi: magick not available");
+        return;
+    }
+
+    let (w, h) = (64u32, 64u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    let cases = [
+        // (x, y, cw, ch, im_geometry, label)
+        (0, 0, 32, 32, "32x32+0+0", "top_left"),
+        (16, 16, 32, 32, "32x32+16+16", "center"),
+        (32, 32, 32, 32, "32x32+32+32", "bottom_right"),
+    ];
+
+    for (x, y, cw, ch, im_geom, label) in &cases {
+        let our_result =
+            rasmcore_image::domain::transform::crop(&pixels, &info, *x, *y, *cw, *ch).unwrap();
+
+        if let Some(ref_path) = magick_op(&input_path, &["-crop", im_geom, "+repage"]) {
+            let magick_output = read_png_rgb(&ref_path);
+            let error = mae(&our_result.pixels, &magick_output);
+            eprintln!("  crop {label}: MAE = {error:.4}");
+            assert!(
+                error < 0.01,
+                "crop {label} should be pixel-exact, MAE = {error:.4}"
+            );
+            cleanup(&[&ref_path]);
+        }
+    }
+    cleanup(&[&input_path]);
+}
+
+#[test]
+fn transform_rotate_multi() {
+    // Test fixed rotations (90, 180, 270) — should be pixel-exact.
+    // Test arbitrary rotation (45°) — ALGORITHM tier.
+    if !magick_available() {
+        eprintln!("SKIP rotate_multi: magick not available");
+        return;
+    }
+
+    let (w, h) = (64u32, 64u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    // Fixed rotations — pixel-exact
+    let fixed_cases = [
+        (Rotation::R90, "-rotate", "90", "rotate_90", 0.01),
+        (Rotation::R180, "-rotate", "180", "rotate_180", 0.01),
+        (Rotation::R270, "-rotate", "270", "rotate_270", 0.01),
+    ];
+
+    for (our_rot, im_flag, im_angle, label, max_mae) in &fixed_cases {
+        let our_result =
+            rasmcore_image::domain::transform::rotate(&pixels, &info, *our_rot).unwrap();
+
+        if let Some(ref_path) = magick_op(&input_path, &[im_flag, im_angle]) {
+            let magick_output = read_png_rgb(&ref_path);
+            // IM and ours should have same output dimensions
+            let error = mae(&our_result.pixels, &magick_output);
+            eprintln!("  {label}: MAE = {error:.4}");
+            assert!(
+                error < *max_mae,
+                "{label} should be pixel-exact, MAE = {error:.4}"
+            );
+            cleanup(&[&ref_path]);
+        }
+    }
+
+    // Arbitrary rotation (45°) — bilinear vs three-shear, ALGORITHM tier
+    // Just verify it produces valid output of correct approximate size
+    let our_45 =
+        rasmcore_image::domain::transform::rotate_arbitrary(&pixels, &info, 45.0, &[0, 0, 0])
+            .unwrap();
+    let (ow, oh) = (our_45.info.width, our_45.info.height);
+    // 45° rotation of 64x64 produces ~90x90 bounding box
+    eprintln!("  rotate_45: ours={ow}x{oh}");
+    assert!(
+        ow > 80 && ow < 100,
+        "rotate_45 width should be ~90, got {ow}"
+    );
+    assert!(
+        oh > 80 && oh < 100,
+        "rotate_45 height should be ~90, got {oh}"
+    );
+    // Verify output contains content (not all black)
+    let mean: f64 =
+        our_45.pixels.iter().map(|&v| v as f64).sum::<f64>() / our_45.pixels.len() as f64;
+    assert!(mean > 10.0, "rotate_45 should have content, mean={mean:.1}");
+
+    cleanup(&[&input_path]);
+}
+
+#[test]
+fn transform_flip_exact() {
+    // Flip horizontal (IM -flop) and vertical (IM -flip) — pixel-exact.
+    if !magick_available() {
+        eprintln!("SKIP flip_exact: magick not available");
+        return;
+    }
+
+    let (w, h) = (64u32, 64u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    // Horizontal flip = IM -flop (mirror left-right)
+    let our_h =
+        rasmcore_image::domain::transform::flip(&pixels, &info, FlipDirection::Horizontal).unwrap();
+    if let Some(ref_path) = magick_op(&input_path, &["-flop"]) {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&our_h.pixels, &magick_output);
+        eprintln!("  flip_horizontal: MAE = {error:.4}");
+        assert!(
+            error < 0.01,
+            "flip horizontal should be pixel-exact, MAE = {error:.4}"
+        );
+        cleanup(&[&ref_path]);
+    }
+
+    // Vertical flip = IM -flip (mirror top-bottom)
+    let our_v =
+        rasmcore_image::domain::transform::flip(&pixels, &info, FlipDirection::Vertical).unwrap();
+    if let Some(ref_path) = magick_op(&input_path, &["-flip"]) {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&our_v.pixels, &magick_output);
+        eprintln!("  flip_vertical: MAE = {error:.4}");
+        assert!(
+            error < 0.01,
+            "flip vertical should be pixel-exact, MAE = {error:.4}"
+        );
+        cleanup(&[&ref_path]);
+    }
+
+    cleanup(&[&input_path]);
+}
+
+#[test]
+fn transform_pad_multi() {
+    // Test pad with 2 different border sizes and colors vs IM -border
+    if !magick_available() {
+        eprintln!("SKIP pad_multi: magick not available");
+        return;
+    }
+
+    let (w, h) = (32u32, 32u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    // Case 1: 8px white border
+    let our_pad1 =
+        rasmcore_image::domain::transform::pad(&pixels, &info, 8, 8, 8, 8, &[255, 255, 255])
+            .unwrap();
+    if let Some(ref_path) = magick_op(&input_path, &["-bordercolor", "white", "-border", "8x8"]) {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&our_pad1.pixels, &magick_output);
+        eprintln!("  pad_8px_white: MAE = {error:.4}");
+        assert!(
+            error < 1.0,
+            "pad 8px white MAE = {error:.4} (expected < 1.0)"
+        );
+        cleanup(&[&ref_path]);
+    }
+
+    // Case 2: 16px red border
+    let our_pad2 =
+        rasmcore_image::domain::transform::pad(&pixels, &info, 16, 16, 16, 16, &[255, 0, 0])
+            .unwrap();
+    if let Some(ref_path) = magick_op(&input_path, &["-bordercolor", "red", "-border", "16x16"]) {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&our_pad2.pixels, &magick_output);
+        eprintln!("  pad_16px_red: MAE = {error:.4}");
+        assert!(
+            error < 1.0,
+            "pad 16px red MAE = {error:.4} (expected < 1.0)"
+        );
+        cleanup(&[&ref_path]);
+    }
+
+    cleanup(&[&input_path]);
+}
+
 #[test]
 fn reference_audit_summary() {
     eprintln!("\n=== REFERENCE AUDIT SUMMARY ===");
