@@ -1519,14 +1519,22 @@ fn decode_native_exr(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 /// BCn format identified from DDS FourCC or DX10 DXGI_FORMAT.
+///
+/// Validation status (reference parity tested against external decoder):
+///   - BC1: **validated** — IM parity MAE=0.24
+///   - BC3: **validated** — IM parity MAE=0.24
+///   - BC2: **not yet validated** — unit-tested only, no reference decoder comparison
+///   - BC4: **not yet validated** — unit-tested only, no reference decoder comparison
+///   - BC5: **not yet validated** — unit-tested only, no reference decoder comparison
+///   - BC7: **not yet validated** — unit-tested only, no reference decoder comparison
 #[derive(Clone, Copy, Debug)]
 enum DdsBcFormat {
-    Bc1, // DXT1: RGB + 1-bit alpha
-    Bc2, // DXT3: RGB + explicit 4-bit alpha
-    Bc3, // DXT5: RGB + interpolated alpha
-    Bc4, // ATI1/RGTC1: single channel
-    Bc5, // ATI2/RGTC2: two-channel normal map
-    Bc7, // BPTC: high-quality RGBA
+    Bc1, // DXT1: RGB + 1-bit alpha          [validated]
+    Bc2, // DXT3: RGB + explicit 4-bit alpha  [not yet validated]
+    Bc3, // DXT5: RGB + interpolated alpha    [validated]
+    Bc4, // ATI1/RGTC1: single channel        [not yet validated]
+    Bc5, // ATI2/RGTC2: two-channel normal map [not yet validated]
+    Bc7, // BPTC: high-quality RGBA           [not yet validated]
 }
 
 impl DdsBcFormat {
@@ -1663,6 +1671,9 @@ fn decompress_bcn(
 ///
 /// Supports uncompressed R8G8B8, A8R8G8B8, luminance, and BCn (DXT1-DXT5, BC4/BC5/BC7)
 /// block-compressed textures.
+///
+/// Reference-validated formats: BC1, BC3 (IM parity MAE < 1.0).
+/// Not yet validated against a reference: BC2, BC4, BC5, BC7 (unit-tested only).
 fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if data.len() < 128 {
         return Err(ImageError::InvalidInput("DDS: header too short".into()));
