@@ -114,6 +114,12 @@ pub fn encode(
                 .map_err(err_map)?;
             img.write_data(&u16_data).map_err(err_map)?;
         }
+        PixelFormat::Cmyk8 => {
+            let img = encoder
+                .new_image::<tiff::encoder::colortype::CMYK8>(info.width, info.height)
+                .map_err(err_map)?;
+            img.write_data(pixels).map_err(err_map)?;
+        }
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "TIFF encoding from {other:?} not supported"

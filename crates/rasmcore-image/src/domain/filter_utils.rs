@@ -49,6 +49,31 @@ pub fn u16_to_bytes(values: &[u16]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
+/// Process a CMYK image by converting to RGB, applying an RGB filter, then
+/// converting back to CMYK. Used as a boundary conversion for the filter pipeline.
+pub fn process_cmyk_via_rgb<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
+where
+    F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
+{
+    use super::color;
+
+    let (rgb_pixels, rgb_info) = color::cmyk_to_rgb(pixels, info)?;
+    let result_rgb = f(&rgb_pixels, &rgb_info)?;
+
+    // Convert result back to CMYK
+    let result_rgb_info = ImageInfo {
+        format: rgb_info.format,
+        ..*info
+    };
+    let (cmyk_pixels, _) = color::rgb_to_cmyk(&result_rgb, &result_rgb_info)?;
+    Ok(cmyk_pixels)
+}
+
+/// Check if a pixel format is CMYK.
+pub fn is_cmyk(format: PixelFormat) -> bool {
+    matches!(format, PixelFormat::Cmyk8 | PixelFormat::Cmyka8)
+}
+
 /// Convert 16-bit pixel buffer to f32 normalized [0.0, 1.0] per sample.
 pub fn u16_pixels_to_f32(bytes: &[u8]) -> Vec<f32> {
     bytes_to_u16(bytes)
