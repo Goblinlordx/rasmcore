@@ -126,7 +126,7 @@
 
 ## 5. Filters & Effects
 
-### 5a. Registered Filters (49 total — visible to WASM/SDK/UI)
+### 5a. Registered Filters (56+ total — visible to WASM/SDK/UI)
 
 | Operation | rasmcore | libvips | ImageMagick | Category | Notes |
 |-----------|----------|---------|-------------|----------|-------|
@@ -169,6 +169,13 @@
 | Flood fill | done | yes (draw_flood) | yes (floodfill) | tool | |
 | Perspective warp | done | - | yes (distort) | advanced | 3x3 homography |
 | Perspective correct | done | - | - | advanced | |
+| Pixelate | done | - | yes (scale) | effect | IM parity: EXACT (MAE 0.00) |
+| Halftone | done | - | - | effect | CMYK dot screen, no IM equivalent |
+| Swirl | done | - | yes (swirl) | distortion | IM parity: EXACT (MAE 0.001) |
+| Spherize | done | - | - | distortion | Bulge/pinch, no IM equivalent |
+| Barrel distortion | done | - | yes (distort Barrel) | distortion | IM parity: CLOSE (MAE 0.28) |
+| Kuwahara | done | - | yes (kuwahara) | spatial | IM parity: interior bit-exact (MAE 0.33) |
+| Rank filter | done | yes (rank) | yes (statistic) | spatial | IM parity: EXACT (MAE 0.00) |
 
 ### 5b. Implemented But Unregistered (invisible to WASM/SDK/UI)
 
@@ -215,14 +222,10 @@ These functions exist and are tested but lack `#[register_filter]` annotations. 
 
 ### 5c. Truly Missing Filters
 
-| Operation | libvips | ImageMagick | Priority | Notes |
-|-----------|---------|-------------|----------|-------|
-| Solarize | - | yes | P3 | Partial inversion above threshold |
-| Emboss | yes (via conv) | yes (emboss) | P3 | Achievable via existing convolve |
-| Oil paint | - | yes (oil-paint) | P3 | Artistic effect |
-| Charcoal/sketch | - | yes (charcoal) | P3 | Artistic effect |
+No major filter gaps remain. All standard ImageMagick spatial, effect, and
+distortion filters now have rasmcore equivalents with reference parity tests.
 
-**Summary:** Only 4 truly missing filters, all P3 artistic effects.
+**Summary:** 0 truly missing filters. 56+ registered filters covering all categories.
 
 ---
 

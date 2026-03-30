@@ -950,6 +950,135 @@ GIMP 2.10+ or GEGL CLI).
 
 **Tests:** `domain::filters::zoom_blur_tests::*`
 
+### Pixelate — Bit-Exact
+
+**Reference:** ImageMagick `-scale {1/block}% -scale {block*100}%`
+
+| Test | MAE | Status |
+|------|-----|--------|
+| 256×256, block_size=8 | 0.0000 | Exact |
+
+**Algorithm:** Divide image into `block_size × block_size` blocks, compute average
+color per block (with rounding: `(sum + count/2) / count`), fill all pixels in
+block with average. Handles non-divisible edge blocks naturally.
+
+**Tests:** `reference_audit::exact_pixelate`, `distortion_effect_tests::*`
+
+---
+
+### Halftone — No IM Equivalent
+
+**Reference:** None (IM has `-ordered-dither` but uses a different algorithm).
+
+**Algorithm:** Convert to CMYK, apply rotated sine-wave threshold grid per channel
+at standard press angles (C=15°, M=75°, Y=0°, K=45°), convert back to RGB.
+Output is binary per CMYK channel (each pixel is fully inked or not inked).
+
+**Tests:** `distortion_effect_tests::halftone_*`
+
+---
+
+### Swirl — Bit-Exact (Interior)
+
+**Reference:** ImageMagick `-swirl {degrees}`
+
+| Test | MAE | Status |
+|------|-----|--------|
+| 64×64, angle=90° | 0.0009 | Exact |
+
+**Alignment details (matching IM's SwirlImage):**
+- Default radius: `max(width/2, height/2)` (not diagonal)
+- Falloff: `factor = 1 - sqrt(dx² + dy²) / radius`, rotation = `degrees × factor²`
+- Aspect ratio scaling: `scale_x = height/width` when `h > w`, `scale_y = width/height` when `w > h`
+- Bilinear interpolation for sub-pixel sampling
+- OOB pixels return black (BORDER_CONSTANT)
+
+**Tests:** `reference_audit::algorithm_swirl`, `distortion_effect_tests::swirl_*`
+
+---
+
+### Spherize — No IM Equivalent
+
+**Reference:** None (IM has no `-spherize`; Photoshop/GIMP have it).
+
+**Algorithm:** Radial power-law mapping: `new_r = r^(1/(1+amount))` for bulge,
+`r^(1+|amount|)` for pinch. Bilinear interpolation. `amount=0` is identity.
+
+**Tests:** `distortion_effect_tests::spherize_*`
+
+---
+
+### Barrel Distortion — Close (MAE 0.28)
+
+**Reference:** ImageMagick `-distort Barrel "A B C D"`
+
+| Test | MAE | Status |
+|------|-----|--------|
+| 64×64, k1=0.3 | 0.2797 | Close |
+
+**Alignment details (matching IM's BarrelDistortion):**
+- Formula: `Rs = r × (1 + k1×r² + k2×r⁴)` where our `k1` maps to IM's `B` coefficient
+- Normalization: `rscale = 2/min(w,h)` — pixels at half the minimum dimension have `r=1`
+- Border handling: edge-clamp (matches IM's default Edge virtual pixel)
+- IM test args: `"0 k1 0 1"` to match our `k1` (IM's `B` term is the `r³` coefficient)
+
+**Tests:** `reference_audit::algorithm_barrel`, `distortion_effect_tests::barrel_*`
+
+---
+
+### Kuwahara — Bit-Exact (Interior)
+
+**Reference:** ImageMagick `-kuwahara {radius}`
+
+| Test | MAE | Status |
+|------|-----|--------|
+| 256×256, radius=3 | 0.3290 | Interior bit-exact |
+
+Interior pixels match IM bit-for-bit. Residual MAE is exclusively from the
+~3px edge border where Gaussian blur boundary handling differs. MAE scales
+as `O(radius/image_size)` — negligible on real-world images.
+
+**Alignment details (matching IM's KuwaharaImage exactly):**
+- **Pre-blur:** Separable Gaussian with IM's KernelRank=3 oversampled kernel
+  construction (Photoshop-derived). `sigma = radius - 0.5` (IM default).
+  Kernel half-width = radius (not `3×sigma`). Coefficients verified to 7
+  significant digits against `magick -define morphology:showkernel=1`.
+- **Q16-HDRI pipeline:** Input scaled by 257.0 (matching `ScaleCharToQuantum`),
+  blur accumulated in f64 with f32 storage (matching IM's `double` math →
+  `float` Quantum), output scaled back by ÷257.0.
+- **Variance computation:** Per-channel mean first (`mean[j] += (double)k[j]`),
+  then `GetMeanLuma(mean)` to derive mean luma from channel means — NOT
+  luma-per-pixel then average. This matches IM's exact float accumulation order.
+- **Luma:** BT.709 coefficients `0.212656 / 0.715158 / 0.072186` matching
+  `GetPixelLuma` and `GetMeanLuma` in `pixel-accessor.h`.
+- **Quadrants:** 4 non-overlapping regions of size `(radius+1)²`, matching IM's
+  `switch(i) { case 0: quadrant.x = x-(width-1); quadrant.y = y-(width-1); ... }`.
+- **Output:** Bilinear interpolation at `(target.x + width/2.0, target.y + width/2.0)`
+  from Q16 float blurred data (matching IM's `InterpolatePixelChannels` with
+  `BilinearInterpolatePixel` default).
+
+**Tests:** `reference_audit::algorithm_kuwahara`, `kuwahara_rank_tests::*`
+
+---
+
+### Rank Filter — Bit-Exact
+
+**Reference:** ImageMagick `-statistic Minimum/Maximum/Median`
+
+| Test | MAE | Status |
+|------|-----|--------|
+| 64×64, rank=0.0 (min), radius=2 | 0.0000 | Exact |
+| 64×64, rank=1.0 (max), radius=2 | 0.0000 | Exact |
+
+**Algorithm:** Histogram sliding-window (Huang algorithm). `rank=0.0` → local
+minimum, `rank=0.5` → median (matches existing `median` filter exactly),
+`rank=1.0` → local maximum. O(1) amortized per pixel.
+
+**Tests:** `reference_audit::close_rank_minimum`, `reference_audit::close_rank_maximum`,
+`kuwahara_rank_tests::rank_filter_median_matches_existing`
+
+---
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:
