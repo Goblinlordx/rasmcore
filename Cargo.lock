@@ -2519,6 +2519,7 @@ dependencies = [
  "rasmcore-pipeline",
  "rasmcore-pnm",
  "rasmcore-qoi",
+ "rasmcore-raw",
  "rasmcore-tga",
  "rasmcore-webp",
  "resvg",
@@ -2580,6 +2581,10 @@ dependencies = [
 
 [[package]]
 name = "rasmcore-qoi"
+version = "0.1.0"
+
+[[package]]
+name = "rasmcore-raw"
 version = "0.1.0"
 
 [[package]]

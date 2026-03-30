@@ -86,10 +86,7 @@ impl<'a> BitReader<'a> {
             let mut byte = self.data[self.pos];
             self.pos += 1;
             // Handle JPEG byte stuffing: 0xFF 0x00 -> 0xFF
-            if byte == 0xFF
-                && self.pos < self.data.len()
-                && self.data[self.pos] == 0x00
-            {
+            if byte == 0xFF && self.pos < self.data.len() && self.data[self.pos] == 0x00 {
                 self.pos += 1; // skip stuffed zero
                 // If it's a marker (not 0x00), we've hit end of scan
                 // For robustness, still use the 0xFF byte

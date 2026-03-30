@@ -1,5 +1,5 @@
 title: DNG RAW Image Decode — Pure Rust Minimal MVP
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-30'
