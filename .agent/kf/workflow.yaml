@@ -13,6 +13,18 @@ verification:
     - "./scripts/validate.sh"
   description: "Format check (rustfmt), lint (clippy -D warnings), domain tests, parity tests, WASM build"
 
+# Pre-completion checklist — every developer MUST verify before marking complete.
+pre_completion:
+  - name: registration-check
+    description: |
+      If the track added, changed, or removed any filter or codec:
+        - Filters: verify #[register_filter] + ConfigParams struct present.
+          After build, confirm the filter appears in param-manifest.json.
+        - Codecs: verify WIT + adapter wiring. Confirm format appears in
+          supportedFormats() / supportedWriteFormats() output.
+        - Removals: verify all registration artifacts are also removed.
+      If the track did not touch filters or codecs, this check is N/A.
+
 phases:
   - name: implementation
     description: "Full implementation of core modules"

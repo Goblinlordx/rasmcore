@@ -101,6 +101,30 @@ technical_requirements:
         Lossless: B == original bit-exact, A == B bit-exact.
         Lossy: B ≈ original at same quality as C ≈ original, A == B.
         See code_styleguides/codec-validation.md for full methodology.
+    - name: registration-before-completion
+      description: |
+        Every new, changed, or removed filter or codec MUST be properly
+        registered via project annotations before a track is considered
+        complete. This is a hard gate — not optional cleanup.
+
+        Filters: add #[rasmcore_macros::register_filter(name, category)] and
+        a matching #[derive(ConfigParams)] struct with #[param(...)] fields.
+        The build script auto-generates WIT declarations, adapter glue, and
+        param-manifest.json from these annotations. If a filter exists as a
+        pub fn but lacks registration, it is invisible to WASM consumers,
+        the SDK, and the demo UI.
+
+        Codecs: encoder/decoder functions must be registered in the codec
+        module's WIT interface and adapter. New formats must appear in
+        SUPPORTED_FORMATS and have write/read methods wired.
+
+        Removals: if a filter or codec is removed, its registration,
+        ConfigParams, and any WIT/adapter references must also be removed.
+
+        Verification: after implementation, confirm the filter/codec appears
+        in the generated param-manifest.json (filters) or
+        supportedFormats()/supportedWriteFormats() output (codecs). If it
+        doesn't, the track is not done.
 
   testing_hierarchy:
     primary: "Domain unit tests at domain boundaries (TDD, native cargo test)"
