@@ -1,111 +1,147 @@
 id: parity-gap-audit_20260330094610Z
-title: "Research: Format & Filter Parity Gap Audit vs libvips, ImageMagick, and Competitors"
+title: 'Research: Format & Filter Parity Gap Audit vs libvips, ImageMagick, and Competitors'
 type: research
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Systematic comparison of format support, filter operations, transform
-    capabilities, and pipeline features against libvips, ImageMagick, sharp,
-    Pillow, and GraphicsMagick. Produces a prioritized gap report with
-    actionable track recommendations at .agent/kf/_reports/parity-gap-audit.md.
-  context: |
-    The project now has 19 codec formats, 95+ registered filters, 77+ total
+  summary: 'Systematic comparison of format support, filter operations, transform capabilities, and pipeline features against
+    libvips, ImageMagick, sharp, Pillow, and GraphicsMagick. Produces a prioritized gap report with actionable track recommendations
+    at .agent/kf/_reports/parity-gap-audit.md.
+
+    '
+  context: 'The project now has 19 codec formats, 95+ registered filters, 77+ total
+
     filter functions, 13+ transforms, 5 quality metrics, multi-frame support
+
     for 4 formats, and a full pipeline with spatial caching. We need to
+
     understand where we stand relative to the industry standards and identify
+
     the highest-impact gaps to close next.
 
+
     Target comparisons:
+
     - libvips (C, used by sharp/Node.js ecosystem) — the performance benchmark
+
     - ImageMagick 7 (C, ubiquitous CLI tool) — the feature-completeness benchmark
+
     - sharp (Node.js, wraps libvips) — the web/API developer benchmark
+
     - Pillow (Python) — the data science/ML pipeline benchmark
+
     - GraphicsMagick (C, IM fork) — the high-volume processing benchmark
+
     - Photon (Rust/WASM) — the closest Rust competitor
+
     - Squoosh (Google, WASM) — the web-native compression benchmark
-  codebase_analysis: |
-    Current inventory (from codebase exploration):
+
+    '
+  codebase_analysis: 'Current inventory (from codebase exploration):
+
 
     FORMATS (19 decode, 17 encode):
+
     Full roundtrip: PNG, JPEG, GIF, WebP, BMP, TIFF, QOI, ICO, TGA, HDR,
+
     PNM, EXR, DDS, JP2, HEIC, FITS, APNG
+
     Decode-only: JPEG XL, SVG
+
     Encode-only: AVIF
 
+
     FILTERS (95+ registered, 77+ total functions):
+
     Spatial: blur (4 types), sharpen, median, bilateral, guided, NLM denoise
+
     Color: hue, saturation, sepia, colorize, vibrance, channel mixer, gradient map
+
     Enhancement: CLAHE, equalize, normalize, auto-level, dehaze, clarity, retinex (3)
+
     Edge: Sobel, Scharr, Laplacian, Canny
+
     Morphology: erode, dilate, open, close, gradient, tophat, blackhat
+
     Grading: ASC CDL, lift/gamma/gain, split toning, curves, 3 tonemappers
+
     Artistic: oil paint, charcoal, pixelate, halftone, Kuwahara, emboss, solarize
+
     Draw: line, rect, circle, text
+
     Advanced: seam carve, inpaint, perspective correct, Hough lines, displacement map
+
     Quantize: median cut, Floyd-Steinberg, ordered dither
+
     Noise: Perlin, simplex
+
     Blend: 18 modes
+
     Alpha: premultiply, flatten, add/remove
 
+
     TRANSFORMS: resize (13 filters), crop, rotate, flip, pad, trim, affine,
+
     barrel distort, spherize, undistort, auto-orient, format convert
 
-    GAPS ALREADY KNOWN:
-    - No animated WebP encode
-    - No JPEG XL encode (scaffold only)
-    - No AVIF decode
-    - No RAW decode without feature flag
-    - SSIM/PSNR/metrics just added — need Delta E 2000, VMAF stub
-  acceptance_criteria:
-    - Comprehensive format matrix comparing all 7 products (decode/encode/multi-frame)
-    - Filter/operation matrix covering at minimum 50 libvips operations and 50 IM operations
-    - Transform comparison matrix
-    - Pipeline/architecture comparison (streaming, tiling, memory model)
-    - Prioritized gap list with P0 (critical for competitive parity), P1 (important), P2 (nice to have)
-    - Each P0 gap includes a brief scope estimate (S/M/L track)
-    - Report written to .agent/kf/_reports/parity-gap-audit.md
-  out_of_scope: |
-    Implementing any gaps (this is research only).
-    Performance benchmarking (separate concern).
-    Video processing comparison (different domain).
-    GUI/desktop application comparison (we're a library).
-  technical_notes: |
-    Research methodology:
-    1. Use official documentation for each product (web fetch if needed)
-    2. Cross-reference against our codebase inventory
-    3. Categorize gaps by impact and effort
-    4. Focus on operations that real-world users need most (web optimization,
-       photo editing, batch processing, ML preprocessing)
 
-    Key resources:
-    - libvips: https://www.libvips.org/API/current/
-    - ImageMagick: https://imagemagick.org/script/command-line-options.php
-    - sharp: https://sharp.pixelplumbing.com/api-operation
-    - Pillow: https://pillow.readthedocs.io/en/stable/reference/
-    - GraphicsMagick: http://www.graphicsmagick.org/
+    GAPS ALREADY KNOWN:
+
+    - No animated WebP encode
+
+    - No JPEG XL encode (scaffold only)
+
+    - No AVIF decode
+
+    - No RAW decode without feature flag
+
+    - SSIM/PSNR/metrics just added — need Delta E 2000, VMAF stub
+
+    '
+  acceptance_criteria:
+  - Comprehensive format matrix comparing all 7 products (decode/encode/multi-frame)
+  - Filter/operation matrix covering at minimum 50 libvips operations and 50 IM operations
+  - Transform comparison matrix
+  - Pipeline/architecture comparison (streaming, tiling, memory model)
+  - Prioritized gap list with P0 (critical for competitive parity), P1 (important), P2 (nice to have)
+  - Each P0 gap includes a brief scope estimate (S/M/L track)
+  - Report written to .agent/kf/_reports/parity-gap-audit.md
+  out_of_scope: 'Implementing any gaps (this is research only).
+
+    Performance benchmarking (separate concern).
+
+    Video processing comparison (different domain).
+
+    GUI/desktop application comparison (we''re a library).
+
+    '
+  technical_notes: "Research methodology:\n1. Use official documentation for each product (web fetch if needed)\n2. Cross-reference\
+    \ against our codebase inventory\n3. Categorize gaps by impact and effort\n4. Focus on operations that real-world users\
+    \ need most (web optimization,\n   photo editing, batch processing, ML preprocessing)\n\nKey resources:\n- libvips: https://www.libvips.org/API/current/\n\
+    - ImageMagick: https://imagemagick.org/script/command-line-options.php\n- sharp: https://sharp.pixelplumbing.com/api-operation\n\
+    - Pillow: https://pillow.readthedocs.io/en/stable/reference/\n- GraphicsMagick: http://www.graphicsmagick.org/\n"
 plan:
-  - phase: Format Comparison
-    tasks:
-      - text: Build format decode/encode matrix across all 7 products
-        done: false
-      - text: Identify format gaps (missing codecs vs each competitor)
-        done: false
-  - phase: Operation Comparison
-    tasks:
-      - text: Build filter/operation comparison matrix vs libvips operations
-        done: false
-      - text: Build filter/operation comparison matrix vs ImageMagick operators
-        done: false
-      - text: Compare transform capabilities across products
-        done: false
-      - text: Compare pipeline/architecture features (streaming, tiling, memory)
-        done: false
-  - phase: Gap Analysis & Report
-    tasks:
-      - text: Prioritize all gaps (P0/P1/P2) with scope estimates
-        done: false
-      - text: Write final report to .agent/kf/_reports/parity-gap-audit.md
-        done: false
+- phase: Format Comparison
+  tasks:
+  - text: Build format decode/encode matrix across all 7 products
+    done: true
+  - text: Identify format gaps (missing codecs vs each competitor)
+    done: true
+- phase: Operation Comparison
+  tasks:
+  - text: Build filter/operation comparison matrix vs libvips operations
+    done: true
+  - text: Build filter/operation comparison matrix vs ImageMagick operators
+    done: true
+  - text: Compare transform capabilities across products
+    done: true
+  - text: Compare pipeline/architecture features (streaming, tiling, memory)
+    done: true
+- phase: Gap Analysis & Report
+  tasks:
+  - text: Prioritize all gaps (P0/P1/P2) with scope estimates
+    done: true
+  - text: Write final report to .agent/kf/_reports/parity-gap-audit.md
+    done: true
 extra: {}
