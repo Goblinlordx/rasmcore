@@ -1423,6 +1423,7 @@ fn to_grayscale(pixels: &[u8], channels: usize) -> Vec<u8> {
     }
 }
 
+#[allow(dead_code)] // scalar fallback, SIMD path used on wasm32
 fn to_grayscale_scalar(pixels: &[u8], channels: usize, pixel_count: usize) -> Vec<u8> {
     let mut gray = Vec::with_capacity(pixel_count);
     // BT.601 fixed-point: 77/256 ≈ 0.3008, 150/256 ≈ 0.5859, 29/256 ≈ 0.1133

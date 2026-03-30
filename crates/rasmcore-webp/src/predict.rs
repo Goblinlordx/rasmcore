@@ -582,6 +582,7 @@ pub fn sad(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
+#[allow(dead_code)] // scalar fallback for non-SIMD targets
 fn sad_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())

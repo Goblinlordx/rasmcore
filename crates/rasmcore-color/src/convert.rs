@@ -37,6 +37,7 @@ pub fn rgb_to_ycbcr(pixels: &[u8], width: u32, height: u32, matrix: &ColorMatrix
     }
 }
 
+#[allow(dead_code)] // used by non-SIMD targets
 fn rgb_to_ycbcr_scalar(
     pixels: &[u8],
     y: &mut [u8],
@@ -68,8 +69,6 @@ fn rgb_to_ycbcr_simd128(
     n: usize,
     matrix: &ColorMatrix,
 ) {
-    use std::arch::wasm32::*;
-
     // Process 4 pixels per iteration (12 RGB bytes)
     let chunks = n / 4;
     let yr = matrix.yr;

@@ -65,6 +65,7 @@ pub fn inverse_wht(coeffs: &[i16; 16], out: &mut [i16; 16]) {
 
 // ─── Scalar implementations ─────────────────────────────────────────────────
 
+#[allow(dead_code)] // scalar fallback for non-SIMD targets
 fn forward_dct_scalar(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
@@ -99,6 +100,7 @@ fn forward_dct_scalar(src: &[u8; 16], reference: &[u8; 16], out: &mut [i16; 16])
     }
 }
 
+#[allow(dead_code)]
 fn inverse_dct_scalar(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 16]) {
     let mut tmp = [0i32; 16];
 
@@ -135,6 +137,7 @@ fn inverse_dct_scalar(coeffs: &[i16; 16], reference: &[u8; 16], dst: &mut [u8; 1
     }
 }
 
+#[allow(dead_code)]
 fn forward_wht_scalar(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
@@ -164,6 +167,7 @@ fn forward_wht_scalar(dc_coeffs: &[i16; 16], out: &mut [i16; 16]) {
     }
 }
 
+#[allow(dead_code)]
 fn inverse_wht_scalar(coeffs: &[i16; 16], out: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
@@ -195,15 +199,18 @@ fn inverse_wht_scalar(coeffs: &[i16; 16], out: &mut [i16; 16]) {
 }
 
 #[inline(always)]
+#[allow(dead_code)]
 fn mul1(a: i32) -> i32 {
     ((a * 20091) >> 16) + a
 }
 
+#[allow(dead_code)]
 #[inline(always)]
 fn mul2(a: i32) -> i32 {
     (a * 35468) >> 16
 }
 
+#[allow(dead_code)]
 #[inline(always)]
 fn clamp_u8(v: i32) -> u8 {
     v.clamp(0, 255) as u8
@@ -250,6 +257,7 @@ mod simd128 {
     }
 
     /// Transpose a 4x4 matrix stored as 4 i32x4 row vectors.
+    #[allow(dead_code)]
     #[inline(always)]
     fn transpose4x4(r0: v128, r1: v128, r2: v128, r3: v128) -> (v128, v128, v128, v128) {
         // Interleave low/high pairs
@@ -373,9 +381,9 @@ mod simd128 {
         // Horizontal pass: operates within each row.
         // For each row, we need elements [0]+[2], [0]-[2], MUL2([1])-MUL1([3]), etc.
         // This requires lane shuffles, so we do it scalar per-row.
-        let four = i32x4_splat(4);
-        let zero = i32x4_splat(0);
-        let max_val = i32x4_splat(255);
+        let _four = i32x4_splat(4);
+        let _zero = i32x4_splat(0);
+        let _max_val = i32x4_splat(255);
 
         for (row, t) in [(0, t0), (1, t1), (2, t2), (3, t3)] {
             let e0 = i32x4_extract_lane::<0>(t) + 4; // +4 rounding
