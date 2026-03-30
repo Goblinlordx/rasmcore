@@ -1618,6 +1618,44 @@ fn close_modulate_saturation_0() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Photo Filter & Spin Blur
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn close_photo_filter_warm() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            rasmcore_image::domain::filters::photo_filter(px, info, 236, 138, 0, 50.0, 0).unwrap()
+        },
+        &["-fill", "rgb(236,138,0)", "-colorize", "50%"],
+        "photo_filter warm 50%",
+    ) {
+        assert!(
+            error < 2.0,
+            "CLOSE: photo_filter warm MAE should be < 2.0, got {error:.4}"
+        );
+    }
+}
+
+#[test]
+fn algorithm_spin_blur() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::spin_blur(px, info, 0.5, 0.5, 10.0).unwrap(),
+        &["-radial-blur", "10"],
+        "spin_blur 10deg",
+    ) {
+        assert!(
+            error < 15.0,
+            "ALGORITHM: spin_blur MAE should be < 15.0, got {error:.4}"
+        );
+    }
+}
+
 #[test]
 fn reference_audit_summary() {
     if !magick_available() {
