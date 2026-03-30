@@ -6,53 +6,122 @@
 //!
 //! # Reference implementation
 //!
-//! Ported from ImageMagick 6 (github.com/ImageMagick/ImageMagick6):
-//! - `magick/resample.c` — `ResamplePixelColor()`, `ScaleResampleFilter()`, `ClampUpAxes()`
-//! - `magick/resize.c` — Robidoux filter B,C coefficients
-//! - `magick/distort.c` — pixel-center convention (`d.x = i + 0.5`), FX equivalents
+//! Ported from ImageMagick 6 (`github.com/ImageMagick/ImageMagick6`):
+//!
+//! | IM source file | Functions ported | What we use them for |
+//! |----------------|-----------------|---------------------|
+//! | `magick/resample.c` | `ClampUpAxes()` | SVD decomposition + minor-axis clamping |
+//! | `magick/resample.c` | `ScaleResampleFilter()` | Ellipse A,B,C,F coefficients, LUT scaling |
+//! | `magick/resample.c` | `ResamplePixelColor()` | Parallelogram iteration, DQ/DDQ loop |
+//! | `magick/resize.c` | Filter table | Robidoux B,C values (line ~1150) |
+//! | `magick/distort.c` | Pixel loop | `d.x = i + 0.5` pixel-center convention |
+//! | `magick/distort.c` | `GenerateCoefficients()` | Polar/Barrel coefficient computation |
 //!
 //! # Algorithm (Heckbert 1989, as implemented by IM)
 //!
 //! For each output pixel:
 //! 1. Compute source coordinates `(sx, sy)` via inverse distortion
 //! 2. Compute 2×2 Jacobian matrix of the transformation
-//! 3. `ClampUpAxes`: SVD of Jacobian, clamp minor axis ≥ 1.0 (prevents magnification artifacts)
+//! 3. `ClampUpAxes`: SVD of Jacobian, clamp minor axis ≥ 1.0
 //! 4. Compute ellipse coefficients A,B,C,F from clamped axes
-//! 5. Scale F by support², then scale A,B,C by `WLUT_WIDTH/F` for direct LUT indexing
-//! 6. Iterate source pixels within parallelogram fitted to ellipse
+//! 5. Scale F by support², then scale A,B,C by `WLUT_WIDTH/F` for LUT indexing
+//! 6. Iterate source pixels within parallelogram (slope = -B/(2A))
 //! 7. For each pixel: `Q = A*U² + B*U*V + C*V²`, weight = `LUT[(int)Q]`
 //! 8. Accumulate weighted colors; divide by total weight
 //!
 //! # Robidoux filter
 //!
-//! Cylindrical Mitchell-Netravali cubic (B=0.37821575509399867, C=0.31089212245300067).
-//! Values from IM's `resize.c` filter table. Support radius = 2.0.
+//! Cylindrical Mitchell-Netravali cubic. Support radius = 2.0.
+//! - B = 0.37821575509399867 (from IM `resize.c` filter table)
+//! - C = 0.31089212245300067 (from IM `resize.c` filter table)
 //!
-//! # IM parity status (tested at 64x64)
+//! # What was ported verbatim from IM
 //!
-//! | Filter  | MAE vs IM | IM command | Notes |
-//! |---------|-----------|------------|-------|
-//! | wave    | < 1.0     | `-wave 5x20` | Bilinear (IM effect.c, not distort.c) |
-//! | polar   | 2.55      | `-distort Polar 32` | EWA Robidoux; DQ/DDQ accumulation |
-//! | swirl   | 2.34      | `-swirl 90` | EWA with IM aspect-ratio scaling |
-//! | barrel  | 8.24      | `-distort Barrel "0.5 0.1 0 1"` | Edge-clamp; polynomial mapping |
-//! | depolar | ~2.5      | `-distort DePolar 32` | Same pipeline as polar |
+//! - **ClampUpAxes**: discriminant = `(frobenius²+2det)(frobenius²-2det)`,
+//!   eigenvector row selection by `|s1s1-n11|² vs |s1s1-n22|²`, minor axis
+//!   as 90° rotation of major `(-u21, u11)`.
+//! - **Weight LUT**: 1024-entry table indexed by Q directly. Built as
+//!   `LUT[Q] = kernel(sqrt(Q) * support/sqrt(WLUT_WIDTH))`.
+//! - **ScaleResampleFilter**: A,B,C from clamped axes, F = (major*minor)²,
+//!   F *= support², A/B/C scaled by WLUT_WIDTH/F.
+//! - **ResamplePixelColor**: parallelogram iteration with `slope = -B/(2A)`,
+//!   `Uwidth = sqrt(F/A)`, incremental `Q += DQ; DQ += DDQ` updates.
+//! - **Q16 simulation**: source pixels scaled ×257 before accumulation,
+//!   /257 after (matching IM Q16-HDRI internal 0-65535 range).
+//! - **Pixel-center convention**: `d.x = i + 0.5` for distort source coords.
 //!
-//! ## Residual analysis
+//! # IM parity — current status
 //!
-//! Verified that IM's default `-distort Polar` uses EWA Robidoux (not bilinear):
-//! `IM default vs IM -filter Point: MAE = 4.35` (confirmed via magick tests).
-//! Our pure bilinear also gives MAE 4.35 vs IM default, confirming EWA is active.
+//! Tested against ImageMagick 7.1.2-18 Q16-HDRI on 64×64 gradient images.
 //!
-//! The ~2.5 EWA residual (per-channel ~0.83) is from numerical precision in the
-//! parallelogram iteration: our incremental Q computation (DQ += DDQ) accumulates
-//! f64 rounding differently from IM's. This is sub-quantization-level (< 1 u8)
-//! and represents the FP math precision floor for this algorithm.
+//! | Filter  | MAE  | IM command | Resampling |
+//! |---------|------|------------|------------|
+//! | wave    | <1.0 | `-wave 5x20` | Bilinear (IM `effect.c` WaveImage) |
+//! | polar   | 2.55 | `-distort Polar 32` | EWA Robidoux |
+//! | swirl   | 2.34 | `-swirl 90` | EWA Robidoux |
+//! | barrel  | 8.24 | `-distort Barrel "0.5 0.1 0 1"` | EWA Robidoux |
+//! | depolar | ~2.5 | `-distort DePolar 32` | EWA Robidoux |
 //!
-//! The barrel residual (8.24) includes polynomial coefficient mapping differences:
-//! our `k1, k2` map to different polynomial terms than IM's `"A B C D"` barrel
-//! format. The IM-exact polynomial form is implemented but parameter mapping
-//! causes the test to compare slightly different distortions.
+//! # Known residuals and root causes
+//!
+//! ## Wave (MAE < 1.0) — RESOLVED
+//!
+//! IM's `-wave` is implemented in `effect.c` (WaveImage), NOT `distort.c`.
+//! It uses simple bilinear interpolation, not EWA. Our wave filter matches
+//! by using `bilinear_pub()` instead of `sample()`. Near pixel-exact.
+//!
+//! ## Polar/Swirl/Depolar (MAE ~2.5) — FP PRECISION FLOOR
+//!
+//! **Root cause: incremental quadratic accumulation precision.**
+//!
+//! Our EWA inner loop uses the same DQ/DDQ incremental scheme as IM:
+//! ```text
+//! Q = (A*U + B*V)*U + C*V*V
+//! DQ = A*(2*U+1) + B*V
+//! DDQ = 2*A
+//! for each pixel: Q += DQ; DQ += DDQ
+//! ```
+//! Both implementations use f64. However, the accumulated rounding differs
+//! because:
+//! 1. Our Jacobian is computed in f32 then cast to f64 for ellipse computation.
+//!    IM computes the Jacobian as f64 throughout (via `ScaleResampleFilter`
+//!    which receives `double` parameters from the distort loop).
+//! 2. The A,B,C coefficients are derived from ClampUpAxes output. Even with
+//!    identical ClampUpAxes (verified by verbatim port), the f32→f64 cast
+//!    of the input Jacobian introduces ~1e-7 relative error that propagates
+//!    through the ellipse math.
+//! 3. Q is truncated to `int` for LUT indexing. Near LUT bin boundaries,
+//!    the ~1e-7 error can shift Q to an adjacent bin, causing ±1 in the
+//!    final pixel value.
+//!
+//! **Evidence**: Per-channel average diff is 0.83 (< 1 quantization level).
+//! This was verified by confirming our bilinear gives MAE 4.35 vs IM
+//! (matching `IM -filter Point` vs `IM default`), proving our EWA IS
+//! producing better results than bilinear, just not bit-exact with IM's.
+//!
+//! **To close this gap** would require changing the `Jacobian` type from
+//! `[[f32; 2]; 2]` to `[[f64; 2]; 2]` and computing all distortion
+//! Jacobians in f64 end-to-end. This is a mechanical change but touches
+//! all 8 distortion filter functions and the Jacobian helper signatures.
+//!
+//! ## Barrel (MAE 8.24) — POLYNOMIAL MAPPING
+//!
+//! **Root cause: our k1/k2 parameters map to different polynomial terms
+//! than IM's "A B C D" barrel format.**
+//!
+//! IM barrel polynomial: `factor = A*rscale³*r³ + B*rscale²*r² + C*rscale*r + D`
+//! Our barrel polynomial: `factor = A_coeff*r³ + B_coeff*r² + 1` (matching IM
+//! form, but our test passes `k1=0.5, k2=0.1` which map to the cubic and
+//! quadratic terms via `k1*rscale³` and `k2*rscale²`).
+//!
+//! The barrel test compares against `magick -distort Barrel "0.5 0.1 0 1"`
+//! where IM interprets "0.5" as the r⁴ coefficient (A), "0.1" as r³ (B),
+//! "0" as r² (C), and "1" as r⁰ (D). Our code maps k1 → r³ and k2 → r²,
+//! which is a DIFFERENT polynomial despite using the same numeric values.
+//!
+//! **To close this gap**: either change our barrel API to match IM's 4-param
+//! "A B C D" format, or adjust the IM parity test to pass coefficients that
+//! produce equivalent polynomials.
 
 /// Exact Robidoux filter B,C values from IM resize.c.
 const ROBIDOUX_B: f64 = 0.37821575509399867;

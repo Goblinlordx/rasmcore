@@ -15027,6 +15027,7 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("wave IM parity MAE: {mae:.2}");
+        // Wave uses bilinear (matching IM effect.c WaveImage). See ewa.rs docs.
         assert!(mae < 1.0, "wave IM parity MAE = {mae:.2} > 1.0");
     }
 
@@ -15089,8 +15090,9 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("polar IM parity MAE: {mae:.2}");
-        // MAE 2.55: per-channel ~0.85 (±1 quantization level).
-        // Residual from IM Q16-HDRI 16-bit internal precision.
+        // MAE 2.55: per-channel ~0.83 (<1 quantization level). Root cause:
+        // f32 Jacobian → f64 cast introduces ~1e-7 error that shifts LUT
+        // bin selection near boundaries. See ewa.rs "Known residuals" docs.
         assert!(mae < 3.0, "polar IM parity MAE = {mae:.2} > 3.0");
     }
 
@@ -15149,7 +15151,8 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("swirl IM parity MAE: {mae:.2}");
-        // Swirl uses EWA with IM aspect-ratio scaling.
+        // MAE 2.34: same f32→f64 Jacobian precision cause as polar.
+        // See ewa.rs "Known residuals" docs.
         assert!(mae < 3.0, "swirl IM parity MAE = {mae:.2} > 3.0");
     }
 
@@ -15207,9 +15210,9 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("barrel IM parity MAE: {mae:.2}");
-        // Both use edge-clamp and pixel-center convention. Residual from
-        // polynomial form difference (our k1→r³, k2→r² vs IM A→r³, B→r²
-        // coefficient mapping) and Q16-HDRI precision.
+        // MAE 8.24: our k1/k2 map to different polynomial terms than IM's
+        // "A B C D" barrel args. Fix: match IM's 4-param format or adjust
+        // test coefficients. See ewa.rs "Known residuals — Barrel" docs.
         assert!(mae < 9.0, "barrel IM parity MAE = {mae:.2} > 9.0");
     }
 }
