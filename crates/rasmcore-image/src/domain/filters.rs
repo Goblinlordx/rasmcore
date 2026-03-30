@@ -552,6 +552,131 @@ pub struct DitherOrderedParams {
     pub map_size: u32,
 }
 
+/// Parameters for draw_line.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DrawLineParams {
+    /// Start X coordinate
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 0.0)]
+    pub x1: f32,
+    /// Start Y coordinate
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 0.0)]
+    pub y1: f32,
+    /// End X coordinate
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 100.0)]
+    pub x2: f32,
+    /// End Y coordinate
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 100.0)]
+    pub y2: f32,
+    /// Color red component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_r: u32,
+    /// Color green component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_g: u32,
+    /// Color blue component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_b: u32,
+    /// Color alpha component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_a: u32,
+    /// Line width in pixels
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub width: f32,
+}
+
+/// Parameters for draw_rect.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DrawRectParams {
+    /// Rectangle X position
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 10.0)]
+    pub x: f32,
+    /// Rectangle Y position
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 10.0)]
+    pub y: f32,
+    /// Rectangle width
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 100.0)]
+    pub rect_width: f32,
+    /// Rectangle height
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 100.0)]
+    pub rect_height: f32,
+    /// Color red component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_r: u32,
+    /// Color green component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_g: u32,
+    /// Color blue component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_b: u32,
+    /// Color alpha component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_a: u32,
+    /// Stroke width in pixels (outline mode)
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub stroke_width: f32,
+    /// Fill the rectangle (true) or draw outline only (false)
+    #[param(default = true)]
+    pub filled: bool,
+}
+
+/// Parameters for draw_circle.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DrawCircleParams {
+    /// Center X coordinate
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0)]
+    pub cx: f32,
+    /// Center Y coordinate
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0)]
+    pub cy: f32,
+    /// Circle radius
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0)]
+    pub radius: f32,
+    /// Color red component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_r: u32,
+    /// Color green component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_g: u32,
+    /// Color blue component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_b: u32,
+    /// Color alpha component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_a: u32,
+    /// Stroke width in pixels (outline mode)
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub stroke_width: f32,
+    /// Fill the circle (true) or draw outline only (false)
+    #[param(default = true)]
+    pub filled: bool,
+}
+
+/// Parameters for draw_text.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DrawTextParams {
+    /// Text X position
+    #[param(min = 0, max = 65535, step = 1, default = 10)]
+    pub x: u32,
+    /// Text Y position
+    #[param(min = 0, max = 65535, step = 1, default = 10)]
+    pub y: u32,
+    /// Scale multiplier (1 = 8x16 native, 2 = 16x32, etc.)
+    #[param(min = 1, max = 16, step = 1, default = 1)]
+    pub scale: u32,
+    /// Color red component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_r: u32,
+    /// Color green component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_g: u32,
+    /// Color blue component
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_b: u32,
+    /// Color alpha component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_a: u32,
+}
+
 /// Parameters for white balance temperature adjustment.
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct WhiteBalanceTemperatureParams {
@@ -6601,6 +6726,90 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
         }
     }
     pixels
+}
+
+// ─── Draw Primitives (registered wrappers) ───────────────────────────────
+
+/// Draw a line on the image. Color components are 0-255.
+#[rasmcore_macros::register_filter(name = "draw_line", category = "draw")]
+pub fn draw_line_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    color_r: u32,
+    color_g: u32,
+    color_b: u32,
+    color_a: u32,
+    width: f32,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
+    let (result, _) = super::draw::draw_line(pixels, info, x1, y1, x2, y2, color, width)?;
+    Ok(result)
+}
+
+/// Draw a rectangle on the image. Set filled=true for solid fill.
+#[rasmcore_macros::register_filter(name = "draw_rect", category = "draw")]
+pub fn draw_rect_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    x: f32,
+    y: f32,
+    rect_width: f32,
+    rect_height: f32,
+    color_r: u32,
+    color_g: u32,
+    color_b: u32,
+    color_a: u32,
+    stroke_width: f32,
+    filled: bool,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
+    let (result, _) =
+        super::draw::draw_rect(pixels, info, x, y, rect_width, rect_height, color, stroke_width, filled)?;
+    Ok(result)
+}
+
+/// Draw a circle on the image. Set filled=true for solid fill.
+#[rasmcore_macros::register_filter(name = "draw_circle", category = "draw")]
+pub fn draw_circle_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color_r: u32,
+    color_g: u32,
+    color_b: u32,
+    color_a: u32,
+    stroke_width: f32,
+    filled: bool,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
+    let (result, _) =
+        super::draw::draw_circle(pixels, info, cx, cy, radius, color, stroke_width, filled)?;
+    Ok(result)
+}
+
+/// Draw text on the image using the embedded 8x16 bitmap font.
+#[rasmcore_macros::register_filter(name = "draw_text", category = "draw")]
+pub fn draw_text_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    x: u32,
+    y: u32,
+    text: &str,
+    scale: u32,
+    color_r: u32,
+    color_g: u32,
+    color_b: u32,
+    color_a: u32,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
+    let (result, _) = super::draw::draw_text(pixels, info, x, y, text, scale, color)?;
+    Ok(result)
 }
 
 #[cfg(test)]
