@@ -35,9 +35,10 @@ fn write_profile_tier_level(w: &mut BitstreamWriter, ptl: &ProfileTierLevel, max
     // Simplified: write all zeros for the 48 constraint bits.
     // The exact values depend on the profile; for roundtrip testing we write
     // what x265 writes for Main Still Picture.
+    // Constraint flags — match x265 4.1 defaults for Main Still Picture
     w.write_flag(true); // general_progressive_source_flag
     w.write_flag(false); // general_interlaced_source_flag
-    w.write_flag(true); // general_non_packed_constraint_flag
+    w.write_flag(false); // general_non_packed_constraint_flag (x265 default)
     w.write_flag(true); // general_frame_only_constraint_flag
     // remaining 44 constraint bits = 0
     w.write_bits(0, 32);
@@ -79,7 +80,7 @@ pub fn write_vps(vps: &Vps) -> Vec<u8> {
     // vps_sub_layer_ordering_info_present_flag
     w.write_flag(true);
     // For each sub-layer (just 1 for single-layer):
-    w.write_ue(1); // vps_max_dec_pic_buffering_minus1
+    w.write_ue(2); // vps_max_dec_pic_buffering_minus1 (x265 default)
     w.write_ue(0); // vps_max_num_reorder_pics
     w.write_ue(0); // vps_max_latency_increase_plus1
 
@@ -133,7 +134,7 @@ pub fn write_sps(sps: &Sps) -> Vec<u8> {
     // sub_layer_ordering_info_present_flag — write for all sub-layers
     w.write_flag(true);
     for _ in 0..sps.max_sub_layers {
-        w.write_ue(1); // sps_max_dec_pic_buffering_minus1
+        w.write_ue(2); // sps_max_dec_pic_buffering_minus1 (x265 default)
         w.write_ue(0); // sps_max_num_reorder_pics
         w.write_ue(0); // sps_max_latency_increase_plus1
     }
@@ -288,11 +289,11 @@ pub fn default_pps(qp: i32) -> Pps {
         dependent_slice_segments_enabled: false,
         output_flag_present: false,
         num_extra_slice_header_bits: 0,
-        sign_data_hiding_enabled: false,
+        sign_data_hiding_enabled: false, // SDH not yet implemented in encoder
         cabac_init_present: false,
         num_ref_idx_l0_default_active: 1,
         num_ref_idx_l1_default_active: 1,
-        init_qp: qp,
+        init_qp: 26, // HEVC default — slice_qp_delta adjusts to actual QP
         constrained_intra_pred: false,
         transform_skip_enabled: false,
         cu_qp_delta_enabled: false,
@@ -309,7 +310,7 @@ pub fn default_pps(qp: i32) -> Pps {
         num_tile_rows: 1,
         loop_filter_across_tiles_enabled: true,
         loop_filter_across_slices_enabled: true,
-        deblocking_filter_control_present: true,
+        deblocking_filter_control_present: false, // x265 default — simplest PPS
         deblocking_filter_override_enabled: false,
         deblocking_filter_disabled: false,
         beta_offset: 0,
@@ -324,9 +325,10 @@ fn default_profile() -> ProfileTierLevel {
     ProfileTierLevel {
         general_profile_space: 0,
         general_tier_flag: false,
-        general_profile_idc: 3,                      // Main Still Picture
-        general_profile_compatibility_flags: 1 << 3, // bit 3 = Main Still Picture
-        general_level_idc: 60,                       // Level 2.0 (sufficient for small stills)
+        general_profile_idc: 3, // Main Still Picture
+        // x265 sets bits 1 (Main), 2 (Main 10), 3 (Main Still Picture)
+        general_profile_compatibility_flags: (1 << 1) | (1 << 2) | (1 << 3),
+        general_level_idc: 30, // Level 1.0 — x265 default for small stills
     }
 }
 
@@ -430,11 +432,12 @@ mod tests {
 
     #[test]
     fn pps_roundtrip_various_qp() {
+        // init_qp is now fixed at 26 (x265 default); QP applied via slice delta
         for qp in [22, 26, 30, 37, 51] {
             let pps = default_pps(qp);
             let rbsp = write_pps(&pps);
             let parsed = params::parse_pps(&rbsp).unwrap();
-            assert_eq!(parsed.init_qp, qp, "QP mismatch for {qp}");
+            assert_eq!(parsed.init_qp, 26, "init_qp should always be 26 for {qp}");
         }
     }
 
