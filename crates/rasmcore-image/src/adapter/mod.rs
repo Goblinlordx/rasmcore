@@ -119,6 +119,51 @@ fn to_domain_png_filter(f: Option<encoder::PngFilterType>) -> domain::encoder::p
     }
 }
 
+fn to_wit_disposal_method(d: domain::types::DisposalMethod) -> decoder::DisposalMethod {
+    match d {
+        domain::types::DisposalMethod::None => decoder::DisposalMethod::None,
+        domain::types::DisposalMethod::Background => decoder::DisposalMethod::Background,
+        domain::types::DisposalMethod::Previous => decoder::DisposalMethod::Previous,
+    }
+}
+
+fn to_wit_frame_info(fi: &domain::types::FrameInfo) -> decoder::FrameInfo {
+    decoder::FrameInfo {
+        index: fi.index,
+        delay_ms: fi.delay_ms,
+        disposal: to_wit_disposal_method(fi.disposal),
+        width: fi.width,
+        height: fi.height,
+        x_offset: fi.x_offset,
+        y_offset: fi.y_offset,
+    }
+}
+
+fn to_wit_decoded_frame(
+    img: domain::types::DecodedImage,
+    fi: domain::types::FrameInfo,
+) -> decoder::DecodedFrame {
+    decoder::DecodedFrame {
+        image: decoder::DecodedImage {
+            pixels: img.pixels,
+            info: to_wit_image_info(&img.info),
+            icc_profile: img.icc_profile,
+        },
+        info: to_wit_frame_info(&fi),
+    }
+}
+
+pub fn to_domain_frame_selection(s: pipeline::FrameSelection) -> domain::types::FrameSelection {
+    match s {
+        pipeline::FrameSelection::Single(i) => domain::types::FrameSelection::Single(i),
+        pipeline::FrameSelection::Pick(v) => domain::types::FrameSelection::Pick(v),
+        pipeline::FrameSelection::Range((start, end)) => {
+            domain::types::FrameSelection::Range(start, end)
+        }
+        pipeline::FrameSelection::All => domain::types::FrameSelection::All,
+    }
+}
+
 struct Component;
 
 bindings::export!(Component with_types_in bindings);
@@ -168,6 +213,23 @@ impl decoder::Guest for Component {
 
     fn supported_formats() -> Vec<String> {
         domain::decoder::supported_formats()
+    }
+
+    fn frame_count(data: Vec<u8>) -> Result<u32, RasmcoreError> {
+        domain::decoder::frame_count(&data).map_err(to_wit_error)
+    }
+
+    fn decode_frame(data: Vec<u8>, index: u32) -> Result<decoder::DecodedFrame, RasmcoreError> {
+        let (img, fi) = domain::decoder::decode_frame(&data, index).map_err(to_wit_error)?;
+        Ok(to_wit_decoded_frame(img, fi))
+    }
+
+    fn decode_all_frames(data: Vec<u8>) -> Result<Vec<decoder::DecodedFrame>, RasmcoreError> {
+        let frames = domain::decoder::decode_all_frames(&data).map_err(to_wit_error)?;
+        Ok(frames
+            .into_iter()
+            .map(|(img, fi)| to_wit_decoded_frame(img, fi))
+            .collect())
     }
 }
 

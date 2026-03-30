@@ -91,6 +91,18 @@ interface pipeline {
         repeat: option<u16>,
     }
 
+    /// Frame selection mode for multi-frame sources.
+    variant frame-selection {
+        /// Select a single frame by index (pipeline produces one image).
+        single(u32),
+        /// Select specific frames by index.
+        pick(list<u32>),
+        /// Select a contiguous range (start inclusive, end exclusive).
+        %range(tuple<u32, u32>),
+        /// Select all frames.
+        all,
+    }
+
     /// The pipeline resource — owns the node graph and spatial cache.
     resource image-pipeline {
         /// Create a new empty pipeline.
@@ -101,6 +113,10 @@ interface pipeline {
         /// Read encoded image data into the pipeline. Returns a source node.
         /// Does NOT decode pixels until a downstream write() requests them.
         read: func(data: buffer) -> result<node-id, rasmcore-error>;
+
+        /// Read encoded multi-frame image data with frame selection.
+        /// The source node will yield selected frames when execute-sequence is called.
+        read-frames: func(data: buffer, selection: frame-selection) -> result<node-id, rasmcore-error>;
 
         /// Get image info for a node (dimensions, format — no pixel computation).
         node-info: func(node: node-id) -> result<image-info, rasmcore-error>;
@@ -228,6 +244,13 @@ interface pipeline {
 
         /// Write to any format (convenience). If metadata is provided, it is embedded.
         write: func(source: node-id, format: string, quality: option<u8>, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
+
+        // ─── Multi-Frame Execution ───
+
+        /// Execute the pipeline in sequence mode: run the graph once per
+        /// selected frame from a read-frames source, collecting results.
+        /// Returns the number of frames produced. Use with read-frames().
+        execute-sequence: func(source: node-id, output: node-id) -> result<u32, rasmcore-error>;
     }
 
     /// Detect image format from header bytes.

@@ -10,10 +10,9 @@ use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
 use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
-use crate::domain::pipeline::nodes::{color, composite, filters, sink, source, transform};
+use crate::domain::pipeline::nodes::{color, composite, filters, frame_source, sink, source, transform};
 
-use super::to_wit_error;
-use super::to_wit_image_info;
+use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
 
 fn to_domain_png_filter_pipeline(
     f: Option<pipeline::PngFilterType>,
@@ -253,6 +252,18 @@ impl GuestImagePipeline for PipelineResource {
         // Capture source data for metadata operations
         self.metadata_ops.borrow_mut().source_data = Some(data.clone());
         let node = source::SourceNode::new(data).map_err(to_wit_error)?;
+        let id = self.graph.borrow_mut().add_node(Box::new(node));
+        Ok(id)
+    }
+
+    fn read_frames(
+        &self,
+        data: Vec<u8>,
+        selection: pipeline::FrameSelection,
+    ) -> Result<NodeId, RasmcoreError> {
+        let domain_sel = to_domain_frame_selection(selection);
+        let node =
+            frame_source::FrameSourceNode::new(data, domain_sel).map_err(to_wit_error)?;
         let id = self.graph.borrow_mut().add_node(Box::new(node));
         Ok(id)
     }
@@ -670,6 +681,24 @@ impl GuestImagePipeline for PipelineResource {
             domain_meta.as_ref(),
         )
         .map_err(to_wit_error)
+    }
+
+    // ─── Multi-Frame ───
+
+    fn execute_sequence(
+        &self,
+        source: NodeId,
+        output: NodeId,
+    ) -> Result<u32, RasmcoreError> {
+        let seq = self
+            .graph
+            .borrow_mut()
+            .execute_sequence(source, output)
+            .map_err(to_wit_error)?;
+        let count = seq.len() as u32;
+        // Store the sequence for later retrieval by multi-frame encode (track 2)
+        // For now, just return the count — the FrameSequence is consumed.
+        Ok(count)
     }
 
     // ─── Metadata ───
