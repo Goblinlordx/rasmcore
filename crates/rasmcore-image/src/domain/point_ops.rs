@@ -39,6 +39,24 @@ pub enum PointOp {
     /// Uses `>=` to match ImageMagick's Q16-HDRI boundary behavior where 50% threshold
     /// at Q8 maps to value 128, and value 128 IS solarized.
     Solarize(u8),
+    /// Levels: remap [black, white] input range to [0, 255] with gamma correction.
+    /// `LUT[i] = clamp(((i/255 - black) / (white - black)) ^ (1/gamma) * 255)`
+    /// Matches ImageMagick `-level black%,white%,gamma`.
+    Levels {
+        black: f32,
+        white: f32,
+        gamma: f32,
+    },
+    /// Sigmoidal contrast: S-curve contrast adjustment.
+    /// `sigmoid(x) = 1 / (1 + exp(-strength * (x - midpoint)))`
+    /// `LUT[i] = (sigmoid(i/255) - sigmoid(0)) / (sigmoid(1) - sigmoid(0)) * 255`
+    /// sharpen=true increases contrast, sharpen=false decreases it.
+    /// Matches ImageMagick `-sigmoidal-contrast strengthxmidpoint%`.
+    SigmoidalContrast {
+        strength: f32,
+        midpoint: f32,
+        sharpen: bool,
+    },
 }
 
 /// Build a 256-entry LUT for a single point operation.
@@ -94,6 +112,55 @@ pub fn build_lut(op: &PointOp) -> [u8; 256] {
             for (i, entry) in lut.iter_mut().enumerate() {
                 let v = i as u8;
                 *entry = if v >= *threshold { 255 - v } else { v };
+            }
+        }
+        PointOp::Levels {
+            black,
+            white,
+            gamma,
+        } => {
+            let range = (white - black).max(1e-6);
+            let inv_gamma = 1.0 / gamma;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let normalized = ((i as f32 / 255.0) - black) / range;
+                let clamped = normalized.clamp(0.0, 1.0);
+                *entry = (clamped.powf(inv_gamma) * 255.0 + 0.5) as u8;
+            }
+        }
+        PointOp::SigmoidalContrast {
+            strength,
+            midpoint,
+            sharpen,
+        } => {
+            if *strength < 1e-6 {
+                // Identity
+                for (i, entry) in lut.iter_mut().enumerate() {
+                    *entry = i as u8;
+                }
+            } else {
+                // IM formula: sigmoidal contrast uses scaled sigmoid
+                // sigmoid(x) = 1 / (1 + exp(strength * (midpoint - x)))
+                // Normalize to map [0,1] output range
+                let sig = |x: f32| -> f32 { 1.0 / (1.0 + (-*strength * (x - midpoint)).exp()) };
+                let sig_0 = sig(0.0);
+                let sig_1 = sig(1.0);
+                let range = sig_1 - sig_0;
+
+                for (i, entry) in lut.iter_mut().enumerate() {
+                    let x = i as f32 / 255.0;
+                    let v = if *sharpen {
+                        // Increase contrast: apply sigmoid
+                        (sig(x) - sig_0) / range
+                    } else {
+                        // Decrease contrast: apply inverse sigmoid
+                        // inv_sig(y) = midpoint - ln((1 - y_scaled) / y_scaled) / strength
+                        // where y_scaled = y * range + sig_0
+                        let y_scaled = x * range + sig_0;
+                        let y_clamped = y_scaled.clamp(1e-7, 1.0 - 1e-7);
+                        *midpoint - ((1.0 - y_clamped) / y_clamped).ln() / strength
+                    };
+                    *entry = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+                }
             }
         }
     }
@@ -272,6 +339,47 @@ pub fn build_lut_u16(op: &PointOp) -> Vec<u16> {
                 };
             }
         }
+        PointOp::Levels {
+            black,
+            white,
+            gamma,
+        } => {
+            let range = (white - black).max(1e-6);
+            let inv_gamma = 1.0 / gamma;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let normalized = ((i as f32 / MAX16) - black) / range;
+                let clamped = normalized.clamp(0.0, 1.0);
+                *entry = (clamped.powf(inv_gamma) * MAX16 + 0.5) as u16;
+            }
+        }
+        PointOp::SigmoidalContrast {
+            strength,
+            midpoint,
+            sharpen,
+        } => {
+            if *strength < 1e-6 {
+                for (i, entry) in lut.iter_mut().enumerate() {
+                    *entry = i as u16;
+                }
+            } else {
+                let sig = |x: f32| -> f32 { 1.0 / (1.0 + (-*strength * (x - midpoint)).exp()) };
+                let sig_0 = sig(0.0);
+                let sig_1 = sig(1.0);
+                let range = sig_1 - sig_0;
+
+                for (i, entry) in lut.iter_mut().enumerate() {
+                    let x = i as f32 / MAX16;
+                    let v = if *sharpen {
+                        (sig(x) - sig_0) / range
+                    } else {
+                        let y_scaled = x * range + sig_0;
+                        let y_clamped = y_scaled.clamp(1e-7, 1.0 - 1e-7);
+                        *midpoint - ((1.0 - y_clamped) / y_clamped).ln() / strength
+                    };
+                    *entry = (v.clamp(0.0, 1.0) * MAX16 + 0.5) as u16;
+                }
+            }
+        }
     }
     lut
 }
@@ -397,6 +505,48 @@ pub fn posterize(pixels: &[u8], info: &ImageInfo, levels: u8) -> Result<Vec<u8>,
 /// Clamp pixel values to [min, max].
 pub fn clamp(pixels: &[u8], info: &ImageInfo, min: u8, max: u8) -> Result<Vec<u8>, ImageError> {
     apply_op(pixels, info, &PointOp::Clamp(min, max))
+}
+
+/// Levels adjustment: remap [black, white] input range with gamma correction.
+/// black/white are fractions in [0.0, 1.0], gamma is the exponent (1.0 = linear).
+pub fn levels(
+    pixels: &[u8],
+    info: &ImageInfo,
+    black: f32,
+    white: f32,
+    gamma: f32,
+) -> Result<Vec<u8>, ImageError> {
+    apply_op(
+        pixels,
+        info,
+        &PointOp::Levels {
+            black,
+            white,
+            gamma,
+        },
+    )
+}
+
+/// Sigmoidal contrast: S-curve contrast adjustment.
+/// strength controls curve steepness (0 = identity, higher = more contrast).
+/// midpoint is the center of the curve in [0.0, 1.0].
+/// sharpen=true increases contrast, sharpen=false decreases it.
+pub fn sigmoidal_contrast(
+    pixels: &[u8],
+    info: &ImageInfo,
+    strength: f32,
+    midpoint: f32,
+    sharpen: bool,
+) -> Result<Vec<u8>, ImageError> {
+    apply_op(
+        pixels,
+        info,
+        &PointOp::SigmoidalContrast {
+            strength,
+            midpoint,
+            sharpen,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -718,6 +868,123 @@ mod tests {
         for &v in &[0u16, 100, 1000, 10000, 32768, 50000, 65535] {
             let sequential = inv[g[v as usize] as usize];
             assert_eq!(fused[v as usize], sequential, "compose mismatch at {v}");
+        }
+    }
+
+    // ── Levels tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn levels_identity() {
+        // (0%, 100%, gamma=1.0) should be identity
+        let lut = build_lut(&PointOp::Levels {
+            black: 0.0,
+            white: 1.0,
+            gamma: 1.0,
+        });
+        for i in 0..256 {
+            assert_eq!(lut[i], i as u8, "levels identity failed at {i}");
+        }
+    }
+
+    #[test]
+    fn levels_black_white_clamping() {
+        // black=10%, white=90% — values below 25 should map to 0, above 230 to 255
+        let lut = build_lut(&PointOp::Levels {
+            black: 0.1,
+            white: 0.9,
+            gamma: 1.0,
+        });
+        assert_eq!(lut[0], 0);
+        assert_eq!(lut[255], 255);
+        // Midpoint (128/255 ≈ 0.502) should map to approximately (0.502-0.1)/(0.9-0.1) ≈ 0.503 → 128
+        assert!((lut[128] as i16 - 128).abs() <= 1);
+    }
+
+    #[test]
+    fn levels_with_gamma() {
+        // gamma=2.0 should darken midtones
+        let lut = build_lut(&PointOp::Levels {
+            black: 0.0,
+            white: 1.0,
+            gamma: 2.0,
+        });
+        // With gamma=2.0, inv_gamma=0.5, so midpoint 128 → (0.502)^0.5 ≈ 0.709 → 181
+        assert!(lut[128] > 160, "gamma 2.0 should brighten: got {}", lut[128]);
+    }
+
+    #[test]
+    fn levels_compose_with_invert() {
+        let levels_lut = build_lut(&PointOp::Levels {
+            black: 0.1,
+            white: 0.9,
+            gamma: 1.0,
+        });
+        let invert_lut = build_lut(&PointOp::Invert);
+        let fused = compose_luts(&levels_lut, &invert_lut);
+        // Fused should be levels then invert
+        for i in 0..256 {
+            assert_eq!(fused[i], invert_lut[levels_lut[i] as usize]);
+        }
+    }
+
+    // ── Sigmoidal Contrast tests ──────────────────────────────────────────
+
+    #[test]
+    fn sigmoidal_identity_at_zero_strength() {
+        let lut = build_lut(&PointOp::SigmoidalContrast {
+            strength: 0.0,
+            midpoint: 0.5,
+            sharpen: true,
+        });
+        for i in 0..256 {
+            assert_eq!(lut[i], i as u8, "sigmoidal identity failed at {i}");
+        }
+    }
+
+    #[test]
+    fn sigmoidal_sharpen_increases_contrast() {
+        let lut = build_lut(&PointOp::SigmoidalContrast {
+            strength: 5.0,
+            midpoint: 0.5,
+            sharpen: true,
+        });
+        // Endpoints should be near 0 and 255
+        assert!(lut[0] <= 2, "sigmoidal black point: {}", lut[0]);
+        assert!(lut[255] >= 253, "sigmoidal white point: {}", lut[255]);
+        // Midpoint (128) should stay near 128
+        assert!((lut[128] as i16 - 128).abs() <= 2, "midpoint: {}", lut[128]);
+        // Shadows should be darker, highlights brighter (S-curve)
+        assert!(lut[64] < 64, "shadows should be darker: {} vs 64", lut[64]);
+        assert!(lut[192] > 192, "highlights should be brighter: {} vs 192", lut[192]);
+    }
+
+    #[test]
+    fn sigmoidal_soften_decreases_contrast() {
+        let lut = build_lut(&PointOp::SigmoidalContrast {
+            strength: 5.0,
+            midpoint: 0.5,
+            sharpen: false,
+        });
+        // Inverse: shadows brighter, highlights darker
+        assert!(lut[64] > 64, "softened shadows should be brighter: {} vs 64", lut[64]);
+        assert!(lut[192] < 192, "softened highlights should be darker: {} vs 192", lut[192]);
+    }
+
+    #[test]
+    fn sigmoidal_compose_with_levels() {
+        let sig_lut = build_lut(&PointOp::SigmoidalContrast {
+            strength: 3.0,
+            midpoint: 0.5,
+            sharpen: true,
+        });
+        let levels_lut = build_lut(&PointOp::Levels {
+            black: 0.1,
+            white: 0.9,
+            gamma: 1.0,
+        });
+        let fused = compose_luts(&levels_lut, &sig_lut);
+        for i in 0..256 {
+            assert_eq!(fused[i], sig_lut[levels_lut[i] as usize]);
         }
     }
 }

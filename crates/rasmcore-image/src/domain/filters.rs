@@ -6529,6 +6529,61 @@ pub fn posterize_registered(
     super::point_ops::posterize(pixels, info, levels)
 }
 
+#[derive(rasmcore_macros::ConfigParams)]
+/// Levels adjustment — remap input black/white points with gamma
+pub struct LevelsParams {
+    /// Input black point (0-100%)
+    #[param(min = 0.0, max = 100.0, step = 0.1, default = 0.0)]
+    pub black_point: f32,
+    /// Input white point (0-100%)
+    #[param(min = 0.0, max = 100.0, step = 0.1, default = 100.0)]
+    pub white_point: f32,
+    /// Gamma correction (0.1-10.0, 1.0 = linear)
+    #[param(min = 0.1, max = 10.0, step = 0.01, default = 1.0)]
+    pub gamma: f32,
+}
+
+/// Levels adjustment: remap [black, white] input range with gamma curve.
+/// Matches ImageMagick `-level black%,white%,gamma`.
+#[rasmcore_macros::register_filter(name = "levels", category = "adjustment")]
+pub fn levels(
+    pixels: &[u8],
+    info: &ImageInfo,
+    black_point: f32,
+    white_point: f32,
+    gamma: f32,
+) -> Result<Vec<u8>, ImageError> {
+    // Convert percentage to fraction
+    super::point_ops::levels(pixels, info, black_point / 100.0, white_point / 100.0, gamma)
+}
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Sigmoidal contrast — S-curve contrast adjustment
+pub struct SigmoidalContrastParams {
+    /// Contrast strength (0-20, 0 = identity)
+    #[param(min = 0.0, max = 20.0, step = 0.1, default = 3.0)]
+    pub strength: f32,
+    /// Midpoint percentage (0-100%)
+    #[param(min = 0.0, max = 100.0, step = 0.1, default = 50.0)]
+    pub midpoint: f32,
+    /// true = increase contrast (sharpen), false = decrease contrast (soften)
+    #[param(default = true)]
+    pub sharpen: bool,
+}
+
+/// Sigmoidal contrast: S-curve contrast adjustment.
+/// Matches ImageMagick `-sigmoidal-contrast strengthxmidpoint%`.
+#[rasmcore_macros::register_filter(name = "sigmoidal_contrast", category = "adjustment")]
+pub fn sigmoidal_contrast(
+    pixels: &[u8],
+    info: &ImageInfo,
+    strength: f32,
+    midpoint: f32,
+    sharpen: bool,
+) -> Result<Vec<u8>, ImageError> {
+    super::point_ops::sigmoidal_contrast(pixels, info, strength, midpoint / 100.0, sharpen)
+}
+
 /// Histogram equalization — maximize contrast via CDF remapping.
 #[rasmcore_macros::register_filter(name = "equalize", category = "enhancement")]
 pub fn equalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {

@@ -1147,6 +1147,83 @@ fn algorithm_charcoal() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// LEVELS & SIGMOIDAL CONTRAST — EXACT tier
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_levels() {
+    // IM -level "10%,90%,1.5" → our levels(10%, 90%, 1.5)
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::levels(px, info, 10.0, 90.0, 1.5).unwrap(),
+        &["-level", "10%,90%,1.5"],
+        "levels_10_90_1.5",
+    ) {
+        assert!(
+            error < 1.0,
+            "levels MAE = {error:.4} (expected < 1.0)"
+        );
+    }
+}
+
+#[test]
+fn exact_levels_identity() {
+    // IM -level "0%,100%,1.0" should be identity (MAE ≈ 0)
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::levels(px, info, 0.0, 100.0, 1.0).unwrap(),
+        &["-level", "0%,100%,1.0"],
+        "levels_identity",
+    ) {
+        assert!(
+            error < 0.01,
+            "levels identity MAE = {error:.4} (expected ~0)"
+        );
+    }
+}
+
+#[test]
+fn exact_sigmoidal_contrast() {
+    // IM -sigmoidal-contrast "5x50%" → our sigmoidal_contrast(5, 50%, true)
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            rasmcore_image::domain::filters::sigmoidal_contrast(px, info, 5.0, 50.0, true).unwrap()
+        },
+        &["-sigmoidal-contrast", "5x50%"],
+        "sigmoidal_5x50",
+    ) {
+        assert!(
+            error < 1.0,
+            "sigmoidal_contrast MAE = {error:.4} (expected < 1.0)"
+        );
+    }
+}
+
+#[test]
+fn exact_sigmoidal_contrast_soften() {
+    // IM +sigmoidal-contrast "5x50%" (note: +sigmoidal = decrease contrast)
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            rasmcore_image::domain::filters::sigmoidal_contrast(px, info, 5.0, 50.0, false)
+                .unwrap()
+        },
+        &["+sigmoidal-contrast", "5x50%"],
+        "sigmoidal_soften_5x50",
+    ) {
+        assert!(
+            error < 1.0,
+            "sigmoidal_contrast soften MAE = {error:.4} (expected < 1.0)"
+        );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // DDS BCn DECODE PARITY — compare our BC1/BC3 decode against ImageMagick
 // ═══════════════════════════════════════════════════════════════════════════
 
