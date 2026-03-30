@@ -14,7 +14,7 @@ mod ref_tools;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::path::Path;
 
-use rasmcore_image::domain::filters::MertensParams;
+use rasmcore_image::domain::filters::{AdaptiveMethod, BlendMode, MertensParams};
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::{decoder, encoder, filters, transform};
 
@@ -905,6 +905,306 @@ fn transform_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── Color & Tone Benchmarks ────────────────────────────────────────────
+
+fn color_tone_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("color_tone");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        // Ensure RGB8
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Brightness (+25%)
+        let px = pixels.clone();
+        let inf = info;
+        group.bench_function(BenchmarkId::new("brightness/rasmcore", size), |b| {
+            b.iter(|| filters::brightness(&px, &inf, 0.25).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("brightness/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(&p, &["-evaluate", "Add", "25%"], "png", None)
+                });
+            });
+        }
+
+        // Contrast (+0.5)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("contrast/rasmcore", size), |b| {
+            b.iter(|| filters::contrast(&px, &inf, 0.5).unwrap());
+        });
+
+        // Hue rotate
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("hue_rotate/rasmcore", size), |b| {
+            b.iter(|| filters::hue_rotate(&px, &inf, 90.0).unwrap());
+        });
+
+        // Saturate
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("saturate/rasmcore", size), |b| {
+            b.iter(|| filters::saturate(&px, &inf, 1.5).unwrap());
+        });
+
+        // Sepia
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("sepia/rasmcore", size), |b| {
+            b.iter(|| filters::sepia(&px, &inf, 0.8).unwrap());
+        });
+    }
+
+    group.finish();
+}
+
+// ─── Edge Detection Benchmarks ──────────────────────────────────────────
+
+fn edge_detection_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("edge");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        // Convert to grayscale for edge detectors
+        let rgb_info = ImageInfo {
+            width: dec.info.width,
+            height: dec.info.height,
+            format: PixelFormat::Rgb8,
+            color_space: dec.info.color_space,
+        };
+        let rgb_pixels = if dec.info.format == PixelFormat::Rgba8 {
+            dec.pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect::<Vec<u8>>()
+        } else {
+            dec.pixels.clone()
+        };
+        let gray_dec = filters::grayscale(&rgb_pixels, &rgb_info).unwrap();
+        let gray_pixels = gray_dec.pixels;
+        let gray_info = gray_dec.info;
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Sobel
+        group.bench_function(BenchmarkId::new("sobel/rasmcore", size), |b| {
+            b.iter(|| filters::sobel(&gray_pixels, &gray_info).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("sobel/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-edge", "1"], "png", None));
+            });
+        }
+
+        // Scharr
+        group.bench_function(BenchmarkId::new("scharr/rasmcore", size), |b| {
+            b.iter(|| filters::scharr(&gray_pixels, &gray_info).unwrap());
+        });
+
+        // Laplacian
+        group.bench_function(BenchmarkId::new("laplacian/rasmcore", size), |b| {
+            b.iter(|| filters::laplacian(&gray_pixels, &gray_info).unwrap());
+        });
+
+        // Canny
+        group.bench_function(BenchmarkId::new("canny/rasmcore", size), |b| {
+            b.iter(|| filters::canny(&gray_pixels, &gray_info, 50.0, 150.0).unwrap());
+        });
+    }
+
+    group.finish();
+}
+
+// ─── Threshold & Analysis Benchmarks ────────────────────────────────────
+
+fn threshold_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("threshold");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+
+        let rgb_info = ImageInfo {
+            width: dec.info.width,
+            height: dec.info.height,
+            format: PixelFormat::Rgb8,
+            color_space: dec.info.color_space,
+        };
+        let rgb_pixels = if dec.info.format == PixelFormat::Rgba8 {
+            dec.pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect::<Vec<u8>>()
+        } else {
+            dec.pixels.clone()
+        };
+        let gray_dec = filters::grayscale(&rgb_pixels, &rgb_info).unwrap();
+        let gray_pixels = gray_dec.pixels;
+        let gray_info = gray_dec.info;
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Otsu threshold
+        group.bench_function(BenchmarkId::new("otsu/rasmcore", size), |b| {
+            b.iter(|| filters::otsu_threshold(&gray_pixels, &gray_info).unwrap());
+        });
+
+        // Triangle threshold
+        group.bench_function(BenchmarkId::new("triangle/rasmcore", size), |b| {
+            b.iter(|| filters::triangle_threshold(&gray_pixels, &gray_info).unwrap());
+        });
+
+        // Adaptive threshold (Gaussian, block_size=11)
+        group.bench_function(BenchmarkId::new("adaptive_gaussian/rasmcore", size), |b| {
+            b.iter(|| {
+                filters::adaptive_threshold(
+                    &gray_pixels,
+                    &gray_info,
+                    255,
+                    AdaptiveMethod::Gaussian,
+                    11,
+                    2.0,
+                )
+                .unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// ─── Alpha, Blend, Vignette, Pyramid Benchmarks ────────────────────────
+
+fn alpha_blend_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("alpha_blend");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+
+        let base_info = ImageInfo {
+            width: dec.info.width,
+            height: dec.info.height,
+            format: dec.info.format,
+            color_space: dec.info.color_space,
+        };
+
+        // Build RGBA8 input (add alpha channel if needed)
+        let rgba_info = ImageInfo {
+            format: PixelFormat::Rgba8,
+            ..base_info
+        };
+        let rgba_pixels = if base_info.format == PixelFormat::Rgba8 {
+            dec.pixels.clone()
+        } else {
+            dec.pixels
+                .chunks_exact(3)
+                .flat_map(|c| [c[0], c[1], c[2], 200])
+                .collect::<Vec<u8>>()
+        };
+
+        // RGB8 for vignette/pyramid
+        let rgb_info = ImageInfo {
+            format: PixelFormat::Rgb8,
+            ..base_info
+        };
+        let rgb_pixels = if base_info.format == PixelFormat::Rgba8 {
+            dec.pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect::<Vec<u8>>()
+        } else {
+            dec.pixels.clone()
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Premultiply
+        group.bench_function(BenchmarkId::new("premultiply/rasmcore", size), |b| {
+            b.iter(|| filters::premultiply(&rgba_pixels, &rgba_info).unwrap());
+        });
+
+        // Unpremultiply
+        group.bench_function(BenchmarkId::new("unpremultiply/rasmcore", size), |b| {
+            b.iter(|| filters::unpremultiply(&rgba_pixels, &rgba_info).unwrap());
+        });
+
+        // Blend modes (self-blend for consistency)
+        group.bench_function(BenchmarkId::new("blend_multiply/rasmcore", size), |b| {
+            b.iter(|| {
+                filters::blend(
+                    &rgba_pixels, &rgba_info, &rgba_pixels, &rgba_info, BlendMode::Multiply,
+                )
+                .unwrap()
+            });
+        });
+
+        group.bench_function(BenchmarkId::new("blend_screen/rasmcore", size), |b| {
+            b.iter(|| {
+                filters::blend(
+                    &rgba_pixels, &rgba_info, &rgba_pixels, &rgba_info, BlendMode::Screen,
+                )
+                .unwrap()
+            });
+        });
+
+        // Vignette powerlaw
+        group.bench_function(BenchmarkId::new("vignette_powerlaw/rasmcore", size), |b| {
+            b.iter(|| {
+                filters::vignette_powerlaw(&rgb_pixels, &rgb_info, 0.5, 2.0, size, size, 0, 0)
+                    .unwrap()
+            });
+        });
+
+        // Pyramid down/up (Gray8 only)
+        {
+            let gray_dec = filters::grayscale(&rgb_pixels, &rgb_info).unwrap();
+            let gp = gray_dec.pixels;
+            let gi = gray_dec.info;
+
+            group.bench_function(BenchmarkId::new("pyr_down/rasmcore", size), |b| {
+                b.iter(|| filters::pyr_down(&gp, &gi).unwrap());
+            });
+
+            group.bench_function(BenchmarkId::new("pyr_up/rasmcore", size), |b| {
+                b.iter(|| filters::pyr_up(&gp, &gi).unwrap());
+            });
+        }
+    }
+
+    group.finish();
+}
+
 // ─── Pipeline Benchmarks ─────────────────────────────────────────────────
 
 fn pipeline_benchmarks(c: &mut Criterion) {
@@ -1246,6 +1546,10 @@ criterion_group!(
     enhancement_filter_benchmarks,
     geometric_warp_benchmarks,
     transform_benchmarks,
+    color_tone_benchmarks,
+    edge_detection_benchmarks,
+    threshold_benchmarks,
+    alpha_blend_benchmarks,
     pipeline_benchmarks,
     cli_decoder_benchmarks,
     cli_encoder_benchmarks
