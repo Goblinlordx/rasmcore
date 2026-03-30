@@ -1091,9 +1091,10 @@ fn exact_emboss() {
 
 #[test]
 fn algorithm_oil_paint() {
-    // Our oil_paint uses 20 intensity bins; IM -paint uses per-pixel intensity
-    // levels. Algorithm differences in binning and intensity formula cause
-    // divergence. Threshold is set after measuring baseline MAE.
+    // Our oil_paint uses 256 intensity bins (aligned with IM) and BT.601 luma.
+    // Remaining MAE (~3.6) comes from: IM operates at Q16-HDRI float precision
+    // for intensity computation, and may use slightly different mode tie-breaking
+    // when multiple bins have equal count. Edge handling also differs.
     if let Some(error) = check_parity_rgb(
         64,
         64,
@@ -1102,8 +1103,8 @@ fn algorithm_oil_paint() {
         "oil_paint_r3",
     ) {
         assert!(
-            error < 15.0,
-            "oil_paint MAE = {error:.4} (ALGORITHM tier: binning differs)"
+            error < 5.0,
+            "oil_paint MAE = {error:.4} (ALGORITHM tier: Q16-HDRI precision + tie-breaking)"
         );
     }
 }

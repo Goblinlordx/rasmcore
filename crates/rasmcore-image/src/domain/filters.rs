@@ -10256,8 +10256,10 @@ pub fn oil_paint(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>
     let ch = channels(info.format);
     let r = radius as usize;
 
-    // Quantize to 20 intensity bins for mode detection
-    const BINS: usize = 20;
+    // Use 256 intensity bins (one per level) to match ImageMagick's -paint
+    // behavior. Coarser binning (e.g. 20 bins) trades accuracy for memory
+    // but diverges from the reference.
+    const BINS: usize = 256;
     let mut out = vec![0u8; pixels.len()];
 
     for y in 0..h {
@@ -10276,23 +10278,22 @@ pub fn oil_paint(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>
                 for nx in x0..x1 {
                     let idx = (ny * w + nx) * ch;
                     let intensity = if ch >= 3 {
-                        // Approximate luminance
+                        // BT.601 luminance
                         ((pixels[idx] as u32 * 77
                             + pixels[idx + 1] as u32 * 150
                             + pixels[idx + 2] as u32 * 29
                             + 128)
-                            >> 8) as u8
+                            >> 8) as usize
                     } else {
-                        pixels[idx]
+                        pixels[idx] as usize
                     };
-                    let bin = (intensity as usize * (BINS - 1)) / 255;
-                    count[bin] += 1;
+                    count[intensity] += 1;
                     if ch >= 3 {
-                        sum_r[bin] += pixels[idx] as u32;
-                        sum_g[bin] += pixels[idx + 1] as u32;
-                        sum_b[bin] += pixels[idx + 2] as u32;
+                        sum_r[intensity] += pixels[idx] as u32;
+                        sum_g[intensity] += pixels[idx + 1] as u32;
+                        sum_b[intensity] += pixels[idx + 2] as u32;
                     } else {
-                        sum_r[bin] += pixels[idx] as u32;
+                        sum_r[intensity] += pixels[idx] as u32;
                     }
                 }
             }
