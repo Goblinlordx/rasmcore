@@ -879,6 +879,40 @@ for degenerate point configurations where c22≠1. For typical use cases
 
 **Parity tests:** `domain::filters::perspective_tests::homography_*`
 
+### Procedural Noise (Perlin + Simplex) — Statistical Validation Only
+
+**Reference:** Ken Perlin "Improving Noise" (SIGGRAPH 2002), OpenSimplex (KdotJPG 2014)
+
+| Property | Validation Method | Status |
+|----------|-------------------|--------|
+| Determinism | Same seed → identical output | Tested (exact) |
+| Seed independence | Different seeds → different output | Tested |
+| Statistical range | Mean ~128, stddev >10, span >100 | Tested |
+| Smoothness | Single-octave avg adjacent diff <10 | Tested |
+| Reference parity | Against external implementation | **NOT VALIDATED** |
+| SIMD optimization | WASM128/SSE/NEON vectorization | **NOT IMPLEMENTED** |
+
+**Why no reference parity:** There is no single canonical implementation of
+Perlin or Simplex noise. Ken Perlin's original Java code, the Rust `noise`
+crate, OpenSimplex2, and libnoise all produce different output for the same
+inputs due to different gradient tables, permutation schemes, and scaling
+constants. Pixel-exact parity would require choosing one implementation as
+canonical and matching its exact internal details.
+
+**Future validation options:**
+- Cross-check against the Rust `noise` crate (closest to an ecosystem standard)
+- Validate gradient table correctness against Perlin's published table
+- Validate fade curve output at known inputs
+- Frequency-domain analysis (FFT) to verify spectral properties
+
+**SIMD opportunity:** The inner loop evaluates the same fade/lerp/gradient
+math at every pixel independently — embarrassingly parallel. Key optimization:
+- Drop from f64 to f32 (sufficient for u8 output) → 4-wide WASM SIMD128
+- Vectorize fade curve, gradient dot products, and lerp
+- Permutation table lookups remain scalar (random access), but post-lookup
+  arithmetic dominates and vectorizes well
+- Expected speedup: 2-3x on WASM, more on AVX2
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:
