@@ -5121,19 +5121,23 @@ pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8
         // Vectorized ln(orig/surround) — 4 values at a time
         let mut i = 0;
         while i < simd_end {
-            let o = v128_load(orig_f32[i..].as_ptr() as *const v128);
-            let s = v128_load(surr_f32[i..].as_ptr() as *const v128);
+            // SAFETY: i..i+4 is within bounds (simd_end rounded down to multiple of 4).
+            // Pointers from Vec<f32> slices are valid and v128_load handles unaligned.
+            let o = unsafe { v128_load(orig_f32[i..].as_ptr() as *const v128) };
+            let s = unsafe { v128_load(surr_f32[i..].as_ptr() as *const v128) };
             let ratio = f32x4_div(o, s);
-            // Scalar ln per lane (WASM SIMD128 has no native ln)
             let mut vals = [0.0f32; 4];
             vals[0] = f32x4_extract_lane::<0>(ratio).ln();
             vals[1] = f32x4_extract_lane::<1>(ratio).ln();
             vals[2] = f32x4_extract_lane::<2>(ratio).ln();
             vals[3] = f32x4_extract_lane::<3>(ratio).ln();
-            v128_store(
-                retinex[i..].as_mut_ptr() as *mut v128,
-                f32x4(vals[0], vals[1], vals[2], vals[3]),
-            );
+            // SAFETY: same bounds guarantee as above.
+            unsafe {
+                v128_store(
+                    retinex[i..].as_mut_ptr() as *mut v128,
+                    f32x4(vals[0], vals[1], vals[2], vals[3]),
+                );
+            }
             for &v in &vals {
                 min_val = min_val.min(v);
                 max_val = max_val.max(v);
@@ -5186,7 +5190,8 @@ pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8
         if channels == 3 {
             // RGB: retinex layout matches pixel layout
             while ri < simd_end {
-                let r = v128_load(retinex[ri..].as_ptr() as *const v128);
+                // SAFETY: ri..ri+4 within bounds (simd_end rounded down).
+                let r = unsafe { v128_load(retinex[ri..].as_ptr() as *const v128) };
                 let v = f32x4_mul(f32x4_sub(r, min_v), scale);
                 let v = f32x4_max(zero, f32x4_min(max_255, f32x4_add(v, half)));
                 result[ri] = f32x4_extract_lane::<0>(v) as u8;

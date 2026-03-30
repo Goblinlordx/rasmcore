@@ -204,8 +204,10 @@ unsafe fn rotate_90_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                 for r in 0..8 {
                     let sy = ty + r;
                     let off = (sy * w + tx) * BPP;
-                    rows_lo[r] = v128_load(pixels.as_ptr().add(off) as *const v128);
-                    rows_hi[r] = v128_load(pixels.as_ptr().add(off + 16) as *const v128);
+                    // SAFETY: off and off+16 are within pixel buffer bounds
+                    // (8×8 tile within w×h image, BPP=4, 32 bytes per row).
+                    rows_lo[r] = unsafe { v128_load(pixels.as_ptr().add(off) as *const v128) };
+                    rows_hi[r] = unsafe { v128_load(pixels.as_ptr().add(off + 16) as *const v128) };
                 }
 
                 // Transpose 8×8 i32 matrix laid out as 8 rows of (lo, hi) v128.
@@ -300,8 +302,11 @@ unsafe fn rotate_90_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                     // Write reversed: hi reversed first, then lo reversed
                     let rev_hi = reverse_v128_i32!(hi);
                     let rev_lo = reverse_v128_i32!(lo);
-                    v128_store(result.as_mut_ptr().add(dst_off) as *mut v128, rev_hi);
-                    v128_store(result.as_mut_ptr().add(dst_off + 16) as *mut v128, rev_lo);
+                    // SAFETY: dst_off within result buffer bounds (tile-aligned output).
+                    unsafe {
+                        v128_store(result.as_mut_ptr().add(dst_off) as *mut v128, rev_hi);
+                        v128_store(result.as_mut_ptr().add(dst_off + 16) as *mut v128, rev_lo);
+                    }
                 }
             } else {
                 // Edge tile: scalar fallback
@@ -342,8 +347,9 @@ unsafe fn rotate_270_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                 for r in 0..8 {
                     let sy = ty + r;
                     let off = (sy * w + tx) * BPP;
-                    rows_lo[r] = v128_load(pixels.as_ptr().add(off) as *const v128);
-                    rows_hi[r] = v128_load(pixels.as_ptr().add(off + 16) as *const v128);
+                    // SAFETY: 8×8 tile within bounds, 32 bytes per row.
+                    rows_lo[r] = unsafe { v128_load(pixels.as_ptr().add(off) as *const v128) };
+                    rows_hi[r] = unsafe { v128_load(pixels.as_ptr().add(off + 16) as *const v128) };
                 }
 
                 macro_rules! unpack_lo_i32 {
@@ -420,8 +426,11 @@ unsafe fn rotate_270_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                     let dst_row = w - 1 - (tx + col_idx);
                     let dst_col_start = ty;
                     let dst_off = (dst_row * ow + dst_col_start) * BPP;
-                    v128_store(result.as_mut_ptr().add(dst_off) as *mut v128, lo);
-                    v128_store(result.as_mut_ptr().add(dst_off + 16) as *mut v128, hi);
+                    // SAFETY: dst_off within output buffer bounds (transposed tile).
+                    unsafe {
+                        v128_store(result.as_mut_ptr().add(dst_off) as *mut v128, lo);
+                        v128_store(result.as_mut_ptr().add(dst_off + 16) as *mut v128, hi);
+                    }
                 }
             } else {
                 for dy in 0..tile_h {
