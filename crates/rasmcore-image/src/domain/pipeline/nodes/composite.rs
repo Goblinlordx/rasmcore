@@ -98,7 +98,7 @@ impl ImageNode for CompositeNode {
                     &positioned_info,
                     &bg_pixels,
                     &self.bg_info,
-                    mode.clone(),
+                    *mode,
                 )
             }
         }

@@ -5,9 +5,9 @@
 
 use super::error::ImageError;
 use super::metadata::{ExifMetadata, read_exif};
-use super::metadata_iptc::{IptcMetadata, parse_iptc};
+use super::metadata_iptc::parse_iptc;
 use super::metadata_set::MetadataSet;
-use super::metadata_xmp::{XmpMetadata, parse_xmp};
+use super::metadata_xmp::parse_xmp;
 use std::collections::BTreeMap;
 
 // ─── Field Registries ────────────────────────────────────────────────────
@@ -125,14 +125,13 @@ pub fn metadata_dump_from_bytes(
     let mut result = BTreeMap::new();
 
     // EXIF — parse from original bytes for best compatibility
-    if ms.exif.is_some() {
-        if let Ok(exif) = read_exif(data) {
+    if ms.exif.is_some()
+        && let Ok(exif) = read_exif(data) {
             let fields = exif_to_fields(&exif);
             if !fields.is_empty() {
                 result.insert("exif".into(), fields);
             }
         }
-    }
 
     add_xmp_fields(&mut result, ms);
     add_iptc_fields(&mut result, ms);
@@ -147,14 +146,13 @@ pub fn metadata_dump(ms: &MetadataSet) -> BTreeMap<String, BTreeMap<String, Stri
     let mut result = BTreeMap::new();
 
     // EXIF
-    if let Some(ref exif_bytes) = ms.exif {
-        if let Ok(exif) = parse_exif_from_raw(exif_bytes) {
+    if let Some(ref exif_bytes) = ms.exif
+        && let Ok(exif) = parse_exif_from_raw(exif_bytes) {
             let fields = exif_to_fields(&exif);
             if !fields.is_empty() {
                 result.insert("exif".into(), fields);
             }
         }
-    }
 
     add_xmp_fields(&mut result, ms);
     add_iptc_fields(&mut result, ms);
@@ -190,8 +188,8 @@ fn exif_to_fields(exif: &ExifMetadata) -> BTreeMap<String, String> {
 }
 
 fn add_xmp_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &MetadataSet) {
-    if let Some(ref xmp_bytes) = ms.xmp {
-        if let Ok(xmp) = parse_xmp(xmp_bytes) {
+    if let Some(ref xmp_bytes) = ms.xmp
+        && let Ok(xmp) = parse_xmp(xmp_bytes) {
             let mut fields = BTreeMap::new();
             if let Some(ref v) = xmp.title {
                 fields.insert("Title".into(), v.clone());
@@ -218,12 +216,11 @@ fn add_xmp_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &
                 result.insert("xmp".into(), fields);
             }
         }
-    }
 }
 
 fn add_iptc_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &MetadataSet) {
-    if let Some(ref iptc_bytes) = ms.iptc {
-        if let Ok(iptc) = parse_iptc(iptc_bytes) {
+    if let Some(ref iptc_bytes) = ms.iptc
+        && let Ok(iptc) = parse_iptc(iptc_bytes) {
             let mut fields = BTreeMap::new();
             if let Some(ref v) = iptc.title {
                 fields.insert("Title".into(), v.clone());
@@ -250,7 +247,6 @@ fn add_iptc_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: 
                 result.insert("iptc".into(), fields);
             }
         }
-    }
 }
 
 fn add_icc_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &MetadataSet) {

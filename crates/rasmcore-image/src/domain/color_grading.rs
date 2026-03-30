@@ -13,7 +13,9 @@
 
 use super::color_lut::ColorLut3D;
 use super::error::ImageError;
-use super::types::{ColorSpace, ImageInfo, PixelFormat};
+#[cfg(test)]
+use super::types::ColorSpace;
+use super::types::{ImageInfo, PixelFormat};
 
 // ─── ASC-CDL (Slope/Offset/Power) ─────────────────────────────────────────
 
@@ -168,10 +170,9 @@ pub fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32
     let midpoint = 0.5 + st.balance * 0.5;
 
     // Shadow/highlight blend factor
-    let shadow_weight = (1.0 - luma / midpoint.max(0.001)).max(0.0).min(1.0) * st.strength;
+    let shadow_weight = (1.0 - luma / midpoint.max(0.001)).clamp(0.0, 1.0) * st.strength;
     let highlight_weight = ((luma - midpoint) / (1.0 - midpoint).max(0.001))
-        .max(0.0)
-        .min(1.0)
+        .clamp(0.0, 1.0)
         * st.strength;
 
     // Blend: tint toward shadow/highlight color
@@ -231,8 +232,8 @@ pub fn build_curve_lut(points: &[(f32, f32)]) -> [u8; 256] {
 
     if points.len() < 2 {
         // Identity
-        for i in 0..256 {
-            lut[i] = i as u8;
+        for (i, v) in lut.iter_mut().enumerate() {
+            *v = i as u8;
         }
         return lut;
     }
@@ -284,6 +285,7 @@ pub fn build_curve_lut(points: &[(f32, f32)]) -> [u8; 256] {
     }
 
     // Evaluate at each of 256 positions
+    #[allow(clippy::needless_range_loop)]
     for i in 0..256 {
         let x = i as f32 / 255.0;
 
@@ -393,7 +395,7 @@ pub fn tonemap_reinhard_pixel(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
 
 /// Apply Reinhard tone mapping to an image buffer.
 pub fn tonemap_reinhard(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
-    apply_rgb_transform(pixels, info, |r, g, b| tonemap_reinhard_pixel(r, g, b))
+    apply_rgb_transform(pixels, info, tonemap_reinhard_pixel)
 }
 
 /// Drago logarithmic tone mapping operator.

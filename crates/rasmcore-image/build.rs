@@ -345,7 +345,7 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                 let struct_line = lines[j].trim();
                 let struct_name = struct_line
                     .strip_prefix("pub struct ")
-                    .and_then(|s| s.split(|c: char| c == ' ' || c == '{').next())
+                    .and_then(|s| s.split([' ', '{']).next())
                     .unwrap_or("")
                     .to_string();
 

@@ -48,6 +48,7 @@ where
 }
 
 /// Build ImageInfo for a tile region (same format/color_space, tile dimensions).
+#[allow(dead_code)] // reserved for tiled pipeline execution
 #[inline]
 fn tile_info(request: Rect, source: &ImageInfo) -> ImageInfo {
     ImageInfo {
@@ -419,7 +420,7 @@ impl ImageNode for SobelNode {
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
         let overlap = self.overlap();
-        let bpp = bytes_per_pixel(self.source_info.format);
+        let _bpp = bytes_per_pixel(self.source_info.format);
         let ur = request.expand(&overlap, self.source_info.width, self.source_info.height);
         let src = upstream_fn(self.upstream, ur)?;
         {

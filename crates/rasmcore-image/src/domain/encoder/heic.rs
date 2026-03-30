@@ -22,6 +22,7 @@ impl Default for HeicEncodeConfig {
 
 /// Map quality (1-100) to HEVC QP (0-51).
 /// Quality 100 → QP 0 (lossless-like), Quality 1 → QP 51.
+#[allow(dead_code)] // will be used when HEIC encoding is activated
 fn quality_to_qp(quality: u8) -> i32 {
     let q = quality.clamp(1, 100) as i32;
     // Linear mapping: q=100 → QP=4, q=50 → QP=26, q=1 → QP=51

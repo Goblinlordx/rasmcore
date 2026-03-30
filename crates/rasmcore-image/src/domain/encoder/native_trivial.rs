@@ -3,8 +3,6 @@
 //! Each function is feature-gated and only compiled when the corresponding
 //! native-* feature is enabled in Cargo.toml.
 
-use super::super::error::ImageError;
-use super::super::types::{ImageInfo, PixelFormat};
 
 #[cfg(feature = "native-qoi")]
 pub fn encode_qoi(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {

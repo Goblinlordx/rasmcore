@@ -29,7 +29,7 @@ pub fn median_cut(
     info: &ImageInfo,
     max_colors: usize,
 ) -> Result<Vec<Rgb>, ImageError> {
-    if max_colors < 2 || max_colors > 256 {
+    if !(2..=256).contains(&max_colors) {
         return Err(ImageError::InvalidParameters(
             "max_colors must be 2..256".into(),
         ));
@@ -218,8 +218,8 @@ pub fn dither_floyd_steinberg(
             }
 
             // ClampPixel
-            for c in 0..3 {
-                px[c] = px[c].clamp(0.0, Q);
+            for px_val in &mut px {
+                *px_val = px_val.clamp(0.0, Q);
             }
 
             // Nearest color at Q16

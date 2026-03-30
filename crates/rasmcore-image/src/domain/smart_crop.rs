@@ -21,8 +21,6 @@
 //! removal for entropy, skin+saturation scoring for attention) to close the remaining gap.
 
 use super::error::ImageError;
-use super::filters;
-use super::histogram;
 use super::transform;
 use super::types::{DecodedImage, ImageInfo, PixelFormat};
 
@@ -322,6 +320,7 @@ fn saturation_score(rgb: &[[f32; 3]], luma: &[f32], _w: usize, _h: usize) -> Vec
 }
 
 /// Simple Gaussian blur on f32 score map (separable, box approximation).
+#[allow(clippy::needless_range_loop)]
 fn gaussian_blur_f32(input: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
     let radius = (sigma * 2.5).ceil() as usize;
     if radius == 0 {

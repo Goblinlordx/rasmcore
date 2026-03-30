@@ -240,8 +240,8 @@ pub trait ImageFilter: Send + Sync {
     /// Default: identity LUT (no-op).
     fn build_lut(&self, _params: &FilterParams) -> [u8; 256] {
         let mut lut = [0u8; 256];
-        for i in 0..256 {
-            lut[i] = i as u8;
+        for (i, v) in lut.iter_mut().enumerate() {
+            *v = i as u8;
         }
         lut
     }
@@ -434,7 +434,7 @@ builtin_filter!(MedianFilter, "median", FilterCategory::Denoise,
 // Edge detection
 builtin_filter!(SobelFilter, "sobel", FilterCategory::EdgeDetection,
     params: [],
-    apply: |input| { filters::sobel(input.pixels, input.info) }
+    apply: |input| filters::sobel(input.pixels, input.info)
 );
 
 builtin_filter!(CannyFilter, "canny", FilterCategory::EdgeDetection,
@@ -621,17 +621,17 @@ builtin_filter!(SepiaFilter, "sepia", FilterCategory::Color,
 // Histogram operations
 builtin_filter!(EqualizeFilter, "equalize", FilterCategory::Contrast,
     params: [],
-    apply: |input| { histogram::equalize(input.pixels, input.info) }
+    apply: |input| histogram::equalize(input.pixels, input.info)
 );
 
 builtin_filter!(NormalizeFilter, "normalize", FilterCategory::Contrast,
     params: [],
-    apply: |input| { histogram::normalize(input.pixels, input.info) }
+    apply: |input| histogram::normalize(input.pixels, input.info)
 );
 
 builtin_filter!(AutoLevelFilter, "auto_level", FilterCategory::Contrast,
     params: [],
-    apply: |input| { histogram::auto_level(input.pixels, input.info) }
+    apply: |input| histogram::auto_level(input.pixels, input.info)
 );
 
 // OpenCV-tier filters

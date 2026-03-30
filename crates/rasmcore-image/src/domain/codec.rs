@@ -120,16 +120,12 @@ impl CodecRegistry {
 
     /// Check if a format name is supported for decoding.
     pub fn can_decode_format(format: &str) -> bool {
-        Self::supported_decode_formats()
-            .iter()
-            .any(|&f| f == format)
+        Self::supported_decode_formats().contains(&format)
     }
 
     /// Check if a format name is supported for encoding.
     pub fn can_encode_format(format: &str) -> bool {
-        Self::supported_encode_formats()
-            .iter()
-            .any(|&f| f == format)
+        Self::supported_encode_formats().contains(&format)
     }
 
     /// Get MIME type for a format name.

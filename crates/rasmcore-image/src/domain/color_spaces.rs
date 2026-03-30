@@ -515,11 +515,11 @@ impl Illuminant {
     pub fn xyz(self) -> (f64, f64, f64) {
         match self {
             // CIE xy (0.3457, 0.3585) → XYZ
-            Illuminant::D50 => (0.9642956764295680, 1.0, 0.8251046025104602),
+            Illuminant::D50 => (0.964_295_676_429_568, 1.0, 0.8251046025104602),
             // CIE xy (0.3127, 0.329) → XYZ
             Illuminant::D65 => (D65_X, D65_Y, D65_Z),
             // CIE xy (0.44758, 0.40745) → XYZ
-            Illuminant::A => (1.0984906123450726, 1.0, 0.3557982574549030),
+            Illuminant::A => (1.0984906123450726, 1.0, 0.355_798_257_454_903),
         }
     }
 }
@@ -645,12 +645,13 @@ pub fn perspective_warp(
 
 /// Solve a 3x3 homography matrix from 4 point correspondences.
 /// Uses the DLT (Direct Linear Transform) algorithm.
+#[allow(clippy::needless_range_loop)]
 fn solve_homography(src: &[(f64, f64); 4], dst: &[(f64, f64); 4]) -> Result<[f64; 9], ImageError> {
     // Build 8x9 matrix A where A * h = 0
     let mut a = [[0.0f64; 9]; 8];
     for i in 0..4 {
-        let (sx, sy) = (src[i].0 as f64, src[i].1 as f64);
-        let (dx, dy) = (dst[i].0 as f64, dst[i].1 as f64);
+        let (sx, sy) = (src[i].0, src[i].1);
+        let (dx, dy) = (dst[i].0, dst[i].1);
         let r = i * 2;
         a[r] = [-sx, -sy, -1.0, 0.0, 0.0, 0.0, dx * sx, dx * sy, dx];
         a[r + 1] = [0.0, 0.0, 0.0, -sx, -sy, -1.0, dy * sx, dy * sy, dy];
@@ -695,7 +696,7 @@ fn solve_homography(src: &[(f64, f64); 4], dst: &[(f64, f64); 4]) -> Result<[f64
     let mut h = [0.0f64; 9];
     h[8] = 1.0;
     for i in 0..8 {
-        h[i] = -mat[i][8] as f64;
+        h[i] = -mat[i][8];
     }
     Ok(h)
 }

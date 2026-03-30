@@ -71,7 +71,7 @@ pub fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<
 where
     F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
 {
-    let channels = channels(info.format);
+    let _channels = channels(info.format);
     let bpc = 2; // bytes per channel for 16-bit
 
     // Downscale to 8-bit: (u16 + 128) / 257

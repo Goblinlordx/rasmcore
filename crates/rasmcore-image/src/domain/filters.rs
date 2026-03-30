@@ -77,7 +77,7 @@ fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>,
 where
     F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
 {
-    let ch = channels(info.format);
+    let _ch = channels(info.format);
     let samples = bytes_to_u16(pixels);
 
     // Downscale to 8-bit
@@ -355,7 +355,7 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
     // 16-bit: work in f32 for full precision
     if is_16bit(info.format) {
         let orig_f32 = u16_pixels_to_f32(pixels);
-        let info_8 = ImageInfo {
+        let _info_8 = ImageInfo {
             format: match info.format {
                 PixelFormat::Rgb16 => PixelFormat::Rgb8,
                 PixelFormat::Rgba16 => PixelFormat::Rgba8,
@@ -649,7 +649,7 @@ pub fn convolve(
     kh: usize,
     divisor: f32,
 ) -> Result<Vec<u8>, ImageError> {
-    if kw % 2 == 0 || kh % 2 == 0 || kw * kh != kernel.len() {
+    if kw.is_multiple_of(2) || kh.is_multiple_of(2) || kw * kh != kernel.len() {
         return Err(ImageError::InvalidParameters(
             "kernel dimensions must be odd and match kernel length".into(),
         ));
@@ -1009,15 +1009,15 @@ fn median_histogram(
     for c in 0..channels {
         for y in 0..h {
             let mut hist = [0u32; 256];
-            let mut count = 0u32;
+            let mut _count = 0u32;
 
             // Initialize histogram for first window in this row
             for ky in -r..=r {
                 let sy = reflect(y as i32 + ky, h);
                 for kx in -r..=r {
-                    let sx = reflect(0i32 + kx, w);
+                    let sx = reflect(kx, w);
                     hist[pixels[(sy * w + sx) * channels + c] as usize] += 1;
-                    count += 1;
+                    _count += 1;
                 }
             }
 
@@ -1033,7 +1033,7 @@ fn median_histogram(
                     let sx = reflect(old_x, w);
                     let val = pixels[(sy * w + sx) * channels + c] as usize;
                     hist[val] -= 1;
-                    count -= 1;
+                    _count -= 1;
                 }
 
                 // Add rightmost column (x + r)
@@ -1043,7 +1043,7 @@ fn median_histogram(
                     let sx = reflect(new_x, w);
                     let val = pixels[(sy * w + sx) * channels + c] as usize;
                     hist[val] += 1;
-                    count += 1;
+                    _count += 1;
                 }
 
                 out[(y * w + x) * channels + c] = find_median_in_hist(&hist, median_pos);
@@ -1076,7 +1076,7 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| sobel(p8, i8));
+        return process_via_8bit(pixels, info, sobel);
     }
 
     let w = info.width as usize;
@@ -1126,7 +1126,7 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| scharr(p8, i8));
+        return process_via_8bit(pixels, info, scharr);
     }
 
     let w = info.width as usize;
@@ -1170,7 +1170,7 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| laplacian(p8, i8));
+        return process_via_8bit(pixels, info, laplacian);
     }
 
     let w = info.width as usize;
@@ -1336,7 +1336,7 @@ pub fn canny(
             // Quantize angle to 4 directions
             let angle = gy.atan2(gx).to_degrees();
             let angle = if angle < 0.0 { angle + 180.0 } else { angle };
-            direction[y * w + x] = if angle < 22.5 || angle >= 157.5 {
+            direction[y * w + x] = if !(22.5..157.5).contains(&angle) {
                 0 // horizontal
             } else if angle < 67.5 {
                 1 // 45 degrees
@@ -1531,6 +1531,7 @@ fn im_gaussian_kernel_radius(sigma: f64) -> usize {
     (width - 2 - 1) / 2 // convert width to radius
 }
 
+#[allow(clippy::needless_range_loop)]
 /// Separable 1D Gaussian blur on a f64 single-channel buffer.
 ///
 /// Uses zero-padding outside image bounds (matching ImageMagick's vignette
@@ -1669,6 +1670,7 @@ fn build_aa_ellipse_mask(w: usize, h: usize, cx: f64, cy: f64, rx: f64, ry: f64)
 /// `full_width`/`full_height` and `tile_offset_x`/`tile_offset_y` support
 /// tiled execution. For non-tiled usage, set tile offsets to 0 and full dims
 /// to the image dimensions.
+#[allow(clippy::too_many_arguments)]
 #[rasmcore_macros::register_filter(name = "vignette", category = "enhancement")]
 pub fn vignette(
     pixels: &[u8],
@@ -1760,6 +1762,7 @@ pub fn vignette_full(
 /// Multiplies each pixel by `1.0 - strength * (dist / max_dist)^falloff`.
 /// This is a computationally cheap alternative to the Gaussian vignette
 /// with a different aesthetic (smooth polynomial falloff vs. Gaussian).
+#[allow(clippy::too_many_arguments)]
 #[rasmcore_macros::register_filter(name = "vignette_powerlaw", category = "enhancement")]
 pub fn vignette_powerlaw(
     pixels: &[u8],
@@ -2236,8 +2239,8 @@ pub fn hough_lines_p(
         }
 
         // Walk in both directions to find segment endpoints
-        #[allow(clippy::needless_range_loop)]
         let mut line_end = [(0i32, 0i32); 2];
+        #[allow(clippy::needless_range_loop)]
         for k in 0..2usize {
             let mut gap = 0i32;
             let (mut x, mut y) = (x0, y0);
@@ -2413,7 +2416,7 @@ fn solve_homography_4pt(src: &[(f32, f32); 4], dst: &[(f32, f32); 4]) -> Option<
 
     // Extract solution: x[i] = aug[i][n]
     // Pack into 3×3 with M[8] = 1.0 (c22 = 1)
-    #[allow(clippy::identity_op)]
+    #[allow(clippy::identity_op, clippy::erasing_op)]
     Some([
         aug[0 * (n + 1) + n], // c00
         aug[1 * (n + 1) + n], // c01
@@ -2722,19 +2725,17 @@ pub fn perspective_correct(
     let mut angle_x = 0.0f32;
     let mut angle_y = 0.0f32;
 
-    if v_lines.len() >= 2 {
-        if let Some(vp) = estimate_vanishing_point(&v_lines) {
+    if v_lines.len() >= 2
+        && let Some(vp) = estimate_vanishing_point(&v_lines) {
             let dx = vp.0 - cx;
             angle_x = (dx / (h as f32 * 2.0)).atan() * strength;
         }
-    }
 
-    if h_lines.len() >= 2 {
-        if let Some(vp) = estimate_vanishing_point(&h_lines) {
+    if h_lines.len() >= 2
+        && let Some(vp) = estimate_vanishing_point(&h_lines) {
             let dy = vp.1 - cy;
             angle_y = (dy / (w as f32 * 2.0)).atan() * strength;
         }
-    }
 
     // Step 5: Build rectifying homography
     let hw = w as f32 / 2.0;
@@ -2887,8 +2888,8 @@ pub fn clahe(
 
     let (w, h) = (info.width as usize, info.height as usize);
     let grid = tile_grid as usize;
-    let tile_w = (w + grid - 1) / grid;
-    let tile_h = (h + grid - 1) / grid;
+    let tile_w = w.div_ceil(grid);
+    let tile_h = h.div_ceil(grid);
 
     // Build per-tile CDF lookup tables
     let mut tile_luts = vec![[0u8; 256]; grid * grid];
@@ -3060,9 +3061,9 @@ pub fn bilateral(
     let gauss_color_coeff: f32 = -0.5 / (sigma_color * sigma_color);
     let color_lut_size = 256 * channels;
     let mut color_weight = vec![0.0f32; color_lut_size];
-    for i in 0..color_lut_size {
+    for (i, cw) in color_weight.iter_mut().enumerate().take(color_lut_size) {
         let fi = i as f32;
-        color_weight[i] = (fi * fi * gauss_color_coeff).exp();
+        *cw = (fi * fi * gauss_color_coeff).exp();
     }
 
     // Pad image with BORDER_REFLECT_101
@@ -3292,9 +3293,7 @@ fn make_structuring_element(shape: MorphShape, kw: usize, kh: usize) -> Vec<bool
     let cy = kh / 2;
     match shape {
         MorphShape::Rect => {
-            for v in &mut se {
-                *v = true;
-            }
+            se.fill(true);
         }
         MorphShape::Cross => {
             for y in 0..kh {
@@ -3602,14 +3601,14 @@ fn nlm_denoise_opencv(
     let weight_threshold = (0.001 * fixed_point_mult as f64) as i32;
 
     let mut lut = vec![0i32; almost_max_dist];
-    for ad in 0..almost_max_dist {
+    for (ad, lut_entry) in lut.iter_mut().enumerate().take(almost_max_dist) {
         let dist = ad as f64 * almost_dist2actual;
         // OpenCV DistSquared::calcWeight: exp(-dist / (h*h * channels))
         // Note: -dist (NOT -dist*dist) because dist is already squared per-pixel distance.
         // For grayscale (channels=1): exp(-dist / (h*h))
         let wf = (-dist / (params.h as f64 * params.h as f64)).exp();
         let wi = (fixed_point_mult as f64 * wf + 0.5) as i32;
-        lut[ad] = if wi < weight_threshold { 0 } else { wi };
+        *lut_entry = if wi < weight_threshold { 0 } else { wi };
     }
 
     let mut out = vec![0u8; w * h];
@@ -3880,6 +3879,7 @@ pub fn clarity(
 
     // Compute luminance for midtone weighting
     let mut luma = vec![0.0f32; n];
+    #[allow(clippy::needless_range_loop)]
     for i in 0..n {
         let pi = i * channels;
         luma[i] = (0.2126 * pixels[pi] as f32
@@ -3894,6 +3894,7 @@ pub fn clarity(
     // Midtone weight function: bell curve centered at 0.5, zero at 0 and 1
     // w(l) = 4 * l * (1 - l) — parabola peaking at 0.5 with w(0.5) = 1.0
     let mut result = vec![0u8; pixels.len()];
+    #[allow(clippy::needless_range_loop)]
     for i in 0..n {
         let weight = 4.0 * luma[i] * (1.0 - luma[i]) * amount;
         let pi = i * channels;
@@ -3948,7 +3949,7 @@ pub fn pyramid_detail_remap(
 
     // Determine pyramid levels
     let levels = if num_levels == 0 {
-        ((w.min(h) as f32).log2() as usize).min(7).max(2)
+        ((w.min(h) as f32).log2() as usize).clamp(2, 7)
     } else {
         num_levels.min(10)
     };
@@ -3994,7 +3995,7 @@ fn pyramid_detail_remap_channel(
     let mut ch = h;
     for _ in 1..levels {
         let prev = gauss_pyramid.last().unwrap();
-        let (nw, nh) = ((cw + 1) / 2, (ch + 1) / 2);
+        let (nw, nh) = (cw.div_ceil(2), ch.div_ceil(2));
         let downsampled = downsample_2x(prev, cw, ch);
         gauss_pyramid.push(downsampled);
         cw = nw;
@@ -4007,11 +4008,12 @@ fn pyramid_detail_remap_channel(
     ch = h;
 
     for level in 0..levels - 1 {
-        let (nw, nh) = ((cw + 1) / 2, (ch + 1) / 2);
+        let (nw, nh) = (cw.div_ceil(2), ch.div_ceil(2));
 
         // Laplacian = current level - upsampled(next level)
         let upsampled = upsample_2x(&gauss_pyramid[level + 1], nw, nh, cw, ch);
         let mut laplacian = vec![0.0f32; cw * ch];
+        #[allow(clippy::needless_range_loop)]
         for i in 0..cw * ch {
             laplacian[i] = gauss_pyramid[level][i] - upsampled[i];
         }
@@ -4019,12 +4021,12 @@ fn pyramid_detail_remap_channel(
         // Remap detail: attenuate or amplify based on sigma
         // Enhancement: small sigma compresses large gradients, preserves small detail
         // Smoothing: large sigma suppresses small detail
-        for i in 0..cw * ch {
-            let d = laplacian[i];
+        for laplacian_val in laplacian.iter_mut().take(cw * ch) {
+            let d = *laplacian_val;
             // Sigmoidal remapping: f(d) = d * (sigma / (sigma + |d|))
             // sigma < 1: enhances small detail (compresses large)
             // sigma > 1: smooths (suppresses small detail)
-            laplacian[i] = d * sigma / (sigma + d.abs());
+            *laplacian_val = d * sigma / (sigma + d.abs());
         }
 
         output_laplacian.push(laplacian);
@@ -4044,8 +4046,8 @@ fn pyramid_detail_remap_channel(
     let (mut tw, mut th) = (w, h);
     for _ in 0..levels {
         dims.push((tw, th));
-        tw = (tw + 1) / 2;
-        th = (th + 1) / 2;
+        tw = tw.div_ceil(2);
+        th = th.div_ceil(2);
     }
 
     for level in (0..levels - 1).rev() {
@@ -4063,8 +4065,8 @@ fn pyramid_detail_remap_channel(
 
 /// Downsample by 2x using box filter (average of 2x2 blocks).
 fn downsample_2x(data: &[f32], w: usize, h: usize) -> Vec<f32> {
-    let nw = (w + 1) / 2;
-    let nh = (h + 1) / 2;
+    let nw = w.div_ceil(2);
+    let nh = h.div_ceil(2);
     let mut out = vec![0.0f32; nw * nh];
     for y in 0..nh {
         for x in 0..nw {
@@ -4130,7 +4132,7 @@ pub fn gaussian_blur_cv(
     // OpenCV kernel size for 8U: ksize = round(sigma * 6 + 1) | 1
     let ksize = {
         let k = (sigma * 6.0 + 1.0).round() as usize;
-        if k % 2 == 0 { k + 1 } else { k }
+        if k.is_multiple_of(2) { k + 1 } else { k }
     };
     let ksize = ksize.max(3);
 
@@ -4407,8 +4409,8 @@ pub fn connected_components(
     let mut next_label: u32 = 1;
 
     // Initialize union-find
-    for i in 0..parent.len() {
-        parent[i] = i as u32;
+    for (i, p) in parent.iter_mut().enumerate() {
+        *p = i as u32;
     }
 
     fn find(parent: &mut [u32], mut x: u32) -> u32 {
@@ -4586,8 +4588,8 @@ pub fn pyr_down(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo),
     }
     let w = info.width as usize;
     let h = info.height as usize;
-    let ow = (w + 1) / 2;
-    let oh = (h + 1) / 2;
+    let ow = w.div_ceil(2);
+    let oh = h.div_ceil(2);
 
     // 5x5 Gaussian kernel (1/256 normalization): [1,4,6,4,1] x [1,4,6,4,1]
     let kernel_1d: [i32; 5] = [1, 4, 6, 4, 1];
@@ -4598,7 +4600,7 @@ pub fn pyr_down(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo),
         for x in 0..w {
             let mut sum: i32 = 0;
             for k in 0..5i32 {
-                let sx = reflect101((x as isize + k as isize - 2) as isize, w as isize) as usize;
+                let sx = reflect101(x as isize + k as isize - 2, w as isize) as usize;
                 sum += pixels[y * w + sx] as i32 * kernel_1d[k as usize];
             }
             temp[y * w + x] = sum;
@@ -4613,7 +4615,7 @@ pub fn pyr_down(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo),
             let y = oy * 2;
             let mut sum: i32 = 0;
             for k in 0..5i32 {
-                let sy = reflect101((y as isize + k as isize - 2) as isize, h as isize) as usize;
+                let sy = reflect101(y as isize + k as isize - 2, h as isize) as usize;
                 sum += temp[sy * w + x] * kernel_1d[k as usize];
             }
             // Normalize by 256 (16*16)
@@ -4662,7 +4664,7 @@ pub fn pyr_up(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), I
         for x in 0..ow {
             let mut sum: i32 = 0;
             for k in 0..5i32 {
-                let sx = reflect101((x as isize + k as isize - 2) as isize, ow as isize) as usize;
+                let sx = reflect101(x as isize + k as isize - 2, ow as isize) as usize;
                 sum += upsampled[y * ow + sx] * kernel_1d[k as usize];
             }
             temp[y * ow + x] = sum;
@@ -4675,7 +4677,7 @@ pub fn pyr_up(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), I
         for x in 0..ow {
             let mut sum: i32 = 0;
             for k in 0..5i32 {
-                let sy = reflect101((y as isize + k as isize - 2) as isize, oh as isize) as usize;
+                let sy = reflect101(y as isize + k as isize - 2, oh as isize) as usize;
                 sum += temp[sy * ow + x] * kernel_1d[k as usize];
             }
             output[y * ow + x] = ((sum + 128) >> 8).clamp(0, 255) as u8;
@@ -6236,8 +6238,8 @@ pub fn otsu_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageError>
 
     // Compute total mean
     let mut total_sum = 0.0f64;
-    for i in 0..256 {
-        total_sum += i as f64 * hist[i] as f64;
+    for (i, &h) in hist.iter().enumerate() {
+        total_sum += i as f64 * h as f64;
     }
 
     let mut best_thresh = 0u8;
@@ -6245,8 +6247,8 @@ pub fn otsu_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageError>
     let mut w0 = 0.0f64;
     let mut sum0 = 0.0f64;
 
-    for t in 0..256 {
-        w0 += hist[t] as f64;
+    for (t, &ht) in hist.iter().enumerate() {
+        w0 += ht as f64;
         if w0 == 0.0 {
             continue;
         }
@@ -6255,7 +6257,7 @@ pub fn otsu_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageError>
             break;
         }
 
-        sum0 += t as f64 * hist[t] as f64;
+        sum0 += t as f64 * ht as f64;
         let mu0 = sum0 / w0;
         let mu1 = (total_sum - sum0) / w1;
         let between_var = w0 * w1 * (mu0 - mu1) * (mu0 - mu1);
@@ -6388,7 +6390,7 @@ pub fn adaptive_threshold(
             "adaptive threshold requires Gray8 input".into(),
         ));
     }
-    if block_size % 2 == 0 || block_size < 3 {
+    if block_size.is_multiple_of(2) || block_size < 3 {
         return Err(ImageError::InvalidParameters(
             "block_size must be odd and >= 3".into(),
         ));
@@ -6496,6 +6498,7 @@ fn box_mean_u8_replicate(pixels: &[u8], w: usize, h: usize, radius: usize) -> Ve
 }
 
 /// Box mean via integral image (f64 precision).
+#[allow(dead_code)] // reserved for future adaptive-threshold modes
 fn box_mean_f64(data: &[f64], w: usize, h: usize, radius: usize) -> Vec<f64> {
     let n = w * h;
     let r = radius;
@@ -6554,6 +6557,7 @@ fn box_mean_f64(data: &[f64], w: usize, h: usize, radius: usize) -> Vec<f64> {
 }
 
 /// Separable Gaussian blur (f64 precision) for adaptive threshold Gaussian mode.
+#[allow(clippy::needless_range_loop)]
 fn gaussian_blur_f64(pixels: &[u8], w: usize, h: usize, ksize: usize, sigma: f64) -> Vec<f64> {
     let r = ksize / 2;
 
@@ -6578,7 +6582,7 @@ fn gaussian_blur_f64(pixels: &[u8], w: usize, h: usize, ksize: usize, sigma: f64
         for x in 0..w {
             let mut val = 0.0f64;
             for k in 0..ksize {
-                let sx = (x as isize + k as isize - r as isize);
+                let sx = x as isize + k as isize - r as isize;
                 let sx = reflect101(sx, ws) as usize;
                 val += pixels[y * w + sx] as f64 * kernel[k];
             }
@@ -6592,7 +6596,7 @@ fn gaussian_blur_f64(pixels: &[u8], w: usize, h: usize, ksize: usize, sigma: f64
         for x in 0..w {
             let mut val = 0.0f64;
             for k in 0..ksize {
-                let sy = (y as isize + k as isize - r as isize);
+                let sy = y as isize + k as isize - r as isize;
                 let sy = reflect101(sy, hs) as usize;
                 val += tmp[sy * w + x] * kernel[k];
             }
@@ -6920,7 +6924,7 @@ pub fn mertens_fusion_f32(
 /// Input is f32 RGB in [0,1], interleaved. Returns one weight per pixel.
 fn compute_mertens_weight(img_f: &[f32], w: usize, h: usize, params: &MertensParams) -> Vec<f32> {
     let n = w * h;
-    let sigma = 0.2f32;
+    let _sigma = 0.2f32;
 
     // Convert to grayscale — matches OpenCV MergeMertens which uses COLOR_RGB2GRAY
     // on BGR data, effectively: 0.299*B + 0.587*G + 0.114*R.
@@ -7008,8 +7012,8 @@ const PYR_KERNEL: [f32; 5] = [1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.
 fn pyr_down_gray(src: &[f32], sw: u32, sh: u32) -> (Vec<f32>, u32, u32) {
     let sw = sw as usize;
     let sh = sh as usize;
-    let dw = (sw + 1) / 2;
-    let dh = (sh + 1) / 2;
+    let dw = sw.div_ceil(2);
+    let dh = sh.div_ceil(2);
     let sws = sw as isize;
     let shs = sh as isize;
 
@@ -7048,8 +7052,8 @@ fn pyr_down_gray(src: &[f32], sw: u32, sh: u32) -> (Vec<f32>, u32, u32) {
 fn pyr_down_rgb(src: &[f32], sw: u32, sh: u32) -> (Vec<f32>, u32, u32) {
     let sw = sw as usize;
     let sh = sh as usize;
-    let dw = (sw + 1) / 2;
-    let dh = (sh + 1) / 2;
+    let dw = sw.div_ceil(2);
+    let dh = sh.div_ceil(2);
     let sws = sw as isize;
     let shs = sh as isize;
 
@@ -7095,6 +7099,7 @@ fn pyr_down_rgb(src: &[f32], sw: u32, sh: u32) -> (Vec<f32>, u32, u32) {
 }
 
 /// pyrUp for single-channel f32 — upsample by 2 then apply 5×5 Gaussian × 4.
+#[allow(dead_code)] // reserved for pyramid reconstruction path
 fn pyr_up_gray(src: &[f32], sw: u32, sh: u32, dw: u32, dh: u32) -> Vec<f32> {
     let sw = sw as usize;
     let sh = sh as usize;
@@ -7499,9 +7504,7 @@ fn solve_least_squares(a: &[f64], b: &[f64], m: usize, n: usize) -> Vec<f64> {
         }
         if max_row != col {
             for j in 0..=n {
-                let tmp = aug[col * (n + 1) + j];
-                aug[col * (n + 1) + j] = aug[max_row * (n + 1) + j];
-                aug[max_row * (n + 1) + j] = tmp;
+                aug.swap(col * (n + 1) + j, max_row * (n + 1) + j);
             }
         }
 

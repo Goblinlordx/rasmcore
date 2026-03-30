@@ -244,9 +244,9 @@ pub fn absorb_1d_pre(lut_1d: &[u8; 256], clut: &ColorLut3D) -> ColorLut3D {
 pub fn absorb_1d_post(clut: &ColorLut3D, lut_1d: &[u8; 256]) -> ColorLut3D {
     let mut result = clut.clone();
     for entry in result.data.iter_mut() {
-        for ch in 0..3 {
-            let v = (entry[ch] * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-            entry[ch] = lut_1d[v as usize] as f32 / 255.0;
+        for ch_val in entry.iter_mut().take(3) {
+            let v = (*ch_val * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+            *ch_val = lut_1d[v as usize] as f32 / 255.0;
         }
     }
     result
@@ -315,6 +315,7 @@ impl ColorOp {
 
 // ─── HSV/HSL conversions (normalized 0-1 input/output) ─────────────────────
 
+#[allow(dead_code)] // reserved for HSV-based LUT operations
 fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
@@ -333,6 +334,7 @@ fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     (h, s, max)
 }
 
+#[allow(dead_code)] // reserved for HSV-based LUT operations
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
     let c = v * s;
     let hp = h / 60.0;
