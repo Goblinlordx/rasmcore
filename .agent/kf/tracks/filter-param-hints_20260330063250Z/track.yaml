@@ -1,0 +1,128 @@
+id: filter-param-hints_20260330063250Z
+title: Filter ConfigParams Hint Pipeline — Wire Hints Through Manifest & Annotate All Filters
+type: chore
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Fix build.rs to emit hint field in param-manifest.json, define rc.* hint
+    vocabulary, and annotate all filters with color/angle/percentage params
+    with proper hints for UI-driven specialized controls.
+  context: |
+    The ConfigParams derive macro already supports #[param(hint = "...")] and
+    stores it in ParamDescriptorJson.hint. The demo UI (pipeline.js) already
+    has hint-to-control mapping logic for rc.color_rgb, rc.color_rgba,
+    rc.angle_deg, and rc.percentage. However, the build.rs manifest generator
+    drops the hint field entirely — ParamField has no hint member, the parser
+    ignores hint= in #[param(...)], and the JSON output omits it. This means
+    the hint pipeline is broken end-to-end despite both endpoints being ready.
+
+    Additionally, only 1 of ~66 ConfigParams structs uses a hint (colorize
+    with rc.color_rgb). Many filters have color params as separate _r/_g/_b/_a
+    u32 fields (draw_line, draw_rect, draw_circle, draw_text) or separate
+    channel fields (asc_cdl slope_r/g/b, lift_gamma_gain lift_r/g/b, etc.)
+    that should be annotated so the UI can render color pickers instead of
+    individual numeric sliders.
+  codebase_analysis: |
+    Key files:
+    - crates/rasmcore-macros/src/lib.rs:316-321 — proc macro extracts hint, stores in ParamDescriptorJson.hint ✓
+    - crates/rasmcore-image/build.rs:310-318 — ParamField struct MISSING hint field
+    - crates/rasmcore-image/build.rs:357-373 — parser ignores hint= attribute
+    - crates/rasmcore-image/build.rs:156-159 — JSON output omits hint
+    - demo/src/pipeline.js:81-99 — UI consumes hints (rc.color_rgb → color picker, etc.) ✓
+    - crates/rasmcore-image/src/domain/filters.rs — 66 ConfigParams structs, only colorize has hint
+
+    Filters needing color hints (separate _r/_g/_b/_a fields, no hint):
+    - DrawLineParams: color_r, color_g, color_b, color_a
+    - DrawRectParams: color_r, color_g, color_b, color_a
+    - DrawCircleParams: color_r, color_g, color_b, color_a
+    - DrawTextParams: color_r, color_g, color_b, color_a
+    - FloodFillParams: fill_r, fill_g, fill_b, fill_a
+
+    Filters needing color hints (per-channel triplets):
+    - AscCdlParams: slope_r/g/b, offset_r/g/b, power_r/g/b (3 groups)
+    - LiftGammaGainParams: lift_r/g/b, gamma_r/g/b, gain_r/g/b (3 groups)
+
+    Filters needing angle hints:
+    - SplitToningParams: highlight_hue, shadow_hue (0-360 degrees)
+    - SelectiveColorParams: target_hue (0-360 degrees)
+    - HueRotateParams: degrees (0-360)
+
+    Filters needing percentage hints:
+    - Various amount/strength params already have 0-1 range; rc.percentage
+      could be applied where the semantic is a user-facing percentage.
+  acceptance_criteria:
+    - build.rs ParamField struct includes a hint field
+    - build.rs parser extracts hint= from #[param(...)] attributes
+    - param-manifest.json includes "hint" key for every param entry (empty string when no hint)
+    - All drawing filter color fields (draw_line, draw_rect, draw_circle, draw_text) have rc.color_rgba hint
+    - FloodFillParams fill color fields have rc.color_rgba hint
+    - AscCdlParams per-channel triplets have rc.color_rgb hints (slope, offset, power groups)
+    - LiftGammaGainParams per-channel triplets have rc.color_rgb hints (lift, gamma, gain groups)
+    - SplitToningParams hue fields have rc.angle_deg hint
+    - SelectiveColorParams target_hue has rc.angle_deg hint
+    - HueRotateParams degrees field has rc.angle_deg hint
+    - rc.* hint vocabulary is documented in code_styleguides/
+    - Demo UI renders color pickers for hint-annotated color params (manual verification)
+    - Existing colorize rc.color_rgb hint continues to work
+  out_of_scope: |
+    - Changing filter function signatures or WIT interfaces (hints are metadata only)
+    - Adding new hint types beyond what the demo UI already supports
+    - Converting separate _r/_g/_b fields into [u8; 3] arrays (structural refactor)
+    - Adding hints to params that are not clearly color/angle/percentage
+    - Runtime hint validation or enforcement
+  technical_notes: |
+    Grouping convention for separate channel fields:
+    When a filter has color_r, color_g, color_b (optionally color_a) as separate
+    params, each field gets the same hint (rc.color_rgba or rc.color_rgb). The UI
+    uses the shared field name prefix (e.g., "color_") as the grouping key — all
+    fields sharing a prefix and hint are rendered as a single color picker.
+
+    For grading filters with multiple color groups (e.g., slope_r/g/b AND
+    offset_r/g/b), each group gets rc.color_rgb on its fields. The prefix
+    (slope_, offset_, power_) distinguishes the groups.
+
+    The hint field is added to JSON as the last key in each param object to
+    minimize diff noise. Empty string for params without hints.
+
+    The demo UI expand logic (expandArgs) already handles unpacking color values
+    to separate r,g,b args for pipeline dispatch — no changes needed there.
+plan:
+  - phase: Fix build.rs hint pipeline
+    tasks:
+      - text: Add hint field to ParamField struct in build.rs
+        done: false
+      - text: Update parse_config_params_structs to extract hint= from #[param(...)] attributes
+        done: false
+      - text: Update manifest JSON generation to emit "hint" key for every param (empty string default)
+        done: false
+      - text: Rebuild and verify param-manifest.json includes hint field for colorize target param
+        done: false
+  - phase: Annotate filters with hints
+    tasks:
+      - text: Add rc.color_rgba hints to DrawLineParams, DrawRectParams, DrawCircleParams, DrawTextParams color fields
+        done: false
+      - text: Add rc.color_rgba hints to FloodFillParams fill color fields
+        done: false
+      - text: Add rc.color_rgb hints to AscCdlParams (slope, offset, power channel triplets)
+        done: false
+      - text: Add rc.color_rgb hints to LiftGammaGainParams (lift, gamma, gain channel triplets)
+        done: false
+      - text: Add rc.angle_deg hints to SplitToningParams hue fields, SelectiveColorParams target_hue, HueRotateParams degrees
+        done: false
+  - phase: Documentation
+    tasks:
+      - text: Create code_styleguides/param-hints.md defining the rc.* hint vocabulary and grouping conventions
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Rebuild param-manifest.json and verify all new hints appear correctly
+        done: false
+      - text: Verify demo UI renders color pickers for annotated drawing filter params
+        done: false
+      - text: Verify existing colorize filter color picker still works
+        done: false
+      - text: Verify no regression in filters without hints (params render as standard numeric sliders)
+        done: false
+extra: {}
