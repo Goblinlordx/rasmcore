@@ -4,6 +4,7 @@
 //! bit-exact results. The 32-point butterfly decomposes into:
 //!   - 16-point even sub-transform (even-indexed coefficients)
 //!   - 16-point odd computation (odd-indexed coefficients)
+//!
 //! Each level further decomposes until reaching 4-point base case.
 
 /// Even coefficients for 4-point sub-transform.
