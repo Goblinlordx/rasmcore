@@ -30,12 +30,18 @@ use syn::{Expr, Fields, Ident, ItemFn, ItemStruct, Lit, LitStr, Meta, Token, par
 struct RegisterFilterArgs {
     name: String,
     category: String,
+    group: String,
+    variant: String,
+    reference: String,
 }
 
 impl Parse for RegisterFilterArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = String::new();
         let mut category = String::new();
+        let mut group = String::new();
+        let mut variant = String::new();
+        let mut reference = String::new();
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -49,6 +55,18 @@ impl Parse for RegisterFilterArgs {
                 "category" => {
                     let lit: LitStr = input.parse()?;
                     category = lit.value();
+                }
+                "group" => {
+                    let lit: LitStr = input.parse()?;
+                    group = lit.value();
+                }
+                "variant" => {
+                    let lit: LitStr = input.parse()?;
+                    variant = lit.value();
+                }
+                "reference" => {
+                    let lit: LitStr = input.parse()?;
+                    reference = lit.value();
                 }
                 other => {
                     return Err(syn::Error::new(
@@ -70,7 +88,13 @@ impl Parse for RegisterFilterArgs {
             ));
         }
 
-        Ok(RegisterFilterArgs { name, category })
+        Ok(RegisterFilterArgs {
+            name,
+            category,
+            group,
+            variant,
+            reference,
+        })
     }
 }
 
@@ -82,6 +106,9 @@ pub fn register_filter(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
     let filter_name = &args.name;
     let filter_category = &args.category;
+    let filter_group = &args.group;
+    let filter_variant = &args.variant;
+    let filter_reference = &args.reference;
     let reg_ident = format_ident!("__RASMCORE_FILTER_{}", fn_name.to_string().to_uppercase());
     let params = &input_fn.sig.inputs;
     let param_count = params.len().saturating_sub(2);
@@ -95,6 +122,9 @@ pub fn register_filter(attr: TokenStream, item: TokenStream) -> TokenStream {
             ::rasmcore_image::domain::filter_registry::StaticFilterRegistration {
                 name: #filter_name,
                 category: #filter_category,
+                group: #filter_group,
+                variant: #filter_variant,
+                reference: #filter_reference,
                 param_count: #param_count,
                 fn_name: stringify!(#fn_name),
                 module_path: module_path!(),

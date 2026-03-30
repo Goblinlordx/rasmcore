@@ -289,6 +289,12 @@ pub struct StaticFilterRegistration {
     pub name: &'static str,
     /// Category for grouping (e.g., "spatial", "color")
     pub category: &'static str,
+    /// UI group — related variants share a group (e.g., "blur" for blur/bokeh_blur/motion_blur)
+    pub group: &'static str,
+    /// Variant name within the group (e.g., "bokeh", "motion"). Empty for default/standalone.
+    pub variant: &'static str,
+    /// Provenance — algorithm, paper, or physical model (e.g., "Reinhard 2002")
+    pub reference: &'static str,
     /// Number of parameters (beyond pixels + info)
     pub param_count: usize,
     /// Function name in source code

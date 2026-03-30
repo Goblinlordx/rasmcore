@@ -154,6 +154,9 @@ fn main() {
         manifest.push_str("    {\n");
         manifest.push_str(&format!("      \"name\": \"{}\",\n", f.name));
         manifest.push_str(&format!("      \"category\": \"{}\",\n", f.category));
+        manifest.push_str(&format!("      \"group\": \"{}\",\n", f.group));
+        manifest.push_str(&format!("      \"variant\": \"{}\",\n", f.variant));
+        manifest.push_str(&format!("      \"reference\": \"{}\",\n", f.reference));
         manifest.push_str("      \"params\": [");
 
         if let Some(fields) = params {
@@ -207,6 +210,9 @@ fn main() {
 struct FilterReg {
     name: String,
     category: String,
+    group: String,
+    variant: String,
+    reference: String,
     fn_name: String,
     params: Vec<(String, String)>, // (param_name, rust_type)
 }
@@ -227,9 +233,22 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
 
         // Look for register_filter attribute
         if line.contains("register_filter(") && line.contains("name") {
-            // Extract name and category
-            let name = extract_string_attr(line, "name");
-            let category = extract_string_attr(line, "category");
+            // Collect the full attribute text (may span multiple lines)
+            let mut attr_text = line.to_string();
+            let mut k = i + 1;
+            while !attr_text.contains(")]") && k < lines.len() {
+                attr_text.push(' ');
+                attr_text.push_str(lines[k].trim());
+                k += 1;
+            }
+
+            // Extract name and category (required)
+            let name = extract_string_attr(&attr_text, "name");
+            let category = extract_string_attr(&attr_text, "category");
+            // Extract optional group/variant/reference
+            let group = extract_string_attr(&attr_text, "group").unwrap_or_default();
+            let variant = extract_string_attr(&attr_text, "variant").unwrap_or_default();
+            let reference = extract_string_attr(&attr_text, "reference").unwrap_or_default();
 
             if let (Some(name), Some(category)) = (name, category) {
                 // Find the next pub fn and collect its full signature (may span multiple lines)
@@ -244,7 +263,10 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
                             full_sig.push(' ');
                             full_sig.push_str(lines[j].trim());
                         }
-                        if let Some(reg) = parse_fn_signature(&full_sig, &name, &category) {
+                        if let Some(mut reg) = parse_fn_signature(&full_sig, &name, &category) {
+                            reg.group = group.clone();
+                            reg.variant = variant.clone();
+                            reg.reference = reference.clone();
                             filters.push(reg);
                         }
                         break;
@@ -308,6 +330,9 @@ fn parse_fn_signature(line: &str, name: &str, category: &str) -> Option<FilterRe
     Some(FilterReg {
         name: name.to_string(),
         category: category.to_string(),
+        group: String::new(),
+        variant: String::new(),
+        reference: String::new(),
         fn_name,
         params,
     })
