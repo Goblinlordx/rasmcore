@@ -1,82 +1,76 @@
 id: cube-lut-import_20260330101817Z
-title: "External 3D LUT Import (.cube / HALD)"
+title: External 3D LUT Import (.cube / HALD)
 type: feature
 status: pending
 created: 2026-03-30
-updated: 2026-03-30
+updated: '2026-03-30'
 spec:
-  summary: >
-    Parse Adobe .cube and HALD PNG 3D LUT files and apply via existing
-    ColorLut3D infrastructure. Enables DaVinci Resolve / Photoshop color grades.
-  context: |
-    The codebase has a full 3D LUT system (ColorLut3D with tetrahedral
-    interpolation, composition, shaper curves) but it only generates LUTs
-    internally from ColorOp chains. Users cannot load external LUT files
-    from color grading tools like DaVinci Resolve (.cube), Flame (.3dl),
-    or ImageMagick HALD CLUTs. This is a critical gap for professional
-    color workflows.
-  codebase_analysis: |
-    - ColorLut3D in color_lut.rs: 33x33x33 grid, tetrahedral lookup, identity/from_fn
-    - compose_cluts() and absorb_1d_pre/post() for LUT composition
-    - gradient_map() uses 1D LUT (256-entry), different from 3D LUT
-    - IM reference: -hald-clut applies a HALD CLUT image as 3D color transform
-    - .cube format: text-based, TITLE/DOMAIN_MIN/DOMAIN_MAX/LUT_3D_SIZE header + RGB triplets
-    - HALD PNG: NxN image where N = grid_size^2, pixels encode the identity LUT
-      colored by the grading transform
-  acceptance_criteria:
-    - Parse .cube files (Adobe/Resolve format) into ColorLut3D
-    - Parse HALD PNG images into ColorLut3D
-    - apply_cube_lut filter registered with lut_data (embedded) parameter
-    - Round-trip test (identity .cube produces identity output)
-    - IM parity test (apply same HALD CLUT via IM and our code, MAE < 1.0)
-    - Supports arbitrary grid sizes (17, 33, 65 common)
-    - Error handling for malformed .cube / wrong-size HALD images
-  out_of_scope: |
-    .3dl (Flame/Lustre) format. 1D LUT file import (separate concern).
-    LUT export / writing. ICC profile-based LUT generation.
-  technical_notes: |
-    .cube format (Resolve/Adobe):
-      TITLE "My LUT"
-      DOMAIN_MIN 0.0 0.0 0.0
-      DOMAIN_MAX 1.0 1.0 1.0
-      LUT_3D_SIZE 33
-      0.000000 0.000000 0.000000
-      0.031250 0.000000 0.000000
-      ...
-    R varies fastest, then G, then B (same as our ColorLut3D storage order).
+  summary: 'Parse Adobe .cube and HALD PNG 3D LUT files and apply via existing ColorLut3D infrastructure. Enables DaVinci
+    Resolve / Photoshop color grades.
 
-    HALD PNG:
-      A HALD CLUT of level N is an image of N^2 x N^2 pixels.
-      The identity HALD for level 8 is 64x64 = 4096 pixels encoding
-      a 8x8x8 LUT. Color grading tools modify the HALD image to bake
-      their grade, then the HALD is applied as a 3D LUT.
-      Generate identity: magick -size 8 hald: identity_hald8.png
-      Apply: magick input.jpg identity_hald8.png -hald-clut output.jpg
+    '
+  context: 'The codebase has a full 3D LUT system (ColorLut3D with tetrahedral
+
+    interpolation, composition, shaper curves) but it only generates LUTs
+
+    internally from ColorOp chains. Users cannot load external LUT files
+
+    from color grading tools like DaVinci Resolve (.cube), Flame (.3dl),
+
+    or ImageMagick HALD CLUTs. This is a critical gap for professional
+
+    color workflows.
+
+    '
+  codebase_analysis: "- ColorLut3D in color_lut.rs: 33x33x33 grid, tetrahedral lookup, identity/from_fn\n- compose_cluts()\
+    \ and absorb_1d_pre/post() for LUT composition\n- gradient_map() uses 1D LUT (256-entry), different from 3D LUT\n- IM\
+    \ reference: -hald-clut applies a HALD CLUT image as 3D color transform\n- .cube format: text-based, TITLE/DOMAIN_MIN/DOMAIN_MAX/LUT_3D_SIZE\
+    \ header + RGB triplets\n- HALD PNG: NxN image where N = grid_size^2, pixels encode the identity LUT\n  colored by the\
+    \ grading transform\n"
+  acceptance_criteria:
+  - Parse .cube files (Adobe/Resolve format) into ColorLut3D
+  - Parse HALD PNG images into ColorLut3D
+  - apply_cube_lut filter registered with lut_data (embedded) parameter
+  - Round-trip test (identity .cube produces identity output)
+  - IM parity test (apply same HALD CLUT via IM and our code, MAE < 1.0)
+  - Supports arbitrary grid sizes (17, 33, 65 common)
+  - Error handling for malformed .cube / wrong-size HALD images
+  out_of_scope: '.3dl (Flame/Lustre) format. 1D LUT file import (separate concern).
+
+    LUT export / writing. ICC profile-based LUT generation.
+
+    '
+  technical_notes: ".cube format (Resolve/Adobe):\n  TITLE \"My LUT\"\n  DOMAIN_MIN 0.0 0.0 0.0\n  DOMAIN_MAX 1.0 1.0 1.0\n\
+    \  LUT_3D_SIZE 33\n  0.000000 0.000000 0.000000\n  0.031250 0.000000 0.000000\n  ...\nR varies fastest, then G, then B\
+    \ (same as our ColorLut3D storage order).\n\nHALD PNG:\n  A HALD CLUT of level N is an image of N^2 x N^2 pixels.\n  The\
+    \ identity HALD for level 8 is 64x64 = 4096 pixels encoding\n  a 8x8x8 LUT. Color grading tools modify the HALD image\
+    \ to bake\n  their grade, then the HALD is applied as a 3D LUT.\n  Generate identity: magick -size 8 hald: identity_hald8.png\n\
+    \  Apply: magick input.jpg identity_hald8.png -hald-clut output.jpg\n"
 plan:
-  - phase: "Cube Parser"
-    tasks:
-      - text: "Implement parse_cube_lut() to parse .cube text format into ColorLut3D"
-        done: false
-      - text: "Handle TITLE, DOMAIN_MIN/MAX, LUT_3D_SIZE, LUT_1D_SIZE (skip 1D), comments"
-        done: false
-      - text: "Test with identity .cube, verify round-trip is identity"
-        done: false
-  - phase: "HALD Parser"
-    tasks:
-      - text: "Implement parse_hald_lut() to parse HALD PNG image into ColorLut3D"
-        done: false
-      - text: "Detect grid level from image dimensions (sqrt of width)"
-        done: false
-      - text: "IM parity test (generate HALD via magick, apply via both, MAE < 1.0)"
-        done: false
-  - phase: "Filter Registration & Integration"
-    tasks:
-      - text: "Register apply_cube_lut filter that accepts embedded LUT data"
-        done: false
-      - text: "Register apply_hald_lut filter that accepts HALD image data"
-        done: false
-      - text: "Error handling for malformed input (wrong size, NaN values, missing header)"
-        done: false
-      - text: "Full cargo test pass, verify param-manifest.json"
-        done: false
+- phase: Cube Parser
+  tasks:
+  - text: Implement parse_cube_lut() to parse .cube text format into ColorLut3D
+    done: true
+  - text: Handle TITLE, DOMAIN_MIN/MAX, LUT_3D_SIZE, LUT_1D_SIZE (skip 1D), comments
+    done: true
+  - text: Test with identity .cube, verify round-trip is identity
+    done: true
+- phase: HALD Parser
+  tasks:
+  - text: Implement parse_hald_lut() to parse HALD PNG image into ColorLut3D
+    done: true
+  - text: Detect grid level from image dimensions (sqrt of width)
+    done: true
+  - text: IM parity test (generate HALD via magick, apply via both, MAE < 1.0)
+    done: true
+- phase: Filter Registration & Integration
+  tasks:
+  - text: Register apply_cube_lut filter that accepts embedded LUT data
+    done: true
+  - text: Register apply_hald_lut filter that accepts HALD image data
+    done: true
+  - text: Error handling for malformed input (wrong size, NaN values, missing header)
+    done: true
+  - text: Full cargo test pass, verify param-manifest.json
+    done: true
 extra: {}
