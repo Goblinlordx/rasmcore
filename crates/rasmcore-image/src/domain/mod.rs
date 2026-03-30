@@ -10,6 +10,7 @@ pub mod decoder;
 pub mod draw;
 pub mod encoder;
 pub mod error;
+pub mod ewa;
 pub mod filter_registry;
 pub mod filter_utils;
 pub mod filters;
