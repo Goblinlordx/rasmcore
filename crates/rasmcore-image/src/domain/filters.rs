@@ -10396,18 +10396,130 @@ pub fn charcoal(
         pixels.to_vec()
     };
 
-    // 2. Edge detection via Sobel
+    // 2. Edge detection via Sobel — outputs Gray8
     let edges = sobel(&smoothed, info)?;
+    let gray_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
 
-    // 3. Post-blur to soften the edges
+    // 3. Post-blur to soften the edges (on the grayscale edge image)
     let blurred = if radius > 0.0 {
-        blur(&edges, info, radius)?
+        blur(&edges, &gray_info, radius)?
     } else {
         edges
     };
 
     // 4. Invert to get dark lines on white background
-    super::point_ops::invert(&blurred, info)
+    super::point_ops::invert(&blurred, &gray_info)
+}
+
+#[cfg(test)]
+mod artistic_filter_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn solarize_below_threshold_unchanged() {
+        // All pixels at 100, threshold 128 → below threshold → unchanged
+        let pixels = vec![100u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = solarize(&pixels, &info, 128).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn solarize_above_threshold_inverted() {
+        // Pixel at 200, threshold 128 → above → 255-200=55
+        let pixels = vec![200u8; 3];
+        let info = rgb_info(1, 1);
+        let result = solarize(&pixels, &info, 128).unwrap();
+        assert_eq!(result, vec![55, 55, 55]);
+    }
+
+    #[test]
+    fn solarize_zero_threshold_inverts_all() {
+        // threshold=0 means all non-zero pixels get inverted
+        let pixels = vec![128u8; 3];
+        let info = rgb_info(1, 1);
+        let result = solarize(&pixels, &info, 0).unwrap();
+        assert_eq!(result, vec![127, 127, 127]);
+    }
+
+    #[test]
+    fn emboss_preserves_size() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = emboss(&pixels, &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn emboss_flat_produces_midtone() {
+        // Uniform image should produce mostly mid-gray after emboss
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = emboss(&pixels, &info).unwrap();
+        let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        // Emboss of flat field: center weight=1 → ~128
+        assert!(
+            (mean - 128.0).abs() < 30.0,
+            "flat emboss mean should be near 128, got {mean:.0}"
+        );
+    }
+
+    #[test]
+    fn oil_paint_preserves_size() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = oil_paint(&pixels, &info, 2).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn oil_paint_uniform_is_identity() {
+        // Uniform image → all pixels in same bin → output = input
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = oil_paint(&pixels, &info, 3).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn charcoal_outputs_gray() {
+        // Charcoal outputs Gray8 (from Sobel)
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = charcoal(&pixels, &info, 1.0, 0.5).unwrap();
+        // Output is Gray8: 32*32 = 1024 bytes (not 3072)
+        assert_eq!(result.len(), 32 * 32);
+    }
+
+    #[test]
+    fn charcoal_flat_is_white() {
+        // Flat image → no edges → Sobel = 0 → invert = 255 → white
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = charcoal(&pixels, &info, 0.0, 0.0).unwrap();
+        // Output is Gray8
+        assert_eq!(result.len(), 16 * 16);
+        let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            mean > 240.0,
+            "charcoal of flat image should be near-white, got mean={mean:.0}"
+        );
+    }
 }
 
 #[cfg(test)]
