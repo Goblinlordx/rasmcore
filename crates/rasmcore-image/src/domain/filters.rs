@@ -4709,8 +4709,8 @@ fn box_blur_radii_for_gaussian(sigma: f32) -> [usize; 3] {
         .round() as usize;
 
     let mut radii = [0usize; 3];
-    for i in 0..3 {
-        radii[i] = if i < m { wu / 2 } else { wl / 2 };
+    for (i, r) in radii.iter_mut().enumerate() {
+        *r = if i < m { wu / 2 } else { wl / 2 };
     }
     radii
 }
