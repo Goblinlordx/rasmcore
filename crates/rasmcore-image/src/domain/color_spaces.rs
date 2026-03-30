@@ -59,24 +59,22 @@ fn linear_to_prophoto(v: f64) -> f64 {
 
 /// ProPhoto RGB → XYZ (D50) matrix.
 /// Derived from primaries R(0.7347,0.2653), G(0.1596,0.7468), B(0.0366,0.0001)
-/// with D50 white point. Matches colour-science 0.4.7.
+/// using our exact D50 white point. Row sums equal our Illuminant::D50 to f64 precision.
 fn prophoto_rgb_to_xyz_d50(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let rl = prophoto_to_linear(r);
     let gl = prophoto_to_linear(g);
     let bl = prophoto_to_linear(b);
-    // Matrix from colour-science: colour.RGB_COLOURSPACES['ProPhoto RGB'].matrix_RGB_to_XYZ
-    let x = 0.7976749444816064 * rl + 0.1351917082975956 * gl + 0.0313493495815248 * bl;
-    let y = 0.2880402378623901 * rl + 0.7118741461693835 * gl + 0.0000856159682265 * bl;
-    let z = 0.0000000000000000 * rl + 0.0000000000000000 * gl + 0.8251046025104602 * bl;
+    let x = 0.7830986009003157 * rl + 0.1532627928985585 * gl + 0.0279342826306939 * bl;
+    let y = 0.2827767235862988 * rl + 0.7171469532371147 * gl + 0.0000763231765866 * bl;
+    let z = 0.0000000000000000 * rl + 0.0898834424517862 * gl + 0.7352211600586739 * bl;
     (x, y, z)
 }
 
-/// XYZ (D50) → ProPhoto RGB.
+/// XYZ (D50) → ProPhoto RGB. Exact inverse of the forward matrix.
 fn xyz_d50_to_prophoto_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
-    // Inverse of the above matrix (from colour-science)
-    let rl = 1.3459433009386654 * x - 0.2556075514260984 * y - 0.0511118466700571 * z;
-    let gl = -0.5445989112457426 * x + 1.5081673487328567 * y + 0.0205351443914399 * z;
-    let bl = 0.0000000000000000 * x + 0.0000000000000000 * y + 1.2118127506937628 * z;
+    let rl = 1.3811931741006944 * x - 0.2886038185049336 * y - 0.0524476381088289 * z;
+    let gl = -0.5446224939028348 * x + 1.5082327413132783 * y + 0.0205360323914797 * z;
+    let bl = 0.0665820670677611 * x - 0.1843869003945875 * y + 1.3576243516096507 * z;
     (
         linear_to_prophoto(rl.clamp(0.0, 1.0)),
         linear_to_prophoto(gl.clamp(0.0, 1.0)),
@@ -119,25 +117,22 @@ fn linear_to_adobe(v: f64) -> f64 {
 
 /// Adobe RGB → XYZ (D65) matrix.
 /// Derived from primaries R(0.64,0.33), G(0.21,0.71), B(0.15,0.06)
-/// with D65 white point. Matches colour-science 0.4.7.
+/// using our exact D65 white point. Row sums equal D65 to f64 precision.
 fn adobe_rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let rl = adobe_to_linear(r);
     let gl = adobe_to_linear(g);
     let bl = adobe_to_linear(b);
-    // Matrix from colour-science: colour.RGB_COLOURSPACES['Adobe RGB (1998)'].matrix_RGB_to_XYZ
     let x = 0.5766690429101305 * rl + 0.1855582379065463 * gl + 0.1882286462349947 * bl;
-    let y = 0.2973449753743829 * rl + 0.6273635662554661 * gl + 0.0752914583701510 * bl;
-    let z = 0.0270313613864123 * rl + 0.0706888525938314 * gl + 0.9913375368376388 * bl;
+    let y = 0.2973449752505360 * rl + 0.6273635662554661 * gl + 0.0752914584939979 * bl;
+    let z = 0.0270313613864123 * rl + 0.0706888525358272 * gl + 0.9913375368376386 * bl;
     (x, y, z)
 }
 
-/// XYZ (D65) → Adobe RGB.
-#[allow(clippy::excessive_precision)] // matrix constants from colour-science reference
+/// XYZ (D65) → Adobe RGB. Exact inverse of forward matrix.
 fn xyz_to_adobe_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
-    // Inverse matrix (from colour-science)
-    let rl = 2.0415879038107327 * x - 0.5650069742788597 * y - 0.3447313507783297 * z;
-    let gl = -0.9692436362808796 * x + 1.8759675015077202 * y + 0.0415550574071756 * z;
-    let bl = 0.0134442015914174 * x - 0.1183623922401997 * y + 1.0151749943912780 * z;
+    let rl = 2.0415879038107470 * x - 0.5650069742788597 * y - 0.3447313507783297 * z;
+    let gl = -0.9692436362808798 * x + 1.8759675015077206 * y + 0.0415550574071756 * z;
+    let bl = 0.0134442806320312 * x - 0.1183623922310184 * y + 1.0151749943912058 * z;
     (
         linear_to_adobe(rl.clamp(0.0, 1.0)),
         linear_to_adobe(gl.clamp(0.0, 1.0)),
@@ -173,20 +168,19 @@ fn rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let rl = srgb_to_linear(r);
     let gl = srgb_to_linear(g);
     let bl = srgb_to_linear(b);
-    let x = 0.4123907992735076 * rl + 0.3575843393838780 * gl + 0.1804807884018343 * bl;
+    // Derived from sRGB primaries R(0.64,0.33), G(0.30,0.60), B(0.15,0.06)
+    // using our exact D65 white point. Row sums equal D65 to f64 precision.
+    let x = 0.4123907992659593 * rl + 0.3575843393838780 * gl + 0.1804807884018343 * bl;
     let y = 0.2126390058715102 * rl + 0.7151686787677560 * gl + 0.0721923153607337 * bl;
     let z = 0.0193308187155918 * rl + 0.1191947797946260 * gl + 0.9505321522496607 * bl;
     (x, y, z)
 }
 
-/// XYZ to sRGB.
-/// Full 16-digit precision inverse matrix from colour-science 0.4.7:
-///   numpy.linalg.inv(colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ)
-#[allow(clippy::excessive_precision)] // full-precision reference matrix
+/// XYZ to sRGB. Exact inverse of forward matrix (cofactor/det, not from external source).
 fn xyz_to_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     let rl = 3.2409699419045226 * x - 1.5373831775700939 * y - 0.4986107602930034 * z;
-    let gl = -0.9692436362808796 * x + 1.8759675015077202 * y + 0.0415550574071756 * z;
-    let bl = 0.0556300796969936 * x - 0.2039769588889765 * y + 1.0569715142428786 * z;
+    let gl = -0.9692436362808796 * x + 1.8759675015077204 * y + 0.0415550574071756 * z;
+    let bl = 0.0556300796969936 * x - 0.2039769588889765 * y + 1.0569715142428784 * z;
     (linear_to_srgb(rl), linear_to_srgb(gl), linear_to_srgb(bl))
 }
 
@@ -657,18 +651,21 @@ impl Illuminant {
 }
 
 /// Bradford chromatic adaptation matrix: transform XYZ from one illuminant to another.
+///
+/// Full 16-digit precision from colour-science 0.4.7:
+///   colour.adaptation.CHROMATIC_ADAPTATION_TRANSFORMS['Bradford']
 pub fn bradford_adapt(x: f64, y: f64, z: f64, from: Illuminant, to: Illuminant) -> (f64, f64, f64) {
-    // Bradford cone response matrix (matches colour-science)
+    // Bradford cone response matrix (colour-science 0.4.7)
     const M: [[f64; 3]; 3] = [
-        [0.8951, 0.2664, -0.1614],
-        [-0.7502, 1.7135, 0.0367],
-        [0.0389, -0.0685, 1.0296],
+        [0.8951000, 0.2664000, -0.1614000],
+        [-0.7502000, 1.7135000, 0.0367000],
+        [0.0389000, -0.0685000, 1.0296000],
     ];
-    // Inverse — computed via np.linalg.inv(M) to match colour-science precision
+    // Inverse — numpy.linalg.inv(M) at full f64 precision
     const M_INV: [[f64; 3]; 3] = [
-        [0.986992905466712, -0.147054256420990, 0.159962651663731],
-        [0.432305269723394, 0.518360271536777, 0.049291228212856],
-        [-0.008528664575177, 0.040042821654085, 0.968486695787550],
+        [0.9869929054667123, -0.1470542564209900, 0.1599626516637315],
+        [0.4323052697233945, 0.5183602715367776, 0.0492912282128556],
+        [-0.0085286645751773, 0.0400428216540852, 0.9684866957875502],
     ];
 
     let (sx, sy, sz) = from.xyz();
@@ -989,23 +986,22 @@ mod tests {
     #[test]
     fn prophoto_srgb_roundtrip() {
         // sRGB → ProPhoto → sRGB should be near-identity for in-gamut colors
-        // With full-precision sRGB matrices, roundtrip error is limited by
-        // Bradford chromatic adaptation chain (D65→D50→D65 = 4 matrix multiplies)
+        // With exact inverse matrices and full-precision sRGB, roundtrip
+        // is limited only by f64 arithmetic and Bradford chain (~1e-10)
         let (pr, pg, pb) = srgb_to_prophoto(0.6, 0.4, 0.2);
         let (r, g, b) = prophoto_to_srgb(pr, pg, pb);
-        assert!((r - 0.6).abs() < 1e-4, "R roundtrip: {r}");
-        assert!((g - 0.4).abs() < 1e-4, "G roundtrip: {g}");
-        assert!((b - 0.2).abs() < 1e-4, "B roundtrip: {b}");
+        assert!((r - 0.6).abs() < 1e-10, "R roundtrip: {r}");
+        assert!((g - 0.4).abs() < 1e-10, "G roundtrip: {g}");
+        assert!((b - 0.2).abs() < 1e-10, "B roundtrip: {b}");
     }
 
     #[test]
     fn prophoto_white_is_white() {
         // ProPhoto (1,1,1) → sRGB should be near (1,1,1) via Bradford D50→D65
-        // Tolerance limited by Bradford adaptation precision (~1e-4)
         let (r, g, b) = prophoto_to_srgb(1.0, 1.0, 1.0);
-        assert!((r - 1.0).abs() < 2e-4, "R: {r}");
-        assert!((g - 1.0).abs() < 2e-4, "G: {g}");
-        assert!((b - 1.0).abs() < 2e-4, "B: {b}");
+        assert!((r - 1.0).abs() < 1e-10, "R: {r}");
+        assert!((g - 1.0).abs() < 1e-10, "G: {g}");
+        assert!((b - 1.0).abs() < 1e-10, "B: {b}");
     }
 
     // ── Adobe RGB Tests ─────────────────────────────────────────────────
@@ -1042,12 +1038,12 @@ mod tests {
     #[test]
     fn adobe_srgb_roundtrip() {
         // sRGB → Adobe → sRGB should be near-identity
-        // Both D65 → no Bradford chain → limited by matrix inverse precision
+        // Both D65, exact inverse matrices → f64-limited precision
         let (ar, ag, ab) = srgb_to_adobe(0.6, 0.4, 0.2);
         let (r, g, b) = adobe_to_srgb(ar, ag, ab);
-        assert!((r - 0.6).abs() < 1e-7, "R roundtrip: {r}");
-        assert!((g - 0.4).abs() < 1e-7, "G roundtrip: {g}");
-        assert!((b - 0.2).abs() < 1e-7, "B roundtrip: {b}");
+        assert!((r - 0.6).abs() < 1e-12, "R roundtrip: {r}");
+        assert!((g - 0.4).abs() < 1e-12, "G roundtrip: {g}");
+        assert!((b - 0.2).abs() < 1e-12, "B roundtrip: {b}");
     }
 
     #[test]
