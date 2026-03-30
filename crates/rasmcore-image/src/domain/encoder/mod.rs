@@ -84,9 +84,8 @@ pub fn encode(
             webp::encode_pixels(pixels, info, &config)
         }
         "gif" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
             let config = gif::GifEncodeConfig::default();
-            gif::encode(&img, info, &config)
+            gif::encode_pixels(pixels, info, &config)
         }
         "avif" => {
             let config = avif::AvifEncodeConfig {

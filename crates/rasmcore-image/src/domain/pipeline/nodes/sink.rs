@@ -134,8 +134,7 @@ pub fn write_gif(
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
-    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
-    let encoded = encoder::gif::encode(&img, &info, config)?;
+    let encoded = encoder::gif::encode_pixels(&pixels, &info, config)?;
 
     match metadata {
         Some(ms) if !ms.is_empty() => embed_metadata(encoded, "gif", ms),
