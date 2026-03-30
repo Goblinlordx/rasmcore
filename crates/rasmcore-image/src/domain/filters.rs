@@ -2824,6 +2824,14 @@ pub fn hough_lines_p(
 ///
 /// Returns the 3×3 matrix (row-major) mapping src → dst.
 /// Reference: OpenCV 4.x modules/imgproc/src/imgwarp.cpp getPerspectiveTransform
+/// Public wrapper for integration tests.
+pub fn solve_homography_4pt_public(
+    src: &[(f32, f32); 4],
+    dst: &[(f32, f32); 4],
+) -> Option<[f64; 9]> {
+    solve_homography_4pt(src, dst)
+}
+
 fn solve_homography_4pt(src: &[(f32, f32); 4], dst: &[(f32, f32); 4]) -> Option<[f64; 9]> {
     // Build 8×8 system A*x = b, where x = [c00, c01, c02, c10, c11, c12, c20, c21]
     // and c22 = 1 (assumed).
@@ -2912,8 +2920,12 @@ fn solve_homography_4pt(src: &[(f32, f32); 4], dst: &[(f32, f32); 4]) -> Option<
     ])
 }
 
+/// Public wrapper for integration tests.
+pub fn invert_3x3_public(m: &[f64; 9]) -> Option<[f64; 9]> {
+    invert_3x3(m)
+}
+
 /// Invert a 3x3 matrix (row-major). Returns None if singular.
-#[allow(dead_code)]
 fn invert_3x3(m: &[f64; 9]) -> Option<[f64; 9]> {
     let det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6])
         + m[2] * (m[3] * m[7] - m[4] * m[6]);
@@ -2947,6 +2959,11 @@ const INTER_REMAP_COEF_SCALE: i32 = 1 << INTER_REMAP_COEF_BITS; // 32768
 /// weights as i16 but we use i32 to avoid overflow at the (0,0) entry
 /// where the weight is exactly INTER_REMAP_COEF_SCALE (32768). The
 /// interpolation math is identical — only the storage type differs.
+/// Public wrapper for integration tests.
+pub fn build_bilinear_tab_public() -> Vec<[i32; 4]> {
+    build_bilinear_tab()
+}
+
 fn build_bilinear_tab() -> Vec<[i32; 4]> {
     let sz = (INTER_TAB_SIZE * INTER_TAB_SIZE) as usize; // 1024
     let mut itab = vec![[0i32; 4]; sz];

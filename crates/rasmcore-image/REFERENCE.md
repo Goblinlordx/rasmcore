@@ -755,6 +755,130 @@ least-squares solver sensitivity — different SVD implementations produce
 mathematically equivalent but numerically different response curves that both
 yield correct HDR radiance maps. The algorithm structure matches the paper exactly.
 
+### ProPhoto RGB Color Space — f64 Precision Limit
+
+**Reference:** colour-science 0.4.7, ICC.1:2004-10 (ROMM RGB)
+
+| Conversion | Max Error | Status |
+|-----------|-----------|--------|
+| ProPhoto → sRGB roundtrip | ~1e-10 | f64-limited (Bradford chain) |
+| ProPhoto (1,1,1) → sRGB | ~1e-10 | f64-limited |
+| Transfer function roundtrip | 0.0 | Exact |
+
+**Alignment details:**
+- Primaries: R(0.7347, 0.2653), G(0.1596, 0.7468), B(0.0366, 0.0001)
+- White point: D50 — uses our exact `Illuminant::D50` constant
+- Transfer function: gamma 1.8, linear segment below Et = 1/512
+- XYZ matrix: derived from primaries + our D50 (NOT from colour-science directly)
+- Inverse matrix: exact cofactor/det inverse of forward matrix
+- Row sums of forward matrix equal our D50 to f64 precision (1e-16)
+- Roundtrip error dominated by Bradford D50↔D65 adaptation chain (4 matrix multiplies)
+
+### Adobe RGB 1998 Color Space — f64 Precision Limit
+
+**Reference:** colour-science 0.4.7, Adobe RGB (1998) Color Image Encoding
+
+| Conversion | Max Error | Status |
+|-----------|-----------|--------|
+| Adobe → sRGB roundtrip | ~1e-12 | f64-exact |
+| Adobe (1,1,1) → sRGB | ~1e-10 | f64-exact |
+| Transfer function roundtrip | 0.0 | Exact |
+
+**Alignment details:**
+- Primaries: R(0.64, 0.33), G(0.21, 0.71), B(0.15, 0.06)
+- White point: D65 — same as sRGB, no chromatic adaptation needed
+- Transfer function: gamma 563/256 (≈2.19921875), simple power law
+- XYZ matrix: derived from primaries + our D65
+- Inverse matrix: exact cofactor/det inverse of forward matrix
+- No Bradford chain → roundtrip limited only by f64 arithmetic
+
+### sRGB XYZ Matrices — Self-Consistent Full Precision
+
+**Reference:** IEC 61966-2-1, colour-science 0.4.7
+
+| Property | Value | Status |
+|----------|-------|--------|
+| Forward matrix row sums vs D65 | 1e-16 | f64-exact |
+| M * M_inv identity error | 2e-16 | f64-exact |
+| sRGB roundtrip (via XYZ) | ~1e-15 | f64-exact |
+
+**Alignment details:**
+- All RGB→XYZ matrices (sRGB, Adobe, ProPhoto) are derived from CIE
+  chromaticity primaries using our exact D65/D50 white point constants
+- Inverse matrices are the exact mathematical inverse (cofactor/determinant),
+  NOT independently sourced from external references
+- This eliminates white-point mismatch errors that occur when mixing matrices
+  from different sources with different precision assumptions
+- Previous 4-decimal sRGB matrices (0.4124) replaced with self-derived
+  16-digit values (0.4123907992659593)
+
+### Perspective Warp — OpenCV Fixed-Point Bilinear
+
+**Reference:** OpenCV 4.x `warpPerspective` with `INTER_LINEAR` + `BORDER_CONSTANT(0)`
+
+| Property | Our Implementation | OpenCV |
+|----------|-------------------|--------|
+| Sub-pixel precision | 5 bits (1/32 grid) | 5 bits (INTER_BITS=5) |
+| Weight table size | 1024 entries × 4 weights | Same (INTER_TAB_SIZE²) |
+| Weight scale | 32768 (INTER_REMAP_COEF_SCALE) | Same |
+| Rounding | +16384 then >>15 | Same |
+| Coordinate quantization | cvRound (half-to-even) | Same |
+| Border handling | BORDER_CONSTANT(0) | Same |
+| Weight storage | i32 (avoids i16 overflow at origin) | i16 (wraps at origin) |
+
+**Where it may differ:** Weight storage uses i32 instead of i16 to avoid
+the overflow at table index 0 where the weight would be 32768 (exceeds
+i16 max of 32767). OpenCV wraps to -32768 as short, which produces
+incorrect interpolation for the (0,0) sub-pixel case. Our i32 path gives
+the mathematically correct result. For all non-origin sub-pixel positions,
+output should be bit-exact with OpenCV.
+
+**Parity tests:** `tests/opencv_parity.rs::perspective_warp_*`
+**Fixture:** `tests/fixtures/opencv/gradient_128_perspective.raw` (existing)
+
+### Hough Lines (PPHT) — Algorithmic Match
+
+**Reference:** OpenCV 4.x `HoughLinesProbabilistic` (Matas et al., 2000)
+
+| Property | Our Implementation | OpenCV |
+|----------|-------------------|--------|
+| Algorithm | Progressive Probabilistic HT | Same |
+| PRNG | Multiply-With-Carry (CvRng) | Same (cv::RNG) |
+| Accumulator | Incremental with vote decrement | Same |
+| Line walking | Fixed-point (16-bit shift) | Same (SHIFT=16) |
+| Length check | Chebyshev (L∞) | Same |
+| Segment extraction | Mask-based contiguous runs | Same |
+
+**Determinism:** Our implementation accepts a `seed` parameter. With
+`seed=0` it uses the OpenCV default seed (u64::MAX). Given the same seed
+and input, output is deterministic and reproducible.
+
+**Where it may differ:** OpenCV's PRNG state is thread-local and advances
+between calls, making it non-deterministic across program runs. Our seeded
+PRNG always starts from the given seed, so the pixel processing order may
+differ from a specific OpenCV run. The algorithm and line extraction logic
+are identical — only the random traversal order can differ.
+
+**Parity tests:** `domain::filters::perspective_tests::hough_*`
+
+### Homography Solver — Algorithmic Match
+
+**Reference:** OpenCV 4.x `getPerspectiveTransform`
+
+| Property | Our Implementation | OpenCV |
+|----------|-------------------|--------|
+| Formulation | A*x=b, c22=1 | Same |
+| Row ordering | x-eqns rows 0-3, y-eqns 4-7 | Same |
+| Solver | Gaussian elimination, partial pivot | Same (DECOMP_LU) |
+| SVD fallback | Not implemented | Available for degenerate cases |
+| M[8] output | Exactly 1.0 | Same |
+
+**Where it may differ:** Our solver does not implement the SVD fallback
+for degenerate point configurations where c22≠1. For typical use cases
+(4 well-separated points), output should be f64-identical to OpenCV.
+
+**Parity tests:** `domain::filters::perspective_tests::homography_*`
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:
