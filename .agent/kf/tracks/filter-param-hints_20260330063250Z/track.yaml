@@ -1,195 +1,146 @@
 id: filter-param-hints_20260330063250Z
-title: "Filter ConfigParams: Type-Level Hints, Nested Struct Flattening & Manifest Pipeline"
+title: 'Filter ConfigParams: Type-Level Hints, Nested Struct Flattening & Manifest Pipeline'
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Introduce reusable ConfigParams sub-structs (ColorRgb, ColorRgba, AngleDeg,
-    etc.) with type-level #[config_hint("rc.*")] attributes that auto-propagate
-    through the macro, build.rs, and manifest pipeline. Nested struct fields are
-    auto-flattened to WIT/manifest and auto-aggregated on the Rust side. Per-field
-    #[param(hint = "...")] overrides the type-level hint when needed. Replaces
-    scattered separate _r/_g/_b/_a fields with single typed struct fields across
-    all filters.
-  context: |
-    The ConfigParams derive macro already supports #[param(hint = "...")] and
-    stores it in ParamDescriptorJson.hint. The demo UI (pipeline.js) already has
-    hint-to-control mapping for rc.color_rgb, rc.color_rgba, rc.angle_deg, and
-    rc.percentage. However:
+  summary: 'Introduce reusable ConfigParams sub-structs (ColorRgb, ColorRgba, AngleDeg, etc.) with type-level #[config_hint("rc.*")]
+    attributes that auto-propagate through the macro, build.rs, and manifest pipeline. Nested struct fields are auto-flattened
+    to WIT/manifest and auto-aggregated on the Rust side. Per-field #[param(hint = "...")] overrides the type-level hint when
+    needed. Replaces scattered separate _r/_g/_b/_a fields with single typed struct fields across all filters.
 
-    1. build.rs manifest generator drops hints entirely — ParamField has no hint
-       member, the parser ignores hint=, JSON output omits it.
-    2. Only 1 of ~66 ConfigParams structs uses a hint (colorize with rc.color_rgb).
-    3. Many filters represent colors as separate color_r/color_g/color_b/color_a
-       u32 fields — verbose, error-prone, and impossible for the UI to group.
-    4. Color grading filters have per-channel triplets (slope_r/g/b, lift_r/g/b)
-       that are semantically color groups but structurally disconnected.
-
-    The solution: define reusable param-type structs with type-level hints, then
-    use them as fields in filter ConfigParams. The macro auto-flattens nested
-    structs for WIT and manifest, and auto-aggregates them in adapter glue. The
-    hint is intrinsic to the type — a ColorRgba is always a color picker.
-  codebase_analysis: |
-    Key files:
-    - crates/rasmcore-macros/src/lib.rs:229-385 — ConfigParams derive macro
-      - Already extracts #[param(hint = "...")] per field (line 321)
-      - Generates ParamDescriptorJson with hint field (line 364)
-      - Needs: #[config_hint("...")] struct-level attribute, nested struct detection
-    - crates/rasmcore-image/build.rs:310-410 — build-time ConfigParams parser
-      - ParamField struct (line 310): MISSING hint field
-      - parse_config_params_structs (line 320): regex parser, ignores hint=
-      - Manifest JSON output (line 156): omits hint
-      - Needs: hint field, two-pass parsing for nested struct resolution
-    - crates/rasmcore-image/build.rs:68-130 — WIT generation
-      - Already flattens [u8; 3] to separate args
-      - Needs: flatten nested ConfigParams structs the same way
-    - demo/src/pipeline.js:81-99 — hint consumption ✓
-      - rc.color_rgb/rgba → color picker
-      - rc.angle_deg → angle control
-      - rc.percentage → percentage control
-    - crates/rasmcore-image/src/domain/filter_registry.rs — ParamDescriptorJson, ParamValue
-      - ParamValue already has Color([u8; 3]) variant
-    - crates/rasmcore-image/src/domain/filters.rs — 66 ConfigParams structs
-
-    Filters to migrate to nested struct fields:
-    Drawing (color_r/g/b/a → pub color: ColorRgba):
-      DrawLineParams, DrawRectParams, DrawCircleParams, DrawTextParams
-    Fill (fill_r/g/b/a → pub fill: ColorRgba):
-      FloodFillParams
-    Colorize (target: [u8; 3] → pub target: ColorRgb):
-      ColorizeParams (already has hint, migrate to struct type)
-    Color grading (slope_r/g/b → pub slope: ColorRgb, etc.):
-      AscCdlParams (3 groups: slope, offset, power)
-      LiftGammaGainParams (3 groups: lift, gamma, gain)
-    Angle fields (f32 → pub hue: AngleDeg, etc.):
-      SplitToningParams: highlight_hue, shadow_hue
-      SelectiveColorParams: target_hue
-      HueRotateParams: degrees
+    '
+  context: "The ConfigParams derive macro already supports #[param(hint = \"...\")] and\nstores it in ParamDescriptorJson.hint.\
+    \ The demo UI (pipeline.js) already has\nhint-to-control mapping for rc.color_rgb, rc.color_rgba, rc.angle_deg, and\n\
+    rc.percentage. However:\n\n1. build.rs manifest generator drops hints entirely — ParamField has no hint\n   member, the\
+    \ parser ignores hint=, JSON output omits it.\n2. Only 1 of ~66 ConfigParams structs uses a hint (colorize with rc.color_rgb).\n\
+    3. Many filters represent colors as separate color_r/color_g/color_b/color_a\n   u32 fields — verbose, error-prone, and\
+    \ impossible for the UI to group.\n4. Color grading filters have per-channel triplets (slope_r/g/b, lift_r/g/b)\n   that\
+    \ are semantically color groups but structurally disconnected.\n\nThe solution: define reusable param-type structs with\
+    \ type-level hints, then\nuse them as fields in filter ConfigParams. The macro auto-flattens nested\nstructs for WIT and\
+    \ manifest, and auto-aggregates them in adapter glue. The\nhint is intrinsic to the type — a ColorRgba is always a color\
+    \ picker.\n"
+  codebase_analysis: "Key files:\n- crates/rasmcore-macros/src/lib.rs:229-385 — ConfigParams derive macro\n  - Already extracts\
+    \ #[param(hint = \"...\")] per field (line 321)\n  - Generates ParamDescriptorJson with hint field (line 364)\n  - Needs:\
+    \ #[config_hint(\"...\")] struct-level attribute, nested struct detection\n- crates/rasmcore-image/build.rs:310-410 —\
+    \ build-time ConfigParams parser\n  - ParamField struct (line 310): MISSING hint field\n  - parse_config_params_structs\
+    \ (line 320): regex parser, ignores hint=\n  - Manifest JSON output (line 156): omits hint\n  - Needs: hint field, two-pass\
+    \ parsing for nested struct resolution\n- crates/rasmcore-image/build.rs:68-130 — WIT generation\n  - Already flattens\
+    \ [u8; 3] to separate args\n  - Needs: flatten nested ConfigParams structs the same way\n- demo/src/pipeline.js:81-99\
+    \ — hint consumption ✓\n  - rc.color_rgb/rgba → color picker\n  - rc.angle_deg → angle control\n  - rc.percentage → percentage\
+    \ control\n- crates/rasmcore-image/src/domain/filter_registry.rs — ParamDescriptorJson, ParamValue\n  - ParamValue already\
+    \ has Color([u8; 3]) variant\n- crates/rasmcore-image/src/domain/filters.rs — 66 ConfigParams structs\n\nFilters to migrate\
+    \ to nested struct fields:\nDrawing (color_r/g/b/a → pub color: ColorRgba):\n  DrawLineParams, DrawRectParams, DrawCircleParams,\
+    \ DrawTextParams\nFill (fill_r/g/b/a → pub fill: ColorRgba):\n  FloodFillParams\nColorize (target: [u8; 3] → pub target:\
+    \ ColorRgb):\n  ColorizeParams (already has hint, migrate to struct type)\nColor grading (slope_r/g/b → pub slope: ColorRgb,\
+    \ etc.):\n  AscCdlParams (3 groups: slope, offset, power)\n  LiftGammaGainParams (3 groups: lift, gamma, gain)\nAngle\
+    \ fields (f32 → pub hue: AngleDeg, etc.):\n  SplitToningParams: highlight_hue, shadow_hue\n  SelectiveColorParams: target_hue\n\
+    \  HueRotateParams: degrees\n"
   acceptance_criteria:
-    - Reusable param-type structs exist (ColorRgb, ColorRgba, AngleDeg) with #[config_hint("rc.*")]
-    - ConfigParams derive macro detects #[config_hint("...")] on struct and emits it via a config_hint() associated fn
-    - ConfigParams derive macro detects nested ConfigParams fields and flattens their descriptors with field-name prefix (e.g., color.r)
-    - Per-field #[param(hint = "...")] overrides the type-level config_hint when present
-    - build.rs ParamField includes hint; parser extracts both type-level and field-level hints
-    - build.rs two-pass parsing resolves nested struct types and inlines their fields with prefix
-    - param-manifest.json includes "hint" key for every param entry
-    - WIT generation flattens nested struct fields (color.r → color-r in WIT)
-    - Adapter glue aggregates flat WIT args back into nested structs
-    - All drawing filters use pub color: ColorRgba (replacing separate color_r/g/b/a)
-    - FloodFillParams uses pub fill: ColorRgba
-    - ColorizeParams uses pub target: ColorRgb
-    - AscCdlParams uses pub slope/offset/power: ColorRgb
-    - LiftGammaGainParams uses pub lift/gamma/gain: ColorRgb
-    - Angle params migrated to AngleDeg where applicable
-    - Demo UI renders color pickers for all migrated color fields
-    - No regression in filters without hints
-    - rc.* hint vocabulary documented in code_styleguides/
-  out_of_scope: |
-    - Deeply nested structs (only one level of nesting supported)
+  - Reusable param-type structs exist (ColorRgb, ColorRgba, AngleDeg) with
+  - ConfigParams derive macro detects
+  - ConfigParams derive macro detects nested ConfigParams fields and flattens their descriptors with field-name prefix (e.g.,
+    color.r)
+  - Per-field
+  - build.rs ParamField includes hint; parser extracts both type-level and field-level hints
+  - build.rs two-pass parsing resolves nested struct types and inlines their fields with prefix
+  - param-manifest.json includes "hint" key for every param entry
+  - WIT generation flattens nested struct fields (color.r → color-r in WIT)
+  - Adapter glue aggregates flat WIT args back into nested structs
+  - All drawing filters use pub color: ColorRgba (replacing separate color_r/g/b/a)
+  - FloodFillParams uses pub fill: ColorRgba
+  - ColorizeParams uses pub target: ColorRgb
+  - AscCdlParams uses pub slope/offset/power: ColorRgb
+  - LiftGammaGainParams uses pub lift/gamma/gain: ColorRgb
+  - Angle params migrated to AngleDeg where applicable
+  - Demo UI renders color pickers for all migrated color fields
+  - No regression in filters without hints
+  - rc.* hint vocabulary documented in code_styleguides/
+  out_of_scope: '- Deeply nested structs (only one level of nesting supported)
+
     - New hint types beyond what the demo UI already supports (rc.color_rgb, rc.color_rgba, rc.angle_deg, rc.percentage)
+
     - Runtime hint validation or enforcement
+
     - Migrating non-color/non-angle params to typed structs (future work)
+
     - GPU/SIMD changes — this is metadata/plumbing only
-  technical_notes: |
-    Design: type-level hints with field-level override
 
-      #[derive(ConfigParams)]
-      #[config_hint("rc.color_rgba")]
-      pub struct ColorRgba {
-          #[param(min = 0, max = 255, default = 255)] pub r: u8,
-          #[param(min = 0, max = 255, default = 255)] pub g: u8,
-          #[param(min = 0, max = 255, default = 255)] pub b: u8,
-          #[param(min = 0, max = 255, default = 255)] pub a: u8,
-      }
-
-      #[derive(ConfigParams)]
-      pub struct DrawLineParams {
-          pub color: ColorRgba,    // ← hint auto-inherited from type
-          #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
-          pub width: f32,
-      }
-
-    Macro behavior for nested fields:
-    - When a field type has a config_hint() method (i.e., is a ConfigParams struct),
-      the macro calls Type::param_descriptors() and prefixes each with "fieldname."
-    - The type-level hint propagates to all flattened params unless the field has
-      an explicit #[param(hint = "...")] override
-    - Manifest output: {"name":"color.r","type":"u8","hint":"rc.color_rgba",...}
-
-    WIT flattening:
-    - Nested struct field "color: ColorRgba" → color-r: u8, color-g: u8, ... in WIT
-    - Same mechanism as existing [u8; 3] unpacking, extended to named struct fields
-
-    Adapter aggregation:
-    - Generated adapter code constructs ColorRgba { r: color_r, g: color_g, ... }
-      from flat WIT args before calling the domain function
-
-    build.rs two-pass parsing:
-    - Pass 1: parse all ConfigParams structs into a HashMap<name, fields>
-    - Pass 2: resolve field types — if a field type matches a known struct name,
-      inline its fields with prefix and propagate the struct-level hint
-    - The struct-level hint is extracted from #[config_hint("...")] attribute
-
-    Filter function signatures will change from:
-      fn draw_line(pixels, info, x1, y1, x2, y2, color_r, color_g, color_b, color_a, width)
-    to:
-      fn draw_line(pixels, info, x1, y1, x2, y2, color: ColorRgba, width)
-    The WIT signature stays flat — adapter handles the mapping.
+    '
+  technical_notes: "Design: type-level hints with field-level override\n\n  #[derive(ConfigParams)]\n  #[config_hint(\"rc.color_rgba\"\
+    )]\n  pub struct ColorRgba {\n      #[param(min = 0, max = 255, default = 255)] pub r: u8,\n      #[param(min = 0, max\
+    \ = 255, default = 255)] pub g: u8,\n      #[param(min = 0, max = 255, default = 255)] pub b: u8,\n      #[param(min =\
+    \ 0, max = 255, default = 255)] pub a: u8,\n  }\n\n  #[derive(ConfigParams)]\n  pub struct DrawLineParams {\n      pub\
+    \ color: ColorRgba,    // ← hint auto-inherited from type\n      #[param(min = 0.5, max = 100.0, step = 0.5, default =\
+    \ 2.0)]\n      pub width: f32,\n  }\n\nMacro behavior for nested fields:\n- When a field type has a config_hint() method\
+    \ (i.e., is a ConfigParams struct),\n  the macro calls Type::param_descriptors() and prefixes each with \"fieldname.\"\
+    \n- The type-level hint propagates to all flattened params unless the field has\n  an explicit #[param(hint = \"...\"\
+    )] override\n- Manifest output: {\"name\":\"color.r\",\"type\":\"u8\",\"hint\":\"rc.color_rgba\",...}\n\nWIT flattening:\n\
+    - Nested struct field \"color: ColorRgba\" → color-r: u8, color-g: u8, ... in WIT\n- Same mechanism as existing [u8; 3]\
+    \ unpacking, extended to named struct fields\n\nAdapter aggregation:\n- Generated adapter code constructs ColorRgba {\
+    \ r: color_r, g: color_g, ... }\n  from flat WIT args before calling the domain function\n\nbuild.rs two-pass parsing:\n\
+    - Pass 1: parse all ConfigParams structs into a HashMap<name, fields>\n- Pass 2: resolve field types — if a field type\
+    \ matches a known struct name,\n  inline its fields with prefix and propagate the struct-level hint\n- The struct-level\
+    \ hint is extracted from #[config_hint(\"...\")] attribute\n\nFilter function signatures will change from:\n  fn draw_line(pixels,\
+    \ info, x1, y1, x2, y2, color_r, color_g, color_b, color_a, width)\nto:\n  fn draw_line(pixels, info, x1, y1, x2, y2,\
+    \ color: ColorRgba, width)\nThe WIT signature stays flat — adapter handles the mapping.\n"
 plan:
-  - phase: Core infrastructure — macro & build.rs
-    tasks:
-      - text: Define reusable param-type structs (ColorRgb, ColorRgba, AngleDeg) with #[config_hint("rc.*")] in a shared module (e.g., domain/param_types.rs)
-        done: false
-      - text: Extend ConfigParams derive macro to parse #[config_hint("...")] struct-level attribute and emit config_hint() associated fn
-        done: false
-      - text: Extend ConfigParams derive macro to detect nested ConfigParams fields, flatten their descriptors with field-name prefix, and propagate type-level hint (field-level #[param(hint)] overrides)
-        done: false
-      - text: Add hint field to build.rs ParamField struct
-        done: false
-      - text: Update build.rs parser to extract hint= from #[param(...)] and #[config_hint("...")] from struct attributes
-        done: false
-      - text: Implement two-pass parsing in build.rs — resolve nested struct types and inline their fields with prefix + propagated hint
-        done: false
-      - text: Update manifest JSON output to emit "hint" key for every param
-        done: false
-      - text: Update WIT generation to flatten nested struct fields (color → color-r, color-g, etc.)
-        done: false
-      - text: Update adapter glue generation to aggregate flat WIT args into nested structs
-        done: false
-  - phase: Migrate filters to typed struct fields
-    tasks:
-      - text: Migrate DrawLineParams, DrawRectParams, DrawCircleParams, DrawTextParams — replace color_r/g/b/a with pub color: ColorRgba
-        done: false
-      - text: Migrate FloodFillParams — replace fill_r/g/b/a with pub fill: ColorRgba
-        done: false
-      - text: Migrate ColorizeParams — replace target: [u8; 3] with pub target: ColorRgb
-        done: false
-      - text: Migrate AscCdlParams — replace slope_r/g/b, offset_r/g/b, power_r/g/b with pub slope/offset/power: ColorRgb
-        done: false
-      - text: Migrate LiftGammaGainParams — replace lift_r/g/b, gamma_r/g/b, gain_r/g/b with pub lift/gamma/gain: ColorRgb
-        done: false
-      - text: Migrate angle fields — SplitToningParams hues, SelectiveColorParams target_hue, HueRotateParams degrees to AngleDeg
-        done: false
-      - text: Update filter function signatures to accept typed structs instead of individual channel args
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Create code_styleguides/param-hints.md — rc.* hint vocabulary, type-level vs field-level hints, nesting conventions, how to add new param types
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Rebuild and verify param-manifest.json has correct hints and prefixed names for all migrated filters
-        done: false
-      - text: Verify WIT declarations are correct (flat args with prefixed names)
-        done: false
-      - text: Verify demo UI renders color pickers for drawing filter color params
-        done: false
-      - text: Verify demo UI renders color pickers for grading filter channel groups
-        done: false
-      - text: Verify existing colorize filter still works with new ColorRgb type
-        done: false
-      - text: Verify no regression in filters without hints
-        done: false
+- phase: Core infrastructure — macro & build.rs
+  tasks:
+  - text: Define reusable param-type structs (ColorRgb, ColorRgba, AngleDeg) with
+    done: true
+  - text: Extend ConfigParams derive macro to parse
+    done: true
+  - text: Extend ConfigParams derive macro to detect nested ConfigParams fields, flatten their descriptors with field-name
+      prefix, and propagate type-level hint (field-level
+    done: true
+  - text: Add hint field to build.rs ParamField struct
+    done: true
+  - text: Update build.rs parser to extract hint= from
+    done: true
+  - text: Implement two-pass parsing in build.rs — resolve nested struct types and inline their fields with prefix + propagated
+      hint
+    done: true
+  - text: Update manifest JSON output to emit "hint" key for every param
+    done: true
+  - text: Update WIT generation to flatten nested struct fields (color → color-r, color-g, etc.)
+    done: true
+  - text: Update adapter glue generation to aggregate flat WIT args into nested structs
+    done: true
+- phase: Migrate filters to typed struct fields
+  tasks:
+  - text: Migrate DrawLineParams, DrawRectParams, DrawCircleParams, DrawTextParams — replace color_r/g/b/a with ColorRgba
+    done: true
+  - text: Migrate FloodFillParams — replace fill_r/g/b/a with ColorRgba
+    done: true
+  - text: Migrate ColorizeParams — replace [u8; 3] target with ColorRgb
+    done: true
+  - text: Migrate AscCdlParams — replace slope_r/g/b, offset_r/g/b, power_r/g/b with ColorRgb structs
+    done: true
+  - text: Migrate LiftGammaGainParams — replace lift_r/g/b, gamma_r/g/b, gain_r/g/b with ColorRgb structs
+    done: true
+  - text: Migrate angle fields — SplitToningParams hues, SelectiveColorParams target_hue, HueRotateParams degrees to AngleDeg
+    done: true
+  - text: Update filter function signatures to accept typed structs instead of individual channel args
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Create code_styleguides/param-hints.md — rc.* hint vocabulary, type-level vs field-level hints, nesting conventions,
+      how to add new param types
+    done: true
+- phase: Verification
+  tasks:
+  - text: Rebuild and verify param-manifest.json has correct hints and prefixed names for all migrated filters
+    done: true
+  - text: Verify WIT declarations are correct (flat args with prefixed names)
+    done: true
+  - text: Verify demo UI renders color pickers for drawing filter color params
+    done: true
+  - text: Verify demo UI renders color pickers for grading filter channel groups
+    done: true
+  - text: Verify existing colorize filter still works with new ColorRgb type
+    done: true
+  - text: Verify no regression in filters without hints
+    done: true
 extra: {}
