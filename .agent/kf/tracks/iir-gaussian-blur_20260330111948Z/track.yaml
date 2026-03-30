@@ -1,114 +1,123 @@
 id: iir-gaussian-blur_20260330111948Z
-title: "Young/van Vliet IIR Gaussian Blur"
+title: Young/van Vliet IIR Gaussian Blur
 type: feature
 status: pending
 created: 2026-03-30
-updated: 2026-03-30
+updated: '2026-03-30'
 spec:
-  summary: >
-    Implement Young/van Vliet IIR gaussian blur with infinite support and O(1)
-    per-pixel cost regardless of sigma. Wire into shadow_highlight to close
-    the remaining GEGL parity gap (MAE 0.53). Reusable by 9 blur consumers.
-  context: |
-    The shadow_highlight filter achieves MAE=0.53 vs GEGL, with the remaining
+  summary: 'Implement Young/van Vliet IIR gaussian blur with infinite support and O(1) per-pixel cost regardless of sigma.
+    Wire into shadow_highlight to close the remaining GEGL parity gap (MAE 0.53). Reusable by 9 blur consumers.
+
+    '
+  context: 'The shadow_highlight filter achieves MAE=0.53 vs GEGL, with the remaining
+
     difference traced to FIR vs IIR gaussian blur. GEGL uses Young/van Vliet
+
     (YvV) IIR which has infinite support and exact gaussian frequency response.
+
     Our current blur infrastructure uses FIR (libblur for u8, separable kernel
+
     for f32) which truncates at 3-sigma.
 
+
     An IIR gaussian is also faster for large sigma: O(1) per pixel vs O(sigma)
+
     for FIR. This benefits retinex (sigma up to 250), shadow_highlight (radius
+
     up to 1500), and any future large-radius blur consumers.
-  codebase_analysis: |
-    CURRENT BLUR INFRASTRUCTURE:
+
+    '
+  codebase_analysis: 'CURRENT BLUR INFRASTRUCTURE:
+
     - blur() at filters.rs:661 — delegates to libblur (FIR, u8 only)
+
     - gaussian_blur_cv() at filters.rs:6569 — separable FIR, OpenCV-compatible
+
     - blur_1ch_f32() at filters.rs:6636 — separable FIR on f32 single-channel
+
     - gaussian_kernel_1d() at filters.rs:6606 — 1D FIR kernel generator
+
     - libblur crate does NOT support IIR
 
+
     CONSUMERS (9 direct callers):
+
     - shadow_highlight → blur_1ch_f32 (primary target, GEGL parity)
+
     - retinex_ssr/msr/msrcr → gaussian_blur_cv (3 callers, sigma up to 250)
+
     - clarity → blur (local contrast)
+
     - frequency_low/high → blur (frequency separation)
+
     - sharpen → blur (unsharp mask, small sigma)
+
     - charcoal → blur (optional pre-blur)
 
+
     NO existing IIR infrastructure in the codebase.
+
+    '
   acceptance_criteria:
-    - Young/van Vliet IIR gaussian implemented as gaussian_blur_iir_1ch_f32()
-    - Matches true gaussian within 1e-4 relative error for sigma 1-500
-    - O(1) per pixel (4 forward + 4 backward coefficients, independent of sigma)
-    - Wire into blur_1ch_f32 as the default path (replaces FIR separable)
-    - shadow_highlight GEGL parity MAE < 0.5 (down from 0.53)
-    - Unit test comparing IIR vs FIR output at sigma=1, 10, 50, 100
-    - GEGL parity test passes with tighter threshold
-    - No regression in existing blur-dependent tests
-  out_of_scope: |
-    Replacing libblur for u8 blur() — that's a separate optimization.
+  - Young/van Vliet IIR gaussian implemented as gaussian_blur_iir_1ch_f32()
+  - Matches true gaussian within 1e-4 relative error for sigma 1-500
+  - O(1) per pixel (4 forward + 4 backward coefficients, independent of sigma)
+  - Wire into blur_1ch_f32 as the default path (replaces FIR separable)
+  - shadow_highlight GEGL parity MAE < 0.5 (down from 0.53)
+  - Unit test comparing IIR vs FIR output at sigma=1, 10, 50, 100
+  - GEGL parity test passes with tighter threshold
+  - No regression in existing blur-dependent tests
+  out_of_scope: 'Replacing libblur for u8 blur() — that''s a separate optimization.
+
     Multi-channel IIR (could be added later, this track does single-channel f32).
+
     Deriche IIR (Young/van Vliet is sufficient and simpler to implement).
-  technical_notes: |
-    YOUNG/VAN VLIET IIR GAUSSIAN:
-    Reference: I.T. Young, L.J. van Vliet, "Recursive implementation of the
-    Gaussian filter" Signal Processing 44 (1995) 139-151.
 
-    Algorithm:
-    1. Compute 4 causal coefficients (b0, b1, b2, b3) and scale factor from sigma
-    2. Forward pass (causal): y[n] = b0*x[n] + b1*y[n-1] + b2*y[n-2] + b3*y[n-3]
-    3. Backward pass (anti-causal): same coefficients, reverse direction
-    4. Apply horizontally, then vertically (separable)
-
-    Coefficient computation (van Vliet 1998 improved):
-      q = 0.98711*sigma - 0.96330 (sigma >= 2.5)
-      q = 3.97156 - 4.14554*sqrt(1-0.26891*sigma) (0.5 <= sigma < 2.5)
-      b0 = 1.57825 + 2.44413*q + 1.4281*q^2 + 0.422205*q^3
-      b1 = (2.44413*q + 2.85619*q^2 + 1.26661*q^3) / b0
-      b2 = -(1.4281*q^2 + 1.26661*q^3) / b0
-      b3 = 0.422205*q^3 / b0
-      B = 1 - (b1 + b2 + b3)
-
-    Boundary handling: replicate edge pixels (matches GEGL abyss-policy=1).
-
-    The 1D IIR filter is applied as two separable passes (H then V),
-    each consisting of forward + backward scans. Total: 4 linear scans
-    per dimension = 8 scans total, each O(n).
+    '
+  technical_notes: "YOUNG/VAN VLIET IIR GAUSSIAN:\nReference: I.T. Young, L.J. van Vliet, \"Recursive implementation of the\n\
+    Gaussian filter\" Signal Processing 44 (1995) 139-151.\n\nAlgorithm:\n1. Compute 4 causal coefficients (b0, b1, b2, b3)\
+    \ and scale factor from sigma\n2. Forward pass (causal): y[n] = b0*x[n] + b1*y[n-1] + b2*y[n-2] + b3*y[n-3]\n3. Backward\
+    \ pass (anti-causal): same coefficients, reverse direction\n4. Apply horizontally, then vertically (separable)\n\nCoefficient\
+    \ computation (van Vliet 1998 improved):\n  q = 0.98711*sigma - 0.96330 (sigma >= 2.5)\n  q = 3.97156 - 4.14554*sqrt(1-0.26891*sigma)\
+    \ (0.5 <= sigma < 2.5)\n  b0 = 1.57825 + 2.44413*q + 1.4281*q^2 + 0.422205*q^3\n  b1 = (2.44413*q + 2.85619*q^2 + 1.26661*q^3)\
+    \ / b0\n  b2 = -(1.4281*q^2 + 1.26661*q^3) / b0\n  b3 = 0.422205*q^3 / b0\n  B = 1 - (b1 + b2 + b3)\n\nBoundary handling:\
+    \ replicate edge pixels (matches GEGL abyss-policy=1).\n\nThe 1D IIR filter is applied as two separable passes (H then\
+    \ V),\neach consisting of forward + backward scans. Total: 4 linear scans\nper dimension = 8 scans total, each O(n).\n"
 plan:
-  - phase: "IIR Gaussian Core"
-    tasks:
-      - text: "Implement YvV coefficient computation from sigma (van Vliet 1998 improved formula)"
-        done: false
-      - text: "Implement 1D forward (causal) IIR pass on f32 slice"
-        done: false
-      - text: "Implement 1D backward (anti-causal) IIR pass with replicate boundary"
-        done: false
-      - text: "Implement gaussian_blur_iir_1ch_f32(data, w, h, sigma) using separable H+V passes"
-        done: false
-      - text: "Unit test IIR vs FIR at sigma=1, 10, 50, 100 — relative error < 1e-3"
-        done: false
-  - phase: "Integration"
-    tasks:
-      - text: "Replace blur_1ch_f32 implementation with IIR path for sigma >= 2.0"
-        done: false
-      - text: "Verify shadow_highlight unit tests still pass"
-        done: false
-      - text: "Run GEGL shadow_highlight parity test — target MAE < 0.5"
-        done: false
-  - phase: "Extended Validation"
-    tasks:
-      - text: "Test edge cases — sigma=0.5 (small), sigma=500 (very large), 1x1 image, non-square"
-        done: false
-      - text: "Verify retinex_ssr/msr/msrcr still produce correct output (no regression)"
-        done: false
-      - text: "Benchmark IIR vs FIR at sigma=100 on 256x256 — verify O(1) advantage"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Full cargo test pass"
-        done: false
-      - text: "Update shadow_highlight doc comment with final MAE"
-        done: false
-      - text: "Verify param-manifest.json unchanged (no new filter registration)"
-        done: false
+- phase: IIR Gaussian Core
+  tasks:
+  - text: Implement YvV coefficient computation from sigma (van Vliet 1998 improved formula)
+    done: true
+  - text: Implement 1D forward (causal) IIR pass on f32 slice
+    done: true
+  - text: Implement 1D backward (anti-causal) IIR pass with replicate boundary
+    done: true
+  - text: Implement gaussian_blur_iir_1ch_f32(data, w, h, sigma) using separable H+V passes
+    done: true
+  - text: Unit test IIR vs FIR at sigma=1, 10, 50, 100 — relative error < 1e-3
+    done: true
+- phase: Integration
+  tasks:
+  - text: Replace blur_1ch_f32 implementation with IIR path for sigma >= 2.0
+    done: true
+  - text: Verify shadow_highlight unit tests still pass
+    done: true
+  - text: Run GEGL shadow_highlight parity test — target MAE < 0.5
+    done: true
+- phase: Extended Validation
+  tasks:
+  - text: Test edge cases — sigma=0.5 (small), sigma=500 (very large), 1x1 image, non-square
+    done: true
+  - text: Verify retinex_ssr/msr/msrcr still produce correct output (no regression)
+    done: true
+  - text: Benchmark IIR vs FIR at sigma=100 on 256x256 — verify O(1) advantage
+    done: true
+- phase: Verification
+  tasks:
+  - text: Full cargo test pass
+    done: true
+  - text: Update shadow_highlight doc comment with final MAE
+    done: true
+  - text: Verify param-manifest.json unchanged (no new filter registration)
+    done: true
 extra: {}
