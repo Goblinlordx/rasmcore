@@ -159,8 +159,7 @@ pub fn write_bmp(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageEr
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
-    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
-    encoder::bmp::encode(&img, &info, &encoder::bmp::BmpEncodeConfig)
+    encoder::bmp::encode_pixels(&pixels, &info, &encoder::bmp::BmpEncodeConfig)
 }
 
 /// Write a node's output as ICO.
@@ -189,8 +188,7 @@ pub fn write_webp(
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
-    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
-    let encoded = encoder::webp::encode(&img, &info, config)?;
+    let encoded = encoder::webp::encode_pixels(&pixels, &info, config)?;
 
     match metadata {
         Some(ms) if !ms.is_empty() => embed_metadata(encoded, "webp", ms),

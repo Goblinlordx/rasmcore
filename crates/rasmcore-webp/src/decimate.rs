@@ -380,7 +380,7 @@ pub fn pick_best_intra16(
     lambdas: &VP8SegmentLambdas,
     cost_table: &LevelCostTable,
     rd: &mut VP8ModeScore,
-    init_top_nz: &[u8; 4], // Y AC NZ from bottom row of MB above
+    init_top_nz: &[u8; 4],  // Y AC NZ from bottom row of MB above
     init_left_nz: &[u8; 4], // Y AC NZ from right column of MB to left
     dc_nz: u8,              // Y2 DC NZ context (top_ctx[0] + left_ctx[0])
 ) {
@@ -429,8 +429,13 @@ pub fn pick_best_intra16(
         // Rate — use real NZ context from neighboring MBs
         let mut cost_top_nz = *init_top_nz;
         let mut cost_left_nz = *init_left_nz;
-        rd_cur.r =
-            get_cost_luma16(&rd_cur, cost_table, &mut cost_top_nz, &mut cost_left_nz, dc_nz) as ScoreT;
+        rd_cur.r = get_cost_luma16(
+            &rd_cur,
+            cost_table,
+            &mut cost_top_nz,
+            &mut cost_left_nz,
+            dc_nz,
+        ) as ScoreT;
 
         // Flatness penalty
         if flat_src {
@@ -469,7 +474,11 @@ pub fn pick_best_intra16(
 /// Returns true if I4 beats the current I16 score in `rd`.
 ///
 /// Ported from libwebp quant_enc.c PickBestIntra4 (line 1052).
-#[allow(clippy::too_many_arguments, clippy::field_reassign_with_default, clippy::identity_op)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::field_reassign_with_default,
+    clippy::identity_op
+)]
 pub fn pick_best_intra4(
     src_16x16: &[u8; 256],
     above_row: &[u8; 20], // 16 above pixels + 4 extra for diagonal modes
@@ -479,9 +488,9 @@ pub fn pick_best_intra4(
     cost_table: &LevelCostTable,
     rd: &mut VP8ModeScore,
     max_i4_header_bits: i32,
-    top_modes: &[u8; 4],  // above macroblock's bottom-row modes
-    left_modes: &[u8; 4], // left macroblock's right-column modes
-    init_top_nz: &[u8; 4], // Y AC NZ from bottom row of MB above
+    top_modes: &[u8; 4],    // above macroblock's bottom-row modes
+    left_modes: &[u8; 4],   // left macroblock's right-column modes
+    init_top_nz: &[u8; 4],  // Y AC NZ from bottom row of MB above
     init_left_nz: &[u8; 4], // Y AC NZ from right column of MB to left
 ) -> bool {
     let i16_score = rd.score;
@@ -707,7 +716,7 @@ pub fn pick_best_uv(
     lambdas: &VP8SegmentLambdas,
     cost_table: &LevelCostTable,
     rd: &mut VP8ModeScore,
-    init_top_nz: &[u8; 4], // UV NZ from MB above [U0, U1, V0, V1]
+    init_top_nz: &[u8; 4],  // UV NZ from MB above [U0, U1, V0, V1]
     init_left_nz: &[u8; 4], // UV NZ from MB to left [U0, U1, V0, V1]
 ) {
     let mut best_score: ScoreT = MAX_COST;
@@ -862,8 +871,8 @@ pub fn vp8_decimate(
 
     // Phase 1: Evaluate I16x16
     pick_best_intra16(
-        src_y, above_y, left_y, tl_y, seg_quant, lambdas, cost_table, &mut rd,
-        &y_top_nz, &y_left_nz, dc_nz,
+        src_y, above_y, left_y, tl_y, seg_quant, lambdas, cost_table, &mut rd, &y_top_nz,
+        &y_left_nz, dc_nz,
     );
 
     // Phase 2: Evaluate I4x4 (if it can beat I16)
@@ -892,9 +901,20 @@ pub fn vp8_decimate(
 
     // Phase 3: Evaluate UV
     pick_best_uv(
-        src_u, src_v, above_u, above_v, left_u, left_v, tl_u, tl_v, seg_quant, lambdas, cost_table,
+        src_u,
+        src_v,
+        above_u,
+        above_v,
+        left_u,
+        left_v,
+        tl_u,
+        tl_v,
+        seg_quant,
+        lambdas,
+        cost_table,
         &mut rd,
-        &uv_top_nz, &uv_left_nz,
+        &uv_top_nz,
+        &uv_left_nz,
     );
 
     let is_skipped = rd.nz == 0;

@@ -8,9 +8,7 @@
 //! probability tables for the bitstream. This improves both RD cost estimation
 //! accuracy and boolean coder compression efficiency.
 
-use crate::cost_engine::{
-    self, NUM_BANDS, NUM_CTX, NUM_PROBAS, NUM_TYPES, VP8_ENC_BANDS,
-};
+use crate::cost_engine::{self, NUM_BANDS, NUM_CTX, NUM_PROBAS, NUM_TYPES, VP8_ENC_BANDS};
 use crate::rdo;
 use crate::tables::ZIGZAG;
 use crate::token;

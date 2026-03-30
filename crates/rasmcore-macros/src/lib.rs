@@ -282,9 +282,10 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
             .filter_map(|a| {
                 if let Meta::NameValue(nv) = &a.meta
                     && let Expr::Lit(lit) = &nv.value
-                        && let Lit::Str(s) = &lit.lit {
-                            return Some(s.value().trim().to_string());
-                        }
+                    && let Lit::Str(s) = &lit.lit
+                {
+                    return Some(s.value().trim().to_string());
+                }
                 None
             })
             .next()
@@ -334,7 +335,11 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
                 quote! { true }
             } else if default_s == "false" {
                 quote! { false }
-            } else if default_s.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-') {
+            } else if default_s
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit() || c == '-')
+            {
                 let v: i64 = default_s.parse().unwrap_or(0);
                 let lit = proc_macro2::Literal::i64_unsuffixed(v);
                 quote! { #lit as #field_type }

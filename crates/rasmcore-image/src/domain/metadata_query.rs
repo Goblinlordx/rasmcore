@@ -126,12 +126,13 @@ pub fn metadata_dump_from_bytes(
 
     // EXIF — parse from original bytes for best compatibility
     if ms.exif.is_some()
-        && let Ok(exif) = read_exif(data) {
-            let fields = exif_to_fields(&exif);
-            if !fields.is_empty() {
-                result.insert("exif".into(), fields);
-            }
+        && let Ok(exif) = read_exif(data)
+    {
+        let fields = exif_to_fields(&exif);
+        if !fields.is_empty() {
+            result.insert("exif".into(), fields);
         }
+    }
 
     add_xmp_fields(&mut result, ms);
     add_iptc_fields(&mut result, ms);
@@ -147,12 +148,13 @@ pub fn metadata_dump(ms: &MetadataSet) -> BTreeMap<String, BTreeMap<String, Stri
 
     // EXIF
     if let Some(ref exif_bytes) = ms.exif
-        && let Ok(exif) = parse_exif_from_raw(exif_bytes) {
-            let fields = exif_to_fields(&exif);
-            if !fields.is_empty() {
-                result.insert("exif".into(), fields);
-            }
+        && let Ok(exif) = parse_exif_from_raw(exif_bytes)
+    {
+        let fields = exif_to_fields(&exif);
+        if !fields.is_empty() {
+            result.insert("exif".into(), fields);
         }
+    }
 
     add_xmp_fields(&mut result, ms);
     add_iptc_fields(&mut result, ms);
@@ -189,64 +191,66 @@ fn exif_to_fields(exif: &ExifMetadata) -> BTreeMap<String, String> {
 
 fn add_xmp_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &MetadataSet) {
     if let Some(ref xmp_bytes) = ms.xmp
-        && let Ok(xmp) = parse_xmp(xmp_bytes) {
-            let mut fields = BTreeMap::new();
-            if let Some(ref v) = xmp.title {
-                fields.insert("Title".into(), v.clone());
-            }
-            if let Some(ref v) = xmp.description {
-                fields.insert("Description".into(), v.clone());
-            }
-            if let Some(ref v) = xmp.creator {
-                fields.insert("Creator".into(), v.clone());
-            }
-            if let Some(ref v) = xmp.rights {
-                fields.insert("Rights".into(), v.clone());
-            }
-            if let Some(ref v) = xmp.create_date {
-                fields.insert("CreateDate".into(), v.clone());
-            }
-            if let Some(ref v) = xmp.modify_date {
-                fields.insert("ModifyDate".into(), v.clone());
-            }
-            if let Some(ref v) = xmp.creator_tool {
-                fields.insert("CreatorTool".into(), v.clone());
-            }
-            if !fields.is_empty() {
-                result.insert("xmp".into(), fields);
-            }
+        && let Ok(xmp) = parse_xmp(xmp_bytes)
+    {
+        let mut fields = BTreeMap::new();
+        if let Some(ref v) = xmp.title {
+            fields.insert("Title".into(), v.clone());
         }
+        if let Some(ref v) = xmp.description {
+            fields.insert("Description".into(), v.clone());
+        }
+        if let Some(ref v) = xmp.creator {
+            fields.insert("Creator".into(), v.clone());
+        }
+        if let Some(ref v) = xmp.rights {
+            fields.insert("Rights".into(), v.clone());
+        }
+        if let Some(ref v) = xmp.create_date {
+            fields.insert("CreateDate".into(), v.clone());
+        }
+        if let Some(ref v) = xmp.modify_date {
+            fields.insert("ModifyDate".into(), v.clone());
+        }
+        if let Some(ref v) = xmp.creator_tool {
+            fields.insert("CreatorTool".into(), v.clone());
+        }
+        if !fields.is_empty() {
+            result.insert("xmp".into(), fields);
+        }
+    }
 }
 
 fn add_iptc_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &MetadataSet) {
     if let Some(ref iptc_bytes) = ms.iptc
-        && let Ok(iptc) = parse_iptc(iptc_bytes) {
-            let mut fields = BTreeMap::new();
-            if let Some(ref v) = iptc.title {
-                fields.insert("Title".into(), v.clone());
-            }
-            if let Some(ref v) = iptc.caption {
-                fields.insert("Caption".into(), v.clone());
-            }
-            if !iptc.keywords.is_empty() {
-                fields.insert("Keywords".into(), iptc.keywords.join(", "));
-            }
-            if let Some(ref v) = iptc.byline {
-                fields.insert("Byline".into(), v.clone());
-            }
-            if let Some(ref v) = iptc.copyright {
-                fields.insert("Copyright".into(), v.clone());
-            }
-            if let Some(ref v) = iptc.category {
-                fields.insert("Category".into(), v.clone());
-            }
-            if let Some(v) = iptc.urgency {
-                fields.insert("Urgency".into(), v.to_string());
-            }
-            if !fields.is_empty() {
-                result.insert("iptc".into(), fields);
-            }
+        && let Ok(iptc) = parse_iptc(iptc_bytes)
+    {
+        let mut fields = BTreeMap::new();
+        if let Some(ref v) = iptc.title {
+            fields.insert("Title".into(), v.clone());
         }
+        if let Some(ref v) = iptc.caption {
+            fields.insert("Caption".into(), v.clone());
+        }
+        if !iptc.keywords.is_empty() {
+            fields.insert("Keywords".into(), iptc.keywords.join(", "));
+        }
+        if let Some(ref v) = iptc.byline {
+            fields.insert("Byline".into(), v.clone());
+        }
+        if let Some(ref v) = iptc.copyright {
+            fields.insert("Copyright".into(), v.clone());
+        }
+        if let Some(ref v) = iptc.category {
+            fields.insert("Category".into(), v.clone());
+        }
+        if let Some(v) = iptc.urgency {
+            fields.insert("Urgency".into(), v.to_string());
+        }
+        if !fields.is_empty() {
+            result.insert("iptc".into(), fields);
+        }
+    }
 }
 
 fn add_icc_fields(result: &mut BTreeMap<String, BTreeMap<String, String>>, ms: &MetadataSet) {

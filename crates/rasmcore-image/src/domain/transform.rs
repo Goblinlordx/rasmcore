@@ -2,9 +2,7 @@ use super::error::ImageError;
 use super::metadata::ExifOrientation;
 #[cfg(test)]
 use super::types::ColorSpace;
-use super::types::{
-    DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation,
-};
+use super::types::{DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation};
 
 /// Resize an image to new dimensions using SIMD-optimized fast_image_resize.
 ///
@@ -144,8 +142,7 @@ fn rotate_90_blocked_scalar(pixels: &[u8], w: usize, h: usize, bpp: usize) -> Ve
                     let sx = tx + dx;
                     let src_off = (sy * w + sx) * bpp;
                     let dst_off = (sx * ow + (h - 1 - sy)) * bpp;
-                    result[dst_off..dst_off + bpp]
-                        .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                    result[dst_off..dst_off + bpp].copy_from_slice(&pixels[src_off..src_off + bpp]);
                 }
             }
         }
@@ -172,8 +169,7 @@ fn rotate_270_blocked_scalar(pixels: &[u8], w: usize, h: usize, bpp: usize) -> V
                     let sx = tx + dx;
                     let src_off = (sy * w + sx) * bpp;
                     let dst_off = ((w - 1 - sx) * ow + sy) * bpp;
-                    result[dst_off..dst_off + bpp]
-                        .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                    result[dst_off..dst_off + bpp].copy_from_slice(&pixels[src_off..src_off + bpp]);
                 }
             }
         }
@@ -287,8 +283,14 @@ unsafe fn rotate_90_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                 }
 
                 let cols: [(v128, v128); 8] = [
-                    (c0, c0b), (c1, c1b), (c2, c2b), (c3, c3b),
-                    (c4, c4b), (c5, c5b), (c6, c6b), (c7, c7b),
+                    (c0, c0b),
+                    (c1, c1b),
+                    (c2, c2b),
+                    (c3, c3b),
+                    (c4, c4b),
+                    (c5, c5b),
+                    (c6, c6b),
+                    (c7, c7b),
                 ];
 
                 for (col_idx, &(lo, hi)) in cols.iter().enumerate() {
@@ -299,10 +301,7 @@ unsafe fn rotate_90_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                     let rev_hi = reverse_v128_i32!(hi);
                     let rev_lo = reverse_v128_i32!(lo);
                     v128_store(result.as_mut_ptr().add(dst_off) as *mut v128, rev_hi);
-                    v128_store(
-                        result.as_mut_ptr().add(dst_off + 16) as *mut v128,
-                        rev_lo,
-                    );
+                    v128_store(result.as_mut_ptr().add(dst_off + 16) as *mut v128, rev_lo);
                 }
             } else {
                 // Edge tile: scalar fallback
@@ -407,8 +406,14 @@ unsafe fn rotate_270_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                 // For rotate_270: dst_row = w-1-sx, dst_col = sy.
                 // Column `col` → output row w-1-(tx+col). Row order preserved.
                 let cols: [(v128, v128); 8] = [
-                    (c0, c0b), (c1, c1b), (c2, c2b), (c3, c3b),
-                    (c4, c4b), (c5, c5b), (c6, c6b), (c7, c7b),
+                    (c0, c0b),
+                    (c1, c1b),
+                    (c2, c2b),
+                    (c3, c3b),
+                    (c4, c4b),
+                    (c5, c5b),
+                    (c6, c6b),
+                    (c7, c7b),
                 ];
 
                 for (col_idx, &(lo, hi)) in cols.iter().enumerate() {
@@ -416,10 +421,7 @@ unsafe fn rotate_270_simd_rgba(pixels: &[u8], w: usize, h: usize) -> Vec<u8> {
                     let dst_col_start = ty;
                     let dst_off = (dst_row * ow + dst_col_start) * BPP;
                     v128_store(result.as_mut_ptr().add(dst_off) as *mut v128, lo);
-                    v128_store(
-                        result.as_mut_ptr().add(dst_off + 16) as *mut v128,
-                        hi,
-                    );
+                    v128_store(result.as_mut_ptr().add(dst_off + 16) as *mut v128, hi);
                 }
             } else {
                 for dy in 0..tile_h {
@@ -494,8 +496,7 @@ pub fn rotate(
             for i in 0..total {
                 let src_off = i * bpp;
                 let dst_off = (total - 1 - i) * bpp;
-                result[dst_off..dst_off + bpp]
-                    .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                result[dst_off..dst_off + bpp].copy_from_slice(&pixels[src_off..src_off + bpp]);
             }
             Ok(DecodedImage {
                 pixels: result,
@@ -536,8 +537,7 @@ pub fn flip(
                 for x in 0..w {
                     let src_off = y * stride + x * bpp;
                     let dst_off = y * stride + (w - 1 - x) * bpp;
-                    result[dst_off..dst_off + bpp]
-                        .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                    result[dst_off..dst_off + bpp].copy_from_slice(&pixels[src_off..src_off + bpp]);
                 }
             }
         }
@@ -747,7 +747,7 @@ fn convert_pixels(
                     _ => {
                         return Err(ImageError::UnsupportedFormat(format!(
                             "conversion from {src:?} to {dst:?} not supported"
-                        )))
+                        )));
                     }
                 };
                 if intermediate_fmt == target_8 {
@@ -816,7 +816,6 @@ pub fn auto_orient_from_exif(
     };
     auto_orient(pixels, info, orientation)
 }
-
 
 // ─── Extended Geometry ──────────────────────────────────────────────────────
 
@@ -1192,14 +1191,26 @@ pub fn affine(
                     // Round, clamp, store
                     let out_v = f32x4_min(max_v, f32x4_max(zero_v, f32x4_add(val, half_v)));
                     output[out_idx] = f32x4_extract_lane::<0>(out_v) as u8;
-                    if bpp > 1 { output[out_idx + 1] = f32x4_extract_lane::<1>(out_v) as u8; }
-                    if bpp > 2 { output[out_idx + 2] = f32x4_extract_lane::<2>(out_v) as u8; }
-                    if bpp > 3 { output[out_idx + 3] = f32x4_extract_lane::<3>(out_v) as u8; }
+                    if bpp > 1 {
+                        output[out_idx + 1] = f32x4_extract_lane::<1>(out_v) as u8;
+                    }
+                    if bpp > 2 {
+                        output[out_idx + 2] = f32x4_extract_lane::<2>(out_v) as u8;
+                    }
+                    if bpp > 3 {
+                        output[out_idx + 3] = f32x4_extract_lane::<3>(out_v) as u8;
+                    }
                 } else {
                     output[out_idx] = f32x4_extract_lane::<0>(bg_v) as u8;
-                    if bpp > 1 { output[out_idx + 1] = f32x4_extract_lane::<1>(bg_v) as u8; }
-                    if bpp > 2 { output[out_idx + 2] = f32x4_extract_lane::<2>(bg_v) as u8; }
-                    if bpp > 3 { output[out_idx + 3] = f32x4_extract_lane::<3>(bg_v) as u8; }
+                    if bpp > 1 {
+                        output[out_idx + 1] = f32x4_extract_lane::<1>(bg_v) as u8;
+                    }
+                    if bpp > 2 {
+                        output[out_idx + 2] = f32x4_extract_lane::<2>(bg_v) as u8;
+                    }
+                    if bpp > 3 {
+                        output[out_idx + 3] = f32x4_extract_lane::<3>(bg_v) as u8;
+                    }
                 }
             }
         }

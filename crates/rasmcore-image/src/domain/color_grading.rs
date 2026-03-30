@@ -171,9 +171,8 @@ pub fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32
 
     // Shadow/highlight blend factor
     let shadow_weight = (1.0 - luma / midpoint.max(0.001)).clamp(0.0, 1.0) * st.strength;
-    let highlight_weight = ((luma - midpoint) / (1.0 - midpoint).max(0.001))
-        .clamp(0.0, 1.0)
-        * st.strength;
+    let highlight_weight =
+        ((luma - midpoint) / (1.0 - midpoint).max(0.001)).clamp(0.0, 1.0) * st.strength;
 
     // Blend: tint toward shadow/highlight color
     let out_r = r

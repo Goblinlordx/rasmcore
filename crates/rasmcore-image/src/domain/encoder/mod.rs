@@ -106,36 +106,12 @@ pub fn encode(
             let config = tiff::TiffEncodeConfig::default();
             tiff::encode(pixels, info, &config)
         }
-        #[cfg(feature = "native-bmp")]
         "bmp" => native_trivial::encode_bmp(pixels, info),
-        #[cfg(not(feature = "native-bmp"))]
-        "bmp" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            bmp::encode(&img, info, &bmp::BmpEncodeConfig)
-        }
         "ico" => ico::encode_pixels(pixels, info, &ico::IcoEncodeConfig),
-        #[cfg(feature = "native-qoi")]
         "qoi" => native_trivial::encode_qoi(pixels, info),
-        #[cfg(not(feature = "native-qoi"))]
-        "qoi" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            qoi::encode(&img, info, &qoi::QoiEncodeConfig)
-        }
-        #[cfg(feature = "native-tga")]
         "tga" => native_trivial::encode_tga(pixels, info),
-        #[cfg(not(feature = "native-tga"))]
-        "tga" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            encode_via_image_format(&img, image::ImageFormat::Tga)
-        }
         "hdr" => hdr::encode_pixels(pixels, info, &hdr::HdrEncodeConfig),
-        #[cfg(feature = "native-pnm")]
         "pnm" | "ppm" | "pgm" | "pbm" => native_trivial::encode_pnm(pixels, info),
-        #[cfg(not(feature = "native-pnm"))]
-        "pnm" | "ppm" | "pgm" | "pbm" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
-            encode_via_image_format(&img, image::ImageFormat::Pnm)
-        }
         "exr" | "openexr" => exr::encode_pixels(pixels, info, &exr::ExrEncodeConfig),
         "dds" => dds::encode_dds(pixels, info),
         "jp2" | "j2k" | "jpeg2000" => {

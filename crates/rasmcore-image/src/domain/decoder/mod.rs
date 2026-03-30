@@ -1,5 +1,3 @@
-use image::ImageFormat;
-
 use super::color;
 use super::error::ImageError;
 use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
@@ -78,10 +76,34 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     if header.len() >= 4 && header[..4] == [0x76, 0x2F, 0x31, 0x01] {
         return Some("exr".to_string());
     }
-    image::guess_format(header)
-        .ok()
-        .and_then(|fmt| format_to_str(fmt))
-        .map(String::from)
+    // PNG magic
+    if header.len() >= 4 && header[..4] == [0x89, 0x50, 0x4E, 0x47] {
+        return Some("png".to_string());
+    }
+    // JPEG magic (SOI marker)
+    if header.len() >= 2 && header[0] == 0xFF && header[1] == 0xD8 {
+        return Some("jpeg".to_string());
+    }
+    // BMP magic
+    if header.len() >= 2 && &header[..2] == b"BM" {
+        return Some("bmp".to_string());
+    }
+    // QOI magic
+    if header.len() >= 4 && &header[..4] == b"qoif" {
+        return Some("qoi".to_string());
+    }
+    // TIFF (little-endian or big-endian)
+    if header.len() >= 4
+        && ((header[0] == b'I' && header[1] == b'I' && header[2] == 42 && header[3] == 0)
+            || (header[0] == b'M' && header[1] == b'M' && header[2] == 0 && header[3] == 42))
+    {
+        return Some("tiff".to_string());
+    }
+    // PNM (P1-P6)
+    if header.len() >= 2 && header[0] == b'P' && header[1].is_ascii_digit() {
+        return Some("pnm".to_string());
+    }
+    None
 }
 
 /// Check if data starts with a HEIF/HEIC/AVIF ftyp box with a recognized brand.
@@ -308,47 +330,11 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
         return decode_native_exr(data);
     }
 
-    let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
-
-    let format = detect_pixel_format(&img);
-    let pixels = match format {
-        PixelFormat::Rgba8 => img.to_rgba8().into_raw(),
-        PixelFormat::Rgb8 => img.to_rgb8().into_raw(),
-        PixelFormat::Gray8 => img.to_luma8().into_raw(),
-        PixelFormat::Gray16 => img
-            .to_luma16()
-            .as_raw()
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect(),
-        PixelFormat::Rgb16 => img
-            .to_rgb16()
-            .as_raw()
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect(),
-        PixelFormat::Rgba16 => img
-            .to_rgba16()
-            .as_raw()
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect(),
-        _ => img.to_rgba8().into_raw(),
-    };
-
-    // Extract ICC profile from raw bytes (before the image crate strips metadata)
-    let icc_profile = extract_icc_profile(data);
-
-    Ok(DecodedImage {
-        pixels,
-        info: ImageInfo {
-            width: img.width(),
-            height: img.height(),
-            format,
-            color_space: ColorSpace::Srgb,
-        },
-        icc_profile,
-    })
+    // All known formats are handled above — unknown format
+    let detected = detect_format(data).unwrap_or_else(|| "unknown".to_string());
+    Err(ImageError::InvalidInput(format!(
+        "decode: format '{detected}' not supported"
+    )))
 }
 
 /// Extract ICC profile from raw image bytes based on detected format.
@@ -509,8 +495,12 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
         });
     }
 
-    let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
-
+    // Decode natively, then convert pixel format if needed
+    let decoded = decode(data)?;
+    if decoded.info.format == target_format {
+        return Ok(decoded);
+    }
+    let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
     let (pixels, format) = match target_format {
         PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
         PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
@@ -548,19 +538,6 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
 /// List supported decode formats
 pub fn supported_formats() -> Vec<String> {
     SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
-}
-
-fn detect_pixel_format(img: &image::DynamicImage) -> PixelFormat {
-    match img.color() {
-        image::ColorType::Rgb8 => PixelFormat::Rgb8,
-        image::ColorType::Rgba8 => PixelFormat::Rgba8,
-        image::ColorType::L8 => PixelFormat::Gray8,
-        image::ColorType::L16 => PixelFormat::Gray16,
-        image::ColorType::Rgb16 => PixelFormat::Rgb16,
-        image::ColorType::Rgba16 => PixelFormat::Rgba16,
-        image::ColorType::La16 => PixelFormat::Rgba16, // promote LA16 to RGBA16
-        _ => PixelFormat::Rgba8,
-    }
 }
 
 /// Decode a JPEG 2000 image using justjp2.
@@ -1575,38 +1552,30 @@ fn decode_native_tga(data: &[u8]) -> Result<DecodedImage, ImageError> {
     })
 }
 
-fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {
-    match fmt {
-        ImageFormat::Png => Some("png"),
-        ImageFormat::Jpeg => Some("jpeg"),
-        ImageFormat::Gif => Some("gif"),
-        ImageFormat::WebP => Some("webp"),
-        ImageFormat::Bmp => Some("bmp"),
-        ImageFormat::Tiff => Some("tiff"),
-        ImageFormat::Avif => Some("avif"),
-        ImageFormat::Qoi => Some("qoi"),
-        ImageFormat::Ico => Some("ico"),
-        ImageFormat::Tga => Some("tga"),
-        ImageFormat::Hdr => Some("hdr"),
-        ImageFormat::Pnm => Some("pnm"),
-        ImageFormat::OpenExr => Some("exr"),
-        ImageFormat::Dds => Some("dds"),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn make_png(width: u32, height: u32) -> Vec<u8> {
-        let img = image::RgbImage::from_fn(width, height, |x, y| {
-            image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
-        });
-        let mut buf = Vec::new();
-        let mut cursor = std::io::Cursor::new(&mut buf);
-        img.write_to(&mut cursor, ImageFormat::Png).unwrap();
-        buf
+        let pixels: Vec<u8> = (0..width * height)
+            .flat_map(|i| {
+                let x = i % width;
+                let y = i / width;
+                [(x % 256) as u8, (y % 256) as u8, 128u8]
+            })
+            .collect();
+        let info = ImageInfo {
+            width,
+            height,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        crate::domain::encoder::png::encode(
+            &pixels,
+            &info,
+            &crate::domain::encoder::png::PngEncodeConfig::default(),
+        )
+        .unwrap()
     }
 
     fn make_jpeg(width: u32, height: u32) -> Vec<u8> {

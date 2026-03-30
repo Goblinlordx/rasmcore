@@ -12,13 +12,25 @@ mod tests {
     use rasmcore_pipeline::Rect;
 
     fn make_test_png() -> Vec<u8> {
-        let img = image::RgbImage::from_fn(64, 64, |x, y| {
-            image::Rgb([(x * 4) as u8, (y * 4) as u8, 128])
-        });
-        let mut buf = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
-            .unwrap();
-        buf
+        let pixels: Vec<u8> = (0..64 * 64)
+            .flat_map(|i| {
+                let x = i % 64;
+                let y = i / 64;
+                [(x * 4) as u8, (y * 4) as u8, 128u8]
+            })
+            .collect();
+        let info = ImageInfo {
+            width: 64,
+            height: 64,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        crate::domain::encoder::png::encode(
+            &pixels,
+            &info,
+            &crate::domain::encoder::png::PngEncodeConfig::default(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -198,11 +210,19 @@ mod tests {
     }
 
     fn make_test_rgba_png(w: u32, h: u32, r: u8, g: u8, b: u8, a: u8) -> Vec<u8> {
-        let img = image::RgbaImage::from_fn(w, h, |_, _| image::Rgba([r, g, b, a]));
-        let mut buf = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
-            .unwrap();
-        buf
+        let pixels: Vec<u8> = (0..(w * h)).flat_map(|_| [r, g, b, a]).collect();
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        crate::domain::encoder::png::encode(
+            &pixels,
+            &info,
+            &crate::domain::encoder::png::PngEncodeConfig::default(),
+        )
+        .unwrap()
     }
 
     #[test]

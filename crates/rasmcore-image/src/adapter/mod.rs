@@ -242,13 +242,12 @@ impl encoder::Guest for Component {
         config: encoder::WebpEncodeConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
-        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
-            .map_err(to_wit_error)?;
         let domain_config = domain::encoder::webp::WebpEncodeConfig {
             quality: config.quality.unwrap_or(75),
             lossless: config.lossless.unwrap_or(false),
         };
-        domain::encoder::webp::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+        domain::encoder::webp::encode_pixels(&pixels, &domain_info, &domain_config)
+            .map_err(to_wit_error)
     }
 
     fn encode_avif(
@@ -282,10 +281,12 @@ impl encoder::Guest for Component {
         _config: encoder::BmpEncodeConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
-        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
-            .map_err(to_wit_error)?;
-        domain::encoder::bmp::encode(&img, &domain_info, &domain::encoder::bmp::BmpEncodeConfig)
-            .map_err(to_wit_error)
+        domain::encoder::bmp::encode_pixels(
+            &pixels,
+            &domain_info,
+            &domain::encoder::bmp::BmpEncodeConfig,
+        )
+        .map_err(to_wit_error)
     }
 
     fn encode_ico(

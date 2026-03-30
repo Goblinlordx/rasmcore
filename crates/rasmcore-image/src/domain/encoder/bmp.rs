@@ -1,5 +1,3 @@
-use image::DynamicImage;
-
 use crate::domain::error::ImageError;
 use crate::domain::types::ImageInfo;
 
@@ -7,23 +5,18 @@ use crate::domain::types::ImageInfo;
 #[derive(Debug, Clone, Default)]
 pub struct BmpEncodeConfig;
 
-/// Encode pixel data to BMP.
-pub fn encode(
-    img: &DynamicImage,
-    _info: &ImageInfo,
+/// Encode pixel data to BMP using the native rasmcore-bmp encoder.
+pub fn encode_pixels(
+    pixels: &[u8],
+    info: &ImageInfo,
     _config: &BmpEncodeConfig,
 ) -> Result<Vec<u8>, ImageError> {
-    let mut buf = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut buf);
-    img.write_to(&mut cursor, image::ImageFormat::Bmp)
-        .map_err(|e| ImageError::ProcessingFailed(e.to_string()))?;
-    Ok(buf)
+    super::native_trivial::encode_bmp(pixels, info)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::encoder::pixels_to_dynamic_image;
     use crate::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 
     #[test]
@@ -35,14 +28,13 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let img = pixels_to_dynamic_image(&pixels, &info).unwrap();
-        let result = encode(&img, &info, &BmpEncodeConfig).unwrap();
-        // BMP magic: "BM"
+        let result = encode_pixels(&pixels, &info, &BmpEncodeConfig).unwrap();
         assert_eq!(&result[..2], b"BM");
     }
 
     #[test]
-    fn encode_rgba8() {
+    fn encode_rgba8_unsupported() {
+        // BMP native encoder does not support RGBA8 — returns error
         let pixels: Vec<u8> = (0..(8 * 8 * 4)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {
             width: 8,
@@ -50,8 +42,7 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let img = pixels_to_dynamic_image(&pixels, &info).unwrap();
-        let result = encode(&img, &info, &BmpEncodeConfig);
-        assert!(result.is_ok());
+        let result = encode_pixels(&pixels, &info, &BmpEncodeConfig);
+        assert!(result.is_err());
     }
 }

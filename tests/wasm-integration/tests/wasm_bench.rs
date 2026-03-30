@@ -344,7 +344,10 @@ fn perf_1080p() {
         let _ = sink::write_jpeg(
             &mut g,
             sh,
-            &rasmcore_image::domain::encoder::jpeg::JpegEncodeConfig { quality: 85, progressive: false },
+            &rasmcore_image::domain::encoder::jpeg::JpegEncodeConfig {
+                quality: 85,
+                progressive: false,
+            },
             None,
         )
         .unwrap();

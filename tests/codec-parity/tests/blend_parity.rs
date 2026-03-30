@@ -12,7 +12,7 @@
 //! - SoftLight: IM 7 Q16-HDRI uses a different formula than the W3C spec.
 //!   We follow the W3C/vips formula and only validate against vips for this mode.
 
-use rasmcore_image::domain::filters::{blend, BlendMode};
+use rasmcore_image::domain::filters::{BlendMode, blend};
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 use std::io::Write;
 use std::path::PathBuf;
@@ -237,9 +237,7 @@ fn compare_pixels(ours: &[u8], reference: &[u8]) -> (u8, usize) {
             if diff > 1 {
                 let px = i / 3;
                 let ch = i % 3;
-                eprintln!(
-                    "  MISMATCH at pixel {px} channel {ch}: ours={a} ref={b} diff={diff}"
-                );
+                eprintln!("  MISMATCH at pixel {px} channel {ch}: ours={a} ref={b} diff={diff}");
             }
         }
     }
@@ -267,7 +265,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(14),
             magick_name: "Multiply",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Screen,
@@ -275,7 +272,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(15),
             magick_name: "Screen",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Overlay,
@@ -283,7 +279,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(16),
             magick_name: "Overlay",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Darken,
@@ -291,7 +286,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(17),
             magick_name: "Darken",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Lighten,
@@ -299,7 +293,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(18),
             magick_name: "Lighten",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::ColorDodge,
@@ -307,7 +300,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(19),
             magick_name: "ColorDodge",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::ColorBurn,
@@ -315,7 +307,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(20),
             magick_name: "ColorBurn",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::HardLight,
@@ -323,7 +314,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(21),
             magick_name: "HardLight",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::SoftLight,
@@ -333,7 +323,6 @@ fn all_modes() -> Vec<ModeSpec> {
             // IM 7 Q16-HDRI SoftLight uses a different formula than the W3C spec.
             // vips matches W3C. We validate against vips only.
             skip_magick_cross: true,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Difference,
@@ -341,7 +330,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(23),
             magick_name: "Difference",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Exclusion,
@@ -349,7 +337,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(24),
             magick_name: "Exclusion",
             skip_magick_cross: false,
-
         },
         // Extended modes (ImageMagick only)
         ModeSpec {
@@ -358,7 +345,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "VividLight",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::LinearDodge,
@@ -366,7 +352,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "LinearDodge",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::LinearBurn,
@@ -374,7 +359,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "LinearBurn",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::LinearLight,
@@ -382,7 +366,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "LinearLight",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::PinLight,
@@ -390,7 +373,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "PinLight",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::HardMix,
@@ -406,7 +388,6 @@ fn all_modes() -> Vec<ModeSpec> {
             // IM MinusSrc = Dest - Src = bg - fg, matching our Subtract semantics
             magick_name: "MinusSrc",
             skip_magick_cross: false,
-
         },
         ModeSpec {
             blend_mode: BlendMode::Divide,
@@ -415,7 +396,6 @@ fn all_modes() -> Vec<ModeSpec> {
             // IM DivideDst = Dest / Src = bg / fg, matching our Divide semantics
             magick_name: "DivideDst",
             skip_magick_cross: false,
-
         },
     ]
 }

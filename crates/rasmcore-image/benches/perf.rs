@@ -1277,7 +1277,11 @@ fn alpha_blend_benchmarks(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("blend_multiply/rasmcore", size), |b| {
             b.iter(|| {
                 filters::blend(
-                    &rgba_pixels, &rgba_info, &rgba_pixels, &rgba_info, BlendMode::Multiply,
+                    &rgba_pixels,
+                    &rgba_info,
+                    &rgba_pixels,
+                    &rgba_info,
+                    BlendMode::Multiply,
                 )
                 .unwrap()
             });
@@ -1293,7 +1297,11 @@ fn alpha_blend_benchmarks(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("blend_screen/rasmcore", size), |b| {
             b.iter(|| {
                 filters::blend(
-                    &rgba_pixels, &rgba_info, &rgba_pixels, &rgba_info, BlendMode::Screen,
+                    &rgba_pixels,
+                    &rgba_info,
+                    &rgba_pixels,
+                    &rgba_info,
+                    BlendMode::Screen,
                 )
                 .unwrap()
             });

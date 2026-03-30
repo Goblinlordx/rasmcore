@@ -1,5 +1,3 @@
-use image::DynamicImage;
-
 use crate::domain::error::ImageError;
 use crate::domain::types::{ImageInfo, PixelFormat};
 
@@ -9,6 +7,8 @@ pub struct WebpEncodeConfig {
     /// Quality level 1-100 for lossy mode (default: 75).
     pub quality: u8,
     /// Use lossless encoding (default: false).
+    /// Note: lossless WebP is not yet natively implemented.
+    /// Falls back to lossy at quality 100 when requested.
     pub lossless: bool,
 }
 
@@ -21,92 +21,40 @@ impl Default for WebpEncodeConfig {
     }
 }
 
-/// Encode raw pixel data to WebP.
+/// Encode raw pixel data to WebP using rasmcore-webp (VP8 lossy).
 ///
-/// Dispatches to rasmcore-webp (lossy) or image crate (lossless) based on config.
 /// Accepts RGB8 or RGBA8 pixel data directly.
+/// Lossless mode is not yet natively implemented — falls back to
+/// lossy at quality 100.
 pub fn encode_pixels(
     pixels: &[u8],
     info: &ImageInfo,
     config: &WebpEncodeConfig,
 ) -> Result<Vec<u8>, ImageError> {
-    if config.lossless {
-        // Lossless: use image crate's WebP encoder (handles alpha, pixel-exact)
-        let img = super::pixels_to_dynamic_image(pixels, info)?;
-        encode_lossless(&img)
-    } else {
-        // Lossy: use our rasmcore-webp VP8 encoder
-        encode_lossy(pixels, info, config)
-    }
+    let quality = if config.lossless { 100 } else { config.quality };
+    encode_lossy(pixels, info, quality)
 }
 
-/// Encode a DynamicImage to WebP (convenience wrapper for pipeline sink compatibility).
-pub fn encode(
-    img: &DynamicImage,
-    info: &ImageInfo,
-    config: &WebpEncodeConfig,
-) -> Result<Vec<u8>, ImageError> {
-    if config.lossless {
-        encode_lossless(img)
-    } else {
-        // Extract raw pixels and dispatch to lossy encoder
-        let (pixels, pixel_format) = match img {
-            image::DynamicImage::ImageRgb8(buf) => (buf.as_raw().as_slice(), PixelFormat::Rgb8),
-            image::DynamicImage::ImageRgba8(buf) => (buf.as_raw().as_slice(), PixelFormat::Rgba8),
-            _ => {
-                let rgb = img.to_rgb8();
-                let adjusted_info = ImageInfo {
-                    format: PixelFormat::Rgb8,
-                    ..*info
-                };
-                return encode_lossy(rgb.as_raw(), &adjusted_info, config);
-            }
-        };
-        let adjusted_info = ImageInfo {
-            format: pixel_format,
-            ..*info
-        };
-        encode_lossy(pixels, &adjusted_info, config)
-    }
-}
-
-/// Lossy encoding via rasmcore-webp (our pure Rust VP8 encoder).
-fn encode_lossy(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &WebpEncodeConfig,
-) -> Result<Vec<u8>, ImageError> {
+fn encode_lossy(pixels: &[u8], info: &ImageInfo, quality: u8) -> Result<Vec<u8>, ImageError> {
     let webp_format = match info.format {
         PixelFormat::Rgb8 => rasmcore_webp::PixelFormat::Rgb8,
         PixelFormat::Rgba8 => rasmcore_webp::PixelFormat::Rgba8,
-        other => {
-            return Err(ImageError::UnsupportedFormat(format!(
-                "WebP lossy encoding from {other:?} not supported — convert to RGB8 or RGBA8 first"
-            )));
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "WebP encode requires RGB8 or RGBA8".into(),
+            ));
         }
     };
 
-    let webp_config = rasmcore_webp::EncodeConfig {
-        quality: config.quality,
-    };
+    let webp_config = rasmcore_webp::EncodeConfig { quality };
 
     rasmcore_webp::encode(pixels, info.width, info.height, webp_format, &webp_config)
         .map_err(|e| ImageError::ProcessingFailed(format!("WebP lossy encode failed: {e}")))
 }
 
-/// Lossless encoding via image crate (preserves all pixel data exactly).
-fn encode_lossless(img: &DynamicImage) -> Result<Vec<u8>, ImageError> {
-    let mut buf = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut buf);
-    img.write_to(&mut cursor, image::ImageFormat::WebP)
-        .map_err(|e| ImageError::ProcessingFailed(e.to_string()))?;
-    Ok(buf)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::encoder::pixels_to_dynamic_image;
     use crate::domain::types::ColorSpace;
 
     fn make_test_pixels(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -120,10 +68,28 @@ mod tests {
         (pixels, info)
     }
 
-    fn make_test_image(w: u32, h: u32) -> (DynamicImage, ImageInfo) {
-        let (pixels, info) = make_test_pixels(w, h);
-        let img = pixels_to_dynamic_image(&pixels, &info).unwrap();
-        (img, info)
+    #[test]
+    fn default_config() {
+        let config = WebpEncodeConfig::default();
+        assert_eq!(config.quality, 75);
+        assert!(!config.lossless);
+    }
+
+    #[test]
+    fn encode_1x1_lossy() {
+        let pixels = vec![128u8, 128, 128];
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let config = WebpEncodeConfig {
+            quality: 75,
+            lossless: false,
+        };
+        let result = encode_pixels(&pixels, &info, &config).unwrap();
+        assert!(result.starts_with(b"RIFF"));
     }
 
     #[test]
@@ -134,104 +100,8 @@ mod tests {
             lossless: false,
         };
         let result = encode_pixels(&pixels, &info, &config).unwrap();
-        // WebP RIFF header: "RIFF" ... "WEBP"
-        assert_eq!(&result[..4], b"RIFF");
+        assert!(result.starts_with(b"RIFF"));
         assert_eq!(&result[8..12], b"WEBP");
-    }
-
-    #[test]
-    fn encode_lossless_produces_output() {
-        let (pixels, info) = make_test_pixels(16, 16);
-        let config = WebpEncodeConfig {
-            quality: 75,
-            lossless: true,
-        };
-        let result = encode_pixels(&pixels, &info, &config).unwrap();
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn encode_via_dynamic_image_lossy() {
-        let (img, info) = make_test_image(16, 16);
-        let config = WebpEncodeConfig {
-            quality: 75,
-            lossless: false,
-        };
-        let result = encode(&img, &info, &config).unwrap();
-        assert_eq!(&result[..4], b"RIFF");
-        assert_eq!(&result[8..12], b"WEBP");
-    }
-
-    #[test]
-    fn encode_via_dynamic_image_lossless() {
-        let (img, info) = make_test_image(16, 16);
-        let config = WebpEncodeConfig {
-            quality: 75,
-            lossless: true,
-        };
-        let result = encode(&img, &info, &config).unwrap();
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn lossy_quality_affects_size() {
-        let (pixels, info) = make_test_pixels(64, 64);
-        let low_q = encode_pixels(
-            &pixels,
-            &info,
-            &WebpEncodeConfig {
-                quality: 10,
-                lossless: false,
-            },
-        )
-        .unwrap();
-        let high_q = encode_pixels(
-            &pixels,
-            &info,
-            &WebpEncodeConfig {
-                quality: 95,
-                lossless: false,
-            },
-        )
-        .unwrap();
-        // Higher quality should produce larger output
-        assert!(
-            high_q.len() > low_q.len(),
-            "q95 ({}) should be larger than q10 ({})",
-            high_q.len(),
-            low_q.len()
-        );
-    }
-
-    #[test]
-    fn lossy_output_decodable() {
-        let (pixels, info) = make_test_pixels(32, 32);
-        let encoded = encode_pixels(
-            &pixels,
-            &info,
-            &WebpEncodeConfig {
-                quality: 75,
-                lossless: false,
-            },
-        )
-        .unwrap();
-
-        // Decode with image crate to verify it's valid WebP
-        let decoded = image::load_from_memory(&encoded).unwrap();
-        assert_eq!(decoded.width(), 32);
-        assert_eq!(decoded.height(), 32);
-    }
-
-    #[test]
-    fn lossy_deterministic() {
-        let (pixels, info) = make_test_pixels(16, 16);
-        let config = WebpEncodeConfig {
-            quality: 75,
-            lossless: false,
-        };
-        let out1 = encode_pixels(&pixels, &info, &config).unwrap();
-        let out2 = encode_pixels(&pixels, &info, &config).unwrap();
-        assert_eq!(out1, out2, "lossy encoding should be deterministic");
     }
 
     #[test]
@@ -244,34 +114,62 @@ mod tests {
             color_space: ColorSpace::Srgb,
         };
         let config = WebpEncodeConfig {
-            quality: 75,
+            quality: 85,
             lossless: false,
         };
         let result = encode_pixels(&pixels, &info, &config).unwrap();
-        assert_eq!(&result[..4], b"RIFF");
+        assert!(result.starts_with(b"RIFF"));
     }
 
     #[test]
-    fn encode_1x1_lossy() {
-        let pixels = vec![128u8, 64, 32];
-        let info = ImageInfo {
-            width: 1,
-            height: 1,
-            format: PixelFormat::Rgb8,
-            color_space: ColorSpace::Srgb,
-        };
+    fn lossy_deterministic() {
+        let (pixels, info) = make_test_pixels(16, 16);
         let config = WebpEncodeConfig {
             quality: 75,
             lossless: false,
         };
-        let result = encode_pixels(&pixels, &info, &config).unwrap();
-        assert_eq!(&result[..4], b"RIFF");
+        let a = encode_pixels(&pixels, &info, &config).unwrap();
+        let b = encode_pixels(&pixels, &info, &config).unwrap();
+        assert_eq!(a, b);
     }
 
     #[test]
-    fn default_config() {
-        let config = WebpEncodeConfig::default();
-        assert_eq!(config.quality, 75);
-        assert!(!config.lossless);
+    fn lossy_quality_affects_size() {
+        let (pixels, info) = make_test_pixels(32, 32);
+        let low = encode_pixels(
+            &pixels,
+            &info,
+            &WebpEncodeConfig {
+                quality: 30,
+                lossless: false,
+            },
+        )
+        .unwrap();
+        let high = encode_pixels(
+            &pixels,
+            &info,
+            &WebpEncodeConfig {
+                quality: 95,
+                lossless: false,
+            },
+        )
+        .unwrap();
+        assert!(
+            high.len() > low.len(),
+            "higher quality should produce larger output"
+        );
+    }
+
+    #[test]
+    fn lossy_output_decodable() {
+        let (pixels, info) = make_test_pixels(32, 32);
+        let config = WebpEncodeConfig {
+            quality: 75,
+            lossless: false,
+        };
+        let encoded = encode_pixels(&pixels, &info, &config).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.width, 32);
+        assert_eq!(decoded.info.height, 32);
     }
 }

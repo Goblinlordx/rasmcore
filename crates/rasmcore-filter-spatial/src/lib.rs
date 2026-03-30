@@ -22,9 +22,7 @@
 // This crate serves as the dependency entry point: when a user depends
 // on rasmcore-filter-spatial, they get the spatial filters registered.
 
-pub use rasmcore_image::domain::filters::{
-    blur, sharpen, convolve, median, gaussian_blur_cv,
-};
+pub use rasmcore_image::domain::filters::{blur, convolve, gaussian_blur_cv, median, sharpen};
 
 // Re-export the convolve helpers that external users might need
 pub use rasmcore_image::domain::filter_utils;
@@ -51,7 +49,10 @@ mod tests {
     fn spatial_filters_registered() {
         let regs = rasmcore_image::domain::filter_registry::registered_filters();
         let names: Vec<&str> = regs.iter().map(|r| r.name).collect();
-        assert!(names.contains(&"blur"), "blur should be registered. Found: {names:?}");
+        assert!(
+            names.contains(&"blur"),
+            "blur should be registered. Found: {names:?}"
+        );
         assert!(names.contains(&"sharpen"), "sharpen should be registered");
         assert!(names.contains(&"convolve"), "convolve should be registered");
         assert!(names.contains(&"median"), "median should be registered");

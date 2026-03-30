@@ -164,11 +164,7 @@ pub fn trellis_quantize_block(
                 1 => 1,
                 _ => 2,
             };
-            let next_band = if n + 1 < 16 {
-                VP8_ENC_BANDS[n + 1]
-            } else {
-                0
-            };
+            let next_band = if n + 1 < 16 { VP8_ENC_BANDS[n + 1] } else { 0 };
 
             ss[ss_cur_idx][m].cost_band = next_band;
             ss[ss_cur_idx][m].cost_ctx = ctx as u8;

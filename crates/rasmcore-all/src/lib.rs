@@ -34,6 +34,6 @@
 //! my-custom-filter = "0.1"  # uses #[register_filter]
 //! ```
 
-pub use rasmcore_image;
-pub use rasmcore_filters_std;
 pub use rasmcore_codecs_std;
+pub use rasmcore_filters_std;
+pub use rasmcore_image;

@@ -11,8 +11,7 @@ use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 use std::process::Command;
 
 fn venv_python() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../fixtures/.venv/bin/python3")
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/.venv/bin/python3")
 }
 
 fn has_opencv() -> bool {
@@ -126,9 +125,7 @@ fn compare_pixels(ours: &[u8], reference: &[u8], tolerance: u8) -> (u8, usize) {
                 if diff > tolerance {
                     let x = i % 32;
                     let y = i / 32;
-                    eprintln!(
-                        "  MISMATCH at ({x},{y}): ours={a} ref={b} diff={diff}"
-                    );
+                    eprintln!("  MISMATCH at ({x},{y}): ours={a} ref={b} diff={diff}");
                 }
             }
         }
@@ -169,7 +166,9 @@ macro_rules! motion_blur_test {
             assert!(
                 max_diff <= 1,
                 "motion_blur(length={}, angle={}) FAILED: max_diff={} exceeds tolerance 1",
-                $length, $angle, max_diff
+                $length,
+                $angle,
+                max_diff
             );
         }
     };

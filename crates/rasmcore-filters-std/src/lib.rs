@@ -11,10 +11,10 @@
 //!
 //! Or depend on individual category crates for minimal builds.
 
-pub use rasmcore_filter_spatial;
+pub use rasmcore_filter_advanced;
+pub use rasmcore_filter_alpha;
 pub use rasmcore_filter_color;
 pub use rasmcore_filter_edge;
-pub use rasmcore_filter_alpha;
-pub use rasmcore_filter_histogram;
 pub use rasmcore_filter_enhance;
-pub use rasmcore_filter_advanced;
+pub use rasmcore_filter_histogram;
+pub use rasmcore_filter_spatial;
