@@ -1,5 +1,5 @@
 title: Drop image crate features for all codecs with native replacements
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-30'
