@@ -15,7 +15,7 @@ moxcms = "0.8"
 wit-bindgen-rt = "0.41.0"
 png = "0.17"
 image = { workspace = true, features = [
-    "gif", "webp", "ico",
+    "webp", "ico",
     "hdr", "exr", "dds",
 ] }
 rasmcore-fits = { path = "../rasmcore-fits" }
