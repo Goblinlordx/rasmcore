@@ -14209,9 +14209,9 @@ mod distortion_effect_tests {
 
 // ─── Gaussian blur in f32 for Kuwahara ────────────────────────────────────
 
-/// Separable Gaussian blur operating entirely in f32 precision.
-/// Used by Kuwahara to match IM's Q16-HDRI blur accuracy.
-/// `krad` is the kernel half-width (IM uses radius directly, not 3*sigma).
+/// Separable Gaussian blur operating entirely in f64 precision.
+/// Matches IM's KernelRank=3 Blur kernel construction (Photoshop-derived
+/// 3x oversampled Gaussian for better normalization) and edge-clamp border.
 fn gaussian_blur_f32(
     pixels: &[u8],
     w: usize,
@@ -14220,16 +14220,21 @@ fn gaussian_blur_f32(
     krad: usize,
     sigma: f64,
 ) -> Vec<f32> {
-    // Build 1D Gaussian kernel — IM uses radius as the kernel half-width
+    // Build 1D Gaussian kernel using IM's KernelRank=3 technique:
+    // Generate a Gaussian 3x wider, accumulate 3 samples per output bin.
+    const KERNEL_RANK: usize = 3;
     let ksize = 2 * krad + 1;
     let mut kernel = vec![0.0f64; ksize];
-    let s2 = 2.0 * sigma * sigma;
-    let mut ksum = 0.0;
-    for i in 0..ksize {
-        let d = i as f64 - krad as f64;
-        kernel[i] = (-d * d / s2).exp();
-        ksum += kernel[i];
+    let sigma_scaled = sigma * KERNEL_RANK as f64;
+    let alpha = 1.0 / (2.0 * sigma_scaled * sigma_scaled);
+    let beta = 1.0 / ((2.0 * std::f64::consts::PI).sqrt() * sigma_scaled);
+    let v = (ksize * KERNEL_RANK - 1) / 2;
+    for u_i in 0..=(2 * v) {
+        let u = u_i as i64 - v as i64;
+        let idx = u_i / KERNEL_RANK;
+        kernel[idx] += (-(u * u) as f64 * alpha).exp() * beta;
     }
+    let ksum: f64 = kernel.iter().sum();
     for k in &mut kernel {
         *k /= ksum;
     }
@@ -14299,49 +14304,28 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
     // IM default sigma = radius - 0.5, kernel half-width = radius
     let sigma = (radius as f64 - 0.5).max(0.5);
     let blurred_f32 = gaussian_blur_f32(pixels, w, h, ch, radius as usize, sigma);
-    // Quantize back to u8 for output
-    let blurred: Vec<u8> = blurred_f32
-        .iter()
-        .map(|&v| v.round().clamp(0.0, 255.0) as u8)
-        .collect();
 
-    // Step 2: Build luma integral images for O(1) variance computation
-    let iw = w + 1;
-    let mut luma_sum = vec![0.0f64; iw * (h + 1)];
-    let mut luma_sq_sum = vec![0.0f64; iw * (h + 1)];
-
-    for y in 0..h {
-        for x in 0..w {
-            let off = (y * w + x) * ch;
-            // BT.709 luma computed from f32-precision blurred data
-            let luma = if ch >= 3 {
+    // Step 2: Precompute per-pixel luma from f32 blurred data (BT.709, IM's coefficients)
+    let luma: Vec<f64> = (0..w * h)
+        .map(|i| {
+            let off = i * ch;
+            if ch >= 3 {
                 0.212656 * blurred_f32[off] as f64
                     + 0.715158 * blurred_f32[off + 1] as f64
                     + 0.072186 * blurred_f32[off + 2] as f64
             } else {
                 blurred_f32[off] as f64
-            };
-            let i = (y + 1) * iw + (x + 1);
-            luma_sum[i] = luma + luma_sum[y * iw + (x + 1)] + luma_sum[(y + 1) * iw + x]
-                - luma_sum[y * iw + x];
-            luma_sq_sum[i] =
-                luma * luma + luma_sq_sum[y * iw + (x + 1)] + luma_sq_sum[(y + 1) * iw + x]
-                    - luma_sq_sum[y * iw + x];
-        }
-    }
-
-    // Helper: compute sum over rectangle [y0..y1, x0..x1] from integral image
-    let rect_sum = |img: &[f64], x0: usize, y0: usize, x1: usize, y1: usize| -> f64 {
-        img[y1 * iw + x1] - img[y0 * iw + x1] - img[y1 * iw + x0] + img[y0 * iw + x0]
-    };
+            }
+        })
+        .collect();
 
     let mut out = vec![0u8; pixels.len()];
+    let wi = w as i32;
+    let hi = h as i32;
 
     for y in 0..h {
         for x in 0..w {
             // IM quadrants: 4 non-overlapping regions of size width×width
-            // Q0: top-left,   Q1: top-right
-            // Q2: bottom-left, Q3: bottom-right
             let quadrants: [(i32, i32); 4] = [
                 (x as i32 - width + 1, y as i32 - width + 1), // Q0: top-left
                 (x as i32, y as i32 - width + 1),             // Q1: top-right
@@ -14350,51 +14334,60 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
             ];
 
             let mut min_var = f64::MAX;
-            let mut best_cx = x as f32;
-            let mut best_cy = y as f32;
+            let mut best_cx = x as f64;
+            let mut best_cy = y as f64;
 
             for &(qx, qy) in &quadrants {
-                // Clamp quadrant to image bounds
-                let x0 = qx.max(0) as usize;
-                let y0 = qy.max(0) as usize;
-                let x1 = (qx + width).min(w as i32) as usize;
-                let y1 = (qy + width).min(h as i32) as usize;
-                let count = ((x1 - x0) * (y1 - y0)) as f64;
-                if count == 0.0 {
-                    continue;
+                // IM: GetCacheViewVirtualPixels handles OOB via edge-clamp
+                // We iterate over the full quadrant, clamping coords to image bounds
+                // Two-pass: first compute mean, then variance (matches IM's exact loop)
+                let mut mean_luma = 0.0f64;
+                let mut n = 0u32;
+                for ky in 0..width {
+                    let sy = (qy + ky).clamp(0, hi - 1) as usize;
+                    for kx in 0..width {
+                        let sx = (qx + kx).clamp(0, wi - 1) as usize;
+                        mean_luma += luma[sy * w + sx];
+                        n += 1;
+                    }
                 }
+                mean_luma /= n as f64;
 
-                // Luma variance via integral images
-                let s = rect_sum(&luma_sum, x0, y0, x1, y1);
-                let sq = rect_sum(&luma_sq_sum, x0, y0, x1, y1);
-                let mean = s / count;
-                let variance = sq - mean * s; // = sum((luma - mean)²)
+                // IM: variance = sum((pixel_luma - mean_luma)²)
+                let mut variance = 0.0f64;
+                for ky in 0..width {
+                    let sy = (qy + ky).clamp(0, hi - 1) as usize;
+                    for kx in 0..width {
+                        let sx = (qx + kx).clamp(0, wi - 1) as usize;
+                        let d = luma[sy * w + sx] - mean_luma;
+                        variance += d * d;
+                    }
+                }
 
                 if variance < min_var {
                     min_var = variance;
-                    // IM output: center pixel of winning quadrant (float coords)
-                    // IM uses: target.x + target.width/2.0
-                    best_cx = qx as f32 + width as f32 / 2.0;
-                    best_cy = qy as f32 + width as f32 / 2.0;
+                    // IM: InterpolatePixelChannels at (target.x + width/2.0, target.y + width/2.0)
+                    best_cx = qx as f64 + width as f64 / 2.0;
+                    best_cy = qy as f64 + width as f64 / 2.0;
                 }
             }
 
-            // Bilinear interpolation at sub-pixel center (matches IM's InterpolatePixelChannels)
-            let sx = best_cx.clamp(0.0, (w - 1) as f32);
-            let sy = best_cy.clamp(0.0, (h - 1) as f32);
+            // Bilinear interpolation at sub-pixel center from f32 blurred data
+            let sx = best_cx.clamp(0.0, (w - 1) as f64);
+            let sy = best_cy.clamp(0.0, (h - 1) as f64);
             let x0i = sx.floor() as usize;
             let y0i = sy.floor() as usize;
             let x1i = (x0i + 1).min(w - 1);
             let y1i = (y0i + 1).min(h - 1);
-            let fx = sx - x0i as f32;
-            let fy = sy - y0i as f32;
+            let fx = (sx - x0i as f64) as f32;
+            let fy = (sy - y0i as f64) as f32;
 
             let out_off = (y * w + x) * ch;
             for c in 0..ch {
-                let p00 = blurred[(y0i * w + x0i) * ch + c] as f32;
-                let p10 = blurred[(y0i * w + x1i) * ch + c] as f32;
-                let p01 = blurred[(y1i * w + x0i) * ch + c] as f32;
-                let p11 = blurred[(y1i * w + x1i) * ch + c] as f32;
+                let p00 = blurred_f32[(y0i * w + x0i) * ch + c];
+                let p10 = blurred_f32[(y0i * w + x1i) * ch + c];
+                let p01 = blurred_f32[(y1i * w + x0i) * ch + c];
+                let p11 = blurred_f32[(y1i * w + x1i) * ch + c];
                 let v = p00 * (1.0 - fx) * (1.0 - fy)
                     + p10 * fx * (1.0 - fy)
                     + p01 * (1.0 - fx) * fy

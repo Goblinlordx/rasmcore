@@ -1515,9 +1515,10 @@ fn close_gradient_map_bw() {
 
 #[test]
 fn algorithm_kuwahara() {
-    // IM -kuwahara: pre-blur, luma-variance quadrant selection, center-pixel output.
-    // Our implementation matches the same algorithm with f32-precision blur.
-    // Residual MAE from edge handling and Gaussian kernel normalization.
+    // IM -kuwahara: pre-blur (KernelRank=3 Gaussian), luma-variance quadrant
+    // selection, center-pixel bilinear output. Our implementation matches the
+    // same algorithm in f64 precision. Residual MAE from float accumulation
+    // order and Gaussian edge handling.
     if let Some(error) = check_parity_rgb(
         128,
         128,
@@ -1526,8 +1527,8 @@ fn algorithm_kuwahara() {
         "kuwahara_3",
     ) {
         assert!(
-            error < 3.0,
-            "kuwahara MAE = {error:.4} (expected < 3.0, ALGORITHM tier)"
+            error < 2.0,
+            "kuwahara MAE = {error:.4} (expected < 2.0, CLOSE tier)"
         );
     }
 }
