@@ -1,9 +1,9 @@
-use image::DynamicImage;
-
 use super::error::ImageError;
 use super::metadata::ExifOrientation;
+#[cfg(test)]
+use super::types::ColorSpace;
 use super::types::{
-    ColorSpace, DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation,
+    DecodedImage, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation,
 };
 
 /// Resize an image to new dimensions using SIMD-optimized fast_image_resize.
@@ -76,7 +76,7 @@ pub fn resize(
     })
 }
 
-/// Crop a region from an image
+/// Crop a region from an image using raw row-slice copies.
 pub fn crop(
     pixels: &[u8],
     info: &ImageInfo,
@@ -96,76 +96,355 @@ pub fn crop(
             "crop dimensions must be > 0".into(),
         ));
     }
-    let img = pixels_to_image(pixels, info)?;
-    let cropped = img.crop_imm(x, y, width, height);
-    image_to_decoded(cropped, info.format, info.color_space)
+    let bpp = bytes_per_pixel(info.format)?;
+    let src_stride = info.width as usize * bpp;
+    let dst_stride = width as usize * bpp;
+    let mut result = vec![0u8; height as usize * dst_stride];
+
+    for row in 0..height as usize {
+        let src_offset = (y as usize + row) * src_stride + x as usize * bpp;
+        let dst_offset = row * dst_stride;
+        result[dst_offset..dst_offset + dst_stride]
+            .copy_from_slice(&pixels[src_offset..src_offset + dst_stride]);
+    }
+
+    Ok(DecodedImage {
+        pixels: result,
+        info: ImageInfo {
+            width,
+            height,
+            format: info.format,
+            color_space: info.color_space,
+        },
+        icc_profile: None,
+    })
 }
 
-/// Rotate an image
+/// Rotate an image by 90, 180, or 270 degrees using raw buffer ops.
 pub fn rotate(
     pixels: &[u8],
     info: &ImageInfo,
     degrees: Rotation,
 ) -> Result<DecodedImage, ImageError> {
-    let img = pixels_to_image(pixels, info)?;
-    let rotated = match degrees {
-        Rotation::R90 => img.rotate90(),
-        Rotation::R180 => img.rotate180(),
-        Rotation::R270 => img.rotate270(),
-    };
-    image_to_decoded(rotated, info.format, info.color_space)
+    let bpp = bytes_per_pixel(info.format)?;
+    let (w, h) = (info.width as usize, info.height as usize);
+
+    match degrees {
+        Rotation::R90 => {
+            // 90° CW: dst(x,y) = src(y, w-1-x) → output is h×w
+            let mut result = vec![0u8; w * h * bpp];
+            for sy in 0..h {
+                for sx in 0..w {
+                    let dx = h - 1 - sy;
+                    let dy = sx;
+                    let src_off = (sy * w + sx) * bpp;
+                    let dst_off = (dy * h + dx) * bpp;
+                    result[dst_off..dst_off + bpp]
+                        .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                }
+            }
+            Ok(DecodedImage {
+                pixels: result,
+                info: ImageInfo {
+                    width: info.height,
+                    height: info.width,
+                    format: info.format,
+                    color_space: info.color_space,
+                },
+                icc_profile: None,
+            })
+        }
+        Rotation::R180 => {
+            // 180°: reverse pixel order
+            let mut result = vec![0u8; pixels.len()];
+            let total = w * h;
+            for i in 0..total {
+                let src_off = i * bpp;
+                let dst_off = (total - 1 - i) * bpp;
+                result[dst_off..dst_off + bpp]
+                    .copy_from_slice(&pixels[src_off..src_off + bpp]);
+            }
+            Ok(DecodedImage {
+                pixels: result,
+                info: info.clone(),
+                icc_profile: None,
+            })
+        }
+        Rotation::R270 => {
+            // 270° CW (= 90° CCW): dst(x,y) = src(h-1-y, x) → output is h×w
+            let mut result = vec![0u8; w * h * bpp];
+            for sy in 0..h {
+                for sx in 0..w {
+                    let dx = sy;
+                    let dy = w - 1 - sx;
+                    let src_off = (sy * w + sx) * bpp;
+                    let dst_off = (dy * h + dx) * bpp;
+                    result[dst_off..dst_off + bpp]
+                        .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                }
+            }
+            Ok(DecodedImage {
+                pixels: result,
+                info: ImageInfo {
+                    width: info.height,
+                    height: info.width,
+                    format: info.format,
+                    color_space: info.color_space,
+                },
+                icc_profile: None,
+            })
+        }
+    }
 }
 
-/// Flip an image
+/// Flip an image horizontally or vertically using raw buffer ops.
 pub fn flip(
     pixels: &[u8],
     info: &ImageInfo,
     direction: FlipDirection,
 ) -> Result<DecodedImage, ImageError> {
-    let img = pixels_to_image(pixels, info)?;
-    let flipped = match direction {
-        FlipDirection::Horizontal => img.fliph(),
-        FlipDirection::Vertical => img.flipv(),
-    };
-    image_to_decoded(flipped, info.format, info.color_space)
+    let bpp = bytes_per_pixel(info.format)?;
+    let (w, h) = (info.width as usize, info.height as usize);
+    let stride = w * bpp;
+    let mut result = vec![0u8; pixels.len()];
+
+    match direction {
+        FlipDirection::Horizontal => {
+            for y in 0..h {
+                for x in 0..w {
+                    let src_off = y * stride + x * bpp;
+                    let dst_off = y * stride + (w - 1 - x) * bpp;
+                    result[dst_off..dst_off + bpp]
+                        .copy_from_slice(&pixels[src_off..src_off + bpp]);
+                }
+            }
+        }
+        FlipDirection::Vertical => {
+            for y in 0..h {
+                let src_off = y * stride;
+                let dst_off = (h - 1 - y) * stride;
+                result[dst_off..dst_off + stride]
+                    .copy_from_slice(&pixels[src_off..src_off + stride]);
+            }
+        }
+    }
+
+    Ok(DecodedImage {
+        pixels: result,
+        info: info.clone(),
+        icc_profile: None,
+    })
 }
 
-/// Convert pixel format
+/// Convert pixel format using raw buffer operations.
+///
+/// Supports all conversions between Gray8, Rgb8, Rgba8, Gray16, Rgb16, Rgba16.
+/// Grayscale conversion uses BT.601 luma: (77*R + 150*G + 29*B + 128) >> 8.
+/// 8↔16 bit conversion uses proper rounding: u8→u16 via v*257, u16→u8 via (v+128)/257.
 pub fn convert_format(
     pixels: &[u8],
     info: &ImageInfo,
     target: PixelFormat,
 ) -> Result<DecodedImage, ImageError> {
-    let img = pixels_to_image(pixels, info)?;
-    let (new_pixels, new_format) = match target {
-        PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-        PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-        PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-        PixelFormat::Gray16 => (
-            u16_to_le_bytes(img.to_luma16().as_raw()),
-            PixelFormat::Gray16,
-        ),
-        PixelFormat::Rgb16 => (u16_to_le_bytes(img.to_rgb16().as_raw()), PixelFormat::Rgb16),
-        PixelFormat::Rgba16 => (
-            u16_to_le_bytes(img.to_rgba16().as_raw()),
-            PixelFormat::Rgba16,
-        ),
-        other => {
-            return Err(ImageError::UnsupportedFormat(format!(
-                "conversion to {other:?} not supported"
-            )));
-        }
-    };
+    if info.format == target {
+        return Ok(DecodedImage {
+            pixels: pixels.to_vec(),
+            info: info.clone(),
+            icc_profile: None,
+        });
+    }
+
+    let n = (info.width as usize) * (info.height as usize);
+    let new_pixels = convert_pixels(pixels, info.format, target, n)?;
+
     Ok(DecodedImage {
         pixels: new_pixels,
         info: ImageInfo {
-            width: img.width(),
-            height: img.height(),
-            format: new_format,
+            width: info.width,
+            height: info.height,
+            format: target,
             color_space: info.color_space,
         },
         icc_profile: None,
     })
+}
+
+/// Convert pixel data between formats.
+fn convert_pixels(
+    pixels: &[u8],
+    src: PixelFormat,
+    dst: PixelFormat,
+    pixel_count: usize,
+) -> Result<Vec<u8>, ImageError> {
+    // Strategy: normalize to RGBA8 or RGBA16 as intermediate if needed,
+    // then convert to target. For efficiency, handle direct conversions first.
+    match (src, dst) {
+        // ── Identity ──
+        (a, b) if a == b => Ok(pixels.to_vec()),
+
+        // ── 8-bit direct conversions ──
+        (PixelFormat::Rgb8, PixelFormat::Rgba8) => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for chunk in pixels.chunks_exact(3) {
+                out.extend_from_slice(chunk);
+                out.push(255);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba8, PixelFormat::Rgb8) => {
+            let mut out = Vec::with_capacity(pixel_count * 3);
+            for chunk in pixels.chunks_exact(4) {
+                out.extend_from_slice(&chunk[..3]);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb8, PixelFormat::Gray8) | (PixelFormat::Rgba8, PixelFormat::Gray8) => {
+            let bpp = if src == PixelFormat::Rgb8 { 3 } else { 4 };
+            let mut out = Vec::with_capacity(pixel_count);
+            for chunk in pixels.chunks_exact(bpp) {
+                let r = chunk[0] as u16;
+                let g = chunk[1] as u16;
+                let b = chunk[2] as u16;
+                out.push(((77 * r + 150 * g + 29 * b + 128) >> 8) as u8);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray8, PixelFormat::Rgb8) => {
+            let mut out = Vec::with_capacity(pixel_count * 3);
+            for &v in pixels {
+                out.push(v);
+                out.push(v);
+                out.push(v);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray8, PixelFormat::Rgba8) => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for &v in pixels {
+                out.push(v);
+                out.push(v);
+                out.push(v);
+                out.push(255);
+            }
+            Ok(out)
+        }
+
+        // ── 16-bit direct conversions ──
+        (PixelFormat::Rgb16, PixelFormat::Rgba16) => {
+            let mut out = Vec::with_capacity(pixel_count * 8);
+            for chunk in pixels.chunks_exact(6) {
+                out.extend_from_slice(chunk);
+                out.extend_from_slice(&65535u16.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba16, PixelFormat::Rgb16) => {
+            let mut out = Vec::with_capacity(pixel_count * 6);
+            for chunk in pixels.chunks_exact(8) {
+                out.extend_from_slice(&chunk[..6]);
+            }
+            Ok(out)
+        }
+
+        // ── 8→16 bit promotion ──
+        (PixelFormat::Gray8, PixelFormat::Gray16) => {
+            let mut out = Vec::with_capacity(pixel_count * 2);
+            for &v in pixels {
+                out.extend_from_slice(&(v as u16 * 257).to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb8, PixelFormat::Rgb16) => {
+            let mut out = Vec::with_capacity(pixel_count * 6);
+            for &v in pixels {
+                out.extend_from_slice(&(v as u16 * 257).to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba8, PixelFormat::Rgba16) => {
+            let mut out = Vec::with_capacity(pixel_count * 8);
+            for &v in pixels {
+                out.extend_from_slice(&(v as u16 * 257).to_le_bytes());
+            }
+            Ok(out)
+        }
+
+        // ── 16→8 bit demotion ──
+        (PixelFormat::Gray16, PixelFormat::Gray8) => {
+            let mut out = Vec::with_capacity(pixel_count);
+            for chunk in pixels.chunks_exact(2) {
+                let v = u16::from_le_bytes([chunk[0], chunk[1]]);
+                out.push(((v as u32 + 128) / 257) as u8);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb16, PixelFormat::Rgb8) => {
+            let mut out = Vec::with_capacity(pixel_count * 3);
+            for chunk in pixels.chunks_exact(2) {
+                let v = u16::from_le_bytes([chunk[0], chunk[1]]);
+                out.push(((v as u32 + 128) / 257) as u8);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba16, PixelFormat::Rgba8) => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for chunk in pixels.chunks_exact(2) {
+                let v = u16::from_le_bytes([chunk[0], chunk[1]]);
+                out.push(((v as u32 + 128) / 257) as u8);
+            }
+            Ok(out)
+        }
+
+        // ── Cross-depth + cross-channel: two-step via intermediate ──
+        _ => {
+            // Step 1: convert to 8-bit same-channel-count
+            let (intermediate, intermediate_fmt) = match src {
+                PixelFormat::Gray16 => (
+                    convert_pixels(pixels, src, PixelFormat::Gray8, pixel_count)?,
+                    PixelFormat::Gray8,
+                ),
+                PixelFormat::Rgb16 => (
+                    convert_pixels(pixels, src, PixelFormat::Rgb8, pixel_count)?,
+                    PixelFormat::Rgb8,
+                ),
+                PixelFormat::Rgba16 => (
+                    convert_pixels(pixels, src, PixelFormat::Rgba8, pixel_count)?,
+                    PixelFormat::Rgba8,
+                ),
+                other => (pixels.to_vec(), other),
+            };
+            // Step 2: convert channels at 8-bit
+            let (channel_converted, channel_fmt) = if intermediate_fmt == dst {
+                return Ok(intermediate);
+            } else {
+                // Get 8-bit target
+                let target_8 = match dst {
+                    PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray8,
+                    PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb8,
+                    PixelFormat::Rgba8 | PixelFormat::Rgba16 => PixelFormat::Rgba8,
+                    _ => {
+                        return Err(ImageError::UnsupportedFormat(format!(
+                            "conversion from {src:?} to {dst:?} not supported"
+                        )))
+                    }
+                };
+                if intermediate_fmt == target_8 {
+                    (intermediate, target_8)
+                } else {
+                    (
+                        convert_pixels(&intermediate, intermediate_fmt, target_8, pixel_count)?,
+                        target_8,
+                    )
+                }
+            };
+            // Step 3: promote to 16-bit if needed
+            if channel_fmt == dst {
+                Ok(channel_converted)
+            } else {
+                convert_pixels(&channel_converted, channel_fmt, dst, pixel_count)
+            }
+        }
+    }
 }
 
 /// Auto-orient an image by applying the EXIF orientation transform.
@@ -216,97 +495,6 @@ pub fn auto_orient_from_exif(
     auto_orient(pixels, info, orientation)
 }
 
-fn pixels_to_image(pixels: &[u8], info: &ImageInfo) -> Result<DynamicImage, ImageError> {
-    match info.format {
-        PixelFormat::Rgb8 => image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
-            .map(DynamicImage::ImageRgb8)
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
-        PixelFormat::Rgba8 => image::RgbaImage::from_raw(info.width, info.height, pixels.to_vec())
-            .map(DynamicImage::ImageRgba8)
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
-        PixelFormat::Gray8 => image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
-            .map(DynamicImage::ImageLuma8)
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into())),
-        PixelFormat::Gray16 => {
-            let u16_pixels = le_bytes_to_u16(pixels);
-            image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(
-                info.width,
-                info.height,
-                u16_pixels,
-            )
-            .map(DynamicImage::ImageLuma16)
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        PixelFormat::Rgb16 => {
-            let u16_pixels = le_bytes_to_u16(pixels);
-            image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(
-                info.width,
-                info.height,
-                u16_pixels,
-            )
-            .map(DynamicImage::ImageRgb16)
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        PixelFormat::Rgba16 => {
-            let u16_pixels = le_bytes_to_u16(pixels);
-            image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
-                info.width,
-                info.height,
-                u16_pixels,
-            )
-            .map(DynamicImage::ImageRgba16)
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch".into()))
-        }
-        other => Err(ImageError::UnsupportedFormat(format!(
-            "transform from {other:?} not supported"
-        ))),
-    }
-}
-
-/// Convert LE byte pairs to u16 values.
-fn le_bytes_to_u16(bytes: &[u8]) -> Vec<u16> {
-    bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect()
-}
-
-/// Convert u16 values to LE byte pairs.
-fn u16_to_le_bytes(values: &[u16]) -> Vec<u8> {
-    values.iter().flat_map(|v| v.to_le_bytes()).collect()
-}
-
-fn image_to_decoded(
-    img: DynamicImage,
-    original_format: PixelFormat,
-    color_space: ColorSpace,
-) -> Result<DecodedImage, ImageError> {
-    let (pixels, format) = match original_format {
-        PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-        PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-        PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-        PixelFormat::Gray16 => (
-            u16_to_le_bytes(img.to_luma16().as_raw()),
-            PixelFormat::Gray16,
-        ),
-        PixelFormat::Rgb16 => (u16_to_le_bytes(img.to_rgb16().as_raw()), PixelFormat::Rgb16),
-        PixelFormat::Rgba16 => (
-            u16_to_le_bytes(img.to_rgba16().as_raw()),
-            PixelFormat::Rgba16,
-        ),
-        _ => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-    };
-    Ok(DecodedImage {
-        pixels,
-        info: ImageInfo {
-            width: img.width(),
-            height: img.height(),
-            format,
-            color_space,
-        },
-        icc_profile: None,
-    })
-}
 
 // ─── Extended Geometry ──────────────────────────────────────────────────────
 
