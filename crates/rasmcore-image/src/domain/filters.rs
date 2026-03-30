@@ -13116,7 +13116,7 @@ pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 
         for y in 0..h {
             let yf = y as f32;
-            // radius = y / height * max_radius
+            // radius: y=0 → 0 (center), y=h → max_radius (edge)
             let radius_v = f32x4_splat(yf / hf * max_radius);
             let mut x = 0;
             while x + 4 <= w {
@@ -13137,10 +13137,10 @@ pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
                     v128_store(tmp_radius.as_mut_ptr() as *mut v128, radius_v);
                 }
                 for p in 0..4 {
-                    let a = tmp_angle[p];
+                    let a = tmp_angle[p] - std::f32::consts::PI;
                     let r = tmp_radius[p];
-                    let sx = cx + r * a.cos();
-                    let sy = cy + r * a.sin();
+                    let sx = cx + r * a.sin();
+                    let sy = cy - r * a.cos();
                     let off = (y * w + x + p) * ch;
                     for c in 0..ch {
                         out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13149,10 +13149,10 @@ pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
                 x += 4;
             }
             while x < w {
-                let angle = x as f32 / wf * two_pi;
+                let angle = x as f32 / wf * two_pi - std::f32::consts::PI;
                 let radius = yf / hf * max_radius;
-                let sx = cx + radius * angle.cos();
-                let sy = cy + radius * angle.sin();
+                let sx = cx + radius * angle.sin();
+                let sy = cy - radius * angle.cos();
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
                     out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13168,9 +13168,9 @@ pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
             let yf = y as f32;
             let radius = yf / hf * max_radius;
             for x in 0..w {
-                let angle = x as f32 / wf * two_pi;
-                let sx = cx + radius * angle.cos();
-                let sy = cy + radius * angle.sin();
+                let angle = x as f32 / wf * two_pi - std::f32::consts::PI;
+                let sx = cx + radius * angle.sin();
+                let sy = cy - radius * angle.cos();
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
                     out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13202,12 +13202,17 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let ch = channels(info.format);
     let wf = w as f32;
     let hf = h as f32;
-    let cx = wf * 0.5;
-    let cy = hf * 0.5;
-    let max_radius = cx.min(cy);
+    // IM pixel-center coords: center of N-wide image is at (N-1)/2
+    let cx = (w as f32 - 1.0) * 0.5;
+    let cy = (h as f32 - 1.0) * 0.5;
+    let max_radius = (wf * 0.5).min(hf * 0.5);
     let wi = w as i32;
     let hi = h as i32;
     let two_pi = std::f32::consts::TAU;
+    // IM coefficients from `-distort Polar` verbose output
+    let c6 = wf / two_pi; // angle → x scale
+    let c7 = hf / max_radius; // radius → y scale
+    let half_w = wf * 0.5;
 
     let mut out = vec![0u8; pixels.len()];
 
@@ -13229,17 +13234,23 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
             + fetch(x0 + 1, y0 + 1) * fx * fy
     };
 
+    // IM Polar FX equivalent:
+    //   ii = i - cx;  jj = j - cy;
+    //   xx = atan2(ii,jj)/(2π); xx -= round(xx);
+    //   xx = xx * 2π * c6 + w/2;
+    //   yy = hypot(ii,jj) * c7;
+    //   source at (xx - 0.5, yy - 0.5)
     #[cfg(target_arch = "wasm32")]
     {
         use std::arch::wasm32::*;
 
         for y in 0..h {
             let yf = y as f32;
-            let dy = yf - cy;
-            let dy_sq_v = f32x4_splat(dy * dy);
+            let jj = yf - cy;
+            let jj_sq_v = f32x4_splat(jj * jj);
             let mut x = 0;
             while x + 4 <= w {
-                let dx = unsafe {
+                let ii_v = unsafe {
                     f32x4(
                         x as f32 - cx,
                         (x + 1) as f32 - cx,
@@ -13247,19 +13258,19 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
                         (x + 3) as f32 - cx,
                     )
                 };
-                let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), dy_sq_v));
+                let r = f32x4_sqrt(f32x4_add(f32x4_mul(ii_v, ii_v), jj_sq_v));
                 let mut tmp_r = [0.0f32; 4];
                 unsafe {
                     v128_store(tmp_r.as_mut_ptr() as *mut v128, r);
                 }
                 for p in 0..4 {
-                    let dxp = (x + p) as f32 - cx;
+                    let ii = (x + p) as f32 - cx;
                     let radius = tmp_r[p];
-                    let angle = dy.atan2(dxp);
-                    // Map angle from [-π, π] to [0, 2π], then to source x
-                    let norm_angle = if angle < 0.0 { angle + two_pi } else { angle };
-                    let sx = norm_angle / two_pi * wf;
-                    let sy = radius / max_radius * hf;
+                    let angle = ii.atan2(jj);
+                    let mut xx = angle / two_pi;
+                    xx -= xx.round();
+                    let sx = xx * two_pi * c6 + half_w - 0.5;
+                    let sy = radius * c7 - 0.5;
                     let off = (y * w + x + p) * ch;
                     for c in 0..ch {
                         out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13268,12 +13279,13 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
                 x += 4;
             }
             while x < w {
-                let dx = x as f32 - cx;
-                let radius = (dx * dx + dy * dy).sqrt();
-                let angle = dy.atan2(dx);
-                let norm_angle = if angle < 0.0 { angle + two_pi } else { angle };
-                let sx = norm_angle / two_pi * wf;
-                let sy = radius / max_radius * hf;
+                let ii = x as f32 - cx;
+                let radius = (ii * ii + jj * jj).sqrt();
+                let angle = ii.atan2(jj);
+                let mut xx = angle / two_pi;
+                xx -= xx.round();
+                let sx = xx * two_pi * c6 + half_w - 0.5;
+                let sy = radius * c7 - 0.5;
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
                     out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13287,14 +13299,15 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     {
         for y in 0..h {
             let yf = y as f32;
-            let dy = yf - cy;
+            let jj = yf - cy;
             for x in 0..w {
-                let dx = x as f32 - cx;
-                let radius = (dx * dx + dy * dy).sqrt();
-                let angle = dy.atan2(dx);
-                let norm_angle = if angle < 0.0 { angle + two_pi } else { angle };
-                let sx = norm_angle / two_pi * wf;
-                let sy = radius / max_radius * hf;
+                let ii = x as f32 - cx;
+                let radius = (ii * ii + jj * jj).sqrt();
+                let angle = ii.atan2(jj);
+                let mut xx = angle / two_pi;
+                xx -= xx.round();
+                let sx = xx * two_pi * c6 + half_w - 0.5;
+                let sy = radius * c7 - 0.5;
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
                     out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13372,7 +13385,7 @@ pub fn wave(
             let yf = y as f32;
             if is_vert {
                 // Vertical: shift x based on sin(y)
-                let disp = amplitude * (two_pi * yf / wl).sin();
+                let disp = -amplitude * (two_pi * yf / wl).sin();
                 let mut x = 0;
                 while x + 4 <= w {
                     for p in 0..4 {
@@ -13414,7 +13427,7 @@ pub fn wave(
                     x += 4;
                 }
                 while x < w {
-                    let sy = yf + amplitude * (two_pi * x as f32 / wl).sin();
+                    let sy = yf - amplitude * (two_pi * x as f32 / wl).sin();
                     let off = (y * w + x) * ch;
                     for c in 0..ch {
                         out[off + c] = sample(x as f32, sy, c).round().clamp(0.0, 255.0) as u8;
@@ -13432,9 +13445,9 @@ pub fn wave(
             for x in 0..w {
                 let xf = x as f32;
                 let (sx, sy) = if is_vert {
-                    (xf + amplitude * (two_pi * yf / wl).sin(), yf)
+                    (xf - amplitude * (two_pi * yf / wl).sin(), yf)
                 } else {
-                    (xf, yf + amplitude * (two_pi * xf / wl).sin())
+                    (xf, yf - amplitude * (two_pi * xf / wl).sin())
                 };
                 let off = (y * w + x) * ch;
                 for c in 0..ch {
@@ -14035,8 +14048,8 @@ mod distortion_effect_tests {
 
     // ── ImageMagick Parity Tests ──
 
-    /// Helper: create a test PNG and return its path and pixel data.
-    fn make_distortion_test_png(w: u32, h: u32) -> (std::path::PathBuf, Vec<u8>) {
+    /// Helper: create a test image as stripped PNG (no sRGB chunk) for IM parity.
+    fn make_distortion_test_image(w: u32, h: u32) -> (std::path::PathBuf, Vec<u8>) {
         let mut pixels = vec![0u8; (w * h * 3) as usize];
         for y in 0..h {
             for x in 0..w {
@@ -14046,12 +14059,23 @@ mod distortion_effect_tests {
                 pixels[i + 2] = if (x / 4 + y / 4) % 2 == 0 { 200 } else { 50 };
             }
         }
-        let path = std::env::temp_dir().join("rasmcore_distortion_parity.png");
-        let encoded =
-            crate::domain::encoder::encode(&pixels, &rgb_info(w, h), "png", Default::default())
-                .unwrap();
-        std::fs::write(&path, &encoded).unwrap();
-        (path, pixels)
+        // Write as raw RGB then convert to stripped PNG via IM
+        let raw_path = std::env::temp_dir().join("rasmcore_distortion_parity.rgb");
+        let png_path = std::env::temp_dir().join("rasmcore_distortion_parity.png");
+        std::fs::write(&raw_path, &pixels).unwrap();
+        let _ = std::process::Command::new("magick")
+            .args([
+                "-size",
+                &format!("{w}x{h}"),
+                "-depth",
+                "8",
+                &format!("rgb:{}", raw_path.to_str().unwrap()),
+                "-strip",
+                png_path.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        (png_path, pixels)
     }
 
     #[test]
@@ -14067,20 +14091,23 @@ mod distortion_effect_tests {
         }
 
         let (w, h) = (64u32, 64u32);
-        let (png_path, pixels) = make_distortion_test_png(w, h);
+        let (png_path, pixels) = make_distortion_test_image(w, h);
         let amplitude = 5.0f32;
         let wavelength = 20.0f32;
 
         let info = rgb_info(w, h);
         let our_result = wave(&pixels, &info, amplitude, wavelength, 0.0).unwrap();
 
-        // IM -wave displaces rows vertically. It extends the image; crop back.
+        // IM -wave extends canvas by 2*amplitude. Crop at offset=amplitude
+        // to get the centered portion matching our source mapping.
         let im_raw = std::env::temp_dir().join("wave_parity_im.rgb");
         let result = std::process::Command::new("magick")
             .args([
                 png_path.to_str().unwrap(),
+                "-background",
+                "black",
                 "-virtual-pixel",
-                "Black",
+                "Background",
                 "-wave",
                 &format!("{amplitude}x{wavelength}"),
                 "-crop",
@@ -14113,9 +14140,7 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("wave IM parity MAE: {mae:.2}");
-        // ALGORITHM tier: IM -wave extends canvas then crops, so alignment differs
-        // at boundaries. The sinusoidal pattern matches but pixel offsets diverge.
-        assert!(mae < 40.0, "wave IM parity MAE = {mae:.2} > 40.0");
+        assert!(mae < 2.0, "wave IM parity MAE = {mae:.2} > 2.0");
     }
 
     #[test]
@@ -14131,18 +14156,22 @@ mod distortion_effect_tests {
         }
 
         let (w, h) = (64u32, 64u32);
-        let (png_path, pixels) = make_distortion_test_png(w, h);
+        let (png_path, pixels) = make_distortion_test_image(w, h);
         let max_radius = (w.min(h) / 2) as f64;
 
         let info = rgb_info(w, h);
-        let our_result = polar(&pixels, &info).unwrap();
+        // IM's -distort Polar produces Cartesian output from polar-mapped source
+        // — this matches our `depolar` function, not `polar`.
+        let our_result = depolar(&pixels, &info).unwrap();
 
         let im_raw = std::env::temp_dir().join("polar_parity_im.rgb");
         let result = std::process::Command::new("magick")
             .args([
                 png_path.to_str().unwrap(),
+                "-background",
+                "black",
                 "-virtual-pixel",
-                "Black",
+                "Background",
                 "-distort",
                 "Polar",
                 &format!("{max_radius}"),
@@ -14173,12 +14202,8 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("polar IM parity MAE: {mae:.2}");
-        // ALGORITHM tier: IM's Polar uses angle origin at top (12 o'clock, clockwise)
-        // while we use standard math convention (right/3 o'clock, counterclockwise).
-        // Both produce valid polar projections with identical roundtrip behavior.
-        // High MAE expected from the rotated angle mapping — validates the algorithm
-        // runs without error and produces a reasonable polar-projected image.
-        assert!(mae < 95.0, "polar IM parity MAE = {mae:.2} > 95.0");
+        // Residual from IM using EWA resampling vs our bilinear interpolation.
+        assert!(mae < 5.0, "polar IM parity MAE = {mae:.2} > 5.0");
     }
 }
 
