@@ -14,9 +14,10 @@ fn main() {
     let filters_path = Path::new(&manifest_dir).join("src/domain/filters.rs");
     let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
 
-    // Tell cargo to rerun if filters.rs or param_types.rs changes
+    // Tell cargo to rerun if filters.rs, param_types.rs, or build.rs changes
     println!("cargo:rerun-if-changed=src/domain/filters.rs");
     println!("cargo:rerun-if-changed=src/domain/param_types.rs");
+    println!("cargo:rerun-if-changed=build.rs");
 
     if !filters_path.exists() {
         return;
@@ -231,8 +232,8 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
     while i < lines.len() {
         let line = lines[i].trim();
 
-        // Look for register_filter attribute
-        if line.contains("register_filter(") && line.contains("name") {
+        // Look for register_filter attribute (may span multiple lines)
+        if line.contains("register_filter(") && !line.starts_with("//") {
             // Collect the full attribute text (may span multiple lines)
             let mut attr_text = line.to_string();
             let mut k = i + 1;
@@ -251,8 +252,8 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
             let reference = extract_string_attr(&attr_text, "reference").unwrap_or_default();
 
             if let (Some(name), Some(category)) = (name, category) {
-                // Find the next pub fn and collect its full signature (may span multiple lines)
-                let mut j = i + 1;
+                // Find the next pub fn AFTER the attribute ends (k is past the closing `)]`)
+                let mut j = k;
                 while j < lines.len() {
                     let fn_line = lines[j].trim();
                     if fn_line.starts_with("pub fn ") {
@@ -271,7 +272,11 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
                         }
                         break;
                     }
-                    if fn_line.starts_with("//") || fn_line.starts_with("///") || fn_line.is_empty()
+                    // Skip comments, blank lines, and other attributes before pub fn
+                    if fn_line.starts_with("//")
+                        || fn_line.starts_with("///")
+                        || fn_line.starts_with("#[")
+                        || fn_line.is_empty()
                     {
                         j += 1;
                         continue;
