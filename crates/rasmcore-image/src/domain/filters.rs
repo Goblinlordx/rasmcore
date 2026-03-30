@@ -10340,8 +10340,11 @@ pub struct CharcoalParams {
     pub sigma: f32,
 }
 
-/// Charcoal sketch: Sobel edge detection → Gaussian blur → invert.
-/// Produces a pencil/charcoal drawing effect.
+/// Charcoal sketch: Sobel edge detection → blur → invert.
+/// IM's -charcoal uses a different edge detector (not Sobel) plus normalize;
+/// we use Sobel which produces visually similar but numerically different
+/// edge maps. The normalize step is intentionally omitted because it
+/// amplifies the edge detector difference (MAE 24→239 with normalize).
 #[rasmcore_macros::register_filter(name = "charcoal", category = "effect")]
 pub fn charcoal(
     pixels: &[u8],

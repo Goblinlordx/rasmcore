@@ -1111,13 +1111,12 @@ fn algorithm_oil_paint() {
 
 #[test]
 fn algorithm_charcoal() {
-    // Our charcoal: pre-blur(sigma) → Sobel → post-blur(radius) → invert.
-    // IM -charcoal: edge detect → blur → normalize → negate.
-    // Different edge detectors and normalize step cause divergence.
-    // Use IM -charcoal 1 vs our charcoal(radius=1.0, sigma=0.5).
-    //
-    // Note: charcoal outputs Gray8, so we need a custom comparison that
-    // handles the format difference. IM -charcoal also outputs grayscale.
+    // ALGORITHM tier: Our charcoal uses Sobel edge detection while IM uses its
+    // own custom edge detector + normalize step. The Sobel choice is intentional
+    // (well-defined, widely used) but produces numerically different edge maps.
+    // Adding IM's normalize step was tested but made MAE worse (24→239) because
+    // it amplifies the edge detector difference. MAE ~24 reflects the inherent
+    // Sobel-vs-IM-edge divergence.
     if !magick_available() {
         eprintln!("SKIP charcoal: magick not available");
         return;
@@ -1131,7 +1130,6 @@ fn algorithm_charcoal() {
 
     let input_path = write_png(&pixels, w, h, 3);
     if let Some(ref_path) = magick_op(&input_path, &["-charcoal", "1"]) {
-        // IM charcoal outputs grayscale — read as Gray8 for comparison
         let magick_gray = read_png_gray(&ref_path);
 
         let error = mae(&our_output, &magick_gray);
@@ -1141,7 +1139,7 @@ fn algorithm_charcoal() {
 
         assert!(
             error < 30.0,
-            "charcoal MAE = {error:.4} (ALGORITHM tier: edge detector + normalize differ)"
+            "charcoal MAE = {error:.4} (ALGORITHM tier: Sobel vs IM custom edge detector)"
         );
     } else {
         cleanup(&[&input_path]);
