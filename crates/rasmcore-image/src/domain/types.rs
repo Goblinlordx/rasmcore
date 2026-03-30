@@ -26,6 +26,8 @@ pub enum ColorSpace {
     DisplayP3,
     Bt709,
     Bt2020,
+    ProPhotoRgb,
+    AdobeRgb,
 }
 
 /// Image metadata

@@ -28,6 +28,8 @@ interface types {
         display-p3,
         bt709,
         bt2020,
+        prophoto-rgb,
+        adobe-rgb,
     }
 
     /// Audio sample formats

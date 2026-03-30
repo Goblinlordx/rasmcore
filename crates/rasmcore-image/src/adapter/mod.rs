@@ -62,6 +62,8 @@ fn to_wit_color_space(c: domain::types::ColorSpace) -> types::ColorSpace {
         domain::types::ColorSpace::DisplayP3 => types::ColorSpace::DisplayP3,
         domain::types::ColorSpace::Bt709 => types::ColorSpace::Bt709,
         domain::types::ColorSpace::Bt2020 => types::ColorSpace::Bt2020,
+        domain::types::ColorSpace::ProPhotoRgb => types::ColorSpace::ProphotoRgb,
+        domain::types::ColorSpace::AdobeRgb => types::ColorSpace::AdobeRgb,
     }
 }
 
@@ -85,6 +87,8 @@ fn to_domain_image_info(info: &types::ImageInfo) -> domain::types::ImageInfo {
             types::ColorSpace::DisplayP3 => domain::types::ColorSpace::DisplayP3,
             types::ColorSpace::Bt709 => domain::types::ColorSpace::Bt709,
             types::ColorSpace::Bt2020 => domain::types::ColorSpace::Bt2020,
+            types::ColorSpace::ProphotoRgb => domain::types::ColorSpace::ProPhotoRgb,
+            types::ColorSpace::AdobeRgb => domain::types::ColorSpace::AdobeRgb,
         },
     }
 }

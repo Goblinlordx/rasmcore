@@ -29,6 +29,133 @@ fn linear_to_srgb(v: f64) -> f64 {
     }
 }
 
+// ─── ProPhoto RGB (ROMM RGB) ─────────────────────────────────────────────
+//
+// Primaries: R(0.7347, 0.2653) G(0.1596, 0.7468) B(0.0366, 0.0001)
+// White point: D50
+// Transfer function: gamma 1.8, linear below Et = 1/512 = 0.001953125
+// Reference: ICC.1:2004-10, colour-science 0.4.7
+
+const PROPHOTO_ET: f64 = 1.0 / 512.0; // 16 * (1/512)^1.8 = 1/512
+const PROPHOTO_ET_LINEAR: f64 = 1.0 / 8192.0; // = Et / 16
+
+#[inline]
+fn prophoto_to_linear(v: f64) -> f64 {
+    if v <= PROPHOTO_ET {
+        v / 16.0
+    } else {
+        v.powf(1.8)
+    }
+}
+
+#[inline]
+fn linear_to_prophoto(v: f64) -> f64 {
+    if v <= PROPHOTO_ET_LINEAR {
+        v * 16.0
+    } else {
+        v.powf(1.0 / 1.8)
+    }
+}
+
+/// ProPhoto RGB → XYZ (D50) matrix.
+/// Derived from primaries R(0.7347,0.2653), G(0.1596,0.7468), B(0.0366,0.0001)
+/// with D50 white point. Matches colour-science 0.4.7.
+fn prophoto_rgb_to_xyz_d50(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let rl = prophoto_to_linear(r);
+    let gl = prophoto_to_linear(g);
+    let bl = prophoto_to_linear(b);
+    // Matrix from colour-science: colour.RGB_COLOURSPACES['ProPhoto RGB'].matrix_RGB_to_XYZ
+    let x = 0.7976749444816064 * rl + 0.1351917082975956 * gl + 0.0313493495815248 * bl;
+    let y = 0.2880402378623901 * rl + 0.7118741461693835 * gl + 0.0000856159682265 * bl;
+    let z = 0.0000000000000000 * rl + 0.0000000000000000 * gl + 0.8251046025104602 * bl;
+    (x, y, z)
+}
+
+/// XYZ (D50) → ProPhoto RGB.
+fn xyz_d50_to_prophoto_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+    // Inverse of the above matrix (from colour-science)
+    let rl = 1.3459433009386654 * x - 0.2556075514260984 * y - 0.0511118466700571 * z;
+    let gl = -0.5445989112457426 * x + 1.5081673487328567 * y + 0.0205351443914399 * z;
+    let bl = 0.0000000000000000 * x + 0.0000000000000000 * y + 1.2118127506937628 * z;
+    (
+        linear_to_prophoto(rl.clamp(0.0, 1.0)),
+        linear_to_prophoto(gl.clamp(0.0, 1.0)),
+        linear_to_prophoto(bl.clamp(0.0, 1.0)),
+    )
+}
+
+/// Convert ProPhoto RGB to sRGB via XYZ (D50 → D65 Bradford adaptation).
+pub fn prophoto_to_srgb(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let (x50, y50, z50) = prophoto_rgb_to_xyz_d50(r, g, b);
+    let (x65, y65, z65) = bradford_adapt(x50, y50, z50, Illuminant::D50, Illuminant::D65);
+    xyz_to_rgb(x65, y65, z65)
+}
+
+/// Convert sRGB to ProPhoto RGB via XYZ (D65 → D50 Bradford adaptation).
+pub fn srgb_to_prophoto(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let (x65, y65, z65) = rgb_to_xyz(r, g, b);
+    let (x50, y50, z50) = bradford_adapt(x65, y65, z65, Illuminant::D65, Illuminant::D50);
+    xyz_d50_to_prophoto_rgb(x50, y50, z50)
+}
+
+// ─── Adobe RGB 1998 ──────────────────────────────────────────────────────
+//
+// Primaries: R(0.64, 0.33) G(0.21, 0.71) B(0.15, 0.06)
+// White point: D65
+// Transfer function: gamma 2.19921875 (= 563/256)
+// Reference: Adobe RGB (1998) Color Image Encoding, colour-science 0.4.7
+
+const ADOBE_GAMMA: f64 = 563.0 / 256.0; // 2.19921875
+
+#[inline]
+fn adobe_to_linear(v: f64) -> f64 {
+    v.powf(ADOBE_GAMMA)
+}
+
+#[inline]
+fn linear_to_adobe(v: f64) -> f64 {
+    v.clamp(0.0, 1.0).powf(1.0 / ADOBE_GAMMA)
+}
+
+/// Adobe RGB → XYZ (D65) matrix.
+/// Derived from primaries R(0.64,0.33), G(0.21,0.71), B(0.15,0.06)
+/// with D65 white point. Matches colour-science 0.4.7.
+fn adobe_rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let rl = adobe_to_linear(r);
+    let gl = adobe_to_linear(g);
+    let bl = adobe_to_linear(b);
+    // Matrix from colour-science: colour.RGB_COLOURSPACES['Adobe RGB (1998)'].matrix_RGB_to_XYZ
+    let x = 0.5766690429101305 * rl + 0.1855582379065463 * gl + 0.1882286462349947 * bl;
+    let y = 0.2973449753743829 * rl + 0.6273635662554661 * gl + 0.0752914583701510 * bl;
+    let z = 0.0270313613864123 * rl + 0.0706888525938314 * gl + 0.9913375368376388 * bl;
+    (x, y, z)
+}
+
+/// XYZ (D65) → Adobe RGB.
+fn xyz_to_adobe_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+    // Inverse matrix (from colour-science)
+    let rl = 2.0415879038107327 * x - 0.5650069742788597 * y - 0.3447313507783297 * z;
+    let gl = -0.9692436362808796 * x + 1.8759675015077202 * y + 0.0415550574071756 * z;
+    let bl = 0.0134442015914174 * x - 0.1183623922401997 * y + 1.0151749943912780 * z;
+    (
+        linear_to_adobe(rl.clamp(0.0, 1.0)),
+        linear_to_adobe(gl.clamp(0.0, 1.0)),
+        linear_to_adobe(bl.clamp(0.0, 1.0)),
+    )
+}
+
+/// Convert Adobe RGB to sRGB via XYZ (both D65, no adaptation needed).
+pub fn adobe_to_srgb(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let (x, y, z) = adobe_rgb_to_xyz(r, g, b);
+    xyz_to_rgb(x, y, z)
+}
+
+/// Convert sRGB to Adobe RGB via XYZ (both D65, no adaptation needed).
+pub fn srgb_to_adobe(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let (x, y, z) = rgb_to_xyz(r, g, b);
+    xyz_to_adobe_rgb(x, y, z)
+}
+
 // ─── CIE Lab (via XYZ, D65 illuminant) ───────────────────────────────────
 
 /// D65 reference white point — derived from CIE chromaticity (0.3127, 0.329) with Y=1.
@@ -820,6 +947,118 @@ mod tests {
             spread < 5.0,
             "gray-world should equalize means: R={mean_r:.0} G={mean_g:.0} B={mean_b:.0}"
         );
+    }
+
+    // ── ProPhoto RGB Tests ────────────────────────────────────────────────
+
+    #[test]
+    fn prophoto_transfer_function_roundtrip() {
+        for &v in &[0.0, 0.001, 0.01, 0.1, 0.5, 0.8, 1.0] {
+            let lin = prophoto_to_linear(v);
+            let back = linear_to_prophoto(lin);
+            assert!(
+                (v - back).abs() < 1e-12,
+                "ProPhoto roundtrip failed for {v}: got {back}"
+            );
+        }
+    }
+
+    #[test]
+    fn prophoto_linear_segment() {
+        // Below Et = 1/512, the transfer should be v/16
+        let v = 0.001;
+        assert!((prophoto_to_linear(v) - v / 16.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn prophoto_to_srgb_converts() {
+        // ProPhoto (0.5, 0.3, 0.1) → sRGB: values may be slightly out of [0,1]
+        // because ProPhoto's gamut exceeds sRGB — this is expected
+        let (r, g, b) = prophoto_to_srgb(0.5, 0.3, 0.1);
+        assert!(r > 0.0, "R should be positive: {r}");
+        assert!(g > 0.0, "G should be positive: {g}");
+        // B can be slightly negative for out-of-gamut ProPhoto colors
+        assert!(b > -0.1, "B should be near zero or positive: {b}");
+    }
+
+    #[test]
+    fn prophoto_srgb_roundtrip() {
+        // sRGB → ProPhoto → sRGB should be near-identity for in-gamut colors
+        // Tolerance limited by 4-decimal sRGB XYZ matrices in the existing codebase
+        let (pr, pg, pb) = srgb_to_prophoto(0.6, 0.4, 0.2);
+        let (r, g, b) = prophoto_to_srgb(pr, pg, pb);
+        assert!((r - 0.6).abs() < 0.001, "R roundtrip: {r}");
+        assert!((g - 0.4).abs() < 0.001, "G roundtrip: {g}");
+        assert!((b - 0.2).abs() < 0.001, "B roundtrip: {b}");
+    }
+
+    #[test]
+    fn prophoto_white_is_white() {
+        // ProPhoto (1,1,1) → sRGB should be near (1,1,1) via Bradford D50→D65
+        let (r, g, b) = prophoto_to_srgb(1.0, 1.0, 1.0);
+        assert!((r - 1.0).abs() < 0.02, "R: {r}");
+        assert!((g - 1.0).abs() < 0.02, "G: {g}");
+        assert!((b - 1.0).abs() < 0.02, "B: {b}");
+    }
+
+    // ── Adobe RGB Tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn adobe_transfer_function_roundtrip() {
+        for &v in &[0.0, 0.01, 0.1, 0.5, 0.8, 1.0] {
+            let lin = adobe_to_linear(v);
+            let back = linear_to_adobe(lin);
+            assert!(
+                (v - back).abs() < 1e-12,
+                "Adobe roundtrip failed for {v}: got {back}"
+            );
+        }
+    }
+
+    #[test]
+    fn adobe_gamma_is_correct() {
+        // Adobe gamma = 563/256 ≈ 2.19921875
+        let v = 0.5f64;
+        let linear = v.powf(563.0 / 256.0);
+        assert!((adobe_to_linear(v) - linear).abs() < 1e-15);
+    }
+
+    #[test]
+    fn adobe_to_srgb_produces_valid_range() {
+        // Adobe (0.5, 0.3, 0.1) should produce valid sRGB values
+        let (r, g, b) = adobe_to_srgb(0.5, 0.3, 0.1);
+        assert!(r > 0.0 && r <= 1.0, "R out of range: {r}");
+        assert!(g > 0.0 && g <= 1.0, "G out of range: {g}");
+        assert!(b >= 0.0 && b <= 1.0, "B out of range: {b}");
+    }
+
+    #[test]
+    fn adobe_srgb_roundtrip() {
+        // sRGB → Adobe → sRGB should be near-identity
+        // Tolerance limited by 4-decimal sRGB XYZ matrices
+        let (ar, ag, ab) = srgb_to_adobe(0.6, 0.4, 0.2);
+        let (r, g, b) = adobe_to_srgb(ar, ag, ab);
+        assert!((r - 0.6).abs() < 0.001, "R roundtrip: {r}");
+        assert!((g - 0.4).abs() < 0.001, "G roundtrip: {g}");
+        assert!((b - 0.2).abs() < 0.001, "B roundtrip: {b}");
+    }
+
+    #[test]
+    fn adobe_white_is_white() {
+        // Adobe (1,1,1) → sRGB should be near (1,1,1) — both D65
+        // Tolerance limited by sRGB matrix precision (4 decimals)
+        let (r, g, b) = adobe_to_srgb(1.0, 1.0, 1.0);
+        assert!((r - 1.0).abs() < 0.01, "R: {r}");
+        assert!((g - 1.0).abs() < 0.01, "G: {g}");
+        assert!((b - 1.0).abs() < 0.01, "B: {b}");
+    }
+
+    #[test]
+    fn adobe_black_is_black() {
+        let (r, g, b) = adobe_to_srgb(0.0, 0.0, 0.0);
+        assert!(r.abs() < 1e-12);
+        assert!(g.abs() < 1e-12);
+        assert!(b.abs() < 1e-12);
     }
 
     #[test]
