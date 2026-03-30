@@ -61,10 +61,10 @@ pub fn robidoux_kernel(r: f32) -> f32 {
 ///
 /// LUT[Q] = filter(sqrt(Q) * r_scale) where r_scale = support * sqrt(1/WLUT_WIDTH).
 /// Q indexes [0, WLUT_WIDTH) representing squared distances scaled to the LUT range.
-fn build_weight_lut() -> Vec<f32> {
+fn build_weight_lut() -> Vec<f64> {
     let r_scale = SUPPORT * (1.0 / WLUT_WIDTH as f64).sqrt();
     (0..WLUT_WIDTH)
-        .map(|q| robidoux_kernel_f64((q as f64).sqrt() * r_scale) as f32)
+        .map(|q| robidoux_kernel_f64((q as f64).sqrt() * r_scale))
         .collect()
 }
 
@@ -220,7 +220,7 @@ pub struct EwaSampler<'a> {
     pub w: usize,
     pub h: usize,
     pub ch: usize,
-    lut: Vec<f32>,
+    lut: Vec<f64>,
 }
 
 impl<'a> EwaSampler<'a> {
@@ -293,7 +293,7 @@ impl<'a> EwaSampler<'a> {
             for u_off in 0..uw {
                 let qi = q as i32;
                 if qi >= 0 && qi < WLUT_WIDTH as i32 {
-                    let weight = self.lut[qi as usize] as f64;
+                    let weight = self.lut[qi as usize];
                     if weight > 0.0 {
                         color += weight * self.fetch(u_start + u_off, v, c) as f64;
                         divisor += weight;

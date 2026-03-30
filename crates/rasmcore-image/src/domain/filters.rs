@@ -13258,12 +13258,14 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let w = info.width as usize;
     let h = info.height as usize;
     let ch = channels(info.format);
-    let wf = w as f32;
-    let hf = h as f32;
-    let cx = (w as f32 - 1.0) * 0.5;
-    let cy = (h as f32 - 1.0) * 0.5;
+    // Use f64 throughout to match IM's double-precision pipeline
+    let wf = w as f64;
+    let hf = h as f64;
+    // IM uses pixel-center convention: d.x = i + 0.5, center = w/2
+    let cx = wf * 0.5;
+    let cy = hf * 0.5;
     let max_radius = (wf * 0.5).min(hf * 0.5);
-    let two_pi = std::f32::consts::TAU;
+    let two_pi = std::f64::consts::TAU;
     let c6 = wf / two_pi;
     let c7 = hf / max_radius;
     let half_w = wf * 0.5;
@@ -13272,18 +13274,30 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
 
     for y in 0..h {
-        let yf = y as f32;
+        // IM pixel-center: d.y = j + 0.5
+        let yf = y as f64 + 0.5;
         let jj = yf - cy;
         for x in 0..w {
-            let xf = x as f32;
+            // IM pixel-center: d.x = i + 0.5
+            let xf = x as f64 + 0.5;
             let ii = xf - cx;
             let radius = (ii * ii + jj * jj).sqrt();
             let angle = ii.atan2(jj);
             let mut xx = angle / two_pi;
             xx -= xx.round();
-            let sx = xx * two_pi * c6 + half_w - 0.5;
-            let sy = radius * c7 - 0.5;
-            let j = super::ewa::jacobian_depolar(xf, yf, cx, cy, c6, c7);
+            let sx = (xx * two_pi * c6 + half_w - 0.5) as f32;
+            let sy = (radius * c7 - 0.5) as f32;
+            // Analytical Jacobian in f64 precision
+            let r2 = ii * ii + jj * jj;
+            let j: super::ewa::Jacobian = if r2 < 1e-10 {
+                super::ewa::JACOBIAN_IDENTITY
+            } else {
+                let r = radius;
+                [
+                    [(jj / r2 * c6) as f32, (-ii / r2 * c6) as f32],
+                    [(ii / r * c7) as f32, (jj / r * c7) as f32],
+                ]
+            };
             let off = (y * w + x) * ch;
             for c in 0..ch {
                 out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
@@ -13999,8 +14013,8 @@ mod distortion_effect_tests {
         eprintln!("polar IM parity MAE: {mae:.2}");
         // EWA Robidoux vs IM's EWA — differences from filter kernel precision
         // and Jacobian computation approach.
-        // Residual from ClampUpAxes eigenvector precision and IM's Q16-HDRI
-        // internal precision. 2.55 is within FP math range for f32 vs f64.
+        // MAE 2.55: per-channel average diff ~0.85 (±1 quantization level).
+        // Difference from IM Q16-HDRI internal precision vs our f32 8-bit path.
         assert!(mae < 3.0, "polar IM parity MAE = {mae:.2} > 3.0");
     }
 }
