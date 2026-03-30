@@ -5842,8 +5842,8 @@ pub fn flood_fill_registered(
 /// Build a seeded permutation table (256 entries, doubled for wrapping).
 fn build_perm_table(seed: u64) -> [u8; 512] {
     let mut perm = [0u8; 256];
-    for i in 0..256 {
-        perm[i] = i as u8;
+    for (i, p) in perm.iter_mut().enumerate() {
+        *p = i as u8;
     }
     // Fisher-Yates shuffle with a simple LCG seeded from the user seed
     let mut state = seed
@@ -5922,10 +5922,10 @@ const SIMPLEX_GRADS: [(f64, f64); 8] = [
     (-1.0, 0.0),
     (0.0, 1.0),
     (0.0, -1.0),
-    (0.7071067811865476, 0.7071067811865476),
-    (-0.7071067811865476, 0.7071067811865476),
-    (0.7071067811865476, -0.7071067811865476),
-    (-0.7071067811865476, -0.7071067811865476),
+    (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
+    (-std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
+    (std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
+    (-std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
 ];
 
 /// Single-octave OpenSimplex noise at (x, y). Returns approximately [-1, 1].
@@ -6029,7 +6029,7 @@ where
 #[rasmcore_macros::register_filter(name = "perlin_noise", category = "generator")]
 pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
-    let octaves = octaves.max(1).min(16);
+    let octaves = octaves.clamp(1, 16);
     let mut pixels = vec![0u8; (width * height) as usize];
 
     for y in 0..height {
@@ -6055,7 +6055,7 @@ pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32
 #[rasmcore_macros::register_filter(name = "simplex_noise", category = "generator")]
 pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
-    let octaves = octaves.max(1).min(16);
+    let octaves = octaves.clamp(1, 16);
     let mut pixels = vec![0u8; (width * height) as usize];
 
     for y in 0..height {
