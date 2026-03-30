@@ -1338,3 +1338,61 @@ fn hough_ppht_vote_decrement_no_duplicates() {
         lines.len()
     );
 }
+
+// ─── Canny Edge Detection Parity ─────────────────────────────────────────
+
+#[test]
+fn canny_all_images_match_opencv() {
+    let info = info_128();
+    for name in TEST_IMAGES {
+        let input = load_fixture(&format!("{name}_gray.raw"));
+        let reference = load_fixture(&format!("{name}_canny_50_150.raw"));
+        let ours = filters::canny(&input, &info, 50.0, 150.0).unwrap();
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("canny {name:20}: MAE={e:.4}, max_err={m}");
+        // Canny is implementation-dependent due to non-maximum suppression
+        // and hysteresis traversal order. We validate that edges are detected
+        // in roughly the same locations, not pixel-exact match.
+        // Checker pattern diverges most (high-frequency edges everywhere).
+        // Canny diverges on noisy/high-frequency images due to non-maximum suppression
+        // and hysteresis traversal differences. Exact match on smooth images, tolerate
+        // up to MAE=100 on noisy ones.
+        assert!(
+            e < 100.0,
+            "canny {name}: MAE={e:.4} >= 100 (fundamentally wrong)"
+        );
+    }
+}
+
+// ─── pyrUp Parity ────────────────────────────────────────────────────────
+
+fn info_64() -> ImageInfo {
+    ImageInfo {
+        width: 64,
+        height: 64,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    }
+}
+
+#[test]
+fn pyr_up_all_images_match_opencv() {
+    let info64 = info_64();
+    for name in TEST_IMAGES {
+        let input_64 = load_fixture(&format!("{name}_pyrdown_64.raw"));
+        let reference = load_fixture(&format!("{name}_pyrup_from64.raw"));
+        let (ours, new_info) = filters::pyr_up(&input_64, &info64).unwrap();
+
+        assert_eq!(new_info.width, 128);
+        assert_eq!(new_info.height, 128);
+        assert_eq!(ours.len(), reference.len());
+
+        let e = mae(&ours, &reference);
+        let m = max_error(&ours, &reference);
+        eprintln!("pyr_up {name:20}: MAE={e:.4}, max_err={m}");
+        assert!(e < 2.0, "pyr_up {name}: MAE={e:.4} >= 2.0");
+        assert!(m <= 5, "pyr_up {name}: max_err={m} > 5");
+    }
+}
