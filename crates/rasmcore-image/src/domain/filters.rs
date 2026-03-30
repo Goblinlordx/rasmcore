@@ -218,6 +218,201 @@ pub struct BokehBlurParams {
     pub shape: u32,
 }
 
+/// Parameters for CLAHE contrast enhancement.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct ClaheParams {
+    /// Contrast amplification clip limit (2.0-4.0 typical)
+    #[param(min = 1.0, max = 40.0, step = 0.5, default = 2.0)]
+    pub clip_limit: f32,
+    /// Number of tiles per dimension (8 = 8x8 grid)
+    #[param(min = 2, max = 32, step = 1, default = 8)]
+    pub tile_grid: u32,
+}
+
+/// Parameters for bilateral filter.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct BilateralParams {
+    /// Filter size (0 for auto from sigma_space; typical 5-9)
+    #[param(min = 0, max = 31, step = 2, default = 5)]
+    pub diameter: u32,
+    /// Filter sigma in color/intensity space (10-150 typical)
+    #[param(min = 1.0, max = 300.0, step = 1.0, default = 75.0)]
+    pub sigma_color: f32,
+    /// Filter sigma in coordinate space (10-150 typical)
+    #[param(min = 1.0, max = 300.0, step = 1.0, default = 75.0)]
+    pub sigma_space: f32,
+}
+
+/// Parameters for guided filter.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct GuidedFilterParams {
+    /// Window radius (4-8 typical)
+    #[param(min = 1, max = 30, step = 1, default = 4)]
+    pub radius: u32,
+    /// Regularization parameter (smaller = more edge-preserving)
+    #[param(min = 0.001, max = 1.0, step = 0.001, default = 0.01)]
+    pub epsilon: f32,
+}
+
+/// Parameters for morphological operations.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MorphParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for NLM denoising (simplified for user-facing API).
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct NlmDenoiseSimpleParams {
+    /// Filter strength (higher = more denoising)
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 10.0)]
+    pub h: f32,
+    /// Patch size (must be odd)
+    #[param(min = 3, max = 21, step = 2, default = 7)]
+    pub patch_size: u32,
+    /// Search window size (must be odd)
+    #[param(min = 7, max = 51, step = 2, default = 21)]
+    pub search_size: u32,
+}
+
+/// Parameters for dehaze (dark channel prior).
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct DehazeParams {
+    /// Local patch size for dark channel (typical: 7-15)
+    #[param(min = 1, max = 30, step = 1, default = 7)]
+    pub patch_radius: u32,
+    /// Haze removal strength 0.0-1.0
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.95)]
+    pub omega: f32,
+    /// Minimum transmission to avoid noise amplification
+    #[param(min = 0.01, max = 0.5, step = 0.01, default = 0.1)]
+    pub t_min: f32,
+}
+
+/// Parameters for clarity (midtone local contrast).
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct ClarityParams {
+    /// Enhancement strength (0.0-2.0 typical)
+    #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
+    pub amount: f32,
+    /// Blur radius for local contrast (30-50 typical)
+    #[param(min = 5.0, max = 100.0, step = 1.0, default = 40.0)]
+    pub sigma: f32,
+}
+
+/// Parameters for OpenCV-compatible Gaussian blur.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct GaussianBlurCvParams {
+    /// Gaussian standard deviation
+    #[param(min = 0.1, max = 50.0, step = 0.1, default = 1.0)]
+    pub sigma: f32,
+}
+
+/// Parameters for pyramid detail remapping.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct PyramidDetailRemapParams {
+    /// Detail remapping strength (0.2=enhance, 1.0=neutral, 3.0=smooth)
+    #[param(min = 0.1, max = 5.0, step = 0.1, default = 1.0)]
+    pub sigma: f32,
+    /// Pyramid depth (0=auto)
+    #[param(min = 0, max = 10, step = 1, default = 0)]
+    pub num_levels: u32,
+}
+
+/// Parameters for single-scale Retinex.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct RetinexSsrParams {
+    /// Gaussian scale for surround function
+    #[param(min = 10.0, max = 300.0, step = 10.0, default = 80.0)]
+    pub sigma: f32,
+}
+
+/// Parameters for multi-scale Retinex.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct RetinexMsrParams {
+    /// Small-scale Gaussian sigma
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 15.0)]
+    pub sigma_small: f32,
+    /// Medium-scale Gaussian sigma
+    #[param(min = 10.0, max = 200.0, step = 5.0, default = 80.0)]
+    pub sigma_medium: f32,
+    /// Large-scale Gaussian sigma
+    #[param(min = 50.0, max = 500.0, step = 10.0, default = 250.0)]
+    pub sigma_large: f32,
+}
+
+/// Parameters for multi-scale Retinex with color restoration.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct RetinexMsrcrParams {
+    /// Small-scale Gaussian sigma
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 15.0)]
+    pub sigma_small: f32,
+    /// Medium-scale Gaussian sigma
+    #[param(min = 10.0, max = 200.0, step = 5.0, default = 80.0)]
+    pub sigma_medium: f32,
+    /// Large-scale Gaussian sigma
+    #[param(min = 50.0, max = 500.0, step = 10.0, default = 250.0)]
+    pub sigma_large: f32,
+    /// Color restoration nonlinearity
+    #[param(min = 1.0, max = 300.0, step = 5.0, default = 125.0)]
+    pub alpha: f32,
+    /// Color restoration gain
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 46.0)]
+    pub beta: f32,
+}
+
+/// Parameters for binary threshold.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct ThresholdBinaryParams {
+    /// Threshold value
+    #[param(min = 0, max = 255, step = 1, default = 128)]
+    pub thresh: u8,
+    /// Maximum output value
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub max_value: u8,
+}
+
+/// Parameters for adaptive threshold.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct AdaptiveThresholdParams {
+    /// Maximum output value
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub max_value: u8,
+    /// Adaptive method: 0=mean, 1=gaussian
+    #[param(min = 0, max = 1, step = 1, default = 0)]
+    pub method: u32,
+    /// Block size (must be odd, >= 3)
+    #[param(min = 3, max = 51, step = 2, default = 11)]
+    pub block_size: u32,
+    /// Constant subtracted from mean
+    #[param(min = -50.0, max = 50.0, step = 0.5, default = 2.0)]
+    pub c: f32,
+}
+
+/// Parameters for flood fill.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct FloodFillParams {
+    /// Seed X coordinate
+    #[param(min = 0, max = 8000, step = 1, default = 0)]
+    pub seed_x: u32,
+    /// Seed Y coordinate
+    #[param(min = 0, max = 8000, step = 1, default = 0)]
+    pub seed_y: u32,
+    /// Fill value
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub new_val: u8,
+    /// Intensity tolerance
+    #[param(min = 0, max = 255, step = 1, default = 10)]
+    pub tolerance: u8,
+    /// Connectivity: 4 or 8
+    #[param(min = 4, max = 8, step = 4, default = 8)]
+    pub connectivity: u32,
+}
+
 /// Apply gaussian blur using libblur (SIMD-optimized).
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on
@@ -1134,6 +1329,7 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Uses 3x3 Scharr kernels: Gx = [[-3,0,3],[-10,0,10],[-3,0,3]]
 /// Returns gradient magnitude (L2 norm of Gx and Gy).
 /// Reference: cv2.Scharr (OpenCV 4.13).
+#[rasmcore_macros::register_filter(name = "scharr", category = "edge")]
 pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -1178,6 +1374,7 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Uses 3x3 kernel: [[0,1,0],[1,-4,1],[0,1,0]].
 /// Returns absolute value of Laplacian, clamped to [0, 255].
 /// Reference: cv2.Laplacian (OpenCV 4.13).
+#[rasmcore_macros::register_filter(name = "laplacian", category = "edge")]
 pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2960,6 +3157,7 @@ fn line_intersection(l1: &LineSegment, l2: &LineSegment) -> Option<(f32, f32)> {
 ///
 /// - `clip_limit`: contrast amplification limit (2.0-4.0 typical, higher = more contrast)
 /// - `tile_grid`: number of tiles per dimension (8 = 8x8 grid, OpenCV default)
+#[rasmcore_macros::register_filter(name = "clahe", category = "enhancement")]
 pub fn clahe(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3106,6 +3304,7 @@ fn reflect101(idx: isize, size: isize) -> isize {
 /// - `diameter`: filter size (use 0 for auto from sigma_space; typical 5-9)
 /// - `sigma_color`: filter sigma in the color/intensity space (10-150 typical)
 /// - `sigma_space`: filter sigma in coordinate space (10-150 typical)
+#[rasmcore_macros::register_filter(name = "bilateral", category = "spatial")]
 pub fn bilateral(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3239,6 +3438,7 @@ pub fn bilateral(
 /// - `epsilon`: regularization parameter (0.01-0.1 typical; smaller = more edge-preserving)
 ///
 /// For self-guided filtering, the input is used as both source and guide.
+#[rasmcore_macros::register_filter(name = "guided_filter", category = "spatial")]
 pub fn guided_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3819,6 +4019,7 @@ fn nlm_denoise_classic(
 /// - `patch_radius`: local patch size for dark channel (typical: 7-15)
 /// - `omega`: haze removal strength 0.0-1.0 (typical: 0.95)
 /// - `t_min`: minimum transmission to avoid noise amplification (typical: 0.1)
+#[rasmcore_macros::register_filter(name = "dehaze", category = "enhancement")]
 pub fn dehaze(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3950,6 +4151,7 @@ pub fn dehaze(
 ///
 /// - `amount`: enhancement strength (0.0-2.0 typical, 1.0 = full effect)
 /// - `sigma`: blur radius for local contrast (30-50 typical)
+#[rasmcore_macros::register_filter(name = "clarity", category = "enhancement")]
 pub fn clarity(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4020,11 +4222,12 @@ pub fn clarity(
 ///
 /// - `sigma`: detail remapping strength (0.2 = strong enhancement, 1.0 = neutral, 3.0 = smooth)
 /// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
+#[rasmcore_macros::register_filter(name = "pyramid_detail_remap", category = "enhancement")]
 pub fn pyramid_detail_remap(
     pixels: &[u8],
     info: &ImageInfo,
     sigma: f32,
-    num_levels: usize,
+    num_levels: u32,
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     let channels = match info.format {
@@ -4042,7 +4245,7 @@ pub fn pyramid_detail_remap(
     let levels = if num_levels == 0 {
         ((w.min(h) as f32).log2() as usize).clamp(2, 7)
     } else {
-        num_levels.min(10)
+        (num_levels as usize).min(10)
     };
 
     // Process each channel independently through the pyramid
@@ -4211,6 +4414,7 @@ fn upsample_2x(data: &[f32], sw: usize, sh: usize, tw: usize, th: usize) -> Vec<
 /// Future path: this could replace `blur()` as the primary Gaussian implementation
 /// if full OpenCV alignment is desired across all filters. SIMD optimization can
 /// be added later and validated against this reference-aligned output.
+#[rasmcore_macros::register_filter(name = "gaussian_blur_cv", category = "spatial")]
 pub fn gaussian_blur_cv(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4274,6 +4478,7 @@ fn gaussian_kernel_1d(ksize: usize, sigma: f32) -> Vec<f32> {
 ///
 /// Reference: Jobson, Rahman, Woodell — "Properties and Performance of a
 /// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
+#[rasmcore_macros::register_filter(name = "retinex_ssr", category = "enhancement")]
 pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     let channels = match info.format {
@@ -4875,6 +5080,181 @@ pub fn displacement_map(
     }
 
     Ok(out)
+}
+
+// ─── Registered Wrappers — Simplify Enum/Slice/Struct Signatures ──────────
+//
+// These thin wrappers expose complex-signature filters through the
+// #[register_filter] pipeline by converting scalar params to enums/structs.
+
+fn morph_shape_from_u32(v: u32) -> MorphShape {
+    match v {
+        1 => MorphShape::Ellipse,
+        2 => MorphShape::Cross,
+        _ => MorphShape::Rect,
+    }
+}
+
+/// Morphological erosion (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "erode", category = "morphology")]
+pub fn erode_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    erode(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Morphological dilation (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "dilate", category = "morphology")]
+pub fn dilate_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    dilate(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Morphological opening (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "morph_open", category = "morphology")]
+pub fn morph_open_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    morph_open(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Morphological closing (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "morph_close", category = "morphology")]
+pub fn morph_close_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    morph_close(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Morphological gradient (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "morph_gradient", category = "morphology")]
+pub fn morph_gradient_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    morph_gradient(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Morphological top-hat (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "morph_tophat", category = "morphology")]
+pub fn morph_tophat_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    morph_tophat(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Morphological black-hat (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "morph_blackhat", category = "morphology")]
+pub fn morph_blackhat_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ksize: u32,
+    shape: u32,
+) -> Result<Vec<u8>, ImageError> {
+    morph_blackhat(pixels, info, ksize, morph_shape_from_u32(shape))
+}
+
+/// Non-local means denoising (user-facing wrapper with scalar params).
+#[rasmcore_macros::register_filter(name = "nlm_denoise", category = "enhancement")]
+pub fn nlm_denoise_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    h: f32,
+    patch_size: u32,
+    search_size: u32,
+) -> Result<Vec<u8>, ImageError> {
+    nlm_denoise(
+        pixels,
+        info,
+        &NlmParams {
+            h,
+            patch_size,
+            search_size,
+            algorithm: NlmAlgorithm::OpenCv,
+        },
+    )
+}
+
+/// Multi-scale Retinex (user-facing wrapper with 3 fixed sigma scales).
+#[rasmcore_macros::register_filter(name = "retinex_msr", category = "enhancement")]
+pub fn retinex_msr_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma_small: f32,
+    sigma_medium: f32,
+    sigma_large: f32,
+) -> Result<Vec<u8>, ImageError> {
+    retinex_msr(pixels, info, &[sigma_small, sigma_medium, sigma_large])
+}
+
+/// Multi-scale Retinex with color restoration (user-facing wrapper).
+#[rasmcore_macros::register_filter(name = "retinex_msrcr", category = "enhancement")]
+pub fn retinex_msrcr_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    sigma_small: f32,
+    sigma_medium: f32,
+    sigma_large: f32,
+    alpha: f32,
+    beta: f32,
+) -> Result<Vec<u8>, ImageError> {
+    retinex_msrcr(
+        pixels,
+        info,
+        &[sigma_small, sigma_medium, sigma_large],
+        alpha,
+        beta,
+    )
+}
+
+/// Adaptive threshold (user-facing wrapper with u32 method param).
+#[rasmcore_macros::register_filter(name = "adaptive_threshold", category = "threshold")]
+pub fn adaptive_threshold_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    max_value: u8,
+    method: u32,
+    block_size: u32,
+    c: f32,
+) -> Result<Vec<u8>, ImageError> {
+    let m = match method {
+        1 => AdaptiveMethod::Gaussian,
+        _ => AdaptiveMethod::Mean,
+    };
+    adaptive_threshold(pixels, info, max_value, m, block_size, c as f64)
+}
+
+/// Flood fill (user-facing wrapper returning buffer only).
+#[rasmcore_macros::register_filter(name = "flood_fill", category = "tool")]
+pub fn flood_fill_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    seed_x: u32,
+    seed_y: u32,
+    new_val: u8,
+    tolerance: u8,
+    connectivity: u32,
+) -> Result<Vec<u8>, ImageError> {
+    let (result, _count) = flood_fill(pixels, info, seed_x, seed_y, new_val, tolerance, connectivity)?;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -6436,6 +6816,7 @@ pub fn triangle_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageEr
 /// Apply binary threshold to a grayscale image.
 ///
 /// Pixels >= threshold become max_value, pixels < threshold become 0.
+#[rasmcore_macros::register_filter(name = "threshold_binary", category = "threshold")]
 pub fn threshold_binary(
     pixels: &[u8],
     info: &ImageInfo,
