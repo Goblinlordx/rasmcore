@@ -1,0 +1,8 @@
+title: Demo UI — Smart Controls from Parameter Hints
+status: pending
+type: feature
+approved: false
+created: '2026-03-30'
+updated: '2026-03-30'
+deps:
+- param-hint-vocabulary_20260331000101Z

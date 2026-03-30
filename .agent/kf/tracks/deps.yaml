@@ -150,3 +150,8 @@ codegen-build-rs-refactor_20260330120510Z: []
 codegen-crate-extract_20260331000001Z: []
 
 codegen-crate-extract_20260331000001Z: []
+
+# Param hint vocabulary + UI smart controls
+param-hint-vocabulary_20260331000101Z: []
+demo-ui-smart-controls_20260331000102Z:
+  - param-hint-vocabulary_20260331000101Z
