@@ -5851,6 +5851,146 @@ pub fn dehaze(
     Ok(result)
 }
 
+// ─── Dodge & Burn ─────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Dodge — lighten exposure in a selected tonal range
+pub struct DodgeParams {
+    /// Exposure increase (0-100%)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
+    pub exposure: f32,
+    /// Tonal range: 0=shadows, 1=midtones, 2=highlights
+    #[param(min = 0, max = 2, step = 1, default = 1)]
+    pub range: u32,
+}
+
+/// Dodge: lighten (increase exposure) selectively in shadows, midtones, or highlights.
+///
+/// Equivalent to Photoshop's Dodge tool applied uniformly.
+/// Formula: `output = pixel + pixel * exposure * range_weight(luma)`
+///
+/// Range weights:
+/// - shadows: peaks at dark values, fades at midtones
+/// - midtones: peaks at mid-gray, fades at extremes
+/// - highlights: peaks at bright values, fades at midtones
+///
+/// Not yet validated against a reference.
+#[rasmcore_macros::register_filter(name = "dodge", category = "enhancement")]
+pub fn dodge(
+    pixels: &[u8],
+    info: &ImageInfo,
+    exposure: f32,
+    range: u32,
+) -> Result<Vec<u8>, ImageError> {
+    dodge_burn_impl(pixels, info, exposure / 100.0, range, true)
+}
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Burn — darken exposure in a selected tonal range
+pub struct BurnParams {
+    /// Exposure decrease (0-100%)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
+    pub exposure: f32,
+    /// Tonal range: 0=shadows, 1=midtones, 2=highlights
+    #[param(min = 0, max = 2, step = 1, default = 1)]
+    pub range: u32,
+}
+
+/// Burn: darken (decrease exposure) selectively in shadows, midtones, or highlights.
+///
+/// Equivalent to Photoshop's Burn tool applied uniformly.
+/// Formula: `output = pixel * (1 - exposure * range_weight(luma))`
+///
+/// Not yet validated against a reference.
+#[rasmcore_macros::register_filter(name = "burn", category = "enhancement")]
+pub fn burn(
+    pixels: &[u8],
+    info: &ImageInfo,
+    exposure: f32,
+    range: u32,
+) -> Result<Vec<u8>, ImageError> {
+    dodge_burn_impl(pixels, info, exposure / 100.0, range, false)
+}
+
+/// Shared implementation for dodge and burn.
+fn dodge_burn_impl(
+    pixels: &[u8],
+    info: &ImageInfo,
+    exposure: f32,
+    range: u32,
+    is_dodge: bool,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            dodge_burn_impl(p8, i8, exposure, range, is_dodge)
+        });
+    }
+
+    let ch = channels(info.format);
+    if ch < 3 {
+        return Err(ImageError::UnsupportedFormat(
+            "dodge/burn requires RGB8 or RGBA8".into(),
+        ));
+    }
+
+    // Identity fast path
+    if exposure.abs() < 1e-6 {
+        return Ok(pixels.to_vec());
+    }
+
+    let n = (info.width as usize) * (info.height as usize);
+    let mut result = vec![0u8; pixels.len()];
+
+    for i in 0..n {
+        let pi = i * ch;
+        // BT.709 luminance for range weight
+        let luma = (0.2126 * pixels[pi] as f32
+            + 0.7152 * pixels[pi + 1] as f32
+            + 0.0722 * pixels[pi + 2] as f32)
+            / 255.0;
+
+        // Range weight based on tonal selection
+        let weight = match range {
+            0 => {
+                // Shadows: strong at dark, fades at mid
+                let t = (luma * 2.0).min(1.0);
+                1.0 - t * t * (3.0 - 2.0 * t) // 1-smoothstep(0, 0.5)
+            }
+            2 => {
+                // Highlights: strong at bright, fades at mid
+                let t = ((luma - 0.5) * 2.0).max(0.0).min(1.0);
+                t * t * (3.0 - 2.0 * t) // smoothstep(0.5, 1.0)
+            }
+            _ => {
+                // Midtones: bell curve peaking at 0.5
+                // w = 4 * luma * (1 - luma), peaks at 1.0 for luma=0.5
+                (4.0 * luma * (1.0 - luma)).min(1.0)
+            }
+        };
+
+        let factor = exposure * weight;
+
+        for c in 0..3 {
+            let v = pixels[pi + c] as f32;
+            let adjusted = if is_dodge {
+                // Dodge: lighten — output = pixel + pixel * factor
+                v + v * factor
+            } else {
+                // Burn: darken — output = pixel * (1 - factor)
+                v * (1.0 - factor)
+            };
+            result[pi + c] = adjusted.round().clamp(0.0, 255.0) as u8;
+        }
+        if ch == 4 {
+            result[pi + 3] = pixels[pi + 3]; // preserve alpha
+        }
+    }
+
+    Ok(result)
+}
+
 /// Clarity — midtone-weighted local contrast enhancement.
 ///
 /// Applies a large-radius unsharp mask but weights the effect by a midtone curve:
@@ -16273,6 +16413,121 @@ mod cube_lut_tests {
                 result[i],
                 pixels[i]
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod dodge_burn_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn dodge_identity_at_zero() {
+        let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(8, 8);
+        let result = dodge(&pixels, &info, 0.0, 1).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn burn_identity_at_zero() {
+        let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(8, 8);
+        let result = burn(&pixels, &info, 0.0, 1).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn dodge_shadows_brightens_darks_only() {
+        // Dark pixels (30) should get brighter, bright pixels (230) should stay same
+        let mut pixels = vec![0u8; 8 * 8 * 3];
+        // First half dark, second half bright
+        for i in 0..32 {
+            let pi = i * 3;
+            pixels[pi] = 30;
+            pixels[pi + 1] = 30;
+            pixels[pi + 2] = 30;
+        }
+        for i in 32..64 {
+            let pi = i * 3;
+            pixels[pi] = 230;
+            pixels[pi + 1] = 230;
+            pixels[pi + 2] = 230;
+        }
+        let info = rgb_info(8, 8);
+        let result = dodge(&pixels, &info, 100.0, 0).unwrap(); // shadows only
+
+        // Dark pixels should be brighter
+        assert!(result[0] > 30, "dark pixel should be dodged: {}", result[0]);
+        // Bright pixels should be unchanged or barely changed
+        let bright_diff = (result[32 * 3] as i16 - 230).abs();
+        assert!(
+            bright_diff <= 2,
+            "bright pixel should be unchanged: {} (diff={})",
+            result[32 * 3],
+            bright_diff
+        );
+    }
+
+    #[test]
+    fn burn_highlights_darkens_brights_only() {
+        let mut pixels = vec![0u8; 8 * 8 * 3];
+        for i in 0..32 {
+            let pi = i * 3;
+            pixels[pi] = 30;
+            pixels[pi + 1] = 30;
+            pixels[pi + 2] = 30;
+        }
+        for i in 32..64 {
+            let pi = i * 3;
+            pixels[pi] = 230;
+            pixels[pi + 1] = 230;
+            pixels[pi + 2] = 230;
+        }
+        let info = rgb_info(8, 8);
+        let result = burn(&pixels, &info, 100.0, 2).unwrap(); // highlights only
+
+        // Dark pixels should be unchanged
+        let dark_diff = (result[0] as i16 - 30).abs();
+        assert!(
+            dark_diff <= 2,
+            "dark pixel should be unchanged: {} (diff={})",
+            result[0],
+            dark_diff
+        );
+        // Bright pixels should be darker
+        assert!(
+            result[32 * 3] < 230,
+            "bright pixel should be burned: {}",
+            result[32 * 3]
+        );
+    }
+
+    #[test]
+    fn dodge_preserves_alpha() {
+        let mut pixels = vec![100u8; 4 * 4 * 4];
+        for i in 0..16 {
+            pixels[i * 4 + 3] = (i * 16) as u8;
+        }
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = dodge(&pixels, &info, 50.0, 1).unwrap();
+        for i in 0..16 {
+            assert_eq!(result[i * 4 + 3], pixels[i * 4 + 3]);
         }
     }
 }
