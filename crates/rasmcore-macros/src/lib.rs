@@ -233,32 +233,58 @@ pub fn register_decoder(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Generates:
 /// - `param_descriptors()` → `Vec<ParamDescriptorJson>` with metadata
+/// - `config_hint()` → `&'static str` (from `#[config_hint("...")]`, or `""`)
 /// - `Default` impl using `#[param(default = ...)]` values
+///
+/// # Type-level hints
+///
+/// Add `#[config_hint("rc.color_rgba")]` on the struct to define a type-level
+/// hint. When this struct is used as a field in another ConfigParams, the hint
+/// propagates automatically to all flattened params.
+///
+/// # Nested structs
+///
+/// Fields whose type is another ConfigParams struct are auto-flattened:
+/// their descriptors are prefixed with the field name (e.g., `color.r`)
+/// and the nested type's `config_hint()` propagates unless the field has
+/// an explicit `#[param(hint = "...")]` override.
 ///
 /// # Example
 ///
 /// ```ignore
 /// #[derive(ConfigParams)]
-/// pub struct BlurParams {
-///     /// Blur radius in pixels
-///     #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
-///     pub radius: f32,
+/// #[config_hint("rc.color_rgba")]
+/// pub struct ColorRgba {
+///     #[param(min = 0, max = 255, step = 1, default = 255)]
+///     pub r: u8,
+///     // ...
 /// }
 ///
 /// #[derive(ConfigParams)]
-/// pub struct JpegConfig {
-///     /// JPEG quality (1-100)
-///     #[param(min = 1, max = 100, default = 85)]
-///     pub quality: u8,
-///     /// Enable progressive encoding
-///     #[param(default = false)]
-///     pub progressive: bool,
+/// pub struct DrawLineParams {
+///     pub color: ColorRgba,  // auto-flattened, hint inherited
+///     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+///     pub width: f32,
 /// }
 /// ```
-#[proc_macro_derive(ConfigParams, attributes(param))]
+#[proc_macro_derive(ConfigParams, attributes(param, config_hint))]
 pub fn derive_config_params(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ItemStruct);
     let struct_name = &input.ident;
+
+    // Parse struct-level #[config_hint("...")] attribute
+    let struct_hint = input
+        .attrs
+        .iter()
+        .filter(|a| a.path().is_ident("config_hint"))
+        .filter_map(|a| {
+            // Parse #[config_hint("rc.color_rgba")]
+            let tokens: proc_macro2::TokenStream = a.meta.require_list().ok()?.tokens.clone();
+            let lit: LitStr = syn::parse2(tokens).ok()?;
+            Some(lit.value())
+        })
+        .next()
+        .unwrap_or_default();
 
     let fields = match &input.fields {
         Fields::Named(f) => &f.named,
@@ -273,6 +299,9 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
         let field_name_str = field_name.to_string();
         let field_type = &field.ty;
         let field_type_str = quote!(#field_type).to_string().replace(' ', "");
+
+        // Check if this is a primitive/known type or a nested ConfigParams struct
+        let is_primitive = is_primitive_param_type(&field_type_str);
 
         // Extract doc comment as label
         let label = field
@@ -325,52 +354,85 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
             });
         }
 
-        // Default expression
-        let default_expr = if !default_s.is_empty() {
-            if default_s.contains('.') {
-                let v: f64 = default_s.parse().unwrap_or(0.0);
-                let lit = proc_macro2::Literal::f64_unsuffixed(v);
-                quote! { #lit as #field_type }
-            } else if default_s == "true" {
-                quote! { true }
-            } else if default_s == "false" {
-                quote! { false }
-            } else if default_s
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_digit() || c == '-')
-            {
-                let v: i64 = default_s.parse().unwrap_or(0);
-                let lit = proc_macro2::Literal::i64_unsuffixed(v);
-                quote! { #lit as #field_type }
+        if !is_primitive {
+            // Nested ConfigParams struct — flatten its descriptors with prefix
+            // The hint comes from: field-level override > nested type's config_hint
+            let hint_override = hint_s.clone();
+            descriptor_entries.push(quote! {{
+                let nested = #field_type::param_descriptors();
+                let type_hint = #field_type::config_hint();
+                let hint = if #hint_override.is_empty() {
+                    type_hint.to_string()
+                } else {
+                    #hint_override.to_string()
+                };
+                for mut d in nested {
+                    d.name = format!("{}.{}", #field_name_str, d.name);
+                    if !hint.is_empty() {
+                        d.hint = hint.clone();
+                    }
+                    __descriptors.push(d);
+                }
+            }});
+
+            // Default: use nested type's Default impl
+            default_entries.push(quote! { #field_name: Default::default() });
+        } else {
+            // Primitive field — standard descriptor
+            // Default expression
+            let default_expr = if !default_s.is_empty() {
+                if default_s.contains('.') {
+                    let v: f64 = default_s.parse().unwrap_or(0.0);
+                    let lit = proc_macro2::Literal::f64_unsuffixed(v);
+                    quote! { #lit as #field_type }
+                } else if default_s == "true" {
+                    quote! { true }
+                } else if default_s == "false" {
+                    quote! { false }
+                } else if default_s
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit() || c == '-')
+                {
+                    let v: i64 = default_s.parse().unwrap_or(0);
+                    let lit = proc_macro2::Literal::i64_unsuffixed(v);
+                    quote! { #lit as #field_type }
+                } else {
+                    quote! { Default::default() }
+                }
             } else {
                 quote! { Default::default() }
-            }
-        } else {
-            quote! { Default::default() }
-        };
+            };
 
-        default_entries.push(quote! { #field_name: #default_expr });
+            default_entries.push(quote! { #field_name: #default_expr });
 
-        descriptor_entries.push(quote! {
-            ::rasmcore_image::domain::filter_registry::ParamDescriptorJson {
-                name: #field_name_str.to_string(),
-                param_type: #field_type_str.to_string(),
-                min: #min_s.to_string(),
-                max: #max_s.to_string(),
-                step: #step_s.to_string(),
-                default_val: #default_s.to_string(),
-                label: #label.to_string(),
-                hint: #hint_s.to_string(),
-            }
-        });
+            descriptor_entries.push(quote! {
+                __descriptors.push(::rasmcore_image::domain::filter_registry::ParamDescriptorJson {
+                    name: #field_name_str.to_string(),
+                    param_type: #field_type_str.to_string(),
+                    min: #min_s.to_string(),
+                    max: #max_s.to_string(),
+                    step: #step_s.to_string(),
+                    default_val: #default_s.to_string(),
+                    label: #label.to_string(),
+                    hint: #hint_s.to_string(),
+                });
+            });
+        }
     }
 
     let expanded = quote! {
         impl #struct_name {
             /// Get parameter descriptors for manifest generation.
             pub fn param_descriptors() -> ::std::vec::Vec<::rasmcore_image::domain::filter_registry::ParamDescriptorJson> {
-                ::std::vec![#(#descriptor_entries),*]
+                let mut __descriptors = ::std::vec::Vec::new();
+                #(#descriptor_entries)*
+                __descriptors
+            }
+
+            /// Type-level UI hint (e.g., `"rc.color_rgba"`). Empty string if none.
+            pub fn config_hint() -> &'static str {
+                #struct_hint
             }
         }
 
@@ -382,4 +444,17 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Check if a type string represents a primitive param type (not a nested ConfigParams struct).
+fn is_primitive_param_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "f32" | "f64"
+            | "u8" | "u16" | "u32" | "u64"
+            | "i8" | "i16" | "i32" | "i64"
+            | "bool"
+            | "&str" | "String"
+            | "[u8;3]" | "[u8;4]"
+    )
 }
