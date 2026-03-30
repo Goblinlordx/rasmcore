@@ -1212,6 +1212,11 @@ pub fn decode_with_scale(data: &[u8], scale_denom: u8) -> Result<DecodedOutput, 
     })
 }
 
+/// Read JPEG dimensions from the SOF marker without full decoding.
+pub fn dimensions(data: &[u8]) -> Result<(u32, u32), EncodeError> {
+    decode::jpeg_dimensions(data)
+}
+
 /// Decoded JPEG output.
 pub struct DecodedOutput {
     pub pixels: Vec<u8>,

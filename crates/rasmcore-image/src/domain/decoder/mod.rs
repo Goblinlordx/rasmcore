@@ -1,6 +1,8 @@
 use super::color;
 use super::error::ImageError;
-use super::types::{ColorSpace, DecodedImage, DisposalMethod, FrameInfo, ImageInfo, PixelFormat};
+use super::types::{
+    ColorSpace, DecodedImage, DisposalMethod, FrameInfo, ImageInfo, PixelFormat, ResizeFilter,
+};
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────
 
@@ -235,6 +237,53 @@ fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
         },
         icc_profile: None,
     })
+}
+
+/// Decode and resize in one step, using DCT-domain downscaling for JPEG.
+///
+/// For JPEG input, auto-selects the optimal DCT scale factor (2, 4, or 8)
+/// to produce an intermediate image close to the target dimensions, then
+/// applies a residual Lanczos3 resize to hit the exact target.
+///
+/// For non-JPEG input, decodes normally then resizes.
+pub fn smart_resize(
+    data: &[u8],
+    target_w: u32,
+    target_h: u32,
+) -> Result<DecodedImage, ImageError> {
+    let is_jpeg = data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8;
+    if !is_jpeg {
+        let dec = decode(data)?;
+        return super::transform::resize(&dec.pixels, &dec.info, target_w, target_h, ResizeFilter::Lanczos3);
+    }
+
+    // Peek at JPEG dimensions without full decode
+    let (full_w, full_h) = rasmcore_jpeg::dimensions(data)
+        .map_err(|e| ImageError::InvalidInput(format!("JPEG dims: {e}")))?;
+
+    // Choose largest scale_denom where scaled dims >= target dims
+    let scale = if full_w / 8 >= target_w && full_h / 8 >= target_h {
+        8u8
+    } else if full_w / 4 >= target_w && full_h / 4 >= target_h {
+        4
+    } else if full_w / 2 >= target_w && full_h / 2 >= target_h {
+        2
+    } else {
+        1
+    };
+
+    let dec = if scale > 1 {
+        decode_native_jpeg_scaled(data, scale)?
+    } else {
+        decode_native_jpeg(data)?
+    };
+
+    // If already at target size, no residual resize needed
+    if dec.info.width == target_w && dec.info.height == target_h {
+        return Ok(dec);
+    }
+
+    super::transform::resize(&dec.pixels, &dec.info, target_w, target_h, ResizeFilter::Lanczos3)
 }
 
 /// Decode an image from raw bytes
@@ -984,6 +1033,28 @@ fn decode_native_jpeg(data: &[u8]) -> Result<DecodedImage, ImageError> {
 
     let decoded =
         rasmcore_jpeg::decode(data).map_err(|e| ImageError::InvalidInput(format!("JPEG: {e}")))?;
+    let format = match decoded.format {
+        rasmcore_jpeg::PixelFormat::Rgb8 => PixelFormat::Rgb8,
+        rasmcore_jpeg::PixelFormat::Gray8 => PixelFormat::Gray8,
+        rasmcore_jpeg::PixelFormat::Rgba8 => PixelFormat::Rgba8,
+    };
+    Ok(DecodedImage {
+        pixels: decoded.pixels,
+        info: ImageInfo {
+            width: decoded.width,
+            height: decoded.height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile,
+    })
+}
+
+/// Decode JPEG at reduced resolution via DCT-domain downscaling.
+fn decode_native_jpeg_scaled(data: &[u8], scale_denom: u8) -> Result<DecodedImage, ImageError> {
+    let icc_profile = extract_jpeg_icc_profile(data);
+    let decoded = rasmcore_jpeg::decode_with_scale(data, scale_denom)
+        .map_err(|e| ImageError::InvalidInput(format!("JPEG scaled: {e}")))?;
     let format = match decoded.format {
         rasmcore_jpeg::PixelFormat::Rgb8 => PixelFormat::Rgb8,
         rasmcore_jpeg::PixelFormat::Gray8 => PixelFormat::Gray8,

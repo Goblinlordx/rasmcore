@@ -130,6 +130,55 @@ impl HuffmanTable {
 // ─── Main Decode Function ───────────────────────────────────────────────────
 
 /// Decode a JPEG byte stream to raw pixels.
+/// Read JPEG dimensions from the SOF marker without decoding.
+pub fn jpeg_dimensions(data: &[u8]) -> Result<(u32, u32), EncodeError> {
+    if data.len() < 2 || data[0] != 0xFF || data[1] != M_SOI {
+        return Err(EncodeError::DecodeFailed("not a JPEG".into()));
+    }
+    let mut pos = 2;
+    loop {
+        if pos + 1 >= data.len() {
+            break;
+        }
+        while pos < data.len() && data[pos] != 0xFF {
+            pos += 1;
+        }
+        if pos + 1 >= data.len() {
+            break;
+        }
+        pos += 1;
+        while pos < data.len() && data[pos] == 0xFF {
+            pos += 1;
+        }
+        if pos >= data.len() {
+            break;
+        }
+        let marker = data[pos];
+        pos += 1;
+        match marker {
+            M_SOF0 | M_SOF1 | M_SOF2 => {
+                if pos + 7 > data.len() {
+                    break;
+                }
+                let h = u16::from_be_bytes([data[pos + 3], data[pos + 4]]) as u32;
+                let w = u16::from_be_bytes([data[pos + 5], data[pos + 6]]) as u32;
+                return Ok((w, h));
+            }
+            M_EOI | M_SOS => break,
+            _ => {
+                if pos + 2 > data.len() {
+                    break;
+                }
+                let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                pos += len;
+            }
+        }
+    }
+    Err(EncodeError::DecodeFailed(
+        "no SOF marker found".into(),
+    ))
+}
+
 pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
     jpeg_decode_impl(data, 1)
 }
