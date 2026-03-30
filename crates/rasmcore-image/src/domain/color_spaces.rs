@@ -168,6 +168,7 @@ const D65_Z: f64 = 1.0890577507598784;
 /// sRGB to XYZ matrix (D65, IEC 61966-2-1).
 /// Full 16-digit precision from colour-science 0.4.7:
 ///   colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ
+#[allow(clippy::excessive_precision)] // full-precision reference matrix
 fn rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let rl = srgb_to_linear(r);
     let gl = srgb_to_linear(g);
@@ -181,6 +182,7 @@ fn rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
 /// XYZ to sRGB.
 /// Full 16-digit precision inverse matrix from colour-science 0.4.7:
 ///   numpy.linalg.inv(colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ)
+#[allow(clippy::excessive_precision)] // full-precision reference matrix
 fn xyz_to_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     let rl = 3.2409699419045226 * x - 1.5373831775700939 * y - 0.4986107602930034 * z;
     let gl = -0.9692436362808796 * x + 1.8759675015077202 * y + 0.0415550574071756 * z;

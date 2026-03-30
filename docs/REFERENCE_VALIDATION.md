@@ -95,8 +95,16 @@ for per-filter details including alignment notes.
 | median (r=1) | Pillow `MedianFilter` | 12.1.1 |
 | sobel | OpenCV `Sobel` L2 | 4.13.0 |
 | sepia | numpy matrix multiply | 2.4.3 |
-| blend Multiply | numpy W3C CSS L1 | 2.4.3 |
-| blend Screen | numpy W3C CSS L1 | 2.4.3 |
+| blend Darken | libvips `composite` | 8.18.1 |
+| blend Lighten | libvips `composite` | 8.18.1 |
+| blend VividLight | ImageMagick `composite` | 7.1.2-18 |
+| blend LinearDodge | ImageMagick `composite` | 7.1.2-18 |
+| blend LinearBurn | ImageMagick `composite` | 7.1.2-18 |
+| blend LinearLight | ImageMagick `composite` | 7.1.2-18 |
+| blend PinLight | ImageMagick `composite` | 7.1.2-18 |
+| blend HardMix | ImageMagick `composite` | 7.1.2-18 |
+| blend Subtract | ImageMagick `composite` | 7.1.2-18 |
+| blend Divide | ImageMagick `composite` | 7.1.2-18 |
 | bilateral filter | OpenCV `bilateralFilter` | 4.13.0 |
 | brightness(0) | Self identity | N/A |
 | histogram match (gray) | scikit-image `match_histograms` | 0.26.0 |
@@ -150,8 +158,32 @@ Data: `tests/fixtures/generated/histogram_match_reference.json`.
 
 | Operation | Reference | Tool Version | Why Not Exact |
 |-----------|-----------|-------------|---------------|
+| blend Multiply | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend Screen | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend Overlay | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend ColorDodge | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend ColorBurn | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend HardLight | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend SoftLight | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend Difference | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| blend Exclusion | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
 | CLAHE | OpenCV `createCLAHE` | 4.13.0 | f32 bilinear interpolation rounding |
 | guided filter | OpenCV `ximgproc.guidedFilter` | 4.13.0 | f32 summed-area-table rounding |
+
+**Blend mode +/-1 detail:** Our `blend_channel` uses f32 arithmetic while libvips
+uses f64 internally. Both round to u8 at the end, but the intermediate precision
+difference causes at most 1 LSB difference on ~30-50% of gradient pixel pairs.
+The 10 modes not in vips (VividLight, LinearDodge, etc.) are validated against
+ImageMagick 7 Q16-HDRI and achieve pixel-exact results.
+
+**SoftLight note:** ImageMagick 7 Q16-HDRI uses a different SoftLight formula
+than the W3C Compositing and Blending Level 1 specification. Our implementation
+follows the W3C/vips formula. SoftLight is validated only against vips.
+
+**HardMix note:** At the exact boundary `fg + bg = 255`, our `>=` comparison
+(matching Photoshop's documented behavior) gives 255 while ImageMagick's
+floating-point `>` comparison gives inconsistent results depending on FP rounding.
+This boundary condition is excluded from ImageMagick cross-validation.
 
 ---
 
@@ -267,10 +299,10 @@ tests/fixtures/.venv/bin/pip install numpy==2.4.3 Pillow==12.1.1 opencv-python-h
 
 | Tool | Version | Location | Purpose |
 |------|---------|----------|---------|
-| ImageMagick | 7.1.2-18 Q16-HDRI | `/opt/homebrew/bin/magick` | Fixture generation, transform parity |
+| ImageMagick | 7.1.2-18 Q16-HDRI | `/opt/homebrew/bin/magick` | Blend mode parity (19 modes), fixture generation, transform parity |
 | libwebp | 1.6.0 | `/opt/homebrew/bin/cwebp`, `dwebp` | VP8 bitstream validation |
 | libjpeg-turbo | 3.1.3 | `/opt/homebrew/bin/cjpeg`, `djpeg` | JPEG bitstream validation |
-| libvips | 8.18.1 | `/opt/homebrew/bin/vips` | Performance benchmarking |
+| libvips | 8.18.1 | `/opt/homebrew/bin/vips` | Blend mode parity (11 modes), benchmarking |
 
 ### Test Files
 
@@ -280,6 +312,7 @@ tests/fixtures/.venv/bin/pip install numpy==2.4.3 Pillow==12.1.1 opencv-python-h
 | `crates/rasmcore-image/tests/opencv_parity.rs` | Bilateral, CLAHE, guided | 21+ tests, venv Python |
 | `crates/rasmcore-image/tests/reference_audit.rs` | All ops vs ImageMagick | 30+ tests, Docker ImageMagick |
 | `crates/rasmcore-image/tests/parity.rs` | Decode/encode/transform | 20+ tests, fixtures from generate.sh |
+| `tests/codec-parity/tests/blend_parity.rs` | All 19 blend modes | 20 tests, vips 8.18 + IM 7 |
 | `crates/rasmcore-webp/tests/encode_decode.rs` | VP8 encode → decode | 11 tests, image-webp decoder |
 | `crates/rasmcore-jpeg/tests/parity.rs` | JPEG three-way | 28+ tests, libjpeg-turbo + mozjpeg |
 | `tests/fixtures/scripts/histogram_match_reference.py` | Histogram matching | 4 cases, pure Python CDF inversion |
