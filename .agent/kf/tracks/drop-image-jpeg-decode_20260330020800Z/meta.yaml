@@ -1,5 +1,5 @@
 title: Drop image JPEG feature — wire rasmcore-jpeg decoder
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-30'
