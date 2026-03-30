@@ -133,7 +133,7 @@ interface encoder {
 
     /// Get format metadata (MIME type, extensions) for a specific format.
     /// Returns none if the format is not supported.
-    format-info: func(format: string) -> option<format-info>;
+    get-format-info: func(format: string) -> option<format-info>;
 
     /// Get format metadata for all supported encode formats.
     all-format-info: func() -> list<format-info>;

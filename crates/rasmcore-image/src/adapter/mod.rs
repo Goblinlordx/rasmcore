@@ -338,7 +338,7 @@ impl encoder::Guest for Component {
         domain::encoder::supported_formats()
     }
 
-    fn format_info(format: String) -> Option<types::FormatInfo> {
+    fn get_format_info(format: String) -> Option<types::FormatInfo> {
         domain::encoder::format_info(&format).map(|fi| types::FormatInfo {
             name: fi.name,
             mime_type: fi.mime_type,
