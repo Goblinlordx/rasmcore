@@ -154,9 +154,9 @@ fn main() {
                     manifest.push(',');
                 }
                 manifest.push_str(&format!(
-                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\"}}",
+                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\",\"hint\":\"{}\"}}",
                     field.name, field.param_type,
-                    field.min, field.max, field.step, field.default_val, field.label
+                    field.min, field.max, field.step, field.default_val, field.label, field.hint
                 ));
             }
             if !fields.is_empty() {
@@ -171,7 +171,7 @@ fn main() {
                 }
                 let (min, max, step, def) = default_range_for_type(ptype);
                 manifest.push_str(&format!(
-                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"\"}}",
+                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"\",\"hint\":\"\"}}",
                     pname, ptype, min, max, step, def
                 ));
             }
@@ -307,6 +307,7 @@ fn parse_fn_signature(line: &str, name: &str, category: &str) -> Option<FilterRe
 
 // ─── ConfigParams struct parser ─────────────────────────────────────────────
 
+#[derive(Clone)]
 struct ParamField {
     name: String,
     param_type: String,
@@ -315,9 +316,29 @@ struct ParamField {
     step: String,
     default_val: String,
     label: String,
+    hint: String,
+}
+
+/// Parsed ConfigParams struct metadata (struct-level attributes).
+struct ParsedStruct {
+    fields: Vec<ParamField>,
+    config_hint: String,
 }
 
 fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String, Vec<ParamField>> {
+    // Pass 1: parse all ConfigParams structs (raw, without resolving nested types)
+    let raw = parse_config_params_raw(source);
+
+    // Pass 2: resolve nested struct types — inline their fields with prefix
+    let mut result = std::collections::HashMap::new();
+    for (name, parsed) in &raw {
+        let fields = resolve_nested_fields(&parsed.fields, &parsed.config_hint, &raw);
+        result.insert(name.clone(), fields);
+    }
+    result
+}
+
+fn parse_config_params_raw(source: &str) -> std::collections::HashMap<String, ParsedStruct> {
     let mut result = std::collections::HashMap::new();
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
@@ -325,13 +346,35 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
     while i < lines.len() {
         let line = lines[i].trim();
         if line.contains("derive") && line.contains("ConfigParams") {
-            // Next non-comment line should be "pub struct FooParams {"
+            // Look backwards/forwards for #[config_hint("...")] on the struct
+            let mut struct_hint = String::new();
+
+            // Check lines between derive and struct for #[config_hint("...")]
             let mut j = i + 1;
-            while j < lines.len()
-                && (lines[j].trim().starts_with("//") || lines[j].trim().is_empty())
-            {
+            while j < lines.len() {
+                let fl = lines[j].trim();
+                if fl.starts_with("#[config_hint(") {
+                    if let Some(h) = extract_config_hint_value(fl) {
+                        struct_hint = h;
+                    }
+                } else if fl.starts_with("///") || fl.is_empty() {
+                    // skip doc comments and blank lines
+                } else {
+                    break;
+                }
                 j += 1;
             }
+
+            // Also check if config_hint was on a line before the derive
+            if struct_hint.is_empty() && i > 0 {
+                let prev = lines[i - 1].trim();
+                if prev.starts_with("#[config_hint(") {
+                    if let Some(h) = extract_config_hint_value(prev) {
+                        struct_hint = h;
+                    }
+                }
+            }
+
             if j < lines.len() && lines[j].trim().starts_with("pub struct ") {
                 let struct_line = lines[j].trim();
                 let struct_name = struct_line
@@ -343,8 +386,11 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                 // Parse fields until closing brace
                 let mut fields = Vec::new();
                 let mut doc_comment = String::new();
-                let mut param_attrs: (String, String, String, String) =
-                    ("null".into(), "null".into(), "null".into(), String::new());
+                let mut param_min = "null".to_string();
+                let mut param_max = "null".to_string();
+                let mut param_step = "null".to_string();
+                let mut param_default = String::new();
+                let mut param_hint = String::new();
                 j += 1;
                 while j < lines.len() {
                     let fl = lines[j].trim();
@@ -355,7 +401,6 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                     if fl.starts_with("///") {
                         doc_comment = fl.trim_start_matches("///").trim().to_string();
                     } else if fl.starts_with("#[param(") {
-                        // Parse #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0)]
                         let inner = fl.trim_start_matches("#[param(").trim_end_matches(")]");
                         for part in inner.split(',') {
                             let part = part.trim();
@@ -363,48 +408,105 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
                                 let k = k.trim();
                                 let v = v.trim().trim_matches('"');
                                 match k {
-                                    "min" => param_attrs.0 = v.to_string(),
-                                    "max" => param_attrs.1 = v.to_string(),
-                                    "step" => param_attrs.2 = v.to_string(),
-                                    "default" => param_attrs.3 = v.to_string(),
+                                    "min" => param_min = v.to_string(),
+                                    "max" => param_max = v.to_string(),
+                                    "step" => param_step = v.to_string(),
+                                    "default" => param_default = v.to_string(),
+                                    "hint" => param_hint = v.to_string(),
                                     _ => {}
                                 }
                             }
                         }
                     } else if fl.starts_with("pub ") && fl.contains(':') {
-                        // pub radius: f32,
                         let field_str = fl.strip_prefix("pub ").unwrap_or(fl);
                         if let Some((fname, ftype)) = field_str.split_once(':') {
                             let fname = fname.trim().to_string();
                             let ftype = ftype.trim().trim_end_matches(',').trim().to_string();
-                            let default = if param_attrs.3.is_empty() {
+                            let default = if param_default.is_empty() {
                                 default_for_type(&ftype)
                             } else {
-                                param_attrs.3.clone()
+                                param_default.clone()
                             };
                             fields.push(ParamField {
                                 name: fname,
                                 param_type: ftype,
-                                min: param_attrs.0.clone(),
-                                max: param_attrs.1.clone(),
-                                step: param_attrs.2.clone(),
+                                min: param_min.clone(),
+                                max: param_max.clone(),
+                                step: param_step.clone(),
                                 default_val: default,
                                 label: doc_comment.clone(),
+                                hint: param_hint.clone(),
                             });
                             doc_comment.clear();
-                            param_attrs =
-                                ("null".into(), "null".into(), "null".into(), String::new());
+                            param_min = "null".into();
+                            param_max = "null".into();
+                            param_step = "null".into();
+                            param_default.clear();
+                            param_hint.clear();
                         }
                     }
                     j += 1;
                 }
 
                 if !fields.is_empty() {
-                    result.insert(struct_name, fields);
+                    result.insert(
+                        struct_name,
+                        ParsedStruct {
+                            fields,
+                            config_hint: struct_hint.clone(),
+                        },
+                    );
                 }
             }
         }
         i += 1;
+    }
+    result
+}
+
+/// Extract value from `#[config_hint("rc.color_rgba")]`
+fn extract_config_hint_value(line: &str) -> Option<String> {
+    let start = line.find("config_hint(\"")? + "config_hint(\"".len();
+    let rest = &line[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Resolve nested struct fields: if a field type matches a known ConfigParams struct,
+/// inline its fields with a prefix and propagate hints.
+fn resolve_nested_fields(
+    fields: &[ParamField],
+    _struct_hint: &str,
+    all_structs: &std::collections::HashMap<String, ParsedStruct>,
+) -> Vec<ParamField> {
+    let mut result = Vec::new();
+    for field in fields {
+        if let Some(nested) = all_structs.get(&field.param_type) {
+            // Nested ConfigParams struct — inline fields with prefix
+            let hint = if field.hint.is_empty() {
+                &nested.config_hint
+            } else {
+                &field.hint
+            };
+            for nf in &nested.fields {
+                result.push(ParamField {
+                    name: format!("{}.{}", field.name, nf.name),
+                    param_type: nf.param_type.clone(),
+                    min: nf.min.clone(),
+                    max: nf.max.clone(),
+                    step: nf.step.clone(),
+                    default_val: nf.default_val.clone(),
+                    label: nf.label.clone(),
+                    hint: if hint.is_empty() {
+                        nf.hint.clone()
+                    } else {
+                        hint.to_string()
+                    },
+                });
+            }
+        } else {
+            result.push(field.clone());
+        }
     }
     result
 }
