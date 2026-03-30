@@ -1,6 +1,6 @@
 use super::color;
 use super::error::ImageError;
-use super::types::{ColorSpace, DecodedImage, ImageInfo, PixelFormat};
+use super::types::{ColorSpace, DecodedImage, DisposalMethod, FrameInfo, ImageInfo, PixelFormat};
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────
 
@@ -335,6 +335,76 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     Err(ImageError::InvalidInput(format!(
         "decode: format '{detected}' not supported"
     )))
+}
+
+// ─── Multi-Frame / Multi-Page API ───────────────────────────────────────────
+
+/// Return the total number of frames/pages in the image without full decode.
+///
+/// Returns 1 for single-frame formats. Supports GIF, WebP (animated), and TIFF (multi-page).
+pub fn frame_count(data: &[u8]) -> Result<u32, ImageError> {
+    if data.len() >= 6 && &data[..3] == b"GIF" {
+        return gif_frame_count(data);
+    }
+    if data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        return webp_frame_count(data);
+    }
+    if data.len() >= 4
+        && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
+            || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
+    {
+        return tiff_page_count(data);
+    }
+    Ok(1)
+}
+
+/// Decode a specific frame/page by zero-based index.
+///
+/// Returns the decoded image and frame metadata. For single-frame formats,
+/// only index 0 is valid and returns the same result as `decode()`.
+pub fn decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo), ImageError> {
+    if data.len() >= 6 && &data[..3] == b"GIF" {
+        return gif_decode_frame(data, index);
+    }
+    if data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        return webp_decode_frame(data, index);
+    }
+    if data.len() >= 4
+        && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
+            || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
+    {
+        return tiff_decode_frame(data, index);
+    }
+    // Single-frame fallback
+    if index != 0 {
+        return Err(ImageError::InvalidParameters(format!(
+            "frame index {index} out of range (single-frame image)"
+        )));
+    }
+    let decoded = decode(data)?;
+    let info = FrameInfo {
+        index: 0,
+        delay_ms: 0,
+        disposal: DisposalMethod::None,
+        width: decoded.info.width,
+        height: decoded.info.height,
+        x_offset: 0,
+        y_offset: 0,
+    };
+    Ok((decoded, info))
+}
+
+/// Decode all frames/pages from a multi-frame image.
+///
+/// Returns a vector of (image, frame_info) pairs. For single-frame formats,
+/// returns a single-element vector.
+pub fn decode_all_frames(data: &[u8]) -> Result<Vec<(DecodedImage, FrameInfo)>, ImageError> {
+    let count = frame_count(data)?;
+    let mut frames = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        frames.push(decode_frame(data, i)?);
+    }
+    Ok(frames)
 }
 
 /// Extract ICC profile from raw image bytes based on detected format.
@@ -1423,6 +1493,288 @@ fn decode_native_tga(data: &[u8]) -> Result<DecodedImage, ImageError> {
         },
         icc_profile: None,
     })
+}
+
+// ─── GIF Multi-Frame ────────────────────────────────────────────────────────
+
+/// Count GIF frames by iterating the decoder without full pixel decode.
+fn gif_frame_count(data: &[u8]) -> Result<u32, ImageError> {
+    let mut opts = gif::DecodeOptions::new();
+    opts.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = opts
+        .read_info(data)
+        .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?;
+    let mut count = 0u32;
+    while decoder
+        .read_next_frame()
+        .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?
+        .is_some()
+    {
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Decode a specific GIF frame by index, with full compositing onto the canvas.
+fn gif_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo), ImageError> {
+    let mut opts = gif::DecodeOptions::new();
+    opts.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = opts
+        .read_info(data)
+        .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?;
+
+    let screen_width = decoder.width() as u32;
+    let screen_height = decoder.height() as u32;
+
+    // Advance to the requested frame
+    for i in 0..=index {
+        let frame = decoder
+            .read_next_frame()
+            .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?
+            .ok_or_else(|| {
+                ImageError::InvalidParameters(format!(
+                    "GIF frame index {index} out of range"
+                ))
+            })?;
+
+        if i == index {
+            let frame_width = frame.width as u32;
+            let frame_height = frame.height as u32;
+            let left = frame.left as u32;
+            let top = frame.top as u32;
+
+            let pixels = if frame_width == screen_width
+                && frame_height == screen_height
+                && left == 0
+                && top == 0
+            {
+                frame.buffer.to_vec()
+            } else {
+                let mut canvas = vec![0u8; (screen_width * screen_height * 4) as usize];
+                for y in 0..frame_height {
+                    let dst_y = top + y;
+                    if dst_y >= screen_height {
+                        break;
+                    }
+                    let src_row = (y * frame_width * 4) as usize;
+                    let dst_row = ((dst_y * screen_width + left) * 4) as usize;
+                    let copy_width = frame_width.min(screen_width - left) as usize * 4;
+                    canvas[dst_row..dst_row + copy_width]
+                        .copy_from_slice(&frame.buffer[src_row..src_row + copy_width]);
+                }
+                canvas
+            };
+
+            // GIF delay is in hundredths of a second → convert to milliseconds
+            let delay_ms = frame.delay as u32 * 10;
+
+            let disposal = match frame.dispose {
+                gif::DisposalMethod::Background => DisposalMethod::Background,
+                gif::DisposalMethod::Previous => DisposalMethod::Previous,
+                _ => DisposalMethod::None,
+            };
+
+            return Ok((
+                DecodedImage {
+                    pixels,
+                    info: ImageInfo {
+                        width: screen_width,
+                        height: screen_height,
+                        format: PixelFormat::Rgba8,
+                        color_space: ColorSpace::Srgb,
+                    },
+                    icc_profile: None,
+                },
+                FrameInfo {
+                    index,
+                    delay_ms,
+                    disposal,
+                    width: frame_width,
+                    height: frame_height,
+                    x_offset: left,
+                    y_offset: top,
+                },
+            ));
+        }
+    }
+    unreachable!()
+}
+
+// ─── WebP Multi-Frame ───────────────────────────────────────────────────────
+
+/// Count WebP frames (1 for static, N for animated).
+fn webp_frame_count(data: &[u8]) -> Result<u32, ImageError> {
+    let decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(data))
+        .map_err(|e| ImageError::InvalidInput(format!("WebP: {e}")))?;
+    let n = decoder.num_frames();
+    Ok(if n == 0 { 1 } else { n })
+}
+
+/// Decode a specific WebP frame by index.
+fn webp_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo), ImageError> {
+    let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(data))
+        .map_err(|e| ImageError::InvalidInput(format!("WebP: {e}")))?;
+
+    let (width, height) = decoder.dimensions();
+    let has_alpha = decoder.has_alpha();
+
+    if !decoder.is_animated() {
+        if index != 0 {
+            return Err(ImageError::InvalidParameters(format!(
+                "WebP frame index {index} out of range (static image)"
+            )));
+        }
+        // Single-frame: use read_image
+        let decoded = decode_native_webp(data)?;
+        let info = FrameInfo {
+            index: 0,
+            delay_ms: 0,
+            disposal: DisposalMethod::None,
+            width,
+            height,
+            x_offset: 0,
+            y_offset: 0,
+        };
+        return Ok((decoded, info));
+    }
+
+    // Animated: iterate frames via read_frame (sequential, composited)
+    let buf_size = if has_alpha {
+        (width * height * 4) as usize
+    } else {
+        (width * height * 3) as usize
+    };
+
+    for i in 0..=index {
+        let mut buf = vec![0u8; buf_size];
+        let duration_ms = decoder.read_frame(&mut buf).map_err(|e| {
+            ImageError::InvalidParameters(format!("WebP frame index {index} out of range: {e}"))
+        })?;
+
+        if i == index {
+            let format = if has_alpha {
+                PixelFormat::Rgba8
+            } else {
+                PixelFormat::Rgb8
+            };
+            return Ok((
+                DecodedImage {
+                    pixels: buf,
+                    info: ImageInfo {
+                        width,
+                        height,
+                        format,
+                        color_space: ColorSpace::Srgb,
+                    },
+                    icc_profile: None,
+                },
+                FrameInfo {
+                    index,
+                    delay_ms: duration_ms,
+                    disposal: DisposalMethod::None,
+                    width,
+                    height,
+                    x_offset: 0,
+                    y_offset: 0,
+                },
+            ));
+        }
+    }
+    unreachable!()
+}
+
+// ─── TIFF Multi-Page ────────────────────────────────────────────────────────
+
+/// Count TIFF pages (IFDs) by iterating through the directory chain.
+fn tiff_page_count(data: &[u8]) -> Result<u32, ImageError> {
+    let cursor = std::io::Cursor::new(data);
+    let mut decoder = tiff::decoder::Decoder::new(cursor)
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+    let mut count = 1u32;
+    while decoder.more_images() {
+        decoder
+            .next_image()
+            .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Decode a specific TIFF page by zero-based index.
+fn tiff_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo), ImageError> {
+    let cursor = std::io::Cursor::new(data);
+    let mut decoder = tiff::decoder::Decoder::new(cursor)
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+
+    // Seek to the requested IFD
+    if index > 0 {
+        decoder
+            .seek_to_image(index as usize)
+            .map_err(|e| ImageError::InvalidParameters(format!(
+                "TIFF page index {index} out of range: {e}"
+            )))?;
+    }
+
+    let (width, height) = decoder
+        .dimensions()
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+    let color_type = decoder
+        .colortype()
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+    let result = decoder
+        .read_image()
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+
+    let (pixels, format) = match (color_type, result) {
+        (tiff::ColorType::Gray(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Gray8)
+        }
+        (tiff::ColorType::Gray(16), tiff::decoder::DecodingResult::U16(buf)) => {
+            let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+            (bytes, PixelFormat::Gray16)
+        }
+        (tiff::ColorType::RGB(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Rgb8)
+        }
+        (tiff::ColorType::RGB(16), tiff::decoder::DecodingResult::U16(buf)) => {
+            let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+            (bytes, PixelFormat::Rgb16)
+        }
+        (tiff::ColorType::RGBA(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Rgba8)
+        }
+        (tiff::ColorType::RGBA(16), tiff::decoder::DecodingResult::U16(buf)) => {
+            let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+            (bytes, PixelFormat::Rgba16)
+        }
+        _ => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "TIFF color type {color_type:?} not supported"
+            )));
+        }
+    };
+
+    Ok((
+        DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width,
+                height,
+                format,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        },
+        FrameInfo {
+            index,
+            delay_ms: 0,
+            disposal: DisposalMethod::None,
+            width,
+            height,
+            x_offset: 0,
+            y_offset: 0,
+        },
+    ))
 }
 
 #[cfg(test)]

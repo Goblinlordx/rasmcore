@@ -49,6 +49,38 @@ pub struct DecodedImage {
     pub icc_profile: Option<Vec<u8>>,
 }
 
+// ─── Multi-Frame / Multi-Page Types ─────────────────────────────────────────
+
+/// Frame disposal method for animated images (GIF, WebP).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisposalMethod {
+    /// No disposal — leave frame in place.
+    None,
+    /// Restore the area covered by the frame to the background.
+    Background,
+    /// Restore the area covered by the frame to the previous frame.
+    Previous,
+}
+
+/// Per-frame metadata for multi-frame/multi-page images.
+#[derive(Debug, Clone)]
+pub struct FrameInfo {
+    /// Zero-based frame index.
+    pub index: u32,
+    /// Frame delay in milliseconds (0 for non-animated formats like TIFF).
+    pub delay_ms: u32,
+    /// Disposal method (only meaningful for animated GIF/WebP).
+    pub disposal: DisposalMethod,
+    /// Frame width in pixels.
+    pub width: u32,
+    /// Frame height in pixels.
+    pub height: u32,
+    /// Horizontal offset of the frame within the canvas.
+    pub x_offset: u32,
+    /// Vertical offset of the frame within the canvas.
+    pub y_offset: u32,
+}
+
 /// Resize algorithm
 #[derive(Debug, Clone, Copy)]
 pub enum ResizeFilter {
