@@ -5395,6 +5395,142 @@ pub fn clarity(
     Ok(result)
 }
 
+// ─── Shadow/Highlight ─────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Shadow/Highlight adjustment — local tone mapping for shadows and highlights
+pub struct ShadowHighlightParams {
+    /// Shadow recovery amount (0-100, 0 = no change)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 0.0)]
+    pub shadow_amount: f32,
+    /// Highlight recovery amount (0-100, 0 = no change)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 0.0)]
+    pub highlight_amount: f32,
+    /// Blur radius for local luminance estimation (higher = broader adjustment)
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 30.0)]
+    pub radius: f32,
+}
+
+/// Shadow/highlight adjustment: independently lighten shadows and darken highlights.
+///
+/// Uses local luminance estimation via gaussian blur to identify shadow and
+/// highlight regions, then applies separate tonal adjustments to each.
+/// Unlike global brightness/contrast, mid-tones are preserved.
+///
+/// Algorithm:
+/// 1. Compute per-pixel luminance (BT.709)
+/// 2. Blur luminance to get local brightness map
+/// 3. Shadow weight = smoothstep(0, 0.5, 1 - local_lum) — strong in dark areas
+/// 4. Highlight weight = smoothstep(0.5, 1, local_lum) — strong in bright areas
+/// 5. For shadows: lighten proportional to shadow_amount * shadow_weight
+/// 6. For highlights: darken proportional to highlight_amount * highlight_weight
+///
+/// Reference: Photoshop Image > Adjustments > Shadow/Highlight.
+/// No direct IM equivalent — validated via property tests and GIMP comparison.
+/// Not yet validated against a reference implementation.
+#[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
+pub fn shadow_highlight(
+    pixels: &[u8],
+    info: &ImageInfo,
+    shadow_amount: f32,
+    highlight_amount: f32,
+    radius: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            shadow_highlight(p8, i8, shadow_amount, highlight_amount, radius)
+        });
+    }
+
+    let ch = channels(info.format);
+    if ch < 3 {
+        return Err(ImageError::UnsupportedFormat(
+            "shadow_highlight requires RGB8 or RGBA8".into(),
+        ));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let n = w * h;
+
+    // Normalize amounts to [0, 1]
+    let s_amt = (shadow_amount / 100.0).clamp(0.0, 1.0);
+    let h_amt = (highlight_amount / 100.0).clamp(0.0, 1.0);
+
+    // Identity fast path
+    if s_amt < 1e-6 && h_amt < 1e-6 {
+        return Ok(pixels.to_vec());
+    }
+
+    // 1. Compute per-pixel luminance (BT.709)
+    let mut luma = vec![0.0f32; n];
+    for i in 0..n {
+        let pi = i * ch;
+        luma[i] = (0.2126 * pixels[pi] as f32
+            + 0.7152 * pixels[pi + 1] as f32
+            + 0.0722 * pixels[pi + 2] as f32)
+            / 255.0;
+    }
+
+    // 2. Blur luminance to get local brightness map
+    //    Build a Gray8 image from luminance, blur it, read back
+    let gray_pixels: Vec<u8> = luma.iter().map(|&l| (l * 255.0 + 0.5) as u8).collect();
+    let gray_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    let blurred_gray = blur(&gray_pixels, &gray_info, radius)?;
+    let local_lum: Vec<f32> = blurred_gray.iter().map(|&v| v as f32 / 255.0).collect();
+
+    // 3-6. Apply shadow/highlight adjustments
+    let mut result = vec![0u8; pixels.len()];
+
+    for i in 0..n {
+        let ll = local_lum[i];
+
+        // Shadow weight: strong where local luminance is low
+        // smoothstep from 0 at ll=0.5 to 1 at ll=0
+        let shadow_w = if ll >= 0.5 {
+            0.0
+        } else {
+            let t = 1.0 - ll * 2.0; // 1 at ll=0, 0 at ll=0.5
+            t * t * (3.0 - 2.0 * t) // smoothstep
+        };
+
+        // Highlight weight: strong where local luminance is high
+        // smoothstep from 0 at ll=0.5 to 1 at ll=1
+        let highlight_w = if ll <= 0.5 {
+            0.0
+        } else {
+            let t = (ll - 0.5) * 2.0; // 0 at ll=0.5, 1 at ll=1
+            t * t * (3.0 - 2.0 * t) // smoothstep
+        };
+
+        let pi = i * ch;
+        for c in 0..3 {
+            let orig = pixels[pi + c] as f32;
+
+            // Shadow: lighten dark areas (boost toward 128)
+            let shadow_boost = (128.0 - orig).max(0.0) * s_amt * shadow_w;
+
+            // Highlight: darken bright areas (pull toward 128)
+            let highlight_cut = (orig - 128.0).max(0.0) * h_amt * highlight_w;
+
+            let adjusted = orig + shadow_boost - highlight_cut;
+            result[pi + c] = adjusted.round().clamp(0.0, 255.0) as u8;
+        }
+        if ch == 4 {
+            result[pi + 3] = pixels[pi + 3]; // preserve alpha
+        }
+    }
+
+    Ok(result)
+}
+
 // ─── Frequency Separation ──────────────────────────────────────────────────
 
 /// Frequency separation — low-pass (structure) layer.
@@ -11326,6 +11462,104 @@ mod artistic_filter_tests {
             mean > 240.0,
             "charcoal of flat image should be near-white, got mean={mean:.0}"
         );
+    }
+}
+
+#[cfg(test)]
+mod shadow_highlight_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn identity_at_zero() {
+        // shadow=0, highlight=0 should be identity
+        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(16, 16);
+        let result = shadow_highlight(&pixels, &info, 0.0, 0.0, 30.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn shadow_boost_lightens_darks() {
+        // Create dark image (all pixels at 30)
+        let pixels = vec![30u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = shadow_highlight(&pixels, &info, 100.0, 0.0, 30.0).unwrap();
+        // All pixels should be brighter than original
+        let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let mean_result: f64 =
+            result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            mean_result > mean_orig,
+            "shadow boost should lighten: orig={mean_orig:.0}, result={mean_result:.0}"
+        );
+    }
+
+    #[test]
+    fn highlight_cut_darkens_brights() {
+        // Create bright image (all pixels at 230)
+        let pixels = vec![230u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = shadow_highlight(&pixels, &info, 0.0, 100.0, 30.0).unwrap();
+        let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let mean_result: f64 =
+            result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            mean_result < mean_orig,
+            "highlight cut should darken: orig={mean_orig:.0}, result={mean_result:.0}"
+        );
+    }
+
+    #[test]
+    fn midtones_preserved() {
+        // Create mid-tone image (all pixels at 128)
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = shadow_highlight(&pixels, &info, 50.0, 50.0, 30.0).unwrap();
+        // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
+        let max_diff: u8 = pixels
+            .iter()
+            .zip(result.iter())
+            .map(|(&a, &b)| (a as i16 - b as i16).unsigned_abs() as u8)
+            .max()
+            .unwrap_or(0);
+        assert!(
+            max_diff <= 5,
+            "midtones should be preserved, max_diff={max_diff}"
+        );
+    }
+
+    #[test]
+    fn preserves_alpha() {
+        let mut pixels = vec![30u8; 8 * 8 * 4];
+        // Set alpha to various values
+        for i in 0..64 {
+            pixels[i * 4 + 3] = (i * 4) as u8;
+        }
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = shadow_highlight(&pixels, &info, 50.0, 50.0, 10.0).unwrap();
+        // Alpha should be exactly preserved
+        for i in 0..64 {
+            assert_eq!(
+                result[i * 4 + 3],
+                pixels[i * 4 + 3],
+                "alpha not preserved at pixel {i}"
+            );
+        }
     }
 }
 
