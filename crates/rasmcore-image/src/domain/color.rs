@@ -943,6 +943,113 @@ mod tests {
     }
 
     #[test]
+    fn cmyk_rgb_to_cmyk_parity_vs_imagemagick() {
+        // Skip if ImageMagick is not available
+        let has_magick = std::process::Command::new("magick")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !has_magick {
+            eprintln!("SKIP: ImageMagick not available for CMYK parity test");
+            return;
+        }
+
+        // Generate a test PNG with known pixels
+        let (w, h) = (32u32, 32u32);
+        let mut rgb = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y * w + x) as usize * 3;
+                rgb[i] = (x * 255 / w) as u8;
+                rgb[i + 1] = (y * 255 / h) as u8;
+                rgb[i + 2] = 128;
+            }
+        }
+
+        // Write test PNG via our encoder
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let png_data =
+            crate::domain::encoder::encode(&rgb, &info, "png", None).unwrap();
+        let png_path = std::env::temp_dir().join("cmyk_parity_input.png");
+        std::fs::write(&png_path, &png_data).unwrap();
+
+        // rasmcore: RGB -> CMYK
+        let (our_cmyk, _) = rgb_to_cmyk(&rgb, &info).unwrap();
+
+        // ImageMagick: RGB -> CMYK (raw bytes)
+        let im_raw = std::env::temp_dir().join("cmyk_parity_im.raw");
+        let result = std::process::Command::new("magick")
+            .args([
+                png_path.to_str().unwrap(),
+                "-colorspace", "CMYK", "-depth", "8",
+                &format!("cmyk:{}", im_raw.to_str().unwrap()),
+            ])
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "magick RGB->CMYK failed");
+
+        let im_cmyk = std::fs::read(&im_raw).unwrap();
+        assert_eq!(
+            our_cmyk.len(), im_cmyk.len(),
+            "CMYK buffer size: ours={} vs IM={}",
+            our_cmyk.len(), im_cmyk.len()
+        );
+
+        // Compute MAE
+        let n = our_cmyk.len();
+        let mae: f64 = our_cmyk.iter().zip(im_cmyk.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>() / n as f64;
+
+        assert!(
+            mae < 1.5,
+            "CMYK rgb_to_cmyk vs ImageMagick MAE = {mae:.3} (must be < 1.5)"
+        );
+        eprintln!("CMYK rgb_to_cmyk vs ImageMagick: MAE = {mae:.3}");
+
+        // Also test round-trip: RGB -> CMYK -> RGB vs IM's round-trip
+        let cmyk_info = ImageInfo {
+            format: PixelFormat::Cmyk8,
+            ..info
+        };
+        let (our_rt, _) = cmyk_to_rgb(&our_cmyk, &cmyk_info).unwrap();
+
+        let im_rt_raw = std::env::temp_dir().join("cmyk_parity_rt.raw");
+        let result = std::process::Command::new("magick")
+            .args([
+                png_path.to_str().unwrap(),
+                "-colorspace", "CMYK", "-colorspace", "sRGB",
+                "-depth", "8",
+                &format!("rgb:{}", im_rt_raw.to_str().unwrap()),
+            ])
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "magick round-trip failed");
+
+        let im_rt = std::fs::read(&im_rt_raw).unwrap();
+        let rt_mae: f64 = our_rt.iter().zip(im_rt.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>() / our_rt.len() as f64;
+
+        assert!(
+            rt_mae < 1.5,
+            "CMYK round-trip vs ImageMagick MAE = {rt_mae:.3} (must be < 1.5)"
+        );
+        eprintln!("CMYK round-trip vs ImageMagick: MAE = {rt_mae:.3}");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&png_path);
+        let _ = std::fs::remove_file(&im_raw);
+        let _ = std::fs::remove_file(&im_rt_raw);
+    }
+
+    #[test]
     fn cmyk_to_rgb_pure_black() {
         let info = ImageInfo {
             width: 1,
