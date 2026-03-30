@@ -63,33 +63,6 @@ pub fn encode_pixels(
         .map_err(|e| ImageError::ProcessingFailed(e.to_string()))
 }
 
-/// Encode a DynamicImage to JPEG (convenience wrapper for pipeline sink compatibility).
-pub fn encode(
-    img: &image::DynamicImage,
-    info: &ImageInfo,
-    config: &JpegEncodeConfig,
-) -> Result<Vec<u8>, ImageError> {
-    let (pixels, pixel_format) = match img {
-        image::DynamicImage::ImageRgb8(buf) => (buf.as_raw().as_slice(), PixelFormat::Rgb8),
-        image::DynamicImage::ImageRgba8(buf) => (buf.as_raw().as_slice(), PixelFormat::Rgba8),
-        image::DynamicImage::ImageLuma8(buf) => (buf.as_raw().as_slice(), PixelFormat::Gray8),
-        _ => {
-            let rgb = img.to_rgb8();
-            let adjusted_info = ImageInfo {
-                format: PixelFormat::Rgb8,
-                ..*info
-            };
-            return encode_pixels(rgb.as_raw(), &adjusted_info, config);
-        }
-    };
-
-    let adjusted_info = ImageInfo {
-        format: pixel_format,
-        ..*info
-    };
-    encode_pixels(pixels, &adjusted_info, config)
-}
-
 /// Embed an ICC profile into already-encoded JPEG data.
 ///
 /// Inserts APP2 markers with "ICC_PROFILE\0" signature after SOI.

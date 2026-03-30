@@ -348,190 +348,63 @@ fn extract_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
 
 /// Decode and convert to a specific pixel format
 pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage, ImageError> {
-    // JP2/J2K: decode then convert if needed
-    if is_jp2(data) {
-        let decoded = decode_jp2(data)?;
-        if decoded.info.format == target_format {
-            return Ok(decoded);
-        }
-        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
-        let (pixels, format) = match target_format {
-            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-            other => {
-                return Err(ImageError::UnsupportedFormat(format!(
-                    "conversion to {other:?} not supported"
-                )));
-            }
-        };
-        return Ok(DecodedImage {
-            pixels,
-            info: ImageInfo {
-                width: decoded.info.width,
-                height: decoded.info.height,
-                format,
-                color_space: decoded.info.color_space,
-            },
-            icc_profile: decoded.icc_profile,
-        });
-    }
-
-    // SVG: decode then convert if needed
-    if is_svg(data) {
-        let decoded = decode_svg(data)?;
-        if decoded.info.format == target_format {
-            return Ok(decoded);
-        }
-        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
-        let (pixels, format) = match target_format {
-            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-            other => {
-                return Err(ImageError::UnsupportedFormat(format!(
-                    "SVG conversion to {other:?} not supported"
-                )));
-            }
-        };
-        return Ok(DecodedImage {
-            pixels,
-            info: ImageInfo {
-                width: decoded.info.width,
-                height: decoded.info.height,
-                format,
-                color_space: decoded.info.color_space,
-            },
-            icc_profile: decoded.icc_profile,
-        });
-    }
-
-    // FITS: decode then convert
-    if rasmcore_fits::is_fits(data) {
-        let decoded = decode_fits(data)?;
-        if decoded.info.format == target_format {
-            return Ok(decoded);
-        }
-        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
-        let (pixels, format) = match target_format {
-            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-            other => {
-                return Err(ImageError::UnsupportedFormat(format!(
-                    "conversion to {other:?} not supported"
-                )));
-            }
-        };
-        return Ok(DecodedImage {
-            pixels,
-            info: ImageInfo {
-                width: decoded.info.width,
-                height: decoded.info.height,
-                format,
-                color_space: decoded.info.color_space,
-            },
-            icc_profile: decoded.icc_profile,
-        });
-    }
-
-    // JXL: decode then convert
-    if is_jxl(data) {
-        let decoded = decode_jxl(data)?;
-        // If already in target format, return as-is
-        if decoded.info.format == target_format {
-            return Ok(decoded);
-        }
-        // Otherwise, use image crate for format conversion
-        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
-        let (pixels, format) = match target_format {
-            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-            other => {
-                return Err(ImageError::UnsupportedFormat(format!(
-                    "conversion to {other:?} not supported"
-                )));
-            }
-        };
-        return Ok(DecodedImage {
-            pixels,
-            info: ImageInfo {
-                width: decoded.info.width,
-                height: decoded.info.height,
-                format,
-                color_space: decoded.info.color_space,
-            },
-            icc_profile: decoded.icc_profile,
-        });
-    }
-
-    // JPEG — use native decoder, then convert format
-    if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
-        let decoded = decode_native_jpeg(data)?;
-        if decoded.info.format == target_format {
-            return Ok(decoded);
-        }
-        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
-        let (pixels, format) = match target_format {
-            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-            other => {
-                return Err(ImageError::UnsupportedFormat(format!(
-                    "conversion to {other:?} not supported"
-                )));
-            }
-        };
-        return Ok(DecodedImage {
-            pixels,
-            info: ImageInfo {
-                width: decoded.info.width,
-                height: decoded.info.height,
-                format,
-                color_space: decoded.info.color_space,
-            },
-            icc_profile: decoded.icc_profile,
-        });
-    }
-
-    // Decode natively, then convert pixel format if needed
     let decoded = decode(data)?;
     if decoded.info.format == target_format {
         return Ok(decoded);
     }
-    let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
-    let (pixels, format) = match target_format {
-        PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
-        PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
-        PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
-        PixelFormat::Gray16 => {
-            let luma16 = img.to_luma16();
-            let bytes = luma16
-                .as_raw()
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect();
-            (bytes, PixelFormat::Gray16)
+    convert_pixels(decoded, target_format)
+}
+
+/// Convert decoded image pixels to a different pixel format.
+fn convert_pixels(decoded: DecodedImage, target: PixelFormat) -> Result<DecodedImage, ImageError> {
+    let w = decoded.info.width as usize;
+    let h = decoded.info.height as usize;
+    let n = w * h;
+    let src = &decoded.pixels;
+
+    let pixels = match (decoded.info.format, target) {
+        // RGB8 → RGBA8: add alpha=255
+        (PixelFormat::Rgb8, PixelFormat::Rgba8) => src
+            .chunks_exact(3)
+            .flat_map(|c| [c[0], c[1], c[2], 255])
+            .collect(),
+        // RGBA8 → RGB8: drop alpha
+        (PixelFormat::Rgba8, PixelFormat::Rgb8) => src
+            .chunks_exact(4)
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect(),
+        // RGB8/RGBA8 → Gray8: BT.601 luma
+        (PixelFormat::Rgb8, PixelFormat::Gray8) => src
+            .chunks_exact(3)
+            .map(|c| ((c[0] as u16 * 77 + c[1] as u16 * 150 + c[2] as u16 * 29) >> 8) as u8)
+            .collect(),
+        (PixelFormat::Rgba8, PixelFormat::Gray8) => src
+            .chunks_exact(4)
+            .map(|c| ((c[0] as u16 * 77 + c[1] as u16 * 150 + c[2] as u16 * 29) >> 8) as u8)
+            .collect(),
+        // Gray8 → RGB8
+        (PixelFormat::Gray8, PixelFormat::Rgb8) => src.iter().flat_map(|&g| [g, g, g]).collect(),
+        // Gray8 → RGBA8
+        (PixelFormat::Gray8, PixelFormat::Rgba8) => {
+            src.iter().flat_map(|&g| [g, g, g, 255]).collect()
         }
-        other => {
+        _ => {
             return Err(ImageError::UnsupportedFormat(format!(
-                "conversion to {other:?} not supported"
+                "conversion from {:?} to {target:?} not supported",
+                decoded.info.format
             )));
         }
     };
 
-    let icc_profile = extract_icc_profile(data);
-
     Ok(DecodedImage {
         pixels,
         info: ImageInfo {
-            width: img.width(),
-            height: img.height(),
-            format,
-            color_space: ColorSpace::Srgb,
+            width: decoded.info.width,
+            height: decoded.info.height,
+            format: target,
+            color_space: decoded.info.color_space,
         },
-        icc_profile,
+        icc_profile: decoded.icc_profile,
     })
 }
 

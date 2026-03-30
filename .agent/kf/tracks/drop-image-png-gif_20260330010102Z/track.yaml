@@ -1,103 +1,91 @@
 id: drop-image-png-gif_20260330010102Z
-title: "Drop remaining image features \u2014 native WebP decode, ICO, HDR, EXR, DDS"
+title: Drop remaining image features — native WebP decode, ICO, HDR, EXR, DDS
 type: refactor
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Replace the remaining image crate usages: WebP decode (use image-webp
-    directly), ICO/HDR encode (write native), EXR (use exr crate directly),
-    DDS decode (native). Each swap requires parity tests before the image
-    feature is dropped. Eliminate image crate dependency entirely.
-  context: |
-    After Track 1 drops jpeg/png/gif/avif/bmp/qoi/tga/pnm/tiff from
+  summary: 'Replace the remaining image crate usages: WebP decode (use image-webp directly), ICO/HDR encode (write native),
+    EXR (use exr crate directly), DDS decode (native). Each swap requires parity tests before the image feature is dropped.
+    Eliminate image crate dependency entirely.
+
+    '
+  context: 'After Track 1 drops jpeg/png/gif/avif/bmp/qoi/tga/pnm/tiff from
+
     image features, only webp/dds/exr/ico/hdr remain. This track eliminates
+
     those and removes the image crate from Cargo.toml entirely.
-  codebase_analysis: |
-    Remaining image-dependent codecs after Track 1:
-      - WebP decode: uses image-webp internally. image-webp is a standalone
-        crate (3 deps) that can be used directly.
-      - ICO encode: trivial BMP-in-container format. ~50 lines to write native.
-      - HDR encode: Radiance RGBE format. Simple header + pixel encoding.
-      - EXR encode/decode: uses exr crate internally. Can use directly.
-      - DDS decode: uses image DDS decoder. Custom encoder already exists.
 
-    Also need to replace:
-      - image::guess_format() -- write custom magic-byte detection
-      - pixels_to_dynamic_image() helper -- remove entirely
-      - image::DynamicImage in remaining encoder paths
-
-    This track depends on the transform rewrite (Track 2) completing first,
-    since transform.rs is the other major DynamicImage user.
+    '
+  codebase_analysis: "Remaining image-dependent codecs after Track 1:\n  - WebP decode: uses image-webp internally. image-webp\
+    \ is a standalone\n    crate (3 deps) that can be used directly.\n  - ICO encode: trivial BMP-in-container format. ~50\
+    \ lines to write native.\n  - HDR encode: Radiance RGBE format. Simple header + pixel encoding.\n  - EXR encode/decode:\
+    \ uses exr crate internally. Can use directly.\n  - DDS decode: uses image DDS decoder. Custom encoder already exists.\n\
+    \nAlso need to replace:\n  - image::guess_format() -- write custom magic-byte detection\n  - pixels_to_dynamic_image()\
+    \ helper -- remove entirely\n  - image::DynamicImage in remaining encoder paths\n\nThis track depends on the transform\
+    \ rewrite (Track 2) completing first,\nsince transform.rs is the other major DynamicImage user.\n"
   acceptance_criteria:
-    - Parity test for each codec swap BEFORE dropping the image feature
-    - image crate completely removed from Cargo.toml
-    - WebP decode uses image-webp crate directly, parity-tested
-    - ICO encode is native, parity-tested vs image crate reference
-    - HDR encode is native, parity-tested vs image crate reference
-    - EXR encode/decode uses exr crate directly, parity-tested
-    - DDS decode is native, parity-tested
-    - Custom format detection replaces image::guess_format()
-    - All parity tests pass
-    - Binary size reduction measured and documented (native + WASM)
-  out_of_scope: |
-    AVIF encode (already dropped in Track 1).
+  - Parity test for each codec swap BEFORE dropping the image feature
+  - image crate completely removed from Cargo.toml
+  - WebP decode uses image-webp crate directly, parity-tested
+  - ICO encode is native, parity-tested vs image crate reference
+  - HDR encode is native, parity-tested vs image crate reference
+  - EXR encode/decode uses exr crate directly, parity-tested
+  - DDS decode is native, parity-tested
+  - Custom format detection replaces image::guess_format()
+  - All parity tests pass
+  - Binary size reduction measured and documented (native + WASM)
+  out_of_scope: 'AVIF encode (already dropped in Track 1).
+
     Writing native WebP decoder (image-webp as standalone dep is fine).
-  technical_notes: |
-    COVERAGE AUDIT + PARITY TEST PATTERN (same as Track 1):
-      1. Audit the image crate's coverage for each format
-      2. Verify our replacement matches or exceeds it
-      3. Write COVERAGE.md documenting: our coverage, image crate coverage,
-         full spec coverage, and gaps to target later
-      4. Parity tests must cover all supported variants
-      5. Assert pixel-exact match (lossless) or MAE < threshold
 
-    image-webp can be added as a direct dependency. It is the same crate
-    image uses internally, just without the DynamicImage wrapper.
-
-    Format detection: check magic bytes in order (JPEG FFD8, PNG 89504E47,
-    GIF GIF8, WebP RIFF/WEBP, BMP BM, TIFF 4949/4D4D, QOI qoif, etc.).
-    This is ~30 lines of code.
+    '
+  technical_notes: "COVERAGE AUDIT + PARITY TEST PATTERN (same as Track 1):\n  1. Audit the image crate's coverage for each\
+    \ format\n  2. Verify our replacement matches or exceeds it\n  3. Write COVERAGE.md documenting: our coverage, image crate\
+    \ coverage,\n     full spec coverage, and gaps to target later\n  4. Parity tests must cover all supported variants\n\
+    \  5. Assert pixel-exact match (lossless) or MAE < threshold\n\nimage-webp can be added as a direct dependency. It is\
+    \ the same crate\nimage uses internally, just without the DynamicImage wrapper.\n\nFormat detection: check magic bytes\
+    \ in order (JPEG FFD8, PNG 89504E47,\nGIF GIF8, WebP RIFF/WEBP, BMP BM, TIFF 4949/4D4D, QOI qoif, etc.).\nThis is ~30\
+    \ lines of code.\n"
 plan:
-  - phase: "Coverage audit and crate replacements"
-    tasks:
-      - text: "WebP decode coverage audit: compare image-webp direct vs image wrapper, write COVERAGE.md"
-        done: false
-      - text: "Add WebP decode parity tests for all variants, wire image-webp directly"
-        done: false
-      - text: "EXR coverage audit: compare exr crate direct vs image wrapper (bit depths, compression, layers)"
-        done: false
-      - text: "Add EXR decode/encode parity tests, wire exr crate directly, write COVERAGE.md"
-        done: false
-      - text: "DDS coverage audit: identify supported DDS variants in image crate"
-        done: false
-      - text: "Write native DDS decoder with parity tests, write COVERAGE.md"
-        done: false
-  - phase: "Native encoders with coverage audit"
-    tasks:
-      - text: "ICO coverage audit: supported icon sizes, bit depths, PNG-in-ICO vs BMP-in-ICO"
-        done: false
-      - text: "Write native ICO encoder, parity tests for all variants, COVERAGE.md"
-        done: false
-      - text: "HDR coverage audit: Radiance RGBE format variants"
-        done: false
-      - text: "Write native HDR/Radiance encoder, parity tests, COVERAGE.md"
-        done: false
-  - phase: "Remove image crate"
-    tasks:
-      - text: "Write custom format detection to replace image::guess_format()"
-        done: false
-      - text: "Remove pixels_to_dynamic_image() helper"
-        done: false
-      - text: "Remove image from Cargo.toml entirely"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All decode/encode parity tests pass without image crate"
-        done: false
-      - text: "Measure and document binary size reduction (native + WASM)"
-        done: false
-      - text: "cargo tree confirms image crate fully eliminated"
-        done: false
+- phase: Coverage audit and crate replacements
+  tasks:
+  - text: 'WebP decode coverage audit: compare image-webp direct vs image wrapper, write COVERAGE.md'
+    done: true
+  - text: Add WebP decode parity tests for all variants, wire image-webp directly
+    done: true
+  - text: 'EXR coverage audit: compare exr crate direct vs image wrapper (bit depths, compression, layers)'
+    done: true
+  - text: Add EXR decode/encode parity tests, wire exr crate directly, write COVERAGE.md
+    done: true
+  - text: 'DDS coverage audit: identify supported DDS variants in image crate'
+    done: true
+  - text: Write native DDS decoder with parity tests, write COVERAGE.md
+    done: true
+- phase: Native encoders with coverage audit
+  tasks:
+  - text: 'ICO coverage audit: supported icon sizes, bit depths, PNG-in-ICO vs BMP-in-ICO'
+    done: true
+  - text: Write native ICO encoder, parity tests for all variants, COVERAGE.md
+    done: true
+  - text: 'HDR coverage audit: Radiance RGBE format variants'
+    done: true
+  - text: Write native HDR/Radiance encoder, parity tests, COVERAGE.md
+    done: true
+- phase: Remove image crate
+  tasks:
+  - text: Write custom format detection to replace image::guess_format()
+    done: true
+  - text: Remove pixels_to_dynamic_image() helper
+    done: true
+  - text: Remove image from Cargo.toml entirely
+    done: false
+- phase: Verification
+  tasks:
+  - text: All decode/encode parity tests pass without image crate
+    done: false
+  - text: Measure and document binary size reduction (native + WASM)
+    done: false
+  - text: cargo tree confirms image crate fully eliminated
+    done: false
 extra: {}

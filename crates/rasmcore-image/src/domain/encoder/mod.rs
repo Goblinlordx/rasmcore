@@ -15,10 +15,8 @@ pub mod qoi;
 pub mod tiff;
 pub mod webp;
 
-use image::DynamicImage;
-
 use super::error::ImageError;
-use super::types::{ImageInfo, PixelFormat};
+use super::types::ImageInfo;
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────
 
@@ -163,99 +161,10 @@ pub fn all_format_info() -> Vec<FormatInfo> {
         .collect()
 }
 
-/// Encode a DynamicImage using the image crate's built-in format encoder.
-/// Used for formats that don't need custom config (TGA, HDR, PNM, EXR).
-fn encode_via_image_format(
-    img: &DynamicImage,
-    format: image::ImageFormat,
-) -> Result<Vec<u8>, ImageError> {
-    let mut buf = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut buf);
-    img.write_to(&mut cursor, format)
-        .map_err(|e| ImageError::ProcessingFailed(e.to_string()))?;
-    Ok(buf)
-}
-
-/// Convert raw pixel data to a DynamicImage for encoding.
-pub fn pixels_to_dynamic_image(
-    pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<DynamicImage, ImageError> {
-    match info.format {
-        PixelFormat::Rgb8 => {
-            let img = image::RgbImage::from_raw(info.width, info.height, pixels.to_vec())
-                .ok_or_else(|| {
-                    ImageError::InvalidInput("pixel data size mismatch for RGB8".into())
-                })?;
-            Ok(DynamicImage::ImageRgb8(img))
-        }
-        PixelFormat::Rgba8 => {
-            let img = image::RgbaImage::from_raw(info.width, info.height, pixels.to_vec())
-                .ok_or_else(|| {
-                    ImageError::InvalidInput("pixel data size mismatch for RGBA8".into())
-                })?;
-            Ok(DynamicImage::ImageRgba8(img))
-        }
-        PixelFormat::Gray8 => {
-            let img = image::GrayImage::from_raw(info.width, info.height, pixels.to_vec())
-                .ok_or_else(|| {
-                    ImageError::InvalidInput("pixel data size mismatch for Gray8".into())
-                })?;
-            Ok(DynamicImage::ImageLuma8(img))
-        }
-        PixelFormat::Gray16 => {
-            let u16_pixels: Vec<u16> = pixels
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let img = image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(
-                info.width,
-                info.height,
-                u16_pixels,
-            )
-            .ok_or_else(|| {
-                ImageError::InvalidInput("pixel data size mismatch for Gray16".into())
-            })?;
-            Ok(DynamicImage::ImageLuma16(img))
-        }
-        PixelFormat::Rgb16 => {
-            let u16_pixels: Vec<u16> = pixels
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let img = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(
-                info.width,
-                info.height,
-                u16_pixels,
-            )
-            .ok_or_else(|| ImageError::InvalidInput("pixel data size mismatch for Rgb16".into()))?;
-            Ok(DynamicImage::ImageRgb16(img))
-        }
-        PixelFormat::Rgba16 => {
-            let u16_pixels: Vec<u16> = pixels
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let img = image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
-                info.width,
-                info.height,
-                u16_pixels,
-            )
-            .ok_or_else(|| {
-                ImageError::InvalidInput("pixel data size mismatch for Rgba16".into())
-            })?;
-            Ok(DynamicImage::ImageRgba16(img))
-        }
-        other => Err(ImageError::UnsupportedFormat(format!(
-            "encoding from {other:?} pixel format not supported"
-        ))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::ColorSpace;
+    use crate::domain::types::{ColorSpace, PixelFormat};
 
     fn make_rgb8_pixels(width: u32, height: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(width * height * 3)).map(|i| (i % 256) as u8).collect();

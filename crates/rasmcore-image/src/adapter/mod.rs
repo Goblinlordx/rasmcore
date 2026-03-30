@@ -178,14 +178,13 @@ impl encoder::Guest for Component {
         config: encoder::JpegEncodeConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
-        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
-            .map_err(to_wit_error)?;
         let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
             quality: config.quality.unwrap_or(85),
             progressive: config.progressive.unwrap_or(false),
             turbo: false,
         };
-        domain::encoder::jpeg::encode(&img, &domain_info, &domain_config).map_err(to_wit_error)
+        domain::encoder::jpeg::encode_pixels(&pixels, &domain_info, &domain_config)
+            .map_err(to_wit_error)
     }
 
     fn encode_jpeg_with_icc(
@@ -195,14 +194,12 @@ impl encoder::Guest for Component {
         icc_profile: Vec<u8>,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
-        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
-            .map_err(to_wit_error)?;
         let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
             quality: config.quality.unwrap_or(85),
             progressive: config.progressive.unwrap_or(false),
             turbo: false,
         };
-        let encoded = domain::encoder::jpeg::encode(&img, &domain_info, &domain_config)
+        let encoded = domain::encoder::jpeg::encode_pixels(&pixels, &domain_info, &domain_config)
             .map_err(to_wit_error)?;
         domain::encoder::jpeg::embed_icc_profile(&encoded, &icc_profile).map_err(to_wit_error)
     }
@@ -295,10 +292,12 @@ impl encoder::Guest for Component {
         _config: encoder::IcoEncodeConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
-        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
-            .map_err(to_wit_error)?;
-        domain::encoder::ico::encode(&img, &domain_info, &domain::encoder::ico::IcoEncodeConfig)
-            .map_err(to_wit_error)
+        domain::encoder::ico::encode_pixels(
+            &pixels,
+            &domain_info,
+            &domain::encoder::ico::IcoEncodeConfig,
+        )
+        .map_err(to_wit_error)
     }
 
     fn encode_qoi(
@@ -307,10 +306,7 @@ impl encoder::Guest for Component {
         _config: encoder::QoiEncodeConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
-        let img = domain::encoder::pixels_to_dynamic_image(&pixels, &domain_info)
-            .map_err(to_wit_error)?;
-        domain::encoder::qoi::encode(&img, &domain_info, &domain::encoder::qoi::QoiEncodeConfig)
-            .map_err(to_wit_error)
+        domain::encoder::encode(&pixels, &domain_info, "qoi", None).map_err(to_wit_error)
     }
 
     fn encode_gif(
