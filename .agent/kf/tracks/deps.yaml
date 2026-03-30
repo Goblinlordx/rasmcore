@@ -120,3 +120,6 @@ parity-gap-audit_20260330094610Z: []
 
 # Filter variant groups — no deps
 filter-variant-groups_20260330100630Z: []
+
+# TrueType font rendering — no deps
+truetype-font-rendering_20260330101022Z: []
