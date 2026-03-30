@@ -73,6 +73,8 @@ else
 fi
 
 echo "=== 5. WASM build ==="
+# Generate WIT from filter registrations before WASM build
+node scripts/generate-wit.cjs 2>&1 || true
 if cargo component build -p rasmcore-image 2>&1; then
   echo "  PASS"
 else

@@ -14,8 +14,11 @@ cd "$SCRIPT_DIR"
 npm install --silent 2>/dev/null || true
 cd "$PROJECT_ROOT"
 
-echo "=== 1. Building WASM component (release) ==="
+echo "=== 1a. Generating WIT from filter registrations ==="
 cd "$PROJECT_ROOT"
+node scripts/generate-wit.cjs
+
+echo "=== 1b. Building WASM component (release) ==="
 cargo component build -p rasmcore-image --release
 
 WASM="$PROJECT_ROOT/target/wasm32-wasip1/release/rasmcore_image.wasm"
@@ -26,17 +29,25 @@ fi
 echo "  WASM: $(du -h "$WASM" | cut -f1) at $WASM"
 
 echo "=== 2. Generating browser SDK via jco transpile ==="
-mkdir -p "$SCRIPT_DIR/sdk"
-npx @bytecodealliance/jco transpile "$WASM" -o "$SCRIPT_DIR/sdk/" --name rasmcore-image
+SDK_BUILD_DIR="$PROJECT_ROOT/target/sdk"
+mkdir -p "$SDK_BUILD_DIR"
+npx @bytecodealliance/jco transpile "$WASM" -o "$SDK_BUILD_DIR/" --name rasmcore-image
 
 echo "=== 3. Copying param manifest ==="
-MANIFEST=$(find "$PROJECT_ROOT/target" -name "param-manifest.json" 2>/dev/null | sort | tail -1)
+# Find the WASM release manifest (matches the build we just did)
+MANIFEST="$PROJECT_ROOT/target/wasm32-wasip1/release/build"
+MANIFEST=$(find "$MANIFEST" -name "param-manifest.json" 2>/dev/null | head -1)
 if [ -n "$MANIFEST" ]; then
-    cp "$MANIFEST" "$SCRIPT_DIR/sdk/param-manifest.json"
-    echo "  Copied: param-manifest.json → demo/sdk/"
+    cp "$MANIFEST" "$SDK_BUILD_DIR/param-manifest.json"
+    echo "  Copied: param-manifest.json → target/sdk/"
 else
     echo "  WARNING: param-manifest.json not found"
 fi
+
+echo "=== 3b. Copying SDK to demo ==="
+mkdir -p "$SCRIPT_DIR/sdk"
+cp -r "$SDK_BUILD_DIR/"* "$SCRIPT_DIR/sdk/"
+echo "  Copied: target/sdk/ → demo/sdk/"
 
 echo "=== 4. Generating fluent SDK (rcimage) ==="
 node "$PROJECT_ROOT/scripts/generate-fluent-sdk.cjs"
