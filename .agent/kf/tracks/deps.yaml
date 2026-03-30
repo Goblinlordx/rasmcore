@@ -92,3 +92,14 @@ validate-pro-filters_20260330044600Z: []
 
 # Filter param hints — independent, metadata-only changes
 filter-param-hints_20260330063250Z: []
+
+# Codec & filter expansion — all independent, no deps
+apng-multiframe_20260330071041Z: []
+
+dds-bcn-decode_20260330071042Z: []
+
+distortion-effect-filters_20260330071044Z: []
+
+color-manipulation-filters_20260330071045Z: []
+
+raw-dng-decode_20260330071046Z: []

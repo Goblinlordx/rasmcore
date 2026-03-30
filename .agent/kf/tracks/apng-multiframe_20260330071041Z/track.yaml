@@ -1,0 +1,109 @@
+id: apng-multiframe_20260330071041Z
+title: APNG Decode & Encode — Animated PNG Support
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Wire the png crate's existing APNG support into the decode pipeline and add
+    APNG encode via the apng crate for FrameSequence write. Includes reference
+    parity tests against ImageMagick/ffmpeg for frame count, delay, and pixel accuracy.
+  context: |
+    The project supports animated GIF and multi-page TIFF for multi-frame workflows,
+    but animated PNG (APNG) is missing. APNG is widely used on the web (Discord,
+    browsers, messaging apps) and offers better quality than GIF (full 24-bit color,
+    8-bit alpha). The png crate (0.17+) already includes APNG decode support via
+    next_frame() iteration; it just needs to be wired into the existing multi-frame
+    decoder API (frame_count, decode_frame, decode_all_frames). For encode, the apng
+    crate (0.3) provides APNG write capability.
+  codebase_analysis: |
+    DECODE SIDE:
+    - decoder/mod.rs already has is_png() detection (magic 0x89 PNG)
+    - Multi-frame API exists: frame_count(), decode_frame(), decode_all_frames()
+    - GIF multi-frame decode is the reference pattern (~50 LOC per function)
+    - png::Reader::info().animation_control gives acTL data (frame_count, num_plays)
+    - png::Reader::next_frame() iterates APNG frames with fcTL metadata
+    - fcTL provides: sequence_number, width, height, x_offset, y_offset,
+      delay_num, delay_den, dispose_op, blend_op
+    - DisposalMethod enum already matches APNG's dispose_op values
+    - Need to detect APNG vs static PNG (check acTL chunk presence)
+
+    ENCODE SIDE:
+    - FrameSequence type exists with (DecodedImage, FrameInfo) pairs
+    - encode_sequence() router in encoder/mod.rs dispatches by format
+    - GIF encode_sequence pattern: iterate frames, configure per-frame metadata
+    - apng crate API: Encoder::new() + write_frame() per frame
+    - delay_ms in FrameInfo -> delay_num/delay_den rational conversion
+
+    WASM: Both png and apng crates are pure Rust, WASM-compatible.
+  acceptance_criteria:
+    - APNG detected and decoded via existing decode() for first frame (backward compat)
+    - frame_count() returns correct count for APNG files
+    - decode_frame(index) returns correct frame with delay and disposal metadata
+    - decode_all_frames() returns all frames with per-frame metadata
+    - encode_sequence(seq, "apng", quality) produces valid APNG from FrameSequence
+    - Roundtrip test — decode APNG -> FrameSequence -> encode APNG -> decode -> same frame count and delays
+    - Reference parity test — our decode matches ffmpeg frame extraction (frame count, per-frame dimensions)
+    - Reference parity test — our encode produces APNG decodable by ImageMagick with matching frame count
+    - WIT encoder interface includes encode-apng-sequence function
+    - Existing single-frame PNG decode/encode unchanged (backward compatible)
+    - Three-way codec validation for APNG encode (our_encode->our_decode, our_encode->ref_decode, ref_encode->ref_decode)
+  out_of_scope: |
+    APNG optimization (frame diffing, palette optimization).
+    APNG-specific filters or transforms.
+    Backwards-compatible GIF fallback generation.
+  technical_notes: |
+    APNG detection: After PNG magic check, scan for acTL chunk before IDAT.
+    If acTL present, it's APNG; otherwise static PNG.
+
+    Delay conversion: APNG uses delay_num/delay_den (rational); FrameInfo uses
+    delay_ms (u32). Convert: delay_ms = (delay_num * 1000) / delay_den.
+    Reverse: delay_num = delay_ms, delay_den = 1000.
+
+    Dispose/blend ops: APNG has APNG_DISPOSE_OP_NONE/BACKGROUND/PREVIOUS
+    and APNG_BLEND_OP_SOURCE/OVER — map directly to existing DisposalMethod.
+
+    Encode approach:
+    1. Add apng = "0.3" to workspace deps
+    2. Create encoder/apng.rs with encode_sequence(seq, config) -> Result<Vec<u8>>
+    3. Add "apng" arm to encode_sequence() router
+    4. Add WIT function encode-apng-sequence
+
+    Reference validation:
+    - Decode parity: ffmpeg -i test.apng -vsync 0 frame_%03d.png — compare frame count and dimensions
+    - Encode parity: our APNG -> identify -verbose (ImageMagick) -> verify frame count and delays
+plan:
+  - phase: APNG Decode
+    tasks:
+      - text: Add APNG detection (acTL chunk scan) to distinguish animated PNG from static
+        done: false
+      - text: Implement apng_frame_count() using png crate animation_control
+        done: false
+      - text: Implement apng_decode_frame(index) with fcTL metadata mapping to FrameInfo
+        done: false
+      - text: Implement apng_decode_all_frames() iterating all APNG frames
+        done: false
+      - text: Test roundtrip — create 3-frame APNG fixture, decode, verify frame count/delays/pixels
+        done: false
+  - phase: APNG Encode
+    tasks:
+      - text: Add apng crate dependency and create encoder/apng.rs with encode_sequence()
+        done: false
+      - text: Add "apng" arm to encode_sequence() router in encoder/mod.rs
+        done: false
+      - text: Test roundtrip — decode APNG -> encode APNG -> decode -> verify frame count and delays
+        done: false
+  - phase: Reference Parity & Validation
+    tasks:
+      - text: Three-way codec validation — our_encode->our_decode, our_encode->ref_decode, ref_encode->ref_decode
+        done: false
+      - text: Reference decode parity test — compare frame count and dimensions vs ffmpeg extraction
+        done: false
+  - phase: WIT & Verification
+    tasks:
+      - text: Add encode-apng-sequence to encoder.wit and wire adapter
+        done: false
+      - text: Backward compat — existing static PNG decode/encode unchanged, cargo test passes
+        done: false
+extra: {}

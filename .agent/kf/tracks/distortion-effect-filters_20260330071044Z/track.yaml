@@ -1,0 +1,132 @@
+id: distortion-effect-filters_20260330071044Z
+title: Distortion & Artistic Effect Filters — Pixelate, Halftone, Swirl, Spherize, Barrel
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Add 5 missing effect/distortion filters with SIMD (WASM SIMD128), registration
+    via register_filter macro, and ImageMagick reference parity tests. Fills the
+    biggest gap in the effects and geometric distortion categories.
+  context: |
+    The filter library has 87 registered filters covering most categories, but
+    effects and geometric distortions have notable gaps. Pixelate/mosaic is the
+    most commonly requested missing effect. Halftone is essential for print/design
+    workflows. Swirl, spherize, and barrel distortion are standard artistic
+    distortion effects present in ImageMagick, Photoshop, and GIMP. The existing
+    undistort filter corrects lens distortion but does not introduce it.
+  codebase_analysis: |
+    FILTER REGISTRATION PATTERN:
+    - #[rasmcore_macros::register_filter(name = "...", category = "...")]
+    - ConfigParams struct with #[derive(rasmcore_macros::ConfigParams)]
+    - Implementation in crates/rasmcore-image/src/domain/filters.rs
+    - Re-exported via crate wrappers (rasmcore-filter-advanced, etc.)
+
+    EXISTING DISTORTION INFRASTRUCTURE:
+    - perspective_warp: 3x3 homography with bilinear interpolation (filters.rs)
+    - undistort: OpenCV K1/K2 lens correction (transform.rs)
+    - displacement_map: arbitrary warp via displacement texture (filters.rs)
+    - All use bilinear interpolation for sub-pixel sampling
+
+    SIMD PATTERN:
+    - WASM SIMD128 via std::arch::wasm32::* (see grayscale, retinex_ssr)
+    - Point ops auto-vectorize via LLVM
+    - For pixel sampling: batch 4 pixels per SIMD lane where possible
+    - Scalar fallback for remainder pixels
+
+    PARITY TEST PATTERN:
+    - reference_audit.rs: check_parity_rgb() helper
+    - Invokes ImageMagick convert with specific args
+    - Computes MAE between our output and IM output
+    - Tiers: EXACT (<0.01), CLOSE (<2.0), ALGORITHM (<5.0-15.0)
+
+    TARGET CRATE: crates/rasmcore-filter-advanced (re-exports from domain)
+  acceptance_criteria:
+    - pixelate filter registered with block_size param, produces mosaic effect matching IM -scale down then up
+    - halftone filter registered with dot_size and angle params, produces CMYK dot screen pattern
+    - swirl filter registered with angle and radius params, matches IM -swirl within ALGORITHM tier
+    - spherize filter registered with amount param, produces fisheye/barrel bulge effect
+    - barrel filter registered with k1/k2 params, introduces barrel/pincushion distortion (inverse of undistort)
+    - All 5 filters use WASM SIMD128 for inner loops with scalar fallback
+    - All 5 have #[register_filter] + ConfigParams with proper param hints
+    - ImageMagick reference parity test for each filter with documented MAE threshold
+    - All 5 re-exported via rasmcore-filter-advanced crate
+    - cargo test passes, param-manifest.json includes all 5 new filters
+  out_of_scope: |
+    GPU-accelerated distortion. Mesh/grid warp deformation.
+    Animated distortion (time-varying parameters).
+    Tilt-shift blur effect (separate concern).
+  technical_notes: |
+    PIXELATE:
+    - Divide image into block_size x block_size blocks
+    - Average color per block, fill all pixels in block with average
+    - SIMD: vectorize the averaging loop (sum 4 channels simultaneously)
+    - IM equivalent: -scale {1/block}% -scale {block*100}%
+
+    HALFTONE:
+    - Convert to CMYK, generate rotated dot screens per channel
+    - Each channel: threshold against sine-wave grid at channel-specific angle
+    - Standard angles: C=15, M=75, Y=0, K=45 degrees
+    - dot_size controls screen frequency (LPI equivalent)
+    - IM equivalent: complex pipeline with -ordered-dither
+
+    SWIRL:
+    - For each output pixel (x,y), compute polar coords from center
+    - Rotate angle = swirl_angle * (1 - r/radius) for r < radius
+    - Sample source at rotated coords with bilinear interpolation
+    - SIMD: batch 4 pixel coordinate transforms
+    - IM equivalent: -swirl {degrees}
+
+    SPHERIZE:
+    - For each output pixel, compute normalized distance from center
+    - Apply spherical projection: new_r = r^2 / radius (for bulge)
+    - Or new_r = sqrt(r * radius) (for pinch)
+    - amount param: positive = bulge, negative = pinch
+    - Bilinear interpolation for sub-pixel sampling
+
+    BARREL:
+    - Apply radial distortion: r_distorted = r * (1 + k1*r^2 + k2*r^4)
+    - k1 > 0: barrel distortion; k1 < 0: pincushion
+    - Inverse of the existing undistort correction
+    - IM equivalent: -distort Barrel "k1 k2 0 1"
+plan:
+  - phase: Pixelate & Halftone
+    tasks:
+      - text: Implement pixelate filter with block averaging, SIMD inner loop, register with ConfigParams
+        done: false
+      - text: Test pixelate — verify block boundaries, edge cases (non-divisible dimensions)
+        done: false
+      - text: Implement halftone filter with CMYK dot screens at standard angles, register with ConfigParams
+        done: false
+      - text: Test halftone — verify output is binary per-channel, correct screen angles
+        done: false
+  - phase: Geometric Distortions
+    tasks:
+      - text: Implement swirl filter with polar coordinate rotation, bilinear sampling, SIMD batch
+        done: false
+      - text: Test swirl — identity at angle=0, verify center stays fixed, edge pixels unaffected beyond radius
+        done: false
+      - text: Implement spherize filter with spherical projection, amount param for bulge/pinch
+        done: false
+      - text: Implement barrel distortion filter with k1/k2 radial polynomial, inverse of undistort
+        done: false
+      - text: Test spherize and barrel — identity at amount=0/k1=0, verify center preservation
+        done: false
+  - phase: Reference Parity
+    tasks:
+      - text: IM parity test for pixelate via -scale down/up, assert MAE within EXACT tier
+        done: false
+      - text: IM parity test for swirl via -swirl, assert MAE within ALGORITHM tier
+        done: false
+      - text: IM parity test for barrel via -distort Barrel, assert MAE within ALGORITHM tier
+        done: false
+  - phase: Registration & Verification
+    tasks:
+      - text: Re-export all 5 filters via rasmcore-filter-advanced crate
+        done: false
+      - text: Verify all 5 appear in param-manifest.json after build
+        done: false
+      - text: Full cargo test pass including new and existing tests
+        done: false
+extra: {}

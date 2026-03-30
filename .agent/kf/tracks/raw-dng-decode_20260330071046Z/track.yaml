@@ -1,0 +1,146 @@
+id: raw-dng-decode_20260330071046Z
+title: DNG RAW Image Decode — Pure Rust Minimal MVP
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Pure Rust DNG decoder in a new rasmcore-raw crate. Handles TIFF/IFD container
+    parsing, Bayer CFA demosaicing, and DNG color matrix application. DNG-only
+    scope (CR2/NEF/ARW deferred). WASM-safe, zero C dependencies. Includes
+    reference parity tests against dcraw/LibRaw.
+  context: |
+    RAW image decode is missing entirely from the codec lineup. DNG (Digital
+    Negative) is Adobe's open RAW format specification based on TIFF/EP. It's
+    the interchange format for RAW workflows — many cameras support it natively,
+    and Adobe DNG Converter can convert any proprietary RAW format to DNG.
+    Starting with DNG gives maximum coverage with a single, well-documented
+    format. The tiff crate already handles TIFF/IFD parsing, and the project
+    has YUV/color matrix infrastructure in rasmcore-color.
+  codebase_analysis: |
+    TIFF INFRASTRUCTURE:
+    - tiff crate (0.11) already in workspace for TIFF encode/decode
+    - TIFF IFD tag reading infrastructure exists in decoder/mod.rs
+    - DNG is TIFF-based: uses standard IFD tags + DNG-specific tags
+    - Can reuse tiff crate's Reader for IFD navigation
+
+    DNG-SPECIFIC TAGS (not in standard TIFF):
+    - Tag 50706: DNGVersion (must be [1,x,x,x])
+    - Tag 33421: CFARepeatPatternDim (typically [2,2] for Bayer)
+    - Tag 33422: CFAPattern (e.g., [0,1,1,2] = RGGB)
+    - Tag 50721: ColorMatrix1 (3x3 XYZ-to-camera matrix)
+    - Tag 50722: ColorMatrix2 (second illuminant matrix)
+    - Tag 50727: AsShotNeutral (white balance multipliers)
+    - Tag 50708: UniqueCameraModel
+
+    COLOR INFRASTRUCTURE:
+    - rasmcore-color has ycbcr_to_rgb, color matrices (BT.601/709/2020)
+    - DNG uses XYZ color space; need XYZ-to-sRGB matrix multiplication
+    - XYZ-to-sRGB is a well-known 3x3 matrix (IEC 61966-2-1)
+
+    DECODER PATTERN:
+    - Add to SUPPORTED_FORMATS, detect via DNG magic (TIFF header + DNGVersion tag)
+    - decode_dng() returns DecodedImage with RGB8 or RGB16
+    - Feature-gated: feature = "raw-dng"
+
+    WASM: All pure Rust, no C deps. tiff crate is WASM-compatible.
+    The new rasmcore-raw crate follows rasmcore-fits pattern (zero external deps).
+  acceptance_criteria:
+    - DNG files detected via TIFF header + DNGVersion IFD tag
+    - Bayer CFA pattern (RGGB, BGGR, GRBG, GBRG) correctly parsed from CFAPattern tag
+    - Demosaicing produces full RGB image from CFA sensor data (bilinear or Malvar-He-Cutler)
+    - ColorMatrix1 applied to convert camera color space to XYZ, then XYZ to sRGB
+    - AsShotNeutral white balance multipliers applied correctly
+    - 8-bit and 16-bit sensor data supported (BitsPerSample 8/12/14/16)
+    - Uncompressed and lossless JPEG compressed DNG supported
+    - Reference parity test — our decode vs dcraw -T output, MAE < 5.0 for same DNG input
+    - Reference parity test — our decode vs LibRaw (via rawpy) output, MAE < 5.0
+    - Three-way validation — our_decode(dng) vs dcraw_decode(dng) vs libraw_decode(dng)
+    - detect_format returns "dng" for DNG files, "tiff" for non-DNG TIFF
+    - Existing TIFF decode unchanged (backward compatible)
+  out_of_scope: |
+    Proprietary RAW formats (CR2, NEF, ARW, ORF, RW2) — future tracks.
+    Lossy JPEG DNG compression (baseline JPEG in DNG — less common).
+    DNG opcodes (WarpRectilinear, GainMap, etc.).
+    DNG profiles (.dcp files). Lens correction from DNG metadata.
+    HDR DNG / floating-point DNG. DNG encoding (write).
+    Thumbnail/preview extraction from DNG.
+  technical_notes: |
+    CRATE STRUCTURE:
+    - Create crates/rasmcore-raw/src/lib.rs
+    - Modules: dng.rs (container), demosaic.rs (CFA interpolation), color.rs (matrices)
+    - Zero external deps beyond tiff crate for IFD parsing
+
+    DNG DECODE PIPELINE:
+    1. Open TIFF, navigate to main IFD (SubIFD with NewSubFileType=0)
+    2. Read CFAPattern tag -> determine Bayer layout (RGGB/BGGR/GRBG/GBRG)
+    3. Read raw sensor data (StripOffsets/StripByteCounts or TileOffsets)
+    4. Demosaic: Bayer interpolation (bilinear for MVP, Malvar-He-Cutler for quality)
+    5. Read ColorMatrix1 (3x3, maps XYZ D65 to camera space)
+    6. Compute inverse: camera-to-XYZ matrix
+    7. Read AsShotNeutral -> compute white balance multipliers
+    8. Apply: raw -> white_balance -> camera_to_xyz -> xyz_to_srgb -> gamma -> RGB8/16
+    9. Apply sRGB gamma curve (linear to sRGB transfer function)
+
+    DEMOSAICING (Bayer CFA):
+    - Bilinear MVP: for each pixel, average neighboring pixels of same color
+    - Green channel: average 4 neighbors (cross pattern)
+    - Red/Blue: average 2 or 4 neighbors depending on position
+    - SIMD: vectorize row processing (4 pixels per SIMD lane)
+    - Future: Malvar-He-Cutler (5x5 gradient-corrected, better edge preservation)
+
+    COLOR MATRIX:
+    - DNG ColorMatrix1 is XYZ_to_camera (3x3)
+    - Invert to get camera_to_XYZ
+    - XYZ_to_sRGB: standard IEC 61966-2-1 matrix
+    - Combined: camera_rgb -> XYZ -> sRGB (two 3x3 multiplications, or pre-multiply)
+
+    REFERENCE VALIDATION:
+    - dcraw: dcraw -T -4 -o 1 input.dng -> 16-bit TIFF in sRGB
+    - rawpy: rawpy.imread(dng).postprocess(output_color=rawpy.ColorSpace.sRGB)
+    - Compare our RGB output vs reference, MAE < 5.0 (demosaic algorithms differ)
+plan:
+  - phase: Crate Scaffold & DNG Parsing
+    tasks:
+      - text: Create rasmcore-raw crate with dng, demosaic, color modules
+        done: false
+      - text: Implement DNG detection (TIFF header + DNGVersion tag check)
+        done: false
+      - text: Parse DNG-specific IFD tags (CFAPattern, ColorMatrix1, AsShotNeutral, BitsPerSample)
+        done: false
+      - text: Extract raw sensor data from StripOffsets or TileOffsets
+        done: false
+  - phase: Demosaicing
+    tasks:
+      - text: Implement bilinear Bayer demosaic for RGGB pattern with SIMD inner loop
+        done: false
+      - text: Support all 4 CFA rotations (RGGB, BGGR, GRBG, GBRG)
+        done: false
+      - text: Test demosaic with synthetic Bayer data (known color patches)
+        done: false
+  - phase: Color Pipeline
+    tasks:
+      - text: Implement white balance application from AsShotNeutral multipliers
+        done: false
+      - text: Implement camera-to-XYZ matrix inversion from ColorMatrix1
+        done: false
+      - text: Implement XYZ-to-sRGB conversion with sRGB gamma curve
+        done: false
+      - text: Test full pipeline with known color matrix values
+        done: false
+  - phase: Integration & Wiring
+    tasks:
+      - text: Wire decode_dng() into decoder/mod.rs dispatch, add "dng" to SUPPORTED_FORMATS
+        done: false
+      - text: Feature-gate behind raw-dng feature flag in rasmcore-image Cargo.toml
+        done: false
+  - phase: Reference Parity & Verification
+    tasks:
+      - text: Reference parity test — our decode vs dcraw -T output for sample DNG, MAE < 5.0
+        done: false
+      - text: Three-way validation — our_decode vs dcraw vs rawpy for same input
+        done: false
+      - text: Backward compat — existing TIFF decode unchanged, cargo test passes
+        done: false
+extra: {}
