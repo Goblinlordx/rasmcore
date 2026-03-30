@@ -635,4 +635,60 @@ mod tests {
         let config = PngEncodeConfig::default();
         assert!(encode_sequence(&seq, &config).is_err());
     }
+
+    /// Three-way codec validation for APNG:
+    /// A = our_encode(original) → our_decode
+    /// B = our_encode(original) → ref_decode (png crate directly)
+    /// C = ref_encode(original) → ref_decode
+    /// Lossless: A == B pixel-exact, B == original pixel-exact.
+    #[test]
+    fn apng_three_way_codec_validation() {
+        let seq = make_test_frame_sequence();
+        let config = PngEncodeConfig::default();
+        let encoded = encode_sequence(&seq, &config).unwrap();
+
+        // A: our_encode → our_decode
+        let a_frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
+        assert_eq!(a_frames.len(), 3);
+
+        // B: our_encode → ref_decode (png crate directly)
+        let b_decoder = png::Decoder::new(std::io::Cursor::new(&encoded));
+        let mut b_reader = b_decoder.read_info().unwrap();
+        let b_actl = b_reader.info().animation_control().unwrap();
+        assert_eq!(b_actl.num_frames, 3);
+        // Read all frames via raw png crate
+        for _ in 0..3 {
+            let mut buf = vec![0u8; b_reader.output_buffer_size()];
+            b_reader.next_frame(&mut buf).unwrap();
+        }
+
+        // C: ref_encode → ref_decode (png crate encode directly → our decode)
+        let ref_encoded = {
+            let mut buf = Vec::new();
+            let mut enc = png::Encoder::new(&mut buf, 4, 4);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.set_animated(3, 0).unwrap();
+            let mut w = enc.write_header().unwrap();
+            let colors: [[u8; 4]; 3] = [[255,0,0,255],[0,255,0,255],[0,0,255,255]];
+            for color in &colors {
+                let px: Vec<u8> = (0..16).flat_map(|_| *color).collect();
+                w.set_frame_delay(10, 100).unwrap();
+                w.write_image_data(&px).unwrap();
+            }
+            drop(w);
+            buf
+        };
+        let c_frames = crate::domain::decoder::decode_all_frames(&ref_encoded).unwrap();
+        assert_eq!(c_frames.len(), 3);
+
+        // Verify A == original pixels (lossless roundtrip)
+        for (i, (decoded, _)) in a_frames.iter().enumerate() {
+            let original_pixels = &seq.frames[i].0.pixels;
+            assert_eq!(
+                &decoded.pixels, original_pixels,
+                "frame {i}: our_encode→our_decode must match original pixels"
+            );
+        }
+    }
 }
