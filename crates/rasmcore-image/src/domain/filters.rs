@@ -13868,20 +13868,6 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
     let sigma = (radius as f64 - 0.5).max(0.5);
     let blurred_f32 = gaussian_blur_f32(pixels, w, h, ch, radius as usize, sigma);
 
-    // Step 2: Precompute per-pixel luma from f32 blurred data (BT.709, IM's coefficients)
-    let luma: Vec<f64> = (0..w * h)
-        .map(|i| {
-            let off = i * ch;
-            if ch >= 3 {
-                0.212656 * blurred_f32[off] as f64
-                    + 0.715158 * blurred_f32[off + 1] as f64
-                    + 0.072186 * blurred_f32[off + 2] as f64
-            } else {
-                blurred_f32[off] as f64
-            }
-        })
-        .collect();
-
     let mut out = vec![0u8; pixels.len()];
     let wi = w as i32;
     let hi = h as i32;
@@ -13901,28 +13887,46 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
             let mut best_cy = y as f64;
 
             for &(qx, qy) in &quadrants {
-                // IM: GetCacheViewVirtualPixels handles OOB via edge-clamp
-                // We iterate over the full quadrant, clamping coords to image bounds
-                // Two-pass: first compute mean, then variance (matches IM's exact loop)
-                let mut mean_luma = 0.0f64;
-                let mut n = 0u32;
+                // IM computes per-channel mean first, then derives mean_luma from
+                // the channel means (GetMeanLuma). This differs from computing luma
+                // per-pixel then averaging, due to floating-point ordering.
+                let n = (width * width) as f64;
+                let mut mean_ch = [0.0f64; 4]; // max channels
                 for ky in 0..width {
                     let sy = (qy + ky).clamp(0, hi - 1) as usize;
                     for kx in 0..width {
                         let sx = (qx + kx).clamp(0, wi - 1) as usize;
-                        mean_luma += luma[sy * w + sx];
-                        n += 1;
+                        let off = (sy * w + sx) * ch;
+                        for c in 0..ch {
+                            mean_ch[c] += blurred_f32[off + c] as f64;
+                        }
                     }
                 }
-                mean_luma /= n as f64;
+                for c in 0..ch {
+                    mean_ch[c] /= n;
+                }
+                // IM: GetMeanLuma — luma from channel means
+                let mean_luma = if ch >= 3 {
+                    0.212656 * mean_ch[0] + 0.715158 * mean_ch[1] + 0.072186 * mean_ch[2]
+                } else {
+                    mean_ch[0]
+                };
 
-                // IM: variance = sum((pixel_luma - mean_luma)²)
+                // IM: variance = sum((GetPixelLuma(k) - GetMeanLuma(mean))²)
                 let mut variance = 0.0f64;
                 for ky in 0..width {
                     let sy = (qy + ky).clamp(0, hi - 1) as usize;
                     for kx in 0..width {
                         let sx = (qx + kx).clamp(0, wi - 1) as usize;
-                        let d = luma[sy * w + sx] - mean_luma;
+                        let off = (sy * w + sx) * ch;
+                        let pixel_luma = if ch >= 3 {
+                            0.212656 * blurred_f32[off] as f64
+                                + 0.715158 * blurred_f32[off + 1] as f64
+                                + 0.072186 * blurred_f32[off + 2] as f64
+                        } else {
+                            blurred_f32[off] as f64
+                        };
+                        let d = pixel_luma - mean_luma;
                         variance += d * d;
                     }
                 }

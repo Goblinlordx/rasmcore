@@ -1516,9 +1516,10 @@ fn close_gradient_map_bw() {
 #[test]
 fn algorithm_kuwahara() {
     // IM -kuwahara: KernelRank=3 Gaussian pre-blur in Q16-HDRI (float) precision,
-    // luma-variance quadrant selection (BT.709), center-pixel bilinear output.
-    // Our implementation matches IM's full Q16-HDRI pipeline. Residual MAE from
-    // IM morphology engine edge handling vs our edge-clamp at image borders.
+    // per-channel mean → luma(mean) for variance, center-pixel bilinear output.
+    // Interior pixels are bit-exact. Residual MAE only from edge border pixels
+    // where IM morphology virtual pixel handling differs from our edge-clamp.
+    // MAE ∝ edge_fraction ∝ 1/image_size — scales down with larger images.
     if let Some(error) = check_parity_rgb(
         256,
         256,
@@ -1527,8 +1528,8 @@ fn algorithm_kuwahara() {
         "kuwahara_3",
     ) {
         assert!(
-            error < 1.0,
-            "kuwahara MAE = {error:.4} (expected < 1.0, CLOSE tier)"
+            error < 0.5,
+            "kuwahara MAE = {error:.4} (expected < 0.5, interior bit-exact)"
         );
     }
 }
