@@ -1,0 +1,118 @@
+id: codegen-generators-compositors-mappers_20260330132607Z
+title: "Auto-generate Generator, Compositor, and Mapper Node Types"
+type: feature
+status: pending
+created: "2026-03-30"
+updated: "2026-03-30"
+spec:
+  summary: |
+    Add #[register_generator], #[register_compositor], and #[register_mapper]
+    macros with full codegen: WIT declarations, pipeline nodes, adapter methods,
+    and manifest entries — matching the existing #[register_filter] pipeline.
+  context: |
+    Filters are fully generated (115 typed nodes + WIT + adapter). Three other
+    node types remain hand-written: generators (6 source nodes that create
+    images from config), compositors (composite, blend, mask_apply, blend_if
+    — multi-input nodes), and mappers (grayscale, flatten, add_alpha,
+    remove_alpha — format-changing ops). Each needs its own registration macro,
+    codegen in build.rs, and WIT generation in generate-wit.cjs.
+  codebase_analysis: |
+    GENERATORS (sources — no pixel input):
+    - perlin_noise(width, height, seed, scale, octaves) -> Vec<u8>
+    - simplex_noise(width, height, seed, scale, octaves) -> Vec<u8>
+    - gradient_linear(width, height, color1_r..., color2_r..., angle) -> Vec<u8>
+    - gradient_radial(width, height, color1_r..., color2_r..., cx, cy) -> Vec<u8>
+    - checkerboard(width, height, size, color1_r..., color2_r...) -> Vec<u8>
+    - plasma(width, height, seed, scale, turbulence) -> Vec<u8>
+    Pattern: (config) -> (pixels, info) — source node in pipeline graph
+
+    COMPOSITORS (multi-input):
+    - composite(fg, fg_info, bg, bg_info, x, y) -> Vec<u8>
+    - blend(fg, fg_info, bg, bg_info, mode) -> Vec<u8>
+    - mask_apply(pixels, info, mask_data, mask_width, mask_height, invert) -> Vec<u8>
+    - blend_if(pixels, info, ...) -> Vec<u8>
+    Pattern: (image_a, image_b, config) -> image — merge node
+
+    MAPPERS (format changers):
+    - grayscale(pixels, info) -> DecodedImage (changes format to Gray8)
+    - flatten(pixels, info, bg_r, bg_g, bg_b) -> (Vec<u8>, ImageInfo)
+    - add_alpha(pixels, info, alpha) -> (Vec<u8>, ImageInfo)
+    - remove_alpha(pixels, info) -> (Vec<u8>, ImageInfo)
+    Pattern: (image, config) -> (image, new_info) — output info differs from input
+
+    BUILD INFRASTRUCTURE:
+    - build.rs: parse_registered_filters() generates adapter + nodes + manifest
+    - generate-wit.cjs: generates filters.wit + pipeline.wit from templates
+    - rasmcore-macros/src/lib.rs: #[register_filter] proc macro
+  acceptance_criteria:
+    - "#[register_generator] macro in rasmcore-macros, parsed by build.rs + generate-wit.cjs"
+    - All 6 generators registered and auto-generating WIT + pipeline source nodes
+    - "#[register_compositor] macro, parsed by build.rs + generate-wit.cjs"
+    - All 4 compositors registered and auto-generating WIT + pipeline merge nodes
+    - "#[register_mapper] macro, parsed by build.rs + generate-wit.cjs"
+    - All 4 mappers registered with output_format field, generating correct info()
+    - param-manifest.json includes generators, compositors, and mappers
+    - "pipeline_grayscale_chain test passes (currently #[ignore])"
+    - WASM component build passes with all node types
+  out_of_scope: |
+    Encoder registration (separate track). New filter implementations.
+    Config struct refactor (separate track).
+  technical_notes: |
+    Generator WIT pattern:
+      generate-perlin-noise: func(config: perlin-noise-config) -> result<tuple<buffer, image-info>, error>;
+    Pipeline: GeneratorNode has no upstream, info() returns configured dimensions.
+
+    Compositor WIT pattern:
+      composite: func(fg: node-id, bg: node-id, config: composite-config) -> result<node-id, error>;
+    Pipeline: CompositorNode has TWO upstream node IDs.
+
+    Mapper WIT pattern (same as filter but output info changes):
+      grayscale: func(source: node-id) -> result<node-id, error>;
+    Pipeline: MapperNode.info() returns the TRANSFORMED format (e.g., Gray8).
+    Use output_format field in registration to specify the change.
+plan:
+  - phase: Macro + Parsing Infrastructure
+    tasks:
+      - text: "Add #[register_generator] proc macro (rasmcore-macros)"
+        done: false
+      - text: "Add #[register_compositor] proc macro (rasmcore-macros)"
+        done: false
+      - text: "Add #[register_mapper] proc macro with output_format field"
+        done: false
+      - text: Update build.rs to parse all 3 new macro types
+        done: false
+      - text: Update generate-wit.cjs to emit WIT for generators, compositors, mappers
+        done: false
+  - phase: Generator Nodes
+    tasks:
+      - text: "Annotate 6 generators with #[register_generator]"
+        done: false
+      - text: build.rs generates GeneratorNode structs (no upstream, config only)
+        done: false
+      - text: build.rs generates pipeline adapter source methods
+        done: false
+  - phase: Compositor Nodes
+    tasks:
+      - text: "Annotate 4 compositors with #[register_compositor]"
+        done: false
+      - text: build.rs generates CompositorNode structs (two upstream IDs)
+        done: false
+      - text: build.rs generates pipeline adapter merge methods
+        done: false
+  - phase: Mapper Nodes
+    tasks:
+      - text: "Annotate 4 mappers with #[register_mapper]"
+        done: false
+      - text: build.rs generates MapperNode structs with output_format in info()
+        done: false
+      - text: "Un-ignore pipeline_grayscale_chain test, verify it passes"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "param-manifest.json includes all node types"
+        done: false
+      - text: WASM component build passes
+        done: false
+      - text: Full cargo test pass
+        done: false
+extra: {}

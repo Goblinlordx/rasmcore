@@ -1,0 +1,8 @@
+title: Refactor Filters to Use Config Structs as Parameters
+status: pending
+type: refactor
+approved: false
+created: '2026-03-30'
+updated: '2026-03-30'
+deps:
+- codegen-generators-compositors-mappers_20260330132607Z

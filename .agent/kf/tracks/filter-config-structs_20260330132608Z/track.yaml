@@ -1,0 +1,103 @@
+id: filter-config-structs_20260330132608Z
+title: "Refactor Filters to Use Config Structs as Parameters"
+type: refactor
+status: pending
+created: "2026-03-30"
+updated: "2026-03-30"
+spec:
+  summary: |
+    Refactor all 115 registered filter functions to take a single typed config
+    struct instead of individual scalar parameters. The config struct becomes
+    the single source of truth: function parameter, WIT record, pipeline node
+    state, and SDK type.
+  context: |
+    Currently filters take individual params: blur(pixels, info, radius).
+    78 ConfigParams structs already exist for manifest generation but aren't
+    used as actual function parameters. This refactor makes the config struct
+    the actual API: blur(pixels, info, config: BlurConfig). This gives us:
+    - Strongly typed config in Rust, WIT, and SDK
+    - Single struct stored in pipeline node (no N separate fields)
+    - Config struct IS the WIT record (1:1 mapping)
+    - Cleaner separation: standard API (pixels, info) + filter-owned config
+  codebase_analysis: |
+    CURRENT STATE:
+    - 115 registered filters with individual scalar params
+    - 78 ConfigParams structs in filters.rs (derive macro generates param metadata)
+    - build.rs generates adapter/nodes from function signature params
+    - generate-wit.cjs generates individual WIT params from Rust types
+
+    TARGET STATE:
+    - Each filter: fn filter(pixels, info, config: FilterConfig) -> Result<Vec<u8>>
+    - FilterConfig: #[derive(ConfigParams, Clone)] with all params as fields
+    - WIT: record filter-config { field1: type, ... }
+    - Pipeline node: struct FilterNode { upstream, source_info, config: FilterConfig }
+    - build.rs generates WIT records + adapter conversion automatically
+
+    MIGRATION APPROACH:
+    - Start with the 78 filters that already have ConfigParams structs
+    - Create ConfigParams for the remaining 37
+    - Change function signatures one batch at a time
+    - Update build.rs codegen to pass config struct instead of individual params
+  acceptance_criteria:
+    - All 115 filter functions take (pixels, info, config) signature
+    - Every filter has a ConfigParams struct
+    - WIT generates record types per filter config
+    - Pipeline nodes store config struct (not individual fields)
+    - Generated adapter converts WIT record to Rust config struct
+    - All existing tests pass (updated for new signatures)
+    - param-manifest.json unchanged (still derived from ConfigParams)
+  out_of_scope: |
+    Generator/compositor/mapper config structs (separate track).
+    New filter implementations. Performance optimization.
+  technical_notes: |
+    BATCH ORDER (minimize breakage):
+    1. Filters that already have ConfigParams (78) — just wire them up
+    2. Simple 1-param filters (create trivial config structs)
+    3. Multi-param filters without ConfigParams (create and wire)
+
+    WIT GENERATION CHANGE:
+    Before: blur: func(pixels: buffer, info: image-info, radius: f32) -> ...
+    After:  record blur-config { radius: f32 }
+            blur: func(pixels: buffer, info: image-info, config: blur-config) -> ...
+
+    ADAPTER CHANGE:
+    Before: fn blur(pixels, info, radius) { domain::filters::blur(&pixels, &di, radius) }
+    After:  fn blur(pixels, info, config) { domain::filters::blur(&pixels, &di, config.into()) }
+plan:
+  - phase: Infrastructure
+    tasks:
+      - text: Update build.rs to detect config struct param and generate WIT record
+        done: false
+      - text: Update generate-wit.cjs to emit WIT record types
+        done: false
+      - text: Update pipeline node generator to store config struct
+        done: false
+  - phase: Batch 1 — Wire Existing ConfigParams (78 filters)
+    tasks:
+      - text: Change function signatures to take config struct for first 20 filters
+        done: false
+      - text: Change function signatures for next 20 filters
+        done: false
+      - text: Change function signatures for next 20 filters
+        done: false
+      - text: Change function signatures for remaining 18 filters
+        done: false
+  - phase: Batch 2 — Create Missing ConfigParams (37 filters)
+    tasks:
+      - text: Create ConfigParams structs for 1-param filters
+        done: false
+      - text: Create ConfigParams structs for multi-param filters
+        done: false
+      - text: Wire all new config structs as function params
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All 115 filters use config struct signature
+        done: false
+      - text: WIT generates record types for all configs
+        done: false
+      - text: Full cargo test pass
+        done: false
+      - text: WASM demo build passes
+        done: false
+extra: {}
