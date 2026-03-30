@@ -287,10 +287,10 @@ fn is_flat(levels: &[[i16; 16]], thresh: i16) -> bool {
 
 /// Check if source 16x16 block has low variance (flat).
 fn is_flat_source_16(src: &[u8; 256]) -> bool {
-    // Simple variance check: if max-min <= threshold, it's flat
-    let min = *src.iter().min().unwrap();
-    let max = *src.iter().max().unwrap();
-    (max - min) <= 20
+    // Sum-of-squares flatness check matching libwebp IsFlatSource16:
+    // flat if sum(x^2) < 16*16*2 = 512
+    let score: u32 = src.iter().map(|&v| (v as u32) * (v as u32)).sum();
+    score < 512
 }
 
 // ─── Cost functions (GetCostLuma16/4/UV) ─────────────────────────────────
@@ -490,6 +490,7 @@ pub fn pick_best_intra4(
     // VP8BitCost(0, 145) = 211: cost of signaling "not I16" in macroblock header
     rd_best.h = 211;
     rdo::set_rd_score(lambdas.lambda_mode, &mut rd_best);
+    rd_best.score += lambdas.i4_penalty; // penalize I4 mode selection (libwebp: rd_best->score += dqm->i4_penalty_)
 
     let mut best_modes = [0u8; 16]; // selected mode per sub-block
     let mut recon_16x16 = [0u8; 256]; // accumulate reconstructed pixels
@@ -867,20 +868,26 @@ pub fn vp8_decimate(
     // Phase 2: Evaluate I4x4 (if it can beat I16)
     // Conservative header budget. libwebp computes this from partition 0 size limit.
     let max_header = 15000;
-    let is_i4 = pick_best_intra4(
-        src_y,
-        above_y_full,
-        left_y,
-        seg_quant,
-        lambdas,
-        cost_table,
-        &mut rd,
-        max_header,
-        top_modes,
-        left_modes,
-        &y_top_nz,
-        &y_left_nz,
-    );
+    // Only evaluate I4 if I16 distortion is above min_disto threshold
+    // libwebp: if (rd->D < (score_t)dqm->min_disto_) return; // skip I4
+    let is_i4 = if rd.d >= lambdas.min_disto as ScoreT {
+        pick_best_intra4(
+            src_y,
+            above_y_full,
+            left_y,
+            seg_quant,
+            lambdas,
+            cost_table,
+            &mut rd,
+            max_header,
+            top_modes,
+            left_modes,
+            &y_top_nz,
+            &y_left_nz,
+        )
+    } else {
+        false // Keep I16, I4 evaluation skipped
+    };
 
     // Phase 3: Evaluate UV
     pick_best_uv(

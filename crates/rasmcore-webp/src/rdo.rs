@@ -669,7 +669,7 @@ pub fn compute_segment_lambdas(qp: u8) -> VP8SegmentLambdas {
     // SNS strength tuning: libwebp default is 50 for method >= 4.
     // Our encoder may need a different value since our RD framework differs slightly.
     // TODO: calibrate once coefficient quality gap is closed
-    let sns_strength = 0i32; // disabled for now — causes quality regression
+    let sns_strength = 50i32; // libwebp default for method >= 4
     let mut tlambda = (sns_strength * q_i4) >> 5;
     check(&mut tlambda);
 
