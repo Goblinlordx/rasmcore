@@ -238,6 +238,8 @@ pub struct PipelineResource {
     graph: RefCell<NodeGraph>,
     /// Metadata operations, keyed by source node ID.
     metadata_ops: RefCell<MetadataOps>,
+    /// Rc handle to frame source for sequence execution.
+    frame_source: RefCell<Option<std::rc::Rc<frame_source::FrameSourceNode>>>,
 }
 
 impl GuestImagePipeline for PipelineResource {
@@ -245,6 +247,7 @@ impl GuestImagePipeline for PipelineResource {
         Self {
             graph: RefCell::new(NodeGraph::new(16 * 1024 * 1024)), // 16MB cache budget
             metadata_ops: RefCell::new(MetadataOps::default()),
+            frame_source: RefCell::new(None),
         }
     }
 
@@ -264,7 +267,9 @@ impl GuestImagePipeline for PipelineResource {
         let domain_sel = to_domain_frame_selection(selection);
         let node =
             frame_source::FrameSourceNode::new(data, domain_sel).map_err(to_wit_error)?;
-        let id = self.graph.borrow_mut().add_node(Box::new(node));
+        let (id, rc) = self.graph.borrow_mut().add_frame_source(node);
+        // Store the Rc handle for later use by execute_sequence
+        *self.frame_source.borrow_mut() = Some(rc);
         Ok(id)
     }
 
@@ -687,13 +692,19 @@ impl GuestImagePipeline for PipelineResource {
 
     fn execute_sequence(
         &self,
-        source: NodeId,
+        _source: NodeId,
         output: NodeId,
     ) -> Result<u32, RasmcoreError> {
+        let frame_src = self.frame_source.borrow();
+        let rc = frame_src.as_ref().ok_or_else(|| {
+            RasmcoreError::InvalidInput(
+                "no frame source: call read_frames() before execute_sequence()".into(),
+            )
+        })?;
         let seq = self
             .graph
             .borrow_mut()
-            .execute_sequence(source, output)
+            .execute_sequence(rc, output)
             .map_err(to_wit_error)?;
         let count = seq.len() as u32;
         // Store the sequence for later retrieval by multi-frame encode (track 2)

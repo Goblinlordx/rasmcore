@@ -1,5 +1,7 @@
 //! Node graph — holds all nodes and dispatches region requests.
 
+use std::rc::Rc;
+
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
 use crate::domain::types::{DecodedImage, FrameSequence, ImageInfo};
@@ -18,19 +20,8 @@ pub enum AccessPattern {
     GlobalTwoPass,
 }
 
-/// Blanket downcast support for pipeline nodes.
-pub trait AsAny {
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
-impl<T: 'static> AsAny for T {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 /// The core trait every pipeline node implements.
-pub trait ImageNode: AsAny {
+pub trait ImageNode {
     /// Image dimensions and format (available without computing pixels).
     fn info(&self) -> ImageInfo;
 
@@ -47,6 +38,30 @@ pub trait ImageNode: AsAny {
 
     /// Access pattern hint.
     fn access_pattern(&self) -> AccessPattern;
+}
+
+/// Rc wrapper around FrameSourceNode that implements ImageNode by delegation.
+/// This allows the graph to own the node while the caller retains an Rc handle
+/// for driving frame iteration in execute_sequence().
+struct FrameSourceRcWrapper(Rc<FrameSourceNode>);
+
+impl ImageNode for FrameSourceRcWrapper {
+    fn info(&self) -> ImageInfo {
+        self.0.info()
+    }
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        self.0.compute_region(request, upstream_fn)
+    }
+    fn overlap(&self) -> Overlap {
+        self.0.overlap()
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        self.0.access_pattern()
+    }
 }
 
 /// Pipeline-owned node graph.
@@ -133,44 +148,32 @@ impl NodeGraph {
         self.nodes.len()
     }
 
+    /// Add a frame source node and return both the node-id and an Rc handle
+    /// for driving frame iteration via `execute_sequence()`.
+    pub fn add_frame_source(&mut self, node: FrameSourceNode) -> (u32, Rc<FrameSourceNode>) {
+        let rc = Rc::new(node);
+        let id = self.nodes.len() as u32;
+        self.nodes.push(Box::new(FrameSourceRcWrapper(rc.clone())));
+        (id, rc)
+    }
+
     /// Execute the pipeline in sequence mode: run the graph once per selected
     /// frame from a FrameSourceNode, collecting results into a FrameSequence.
     ///
-    /// `source_node_id` must point to a FrameSourceNode. `output_node_id` is
-    /// the final node whose output is captured for each frame.
+    /// `frame_source` is the Rc handle returned by `add_frame_source()`.
+    /// `output_node_id` is the final node whose output is captured per frame.
     pub fn execute_sequence(
         &mut self,
-        source_node_id: u32,
+        frame_source: &Rc<FrameSourceNode>,
         output_node_id: u32,
     ) -> Result<FrameSequence, ImageError> {
-        // Get the selected frame indices from the FrameSourceNode.
-        // We need to read them before mutably borrowing for request_region.
-        let (indices, canvas_w, canvas_h) = {
-            let node = self.nodes.get(source_node_id as usize).ok_or_else(|| {
-                ImageError::InvalidParameters(format!("invalid source node id: {source_node_id}"))
-            })?;
-            let frame_src = node
-                .as_any()
-                .downcast_ref::<FrameSourceNode>()
-                .ok_or_else(|| {
-                    ImageError::InvalidParameters(
-                        "source node is not a FrameSourceNode".into(),
-                    )
-                })?;
-            let indices = frame_src.selected_indices();
-            let (cw, ch) = frame_src.canvas_size();
-            (indices, cw, ch)
-        };
-
+        let indices = frame_source.selected_indices();
+        let (canvas_w, canvas_h) = frame_source.canvas_size();
         let mut sequence = FrameSequence::new(canvas_w, canvas_h);
 
         for &frame_idx in &indices {
             // Advance the source to the next frame
-            let frame_info = {
-                let node = &self.nodes[source_node_id as usize];
-                let frame_src = node.as_any().downcast_ref::<FrameSourceNode>().unwrap();
-                frame_src.set_current_frame(frame_idx)?
-            };
+            let frame_info = frame_source.set_current_frame(frame_idx)?;
 
             // Clear cache between frames — cached regions from previous frame are stale
             self.cache = SpatialCache::new(self.cache_budget);
@@ -605,5 +608,122 @@ mod tiled_parity_tests {
             )));
             (g, contrast, w, h, 4)
         });
+    }
+}
+
+#[cfg(test)]
+mod frame_sequence_tests {
+    use super::*;
+    use crate::domain::pipeline::nodes::filters::BrightnessNode;
+    use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
+    use crate::domain::types::*;
+
+    /// Build a 3-frame animated GIF for testing.
+    fn make_animated_gif() -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut encoder = gif::Encoder::new(&mut buf, 4, 4, &[]).unwrap();
+            encoder.set_repeat(gif::Repeat::Infinite).unwrap();
+            let colors: [[u8; 3]; 3] = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
+            for (i, color) in colors.iter().enumerate() {
+                let mut pixels: Vec<u8> = Vec::with_capacity(64);
+                for _ in 0..16 {
+                    pixels.extend_from_slice(&[color[0], color[1], color[2], 255]);
+                }
+                let mut frame = gif::Frame::from_rgba(4, 4, &mut pixels);
+                frame.delay = (i as u16 + 1) * 10;
+                encoder.write_frame(&frame).unwrap();
+            }
+        }
+        buf
+    }
+
+    #[test]
+    fn execute_sequence_all_frames() {
+        let gif = make_animated_gif();
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let node = FrameSourceNode::new(gif, FrameSelection::All).unwrap();
+        let (_src_id, rc) = graph.add_frame_source(node);
+        let seq = graph.execute_sequence(&rc, _src_id).unwrap();
+        assert_eq!(seq.len(), 3);
+        assert_eq!(seq.frames[0].1.delay_ms, 100);
+        assert_eq!(seq.frames[1].1.delay_ms, 200);
+        assert_eq!(seq.frames[2].1.delay_ms, 300);
+    }
+
+    #[test]
+    fn execute_sequence_single_pick() {
+        let gif = make_animated_gif();
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let node = FrameSourceNode::new(gif, FrameSelection::Single(1)).unwrap();
+        let (src_id, rc) = graph.add_frame_source(node);
+        let seq = graph.execute_sequence(&rc, src_id).unwrap();
+        assert_eq!(seq.len(), 1);
+        assert_eq!(seq.frames[0].1.index, 1);
+        // Frame 1 is green
+        assert_eq!(seq.frames[0].0.pixels[0], 0);
+        assert_eq!(seq.frames[0].0.pixels[1], 255);
+        assert_eq!(seq.frames[0].0.pixels[2], 0);
+    }
+
+    #[test]
+    fn execute_sequence_pick_subset() {
+        let gif = make_animated_gif();
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let node = FrameSourceNode::new(gif, FrameSelection::Pick(vec![0, 2])).unwrap();
+        let (src_id, rc) = graph.add_frame_source(node);
+        let seq = graph.execute_sequence(&rc, src_id).unwrap();
+        assert_eq!(seq.len(), 2);
+        assert_eq!(seq.frames[0].1.index, 0); // red
+        assert_eq!(seq.frames[1].1.index, 2); // blue
+    }
+
+    #[test]
+    fn execute_sequence_range() {
+        let gif = make_animated_gif();
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let node = FrameSourceNode::new(gif, FrameSelection::Range(0, 2)).unwrap();
+        let (src_id, rc) = graph.add_frame_source(node);
+        let seq = graph.execute_sequence(&rc, src_id).unwrap();
+        assert_eq!(seq.len(), 2); // frames 0, 1
+    }
+
+    #[test]
+    fn execute_sequence_with_filter() {
+        let gif = make_animated_gif();
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let node = FrameSourceNode::new(gif, FrameSelection::All).unwrap();
+        let (src_id, rc) = graph.add_frame_source(node);
+        let src_info = graph.node_info(src_id).unwrap();
+        let bright = graph.add_node(Box::new(BrightnessNode::new(src_id, src_info, 0.2)));
+
+        let seq = graph.execute_sequence(&rc, bright).unwrap();
+        assert_eq!(seq.len(), 3);
+        // Brightness 0.2 adds ~51 to each channel value
+        // Frame 0 is red (255, 0, 0) -> (255, 51, 51) after brightness
+        assert!(seq.frames[0].0.pixels[1] > 40); // green channel boosted from 0
+    }
+
+    #[test]
+    fn frame_sequence_from_decode() {
+        let gif = make_animated_gif();
+        let seq = FrameSequence::from_decode(&gif).unwrap();
+        assert_eq!(seq.len(), 3);
+        assert_eq!(seq.canvas_width, 4);
+        assert_eq!(seq.canvas_height, 4);
+    }
+
+    #[test]
+    fn backward_compat_single_image_pipeline() {
+        // Existing single-image pipeline still works unchanged
+        use crate::domain::pipeline::nodes::source::SourceNode;
+
+        let gif = make_animated_gif();
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(gif).unwrap()));
+        let info = graph.node_info(src).unwrap();
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = graph.request_region(src, full).unwrap();
+        assert_eq!(pixels.len(), 4 * 4 * 4); // 4x4 RGBA8
     }
 }
