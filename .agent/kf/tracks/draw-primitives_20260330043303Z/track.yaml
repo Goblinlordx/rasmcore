@@ -5,86 +5,117 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Add drawing operations (line, rectangle, circle, filled shapes) and basic
-    text rendering, leveraging tiny_skia already in the dependency tree via resvg.
-  context: |
-    libvips has draw_rect, draw_line, draw_circle, text operations. ImageMagick
+  summary: 'Add drawing operations (line, rectangle, circle, filled shapes) and basic text rendering, leveraging tiny_skia
+    already in the dependency tree via resvg.
+
+    '
+  context: 'libvips has draw_rect, draw_line, draw_circle, text operations. ImageMagick
+
     has extensive drawing and annotation support. rasmcore has zero drawing
+
     capabilities. This is a P2 gap that blocks watermarking, annotation, and
+
     basic graphics overlay workflows.
-  codebase_analysis: |
-    Key finding: tiny_skia is already available as a transitive dependency via
+
+    '
+  codebase_analysis: 'Key finding: tiny_skia is already available as a transitive dependency via
+
     resvg (used for SVG rasterization). tiny_skia provides:
+
     - Pixmap (RGBA8 pixel buffer)
+
     - PathBuilder (line, quad, cubic bezier)
+
     - Paint (solid color, anti-aliasing)
+
     - Stroke (width, cap, join)
+
     - Transform (affine)
+
     - Text via integration with fontdb + rustybuzz (resvg already pulls these)
 
+
     Current SVG decode in decoder/mod.rs uses resvg::tiny_skia::Pixmap internally
+
     and converts to DecodedImage. Same pattern works for drawing.
 
+
     For text: resvg includes fontdb and text layout. Alternative: add fontdue
+
     (pure Rust, 50KB, bitmap font rendering) for simpler API without full SVG
+
     text layout engine.
 
+
     Pixel buffer format: filters work with Vec<u8> in RGB8/RGBA8. Drawing
+
     operations need RGBA8 for anti-aliasing. Convert if needed.
+
+    '
   acceptance_criteria:
-    - draw_line(pixels, info, x1, y1, x2, y2, color, width) works
-    - draw_rect(pixels, info, x, y, w, h, color, width, filled) works
-    - draw_circle(pixels, info, cx, cy, r, color, width, filled) works
-    - draw_text(pixels, info, x, y, text, font_size, color) works with default font
-    - All draw ops support anti-aliasing via tiny_skia
-    - All draw ops registered as filters via #[register_filter]
-    - Draw operations work on RGBA8 buffers (auto-convert if RGB8 input)
-  out_of_scope: |
-    Complex path drawing (bezier curves, arcs) — can be added later.
+  - draw_line(pixels, info, x1, y1, x2, y2, color, width) works
+  - draw_rect(pixels, info, x, y, w, h, color, width, filled) works
+  - draw_circle(pixels, info, cx, cy, r, color, width, filled) works
+  - draw_text(pixels, info, x, y, text, font_size, color) works with default font
+  - All draw ops support anti-aliasing via tiny_skia
+  - All draw ops registered as filters via
+  - Draw operations work on RGBA8 buffers (auto-convert if RGB8 input)
+  out_of_scope: 'Complex path drawing (bezier curves, arcs) — can be added later.
+
     Custom font loading from file — use system/embedded default font.
+
     SVG generation/output. Vector graphics editing.
-  technical_notes: |
-    Architecture: create domain/draw.rs module that:
+
+    '
+  technical_notes: 'Architecture: create domain/draw.rs module that:
+
     1. Wraps tiny_skia::Pixmap around the existing pixel buffer
+
     2. Converts DecodedImage RGBA8 <-> tiny_skia Pixmap (zero-copy if possible)
+
     3. Exposes draw operations as pub fn with simple params
+
     4. Registers each as a filter for WASM/SDK visibility
 
+
     For text rendering, embed a small default font (e.g., DejaVu Sans subset)
+
     as a const byte array, registered with fontdb on first use. This avoids
+
     runtime font discovery which is unavailable in WASM.
+
+    '
 plan:
-  - phase: Foundation
-    tasks:
-      - text: "Create domain/draw.rs module with tiny_skia Pixmap integration"
-        done: false
-      - text: "Implement pixel buffer <-> Pixmap conversion (RGBA8, handle RGB8 auto-convert)"
-        done: false
-  - phase: Shape Drawing
-    tasks:
-      - text: "Implement draw_line with color, width, anti-aliasing"
-        done: false
-      - text: "Implement draw_rect with color, width, filled option"
-        done: false
-      - text: "Implement draw_circle with color, width, filled option"
-        done: false
-      - text: "Register all 3 shape ops as filters with ConfigParams"
-        done: false
-  - phase: Text Rendering
-    tasks:
-      - text: "Embed default font (DejaVu Sans subset or similar, ~50KB)"
-        done: false
-      - text: "Implement draw_text with position, font_size, color via resvg text or fontdue"
-        done: false
-      - text: "Register draw_text as filter with ConfigParams"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "Visual test: draw all primitives on test image, compare rendered output"
-        done: false
-      - text: "Test anti-aliasing quality on diagonal lines and circles"
-        done: false
-      - text: "Verify all 4 draw ops appear in param-manifest.json"
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Create domain/draw.rs module with tiny_skia Pixmap integration
+    done: true
+  - text: Implement pixel buffer <-> Pixmap conversion (RGBA8, handle RGB8 auto-convert)
+    done: true
+- phase: Shape Drawing
+  tasks:
+  - text: Implement draw_line with color, width, anti-aliasing
+    done: true
+  - text: Implement draw_rect with color, width, filled option
+    done: true
+  - text: Implement draw_circle with color, width, filled option
+    done: true
+  - text: Register all 3 shape ops as filters with ConfigParams
+    done: true
+- phase: Text Rendering
+  tasks:
+  - text: Embed default font (DejaVu Sans subset or similar, ~50KB)
+    done: true
+  - text: Implement draw_text with position, font_size, color via resvg text or fontdue
+    done: true
+  - text: Register draw_text as filter with ConfigParams
+    done: true
+- phase: Verification
+  tasks:
+  - text: 'Visual test: draw all primitives on test image, compare rendered output'
+    done: true
+  - text: Test anti-aliasing quality on diagonal lines and circles
+    done: true
+  - text: Verify all 4 draw ops appear in param-manifest.json
+    done: true
 extra: {}
