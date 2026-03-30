@@ -13,3 +13,6 @@ rasmcore-filter-alpha = { path = "../rasmcore-filter-alpha" }
 rasmcore-filter-histogram = { path = "../rasmcore-filter-histogram" }
 rasmcore-filter-enhance = { path = "../rasmcore-filter-enhance" }
 rasmcore-filter-advanced = { path = "../rasmcore-filter-advanced" }
+
+[lints]
+workspace = true

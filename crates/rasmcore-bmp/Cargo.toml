@@ -9,3 +9,6 @@ description = "Pure Rust BMP encoder/decoder — palette, RLE4/RLE8, bitfields"
 rasmcore-bitio = { path = "../rasmcore-bitio" }
 
 [dev-dependencies]
+
+[lints]
+workspace = true

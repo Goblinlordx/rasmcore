@@ -17,3 +17,6 @@ rasmcore-jpeg = { path = "../../crates/rasmcore-jpeg" }
 image = { workspace = true, features = [
     "qoi", "pnm", "bmp", "tga", "jpeg",
 ] }
+
+[lints]
+workspace = true

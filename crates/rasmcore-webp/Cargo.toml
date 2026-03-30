@@ -12,3 +12,6 @@ rasmcore-trellis = { path = "../rasmcore-trellis" }
 [dev-dependencies]
 # For parity testing against reference implementations
 image = { workspace = true, features = ["webp", "png"] }
+
+[lints]
+workspace = true

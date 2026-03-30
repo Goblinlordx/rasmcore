@@ -8,3 +8,6 @@ publish.workspace = true
 rasmcore-macros = { path = "../rasmcore-macros" }
 rasmcore-image = { path = "../rasmcore-image" }
 inventory = "0.3"
+
+[lints]
+workspace = true

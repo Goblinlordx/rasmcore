@@ -7,3 +7,6 @@ description = "Pure Rust deflate/inflate with shared Huffman coding — for PNG,
 
 [dependencies]
 rasmcore-bitio = { path = "../rasmcore-bitio" }
+
+[lints]
+workspace = true

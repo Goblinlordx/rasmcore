@@ -7,3 +7,6 @@ description = "Bit-level reader/writer for codec bitstreams — MSB and LSB orde
 
 [dependencies]
 # No external dependencies — pure Rust, WASM-ready
+
+[lints]
+workspace = true

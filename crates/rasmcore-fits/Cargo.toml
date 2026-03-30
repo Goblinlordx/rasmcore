@@ -9,3 +9,6 @@ description = "Pure Rust FITS (Flexible Image Transport System) codec — astron
 # No external dependencies — implemented from FITS 4.0 standard
 
 [dev-dependencies]
+
+[lints]
+workspace = true

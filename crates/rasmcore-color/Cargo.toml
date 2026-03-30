@@ -7,3 +7,6 @@ description = "Parameterized color space conversion (BT.601, BT.709, BT.2020) â€
 
 [dependencies]
 # No external dependencies â€” all algorithms implemented from spec
+
+[lints]
+workspace = true

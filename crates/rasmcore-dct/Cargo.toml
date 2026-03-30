@@ -9,3 +9,6 @@ description = "Shared integer DCT/DST transforms (4x4 through 32x32) for JPEG, W
 # Zero external dependencies — pure Rust, WASM-ready
 
 [dev-dependencies]
+
+[lints]
+workspace = true

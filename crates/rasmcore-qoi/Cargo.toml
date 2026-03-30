@@ -9,3 +9,6 @@ description = "Pure Rust QOI (Quite OK Image) encoder/decoder — zero dependenc
 # No external dependencies — implemented from spec
 
 [dev-dependencies]
+
+[lints]
+workspace = true

@@ -9,3 +9,6 @@ description = "Codec-agnostic trellis quantization engine (Viterbi DP)"
 # No external dependencies — pure Rust, WASM-compatible
 
 [dev-dependencies]
+
+[lints]
+workspace = true

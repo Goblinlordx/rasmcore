@@ -8,3 +8,6 @@ publish = false
 rasmcore-macros = { path = "../../crates/rasmcore-macros" }
 rasmcore-image = { path = "../../crates/rasmcore-image" }
 inventory = "0.3"
+
+[lints]
+workspace = true

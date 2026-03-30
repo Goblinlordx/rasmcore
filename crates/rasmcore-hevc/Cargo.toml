@@ -17,3 +17,6 @@ test-utils = []
 trace = []
 
 [dev-dependencies]
+
+[lints]
+workspace = true

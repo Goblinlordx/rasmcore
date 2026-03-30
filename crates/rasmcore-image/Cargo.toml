@@ -76,3 +76,6 @@ target.path = "../../wit/image"
 
 [package.metadata.component.target.dependencies]
 "rasmcore:core" = { path = "../../wit/core" }
+
+[lints]
+workspace = true

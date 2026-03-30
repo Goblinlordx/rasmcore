@@ -12,3 +12,6 @@ rasmcore-color = { path = "../rasmcore-color" }
 
 [dev-dependencies]
 image = { workspace = true, features = ["jpeg"] }
+
+[lints]
+workspace = true

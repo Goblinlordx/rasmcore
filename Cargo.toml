@@ -53,5 +53,18 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[workspace.lints.rust]
+unused_imports = "deny"
+unused_variables = "warn"
+dead_code = "warn"
+unused_assignments = "warn"
+unused_mut = "warn"
+
+[workspace.lints.clippy]
+needless_range_loop = "warn"
+unnecessary_cast = "warn"
+redundant_closure = "warn"
+collapsible_if = "warn"
+
 [workspace.dependencies]
 image = { version = "0.25", default-features = false }

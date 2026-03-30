@@ -19,3 +19,6 @@ rasmcore-codec-jxl = { path = "../rasmcore-codec-jxl" }
 rasmcore-codec-jp2 = { path = "../rasmcore-codec-jp2" }
 rasmcore-codec-svg = { path = "../rasmcore-codec-svg" }
 rasmcore-codec-fits = { path = "../rasmcore-codec-fits" }
+
+[lints]
+workspace = true

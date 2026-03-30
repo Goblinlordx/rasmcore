@@ -9,3 +9,6 @@ description = "Pure Rust PNM (PBM/PGM/PPM/PAM) encoder/decoder — zero dependen
 rasmcore-bitio = { path = "../rasmcore-bitio" }
 
 [dev-dependencies]
+
+[lints]
+workspace = true

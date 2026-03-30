@@ -7,3 +7,6 @@ description = "Pure Rust JPEG XL encoder (ISO/IEC 18181) — scaffold for future
 
 [dependencies]
 # No external dependencies — all algorithms will be implemented from spec
+
+[lints]
+workspace = true

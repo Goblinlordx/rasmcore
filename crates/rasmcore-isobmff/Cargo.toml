@@ -9,3 +9,6 @@ description = "Pure Rust ISO Base Media File Format parser for HEIF/HEIC and AVI
 # Zero external dependencies — pure Rust, WASM-ready
 
 [dev-dependencies]
+
+[lints]
+workspace = true

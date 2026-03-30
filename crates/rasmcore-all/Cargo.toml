@@ -9,3 +9,6 @@ description = "All rasmcore functionality — image processing infrastructure + 
 rasmcore-image = { path = "../rasmcore-image" }
 rasmcore-filters-std = { path = "../rasmcore-filters-std" }
 rasmcore-codecs-std = { path = "../rasmcore-codecs-std" }
+
+[lints]
+workspace = true

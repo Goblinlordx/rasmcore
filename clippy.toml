@@ -1,0 +1,11 @@
+# Clippy configuration for rasmcore workspace
+# See: https://doc.rust-lang.org/clippy/lint_configuration.html
+
+# Allow functions with many arguments in codec internals
+too-many-arguments-threshold = 10
+
+# Cognitive complexity threshold (default 25, relaxed for codec functions)
+cognitive-complexity-threshold = 40
+
+# Type complexity threshold (codec types can be deeply nested)
+type-complexity-threshold = 300

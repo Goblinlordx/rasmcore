@@ -8,3 +8,6 @@ description = "Pure Rust TGA encoder/decoder — zero dependencies"
 [dependencies]
 
 [dev-dependencies]
+
+[lints]
+workspace = true

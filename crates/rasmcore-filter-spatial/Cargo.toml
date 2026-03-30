@@ -10,3 +10,6 @@ rasmcore-macros = { path = "../rasmcore-macros" }
 rasmcore-image = { path = "../rasmcore-image" }
 inventory = "0.3"
 libblur = "0.15"
+
+[lints]
+workspace = true

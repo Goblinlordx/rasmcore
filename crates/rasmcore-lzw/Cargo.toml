@@ -10,3 +10,6 @@ rasmcore-bitio = { path = "../rasmcore-bitio" }
 
 [dev-dependencies]
 weezl = "0.1"
+
+[lints]
+workspace = true
