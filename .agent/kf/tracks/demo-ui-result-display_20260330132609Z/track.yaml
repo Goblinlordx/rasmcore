@@ -1,101 +1,131 @@
 id: demo-ui-result-display_20260330132609Z
-title: "Fix Demo UI — Result Display, Auto-Preview, imageBytes Bug"
+title: Fix Demo UI — Result Display, Auto-Preview, imageBytes Bug
 type: bug
 status: pending
-created: "2026-03-30"
-updated: "2026-03-30"
+created: '2026-03-30'
+updated: '2026-03-30'
 spec:
-  summary: |
-    Fix demo pipeline UI: result image not showing after filter application,
+  summary: 'Fix demo pipeline UI: result image not showing after filter application,
+
     imageBytes undefined error, and before/after comparison not working.
+
     Result should display automatically after applying any filter.
-  context: |
-    The demo pipeline UI has several broken behaviors:
-    1. Clicking a filter in the palette adds it to the chain but crashes
-       with "imageBytes is not defined" — the variable was never declared
-    2. Result canvas never shows processed output because processing
-       never starts (blocked by the imageBytes crash)
-    3. Before/After button exists but comparison is broken since no
-       result is ever rendered
-    Users see only the original image with no way to see filter results.
-  codebase_analysis: |
-    BUG LOCATION: demo/src/pipeline.js
+
+    '
+  context: "The demo pipeline UI has several broken behaviors:\n1. Clicking a filter in the palette adds it to the chain but\
+    \ crashes\n   with \"imageBytes is not defined\" — the variable was never declared\n2. Result canvas never shows processed\
+    \ output because processing\n   never starts (blocked by the imageBytes crash)\n3. Before/After button exists but comparison\
+    \ is broken since no\n   result is ever rendered\nUsers see only the original image with no way to see filter results.\n"
+  codebase_analysis: 'BUG LOCATION: demo/src/pipeline.js
+
 
     ROOT CAUSE: Line 857 and 864 reference `imageBytes` which is never
+
     declared as a top-level variable. The layers array stores per-layer
+
     imageBytes (line 452: layers[].imageBytes) but preview/apply functions
+
     check a nonexistent global `imageBytes`.
 
+
     FIX: Replace `imageBytes` references with `layers[activeLayerIdx]?.imageBytes`
+
     or declare a top-level `imageBytes` that tracks the active layer data.
 
+
     DISPLAY FLOW:
+
     - User loads image → stored in layers[0].imageBytes (line 500)
+
     - User adds filter → calls addNode() → calls previewEditing() → CRASH
+
     - previewEditing() would send process request to worker
+
     - Worker processes chain and sends back PNG blob
+
     - Blob drawn to preview-canvas (line 372-388)
 
+
     ALSO NEEDED:
+
     - Auto-display result after filter applied (currently requires Apply click)
+
     - Result canvas should show immediately, not behind Before/After toggle
+
     - Show before/after side-by-side or with a slider for comparison
+
+    '
   acceptance_criteria:
-    - No imageBytes undefined error when adding filters
-    - Result image displays automatically after adding/editing any filter
-    - Before/After comparison works correctly
-    - Loading an image shows it in the preview
-    - "Apply full chain shows processed result on the main canvas"
-    - All 115 filters selectable and previewable in the UI
-  out_of_scope: |
-    New filter implementations. Performance optimization.
+  - No imageBytes undefined error when adding filters
+  - Result image displays automatically after adding/editing any filter
+  - Before/After comparison works correctly
+  - Loading an image shows it in the preview
+  - Apply full chain shows processed result on the main canvas
+  - All 115 filters selectable and previewable in the UI
+  out_of_scope: 'New filter implementations. Performance optimization.
+
     Mobile responsive layout. Undo/redo system.
-  technical_notes: |
-    FIXES:
+
+    '
+  technical_notes: 'FIXES:
+
     1. Declare `let imageBytes = null;` at module level
+
     2. Set imageBytes when image loads (in the FileReader onload handler)
+
     3. Set imageBytes = layers[activeLayerIdx].imageBytes for multi-layer
+
     4. In previewEditing(): guard with `if (!imageBytes || ...)`
+
     5. In applyFullChain(): same guard
+
     6. After worker returns result: update preview-canvas immediately
+
     7. Show result canvas by default (not hidden behind Before/After)
 
+
     BEFORE/AFTER:
+
     - Keep original pixels in originalCanvas
+
     - Show result in previewCanvas (default view)
+
     - Toggle swaps visibility
+
     - Consider a CSS slider overlay for interactive comparison
+
+    '
 plan:
-  - phase: Fix imageBytes Bug
-    tasks:
-      - text: "Declare top-level imageBytes variable, set on image load"
-        done: false
-      - text: Update previewEditing() and applyFullChain() to use correct reference
-        done: false
-      - text: Verify no more undefined errors when adding filters
-        done: false
-  - phase: Auto-Display Results
-    tasks:
-      - text: Auto-trigger preview after adding a filter node to chain
-        done: false
-      - text: Show result canvas immediately after worker returns processed image
-        done: false
-      - text: Ensure Apply button triggers full-res processing and displays result
-        done: false
-  - phase: Before/After Comparison
-    tasks:
-      - text: Store original image for comparison
-        done: false
-      - text: Before/After toggle works correctly between original and processed
-        done: false
-      - text: Add visual indicator of which view is showing (label/badge)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Load image, add blur, see blurred result automatically
-        done: false
-      - text: Toggle Before/After shows original vs processed
-        done: false
-      - text: All filter categories visible and selectable in palette
-        done: false
+- phase: Fix imageBytes Bug
+  tasks:
+  - text: Declare top-level imageBytes variable, set on image load
+    done: true
+  - text: Update previewEditing() and applyFullChain() to use correct reference
+    done: true
+  - text: Verify no more undefined errors when adding filters
+    done: true
+- phase: Auto-Display Results
+  tasks:
+  - text: Auto-trigger preview after adding a filter node to chain
+    done: true
+  - text: Show result canvas immediately after worker returns processed image
+    done: true
+  - text: Ensure Apply button triggers full-res processing and displays result
+    done: true
+- phase: Before/After Comparison
+  tasks:
+  - text: Store original image for comparison
+    done: true
+  - text: Before/After toggle works correctly between original and processed
+    done: true
+  - text: Add visual indicator of which view is showing (label/badge)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Load image, add blur, see blurred result automatically
+    done: true
+  - text: Toggle Before/After shows original vs processed
+    done: true
+  - text: All filter categories visible and selectable in palette
+    done: true
 extra: {}
