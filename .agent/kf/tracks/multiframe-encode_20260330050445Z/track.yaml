@@ -1,107 +1,98 @@
 id: multiframe-encode_20260330050445Z
-title: "Multi-Frame Encode — GIF Animation and TIFF Multi-Page Write"
+title: Multi-Frame Encode — GIF Animation and TIFF Multi-Page Write
 type: feature
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add multi-frame encoding for GIF (animated) and TIFF (multi-page) so that
+  summary: 'Add multi-frame encoding for GIF (animated) and TIFF (multi-page) so that
+
     a FrameSequence can be written out as an animated GIF or multi-page TIFF.
+
     This completes the read-transform-write cycle for frame-based workflows.
-  context: |
-    With the frame-sequence-api track providing FrameSequence as a first-class
+
+    '
+  context: 'With the frame-sequence-api track providing FrameSequence as a first-class
+
     type and the multi-frame read API already merged, the missing piece is write.
+
     External consumers need to: decompose an animation into frames, apply filters
+
     or transforms to individual frames, then reassemble into a new animation.
 
+
     The gif crate (0.14) already supports writing multiple frames via
+
     encoder.write_frame() in a loop. The tiff crate (0.11) supports multi-page
+
     via encoder.write_image() called multiple times. WebP animated encode is NOT
+
     feasible — the image-webp crate does not expose an animation encoder API.
-  codebase_analysis: |
-    GIF ENCODER (encoder/gif.rs):
-      - encode_pixels(pixels, info, config) -> single frame GIF89a
-      - Uses gif::Encoder::new() + write_frame() — the crate supports multiple
-        write_frame() calls for animation but only one is used
-      - NeuQuant quantization to 256-color palette
-      - GifEncodeConfig { repeat: u16 } — already has loop config
 
-    TIFF ENCODER (encoder/tiff.rs):
-      - encode(pixels, info, config) -> single IFD TIFF
-      - Uses tiff::encoder::TiffEncoder::write_image() — calling it multiple
-        times chains IFDs automatically (multi-page)
-      - TiffEncodeConfig { compression: TiffCompression }
-
-    WASM ENCODER ADAPTER (adapter/mod.rs lines 174-333):
-      - encode_gif(pixels, info, config) -> single frame
-      - encode_tiff(pixels, info, config) -> single page
-      - encode(pixels, info, format, quality) -> convenience router
-      - No multi-frame encode functions
-
-    KEY INSIGHT: Both underlying crates already support multi-frame write.
-    The work is wiring FrameSequence through the encoder API and adapter.
+    '
+  codebase_analysis: "GIF ENCODER (encoder/gif.rs):\n  - encode_pixels(pixels, info, config) -> single frame GIF89a\n  - Uses\
+    \ gif::Encoder::new() + write_frame() — the crate supports multiple\n    write_frame() calls for animation but only one\
+    \ is used\n  - NeuQuant quantization to 256-color palette\n  - GifEncodeConfig { repeat: u16 } — already has loop config\n\
+    \nTIFF ENCODER (encoder/tiff.rs):\n  - encode(pixels, info, config) -> single IFD TIFF\n  - Uses tiff::encoder::TiffEncoder::write_image()\
+    \ — calling it multiple\n    times chains IFDs automatically (multi-page)\n  - TiffEncodeConfig { compression: TiffCompression\
+    \ }\n\nWASM ENCODER ADAPTER (adapter/mod.rs lines 174-333):\n  - encode_gif(pixels, info, config) -> single frame\n  -\
+    \ encode_tiff(pixels, info, config) -> single page\n  - encode(pixels, info, format, quality) -> convenience router\n\
+    \  - No multi-frame encode functions\n\nKEY INSIGHT: Both underlying crates already support multi-frame write.\nThe work\
+    \ is wiring FrameSequence through the encoder API and adapter.\n"
   acceptance_criteria:
-    - gif::encode_sequence(sequence, config) writes animated GIF with per-frame delays
-    - tiff::encode_pages(sequence, config) writes multi-page TIFF
-    - Roundtrip test: decode animated GIF -> FrameSequence -> encode GIF -> decode -> same frame count and delays
-    - Roundtrip test: decode multi-page TIFF -> encode multi-page TIFF -> decode -> same page count and pixels
-    - WIT encoder interface includes encode-gif-sequence and encode-tiff-pages functions
-    - Existing single-frame encode unchanged (backward compatible)
-  out_of_scope: |
-    Animated WebP encode (image-webp crate limitation — no animation encoder).
+  - gif::encode_sequence(sequence, config) writes animated GIF with per-frame delays
+  - tiff::encode_pages(sequence, config) writes multi-page TIFF
+  - Roundtrip test: decode animated GIF -> FrameSequence -> encode GIF -> decode -> same frame count and delays
+  - Roundtrip test: decode multi-page TIFF -> encode multi-page TIFF -> decode -> same page count and pixels
+  - WIT encoder interface includes encode-gif-sequence and encode-tiff-pages functions
+  - Existing single-frame encode unchanged (backward compatible)
+  out_of_scope: 'Animated WebP encode (image-webp crate limitation — no animation encoder).
+
     Frame-level pipeline (applying filters across a sequence automatically).
+
     Animation preview/playback. Sprite sheet generation.
+
     Global palette optimization across GIF frames (use per-frame NeuQuant).
-  technical_notes: |
-    GIF multi-frame encode approach:
-      1. Create gif::Encoder with canvas dimensions from FrameSequence
-      2. For each frame: NeuQuant quantize, set frame.delay from FrameInfo.delay_ms / 10
-      3. Set frame.dispose from FrameInfo.disposal
-      4. write_frame() per frame
 
-    TIFF multi-page encode approach:
-      1. Create tiff::encoder::TiffEncoder
-      2. For each frame: write_image() with the frame's pixel data
-      3. IFD chaining is automatic in the tiff crate
-
-    New encoder API functions:
-      gif::encode_sequence(seq: &FrameSequence, config: &GifEncodeConfig) -> Result<Vec<u8>>
-      tiff::encode_pages(seq: &FrameSequence, config: &TiffEncodeConfig) -> Result<Vec<u8>>
-
-    Convenience router addition:
-      encoder::encode_sequence(seq, format, quality) dispatches to format-specific
+    '
+  technical_notes: "GIF multi-frame encode approach:\n  1. Create gif::Encoder with canvas dimensions from FrameSequence\n\
+    \  2. For each frame: NeuQuant quantize, set frame.delay from FrameInfo.delay_ms / 10\n  3. Set frame.dispose from FrameInfo.disposal\n\
+    \  4. write_frame() per frame\n\nTIFF multi-page encode approach:\n  1. Create tiff::encoder::TiffEncoder\n  2. For each\
+    \ frame: write_image() with the frame's pixel data\n  3. IFD chaining is automatic in the tiff crate\n\nNew encoder API\
+    \ functions:\n  gif::encode_sequence(seq: &FrameSequence, config: &GifEncodeConfig) -> Result<Vec<u8>>\n  tiff::encode_pages(seq:\
+    \ &FrameSequence, config: &TiffEncodeConfig) -> Result<Vec<u8>>\n\nConvenience router addition:\n  encoder::encode_sequence(seq,\
+    \ format, quality) dispatches to format-specific\n"
 plan:
-  - phase: GIF Animation Encode
-    tasks:
-      - text: "Add gif::encode_sequence(seq, config) that writes all frames with delays"
-        done: false
-      - text: "Handle per-frame NeuQuant quantization and disposal method mapping"
-        done: false
-      - text: "Test roundtrip: 3-frame animated GIF -> decode_all -> encode_sequence -> decode -> verify"
-        done: false
-  - phase: TIFF Multi-Page Encode
-    tasks:
-      - text: "Add tiff::encode_pages(seq, config) that writes multiple IFDs"
-        done: false
-      - text: "Test roundtrip: 2-page TIFF -> decode_all -> encode_pages -> decode -> verify"
-        done: false
-  - phase: Convenience API
-    tasks:
-      - text: "Add encoder::encode_sequence(seq, format, quality) router"
-        done: false
-      - text: "Return clear error for unsupported formats (WebP animated, JPEG, PNG)"
-        done: false
-  - phase: WIT and Adapter
-    tasks:
-      - text: "Add encode-gif-sequence and encode-tiff-pages to encoder.wit"
-        done: false
-      - text: "Wire adapter functions for multi-frame encode"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "Full roundtrip through WASM: GIF decode_all -> encode_sequence -> frame_count"
-        done: false
-      - text: "Backward compat: existing single-frame encode functions unchanged"
-        done: false
+- phase: GIF Animation Encode
+  tasks:
+  - text: Add gif::encode_sequence(seq, config) that writes all frames with delays
+    done: true
+  - text: Handle per-frame NeuQuant quantization and disposal method mapping
+    done: true
+  - text: 'Test roundtrip: 3-frame animated GIF -> decode_all -> encode_sequence -> decode -> verify'
+    done: true
+- phase: TIFF Multi-Page Encode
+  tasks:
+  - text: Add tiff::encode_pages(seq, config) that writes multiple IFDs
+    done: true
+  - text: 'Test roundtrip: 2-page TIFF -> decode_all -> encode_pages -> decode -> verify'
+    done: true
+- phase: Convenience API
+  tasks:
+  - text: Add encoder::encode_sequence(seq, format, quality) router
+    done: true
+  - text: Return clear error for unsupported formats (WebP animated, JPEG, PNG)
+    done: true
+- phase: WIT and Adapter
+  tasks:
+  - text: Add encode-gif-sequence and encode-tiff-pages to encoder.wit
+    done: true
+  - text: Wire adapter functions for multi-frame encode
+    done: true
+- phase: Verification
+  tasks:
+  - text: 'Full roundtrip through WASM: GIF decode_all -> encode_sequence -> frame_count'
+    done: true
+  - text: 'Backward compat: existing single-frame encode functions unchanged'
+    done: true
 extra: {}
