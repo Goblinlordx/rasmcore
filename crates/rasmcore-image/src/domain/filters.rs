@@ -14240,8 +14240,10 @@ fn gaussian_blur_f32(
     }
 
     let n = w * h * ch;
-    // Convert input to f32
-    let input: Vec<f32> = pixels.iter().map(|&v| v as f32).collect();
+    // Convert input to Q16-HDRI scale (0-65535) matching IM's ScaleCharToQuantum
+    // IM stores pixels as float (Quantum) in Q16-HDRI mode: value * 257.0
+    const Q16_SCALE: f32 = 257.0;
+    let input: Vec<f32> = pixels.iter().map(|&v| v as f32 * Q16_SCALE).collect();
 
     // Horizontal pass (edge-clamp border)
     let mut tmp = vec![0.0f32; n];
@@ -14392,7 +14394,9 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
                     + p10 * fx * (1.0 - fy)
                     + p01 * (1.0 - fx) * fy
                     + p11 * fx * fy;
-                out[out_off + c] = v.round().clamp(0.0, 255.0) as u8;
+                // Scale back from Q16 (0-65535) to u8 (0-255)
+                let v_u8 = v / 257.0;
+                out[out_off + c] = v_u8.round().clamp(0.0, 255.0) as u8;
             }
         }
     }

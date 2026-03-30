@@ -1515,20 +1515,20 @@ fn close_gradient_map_bw() {
 
 #[test]
 fn algorithm_kuwahara() {
-    // IM -kuwahara: pre-blur (KernelRank=3 Gaussian), luma-variance quadrant
-    // selection, center-pixel bilinear output. Our implementation matches the
-    // same algorithm in f64 precision. Residual MAE from float accumulation
-    // order and Gaussian edge handling.
+    // IM -kuwahara: KernelRank=3 Gaussian pre-blur in Q16-HDRI (float) precision,
+    // luma-variance quadrant selection (BT.709), center-pixel bilinear output.
+    // Our implementation matches IM's full Q16-HDRI pipeline. Residual MAE from
+    // IM morphology engine edge handling vs our edge-clamp at image borders.
     if let Some(error) = check_parity_rgb(
-        128,
-        128,
+        256,
+        256,
         |px, info| rasmcore_image::domain::filters::kuwahara(px, info, 3).unwrap(),
         &["-kuwahara", "3"],
         "kuwahara_3",
     ) {
         assert!(
-            error < 2.0,
-            "kuwahara MAE = {error:.4} (expected < 2.0, CLOSE tier)"
+            error < 1.0,
+            "kuwahara MAE = {error:.4} (expected < 1.0, CLOSE tier)"
         );
     }
 }
