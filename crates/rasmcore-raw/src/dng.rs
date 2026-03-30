@@ -5,11 +5,11 @@
 //! and orchestrates the full decode pipeline:
 //! TIFF container → raw extraction → demosaic → color pipeline → RGB output.
 
+use crate::RawError;
 use crate::color::{apply_color_pipeline, build_camera_to_srgb};
-use crate::demosaic::{demosaic_bilinear, CfaPattern};
+use crate::demosaic::{CfaPattern, demosaic_bilinear};
 use crate::ljpeg;
 use crate::tiff::*;
-use crate::RawError;
 
 /// Parsed DNG metadata from IFD tags.
 #[derive(Debug)]
@@ -91,12 +91,16 @@ pub fn decode_dng(data: &[u8]) -> Result<DngDecodeResult, RawError> {
     let raw_u16 = extract_raw_data(&tiff, &metadata)?;
 
     // Demosaic
-    let rgb16 = demosaic_bilinear(&raw_u16, metadata.width, metadata.height, metadata.cfa_pattern)?;
+    let rgb16 = demosaic_bilinear(
+        &raw_u16,
+        metadata.width,
+        metadata.height,
+        metadata.cfa_pattern,
+    )?;
 
     // Build color pipeline
-    let camera_to_srgb = build_camera_to_srgb(&metadata.color_matrix).ok_or_else(|| {
-        RawError::InvalidFormat("singular ColorMatrix1 — cannot invert".into())
-    })?;
+    let camera_to_srgb = build_camera_to_srgb(&metadata.color_matrix)
+        .ok_or_else(|| RawError::InvalidFormat("singular ColorMatrix1 — cannot invert".into()))?;
 
     // Compute white balance multipliers from AsShotNeutral
     let wb = compute_white_balance(&metadata.as_shot_neutral);
@@ -126,11 +130,15 @@ pub fn decode_dng_16bit(data: &[u8]) -> Result<DngDecodeResult, RawError> {
     let tiff = TiffContainer::parse(data)?;
     let metadata = find_raw_ifd_and_parse(&tiff)?;
     let raw_u16 = extract_raw_data(&tiff, &metadata)?;
-    let rgb16 = demosaic_bilinear(&raw_u16, metadata.width, metadata.height, metadata.cfa_pattern)?;
+    let rgb16 = demosaic_bilinear(
+        &raw_u16,
+        metadata.width,
+        metadata.height,
+        metadata.cfa_pattern,
+    )?;
 
-    let camera_to_srgb = build_camera_to_srgb(&metadata.color_matrix).ok_or_else(|| {
-        RawError::InvalidFormat("singular ColorMatrix1 — cannot invert".into())
-    })?;
+    let camera_to_srgb = build_camera_to_srgb(&metadata.color_matrix)
+        .ok_or_else(|| RawError::InvalidFormat("singular ColorMatrix1 — cannot invert".into()))?;
     let wb = compute_white_balance(&metadata.as_shot_neutral);
 
     let pixels = apply_color_pipeline(
@@ -262,7 +270,8 @@ fn parse_dng_metadata(
     let cfa_pattern = CfaPattern::from_cfa_bytes(cfa_data)?;
 
     // ColorMatrix1 (required for color pipeline)
-    let color_matrix = if let Some(cm_entry) = TiffContainer::find_tag(entries, TAG_COLOR_MATRIX_1) {
+    let color_matrix = if let Some(cm_entry) = TiffContainer::find_tag(entries, TAG_COLOR_MATRIX_1)
+    {
         let vals = tiff.tag_srational_vec(cm_entry)?;
         if vals.len() < 9 {
             return Err(RawError::InvalidFormat(format!(
@@ -279,18 +288,17 @@ fn parse_dng_metadata(
     };
 
     // AsShotNeutral
-    let as_shot_neutral = if let Some(asn_entry) =
-        TiffContainer::find_tag(entries, TAG_AS_SHOT_NEUTRAL)
-    {
-        let vals = tiff.tag_rational_vec(asn_entry)?;
-        if vals.len() >= 3 {
-            [vals[0], vals[1], vals[2]]
+    let as_shot_neutral =
+        if let Some(asn_entry) = TiffContainer::find_tag(entries, TAG_AS_SHOT_NEUTRAL) {
+            let vals = tiff.tag_rational_vec(asn_entry)?;
+            if vals.len() >= 3 {
+                [vals[0], vals[1], vals[2]]
+            } else {
+                [1.0, 1.0, 1.0]
+            }
         } else {
             [1.0, 1.0, 1.0]
-        }
-    } else {
-        [1.0, 1.0, 1.0]
-    };
+        };
 
     // BlackLevel (default 0)
     let black_level = TiffContainer::find_tag(entries, TAG_BLACK_LEVEL)
@@ -491,7 +499,13 @@ fn extract_strips_uncompressed(
         let strip_data = tiff.raw_data(offset, byte_count)?;
         let rows_in_strip = rps.min(raw.len() / w - i * rps);
 
-        read_pixels_from_bytes(strip_data, &mut raw[pixel_idx..], w * rows_in_strip, bps, tiff.order)?;
+        read_pixels_from_bytes(
+            strip_data,
+            &mut raw[pixel_idx..],
+            w * rows_in_strip,
+            bps,
+            tiff.order,
+        )?;
         pixel_idx += w * rows_in_strip;
     }
 
@@ -508,7 +522,7 @@ fn extract_tiles_uncompressed(
 ) -> Result<(), RawError> {
     let tw = meta.tile_width.unwrap_or(w as u32) as usize;
     let tl = meta.tile_length.unwrap_or(h as u32) as usize;
-    let tiles_across = (w + tw - 1) / tw;
+    let tiles_across = w.div_ceil(tw);
 
     for (i, (&offset, &byte_count)) in meta
         .tile_offsets
@@ -552,17 +566,17 @@ fn read_pixels_from_bytes(
 
     match bps {
         8 => {
-            for i in 0..count.min(data.len()) {
-                output[i] = data[i] as u16;
+            for (out, &byte) in output.iter_mut().zip(data.iter()).take(count) {
+                *out = byte as u16;
             }
         }
         16 => {
-            for i in 0..count {
+            for (i, out) in output.iter_mut().enumerate().take(count) {
                 let offset = i * 2;
                 if offset + 1 >= data.len() {
                     break;
                 }
-                output[i] = order.u16(&data[offset..offset + 2]);
+                *out = order.u16(&data[offset..offset + 2]);
             }
         }
         12 => {
@@ -624,7 +638,7 @@ fn extract_lossless_jpeg(
         // Tiled layout — each tile is a separate lossless JPEG
         let tw = meta.tile_width.unwrap_or(w as u32) as usize;
         let tl = meta.tile_length.unwrap_or(h as u32) as usize;
-        let tiles_across = (w + tw - 1) / tw;
+        let tiles_across = w.div_ceil(tw);
 
         for (i, (&offset, &byte_count)) in meta
             .tile_offsets

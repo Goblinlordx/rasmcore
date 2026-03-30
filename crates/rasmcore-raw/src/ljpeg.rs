@@ -86,10 +86,11 @@ impl<'a> BitReader<'a> {
             let mut byte = self.data[self.pos];
             self.pos += 1;
             // Handle JPEG byte stuffing: 0xFF 0x00 -> 0xFF
-            if byte == 0xFF {
-                if self.pos < self.data.len() && self.data[self.pos] == 0x00 {
-                    self.pos += 1; // skip stuffed zero
-                }
+            if byte == 0xFF
+                && self.pos < self.data.len()
+                && self.data[self.pos] == 0x00
+            {
+                self.pos += 1; // skip stuffed zero
                 // If it's a marker (not 0x00), we've hit end of scan
                 // For robustness, still use the 0xFF byte
             }
@@ -240,14 +241,12 @@ pub fn decode_ljpeg(data: &[u8]) -> Result<LjpegImage, RawError> {
                     return Err(RawError::DataTruncated);
                 }
                 let ns = data[pos + 2]; // number of components in scan
-                for i in 0..ns as usize {
+                for (i, cht) in comp_huff_table.iter_mut().enumerate().take(ns as usize) {
                     let base = pos + 3 + i * 2;
                     let _cs = data[base]; // component selector
                     let td_ta = data[base + 1]; // upper = DC table, lower = AC table
                     let td = (td_ta >> 4) & 0x0F;
-                    if i < 4 {
-                        comp_huff_table[i] = td;
-                    }
+                    *cht = td;
                 }
                 // Ss = predictor selection
                 predictor = data[pos + 3 + ns as usize * 2];
@@ -314,6 +313,7 @@ fn decode_scan(
 
     for row in 0..h {
         for col in 0..w {
+            #[allow(clippy::needless_range_loop)]
             for c in 0..nc {
                 let table_id = comp_tables[c] as usize;
                 let table = huff_tables[table_id].as_ref().ok_or_else(|| {
@@ -323,7 +323,7 @@ fn decode_scan(
                 })?;
 
                 // Decode the category (SSSS)
-                let ssss = reader.decode_huff(table)? as u8;
+                let ssss = reader.decode_huff(table)?;
 
                 // Decode the difference value
                 let diff = if ssss == 0 {

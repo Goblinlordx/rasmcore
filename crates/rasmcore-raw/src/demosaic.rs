@@ -107,14 +107,7 @@ pub fn demosaic_bilinear(
 }
 
 /// Process one row of demosaicing.
-fn demosaic_row(
-    raw: &[u16],
-    rgb: &mut [u16],
-    w: usize,
-    h: usize,
-    row: usize,
-    pattern: CfaPattern,
-) {
+fn demosaic_row(raw: &[u16], rgb: &mut [u16], w: usize, h: usize, row: usize, pattern: CfaPattern) {
     // Interior pixels (not on the border) can use the full 3×3 neighborhood.
     // Border pixels clamp to edge values.
     let is_interior_row = row > 0 && row < h - 1;
@@ -192,12 +185,14 @@ fn interpolate_pixel(
         PixelColor::Red => {
             // At a red pixel: R is known, interpolate G and B
             let g = (get(r - 1, c) + get(r + 1, c) + get(r, c - 1) + get(r, c + 1)) / 4;
-            let b = (get(r - 1, c - 1) + get(r - 1, c + 1) + get(r + 1, c - 1) + get(r + 1, c + 1)) / 4;
+            let b =
+                (get(r - 1, c - 1) + get(r - 1, c + 1) + get(r + 1, c - 1) + get(r + 1, c + 1)) / 4;
             (val, g as u16, b as u16)
         }
         PixelColor::Blue => {
             // At a blue pixel: B is known, interpolate R and G
-            let r_val = (get(r - 1, c - 1) + get(r - 1, c + 1) + get(r + 1, c - 1) + get(r + 1, c + 1)) / 4;
+            let r_val =
+                (get(r - 1, c - 1) + get(r - 1, c + 1) + get(r + 1, c - 1) + get(r + 1, c + 1)) / 4;
             let g = (get(r - 1, c) + get(r + 1, c) + get(r, c - 1) + get(r, c + 1)) / 4;
             (r_val as u16, g as u16, val)
         }
@@ -320,14 +315,8 @@ unsafe fn demosaic_row_sse41(
         let br_lo = _mm_unpacklo_epi16(br, _mm_setzero_si128());
         let br_hi = _mm_unpackhi_epi16(br, _mm_setzero_si128());
 
-        let dsum_lo = _mm_add_epi32(
-            _mm_add_epi32(al_lo, ar_lo),
-            _mm_add_epi32(bl_lo, br_lo),
-        );
-        let dsum_hi = _mm_add_epi32(
-            _mm_add_epi32(al_hi, ar_hi),
-            _mm_add_epi32(bl_hi, br_hi),
-        );
+        let dsum_lo = _mm_add_epi32(_mm_add_epi32(al_lo, ar_lo), _mm_add_epi32(bl_lo, br_lo));
+        let dsum_hi = _mm_add_epi32(_mm_add_epi32(al_hi, ar_hi), _mm_add_epi32(bl_hi, br_hi));
         let _diag_avg_lo = _mm_srli_epi32(dsum_lo, 2);
         let _diag_avg_hi = _mm_srli_epi32(dsum_hi, 2);
         let _diag_avg = _mm_packus_epi32(_diag_avg_lo, _diag_avg_hi);
@@ -575,16 +564,15 @@ mod tests {
             for row in 1..7 {
                 for col in 1..7 {
                     let idx = (row * 8 + col) * 3;
+                    assert_eq!(rgb[idx], 500, "R mismatch at ({row},{col}) for {pattern:?}");
                     assert_eq!(
-                        rgb[idx], 500,
-                        "R mismatch at ({row},{col}) for {pattern:?}"
-                    );
-                    assert_eq!(
-                        rgb[idx + 1], 500,
+                        rgb[idx + 1],
+                        500,
                         "G mismatch at ({row},{col}) for {pattern:?}"
                     );
                     assert_eq!(
-                        rgb[idx + 2], 500,
+                        rgb[idx + 2],
+                        500,
                         "B mismatch at ({row},{col}) for {pattern:?}"
                     );
                 }

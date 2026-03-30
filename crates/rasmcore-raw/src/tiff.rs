@@ -173,7 +173,7 @@ impl<'a> TiffContainer<'a> {
     }
 
     /// Find an entry by tag ID in a list of entries.
-    pub fn find_tag<'b>(entries: &'b [IfdEntry], tag: u16) -> Option<&'b IfdEntry> {
+    pub fn find_tag(entries: &[IfdEntry], tag: u16) -> Option<&IfdEntry> {
         entries.iter().find(|e| e.tag == tag)
     }
 

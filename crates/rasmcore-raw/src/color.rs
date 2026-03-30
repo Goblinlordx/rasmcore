@@ -479,10 +479,7 @@ mod tests {
         assert_eq!(output.len(), 12); // 4 pixels × 3 bytes
         // Each channel should be > 200 (approximately white after gamma)
         for val in &output {
-            assert!(
-                *val > 100,
-                "expected bright pixel, got {val}"
-            );
+            assert!(*val > 100, "expected bright pixel, got {val}");
         }
     }
 }
