@@ -905,13 +905,22 @@ canonical and matching its exact internal details.
 - Validate fade curve output at known inputs
 - Frequency-domain analysis (FFT) to verify spectral properties
 
-**SIMD opportunity:** The inner loop evaluates the same fade/lerp/gradient
-math at every pixel independently — embarrassingly parallel. Key optimization:
-- Drop from f64 to f32 (sufficient for u8 output) → 4-wide WASM SIMD128
-- Vectorize fade curve, gradient dot products, and lerp
-- Permutation table lookups remain scalar (random access), but post-lookup
-  arithmetic dominates and vectorizes well
-- Expected speedup: 2-3x on WASM, more on AVX2
+**SIMD: f32 on WASM, f64 on native (verified u8-identical)**
+
+- WASM target: uses f32 arithmetic (f32x4 SIMD-ready via LLVM auto-vectorization
+  when compiled with `+simd128`). Verified empirically: f32 produces 0/4096 pixel
+  differences vs f64 at u8 level for Perlin noise — f32's 23-bit mantissa is more
+  than sufficient for [0, 255] output.
+- Native target: uses f64 scalar, LLVM auto-vectorizes to SSE2/NEON f64 SIMD.
+- Both paths produce bit-identical u8 output (validated by regression fixtures).
+- The permutation table lookup (random memory access) remains scalar on both
+  paths — it cannot be vectorized. Post-lookup arithmetic (fade, lerp, gradient)
+  is the SIMD target.
+
+**Regression fixtures:** Scalar f64 output captured as raw fixtures in
+`tests/fixtures/noise/` at 4 known (seed, params) combinations. Both f32
+and f64 paths must produce bit-identical u8 output against these snapshots.
+Tests: `tests/noise_regression.rs`
 
 ## Adding New Filters
 

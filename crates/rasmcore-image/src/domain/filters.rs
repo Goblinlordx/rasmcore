@@ -5922,10 +5922,22 @@ const SIMPLEX_GRADS: [(f64, f64); 8] = [
     (-1.0, 0.0),
     (0.0, 1.0),
     (0.0, -1.0),
-    (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
-    (-std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
-    (std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
-    (-std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
+    (
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    ),
+    (
+        -std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    ),
+    (
+        std::f64::consts::FRAC_1_SQRT_2,
+        -std::f64::consts::FRAC_1_SQRT_2,
+    ),
+    (
+        -std::f64::consts::FRAC_1_SQRT_2,
+        -std::f64::consts::FRAC_1_SQRT_2,
+    ),
 ];
 
 /// Single-octave OpenSimplex noise at (x, y). Returns approximately [-1, 1].
@@ -6016,6 +6028,138 @@ where
     value / max_amp // normalize to [-1, 1]
 }
 
+// ── f32 noise for WASM (verified u8-identical to f64) ───────────────────────
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn fade_f32(t: f32) -> f32 {
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn lerp_f32(t: f32, a: f32, b: f32) -> f32 {
+    a + t * (b - a)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn grad_perlin_f32(hash: u8, x: f32, y: f32) -> f32 {
+    match hash & 0x3 {
+        0 => x + y,
+        1 => -x + y,
+        2 => x - y,
+        _ => -x - y,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn perlin_2d_f32(perm: &[u8; 512], x: f32, y: f32) -> f32 {
+    let xi = x.floor() as i32 & 255;
+    let yi = y.floor() as i32 & 255;
+    let xf = x - x.floor();
+    let yf = y - y.floor();
+    let u = fade_f32(xf);
+    let v = fade_f32(yf);
+    let aa = perm[(perm[xi as usize] as i32 + yi) as usize & 511];
+    let ab = perm[(perm[xi as usize] as i32 + yi + 1) as usize & 511];
+    let ba = perm[(perm[(xi + 1) as usize & 255] as i32 + yi) as usize & 511];
+    let bb = perm[(perm[(xi + 1) as usize & 255] as i32 + yi + 1) as usize & 511];
+    lerp_f32(
+        v,
+        lerp_f32(
+            u,
+            grad_perlin_f32(aa, xf, yf),
+            grad_perlin_f32(ba, xf - 1.0, yf),
+        ),
+        lerp_f32(
+            u,
+            grad_perlin_f32(ab, xf, yf - 1.0),
+            grad_perlin_f32(bb, xf - 1.0, yf - 1.0),
+        ),
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
+fn simplex_2d_f32(perm: &[u8; 512], x: f32, y: f32) -> f32 {
+    const SS: f32 = -0.211324865;
+    const SQ: f32 = 0.366025404;
+    const SR2: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    const GR: [(f32, f32); 8] = [
+        (1.0, 0.0),
+        (-1.0, 0.0),
+        (0.0, 1.0),
+        (0.0, -1.0),
+        (SR2, SR2),
+        (-SR2, SR2),
+        (SR2, -SR2),
+        (-SR2, -SR2),
+    ];
+    let stretch = (x + y) * SS;
+    let xs = x + stretch;
+    let ys = y + stretch;
+    let xsb = xs.floor() as i32;
+    let ysb = ys.floor() as i32;
+    let squish = (xsb + ysb) as f32 * SQ;
+    let dx0 = x - (xsb as f32 + squish);
+    let dy0 = y - (ysb as f32 + squish);
+    let xins = xs - xsb as f32;
+    let yins = ys - ysb as f32;
+    let mut value = 0.0f32;
+    let a0 = 2.0 - dx0 * dx0 - dy0 * dy0;
+    if a0 > 0.0 {
+        let a = a0 * a0;
+        let gi = perm[(perm[xsb as usize & 255] as i32 + ysb) as usize & 511] as usize & 7;
+        value += a * a * (GR[gi].0 * dx0 + GR[gi].1 * dy0);
+    }
+    let d1x = dx0 - 1.0 - SQ;
+    let d1y = dy0 - SQ;
+    let a1 = 2.0 - d1x * d1x - d1y * d1y;
+    if a1 > 0.0 {
+        let a = a1 * a1;
+        let gi = perm[(perm[(xsb + 1) as usize & 255] as i32 + ysb) as usize & 511] as usize & 7;
+        value += a * a * (GR[gi].0 * d1x + GR[gi].1 * d1y);
+    }
+    let d2x = dx0 - SQ;
+    let d2y = dy0 - 1.0 - SQ;
+    let a2 = 2.0 - d2x * d2x - d2y * d2y;
+    if a2 > 0.0 {
+        let a = a2 * a2;
+        let gi = perm[(perm[xsb as usize & 255] as i32 + ysb + 1) as usize & 511] as usize & 7;
+        value += a * a * (GR[gi].0 * d2x + GR[gi].1 * d2y);
+    }
+    if xins + yins > 1.0 {
+        let d3x = dx0 - 1.0 - 2.0 * SQ;
+        let d3y = dy0 - 1.0 - 2.0 * SQ;
+        let a3 = 2.0 - d3x * d3x - d3y * d3y;
+        if a3 > 0.0 {
+            let a = a3 * a3;
+            let gi =
+                perm[(perm[(xsb + 1) as usize & 255] as i32 + ysb + 1) as usize & 511] as usize & 7;
+            value += a * a * (GR[gi].0 * d3x + GR[gi].1 * d3y);
+        }
+    }
+    value * 47.0
+}
+
+#[cfg(target_arch = "wasm32")]
+fn fbm_f32(
+    perm: &[u8; 512],
+    x: f32,
+    y: f32,
+    octaves: u32,
+    noise_fn: fn(&[u8; 512], f32, f32) -> f32,
+) -> f32 {
+    let (mut v, mut a, mut fr, mut ma) = (0.0f32, 1.0f32, 1.0f32, 0.0f32);
+    for _ in 0..octaves {
+        v += noise_fn(perm, x * fr, y * fr) * a;
+        ma += a;
+        a *= 0.5;
+        fr *= 2.0;
+    }
+    v / ma
+}
+
 // ── Public Generator Functions ──────────────────────────────────────────────
 
 /// Generate a Perlin noise image (Gray8).
@@ -6026,38 +6170,75 @@ where
 /// - `octaves`: fBm octave count (1 = smooth, 4-8 = detailed)
 ///
 /// Returns a Gray8 pixel buffer. Each pixel is in [0, 255].
+///
+/// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
+/// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
 #[rasmcore_macros::register_filter(name = "perlin_noise", category = "generator")]
 pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
     let mut pixels = vec![0u8; (width * height) as usize];
 
+    #[cfg(target_arch = "wasm32")]
+    {
+        let scale = scale as f32;
+        for y in 0..height {
+            for x in 0..width {
+                let n = fbm_f32(
+                    &perm,
+                    x as f32 * scale,
+                    y as f32 * scale,
+                    octaves,
+                    perlin_2d_f32,
+                );
+                pixels[(y * width + x) as usize] =
+                    ((n * 0.5 + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     for y in 0..height {
         for x in 0..width {
             let nx = x as f64 * scale;
             let ny = y as f64 * scale;
             let n = fbm(|fx, fy| perlin_2d(&perm, fx, fy), nx, ny, octaves, 2.0, 0.5);
-            // Map [-1, 1] → [0, 255]
             pixels[(y * width + x) as usize] = ((n * 0.5 + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
         }
     }
+
     pixels
 }
 
 /// Generate a Simplex noise image (Gray8).
 ///
-/// - `width`, `height`: output dimensions
-/// - `seed`: PRNG seed for deterministic output
-/// - `scale`: coordinate scale (larger = more zoomed out, typical: 0.01–0.1)
-/// - `octaves`: fBm octave count (1 = smooth, 4-8 = detailed)
-///
-/// Returns a Gray8 pixel buffer. Each pixel is in [0, 255].
+/// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
+/// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
 #[rasmcore_macros::register_filter(name = "simplex_noise", category = "generator")]
 pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
     let mut pixels = vec![0u8; (width * height) as usize];
 
+    #[cfg(target_arch = "wasm32")]
+    {
+        let scale = scale as f32;
+        for y in 0..height {
+            for x in 0..width {
+                let n = fbm_f32(
+                    &perm,
+                    x as f32 * scale,
+                    y as f32 * scale,
+                    octaves,
+                    simplex_2d_f32,
+                );
+                pixels[(y * width + x) as usize] =
+                    ((n * 0.5 + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     for y in 0..height {
         for x in 0..width {
             let nx = x as f64 * scale;
