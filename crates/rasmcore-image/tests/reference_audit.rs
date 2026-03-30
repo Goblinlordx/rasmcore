@@ -1147,6 +1147,159 @@ fn algorithm_charcoal() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// DDS BCn DECODE PARITY — compare our BC1/BC3 decode against ImageMagick
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn dds_bc1_parity_vs_imagemagick() {
+    if !magick_available() {
+        eprintln!("SKIP dds_bc1_parity: magick not available");
+        return;
+    }
+
+    // Create a gradient image, compress to BC1 via IM, decode with both IM and rasmcore
+    let (w, h) = (16u32, 16u32);
+    let pixels = gradient_rgb(w, h);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    // Compress to BC1 DDS via ImageMagick
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dds_path = std::env::temp_dir().join(format!("refaudit_bc1_{id}.dds"));
+    let ref_path = std::env::temp_dir().join(format!("refaudit_bc1_ref_{id}.png"));
+
+    let dds_ok = Command::new("magick")
+        .args([
+            input_path.to_str().unwrap(),
+            "-define",
+            "dds:compression=dxt1",
+            "-define",
+            "dds:mipmaps=0",
+            dds_path.to_str().unwrap(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !dds_ok {
+        eprintln!("SKIP dds_bc1_parity: magick cannot write DDS BC1");
+        cleanup(&[&input_path]);
+        return;
+    }
+
+    // Decode DDS with IM (reference)
+    let ref_ok = Command::new("magick")
+        .args([dds_path.to_str().unwrap(), ref_path.to_str().unwrap()])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !ref_ok {
+        eprintln!("SKIP dds_bc1_parity: magick cannot decode DDS");
+        cleanup(&[&input_path, &dds_path]);
+        return;
+    }
+
+    // Decode DDS with rasmcore
+    let dds_data = std::fs::read(&dds_path).unwrap();
+    let our_result = rasmcore_image::domain::decoder::decode(&dds_data).unwrap();
+    let our_rgb: Vec<u8> = if our_result.info.format == PixelFormat::Rgba8 {
+        our_result
+            .pixels
+            .chunks_exact(4)
+            .flat_map(|c| &c[..3])
+            .copied()
+            .collect()
+    } else {
+        our_result.pixels.clone()
+    };
+
+    let magick_rgb = read_png_rgb(&ref_path);
+
+    let error = mae(&our_rgb, &magick_rgb);
+    eprintln!("  dds_bc1_parity: MAE = {error:.4}");
+
+    cleanup(&[&input_path, &dds_path, &ref_path]);
+
+    // BC1 decompression should be deterministic — both IM and bcdec_rs implement
+    // the same spec. Expect near-exact match (< 1.0 for rounding).
+    assert!(
+        error < 1.0,
+        "DDS BC1 parity: MAE = {error:.4} (expected < 1.0)"
+    );
+}
+
+#[test]
+fn dds_bc3_parity_vs_imagemagick() {
+    if !magick_available() {
+        eprintln!("SKIP dds_bc3_parity: magick not available");
+        return;
+    }
+
+    let (w, h) = (16u32, 16u32);
+    let pixels = gradient_rgb(w, h);
+    let input_path = write_png(&pixels, w, h, 3);
+
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dds_path = std::env::temp_dir().join(format!("refaudit_bc3_{id}.dds"));
+    let ref_path = std::env::temp_dir().join(format!("refaudit_bc3_ref_{id}.png"));
+
+    let dds_ok = Command::new("magick")
+        .args([
+            input_path.to_str().unwrap(),
+            "-define",
+            "dds:compression=dxt5",
+            "-define",
+            "dds:mipmaps=0",
+            dds_path.to_str().unwrap(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !dds_ok {
+        eprintln!("SKIP dds_bc3_parity: magick cannot write DDS BC3");
+        cleanup(&[&input_path]);
+        return;
+    }
+
+    let ref_ok = Command::new("magick")
+        .args([dds_path.to_str().unwrap(), ref_path.to_str().unwrap()])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !ref_ok {
+        eprintln!("SKIP dds_bc3_parity: magick cannot decode DDS");
+        cleanup(&[&input_path, &dds_path]);
+        return;
+    }
+
+    let dds_data = std::fs::read(&dds_path).unwrap();
+    let our_result = rasmcore_image::domain::decoder::decode(&dds_data).unwrap();
+    let our_rgb: Vec<u8> = if our_result.info.format == PixelFormat::Rgba8 {
+        our_result
+            .pixels
+            .chunks_exact(4)
+            .flat_map(|c| &c[..3])
+            .copied()
+            .collect()
+    } else {
+        our_result.pixels.clone()
+    };
+
+    let magick_rgb = read_png_rgb(&ref_path);
+    let error = mae(&our_rgb, &magick_rgb);
+    eprintln!("  dds_bc3_parity: MAE = {error:.4}");
+
+    cleanup(&[&input_path, &dds_path, &ref_path]);
+
+    assert!(
+        error < 1.0,
+        "DDS BC3 parity: MAE = {error:.4} (expected < 1.0)"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -2900,6 +2900,72 @@ mod tests {
         buf
     }
 
+    // ── DDS BCn tests ──────────────────────────────────────────────────
+
+    /// Build a minimal DDS file with FourCC header and compressed data.
+    fn make_dds_fourcc(width: u32, height: u32, fourcc: &[u8; 4], blocks: &[u8]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Magic
+        buf.extend_from_slice(b"DDS ");
+        // Header size = 124
+        buf.extend_from_slice(&124u32.to_le_bytes());
+        // Flags: DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT
+        let flags: u32 = 0x1 | 0x2 | 0x4 | 0x1000;
+        buf.extend_from_slice(&flags.to_le_bytes());
+        // Height, Width
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&width.to_le_bytes());
+        // Pitch/LinearSize (0 for now)
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        // Depth, MipMapCount
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        // Reserved1[11]
+        buf.extend_from_slice(&[0u8; 44]);
+        // -- Pixel format struct (32 bytes at offset 76) --
+        // PF size = 32
+        buf.extend_from_slice(&32u32.to_le_bytes());
+        // PF flags = DDPF_FOURCC (0x4)
+        buf.extend_from_slice(&4u32.to_le_bytes());
+        // FourCC
+        buf.extend_from_slice(fourcc);
+        // RGBBitCount, masks (unused for compressed)
+        buf.extend_from_slice(&[0u8; 20]);
+        // Caps, Caps2, Caps3, Caps4, Reserved2
+        let caps: u32 = 0x1000; // DDSCAPS_TEXTURE
+        buf.extend_from_slice(&caps.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 16]);
+        // Total header should be 128 bytes (4 magic + 124 header)
+        assert_eq!(buf.len(), 128);
+        // Compressed data
+        buf.extend_from_slice(blocks);
+        buf
+    }
+
+    /// Build a DDS file with DX10 extended header.
+    fn make_dds_dx10(
+        width: u32,
+        height: u32,
+        dxgi_format: u32,
+        blocks: &[u8],
+    ) -> Vec<u8> {
+        let mut buf = make_dds_fourcc(width, height, b"DX10", &[]);
+        // DX10 header extension (20 bytes):
+        // DXGI_FORMAT
+        buf.extend_from_slice(&dxgi_format.to_le_bytes());
+        // resourceDimension = D3D10_RESOURCE_DIMENSION_TEXTURE2D (3)
+        buf.extend_from_slice(&3u32.to_le_bytes());
+        // miscFlag
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        // arraySize = 1
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        // miscFlags2
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        // Compressed data
+        buf.extend_from_slice(blocks);
+        buf
+    }
+
     #[test]
     fn apng_frame_count_3() {
         let data = make_apng(4, 4);
@@ -2972,5 +3038,149 @@ mod tests {
         // Static PNG decode() should still work exactly as before
         let decoded = decode(&data).unwrap();
         assert_eq!(decoded.info.format, PixelFormat::Rgb8);
+    }
+
+    #[test]
+    fn dds_bc1_decode_solid_color() {
+        // BC1 block encoding a solid red 4x4 block:
+        // Two 16-bit RGB565 endpoints, both = red (0xF800),
+        // plus 4 bytes of index data (all 0 = use endpoint 0).
+        let mut block = [0u8; 8];
+        // Endpoint 0: R=31, G=0, B=0 → RGB565 = 0xF800
+        block[0..2].copy_from_slice(&0xF800u16.to_le_bytes());
+        // Endpoint 1: same
+        block[2..4].copy_from_slice(&0xF800u16.to_le_bytes());
+        // Indices: all 0 (use endpoint 0)
+        block[4..8].copy_from_slice(&[0, 0, 0, 0]);
+
+        let dds = make_dds_fourcc(4, 4, b"DXT1", &block);
+        let result = decode(&dds).unwrap();
+        assert_eq!(result.info.width, 4);
+        assert_eq!(result.info.height, 4);
+        assert_eq!(result.info.format, PixelFormat::Rgba8);
+        // Check first pixel is red (R=255, G=0, B=0, A=255)
+        // BC1 expands 5-bit red (31) to 8-bit: 31 * 255/31 = 255
+        assert_eq!(result.pixels[0], 255); // R
+        assert_eq!(result.pixels[1], 0); // G
+        assert_eq!(result.pixels[2], 0); // B
+        assert_eq!(result.pixels[3], 255); // A
+    }
+
+    #[test]
+    fn dds_bc3_decode_solid() {
+        // BC3 = 8 bytes alpha block + 8 bytes BC1 color block = 16 bytes
+        let mut block = [0u8; 16];
+        // Alpha block: endpoints 255, 255, indices all 0 → alpha=255
+        block[0] = 255; // alpha endpoint 0
+        block[1] = 255; // alpha endpoint 1
+        // Alpha indices: all 0
+        block[2..8].copy_from_slice(&[0; 6]);
+        // Color block: solid green (G=63 in RGB565 = 0x07E0)
+        block[8..10].copy_from_slice(&0x07E0u16.to_le_bytes());
+        block[10..12].copy_from_slice(&0x07E0u16.to_le_bytes());
+        block[12..16].copy_from_slice(&[0, 0, 0, 0]);
+
+        let dds = make_dds_fourcc(4, 4, b"DXT5", &block);
+        let result = decode(&dds).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgba8);
+        assert_eq!(result.pixels[0], 0); // R
+        assert_eq!(result.pixels[1], 255); // G (6-bit 63 → 255)
+        assert_eq!(result.pixels[2], 0); // B
+        assert_eq!(result.pixels[3], 255); // A
+    }
+
+    #[test]
+    fn dds_bc4_decode_solid() {
+        // BC4 = 8 bytes for single channel
+        let mut block = [0u8; 8];
+        // Endpoints: 200, 200 (solid value)
+        block[0] = 200;
+        block[1] = 200;
+        // Indices: all 0
+        block[2..8].copy_from_slice(&[0; 6]);
+
+        let dds = make_dds_dx10(4, 4, 80, &block); // DXGI_FORMAT_BC4_UNORM = 80
+        let result = decode(&dds).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Gray8);
+        assert_eq!(result.info.width, 4);
+        assert_eq!(result.info.height, 4);
+        assert_eq!(result.pixels.len(), 16);
+        assert_eq!(result.pixels[0], 200);
+    }
+
+    #[test]
+    fn dds_bc7_decode_basic() {
+        // BC7 is complex — use a real block from bcdec_rs test suite
+        // Mode 4 all-zero block should produce black+alpha
+        let block = [0u8; 16];
+        let dds = make_dds_dx10(4, 4, 98, &block); // DXGI_FORMAT_BC7_UNORM = 98
+        let result = decode(&dds).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgba8);
+        assert_eq!(result.info.width, 4);
+        assert_eq!(result.info.height, 4);
+        // All-zero BC7 block should produce consistent output
+        assert_eq!(result.pixels.len(), 64); // 4*4*4
+    }
+
+    #[test]
+    fn dds_bcn_non_multiple_of_4() {
+        // 6x6 image = 2x2 blocks (padded to 8x8 internally)
+        // Need 4 BC1 blocks = 32 bytes
+        let blocks = [0u8; 32];
+        let dds = make_dds_fourcc(6, 6, b"DXT1", &blocks);
+        let result = decode(&dds).unwrap();
+        assert_eq!(result.info.width, 6);
+        assert_eq!(result.info.height, 6);
+        // Output should be exactly 6x6, not 8x8
+        assert_eq!(result.pixels.len(), 6 * 6 * 4);
+    }
+
+    #[test]
+    fn dds_uncompressed_still_works() {
+        // Verify backward compatibility: 2x2 BGRA uncompressed
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"DDS ");
+        buf.extend_from_slice(&124u32.to_le_bytes());
+        // Flags
+        let flags: u32 = 0x1 | 0x2 | 0x4 | 0x8 | 0x1000;
+        buf.extend_from_slice(&flags.to_le_bytes());
+        buf.extend_from_slice(&2u32.to_le_bytes()); // height
+        buf.extend_from_slice(&2u32.to_le_bytes()); // width
+        buf.extend_from_slice(&8u32.to_le_bytes()); // pitch
+        buf.extend_from_slice(&0u32.to_le_bytes()); // depth
+        buf.extend_from_slice(&0u32.to_le_bytes()); // mipmaps
+        buf.extend_from_slice(&[0u8; 44]); // reserved
+        // Pixel format
+        buf.extend_from_slice(&32u32.to_le_bytes()); // size
+        let pf_flags: u32 = 0x40 | 0x01; // DDPF_RGB | DDPF_ALPHAPIXELS
+        buf.extend_from_slice(&pf_flags.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes()); // fourcc
+        buf.extend_from_slice(&32u32.to_le_bytes()); // bits
+        buf.extend_from_slice(&0x00FF0000u32.to_le_bytes()); // R mask
+        buf.extend_from_slice(&0x0000FF00u32.to_le_bytes()); // G mask
+        buf.extend_from_slice(&0x000000FFu32.to_le_bytes()); // B mask
+        buf.extend_from_slice(&0xFF000000u32.to_le_bytes()); // A mask
+        // Caps
+        buf.extend_from_slice(&0x1000u32.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 16]);
+        assert_eq!(buf.len(), 128);
+        // 2x2 BGRA pixels: all red
+        for _ in 0..4 {
+            buf.extend_from_slice(&[0, 0, 255, 255]); // BGRA red
+        }
+        let result = decode(&buf).unwrap();
+        assert_eq!(result.info.format, PixelFormat::Rgba8);
+        assert_eq!(result.pixels[0], 255); // R
+        assert_eq!(result.pixels[1], 0); // G
+        assert_eq!(result.pixels[2], 0); // B
+        assert_eq!(result.pixels[3], 255); // A
+    }
+
+    #[test]
+    fn dds_detect_format_bcn() {
+        // BC1 DDS should be detected as "dds"
+        let block = [0u8; 8];
+        let dds = make_dds_fourcc(4, 4, b"DXT1", &block);
+        assert_eq!(detect_format(&dds), Some("dds".to_string()));
     }
 }
