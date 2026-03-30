@@ -1,0 +1,133 @@
+id: validate-pro-filters_20260330044600Z
+title: Reference Parity Tests + Benchmarks for Pro Filters
+type: chore
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add reference parity tests (vs Python/OpenCV/ffmpeg) and criterion benchmarks
+    for all 15 pro filters registered in register-filters-pro track.
+  context: |
+    15 pro filters (color grading, tonemapping, content-aware) were registered in
+    register-filters-pro_20260330041400Z but lack reference validation and benchmarks.
+    These are high-value differentiators (ASC CDL, lift/gamma/gain, seam carving,
+    smart crop) that need verified correctness against industry-standard tools.
+  codebase_analysis: |
+    EXISTING TEST PATTERNS:
+    - tests/filter_reference_parity.rs — Python venv (numpy, Pillow, opencv-python-headless)
+      for reference outputs, compared via MAE/PSNR. Uses run_python_ref() helper that
+      shells out to tests/fixtures/.venv/bin/python3.
+    - tests/reference_audit.rs — ImageMagick comparisons via ref_tools::magick_pipeline().
+      Skips gracefully if magick not installed.
+    - smart_crop.rs already has vips parity tests (vips_smartcrop_pixels helper).
+
+    EXISTING BENCHMARK PATTERNS:
+    - benches/perf.rs — criterion groups with Throughput::Elements(pixel_count).
+      Tests 256, 512, 1024 image sizes. Uses ref_tools::has_tool() for optional
+      comparison against external tools.
+    - benches/ref_tools.rs — has_tool(), run_timed(), magick_pipeline(), vips_pipeline()
+      helpers (212 lines).
+
+    METRIC HELPERS (already defined in test files):
+    - mean_absolute_error(a, b) -> f64
+    - max_absolute_error(a, b) -> u8
+    - psnr(a, b) -> f64
+
+    FILTER IMPLEMENTATIONS TO VALIDATE:
+    Color grading (color_grading.rs):
+      asc_cdl — clamp01((in * slope + offset) ^ power), SOP per ITU-R BT.1886
+      lift_gamma_gain — gain * (in + lift*(1-in)) ^ (1/gamma), DaVinci formula
+      split_toning — luminance-based shadow/highlight color blend
+      curves (master/r/g/b) — monotone cubic spline LUT via Fritsch-Carlson
+      film_grain — hash_noise with midtone emphasis, deterministic per seed
+    Tonemapping (color_grading.rs):
+      tonemap_reinhard — L / (1 + L) per-channel
+      tonemap_drago — log(1+L)/log(1+Lmax) with bias power
+      tonemap_filmic — Narkowicz ACES: (x*(a*x+b))/(x*(c*x+d)+e)
+    Content-aware (smart_crop.rs, content_aware.rs):
+      smart_crop — entropy/attention crop (already has some vips tests)
+      seam_carve_width/height — Avidan-Shamir DP seam removal
+      selective_color — HSL hue-range selection + shift/sat/light adjustment
+  acceptance_criteria:
+    - Each of the 15 pro filters has at least one reference parity test
+    - Color grading filters (asc_cdl, lgg, curves) achieve MAE < 0.5 vs Python reference
+    - Tonemapping filters achieve MAE < 1.0 vs Python reference (float precision variance)
+    - Content-aware filters achieve PSNR >= 25dB or pass visual regression test
+    - Film grain is deterministic (same seed produces identical output)
+    - Criterion benchmarks exist for all 15 filters at 3 image sizes
+    - Benchmarks run ONE AT A TIME (CPU-intensive per user preference)
+    - Missing reference tools (ffmpeg, vips, magick, Python) skip gracefully
+    - No regressions in existing test suite
+  out_of_scope: |
+    Fixing pre-existing test failures (threshold_tests, WASM integration).
+    Multi-image filter validation (blend, inpaint, HDR fusion).
+    Performance optimization of any filter (this is measurement only).
+    Adding new filter implementations or changing existing behavior.
+  technical_notes: |
+    PYTHON REFERENCES:
+    Use inline Python scripts via run_python_ref() pattern from filter_reference_parity.rs.
+    The formulas are simple enough to implement in numpy one-liners. Python venv at
+    tests/fixtures/.venv already has numpy/Pillow/OpenCV.
+
+    REFERENCE TOOL AVAILABILITY:
+    Use ref_tools::has_tool() for optional tool checks. Tests MUST NOT fail when
+    external tools are missing — use eprintln!("SKIP — ...") and return early.
+    Exception: Python venv is required (panic if missing, matching existing pattern).
+
+    BENCHMARK SIZING:
+    - 256x256, 1024x1024, 4096x4096 for point-op filters (fast: grading, tonemap)
+    - 256x256, 1024x1024 only for O(n^2) filters (seam carving is too slow at 4096)
+    - sample_size(10) for large images to avoid excessive runtime
+    - Use Criterion groups with throughput tracking (Elements = pixel count)
+
+    TEST FILE ORGANIZATION:
+    Add new test file: tests/pro_filter_parity.rs (follows filter_reference_parity.rs pattern)
+    Add new bench group in benches/perf.rs: pro_filter_benchmarks()
+
+    SEAM CARVING NOTE:
+    Output dimensions differ from input. Parity test should verify:
+    1. Output buffer size matches expected dimensions
+    2. Content preservation (high-energy regions survive) via PSNR against naive center-crop
+plan:
+  - phase: Color Grading Parity
+    tasks:
+      - text: "ASC CDL parity — Python numpy reference: out = clamp((in * slope + offset) ^ power), MAE < 0.5"
+        done: false
+      - text: "Lift/Gamma/Gain parity — Python reference: out = gain * (in + lift*(1-in)) ^ (1/gamma), MAE < 0.5"
+        done: false
+      - text: "Split toning parity — Python reference: luminance-based shadow/highlight blend, MAE < 1.0"
+        done: false
+      - text: "Curves (master + per-channel) parity — Python monotone cubic spline LUT, MAE < 0.5"
+        done: false
+      - text: "Film grain determinism — same seed produces identical output, verify midtone emphasis"
+        done: false
+  - phase: Tonemapping Parity
+    tasks:
+      - text: "Reinhard parity — Python reference: L/(1+L) per-channel, MAE < 0.5"
+        done: false
+      - text: "Drago parity — Python reference: log mapping with bias, MAE < 1.0"
+        done: false
+      - text: "Filmic/ACES parity — Python reference: Narkowicz formula, MAE < 0.5"
+        done: false
+  - phase: Content-Aware Parity
+    tasks:
+      - text: "Smart crop parity — exercise registered wrapper, extend existing vips comparison tests"
+        done: false
+      - text: "Seam carve width parity — verify output dimensions + content preservation PSNR >= 25dB vs naive crop"
+        done: false
+      - text: "Seam carve height parity — same pattern as width, transposed"
+        done: false
+      - text: "Selective color parity — Python HSL reference: hue-range selection + adjustments, MAE < 1.0"
+        done: false
+  - phase: Benchmarks and Verification
+    tasks:
+      - text: "Add criterion benchmark group pro_filters — all 15 filters at 256x256, 1024x1024, 4096x4096"
+        done: false
+      - text: "Add optional ffmpeg/magick comparison benchmarks (skip if tool missing)"
+        done: false
+      - text: "Run benchmarks once, document baseline ns/pixel in markdown report"
+        done: false
+      - text: "Run ./scripts/validate.sh — no new test regressions"
+        done: false
+extra: {}
