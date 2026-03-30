@@ -649,9 +649,12 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
 
         if ref_tools::has_tool("magick") {
             let p = png_path_str.clone();
-            group.bench_function(BenchmarkId::new("gaussian_blur_cv/imagemagick", size), |b| {
-                b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x2"], "png", None));
-            });
+            group.bench_function(
+                BenchmarkId::new("gaussian_blur_cv/imagemagick", size),
+                |b| {
+                    b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x2"], "png", None));
+                },
+            );
         }
 
         // Guided filter (Gray8, radius=4, epsilon=0.01)
@@ -723,9 +726,12 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
 
         if ref_tools::has_tool("magick") {
             let p = png_path_str.clone();
-            group.bench_function(BenchmarkId::new("gaussian_blur_cv/imagemagick", size), |b| {
-                b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x2"], "png", None));
-            });
+            group.bench_function(
+                BenchmarkId::new("gaussian_blur_cv/imagemagick", size),
+                |b| {
+                    b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x2"], "png", None));
+                },
+            );
         }
     }
 
@@ -1369,7 +1375,13 @@ fn edge_detection_benchmarks(c: &mut Criterion) {
                 b.iter(|| {
                     ref_tools::magick_pipeline(
                         &p,
-                        &["-colorspace", "Gray", "-morphology", "Convolve", "Laplacian:0"],
+                        &[
+                            "-colorspace",
+                            "Gray",
+                            "-morphology",
+                            "Convolve",
+                            "Laplacian:0",
+                        ],
                         "png",
                         None,
                     )

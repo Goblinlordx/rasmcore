@@ -1,80 +1,102 @@
 id: bench-filters-spatial_20260329230313Z
-title: "Benchmark Suite \u2014 Spatial Filter Coverage"
+title: Benchmark Suite — Spatial Filter Coverage
 type: chore
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-30'
 spec:
-  summary: >
-    Add Criterion benchmarks for spatial filters not yet covered: median,
-    bokeh_blur, guided_filter, nlm_denoise, convolve, gaussian_blur_cv,
-    and all morphological operations.
-  context: |
-    perf.rs currently benchmarks blur, sharpen, bilateral (256/512 only),
+  summary: 'Add Criterion benchmarks for spatial filters not yet covered: median, bokeh_blur, guided_filter, nlm_denoise,
+    convolve, gaussian_blur_cv, and all morphological operations.
+
+    '
+  context: 'perf.rs currently benchmarks blur, sharpen, bilateral (256/512 only),
+
     and CLAHE. The remaining spatial filters -- many of which are
+
     computationally expensive -- have no performance data.
-  codebase_analysis: |
-    Unbenchmarked spatial filters in filters.rs:
+
+    '
+  codebase_analysis: 'Unbenchmarked spatial filters in filters.rs:
+
     - median(radius) -- O(r^2) per pixel, expensive at large radii
+
     - bokeh_blur(radius, shape) -- non-separable 2D convolution
+
     - guided_filter() -- O(N) edge-preserving filter via integral images
+
     - nlm_denoise() -- non-local means, very expensive
+
     - convolve(kernel) -- general 2D convolution
+
     - gaussian_blur_cv(sigma) -- OpenCV-style reference Gaussian
+
     - erode/dilate/morph_open/close/gradient/tophat/blackhat
+
 
     bilateral already has 256/512 benchmarks but should be extended to 1024.
 
+
     ImageMagick supports median (-statistic Median), morphological ops
+
     (-morphology), and Gaussian blur for reference comparisons.
+
+    '
   acceptance_criteria:
-    - Criterion benchmarks for median, bokeh_blur (disc + hex), guided_filter, nlm_denoise at 256/512
-    - Criterion benchmarks for convolve (5x5 kernel), gaussian_blur_cv at 256/512/1024
-    - Criterion benchmarks for erode, dilate, morph_open, morph_close at 256/512/1024
-    - Extend existing bilateral benchmark to include 1024 size
-    - ImageMagick reference comparison for median, morphological ops, and Gaussian blur
-    - nlm_denoise and guided_filter are rasmcore-only (no standard CLI equivalent)
-  out_of_scope: |
-    Optimizing filter performance -- this track only adds measurement.
+  - Criterion benchmarks for median, bokeh_blur (disc + hex), guided_filter, nlm_denoise at 256/512
+  - Criterion benchmarks for convolve (5x5 kernel), gaussian_blur_cv at 256/512/1024
+  - Criterion benchmarks for erode, dilate, morph_open, morph_close at 256/512/1024
+  - Extend existing bilateral benchmark to include 1024 size
+  - ImageMagick reference comparison for median, morphological ops, and Gaussian blur
+  - nlm_denoise and guided_filter are rasmcore-only (no standard CLI equivalent)
+  out_of_scope: 'Optimizing filter performance -- this track only adds measurement.
+
     WASM benchmarks (separate concern per product.yaml).
-  technical_notes: |
-    Follow the existing filter benchmark pattern: decode a PNG test image,
+
+    '
+  technical_notes: 'Follow the existing filter benchmark pattern: decode a PNG test image,
+
     run the filter in a Criterion closure, measure throughput as pixels/sec.
 
+
     For expensive filters (nlm_denoise, guided_filter), limit to 256/512 to
+
     keep CI times reasonable. Use criterion sample_size(10) for very slow ops.
 
+
     ImageMagick morphology: magick convert input.png -morphology Erode Diamond:3 output.png
+
     ImageMagick median: magick convert input.png -statistic Median 3x3 output.png
+
+    '
 plan:
-  - phase: "Convolution and Blur Filters"
-    tasks:
-      - text: "Add median filter benchmark (r=3) at 256/512 with ImageMagick comparison"
-        done: false
-      - text: "Add bokeh_blur benchmark (disc r=5, hex r=5) at 256/512"
-        done: false
-      - text: "Add convolve benchmark (5x5 sharpen kernel) at 256/512/1024"
-        done: false
-      - text: "Add gaussian_blur_cv benchmark (sigma=2.0) at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add guided_filter benchmark at 256/512 -- rasmcore only"
-        done: false
-      - text: "Add nlm_denoise benchmark at 256/512 -- rasmcore only, sample_size(10)"
-        done: false
-  - phase: "Morphological Operations"
-    tasks:
-      - text: "Add erode benchmark (rect 3x3) at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add dilate benchmark (rect 3x3) at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add morph_open and morph_close benchmarks at 256/512/1024"
-        done: false
-  - phase: "Existing Coverage Extension"
-    tasks:
-      - text: "Extend bilateral benchmark to include 1024 size"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Run cargo bench --bench perf -- filter and verify all new groups appear"
-        done: false
+- phase: Convolution and Blur Filters
+  tasks:
+  - text: Add median filter benchmark (r=3) at 256/512 with ImageMagick comparison
+    done: true
+  - text: Add bokeh_blur benchmark (disc r=5, hex r=5) at 256/512
+    done: true
+  - text: Add convolve benchmark (5x5 sharpen kernel) at 256/512/1024
+    done: true
+  - text: Add gaussian_blur_cv benchmark (sigma=2.0) at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add guided_filter benchmark at 256/512 -- rasmcore only
+    done: true
+  - text: Add nlm_denoise benchmark at 256/512 -- rasmcore only, sample_size(10)
+    done: true
+- phase: Morphological Operations
+  tasks:
+  - text: Add erode benchmark (rect 3x3) at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add dilate benchmark (rect 3x3) at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add morph_open and morph_close benchmarks at 256/512/1024
+    done: true
+- phase: Existing Coverage Extension
+  tasks:
+  - text: Extend bilateral benchmark to include 1024 size
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run cargo bench --bench perf -- filter and verify all new groups appear
+    done: true
 extra: {}
