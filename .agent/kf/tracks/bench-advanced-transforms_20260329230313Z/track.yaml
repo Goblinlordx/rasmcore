@@ -1,101 +1,135 @@
 id: bench-advanced-transforms_20260329230313Z
-title: "Benchmark Suite \u2014 Advanced Filters, Geometric Warps, and Transforms"
+title: Benchmark Suite — Advanced Filters, Geometric Warps, and Transforms
 type: chore
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-30'
 spec:
-  summary: >
-    Add Criterion benchmarks for retinex, dehaze, clarity, HDR fusion,
-    perspective warp, displacement map, affine transform, and standalone
-    transform operations (crop, rotate, flip, pad, trim).
-  context: |
-    These are the most computationally complex operations in the filter suite.
+  summary: 'Add Criterion benchmarks for retinex, dehaze, clarity, HDR fusion, perspective warp, displacement map, affine
+    transform, and standalone transform operations (crop, rotate, flip, pad, trim).
+
+    '
+  context: 'These are the most computationally complex operations in the filter suite.
+
     Performance data is critical for identifying optimization targets. The
+
     transform operations (crop, rotate, flip) currently appear in pipeline
+
     benchmarks but have no standalone measurements.
-  codebase_analysis: |
-    Unbenchmarked advanced filters:
+
+    '
+  codebase_analysis: 'Unbenchmarked advanced filters:
+
     - retinex_ssr(sigma), retinex_msr(sigmas), retinex_msrcr() -- multi-pass
+
     - dehaze() -- dark channel prior + guided filter
+
     - clarity() -- local contrast via Laplacian pyramid
+
     - pyramid_detail_remap() -- Laplacian pyramid manipulation
+
     - mertens_fusion() -- multi-exposure fusion (takes multiple images)
+
     - debevec_hdr_merge() -- HDR tone mapping
 
+
     Unbenchmarked geometric warps:
+
     - perspective_warp(src_points, dst_points) -- homography + bilinear sampling
+
     - perspective_correct() -- auto-correction via Hough lines
+
     - displacement_map(map_x, map_y) -- per-pixel warping
+
     - affine() -- 2D affine transform
 
+
     Unbenchmarked standalone transforms:
+
     - crop, rotate (90/180/270), flip (H/V), rotate_arbitrary
+
     - pad, trim, auto_orient
+
 
     Resize is already benchmarked at 256/512/1024 with ImageMagick comparison.
 
+
     ImageMagick can compare for most transforms. libvips for perspective/affine.
+
+    '
   acceptance_criteria:
-    - Criterion benchmarks for retinex_ssr, dehaze, clarity at 256/512
-    - Criterion benchmarks for mertens_fusion at 256 (very expensive, 3 input images)
-    - Criterion benchmarks for perspective_warp, displacement_map, affine at 256/512/1024
-    - Criterion benchmarks for crop, rotate_90, flip_horizontal at 256/512/1024
-    - Criterion benchmarks for pad, trim at 256/512/1024
-    - ImageMagick reference comparison for crop, rotate, flip, perspective
-    - Expensive operations use sample_size(10) or measurement_time(10s)
-  out_of_scope: |
-    debevec_response_curve (analysis, not throughput), perspective_correct
+  - Criterion benchmarks for retinex_ssr, dehaze, clarity at 256/512
+  - Criterion benchmarks for mertens_fusion at 256 (very expensive, 3 input images)
+  - Criterion benchmarks for perspective_warp, displacement_map, affine at 256/512/1024
+  - Criterion benchmarks for crop, rotate_90, flip_horizontal at 256/512/1024
+  - Criterion benchmarks for pad, trim at 256/512/1024
+  - ImageMagick reference comparison for crop, rotate, flip, perspective
+  - Expensive operations use sample_size(10) or measurement_time(10s)
+  out_of_scope: 'debevec_response_curve (analysis, not throughput), perspective_correct
+
     (includes Hough detection -- too variable for stable benchmarks),
+
     auto_orient (EXIF-dependent, not a pure compute benchmark).
-  technical_notes: |
-    Retinex/dehaze/clarity are expensive multi-pass algorithms. Limit to
+
+    '
+  technical_notes: 'Retinex/dehaze/clarity are expensive multi-pass algorithms. Limit to
+
     256/512 with extended measurement time.
 
+
     mertens_fusion requires 3 input images at different exposures. Generate
+
     by adjusting brightness of the same base image.
 
+
     displacement_map needs pre-generated map_x/map_y arrays. Use a simple
+
     barrel distortion map (same as the parity test fixtures).
 
+
     perspective_warp needs src/dst point pairs. Use a moderate rotation
+
     (corners shifted by ~10% of image size).
 
+
     Transform benchmarks should use the "transform" Criterion group to
+
     separate from compute-bound "filter" group.
+
+    '
 plan:
-  - phase: "Enhancement Filters"
-    tasks:
-      - text: "Add retinex_ssr benchmark (sigma=80) at 256/512 -- rasmcore only"
-        done: false
-      - text: "Add dehaze benchmark at 256/512 -- rasmcore only"
-        done: false
-      - text: "Add clarity benchmark at 256/512 -- rasmcore only"
-        done: false
-      - text: "Add mertens_fusion benchmark at 256 with 3 exposure inputs -- rasmcore only"
-        done: false
-  - phase: "Geometric Warps"
-    tasks:
-      - text: "Add perspective_warp benchmark at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add displacement_map benchmark (barrel distortion) at 256/512/1024"
-        done: false
-      - text: "Add affine benchmark (15-degree rotation) at 256/512/1024"
-        done: false
-  - phase: "Standalone Transforms"
-    tasks:
-      - text: "Add crop benchmark (center 50%) at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add rotate_90 benchmark at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add flip_horizontal benchmark at 256/512/1024 with ImageMagick comparison"
-        done: false
-      - text: "Add pad benchmark (add 10px border) at 256/512/1024"
-        done: false
-      - text: "Add trim benchmark at 256/512/1024"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Run cargo bench --bench perf and verify all new groups appear"
-        done: false
+- phase: Enhancement Filters
+  tasks:
+  - text: Add retinex_ssr benchmark (sigma=80) at 256/512 -- rasmcore only
+    done: true
+  - text: Add dehaze benchmark at 256/512 -- rasmcore only
+    done: true
+  - text: Add clarity benchmark at 256/512 -- rasmcore only
+    done: true
+  - text: Add mertens_fusion benchmark at 256 with 3 exposure inputs -- rasmcore only
+    done: true
+- phase: Geometric Warps
+  tasks:
+  - text: Add perspective_warp benchmark at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add displacement_map benchmark (barrel distortion) at 256/512/1024
+    done: true
+  - text: Add affine benchmark (15-degree rotation) at 256/512/1024
+    done: true
+- phase: Standalone Transforms
+  tasks:
+  - text: Add crop benchmark (center 50%) at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add rotate_90 benchmark at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add flip_horizontal benchmark at 256/512/1024 with ImageMagick comparison
+    done: true
+  - text: Add pad benchmark (add 10px border) at 256/512/1024
+    done: true
+  - text: Add trim benchmark at 256/512/1024
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run cargo bench --bench perf and verify all new groups appear
+    done: true
 extra: {}
