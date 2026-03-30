@@ -5,80 +5,114 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add mask_apply (grayscale mask to alpha) and blend_if (PS-style conditional
+  summary: 'Add mask_apply (grayscale mask to alpha) and blend_if (PS-style conditional
+
     blending by luminosity range). Two compositing building blocks missing from
+
     the alpha/compositing toolset.
-  context: |
-    mask_apply converts a grayscale image into an alpha channel mask — fundamental
+
+    '
+  context: 'mask_apply converts a grayscale image into an alpha channel mask — fundamental
+
     for selective editing workflows. IM uses -compose CopyOpacity. blend_if is
-    Photoshop's Blend If slider: it blends two layers conditionally based on
+
+    Photoshop''s Blend If slider: it blends two layers conditionally based on
+
     luminosity ranges (e.g., only affect highlights, protect shadows). Both are
+
     essential compositing primitives.
-  codebase_analysis: |
-    EXISTING COMPOSITING:
+
+    '
+  codebase_analysis: 'EXISTING COMPOSITING:
+
     - alpha_composite_over() in composite.rs — standard Porter-Duff over
+
     - blend() in filters.rs — 19 blend modes (multiply, screen, overlay, etc.)
+
     - premultiply/unpremultiply — alpha state management
+
     - flatten — composite over solid background
 
+
     MISSING:
+
     - mask_apply: no function to set alpha from external grayscale mask
+
     - blend_if: no luminosity-range conditional blending
 
+
     INFRASTRUCTURE:
+
     - PixelFormat::Rgba8 is the standard compositing format
+
     - BT.709 luminance used throughout (0.2126R + 0.7152G + 0.0722B)
+
     - Sigmoid/smooth-step transitions available in sigmoidal_contrast
+
+    '
   acceptance_criteria:
-    - mask_apply takes image + grayscale mask, outputs RGBA with alpha = mask value
-    - mask_apply works with different-size masks (resized to match image)
-    - blend_if takes two images + luminosity range params, produces conditional blend
-    - blend_if has smooth feathering at range boundaries (not hard cutoff)
-    - blend_if params match PS convention (this_layer_black, this_layer_white, underlying_black, underlying_white)
-    - Both registered with ConfigParams
-    - IM parity test for mask_apply vs -compose CopyOpacity (EXACT tier)
-    - Both support RGB8 and RGBA8 input
-  out_of_scope: |
-    Per-channel blend-if (R/G/B separate). Mask painting/generation.
+  - mask_apply takes image + grayscale mask, outputs RGBA with alpha = mask value
+  - mask_apply works with different-size masks (resized to match image)
+  - blend_if takes two images + luminosity range params, produces conditional blend
+  - blend_if has smooth feathering at range boundaries (not hard cutoff)
+  - blend_if params match PS convention (this_layer_black, this_layer_white, underlying_black, underlying_white)
+  - Both registered with ConfigParams
+  - IM parity test for mask_apply vs -compose CopyOpacity (EXACT tier)
+  - Both support RGB8 and RGBA8 input
+  out_of_scope: 'Per-channel blend-if (R/G/B separate). Mask painting/generation.
+
     Layer group blending. Clipping masks.
-  technical_notes: |
-    MASK APPLY:
+
+    '
+  technical_notes: 'MASK APPLY:
+
     - Convert input to RGBA8 if not already
+
     - For each pixel: output.alpha = mask_gray_value
+
     - If mask is different size, nearest-neighbor resize to match
+
     - IM: magick image mask -compose CopyOpacity -composite output
 
+
     BLEND IF:
+
     - For each pixel, compute luminosity of both layers
+
     - this_layer range: [black, white] defines where THIS layer is visible
+
     - underlying range: [black, white] defines where UNDERLYING layer shows through
+
     - Feather width (e.g., 10 levels) creates smooth sigmoid transition
+
     - Output = lerp(underlying, this_layer, blend_factor)
+
     - blend_factor = smoothstep(this_luma, range) * smoothstep(under_luma, range)
+
+    '
 plan:
-  - phase: Mask Apply
-    tasks:
-      - text: Implement mask_apply that sets alpha from grayscale mask buffer
-        done: false
-      - text: Handle mask resize when dimensions differ
-        done: false
-      - text: Register with ConfigParams, test with solid and gradient masks
-        done: false
-      - text: IM parity test vs -compose CopyOpacity (EXACT tier)
-        done: false
-  - phase: Blend-If
-    tasks:
-      - text: Implement blend_if with luminosity range and smooth feathering
-        done: false
-      - text: Register with ConfigParams (this_black, this_white, under_black, under_white, feather)
-        done: false
-      - text: Test full-range (0-255) is identity blend, narrow range selectively reveals
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Both in param-manifest.json
-        done: false
-      - text: Full cargo test pass
-        done: false
+- phase: Mask Apply
+  tasks:
+  - text: Implement mask_apply that sets alpha from grayscale mask buffer
+    done: true
+  - text: Handle mask resize when dimensions differ
+    done: true
+  - text: Register with ConfigParams, test with solid and gradient masks
+    done: true
+  - text: IM parity test vs -compose CopyOpacity (EXACT tier)
+    done: true
+- phase: Blend-If
+  tasks:
+  - text: Implement blend_if with luminosity range and smooth feathering
+    done: true
+  - text: Register with ConfigParams (this_black, this_white, under_black, under_white, feather)
+    done: true
+  - text: Test full-range (0-255) is identity blend, narrow range selectively reveals
+    done: true
+- phase: Verification
+  tasks:
+  - text: Both in param-manifest.json
+    done: true
+  - text: Full cargo test pass
+    done: true
 extra: {}
