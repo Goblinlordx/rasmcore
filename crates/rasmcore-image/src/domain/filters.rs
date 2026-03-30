@@ -1424,6 +1424,176 @@ pub fn gradient_map(pixels: &[u8], info: &ImageInfo, stops: String) -> Result<Ve
     Ok(result)
 }
 
+// ─── Sparse Color (Shepard Interpolation) ────────────────────────────────
+
+/// Sparse color parameters (control points as string).
+pub struct SparseColorParams {
+    /// Control points as "x,y:RRGGBB" entries separated by semicolons.
+    pub points: String,
+    /// Inverse distance power (default 2.0). Higher = sharper falloff.
+    pub power: f32,
+}
+
+/// Parse sparse color control points from "x,y:RRGGBB;x,y:RRGGBB;..." format.
+fn parse_sparse_points(points: &str) -> Result<Vec<(f32, f32, [u8; 3])>, ImageError> {
+    let mut result = Vec::new();
+    for entry in points.split(';') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = entry.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err(ImageError::InvalidParameters(format!(
+                "sparse point must be 'x,y:RRGGBB', got '{entry}'"
+            )));
+        }
+        let coords: Vec<&str> = parts[0].split(',').collect();
+        if coords.len() != 2 {
+            return Err(ImageError::InvalidParameters(format!(
+                "coordinates must be 'x,y', got '{}'",
+                parts[0]
+            )));
+        }
+        let x: f32 = coords[0]
+            .trim()
+            .parse()
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid x: '{}'", coords[0])))?;
+        let y: f32 = coords[1]
+            .trim()
+            .parse()
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid y: '{}'", coords[1])))?;
+        let hex = parts[1].trim().trim_start_matches('#');
+        if hex.len() != 6 {
+            return Err(ImageError::InvalidParameters(format!(
+                "color must be 6-digit hex, got '{hex}'"
+            )));
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16)
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid hex: '{hex}'")))?;
+        let g = u8::from_str_radix(&hex[2..4], 16)
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid hex: '{hex}'")))?;
+        let b = u8::from_str_radix(&hex[4..6], 16)
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid hex: '{hex}'")))?;
+        result.push((x, y, [r, g, b]));
+    }
+    if result.is_empty() {
+        return Err(ImageError::InvalidParameters(
+            "sparse_color requires at least one control point".into(),
+        ));
+    }
+    Ok(result)
+}
+
+/// Generate an image by interpolating colors from sparse control points
+/// using Shepard's inverse-distance-weighted method.
+///
+/// Each pixel color is a weighted average of all control points, where
+/// weight = 1 / distance^power. IM equivalent: -sparse-color Shepard "..."
+#[rasmcore_macros::register_filter(name = "sparse_color", category = "color")]
+pub fn sparse_color(
+    pixels: &[u8],
+    info: &ImageInfo,
+    points: String,
+    power: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let ctrl = parse_sparse_points(&points)?;
+    let power = if power <= 0.0 { 2.0 } else { power };
+
+    let bpp = match info.format {
+        PixelFormat::Rgba8 => 4,
+        PixelFormat::Rgb8 => 3,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "sparse_color requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+
+    let mut result = pixels.to_vec();
+    for y in 0..info.height {
+        for x in 0..info.width {
+            let px = x as f32;
+            let py = y as f32;
+            let idx = (y * info.width + x) as usize * bpp;
+
+            let mut sum_r = 0.0f64;
+            let mut sum_g = 0.0f64;
+            let mut sum_b = 0.0f64;
+            let mut sum_w = 0.0f64;
+            let mut exact_match = None;
+
+            for &(cx, cy, color) in &ctrl {
+                let dx = (px - cx) as f64;
+                let dy = (py - cy) as f64;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < 0.001 {
+                    exact_match = Some(color);
+                    break;
+                }
+                let w = 1.0 / dist_sq.powf(power as f64 / 2.0);
+                sum_r += w * color[0] as f64;
+                sum_g += w * color[1] as f64;
+                sum_b += w * color[2] as f64;
+                sum_w += w;
+            }
+
+            if let Some(color) = exact_match {
+                result[idx] = color[0];
+                result[idx + 1] = color[1];
+                result[idx + 2] = color[2];
+            } else if sum_w > 0.0 {
+                result[idx] = (sum_r / sum_w).round().clamp(0.0, 255.0) as u8;
+                result[idx + 1] = (sum_g / sum_w).round().clamp(0.0, 255.0) as u8;
+                result[idx + 2] = (sum_b / sum_w).round().clamp(0.0, 255.0) as u8;
+            }
+            // Alpha preserved (if RGBA)
+        }
+    }
+    Ok(result)
+}
+
+// ─── HSB Modulate ────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// HSB modulate — combined brightness, saturation, hue adjustment.
+pub struct ModulateParams {
+    /// Brightness percentage (100 = unchanged, 0 = black, 200 = 2x bright)
+    #[param(min = 0.0, max = 200.0, step = 1.0, default = 100.0)]
+    pub brightness: f32,
+    /// Saturation percentage (100 = unchanged, 0 = grayscale, 200 = 2x saturated)
+    #[param(min = 0.0, max = 200.0, step = 1.0, default = 100.0)]
+    pub saturation: f32,
+    /// Hue rotation in degrees (0 = unchanged)
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0)]
+    pub hue: f32,
+}
+
+/// Combined brightness/saturation/hue adjustment in HSB color space.
+///
+/// IM equivalent: -modulate brightness,saturation,hue
+/// Uses HSB (same as HSV where B=V=max(R,G,B)), not HSL.
+/// Identity at (100, 100, 0).
+#[rasmcore_macros::register_filter(name = "modulate", category = "color")]
+pub fn modulate(
+    pixels: &[u8],
+    info: &ImageInfo,
+    brightness: f32,
+    saturation: f32,
+    hue: f32,
+) -> Result<Vec<u8>, ImageError> {
+    apply_color_op(
+        pixels,
+        info,
+        &ColorOp::Modulate {
+            brightness: brightness / 100.0,
+            saturation: saturation / 100.0,
+            hue,
+        },
+    )
+}
+
 #[cfg(test)]
 mod color_manipulation_tests {
     use super::*;
@@ -1599,6 +1769,104 @@ mod color_manipulation_tests {
         let result = gradient_map(&pixels, &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
         assert_eq!(result[3], 200, "alpha should be preserved");
         assert_eq!(result[7], 100, "alpha should be preserved");
+    }
+
+    // ── Sparse Color ──
+
+    #[test]
+    fn sparse_color_single_point_fills_uniform() {
+        let pixels = solid_rgb(4, 4, 0, 0, 0);
+        let info = info_rgb8(4, 4);
+        let result = sparse_color(&pixels, &info, "2,2:FF0000".to_string(), 2.0).unwrap();
+        // All pixels should be red (only one control point)
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk, [255, 0, 0]);
+        }
+    }
+
+    #[test]
+    fn sparse_color_two_points_gradient() {
+        let pixels = solid_rgb(8, 1, 0, 0, 0);
+        let info = info_rgb8(8, 1);
+        // Red at x=0, blue at x=7
+        let result =
+            sparse_color(&pixels, &info, "0,0:FF0000;7,0:0000FF".to_string(), 2.0).unwrap();
+        // First pixel should be close to red
+        assert!(
+            result[0] > 200,
+            "first pixel R={} should be >200",
+            result[0]
+        );
+        // Last pixel should be close to blue
+        assert!(
+            result[7 * 3 + 2] > 200,
+            "last pixel B={} should be >200",
+            result[7 * 3 + 2]
+        );
+        // Middle should be a mix
+        let mid = 4 * 3;
+        assert!(
+            result[mid] > 0 && result[mid + 2] > 0,
+            "middle should have both R and B"
+        );
+    }
+
+    #[test]
+    fn sparse_color_invalid_points_error() {
+        let pixels = solid_rgb(4, 4, 0, 0, 0);
+        let info = info_rgb8(4, 4);
+        assert!(sparse_color(&pixels, &info, "invalid".to_string(), 2.0).is_err());
+    }
+
+    // ── Modulate ──
+
+    #[test]
+    fn modulate_identity() {
+        let pixels = solid_rgb(4, 4, 100, 150, 200);
+        let info = info_rgb8(4, 4);
+        let result = modulate(&pixels, &info, 100.0, 100.0, 0.0).unwrap();
+        // Identity: (100%, 100%, 0 deg) should preserve pixels
+        for (a, b) in result.iter().zip(pixels.iter()) {
+            assert!(
+                (*a as i32 - *b as i32).abs() <= 1,
+                "modulate identity: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn modulate_brightness_zero_is_black() {
+        let pixels = solid_rgb(2, 2, 100, 150, 200);
+        let info = info_rgb8(2, 2);
+        let result = modulate(&pixels, &info, 0.0, 100.0, 0.0).unwrap();
+        for &v in &result {
+            assert_eq!(v, 0, "brightness=0 should produce black");
+        }
+    }
+
+    #[test]
+    fn modulate_saturation_zero_is_gray() {
+        let pixels = solid_rgb(2, 2, 255, 0, 0);
+        let info = info_rgb8(2, 2);
+        let result = modulate(&pixels, &info, 100.0, 0.0, 0.0).unwrap();
+        // Desaturated: all channels should be equal (gray)
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk[0], chunk[1], "R should equal G when desaturated");
+            assert_eq!(chunk[1], chunk[2], "G should equal B when desaturated");
+        }
+    }
+
+    #[test]
+    fn modulate_hue_rotation() {
+        let pixels = solid_rgb(2, 2, 255, 0, 0);
+        let info = info_rgb8(2, 2);
+        // Rotate hue by 120 degrees: red -> green
+        let result = modulate(&pixels, &info, 100.0, 100.0, 120.0).unwrap();
+        // Should be approximately green
+        assert!(
+            result[1] > result[0],
+            "after 120 deg hue shift, G should dominate"
+        );
     }
 }
 

@@ -272,6 +272,12 @@ pub enum ColorOp {
     ChannelMix([f32; 9]),
     /// Perceptually weighted saturation: boosts low-saturation more than high.
     Vibrance(f32),
+    /// Combined HSB modulate: brightness factor, saturation factor, hue shift.
+    Modulate {
+        brightness: f32,
+        saturation: f32,
+        hue: f32,
+    },
 }
 
 impl ColorOp {
@@ -326,6 +332,19 @@ impl ColorOp {
                 let (h, s, l) = rgb_to_hsl(r, g, b);
                 let new_s = (s * (1.0 + scale)).clamp(0.0, 1.0);
                 hsl_to_rgb(h, new_s, l)
+            }
+            ColorOp::Modulate {
+                brightness,
+                saturation,
+                hue,
+            } => {
+                // IM -modulate uses HSB (B = max(R,G,B) = Value in HSV)
+                let (h, s, v) = rgb_to_hsv(r, g, b);
+                let new_v = (v * brightness).clamp(0.0, 1.0);
+                let new_s = (s * saturation).clamp(0.0, 1.0);
+                let new_h = (h + hue) % 360.0;
+                let new_h = if new_h < 0.0 { new_h + 360.0 } else { new_h };
+                hsv_to_rgb(new_h, new_s, new_v)
             }
         }
     }
