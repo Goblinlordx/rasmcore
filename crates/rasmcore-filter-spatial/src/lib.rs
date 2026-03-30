@@ -22,7 +22,9 @@
 // This crate serves as the dependency entry point: when a user depends
 // on rasmcore-filter-spatial, they get the spatial filters registered.
 
-pub use rasmcore_image::domain::filters::{blur, convolve, gaussian_blur_cv, median, sharpen};
+pub use rasmcore_image::domain::filters::{
+    blur, convolve, gaussian_blur_cv, kuwahara, median, rank_filter, sharpen,
+};
 
 // Re-export the convolve helpers that external users might need
 pub use rasmcore_image::domain::filter_utils;

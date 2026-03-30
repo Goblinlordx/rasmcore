@@ -13032,3 +13032,391 @@ mod distortion_effect_tests {
         assert_eq!(result.len(), pixels.len());
     }
 }
+
+// ─── Kuwahara Filter ──────────────────────────────────────────────────────
+
+/// Kuwahara edge-preserving smoothing filter.
+///
+/// Divides each pixel's neighborhood into 4 overlapping quadrants of size
+/// `(radius+1) x (radius+1)`. Computes mean RGB and variance per quadrant,
+/// and outputs the mean of the quadrant with the lowest variance.
+/// Produces a painterly smoothing effect while preserving edges.
+///
+/// Equivalent to ImageMagick `-kuwahara {radius}`.
+#[rasmcore_macros::register_filter(name = "kuwahara", category = "spatial")]
+pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
+    if radius == 0 {
+        return Ok(pixels.to_vec());
+    }
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| kuwahara(px, i8, radius));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let r = radius as i32;
+
+    // Build integral images for sum and sum-of-squares per channel
+    // This allows O(1) quadrant mean/variance computation
+    let iw = w + 1;
+    let ih = h + 1;
+    let mut sum = vec![0.0f64; iw * ih * ch];
+    let mut sq_sum = vec![0.0f64; iw * ih * ch];
+
+    // Compute integral images
+    for y in 0..h {
+        for x in 0..w {
+            let px_off = (y * w + x) * ch;
+            let i_off = ((y + 1) * iw + (x + 1)) * ch;
+            let i_up = (y * iw + (x + 1)) * ch;
+            let i_left = ((y + 1) * iw + x) * ch;
+            let i_diag = (y * iw + x) * ch;
+            for c in 0..ch {
+                let v = pixels[px_off + c] as f64;
+                sum[i_off + c] = v + sum[i_up + c] + sum[i_left + c] - sum[i_diag + c];
+                sq_sum[i_off + c] =
+                    v * v + sq_sum[i_up + c] + sq_sum[i_left + c] - sq_sum[i_diag + c];
+            }
+        }
+    }
+
+    // Helper: compute sum over rectangle [y0..y1, x0..x1] from integral image
+    let rect_sum = |img: &[f64], x0: usize, y0: usize, x1: usize, y1: usize, c: usize| -> f64 {
+        img[(y1 * iw + x1) * ch + c] - img[(y0 * iw + x1) * ch + c] - img[(y1 * iw + x0) * ch + c]
+            + img[(y0 * iw + x0) * ch + c]
+    };
+
+    let mut out = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            let out_off = (y * w + x) * ch;
+
+            // Define 4 quadrants (clamped to image bounds)
+            // Each quadrant is (r+1) x (r+1) and overlaps at the center pixel
+            let quadrants = [
+                // top-left: [y-r..y+1, x-r..x+1]
+                (
+                    (x as i32 - r).max(0) as usize,
+                    (y as i32 - r).max(0) as usize,
+                    (x + 1).min(w),
+                    (y + 1).min(h),
+                ),
+                // top-right: [y-r..y+1, x..x+r+1]
+                (
+                    x,
+                    (y as i32 - r).max(0) as usize,
+                    (x as i32 + r + 1).min(w as i32) as usize,
+                    (y + 1).min(h),
+                ),
+                // bottom-left: [y..y+r+1, x-r..x+1]
+                (
+                    (x as i32 - r).max(0) as usize,
+                    y,
+                    (x + 1).min(w),
+                    (y as i32 + r + 1).min(h as i32) as usize,
+                ),
+                // bottom-right: [y..y+r+1, x..x+r+1]
+                (
+                    x,
+                    y,
+                    (x as i32 + r + 1).min(w as i32) as usize,
+                    (y as i32 + r + 1).min(h as i32) as usize,
+                ),
+            ];
+
+            let mut best_var = f64::MAX;
+            let mut best_mean = [0.0f64; 4];
+
+            for &(x0, y0, x1, y1) in &quadrants {
+                let count = ((x1 - x0) * (y1 - y0)) as f64;
+                if count == 0.0 {
+                    continue;
+                }
+                let inv_count = 1.0 / count;
+
+                let mut var_total = 0.0;
+                let mut mean_ch = [0.0f64; 4];
+                for c in 0..ch {
+                    let s = rect_sum(&sum, x0, y0, x1, y1, c);
+                    let sq = rect_sum(&sq_sum, x0, y0, x1, y1, c);
+                    let m = s * inv_count;
+                    let v = sq * inv_count - m * m;
+                    mean_ch[c] = m;
+                    var_total += v;
+                }
+
+                if var_total < best_var {
+                    best_var = var_total;
+                    best_mean = mean_ch;
+                }
+            }
+
+            for c in 0..ch {
+                out[out_off + c] = best_mean[c].round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+// ─── Generalized Rank Filter ──────────────────────────────────────────────
+
+/// Generalized rank filter: selects the value at a given rank from the local
+/// neighborhood histogram.
+///
+/// - `rank = 0.0` → local minimum (erosion-like)
+/// - `rank = 0.5` → median
+/// - `rank = 1.0` → local maximum (dilation-like)
+///
+/// Uses histogram sliding-window (Huang algorithm) for O(1) amortized per pixel.
+/// Equivalent to ImageMagick `-statistic Minimum/Maximum/Median`.
+#[rasmcore_macros::register_filter(name = "rank_filter", category = "spatial")]
+pub fn rank_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    radius: u32,
+    rank: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if radius == 0 {
+        return Ok(pixels.to_vec());
+    }
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| rank_filter(px, i8, radius, rank));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let r = radius as i32;
+    let diameter = (2 * r + 1) as usize;
+    let window_size = diameter * diameter;
+    let rank_clamped = rank.clamp(0.0, 1.0);
+
+    // Target position in sorted order: rank 0.0 → index 0, rank 1.0 → last
+    let target = ((window_size - 1) as f32 * rank_clamped).round() as usize;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    for c in 0..ch {
+        for y in 0..h {
+            let mut hist = [0u32; 256];
+
+            // Initialize histogram for first window in row
+            for ky in -r..=r {
+                let sy = reflect(y as i32 + ky, h);
+                for kx in -r..=r {
+                    let sx = reflect(kx, w);
+                    hist[pixels[(sy * w + sx) * ch + c] as usize] += 1;
+                }
+            }
+
+            // Find rank for first pixel
+            out[y * w * ch + c] = find_rank_in_hist(&hist, target);
+
+            // Slide right
+            for x in 1..w {
+                // Remove leftmost column
+                let old_x = x as i32 - r - 1;
+                for ky in -r..=r {
+                    let sy = reflect(y as i32 + ky, h);
+                    let sx = reflect(old_x, w);
+                    hist[pixels[(sy * w + sx) * ch + c] as usize] -= 1;
+                }
+
+                // Add rightmost column
+                let new_x = x as i32 + r;
+                for ky in -r..=r {
+                    let sy = reflect(y as i32 + ky, h);
+                    let sx = reflect(new_x, w);
+                    hist[pixels[(sy * w + sx) * ch + c] as usize] += 1;
+                }
+
+                out[(y * w + x) * ch + c] = find_rank_in_hist(&hist, target);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Find the value at the given rank position by scanning the histogram.
+#[inline]
+fn find_rank_in_hist(hist: &[u32; 256], target: usize) -> u8 {
+    let mut cumulative = 0u32;
+    for (val, &count) in hist.iter().enumerate() {
+        cumulative += count;
+        if cumulative as usize > target {
+            return val as u8;
+        }
+    }
+    255
+}
+
+#[cfg(test)]
+mod kuwahara_rank_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    // ── Kuwahara ──
+
+    #[test]
+    fn kuwahara_radius_0_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = kuwahara(&pixels, &info, 0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn kuwahara_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = kuwahara(&pixels, &info, 3).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn kuwahara_uniform_is_identity() {
+        let pixels = vec![100u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = kuwahara(&pixels, &info, 3).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn kuwahara_edge_preservation() {
+        // Create image with sharp vertical edge at x=16
+        let w = 32u32;
+        let h = 32u32;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h as usize {
+            for x in 16..w as usize {
+                let off = (y * w as usize + x) * 3;
+                pixels[off] = 255;
+                pixels[off + 1] = 255;
+                pixels[off + 2] = 255;
+            }
+        }
+        let info = rgb_info(w, h);
+        let result = kuwahara(&pixels, &info, 2).unwrap();
+        // Interior pixels far from edge should be unchanged
+        // Left side interior (x=4, y=16) should still be dark
+        let left_off = (16 * w as usize + 4) * 3;
+        assert!(
+            result[left_off] < 30,
+            "left interior should be dark, got {}",
+            result[left_off]
+        );
+        // Right side interior (x=28, y=16) should still be bright
+        let right_off = (16 * w as usize + 28) * 3;
+        assert!(
+            result[right_off] > 225,
+            "right interior should be bright, got {}",
+            result[right_off]
+        );
+    }
+
+    #[test]
+    fn kuwahara_gray_works() {
+        let pixels = vec![128u8; 32 * 32];
+        let info = gray_info(32, 32);
+        let result = kuwahara(&pixels, &info, 2).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    // ── Rank Filter ──
+
+    #[test]
+    fn rank_filter_radius_0_is_identity() {
+        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(16, 16);
+        let result = rank_filter(&pixels, &info, 0, 0.5).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn rank_filter_preserves_size() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = rank_filter(&pixels, &info, 2, 0.5).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn rank_filter_median_matches_existing() {
+        // rank=0.5 should produce same output as the existing median filter
+        let pixels: Vec<u8> = (0..32 * 32 * 3)
+            .map(|i| ((i * 7 + 13) % 256) as u8)
+            .collect();
+        let info = rgb_info(32, 32);
+        let median_result = median(&pixels, &info, 3).unwrap();
+        let rank_result = rank_filter(&pixels, &info, 3, 0.5).unwrap();
+        assert_eq!(rank_result, median_result, "rank 0.5 should match median");
+    }
+
+    #[test]
+    fn rank_filter_min_produces_dark() {
+        // rank=0.0 is local minimum — result should be <= input for each pixel
+        let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
+        let info = gray_info(16, 16);
+        let result = rank_filter(&pixels, &info, 1, 0.0).unwrap();
+        // Local min should be <= each pixel's own value (approximately — due to edge reflect)
+        let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            mean_output < mean_input,
+            "min rank should produce darker output: input={mean_input:.1}, output={mean_output:.1}"
+        );
+    }
+
+    #[test]
+    fn rank_filter_max_produces_bright() {
+        // rank=1.0 is local maximum — result should be >= input on average
+        let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
+        let info = gray_info(16, 16);
+        let result = rank_filter(&pixels, &info, 1, 1.0).unwrap();
+        let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
+        let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            mean_output > mean_input,
+            "max rank should produce brighter output: input={mean_input:.1}, output={mean_output:.1}"
+        );
+    }
+
+    #[test]
+    fn rank_filter_uniform_is_identity() {
+        let pixels = vec![100u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        for rank in [0.0f32, 0.5, 1.0] {
+            let result = rank_filter(&pixels, &info, 2, rank).unwrap();
+            assert_eq!(
+                result, pixels,
+                "uniform image should be identity at rank={rank}"
+            );
+        }
+    }
+}

@@ -1512,6 +1512,62 @@ fn close_gradient_map_bw() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SPATIAL — KUWAHARA & RANK
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn algorithm_kuwahara() {
+    // IM -kuwahara uses similar quadrant-based algorithm but may differ
+    // in border handling and variance computation.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::kuwahara(px, info, 3).unwrap(),
+        &["-kuwahara", "3"],
+        "kuwahara_3",
+    ) {
+        assert!(
+            error < 5.0,
+            "kuwahara MAE = {error:.4} (expected < 5.0, ALGORITHM tier)"
+        );
+    }
+}
+
+#[test]
+fn close_rank_minimum() {
+    // IM -statistic Minimum with a radius of 2 (5x5 window).
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::rank_filter(px, info, 2, 0.0).unwrap(),
+        &["-statistic", "Minimum", "5x5"],
+        "rank_min_r2",
+    ) {
+        assert!(
+            error < 2.0,
+            "rank minimum MAE = {error:.4} (expected < 2.0, CLOSE tier)"
+        );
+    }
+}
+
+#[test]
+fn close_rank_maximum() {
+    // IM -statistic Maximum with a radius of 2 (5x5 window).
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::rank_filter(px, info, 2, 1.0).unwrap(),
+        &["-statistic", "Maximum", "5x5"],
+        "rank_max_r2",
+    ) {
+        assert!(
+            error < 2.0,
+            "rank maximum MAE = {error:.4} (expected < 2.0, CLOSE tier)"
+        );
+    }
+}
+
 #[test]
 fn reference_audit_summary() {
     if !magick_available() {
