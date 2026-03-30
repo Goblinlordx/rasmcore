@@ -268,6 +268,10 @@ pub enum ColorOp {
     Sepia(f32),
     /// Tint toward target RGB color with amount (0-1).
     Colorize([f32; 3], f32),
+    /// Mix RGB channels via 3x3 matrix: [rr,rg,rb, gr,gg,gb, br,bg,bb].
+    ChannelMix([f32; 9]),
+    /// Perceptually weighted saturation: boosts low-saturation more than high.
+    Vibrance(f32),
 }
 
 impl ColorOp {
@@ -302,6 +306,26 @@ impl ColorOp {
                     g + (luma * target[1] - g) * amount,
                     b + (luma * target[2] - b) * amount,
                 )
+            }
+            ColorOp::ChannelMix(m) => {
+                let out_r = (m[0] * r + m[1] * g + m[2] * b).clamp(0.0, 1.0);
+                let out_g = (m[3] * r + m[4] * g + m[5] * b).clamp(0.0, 1.0);
+                let out_b = (m[6] * r + m[7] * g + m[8] * b).clamp(0.0, 1.0);
+                (out_r, out_g, out_b)
+            }
+            ColorOp::Vibrance(amount) => {
+                let max_c = r.max(g).max(b);
+                let min_c = r.min(g).min(b);
+                let sat = if max_c > 0.0 {
+                    (max_c - min_c) / max_c
+                } else {
+                    0.0
+                };
+                // Scale factor: high for desaturated pixels, low for saturated
+                let scale = (amount / 100.0) * (1.0 - sat);
+                let (h, s, l) = rgb_to_hsl(r, g, b);
+                let new_s = (s * (1.0 + scale)).clamp(0.0, 1.0);
+                hsl_to_rgb(h, new_s, l)
             }
         }
     }

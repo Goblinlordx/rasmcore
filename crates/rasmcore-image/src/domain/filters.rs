@@ -1227,6 +1227,380 @@ pub fn colorize(
     )
 }
 
+// ─── Channel Mixer ───────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Channel mixer — cross-mix RGB channels via a 3x3 matrix.
+pub struct ChannelMixerParams {
+    /// Red-from-Red weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 1.0)]
+    pub rr: f32,
+    /// Red-from-Green weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 0.0)]
+    pub rg: f32,
+    /// Red-from-Blue weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 0.0)]
+    pub rb: f32,
+    /// Green-from-Red weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 0.0)]
+    pub gr: f32,
+    /// Green-from-Green weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 1.0)]
+    pub gg: f32,
+    /// Green-from-Blue weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 0.0)]
+    pub gb: f32,
+    /// Blue-from-Red weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 0.0)]
+    pub br: f32,
+    /// Blue-from-Green weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 0.0)]
+    pub bg: f32,
+    /// Blue-from-Blue weight
+    #[param(min = -2.0, max = 2.0, step = 0.01, default = 1.0)]
+    pub bb: f32,
+}
+
+/// Mix RGB channels via a 3x3 matrix for creative color grading.
+///
+/// Identity matrix (1,0,0, 0,1,0, 0,0,1) produces unchanged output.
+/// IM equivalent: `-color-matrix "rr rg rb 0 / gr gg gb 0 / br bg bb 0 / 0 0 0 1"`
+#[rasmcore_macros::register_filter(name = "channel_mixer", category = "color")]
+pub fn channel_mixer(
+    pixels: &[u8],
+    info: &ImageInfo,
+    rr: f32,
+    rg: f32,
+    rb: f32,
+    gr: f32,
+    gg: f32,
+    gb: f32,
+    br: f32,
+    bg: f32,
+    bb: f32,
+) -> Result<Vec<u8>, ImageError> {
+    apply_color_op(
+        pixels,
+        info,
+        &ColorOp::ChannelMix([rr, rg, rb, gr, gg, gb, br, bg, bb]),
+    )
+}
+
+// ─── Vibrance ────────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Vibrance — perceptually weighted saturation boost.
+pub struct VibranceParams {
+    /// Vibrance amount (-100 to 100). Positive boosts muted colors more.
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0)]
+    pub amount: f32,
+}
+
+/// Perceptually weighted saturation: boosts low-saturation pixels more.
+///
+/// Unlike `saturate` which applies a uniform multiplier, vibrance weights
+/// the boost inversely by current saturation — muted colors get more boost,
+/// already-vivid colors get less. amount=0 is identity.
+#[rasmcore_macros::register_filter(name = "vibrance", category = "color")]
+pub fn vibrance(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+    apply_color_op(pixels, info, &ColorOp::Vibrance(amount))
+}
+
+// ─── Gradient Map ────────────────────────────────────────────────────────
+
+/// Gradient map parameters (stops passed as string, not via ConfigParams).
+pub struct GradientMapParams {
+    /// Gradient color stops as "pos:RRGGBB,pos:RRGGBB,...".
+    pub stops: String,
+}
+
+/// Parse gradient stops from string format "pos:RRGGBB,pos:RRGGBB,...".
+fn parse_gradient_stops(stops: &str) -> Result<Vec<(f32, [u8; 3])>, ImageError> {
+    let mut result = Vec::new();
+    for entry in stops.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = entry.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err(ImageError::InvalidParameters(format!(
+                "gradient stop must be 'pos:RRGGBB', got '{entry}'"
+            )));
+        }
+        let pos: f32 = parts[0].parse().map_err(|_| {
+            ImageError::InvalidParameters(format!("invalid position: '{}'", parts[0]))
+        })?;
+        let hex = parts[1].trim_start_matches('#');
+        if hex.len() != 6 {
+            return Err(ImageError::InvalidParameters(format!(
+                "color must be 6-digit hex, got '{hex}'"
+            )));
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16)
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid hex color: '{hex}'")))?;
+        let g = u8::from_str_radix(&hex[2..4], 16)
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid hex color: '{hex}'")))?;
+        let b = u8::from_str_radix(&hex[4..6], 16)
+            .map_err(|_| ImageError::InvalidParameters(format!("invalid hex color: '{hex}'")))?;
+        result.push((pos, [r, g, b]));
+    }
+    result.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    if result.is_empty() {
+        return Err(ImageError::InvalidParameters(
+            "gradient must have at least one stop".into(),
+        ));
+    }
+    Ok(result)
+}
+
+/// Interpolate a color from sorted gradient stops at the given position.
+fn interpolate_gradient(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
+    if stops.len() == 1 || t <= stops[0].0 {
+        return stops[0].1;
+    }
+    if t >= stops[stops.len() - 1].0 {
+        return stops[stops.len() - 1].1;
+    }
+    // Find the two stops surrounding t
+    for i in 0..stops.len() - 1 {
+        let (p0, c0) = stops[i];
+        let (p1, c1) = stops[i + 1];
+        if t >= p0 && t <= p1 {
+            let frac = if (p1 - p0).abs() < 1e-9 {
+                0.0
+            } else {
+                (t - p0) / (p1 - p0)
+            };
+            return [
+                (c0[0] as f32 + (c1[0] as f32 - c0[0] as f32) * frac + 0.5) as u8,
+                (c0[1] as f32 + (c1[1] as f32 - c0[1] as f32) * frac + 0.5) as u8,
+                (c0[2] as f32 + (c1[2] as f32 - c0[2] as f32) * frac + 0.5) as u8,
+            ];
+        }
+    }
+    stops[stops.len() - 1].1
+}
+
+/// Remap image luminance through a color gradient.
+///
+/// Computes BT.709 luminance per pixel, then interpolates the gradient
+/// stops to produce an output color. Black-to-white gradient produces
+/// grayscale equivalent.
+#[rasmcore_macros::register_filter(name = "gradient_map", category = "color")]
+pub fn gradient_map(pixels: &[u8], info: &ImageInfo, stops: String) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    let gradient_stops = parse_gradient_stops(&stops)?;
+
+    // Build 256-entry LUT for fast lookup
+    let mut lut = [[0u8; 3]; 256];
+    for (i, entry) in lut.iter_mut().enumerate() {
+        let t = i as f32 / 255.0;
+        *entry = interpolate_gradient(&gradient_stops, t);
+    }
+
+    let bpp = match info.format {
+        PixelFormat::Rgba8 => 4,
+        PixelFormat::Rgb8 => 3,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "gradient_map requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+
+    let mut result = pixels.to_vec();
+    for chunk in result.chunks_exact_mut(bpp) {
+        // BT.709 luminance
+        let luma = ((77u32 * chunk[0] as u32 + 150 * chunk[1] as u32 + 29 * chunk[2] as u32 + 128)
+            >> 8) as u8;
+        let color = lut[luma as usize];
+        chunk[0] = color[0];
+        chunk[1] = color[1];
+        chunk[2] = color[2];
+        // Alpha (if RGBA) preserved
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod color_manipulation_tests {
+    use super::*;
+    use crate::domain::types::{ColorSpace, ImageInfo, PixelFormat};
+
+    fn info_rgb8(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn solid_rgb(w: u32, h: u32, r: u8, g: u8, b: u8) -> Vec<u8> {
+        (0..(w * h)).flat_map(|_| [r, g, b]).collect()
+    }
+
+    // ── Channel Mixer ──
+
+    #[test]
+    fn channel_mixer_identity_preserves_pixels() {
+        let pixels = solid_rgb(4, 4, 100, 150, 200);
+        let info = info_rgb8(4, 4);
+        let result =
+            channel_mixer(&pixels, &info, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn channel_mixer_red_only() {
+        let pixels = solid_rgb(2, 2, 100, 150, 200);
+        let info = info_rgb8(2, 2);
+        // Output red = 1.0*R + 0*G + 0*B, green = 0, blue = 0
+        let result =
+            channel_mixer(&pixels, &info, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0).unwrap();
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk[0], 100);
+            assert_eq!(chunk[1], 0);
+            assert_eq!(chunk[2], 0);
+        }
+    }
+
+    #[test]
+    fn channel_mixer_swap_red_blue() {
+        let pixels = solid_rgb(2, 2, 100, 150, 200);
+        let info = info_rgb8(2, 2);
+        // Swap R and B channels
+        let result =
+            channel_mixer(&pixels, &info, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0).unwrap();
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk[0], 200); // was blue
+            assert_eq!(chunk[1], 150); // green unchanged
+            assert_eq!(chunk[2], 100); // was red
+        }
+    }
+
+    #[test]
+    fn channel_mixer_clamps_overflow() {
+        let pixels = solid_rgb(2, 2, 200, 200, 200);
+        let info = info_rgb8(2, 2);
+        // 2.0 * R would overflow — should clamp to 255
+        let result =
+            channel_mixer(&pixels, &info, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0).unwrap();
+        assert_eq!(result[0], 255);
+    }
+
+    // ── Vibrance ──
+
+    #[test]
+    fn vibrance_zero_is_identity() {
+        let pixels = solid_rgb(4, 4, 100, 150, 200);
+        let info = info_rgb8(4, 4);
+        let result = vibrance(&pixels, &info, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn vibrance_positive_boosts_muted_more() {
+        let info = info_rgb8(1, 2);
+        // Pixel 1: low saturation (gray-ish)
+        // Pixel 2: high saturation (vivid red)
+        let pixels = vec![120, 130, 125, 255, 20, 20];
+
+        let result = vibrance(&pixels, &info, 50.0).unwrap();
+
+        // The muted pixel should change more than the vivid one
+        let muted_change = (result[0] as i32 - 120).abs()
+            + (result[1] as i32 - 130).abs()
+            + (result[2] as i32 - 125).abs();
+        let vivid_change = (result[3] as i32 - 255).abs()
+            + (result[4] as i32 - 20).abs()
+            + (result[5] as i32 - 20).abs();
+
+        assert!(
+            muted_change >= vivid_change,
+            "muted change ({muted_change}) should be >= vivid change ({vivid_change})"
+        );
+    }
+
+    #[test]
+    fn vibrance_negative_desaturates() {
+        // Use a moderately saturated color (not fully saturated)
+        let pixels = solid_rgb(2, 2, 200, 100, 80);
+        let info = info_rgb8(2, 2);
+        let result = vibrance(&pixels, &info, -80.0).unwrap();
+        // Should become less saturated: channels should converge toward each other
+        let orig_range = 200i32 - 80;
+        let new_range = (result[0] as i32 - result[2] as i32).abs();
+        assert!(
+            new_range < orig_range,
+            "negative vibrance should reduce color range: {new_range} should be < {orig_range}"
+        );
+    }
+
+    // ── Gradient Map ──
+
+    #[test]
+    fn gradient_map_bw_produces_grayscale() {
+        let info = info_rgb8(2, 2);
+        let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
+        let result = gradient_map(&pixels, &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
+        // Each pixel's RGB should all be equal (grayscale)
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk[0], chunk[1], "R should equal G for BW gradient");
+            assert_eq!(chunk[1], chunk[2], "G should equal B for BW gradient");
+        }
+    }
+
+    #[test]
+    fn gradient_map_solid_black() {
+        let pixels = solid_rgb(2, 2, 0, 0, 0);
+        let info = info_rgb8(2, 2);
+        let result = gradient_map(&pixels, &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
+        // Luminance 0 → first stop (red)
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk[0], 255);
+            assert_eq!(chunk[1], 0);
+            assert_eq!(chunk[2], 0);
+        }
+    }
+
+    #[test]
+    fn gradient_map_solid_white() {
+        let pixels = solid_rgb(2, 2, 255, 255, 255);
+        let info = info_rgb8(2, 2);
+        let result = gradient_map(&pixels, &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
+        // Luminance 1.0 → last stop (blue)
+        for chunk in result.chunks_exact(3) {
+            assert_eq!(chunk[0], 0);
+            assert_eq!(chunk[1], 0);
+            assert_eq!(chunk[2], 255);
+        }
+    }
+
+    #[test]
+    fn gradient_map_invalid_stops_returns_error() {
+        let pixels = solid_rgb(2, 2, 128, 128, 128);
+        let info = info_rgb8(2, 2);
+        let result = gradient_map(&pixels, &info, "invalid".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gradient_map_preserves_alpha() {
+        let info = ImageInfo {
+            width: 2,
+            height: 1,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![128, 128, 128, 200, 0, 0, 0, 100];
+        let result = gradient_map(&pixels, &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
+        assert_eq!(result[3], 200, "alpha should be preserved");
+        assert_eq!(result[7], 100, "alpha should be preserved");
+    }
+}
+
 // =============================================================================
 // Convolution filters
 // =============================================================================
