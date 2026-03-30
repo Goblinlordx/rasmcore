@@ -15019,6 +15019,16 @@ pub fn halftone(
 /// - Default radius = max(width/2, height/2)
 /// - Factor = 1 - sqrt(distance²) / radius, then angle = degrees * factor²
 /// - Aspect ratio scaling for non-square images
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct SwirlParams {
+    /// Rotation angle in degrees
+    #[param(min = -720.0, max = 720.0, step = 5.0, default = 90.0)]
+    pub angle: f32,
+    /// Radius of effect (0 = auto from image size)
+    #[param(min = 0.0, max = 2000.0, step = 10.0, default = 0.0)]
+    pub radius: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "swirl",
     category = "distortion",
@@ -15084,6 +15094,13 @@ pub fn swirl(
 /// Spherize: apply spherical projection for bulge/pinch effect.
 /// `amount > 0` = bulge (fisheye), `amount < 0` = pinch.
 /// `amount = 0` is identity.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct SpherizeParams {
+    /// Bulge/pinch amount (-1 to 1, positive = bulge)
+    #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub amount: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "spherize",
     category = "distortion",
@@ -15143,6 +15160,16 @@ pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
 /// `k1 > 0` = barrel, `k1 < 0` = pincushion.
 /// This is the inverse of the `undistort` correction filter.
 /// Matches ImageMagick `-distort Barrel` normalization: `rscale = 2/min(w,h)`.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct BarrelParams {
+    /// Radial distortion coefficient (positive = barrel, negative = pincushion)
+    #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.3)]
+    pub k1: f32,
+    /// Higher-order radial coefficient
+    #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.0)]
+    pub k2: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "barrel",
     category = "distortion",
@@ -15350,6 +15377,19 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     Ok(out)
 }
 
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct WaveParams {
+    /// Displacement amplitude in pixels
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 10.0)]
+    pub amplitude: f32,
+    /// Wavelength in pixels
+    #[param(min = 1.0, max = 500.0, step = 5.0, default = 50.0)]
+    pub wavelength: f32,
+    /// Vertical wave (1.0) vs horizontal (0.0)
+    #[param(min = 0.0, max = 1.0, step = 1.0, default = 0.0)]
+    pub vertical: f32,
+}
+
 /// Wave: sinusoidal displacement along one axis.
 ///
 /// Displaces pixels sinusoidally: horizontal wave shifts rows up/down,
@@ -15409,6 +15449,22 @@ pub fn wave(
     }
 
     Ok(out)
+}
+
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct RippleParams {
+    /// Displacement amplitude in pixels
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 8.0)]
+    pub amplitude: f32,
+    /// Wavelength in pixels
+    #[param(min = 1.0, max = 500.0, step = 5.0, default = 40.0)]
+    pub wavelength: f32,
+    /// Center X (0.0-1.0 normalized, 0.5 = center)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub center_x: f32,
+    /// Center Y (0.0-1.0 normalized, 0.5 = center)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub center_y: f32,
 }
 
 /// Ripple: concentric sinusoidal distortion radiating from a center point.
