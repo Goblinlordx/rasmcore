@@ -1,0 +1,79 @@
+id: noise-simd-snapshot_20260330031753Z
+title: "Procedural Noise SIMD + Scalar Snapshot Regression Fixtures"
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Snapshot current scalar noise output as regression fixtures, then add f32
+    SIMD path and validate bit-identical output against those snapshots.
+  context: |
+    The procedural noise generators (Perlin + Simplex) currently use scalar f64
+    math. The project requires SIMD from initial impl for all image ops. The noise
+    inner loop (fade, lerp, gradient dot products) is embarrassingly parallel and
+    vectorizes well at f32 precision (sufficient for u8 output).
+
+    Before adding SIMD, we must snapshot the current scalar output at known seeds
+    as regression fixtures. The SIMD path must produce bit-identical u8 output.
+  codebase_analysis: |
+    Current implementation in filters.rs (lines 5843-6070):
+    - build_perm_table: seeded Fisher-Yates shuffle (stays scalar — random access)
+    - fade/lerp/grad_perlin: f64 scalar, hot path for SIMD
+    - perlin_2d/simplex_2d: per-pixel evaluation, SIMD target
+    - fbm: octave loop wrapping noise_fn, SIMD at the inner pixel loop level
+    - perlin_noise/simplex_noise: outer loop over pixels, SIMD batching target
+
+    Existing SIMD pattern in codebase: #[cfg(target_arch = "wasm32")] blocks
+    with std::arch::wasm32 intrinsics (f32x4_splat, f32x4_mul, etc.), scalar
+    fallback in #[cfg(not(target_arch = "wasm32"))].
+
+    Key constraint: perm table lookups are scalar (random access), but the
+    post-lookup arithmetic (fade, lerp, gradient) dominates and vectorizes.
+    Strategy: process 4 pixels at once, each with independent perm lookups
+    but shared SIMD arithmetic.
+  acceptance_criteria:
+    - Scalar snapshot fixtures for Perlin and Simplex at known seeds/params
+    - f32 SIMD path for WASM128 (std::arch::wasm32 f32x4)
+    - Scalar fallback for non-WASM targets (LLVM auto-vectorizes)
+    - SIMD output is bit-identical to scalar snapshots (u8 level)
+    - Existing noise tests continue to pass unchanged
+    - No regression in output for any seed
+  out_of_scope: AVX2/AVX-512 intrinsics, GPU compute, 3D/4D noise SIMD
+  technical_notes: |
+    Phase 1: Generate scalar snapshots at 2 seeds x 2 param sets x 2 algorithms
+    = 8 fixtures. Store as raw u8 in tests/fixtures/noise/.
+
+    Phase 2: Convert inner loop from f64 to f32 (precision analysis: f32 has
+    23-bit mantissa, sufficient for [0,255] u8 output with sub-pixel accuracy).
+    Add #[cfg(target_arch = "wasm32")] SIMD path processing 4 pixels at a time.
+
+    Phase 3: Assert SIMD fixtures match scalar fixtures bit-for-bit. If f32
+    rounding causes differences, document and adjust (f32 fade curve may differ
+    from f64 at the last bit — acceptable if u8 output is identical).
+plan:
+  - title: "Snapshot scalar output as regression fixtures"
+    tasks:
+      - title: Generate and commit Perlin scalar snapshots (2 seeds x 2 param sets)
+        done: false
+      - title: Generate and commit Simplex scalar snapshots (2 seeds x 2 param sets)
+        done: false
+      - title: Add regression tests that load fixtures and assert exact match
+        done: false
+  - title: "Add f32 SIMD path"
+    tasks:
+      - title: Convert noise inner loop from f64 to f32 and verify no u8 output change
+        done: false
+      - title: Add WASM SIMD path with f32x4 for fade/lerp/gradient
+        done: false
+      - title: Verify SIMD output matches scalar fixtures bit-for-bit
+        done: false
+  - title: "Verification"
+    tasks:
+      - title: Run all existing noise tests (determinism, statistical, range)
+        done: false
+      - title: Run fixture regression tests on both scalar and SIMD paths
+        done: false
+      - title: Run cargo test and validate.sh
+        done: false
+extra: {}
