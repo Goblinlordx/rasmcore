@@ -13047,6 +13047,540 @@ pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u
     Ok(out)
 }
 
+/// Polar: convert Cartesian image to polar-coordinate projection.
+///
+/// Maps the rectangular image into a polar representation where:
+/// - Output x-axis represents angle (0 to 2π across width)
+/// - Output y-axis represents radius (0 to max_radius across height)
+///
+/// Equivalent to ImageMagick `-distort Polar "max_radius"`.
+#[rasmcore_macros::register_filter(name = "polar", category = "distortion")]
+pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, polar);
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let wf = w as f32;
+    let hf = h as f32;
+    let cx = wf * 0.5;
+    let cy = hf * 0.5;
+    let max_radius = cx.min(cy);
+    let wi = w as i32;
+    let hi = h as i32;
+    let two_pi = std::f32::consts::TAU;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    let sample = |sx: f32, sy: f32, c: usize| -> f32 {
+        let x0 = sx.floor() as i32;
+        let y0 = sy.floor() as i32;
+        let fx = sx - x0 as f32;
+        let fy = sy - y0 as f32;
+        let fetch = |px: i32, py: i32| -> f32 {
+            if px >= 0 && px < wi && py >= 0 && py < hi {
+                pixels[(py as usize * w + px as usize) * ch + c] as f32
+            } else {
+                0.0
+            }
+        };
+        fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+            + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+            + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+            + fetch(x0 + 1, y0 + 1) * fx * fy
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+
+        let cx_v = f32x4_splat(cx);
+        let cy_v = f32x4_splat(cy);
+        let max_r_v = f32x4_splat(max_radius);
+        let two_pi_v = f32x4_splat(two_pi);
+        let wf_v = f32x4_splat(wf);
+        let hf_v = f32x4_splat(hf);
+
+        for y in 0..h {
+            let yf = y as f32;
+            // radius = y / height * max_radius
+            let radius_v = f32x4_splat(yf / hf * max_radius);
+            let mut x = 0;
+            while x + 4 <= w {
+                // angle = x / width * 2π
+                let angle = unsafe {
+                    f32x4(
+                        x as f32 / wf * two_pi,
+                        (x + 1) as f32 / wf * two_pi,
+                        (x + 2) as f32 / wf * two_pi,
+                        (x + 3) as f32 / wf * two_pi,
+                    )
+                };
+                // Extract and compute sin/cos per lane (no SIMD sin/cos)
+                let mut tmp_angle = [0.0f32; 4];
+                let mut tmp_radius = [0.0f32; 4];
+                unsafe {
+                    v128_store(tmp_angle.as_mut_ptr() as *mut v128, angle);
+                    v128_store(tmp_radius.as_mut_ptr() as *mut v128, radius_v);
+                }
+                for p in 0..4 {
+                    let a = tmp_angle[p];
+                    let r = tmp_radius[p];
+                    let sx = cx + r * a.cos();
+                    let sy = cy + r * a.sin();
+                    let off = (y * w + x + p) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+                x += 4;
+            }
+            while x < w {
+                let angle = x as f32 / wf * two_pi;
+                let radius = yf / hf * max_radius;
+                let sx = cx + radius * angle.cos();
+                let sy = cy + radius * angle.sin();
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+                x += 1;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..h {
+            let yf = y as f32;
+            let radius = yf / hf * max_radius;
+            for x in 0..w {
+                let angle = x as f32 / wf * two_pi;
+                let sx = cx + radius * angle.cos();
+                let sy = cy + radius * angle.sin();
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// DePolar: convert polar-coordinate image back to Cartesian projection.
+///
+/// Inverse of `polar`: maps a polar representation back to rectangular.
+/// For each output pixel, compute radius and angle from center,
+/// then look up in the polar-space input image.
+///
+/// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
+#[rasmcore_macros::register_filter(name = "depolar", category = "distortion")]
+pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, depolar);
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let wf = w as f32;
+    let hf = h as f32;
+    let cx = wf * 0.5;
+    let cy = hf * 0.5;
+    let max_radius = cx.min(cy);
+    let wi = w as i32;
+    let hi = h as i32;
+    let two_pi = std::f32::consts::TAU;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    let sample = |sx: f32, sy: f32, c: usize| -> f32 {
+        let x0 = sx.floor() as i32;
+        let y0 = sy.floor() as i32;
+        let fx = sx - x0 as f32;
+        let fy = sy - y0 as f32;
+        let fetch = |px: i32, py: i32| -> f32 {
+            if px >= 0 && px < wi && py >= 0 && py < hi {
+                pixels[(py as usize * w + px as usize) * ch + c] as f32
+            } else {
+                0.0
+            }
+        };
+        fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+            + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+            + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+            + fetch(x0 + 1, y0 + 1) * fx * fy
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+
+        for y in 0..h {
+            let yf = y as f32;
+            let dy = yf - cy;
+            let dy_sq_v = f32x4_splat(dy * dy);
+            let mut x = 0;
+            while x + 4 <= w {
+                let dx = unsafe {
+                    f32x4(
+                        x as f32 - cx,
+                        (x + 1) as f32 - cx,
+                        (x + 2) as f32 - cx,
+                        (x + 3) as f32 - cx,
+                    )
+                };
+                let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), dy_sq_v));
+                let mut tmp_r = [0.0f32; 4];
+                unsafe { v128_store(tmp_r.as_mut_ptr() as *mut v128, r); }
+                for p in 0..4 {
+                    let dxp = (x + p) as f32 - cx;
+                    let radius = tmp_r[p];
+                    let angle = dy.atan2(dxp);
+                    // Map angle from [-π, π] to [0, 2π], then to source x
+                    let norm_angle = if angle < 0.0 { angle + two_pi } else { angle };
+                    let sx = norm_angle / two_pi * wf;
+                    let sy = radius / max_radius * hf;
+                    let off = (y * w + x + p) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+                x += 4;
+            }
+            while x < w {
+                let dx = x as f32 - cx;
+                let radius = (dx * dx + dy * dy).sqrt();
+                let angle = dy.atan2(dx);
+                let norm_angle = if angle < 0.0 { angle + two_pi } else { angle };
+                let sx = norm_angle / two_pi * wf;
+                let sy = radius / max_radius * hf;
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+                x += 1;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..h {
+            let yf = y as f32;
+            let dy = yf - cy;
+            for x in 0..w {
+                let dx = x as f32 - cx;
+                let radius = (dx * dx + dy * dy).sqrt();
+                let angle = dy.atan2(dx);
+                let norm_angle = if angle < 0.0 { angle + two_pi } else { angle };
+                let sx = norm_angle / two_pi * wf;
+                let sy = radius / max_radius * hf;
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Wave: sinusoidal displacement along one axis.
+///
+/// Displaces pixels sinusoidally: horizontal wave shifts rows up/down,
+/// vertical wave shifts columns left/right.
+///
+/// Equivalent to ImageMagick `-wave {amplitude}x{wavelength}`.
+#[rasmcore_macros::register_filter(name = "wave", category = "distortion")]
+pub fn wave(
+    pixels: &[u8],
+    info: &ImageInfo,
+    amplitude: f32,
+    wavelength: f32,
+    vertical: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| wave(px, i8, amplitude, wavelength, vertical));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let wi = w as i32;
+    let hi = h as i32;
+    let is_vert = vertical >= 0.5;
+    let two_pi = std::f32::consts::TAU;
+    let wl = if wavelength.abs() < 1e-6 { 1.0 } else { wavelength };
+
+    let mut out = vec![0u8; pixels.len()];
+
+    let sample = |sx: f32, sy: f32, c: usize| -> f32 {
+        let x0 = sx.floor() as i32;
+        let y0 = sy.floor() as i32;
+        let fx = sx - x0 as f32;
+        let fy = sy - y0 as f32;
+        let fetch = |px: i32, py: i32| -> f32 {
+            if px >= 0 && px < wi && py >= 0 && py < hi {
+                pixels[(py as usize * w + px as usize) * ch + c] as f32
+            } else {
+                0.0
+            }
+        };
+        fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+            + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+            + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+            + fetch(x0 + 1, y0 + 1) * fx * fy
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+
+        let amp_v = f32x4_splat(amplitude);
+        let two_pi_wl_v = f32x4_splat(two_pi / wl);
+
+        for y in 0..h {
+            let yf = y as f32;
+            if is_vert {
+                // Vertical: shift x based on sin(y)
+                let disp = amplitude * (two_pi * yf / wl).sin();
+                let mut x = 0;
+                while x + 4 <= w {
+                    for p in 0..4 {
+                        let sx = (x + p) as f32 + disp;
+                        let off = (y * w + x + p) * ch;
+                        for c in 0..ch {
+                            out[off + c] = sample(sx, yf, c).round().clamp(0.0, 255.0) as u8;
+                        }
+                    }
+                    x += 4;
+                }
+                while x < w {
+                    let sx = x as f32 + disp;
+                    let off = (y * w + x) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(sx, yf, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                    x += 1;
+                }
+            } else {
+                // Horizontal: shift y based on sin(x)
+                let mut x = 0;
+                while x + 4 <= w {
+                    let xf = unsafe {
+                        f32x4(
+                            x as f32,
+                            (x + 1) as f32,
+                            (x + 2) as f32,
+                            (x + 3) as f32,
+                        )
+                    };
+                    let phase = f32x4_mul(xf, two_pi_wl_v);
+                    let mut tmp_phase = [0.0f32; 4];
+                    unsafe { v128_store(tmp_phase.as_mut_ptr() as *mut v128, phase); }
+                    for p in 0..4 {
+                        let sy = yf + amplitude * tmp_phase[p].sin();
+                        let off = (y * w + x + p) * ch;
+                        for c in 0..ch {
+                            out[off + c] = sample((x + p) as f32, sy, c).round().clamp(0.0, 255.0) as u8;
+                        }
+                    }
+                    x += 4;
+                }
+                while x < w {
+                    let sy = yf + amplitude * (two_pi * x as f32 / wl).sin();
+                    let off = (y * w + x) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(x as f32, sy, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                    x += 1;
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..h {
+            let yf = y as f32;
+            for x in 0..w {
+                let xf = x as f32;
+                let (sx, sy) = if is_vert {
+                    (xf + amplitude * (two_pi * yf / wl).sin(), yf)
+                } else {
+                    (xf, yf + amplitude * (two_pi * xf / wl).sin())
+                };
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Ripple: concentric sinusoidal distortion radiating from a center point.
+///
+/// Displaces pixels radially based on their distance from center:
+/// each pixel moves along its radial direction by `amplitude * sin(2π * r / wavelength)`.
+///
+/// Equivalent to ImageMagick concentric wave effect.
+#[rasmcore_macros::register_filter(name = "ripple", category = "distortion")]
+pub fn ripple(
+    pixels: &[u8],
+    info: &ImageInfo,
+    amplitude: f32,
+    wavelength: f32,
+    center_x: f32,
+    center_y: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| {
+            ripple(px, i8, amplitude, wavelength, center_x, center_y)
+        });
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let wi = w as i32;
+    let hi = h as i32;
+    let cx = center_x * w as f32;
+    let cy = center_y * h as f32;
+    let two_pi = std::f32::consts::TAU;
+    let wl = if wavelength.abs() < 1e-6 { 1.0 } else { wavelength };
+
+    let mut out = vec![0u8; pixels.len()];
+
+    let sample = |sx: f32, sy: f32, c: usize| -> f32 {
+        let x0 = sx.floor() as i32;
+        let y0 = sy.floor() as i32;
+        let fx = sx - x0 as f32;
+        let fy = sy - y0 as f32;
+        let fetch = |px: i32, py: i32| -> f32 {
+            if px >= 0 && px < wi && py >= 0 && py < hi {
+                pixels[(py as usize * w + px as usize) * ch + c] as f32
+            } else {
+                0.0
+            }
+        };
+        fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+            + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+            + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+            + fetch(x0 + 1, y0 + 1) * fx * fy
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+
+        let cx_v = f32x4_splat(cx);
+        let cy_v = f32x4_splat(cy);
+
+        for y in 0..h {
+            let yf = y as f32;
+            let dy = yf - cy;
+            let dy_sq_v = f32x4_splat(dy * dy);
+            let mut x = 0;
+            while x + 4 <= w {
+                let dx = unsafe {
+                    f32x4(
+                        x as f32 - cx,
+                        (x + 1) as f32 - cx,
+                        (x + 2) as f32 - cx,
+                        (x + 3) as f32 - cx,
+                    )
+                };
+                let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), dy_sq_v));
+                let mut tmp_r = [0.0f32; 4];
+                unsafe { v128_store(tmp_r.as_mut_ptr() as *mut v128, r); }
+                for p in 0..4 {
+                    let dxp = (x + p) as f32 - cx;
+                    let rp = tmp_r[p];
+                    if rp < 1e-6 {
+                        let off = (y * w + x + p) * ch;
+                        out[off..off + ch].copy_from_slice(&pixels[off..off + ch]);
+                    } else {
+                        let disp = amplitude * (two_pi * rp / wl).sin();
+                        let cos_a = dxp / rp;
+                        let sin_a = dy / rp;
+                        let sx = (x + p) as f32 + disp * cos_a;
+                        let sy = yf + disp * sin_a;
+                        let off = (y * w + x + p) * ch;
+                        for c in 0..ch {
+                            out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                        }
+                    }
+                }
+                x += 4;
+            }
+            while x < w {
+                let dx = x as f32 - cx;
+                let r = (dx * dx + dy * dy).sqrt();
+                if r < 1e-6 {
+                    let off = (y * w + x) * ch;
+                    out[off..off + ch].copy_from_slice(&pixels[off..off + ch]);
+                } else {
+                    let disp = amplitude * (two_pi * r / wl).sin();
+                    let cos_a = dx / r;
+                    let sin_a = dy / r;
+                    let sx = x as f32 + disp * cos_a;
+                    let sy = yf + disp * sin_a;
+                    let off = (y * w + x) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+                x += 1;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..h {
+            let yf = y as f32;
+            let dy = yf - cy;
+            for x in 0..w {
+                let dx = x as f32 - cx;
+                let r = (dx * dx + dy * dy).sqrt();
+                if r < 1e-6 {
+                    let off = (y * w + x) * ch;
+                    out[off..off + ch].copy_from_slice(&pixels[off..off + ch]);
+                } else {
+                    let disp = amplitude * (two_pi * r / wl).sin();
+                    let cos_a = dx / r;
+                    let sin_a = dy / r;
+                    let sx = x as f32 + disp * cos_a;
+                    let sy = yf + disp * sin_a;
+                    let off = (y * w + x) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 #[cfg(test)]
 mod distortion_effect_tests {
     use super::*;
@@ -13297,6 +13831,185 @@ mod distortion_effect_tests {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
         let result = barrel(&pixels, &info, 0.3, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    // ── Polar / DePolar ──
+
+    #[test]
+    fn polar_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = polar(&pixels, &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn polar_rgba_works() {
+        let pixels = vec![128u8; 64 * 64 * 4];
+        let info = ImageInfo {
+            width: 64,
+            height: 64,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = polar(&pixels, &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn depolar_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = depolar(&pixels, &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn polar_depolar_roundtrip() {
+        // Create a test image with a centered pattern
+        let w = 64u32;
+        let h = 64u32;
+        let mut pixels = vec![128u8; (w * h * 3) as usize];
+        // Draw a cross pattern at center for roundtrip verification
+        let cx = w / 2;
+        let cy = h / 2;
+        for i in 10..54 {
+            // Horizontal line
+            let off = (cy as usize * w as usize + i) * 3;
+            pixels[off] = 255;
+            pixels[off + 1] = 0;
+            pixels[off + 2] = 0;
+            // Vertical line
+            let off2 = (i * w as usize + cx as usize) * 3;
+            pixels[off2] = 255;
+            pixels[off2 + 1] = 0;
+            pixels[off2 + 2] = 0;
+        }
+
+        let info = rgb_info(w, h);
+        let polar_result = polar(&pixels, &info).unwrap();
+        let roundtrip = depolar(&polar_result, &info).unwrap();
+
+        // Interior pixels near center should be similar after roundtrip.
+        // Bilinear interpolation causes some loss, so use a tolerance.
+        let mut total_diff = 0u64;
+        let mut count = 0u64;
+        for y in 16..48 {
+            for x in 16..48 {
+                let off = (y * w as usize + x) * 3;
+                for c in 0..3 {
+                    let diff = (pixels[off + c] as i32 - roundtrip[off + c] as i32).unsigned_abs();
+                    total_diff += diff as u64;
+                    count += 1;
+                }
+            }
+        }
+        let mae = total_diff as f64 / count as f64;
+        assert!(
+            mae < 30.0,
+            "polar->depolar roundtrip MAE = {mae:.1}, expected < 30"
+        );
+    }
+
+    // ── Wave ──
+
+    #[test]
+    fn wave_zero_amplitude_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = wave(&pixels, &info, 0.0, 10.0, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn wave_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = wave(&pixels, &info, 5.0, 20.0, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn wave_vertical_works() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = wave(&pixels, &info, 5.0, 20.0, 1.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn wave_rgba_works() {
+        let pixels = vec![128u8; 32 * 32 * 4];
+        let info = ImageInfo {
+            width: 32,
+            height: 32,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = wave(&pixels, &info, 3.0, 15.0, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    // ── Ripple ──
+
+    #[test]
+    fn ripple_zero_amplitude_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = ripple(&pixels, &info, 0.0, 10.0, 0.5, 0.5).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn ripple_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = ripple(&pixels, &info, 5.0, 20.0, 0.5, 0.5).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    #[test]
+    fn ripple_center_near_original() {
+        // Ripple with small amplitude — center region should be minimally affected
+        let w = 64u32;
+        let h = 64u32;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        // Place a 3x3 block at center
+        let cx = (w / 2) as usize;
+        let cy = (h / 2) as usize;
+        for dy in 0..3usize {
+            for dx in 0..3usize {
+                let off = ((cy - 1 + dy) * w as usize + (cx - 1 + dx)) * 3;
+                pixels[off] = 200;
+                pixels[off + 1] = 100;
+                pixels[off + 2] = 50;
+            }
+        }
+
+        let info = rgb_info(w, h);
+        // Small amplitude, long wavelength — near-center pixels barely move
+        let result = ripple(&pixels, &info, 1.0, 100.0, 0.5, 0.5).unwrap();
+        let center_off = (cy * w as usize + cx) * 3;
+        // Center pixel should be close to original (displacement at r≈0 is ≈0)
+        assert!(
+            result[center_off] > 100,
+            "center R should be > 100, got {}",
+            result[center_off]
+        );
+    }
+
+    #[test]
+    fn ripple_rgba_works() {
+        let pixels = vec![128u8; 32 * 32 * 4];
+        let info = ImageInfo {
+            width: 32,
+            height: 32,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = ripple(&pixels, &info, 3.0, 15.0, 0.5, 0.5).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 }
