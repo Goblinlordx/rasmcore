@@ -1514,13 +1514,8 @@ fn exact_dodge_midtones_vs_im() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| {
-            rasmcore_image::domain::filters::dodge(px, info, 50.0, 1).unwrap()
-        },
-        &[
-            "-fx",
-            "u + u * 0.5 * min(4*intensity*(1-intensity), 1)",
-        ],
+        |px, info| rasmcore_image::domain::filters::dodge(px, info, 50.0, 1).unwrap(),
+        &["-fx", "u + u * 0.5 * min(4*intensity*(1-intensity), 1)"],
         "dodge_midtones_50",
     ) {
         // Near-EXACT: IM 'intensity' uses Rec.601, we use BT.709.
@@ -1539,13 +1534,8 @@ fn exact_burn_midtones_vs_im() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| {
-            rasmcore_image::domain::filters::burn(px, info, 75.0, 1).unwrap()
-        },
-        &[
-            "-fx",
-            "u * (1 - 0.75 * min(4*intensity*(1-intensity), 1))",
-        ],
+        |px, info| rasmcore_image::domain::filters::burn(px, info, 75.0, 1).unwrap(),
+        &["-fx", "u * (1 - 0.75 * min(4*intensity*(1-intensity), 1))"],
         "burn_midtones_75",
     ) {
         assert!(
@@ -2239,6 +2229,108 @@ fn close_gradient_linear_vs_im() {
     assert!(
         error < 2.0,
         "CLOSE: gradient_linear vs IM gradient MAE should be < 2.0, got {error:.4}"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Mask Apply & Blend-If
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_mask_apply_gradient() {
+    if !magick_available() {
+        eprintln!("SKIP mask_apply: magick not available");
+        return;
+    }
+
+    let (w, h) = (32, 32);
+    // Create gradient image
+    let mut img_pixels = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            img_pixels.push((x * 255 / (w - 1)) as u8);
+            img_pixels.push((y * 255 / (h - 1)) as u8);
+            img_pixels.push(128u8);
+        }
+    }
+    // Create gradient mask (Gray8)
+    let mut mask_pixels = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            mask_pixels.push((x * 255 / (w - 1)) as u8);
+        }
+    }
+
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    // Our result
+    let our_rgba =
+        rasmcore_image::domain::filters::mask_apply(&img_pixels, &info, &mask_pixels, w, h, 0)
+            .unwrap();
+    // Extract just alpha channel
+    let our_alpha: Vec<u8> = our_rgba.chunks_exact(4).map(|c| c[3]).collect();
+
+    // IM result: write image + mask, compose CopyOpacity, extract alpha
+    let img_path = write_png(&img_pixels, w, h, 3);
+    // Write mask as grayscale PNG
+    let mask_path =
+        std::path::PathBuf::from(format!("/tmp/rasmcore_mask_{}.pgm", std::process::id()));
+    std::fs::write(
+        &mask_path,
+        format!("P5\n{w} {h}\n255\n")
+            .as_bytes()
+            .iter()
+            .chain(mask_pixels.iter())
+            .copied()
+            .collect::<Vec<u8>>(),
+    )
+    .unwrap();
+
+    let out_path =
+        std::path::PathBuf::from(format!("/tmp/rasmcore_maskout_{}.png", std::process::id()));
+    let status = std::process::Command::new("magick")
+        .args([
+            img_path.to_str().unwrap(),
+            mask_path.to_str().unwrap(),
+            "-compose",
+            "CopyOpacity",
+            "-composite",
+            "-depth",
+            "8",
+            out_path.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+
+    if !status.success() {
+        eprintln!("SKIP mask_apply: magick compose failed");
+        cleanup(&[&img_path, &mask_path]);
+        return;
+    }
+
+    // Read IM alpha channel
+    let im_out = std::process::Command::new("magick")
+        .args([
+            out_path.to_str().unwrap(),
+            "-channel",
+            "Alpha",
+            "-separate",
+            "-depth",
+            "8",
+            "gray:-",
+        ])
+        .output()
+        .unwrap();
+    let im_alpha = im_out.stdout;
+
+    let error = mae(&our_alpha, &im_alpha);
+    eprintln!("  mask_apply gradient: MAE = {error:.4}");
+
+    cleanup(&[&img_path, &mask_path, &out_path]);
+
+    assert!(
+        error < 0.01,
+        "EXACT: mask_apply vs IM CopyOpacity MAE should be < 0.01, got {error:.4}"
     );
 }
 

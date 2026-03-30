@@ -839,3 +839,46 @@ sys.stdout.buffer.write(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8).toby
     let reference = run_python_ref(&script);
     assert_close("modulate_hsl", &ours, &reference, 1.0);
 }
+
+#[test]
+fn parity_blend_if() {
+    let (w, h) = (64, 64);
+    let top = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    // Underlying: solid mid-gray
+    let bottom = vec![128u8; (w * h * 3) as usize];
+
+    // This layer visible only in range 50-200, feather=10
+    let ours = rasmcore_image::domain::filters::blend_if(&top, &info, &bottom, 50, 200, 0, 255, 10)
+        .unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np
+
+top = np.frombuffer(bytes({top:?}), dtype=np.uint8).reshape(-1, 3).astype(np.float64)
+bot = np.full_like(top, 128.0)
+
+tb, tw, ub, uw, f = 50.0, 200.0, 0.0, 255.0, 10.0
+
+def smoothstep(x, e0, e1):
+    if e1 <= e0:
+        return np.where(x >= e0, 1.0, 0.0)
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+# BT.709 luminance
+this_luma = 0.2126 * top[:, 0] + 0.7152 * top[:, 1] + 0.0722 * top[:, 2]
+under_luma = 0.2126 * bot[:, 0] + 0.7152 * bot[:, 1] + 0.0722 * bot[:, 2]
+
+this_factor = smoothstep(this_luma, tb - f, tb + f) * (1 - smoothstep(this_luma, tw - f, tw + f))
+under_factor = smoothstep(under_luma, ub - f, ub + f) * (1 - smoothstep(under_luma, uw - f, uw + f))
+
+blend = np.clip(this_factor * under_factor, 0, 1)[:, None]
+out = top * blend + bot * (1 - blend)
+sys.stdout.buffer.write(np.clip(out + 0.5, 0, 255).astype(np.uint8).tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_close("blend_if", &ours, &reference, 0.5);
+}
