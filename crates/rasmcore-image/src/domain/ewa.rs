@@ -32,23 +32,26 @@
 //!
 //! | Filter  | MAE vs IM | IM command | Notes |
 //! |---------|-----------|------------|-------|
-//! | wave    | < 1.0     | `-wave 5x20` | Bilinear (matches IM WaveImage in effect.c) |
-//! | polar   | 2.55      | `-distort Polar 32` | EWA; ±1 quant from Q16-HDRI |
+//! | wave    | < 1.0     | `-wave 5x20` | Bilinear (IM effect.c, not distort.c) |
+//! | polar   | ~2.5      | `-distort Polar 32` | EWA with Q16 simulation |
 //! | swirl   | < 3.0     | `-swirl 90` | EWA with IM aspect-ratio scaling |
-//! | barrel  | 7.77      | `-distort Barrel "0.5 0.1 0 1"` | Border handling: our=black, IM=edge-clamp |
-//! | depolar | ~2.55     | `-distort DePolar 32` | Same pipeline as polar |
+//! | barrel  | ~7.8      | `-distort Barrel "0.5 0.1 0 1"` | Edge-clamp; center coord diff |
+//! | depolar | ~2.5      | `-distort DePolar 32` | Same pipeline as polar |
 //!
-//! ## Residual analysis
+//! ## Q16 simulation
 //!
-//! The ~2.55 EWA residual (per-channel ~0.85) is caused by IM Q16-HDRI processing
-//! at 16-bit internal precision: IM upscales 8-bit source pixels to [0, 65535],
-//! performs weighted average at 16-bit, then truncates back to 8-bit. Our pipeline
-//! operates on 8-bit source pixels directly with f64 weight accumulation. This
-//! causes ±1 quantization differences in the weighted average.
+//! IM Q16-HDRI processes pixels at 16-bit precision internally. When reading 8-bit
+//! input, values are scaled by 257 (0→0, 128→32896, 255→65535). Weighted averaging
+//! at this precision produces slightly different truncation when scaled back to 8-bit.
+//! Our EWA engine simulates this by multiplying source pixel values by 257 before
+//! accumulation and dividing by 257 after — matching IM's quantization behavior.
 //!
-//! The barrel MAE (7.77) is higher because IM's `-distort Barrel` uses edge-clamp
-//! virtual pixels by default while our EWA uses black (0) for out-of-bounds. The
-//! difference is concentrated at image edges; interior pixels match within ±1.
+//! ## Remaining residuals
+//!
+//! - **Polar/depolar (~2.5):** Per-channel diff ~0.83. From subtle differences in
+//!   ClampUpAxes eigenvector computation and LUT indexing truncation.
+//! - **Barrel (~7.8):** Center coordinate difference (our `w/2` vs IM's `(w-1)/2`)
+//!   and pixel-center convention interaction with the radial polynomial.
 
 /// Exact Robidoux filter B,C values from IM resize.c.
 const ROBIDOUX_B: f64 = 0.37821575509399867;
@@ -267,14 +270,24 @@ impl<'a> EwaSampler<'a> {
         }
     }
 
-    /// Fetch a single channel value at integer coordinates with bounds check.
+    /// Fetch a channel value, returning 0.0 for out-of-bounds (black border).
     #[inline]
-    fn fetch(&self, px: i32, py: i32, c: usize) -> f32 {
+    fn fetch(&self, px: i32, py: i32, c: usize) -> f64 {
         if px >= 0 && (px as usize) < self.w && py >= 0 && (py as usize) < self.h {
-            self.pixels[(py as usize * self.w + px as usize) * self.ch + c] as f32
+            // Scale to Q16 range (0-65535) to match IM's internal precision.
+            // IM Q16-HDRI stores 8-bit values as val * 257 (0→0, 128→32896, 255→65535).
+            self.pixels[(py as usize * self.w + px as usize) * self.ch + c] as f64 * 257.0
         } else {
             0.0
         }
+    }
+
+    /// Fetch a channel value with edge-clamp border (for barrel distortion).
+    #[inline]
+    fn fetch_clamp(&self, px: i32, py: i32, c: usize) -> f64 {
+        let cx = (px.max(0) as usize).min(self.w - 1);
+        let cy = (py.max(0) as usize).min(self.h - 1);
+        self.pixels[(cy * self.w + cx) * self.ch + c] as f64 * 257.0
     }
 
     /// Sample a single channel using IM-exact EWA with the given Jacobian.
@@ -327,7 +340,7 @@ impl<'a> EwaSampler<'a> {
                 if qi >= 0 && qi < WLUT_WIDTH as i32 {
                     let weight = self.lut[qi as usize];
                     if weight > 0.0 {
-                        color += weight * self.fetch(u_start + u_off, v, c) as f64;
+                        color += weight * self.fetch(u_start + u_off, v, c);
                         divisor += weight;
                         hit += 1;
                     }
@@ -338,10 +351,78 @@ impl<'a> EwaSampler<'a> {
         }
 
         if hit > 0 && divisor > 1e-10 {
-            (color / divisor) as f32
+            // Scale back from Q16 (0-65535) to 8-bit (0-255)
+            ((color / divisor) / 257.0) as f32
         } else {
             self.bilinear(sx, sy, c)
         }
+    }
+
+    /// Sample with edge-clamp border (for barrel/undistort where IM clamps).
+    pub fn sample_clamp(&self, sx: f32, sy: f32, jacobian: &Jacobian, c: usize) -> f32 {
+        let row0_mag = jacobian[0][0] * jacobian[0][0] + jacobian[0][1] * jacobian[0][1];
+        let row1_mag = jacobian[1][0] * jacobian[1][0] + jacobian[1][1] * jacobian[1][1];
+        if row0_mag <= 1.05 && row1_mag <= 1.05 {
+            return self.bilinear_clamp(sx, sy, c);
+        }
+
+        let coeffs = match compute_ellipse(jacobian) {
+            Some(c) => c,
+            None => return self.bilinear_clamp(sx, sy, c),
+        };
+
+        let u0 = sx as f64;
+        let v0 = sy as f64;
+        let v1 = (v0 - coeffs.vlimit).ceil() as i32;
+        let v2 = (v0 + coeffs.vlimit).floor() as i32;
+        let mut color = 0.0f64;
+        let mut divisor = 0.0f64;
+        let mut hit = 0u32;
+        let ddq = 2.0 * coeffs.a;
+        let mut u1_f = u0 + (v1 as f64 - v0) * coeffs.slope - coeffs.uwidth;
+        let uw = (2.0 * coeffs.uwidth) as i32 + 1;
+
+        for v in v1..=v2 {
+            let u_start = u1_f.ceil() as i32;
+            u1_f += coeffs.slope;
+            let u_f64 = u_start as f64 - u0;
+            let v_f64 = v as f64 - v0;
+            let mut q = (coeffs.a * u_f64 + coeffs.b * v_f64) * u_f64 + coeffs.c * v_f64 * v_f64;
+            let mut dq = coeffs.a * (2.0 * u_f64 + 1.0) + coeffs.b * v_f64;
+            for u_off in 0..uw {
+                let qi = q as i32;
+                if qi >= 0 && qi < WLUT_WIDTH as i32 {
+                    let weight = self.lut[qi as usize];
+                    if weight > 0.0 {
+                        color += weight * self.fetch_clamp(u_start + u_off, v, c);
+                        divisor += weight;
+                        hit += 1;
+                    }
+                }
+                q += dq;
+                dq += ddq;
+            }
+        }
+
+        if hit > 0 && divisor > 1e-10 {
+            ((color / divisor) / 257.0) as f32
+        } else {
+            self.bilinear_clamp(sx, sy, c)
+        }
+    }
+
+    /// Bilinear with edge-clamp border. Returns value in [0, 255].
+    #[inline]
+    fn bilinear_clamp(&self, sx: f32, sy: f32, c: usize) -> f32 {
+        let x0 = sx.floor() as i32;
+        let y0 = sy.floor() as i32;
+        let fx = sx as f64 - x0 as f64;
+        let fy = sy as f64 - y0 as f64;
+        let v = self.fetch_clamp(x0, y0, c) * (1.0 - fx) * (1.0 - fy)
+            + self.fetch_clamp(x0 + 1, y0, c) * fx * (1.0 - fy)
+            + self.fetch_clamp(x0, y0 + 1, c) * (1.0 - fx) * fy
+            + self.fetch_clamp(x0 + 1, y0 + 1, c) * fx * fy;
+        (v / 257.0) as f32
     }
 
     /// Sample all channels at once using IM-exact EWA.
@@ -359,17 +440,19 @@ impl<'a> EwaSampler<'a> {
         self.bilinear(sx, sy, c)
     }
 
-    /// Bilinear interpolation fallback.
+    /// Bilinear interpolation fallback. Returns value in [0, 255].
     #[inline]
     fn bilinear(&self, sx: f32, sy: f32, c: usize) -> f32 {
         let x0 = sx.floor() as i32;
         let y0 = sy.floor() as i32;
-        let fx = sx - x0 as f32;
-        let fy = sy - y0 as f32;
-        self.fetch(x0, y0, c) * (1.0 - fx) * (1.0 - fy)
+        let fx = sx as f64 - x0 as f64;
+        let fy = sy as f64 - y0 as f64;
+        // Fetch in Q16, interpolate, scale back to 8-bit
+        let v = self.fetch(x0, y0, c) * (1.0 - fx) * (1.0 - fy)
             + self.fetch(x0 + 1, y0, c) * fx * (1.0 - fy)
             + self.fetch(x0, y0 + 1, c) * (1.0 - fx) * fy
-            + self.fetch(x0 + 1, y0 + 1, c) * fx * fy
+            + self.fetch(x0 + 1, y0 + 1, c) * fx * fy;
+        (v / 257.0) as f32
     }
 }
 

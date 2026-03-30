@@ -13977,7 +13977,7 @@ pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u
             let j = super::ewa::jacobian_barrel(xf, yf, cx, cy, k1, k2, norm);
             let off = (y * w + x) * ch;
             for c in 0..ch {
-                out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
+                out[off + c] = sampler.sample_clamp(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
             }
         }
     }
@@ -14917,10 +14917,8 @@ mod distortion_effect_tests {
         let result = std::process::Command::new("magick")
             .args([
                 png_path.to_str().unwrap(),
-                "-background",
-                "black",
                 "-virtual-pixel",
-                "Background",
+                "Edge",
                 "-distort",
                 "Barrel",
                 "0.5 0.1 0 1",
@@ -14951,8 +14949,8 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("barrel IM parity MAE: {mae:.2}");
-        // Barrel uses black border in EWA while IM uses edge-clamp by default.
-        // The difference is concentrated at image edges. Interior pixels match well.
+        // Both use edge-clamp. Residual from center coordinate difference
+        // (our center=w/2 vs IM center=(w-1)/2) and Q16-HDRI precision.
         assert!(mae < 8.0, "barrel IM parity MAE = {mae:.2} > 8.0");
     }
 }
