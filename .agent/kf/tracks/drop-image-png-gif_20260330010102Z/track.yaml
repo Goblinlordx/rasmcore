@@ -79,13 +79,13 @@ plan:
   - text: Remove pixels_to_dynamic_image() helper
     done: true
   - text: Remove image from Cargo.toml entirely
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All decode/encode parity tests pass without image crate
-    done: false
+    done: true
   - text: Measure and document binary size reduction (native + WASM)
-    done: false
+    done: true
   - text: cargo tree confirms image crate fully eliminated
-    done: false
+    done: true
 extra: {}
