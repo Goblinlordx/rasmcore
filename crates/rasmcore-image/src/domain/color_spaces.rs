@@ -132,6 +132,7 @@ fn adobe_rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
 }
 
 /// XYZ (D65) → Adobe RGB.
+#[allow(clippy::excessive_precision)] // matrix constants from colour-science reference
 fn xyz_to_adobe_rgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     // Inverse matrix (from colour-science)
     let rl = 2.0415879038107327 * x - 0.5650069742788597 * y - 0.3447313507783297 * z;
