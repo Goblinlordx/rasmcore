@@ -1510,10 +1510,151 @@ fn decode_native_exr(data: &[u8]) -> Result<DecodedImage, ImageError> {
     })
 }
 
+/// BCn format identified from DDS FourCC or DX10 DXGI_FORMAT.
+#[derive(Clone, Copy, Debug)]
+enum DdsBcFormat {
+    Bc1, // DXT1: RGB + 1-bit alpha
+    Bc2, // DXT3: RGB + explicit 4-bit alpha
+    Bc3, // DXT5: RGB + interpolated alpha
+    Bc4, // ATI1/RGTC1: single channel
+    Bc5, // ATI2/RGTC2: two-channel normal map
+    Bc7, // BPTC: high-quality RGBA
+}
+
+impl DdsBcFormat {
+    /// Bytes per compressed 4x4 block.
+    fn block_bytes(self) -> usize {
+        match self {
+            DdsBcFormat::Bc1 | DdsBcFormat::Bc4 => 8,
+            DdsBcFormat::Bc2 | DdsBcFormat::Bc3 | DdsBcFormat::Bc5 | DdsBcFormat::Bc7 => 16,
+        }
+    }
+}
+
+/// Decompress BCn block-compressed data into RGBA8 pixels.
+fn decompress_bcn(
+    bc: DdsBcFormat,
+    compressed: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(Vec<u8>, PixelFormat), ImageError> {
+    let w = width as usize;
+    let h = height as usize;
+    let bw = (w + 3) / 4; // blocks across
+    let bh = (h + 3) / 4; // blocks down
+    let block_bytes = bc.block_bytes();
+    let expected_size = bw * bh * block_bytes;
+
+    if compressed.len() < expected_size {
+        return Err(ImageError::InvalidInput(format!(
+            "DDS BCn: data too short, expected {expected_size} got {}",
+            compressed.len()
+        )));
+    }
+
+    match bc {
+        DdsBcFormat::Bc4 => {
+            // BC4 → Gray8 (single channel)
+            let mut output = vec![0u8; w * h];
+            for by in 0..bh {
+                for bx in 0..bw {
+                    let block_offset = (by * bw + bx) * block_bytes;
+                    let block = &compressed[block_offset..block_offset + block_bytes];
+                    // Decompress to a 4x4 block buffer (1 byte per pixel, pitch = 4)
+                    let mut block_buf = [0u8; 4 * 4];
+                    bcdec_rs::bc4(block, &mut block_buf, 4, false);
+                    // Copy to output, respecting image bounds
+                    for row in 0..4 {
+                        let py = by * 4 + row;
+                        if py >= h {
+                            break;
+                        }
+                        for col in 0..4 {
+                            let px = bx * 4 + col;
+                            if px >= w {
+                                break;
+                            }
+                            output[py * w + px] = block_buf[row * 4 + col];
+                        }
+                    }
+                }
+            }
+            Ok((output, PixelFormat::Gray8))
+        }
+        DdsBcFormat::Bc5 => {
+            // BC5 → RGB8 (two-channel, typically normal map RG → RGB with B=255)
+            let mut output = vec![0u8; w * h * 3];
+            for by in 0..bh {
+                for bx in 0..bw {
+                    let block_offset = (by * bw + bx) * block_bytes;
+                    let block = &compressed[block_offset..block_offset + block_bytes];
+                    // bcdec_rs::bc5 outputs RG pairs, pitch in bytes (2 per pixel)
+                    let mut block_buf = [0u8; 4 * 4 * 2];
+                    bcdec_rs::bc5(block, &mut block_buf, 4 * 2, false);
+                    for row in 0..4 {
+                        let py = by * 4 + row;
+                        if py >= h {
+                            break;
+                        }
+                        for col in 0..4 {
+                            let px = bx * 4 + col;
+                            if px >= w {
+                                break;
+                            }
+                            let src = (row * 4 + col) * 2;
+                            let dst = (py * w + px) * 3;
+                            output[dst] = block_buf[src]; // R
+                            output[dst + 1] = block_buf[src + 1]; // G
+                            output[dst + 2] = 255; // B (reconstructed)
+                        }
+                    }
+                }
+            }
+            Ok((output, PixelFormat::Rgb8))
+        }
+        _ => {
+            // BC1/BC2/BC3/BC7 → RGBA8 (4 bytes per pixel)
+            let mut output = vec![0u8; w * h * 4];
+            let pitch = 4 * 4; // 4 pixels * 4 bytes/pixel per row in the block
+            for by in 0..bh {
+                for bx in 0..bw {
+                    let block_offset = (by * bw + bx) * block_bytes;
+                    let block = &compressed[block_offset..block_offset + block_bytes];
+                    let mut block_buf = [0u8; 4 * 4 * 4]; // 16 pixels * RGBA
+                    match bc {
+                        DdsBcFormat::Bc1 => bcdec_rs::bc1(block, &mut block_buf, pitch),
+                        DdsBcFormat::Bc2 => bcdec_rs::bc2(block, &mut block_buf, pitch),
+                        DdsBcFormat::Bc3 => bcdec_rs::bc3(block, &mut block_buf, pitch),
+                        DdsBcFormat::Bc7 => bcdec_rs::bc7(block, &mut block_buf, pitch),
+                        _ => unreachable!(),
+                    }
+                    // Copy to output, respecting image bounds
+                    for row in 0..4 {
+                        let py = by * 4 + row;
+                        if py >= h {
+                            break;
+                        }
+                        for col in 0..4 {
+                            let px = bx * 4 + col;
+                            if px >= w {
+                                break;
+                            }
+                            let src = (row * 4 + col) * 4;
+                            let dst = (py * w + px) * 4;
+                            output[dst..dst + 4].copy_from_slice(&block_buf[src..src + 4]);
+                        }
+                    }
+                }
+            }
+            Ok((output, PixelFormat::Rgba8))
+        }
+    }
+}
+
 /// Decode DDS (DirectDraw Surface) natively.
 ///
-/// Supports uncompressed R8G8B8, A8R8G8B8, and luminance formats.
-/// DXT/BCn compressed textures are not yet supported.
+/// Supports uncompressed R8G8B8, A8R8G8B8, luminance, and BCn (DXT1-DXT5, BC4/BC5/BC7)
+/// block-compressed textures.
 fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if data.len() < 128 {
         return Err(ImageError::InvalidInput("DDS: header too short".into()));
@@ -1523,20 +1664,106 @@ fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let width = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
     let _pitch = u32::from_le_bytes([data[20], data[21], data[22], data[23]]);
 
-    // Pixel format at offset 76
+    // Pixel format at offset 76 (struct starts at offset 76, size at offset 76)
     let pf_flags = u32::from_le_bytes([data[80], data[81], data[82], data[83]]);
+    let pf_fourcc = u32::from_le_bytes([data[84], data[85], data[86], data[87]]);
     let pf_rgb_bit_count = u32::from_le_bytes([data[88], data[89], data[90], data[91]]);
-    let pf_r_mask = u32::from_le_bytes([data[92], data[93], data[94], data[95]]);
-    let pf_g_mask = u32::from_le_bytes([data[96], data[97], data[98], data[99]]);
-    let pf_b_mask = u32::from_le_bytes([data[100], data[101], data[102], data[103]]);
-    let pf_a_mask = u32::from_le_bytes([data[104], data[105], data[106], data[107]]);
+    let _pf_r_mask = u32::from_le_bytes([data[92], data[93], data[94], data[95]]);
+    let _pf_g_mask = u32::from_le_bytes([data[96], data[97], data[98], data[99]]);
+    let _pf_b_mask = u32::from_le_bytes([data[100], data[101], data[102], data[103]]);
+    let _pf_a_mask = u32::from_le_bytes([data[104], data[105], data[106], data[107]]);
 
-    let pixel_data = &data[128..];
-    let npixels = (width * height) as usize;
-
+    const DDPF_FOURCC: u32 = 0x4;
     const DDPF_RGB: u32 = 0x40;
     const DDPF_LUMINANCE: u32 = 0x20000;
     const DDPF_ALPHAPIXELS: u32 = 0x01;
+
+    // FourCC codes for BCn formats
+    const FOURCC_DXT1: u32 = 0x31545844; // "DXT1"
+    const FOURCC_DXT3: u32 = 0x33545844; // "DXT3"
+    const FOURCC_DXT5: u32 = 0x35545844; // "DXT5"
+    const FOURCC_ATI1: u32 = 0x31495441; // "ATI1" (BC4)
+    const FOURCC_ATI2: u32 = 0x32495441; // "ATI2" (BC5)
+    const FOURCC_BC4U: u32 = 0x55344342; // "BC4U"
+    const FOURCC_BC4S: u32 = 0x53344342; // "BC4S"
+    const FOURCC_BC5U: u32 = 0x55354342; // "BC5U"
+    const FOURCC_BC5S: u32 = 0x53354342; // "BC5S"
+    const FOURCC_DX10: u32 = 0x30315844; // "DX10" (extended header)
+
+    // DXGI_FORMAT values for DX10 header
+    const DXGI_FORMAT_BC1_UNORM: u32 = 71;
+    const DXGI_FORMAT_BC1_UNORM_SRGB: u32 = 72;
+    const DXGI_FORMAT_BC2_UNORM: u32 = 74;
+    const DXGI_FORMAT_BC2_UNORM_SRGB: u32 = 75;
+    const DXGI_FORMAT_BC3_UNORM: u32 = 77;
+    const DXGI_FORMAT_BC3_UNORM_SRGB: u32 = 78;
+    const DXGI_FORMAT_BC4_UNORM: u32 = 80;
+    const DXGI_FORMAT_BC5_UNORM: u32 = 83;
+    const DXGI_FORMAT_BC7_UNORM: u32 = 98;
+    const DXGI_FORMAT_BC7_UNORM_SRGB: u32 = 99;
+
+    // Check for compressed (FourCC) formats first
+    if pf_flags & DDPF_FOURCC != 0 {
+        // Determine BCn format from FourCC
+        let (bc_format, pixel_data_offset) = if pf_fourcc == FOURCC_DX10 {
+            // DX10 extended header: 20 extra bytes at offset 128
+            if data.len() < 148 {
+                return Err(ImageError::InvalidInput(
+                    "DDS: DX10 header too short".into(),
+                ));
+            }
+            let dxgi_format =
+                u32::from_le_bytes([data[128], data[129], data[130], data[131]]);
+            let fmt = match dxgi_format {
+                DXGI_FORMAT_BC1_UNORM | DXGI_FORMAT_BC1_UNORM_SRGB => DdsBcFormat::Bc1,
+                DXGI_FORMAT_BC2_UNORM | DXGI_FORMAT_BC2_UNORM_SRGB => DdsBcFormat::Bc2,
+                DXGI_FORMAT_BC3_UNORM | DXGI_FORMAT_BC3_UNORM_SRGB => DdsBcFormat::Bc3,
+                DXGI_FORMAT_BC4_UNORM => DdsBcFormat::Bc4,
+                DXGI_FORMAT_BC5_UNORM => DdsBcFormat::Bc5,
+                DXGI_FORMAT_BC7_UNORM | DXGI_FORMAT_BC7_UNORM_SRGB => DdsBcFormat::Bc7,
+                _ => {
+                    return Err(ImageError::UnsupportedFormat(format!(
+                        "DDS DX10: unsupported DXGI_FORMAT {dxgi_format}"
+                    )));
+                }
+            };
+            (fmt, 148) // 128 base header + 20 DX10 extension
+        } else {
+            let fmt = match pf_fourcc {
+                FOURCC_DXT1 => DdsBcFormat::Bc1,
+                FOURCC_DXT3 => DdsBcFormat::Bc2,
+                FOURCC_DXT5 => DdsBcFormat::Bc3,
+                FOURCC_ATI1 | FOURCC_BC4U | FOURCC_BC4S => DdsBcFormat::Bc4,
+                FOURCC_ATI2 | FOURCC_BC5U | FOURCC_BC5S => DdsBcFormat::Bc5,
+                _ => {
+                    let cc_bytes = pf_fourcc.to_le_bytes();
+                    let cc_str = String::from_utf8_lossy(&cc_bytes);
+                    return Err(ImageError::UnsupportedFormat(format!(
+                        "DDS: unsupported FourCC '{cc_str}' (0x{pf_fourcc:08X})"
+                    )));
+                }
+            };
+            (fmt, 128) // standard 128-byte header
+        };
+
+        let compressed = &data[pixel_data_offset..];
+        let (pixels, format) = decompress_bcn(bc_format, compressed, width, height)?;
+
+        return Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width,
+                height,
+                format,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        });
+    }
+
+    // Uncompressed formats
+    let pixel_data = &data[128..];
+    let npixels = (width * height) as usize;
 
     if pf_flags & DDPF_RGB != 0 {
         if pf_rgb_bit_count == 32 && pf_flags & DDPF_ALPHAPIXELS != 0 {
