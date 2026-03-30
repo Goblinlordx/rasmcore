@@ -30,6 +30,8 @@ pub fn channels(format: PixelFormat) -> usize {
         PixelFormat::Gray8 | PixelFormat::Gray16 => 1,
         PixelFormat::Rgb8 | PixelFormat::Rgb16 => 3,
         PixelFormat::Rgba8 | PixelFormat::Rgba16 => 4,
+        PixelFormat::Cmyk8 => 4,
+        PixelFormat::Cmyka8 => 5,
         _ => 4, // conservative default
     }
 }

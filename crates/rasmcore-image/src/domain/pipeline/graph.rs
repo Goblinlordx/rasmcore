@@ -157,6 +157,8 @@ pub fn bytes_per_pixel(format: crate::domain::types::PixelFormat) -> u32 {
         PixelFormat::Gray16 => 2,
         PixelFormat::Rgb16 => 6,
         PixelFormat::Rgba16 => 8,
+        PixelFormat::Cmyk8 => 4,
+        PixelFormat::Cmyka8 => 5,
         PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p | PixelFormat::Nv12 => 4,
     }
 }

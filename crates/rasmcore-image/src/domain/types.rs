@@ -12,6 +12,8 @@ pub enum PixelFormat {
     Gray16,
     Rgb16,
     Rgba16,
+    Cmyk8,
+    Cmyka8,
     Yuv420p,
     Yuv422p,
     Yuv444p,
