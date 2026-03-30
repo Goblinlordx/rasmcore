@@ -1,0 +1,58 @@
+id: register-unregistered-ops_20260330114035Z
+title: Register Unregistered Domain Functions
+type: chore
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Register 4 existing domain functions that lack #[register_filter] annotations:
+    connected_components, hough_lines_p, histogram_match, and mertens_fusion.
+    These are fully implemented but invisible to the filter system, SDK, and WIT.
+  context: |
+    Four domain functions exist and work correctly but were never registered
+    via the #[register_filter] macro. This means they don't appear in
+    param-manifest.json, aren't accessible via the filter dispatch system,
+    and aren't exposed through WIT. This is a quick wiring chore.
+  codebase_analysis: |
+    EXISTING FUNCTIONS:
+    - connected_components() at filters.rs:7013 — returns labeled image
+    - hough_lines_p() at filters.rs:3947 — probabilistic Hough line detection
+    - histogram_match() at histogram.rs:533 — match histogram to reference
+    - mertens_fusion() at filters.rs:10657 — exposure fusion (Mertens et al.)
+    - debevec_hdr_merge() at filters.rs:11331 — HDR merge (Debevec)
+
+    All have proper signatures (pixels, info, params -> Result) and tests.
+    Just need ConfigParams + register_filter wrapper + re-export.
+  acceptance_criteria:
+    - connected_components registered with min_area param, returns labeled Gray8
+    - hough_lines_p registered with threshold, min_length, max_gap params
+    - histogram_match registered, accepts reference histogram data
+    - mertens_fusion registered with contrast_weight, saturation_weight, exposure_weight
+    - All 4 appear in param-manifest.json after build
+    - Existing domain tests still pass
+  out_of_scope: |
+    New functionality. Algorithm changes. New tests beyond registration verification.
+  technical_notes: |
+    Pattern: add ConfigParams struct + #[register_filter] wrapper that calls
+    the existing function. For histogram_match, the reference image is a
+    buffer param (like draw_text_ttf's font_data). For connected_components,
+    output is a labeled image where pixel value = component ID.
+plan:
+  - phase: Registration
+    tasks:
+      - text: Register connected_components with ConfigParams (min_area)
+        done: false
+      - text: Register hough_lines_p with ConfigParams (threshold, min_length, max_gap)
+        done: false
+      - text: Register histogram_match with reference buffer param
+        done: false
+      - text: Register mertens_fusion with weight params (contrast, saturation, exposure)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify all 4 in param-manifest.json
+        done: false
+      - text: Full cargo test pass
+        done: false
+extra: {}
