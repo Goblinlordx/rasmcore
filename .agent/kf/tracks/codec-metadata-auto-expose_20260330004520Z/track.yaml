@@ -1,0 +1,89 @@
+id: codec-metadata-auto-expose_20260330004520Z
+title: "Codec Metadata Auto-Expose — MIME Type + Extension from Registration"
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Wire existing #[register_encoder] macro to include MIME type and file
+    extensions, expose via WIT format-info query, remove hardcoded MIME maps
+    from demo JS.
+  context: |
+    The project already has #[register_encoder] macro infrastructure and a
+    StaticEncoderRegistration struct with a mime field, but none of the actual
+    encoder functions use the macro. MIME types are hardcoded in three places:
+    codec.rs (backend), main.js (simple demo), pipeline-worker.js (pipeline demo).
+    File extensions are not tracked at all. The WIT interface has no way to
+    query format metadata — only supportedWriteFormats() returning format name
+    strings. The codec-info record already exists in wit/core/types.wit (unused).
+  codebase_analysis: |
+    Existing infrastructure (all built, none wired):
+    - Proc macro: #[register_encoder(name, format, mime)] in rasmcore-macros/src/lib.rs:92-137
+    - Static registry: StaticEncoderRegistration { name, format, mime } in encoder/mod.rs:23-32
+    - Collection: registered_encoders() via inventory::iter in encoder/mod.rs:34-40
+    - MIME data: CodecRegistry::mime_type() in codec.rs:136-154 (hardcoded match)
+    - Unused WIT record: codec-info in wit/core/types.wit:68-74
+
+    What needs to happen:
+    1. Add extensions field to StaticEncoderRegistration and register_encoder macro
+    2. Annotate each encoder function (jpeg.rs, png.rs, etc.) with #[register_encoder]
+    3. Add WIT query function returning format-info records (name, mime, extensions)
+    4. Implement adapter to serve from registered_encoders()
+    5. SDK auto-generates TypeScript types from WIT — no manual work needed
+    6. Demo JS replaces hardcoded MIME_MAP with SDK query
+
+    Default MIME type: application/octet-stream (for formats like QOI, TGA, etc.
+    that lack a well-known IANA type).
+  acceptance_criteria:
+    - Every encoder function uses #[register_encoder] with name, mime, and extensions
+    - StaticEncoderRegistration includes extensions field (list of strings)
+    - WIT exposes format-info query returning name, mime, extensions per format
+    - SDK TypeScript types auto-generated from WIT (no manual type definitions)
+    - Demo JS queries format metadata from SDK instead of hardcoded MIME_MAP
+    - Default MIME is application/octet-stream for unregistered or exotic formats
+    - No duplicate MIME/extension data in JS, Rust match blocks, or config files
+  out_of_scope: |
+    Decoder registration (read-side metadata), new codec implementations,
+    filter registration changes (covered by filter-codec-exposure-audit track)
+  technical_notes: |
+    The register_encoder macro already parses name/format/mime attributes.
+    Add extensions as a comma-separated list attribute:
+      #[register_encoder(name = "jpeg", mime = "image/jpeg", extensions = "jpg,jpeg")]
+
+    For WIT, use the existing codec-info record in core/types.wit or define
+    a new format-info record in encoder.wit. Add a format-info query:
+      format-info: func(format: string) -> option<format-info-record>
+      all-format-info: func() -> list<format-info-record>
+
+    The jco SDK generation will auto-create TypeScript types from WIT.
+    Demo code then calls sdk.encoder.allFormatInfo() to get MIME/extensions
+    at runtime — zero hardcoding.
+plan:
+  - title: "Extend registration infrastructure"
+    tasks:
+      - title: Add extensions field to StaticEncoderRegistration struct
+        done: false
+      - title: Update register_encoder proc macro to parse extensions attribute
+        done: false
+      - title: Annotate all encoder functions with register_encoder (jpeg, png, webp, gif, tiff, avif, bmp, ico, qoi, heic, tga, hdr, pnm, exr, dds, jp2, fits)
+        done: false
+  - title: "WIT and adapter exposure"
+    tasks:
+      - title: Define format-info record in WIT (name, mime, extensions)
+        done: false
+      - title: Add format-info and all-format-info query functions to encoder.wit
+        done: false
+      - title: Implement adapter to serve metadata from registered_encoders()
+        done: false
+  - title: "Demo cleanup and verification"
+    tasks:
+      - title: Replace hardcoded MIME_MAP in demo/src/main.js with SDK query
+        done: false
+      - title: Replace hardcoded MIME_MAP in demo/src/pipeline-worker.js with SDK query
+        done: false
+      - title: Run cargo test and validate.sh
+        done: false
+      - title: Verify demo UI correctly resolves MIME types from backend for all formats
+        done: false
+extra: {}
