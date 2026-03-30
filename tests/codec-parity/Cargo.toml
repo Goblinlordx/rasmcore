@@ -12,6 +12,7 @@ rasmcore-bmp = { path = "../../crates/rasmcore-bmp" }
 rasmcore-tga = { path = "../../crates/rasmcore-tga" }
 rasmcore-fits = { path = "../../crates/rasmcore-fits" }
 rasmcore-jpeg = { path = "../../crates/rasmcore-jpeg" }
+rasmcore-image = { path = "../../crates/rasmcore-image" }
 
 # Reference implementation
 image = { workspace = true, features = [

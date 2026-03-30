@@ -535,6 +535,7 @@ dependencies = [
  "image",
  "rasmcore-bmp",
  "rasmcore-fits",
+ "rasmcore-image",
  "rasmcore-jpeg",
  "rasmcore-pnm",
  "rasmcore-qoi",
