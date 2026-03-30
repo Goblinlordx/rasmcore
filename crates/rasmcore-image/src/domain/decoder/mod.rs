@@ -27,7 +27,7 @@ pub fn registered_decoders() -> Vec<&'static StaticDecoderRegistration> {
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "qoi", "ico", "tga", "hdr", "pnm", "exr", "dds",
-    "jxl", "jp2", "heic", "fits", "svg",
+    "jxl", "jp2", "heic", "fits", "svg", "dng",
 ];
 
 /// Detect image format from header bytes
@@ -93,6 +93,15 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     // QOI magic
     if header.len() >= 4 && &header[..4] == b"qoif" {
         return Some("qoi".to_string());
+    }
+    // DNG — TIFF-based, must be checked before generic TIFF detection
+    #[cfg(feature = "native-raw")]
+    if header.len() >= 4
+        && ((header[0] == b'I' && header[1] == b'I' && header[2] == 42 && header[3] == 0)
+            || (header[0] == b'M' && header[1] == b'M' && header[2] == 0 && header[3] == 42))
+        && rasmcore_raw::is_dng(header)
+    {
+        return Some("dng".to_string());
     }
     // TIFF (little-endian or big-endian)
     if header.len() >= 4
@@ -348,6 +357,16 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     // PNG — native decode via png crate
     if data.len() >= 8 && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
         return decode_native_png(data);
+    }
+
+    // DNG — TIFF-based RAW, must be checked before generic TIFF
+    #[cfg(feature = "native-raw")]
+    if data.len() >= 4
+        && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
+            || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
+        && rasmcore_raw::is_dng(data)
+    {
+        return decode_native_dng(data);
     }
 
     // TIFF — decode via tiff crate directly (dropped from image features)
@@ -965,6 +984,24 @@ fn decode_native_pnm(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 /// Decode a FITS image using rasmcore-fits.
+/// Decode DNG RAW image using rasmcore-raw.
+#[cfg(feature = "native-raw")]
+fn decode_native_dng(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let result =
+        rasmcore_raw::decode(data).map_err(|e| ImageError::InvalidInput(format!("DNG: {e}")))?;
+
+    Ok(DecodedImage {
+        pixels: result.pixels,
+        info: ImageInfo {
+            width: result.width,
+            height: result.height,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
 fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let (header, float_pixels) =
         rasmcore_fits::decode(data).map_err(|e| ImageError::InvalidInput(format!("FITS: {e}")))?;

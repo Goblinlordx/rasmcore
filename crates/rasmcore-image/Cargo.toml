@@ -35,6 +35,7 @@ rasmcore-pnm = { path = "../rasmcore-pnm", optional = true }
 rasmcore-bmp = { path = "../rasmcore-bmp", optional = true }
 rasmcore-tga = { path = "../rasmcore-tga", optional = true }
 rasmcore-color = { path = "../rasmcore-color", optional = true }
+rasmcore-raw = { path = "../rasmcore-raw", optional = true }
 rasmcore-isobmff = { path = "../rasmcore-isobmff", optional = true }
 rasmcore-hevc = { path = "../rasmcore-hevc", optional = true }
 
@@ -44,6 +45,7 @@ native-qoi = ["dep:rasmcore-qoi"]
 native-pnm = ["dep:rasmcore-pnm"]
 native-bmp = ["dep:rasmcore-bmp"]
 native-tga = ["dep:rasmcore-tga"]
+native-raw = ["dep:rasmcore-raw"]
 native-trivial = ["native-qoi", "native-pnm", "native-bmp", "native-tga"]
 native-heif = ["dep:rasmcore-isobmff"]
 # Patent-encumbered — adds HEVC decode capability for HEIC files.
