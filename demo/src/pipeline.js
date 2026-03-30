@@ -67,12 +67,18 @@ function expandArgs(params, paramValues) {
 // Falls back to minimal hardcoded metadata if manifest unavailable.
 let PARAM_META = {};
 let MANIFEST_CATEGORIES = {}; // manifest filter name → category
+let MANIFEST_GROUPS = {};     // manifest filter name → { group, variant, reference }
 
 try {
   const manifest = await fetch('/sdk/param-manifest.json').then(r => r.json());
   for (const filter of manifest.filters) {
     const camelName = snakeToCamel(filter.name);
     MANIFEST_CATEGORIES[camelName] = filter.category;
+    MANIFEST_GROUPS[camelName] = {
+      group: filter.group || '',
+      variant: filter.variant || '',
+      reference: filter.reference || '',
+    };
     PARAM_META[camelName] = filter.params
       .filter(p => {
         // Include simple numeric types
@@ -147,6 +153,10 @@ for (const [name, extra] of Object.entries(PIPELINE_EXTRAS)) {
 const CATEGORY_LABELS = {
   spatial: 'Filters', adjustment: 'Adjustment', color: 'Color',
   edge: 'Edge', transform: 'Transform', alpha: 'Alpha', other: 'Other',
+  enhancement: 'Enhancement', morphology: 'Morphology', threshold: 'Threshold',
+  grading: 'Grading', tonemapping: 'Tonemapping', effect: 'Effects',
+  distortion: 'Distortion', draw: 'Draw', generator: 'Generator', tool: 'Tool',
+  advanced: 'Advanced',
 };
 
 // Operations to skip (internal pipeline methods, not useful in chain builder)
@@ -171,10 +181,23 @@ for (const name of methodNames) {
 const paletteEl = document.getElementById('palette-items');
 paletteEl.innerHTML = '';
 
+// Group operations by category
 const grouped = {};
 for (const op of operations) {
   if (!grouped[op.category]) grouped[op.category] = [];
   grouped[op.category].push(op);
+}
+
+// Title-case a group name: "edge_detect" → "Edge Detect"
+function groupLabel(g) {
+  return g.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Display label for an operation: use variant name if in a group, else full name
+function opLabel(op) {
+  const meta = MANIFEST_GROUPS[op.name];
+  if (meta && meta.variant) return meta.variant.replace(/_/g, ' ');
+  return op.name;
 }
 
 for (const [cat, ops] of Object.entries(grouped)) {
@@ -182,11 +205,65 @@ for (const [cat, ops] of Object.entries(grouped)) {
   h3.textContent = cat;
   h3.style.cssText = 'font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:#666;margin:0.75rem 0 0.3rem';
   paletteEl.appendChild(h3);
+
+  // Separate into variant groups and standalone operations
+  const variantGroups = {};  // group name → [op, ...]
+  const standalone = [];
   for (const op of ops) {
+    const meta = MANIFEST_GROUPS[op.name];
+    if (meta && meta.group) {
+      if (!variantGroups[meta.group]) variantGroups[meta.group] = [];
+      variantGroups[meta.group].push(op);
+    } else {
+      standalone.push(op);
+    }
+  }
+
+  // Render variant groups (collapsible)
+  for (const [grp, variants] of Object.entries(variantGroups)) {
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'palette-group';
+
+    const header = document.createElement('div');
+    header.className = 'palette-group-header';
+    header.innerHTML = `<span class="palette-group-arrow">&#9654;</span> ${groupLabel(grp)} <span style="color:#555;font-size:0.65rem">(${variants.length})</span>`;
+    header.addEventListener('click', () => {
+      const items = groupDiv.querySelector('.palette-group-items');
+      const arrow = header.querySelector('.palette-group-arrow');
+      const collapsed = items.style.display === 'none';
+      items.style.display = collapsed ? 'block' : 'none';
+      arrow.innerHTML = collapsed ? '&#9660;' : '&#9654;';
+    });
+    groupDiv.appendChild(header);
+
+    const itemsDiv = document.createElement('div');
+    itemsDiv.className = 'palette-group-items';
+    itemsDiv.style.display = 'none'; // collapsed by default
+
+    for (const op of variants) {
+      const div = document.createElement('div');
+      div.className = 'palette-item palette-variant';
+      const meta = MANIFEST_GROUPS[op.name];
+      const label = opLabel(op);
+      const paramHint = op.params.length > 0 ? ` (${op.params.length})` : '';
+      div.innerHTML = `${label}<span style="color:#555;font-size:0.7rem">${paramHint}</span>`;
+      if (meta && meta.reference) div.title = meta.reference;
+      div.addEventListener('click', () => addNode(op));
+      itemsDiv.appendChild(div);
+    }
+
+    groupDiv.appendChild(itemsDiv);
+    paletteEl.appendChild(groupDiv);
+  }
+
+  // Render standalone operations (same as before)
+  for (const op of standalone) {
     const div = document.createElement('div');
     div.className = 'palette-item';
+    const meta = MANIFEST_GROUPS[op.name];
     const paramHint = op.params.length > 0 ? ` (${op.params.length})` : '';
     div.innerHTML = `${op.name}<span style="color:#555;font-size:0.7rem">${paramHint}</span>`;
+    if (meta && meta.reference) div.title = meta.reference;
     div.addEventListener('click', () => addNode(op));
     paletteEl.appendChild(div);
   }
