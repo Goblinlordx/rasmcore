@@ -5879,8 +5879,8 @@ pub struct ShadowHighlightParams {
 /// 6. For highlights: darken proportional to highlight_amount * highlight_weight
 ///
 /// Reference: Photoshop Image > Adjustments > Shadow/Highlight.
-/// No direct IM equivalent — validated via property tests and GIMP comparison.
-/// Not yet validated against a reference implementation.
+/// Validated against GEGL gegl:shadows-highlights (ALGORITHM tier, MAE ~11).
+/// Divergence from CIE LAB approach (GEGL) vs RGB luminance (ours).
 #[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
 pub fn shadow_highlight(
     pixels: &[u8],

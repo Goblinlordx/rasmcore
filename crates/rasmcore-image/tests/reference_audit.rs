@@ -65,6 +65,28 @@ fn read_png_rgb(path: &std::path::Path) -> Vec<u8> {
             // Expand to RGB
             decoded.pixels.iter().flat_map(|&g| [g, g, g]).collect()
         }
+        PixelFormat::Rgb16 => {
+            // Downscale 16-bit to 8-bit RGB
+            decoded
+                .pixels
+                .chunks_exact(2)
+                .map(|c| c[1]) // high byte of LE u16
+                .collect::<Vec<u8>>()
+                .chunks_exact(3)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect()
+        }
+        PixelFormat::Rgba16 => {
+            // Downscale 16-bit to 8-bit, strip alpha
+            let u8s: Vec<u8> = decoded
+                .pixels
+                .chunks_exact(2)
+                .map(|c| c[1]) // high byte of LE u16
+                .collect();
+            u8s.chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect()
+        }
         _ => panic!(
             "unsupported format for read_png_rgb: {:?}",
             decoded.info.format
@@ -1369,6 +1391,106 @@ fn dds_bc3_parity_vs_imagemagick() {
     assert!(
         error < 1.0,
         "DDS BC3 parity: MAE = {error:.4} (expected < 1.0)"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SHADOW/HIGHLIGHT — GEGL reference (ALGORITHM tier)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Check if GEGL CLI is available (bundled with GIMP.app on macOS).
+fn gegl_available() -> Option<String> {
+    let paths = [
+        "/Applications/GIMP.app/Contents/MacOS/gegl",
+        "/usr/local/bin/gegl",
+        "/opt/homebrew/bin/gegl",
+    ];
+    for path in &paths {
+        if std::path::Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+    None
+}
+
+/// Run a GEGL operation on an input PNG, write to output PNG.
+fn gegl_op(
+    gegl_bin: &str,
+    input: &std::path::Path,
+    op: &str,
+    params: &[(&str, &str)],
+    output: &std::path::Path,
+) -> bool {
+    let mut cmd = Command::new(gegl_bin);
+    if gegl_bin.contains("GIMP.app") {
+        let base = "/Applications/GIMP.app/Contents/Resources/lib";
+        cmd.env("DYLD_LIBRARY_PATH", base);
+        cmd.env("GEGL_PATH", format!("{base}/gegl-0.4"));
+        cmd.env("BABL_PATH", format!("{base}/babl-0.1"));
+    }
+    cmd.arg(input.to_str().unwrap());
+    cmd.arg("-o");
+    cmd.arg(output.to_str().unwrap());
+    cmd.arg("--");
+    cmd.arg(op);
+    for (k, v) in params {
+        cmd.arg(format!("{k}={v}"));
+    }
+    cmd.output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn algorithm_shadow_highlight_vs_gegl() {
+    let gegl_bin = match gegl_available() {
+        Some(bin) => bin,
+        None => {
+            eprintln!("SKIP shadow_highlight: GEGL not available (install GIMP)");
+            return;
+        }
+    };
+
+    let (w, h) = (64u32, 64u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    // Our shadow_highlight: shadow=50, highlight=50, radius=30
+    let our_output =
+        rasmcore_image::domain::filters::shadow_highlight(&pixels, &info, 50.0, 50.0, 30.0)
+            .unwrap();
+
+    // GEGL: shadows=50 (lighten), highlights=-50 (darken), radius=30
+    let input_path = write_png(&pixels, w, h, 3);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let ref_path = std::env::temp_dir().join(format!("refaudit_sh_{id}.png"));
+
+    let ok = gegl_op(
+        &gegl_bin,
+        &input_path,
+        "gegl:shadows-highlights",
+        &[("shadows", "50"), ("highlights", "-50"), ("radius", "30")],
+        &ref_path,
+    );
+
+    if !ok {
+        eprintln!("SKIP shadow_highlight: GEGL shadows-highlights failed");
+        cleanup(&[&input_path]);
+        return;
+    }
+
+    let gegl_rgb = read_png_rgb(&ref_path);
+    let error = mae(&our_output, &gegl_rgb);
+    eprintln!("  shadow_highlight vs GEGL: MAE = {error:.4}");
+
+    cleanup(&[&input_path, &ref_path]);
+
+    // ALGORITHM tier: our RGB-based local tone mapping vs GEGL's CIE LAB approach.
+    // Different color spaces and weight functions produce structurally similar
+    // but numerically different results.
+    assert!(
+        error < 30.0,
+        "shadow_highlight vs GEGL: MAE = {error:.4} (expected < 30.0, ALGORITHM tier)"
     );
 }
 
