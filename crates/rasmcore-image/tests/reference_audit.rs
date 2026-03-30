@@ -6,6 +6,7 @@
 //!
 //! Tests gracefully skip if ImageMagick is not available.
 
+use std::io::BufWriter;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -27,25 +28,95 @@ fn write_png(pixels: &[u8], w: u32, h: u32, channels: u32) -> std::path::PathBuf
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!("refaudit_{id}.png"));
 
-    // Use image crate to write PNG
+    let file = std::fs::File::create(&path).unwrap();
+    let bw = BufWriter::new(file);
     let color_type = match channels {
-        1 => image::ColorType::L8,
-        3 => image::ColorType::Rgb8,
-        4 => image::ColorType::Rgba8,
+        1 => png::ColorType::Grayscale,
+        3 => png::ColorType::Rgb,
+        4 => png::ColorType::Rgba,
         _ => panic!("unsupported channel count"),
     };
-    image::save_buffer(&path, pixels, w, h, color_type).unwrap();
+    let mut encoder = png::Encoder::new(bw, w, h);
+    encoder.set_color(color_type);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(pixels).unwrap();
     path
 }
 
+/// Read a PNG file and return RGB8 pixels.
+/// If the source has fewer channels (grayscale), expands to RGB.
+/// If the source has more channels (RGBA), strips alpha.
 fn read_png_rgb(path: &std::path::Path) -> Vec<u8> {
-    let img = image::open(path).unwrap();
-    img.to_rgb8().into_raw()
+    let data = std::fs::read(path).unwrap();
+    let decoded = rasmcore_image::domain::decoder::decode(&data).unwrap();
+    match decoded.info.format {
+        PixelFormat::Rgb8 => decoded.pixels,
+        PixelFormat::Rgba8 => {
+            // Strip alpha
+            decoded
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| &c[..3])
+                .copied()
+                .collect()
+        }
+        PixelFormat::Gray8 => {
+            // Expand to RGB
+            decoded
+                .pixels
+                .iter()
+                .flat_map(|&g| [g, g, g])
+                .collect()
+        }
+        _ => panic!("unsupported format for read_png_rgb: {:?}", decoded.info.format),
+    }
 }
 
 fn read_png_rgba(path: &std::path::Path) -> Vec<u8> {
-    let img = image::open(path).unwrap();
-    img.to_rgba8().into_raw()
+    let data = std::fs::read(path).unwrap();
+    let decoded = rasmcore_image::domain::decoder::decode(&data).unwrap();
+    match decoded.info.format {
+        PixelFormat::Rgba8 => decoded.pixels,
+        PixelFormat::Rgb8 => {
+            // Add opaque alpha
+            decoded
+                .pixels
+                .chunks_exact(3)
+                .flat_map(|c| [c[0], c[1], c[2], 255])
+                .collect()
+        }
+        _ => panic!("unsupported format for read_png_rgba: {:?}", decoded.info.format),
+    }
+}
+
+/// Read a PNG file and return Gray8 pixels.
+fn read_png_gray(path: &std::path::Path) -> Vec<u8> {
+    let data = std::fs::read(path).unwrap();
+    let decoded = rasmcore_image::domain::decoder::decode(&data).unwrap();
+    match decoded.info.format {
+        PixelFormat::Gray8 => decoded.pixels,
+        PixelFormat::Rgb8 => {
+            // Convert to grayscale via BT.601 luma
+            decoded
+                .pixels
+                .chunks_exact(3)
+                .map(|c| {
+                    ((c[0] as u32 * 77 + c[1] as u32 * 150 + c[2] as u32 * 29 + 128) >> 8) as u8
+                })
+                .collect()
+        }
+        PixelFormat::Rgba8 => {
+            decoded
+                .pixels
+                .chunks_exact(4)
+                .map(|c| {
+                    ((c[0] as u32 * 77 + c[1] as u32 * 150 + c[2] as u32 * 29 + 128) >> 8) as u8
+                })
+                .collect()
+        }
+        _ => panic!("unsupported format for read_png_gray: {:?}", decoded.info.format),
+    }
 }
 
 fn magick_op(input: &std::path::Path, args: &[&str]) -> Option<std::path::PathBuf> {
@@ -101,8 +172,19 @@ fn photo_rgb_256() -> Option<Vec<u8>> {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/generated/inputs/photo_256x256.png");
     if fixture.exists() {
-        if let Ok(img) = image::open(&fixture) {
-            return Some(img.to_rgb8().into_raw());
+        if let Ok(data) = std::fs::read(&fixture) {
+            if let Ok(decoded) = rasmcore_image::domain::decoder::decode(&data) {
+                return Some(match decoded.info.format {
+                    PixelFormat::Rgb8 => decoded.pixels,
+                    PixelFormat::Rgba8 => decoded
+                        .pixels
+                        .chunks_exact(4)
+                        .flat_map(|c| &c[..3])
+                        .copied()
+                        .collect(),
+                    _ => decoded.pixels,
+                });
+            }
         }
     }
     None
@@ -413,8 +495,11 @@ fn algorithm_rotate_arbitrary() {
 
     let input_path = write_png(&pixels, w, h, 3);
     if let Some(ref_path) = magick_op(&input_path, &["-rotate", "37", "-background", "white"]) {
-        let magick_img = image::open(&ref_path).unwrap().to_rgb8();
-        let (mw, mh) = (magick_img.width(), magick_img.height());
+        let magick_rgb = read_png_rgb(&ref_path);
+        // Derive dimensions from the PNG file
+        let ref_data = std::fs::read(&ref_path).unwrap();
+        let ref_decoded = rasmcore_image::domain::decoder::decode(&ref_data).unwrap();
+        let (mw, mh) = (ref_decoded.info.width, ref_decoded.info.height);
         let (ow, oh) = (our_result.info.width, our_result.info.height);
 
         eprintln!(
@@ -437,9 +522,9 @@ fn algorithm_rotate_arbitrary() {
                 for c in 0..3u32 {
                     let oi = ((our_oy + y) * ow * 3 + (our_ox + x) * 3 + c) as usize;
                     let mi = ((mag_oy + y) * mw * 3 + (mag_ox + x) * 3 + c) as usize;
-                    if oi < our_result.pixels.len() && mi < magick_img.as_raw().len() {
+                    if oi < our_result.pixels.len() && mi < magick_rgb.len() {
                         total_diff +=
-                            (our_result.pixels[oi] as f64 - magick_img.as_raw()[mi] as f64).abs();
+                            (our_result.pixels[oi] as f64 - magick_rgb[mi] as f64).abs();
                         count += 1;
                     }
                 }
@@ -513,8 +598,9 @@ fn algorithm_trim() {
 
     let input_path = write_png(&pixels, w, h, 3);
     if let Some(ref_path) = magick_op(&input_path, &["-trim"]) {
-        let magick_img = image::open(&ref_path).unwrap();
-        let (mw, mh) = (magick_img.width(), magick_img.height());
+        let ref_data = std::fs::read(&ref_path).unwrap();
+        let ref_decoded = rasmcore_image::domain::decoder::decode(&ref_data).unwrap();
+        let (mw, mh) = (ref_decoded.info.width, ref_decoded.info.height);
 
         let ow = our_result.info.width;
         let oh = our_result.info.height;
@@ -952,6 +1038,113 @@ fn exact_split_toning() {
         error < 0.01,
         "Split toning: MAE={error:.4} — must be EXACT match with IM -fx"
     );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ARTISTIC FILTERS — Solarize & Emboss are EXACT, Oil Paint & Charcoal
+// require algorithm alignment investigation.
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_solarize() {
+    // Our solarize: if v > threshold { 255 - v } else { v }
+    // IM -solarize 50%: same formula, threshold = 50% of QuantumRange.
+    // At Q8, 50% = 127.5. IM uses Q16-HDRI internally so the boundary pixel
+    // at value 128 might differ by ±1 due to rounding. Use threshold 128 and
+    // IM arg "50%" — any boundary rounding should still keep MAE < 0.01 since
+    // it affects at most 1 out of 256 values by 1 level.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::solarize(px, info, 128).unwrap(),
+        &["-solarize", "50%"],
+        "solarize_128",
+    ) {
+        assert!(
+            error < 0.01,
+            "EXACT: solarize MAE should be ~0, got {error:.4}"
+        );
+    }
+}
+
+#[test]
+fn exact_emboss() {
+    // Our emboss uses kernel [-2,-1,0, -1,1,1, 0,1,2] with divisor 1.0.
+    // Our convolve() applies the kernel without flipping (correlation), so use
+    // IM's -morphology Correlate (NOT Convolve, which flips 180°).
+    // DETERMINISTIC tier: same kernel, same formula, but edge handling differs
+    // (our pad_reflect vs IM's virtual-pixel). Interior pixels match exactly;
+    // border pixels differ by ±1-2 due to padding strategy.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::emboss(px, info).unwrap(),
+        &["-morphology", "Correlate", "3: -2,-1,0  -1,1,1  0,1,2"],
+        "emboss",
+    ) {
+        assert!(
+            error < 1.0,
+            "DETERMINISTIC: emboss MAE = {error:.4} (expected < 1.0, edge handling differs)"
+        );
+    }
+}
+
+#[test]
+fn algorithm_oil_paint() {
+    // Our oil_paint uses 20 intensity bins; IM -paint uses per-pixel intensity
+    // levels. Algorithm differences in binning and intensity formula cause
+    // divergence. Threshold is set after measuring baseline MAE.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::oil_paint(px, info, 3).unwrap(),
+        &["-paint", "3"],
+        "oil_paint_r3",
+    ) {
+        assert!(
+            error < 15.0,
+            "oil_paint MAE = {error:.4} (ALGORITHM tier: binning differs)"
+        );
+    }
+}
+
+#[test]
+fn algorithm_charcoal() {
+    // Our charcoal: pre-blur(sigma) → Sobel → post-blur(radius) → invert.
+    // IM -charcoal: edge detect → blur → normalize → negate.
+    // Different edge detectors and normalize step cause divergence.
+    // Use IM -charcoal 1 vs our charcoal(radius=1.0, sigma=0.5).
+    //
+    // Note: charcoal outputs Gray8, so we need a custom comparison that
+    // handles the format difference. IM -charcoal also outputs grayscale.
+    if !magick_available() {
+        eprintln!("SKIP charcoal: magick not available");
+        return;
+    }
+
+    let (w, h) = (64u32, 64u32);
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let our_output = rasmcore_image::domain::filters::charcoal(&pixels, &info, 1.0, 0.5).unwrap();
+
+    let input_path = write_png(&pixels, w, h, 3);
+    if let Some(ref_path) = magick_op(&input_path, &["-charcoal", "1"]) {
+        // IM charcoal outputs grayscale — read as Gray8 for comparison
+        let magick_gray = read_png_gray(&ref_path);
+
+        let error = mae(&our_output, &magick_gray);
+        eprintln!("  charcoal: MAE = {error:.4}");
+
+        cleanup(&[&input_path, &ref_path]);
+
+        assert!(
+            error < 30.0,
+            "charcoal MAE = {error:.4} (ALGORITHM tier: edge detector + normalize differ)"
+        );
+    } else {
+        cleanup(&[&input_path]);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

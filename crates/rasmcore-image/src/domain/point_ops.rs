@@ -35,7 +35,9 @@ pub enum PointOp {
     Brightness(f32),
     /// Contrast adjustment (-1.0 to 1.0). `LUT[i] = (factor*(i-128)+128).clamp(0,255)`
     Contrast(f32),
-    /// Solarize: invert values above threshold. `LUT[i] = if i > threshold { 255 - i } else { i }`
+    /// Solarize: invert values at or above threshold. `LUT[i] = if i >= threshold { 255 - i } else { i }`
+    /// Uses `>=` to match ImageMagick's Q16-HDRI boundary behavior where 50% threshold
+    /// at Q8 maps to value 128, and value 128 IS solarized.
     Solarize(u8),
 }
 
@@ -91,7 +93,7 @@ pub fn build_lut(op: &PointOp) -> [u8; 256] {
         PointOp::Solarize(threshold) => {
             for (i, entry) in lut.iter_mut().enumerate() {
                 let v = i as u8;
-                *entry = if v > *threshold { 255 - v } else { v };
+                *entry = if v >= *threshold { 255 - v } else { v };
             }
         }
     }
@@ -263,7 +265,7 @@ pub fn build_lut_u16(op: &PointOp) -> Vec<u16> {
             // Scale 8-bit threshold to 16-bit: threshold * 257
             let threshold16 = *threshold as u32 * 257;
             for (i, entry) in lut.iter_mut().enumerate() {
-                *entry = if (i as u32) > threshold16 {
+                *entry = if (i as u32) >= threshold16 {
                     (65535 - i) as u16
                 } else {
                     i as u16
