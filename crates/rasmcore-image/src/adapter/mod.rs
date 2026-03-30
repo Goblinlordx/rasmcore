@@ -5,7 +5,7 @@ mod pipeline_adapter;
 
 use crate::bindings;
 use crate::bindings::exports::rasmcore::image::{
-    decoder, encoder, filters, metadata, pipeline, transform,
+    compare, decoder, encoder, filters, metadata, pipeline, transform,
 };
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
@@ -1255,5 +1255,64 @@ fn to_domain_metadata_set(ms: &metadata::MetadataSet) -> domain::metadata_set::M
                 value: c.value.clone(),
             })
             .collect(),
+    }
+}
+
+// ─── Compare Interface ──────────────────────────────────────────────────
+
+impl compare::Guest for Component {
+    fn psnr(
+        a: Vec<u8>,
+        info_a: types::ImageInfo,
+        b: Vec<u8>,
+        info_b: types::ImageInfo,
+    ) -> Result<f64, RasmcoreError> {
+        let ia = to_domain_image_info(&info_a);
+        let ib = to_domain_image_info(&info_b);
+        domain::metrics::psnr(&a, &ia, &b, &ib).map_err(to_wit_error)
+    }
+
+    fn ssim(
+        a: Vec<u8>,
+        info_a: types::ImageInfo,
+        b: Vec<u8>,
+        info_b: types::ImageInfo,
+    ) -> Result<f64, RasmcoreError> {
+        let ia = to_domain_image_info(&info_a);
+        let ib = to_domain_image_info(&info_b);
+        domain::metrics::ssim(&a, &ia, &b, &ib).map_err(to_wit_error)
+    }
+
+    fn rmse(
+        a: Vec<u8>,
+        info_a: types::ImageInfo,
+        b: Vec<u8>,
+        info_b: types::ImageInfo,
+    ) -> Result<f64, RasmcoreError> {
+        let ia = to_domain_image_info(&info_a);
+        let ib = to_domain_image_info(&info_b);
+        domain::metrics::rmse(&a, &ia, &b, &ib).map_err(to_wit_error)
+    }
+
+    fn mae(
+        a: Vec<u8>,
+        info_a: types::ImageInfo,
+        b: Vec<u8>,
+        info_b: types::ImageInfo,
+    ) -> Result<f64, RasmcoreError> {
+        let ia = to_domain_image_info(&info_a);
+        let ib = to_domain_image_info(&info_b);
+        domain::metrics::mae(&a, &ia, &b, &ib).map_err(to_wit_error)
+    }
+
+    fn delta_e_cie76(
+        a: Vec<u8>,
+        info_a: types::ImageInfo,
+        b: Vec<u8>,
+        info_b: types::ImageInfo,
+    ) -> Result<f64, RasmcoreError> {
+        let ia = to_domain_image_info(&info_a);
+        let ib = to_domain_image_info(&info_b);
+        domain::metrics::delta_e_cie76(&a, &ia, &b, &ib).map_err(to_wit_error)
     }
 }

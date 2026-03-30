@@ -11,4 +11,5 @@ world image-processor {
     export transform;
     export filters;
     export metadata;
+    export compare;
 }
