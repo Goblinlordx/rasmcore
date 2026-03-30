@@ -19,7 +19,10 @@ fn ensure_rgba8(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo),
             if pixels.len() < expected {
                 return Err(ImageError::InvalidInput(format!(
                     "draw: expected {} bytes for {}x{} RGB8, got {}",
-                    expected, info.width, info.height, pixels.len()
+                    expected,
+                    info.width,
+                    info.height,
+                    pixels.len()
                 )));
             }
             let mut rgba = Vec::with_capacity(info.width as usize * info.height as usize * 4);
@@ -329,15 +332,14 @@ pub fn draw_text(
                                 // Alpha blend the text color onto the background
                                 let ta = color[3] as u16;
                                 let inv_a = 255 - ta;
-                                output[idx] =
-                                    ((color[0] as u16 * ta + output[idx] as u16 * inv_a) / 255)
-                                        as u8;
-                                output[idx + 1] =
-                                    ((color[1] as u16 * ta + output[idx + 1] as u16 * inv_a) / 255)
-                                        as u8;
-                                output[idx + 2] =
-                                    ((color[2] as u16 * ta + output[idx + 2] as u16 * inv_a) / 255)
-                                        as u8;
+                                output[idx] = ((color[0] as u16 * ta + output[idx] as u16 * inv_a)
+                                    / 255) as u8;
+                                output[idx + 1] = ((color[1] as u16 * ta
+                                    + output[idx + 1] as u16 * inv_a)
+                                    / 255) as u8;
+                                output[idx + 2] = ((color[2] as u16 * ta
+                                    + output[idx + 2] as u16 * inv_a)
+                                    / 255) as u8;
                                 output[idx + 3] = output[idx + 3].max(color[3]);
                             }
                         }
@@ -353,6 +355,119 @@ pub fn draw_text(
     }
 
     Ok((output, out_info))
+}
+
+// ─── TrueType / OpenType Font Rendering (via fontdue) ───────────────────
+
+/// Draw text using a TrueType/OpenType font via fontdue.
+///
+/// `font_data`: raw TTF/OTF bytes. `font_size_pt`: point size (converted
+/// to pixels at 96 DPI). `color`: RGBA. Multi-line via '\n'.
+pub fn draw_text_ttf(
+    pixels: &[u8],
+    info: &ImageInfo,
+    x: u32,
+    y: u32,
+    text: &str,
+    font_data: &[u8],
+    font_size_pt: f32,
+    color: [u8; 4],
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let (rgba, out_info) = ensure_rgba8(pixels, info)?;
+    let mut output = rgba;
+    let w = out_info.width as usize;
+    let h = out_info.height as usize;
+
+    // Parse font
+    let settings = fontdue::FontSettings::default();
+    let font = fontdue::Font::from_bytes(font_data, settings)
+        .map_err(|e| ImageError::InvalidInput(format!("font parse error: {e}")))?;
+
+    // Convert pt to px: px = pt * (dpi / 72)
+    let px_size = font_size_pt * (96.0 / 72.0);
+
+    // Get line metrics for vertical positioning
+    let line_metrics = font
+        .horizontal_line_metrics(px_size)
+        .unwrap_or(fontdue::LineMetrics {
+            ascent: px_size * 0.8,
+            descent: px_size * -0.2,
+            line_gap: 0.0,
+            new_line_size: px_size * 1.2,
+        });
+    let line_height = line_metrics.new_line_size;
+
+    let text_color_r = color[0] as u16;
+    let text_color_g = color[1] as u16;
+    let text_color_b = color[2] as u16;
+    let text_color_a = color[3] as u16;
+
+    let mut cursor_x = x as f32;
+    let mut cursor_y = y as f32 + line_metrics.ascent;
+
+    for line in text.split('\n') {
+        cursor_x = x as f32;
+        for ch in line.chars() {
+            let (metrics, bitmap) = font.rasterize(ch, px_size);
+
+            // Glyph origin position
+            let gx = cursor_x as i32 + metrics.xmin;
+            let gy = cursor_y as i32 - metrics.height as i32 - metrics.ymin;
+
+            // Blend glyph bitmap onto output
+            for row in 0..metrics.height {
+                for col in 0..metrics.width {
+                    let px_x = gx + col as i32;
+                    let px_y = gy + row as i32;
+                    if px_x < 0 || px_y < 0 || px_x >= w as i32 || px_y >= h as i32 {
+                        continue;
+                    }
+                    let coverage = bitmap[row * metrics.width + col] as u16;
+                    if coverage == 0 {
+                        continue;
+                    }
+                    // Alpha = text_alpha * coverage / 255
+                    let alpha = (text_color_a * coverage) / 255;
+                    let inv_alpha = 255 - alpha;
+
+                    let idx = (px_y as usize * w + px_x as usize) * 4;
+                    output[idx] =
+                        ((text_color_r * alpha + output[idx] as u16 * inv_alpha) / 255) as u8;
+                    output[idx + 1] =
+                        ((text_color_g * alpha + output[idx + 1] as u16 * inv_alpha) / 255) as u8;
+                    output[idx + 2] =
+                        ((text_color_b * alpha + output[idx + 2] as u16 * inv_alpha) / 255) as u8;
+                    output[idx + 3] = output[idx + 3].max(alpha as u8);
+                }
+            }
+
+            // Advance cursor
+            cursor_x += metrics.advance_width;
+        }
+        cursor_y += line_height;
+    }
+
+    Ok((output, out_info))
+}
+
+/// Draw text with optional TrueType font. Falls back to bitmap when font_data is None.
+pub fn draw_text_auto(
+    pixels: &[u8],
+    info: &ImageInfo,
+    x: u32,
+    y: u32,
+    text: &str,
+    font_data: Option<&[u8]>,
+    font_size_pt: f32,
+    color: [u8; 4],
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    match font_data {
+        Some(data) => draw_text_ttf(pixels, info, x, y, text, data, font_size_pt, color),
+        None => {
+            let scale = (font_size_pt / 12.0).round().max(1.0) as u32;
+            draw_text(pixels, info, x, y, text, scale, color)
+        }
+    }
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
@@ -387,7 +502,8 @@ mod tests {
     #[test]
     fn draw_line_produces_output() {
         let (px, info) = white_rgba(100, 100);
-        let (result, out_info) = draw_line(&px, &info, 10.0, 10.0, 90.0, 90.0, [255, 0, 0, 255], 2.0).unwrap();
+        let (result, out_info) =
+            draw_line(&px, &info, 10.0, 10.0, 90.0, 90.0, [255, 0, 0, 255], 2.0).unwrap();
         assert_eq!(out_info.format, PixelFormat::Rgba8);
         assert_eq!(result.len(), 100 * 100 * 4);
         // The diagonal line should have modified some pixels from white to red
@@ -397,7 +513,18 @@ mod tests {
     #[test]
     fn draw_rect_filled() {
         let (px, info) = white_rgba(100, 100);
-        let (result, _) = draw_rect(&px, &info, 20.0, 20.0, 40.0, 30.0, [0, 0, 255, 255], 1.0, true).unwrap();
+        let (result, _) = draw_rect(
+            &px,
+            &info,
+            20.0,
+            20.0,
+            40.0,
+            30.0,
+            [0, 0, 255, 255],
+            1.0,
+            true,
+        )
+        .unwrap();
         // Check center pixel of rect (40, 35) is blue
         let idx = (35 * 100 + 40) * 4;
         assert_eq!(result[idx], 0, "red channel should be 0 (blue fill)");
@@ -407,19 +534,35 @@ mod tests {
     #[test]
     fn draw_rect_outline() {
         let (px, info) = white_rgba(100, 100);
-        let (result, _) = draw_rect(&px, &info, 20.0, 20.0, 40.0, 30.0, [255, 0, 0, 255], 2.0, false).unwrap();
+        let (result, _) = draw_rect(
+            &px,
+            &info,
+            20.0,
+            20.0,
+            40.0,
+            30.0,
+            [255, 0, 0, 255],
+            2.0,
+            false,
+        )
+        .unwrap();
         // Center of rect (40, 35) should still be white (outline only)
         let idx = (35 * 100 + 40) * 4;
         assert_eq!(result[idx], 255, "center should remain white (outline)");
         // Edge pixel (20, 20) should be red
         let edge = (20 * 100 + 20) * 4;
-        assert_ne!(result[edge..edge + 3], [255, 255, 255], "edge should be red");
+        assert_ne!(
+            result[edge..edge + 3],
+            [255, 255, 255],
+            "edge should be red"
+        );
     }
 
     #[test]
     fn draw_circle_filled() {
         let (px, info) = white_rgba(100, 100);
-        let (result, _) = draw_circle(&px, &info, 50.0, 50.0, 20.0, [0, 255, 0, 255], 1.0, true).unwrap();
+        let (result, _) =
+            draw_circle(&px, &info, 50.0, 50.0, 20.0, [0, 255, 0, 255], 1.0, true).unwrap();
         // Center (50, 50) should be green
         let idx = (50 * 100 + 50) * 4;
         assert_eq!(result[idx + 1], 255, "green channel at center");
@@ -428,7 +571,8 @@ mod tests {
     #[test]
     fn draw_line_rgb8_auto_converts() {
         let (px, info) = white_rgb(100, 100);
-        let (result, out_info) = draw_line(&px, &info, 0.0, 0.0, 99.0, 99.0, [255, 0, 0, 255], 1.0).unwrap();
+        let (result, out_info) =
+            draw_line(&px, &info, 0.0, 0.0, 99.0, 99.0, [255, 0, 0, 255], 1.0).unwrap();
         assert_eq!(out_info.format, PixelFormat::Rgba8);
         assert_eq!(result.len(), 100 * 100 * 4);
     }
@@ -446,5 +590,146 @@ mod tests {
         let (px, info) = white_rgba(200, 100);
         let (result, _) = draw_text(&px, &info, 10, 10, "AB", 2, [0, 0, 0, 255]).unwrap();
         assert_ne!(result, px);
+    }
+
+    // ── TrueType text tests ──
+
+    fn load_system_font() -> Option<Vec<u8>> {
+        // Try common system font paths (macOS, Linux)
+        for path in &[
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/System/Library/Fonts/SFNSMono.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn draw_text_ttf_renders_glyphs() {
+        let Some(font_data) = load_system_font() else {
+            eprintln!("SKIP draw_text_ttf: no system font found");
+            return;
+        };
+        let (px, info) = white_rgba(400, 100);
+        let (result, out_info) = draw_text_ttf(
+            &px,
+            &info,
+            10,
+            10,
+            "Hello World",
+            &font_data,
+            24.0,
+            [0, 0, 0, 255],
+        )
+        .unwrap();
+        assert_eq!(out_info.format, PixelFormat::Rgba8);
+        assert_ne!(result, px, "TTF text should modify pixels");
+
+        // Verify anti-aliased pixels exist (values between 0 and 255)
+        let has_antialiased = result
+            .chunks_exact(4)
+            .any(|rgba| rgba[0] > 0 && rgba[0] < 255 && rgba[3] > 0);
+        assert!(
+            has_antialiased,
+            "TTF rendering should produce anti-aliased pixels"
+        );
+    }
+
+    #[test]
+    fn draw_text_ttf_multiline() {
+        let Some(font_data) = load_system_font() else {
+            eprintln!("SKIP draw_text_ttf_multiline: no system font found");
+            return;
+        };
+        let (px, info) = white_rgba(400, 200);
+        let (result_single, _) = draw_text_ttf(
+            &px,
+            &info,
+            10,
+            10,
+            "Hello",
+            &font_data,
+            24.0,
+            [0, 0, 0, 255],
+        )
+        .unwrap();
+        let (result_multi, _) = draw_text_ttf(
+            &px,
+            &info,
+            10,
+            10,
+            "Hello\nWorld",
+            &font_data,
+            24.0,
+            [0, 0, 0, 255],
+        )
+        .unwrap();
+
+        // Multi-line should modify more pixels (two lines vs one)
+        let modified_single = result_single
+            .iter()
+            .zip(px.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        let modified_multi = result_multi
+            .iter()
+            .zip(px.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        assert!(
+            modified_multi > modified_single,
+            "multi-line ({modified_multi}) should modify more pixels than single ({modified_single})"
+        );
+    }
+
+    #[test]
+    fn draw_text_auto_bitmap_fallback() {
+        let (px, info) = white_rgba(200, 50);
+        // No font data → bitmap fallback
+        let (result, _) =
+            draw_text_auto(&px, &info, 10, 10, "Test", None, 16.0, [0, 0, 0, 255]).unwrap();
+        assert_ne!(result, px, "bitmap fallback should render text");
+    }
+
+    #[test]
+    fn draw_text_auto_ttf_when_available() {
+        let Some(font_data) = load_system_font() else {
+            eprintln!("SKIP draw_text_auto_ttf: no system font found");
+            return;
+        };
+        let (px, info) = white_rgba(400, 100);
+        let (result, _) = draw_text_auto(
+            &px,
+            &info,
+            10,
+            10,
+            "TTF Text",
+            Some(&font_data),
+            24.0,
+            [0, 0, 0, 255],
+        )
+        .unwrap();
+        assert_ne!(result, px, "TTF auto should render text");
+    }
+
+    #[test]
+    fn draw_text_ttf_invalid_font_returns_error() {
+        let (px, info) = white_rgba(100, 50);
+        let result = draw_text_ttf(
+            &px,
+            &info,
+            0,
+            0,
+            "test",
+            b"not a font",
+            16.0,
+            [0, 0, 0, 255],
+        );
+        assert!(result.is_err(), "invalid font data should return error");
     }
 }
