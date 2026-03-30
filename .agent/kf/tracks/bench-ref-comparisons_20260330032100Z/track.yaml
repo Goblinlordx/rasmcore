@@ -1,0 +1,129 @@
+id: bench-ref-comparisons_20260330032100Z
+title: "Benchmark Reference Comparisons — ImageMagick for Color, Edge, Threshold, Blend"
+type: chore
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add ImageMagick benchmark comparisons to perf.rs for all operations that
+    currently only measure rasmcore throughput without a reference baseline.
+  context: |
+    The benchmark suite has 63 benchmarks across color_tone, edge, threshold,
+    and alpha_blend groups, but only 3 have ImageMagick comparisons (brightness,
+    sobel, and the codec groups). Without reference comparisons, we can measure
+    throughput but cannot make competitive performance claims.
+
+    ImageMagick 7.1.x supports equivalents for nearly every operation:
+      - contrast: -sigmoidal-contrast 5,50%
+      - hue_rotate: -modulate 100,100,X (where X = degrees/360*200)
+      - saturate: -modulate 100,X,100
+      - sepia: -sepia-tone 80%
+      - scharr/laplacian: -morphology Convolve Scharr/Laplacian
+      - canny: -canny 0x1+10%+30%
+      - otsu: -auto-threshold OTSU
+      - adaptive_threshold: N/A (no direct IM equivalent, skip)
+      - premultiply: N/A (internal alpha state, not a standalone IM op)
+      - blend: -compose Multiply/Screen -composite
+      - vignette: -vignette 0x10
+      - pad: -border 10 -bordercolor black
+      - trim: -trim
+
+    The existing magick_pipeline() helper in ref_tools.rs handles all of these.
+    The adjusted comparison methodology (subtract decode+encode baseline) is
+    documented in RESULTS-2026-03-30.md.
+  codebase_analysis: |
+    Existing IM comparisons in perf.rs:
+      - decoder group: all codecs (JPEG, PNG, WebP, TIFF, GIF, BMP, AVIF)
+      - encoder group: all codecs
+      - filter group: resize, blur, sharpen, grayscale
+      - transform group: crop, rotate_90, flip_horizontal
+      - geometric group: perspective_warp, affine
+      - color_tone group: brightness only
+
+    Missing IM comparisons (operations WHERE IM has an equivalent):
+      - color_tone: contrast, hue_rotate, saturate, sepia
+      - edge: scharr, laplacian, canny (sobel already has IM)
+      - threshold: otsu (IM has -auto-threshold OTSU)
+      - alpha_blend: blend_multiply, blend_screen (IM has -compose)
+      - alpha_blend: vignette_powerlaw (IM has -vignette)
+      - transform: pad, trim (from the earlier benchmark track)
+
+    ref_tools.rs already has magick_pipeline() which accepts arbitrary ops.
+    No new helper functions needed — just new bench_function calls.
+  acceptance_criteria:
+    - ImageMagick comparison for contrast (sigmoidal-contrast)
+    - ImageMagick comparison for hue_rotate (modulate)
+    - ImageMagick comparison for saturate (modulate)
+    - ImageMagick comparison for sepia (sepia-tone)
+    - ImageMagick comparison for canny (-canny)
+    - ImageMagick comparison for scharr (-morphology Convolve)
+    - ImageMagick comparison for laplacian (-morphology Convolve)
+    - ImageMagick comparison for otsu (-auto-threshold OTSU)
+    - ImageMagick comparison for blend_multiply and blend_screen (-compose)
+    - ImageMagick comparison for vignette (-vignette)
+    - ImageMagick comparison for pad (-border) and trim (-trim)
+    - All benchmarks compile and pass --test mode
+  out_of_scope: |
+    Adding new benchmark groups or operations.
+    Parity validation tests (that is the companion track).
+    adaptive_threshold, premultiply, unpremultiply, pyr_down, pyr_up
+    (no direct ImageMagick equivalent).
+    retinex, dehaze, clarity, mertens_fusion (no IM equivalent).
+    displacement_map (no IM equivalent).
+  technical_notes: |
+    All additions follow the existing pattern in perf.rs:
+      if ref_tools::has_tool("magick") {
+          let p = png_path_str.clone();
+          group.bench_function(BenchmarkId::new("op/imagemagick", size), |b| {
+              b.iter(|| ref_tools::magick_pipeline(&p, &[...], "png", None));
+          });
+      }
+
+    For edge detectors, IM needs grayscale input. The existing edge group
+    already decodes to grayscale — the IM comparison should also convert
+    to grayscale first (-colorspace Gray) before applying the edge op.
+
+    For blend modes, IM needs two input images. Use the same self-blend
+    approach: magick convert fg.png bg.png -compose Multiply -composite out.png
+
+    For threshold (otsu), IM outputs a binary image. The benchmark measures
+    throughput, not output comparison — different output format is fine.
+plan:
+  - phase: "Color/Tone IM Comparisons"
+    tasks:
+      - text: "Add IM comparison for contrast using -sigmoidal-contrast 5,50%"
+        done: false
+      - text: "Add IM comparison for hue_rotate using -modulate 100,100,150"
+        done: false
+      - text: "Add IM comparison for saturate using -modulate 100,150,100"
+        done: false
+      - text: "Add IM comparison for sepia using -sepia-tone 80%"
+        done: false
+  - phase: "Edge Detection IM Comparisons"
+    tasks:
+      - text: "Add IM comparison for canny using -canny 0x1+10%+30%"
+        done: false
+      - text: "Add IM comparison for scharr using -morphology Convolve Scharr"
+        done: false
+      - text: "Add IM comparison for laplacian using -morphology Convolve Laplacian"
+        done: false
+  - phase: "Threshold, Blend, Vignette, Transform IM Comparisons"
+    tasks:
+      - text: "Add IM comparison for otsu using -auto-threshold OTSU"
+        done: false
+      - text: "Add IM comparison for blend_multiply using -compose Multiply -composite"
+        done: false
+      - text: "Add IM comparison for blend_screen using -compose Screen -composite"
+        done: false
+      - text: "Add IM comparison for vignette using -vignette 0x10"
+        done: false
+      - text: "Add IM comparison for pad using -border 10 and trim using -trim"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Run cargo bench --bench perf -- --test and verify all new IM comparisons appear"
+        done: false
+      - text: "Run 1 benchmark group to confirm IM comparisons produce valid timing data"
+        done: false
+extra: {}
