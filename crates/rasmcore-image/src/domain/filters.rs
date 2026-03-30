@@ -16991,3 +16991,328 @@ mod dodge_burn_tests {
         assert_eq!(max_diff, 0, "burn formula mismatch: max_diff={max_diff}");
     }
 }
+
+// ─── Tilt-Shift & Lens Blur ───────────────────────────────────────────────
+
+/// Tilt-shift blur config.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct TiltShiftParams {
+    /// Focus band center position (0.0=top, 0.5=middle, 1.0=bottom)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub focus_position: f32,
+    /// Focus band size as fraction of image height (0.0=none, 1.0=full)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
+    pub band_size: f32,
+    /// Maximum blur radius in pixels
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 8.0)]
+    pub blur_radius: f32,
+    /// Focus band angle in degrees (0=horizontal, 90=vertical)
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    pub angle: f32,
+}
+
+/// Tilt-shift blur — selective focus with graduated blur band.
+///
+/// Keeps a band of the image sharp while progressively blurring toward the edges.
+/// Creates a miniature/diorama effect. The focus band can be rotated via the angle param.
+#[rasmcore_macros::register_filter(
+    name = "tilt_shift",
+    category = "spatial",
+    group = "blur",
+    variant = "tilt_shift",
+    reference = "graduated blur mask with Gaussian blur"
+)]
+pub fn tilt_shift(
+    pixels: &[u8],
+    info: &ImageInfo,
+    focus_position: f32,
+    band_size: f32,
+    blur_radius: f32,
+    angle: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if blur_radius <= 0.0 || band_size >= 1.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let bpp = channels(info.format);
+
+    // Generate the fully blurred version
+    let blurred = blur(pixels, info, blur_radius)?;
+
+    // Compute per-pixel blur mask based on distance from focus band
+    let angle_rad = angle.to_radians();
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+
+    let half_band = band_size * 0.5;
+    // Transition zone: from band edge to full blur
+    let transition = (0.5 - half_band).max(0.01);
+
+    let mut output = Vec::with_capacity(pixels.len());
+
+    for y in 0..h {
+        for x in 0..w {
+            // Compute position along the focus axis (perpendicular to the band)
+            let nx = x as f32 / w as f32 - 0.5;
+            let ny = y as f32 / h as f32 - focus_position;
+
+            // Rotate to align with band angle
+            let dist = (-nx * sin_a + ny * cos_a).abs();
+
+            // Compute blur amount: 0 inside band, ramps to 1 outside
+            let t = if dist <= half_band {
+                0.0
+            } else {
+                ((dist - half_band) / transition).clamp(0.0, 1.0)
+            };
+            // Smoothstep for gradual falloff
+            let t = t * t * (3.0 - 2.0 * t);
+
+            let idx = (y * w + x) * bpp;
+            for c in 0..bpp {
+                let orig = pixels[idx + c] as f32;
+                let blur_val = blurred[idx + c] as f32;
+                output.push((orig + (blur_val - orig) * t) as u8);
+            }
+        }
+    }
+
+    Ok(output)
+}
+
+/// Lens blur config.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct LensBlurParams {
+    /// Blur radius in pixels
+    #[param(min = 0, max = 50, step = 1, default = 5)]
+    pub radius: u32,
+    /// Aperture blade count (0=disc, 5-8=polygon)
+    #[param(min = 0, max = 12, step = 1, default = 0)]
+    pub blade_count: u32,
+    /// Blade rotation angle in degrees
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    pub rotation: f32,
+}
+
+/// Generate a regular polygon kernel with N sides, rotated by angle degrees.
+fn make_polygon_kernel(radius: u32, sides: u32, rotation_deg: f32) -> (Vec<f32>, usize) {
+    let side = (radius * 2 + 1) as usize;
+    let center = radius as f32;
+    let cr = radius as f32 + 0.5;
+    let rot = rotation_deg.to_radians();
+    let n = sides as f32;
+    let mut kernel = vec![0.0f32; side * side];
+
+    for y in 0..side {
+        for x in 0..side {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist > cr {
+                continue;
+            }
+            // Check if point is inside the regular polygon
+            // A point is inside if for each edge, it's on the interior side
+            let angle = dy.atan2(dx) - rot;
+            // Angular distance to nearest vertex
+            let sector = (angle * n / (2.0 * std::f32::consts::PI)).rem_euclid(1.0);
+            let half_angle = std::f32::consts::PI / n;
+            // The polygon edge at this sector has distance: cr * cos(half_angle) / cos(...)
+            let sector_angle = (sector - 0.5).abs() * 2.0 * half_angle;
+            let edge_dist = cr * half_angle.cos() / sector_angle.cos().max(0.001);
+            if dist <= edge_dist {
+                kernel[y * side + x] = 1.0;
+            }
+        }
+    }
+    (kernel, side)
+}
+
+/// Lens blur — depth-of-field simulation with disc or polygon bokeh kernel.
+///
+/// With blade_count=0, uses a circular disc (same as bokeh_blur).
+/// With blade_count=5-12, uses a regular polygon simulating a camera aperture
+/// with that many blades, rotated by the rotation parameter.
+#[rasmcore_macros::register_filter(
+    name = "lens_blur",
+    category = "spatial",
+    group = "blur",
+    variant = "lens",
+    reference = "shaped bokeh kernel depth-of-field simulation"
+)]
+pub fn lens_blur(
+    pixels: &[u8],
+    info: &ImageInfo,
+    radius: u32,
+    blade_count: u32,
+    rotation: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if radius == 0 {
+        return Ok(pixels.to_vec());
+    }
+
+    let (kernel, side) = if blade_count == 0 || blade_count < 3 {
+        make_disc_kernel(radius)
+    } else {
+        make_polygon_kernel(radius, blade_count, rotation)
+    };
+
+    let divisor: f32 = kernel.iter().sum();
+    if divisor == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    convolve(pixels, info, &kernel, side, side, divisor)
+}
+
+#[cfg(test)]
+mod tilt_shift_lens_blur_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn tilt_shift_zero_radius_is_identity() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = tilt_shift(&pixels, &info, 0.5, 0.2, 0.0, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn tilt_shift_full_band_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = tilt_shift(&pixels, &info, 0.5, 1.0, 10.0, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn tilt_shift_center_band_stays_sharp() {
+        // Generate gradient image
+        let w = 32u32;
+        let h = 32u32;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let idx = ((y * w + x) * 3) as usize;
+                pixels[idx] = (x * 8) as u8;
+                pixels[idx + 1] = (y * 8) as u8;
+                pixels[idx + 2] = 128;
+            }
+        }
+        let info = rgb_info(w, h);
+        let result = tilt_shift(&pixels, &info, 0.5, 0.3, 10.0, 0.0).unwrap();
+
+        // Center row (y=16) should be in the focus band — exactly preserved
+        let center_y = 16;
+        for x in 1..(w - 1) as usize {
+            let idx = (center_y * w as usize + x) * 3;
+            assert_eq!(result[idx], pixels[idx], "center pixel at x={x} changed");
+        }
+    }
+
+    #[test]
+    fn tilt_shift_edges_are_blurred() {
+        let w = 32u32;
+        let h = 32u32;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        // Create alternating pattern (high frequency — blurring should smooth it)
+        for y in 0..h {
+            for x in 0..w {
+                let idx = ((y * w + x) * 3) as usize;
+                let val = if (x + y) % 2 == 0 { 255 } else { 0 };
+                pixels[idx] = val;
+                pixels[idx + 1] = val;
+                pixels[idx + 2] = val;
+            }
+        }
+        let info = rgb_info(w, h);
+        let result = tilt_shift(&pixels, &info, 0.5, 0.2, 8.0, 0.0).unwrap();
+
+        // Top edge (y=0) should be heavily blurred — values should be closer to 128
+        let top_y = 0;
+        let mut top_variance = 0.0f64;
+        for x in 2..(w - 2) as usize {
+            let idx = (top_y * w as usize + x) * 3;
+            let val = result[idx] as f64;
+            top_variance += (val - 128.0).abs();
+        }
+        top_variance /= (w - 4) as f64;
+        assert!(
+            top_variance < 100.0,
+            "top edge should be blurred (variance={top_variance})"
+        );
+    }
+
+    #[test]
+    fn lens_blur_zero_radius_is_identity() {
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = lens_blur(&pixels, &info, 0, 0, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn lens_blur_disc_mode() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = lens_blur(&pixels, &info, 3, 0, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+        // Should be different from input (blurred)
+        assert_ne!(result, pixels);
+    }
+
+    #[test]
+    fn lens_blur_polygon_mode() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        // 6-blade hexagon
+        let result = lens_blur(&pixels, &info, 3, 6, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+        assert_ne!(result, pixels);
+    }
+
+    #[test]
+    fn lens_blur_disc_matches_bokeh_blur() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let disc = lens_blur(&pixels, &info, 3, 0, 0.0).unwrap();
+        let bokeh = bokeh_blur(&pixels, &info, 3, BokehShape::Disc).unwrap();
+        // Both use same make_disc_kernel + convolve — should be identical
+        assert_eq!(disc, bokeh, "lens_blur disc should match bokeh_blur disc");
+    }
+
+    #[test]
+    fn polygon_kernel_has_correct_shape() {
+        let (kernel, side) = make_polygon_kernel(5, 6, 0.0);
+        assert_eq!(side, 11); // 2*5+1
+        // Center should be filled
+        assert!(kernel[5 * 11 + 5] > 0.0, "center should be filled");
+        // Total weight should be positive
+        let total: f32 = kernel.iter().sum();
+        assert!(total > 10.0, "polygon should have substantial area");
+    }
+
+    #[test]
+    fn lens_blur_rotation_changes_output() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let r0 = lens_blur(&pixels, &info, 4, 6, 0.0).unwrap();
+        let r30 = lens_blur(&pixels, &info, 4, 6, 30.0).unwrap();
+        // Different rotation should produce different output
+        assert_ne!(r0, r30, "rotated polygon should produce different result");
+    }
+}
