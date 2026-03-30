@@ -87,6 +87,16 @@ interface filters {
         hard-light,
         difference,
         exclusion,
+        color-dodge,
+        color-burn,
+        vivid-light,
+        linear-dodge,
+        linear-burn,
+        linear-light,
+        pin-light,
+        hard-mix,
+        subtract,
+        divide,
     }
 
     /// Blend two same-size images using the specified blend mode

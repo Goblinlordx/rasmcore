@@ -672,6 +672,16 @@ impl filters::Guest for Component {
             filters::BlendMode::HardLight => domain::filters::BlendMode::HardLight,
             filters::BlendMode::Difference => domain::filters::BlendMode::Difference,
             filters::BlendMode::Exclusion => domain::filters::BlendMode::Exclusion,
+            filters::BlendMode::ColorDodge => domain::filters::BlendMode::ColorDodge,
+            filters::BlendMode::ColorBurn => domain::filters::BlendMode::ColorBurn,
+            filters::BlendMode::VividLight => domain::filters::BlendMode::VividLight,
+            filters::BlendMode::LinearDodge => domain::filters::BlendMode::LinearDodge,
+            filters::BlendMode::LinearBurn => domain::filters::BlendMode::LinearBurn,
+            filters::BlendMode::LinearLight => domain::filters::BlendMode::LinearLight,
+            filters::BlendMode::PinLight => domain::filters::BlendMode::PinLight,
+            filters::BlendMode::HardMix => domain::filters::BlendMode::HardMix,
+            filters::BlendMode::Subtract => domain::filters::BlendMode::Subtract,
+            filters::BlendMode::Divide => domain::filters::BlendMode::Divide,
         };
         domain::filters::blend(&fg, &domain_fg, &bg, &domain_bg, domain_mode).map_err(to_wit_error)
     }

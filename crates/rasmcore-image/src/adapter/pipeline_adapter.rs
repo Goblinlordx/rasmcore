@@ -504,6 +504,16 @@ impl GuestImagePipeline for PipelineResource {
             WitBlendMode::HardLight => domain::filters::BlendMode::HardLight,
             WitBlendMode::Difference => domain::filters::BlendMode::Difference,
             WitBlendMode::Exclusion => domain::filters::BlendMode::Exclusion,
+            WitBlendMode::ColorDodge => domain::filters::BlendMode::ColorDodge,
+            WitBlendMode::ColorBurn => domain::filters::BlendMode::ColorBurn,
+            WitBlendMode::VividLight => domain::filters::BlendMode::VividLight,
+            WitBlendMode::LinearDodge => domain::filters::BlendMode::LinearDodge,
+            WitBlendMode::LinearBurn => domain::filters::BlendMode::LinearBurn,
+            WitBlendMode::LinearLight => domain::filters::BlendMode::LinearLight,
+            WitBlendMode::PinLight => domain::filters::BlendMode::PinLight,
+            WitBlendMode::HardMix => domain::filters::BlendMode::HardMix,
+            WitBlendMode::Subtract => domain::filters::BlendMode::Subtract,
+            WitBlendMode::Divide => domain::filters::BlendMode::Divide,
         });
         let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y, domain_mode);
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
