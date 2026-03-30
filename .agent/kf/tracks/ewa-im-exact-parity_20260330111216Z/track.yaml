@@ -5,102 +5,73 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Fix the remaining MAE residuals in EWA resampling by porting IM's exact
-    ClampUpAxes, aligning barrel polynomial/center, and adding per-pixel
-    diagnostic tooling. Target all distortion filters to MAE < 1.0 vs IM.
-  context: >
-    The EWA resampling engine was ported from IM resample.c but has two
-    systematic residuals: (1) ClampUpAxes eigenvector computation differs from
-    IM's numerically-stable row-selection approach, causing ~2.5 MAE for
-    polar/depolar/swirl; (2) barrel polynomial form and center coordinate
-    don't match IM's FX-equivalent, causing ~8.2 MAE.
-  codebase_analysis: |
-    CLAMPUPAXES DIFFERENCES (ewa.rs lines 116-173):
-    1. Discriminant: IM uses (frobenius²+2det)(frobenius²-2det), we use
-       0.25*(n11-n22)² + n12². Mathematically equivalent but numerically
-       different for near-degenerate matrices.
-    2. Eigenvector: IM selects the row with LARGER magnitude via
-       s1s1minusn11_squared >= s1s1minusn22_squared conditional.
-       We always use (n12, s1s1-n11) with n12 threshold.
-    3. Minor axis: IM derives minor as 90° rotation of major (-u21, u11).
-       We independently compute from (n12, s2s2-n11).
+  summary: 'Fix the remaining MAE residuals in EWA resampling by porting IM''s exact ClampUpAxes, aligning barrel polynomial/center,
+    and adding per-pixel diagnostic tooling. Target all distortion filters to MAE < 1.0 vs IM.
 
-    BARREL DIFFERENCES (filters.rs barrel function):
-    1. IM polynomial: factor = A*rscale³*r³ + B*rscale²*r² + C*rscale*r + D
-       Our polynomial: factor = 1 + k1*rn² + k2*rn⁴ (DIFFERENT form)
-    2. IM center from FX: xc=(w-1)/2, yc=(h-1)/2 but actual distort.c
-       code uses w/2 + page.x with pixel-center d.x = i+0.5.
-       Current barrel uses w/2 + 0.5 offset but polynomial is wrong.
-    3. IM denormalizes: k1*rscale³ → A coefficient (cubic r³ term).
-       Our k1 is in the r² term — different meaning entirely.
+    '
+  context: 'The EWA resampling engine was ported from IM resample.c but has two systematic residuals: (1) ClampUpAxes eigenvector
+    computation differs from IM''s numerically-stable row-selection approach, causing ~2.5 MAE for polar/depolar/swirl; (2)
+    barrel polynomial form and center coordinate don''t match IM''s FX-equivalent, causing ~8.2 MAE.
 
-    SWIRL: Uses IM's aspect-ratio scaling and t² falloff correctly.
-    Residual likely from ClampUpAxes (same fix as polar).
+    '
+  codebase_analysis: "CLAMPUPAXES DIFFERENCES (ewa.rs lines 116-173):\n1. Discriminant: IM uses (frobenius²+2det)(frobenius²-2det),\
+    \ we use\n   0.25*(n11-n22)² + n12². Mathematically equivalent but numerically\n   different for near-degenerate matrices.\n\
+    2. Eigenvector: IM selects the row with LARGER magnitude via\n   s1s1minusn11_squared >= s1s1minusn22_squared conditional.\n\
+    \   We always use (n12, s1s1-n11) with n12 threshold.\n3. Minor axis: IM derives minor as 90° rotation of major (-u21,\
+    \ u11).\n   We independently compute from (n12, s2s2-n11).\n\nBARREL DIFFERENCES (filters.rs barrel function):\n1. IM\
+    \ polynomial: factor = A*rscale³*r³ + B*rscale²*r² + C*rscale*r + D\n   Our polynomial: factor = 1 + k1*rn² + k2*rn⁴ (DIFFERENT\
+    \ form)\n2. IM center from FX: xc=(w-1)/2, yc=(h-1)/2 but actual distort.c\n   code uses w/2 + page.x with pixel-center\
+    \ d.x = i+0.5.\n   Current barrel uses w/2 + 0.5 offset but polynomial is wrong.\n3. IM denormalizes: k1*rscale³ → A coefficient\
+    \ (cubic r³ term).\n   Our k1 is in the r² term — different meaning entirely.\n\nSWIRL: Uses IM's aspect-ratio scaling\
+    \ and t² falloff correctly.\nResidual likely from ClampUpAxes (same fix as polar).\n"
   acceptance_criteria:
-    - ClampUpAxes matches IM verbatim — discriminant, row selection, minor = rotate(major)
-    - Barrel polynomial matches IM Barrel form (A*r³ + B*r² + C*r + D with rscale denorm)
-    - Barrel center and pixel-center match IM distort.c exactly
-    - Polar MAE vs IM < 1.0 (currently 2.55)
-    - Barrel MAE vs IM < 1.0 (currently 8.24)
-    - Swirl MAE vs IM < 1.0 (currently < 3.0)
-    - Wave MAE unchanged (< 1.0, bilinear)
-    - All existing identity/roundtrip/size tests still pass
-    - Per-pixel diagnostic test dumping first 5 differing pixels for debugging
-  out_of_scope: >
-    Spherize IM parity (no direct IM equivalent). Ripple IM parity (no
-    direct IM equivalent). Displacement map parity. Transform.rs filters
-    (affine, perspective_warp, undistort).
-  technical_notes: |
-    FIX 1 — ClampUpAxes (ewa.rs):
-    Port IM's exact code verbatim:
-      - discriminant = (frobenius_sq + twice_det) * (frobenius_sq - twice_det)
-      - sqrt_discriminant = sqrt(max(discriminant, 0.0))
-      - s1s1 = 0.5 * (frobenius_sq + sqrt_discriminant)
-      - Eigenvector row selection: pick row with larger |s1s1 - nXX|
-      - Minor axis = 90° rotation of major: (-u21, u11)
-    This is a direct transliteration of IM's C code, no mathematical
-    reinterpretation. Use the EXACT same variable names for auditability.
+  - ClampUpAxes matches IM verbatim — discriminant, row selection, minor = rotate(major)
+  - Barrel polynomial matches IM Barrel form (A*r³ + B*r² + C*r + D with rscale denorm)
+  - Barrel center and pixel-center match IM distort.c exactly
+  - Polar MAE vs IM < 1.0 (currently 2.55)
+  - Barrel MAE vs IM < 1.0 (currently 8.24)
+  - Swirl MAE vs IM < 1.0 (currently < 3.0)
+  - Wave MAE unchanged (< 1.0, bilinear)
+  - All existing identity/roundtrip/size tests still pass
+  - Per-pixel diagnostic test dumping first 5 differing pixels for debugging
+  out_of_scope: 'Spherize IM parity (no direct IM equivalent). Ripple IM parity (no direct IM equivalent). Displacement map
+    parity. Transform.rs filters (affine, perspective_warp, undistort).
 
-    FIX 2 — Barrel (filters.rs):
-    Read IM's barrel verbose output to get exact coefficients for test params.
-    Port IM's polynomial form: factor = A*r³ + B*r² + C*r + D where
-    coefficients are pre-denormalized by rscale.
-    Match IM's center: w/2 + page.x (for us page.x=0, so w/2).
-    Match pixel-center: d.x = i + 0.5.
-
-    FIX 3 — Diagnostic test:
-    Add a test that for each IM parity comparison, dumps the first N pixels
-    where |our - IM| > 1, with both values and the source coordinates.
-    This makes future regressions immediately debuggable.
-
-    VERIFICATION:
-    After each fix, run all im_parity tests and check MAE drops.
-    If MAE doesn't reach < 1.0, inspect the diagnostic dump to identify
-    the next systematic pattern.
+    '
+  technical_notes: "FIX 1 — ClampUpAxes (ewa.rs):\nPort IM's exact code verbatim:\n  - discriminant = (frobenius_sq + twice_det)\
+    \ * (frobenius_sq - twice_det)\n  - sqrt_discriminant = sqrt(max(discriminant, 0.0))\n  - s1s1 = 0.5 * (frobenius_sq +\
+    \ sqrt_discriminant)\n  - Eigenvector row selection: pick row with larger |s1s1 - nXX|\n  - Minor axis = 90° rotation\
+    \ of major: (-u21, u11)\nThis is a direct transliteration of IM's C code, no mathematical\nreinterpretation. Use the EXACT\
+    \ same variable names for auditability.\n\nFIX 2 — Barrel (filters.rs):\nRead IM's barrel verbose output to get exact\
+    \ coefficients for test params.\nPort IM's polynomial form: factor = A*r³ + B*r² + C*r + D where\ncoefficients are pre-denormalized\
+    \ by rscale.\nMatch IM's center: w/2 + page.x (for us page.x=0, so w/2).\nMatch pixel-center: d.x = i + 0.5.\n\nFIX 3\
+    \ — Diagnostic test:\nAdd a test that for each IM parity comparison, dumps the first N pixels\nwhere |our - IM| > 1, with\
+    \ both values and the source coordinates.\nThis makes future regressions immediately debuggable.\n\nVERIFICATION:\nAfter\
+    \ each fix, run all im_parity tests and check MAE drops.\nIf MAE doesn't reach < 1.0, inspect the diagnostic dump to identify\n\
+    the next systematic pattern.\n"
 plan:
-  - phase: ClampUpAxes Verbatim Port
-    tasks:
-      - text: Port IM ClampUpAxes exactly — discriminant formula, row selection, minor = rotate(major)
-        done: false
-      - text: Verify ClampUpAxes unit tests still pass with new implementation
-        done: false
-      - text: Check polar/swirl MAE drops below 1.0
-        done: false
-  - phase: Barrel IM-Exact Alignment
-    tasks:
-      - text: Read IM barrel verbose output, verify coefficient mapping for test params
-        done: false
-      - text: Align barrel polynomial form, center, and pixel-center to IM exactly
-        done: false
-      - text: Check barrel MAE drops below 1.0
-        done: false
-  - phase: Diagnostics & Verification
-    tasks:
-      - text: Add per-pixel diagnostic dump to IM parity tests (first N diffs > 1)
-        done: false
-      - text: Verify all identity/roundtrip/size tests pass
-        done: false
-      - text: Update ewa.rs documentation with final MAE baselines
-        done: false
+- phase: ClampUpAxes Verbatim Port
+  tasks:
+  - text: Port IM ClampUpAxes exactly — discriminant formula, row selection, minor = rotate(major)
+    done: true
+  - text: Verify ClampUpAxes unit tests still pass with new implementation
+    done: true
+  - text: Check polar/swirl MAE drops below 1.0
+    done: true
+- phase: Barrel IM-Exact Alignment
+  tasks:
+  - text: Read IM barrel verbose output, verify coefficient mapping for test params
+    done: true
+  - text: Align barrel polynomial form, center, and pixel-center to IM exactly
+    done: true
+  - text: Check barrel MAE drops below 1.0
+    done: true
+- phase: Diagnostics & Verification
+  tasks:
+  - text: Add per-pixel diagnostic dump to IM parity tests (first N diffs > 1)
+    done: true
+  - text: Verify all identity/roundtrip/size tests pass
+    done: true
+  - text: Update ewa.rs documentation with final MAE baselines
+    done: true
 extra: {}
