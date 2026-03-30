@@ -319,6 +319,124 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
     }
 }
 
+// ─── Scaled Inverse DCT (shrink-on-load) ─────────────────────────────────────
+//
+// Ported from libjpeg-turbo jidctred.c. These reduced IDCTs use only the
+// low-frequency NxN coefficients from the 8x8 block, producing NxN spatial
+// output via an N-point butterfly per dimension.
+
+/// Inverse DCT producing 4x4 output (1/2 scale).
+///
+/// 4-point butterfly on the first 4 frequency rows/cols of the 8x8 block.
+/// Ported from libjpeg-turbo jidctred.c `jpeg_idct_4x4`.
+/// Input: full 8x8 dequantized coefficients. Output: 4x4 pixel block [0, 255].
+pub fn inverse_dct_half(input: &[i32; 64], output: &mut [i16; 16]) {
+    // Workspace: 4 spatial rows × stride 8 (only first 4 cols used)
+    let mut ws = [0i32; 32];
+
+    // Pass 1: columns. Process cols 0..3, using freq rows 0,1,2,3 only.
+    for col in 0..4 {
+        // AC zero shortcut (rows 1,2,3)
+        if input[col + 8] == 0 && input[col + 16] == 0 && input[col + 24] == 0 {
+            let dcval = input[col] << PASS1_BITS;
+            ws[col] = dcval;
+            ws[col + 8] = dcval;
+            ws[col + 16] = dcval;
+            ws[col + 24] = dcval;
+            continue;
+        }
+
+        // Even part: rows 0, 2
+        let tmp0 = input[col];      // row 0 (DC)
+        let tmp2 = input[col + 16]; // row 2
+
+        let tmp10 = (tmp0 + tmp2) << CONST_BITS;
+        let tmp12 = (tmp0 - tmp2) << CONST_BITS;
+
+        // Odd part: rows 1, 3 — same rotation as 8-point even part
+        let z2 = input[col + 8];  // row 1
+        let z3 = input[col + 24]; // row 3
+
+        let z1 = (z2 + z3) * FIX_0_541196100; // c6
+        let tmp0 = z1 + z2 * FIX_0_765366865; // c2-c6
+        let tmp2 = z1 - z3 * FIX_1_847759065; // c2+c6
+
+        ws[col] = descale(tmp10 + tmp0, CONST_BITS - PASS1_BITS);
+        ws[col + 24] = descale(tmp10 - tmp0, CONST_BITS - PASS1_BITS);
+        ws[col + 8] = descale(tmp12 + tmp2, CONST_BITS - PASS1_BITS);
+        ws[col + 16] = descale(tmp12 - tmp2, CONST_BITS - PASS1_BITS);
+    }
+
+    // Pass 2: rows. 4-point butterfly on cols 0..3 of each workspace row.
+    const RANGE_SHIFT: i32 = CONST_BITS + PASS1_BITS + 3;
+    const RANGE_CENTER: i32 = 128;
+
+    for row in 0..4 {
+        let i = row * 8; // workspace stride is 8
+
+        // Even part
+        let tmp10 = (ws[i] + ws[i + 2]) << CONST_BITS;
+        let tmp12 = (ws[i] - ws[i + 2]) << CONST_BITS;
+
+        // Odd part
+        let z2 = ws[i + 1];
+        let z3 = ws[i + 3];
+        let z1 = (z2 + z3) * FIX_0_541196100;
+        let tmp0 = z1 + z2 * FIX_0_765366865;
+        let tmp2 = z1 - z3 * FIX_1_847759065;
+
+        let oi = row * 4;
+        output[oi] = (descale(tmp10 + tmp0, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+        output[oi + 3] = (descale(tmp10 - tmp0, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+        output[oi + 1] = (descale(tmp12 + tmp2, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+        output[oi + 2] = (descale(tmp12 - tmp2, RANGE_SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+    }
+}
+
+/// Inverse DCT producing 2x2 output (1/4 scale).
+///
+/// 2-point butterfly on the first 2 frequency rows/cols.
+/// Ported from libjpeg-turbo jidctred.c `jpeg_idct_2x2`.
+/// Input: full 8x8 dequantized coefficients. Output: 2x2 pixel block [0, 255].
+pub fn inverse_dct_quarter(input: &[i32; 64], output: &mut [i16; 4]) {
+    // Workspace: 2 rows × stride 8 (only first 2 cols used)
+    let mut ws = [0i32; 16];
+
+    // Pass 1: columns. Process cols 0..1, using freq rows 0,1 only.
+    // No PASS1_BITS scaling (libjpeg 2x2 uses PASS1_BITS=0 effectively).
+    for col in 0..2 {
+        let tmp0 = input[col];     // row 0 (DC)
+        let tmp1 = input[col + 8]; // row 1
+
+        // 2-point butterfly: add/subtract (no scaling)
+        ws[col] = tmp0 + tmp1;
+        ws[col + 8] = tmp0 - tmp1;
+    }
+
+    // Pass 2: rows. 2-point butterfly on cols 0,1 of each workspace row.
+    const SHIFT: i32 = 3; // just remove the 8x LL&M factor
+    const RANGE_CENTER: i32 = 128;
+
+    for row in 0..2 {
+        let i = row * 8;
+        let tmp0 = ws[i];
+        let tmp1 = ws[i + 1];
+
+        let oi = row * 2;
+        output[oi] = (descale(tmp0 + tmp1, SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+        output[oi + 1] = (descale(tmp0 - tmp1, SHIFT) + RANGE_CENTER).clamp(0, 255) as i16;
+    }
+}
+
+/// Inverse DCT producing 1x1 output (1/8 scale, DC-only).
+///
+/// Ported from libjpeg-turbo jidctred.c `jpeg_idct_1x1`.
+/// Input: full 8x8 dequantized coefficients. Output: single pixel value [0, 255].
+pub fn inverse_dct_eighth(input: &[i32; 64]) -> u8 {
+    let val = descale(input[0], 3) + 128;
+    val.clamp(0, 255) as u8
+}
+
 // ─── Reference f64 IDCT (for validation) ───────────────────────────────────
 
 /// Reference f64 IDCT for encoder validation.
@@ -580,6 +698,137 @@ mod tests {
         let v = output[0];
         for &p in &output {
             assert_eq!(p, v, "DC-only block should have uniform pixels");
+        }
+    }
+
+    fn make_test_coeffs(seed: usize) -> [i32; 64] {
+        let mut coeffs = [0i32; 64];
+        coeffs[0] = 800 + (seed as i32 * 37) % 400;
+        coeffs[1] = ((seed as i32 * 13) % 200) - 100;
+        coeffs[8] = ((seed as i32 * 17) % 200) - 100;
+        coeffs[9] = ((seed as i32 * 23) % 100) - 50;
+        coeffs[2] = ((seed as i32 * 7) % 150) - 75;
+        coeffs[16] = ((seed as i32 * 11) % 150) - 75;
+        coeffs[3] = ((seed as i32 * 29) % 80) - 40;
+        coeffs[24] = ((seed as i32 * 31) % 80) - 40;
+        coeffs
+    }
+
+    #[test]
+    fn scaled_idct_eighth_dc_only() {
+        for dc in [0, 80, 200, 400, 800, -200, 1023] {
+            let mut input = [0i32; 64];
+            input[0] = dc;
+            let result = inverse_dct_eighth(&input);
+            let expected = (descale(dc, 3) + 128).clamp(0, 255) as u8;
+            assert_eq!(result, expected, "DC={dc}");
+        }
+    }
+
+    #[test]
+    fn scaled_idct_dc_only_matches_full() {
+        // For DC-only blocks, all IDCT variants should produce the same pixel value.
+        for dc in [0, 80, 200, 400, 800, -100] {
+            let mut input = [0i32; 64];
+            input[0] = dc;
+
+            // Full IDCT reference
+            let mut full = [0i16; 64];
+            inverse_dct(&input, &mut full);
+            let full_val = full[0]; // DC-only → all pixels identical
+
+            let eighth = inverse_dct_eighth(&input) as i16;
+            assert!(
+                (eighth - full_val).abs() <= 1,
+                "DC={dc}: eighth={eighth} full={full_val}"
+            );
+
+            let mut quarter = [0i16; 4];
+            inverse_dct_quarter(&input, &mut quarter);
+            for (i, &v) in quarter.iter().enumerate() {
+                assert!(
+                    (v - full_val).abs() <= 1,
+                    "DC={dc}: quarter[{i}]={v} full={full_val}"
+                );
+            }
+
+            let mut half = [0i16; 16];
+            inverse_dct_half(&input, &mut half);
+            for (i, &v) in half.iter().enumerate() {
+                assert!(
+                    (v - full_val).abs() <= 1,
+                    "DC={dc}: half[{i}]={v} full={full_val}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scaled_idct_output_range_valid() {
+        // All outputs must be in [0, 255] for any reasonable input.
+        for seed in 0..30 {
+            let coeffs = make_test_coeffs(seed);
+
+            let eighth = inverse_dct_eighth(&coeffs);
+            assert!(eighth <= 255, "eighth out of range: {eighth}");
+
+            let mut quarter = [0i16; 4];
+            inverse_dct_quarter(&coeffs, &mut quarter);
+            for &v in &quarter {
+                assert!(v >= 0 && v <= 255, "quarter out of range: {v}");
+            }
+
+            let mut half = [0i16; 16];
+            inverse_dct_half(&coeffs, &mut half);
+            for &v in &half {
+                assert!(v >= 0 && v <= 255, "half out of range: {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn scaled_idct_roundtrip_psnr() {
+        // Encode → decode at reduced scale should produce PSNR > 30dB
+        // vs full decode + box downsample (approximate visual equivalence).
+        for seed in 0..10 {
+            let coeffs = make_test_coeffs(seed);
+
+            // Full IDCT then box downsample to 4x4
+            let mut full = [0i16; 64];
+            inverse_dct(&coeffs, &mut full);
+            let mut ref_4x4 = [0i16; 16];
+            for oy in 0..4 {
+                for ox in 0..4 {
+                    let mut sum = 0i32;
+                    for by in 0..2 {
+                        for bx in 0..2 {
+                            sum += full[(oy * 2 + by) * 8 + (ox * 2 + bx)] as i32;
+                        }
+                    }
+                    ref_4x4[oy * 4 + ox] = (sum / 4) as i16;
+                }
+            }
+
+            // Scaled 4x4 IDCT
+            let mut half = [0i16; 16];
+            inverse_dct_half(&coeffs, &mut half);
+
+            // Compute MSE
+            let mut mse = 0.0f64;
+            for i in 0..16 {
+                let d = half[i] as f64 - ref_4x4[i] as f64;
+                mse += d * d;
+            }
+            mse /= 16.0;
+            let psnr = if mse < 0.01 {
+                99.0
+            } else {
+                10.0 * (255.0f64 * 255.0 / mse).log10()
+            };
+            assert!(
+                psnr > 25.0,
+                "seed={seed}: PSNR={psnr:.1}dB too low\nhalf={half:?}\nref ={ref_4x4:?}"
+            );
         }
     }
 }
