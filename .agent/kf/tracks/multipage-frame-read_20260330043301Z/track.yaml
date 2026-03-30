@@ -1,0 +1,84 @@
+id: multipage-frame-read_20260330043301Z
+title: Multi-Page and Multi-Frame Read Support
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add multi-page TIFF read and multi-frame GIF/WebP read — expose frame count,
+    per-frame decode, and frame metadata (delay, disposal) through the decoder API.
+  context: |
+    libvips and ImageMagick both support multi-page TIFF and animated GIF/WebP.
+    rasmcore currently reads only the first frame/page. This is a prerequisite
+    for the animation pipeline (separate research track) and closes a P1 gap
+    for TIFF workflows (scanning, publishing).
+  codebase_analysis: |
+    Current state:
+    - GIF: gif crate supports frame iteration (DecodeOptions::read_info -> Frames)
+      but decoder/mod.rs only reads first frame
+    - WebP: image-webp crate has AnimDecoder, but only first frame read
+    - TIFF: tiff crate supports directory iteration for multi-page, not used
+    - PNG: no APNG in current image crate version
+    - ImageInfo has no frame_count or page_count field
+    - DecodedImage has no frame metadata
+
+    Decoder dispatch at decoder/mod.rs:
+    - decode(data) always returns single DecodedImage
+    - No multi-frame API exists
+  acceptance_criteria:
+    - frame_count(data, format) returns total frames/pages without full decode
+    - decode_frame(data, format, index) decodes a specific frame/page
+    - Frame metadata includes delay_ms, disposal method, and dimensions
+    - Multi-page TIFF read works for at least 2-page documents
+    - Multi-frame GIF read iterates all frames with correct delays
+    - Multi-frame WebP read iterates all frames
+    - Existing single-frame decode behavior unchanged (backward compatible)
+  out_of_scope: |
+    Animation playback/compositing (separate track). Multi-frame encode/write.
+    APNG support (png crate limitation). Frame-to-frame delta optimization.
+  technical_notes: |
+    New domain types needed:
+    - FrameInfo { index: u32, delay_ms: u32, disposal: DisposalMethod, width, height, x_offset, y_offset }
+    - DisposalMethod { None, Background, Previous }
+    New decoder API surface:
+    - frame_count(data: &[u8]) -> Result<u32>
+    - decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo)>
+    - decode_all_frames(data: &[u8]) -> Result<Vec<(DecodedImage, FrameInfo)>>
+    Each format adapter implements these based on its crate capabilities.
+plan:
+  - phase: Domain Types
+    tasks:
+      - text: "Add FrameInfo and DisposalMethod to types.rs"
+        done: false
+      - text: "Add frame_count() and decode_frame() to decoder API in mod.rs"
+        done: false
+  - phase: GIF Multi-Frame
+    tasks:
+      - text: "Implement GIF frame_count via gif crate reader"
+        done: false
+      - text: "Implement GIF decode_frame with delay and disposal metadata"
+        done: false
+      - text: "Test multi-frame GIF with known animated test image"
+        done: false
+  - phase: WebP Multi-Frame
+    tasks:
+      - text: "Implement WebP frame_count via image-webp AnimDecoder"
+        done: false
+      - text: "Implement WebP decode_frame with ANMF chunk metadata"
+        done: false
+  - phase: TIFF Multi-Page
+    tasks:
+      - text: "Implement TIFF page_count via tiff crate directory iteration"
+        done: false
+      - text: "Implement TIFF decode_frame (page) by seeking to directory N"
+        done: false
+      - text: "Test multi-page TIFF with 2+ page document"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "Parity: frame count matches ImageMagick identify -format %n for test images"
+        done: false
+      - text: "Backward compat: existing decode() still returns first frame unchanged"
+        done: false
+extra: {}

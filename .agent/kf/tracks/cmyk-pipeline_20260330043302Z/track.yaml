@@ -1,0 +1,84 @@
+id: cmyk-pipeline_20260330043302Z
+title: CMYK Color Space Pipeline Support
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add CMYK color space support — decode CMYK JPEG/TIFF, convert CMYK<->RGB,
+    preserve CMYK through pipeline, and encode CMYK output for print workflows.
+  context: |
+    CMYK is essential for print workflows (magazines, packaging, signage). Both
+    libvips and ImageMagick support CMYK. rasmcore has JPEG CMYK/YCCK decode
+    (completed in jpeg-cmyk-decode track) but no CMYK pipeline — pixels are
+    immediately converted to RGB, losing CMYK fidelity.
+  codebase_analysis: |
+    Current state:
+    - PixelFormat enum in types.rs has no CMYK variant
+    - JPEG CMYK/YCCK decode exists but converts to RGB immediately
+    - color.rs has ICC functions but no CMYK<->RGB conversion
+    - TIFF crate supports CMYK TIFF decode/encode
+    - No CMYK-aware filters exist (all assume RGB/RGBA/Gray)
+
+    Key decision: should filters operate in CMYK natively or convert to
+    RGB for filtering then back to CMYK? libvips converts to/from CMYK
+    at boundaries. ImageMagick works natively in CMYK for some ops.
+
+    Recommend: boundary conversion (match libvips). Add Cmyk8 pixel format,
+    decode to CMYK, convert to RGB for filter pipeline, convert back to CMYK
+    for encode when target is print.
+  acceptance_criteria:
+    - PixelFormat::Cmyk8 and Cmyka8 variants added to types.rs
+    - CMYK<->RGB conversion functions using ICC profiles or naive formula
+    - JPEG CMYK decode can preserve CMYK pixels (not auto-convert to RGB)
+    - TIFF CMYK decode and encode works
+    - Pipeline auto-converts CMYK to RGB for filters, back to CMYK for encode
+    - Round-trip test - CMYK JPEG decode -> encode preserves color within dE < 2
+  out_of_scope: |
+    CMYK-native filter implementations (all filters stay RGB).
+    Spot colors / Pantone. PDF CMYK output.
+    CMYK ICC profile embedding (just conversion for now).
+  technical_notes: |
+    CMYK<->RGB conversion approaches:
+    1. Naive: C=1-R, M=1-G, Y=1-B, K=min(C,M,Y) — inaccurate but fast
+    2. ICC-based: use embedded ICC profile for device-specific conversion
+    3. Standard illuminant: use D50 illuminant matrix (matches print industry)
+    Recommend: implement naive first, add ICC-based as enhancement.
+    The existing icc_to_srgb() function provides a template for ICC transforms.
+plan:
+  - phase: Type System
+    tasks:
+      - text: "Add Cmyk8 and Cmyka8 to PixelFormat enum in types.rs"
+        done: false
+      - text: "Add channels_for_format and bytes_per_pixel support for CMYK"
+        done: false
+  - phase: Color Conversion
+    tasks:
+      - text: "Implement cmyk_to_rgb() naive conversion (for immediate use)"
+        done: false
+      - text: "Implement rgb_to_cmyk() naive conversion"
+        done: false
+      - text: "Add round-trip test (RGB -> CMYK -> RGB within tolerance)"
+        done: false
+  - phase: Decoder Integration
+    tasks:
+      - text: "Modify JPEG CMYK decode to optionally preserve Cmyk8 output"
+        done: false
+      - text: "Add TIFF CMYK decode support via tiff crate"
+        done: false
+  - phase: Pipeline Integration
+    tasks:
+      - text: "Add auto-convert to RGB at filter pipeline entry when input is CMYK"
+        done: false
+      - text: "Add auto-convert to CMYK at encode when target format requests CMYK"
+        done: false
+      - text: "TIFF CMYK encode via tiff crate"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "Parity: CMYK JPEG round-trip matches ImageMagick within dE < 2"
+        done: false
+      - text: "Test CMYK TIFF decode and encode with standard test images"
+        done: false
+extra: {}

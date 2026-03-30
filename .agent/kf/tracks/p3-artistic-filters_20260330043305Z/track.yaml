@@ -1,0 +1,74 @@
+id: p3-artistic-filters_20260330043305Z
+title: P3 Artistic Filters (Solarize, Emboss, Oil Paint, Charcoal)
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Implement the 4 remaining missing artistic filters — solarize, emboss, oil paint,
+    and charcoal — closing the last filter gaps vs ImageMagick.
+  context: |
+    The updated parity matrix shows only 4 truly missing filters, all P3 artistic
+    effects. Implementing these achieves 100% coverage of commonly-used IM/vips
+    filter operations.
+  codebase_analysis: |
+    All 4 are straightforward algorithms:
+    - solarize: per-pixel op — invert pixels above threshold. Formula: if val > threshold then 255 - val. LUT-collapsible.
+    - emboss: 3x3 convolution kernel. Can use existing convolve() infrastructure. Typical kernel: [[-2,-1,0],[-1,1,1],[0,1,2]]
+    - oil_paint: neighborhood mode filter. For each pixel, find most common intensity in radius. Similar complexity to median filter.
+    - charcoal: edge detection (Sobel or Canny) + Gaussian blur + threshold inversion. Can compose existing filters.
+
+    Related infrastructure:
+    - convolve() registered filter handles custom kernels — emboss could just be a preset
+    - Point ops (gamma, invert, posterize) in point_ops.rs show LUT-collapsible pattern
+    - median filter shows neighborhood-based pattern for oil_paint
+
+    All should be registered with #[register_filter] and ConfigParams.
+  acceptance_criteria:
+    - solarize(threshold) registered filter, LUT-collapsible
+    - emboss() registered filter using 3x3 convolution
+    - oil_paint(radius) registered filter
+    - charcoal(radius, sigma) registered filter
+    - All 4 appear in param-manifest.json
+    - Visual quality matches IM output subjectively (not pixel-exact — artistic ops vary)
+  out_of_scope: |
+    Parity testing against IM (artistic effects are implementation-dependent).
+    Additional artistic effects beyond these 4 (pencil sketch, watercolor, etc).
+  technical_notes: |
+    solarize: trivial LUT — build_lut with threshold check. ~20 LOC.
+    emboss: call existing convolve() with emboss kernel. ~10 LOC + registration.
+    oil_paint: for each pixel, compute intensity histogram in NxN window,
+    find mode (most frequent bin), output that pixel color. ~80-100 LOC.
+    O(r^2) per pixel like median. Optimization: use histogram sliding.
+    charcoal: compose sobel() + blur() + invert(). ~30 LOC wrapper.
+plan:
+  - phase: Simple Filters
+    tasks:
+      - text: "Implement solarize — LUT-collapsible point op with threshold param"
+        done: false
+      - text: "Register solarize with ConfigParams {threshold: u8 [0..255, default 128]}"
+        done: false
+      - text: "Implement emboss — use convolve() with standard emboss kernel"
+        done: false
+      - text: "Register emboss (no params, category effect)"
+        done: false
+  - phase: Complex Filters
+    tasks:
+      - text: "Implement oil_paint — neighborhood mode filter with radius param"
+        done: false
+      - text: "Register oil_paint with ConfigParams {radius: u32 [1..10, default 3]}"
+        done: false
+      - text: "Implement charcoal — compose sobel + blur + invert"
+        done: false
+      - text: "Register charcoal with ConfigParams {radius: f32, sigma: f32}"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "cargo build — all 4 in param-manifest.json"
+        done: false
+      - text: "Visual test with sample images for each effect"
+        done: false
+      - text: "cargo test — no regressions"
+        done: false
+extra: {}

@@ -78,3 +78,11 @@ parity-refresh_20260330041801Z: []
 
 # Animation pipeline research — no deps
 animation-pipeline-research_20260330041802Z: []
+
+# IM/vips parity gap closure — all independent
+shrink-on-load_20260330043300Z: []
+multipage-frame-read_20260330043301Z: []
+cmyk-pipeline_20260330043302Z: []
+draw-primitives_20260330043303Z: []
+image-concat_20260330043304Z: []
+p3-artistic-filters_20260330043305Z: []
