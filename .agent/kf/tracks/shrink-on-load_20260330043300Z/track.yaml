@@ -1,89 +1,100 @@
 id: shrink-on-load_20260330043300Z
-title: "Shrink-on-Load: JPEG DCT-Domain Downscaling"
+title: 'Shrink-on-Load: JPEG DCT-Domain Downscaling'
 type: feature
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Implement DCT-domain downscaling for JPEG decode — skip high-frequency AC
-    coefficients and produce 1/2, 1/4, or 1/8 resolution output directly from
-    the frequency domain, avoiding full-res decode + resize.
-  context: |
-    Both libvips and ImageMagick use shrink-on-load as a major performance
+  summary: 'Implement DCT-domain downscaling for JPEG decode — skip high-frequency AC coefficients and produce 1/2, 1/4, or
+    1/8 resolution output directly from the frequency domain, avoiding full-res decode + resize.
+
+    '
+  context: 'Both libvips and ImageMagick use shrink-on-load as a major performance
+
     optimization for thumbnailing. For a 6000x4000 JPEG resized to 750x500,
+
     this avoids materializing 24M pixels only to discard 97% of them.
+
     Expected speedup: 3-8x on resize, 2-4x overall.
-  codebase_analysis: |
-    Current decode path (rasmcore-jpeg):
+
+    '
+  codebase_analysis: 'Current decode path (rasmcore-jpeg):
+
     - Huffman decode -> dequantize -> inverse_dct (8x8 LL&M) -> level shift -> YCbCr->RGB
+
     - MCU loop at decode.rs:633-689 processes 8x8 blocks per component
+
     - IDCT in dct.rs:168-325 always produces full 8x8 spatial output
+
     - No scale_factor parameter anywhere in the decode chain
 
+
     Post-decode resize:
+
     - fast_image_resize v5 (SIMD) handles all scaling after full decode
+
     - SourceNode in pipeline eagerly decodes full image on first request
 
+
     Key insight: LL&M IDCT is separable — scaled variants skip AC coefficients
+
     outside the target resolution. For 1/4 scale, only process the DC and
+
     lowest 3 AC coefficients per row/column.
+
+    '
   acceptance_criteria:
-    - decode_with_scale(data, 2) produces 1/2 resolution output
-    - decode_with_scale(data, 4) produces 1/4 resolution output
-    - decode_with_scale(data, 8) produces 1/8 resolution (DC-only) output
-    - All chroma subsampling modes handled (4:2:0, 4:2:2, 4:4:4)
-    - Scaled output matches full-decode+resize within PSNR > 40dB
-    - Pipeline smart_resize auto-selects optimal scale factor
-    - Benchmark shows >= 2x speedup for 4x+ downscale
-  out_of_scope: |
-    PNG shrink-on-load (no frequency domain). TIFF/JP2 shrink-on-load.
+  - decode_with_scale(data, 2) produces 1/2 resolution output
+  - decode_with_scale(data, 4) produces 1/4 resolution output
+  - decode_with_scale(data, 8) produces 1/8 resolution (DC-only) output
+  - All chroma subsampling modes handled (4:2:0, 4:2:2, 4:4:4)
+  - Scaled output matches full-decode+resize within PSNR > 40dB
+  - Pipeline smart_resize auto-selects optimal scale factor
+  - Benchmark shows >= 2x speedup for 4x+ downscale
+  out_of_scope: 'PNG shrink-on-load (no frequency domain). TIFF/JP2 shrink-on-load.
+
     Upscaling (only downscale factors 2/4/8).
-  technical_notes: |
-    Implementation approach:
-    1. Add scaled IDCT variants to dct.rs (parallel to existing LL&M):
-       - inverse_dct_half: 8x8 input -> 4x4 output (skip high-freq AC)
-       - inverse_dct_quarter: 8x8 input -> 2x2 output
-       - inverse_dct_eighth: 8x8 input -> 1x1 output (DC only)
-    2. Thread scale_factor through decode chain:
-       decode() -> decode_with_scale(data, factor)
-    3. MCU loop writes smaller blocks at reduced stride
-    4. Chroma handling: coordinate luma/chroma scale factors for subsampled images
-    5. Pipeline integration: smart_resize checks if source is JPEG, calculates
-       optimal DCT scale factor, calls decode_with_scale + residual resize
+
+    '
+  technical_notes: "Implementation approach:\n1. Add scaled IDCT variants to dct.rs (parallel to existing LL&M):\n   - inverse_dct_half:\
+    \ 8x8 input -> 4x4 output (skip high-freq AC)\n   - inverse_dct_quarter: 8x8 input -> 2x2 output\n   - inverse_dct_eighth:\
+    \ 8x8 input -> 1x1 output (DC only)\n2. Thread scale_factor through decode chain:\n   decode() -> decode_with_scale(data,\
+    \ factor)\n3. MCU loop writes smaller blocks at reduced stride\n4. Chroma handling: coordinate luma/chroma scale factors\
+    \ for subsampled images\n5. Pipeline integration: smart_resize checks if source is JPEG, calculates\n   optimal DCT scale\
+    \ factor, calls decode_with_scale + residual resize\n"
 plan:
-  - phase: Scaled IDCT
-    tasks:
-      - text: "Implement inverse_dct_half (8x8 -> 4x4) in dct.rs"
-        done: false
-      - text: "Implement inverse_dct_quarter (8x8 -> 2x2) in dct.rs"
-        done: false
-      - text: "Implement inverse_dct_eighth (8x8 -> 1x1, DC-only) in dct.rs"
-        done: false
-      - text: "Add unit tests for scaled IDCT vs reference (full IDCT + downsample)"
-        done: false
-  - phase: Decoder Integration
-    tasks:
-      - text: "Add decode_with_scale(data, scale_factor) public API to rasmcore-jpeg"
-        done: false
-      - text: "Thread scale_factor through MCU decode loop with reduced output stride"
-        done: false
-      - text: "Handle chroma subsampling interaction (4:2:0/4:2:2/4:4:4 x scale)"
-        done: false
-      - text: "Test all subsampling + scale factor combinations"
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: "Add DecodeParams with optional scale_factor to decoder API"
-        done: false
-      - text: "Implement smart_resize that auto-selects DCT scale then residual resize"
-        done: false
-      - text: "Benchmark: compare shrink-on-load vs full-decode+resize at 2x/4x/8x"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "Parity test: scaled decode vs ImageMagick -define jpeg:size=WxH"
-        done: false
-      - text: "PSNR validation across test corpus (> 40dB for all scale factors)"
-        done: false
+- phase: Scaled IDCT
+  tasks:
+  - text: Implement inverse_dct_half (8x8 -> 4x4) in dct.rs
+    done: true
+  - text: Implement inverse_dct_quarter (8x8 -> 2x2) in dct.rs
+    done: true
+  - text: Implement inverse_dct_eighth (8x8 -> 1x1, DC-only) in dct.rs
+    done: true
+  - text: Add unit tests for scaled IDCT vs reference (full IDCT + downsample)
+    done: true
+- phase: Decoder Integration
+  tasks:
+  - text: Add decode_with_scale(data, scale_factor) public API to rasmcore-jpeg
+    done: true
+  - text: Thread scale_factor through MCU decode loop with reduced output stride
+    done: true
+  - text: Handle chroma subsampling interaction (4:2:0/4:2:2/4:4:4 x scale)
+    done: true
+  - text: Test all subsampling + scale factor combinations
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add DecodeParams with optional scale_factor to decoder API
+    done: true
+  - text: Implement smart_resize that auto-selects DCT scale then residual resize
+    done: true
+  - text: 'Benchmark: compare shrink-on-load vs full-decode+resize at 2x/4x/8x'
+    done: true
+- phase: Verification
+  tasks:
+  - text: 'Parity test: scaled decode vs ImageMagick -define jpeg:size=WxH'
+    done: true
+  - text: PSNR validation across test corpus (> 40dB for all scale factors)
+    done: true
 extra: {}
