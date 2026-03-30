@@ -1,0 +1,15 @@
+id: drop-image-png-direct_20260330020801Z
+title: Drop image PNG feature — use png crate directly
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: Coverage audit, parity tests, rewrite encoder/decoder to use png crate directly, drop png from image features.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}

@@ -60,3 +60,8 @@ drop-image-transforms_20260330010101Z:
 drop-image-png-gif_20260330010102Z:
   - drop-image-trivial-codecs_20260330010100Z
   - drop-image-transforms_20260330010101Z
+
+# Remaining image crate codec swaps — all independent
+drop-image-jpeg-decode_20260330020800Z: []
+drop-image-png-direct_20260330020801Z: []
+drop-image-gif-direct_20260330020802Z: []

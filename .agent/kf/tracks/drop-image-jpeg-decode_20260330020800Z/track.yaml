@@ -1,0 +1,16 @@
+id: drop-image-jpeg-decode_20260330020800Z
+title: Drop image JPEG feature — wire rasmcore-jpeg decoder
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: Coverage audit of rasmcore-jpeg decoder vs zune-jpeg, parity tests, wire as default JPEG decoder, drop jpeg from
+    image features.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
