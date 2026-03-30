@@ -8,9 +8,10 @@ spec:
   summary: >
     Replace the remaining image crate usages: WebP decode (use image-webp
     directly), ICO/HDR encode (write native), EXR (use exr crate directly),
-    DDS decode (native). Eliminate image crate dependency entirely.
+    DDS decode (native). Each swap requires parity tests before the image
+    feature is dropped. Eliminate image crate dependency entirely.
   context: |
-    After the first track drops jpeg/png/gif/avif/bmp/qoi/tga/pnm/tiff from
+    After Track 1 drops jpeg/png/gif/avif/bmp/qoi/tga/pnm/tiff from
     image features, only webp/dds/exr/ico/hdr remain. This track eliminates
     those and removes the image crate from Cargo.toml entirely.
   codebase_analysis: |
@@ -30,19 +31,25 @@ spec:
     This track depends on the transform rewrite (Track 2) completing first,
     since transform.rs is the other major DynamicImage user.
   acceptance_criteria:
+    - Parity test for each codec swap BEFORE dropping the image feature
     - image crate completely removed from Cargo.toml
-    - WebP decode uses image-webp crate directly
-    - ICO encode is native (no image crate)
-    - HDR encode is native (no image crate)
-    - EXR encode/decode uses exr crate directly
-    - DDS decode is native
+    - WebP decode uses image-webp crate directly, parity-tested
+    - ICO encode is native, parity-tested vs image crate reference
+    - HDR encode is native, parity-tested vs image crate reference
+    - EXR encode/decode uses exr crate directly, parity-tested
+    - DDS decode is native, parity-tested
     - Custom format detection replaces image::guess_format()
     - All parity tests pass
-    - Significant binary size reduction measurable
+    - Binary size reduction measured and documented (native + WASM)
   out_of_scope: |
     AVIF encode (already dropped in Track 1).
     Writing native WebP decoder (image-webp as standalone dep is fine).
   technical_notes: |
+    PARITY TEST PATTERN (same as Track 1):
+      1. Encode/decode with image crate, save reference output
+      2. Encode/decode with new implementation
+      3. Assert pixel-exact match (lossless) or MAE < threshold
+
     image-webp can be added as a direct dependency. It is the same crate
     image uses internally, just without the DynamicImage wrapper.
 
@@ -50,19 +57,19 @@ spec:
     GIF GIF8, WebP RIFF/WEBP, BMP BM, TIFF 4949/4D4D, QOI qoif, etc.).
     This is ~30 lines of code.
 plan:
-  - phase: "Direct crate replacements"
+  - phase: "Parity tests and direct crate replacements"
     tasks:
-      - text: "Add image-webp as direct dependency, wire WebP decode without image crate"
+      - text: "Add WebP decode parity test (image-webp direct vs image crate), then wire direct"
         done: false
-      - text: "Use exr crate directly for EXR encode/decode"
+      - text: "Add EXR decode/encode parity test (exr crate direct vs image crate), then wire direct"
         done: false
-      - text: "Write native DDS decoder (replace image DDS path)"
+      - text: "Add DDS decode parity test (native vs image crate), then write native decoder"
         done: false
-  - phase: "Native trivial encoders"
+  - phase: "Native trivial encoders with parity"
     tasks:
-      - text: "Write native ICO encoder (~50 lines, BMP-in-container)"
+      - text: "Write native ICO encoder, add parity test vs image crate reference"
         done: false
-      - text: "Write native HDR/Radiance encoder (RGBE format)"
+      - text: "Write native HDR/Radiance encoder, add parity test vs image crate reference"
         done: false
   - phase: "Remove image crate"
     tasks:
@@ -74,10 +81,10 @@ plan:
         done: false
   - phase: "Verification"
     tasks:
-      - text: "All decode/encode parity tests pass"
+      - text: "All decode/encode parity tests pass without image crate"
         done: false
-      - text: "Measure binary size reduction (native + WASM)"
+      - text: "Measure and document binary size reduction (native + WASM)"
         done: false
-      - text: "cargo tree shows image crate fully eliminated"
+      - text: "cargo tree confirms image crate fully eliminated"
         done: false
 extra: {}
