@@ -8951,6 +8951,13 @@ fn fbm_f32(
 ///
 /// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
 /// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
+#[rasmcore_macros::register_generator(
+    name = "perlin_noise",
+    category = "generator",
+    group = "noise_gen",
+    variant = "perlin",
+    reference = "Perlin 1985 gradient noise"
+)]
 pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
@@ -8991,6 +8998,13 @@ pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32
 ///
 /// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
 /// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
+#[rasmcore_macros::register_generator(
+    name = "simplex_noise",
+    category = "generator",
+    group = "noise_gen",
+    variant = "simplex",
+    reference = "Perlin 2001 simplex noise"
+)]
 pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
@@ -9039,6 +9053,13 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
 ///
 /// Angle 0 = left-to-right, 90 = top-to-bottom, etc.
 /// IM equivalent: `magick -size WxH gradient:color1-color2 -rotate angle`
+#[rasmcore_macros::register_generator(
+    name = "gradient_linear",
+    category = "generator",
+    group = "gradient",
+    variant = "linear",
+    reference = "linear interpolation between two endpoint colors"
+)]
 pub fn gradient_linear(
     width: u32,
     height: u32,
@@ -9089,6 +9110,13 @@ pub fn gradient_linear(
 /// Generate a radial gradient image between two colors from center outward.
 ///
 /// IM equivalent: `magick -size WxH radial-gradient:color1-color2`
+#[rasmcore_macros::register_generator(
+    name = "gradient_radial",
+    category = "generator",
+    group = "gradient",
+    variant = "radial",
+    reference = "radial interpolation from center to edges"
+)]
 pub fn gradient_radial(
     width: u32,
     height: u32,
@@ -9147,6 +9175,11 @@ pub fn gradient_radial(
 /// Generate a checkerboard pattern image.
 ///
 /// IM equivalent: `magick -size WxH pattern:checkerboard`
+#[rasmcore_macros::register_generator(
+    name = "checkerboard",
+    category = "generator",
+    reference = "alternating two-color grid pattern"
+)]
 pub fn checkerboard(
     width: u32,
     height: u32,
@@ -9194,6 +9227,11 @@ pub fn checkerboard(
 ///
 /// Produces colorful fractal patterns. Deterministic for a given seed.
 /// IM equivalent: `magick -size WxH plasma:`
+#[rasmcore_macros::register_generator(
+    name = "plasma",
+    category = "generator",
+    reference = "diamond-square fractal plasma pattern"
+)]
 pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
     let w = width.max(1) as usize;
     let h = height.max(1) as usize;

@@ -140,6 +140,136 @@ pub fn register_filter(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+// ─── Generator Registration ────────────────────────────────────────────────
+
+/// Register a generator function (procedural image source — no pixel input).
+///
+/// Generators create images from config parameters (e.g., noise, gradients).
+/// The function signature takes only config params (no pixels/info) and returns
+/// pixel data.
+#[proc_macro_attribute]
+pub fn register_generator(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterFilterArgs);
+    let input_fn = parse_macro_input!(item as ItemFn);
+
+    let fn_name = &input_fn.sig.ident;
+    let gen_name = &args.name;
+    let gen_category = &args.category;
+    let gen_group = &args.group;
+    let gen_variant = &args.variant;
+    let gen_reference = &args.reference;
+    let reg_ident = format_ident!("__RASMCORE_GENERATOR_{}", fn_name.to_string().to_uppercase());
+    let params = &input_fn.sig.inputs;
+    let param_count = params.len();
+
+    let expanded = quote! {
+        #input_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticGeneratorRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticGeneratorRegistration {
+                name: #gen_name,
+                category: #gen_category,
+                group: #gen_group,
+                variant: #gen_variant,
+                reference: #gen_reference,
+                param_count: #param_count,
+                fn_name: stringify!(#fn_name),
+                module_path: module_path!(),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
+
+// ─── Compositor Registration ───────────────────────────────────────────────
+
+/// Register a compositor function (multi-input blending/composition).
+///
+/// Compositors take two or more image inputs and produce a single output.
+/// The function signature includes multiple pixel/info pairs.
+#[proc_macro_attribute]
+pub fn register_compositor(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterFilterArgs);
+    let input_fn = parse_macro_input!(item as ItemFn);
+
+    let fn_name = &input_fn.sig.ident;
+    let comp_name = &args.name;
+    let comp_category = &args.category;
+    let comp_group = &args.group;
+    let comp_variant = &args.variant;
+    let comp_reference = &args.reference;
+    let reg_ident = format_ident!("__RASMCORE_COMPOSITOR_{}", fn_name.to_string().to_uppercase());
+    let params = &input_fn.sig.inputs;
+    let param_count = params.len();
+
+    let expanded = quote! {
+        #input_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticCompositorRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticCompositorRegistration {
+                name: #comp_name,
+                category: #comp_category,
+                group: #comp_group,
+                variant: #comp_variant,
+                reference: #comp_reference,
+                param_count: #param_count,
+                fn_name: stringify!(#fn_name),
+                module_path: module_path!(),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
+
+// ─── Mapper Registration ───────────────────────────────────────────────────
+
+/// Register a mapper function (format-changing operation).
+///
+/// Mappers take a single image input and produce an output with potentially
+/// different pixel format (e.g., RGB8 → Gray8, RGBA8 → RGB8).
+#[proc_macro_attribute]
+pub fn register_mapper(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterFilterArgs);
+    let input_fn = parse_macro_input!(item as ItemFn);
+
+    let fn_name = &input_fn.sig.ident;
+    let map_name = &args.name;
+    let map_category = &args.category;
+    let map_group = &args.group;
+    let map_variant = &args.variant;
+    let map_reference = &args.reference;
+    let reg_ident = format_ident!("__RASMCORE_MAPPER_{}", fn_name.to_string().to_uppercase());
+    let params = &input_fn.sig.inputs;
+    let param_count = params.len().saturating_sub(2); // subtract pixels + info
+
+    let expanded = quote! {
+        #input_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticMapperRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticMapperRegistration {
+                name: #map_name,
+                category: #map_category,
+                group: #map_group,
+                variant: #map_variant,
+                reference: #map_reference,
+                param_count: #param_count,
+                fn_name: stringify!(#fn_name),
+                module_path: module_path!(),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
+
 // ─── Encoder Registration ───────────────────────────────────────────────────
 
 struct RegisterEncoderArgs {

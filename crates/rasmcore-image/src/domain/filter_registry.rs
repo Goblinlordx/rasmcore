@@ -313,6 +313,78 @@ pub fn registered_filters() -> Vec<&'static StaticFilterRegistration> {
         .collect()
 }
 
+// ─── Generator Registration ───────────────────────────────────────────────
+
+/// Static generator registration — procedural image sources (no pixel input).
+#[derive(Debug)]
+pub struct StaticGeneratorRegistration {
+    pub name: &'static str,
+    pub category: &'static str,
+    pub group: &'static str,
+    pub variant: &'static str,
+    pub reference: &'static str,
+    pub param_count: usize,
+    pub fn_name: &'static str,
+    pub module_path: &'static str,
+}
+
+inventory::collect!(&'static StaticGeneratorRegistration);
+
+pub fn registered_generators() -> Vec<&'static StaticGeneratorRegistration> {
+    inventory::iter::<&'static StaticGeneratorRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
+// ─── Compositor Registration ──────────────────────────────────────────────
+
+/// Static compositor registration — multi-input blending/composition.
+#[derive(Debug)]
+pub struct StaticCompositorRegistration {
+    pub name: &'static str,
+    pub category: &'static str,
+    pub group: &'static str,
+    pub variant: &'static str,
+    pub reference: &'static str,
+    pub param_count: usize,
+    pub fn_name: &'static str,
+    pub module_path: &'static str,
+}
+
+inventory::collect!(&'static StaticCompositorRegistration);
+
+pub fn registered_compositors() -> Vec<&'static StaticCompositorRegistration> {
+    inventory::iter::<&'static StaticCompositorRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
+// ─── Mapper Registration ──────────────────────────────────────────────────
+
+/// Static mapper registration — format-changing operations.
+#[derive(Debug)]
+pub struct StaticMapperRegistration {
+    pub name: &'static str,
+    pub category: &'static str,
+    pub group: &'static str,
+    pub variant: &'static str,
+    pub reference: &'static str,
+    pub param_count: usize,
+    pub fn_name: &'static str,
+    pub module_path: &'static str,
+}
+
+inventory::collect!(&'static StaticMapperRegistration);
+
+pub fn registered_mappers() -> Vec<&'static StaticMapperRegistration> {
+    inventory::iter::<&'static StaticMapperRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
 // ─── Filter Registry ──────────────────────────────────────────────────────
 
 /// Registry of all available image filters.

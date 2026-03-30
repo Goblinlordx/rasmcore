@@ -416,12 +416,64 @@ fn main() {
         }));
     }
 
-    let manifest = json!({ "filters": filter_entries });
+    // Parse generators, compositors, mappers for manifest
+    let generators = parse_registered_by_kind(&source, "register_generator");
+    let compositors = parse_registered_by_kind(&source, "register_compositor");
+    let mappers = parse_registered_by_kind(&source, "register_mapper");
+
+    let gen_entries: Vec<serde_json::Value> = generators
+        .iter()
+        .map(|g| {
+            json!({
+                "name": g.name,
+                "category": g.category,
+                "group": g.group,
+                "variant": g.variant,
+                "reference": g.reference,
+                "kind": "generator",
+            })
+        })
+        .collect();
+
+    let comp_entries: Vec<serde_json::Value> = compositors
+        .iter()
+        .map(|c| {
+            json!({
+                "name": c.name,
+                "category": c.category,
+                "group": c.group,
+                "variant": c.variant,
+                "reference": c.reference,
+                "kind": "compositor",
+            })
+        })
+        .collect();
+
+    let map_entries: Vec<serde_json::Value> = mappers
+        .iter()
+        .map(|m| {
+            json!({
+                "name": m.name,
+                "category": m.category,
+                "group": m.group,
+                "variant": m.variant,
+                "reference": m.reference,
+                "kind": "mapper",
+            })
+        })
+        .collect();
+
+    let manifest = json!({
+        "filters": filter_entries,
+        "generators": gen_entries,
+        "compositors": comp_entries,
+        "mappers": map_entries,
+    });
     let manifest_str = serde_json::to_string_pretty(&manifest).unwrap();
     fs::write(out_dir.join("param-manifest.json"), &manifest_str).unwrap();
     eprintln!(
-        "rasmcore build.rs: Generated param-manifest.json ({} filters)",
-        filters.len()
+        "rasmcore build.rs: Generated param-manifest.json ({} filters, {} generators, {} compositors, {} mappers)",
+        filters.len(), generators.len(), compositors.len(), mappers.len()
     );
 }
 
@@ -510,6 +562,52 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
     }
 
     filters
+}
+
+/// Simple registration entry for generators/compositors/mappers (no params needed for manifest).
+struct SimpleReg {
+    name: String,
+    category: String,
+    group: String,
+    variant: String,
+    reference: String,
+}
+
+/// Parse registrations of a specific kind (e.g., "register_generator").
+fn parse_registered_by_kind(source: &str, kind: &str) -> Vec<SimpleReg> {
+    let mut regs = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+        if line.contains(kind) && !line.starts_with("//") {
+            // Collect full attribute text (may span multiple lines)
+            let mut attr_text = line.to_string();
+            let mut k = i + 1;
+            while !attr_text.contains(")]") && k < lines.len() {
+                attr_text.push(' ');
+                attr_text.push_str(lines[k].trim());
+                k += 1;
+            }
+
+            if let Some(name) = extract_string_attr(&attr_text, "name") {
+                let category = extract_string_attr(&attr_text, "category").unwrap_or_default();
+                let group = extract_string_attr(&attr_text, "group").unwrap_or_default();
+                let variant = extract_string_attr(&attr_text, "variant").unwrap_or_default();
+                let reference = extract_string_attr(&attr_text, "reference").unwrap_or_default();
+                regs.push(SimpleReg {
+                    name,
+                    category,
+                    group,
+                    variant,
+                    reference,
+                });
+            }
+        }
+        i += 1;
+    }
+    regs
 }
 
 fn extract_string_attr(line: &str, attr: &str) -> Option<String> {
