@@ -192,4 +192,12 @@ interface filters {
 
     /// Flood fill from seed point (Gray8 only). Returns filled image.
     flood-fill: func(pixels: buffer, info: image-info, seed-x: u32, seed-y: u32, new-val: u8, tolerance: u8, connectivity: u32) -> result<buffer, rasmcore-error>;
+
+    // ─── Frequency Separation ────────────────────────────────────────────
+
+    /// Low-pass (structure) layer — Gaussian blur at given sigma.
+    frequency-low: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+
+    /// High-pass (detail) layer — original minus blur, offset to mid-gray.
+    frequency-high: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
 }

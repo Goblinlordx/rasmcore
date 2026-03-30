@@ -992,6 +992,26 @@ impl filters::Guest for Component {
         )
         .map_err(to_wit_error)
     }
+
+    // ─── Frequency Separation ────────────────────────────────────────────
+
+    fn frequency_low(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::frequency_low(&pixels, &di, sigma).map_err(to_wit_error)
+    }
+
+    fn frequency_high(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::frequency_high(&pixels, &di, sigma).map_err(to_wit_error)
+    }
 }
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {
