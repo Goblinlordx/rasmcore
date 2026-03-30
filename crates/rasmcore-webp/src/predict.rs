@@ -669,6 +669,7 @@ pub fn select_best_16x16(
 }
 
 /// Select best 16x16 mode using RD cost (SSD + lambda * bits).
+#[allow(clippy::too_many_arguments)]
 pub fn select_best_16x16_rd(
     actual: &[u8],
     above: &[u8; 16],
@@ -741,6 +742,7 @@ pub fn select_best_4x4(
 /// 2. For modes with SATD within 2x of best: compute full RD cost
 ///    (DCT → quantize → RDO prune → estimate bits → dequant → IDCT → SSD)
 /// 3. Pick mode with minimum RD cost
+#[allow(clippy::needless_range_loop)]
 pub fn select_best_4x4_rd(
     actual: &[u8],
     above: &[u8; 4],

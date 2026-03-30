@@ -197,10 +197,8 @@ pub fn rdo_prune_block(
         }
 
         let band = BANDS[i];
-        let ctx = if i == 0 {
-            0u8 // DC context
-        } else if i > 0 && quantized[i - 1] == 0 {
-            0 // previous was zero
+        let ctx = if i == 0 || quantized[i - 1] == 0 {
+            0u8 // DC context or previous was zero
         } else {
             let prev_abs = quantized[i.saturating_sub(1)].unsigned_abs();
             if prev_abs <= 1 { 1 } else { 2 }
@@ -487,8 +485,8 @@ pub fn trellis_optimize_block(
     // our candidates() override uses the QuantMatrix directly.
     // We still need valid step arrays for the generic fallback.
     let mut steps = [0u16; 16];
-    for i in 0..16 {
-        steps[i] = matrix.q[i] as u16;
+    for (i, step) in steps.iter_mut().enumerate() {
+        *step = matrix.q[i];
     }
 
     rasmcore_trellis::trellis_optimize(original_coeffs, &steps, &steps, 16, &ctx, &config, output);
@@ -627,11 +625,11 @@ pub fn compute_segment_lambdas(qp: u8) -> VP8SegmentLambdas {
     let y1_q1 = AC_TABLE[q] as i32; // Y1 AC
 
     // Y2 quantizer steps
-    let y2_q0 = (DC_TABLE[q] as i32 * 2).min(132); // Y2 DC
+    let _y2_q0 = (DC_TABLE[q] as i32 * 2).min(132); // Y2 DC
     let y2_q1 = ((AC_TABLE[q] as i32 * 155) / 100).max(8); // Y2 AC
 
     // UV quantizer steps (no delta_q for our single-segment encoder)
-    let uv_q0 = DC_TABLE[q].min(132) as i32; // UV DC
+    let _uv_q0 = DC_TABLE[q].min(132) as i32; // UV DC
     let uv_q1 = AC_TABLE[q] as i32; // UV AC
 
     // ExpandMatrix returns the "average" quantizer step — libwebp uses
@@ -645,6 +643,7 @@ pub fn compute_segment_lambdas(qp: u8) -> VP8SegmentLambdas {
     let mut lambda_i4 = (3 * q_i4 * q_i4) >> 7;
     let mut lambda_i16 = 3 * q_i16 * q_i16;
     let mut lambda_uv = (3 * q_uv * q_uv) >> 6;
+    #[allow(clippy::identity_op)]
     let mut lambda_mode = (1 * q_i4 * q_i4) >> 7;
     let mut lambda_trellis_i4 = (7 * q_i4 * q_i4) >> 3;
     let mut lambda_trellis_i16 = (q_i16 * q_i16) >> 2;

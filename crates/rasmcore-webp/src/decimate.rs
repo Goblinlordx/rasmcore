@@ -297,6 +297,7 @@ fn is_flat_source_16(src: &[u8; 256]) -> bool {
 
 /// Compute rate for 16x16 luma: Y2 DC block + 16 AC sub-blocks.
 /// Ported from libwebp cost_enc.c VP8GetCostLuma16().
+#[allow(clippy::needless_range_loop)]
 pub fn get_cost_luma16(
     rd: &VP8ModeScore,
     cost_table: &LevelCostTable,
@@ -368,6 +369,7 @@ pub fn get_cost_uv(
 
 /// Evaluate all 4 I16x16 prediction modes, pick the one with lowest RD score.
 /// Ported from libwebp quant_enc.c PickBestIntra16 (line 982).
+#[allow(clippy::too_many_arguments, clippy::field_reassign_with_default)]
 pub fn pick_best_intra16(
     src_16x16: &[u8; 256],
     above: &[u8; 16],
@@ -466,6 +468,7 @@ pub fn pick_best_intra16(
 /// Returns true if I4 beats the current I16 score in `rd`.
 ///
 /// Ported from libwebp quant_enc.c PickBestIntra4 (line 1052).
+#[allow(clippy::too_many_arguments, clippy::field_reassign_with_default, clippy::identity_op)]
 pub fn pick_best_intra4(
     src_16x16: &[u8; 256],
     above_row: &[u8; 20], // 16 above pixels + 4 extra for diagonal modes
@@ -509,6 +512,7 @@ pub fn pick_best_intra4(
         // Build above/left context for prediction from reconstructed neighbors
         let mut above_4 = [127u8; 8]; // 4 above + 4 extra
         let mut left_4 = [129u8; 4];
+        #[allow(unused_assignments)]
         let mut tl = 127u8;
 
         // Above: from row above this sub-block
@@ -687,6 +691,7 @@ pub fn pick_best_intra4(
 
 /// Evaluate all 4 chroma prediction modes, pick lowest RD score.
 /// Ported from libwebp quant_enc.c PickBestUV (line 1148).
+#[allow(clippy::too_many_arguments, clippy::field_reassign_with_default)]
 pub fn pick_best_uv(
     src_u: &[u8; 64],
     src_v: &[u8; 64],
@@ -820,6 +825,7 @@ pub struct DecimateResult {
 ///
 /// Ported from libwebp quant_enc.c VP8Decimate (line 1343).
 /// Evaluates I16, I4, and UV modes, picks the best combination.
+#[allow(clippy::too_many_arguments)]
 pub fn vp8_decimate(
     src_y: &[u8; 256],
     src_u: &[u8; 64],

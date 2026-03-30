@@ -10,6 +10,7 @@
 use crate::token;
 
 /// Reshape the flat DEFAULT_COEFF_PROBS[1056] into [4][8][3][11].
+#[allow(clippy::needless_range_loop)]
 pub fn reshape_probs() -> [[[[u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES] {
     let flat = token::get_default_coeff_probs_flat();
     let mut out = [[[[0u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES];
@@ -165,6 +166,7 @@ pub struct LevelCostTable {
 impl LevelCostTable {
     /// Compute level cost tables from probability tables.
     /// Ported from libwebp cost_enc.c VP8CalculateLevelCosts().
+    #[allow(clippy::needless_range_loop)]
     pub fn compute(coeffs: &[[[[u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES]) -> Self {
         let mut table = Self {
             level_cost: [[[[0u16; MAX_VARIABLE_LEVEL + 1]; NUM_CTX]; NUM_BANDS]; NUM_TYPES],
@@ -199,7 +201,7 @@ impl LevelCostTable {
 
             // Build remap: for each position, store the band index
             for n in 0..16 {
-                let band = VP8_ENC_BANDS[n] as u8;
+                let band = VP8_ENC_BANDS[n];
                 for ctx in 0..NUM_CTX {
                     table.remap[ctype][n][ctx] = band;
                 }
@@ -225,6 +227,7 @@ impl LevelCostTable {
 /// Ported from libwebp cost_enc.c VP8GetResidualCost().
 /// Walks the quantized coefficients, summing costs from the precomputed
 /// level cost table.
+#[allow(clippy::needless_range_loop)]
 pub fn get_residual_cost(
     coeffs: &[i16; 16],
     first: usize,

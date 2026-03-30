@@ -9,7 +9,7 @@
 //! accuracy and boolean coder compression efficiency.
 
 use crate::cost_engine::{
-    self, LevelCostTable, NUM_BANDS, NUM_CTX, NUM_PROBAS, NUM_TYPES, VP8_ENC_BANDS,
+    self, NUM_BANDS, NUM_CTX, NUM_PROBAS, NUM_TYPES, VP8_ENC_BANDS,
 };
 use crate::rdo;
 use crate::tables::ZIGZAG;
@@ -29,6 +29,12 @@ pub struct VP8Proba {
 
     /// Whether any probability was changed from defaults.
     pub dirty: bool,
+}
+
+impl Default for VP8Proba {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VP8Proba {
@@ -84,6 +90,7 @@ impl VP8Proba {
 
     /// Record residuals for an entire macroblock.
     /// Ported from libwebp frame_enc.c RecordResiduals.
+    #[allow(clippy::needless_range_loop)]
     pub fn record_residuals(
         &mut self,
         is_i16: bool,
@@ -313,6 +320,7 @@ fn branch_cost(nb: u32, total: u32, proba: u8) -> u64 {
 /// Get the COEFF_UPDATE_PROBS table reshaped to [4][8][3][11].
 /// These are the probabilities used to signal whether each coefficient
 /// probability is updated in the bitstream header.
+#[allow(clippy::needless_range_loop)]
 fn coeff_update_probs() -> [[[[u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES] {
     let flat = &token::COEFF_UPDATE_PROBS;
     let mut out = [[[[0u8; NUM_PROBAS]; NUM_CTX]; NUM_BANDS]; NUM_TYPES];

@@ -32,6 +32,7 @@ struct MBCoeffs {
 /// Encode a VP8 key frame from YUV420 data.
 ///
 /// Returns the raw VP8 frame data (without RIFF container).
+#[allow(clippy::needless_range_loop)]
 pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let width = yuv.width;
     let height = yuv.height;
@@ -81,6 +82,7 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
 
     // B_PRED mode context tracking
     let mut top_bmode_enc: Vec<[u8; 4]> = vec![[0u8; 4]; mb_w as usize];
+    #[allow(unused_assignments)]
     let mut left_bmode_enc: [u8; 4] = [0u8; 4];
 
     // ─── Pass 1: Mode decisions + coefficient quantization + stats ──────
@@ -88,6 +90,7 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     // cost estimation. Without this, every MB sees zero context, producing
     // wrong trellis/cost decisions and ~18 dB quality loss.
     let mut p1_top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
+    #[allow(unused_assignments)]
     let mut p1_left_ctx: [u8; 9] = [0u8; 9];
 
     for mb_row in 0..mb_h as usize {
@@ -182,9 +185,9 @@ pub fn encode_frame(yuv: &YuvImage, params: &EncodeParams) -> Vec<u8> {
     let mut top_ctx: Vec<[u8; 9]> = vec![[0u8; 9]; mb_w as usize];
     let mut left_ctx: [u8; 9] = [0u8; 9];
 
-    for (idx, (mb, coeffs)) in mb_infos.iter().zip(mb_coeffs.iter()).enumerate() {
+    for (mb, coeffs) in mb_infos.iter().zip(mb_coeffs.iter()) {
         let mb_col = mb.mb_x as usize;
-        let mb_row = mb.mb_y as usize;
+        let _mb_row = mb.mb_y as usize;
         if mb_col == 0 {
             left_ctx = [0u8; 9];
         }
@@ -268,6 +271,7 @@ fn assemble_frame(
 }
 
 /// Encode the first partition: segment header, loop filter, quant params, MB modes.
+#[allow(clippy::needless_range_loop)]
 fn encode_first_partition(
     mb_infos: &[MacroblockInfo],
     _mb_w: u32,
@@ -587,6 +591,7 @@ fn leaf_in_subtree(tree: &[i8; 18], root: usize, target: i8) -> bool {
 /// Each mode is encoded using context from the top and left neighbor modes.
 /// For the first row, top context comes from the bottom row of the MB above.
 /// For the first column, left context comes from the right column of the MB to the left.
+#[allow(clippy::needless_range_loop)]
 fn encode_bpred_modes(
     bw: &mut BoolWriter,
     b_modes: &[u8; 16],

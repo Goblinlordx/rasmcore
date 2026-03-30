@@ -12,7 +12,7 @@
 use crate::cost_engine::{LevelCostTable, MAX_VARIABLE_LEVEL, NUM_CTX, VP8_ENC_BANDS};
 use crate::dct;
 use crate::quant::{self, QuantMatrix};
-use crate::rdo::{self, MAX_COST, RD_DISTO_MULT, ScoreT};
+use crate::rdo::{self, MAX_COST, ScoreT};
 
 // ─── Trellis Constants (from quant_enc.c) ─────────────────────────────────
 
@@ -72,6 +72,7 @@ impl Default for ScoreState {
 /// `cost_table`: precomputed level cost table from cost_engine
 ///
 /// Returns true if any nonzero coefficient was produced.
+#[allow(clippy::needless_range_loop)]
 pub fn trellis_quantize_block(
     coeffs_in: &mut [i16; 16],
     coeffs_out: &mut [i16; 16],
@@ -89,6 +90,7 @@ pub fn trellis_quantize_block(
     let mut ss_prev_idx: usize = 1;
 
     let mut best_path = [-1i32; 3]; // [best_eob_pos, best_node, best_prev]
+    #[allow(unused_assignments)]
     let mut best_score: ScoreT = MAX_COST;
 
     // Compute last interesting coefficient position
@@ -123,7 +125,7 @@ pub fn trellis_quantize_block(
     };
     for m in 0..NUM_NODES {
         ss[ss_cur_idx][m].score = rdo::rd_score_trellis(lambda, init_rate, 0);
-        let band = VP8_ENC_BANDS[first] as u8;
+        let band = VP8_ENC_BANDS[first];
         ss[ss_cur_idx][m].cost_band = band;
         ss[ss_cur_idx][m].cost_ctx = ctx0 as u8;
     }
@@ -143,7 +145,7 @@ pub fn trellis_quantize_block(
         };
 
         // Round-to-nearest quantization
-        let level0 = (((coeff0 as u32).wrapping_add(bias)) as u64 * iq as u64 >> 16) as i32;
+        let level0 = ((((coeff0 as u32).wrapping_add(bias)) as u64 * iq as u64) >> 16) as i32;
         let level0 = level0.min(2047); // MAX_LEVEL
 
         // Swap score states
@@ -152,7 +154,7 @@ pub fn trellis_quantize_block(
         // Test candidate levels
         for m in 0..NUM_NODES {
             let level = level0 + (m as i32) - MIN_DELTA;
-            if level < 0 || level > 2047 {
+            if !(0..=2047).contains(&level) {
                 ss[ss_cur_idx][m].score = MAX_COST;
                 continue;
             }
@@ -163,7 +165,7 @@ pub fn trellis_quantize_block(
                 _ => 2,
             };
             let next_band = if n + 1 < 16 {
-                VP8_ENC_BANDS[n + 1] as u8
+                VP8_ENC_BANDS[n + 1]
             } else {
                 0
             };
@@ -299,6 +301,7 @@ pub struct ReconI16Result {
 /// `cost_table`: precomputed level cost table
 /// `top_nz`: top nonzero context (4 entries for Y columns)
 /// `left_nz`: left nonzero context (4 entries for Y rows)
+#[allow(clippy::needless_range_loop)]
 pub fn reconstruct_intra16(
     src_16x16: &[u8; 256],
     pred_16x16: &[u8; 256],
@@ -481,6 +484,7 @@ pub struct ReconUVResult {
 /// Reconstruct chroma (U+V) for a given UV prediction mode.
 ///
 /// Ported from libwebp quant_enc.c ReconstructUV (line 909).
+#[allow(clippy::too_many_arguments)]
 pub fn reconstruct_uv(
     src_u: &[u8; 64],
     src_v: &[u8; 64],
