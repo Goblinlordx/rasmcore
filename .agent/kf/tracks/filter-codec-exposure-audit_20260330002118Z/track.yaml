@@ -1,85 +1,105 @@
 id: filter-codec-exposure-audit_20260330002118Z
-title: "Filter & Codec Exposure Audit — Register All Unregistered Filters"
+title: Filter & Codec Exposure Audit — Register All Unregistered Filters
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Ensure every implemented filter has a register_filter annotation and
-    ConfigParams struct so the build script auto-generates WIT, adapter, and
-    param-manifest.json.
-  context: |
-    The project is designed so that adding #[register_filter] + ConfigParams
+  summary: 'Ensure every implemented filter has a register_filter annotation and ConfigParams struct so the build script auto-generates
+    WIT, adapter, and param-manifest.json.
+
+    '
+  context: 'The project is designed so that adding #[register_filter] + ConfigParams
+
     struct is the ONLY manual step. The build script then auto-generates:
+
     - WIT declarations in filters.wit
+
     - Adapter glue in adapter/mod.rs
+
     - param-manifest.json for the demo UI
+
     But many filters in filters.rs lack the register_filter annotation entirely,
+
     and 4 registered filters have ConfigParams mismatches that cause the build
+
     script to skip them.
-  codebase_analysis: |
-    Currently registered (20 filters). Missing from manifest due to ConfigParams
+
+    '
+  codebase_analysis: 'Currently registered (20 filters). Missing from manifest due to ConfigParams
+
     issues (4): bokeh_blur, vignette, vignette_powerlaw, displacement_map.
 
+
     Unregistered public filters (30+): scharr, laplacian, distance_transform,
+
     clahe, bilateral, guided_filter, nlm_denoise, dehaze, clarity,
+
     pyramid_detail_remap, gaussian_blur_cv, retinex_ssr, retinex_msr,
+
     retinex_msrcr, connected_components, flood_fill, pyr_down, pyr_up,
+
     erode, dilate, morph_open, morph_close, morph_gradient, morph_tophat,
+
     morph_blackhat, otsu_threshold, triangle_threshold, threshold_binary,
+
     adaptive_threshold, mertens_fusion, debevec_response_curve,
+
     debevec_hdr_merge, hough_lines_p.
 
+
     For each, the fix is: add #[register_filter] annotation with name and
+
     category, create a matching ConfigParams struct with #[derive(ConfigParams)]
+
     and annotated fields. Then rebuild — WIT, adapter, and manifest auto-generate.
 
-    Filters with complex signatures (tile offsets, array inputs) need either
-    a simplified wrapper for user-facing use or should be classified as
-    pipeline-internal (no registration).
-  acceptance_criteria:
-    - Every user-facing filter function has a register_filter annotation
-    - Every registered filter has a matching ConfigParams struct
-    - Build script generates complete param-manifest.json with all filters
-    - WIT + adapter auto-generated correctly (no manual wiring)
-    - Filters with pipeline-internal signatures are documented as such
-    - ConfigParams mismatches for vignette, vignette_powerlaw, bokeh_blur fixed
-  out_of_scope: |
-    New filter implementations, demo UI changes (separate track), manual WIT/adapter editing
-  technical_notes: |
-    The only manual work per filter is:
-    1. Add #[rasmcore_macros::register_filter(name = "X", category = "Y")]
-    2. Create #[derive(rasmcore_macros::ConfigParams)] struct XParams with
-       #[param(min, max, step, default)] annotations on each field
-    3. For complex signatures: create a user-facing wrapper fn that takes
-       simple params and internally computes tile offsets etc.
 
-    Build script (scripts/generate-filter-wit.py or build.rs) handles the rest.
-    Classify each unregistered filter as user-facing or pipeline-internal first.
+    Filters with complex signatures (tile offsets, array inputs) need either
+
+    a simplified wrapper for user-facing use or should be classified as
+
+    pipeline-internal (no registration).
+
+    '
+  acceptance_criteria:
+  - Every user-facing filter function has a register_filter annotation
+  - Every registered filter has a matching ConfigParams struct
+  - Build script generates complete param-manifest.json with all filters
+  - WIT + adapter auto-generated correctly (no manual wiring)
+  - Filters with pipeline-internal signatures are documented as such
+  - ConfigParams mismatches for vignette, vignette_powerlaw, bokeh_blur fixed
+  out_of_scope: 'New filter implementations, demo UI changes (separate track), manual WIT/adapter editing
+
+    '
+  technical_notes: "The only manual work per filter is:\n1. Add #[rasmcore_macros::register_filter(name = \"X\", category\
+    \ = \"Y\")]\n2. Create #[derive(rasmcore_macros::ConfigParams)] struct XParams with\n   #[param(min, max, step, default)]\
+    \ annotations on each field\n3. For complex signatures: create a user-facing wrapper fn that takes\n   simple params and\
+    \ internally computes tile offsets etc.\n\nBuild script (scripts/generate-filter-wit.py or build.rs) handles the rest.\n\
+    Classify each unregistered filter as user-facing or pipeline-internal first.\n"
 plan:
-  - title: "Audit and classify"
-    tasks:
-      - title: Audit all pub fn in filters.rs — produce registered vs unregistered list
-        done: false
-      - title: Classify each unregistered filter as user-facing or pipeline-internal
-        done: false
-  - title: "Register and fix ConfigParams"
-    tasks:
-      - title: Fix ConfigParams mismatches for vignette, vignette_powerlaw, bokeh_blur
-        done: false
-      - title: Add register_filter + ConfigParams for all user-facing unregistered filters
-        done: false
-      - title: Add simplified wrapper functions for filters with complex internal signatures
-        done: false
-  - title: "Build and verify"
-    tasks:
-      - title: Run build script to regenerate WIT + adapter + manifest
-        done: false
-      - title: Verify param-manifest.json includes all registered filters
-        done: false
-      - title: Run cargo test and validate.sh
-        done: false
-      - title: Verify demo filter dropdown shows all registered filters
-        done: false
+- title: Audit and classify
+  tasks:
+  - title: Audit all pub fn in filters.rs — produce registered vs unregistered list
+    done: true
+  - title: Classify each unregistered filter as user-facing or pipeline-internal
+    done: true
+- title: Register and fix ConfigParams
+  tasks:
+  - title: Fix ConfigParams mismatches for vignette, vignette_powerlaw, bokeh_blur
+    done: true
+  - title: Add register_filter + ConfigParams for all user-facing unregistered filters
+    done: true
+  - title: Add simplified wrapper functions for filters with complex internal signatures
+    done: true
+- title: Build and verify
+  tasks:
+  - title: Run build script to regenerate WIT + adapter + manifest
+    done: true
+  - title: Verify param-manifest.json includes all registered filters
+    done: true
+  - title: Run cargo test and validate.sh
+    done: true
+  - title: Verify demo filter dropdown shows all registered filters
+    done: true
 extra: {}
