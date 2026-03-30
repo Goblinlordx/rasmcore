@@ -307,6 +307,8 @@ fn main() {
     let mut pipe_adapter = String::new();
     pipe_adapter.push_str("// Auto-generated pipeline filter adapter methods.\n");
     pipe_adapter.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
+    pipe_adapter.push_str("macro_rules! generated_pipeline_filter_methods {\n");
+    pipe_adapter.push_str("    () => {\n");
 
     for f in &filters {
         let trait_method = &f.name;
@@ -348,6 +350,9 @@ fn main() {
         pipe_adapter.push_str("        Ok(self.graph.borrow_mut().add_node(Box::new(node)))\n");
         pipe_adapter.push_str("    }\n\n");
     }
+
+    pipe_adapter.push_str("    };\n"); // close macro arm
+    pipe_adapter.push_str("}\n"); // close macro_rules!
 
     fs::write(out_dir.join("generated_pipeline_adapter.rs"), &pipe_adapter).unwrap();
 

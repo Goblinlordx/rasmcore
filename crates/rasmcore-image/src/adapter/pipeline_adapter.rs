@@ -14,6 +14,9 @@ use crate::domain::pipeline::nodes::{color, composite, filters, frame_source, si
 
 use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
 
+// Import the generated macro that provides all pipeline filter methods
+include!(concat!(env!("OUT_DIR"), "/generated_pipeline_adapter.rs"));
+
 fn to_domain_png_filter_pipeline(
     f: Option<pipeline::PngFilterType>,
 ) -> crate::domain::encoder::png::PngFilterType {
@@ -389,9 +392,8 @@ impl GuestImagePipeline for PipelineResource {
         Ok(self.graph.borrow_mut().add_node(Box::new(node)))
     }
 
-
-        // Auto-generated pipeline filter methods (all registered filters)
-        include!(concat!(env!("OUT_DIR"), "/generated_pipeline_adapter.rs"));
+    // Auto-generated pipeline filter methods (all registered filters)
+    generated_pipeline_filter_methods!();
 
 
     fn composite(
