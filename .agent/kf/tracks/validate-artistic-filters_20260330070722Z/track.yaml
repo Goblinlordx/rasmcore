@@ -1,0 +1,102 @@
+id: validate-artistic-filters_20260330070722Z
+title: "Artistic Filter Reference Parity Tests & Benchmarks"
+type: chore
+status: pending
+created: 2026-03-30
+updated: 2026-03-30
+spec:
+  summary: >
+    Add ImageMagick reference parity tests for solarize, emboss, oil_paint, and charcoal
+    to reference_audit.rs, plus benchmark entries in bench.rs. Align algorithms with
+    reference where divergence is unnecessary.
+  context: |
+    The 4 artistic filters (solarize, emboss, oil_paint, charcoal) shipped in
+    p3-artistic-filters without reference validation — explicitly marked out of scope.
+    All other filters in the codebase have IM parity tests in reference_audit.rs.
+    This track closes that gap using the existing check_parity_rgb framework.
+  codebase_analysis: |
+    - reference_audit.rs has check_parity_rgb() helper that handles IM invocation,
+      MAE computation, and graceful skip. Adding filters is ~10-15 lines each.
+    - Solarize and emboss should achieve EXACT parity (<0.01 MAE) since the algorithms
+      are identical to IM when using the right IM commands.
+    - Oil paint and charcoal use different algorithms from IM, so ALGORITHM tier
+      thresholds (5.0-15.0) may apply — but where divergence is unnecessary (e.g.
+      bin count, intensity formula), align our implementation with the reference.
+    - bench.rs already benchmarks blur/sharpen/grayscale — adding 4 filters follows
+      the same bench() wrapper pattern.
+    - Solarize is a LUT point-op at point_ops.rs:381; emboss is a 3x3 convolve at
+      filters.rs:10225; oil_paint is a histogram mode filter at filters.rs:10248;
+      charcoal composes sobel+blur+invert at filters.rs:10345.
+    - Oil paint uses 20 intensity bins and BT.601 luma; IM likely uses 256 bins.
+      Aligning bin count and intensity formula could dramatically reduce MAE.
+    - Charcoal uses Sobel edge detection; IM uses its own edge detect. Aligning
+      the edge detector or parameters could improve parity.
+  acceptance_criteria:
+    - Solarize parity test in reference_audit.rs with MAE < 0.01
+    - Emboss parity test using explicit kernel morphology with MAE < 0.01
+    - Oil paint parity test — align algorithm where divergence is unnecessary, document final MAE threshold
+    - Charcoal parity test — align algorithm where divergence is unnecessary, document final MAE threshold
+    - Where algorithm changes are made, document what changed and why in commit message
+    - All 4 filters benchmarked in bench.rs at 256x256
+    - All tests skip gracefully when ImageMagick is unavailable
+    - cargo test passes (existing + new tests)
+  out_of_scope: |
+    Adding new artistic filters beyond the existing 4.
+    SIMD optimization for oil_paint (separate concern).
+    Python/OpenCV reference tools (IM-only, matching existing pattern).
+  technical_notes: |
+    Solarize: IM threshold is percentage — -solarize 50% equals byte threshold 128.
+    Emboss: Must use -morphology Convolve with our exact 3x3 kernel [-2,-1,0,-1,1,1,0,1,2],
+    not IM's -emboss which uses a different kernel.
+    Oil paint: IM uses -paint {radius}; our impl uses 20 intensity bins vs IM's 256.
+    Investigate aligning bin count, intensity formula, and neighborhood shape to reduce MAE.
+    If alignment gets us below 5.0 MAE, use ALGORITHM tier; if below 0.01, use EXACT.
+    Charcoal: IM uses -charcoal {radius}; both are edge+blur+negate but edge detector
+    differs. Investigate whether matching IM's edge detection approach brings us closer.
+    If a fundamental algorithm difference remains, document why and set appropriate threshold.
+plan:
+  - phase: "Solarize & Emboss (EXACT tier)"
+    tasks:
+      - text: "Add solarize parity test via check_parity_rgb with -solarize 50%, threshold 128, assert MAE < 0.01"
+        done: false
+      - text: "Add emboss parity test via check_parity_rgb with -morphology Convolve exact kernel, assert MAE < 0.01"
+        done: false
+      - text: "Run tests, verify EXACT parity or adjust threshold with documented justification"
+        done: false
+  - phase: "Oil Paint — Parity & Alignment"
+    tasks:
+      - text: "Add oil_paint parity test via check_parity_rgb with -paint 3, measure baseline MAE before any changes"
+        done: false
+      - text: "Investigate IM oil paint algorithm (bin count, intensity formula, neighborhood shape) and identify alignment opportunities"
+        done: false
+      - text: "Align oil_paint implementation where divergence is unnecessary (bin count, intensity calc, etc.)"
+        done: false
+      - text: "Re-measure MAE after alignment, set final threshold with documented justification"
+        done: false
+  - phase: "Charcoal — Parity & Alignment"
+    tasks:
+      - text: "Add charcoal parity test via check_parity_rgb with -charcoal 1, measure baseline MAE before any changes"
+        done: false
+      - text: "Investigate IM charcoal algorithm (edge detector, blur params, composition order) and identify alignment opportunities"
+        done: false
+      - text: "Align charcoal implementation where divergence is unnecessary"
+        done: false
+      - text: "Re-measure MAE after alignment, set final threshold with documented justification"
+        done: false
+  - phase: "Benchmarks"
+    tasks:
+      - text: "Add solarize benchmark to bench.rs (256x256, threshold=128)"
+        done: false
+      - text: "Add emboss benchmark to bench.rs (256x256)"
+        done: false
+      - text: "Add oil_paint benchmark to bench.rs (256x256, radius=3)"
+        done: false
+      - text: "Add charcoal benchmark to bench.rs (256x256, radius=1.0, sigma=0.5)"
+        done: false
+      - text: "Run benchmarks, record baseline ns/pixel in commit message"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Full cargo test — all existing + new tests pass"
+        done: false
+extra: {}
