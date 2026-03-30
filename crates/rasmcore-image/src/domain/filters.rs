@@ -567,18 +567,8 @@ pub struct DrawLineParams {
     /// End Y coordinate
     #[param(min = 0.0, max = 65535.0, step = 1.0, default = 100.0)]
     pub y2: f32,
-    /// Color red component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_r: u32,
-    /// Color green component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_g: u32,
-    /// Color blue component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_b: u32,
-    /// Color alpha component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_a: u32,
+    /// Line color
+    pub color: super::param_types::ColorRgba,
     /// Line width in pixels
     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
     pub width: f32,
@@ -599,18 +589,8 @@ pub struct DrawRectParams {
     /// Rectangle height
     #[param(min = 1.0, max = 65535.0, step = 1.0, default = 100.0)]
     pub rect_height: f32,
-    /// Color red component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_r: u32,
-    /// Color green component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_g: u32,
-    /// Color blue component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_b: u32,
-    /// Color alpha component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_a: u32,
+    /// Shape color
+    pub color: super::param_types::ColorRgba,
     /// Stroke width in pixels (outline mode)
     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
     pub stroke_width: f32,
@@ -631,18 +611,8 @@ pub struct DrawCircleParams {
     /// Circle radius
     #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0)]
     pub radius: f32,
-    /// Color red component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_r: u32,
-    /// Color green component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_g: u32,
-    /// Color blue component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_b: u32,
-    /// Color alpha component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_a: u32,
+    /// Shape color
+    pub color: super::param_types::ColorRgba,
     /// Stroke width in pixels (outline mode)
     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
     pub stroke_width: f32,
@@ -663,18 +633,8 @@ pub struct DrawTextParams {
     /// Scale multiplier (1 = 8x16 native, 2 = 16x32, etc.)
     #[param(min = 1, max = 16, step = 1, default = 1)]
     pub scale: u32,
-    /// Color red component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_r: u32,
-    /// Color green component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_g: u32,
-    /// Color blue component
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub color_b: u32,
-    /// Color alpha component
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub color_a: u32,
+    /// Text color
+    pub color: super::param_types::ColorRgba,
 }
 
 /// Parameters for white balance temperature adjustment.
@@ -1241,8 +1201,7 @@ pub fn sepia(pixels: &[u8], info: &ImageInfo, intensity: f32) -> Result<Vec<u8>,
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct ColorizeParams {
     /// Target color to blend toward
-    #[param(hint = "rc.color_rgb")]
-    pub target: [u8; 3],
+    pub target: super::param_types::ColorRgb,
     /// Blend amount (0=none, 1=full tint)
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
     pub amount: f32,
@@ -9739,31 +9698,31 @@ fn solve_least_squares(a: &[f64], b: &[f64], m: usize, n: usize) -> Vec<f64> {
 /// ASC CDL color grading (slope/offset/power per RGB channel)
 pub struct AscCdlParams {
     /// Red slope
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub slope_r: f32,
     /// Green slope
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub slope_g: f32,
     /// Blue slope
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub slope_b: f32,
     /// Red offset
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub offset_r: f32,
     /// Green offset
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub offset_g: f32,
     /// Blue offset
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub offset_b: f32,
     /// Red power
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub power_r: f32,
     /// Green power
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub power_g: f32,
     /// Blue power
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub power_b: f32,
 }
 
@@ -9795,31 +9754,31 @@ pub fn asc_cdl_registered(
 /// Lift/Gamma/Gain 3-way color corrector
 pub struct LiftGammaGainParams {
     /// Red lift
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub lift_r: f32,
     /// Green lift
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub lift_g: f32,
     /// Blue lift
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub lift_b: f32,
     /// Red gamma
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub gamma_r: f32,
     /// Green gamma
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub gamma_g: f32,
     /// Blue gamma
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub gamma_b: f32,
     /// Red gain
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub gain_r: f32,
     /// Green gain
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub gain_g: f32,
     /// Blue gain
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0)]
+    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
     pub gain_b: f32,
 }
 
@@ -9850,10 +9809,10 @@ pub fn lift_gamma_gain_registered(
 /// Split toning — tint shadows and highlights with different hues
 pub struct SplitToningParams {
     /// Highlight hue (degrees)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 40.0)]
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 40.0, hint = "rc.angle_deg")]
     pub highlight_hue: f32,
     /// Shadow hue (degrees)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 220.0)]
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 220.0, hint = "rc.angle_deg")]
     pub shadow_hue: f32,
     /// Balance (-1 = all shadow, +1 = all highlight)
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
@@ -10210,7 +10169,7 @@ pub fn seam_carve_height_registered(
 /// Selective color — adjust pixels within a specific hue range
 pub struct SelectiveColorParams {
     /// Target center hue in degrees (0-360)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0)]
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
     pub target_hue: f32,
     /// Hue range width in degrees
     #[param(min = 1.0, max = 180.0, step = 1.0, default = 30.0)]

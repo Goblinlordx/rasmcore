@@ -12,15 +12,23 @@ use std::path::{Path, PathBuf};
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let filters_path = Path::new(&manifest_dir).join("src/domain/filters.rs");
+    let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
 
-    // Tell cargo to rerun if filters.rs changes
+    // Tell cargo to rerun if filters.rs or param_types.rs changes
     println!("cargo:rerun-if-changed=src/domain/filters.rs");
+    println!("cargo:rerun-if-changed=src/domain/param_types.rs");
 
     if !filters_path.exists() {
         return;
     }
 
-    let source = fs::read_to_string(&filters_path).unwrap();
+    // Combine sources: param_types first (defines reusable types), then filters
+    let mut source = String::new();
+    if param_types_path.exists() {
+        source.push_str(&fs::read_to_string(&param_types_path).unwrap());
+        source.push('\n');
+    }
+    source.push_str(&fs::read_to_string(&filters_path).unwrap());
     let filters = parse_registered_filters(&source);
 
     if filters.is_empty() {
@@ -481,7 +489,16 @@ fn resolve_nested_fields(
 ) -> Vec<ParamField> {
     let mut result = Vec::new();
     for field in fields {
-        if let Some(nested) = all_structs.get(&field.param_type) {
+        // Look up by full type path or just the last segment (e.g., super::param_types::ColorRgba → ColorRgba)
+        let type_name = field
+            .param_type
+            .rsplit("::")
+            .next()
+            .unwrap_or(&field.param_type);
+        if let Some(nested) = all_structs
+            .get(&field.param_type)
+            .or_else(|| all_structs.get(type_name))
+        {
             // Nested ConfigParams struct — inline fields with prefix
             let hint = if field.hint.is_empty() {
                 &nested.config_hint
