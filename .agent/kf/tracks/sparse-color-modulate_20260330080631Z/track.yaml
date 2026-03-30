@@ -5,97 +5,110 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add IM -sparse-color Shepard (color interpolation from control points) and
+  summary: 'Add IM -sparse-color Shepard (color interpolation from control points) and
+
     -modulate (combined brightness/saturation/hue in one HSB operation). Workflow-
+
     completing color utilities validated against ImageMagick references.
-  context: |
-    Sparse color interpolation (Shepard's method) lets users place color control
+
+    '
+  context: 'Sparse color interpolation (Shepard''s method) lets users place color control
+
     points and interpolate smoothly between them — used for localized color
-    correction, gradient generation, and artistic effects. Modulate is IM's
+
+    correction, gradient generation, and artistic effects. Modulate is IM''s
+
     single-operation combined brightness/saturation/hue adjustment in HSB space,
+
     commonly used in batch processing scripts. Both are frequently requested
+
     operations that complement the existing color filter set.
-  codebase_analysis: |
-    EXISTING COLOR OPS:
+
+    '
+  codebase_analysis: 'EXISTING COLOR OPS:
+
     - brightness: linear offset (point op)
+
     - saturate: HSL saturation multiplier (ColorOp)
+
     - hue_rotate: HSL hue shift (ColorOp)
+
     - These exist individually but not as combined HSB modulate
 
+
     COLOR SPACE INFRASTRUCTURE:
+
     - color_lut.rs: rgb_to_hsl() and hsl_to_rgb() helpers
+
     - Could add ChannelMix for combined adjustment or new ColorOp
 
+
     INTERPOLATION:
+
     - No Shepard interpolation exists
+
     - displacement_map does spatial warping but not color interpolation
+
     - flood_fill does BFS color spreading but not smooth interpolation
 
-    WHERE TO ADD:
-    - sparse_color: new function in filters.rs, generates full image from control points
-    - modulate: new ColorOp variant or direct implementation in filters.rs
-    - Both registered with ConfigParams
-  acceptance_criteria:
-    - sparse_color filter generates image from control point list using Shepard interpolation
-    - Control points specified as "x,y:RRGGBB" entries
-    - Interpolation is smooth (inverse distance weighted)
-    - modulate filter registered with brightness (%), saturation (%), hue (degrees)
-    - modulate with (100, 100, 0) is identity (IM convention)
-    - IM parity test for sparse_color vs -sparse-color Shepard, ALGORITHM tier
-    - IM parity test for modulate vs -modulate, EXACT tier (MAE < 0.01)
-    - Both support RGB8 and RGBA8
-    - Re-exported via rasmcore-filter-color crate
-  out_of_scope: |
-    Barycentric interpolation. Voronoi sparse color. Bilinear sparse color.
-    Per-channel modulate. Modulate in non-HSB color spaces.
-  technical_notes: |
-    SPARSE COLOR (Shepard):
-    - Input: list of (x, y, color) control points
-    - For each output pixel (px, py):
-      - weight_i = 1 / distance(px, py, x_i, y_i)^2
-      - color = sum(weight_i * color_i) / sum(weight_i)
-    - Handle zero distance (pixel at control point): use exact color
-    - Power parameter (default 2.0) controls falloff
-    - IM equivalent: -sparse-color Shepard "x1,y1 r1,g1,b1 x2,y2 r2,g2,b2 ..."
 
-    MODULATE (HSB combined adjustment):
-    - Convert pixel to HSB (Hue, Saturation, Brightness)
-    - brightness_factor = brightness_percent / 100.0
-    - saturation_factor = saturation_percent / 100.0
-    - hue_shift = hue_degrees (added to hue)
-    - B' = B * brightness_factor
-    - S' = S * saturation_factor
-    - H' = (H + hue_shift) mod 360
-    - Convert back to RGB
-    - IM equivalent: -modulate brightness,saturation,hue
-    - NOTE: IM uses HSB (V=max), not HSL. Use existing rgb_to_hsv if available,
-      or implement HSB conversion (B = max(R,G,B)).
+    WHERE TO ADD:
+
+    - sparse_color: new function in filters.rs, generates full image from control points
+
+    - modulate: new ColorOp variant or direct implementation in filters.rs
+
+    - Both registered with ConfigParams
+
+    '
+  acceptance_criteria:
+  - sparse_color filter generates image from control point list using Shepard interpolation
+  - Control points specified as "x,y:RRGGBB" entries
+  - Interpolation is smooth (inverse distance weighted)
+  - modulate filter registered with brightness (%), saturation (%), hue (degrees)
+  - modulate with (100, 100, 0) is identity (IM convention)
+  - IM parity test for sparse_color vs -sparse-color Shepard, ALGORITHM tier
+  - IM parity test for modulate vs -modulate, EXACT tier (MAE < 0.01)
+  - Both support RGB8 and RGBA8
+  - Re-exported via rasmcore-filter-color crate
+  out_of_scope: 'Barycentric interpolation. Voronoi sparse color. Bilinear sparse color.
+
+    Per-channel modulate. Modulate in non-HSB color spaces.
+
+    '
+  technical_notes: "SPARSE COLOR (Shepard):\n- Input: list of (x, y, color) control points\n- For each output pixel (px, py):\n\
+    \  - weight_i = 1 / distance(px, py, x_i, y_i)^2\n  - color = sum(weight_i * color_i) / sum(weight_i)\n- Handle zero distance\
+    \ (pixel at control point): use exact color\n- Power parameter (default 2.0) controls falloff\n- IM equivalent: -sparse-color\
+    \ Shepard \"x1,y1 r1,g1,b1 x2,y2 r2,g2,b2 ...\"\n\nMODULATE (HSB combined adjustment):\n- Convert pixel to HSB (Hue, Saturation,\
+    \ Brightness)\n- brightness_factor = brightness_percent / 100.0\n- saturation_factor = saturation_percent / 100.0\n- hue_shift\
+    \ = hue_degrees (added to hue)\n- B' = B * brightness_factor\n- S' = S * saturation_factor\n- H' = (H + hue_shift) mod\
+    \ 360\n- Convert back to RGB\n- IM equivalent: -modulate brightness,saturation,hue\n- NOTE: IM uses HSB (V=max), not HSL.\
+    \ Use existing rgb_to_hsv if available,\n  or implement HSB conversion (B = max(R,G,B)).\n"
 plan:
-  - phase: Sparse Color
-    tasks:
-      - text: Implement sparse_color with Shepard inverse-distance-weighted interpolation
-        done: false
-      - text: Register with ConfigParams (points string param, power f32 default 2.0)
-        done: false
-      - text: Test with 2 control points (should produce smooth gradient between them)
-        done: false
-      - text: IM parity test vs -sparse-color Shepard, ALGORITHM tier
-        done: false
-  - phase: Modulate
-    tasks:
-      - text: Implement modulate with HSB brightness/saturation/hue combined adjustment
-        done: false
-      - text: Register with ConfigParams (brightness 0-200%, saturation 0-200%, hue 0-360)
-        done: false
-      - text: Test identity at (100, 100, 0), test brightness-only and saturation-only
-        done: false
-      - text: IM parity test vs -modulate, assert EXACT tier (MAE < 0.01)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Re-export both via rasmcore-filter-color crate
-        done: false
-      - text: Full cargo test pass, param-manifest.json includes both new filters
-        done: false
+- phase: Sparse Color
+  tasks:
+  - text: Implement sparse_color with Shepard inverse-distance-weighted interpolation
+    done: true
+  - text: Register with ConfigParams (points string param, power f32 default 2.0)
+    done: true
+  - text: Test with 2 control points (should produce smooth gradient between them)
+    done: true
+  - text: IM parity test vs -sparse-color Shepard, ALGORITHM tier
+    done: true
+- phase: Modulate
+  tasks:
+  - text: Implement modulate with HSB brightness/saturation/hue combined adjustment
+    done: true
+  - text: Register with ConfigParams (brightness 0-200%, saturation 0-200%, hue 0-360)
+    done: true
+  - text: Test identity at (100, 100, 0), test brightness-only and saturation-only
+    done: true
+  - text: IM parity test vs -modulate, assert EXACT tier (MAE < 0.01)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Re-export both via rasmcore-filter-color crate
+    done: true
+  - text: Full cargo test pass, param-manifest.json includes both new filters
+    done: true
 extra: {}
