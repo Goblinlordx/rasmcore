@@ -83,6 +83,70 @@ pub struct FrameInfo {
     pub y_offset: u32,
 }
 
+/// Frame selection mode for multi-frame pipeline sources.
+#[derive(Debug, Clone)]
+pub enum FrameSelection {
+    /// Select a single frame — pipeline runs once, output is a single image.
+    Single(u32),
+    /// Select specific frames by index — pipeline runs once per frame.
+    Pick(Vec<u32>),
+    /// Select a contiguous range (start inclusive, end exclusive).
+    Range(u32, u32),
+    /// Select all frames in the source.
+    All,
+}
+
+/// An ordered collection of frames with per-frame metadata.
+///
+/// Used as the output of sequence-mode pipeline execution and as input
+/// to multi-frame encoders (animated GIF, multi-page TIFF).
+#[derive(Debug)]
+pub struct FrameSequence {
+    pub frames: Vec<(DecodedImage, FrameInfo)>,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
+}
+
+impl FrameSequence {
+    /// Create an empty sequence with the given canvas dimensions.
+    pub fn new(canvas_width: u32, canvas_height: u32) -> Self {
+        Self {
+            frames: Vec::new(),
+            canvas_width,
+            canvas_height,
+        }
+    }
+
+    /// Add a frame with metadata.
+    pub fn push(&mut self, image: DecodedImage, info: FrameInfo) {
+        self.frames.push((image, info));
+    }
+
+    /// Number of frames in the sequence.
+    pub fn len(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Whether the sequence is empty.
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    /// Build a sequence by decoding all frames from image data.
+    pub fn from_decode(data: &[u8]) -> Result<Self, super::error::ImageError> {
+        let frames = super::decoder::decode_all_frames(data)?;
+        let (cw, ch) = frames
+            .first()
+            .map(|(img, _)| (img.info.width, img.info.height))
+            .unwrap_or((0, 0));
+        Ok(Self {
+            frames,
+            canvas_width: cw,
+            canvas_height: ch,
+        })
+    }
+}
+
 /// Resize algorithm
 #[derive(Debug, Clone, Copy)]
 pub enum ResizeFilter {
