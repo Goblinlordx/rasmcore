@@ -102,3 +102,42 @@ fn benchmark_filters() {
         filters::grayscale(&decoded.pixels, &decoded.info).unwrap()
     });
 }
+
+#[test]
+fn benchmark_artistic_filters() {
+    println!("\n=== Artistic Filter Benchmarks (native, 256x256) ===");
+    let data = load_fixture("photo_256x256.png");
+    let decoded = decoder::decode(&data).unwrap();
+
+    // Convert to Rgb8 if needed (fixture may be 16-bit)
+    let (pixels, info) = if decoded.info.format == PixelFormat::Rgb16 {
+        let px8: Vec<u8> = decoded.pixels.chunks_exact(2).map(|c| c[0]).collect();
+        let info8 = ImageInfo {
+            format: PixelFormat::Rgb8,
+            ..decoded.info
+        };
+        (px8, info8)
+    } else if decoded.info.format == PixelFormat::Rgba16 {
+        let px8: Vec<u8> = decoded.pixels.chunks_exact(2).map(|c| c[0]).collect();
+        let info8 = ImageInfo {
+            format: PixelFormat::Rgba8,
+            ..decoded.info
+        };
+        (px8, info8)
+    } else {
+        (decoded.pixels, decoded.info)
+    };
+
+    bench("Solarize t=128", || {
+        filters::solarize(&pixels, &info, 128).unwrap()
+    });
+    bench("Emboss", || {
+        filters::emboss(&pixels, &info).unwrap()
+    });
+    bench("Oil paint r=3", || {
+        filters::oil_paint(&pixels, &info, 3).unwrap()
+    });
+    bench("Charcoal r=1 σ=0.5", || {
+        filters::charcoal(&pixels, &info, 1.0, 0.5).unwrap()
+    });
+}
