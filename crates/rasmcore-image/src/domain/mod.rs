@@ -6,6 +6,7 @@ pub mod color_spaces;
 pub mod composite;
 pub mod content_aware;
 pub mod decoder;
+pub mod draw;
 pub mod encoder;
 pub mod error;
 pub mod filter_registry;
