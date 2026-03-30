@@ -354,8 +354,12 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
 //    uses a slightly different iSlow implementation.
 //
 // For thumbnailing these differences are visually imperceptible. For
-// pixel-exact libjpeg-turbo parity, the remaining work is in the chroma
-// upsampling path (merged upsample + color convert), not the IDCT.
+// closer libjpeg-turbo parity, the remaining work is a fused chroma
+// upsample + color conversion pass (libjpeg-turbo's jdmerge.c), which
+// avoids intermediate i16 rounding in the chroma planes. This should be
+// added as a separate `planes_to_pixels_merged()` codepath — do NOT
+// modify the existing `planes_to_pixels` + `upsample_plane` which are
+// validated against the full-size decode reference.
 
 /// Inverse DCT producing 4x4 output (1/2 scale).
 ///
