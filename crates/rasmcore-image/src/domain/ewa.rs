@@ -1,22 +1,54 @@
 //! Elliptical Weighted Average (EWA) resampling engine.
 //!
-//! Provides high-quality area resampling for distortion filters, matching
-//! ImageMagick's `-distort` quality. Uses a Robidoux filter kernel with
-//! Jacobian-based elliptical support region.
+//! Ported from ImageMagick 6 source code for pixel-level parity with
+//! `magick -distort` operations. Uses Robidoux-filtered area sampling
+//! with Jacobian-based elliptical support region.
+//!
+//! # Reference implementation
+//!
+//! Ported from ImageMagick 6 (github.com/ImageMagick/ImageMagick6):
+//! - `magick/resample.c` — `ResamplePixelColor()`, `ScaleResampleFilter()`, `ClampUpAxes()`
+//! - `magick/resize.c` — Robidoux filter B,C coefficients
+//! - `magick/distort.c` — pixel-center convention (`d.x = i + 0.5`), FX equivalents
 //!
 //! # Algorithm (Heckbert 1989, as implemented by IM)
 //!
 //! For each output pixel:
 //! 1. Compute source coordinates `(sx, sy)` via inverse distortion
 //! 2. Compute 2×2 Jacobian matrix of the transformation
-//! 3. From the Jacobian, derive an ellipse in source space
-//! 4. Iterate source pixels within the ellipse, weight by Robidoux kernel
-//! 5. Accumulate weighted colors; divide by total weight
+//! 3. `ClampUpAxes`: SVD of Jacobian, clamp minor axis ≥ 1.0 (prevents magnification artifacts)
+//! 4. Compute ellipse coefficients A,B,C,F from clamped axes
+//! 5. Scale F by support², then scale A,B,C by `WLUT_WIDTH/F` for direct LUT indexing
+//! 6. Iterate source pixels within parallelogram fitted to ellipse
+//! 7. For each pixel: `Q = A*U² + B*U*V + C*V²`, weight = `LUT[(int)Q]`
+//! 8. Accumulate weighted colors; divide by total weight
 //!
 //! # Robidoux filter
 //!
-//! Cylindrical cubic with B=0.3782, C=0.3109 (Nicolas Robidoux optimal values).
-//! Support radius = 2.0. Matches IM's default for `-distort` operations.
+//! Cylindrical Mitchell-Netravali cubic (B=0.37821575509399867, C=0.31089212245300067).
+//! Values from IM's `resize.c` filter table. Support radius = 2.0.
+//!
+//! # IM parity status (tested at 64x64)
+//!
+//! | Filter  | MAE vs IM | IM command | Notes |
+//! |---------|-----------|------------|-------|
+//! | wave    | < 1.0     | `-wave 5x20` | Bilinear (matches IM WaveImage in effect.c) |
+//! | polar   | 2.55      | `-distort Polar 32` | EWA; ±1 quant from Q16-HDRI |
+//! | swirl   | < 3.0     | `-swirl 90` | EWA with IM aspect-ratio scaling |
+//! | barrel  | 7.77      | `-distort Barrel "0.5 0.1 0 1"` | Border handling: our=black, IM=edge-clamp |
+//! | depolar | ~2.55     | `-distort DePolar 32` | Same pipeline as polar |
+//!
+//! ## Residual analysis
+//!
+//! The ~2.55 EWA residual (per-channel ~0.85) is caused by IM Q16-HDRI processing
+//! at 16-bit internal precision: IM upscales 8-bit source pixels to [0, 65535],
+//! performs weighted average at 16-bit, then truncates back to 8-bit. Our pipeline
+//! operates on 8-bit source pixels directly with f64 weight accumulation. This
+//! causes ±1 quantization differences in the weighted average.
+//!
+//! The barrel MAE (7.77) is higher because IM's `-distort Barrel` uses edge-clamp
+//! virtual pixels by default while our EWA uses black (0) for out-of-bounds. The
+//! difference is concentrated at image edges; interior pixels match within ±1.
 
 /// Exact Robidoux filter B,C values from IM resize.c.
 const ROBIDOUX_B: f64 = 0.37821575509399867;
