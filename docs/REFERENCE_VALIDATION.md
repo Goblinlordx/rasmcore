@@ -105,6 +105,8 @@ for per-filter details including alignment notes.
 | blend HardMix | ImageMagick `composite` | 7.1.2-18 |
 | blend Subtract | ImageMagick `composite` | 7.1.2-18 |
 | blend Divide | ImageMagick `composite` | 7.1.2-18 |
+| motion_blur (0°,45°,90°,135°) | OpenCV `filter2D` | 4.13.0 |
+| motion_blur (30°) | OpenCV `filter2D` | 4.13.0 |
 | bilateral filter | OpenCV `bilateralFilter` | 4.13.0 |
 | brightness(0) | Self identity | N/A |
 | histogram match (gray) | scikit-image `match_histograms` | 0.26.0 |
@@ -167,6 +169,7 @@ Data: `tests/fixtures/generated/histogram_match_reference.json`.
 | blend SoftLight | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
 | blend Difference | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
 | blend Exclusion | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
+| motion_blur (120°) | OpenCV `filter2D` | 4.13.0 | f32 accumulation rounding |
 | CLAHE | OpenCV `createCLAHE` | 4.13.0 | f32 bilinear interpolation rounding |
 | guided filter | OpenCV `ximgproc.guidedFilter` | 4.13.0 | f32 summed-area-table rounding |
 
@@ -313,6 +316,7 @@ tests/fixtures/.venv/bin/pip install numpy==2.4.3 Pillow==12.1.1 opencv-python-h
 | `crates/rasmcore-image/tests/reference_audit.rs` | All ops vs ImageMagick | 30+ tests, Docker ImageMagick |
 | `crates/rasmcore-image/tests/parity.rs` | Decode/encode/transform | 20+ tests, fixtures from generate.sh |
 | `tests/codec-parity/tests/blend_parity.rs` | All 19 blend modes | 20 tests, vips 8.18 + IM 7 |
+| `tests/codec-parity/tests/motion_blur_parity.rs` | Motion blur 10 angles | 10 tests, OpenCV filter2D |
 | `crates/rasmcore-webp/tests/encode_decode.rs` | VP8 encode → decode | 11 tests, image-webp decoder |
 | `crates/rasmcore-jpeg/tests/parity.rs` | JPEG three-way | 28+ tests, libjpeg-turbo + mozjpeg |
 | `tests/fixtures/scripts/histogram_match_reference.py` | Histogram matching | 4 cases, pure Python CDF inversion |
