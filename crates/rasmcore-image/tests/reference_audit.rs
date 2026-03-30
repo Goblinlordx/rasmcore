@@ -1150,6 +1150,66 @@ fn algorithm_charcoal() {
 // SUMMARY
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DISTORTION / EFFECT TIER
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_pixelate() {
+    // IM pixelate via -scale down then up (nearest-neighbor resize).
+    // -scale {1/block}% uses box filter for downscale, then nearest for upscale.
+    // Our approach: block averaging + fill. Should match IM -scale closely.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::pixelate(px, info, 8).unwrap(),
+        &["-scale", "12.5%", "-scale", "800%"],
+        "pixelate_8",
+    ) {
+        assert!(
+            error < 2.0,
+            "pixelate MAE = {error:.4} (expected < 2.0, box filter vs block average)"
+        );
+    }
+}
+
+#[test]
+fn algorithm_swirl() {
+    // IM -swirl uses different interpolation (mesh-based) vs our bilinear.
+    // ALGORITHM tier: same concept, different implementations.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::swirl(px, info, 90.0, 0.0).unwrap(),
+        &["-swirl", "90"],
+        "swirl_90",
+    ) {
+        assert!(
+            error < 15.0,
+            "swirl MAE = {error:.4} (expected < 15.0, ALGORITHM tier: bilinear vs IM mesh)"
+        );
+    }
+}
+
+#[test]
+fn algorithm_barrel() {
+    // IM -distort Barrel uses different normalization than ours.
+    // We normalize to diagonal; IM normalizes to half the minimum dimension.
+    // ALGORITHM tier: same polynomial model, different normalization.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::barrel(px, info, 0.3, 0.0).unwrap(),
+        &["-distort", "Barrel", "0.3 0.0 0.0 1.0"],
+        "barrel_k1_0.3",
+    ) {
+        assert!(
+            error < 15.0,
+            "barrel MAE = {error:.4} (expected < 15.0, ALGORITHM tier: normalization differs)"
+        );
+    }
+}
+
 #[test]
 fn reference_audit_summary() {
     if !magick_available() {

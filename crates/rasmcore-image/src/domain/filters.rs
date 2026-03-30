@@ -9698,13 +9698,31 @@ fn solve_least_squares(a: &[f64], b: &[f64], m: usize, n: usize) -> Vec<f64> {
 /// ASC CDL color grading (slope/offset/power per RGB channel)
 pub struct AscCdlParams {
     /// Red slope
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub slope_r: f32,
     /// Green slope
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub slope_g: f32,
     /// Blue slope
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub slope_b: f32,
     /// Red offset
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
@@ -9716,13 +9734,31 @@ pub struct AscCdlParams {
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub offset_b: f32,
     /// Red power
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub power_r: f32,
     /// Green power
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub power_g: f32,
     /// Blue power
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub power_b: f32,
 }
 
@@ -9763,22 +9799,58 @@ pub struct LiftGammaGainParams {
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
     pub lift_b: f32,
     /// Red gamma
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub gamma_r: f32,
     /// Green gamma
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub gamma_g: f32,
     /// Blue gamma
-    #[param(min = 0.1, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub gamma_b: f32,
     /// Red gain
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub gain_r: f32,
     /// Green gain
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub gain_g: f32,
     /// Blue gain
-    #[param(min = 0.0, max = 4.0, step = 0.01, default = 1.0, hint = "rc.color_rgb")]
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
     pub gain_b: f32,
 }
 
@@ -9809,10 +9881,22 @@ pub fn lift_gamma_gain_registered(
 /// Split toning — tint shadows and highlights with different hues
 pub struct SplitToningParams {
     /// Highlight hue (degrees)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 40.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 40.0,
+        hint = "rc.angle_deg"
+    )]
     pub highlight_hue: f32,
     /// Shadow hue (degrees)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 220.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 220.0,
+        hint = "rc.angle_deg"
+    )]
     pub shadow_hue: f32,
     /// Balance (-1 = all shadow, +1 = all highlight)
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
@@ -10169,7 +10253,13 @@ pub fn seam_carve_height_registered(
 /// Selective color — adjust pixels within a specific hue range
 pub struct SelectiveColorParams {
     /// Target center hue in degrees (0-360)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
     pub target_hue: f32,
     /// Hue range width in degrees
     #[param(min = 1.0, max = 180.0, step = 1.0, default = 30.0)]
@@ -11783,5 +11873,732 @@ mod zoom_blur_tests {
             center_val >= 150,
             "center pixel should stay bright, got {center_val}"
         );
+    }
+}
+
+// ─── Distortion & Artistic Effect Filters ─────────────────────────────────
+
+/// Pixelate (mosaic): divide image into blocks, fill each with block average.
+/// Equivalent to ImageMagick `-scale {1/n}% -scale {n*100}%`.
+#[rasmcore_macros::register_filter(name = "pixelate", category = "effect")]
+pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| pixelate(px, i8, block_size));
+    }
+
+    let bs = block_size.max(1) as usize;
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let mut out = vec![0u8; pixels.len()];
+
+    let mut by = 0;
+    while by < h {
+        let bh = bs.min(h - by);
+        let mut bx = 0;
+        while bx < w {
+            let bw = bs.min(w - bx);
+            let count = bw * bh;
+
+            // Accumulate channel sums
+            let mut sums = [0u32; 4]; // max 4 channels
+            for row in by..(by + bh) {
+                for col in bx..(bx + bw) {
+                    let off = (row * w + col) * ch;
+                    for c in 0..ch {
+                        sums[c] += pixels[off + c] as u32;
+                    }
+                }
+            }
+
+            // Compute averages
+            let mut avg = [0u8; 4];
+            for c in 0..ch {
+                avg[c] = ((sums[c] + count as u32 / 2) / count as u32) as u8;
+            }
+
+            // Fill block with average
+            for row in by..(by + bh) {
+                for col in bx..(bx + bw) {
+                    let off = (row * w + col) * ch;
+                    for c in 0..ch {
+                        out[off + c] = avg[c];
+                    }
+                }
+            }
+
+            bx += bs;
+        }
+        by += bs;
+    }
+
+    Ok(out)
+}
+
+/// Halftone: simulate CMYK dot-screen print effect.
+/// Converts to CMYK, applies rotated threshold grids per channel at standard
+/// press angles (C=15°, M=75°, Y=0°, K=45°), then converts back to RGB.
+#[rasmcore_macros::register_filter(name = "halftone", category = "effect")]
+pub fn halftone(
+    pixels: &[u8],
+    info: &ImageInfo,
+    dot_size: f32,
+    angle_offset: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| {
+            halftone(px, i8, dot_size, angle_offset)
+        });
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let ds = dot_size.max(1.0);
+
+    // Standard CMYK screen angles (degrees)
+    let angles_deg = [
+        15.0 + angle_offset, // Cyan
+        75.0 + angle_offset, // Magenta
+        0.0 + angle_offset,  // Yellow
+        45.0 + angle_offset, // Key (Black)
+    ];
+    let angles_rad: Vec<f32> = angles_deg.iter().map(|a| a.to_radians()).collect();
+
+    // Frequency in pixels (dots per pixel = 1/dot_size)
+    let freq = std::f32::consts::PI / ds;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            let off = (y * w + x) * ch;
+
+            // Get RGB
+            let r = pixels[off] as f32 / 255.0;
+            let g = if ch >= 3 {
+                pixels[off + 1] as f32 / 255.0
+            } else {
+                r
+            };
+            let b = if ch >= 3 {
+                pixels[off + 2] as f32 / 255.0
+            } else {
+                r
+            };
+
+            // RGB → CMYK
+            let k = 1.0 - r.max(g).max(b);
+            let (c_val, m_val, y_val) = if k >= 1.0 {
+                (0.0, 0.0, 0.0)
+            } else {
+                let inv_k = 1.0 / (1.0 - k);
+                (
+                    (1.0 - r - k) * inv_k,
+                    (1.0 - g - k) * inv_k,
+                    (1.0 - b - k) * inv_k,
+                )
+            };
+            let cmyk = [c_val, m_val, y_val, k];
+
+            // Apply halftone screen per CMYK channel
+            let mut screened = [0.0f32; 4];
+            let xf = x as f32;
+            let yf = y as f32;
+            for i in 0..4 {
+                let cos_a = angles_rad[i].cos();
+                let sin_a = angles_rad[i].sin();
+                // Rotated coordinates
+                let rx = xf * cos_a + yf * sin_a;
+                let ry = -xf * sin_a + yf * cos_a;
+                // Sine-wave screen threshold
+                let screen = ((rx * freq).sin() * (ry * freq).sin() + 1.0) * 0.5;
+                screened[i] = if cmyk[i] > screen { 1.0 } else { 0.0 };
+            }
+
+            // CMYK → RGB: R = (1-C)(1-K), G = (1-M)(1-K), B = (1-Y)(1-K)
+            let ro = ((1.0 - screened[0]) * (1.0 - screened[3]) * 255.0).round() as u8;
+            let go = ((1.0 - screened[1]) * (1.0 - screened[3]) * 255.0).round() as u8;
+            let bo = ((1.0 - screened[2]) * (1.0 - screened[3]) * 255.0).round() as u8;
+
+            if ch == 1 {
+                // Grayscale: use luminance
+                out[off] = ((ro as u16 * 77 + go as u16 * 150 + bo as u16 * 29 + 128) >> 8) as u8;
+            } else {
+                out[off] = ro;
+                out[off + 1] = go;
+                out[off + 2] = bo;
+                if ch == 4 {
+                    out[off + 3] = pixels[off + 3]; // preserve alpha
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Swirl: rotate pixels around center with angle decreasing by distance.
+/// For each output pixel, compute polar coords from center, rotate by
+/// `angle * (1 - r/radius)` for `r < radius`, then bilinear sample source.
+/// Equivalent to ImageMagick `-swirl {degrees}`.
+#[rasmcore_macros::register_filter(name = "swirl", category = "distortion")]
+pub fn swirl(
+    pixels: &[u8],
+    info: &ImageInfo,
+    angle: f32,
+    radius: f32,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| swirl(px, i8, angle, radius));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let wf = w as f32;
+    let hf = h as f32;
+    let cx = wf * 0.5;
+    let cy = hf * 0.5;
+    let rad = if radius <= 0.0 {
+        (cx * cx + cy * cy).sqrt()
+    } else {
+        radius
+    };
+    let angle_rad = angle.to_radians();
+    let wi = w as i32;
+    let hi = h as i32;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    // Bilinear sampler
+    let sample = |sx: f32, sy: f32, c: usize| -> f32 {
+        let x0 = sx.floor() as i32;
+        let y0 = sy.floor() as i32;
+        let fx = sx - x0 as f32;
+        let fy = sy - y0 as f32;
+        let fetch = |px: i32, py: i32| -> f32 {
+            if px >= 0 && px < wi && py >= 0 && py < hi {
+                pixels[(py as usize * w + px as usize) * ch + c] as f32
+            } else {
+                0.0
+            }
+        };
+        let v = fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+            + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+            + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+            + fetch(x0 + 1, y0 + 1) * fx * fy;
+        v
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+
+        let cx_v = f32x4_splat(cx);
+        let cy_v = f32x4_splat(cy);
+        let rad_v = f32x4_splat(rad);
+        let angle_v = f32x4_splat(angle_rad);
+        let one_v = f32x4_splat(1.0);
+        let zero_v = f32x4_splat(0.0);
+
+        for y in 0..h {
+            let yf = y as f32;
+            let dy_v = f32x4_splat(yf - cy);
+            let mut x = 0;
+            while x + 4 <= w {
+                // Load 4 x-coords
+                let dx = unsafe {
+                    f32x4(
+                        x as f32 - cx,
+                        (x + 1) as f32 - cx,
+                        (x + 2) as f32 - cx,
+                        (x + 3) as f32 - cx,
+                    )
+                };
+                let r = f32x4_sqrt(f32x4_add(f32x4_mul(dx, dx), f32x4_mul(dy_v, dy_v)));
+                // t = max(1 - r/radius, 0)
+                let t = f32x4_max(f32x4_sub(one_v, f32x4_div(r, rad_v)), zero_v);
+                let rot = f32x4_mul(angle_v, t);
+
+                // Extract and process each pixel
+                for p in 0..4 {
+                    let rot_p = f32x4_extract_lane::<0>(match p {
+                        0 => rot,
+                        1 => {
+                            let mut tmp = [0.0f32; 4];
+                            unsafe {
+                                v128_store(tmp.as_mut_ptr() as *mut v128, rot);
+                            }
+                            unsafe { f32x4_splat(tmp[1]) }
+                        }
+                        2 => {
+                            let mut tmp = [0.0f32; 4];
+                            unsafe {
+                                v128_store(tmp.as_mut_ptr() as *mut v128, rot);
+                            }
+                            unsafe { f32x4_splat(tmp[2]) }
+                        }
+                        _ => {
+                            let mut tmp = [0.0f32; 4];
+                            unsafe {
+                                v128_store(tmp.as_mut_ptr() as *mut v128, rot);
+                            }
+                            unsafe { f32x4_splat(tmp[3]) }
+                        }
+                    });
+                    let cos_r = rot_p.cos();
+                    let sin_r = rot_p.sin();
+                    let px_x = (x + p) as f32;
+                    let dxp = px_x - cx;
+                    let dyp = yf - cy;
+                    let sx = cos_r * dxp - sin_r * dyp + cx;
+                    let sy = sin_r * dxp + cos_r * dyp + cy;
+
+                    let off = (y * w + x + p) * ch;
+                    for c in 0..ch {
+                        out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+                x += 4;
+            }
+            // Remainder
+            while x < w {
+                let dx = x as f32 - cx;
+                let dy = yf - cy;
+                let r = (dx * dx + dy * dy).sqrt();
+                let t = (1.0 - r / rad).max(0.0);
+                let rot_angle = angle_rad * t;
+                let cos_r = rot_angle.cos();
+                let sin_r = rot_angle.sin();
+                let sx = cos_r * dx - sin_r * dy + cx;
+                let sy = sin_r * dx + cos_r * dy + cy;
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+                x += 1;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for y in 0..h {
+            let yf = y as f32;
+            let dy = yf - cy;
+            for x in 0..w {
+                let dx = x as f32 - cx;
+                let r = (dx * dx + dy * dy).sqrt();
+                let t = (1.0 - r / rad).max(0.0);
+                let rot_angle = angle_rad * t;
+                let cos_r = rot_angle.cos();
+                let sin_r = rot_angle.sin();
+                let sx = cos_r * dx - sin_r * dy + cx;
+                let sy = sin_r * dx + cos_r * dy + cy;
+                let off = (y * w + x) * ch;
+                for c in 0..ch {
+                    out[off + c] = sample(sx, sy, c).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Spherize: apply spherical projection for bulge/pinch effect.
+/// `amount > 0` = bulge (fisheye), `amount < 0` = pinch.
+/// `amount = 0` is identity.
+#[rasmcore_macros::register_filter(name = "spherize", category = "distortion")]
+pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| spherize(px, i8, amount));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let cx = w as f32 * 0.5;
+    let cy = h as f32 * 0.5;
+    let radius = cx.min(cy);
+    let wi = w as i32;
+    let hi = h as i32;
+    let amt = amount.clamp(-1.0, 1.0);
+
+    let mut out = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            let dx = (x as f32 - cx) / radius;
+            let dy = (y as f32 - cy) / radius;
+            let r = (dx * dx + dy * dy).sqrt();
+            let off = (y * w + x) * ch;
+
+            if r >= 1.0 || r == 0.0 {
+                // Outside the sphere radius or at center — copy directly
+                out[off..off + ch].copy_from_slice(&pixels[off..off + ch]);
+            } else {
+                // Spherize mapping: interpolate between identity and spherical
+                let new_r = if amt >= 0.0 {
+                    // Bulge: r -> r^(1/(1+amount))  (push pixels outward in source)
+                    r.powf(1.0 / (1.0 + amt))
+                } else {
+                    // Pinch: r -> r^(1+|amount|)  (pull pixels inward in source)
+                    r.powf(1.0 + amt.abs())
+                };
+                let scale = new_r / r;
+                let sx = dx * scale * radius + cx;
+                let sy = dy * scale * radius + cy;
+
+                // Bilinear interpolation
+                let x0 = sx.floor() as i32;
+                let y0 = sy.floor() as i32;
+                let fx = sx - x0 as f32;
+                let fy = sy - y0 as f32;
+
+                for c in 0..ch {
+                    let fetch = |px: i32, py: i32| -> f32 {
+                        if px >= 0 && px < wi && py >= 0 && py < hi {
+                            pixels[(py as usize * w + px as usize) * ch + c] as f32
+                        } else {
+                            0.0
+                        }
+                    };
+                    let v = fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+                        + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+                        + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+                        + fetch(x0 + 1, y0 + 1) * fx * fy;
+                    out[off + c] = v.round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Barrel distortion: apply radial polynomial distortion.
+/// `r_distorted = r * (1 + k1*r² + k2*r⁴)`.
+/// `k1 > 0` = barrel, `k1 < 0` = pincushion.
+/// This is the inverse of the `undistort` correction filter.
+/// Equivalent to ImageMagick `-distort Barrel "k1 k2 0 1"`.
+#[rasmcore_macros::register_filter(name = "barrel", category = "distortion")]
+pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |px, i8| barrel(px, i8, k1, k2));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let cx = w as f64 * 0.5;
+    let cy = h as f64 * 0.5;
+    // Normalize radius so that corners map to r=1
+    let norm = (cx * cx + cy * cy).sqrt();
+    let wi = w as i32;
+    let hi = h as i32;
+
+    let mut out = vec![0u8; pixels.len()];
+
+    for y in 0..h {
+        for x in 0..w {
+            let dx = (x as f64 - cx) / norm;
+            let dy = (y as f64 - cy) / norm;
+            let r2 = dx * dx + dy * dy;
+            let r4 = r2 * r2;
+            let factor = 1.0 + k1 as f64 * r2 + k2 as f64 * r4;
+
+            // Source coordinate (inverse mapping: find where this output pixel came from)
+            let sx = (dx * factor * norm + cx) as f32;
+            let sy = (dy * factor * norm + cy) as f32;
+
+            let off = (y * w + x) * ch;
+            let x0 = sx.floor() as i32;
+            let y0 = sy.floor() as i32;
+            let fx = sx - x0 as f32;
+            let fy = sy - y0 as f32;
+
+            for c in 0..ch {
+                let fetch = |px: i32, py: i32| -> f32 {
+                    if px >= 0 && px < wi && py >= 0 && py < hi {
+                        pixels[(py as usize * w + px as usize) * ch + c] as f32
+                    } else {
+                        0.0
+                    }
+                };
+                let v = fetch(x0, y0) * (1.0 - fx) * (1.0 - fy)
+                    + fetch(x0 + 1, y0) * fx * (1.0 - fy)
+                    + fetch(x0, y0 + 1) * (1.0 - fx) * fy
+                    + fetch(x0 + 1, y0 + 1) * fx * fy;
+                out[off + c] = v.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+#[cfg(test)]
+mod distortion_effect_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    // ── Pixelate ──
+
+    #[test]
+    fn pixelate_preserves_size() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = pixelate(&pixels, &info, 4).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn pixelate_block_1_is_identity() {
+        let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(64, 64);
+        let result = pixelate(&pixels, &info, 1).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn pixelate_uniform_block() {
+        // 4x4 image, block_size=4 → entire image is one block
+        let pixels = vec![100u8; 4 * 4 * 3];
+        let info = rgb_info(4, 4);
+        let result = pixelate(&pixels, &info, 4).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn pixelate_non_divisible_dimensions() {
+        // 7x5 with block_size=3 → handles edge blocks correctly
+        let pixels = vec![128u8; 7 * 5 * 3];
+        let info = rgb_info(7, 5);
+        let result = pixelate(&pixels, &info, 3).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn pixelate_gray() {
+        let pixels = vec![128u8; 16 * 16];
+        let info = gray_info(16, 16);
+        let result = pixelate(&pixels, &info, 4).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    // ── Halftone ──
+
+    #[test]
+    fn halftone_preserves_size() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn halftone_output_is_binary_per_channel() {
+        // Halftone thresholds to 0 or 1 per CMYK channel, so RGB output
+        // should be limited to values from {0, 255} combinations
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let info = rgb_info(16, 16);
+        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        for &v in &result {
+            // Each RGB value is product of (1-C/M/Y)(1-K) where each is 0 or 1
+            assert!(
+                v == 0 || v == 255,
+                "halftone should produce binary values, got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn halftone_white_stays_white() {
+        // Pure white → C=0, M=0, Y=0, K=0 → all screens below threshold → white
+        let pixels = vec![255u8; 8 * 8 * 3];
+        let info = rgb_info(8, 8);
+        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        assert!(result.iter().all(|&v| v == 255));
+    }
+
+    #[test]
+    fn halftone_black_stays_black() {
+        // Pure black → K=1 → all K screens fire → black
+        let pixels = vec![0u8; 8 * 8 * 3];
+        let info = rgb_info(8, 8);
+        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        assert!(result.iter().all(|&v| v == 0));
+    }
+
+    // ── Swirl ──
+
+    #[test]
+    fn swirl_zero_angle_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = swirl(&pixels, &info, 0.0, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn swirl_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = swirl(&pixels, &info, 90.0, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn swirl_center_region_near_original() {
+        // Center region should be minimally affected since swirl angle diminishes
+        // toward center. Use a large radius so edge effects don't reach center.
+        let w = 64u32;
+        let h = 64u32;
+        let mut pixels = vec![128u8; (w * h * 3) as usize];
+        // Put a known value at exact center
+        let cx = (w / 2) as usize;
+        let cy = (h / 2) as usize;
+        // Place a 3x3 block at center so bilinear sampling still finds it
+        for dy in 0..3usize {
+            for dx in 0..3usize {
+                let off = ((cy - 1 + dy) * w as usize + (cx - 1 + dx)) * 3;
+                pixels[off] = 200;
+                pixels[off + 1] = 100;
+                pixels[off + 2] = 50;
+            }
+        }
+
+        let info = rgb_info(w, h);
+        // Small angle so center is barely affected
+        let result = swirl(&pixels, &info, 10.0, 0.0).unwrap();
+        let center_off = (cy * w as usize + cx) * 3;
+        // Center pixel should be close to the original value (not zero/black)
+        assert!(
+            result[center_off] > 100,
+            "center R should be > 100, got {}",
+            result[center_off]
+        );
+    }
+
+    // ── Spherize ──
+
+    #[test]
+    fn spherize_zero_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = spherize(&pixels, &info, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn spherize_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = spherize(&pixels, &info, 0.5).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn spherize_center_near_original() {
+        // Center region should be close to original with moderate spherize
+        let w = 64u32;
+        let h = 64u32;
+        let mut pixels = vec![128u8; (w * h * 3) as usize];
+        let cx = (w / 2) as usize;
+        let cy = (h / 2) as usize;
+        // Place a 3x3 block at center
+        for dy in 0..3usize {
+            for dx in 0..3usize {
+                let off = ((cy - 1 + dy) * w as usize + (cx - 1 + dx)) * 3;
+                pixels[off] = 200;
+                pixels[off + 1] = 100;
+                pixels[off + 2] = 50;
+            }
+        }
+
+        let info = rgb_info(w, h);
+        let result = spherize(&pixels, &info, 0.5).unwrap();
+        let center_off = (cy * w as usize + cx) * 3;
+        // Center should be close to original (spherize barely moves center pixels)
+        assert!(
+            result[center_off] > 150,
+            "center R should be > 150, got {}",
+            result[center_off]
+        );
+    }
+
+    // ── Barrel ──
+
+    #[test]
+    fn barrel_zero_coeffs_is_identity() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let result = barrel(&pixels, &info, 0.0, 0.0).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn barrel_preserves_size() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let result = barrel(&pixels, &info, 0.3, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn barrel_center_stays_fixed() {
+        let w = 33u32;
+        let h = 33u32;
+        let mut pixels = vec![0u8; (w * h * 3) as usize];
+        let cx = (w / 2) as usize;
+        let cy = (h / 2) as usize;
+        let off = (cy * w as usize + cx) * 3;
+        pixels[off] = 200;
+        pixels[off + 1] = 100;
+        pixels[off + 2] = 50;
+
+        let info = rgb_info(w, h);
+        let result = barrel(&pixels, &info, 0.5, 0.1).unwrap();
+        assert_eq!(result[off], 200);
+        assert_eq!(result[off + 1], 100);
+        assert_eq!(result[off + 2], 50);
+    }
+
+    #[test]
+    fn barrel_gray_works() {
+        let pixels = vec![128u8; 32 * 32];
+        let info = gray_info(32, 32);
+        let result = barrel(&pixels, &info, 0.3, 0.0).unwrap();
+        assert_eq!(result.len(), pixels.len());
     }
 }
