@@ -139,17 +139,8 @@ fn main() {
     let mut manifest = String::from("{\n  \"filters\": [\n");
 
     for (i, f) in filters.iter().enumerate() {
-        // Match filter to its param struct by name convention: blur → BlurParams
-        let struct_name = format!(
-            "{}Params",
-            f.name
-                .chars()
-                .next()
-                .unwrap()
-                .to_uppercase()
-                .collect::<String>()
-                + &f.name[1..]
-        );
+        // Match filter to its param struct by name convention: blur → BlurParams, bokeh_blur → BokehBlurParams
+        let struct_name = format!("{}Params", to_pascal_case(&f.name));
         let params = param_structs.get(&struct_name);
 
         manifest.push_str("    {\n");
@@ -434,6 +425,19 @@ fn default_range_for_type(ty: &str) -> (&str, &str, &str, &str) {
         "bool" => ("null", "null", "null", "false"),
         _ => ("null", "null", "null", "null"),
     }
+}
+
+fn to_pascal_case(snake: &str) -> String {
+    snake
+        .split('_')
+        .map(|seg| {
+            let mut c = seg.chars();
+            match c.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect()
 }
 
 fn to_wit_name(rust_name: &str) -> String {

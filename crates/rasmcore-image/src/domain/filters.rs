@@ -207,6 +207,17 @@ pub struct VignettePowerlawParams {
     pub falloff: f32,
 }
 
+/// Parameters for bokeh (lens) blur.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct BokehBlurParams {
+    /// Kernel half-size in pixels (kernel side = 2*radius+1)
+    #[param(min = 1, max = 50, step = 1, default = 5)]
+    pub radius: u32,
+    /// Kernel shape: 0=disc, 1=hexagon
+    #[param(min = 0, max = 1, step = 1, default = 0)]
+    pub shape: u32,
+}
+
 /// Apply gaussian blur using libblur (SIMD-optimized).
 ///
 /// Uses separable gaussian convolution with SIMD acceleration on
