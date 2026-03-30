@@ -578,7 +578,7 @@ fn algorithm_trim() {
     // Create image with 8px uniform border
     let (w, h) = (48u32, 48u32);
     let mut pixels = vec![200u8; (w * h * 3) as usize]; // uniform border color
-                                                        // Fill center 32x32 with gradient
+    // Fill center 32x32 with gradient
     for y in 8..40 {
         for x in 8..40 {
             let idx = ((y * w + x) * 3) as usize;
@@ -732,7 +732,7 @@ fn magick_fx_per_channel(
 fn deterministic_asc_cdl_sop() {
     // ASC-CDL: out = clamp01((in * slope + offset) ^ power)
     // slope=[1.5, 0.8, 1.2], offset=[0.1, -0.05, 0.0], power=[1.2, 0.9, 1.5]
-    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
+    use rasmcore_image::domain::color_grading::{AscCdl, asc_cdl};
 
     if !magick_available() {
         eprintln!("SKIP asc_cdl: magick not available");
@@ -779,7 +779,7 @@ fn deterministic_asc_cdl_sop() {
 #[test]
 fn deterministic_asc_cdl_per_channel() {
     // Test with very different values per channel to ensure independence
-    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
+    use rasmcore_image::domain::color_grading::{AscCdl, asc_cdl};
 
     if !magick_available() {
         eprintln!("SKIP asc_cdl_per_channel: magick not available");
@@ -825,7 +825,7 @@ fn deterministic_asc_cdl_per_channel() {
 #[test]
 fn deterministic_lift_gamma_gain() {
     // Lift/Gamma/Gain: out = gain * (in + lift*(1-in))^(1/gamma)
-    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
+    use rasmcore_image::domain::color_grading::{LiftGammaGain, lift_gamma_gain};
 
     if !magick_available() {
         eprintln!("SKIP lift_gamma_gain: magick not available");
@@ -871,7 +871,7 @@ fn deterministic_lift_gamma_gain() {
 #[test]
 fn deterministic_lift_gamma_gain_per_channel() {
     // Test per-channel independence: red lift, green gamma, blue gain
-    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
+    use rasmcore_image::domain::color_grading::{LiftGammaGain, lift_gamma_gain};
 
     if !magick_available() {
         eprintln!("SKIP lgg_per_channel: magick not available");
@@ -990,7 +990,7 @@ fn deterministic_curves_lut() {
 fn exact_split_toning() {
     // Split toning: validate against ImageMagick -fx using the exact same formula.
     // Each channel processed independently from the original image.
-    use rasmcore_image::domain::color_grading::{split_toning, SplitToning};
+    use rasmcore_image::domain::color_grading::{SplitToning, split_toning};
 
     if !magick_available() {
         eprintln!("SKIP split_toning: magick not available");
@@ -1412,6 +1412,8 @@ fn close_channel_mixer_swap_rg() {
 
 #[test]
 fn close_gradient_map_bw() {
+    // IM -fx computes sRGB-domain luminance (no linearization), matching our approach.
+    // -grayscale Rec709Luminance applies gamma correction, which differs.
     if let Some(error) = check_parity_rgb(
         64,
         64,
@@ -1423,13 +1425,12 @@ fn close_gradient_map_bw() {
             )
             .unwrap()
         },
-        &["-grayscale", "Rec709Luminance"],
-        "gradient_map B/W vs grayscale",
+        &["-fx", "0.2126*r+0.7152*g+0.0722*b"],
+        "gradient_map B/W vs IM -fx luminance",
     ) {
-        // BW gradient map should be close to IM grayscale (same BT.709 coefficients)
         assert!(
             error < 2.0,
-            "CLOSE: gradient_map BW vs grayscale MAE should be < 2.0, got {error:.4}"
+            "CLOSE: gradient_map BW MAE should be < 2.0, got {error:.4}"
         );
     }
 }

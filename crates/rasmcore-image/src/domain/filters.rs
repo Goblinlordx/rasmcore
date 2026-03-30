@@ -1411,9 +1411,10 @@ pub fn gradient_map(pixels: &[u8], info: &ImageInfo, stops: String) -> Result<Ve
 
     let mut result = pixels.to_vec();
     for chunk in result.chunks_exact_mut(bpp) {
-        // BT.709 luminance
-        let luma = ((77u32 * chunk[0] as u32 + 150 * chunk[1] as u32 + 29 * chunk[2] as u32 + 128)
-            >> 8) as u8;
+        // BT.709 luminance (float for accuracy)
+        let luma = (0.2126 * chunk[0] as f32 + 0.7152 * chunk[1] as f32 + 0.0722 * chunk[2] as f32)
+            .round()
+            .clamp(0.0, 255.0) as u8;
         let color = lut[luma as usize];
         chunk[0] = color[0];
         chunk[1] = color[1];
