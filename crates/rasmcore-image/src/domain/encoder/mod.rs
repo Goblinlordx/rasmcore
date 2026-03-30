@@ -16,7 +16,7 @@ pub mod tiff;
 pub mod webp;
 
 use super::error::ImageError;
-use super::types::ImageInfo;
+use super::types::{FrameSequence, ImageInfo};
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────
 
@@ -123,6 +123,38 @@ pub fn encode(
     }
 }
 
+/// Encode a FrameSequence to a multi-frame format (convenience wrapper).
+///
+/// Dispatches to format-specific multi-frame encoders. Only GIF and TIFF
+/// support multi-frame encoding; all other formats return an error.
+pub fn encode_sequence(
+    seq: &FrameSequence,
+    format: &str,
+    quality: Option<u8>,
+) -> Result<Vec<u8>, ImageError> {
+    let _ = quality; // reserved for future lossy multi-frame formats
+    match format {
+        "gif" => {
+            let config = gif::GifEncodeConfig::default();
+            gif::encode_sequence(seq, &config)
+        }
+        "tiff" | "tif" => {
+            let config = tiff::TiffEncodeConfig::default();
+            tiff::encode_pages(seq, &config)
+        }
+        "webp" => Err(ImageError::UnsupportedFormat(
+            "animated WebP encode is not supported (image-webp crate limitation)".into(),
+        )),
+        "jpeg" | "jpg" | "png" | "avif" | "heic" | "heif" | "bmp" | "ico" | "qoi" | "tga"
+        | "hdr" | "pnm" | "exr" | "dds" | "jp2" => Err(ImageError::UnsupportedFormat(
+            format!("format '{format}' does not support multi-frame encoding"),
+        )),
+        other => Err(ImageError::UnsupportedFormat(format!(
+            "encode_sequence: format '{other}' not supported"
+        ))),
+    }
+}
+
 /// List supported encode formats.
 pub fn supported_formats() -> Vec<String> {
     SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
@@ -164,7 +196,9 @@ pub fn all_format_info() -> Vec<FormatInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::{ColorSpace, PixelFormat};
+    use crate::domain::types::{
+        ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence, PixelFormat,
+    };
 
     fn make_rgb8_pixels(width: u32, height: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(width * height * 3)).map(|i| (i % 256) as u8).collect();
@@ -545,5 +579,89 @@ mod tests {
             let fi = format_info(fmt).unwrap();
             assert!(!fi.mime_type.is_empty(), "{fmt} should have a MIME type");
         }
+    }
+
+    // ── encode_sequence convenience router tests ───────────────────
+
+    fn make_test_sequence(n: usize) -> FrameSequence {
+        let mut seq = FrameSequence::new(4, 4);
+        for i in 0..n {
+            let pixels: Vec<u8> = (0..16).flat_map(|_| [(i * 80) as u8, 0u8, 0u8]).collect();
+            let image = DecodedImage {
+                pixels,
+                info: ImageInfo {
+                    width: 4,
+                    height: 4,
+                    format: PixelFormat::Rgb8,
+                    color_space: ColorSpace::Srgb,
+                },
+                icc_profile: None,
+            };
+            let fi = FrameInfo {
+                index: i as u32,
+                delay_ms: 100,
+                disposal: DisposalMethod::None,
+                width: 4,
+                height: 4,
+                x_offset: 0,
+                y_offset: 0,
+            };
+            seq.push(image, fi);
+        }
+        seq
+    }
+
+    #[test]
+    fn encode_sequence_gif_dispatches() {
+        let seq = make_test_sequence(2);
+        let result = encode_sequence(&seq, "gif", None).unwrap();
+        assert_eq!(&result[..3], b"GIF");
+    }
+
+    #[test]
+    fn encode_sequence_tiff_dispatches() {
+        let seq = make_test_sequence(2);
+        let result = encode_sequence(&seq, "tiff", None).unwrap();
+        assert!(&result[..2] == b"II" || &result[..2] == b"MM");
+    }
+
+    #[test]
+    fn encode_sequence_tif_alias() {
+        let seq = make_test_sequence(2);
+        let result = encode_sequence(&seq, "tif", None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn encode_sequence_webp_returns_unsupported() {
+        let seq = make_test_sequence(2);
+        let result = encode_sequence(&seq, "webp", None);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ImageError::UnsupportedFormat(msg) => {
+                assert!(msg.contains("animated WebP"), "message: {msg}");
+            }
+            other => panic!("expected UnsupportedFormat, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_sequence_jpeg_returns_unsupported() {
+        let seq = make_test_sequence(2);
+        let result = encode_sequence(&seq, "jpeg", None);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ImageError::UnsupportedFormat(msg) => {
+                assert!(msg.contains("multi-frame"), "message: {msg}");
+            }
+            other => panic!("expected UnsupportedFormat, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_sequence_unknown_format_returns_error() {
+        let seq = make_test_sequence(2);
+        let result = encode_sequence(&seq, "nosuchformat", None);
+        assert!(result.is_err());
     }
 }
