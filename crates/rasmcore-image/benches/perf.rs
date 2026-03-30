@@ -14,7 +14,9 @@ mod ref_tools;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::path::Path;
 
-use rasmcore_image::domain::filters::{AdaptiveMethod, BlendMode, MertensParams};
+use rasmcore_image::domain::filters::{
+    AdaptiveMethod, BlendMode, BokehShape, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
+};
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::{decoder, encoder, filters, transform};
 
@@ -529,8 +531,8 @@ fn filter_benchmarks(c: &mut Criterion) {
         }
     }
 
-    // Bilateral and CLAHE (expensive — smaller sizes only)
-    for &size in &[256u32, 512] {
+    // Bilateral and CLAHE (expensive — includes 1024 for bilateral)
+    for &size in &[256u32, 512, 1024] {
         let png_path = ensure_input("png", size);
         let png_data = std::fs::read(&png_path).unwrap();
         let dec = decoder::decode(&png_data).unwrap();
@@ -556,6 +558,261 @@ fn filter_benchmarks(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new("clahe/rasmcore", size), |b| {
             b.iter(|| filters::clahe(&gray_dec.pixels, &gray_dec.info, 2.0, 8).unwrap());
+        });
+    }
+
+    group.finish();
+}
+
+// ─── Spatial Filter Benchmarks ──────────────────────────────────────────
+
+fn spatial_filter_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("spatial");
+
+    // --- Convolution and blur filters at 256/512 ---
+    for &size in &[256u32, 512] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        // Ensure RGB8
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        // Grayscale for filters that require Gray8
+        let gray_dec = filters::grayscale(&pixels, &info).unwrap();
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Median (radius=3)
+        let px = pixels.clone();
+        let inf = info;
+        group.bench_function(BenchmarkId::new("median/rasmcore", size), |b| {
+            b.iter(|| filters::median(&px, &inf, 3).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("median/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(&p, &["-statistic", "Median", "7x7"], "png", None)
+                });
+            });
+        }
+
+        // Bokeh blur — disc (radius=5)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("bokeh_disc/rasmcore", size), |b| {
+            b.iter(|| filters::bokeh_blur(&px, &inf, 5, BokehShape::Disc).unwrap());
+        });
+
+        // Bokeh blur — hexagon (radius=5)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("bokeh_hex/rasmcore", size), |b| {
+            b.iter(|| filters::bokeh_blur(&px, &inf, 5, BokehShape::Hexagon).unwrap());
+        });
+
+        // Convolve (5x5 sharpen kernel)
+        let px = pixels.clone();
+        #[rustfmt::skip]
+        let kernel: Vec<f32> = vec![
+             0.0, -1.0, -1.0, -1.0,  0.0,
+            -1.0,  2.0, -4.0,  2.0, -1.0,
+            -1.0, -4.0, 13.0, -4.0, -1.0,
+            -1.0,  2.0, -4.0,  2.0, -1.0,
+             0.0, -1.0, -1.0, -1.0,  0.0,
+        ];
+        group.bench_function(BenchmarkId::new("convolve_5x5/rasmcore", size), |b| {
+            b.iter(|| filters::convolve(&px, &inf, &kernel, 5, 5, 1.0).unwrap());
+        });
+
+        // Gaussian blur CV (sigma=2.0)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("gaussian_blur_cv/rasmcore", size), |b| {
+            b.iter(|| filters::gaussian_blur_cv(&px, &inf, 2.0).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("gaussian_blur_cv/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x2"], "png", None));
+            });
+        }
+
+        // Guided filter (Gray8, radius=4, epsilon=0.01)
+        group.bench_function(BenchmarkId::new("guided_filter/rasmcore", size), |b| {
+            b.iter(|| filters::guided_filter(&gray_dec.pixels, &gray_dec.info, 4, 0.01).unwrap());
+        });
+
+        // NLM denoise (Gray8, defaults) — expensive, sample_size(10)
+        group.sample_size(10);
+        let nlm_params = NlmParams {
+            h: 10.0,
+            patch_size: 7,
+            search_size: 21,
+            algorithm: NlmAlgorithm::OpenCv,
+        };
+        group.bench_function(BenchmarkId::new("nlm_denoise/rasmcore", size), |b| {
+            b.iter(|| filters::nlm_denoise(&gray_dec.pixels, &gray_dec.info, &nlm_params).unwrap());
+        });
+        group.sample_size(100); // reset
+    }
+
+    // --- Convolve and gaussian_blur_cv also at 1024 ---
+    {
+        let size = 1024u32;
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Convolve 5x5 at 1024
+        let px = pixels.clone();
+        let inf = info;
+        #[rustfmt::skip]
+        let kernel: Vec<f32> = vec![
+             0.0, -1.0, -1.0, -1.0,  0.0,
+            -1.0,  2.0, -4.0,  2.0, -1.0,
+            -1.0, -4.0, 13.0, -4.0, -1.0,
+            -1.0,  2.0, -4.0,  2.0, -1.0,
+             0.0, -1.0, -1.0, -1.0,  0.0,
+        ];
+        group.bench_function(BenchmarkId::new("convolve_5x5/rasmcore", size), |b| {
+            b.iter(|| filters::convolve(&px, &inf, &kernel, 5, 5, 1.0).unwrap());
+        });
+
+        // Gaussian blur CV at 1024
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("gaussian_blur_cv/rasmcore", size), |b| {
+            b.iter(|| filters::gaussian_blur_cv(&px, &inf, 2.0).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("gaussian_blur_cv/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x2"], "png", None));
+            });
+        }
+    }
+
+    group.finish();
+}
+
+// ─── Morphological Filter Benchmarks ────────────────────────────────────
+
+fn morphological_filter_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("morphological");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Erode (rect 3x3)
+        let px = pixels.clone();
+        let inf = info;
+        group.bench_function(BenchmarkId::new("erode/rasmcore", size), |b| {
+            b.iter(|| filters::erode(&px, &inf, 3, MorphShape::Rect).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("erode/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-morphology", "Erode", "Square:1"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
+
+        // Dilate (rect 3x3)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("dilate/rasmcore", size), |b| {
+            b.iter(|| filters::dilate(&px, &inf, 3, MorphShape::Rect).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("dilate/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-morphology", "Dilate", "Square:1"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
+
+        // Morph open (rect 3x3)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("morph_open/rasmcore", size), |b| {
+            b.iter(|| filters::morph_open(&px, &inf, 3, MorphShape::Rect).unwrap());
+        });
+
+        // Morph close (rect 3x3)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("morph_close/rasmcore", size), |b| {
+            b.iter(|| filters::morph_close(&px, &inf, 3, MorphShape::Rect).unwrap());
         });
     }
 
@@ -1686,6 +1943,8 @@ criterion_group!(
     decoder_benchmarks,
     encoder_benchmarks,
     filter_benchmarks,
+    spatial_filter_benchmarks,
+    morphological_filter_benchmarks,
     enhancement_filter_benchmarks,
     geometric_warp_benchmarks,
     transform_benchmarks,
