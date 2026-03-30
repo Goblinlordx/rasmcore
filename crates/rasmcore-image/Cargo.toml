@@ -28,6 +28,9 @@ jxl-oxide = "0.12"
 justjp2 = { version = "0.1", default-features = false }
 resvg = "0.44"
 fontdue = "0.9"
+rustybuzz = "0.18"
+unicode-bidi = "0.3"
+unicode-linebreak = "0.1"
 bcdec_rs = "0.2"
 
 # Native codec crates (optional, feature-gated)
