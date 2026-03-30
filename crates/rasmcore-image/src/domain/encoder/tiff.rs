@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use crate::domain::error::ImageError;
-use crate::domain::types::{ImageInfo, PixelFormat};
+use crate::domain::types::{FrameSequence, ImageInfo, PixelFormat};
 
 /// TIFF compression algorithm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -130,10 +130,103 @@ pub fn encode(
     Ok(buf)
 }
 
+/// Encode a FrameSequence as a multi-page TIFF.
+///
+/// Each frame becomes a separate IFD (page) in the output. The tiff crate
+/// automatically chains IFDs when `new_image()` is called multiple times.
+pub fn encode_pages(
+    seq: &FrameSequence,
+    config: &TiffEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
+    if seq.is_empty() {
+        return Err(ImageError::InvalidInput(
+            "cannot encode empty frame sequence as TIFF".into(),
+        ));
+    }
+
+    let mut buf = Vec::new();
+    let cursor = Cursor::new(&mut buf);
+    let compression = map_compression(config.compression);
+    let mut encoder = tiff::encoder::TiffEncoder::new(cursor)
+        .map_err(|e| ImageError::ProcessingFailed(format!("TIFF encoder init: {e}")))?
+        .with_compression(compression);
+
+    let err_map = |e: tiff::TiffError| ImageError::ProcessingFailed(format!("TIFF encode: {e}"));
+
+    for (image, _frame_info) in &seq.frames {
+        let info = &image.info;
+        let pixels = &image.pixels;
+
+        match info.format {
+            PixelFormat::Rgb8 => {
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::RGB8>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(pixels).map_err(err_map)?;
+            }
+            PixelFormat::Rgba8 => {
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::RGBA8>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(pixels).map_err(err_map)?;
+            }
+            PixelFormat::Gray8 => {
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::Gray8>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(pixels).map_err(err_map)?;
+            }
+            PixelFormat::Gray16 => {
+                let u16_data: Vec<u16> = pixels
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::Gray16>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(&u16_data).map_err(err_map)?;
+            }
+            PixelFormat::Rgb16 => {
+                let u16_data: Vec<u16> = pixels
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::RGB16>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(&u16_data).map_err(err_map)?;
+            }
+            PixelFormat::Rgba16 => {
+                let u16_data: Vec<u16> = pixels
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::RGBA16>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(&u16_data).map_err(err_map)?;
+            }
+            PixelFormat::Cmyk8 => {
+                let img = encoder
+                    .new_image::<tiff::encoder::colortype::CMYK8>(info.width, info.height)
+                    .map_err(err_map)?;
+                img.write_data(pixels).map_err(err_map)?;
+            }
+            other => {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "TIFF multi-page encoding from {other:?} not supported"
+                )));
+            }
+        }
+    }
+
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::ColorSpace;
+    use crate::domain::types::{ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
 
     fn make_rgb8(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();
@@ -325,5 +418,77 @@ mod tests {
             decoded.pixels, pixels,
             "16-bit Gray TIFF roundtrip must be pixel-exact"
         );
+    }
+
+    // ── encode_pages tests ─────────────────────────────────────────
+
+    fn make_solid_page(w: u32, h: u32, r: u8, g: u8, b: u8, index: u32) -> (DecodedImage, FrameInfo) {
+        let pixels: Vec<u8> = (0..(w * h)).flat_map(|_| [r, g, b]).collect();
+        let image = DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: w,
+                height: h,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        };
+        let info = FrameInfo {
+            index,
+            delay_ms: 0,
+            disposal: DisposalMethod::None,
+            width: w,
+            height: h,
+            x_offset: 0,
+            y_offset: 0,
+        };
+        (image, info)
+    }
+
+    #[test]
+    fn encode_pages_2_page_roundtrip() {
+        let mut seq = FrameSequence::new(4, 4);
+        let (img0, fi0) = make_solid_page(4, 4, 255, 0, 0, 0);
+        let (img1, fi1) = make_solid_page(4, 4, 0, 0, 255, 1);
+        seq.push(img0, fi0);
+        seq.push(img1, fi1);
+
+        let encoded = encode_pages(&seq, &TiffEncodeConfig::default()).unwrap();
+
+        // Verify it's a valid TIFF
+        assert!(&encoded[..2] == b"II" || &encoded[..2] == b"MM");
+
+        // Decode all pages
+        let frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
+        assert_eq!(frames.len(), 2, "should have 2 pages");
+
+        // Verify page 0 is red
+        let red_expected: Vec<u8> = (0..16).flat_map(|_| [255u8, 0, 0]).collect();
+        assert_eq!(frames[0].0.pixels, red_expected);
+
+        // Verify page 1 is blue
+        let blue_expected: Vec<u8> = (0..16).flat_map(|_| [0u8, 0, 255]).collect();
+        assert_eq!(frames[1].0.pixels, blue_expected);
+    }
+
+    #[test]
+    fn encode_pages_preserves_page_count() {
+        let mut seq = FrameSequence::new(4, 4);
+        for i in 0..4 {
+            let (img, fi) = make_solid_page(4, 4, (i * 60) as u8, 0, 0, i);
+            seq.push(img, fi);
+        }
+
+        let encoded = encode_pages(&seq, &TiffEncodeConfig::default()).unwrap();
+        let count = crate::domain::decoder::frame_count(&encoded).unwrap();
+        assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn encode_pages_empty_returns_error() {
+        let seq = FrameSequence::new(4, 4);
+        let result = encode_pages(&seq, &TiffEncodeConfig::default());
+        assert!(result.is_err());
     }
 }
