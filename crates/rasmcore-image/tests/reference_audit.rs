@@ -1546,6 +1546,270 @@ fn exact_burn_midtones_vs_im() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MULTI-PARAMETER PARITY — test filters across parameter ranges
+// ═══════════════════════════════════════════════════════════════════════════
+
+// multi_parity tests are written inline per test function for type clarity.
+
+// ── Phase 1: Blur & Spatial ──────────────────────────────────────────────
+
+#[test]
+fn parity_blur_multi_radius() {
+    let cases: &[(f32, &str, f64)] = &[(1.0, "0x1", 2.0), (5.0, "0x5", 5.0), (15.0, "0x15", 5.0)];
+    eprintln!("  blur multi-radius:");
+    for (r, im_sigma, threshold) in cases {
+        if let Some(error) = check_parity_rgb(
+            64, 64,
+            |px, info| rasmcore_image::domain::filters::blur(px, info, *r).unwrap(),
+            &["-blur", im_sigma],
+            &format!("blur_r{r}"),
+        ) {
+            eprintln!("    r={r}: MAE = {error:.4}");
+            assert!(error < *threshold, "blur r={r}: MAE = {error:.4} exceeds {threshold}");
+        }
+    }
+}
+
+#[test]
+fn parity_motion_blur_multi() {
+    if !magick_available() {
+        eprintln!("SKIP motion_blur: magick not available");
+        return;
+    }
+    let cases: &[(u32, f32, &str, f64)] = &[
+        (5, 0.0, "-motion-blur 0x5+0", 10.0),
+        (15, 0.0, "-motion-blur 0x15+0", 15.0),
+        (10, 45.0, "-motion-blur 45x10+0", 15.0),
+    ];
+    eprintln!("  motion_blur:");
+    for (len, angle, _label, threshold) in cases {
+        if let Some(error) = check_parity_rgb(
+            64,
+            64,
+            |px, info| {
+                rasmcore_image::domain::filters::motion_blur(px, info, *len, *angle).unwrap()
+            },
+            &["-motion-blur", &format!("{angle}x{len}+0")],
+            &format!("motion_blur_l{len}_a{angle}"),
+        ) {
+            eprintln!("    len={len} angle={angle}: MAE = {error:.4}");
+            assert!(
+                error < *threshold,
+                "motion_blur len={len} angle={angle}: MAE = {error:.4} exceeds {threshold}"
+            );
+        }
+    }
+}
+
+#[test]
+fn parity_median_multi_radius() {
+    let cases: &[(u32, &str, f64)] = &[(1, "1", 5.0), (3, "3", 5.0), (5, "5", 5.0)];
+    eprintln!("  median multi-radius:");
+    for (r, im_r, threshold) in cases {
+        if let Some(error) = check_parity_rgb(
+            64, 64,
+            |px, info| rasmcore_image::domain::filters::median(px, info, *r).unwrap(),
+            &["-median", im_r],
+            &format!("median_r{r}"),
+        ) {
+            eprintln!("    r={r}: MAE = {error:.4}");
+            assert!(error < *threshold, "median r={r}: MAE = {error:.4} exceeds {threshold}");
+        }
+    }
+}
+
+// ── Phase 2: Edge & Morphology ───────────────────────────────────────────
+
+#[test]
+fn parity_morphology_multi_kernel() {
+    if !magick_available() {
+        eprintln!("SKIP morphology: magick not available");
+        return;
+    }
+    let ops: &[(&str, fn(&[u8], &ImageInfo, u32, rasmcore_image::domain::filters::MorphShape) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>)] = &[
+        ("Erode", rasmcore_image::domain::filters::erode),
+        ("Dilate", rasmcore_image::domain::filters::dilate),
+    ];
+    let sizes: &[u32] = &[3, 5, 7];
+
+    for (op_name, op_fn) in ops {
+        eprintln!("  morph_{op_name}:");
+        for &ks in sizes {
+            if let Some(error) = check_parity_rgb(
+                64,
+                64,
+                |px, info| {
+                    op_fn(
+                        px,
+                        info,
+                        ks,
+                        rasmcore_image::domain::filters::MorphShape::Rect,
+                    )
+                    .unwrap()
+                },
+                &["-morphology", op_name, &format!("Square:{}", ks / 2)],
+                &format!("morph_{op_name}_{ks}"),
+            ) {
+                eprintln!("    ksize={ks}: MAE = {error:.4}");
+                assert!(
+                    error < 10.0,
+                    "morph {op_name} ksize={ks}: MAE = {error:.4} exceeds 10.0"
+                );
+            }
+        }
+    }
+}
+
+// ── Phase 3: Color & Adjustment ──────────────────────────────────────────
+
+#[test]
+fn parity_hue_rotate_multi() {
+    if !magick_available() {
+        eprintln!("SKIP hue_rotate: magick not available");
+        return;
+    }
+    // IM -modulate: brightness%, saturation%, hue%
+    // hue% = 100 + (degrees / 360 * 200) per IM docs: 100 = no change, 200 = +180deg
+    let angles: &[(f32, f64)] = &[
+        (45.0, 2.0),
+        (90.0, 2.0),
+        (180.0, 2.0),
+        (270.0, 5.0),
+    ];
+    eprintln!("  hue_rotate:");
+    for (deg, threshold) in angles {
+        let im_hue = 100.0 + deg / 360.0 * 200.0;
+        if let Some(error) = check_parity_rgb(
+            64,
+            64,
+            |px, info| {
+                rasmcore_image::domain::filters::hue_rotate(px, info, *deg).unwrap()
+            },
+            &["-modulate", &format!("100,100,{im_hue}")],
+            &format!("hue_rotate_{deg}"),
+        ) {
+            eprintln!("    {deg}deg: MAE = {error:.4}");
+            assert!(
+                error < *threshold,
+                "hue_rotate {deg}: MAE = {error:.4} exceeds {threshold}"
+            );
+        }
+    }
+}
+
+#[test]
+fn parity_brightness_contrast_multi() {
+    if !magick_available() {
+        eprintln!("SKIP brightness/contrast: magick not available");
+        return;
+    }
+    // Brightness: -0.3, 0.0, +0.3 (we use -1..1, IM uses -100..100)
+    let values: &[(f32, &str, f64)] = &[
+        (-0.3, "-30x0", 2.0),
+        (0.0, "0x0", 0.01),
+        (0.3, "30x0", 2.0),
+    ];
+    eprintln!("  brightness:");
+    for (val, im_arg, threshold) in values {
+        if let Some(error) = check_parity_rgb(
+            64,
+            64,
+            |px, info| {
+                rasmcore_image::domain::filters::brightness(px, info, *val).unwrap()
+            },
+            &["-brightness-contrast", im_arg],
+            &format!("brightness_{val}"),
+        ) {
+            eprintln!("    {val}: MAE = {error:.4}");
+            assert!(
+                error < *threshold,
+                "brightness {val}: MAE = {error:.4} exceeds {threshold}"
+            );
+        }
+    }
+}
+
+#[test]
+fn parity_gamma_multi() {
+    let cases: &[(f32, &str, f64)] = &[(0.5, "0.5", 2.0), (1.0, "1.0", 0.01), (2.2, "2.2", 2.0)];
+    eprintln!("  gamma multi-value:");
+    for (g, im_g, threshold) in cases {
+        if let Some(error) = check_parity_rgb(
+            64, 64,
+            |px, info| rasmcore_image::domain::point_ops::gamma(px, info, *g).unwrap(),
+            &["-gamma", im_g],
+            &format!("gamma_{g}"),
+        ) {
+            eprintln!("    gamma={g}: MAE = {error:.4}");
+            assert!(error < *threshold, "gamma {g}: MAE = {error:.4} exceeds {threshold}");
+        }
+    }
+}
+
+#[test]
+fn parity_levels_multi() {
+    if !magick_available() {
+        eprintln!("SKIP levels: magick not available");
+        return;
+    }
+    let settings: &[((f32, f32, f32), &str, f64)] = &[
+        ((0.0, 100.0, 1.0), "0%,100%,1.0", 0.01),
+        ((10.0, 90.0, 1.5), "10%,90%,1.5", 1.0),
+        ((20.0, 80.0, 0.5), "20%,80%,0.5", 1.0),
+    ];
+    eprintln!("  levels:");
+    for ((black, white, g), im_arg, threshold) in settings {
+        if let Some(error) = check_parity_rgb(
+            64,
+            64,
+            |px, info| {
+                rasmcore_image::domain::filters::levels(px, info, *black, *white, *g).unwrap()
+            },
+            &["-level", im_arg],
+            &format!("levels_{black}_{white}_{g}"),
+        ) {
+            eprintln!("    black={black} white={white} gamma={g}: MAE = {error:.4}");
+            assert!(
+                error < *threshold,
+                "levels {black}/{white}/{g}: MAE = {error:.4} exceeds {threshold}"
+            );
+        }
+    }
+}
+
+// ── Phase 4: Enhancement ─────────────────────────────────────────────────
+
+#[test]
+fn parity_equalize_normalize() {
+    if !magick_available() {
+        eprintln!("SKIP equalize/normalize: magick not available");
+        return;
+    }
+    // Equalize
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::equalize_registered(px, info).unwrap(),
+        &["-equalize"],
+        "equalize",
+    ) {
+        eprintln!("  equalize: MAE = {error:.4}");
+        assert!(error < 15.0, "equalize MAE = {error:.4} exceeds 15.0");
+    }
+    // Normalize
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::normalize_registered(px, info).unwrap(),
+        &["-normalize"],
+        "normalize",
+    ) {
+        eprintln!("  normalize: MAE = {error:.4}");
+        assert!(error < 10.0, "normalize MAE = {error:.4} exceeds 10.0");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ═══════════════════════════════════════════════════════════════════════════
 
