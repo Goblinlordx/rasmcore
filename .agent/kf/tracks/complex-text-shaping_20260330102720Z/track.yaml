@@ -5,107 +5,154 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Upgrade draw_text_ttf to use rustybuzz for OpenType shaping (ligatures,
+  summary: 'Upgrade draw_text_ttf to use rustybuzz for OpenType shaping (ligatures,
+
     contextual forms, kerning), unicode-bidi for bidirectional text (RTL/LTR),
+
     and unicode-linebreak for Unicode-aware line breaking. Replaces naive
+
     char-by-char iteration with a proper shaping pipeline. All deps are pure
+
     Rust, WASM-compatible, and rustybuzz is already a transitive dependency.
-  context: |
-    The current draw_text_ttf iterates characters one by one without shaping.
+
+    '
+  context: 'The current draw_text_ttf iterates characters one by one without shaping.
+
     This means no ligatures (fi, fl), no kerning, no contextual Arabic/Devanagari
+
     forms, and no RTL support. For full internationalization support, text must
+
     go through a shaping engine before rasterization. rustybuzz (pure Rust port
+
     of HarfBuzz) is already in the dependency tree via resvg. Adding it as a
+
     direct dependency + unicode-bidi + unicode-linebreak completes the text stack.
-  codebase_analysis: |
-    CURRENT PIPELINE:
+
+    '
+  codebase_analysis: 'CURRENT PIPELINE:
+
     draw_text_ttf() -> for ch in chars -> fontdue::rasterize(ch) -> alpha blend
 
+
     TARGET PIPELINE:
+
     1. unicode-bidi: detect paragraph direction, reorder for visual display
+
     2. unicode-linebreak: find valid break points for word wrap
+
     3. rustybuzz: shape text run -> Vec<GlyphInfo> with glyph IDs + positions
+
     4. fontdue: rasterize each glyph ID at shaped position -> alpha blend
 
+
     EXISTING DEPS (transitive via resvg):
+
     - rustybuzz 0.18 (HarfBuzz port)
+
     - unicode-bidi 0.3 (bidi algorithm)
+
     - Need to add: unicode-linebreak for UAX#14
 
+
     KEY CHANGE:
+
     - rustybuzz::shape() returns GlyphInfo with glyph_id + x_advance + x_offset
+
     - fontdue::Font::rasterize_indexed() takes glyph_id (not char)
+
     - Positions come from shaper, not from fontdue metrics
+
+    '
   acceptance_criteria:
-    - Latin ligatures render correctly (fi, fl, ffi)
-    - Kerning pairs adjust spacing (AV, To, etc.)
-    - Arabic text shapes with correct contextual forms (initial/medial/final)
-    - RTL text (Hebrew, Arabic) renders right-to-left
-    - Mixed LTR/RTL text reorders correctly per Unicode Bidi Algorithm
-    - Word wrapping breaks at Unicode-valid positions (not mid-word for CJK)
-    - Existing ASCII rendering unchanged (backward compatible)
-    - All pure Rust, WASM-compatible, no system dependencies
-    - Tests with Latin, Arabic, and mixed bidi text samples
-  out_of_scope: |
-    Vertical text layout (CJK vertical). Color emoji rendering.
+  - Latin ligatures render correctly (fi, fl, ffi)
+  - Kerning pairs adjust spacing (AV, To, etc.)
+  - Arabic text shapes with correct contextual forms (initial/medial/final)
+  - RTL text (Hebrew, Arabic) renders right-to-left
+  - Mixed LTR/RTL text reorders correctly per Unicode Bidi Algorithm
+  - Word wrapping breaks at Unicode-valid positions (not mid-word for CJK)
+  - Existing ASCII rendering unchanged (backward compatible)
+  - All pure Rust, WASM-compatible, no system dependencies
+  - Tests with Latin, Arabic, and mixed bidi text samples
+  out_of_scope: 'Vertical text layout (CJK vertical). Color emoji rendering.
+
     Font fallback chains (multiple fonts). Text-on-path.
+
     Paragraph alignment (left/center/right/justify).
-  technical_notes: |
-    SHAPING PIPELINE:
+
+    '
+  technical_notes: 'SHAPING PIPELINE:
+
     1. Parse font with rustybuzz::Face::from_slice(font_data)
+
     2. Create rustybuzz::UnicodeBuffer, add text, set script/direction
+
     3. rustybuzz::shape(&face, &[], buffer) -> GlyphBuffer
+
     4. Iterate GlyphBuffer: glyph_id, x_advance, x_offset, y_offset
+
     5. For each glyph: fontdue::Font::rasterize_indexed(glyph_id, px_size)
+
     6. Position at cursor + x_offset, y + y_offset
+
     7. Alpha blend as before
 
+
     BIDI:
+
     1. unicode_bidi::BidiInfo::new(text, None) -> paragraph info
+
     2. For each paragraph level run, shape separately with correct direction
+
     3. Reorder runs for visual display order
 
+
     LINE BREAKING:
+
     1. unicode_linebreak::linebreaks(text) -> break opportunities
+
     2. Accumulate glyph advances until line width exceeded
+
     3. Break at last valid break point
+
     4. Re-shape each line segment independently
 
+
     fontdue::Font::rasterize_indexed(glyph_id, px) exists for shaped output.
+
+    '
 plan:
-  - phase: Shaping Integration
-    tasks:
-      - text: Add rustybuzz and unicode-linebreak as direct dependencies
-        done: false
-      - text: Implement shape_text() using rustybuzz Face + UnicodeBuffer
-        done: false
-      - text: Replace char iteration in draw_text_ttf with shaped glyph positions
-        done: false
-      - text: Use fontdue rasterize_indexed for glyph ID rendering
-        done: false
-  - phase: Bidi Support
-    tasks:
-      - text: Integrate unicode-bidi for paragraph direction detection
-        done: false
-      - text: Shape LTR and RTL runs separately with correct direction
-        done: false
-      - text: Reorder visual runs for correct display order
-        done: false
-  - phase: Line Breaking
-    tasks:
-      - text: Integrate unicode-linebreak for UAX#14 break opportunities
-        done: false
-      - text: Add optional max_width param for word wrap
-        done: false
-  - phase: Testing
-    tasks:
-      - text: Test Latin ligatures (fi, ffi) and kerning (AV) with DejaVu Sans
-        done: false
-      - text: Test Arabic shaping with contextual forms
-        done: false
-      - text: Test mixed LTR/RTL bidi reordering
-        done: false
-      - text: Backward compat — existing ASCII tests still pass
-        done: false
+- phase: Shaping Integration
+  tasks:
+  - text: Add rustybuzz and unicode-linebreak as direct dependencies
+    done: true
+  - text: Implement shape_text() using rustybuzz Face + UnicodeBuffer
+    done: true
+  - text: Replace char iteration in draw_text_ttf with shaped glyph positions
+    done: true
+  - text: Use fontdue rasterize_indexed for glyph ID rendering
+    done: true
+- phase: Bidi Support
+  tasks:
+  - text: Integrate unicode-bidi for paragraph direction detection
+    done: true
+  - text: Shape LTR and RTL runs separately with correct direction
+    done: true
+  - text: Reorder visual runs for correct display order
+    done: true
+- phase: Line Breaking
+  tasks:
+  - text: Integrate unicode-linebreak for UAX#14 break opportunities
+    done: true
+  - text: Add optional max_width param for word wrap
+    done: true
+- phase: Testing
+  tasks:
+  - text: Test Latin ligatures (fi, ffi) and kerning (AV) with DejaVu Sans
+    done: true
+  - text: Test Arabic shaping with contextual forms
+    done: true
+  - text: Test mixed LTR/RTL bidi reordering
+    done: true
+  - text: Backward compat — existing ASCII tests still pass
+    done: true
 extra: {}
