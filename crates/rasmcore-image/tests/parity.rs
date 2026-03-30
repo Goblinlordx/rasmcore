@@ -10,7 +10,7 @@ use butteraugli::{ButteraugliParams, butteraugli};
 use dssim_core::Dssim;
 use imgref::Img;
 use rasmcore_image::domain::types::*;
-use rasmcore_image::domain::{decoder, encoder, filters, transform};
+use rasmcore_image::domain::{concat, decoder, encoder, filters, transform};
 use rgb::RGB8;
 
 fn fixtures_dir() -> std::path::PathBuf {
@@ -988,5 +988,184 @@ fn parity_smart_resize_vs_imagemagick() {
     assert!(
         psnr > 25.0,
         "smart_resize vs ImageMagick: PSNR={psnr:.1}dB (expected > 25)"
+    );
+}
+
+// =============================================================================
+// Concat parity — pixel-exact comparison against ImageMagick +append / -append
+// =============================================================================
+
+/// Decode a fixture PNG to raw RGB8 pixels.
+fn decode_fixture_rgb(name: &str) -> (Vec<u8>, ImageInfo) {
+    let data = load_fixture(name);
+    let decoded = decoder::decode(&data).unwrap();
+    // Convert RGBA8 to RGB8 if needed (IM PNGs are typically RGB)
+    if decoded.info.format == PixelFormat::Rgba8 {
+        let rgb: Vec<u8> = decoded
+            .pixels
+            .chunks_exact(4)
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let info = ImageInfo {
+            format: PixelFormat::Rgb8,
+            ..decoded.info
+        };
+        (rgb, info)
+    } else {
+        (decoded.pixels, decoded.info)
+    }
+}
+
+/// Decode a reference PNG to raw RGB8 pixels.
+fn decode_reference_rgb(name: &str) -> (Vec<u8>, ImageInfo) {
+    let data = load_reference(name);
+    let decoded = decoder::decode(&data).unwrap();
+    if decoded.info.format == PixelFormat::Rgba8 {
+        let rgb: Vec<u8> = decoded
+            .pixels
+            .chunks_exact(4)
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let info = ImageInfo {
+            format: PixelFormat::Rgb8,
+            ..decoded.info
+        };
+        (rgb, info)
+    } else {
+        (decoded.pixels, decoded.info)
+    }
+}
+
+#[test]
+fn parity_concat_horizontal_same_size() {
+    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
+    let (blue_px, blue_info) = decode_fixture_rgb("solid_blue_32x32.png");
+
+    let images = vec![
+        (red_px.as_slice(), &red_info),
+        (blue_px.as_slice(), &blue_info),
+    ];
+    let result = concat::concat_horizontal(&images, 0, &[0, 0, 0]).unwrap();
+
+    let (ref_px, ref_info) = decode_reference_rgb("concat_h_same_size.png");
+
+    assert_eq!(
+        result.info.width, ref_info.width,
+        "width mismatch: ours={} ref={}",
+        result.info.width, ref_info.width
+    );
+    assert_eq!(
+        result.info.height, ref_info.height,
+        "height mismatch: ours={} ref={}",
+        result.info.height, ref_info.height
+    );
+
+    let mae = mean_absolute_error(&result.pixels, &ref_px);
+    eprintln!(
+        "concat_h_same_size: {}x{} vs ref {}x{}, MAE={mae:.3}",
+        result.info.width, result.info.height, ref_info.width, ref_info.height
+    );
+    assert!(
+        mae < 0.01,
+        "concat_h_same_size: MAE={mae:.3} (expected pixel-exact, < 0.01)"
+    );
+}
+
+#[test]
+fn parity_concat_vertical_same_size() {
+    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
+    let (blue_px, blue_info) = decode_fixture_rgb("solid_blue_32x32.png");
+
+    let images = vec![
+        (red_px.as_slice(), &red_info),
+        (blue_px.as_slice(), &blue_info),
+    ];
+    let result = concat::concat_vertical(&images, 0, &[0, 0, 0]).unwrap();
+
+    let (ref_px, ref_info) = decode_reference_rgb("concat_v_same_size.png");
+
+    assert_eq!(result.info.width, ref_info.width);
+    assert_eq!(result.info.height, ref_info.height);
+
+    let mae = mean_absolute_error(&result.pixels, &ref_px);
+    eprintln!(
+        "concat_v_same_size: {}x{} vs ref {}x{}, MAE={mae:.3}",
+        result.info.width, result.info.height, ref_info.width, ref_info.height
+    );
+    assert!(
+        mae < 0.01,
+        "concat_v_same_size: MAE={mae:.3} (expected pixel-exact, < 0.01)"
+    );
+}
+
+#[test]
+fn parity_concat_horizontal_different_heights() {
+    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
+    let (green_px, green_info) = decode_fixture_rgb("solid_green_48x24.png");
+
+    let images = vec![
+        (red_px.as_slice(), &red_info),
+        (green_px.as_slice(), &green_info),
+    ];
+    // IM uses -gravity Center -background gray
+    let result = concat::concat_horizontal(&images, 0, &[128, 128, 128]).unwrap();
+
+    let (ref_px, ref_info) = decode_reference_rgb("concat_h_diff_height.png");
+
+    assert_eq!(
+        result.info.width, ref_info.width,
+        "width mismatch: ours={} ref={}",
+        result.info.width, ref_info.width
+    );
+    assert_eq!(
+        result.info.height, ref_info.height,
+        "height mismatch: ours={} ref={}",
+        result.info.height, ref_info.height
+    );
+
+    let mae = mean_absolute_error(&result.pixels, &ref_px);
+    eprintln!(
+        "concat_h_diff_height: {}x{} vs ref {}x{}, MAE={mae:.3}",
+        result.info.width, result.info.height, ref_info.width, ref_info.height
+    );
+    // Allow small tolerance — IM may handle centering differently for odd pixel counts
+    assert!(
+        mae < 1.0,
+        "concat_h_diff_height: MAE={mae:.3} (expected < 1.0)"
+    );
+}
+
+#[test]
+fn parity_concat_vertical_different_widths() {
+    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
+    let (green_px, green_info) = decode_fixture_rgb("solid_green_48x24.png");
+
+    let images = vec![
+        (red_px.as_slice(), &red_info),
+        (green_px.as_slice(), &green_info),
+    ];
+    let result = concat::concat_vertical(&images, 0, &[128, 128, 128]).unwrap();
+
+    let (ref_px, ref_info) = decode_reference_rgb("concat_v_diff_width.png");
+
+    assert_eq!(
+        result.info.width, ref_info.width,
+        "width mismatch: ours={} ref={}",
+        result.info.width, ref_info.width
+    );
+    assert_eq!(
+        result.info.height, ref_info.height,
+        "height mismatch: ours={} ref={}",
+        result.info.height, ref_info.height
+    );
+
+    let mae = mean_absolute_error(&result.pixels, &ref_px);
+    eprintln!(
+        "concat_v_diff_width: {}x{} vs ref {}x{}, MAE={mae:.3}",
+        result.info.width, result.info.height, ref_info.width, ref_info.height
+    );
+    assert!(
+        mae < 1.0,
+        "concat_v_diff_width: MAE={mae:.3} (expected < 1.0)"
     );
 }

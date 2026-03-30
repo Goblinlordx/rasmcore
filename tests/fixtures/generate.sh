@@ -101,6 +101,26 @@ $IM /out/inputs/photo_256x256.png -compress LZW /out/reference/tiff_lzw.tiff
 # TIFF Deflate/Zip
 $IM /out/inputs/photo_256x256.png -compress Zip /out/reference/tiff_deflate.tiff
 
+# --- Concat reference outputs (ImageMagick append / montage) -----------------
+echo "  Creating concat reference outputs..."
+
+# Create two distinct solid-color inputs for concat tests (32x32 red, 32x32 blue)
+$IM -size 32x32 'xc:#FF0000' /out/inputs/solid_red_32x32.png
+$IM -size 32x32 'xc:#0000FF' /out/inputs/solid_blue_32x32.png
+$IM -size 48x24 'xc:#00FF00' /out/inputs/solid_green_48x24.png
+
+# Horizontal append: red + blue side-by-side (64x32)
+$IM /out/inputs/solid_red_32x32.png /out/inputs/solid_blue_32x32.png +append /out/reference/concat_h_same_size.png
+
+# Vertical append: red on top, blue on bottom (32x64)
+$IM /out/inputs/solid_red_32x32.png /out/inputs/solid_blue_32x32.png -append /out/reference/concat_v_same_size.png
+
+# Horizontal with different heights: red 32x32 + green 48x24 (gray bg, centered)
+$IM /out/inputs/solid_red_32x32.png /out/inputs/solid_green_48x24.png -background '#808080' -gravity Center +append /out/reference/concat_h_diff_height.png
+
+# Vertical with different widths: red 32x32 + green 48x24 (gray bg, centered)
+$IM /out/inputs/solid_red_32x32.png /out/inputs/solid_green_48x24.png -background '#808080' -gravity Center -append /out/reference/concat_v_diff_width.png
+
 # --- Verify reproducibility (hash all outputs) -------------------------------
 echo "  Verifying output hashes..."
 OUTPUT_HASH=$(cd "$OUT_DIR" && find . \( -name '*.png' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' -o -name '*.bmp' -o -name '*.tiff' -o -name '*.qoi' \) | sort | xargs shasum -a 256 | shasum -a 256 | awk '{print $1}')
