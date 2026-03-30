@@ -14,8 +14,8 @@ mod ref_tools;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::path::Path;
 
-use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::filters::MertensParams;
+use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::{decoder, encoder, filters, transform};
 
 // ─── Fixture Helpers ─────────────────────────────────────────────────────
@@ -611,6 +611,51 @@ fn enhancement_filter_benchmarks(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("clarity/rasmcore", size), |b| {
             b.iter(|| filters::clarity(&px, &inf, 0.5, 2.0).unwrap());
         });
+
+        // Frequency separation — low-pass (sigma=4)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("freq_low/rasmcore", size), |b| {
+            b.iter(|| filters::frequency_low(&px, &inf, 4.0).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("freq_low/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-blur", "0x4"], "png", None));
+            });
+        }
+
+        // Frequency separation — high-pass (sigma=4)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("freq_high/rasmcore", size), |b| {
+            b.iter(|| filters::frequency_high(&px, &inf, 4.0).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            // ImageMagick high-pass: original - blur + 50% gray
+            let p = png_path.to_str().unwrap().to_string();
+            group.bench_function(BenchmarkId::new("freq_high/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &[
+                            "(",
+                            "+clone",
+                            "-blur",
+                            "0x4",
+                            ")",
+                            "-compose",
+                            "Mathematics",
+                            "-define",
+                            "compose:args=0,-1,1,0.5",
+                            "-composite",
+                        ],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
     }
 
     // Mertens fusion at 256 only (very expensive, 3 input images)
@@ -751,12 +796,9 @@ fn geometric_warp_benchmarks(c: &mut Criterion) {
         }
 
         let px = pixels.clone();
-        group.bench_function(
-            BenchmarkId::new("displacement_map/rasmcore", size),
-            |b| {
-                b.iter(|| filters::displacement_map(&px, &inf, &map_x, &map_y).unwrap());
-            },
-        );
+        group.bench_function(BenchmarkId::new("displacement_map/rasmcore", size), |b| {
+            b.iter(|| filters::displacement_map(&px, &inf, &map_x, &map_y).unwrap());
+        });
 
         // Affine — 15-degree rotation around center
         let angle_rad = 15.0_f64 * std::f64::consts::PI / 180.0;
@@ -778,14 +820,7 @@ fn geometric_warp_benchmarks(c: &mut Criterion) {
         if ref_tools::has_tool("magick") {
             let p = png_path_str.clone();
             group.bench_function(BenchmarkId::new("affine/imagemagick", size), |b| {
-                b.iter(|| {
-                    ref_tools::magick_pipeline(
-                        &p,
-                        &["-distort", "SRT", "15"],
-                        "png",
-                        None,
-                    )
-                });
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-distort", "SRT", "15"], "png", None));
             });
         }
     }
@@ -811,8 +846,15 @@ fn transform_benchmarks(c: &mut Criterion) {
         let crop_offset = size / 4;
         group.bench_function(BenchmarkId::new("crop/rasmcore", size), |b| {
             b.iter(|| {
-                transform::crop(&dec.pixels, &dec.info, crop_offset, crop_offset, crop_size, crop_size)
-                    .unwrap()
+                transform::crop(
+                    &dec.pixels,
+                    &dec.info,
+                    crop_offset,
+                    crop_offset,
+                    crop_size,
+                    crop_size,
+                )
+                .unwrap()
             });
         });
 
@@ -838,9 +880,7 @@ fn transform_benchmarks(c: &mut Criterion) {
 
         // Flip horizontal
         group.bench_function(BenchmarkId::new("flip_horizontal/rasmcore", size), |b| {
-            b.iter(|| {
-                transform::flip(&dec.pixels, &dec.info, FlipDirection::Horizontal).unwrap()
-            });
+            b.iter(|| transform::flip(&dec.pixels, &dec.info, FlipDirection::Horizontal).unwrap());
         });
 
         if ref_tools::has_tool("magick") {

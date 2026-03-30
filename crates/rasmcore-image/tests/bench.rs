@@ -101,16 +101,4 @@ fn benchmark_filters() {
     bench("Grayscale", || {
         filters::grayscale(&decoded.pixels, &decoded.info).unwrap()
     });
-    bench("FreqSep low σ=4", || {
-        filters::frequency_low(&decoded.pixels, &decoded.info, 4.0).unwrap()
-    });
-    bench("FreqSep high σ=4", || {
-        filters::frequency_high(&decoded.pixels, &decoded.info, 4.0).unwrap()
-    });
-    bench("FreqSep low σ=10", || {
-        filters::frequency_low(&decoded.pixels, &decoded.info, 10.0).unwrap()
-    });
-    bench("FreqSep high σ=10", || {
-        filters::frequency_high(&decoded.pixels, &decoded.info, 10.0).unwrap()
-    });
 }
