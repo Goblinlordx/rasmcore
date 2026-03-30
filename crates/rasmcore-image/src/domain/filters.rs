@@ -3751,6 +3751,13 @@ pub fn flatten(
 }
 
 /// Add alpha channel to RGB8, producing RGBA8 with given alpha value.
+#[rasmcore_macros::register_mapper(
+    name = "add_alpha",
+    category = "alpha",
+    group = "alpha",
+    variant = "add",
+    reference = "RGB8 to RGBA8 with uniform alpha"
+)]
 pub fn add_alpha(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3781,6 +3788,13 @@ pub fn add_alpha(
 }
 
 /// Remove alpha channel from RGBA8, producing RGB8.
+#[rasmcore_macros::register_mapper(
+    name = "remove_alpha",
+    category = "alpha",
+    group = "alpha",
+    variant = "remove",
+    reference = "RGBA8 to RGB8 by dropping alpha channel"
+)]
 pub fn remove_alpha(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
@@ -3822,6 +3836,13 @@ pub struct MaskApplyParams {
 /// Mask is resized to match image dimensions if they differ.
 ///
 /// IM equivalent: `magick image mask -compose CopyOpacity -composite`
+#[rasmcore_macros::register_compositor(
+    name = "mask_apply",
+    category = "composite",
+    group = "composite",
+    variant = "mask",
+    reference = "alpha mask application via luminance"
+)]
 pub fn mask_apply(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3936,6 +3957,13 @@ pub struct BlendIfParams {
 /// luminosity. The "this layer" range controls where the top layer is
 /// visible; the "underlying" range controls where the bottom layer
 /// shows through. Feather creates smooth transitions at range boundaries.
+#[rasmcore_macros::register_compositor(
+    name = "blend_if",
+    category = "composite",
+    group = "composite",
+    variant = "blend_if",
+    reference = "Photoshop Blend-If luminosity-range blending"
+)]
 pub fn blend_if(
     pixels: &[u8],
     info: &ImageInfo,
@@ -4208,6 +4236,13 @@ fn blend_channel(a: u8, b: u8, mode: BlendMode) -> u8 {
 /// `fg` is the "top" layer, `bg` is the "bottom" layer.
 /// Both must have the same format and dimensions.
 /// For RGBA8, alpha is preserved from `bg` (bottom layer).
+#[rasmcore_macros::register_compositor(
+    name = "blend",
+    category = "composite",
+    group = "composite",
+    variant = "blend",
+    reference = "18-mode photographic blend (multiply, screen, overlay, etc.)"
+)]
 pub fn blend(
     fg_pixels: &[u8],
     fg_info: &ImageInfo,

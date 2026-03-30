@@ -12,6 +12,12 @@ use super::types::{ImageInfo, PixelFormat};
 /// Places the foreground at `(offset_x, offset_y)` on the background.
 /// Both inputs must be RGBA8 with straight (non-premultiplied) alpha.
 /// Output has the same dimensions as the background.
+#[rasmcore_macros::register_compositor(
+    name = "composite",
+    category = "composite",
+    group = "composite",
+    reference = "Porter-Duff 1984 over operator"
+)]
 pub fn alpha_composite_over(
     fg_pixels: &[u8],
     fg_info: &ImageInfo,

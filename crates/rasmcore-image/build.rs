@@ -15,23 +15,29 @@ fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let filters_path = Path::new(&manifest_dir).join("src/domain/filters.rs");
     let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
+    let composite_path = Path::new(&manifest_dir).join("src/domain/composite.rs");
 
-    // Tell cargo to rerun if filters.rs, param_types.rs, or build.rs changes
+    // Tell cargo to rerun if filters.rs, param_types.rs, composite.rs, or build.rs changes
     println!("cargo:rerun-if-changed=src/domain/filters.rs");
     println!("cargo:rerun-if-changed=src/domain/param_types.rs");
+    println!("cargo:rerun-if-changed=src/domain/composite.rs");
     println!("cargo:rerun-if-changed=build.rs");
 
     if !filters_path.exists() {
         return;
     }
 
-    // Combine sources: param_types first (defines reusable types), then filters
+    // Combine sources: param_types first (defines reusable types), then filters, then composite
     let mut source = String::new();
     if param_types_path.exists() {
         source.push_str(&fs::read_to_string(&param_types_path).unwrap());
         source.push('\n');
     }
     source.push_str(&fs::read_to_string(&filters_path).unwrap());
+    if composite_path.exists() {
+        source.push('\n');
+        source.push_str(&fs::read_to_string(&composite_path).unwrap());
+    }
     let filters = parse_registered_filters(&source);
 
     if filters.is_empty() {
