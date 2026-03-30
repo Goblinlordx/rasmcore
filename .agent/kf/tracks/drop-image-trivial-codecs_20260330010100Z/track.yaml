@@ -73,19 +73,37 @@ spec:
     Removing image crate entirely (needs transform rewrite first).
     Native AVIF implementation (documented future goal).
   technical_notes: |
+    COVERAGE AUDIT (MANDATORY before each codec swap):
+      For each codec being replaced, audit the image crate's coverage and
+      verify our native implementation matches or exceeds it:
+      1. Read the image crate's codec source (or its sub-crate) to identify
+         supported variants: bit depths, color types, compression modes,
+         subformats, metadata handling, edge cases
+      2. Verify our native implementation handles each variant
+      3. Write a COVERAGE.md in the native crate documenting:
+         - What the image crate supports for this format
+         - What our implementation supports (must be >= image crate)
+         - What the full format spec allows but neither covers (future work)
+      4. Parity tests must cover the full range of supported variants,
+         not just the happy path (e.g., 1/8/16/24/32-bit BMP, RLE-compressed
+         BMP, OS/2 BMP headers, etc.)
+
     PARITY TEST PATTERN (must be added before each codec swap):
-      1. Generate a test image (gradient, checkerboard, photo-like)
-      2. Encode with image crate, save as reference fixture
+      1. Generate test images covering all supported variants
+      2. Encode with image crate, save as reference fixtures
       3. Encode with native implementation
       4. Decode both with both implementations
       5. Assert pixel-exact match (lossless) or MAE < threshold (lossy)
       For decode-only swaps: decode same file with both, compare pixels.
 
-    Order of operations per codec:
-      1. Write parity test (native vs image crate) -- must pass BEFORE swap
-      2. Wire native as default
-      3. Drop image feature
-      4. Verify parity test still passes without image feature
+    ORDER OF OPERATIONS per codec:
+      1. Audit coverage (image crate vs our impl vs full spec)
+      2. Fix any coverage gaps in our impl (must match image crate)
+      3. Write parity tests covering all variants
+      4. Write COVERAGE.md documenting what is/isn't supported
+      5. Wire native as default
+      6. Drop image feature
+      7. Verify parity tests still pass without image feature
 
     For PNG, the image crate internally uses the png crate. We can use
     png::Decoder and png::Encoder directly. The encoder/png.rs already
@@ -96,15 +114,23 @@ spec:
 
     For AVIF, remove encode/decode paths and return UnsupportedFormat.
 plan:
-  - phase: "Parity tests for trivial native codecs"
+  - phase: "Coverage audit and parity for trivial native codecs"
     tasks:
-      - text: "Add BMP decode/encode parity test: rasmcore-bmp vs image crate on gradient+photo images"
+      - text: "BMP coverage audit: compare rasmcore-bmp vs image crate vs BMP spec (bit depths, RLE, OS/2 headers, alpha)"
         done: false
-      - text: "Add QOI decode/encode parity test: rasmcore-qoi vs image crate on gradient+photo images"
+      - text: "BMP: fix any coverage gaps, add parity tests for all supported variants, write COVERAGE.md"
         done: false
-      - text: "Add TGA decode/encode parity test: rasmcore-tga vs image crate on gradient+photo images"
+      - text: "QOI coverage audit: compare rasmcore-qoi vs image crate vs QOI spec (all channel/colorspace combos)"
         done: false
-      - text: "Add PNM decode/encode parity test: rasmcore-pnm vs image crate on gradient+photo images"
+      - text: "QOI: fix any coverage gaps, add parity tests for all supported variants, write COVERAGE.md"
+        done: false
+      - text: "TGA coverage audit: compare rasmcore-tga vs image crate vs TGA spec (bit depths, RLE, origin, alpha)"
+        done: false
+      - text: "TGA: fix any coverage gaps, add parity tests for all supported variants, write COVERAGE.md"
+        done: false
+      - text: "PNM coverage audit: compare rasmcore-pnm vs image crate vs PNM spec (PBM/PGM/PPM/PAM, ascii/binary)"
+        done: false
+      - text: "PNM: fix any coverage gaps, add parity tests for all supported variants, write COVERAGE.md"
         done: false
   - phase: "Enable native trivial codecs and drop image features"
     tasks:
@@ -112,39 +138,41 @@ plan:
         done: false
       - text: "Drop bmp, qoi, tga, pnm from image features"
         done: false
-      - text: "Verify all 4 parity tests still pass without image features"
+      - text: "Verify all parity tests still pass without image features"
         done: false
-  - phase: "JPEG decode parity and swap"
+  - phase: "JPEG decode coverage audit and swap"
     tasks:
-      - text: "Add JPEG decode parity test: rasmcore-jpeg decode vs image/zune-jpeg decode"
+      - text: "JPEG decode coverage audit: compare rasmcore-jpeg decode vs image/zune-jpeg (progressive, CMYK, 12-bit, restart markers, subsampling modes)"
+        done: false
+      - text: "JPEG: fix any decode coverage gaps, add parity tests for all supported variants, write COVERAGE.md"
         done: false
       - text: "Wire rasmcore-jpeg decoder in decoder/mod.rs (JPEG SOI check)"
         done: false
-      - text: "Drop jpeg from image features"
+      - text: "Drop jpeg from image features, verify parity tests pass"
         done: false
-      - text: "Verify JPEG decode parity test passes without image jpeg feature"
-        done: false
-  - phase: "PNG direct crate parity and swap"
+  - phase: "PNG direct crate coverage audit and swap"
     tasks:
-      - text: "Add PNG encode parity test: png crate direct vs image::codecs::png on multiple images"
+      - text: "PNG coverage audit: compare png crate direct vs image wrapper (bit depths, color types, interlacing, transparency, metadata chunks)"
         done: false
-      - text: "Add PNG decode parity test: png crate direct vs image::load_from_memory"
+      - text: "Add PNG encode/decode parity tests covering all supported variants, write COVERAGE.md"
         done: false
       - text: "Rewrite encoder/png.rs to use png crate Encoder directly (no DynamicImage)"
         done: false
-      - text: "Add png decode path in decoder/mod.rs using png crate Decoder directly"
+      - text: "Add PNG decode path in decoder/mod.rs using png crate Decoder directly"
         done: false
-      - text: "Drop png from image features"
+      - text: "Drop png from image features, verify parity tests pass"
         done: false
-  - phase: "GIF direct crate parity and swap"
+  - phase: "GIF direct crate coverage audit and swap"
     tasks:
-      - text: "Add GIF decode/encode parity test: gif crate direct vs image crate"
+      - text: "GIF coverage audit: compare gif crate direct vs image wrapper (animated, transparency, interlace, local color tables)"
+        done: false
+      - text: "Add GIF decode/encode parity tests covering all supported variants, write COVERAGE.md"
         done: false
       - text: "Rewrite encoder/gif.rs to use gif crate Encoder directly"
         done: false
       - text: "Add GIF decode path in decoder/mod.rs using gif crate directly"
         done: false
-      - text: "Drop gif from image features"
+      - text: "Drop gif from image features, verify parity tests pass"
         done: false
   - phase: "Drop AVIF and TIFF from image"
     tasks:
