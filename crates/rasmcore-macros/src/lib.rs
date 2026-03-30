@@ -68,6 +68,11 @@ impl Parse for RegisterFilterArgs {
                     let lit: LitStr = input.parse()?;
                     reference = lit.value();
                 }
+                "overlap" => {
+                    // Overlap is parsed by build.rs for pipeline node generation.
+                    // The proc macro just skips it.
+                    let _lit: LitStr = input.parse()?;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),

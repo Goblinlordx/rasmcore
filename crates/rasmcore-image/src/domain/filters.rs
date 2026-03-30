@@ -656,7 +656,8 @@ pub struct WhiteBalanceTemperatureParams {
     name = "blur",
     category = "spatial",
     group = "blur",
-    reference = "Gaussian convolution"
+    reference = "Gaussian convolution",
+    overlap = "uniform(10)"
 )]
 pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError> {
     if radius < 0.0 {
@@ -783,15 +784,15 @@ pub fn bokeh_blur(
     shape: u32,
 ) -> Result<Vec<u8>, ImageError> {
     let shape = match shape {
-        1 => BokehShape::Hexagon,
-        _ => BokehShape::Disc,
+        1 => 1,
+        _ => 0,
     };
     if radius == 0 {
         return Ok(pixels.to_vec());
     }
     let (kernel, side) = match shape {
-        BokehShape::Disc => make_disc_kernel(radius),
-        BokehShape::Hexagon => make_hex_kernel(radius),
+        1 => make_hex_kernel(radius),
+        _ => make_disc_kernel(radius),
     };
     let divisor: f32 = kernel.iter().sum();
     if divisor == 0.0 {
@@ -1110,7 +1111,8 @@ pub fn spin_blur(
 #[rasmcore_macros::register_filter(
     name = "sharpen",
     category = "spatial",
-    reference = "unsharp mask"
+    reference = "unsharp mask",
+    overlap = "uniform(2)"
 )]
 pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
@@ -3820,7 +3822,6 @@ pub struct MaskApplyParams {
 /// Mask is resized to match image dimensions if they differ.
 ///
 /// IM equivalent: `magick image mask -compose CopyOpacity -composite`
-#[rasmcore_macros::register_filter(name = "mask_apply", category = "alpha")]
 pub fn mask_apply(
     pixels: &[u8],
     info: &ImageInfo,
@@ -3935,7 +3936,6 @@ pub struct BlendIfParams {
 /// luminosity. The "this layer" range controls where the top layer is
 /// visible; the "underlying" range controls where the bottom layer
 /// shows through. Feather creates smooth transitions at range boundaries.
-#[rasmcore_macros::register_filter(name = "blend_if", category = "alpha")]
 pub fn blend_if(
     pixels: &[u8],
     info: &ImageInfo,
@@ -8951,13 +8951,6 @@ fn fbm_f32(
 ///
 /// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
 /// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
-#[rasmcore_macros::register_filter(
-    name = "perlin_noise",
-    category = "generator",
-    group = "noise_gen",
-    variant = "perlin",
-    reference = "Perlin 1985 gradient noise"
-)]
 pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
@@ -8998,13 +8991,6 @@ pub fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32
 ///
 /// On WASM: f32 arithmetic (SIMD-friendly, verified u8-identical to f64).
 /// On native: f64 scalar (LLVM auto-vectorizes to SSE/NEON).
-#[rasmcore_macros::register_filter(
-    name = "simplex_noise",
-    category = "generator",
-    group = "noise_gen",
-    variant = "simplex",
-    reference = "Perlin 2001 simplex noise"
-)]
 pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
     let perm = build_perm_table(seed);
     let octaves = octaves.clamp(1, 16);
@@ -9053,7 +9039,6 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
 ///
 /// Angle 0 = left-to-right, 90 = top-to-bottom, etc.
 /// IM equivalent: `magick -size WxH gradient:color1-color2 -rotate angle`
-#[rasmcore_macros::register_filter(name = "gradient_linear", category = "generator")]
 pub fn gradient_linear(
     width: u32,
     height: u32,
@@ -9104,7 +9089,6 @@ pub fn gradient_linear(
 /// Generate a radial gradient image between two colors from center outward.
 ///
 /// IM equivalent: `magick -size WxH radial-gradient:color1-color2`
-#[rasmcore_macros::register_filter(name = "gradient_radial", category = "generator")]
 pub fn gradient_radial(
     width: u32,
     height: u32,
@@ -9163,7 +9147,6 @@ pub fn gradient_radial(
 /// Generate a checkerboard pattern image.
 ///
 /// IM equivalent: `magick -size WxH pattern:checkerboard`
-#[rasmcore_macros::register_filter(name = "checkerboard", category = "generator")]
 pub fn checkerboard(
     width: u32,
     height: u32,
@@ -9211,7 +9194,6 @@ pub fn checkerboard(
 ///
 /// Produces colorful fractal patterns. Deterministic for a given seed.
 /// IM equivalent: `magick -size WxH plasma:`
-#[rasmcore_macros::register_filter(name = "plasma", category = "generator")]
 pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
     let w = width.max(1) as usize;
     let h = height.max(1) as usize;
@@ -9822,14 +9804,14 @@ mod tests {
     #[test]
     fn colorize_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(&px, &info, [255, 0, 0], 0.5).unwrap();
+        let result = colorize(&px, &info, 255, 0, 0, 0.5).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn colorize_zero_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(&px, &info, [255, 0, 0], 0.0).unwrap();
+        let result = colorize(&px, &info, 255, 0, 0, 0.0).unwrap();
         assert_eq!(result, px);
     }
 
@@ -9953,7 +9935,7 @@ mod tests {
         assert!(hue_rotate(&pixels, &info, 45.0).is_ok());
         assert!(saturate(&pixels, &info, 1.5).is_ok());
         assert!(sepia(&pixels, &info, 0.8).is_ok());
-        assert!(colorize(&pixels, &info, [0, 128, 255], 0.5).is_ok());
+        assert!(colorize(&pixels, &info, 0, 128, 255, 0.5).is_ok());
     }
 
     fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -10089,7 +10071,7 @@ mod tests {
     #[test]
     fn bokeh_disc_zero_radius_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = bokeh_blur(&px, &info, 0, BokehShape::Disc).unwrap();
+        let result = bokeh_blur(&px, &info, 0, 0).unwrap();
         assert_eq!(result, px);
     }
 
@@ -10136,7 +10118,7 @@ mod tests {
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
-        let result = bokeh_blur(&pixels, &info, 3, BokehShape::Disc).unwrap();
+        let result = bokeh_blur(&pixels, &info, 3, 0).unwrap();
         for (i, &v) in result.iter().enumerate() {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -10154,7 +10136,7 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = bokeh_blur(&pixels, &info, 1, BokehShape::Hexagon);
+        let result = bokeh_blur(&pixels, &info, 1, 1);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 64);
     }
@@ -17303,7 +17285,7 @@ mod tilt_shift_lens_blur_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         let disc = lens_blur(&pixels, &info, 3, 0, 0.0).unwrap();
-        let bokeh = bokeh_blur(&pixels, &info, 3, BokehShape::Disc).unwrap();
+        let bokeh = bokeh_blur(&pixels, &info, 3, 0).unwrap();
         // Both use same make_disc_kernel + convolve — should be identical
         assert_eq!(disc, bokeh, "lens_blur disc should match bokeh_blur disc");
     }

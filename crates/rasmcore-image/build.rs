@@ -162,8 +162,198 @@ fn main() {
     fs::write(out_dir.join("generated_filter_adapter.rs"), &adapter_code).unwrap();
 
     eprintln!(
-        "rasmcore build.rs: Generated adapter code at {}/generated_filter_adapter.rs",
-        out_dir.display()
+        "rasmcore build.rs: Generated filter adapter ({} filters)",
+        filters.len()
+    );
+
+    // ── Generate pipeline filter nodes ────────────────────────────────────
+    //
+    // Each registered filter gets a typed node struct + ImageNode impl.
+    // The node stores the upstream node ID, source image info, and all params.
+    // compute_region fetches upstream pixels and calls the domain filter function.
+
+    let mut nodes_code = String::new();
+    nodes_code.push_str("// Auto-generated pipeline filter nodes.\n");
+    nodes_code.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
+    nodes_code.push_str("use crate::domain::error::ImageError;\n");
+    nodes_code.push_str("use crate::domain::filters;\n");
+    nodes_code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
+    nodes_code.push_str("use crate::domain::types::*;\n");
+    nodes_code.push_str("use rasmcore_pipeline::{Overlap, Rect};\n\n");
+
+    for f in &filters {
+        let node_name = format!("{}Node", to_pascal_case(&f.name));
+        let domain_fn = &f.fn_name;
+
+        // Struct fields: upstream, source_info, and each param
+        nodes_code.push_str(&format!("pub struct {node_name} {{\n"));
+        nodes_code.push_str("    upstream: u32,\n");
+        nodes_code.push_str("    source_info: ImageInfo,\n");
+        for (pname, ptype) in &f.params {
+            let clean_n = pname.trim_start_matches('_');
+            let owned_type = to_owned_type(ptype);
+            nodes_code.push_str(&format!("    {clean_n}: {owned_type},\n"));
+        }
+        nodes_code.push_str("}\n\n");
+
+        // Constructor
+        let ctor_params: Vec<String> = f
+            .params
+            .iter()
+            .map(|(n, t)| {
+                let clean_n = n.trim_start_matches('_');
+                format!("{clean_n}: {}", to_owned_type(t))
+            })
+            .collect();
+        let ctor_sig = if ctor_params.is_empty() {
+            "upstream: u32, source_info: ImageInfo".to_string()
+        } else {
+            format!("upstream: u32, source_info: ImageInfo, {}", ctor_params.join(", "))
+        };
+        let ctor_fields: Vec<String> = f
+            .params
+            .iter()
+            .map(|(n, _)| n.trim_start_matches('_').to_string())
+            .collect();
+        let mut all_fields = vec!["upstream".to_string(), "source_info".to_string()];
+        all_fields.extend(ctor_fields);
+
+        nodes_code.push_str(&format!("impl {node_name} {{\n"));
+        nodes_code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
+        nodes_code.push_str(&format!(
+            "        Self {{ {} }}\n",
+            all_fields.join(", ")
+        ));
+        nodes_code.push_str("    }\n");
+        nodes_code.push_str("}\n\n");
+
+        // ImageNode impl
+        let overlap_expr = match f.overlap.as_str() {
+            "full" => "Overlap::uniform(u32::MAX)".to_string(),
+            s if s.starts_with("uniform(") => format!("Overlap::{s}"),
+            s if s.starts_with("param(") => {
+                let param_name = s.trim_start_matches("param(").trim_end_matches(')');
+                format!("Overlap::uniform(self.{param_name} as u32)")
+            }
+            _ => "Overlap::zero()".to_string(), // default: point operation
+        };
+
+        // Build the domain function call
+        let call_args: Vec<String> = f
+            .params
+            .iter()
+            .map(|(n, t)| {
+                let clean_n = n.trim_start_matches('_');
+                if t.starts_with("&[") || t == "&str" {
+                    format!("&self.{clean_n}")
+                } else if t == "String" {
+                    format!("self.{clean_n}.clone()")
+                } else {
+                    format!("self.{clean_n}")
+                }
+            })
+            .collect();
+        let full_domain_call = if call_args.is_empty() {
+            format!("filters::{domain_fn}(&src_pixels, &region_info)")
+        } else {
+            format!(
+                "filters::{domain_fn}(&src_pixels, &region_info, {})",
+                call_args.join(", ")
+            )
+        };
+
+        nodes_code.push_str(&format!("impl ImageNode for {node_name} {{\n"));
+        nodes_code.push_str("    fn info(&self) -> ImageInfo { self.source_info.clone() }\n\n");
+        nodes_code.push_str("    fn compute_region(\n");
+        nodes_code.push_str("        &self,\n");
+        nodes_code.push_str("        request: Rect,\n");
+        nodes_code.push_str("        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n");
+        nodes_code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
+        nodes_code.push_str("        let overlap = self.overlap();\n");
+        nodes_code.push_str("        let upstream_rect = request.expand(&overlap, self.source_info.width, self.source_info.height);\n");
+        nodes_code.push_str("        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;\n");
+        nodes_code.push_str("        let region_info = ImageInfo {\n");
+        nodes_code.push_str("            width: upstream_rect.width,\n");
+        nodes_code.push_str("            height: upstream_rect.height,\n");
+        nodes_code.push_str("            ..self.source_info\n");
+        nodes_code.push_str("        };\n");
+        nodes_code.push_str(&format!("        let filtered = {full_domain_call}?;\n"));
+        nodes_code.push_str("        if upstream_rect == request {\n");
+        nodes_code.push_str("            Ok(filtered)\n");
+        nodes_code.push_str("        } else {\n");
+        nodes_code.push_str("            let bpp = bytes_per_pixel(self.source_info.format);\n");
+        nodes_code.push_str("            let sub = Rect::new(\n");
+        nodes_code.push_str("                request.x - upstream_rect.x,\n");
+        nodes_code.push_str("                request.y - upstream_rect.y,\n");
+        nodes_code.push_str("                request.width,\n");
+        nodes_code.push_str("                request.height,\n");
+        nodes_code.push_str("            );\n");
+        nodes_code.push_str("            let out_rect = Rect::new(0, 0, upstream_rect.width, upstream_rect.height);\n");
+        nodes_code.push_str("            Ok(crop_region(&filtered, out_rect, sub, bpp))\n");
+        nodes_code.push_str("        }\n");
+        nodes_code.push_str("    }\n\n");
+        nodes_code.push_str(&format!("    fn overlap(&self) -> Overlap {{ {overlap_expr} }}\n"));
+        nodes_code.push_str("    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n");
+        nodes_code.push_str("}\n\n");
+    }
+
+    fs::write(out_dir.join("generated_pipeline_nodes.rs"), &nodes_code).unwrap();
+
+    // ── Generate pipeline adapter filter methods ──────────────────────────
+    //
+    // Each filter gets a method on PipelineResource that creates the typed node
+    // and adds it to the graph.
+
+    let mut pipe_adapter = String::new();
+    pipe_adapter.push_str("// Auto-generated pipeline filter adapter methods.\n");
+    pipe_adapter.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
+
+    for f in &filters {
+        let trait_method = &f.name;
+        let node_name = format!("{}Node", to_pascal_case(&f.name));
+
+        // WIT binding signature params
+        let mut sig_params = Vec::new();
+        let mut node_ctor_args = Vec::new();
+        for (n, t) in &f.params {
+            let clean_n = n.trim_start_matches('_');
+            let binding_type = to_binding_type(t);
+            sig_params.push(format!("{clean_n}: {binding_type}"));
+            // For slice types, the node stores owned data; pass directly from binding
+            node_ctor_args.push(clean_n.to_string());
+        }
+
+        let full_sig = if sig_params.is_empty() {
+            "&self, source: NodeId".to_string()
+        } else {
+            format!("&self, source: NodeId, {}", sig_params.join(", "))
+        };
+
+        let ctor_call = if node_ctor_args.is_empty() {
+            format!("filters::{node_name}::new(source, src_info)")
+        } else {
+            format!(
+                "filters::{node_name}::new(source, src_info, {})",
+                node_ctor_args.join(", ")
+            )
+        };
+
+        pipe_adapter.push_str(&format!(
+            "    fn {trait_method}({full_sig}) -> Result<NodeId, RasmcoreError> {{\n"
+        ));
+        pipe_adapter.push_str("        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;\n");
+        pipe_adapter.push_str(&format!(
+            "        let node = {ctor_call};\n"
+        ));
+        pipe_adapter.push_str("        Ok(self.graph.borrow_mut().add_node(Box::new(node)))\n");
+        pipe_adapter.push_str("    }\n\n");
+    }
+
+    fs::write(out_dir.join("generated_pipeline_adapter.rs"), &pipe_adapter).unwrap();
+
+    eprintln!(
+        "rasmcore build.rs: Generated pipeline nodes + adapter ({} filters)",
+        filters.len()
     );
 
     // ── Generate param-manifest.json via serde_json ────────────────────────
@@ -237,6 +427,7 @@ struct FilterReg {
     group: String,
     variant: String,
     reference: String,
+    overlap: String, // "zero" (default), "uniform(N)", "full", "param(name)"
     fn_name: String,
     params: Vec<(String, String)>, // (param_name, rust_type)
 }
@@ -273,6 +464,7 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
             let group = extract_string_attr(&attr_text, "group").unwrap_or_default();
             let variant = extract_string_attr(&attr_text, "variant").unwrap_or_default();
             let reference = extract_string_attr(&attr_text, "reference").unwrap_or_default();
+            let overlap = extract_string_attr(&attr_text, "overlap").unwrap_or_else(|| "zero".to_string());
 
             if let (Some(name), Some(category)) = (name, category) {
                 // Find the next pub fn AFTER the attribute ends (k is past the closing `)]`)
@@ -291,6 +483,7 @@ fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
                             reg.group = group.clone();
                             reg.variant = variant.clone();
                             reg.reference = reference.clone();
+                            reg.overlap = overlap.clone();
                             filters.push(reg);
                         }
                         break;
@@ -400,6 +593,7 @@ fn parse_fn_signature(line: &str, name: &str, category: &str) -> Option<FilterRe
         group: String::new(),
         variant: String::new(),
         reference: String::new(),
+        overlap: "zero".to_string(),
         fn_name,
         params,
     })
@@ -663,9 +857,39 @@ fn to_wit_type(rust_type: &str) -> String {
         "u8" => "u8".to_string(),
         "u16" => "u16".to_string(),
         "u32" => "u32".to_string(),
+        "u64" => "u64".to_string(),
         "i32" => "s32".to_string(),
         "i64" => "s64".to_string(),
         "bool" => "bool".to_string(),
+        "&[f32]" => "list<f32>".to_string(),
+        "&[f64]" => "list<f64>".to_string(),
+        "&[u8]" => "list<u8>".to_string(),
+        "&[u32]" => "list<u32>".to_string(),
+        "String" | "&str" => "string".to_string(),
         other => other.to_string(),
+    }
+}
+
+/// Convert Rust domain type to owned Rust type (for node struct fields).
+fn to_owned_type(rust_type: &str) -> &str {
+    match rust_type {
+        "&[f32]" => "Vec<f32>",
+        "&[f64]" => "Vec<f64>",
+        "&[u8]" => "Vec<u8>",
+        "&[u32]" => "Vec<u32>",
+        "&str" => "String",
+        other => other,
+    }
+}
+
+/// Convert Rust domain type to WIT binding type (for trait signatures).
+fn to_binding_type(rust_type: &str) -> &str {
+    match rust_type {
+        "&[f32]" => "Vec<f32>",
+        "&[f64]" => "Vec<f64>",
+        "&[u8]" => "Vec<u8>",
+        "&[u32]" => "Vec<u32>",
+        "&str" => "String",
+        other => other,
     }
 }
