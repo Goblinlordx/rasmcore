@@ -215,4 +215,23 @@ interface filters {
     /// Generate Simplex noise image (Gray8). Deterministic given same seed.
     /// Scale controls zoom (0.01-0.1 typical), octaves controls detail (1-8).
     simplex-noise: func(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> buffer;
+
+    // ─── TrueType Text Rendering ───────────────────────────────────────
+
+    /// Draw TrueType/OpenType text on an image. Font data is passed as bytes
+    /// (no filesystem access — fully WASM-compatible). Anti-aliased rendering
+    /// with alpha blending. Supports multi-line via newline characters.
+    draw-text-ttf: func(
+        pixels: buffer,
+        info: image-info,
+        x: u32,
+        y: u32,
+        text: string,
+        font-data: buffer,
+        font-size-pt: f32,
+        color-r: u8,
+        color-g: u8,
+        color-b: u8,
+        color-a: u8,
+    ) -> result<buffer, rasmcore-error>;
 }

@@ -1168,6 +1168,35 @@ impl filters::Guest for Component {
     fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {
         domain::filters::simplex_noise(width, height, seed, scale, octaves)
     }
+
+    fn draw_text_ttf(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        x: u32,
+        y: u32,
+        text: String,
+        font_data: Vec<u8>,
+        font_size_pt: f32,
+        color_r: u8,
+        color_g: u8,
+        color_b: u8,
+        color_a: u8,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let color = [color_r, color_g, color_b, color_a];
+        let (result, _) = domain::draw::draw_text_ttf(
+            &pixels,
+            &domain_info,
+            x,
+            y,
+            &text,
+            &font_data,
+            font_size_pt,
+            color,
+        )
+        .map_err(to_wit_error)?;
+        Ok(result)
+    }
 }
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {

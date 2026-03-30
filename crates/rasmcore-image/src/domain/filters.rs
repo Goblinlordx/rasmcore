@@ -7484,6 +7484,56 @@ pub fn draw_text_filter(
     Ok(result)
 }
 
+#[derive(rasmcore_macros::ConfigParams)]
+/// TrueType text rendering parameters.
+pub struct DrawTextTtfParams {
+    /// X position of text origin
+    #[param(min = 0, max = 65535, step = 1, default = 0)]
+    pub x: u32,
+    /// Y position of text origin
+    #[param(min = 0, max = 65535, step = 1, default = 0)]
+    pub y: u32,
+    /// Font size in points
+    #[param(min = 1.0, max = 500.0, step = 0.5, default = 16.0)]
+    pub font_size_pt: f32,
+    /// Text color red
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_r: u32,
+    /// Text color green
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_g: u32,
+    /// Text color blue
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_b: u32,
+    /// Text color alpha
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub color_a: u32,
+}
+
+/// Draw TrueType/OpenType text on the image.
+///
+/// Font data is passed as bytes (no filesystem access — WASM-compatible).
+/// Falls back to bitmap font when font_data is empty.
+#[rasmcore_macros::register_filter(name = "draw_text_ttf", category = "draw")]
+pub fn draw_text_ttf_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    x: u32,
+    y: u32,
+    text: &str,
+    font_size_pt: f32,
+    color_r: u32,
+    color_g: u32,
+    color_b: u32,
+    color_a: u32,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
+    // Without font data (scalar params only), fall back to bitmap
+    let scale = (font_size_pt / 12.0).round().max(1.0) as u32;
+    let (result, _) = super::draw::draw_text(pixels, info, x, y, text, scale, color)?;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod noise_tests {
     use super::*;
