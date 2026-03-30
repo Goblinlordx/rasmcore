@@ -1491,12 +1491,12 @@ fn algorithm_shadow_highlight_vs_gegl() {
 
     cleanup(&[&input_path, &ref_path]);
 
-    // ALGORITHM tier: exact GEGL darktable algorithm ported to Rust.
-    // Remaining MAE ~4.5 from gaussian blur kernel differences and
-    // Gray8 quantization of L* channel during blur (GEGL blurs in float).
+    // DETERMINISTIC tier: exact GEGL darktable algorithm, same color space
+    // pipeline (sRGB→linear Y blur, LAB correction). Remaining MAE ~0.5
+    // from FIR vs IIR gaussian and f32/f64 precision differences.
     assert!(
-        error < 6.0,
-        "shadow_highlight vs GEGL: MAE = {error:.4} (expected < 6.0)"
+        error < 1.0,
+        "shadow_highlight vs GEGL: MAE = {error:.4} (expected < 1.0)"
     );
 }
 

@@ -5949,17 +5949,40 @@ pub fn shadow_highlight(
     };
     let lab = super::color_spaces::image_rgb_to_lab(&rgb_only, &rgb_info)?;
 
-    // 2. Compute blurred L* for local brightness (GEGL blurs in Y float space)
-    let gray_pixels: Vec<u8> = (0..n)
-        .map(|i| (lab[i * 3] * 255.0 / 100.0).round().clamp(0.0, 255.0) as u8)
+    // 2. Compute blurred luminance in float precision.
+    //    GEGL blurs in "Y float" (CIE linear luminance), NOT L* (perceptual).
+    //    We compute Y from sRGB→linear→BT.709 weights, blur in float, then
+    //    convert the blurred Y back to L* for the correction step.
+    let w = info.width as usize;
+    let h = info.height as usize;
+
+    // Compute linear Y from sRGB input (linearize gamma, then BT.709 weights)
+    let y_linear: Vec<f32> = (0..n)
+        .map(|i| {
+            let r_lin = srgb_to_linear(rgb_only[i * 3] as f32 / 255.0);
+            let g_lin = srgb_to_linear(rgb_only[i * 3 + 1] as f32 / 255.0);
+            let b_lin = srgb_to_linear(rgb_only[i * 3 + 2] as f32 / 255.0);
+            0.2126 * r_lin + 0.7152 * g_lin + 0.0722 * b_lin
+        })
         .collect();
-    let gray_info = ImageInfo {
-        width: info.width,
-        height: info.height,
-        format: PixelFormat::Gray8,
-        color_space: info.color_space,
-    };
-    let blurred_gray = blur(&gray_pixels, &gray_info, radius)?;
+
+    // Blur Y in float precision (matches GEGL's gaussian-blur on YaA float)
+    let blurred_y = blur_1ch_f32(&y_linear, w, h, radius);
+
+    // Convert blurred Y back to L* scale for the correction formula
+    // L* = 116 * f(Y/Yn) - 16, where f(t) = t^(1/3) if t > (6/29)^3, else ...
+    let blurred_l: Vec<f32> = blurred_y
+        .iter()
+        .map(|&y| {
+            let t = y.max(0.0); // Y/Yn where Yn=1.0 (D65 normalized)
+            let ft = if t > 0.008856 {
+                t.cbrt()
+            } else {
+                7.787 * t + 16.0 / 116.0
+            };
+            (116.0 * ft - 16.0).max(0.0)
+        })
+        .collect();
 
     // 3. Pre-compute GEGL parameters (matches shadows-highlights-correction.c)
     let low_approximation: f32 = 0.01;
@@ -5992,7 +6015,8 @@ pub fn shadow_highlight(
         ];
 
         // tb0 = (100 - blurred_L) / 100 (inverted luminance)
-        let mut tb0 = (255.0 - blurred_gray[i] as f32) / 255.0;
+        // tb0 = (100 - blurred_L) / 100 — inverted normalized luminance
+        let mut tb0 = (100.0 - blurred_l[i]) / 100.0;
 
         // White point adjustment
         if ta[0] > 0.0 {
@@ -6594,6 +6618,58 @@ fn gaussian_kernel_1d(ksize: usize, sigma: f32) -> Vec<f32> {
         *v *= inv_sum;
     }
     kernel
+}
+
+/// sRGB gamma to linear (f32 version for inline use).
+#[inline]
+fn srgb_to_linear(v: f32) -> f32 {
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Separable gaussian blur on a single-channel f32 buffer.
+/// Avoids Gray8 quantization — used for float-precision L* blur
+/// in shadow/highlight and similar LAB-space operations.
+fn blur_1ch_f32(data: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
+    if sigma <= 0.0 || w == 0 || h == 0 {
+        return data.to_vec();
+    }
+    let ksize = ((sigma * 3.0).ceil() as usize) * 2 + 1;
+    let ksize = ksize.max(3);
+    let kernel = gaussian_kernel_1d(ksize, sigma);
+    let half = ksize / 2;
+
+    // Horizontal pass
+    let mut tmp = vec![0.0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = 0.0f32;
+            for k in 0..ksize {
+                let sx = (x as isize + k as isize - half as isize)
+                    .clamp(0, w as isize - 1) as usize;
+                sum += data[y * w + sx] * kernel[k];
+            }
+            tmp[y * w + x] = sum;
+        }
+    }
+
+    // Vertical pass
+    let mut out = vec![0.0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = 0.0f32;
+            for k in 0..ksize {
+                let sy = (y as isize + k as isize - half as isize)
+                    .clamp(0, h as isize - 1) as usize;
+                sum += tmp[sy * w + x] * kernel[k];
+            }
+            out[y * w + x] = sum;
+        }
+    }
+    out
 }
 
 // ─── Retinex Enhancement ────────────────────────────────────────────────────
