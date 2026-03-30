@@ -8,7 +8,15 @@ interface pipeline {
     use rasmcore:core/types.{buffer, image-info, pixel-format};
     use rasmcore:core/errors.{rasmcore-error};
     use metadata.{exif-orientation, metadata-set};
-    use filters.{blend-mode};
+
+    /// Blend modes for compositing operations
+    enum blend-mode {
+        multiply, screen, overlay, darken, lighten,
+        soft-light, hard-light, difference, exclusion,
+        color-dodge, color-burn, vivid-light,
+        linear-dodge, linear-burn, linear-light, pin-light,
+        hard-mix, subtract, divide,
+    }
 
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
