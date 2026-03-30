@@ -1,126 +1,133 @@
 id: filter-variant-groups_20260330100630Z
-title: "Filter Variant Groups — group/variant/reference metadata for filter registry"
+title: Filter Variant Groups — group/variant/reference metadata for filter registry
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Add group, variant, and reference fields to the filter registration system.
-    Groups organize related filters for UI display (user selects a group, then
-    picks a variant). API stays flat — each variant is its own function.
-    Annotate all 105 filters with provenance metadata.
-  context: |
-    We have 105 registered filters, many of which are variants of the same base
+  summary: 'Add group, variant, and reference fields to the filter registration system. Groups organize related filters for
+    UI display (user selects a group, then picks a variant). API stays flat — each variant is its own function. Annotate all
+    105 filters with provenance metadata.
+
+    '
+  context: 'We have 105 registered filters, many of which are variants of the same base
+
     operation (4 blurs, 7 morphologies, 3 retinex, 3 tonemappers, 4 curves, etc.).
-    Currently there's no metadata linking variants to their group or documenting
+
+    Currently there''s no metadata linking variants to their group or documenting
+
     why a variant exists (which algorithm, paper, or physical model it implements).
 
+
     The UI needs grouping to present filters hierarchically — when a user selects
+
     "blur", they should see gaussian/bokeh/motion/zoom as variant options. The API
+
     stays flat: each variant is its own WIT function and SDK method.
 
+
     The reference field documents provenance — which paper, algorithm, or physical
+
     model the variant implements. This appears in UI tooltips and SDK documentation.
-  codebase_analysis: |
-    Current registration:
-      #[register_filter(name = "blur", category = "spatial")]
-    Needs to become:
-      #[register_filter(name = "blur", category = "spatial", group = "blur")]
-      #[register_filter(name = "bokeh_blur", category = "spatial",
-          group = "blur", variant = "bokeh",
-          reference = "physical optic disc/polygon aperture model")]
 
-    Files to change:
-    - crates/rasmcore-macros/src/lib.rs — RegisterFilterArgs, parse, codegen
-    - crates/rasmcore-image/src/domain/filter_registry.rs — StaticFilterRegistration struct
-    - crates/rasmcore-image/build.rs — manifest JSON generation
-    - crates/rasmcore-image/src/domain/filters.rs — annotate all 105 filters
-
-    Natural groups identified (by prefix pattern):
-    - blur (4): blur, bokeh_blur, motion_blur, zoom_blur
-    - morphology (7): erode, dilate, morph_open/close/gradient/tophat/blackhat
-    - tonemap (3): tonemap_reinhard, tonemap_drago, tonemap_filmic
-    - retinex (3): retinex_ssr, retinex_msr, retinex_msrcr
-    - curves (4): curves_master, curves_red, curves_green, curves_blue
-    - threshold (4): threshold_binary, otsu_threshold, triangle_threshold, adaptive_threshold
-    - dither (2): dither_floyd_steinberg, dither_ordered
-    - edge (4): sobel, scharr, laplacian, canny
-    - vignette (2): vignette, vignette_powerlaw
-    - seam_carve (2): seam_carve_width, seam_carve_height
-    - noise (2): perlin_noise, simplex_noise
-    - perspective (2): perspective_warp, perspective_correct
-    - frequency (2): frequency_low, frequency_high
-    - white_balance (2): white_balance_gray_world, white_balance_temperature
-    - denoise (4): median, bilateral, guided_filter, nlm_denoise
-
-    Standalone filters (no group): sharpen, brightness, contrast, gamma,
-    invert, posterize, grayscale, sepia, equalize, normalize, etc.
+    '
+  codebase_analysis: "Current registration:\n  #[register_filter(name = \"blur\", category = \"spatial\")]\nNeeds to become:\n\
+    \  #[register_filter(name = \"blur\", category = \"spatial\", group = \"blur\")]\n  #[register_filter(name = \"bokeh_blur\"\
+    , category = \"spatial\",\n      group = \"blur\", variant = \"bokeh\",\n      reference = \"physical optic disc/polygon\
+    \ aperture model\")]\n\nFiles to change:\n- crates/rasmcore-macros/src/lib.rs — RegisterFilterArgs, parse, codegen\n-\
+    \ crates/rasmcore-image/src/domain/filter_registry.rs — StaticFilterRegistration struct\n- crates/rasmcore-image/build.rs\
+    \ — manifest JSON generation\n- crates/rasmcore-image/src/domain/filters.rs — annotate all 105 filters\n\nNatural groups\
+    \ identified (by prefix pattern):\n- blur (4): blur, bokeh_blur, motion_blur, zoom_blur\n- morphology (7): erode, dilate,\
+    \ morph_open/close/gradient/tophat/blackhat\n- tonemap (3): tonemap_reinhard, tonemap_drago, tonemap_filmic\n- retinex\
+    \ (3): retinex_ssr, retinex_msr, retinex_msrcr\n- curves (4): curves_master, curves_red, curves_green, curves_blue\n-\
+    \ threshold (4): threshold_binary, otsu_threshold, triangle_threshold, adaptive_threshold\n- dither (2): dither_floyd_steinberg,\
+    \ dither_ordered\n- edge (4): sobel, scharr, laplacian, canny\n- vignette (2): vignette, vignette_powerlaw\n- seam_carve\
+    \ (2): seam_carve_width, seam_carve_height\n- noise (2): perlin_noise, simplex_noise\n- perspective (2): perspective_warp,\
+    \ perspective_correct\n- frequency (2): frequency_low, frequency_high\n- white_balance (2): white_balance_gray_world,\
+    \ white_balance_temperature\n- denoise (4): median, bilateral, guided_filter, nlm_denoise\n\nStandalone filters (no group):\
+    \ sharpen, brightness, contrast, gamma,\ninvert, posterize, grayscale, sepia, equalize, normalize, etc.\n"
   acceptance_criteria:
-    - register_filter macro accepts optional group, variant, reference attributes
-    - StaticFilterRegistration includes group, variant, reference fields
-    - param-manifest.json includes group, variant, reference for every filter
-    - All 105 filters annotated with correct group/variant/reference
-    - Standalone filters have empty group/variant (they ARE the default)
-    - Group default filter has group set but no variant (e.g., blur has group=blur, variant="")
-    - Existing filter names unchanged — API is flat, grouping is metadata only
-    - WIT interface unchanged
-    - demo UI can read group field from manifest
-  out_of_scope: |
-    Changing filter function names or WIT signatures.
+  - register_filter macro accepts optional group, variant, reference attributes
+  - StaticFilterRegistration includes group, variant, reference fields
+  - param-manifest.json includes group, variant, reference for every filter
+  - All 105 filters annotated with correct group/variant/reference
+  - Standalone filters have empty group/variant (they ARE the default)
+  - Group default filter has group set but no variant (e.g., blur has group=blur, variant="")
+  - Existing filter names unchanged — API is flat, grouping is metadata only
+  - WIT interface unchanged
+  - demo UI can read group field from manifest
+  out_of_scope: 'Changing filter function names or WIT signatures.
+
     Changing the pipeline API to use method chaining with variants.
+
     Adding UI rendering of variant groups (UI will consume the metadata).
-  technical_notes: |
-    Variant type taxonomy:
+
+    '
+  technical_notes: 'Variant type taxonomy:
+
     - Algorithm/paper: retinex_ssr (Land 1977), tonemap_reinhard (Reinhard 2002)
+
     - Physical model: bokeh_blur (lens aperture), motion_blur (camera motion)
+
     - Mathematical method: otsu_threshold (Otsu 1979), dither_floyd_steinberg (Floyd-Steinberg 1976)
+
     - Target/scope: frequency_high/low, curves_red/green/blue
+
     - Implementation: gaussian_blur_cv (OpenCV-compatible Gaussian)
 
+
     Group naming convention:
+
     - Group name matches the "base" operation concept
+
     - The default variant (if any) has group=X, variant=""
+
     - Named variants have group=X, variant=Y
+
     - Filters with no natural group have group="", variant=""
 
-    Reference format: free-text, typically "Author Year 'Title'" or
+
+    Reference format: free-text, typically "Author Year ''Title''" or
+
     descriptive like "physical optic disc aperture model"
+
+    '
 plan:
-  - phase: Macro & Registry Infrastructure
-    tasks:
-      - text: Add group, variant, reference to RegisterFilterArgs and parse in proc macro
-        done: false
-      - text: Add group, variant, reference fields to StaticFilterRegistration struct
-        done: false
-      - text: Update build.rs to extract group/variant/reference and emit in manifest JSON
-        done: false
-  - phase: Annotate All Filters
-    tasks:
-      - text: Annotate spatial filters (blur group, sharpen, median, bilateral, guided, NLM, convolve, displacement, kuwahara, rank, gaussian_blur_cv)
-        done: false
-      - text: Annotate edge detection filters (edge group)
-        done: false
-      - text: Annotate morphology filters (morphology group)
-        done: false
-      - text: Annotate color/adjustment filters (hue, saturation, sepia, colorize, brightness, contrast, gamma, etc.)
-        done: false
-      - text: Annotate enhancement filters (equalize, CLAHE, retinex group, dehaze, clarity, frequency group, etc.)
-        done: false
-      - text: Annotate grading filters (tonemap group, curves group, ASC CDL, lift/gamma/gain, split toning)
-        done: false
-      - text: Annotate effect/artistic filters (oil paint, charcoal, halftone, pixelate, emboss, solarize, film grain)
-        done: false
-      - text: Annotate threshold, quantize/dither, distortion, draw, generator, transform, and remaining filters
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Rebuild manifest and verify all 105 filters have correct group/variant/reference fields
-        done: false
-      - text: Verify group counts match expected (blur=4, morphology=7, tonemap=3, etc.)
-        done: false
-      - text: Verify standalone filters have empty group/variant
-        done: false
-      - text: Verify existing tests still pass (no regression)
-        done: false
+- phase: Macro & Registry Infrastructure
+  tasks:
+  - text: Add group, variant, reference to RegisterFilterArgs and parse in proc macro
+    done: true
+  - text: Add group, variant, reference fields to StaticFilterRegistration struct
+    done: true
+  - text: Update build.rs to extract group/variant/reference and emit in manifest JSON
+    done: true
+- phase: Annotate All Filters
+  tasks:
+  - text: Annotate spatial filters (blur group, sharpen, median, bilateral, guided, NLM, convolve, displacement, kuwahara,
+      rank, gaussian_blur_cv)
+    done: true
+  - text: Annotate edge detection filters (edge group)
+    done: true
+  - text: Annotate morphology filters (morphology group)
+    done: true
+  - text: Annotate color/adjustment filters (hue, saturation, sepia, colorize, brightness, contrast, gamma, etc.)
+    done: true
+  - text: Annotate enhancement filters (equalize, CLAHE, retinex group, dehaze, clarity, frequency group, etc.)
+    done: true
+  - text: Annotate grading filters (tonemap group, curves group, ASC CDL, lift/gamma/gain, split toning)
+    done: true
+  - text: Annotate effect/artistic filters (oil paint, charcoal, halftone, pixelate, emboss, solarize, film grain)
+    done: true
+  - text: Annotate threshold, quantize/dither, distortion, draw, generator, transform, and remaining filters
+    done: true
+- phase: Verification
+  tasks:
+  - text: Rebuild manifest and verify all 105 filters have correct group/variant/reference fields
+    done: true
+  - text: Verify group counts match expected (blur=4, morphology=7, tonemap=3, etc.)
+    done: true
+  - text: Verify standalone filters have empty group/variant
+    done: true
+  - text: Verify existing tests still pass (no regression)
+    done: true
 extra: {}
