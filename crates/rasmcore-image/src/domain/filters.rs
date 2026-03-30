@@ -2298,6 +2298,85 @@ mod color_manipulation_tests {
             unique.len()
         );
     }
+
+    // ── Mask Apply ──
+
+    #[test]
+    fn mask_apply_white_mask_preserves_opacity() {
+        let pixels = solid_rgb(4, 4, 100, 150, 200);
+        let info = info_rgb8(4, 4);
+        let mask = vec![255u8; 4 * 4]; // All white = fully opaque
+        let result = mask_apply(&pixels, &info, &mask, 4, 4, 0).unwrap();
+        // Should be RGBA with alpha = 255
+        assert_eq!(result.len(), 4 * 4 * 4);
+        for chunk in result.chunks_exact(4) {
+            assert_eq!(chunk[3], 255, "white mask should give full opacity");
+        }
+    }
+
+    #[test]
+    fn mask_apply_black_mask_makes_transparent() {
+        let pixels = solid_rgb(4, 4, 100, 150, 200);
+        let info = info_rgb8(4, 4);
+        let mask = vec![0u8; 4 * 4]; // All black = fully transparent
+        let result = mask_apply(&pixels, &info, &mask, 4, 4, 0).unwrap();
+        for chunk in result.chunks_exact(4) {
+            assert_eq!(chunk[3], 0, "black mask should give zero opacity");
+        }
+    }
+
+    #[test]
+    fn mask_apply_invert() {
+        let pixels = solid_rgb(4, 4, 100, 150, 200);
+        let info = info_rgb8(4, 4);
+        let mask = vec![200u8; 4 * 4];
+        let normal = mask_apply(&pixels, &info, &mask, 4, 4, 0).unwrap();
+        let inverted = mask_apply(&pixels, &info, &mask, 4, 4, 1).unwrap();
+        assert_eq!(normal[3], 200);
+        assert_eq!(inverted[3], 55); // 255 - 200
+    }
+
+    #[test]
+    fn mask_apply_resize() {
+        let pixels = solid_rgb(8, 8, 128, 128, 128);
+        let info = info_rgb8(8, 8);
+        // 2x2 mask applied to 8x8 image (nearest-neighbor resize)
+        let mask = vec![255, 0, 0, 255]; // Gray8: TL=white, TR=black, BL=black, BR=white
+        let result = mask_apply(&pixels, &info, &mask, 2, 2, 0).unwrap();
+        // Top-left quadrant should be opaque (mask = 255)
+        assert_eq!(result[3], 255, "TL should be opaque");
+        // Top-right quadrant should be transparent (mask = 0)
+        let tr = (0 * 8 + 4) * 4 + 3;
+        assert_eq!(result[tr], 0, "TR should be transparent");
+    }
+
+    // ── Blend-If ──
+
+    #[test]
+    fn blend_if_full_range_is_top_layer() {
+        let info = info_rgb8(4, 4);
+        let top = solid_rgb(4, 4, 255, 0, 0); // red
+        let bottom = solid_rgb(4, 4, 0, 0, 255); // blue
+        // Full range (0-255, 0-255) = top layer fully visible
+        let result = blend_if(&top, &info, &bottom, 0, 255, 0, 255, 0).unwrap();
+        assert_eq!(result[0], 255, "full range should show top (red)");
+        assert_eq!(result[2], 0, "full range should not show bottom (blue)");
+    }
+
+    #[test]
+    fn blend_if_narrow_range_reveals_underlying() {
+        let info = info_rgb8(4, 4);
+        let top = solid_rgb(4, 4, 200, 200, 200); // bright gray
+        let bottom = solid_rgb(4, 4, 50, 50, 50); // dark gray
+        // This layer visible only in dark range (0-100): bright top should be hidden
+        let result = blend_if(&top, &info, &bottom, 0, 100, 0, 255, 0).unwrap();
+        // Top luma ~200, outside [0,100] → should show underlying
+        assert!(
+            result[0] < 150,
+            "bright top should be hidden when range is 0-100: got {}",
+            result[0]
+        );
+    }
 }
 
 // =============================================================================
@@ -3714,6 +3793,215 @@ pub fn remove_alpha(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageIn
             color_space: info.color_space,
         },
     ))
+}
+
+// ─── Mask Apply ──────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Mask apply parameters.
+pub struct MaskApplyParams {
+    /// Invert mask (0 = normal, 1 = inverted)
+    #[param(min = 0, max = 1, step = 1, default = 0)]
+    pub invert: u32,
+}
+
+/// Apply a grayscale mask to the image's alpha channel.
+///
+/// The mask's luminance values become the output alpha. White = fully opaque,
+/// black = fully transparent. If the image is RGB8, it's promoted to RGBA8.
+/// Mask is resized to match image dimensions if they differ.
+///
+/// IM equivalent: `magick image mask -compose CopyOpacity -composite`
+#[rasmcore_macros::register_filter(name = "mask_apply", category = "alpha")]
+pub fn mask_apply(
+    pixels: &[u8],
+    info: &ImageInfo,
+    mask_data: &[u8],
+    mask_width: u32,
+    mask_height: u32,
+    invert: u32,
+) -> Result<Vec<u8>, ImageError> {
+    // Ensure image is RGBA
+    let (mut rgba, out_info) = if info.format == PixelFormat::Rgb8 {
+        let (r, i) = add_alpha(pixels, info, 255)?;
+        (r, i)
+    } else if info.format == PixelFormat::Rgba8 {
+        (pixels.to_vec(), info.clone())
+    } else {
+        return Err(ImageError::UnsupportedFormat(
+            "mask_apply requires RGB8 or RGBA8".into(),
+        ));
+    };
+
+    let w = out_info.width as usize;
+    let h = out_info.height as usize;
+    let mw = mask_width as usize;
+    let mh = mask_height as usize;
+    let invert_mask = invert != 0;
+
+    // Determine mask bytes-per-pixel (Gray8 = 1, RGB8 = 3, RGBA8 = 4)
+    let mask_bpp = if mask_data.len() == mw * mh {
+        1
+    } else if mask_data.len() == mw * mh * 3 {
+        3
+    } else if mask_data.len() == mw * mh * 4 {
+        4
+    } else {
+        return Err(ImageError::InvalidInput(format!(
+            "mask data length {} doesn't match {}x{} at any known format",
+            mask_data.len(),
+            mw,
+            mh
+        )));
+    };
+
+    for y in 0..h {
+        for x in 0..w {
+            // Map to mask coordinates (nearest-neighbor resize)
+            let mx = (x * mw / w).min(mw - 1);
+            let my = (y * mh / h).min(mh - 1);
+            let mi = my * mw + mx;
+
+            let gray = match mask_bpp {
+                1 => mask_data[mi],
+                3 => {
+                    let base = mi * 3;
+                    // BT.709 luminance
+                    let r = mask_data[base] as u32;
+                    let g = mask_data[base + 1] as u32;
+                    let b = mask_data[base + 2] as u32;
+                    ((r * 2126 + g * 7152 + b * 722 + 5000) / 10000) as u8
+                }
+                4 => {
+                    let base = mi * 4;
+                    let r = mask_data[base] as u32;
+                    let g = mask_data[base + 1] as u32;
+                    let b = mask_data[base + 2] as u32;
+                    ((r * 2126 + g * 7152 + b * 722 + 5000) / 10000) as u8
+                }
+                _ => 0,
+            };
+
+            let alpha = if invert_mask { 255 - gray } else { gray };
+            rgba[(y * w + x) * 4 + 3] = alpha;
+        }
+    }
+
+    Ok(rgba)
+}
+
+// ─── Blend-If (conditional compositing) ──────────────────────────────────
+
+/// Smoothstep function for blend-if feathering.
+fn blend_if_smoothstep(x: f32, edge0: f32, edge1: f32) -> f32 {
+    if edge1 <= edge0 {
+        return if x >= edge0 { 1.0 } else { 0.0 };
+    }
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+#[derive(rasmcore_macros::ConfigParams)]
+/// Blend-If — Photoshop-style conditional compositing by luminosity.
+pub struct BlendIfParams {
+    /// This layer: black point (shadows become transparent below this)
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub this_black: u32,
+    /// This layer: white point (highlights become transparent above this)
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub this_white: u32,
+    /// Underlying layer: black point (underlying shows through below this)
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub under_black: u32,
+    /// Underlying layer: white point (underlying shows through above this)
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub under_white: u32,
+    /// Feather width in luminosity levels for smooth transitions
+    #[param(min = 0, max = 50, step = 1, default = 10)]
+    pub feather: u32,
+}
+
+/// Conditionally blend two images based on luminosity ranges.
+///
+/// Photoshop Blend-If equivalent: pixels are blended based on their
+/// luminosity. The "this layer" range controls where the top layer is
+/// visible; the "underlying" range controls where the bottom layer
+/// shows through. Feather creates smooth transitions at range boundaries.
+#[rasmcore_macros::register_filter(name = "blend_if", category = "alpha")]
+pub fn blend_if(
+    pixels: &[u8],
+    info: &ImageInfo,
+    under_data: &[u8],
+    this_black: u32,
+    this_white: u32,
+    under_black: u32,
+    under_white: u32,
+    feather: u32,
+) -> Result<Vec<u8>, ImageError> {
+    if info.format != PixelFormat::Rgb8 && info.format != PixelFormat::Rgba8 {
+        return Err(ImageError::UnsupportedFormat(
+            "blend_if requires RGB8 or RGBA8".into(),
+        ));
+    }
+
+    let bpp = if info.format == PixelFormat::Rgba8 {
+        4
+    } else {
+        3
+    };
+    let npixels = (info.width * info.height) as usize;
+
+    // Validate underlying data matches
+    if under_data.len() < npixels * bpp {
+        return Err(ImageError::InvalidInput(
+            "underlying image data too short for blend_if".into(),
+        ));
+    }
+
+    let tb = this_black.min(255) as f32;
+    let tw = this_white.min(255) as f32;
+    let ub = under_black.min(255) as f32;
+    let uw = under_white.min(255) as f32;
+    let f = feather.min(50) as f32;
+
+    let mut result = pixels.to_vec();
+
+    for i in 0..npixels {
+        let base = i * bpp;
+
+        // Compute luminosity of this layer pixel (BT.709)
+        let this_luma = 0.2126 * pixels[base] as f32
+            + 0.7152 * pixels[base + 1] as f32
+            + 0.0722 * pixels[base + 2] as f32;
+
+        // Compute luminosity of underlying pixel
+        let under_luma = 0.2126 * under_data[base] as f32
+            + 0.7152 * under_data[base + 1] as f32
+            + 0.0722 * under_data[base + 2] as f32;
+
+        // This layer visibility: visible between this_black and this_white
+        let this_factor = blend_if_smoothstep(this_luma, tb - f, tb + f)
+            * (1.0 - blend_if_smoothstep(this_luma, tw - f, tw + f));
+
+        // Underlying visibility: underlying shows through outside under range
+        let under_factor = blend_if_smoothstep(under_luma, ub - f, ub + f)
+            * (1.0 - blend_if_smoothstep(under_luma, uw - f, uw + f));
+
+        // Combined: this layer visible where both factors are high
+        let blend = (this_factor * under_factor).clamp(0.0, 1.0);
+        let inv = 1.0 - blend;
+
+        result[base] = (pixels[base] as f32 * blend + under_data[base] as f32 * inv + 0.5) as u8;
+        result[base + 1] =
+            (pixels[base + 1] as f32 * blend + under_data[base + 1] as f32 * inv + 0.5) as u8;
+        result[base + 2] =
+            (pixels[base + 2] as f32 * blend + under_data[base + 2] as f32 * inv + 0.5) as u8;
+        if bpp == 4 {
+            result[base + 3] = pixels[base + 3]; // preserve alpha
+        }
+    }
+
+    Ok(result)
 }
 
 // ─── Blend Modes ─────────────────────────────────────────────────────────
