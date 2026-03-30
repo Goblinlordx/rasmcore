@@ -1,0 +1,116 @@
+id: polar-wave-distortion_20260330080630Z
+title: Polar/DePolar & Wave/Ripple Distortion
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Add Polar/DePolar coordinate transforms and Wave/Ripple sinusoidal distortions
+    as registered filters. Completes the distortion filter set alongside the existing
+    swirl, spherize, barrel, and perspective_warp. IM parity validated.
+  context: |
+    The distortion category now has swirl, spherize, barrel, perspective_warp,
+    and displacement_map. Missing are the coordinate-space transforms (Polar/DePolar
+    for panoramic and circular effects) and sinusoidal distortions (Wave for
+    horizontal/vertical sine displacement, Ripple for concentric sine displacement).
+    These are standard IM -distort operations used in artistic effects, panoramic
+    projections, and text-around-circle workflows.
+  codebase_analysis: |
+    EXISTING DISTORTION INFRASTRUCTURE:
+    - swirl: polar coordinate rotation with bilinear interpolation
+    - spherize: radial projection with bilinear interpolation
+    - barrel: radial polynomial with bilinear interpolation
+    - perspective_warp: 3x3 homography with bilinear interpolation
+    - displacement_map: arbitrary warp via texture lookup
+    - All use the same bilinear interpolation helper
+
+    COMMON PATTERN:
+    - For each output pixel (x,y): compute source coordinates via distortion math
+    - Sample source image at computed coords with bilinear interpolation
+    - Handle out-of-bounds (clamp or transparent)
+    - SIMD: batch coordinate computation for 4 pixels
+
+    WHERE TO ADD:
+    - New functions in filters.rs following swirl/spherize pattern
+    - Register with ConfigParams
+    - Target crate: rasmcore-filter-advanced
+  acceptance_criteria:
+    - polar filter registered — converts Cartesian to Polar projection
+    - depolar filter registered — converts Polar back to Cartesian
+    - Roundtrip polar->depolar produces near-identical output
+    - wave filter registered with amplitude, wavelength, and direction params
+    - ripple filter registered with amplitude, wavelength, and center params
+    - Wave with amplitude=0 is identity
+    - Ripple with amplitude=0 is identity
+    - IM parity test for polar vs -distort Polar within ALGORITHM tier
+    - IM parity test for wave vs -wave within ALGORITHM tier
+    - All 4 filters support RGB8 and RGBA8
+    - SIMD inner loops for coordinate computation
+    - Re-exported via rasmcore-filter-advanced crate
+  out_of_scope: |
+    Arc distortion (text on circular path). Cylinder/sphere projection.
+    Equirectangular projection. Stereographic projection.
+  technical_notes: |
+    POLAR (Cartesian to Polar):
+    - For each output pixel (x, y):
+      - Interpret x as angle (0 to 2*PI mapped across width)
+      - Interpret y as radius (0 to max_radius mapped across height)
+      - Source x = cx + radius * cos(angle)
+      - Source y = cy + radius * sin(angle)
+    - max_radius = min(width, height) / 2
+    - IM equivalent: -distort Polar "max_radius"
+
+    DEPOLAR (Polar to Cartesian):
+    - Inverse of Polar: for each output (x, y):
+      - Compute radius = sqrt((x-cx)^2 + (y-cy)^2)
+      - Compute angle = atan2(y-cy, x-cx)
+      - Source x = angle / (2*PI) * width
+      - Source y = radius / max_radius * height
+    - IM equivalent: -distort DePolar "max_radius"
+
+    WAVE (sinusoidal displacement):
+    - For each output pixel (x, y):
+      - If horizontal: source_y = y + amplitude * sin(2*PI * x / wavelength)
+      - If vertical: source_x = x + amplitude * sin(2*PI * y / wavelength)
+    - IM equivalent: -wave {amplitude}x{wavelength}
+
+    RIPPLE (concentric sinusoidal):
+    - For each output pixel (x, y):
+      - r = distance from center
+      - angle = atan2(y-cy, x-cx)
+      - displacement = amplitude * sin(2*PI * r / wavelength)
+      - source_x = x + displacement * cos(angle)
+      - source_y = y + displacement * sin(angle)
+plan:
+  - phase: Polar & DePolar
+    tasks:
+      - text: Implement polar distortion (Cartesian to Polar projection) with bilinear sampling
+        done: false
+      - text: Implement depolar distortion (Polar to Cartesian) with bilinear sampling
+        done: false
+      - text: Register both with ConfigParams, test roundtrip polar->depolar near-identity
+        done: false
+      - text: IM parity test for polar vs -distort Polar, ALGORITHM tier
+        done: false
+  - phase: Wave & Ripple
+    tasks:
+      - text: Implement wave distortion with amplitude, wavelength, direction params
+        done: false
+      - text: Implement ripple distortion with amplitude, wavelength, center params
+        done: false
+      - text: Register both with ConfigParams, test identity at amplitude=0
+        done: false
+      - text: IM parity test for wave vs -wave, ALGORITHM tier
+        done: false
+  - phase: Verification
+    tasks:
+      - text: SIMD inner loops for all 4 distortions (batch coordinate computation)
+        done: false
+      - text: Re-export via rasmcore-filter-advanced crate
+        done: false
+      - text: Verify param-manifest.json includes all 4 new filters
+        done: false
+      - text: Full cargo test pass
+        done: false
+extra: {}

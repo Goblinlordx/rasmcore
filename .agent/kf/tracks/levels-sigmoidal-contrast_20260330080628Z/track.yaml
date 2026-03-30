@@ -1,0 +1,101 @@
+id: levels-sigmoidal-contrast_20260330080628Z
+title: Levels Adjustment & Sigmoidal Contrast
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Add IM -level (black/white point + gamma remap) and -sigmoidal-contrast
+    (S-curve contrast) as registered filters. Both are LUT-based point ops
+    with exact IM parity. Core photo editing operations.
+  context: |
+    Levels adjustment is one of the most fundamental photo editing operations.
+    ImageMagick's -level and Photoshop's Levels dialog let users set input
+    black/white points and a gamma curve. Sigmoidal contrast applies an S-curve
+    for more natural contrast than linear. Both are missing despite the project
+    having brightness, contrast, gamma, and auto_level individually. These are
+    top-10 most-used IM operations.
+  codebase_analysis: |
+    EXISTING POINT OPS (point_ops.rs):
+    - PointOp enum with Gamma, Invert, Threshold, Posterize, Clamp, Brightness, Contrast, Solarize
+    - build_lut() generates 256-entry LUT from PointOp
+    - apply_lut() applies LUT to image (handles RGB8, RGBA8, Gray8)
+    - Compose_luts() fuses two LUTs into one
+
+    EXISTING ADJUSTMENT FILTERS:
+    - brightness: linear offset
+    - contrast: linear scaling around midpoint
+    - gamma: power-law curve
+    - auto_level: auto black/white point detection + stretch
+    - contrast_stretch: percentile-based stretch (histogram.rs)
+
+    WHERE TO ADD:
+    - Add Levels and SigmoidalContrast to PointOp enum
+    - build_lut() handles the math
+    - Register as filters in filters.rs
+    - Both compose with existing LUTs (LUT fusion)
+
+    REFERENCE:
+    - IM -level "black%,white%,gamma": remap [black,white] to [0,255] with gamma
+    - IM +sigmoidal-contrast "strength x midpoint%": S-curve centered at midpoint
+    - Both are pure point ops, LUT-composable, SIMD auto-vectorized
+  acceptance_criteria:
+    - "levels filter registered with black_point (0-100%), white_point (0-100%), gamma (0.1-10.0)"
+    - "sigmoidal_contrast filter registered with strength (0-20), midpoint (0-100%), sharpen (bool)"
+    - Levels with (0%, 100%, 1.0) is identity
+    - Sigmoidal with strength=0 is identity
+    - Both composable via LUT fusion (compose_luts)
+    - Reference parity vs IM -level within EXACT tier (MAE < 0.01)
+    - Reference parity vs IM -sigmoidal-contrast within EXACT tier (MAE < 0.01)
+    - Both support RGB8, RGBA8, Gray8 (alpha preserved)
+    - Registered with ConfigParams and proper param hints
+  out_of_scope: |
+    Per-channel levels (separate R/G/B curves). Auto-levels with clipping
+    percentage (covered by existing auto_level). Levels histogram preview.
+  technical_notes: |
+    LEVELS:
+    - LUT[i] = clamp(((i/255 - black) / (white - black)) ^ (1/gamma) * 255)
+    - black/white as fractions [0,1], gamma as exponent
+    - IM syntax: -level "black%,white%,gamma" — percentages of full range
+    - Add PointOp::Levels { black: f32, white: f32, gamma: f32 }
+
+    SIGMOIDAL CONTRAST:
+    - sigmoid(x) = 1 / (1 + exp(-strength * (x - midpoint)))
+    - LUT[i] = (sigmoid(i/255) - sigmoid(0)) / (sigmoid(1) - sigmoid(0)) * 255
+    - sharpen=true: apply as-is (increase contrast)
+    - sharpen=false: apply inverse (decrease contrast)
+    - IM syntax: -sigmoidal-contrast strengthxmidpoint%
+    - Add PointOp::SigmoidalContrast { strength: f32, midpoint: f32, sharpen: bool }
+plan:
+  - phase: Levels
+    tasks:
+      - text: Add PointOp::Levels to enum, implement build_lut for black/white/gamma remap
+        done: false
+      - text: Register levels filter with ConfigParams (black_point, white_point, gamma)
+        done: false
+      - text: Test identity at (0, 100, 1.0), verify black/white point clamping
+        done: false
+      - text: IM parity test vs -level, assert EXACT tier (MAE < 0.01)
+        done: false
+  - phase: Sigmoidal Contrast
+    tasks:
+      - text: Add PointOp::SigmoidalContrast to enum, implement S-curve LUT
+        done: false
+      - text: Register sigmoidal_contrast filter with ConfigParams (strength, midpoint, sharpen)
+        done: false
+      - text: Test identity at strength=0, verify S-curve shape at various strengths
+        done: false
+      - text: IM parity test vs -sigmoidal-contrast, assert EXACT tier (MAE < 0.01)
+        done: false
+  - phase: Integration & Verification
+    tasks:
+      - text: Verify LUT fusion works (compose_luts with levels + sigmoidal)
+        done: false
+      - text: Re-export via rasmcore-filter-enhance crate
+        done: false
+      - text: Verify param-manifest.json includes both new filters
+        done: false
+      - text: Full cargo test pass
+        done: false
+extra: {}

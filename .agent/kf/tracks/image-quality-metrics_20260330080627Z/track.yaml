@@ -1,0 +1,109 @@
+id: image-quality-metrics_20260330080627Z
+title: Image Quality Metrics — PSNR, SSIM, RMSE, Delta E
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: |
+    Add public image comparison metric functions (PSNR, SSIM, RMSE, MAE, Delta E)
+    as first-class domain operations. Register as filters and expose via WIT.
+    Validated against ImageMagick -compare and scikit-image metrics.
+  context: |
+    Every serious image processing tool exposes quality comparison metrics.
+    ImageMagick has -compare (PSNR, RMSE, MAE, SSIM), libvips has vips_dssim,
+    and scikit-image has structural_similarity. We currently compute MAE in test
+    harnesses but lack public metric functions. These are essential for QA
+    pipelines, codec benchmarking, and automated quality gates.
+  codebase_analysis: |
+    EXISTING:
+    - tests/reference_audit.rs has fn mae() for test-only MAE computation
+    - tests/pro_filter_parity.rs has fn mean_absolute_error() and max_absolute_error()
+    - HEVC tests reference PSNR but only as documentation, not computed
+    - No public metric functions in the domain layer
+    - No WIT interface for image comparison
+
+    INFRASTRUCTURE:
+    - histogram.rs has histogram() for per-channel histograms (useful for SSIM)
+    - ImageInfo carries width/height/format/color_space
+    - color_spaces.rs has Lab conversion (needed for Delta E)
+    - Need to handle RGB8, RGBA8 (ignore alpha for metrics), Gray8
+
+    REGISTRATION:
+    - Metrics don't fit register_filter (two-image input, scalar output)
+    - Better as standalone domain functions + dedicated WIT interface
+    - Could also add a compare.wit interface alongside encoder/decoder
+
+    REFERENCE VALIDATION:
+    - IM: magick compare -metric PSNR img1.png img2.png diff.png
+    - scikit-image: structural_similarity(img1, img2, multichannel=True)
+    - Our PSNR/SSIM must match within 0.01 dB / 0.001 of reference
+  acceptance_criteria:
+    - "psnr(a, b) returns peak signal-to-noise ratio in dB (f64)"
+    - "ssim(a, b) returns structural similarity index 0.0-1.0 (f64)"
+    - "rmse(a, b) returns root mean squared error (f64)"
+    - "mae(a, b) returns mean absolute error (f64)"
+    - "delta_e_cie76(a, b) returns per-pixel mean CIE76 Delta E via Lab conversion (f64)"
+    - Identical images produce PSNR=inf (or a large sentinel), SSIM=1.0, RMSE=0.0, MAE=0.0
+    - Supports RGB8, RGBA8 (alpha ignored), Gray8
+    - Reference parity vs IM -compare PSNR within 0.01 dB
+    - Reference parity vs scikit-image SSIM within 0.001
+    - WIT compare interface exposes all 5 metrics
+    - Existing test harness MAE functions updated to use domain implementation
+  out_of_scope: |
+    MS-SSIM (multi-scale). VMAF (requires model files). Perceptual hashing.
+    Butteraugli/DSSIM (separate crates, not standard). Difference visualization.
+  technical_notes: |
+    PSNR:
+    - MSE = sum((a[i] - b[i])^2) / N
+    - PSNR = 10 * log10(MAX^2 / MSE) where MAX=255 for 8-bit
+    - Identical images: return f64::INFINITY or 100.0 sentinel
+
+    SSIM (Wang et al. 2004):
+    - Compute per-window (11x11 Gaussian): luminance, contrast, structure
+    - SSIM(x,y) = (2*mu_x*mu_y + C1)(2*sigma_xy + C2) / ((mu_x^2+mu_y^2+C1)(sigma_x^2+sigma_y^2+C2))
+    - C1 = (0.01*255)^2, C2 = (0.03*255)^2
+    - Return mean SSIM across all windows
+    - For color: compute per-channel, average
+
+    RMSE: sqrt(MSE)
+    MAE: sum(|a[i] - b[i]|) / N
+
+    Delta E (CIE76):
+    - Convert both images to CIE Lab
+    - Per-pixel: sqrt((L1-L2)^2 + (a1-a2)^2 + (b1-b2)^2)
+    - Return mean across all pixels
+plan:
+  - phase: Core Metrics
+    tasks:
+      - text: Create domain/metrics.rs module with psnr(), rmse(), mae() functions
+        done: false
+      - text: Implement SSIM with 11x11 Gaussian window, per-channel averaging
+        done: false
+      - text: Implement delta_e_cie76() using existing Lab color space conversion
+        done: false
+      - text: Handle edge cases (identical images, mismatched dimensions, alpha channel)
+        done: false
+  - phase: Domain Tests
+    tasks:
+      - text: Test identical images produce PSNR=inf/SSIM=1.0/RMSE=0.0/MAE=0.0
+        done: false
+      - text: Test known-difference pairs with hand-computed expected values
+        done: false
+      - text: Test SSIM symmetry and bounds (always in 0.0-1.0)
+        done: false
+  - phase: Reference Parity
+    tasks:
+      - text: PSNR parity vs IM -compare -metric PSNR within 0.01 dB
+        done: false
+      - text: SSIM parity vs scikit-image structural_similarity within 0.001
+        done: false
+      - text: MAE/RMSE parity vs IM -compare -metric MAE/RMSE within 0.01
+        done: false
+  - phase: WIT & Integration
+    tasks:
+      - text: Add compare.wit interface with psnr/ssim/rmse/mae/delta-e functions
+        done: false
+      - text: Wire adapter, verify cargo test passes
+        done: false
+extra: {}

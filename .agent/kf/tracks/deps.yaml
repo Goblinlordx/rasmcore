@@ -103,3 +103,14 @@ distortion-effect-filters_20260330071044Z: []
 color-manipulation-filters_20260330071045Z: []
 
 raw-dng-decode_20260330071046Z: []
+
+# IM/vips parity gap closure — all independent
+image-quality-metrics_20260330080627Z: []
+
+levels-sigmoidal-contrast_20260330080628Z: []
+
+kuwahara-rank-filter_20260330080629Z: []
+
+polar-wave-distortion_20260330080630Z: []
+
+sparse-color-modulate_20260330080631Z: []
