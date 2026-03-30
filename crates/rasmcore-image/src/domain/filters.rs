@@ -2228,6 +2228,76 @@ mod color_manipulation_tests {
         // Center pixel should be close to original (radius ≈ 0, no arc blur)
         assert_eq!(result[center], 255, "center should stay red");
     }
+
+    // ── Gradient & Pattern Generators ──
+
+    #[test]
+    fn gradient_linear_horizontal() {
+        let pixels = gradient_linear(16, 4, 0, 0, 0, 255, 255, 255, 0.0);
+        assert_eq!(pixels.len(), 16 * 4 * 3);
+        // Left edge should be dark, right edge should be bright
+        assert!(pixels[0] < 20, "left should be near black: {}", pixels[0]);
+        assert!(
+            pixels[15 * 3] > 235,
+            "right should be near white: {}",
+            pixels[15 * 3]
+        );
+    }
+
+    #[test]
+    fn gradient_linear_vertical() {
+        let pixels = gradient_linear(4, 16, 255, 0, 0, 0, 0, 255, 90.0);
+        // Top should be red-ish, bottom should be blue-ish
+        assert!(pixels[0] > 200, "top R should be high");
+        assert!(pixels[(15 * 4) * 3 + 2] > 200, "bottom B should be high");
+    }
+
+    #[test]
+    fn gradient_radial_center_is_color1() {
+        let pixels = gradient_radial(16, 16, 255, 0, 0, 0, 0, 255, 0.5, 0.5);
+        // Center pixel (8,8) should be close to color1 (red)
+        let center = (8 * 16 + 8) * 3;
+        assert!(pixels[center] > 200, "center R={}", pixels[center]);
+        assert!(pixels[center + 2] < 50, "center B={}", pixels[center + 2]);
+    }
+
+    #[test]
+    fn checkerboard_pattern() {
+        let pixels = checkerboard(8, 8, 4, 255, 255, 255, 0, 0, 0);
+        assert_eq!(pixels.len(), 8 * 8 * 3);
+        // (0,0) should be white (cell 0,0 = even)
+        assert_eq!(pixels[0], 255);
+        // (4,0) should be black (cell 1,0 = odd)
+        assert_eq!(pixels[4 * 3], 0);
+        // (4,4) should be white (cell 1,1 = even)
+        assert_eq!(pixels[(4 * 8 + 4) * 3], 255);
+    }
+
+    #[test]
+    fn plasma_deterministic() {
+        let a = plasma(32, 32, 42, 1.0);
+        let b = plasma(32, 32, 42, 1.0);
+        assert_eq!(a, b, "same seed should produce same output");
+    }
+
+    #[test]
+    fn plasma_different_seeds() {
+        let a = plasma(32, 32, 1, 1.0);
+        let b = plasma(32, 32, 2, 1.0);
+        assert_ne!(a, b, "different seeds should produce different output");
+    }
+
+    #[test]
+    fn plasma_has_color_variation() {
+        let pixels = plasma(64, 64, 42, 2.0);
+        // Should have some variation (not all one color)
+        let unique: std::collections::HashSet<u8> = pixels.iter().copied().collect();
+        assert!(
+            unique.len() > 10,
+            "plasma should have color variation, got {} unique values",
+            unique.len()
+        );
+    }
 }
 
 // =============================================================================
@@ -6034,8 +6104,8 @@ pub fn shadow_highlight(
             while h2 > 0.0 {
                 let la = ta[0];
                 let la_inv = 1.0 - la;
-                let lb = (tb0 - 0.5) * highlights_sign_neg * if la_inv < 0.0 { -1.0 } else { 1.0 }
-                    + 0.5;
+                let lb =
+                    (tb0 - 0.5) * highlights_sign_neg * if la_inv < 0.0 { -1.0 } else { 1.0 } + 0.5;
 
                 let la_abs = la.abs();
                 let lref = if la_abs > low_approximation {
@@ -6064,8 +6134,7 @@ pub fn shadow_highlight(
                 ta[0] = la * (1.0 - optrans) + blended * optrans;
 
                 // Color correction for a* and b*
-                let cc_factor =
-                    ta[0] * lref * (1.0 - hc) + (1.0 - ta[0]) * href * hc;
+                let cc_factor = ta[0] * lref * (1.0 - hc) + (1.0 - ta[0]) * href * hc;
                 ta[1] = ta[1] * (1.0 - optrans) + ta[1] * cc_factor * optrans;
                 ta[2] = ta[2] * (1.0 - optrans) + ta[2] * cc_factor * optrans;
             }
@@ -6079,8 +6148,7 @@ pub fn shadow_highlight(
             while s2 > 0.0 {
                 let la = ta[0];
                 let la_inv = 1.0 - la;
-                let lb =
-                    (tb0 - 0.5) * shadows_sign * if la_inv < 0.0 { -1.0 } else { 1.0 } + 0.5;
+                let lb = (tb0 - 0.5) * shadows_sign * if la_inv < 0.0 { -1.0 } else { 1.0 } + 0.5;
 
                 let la_abs = la.abs();
                 let lref = if la_abs > low_approximation {
@@ -6107,8 +6175,7 @@ pub fn shadow_highlight(
                 };
                 ta[0] = la * (1.0 - optrans) + blended * optrans;
 
-                let cc_factor =
-                    ta[0] * lref * sc + (1.0 - ta[0]) * href * (1.0 - sc);
+                let cc_factor = ta[0] * lref * sc + (1.0 - ta[0]) * href * (1.0 - sc);
                 ta[1] = ta[1] * (1.0 - optrans) + ta[1] * cc_factor * optrans;
                 ta[2] = ta[2] * (1.0 - optrans) + ta[2] * cc_factor * optrans;
             }
@@ -6648,8 +6715,8 @@ fn blur_1ch_f32(data: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
         for x in 0..w {
             let mut sum = 0.0f32;
             for k in 0..ksize {
-                let sx = (x as isize + k as isize - half as isize)
-                    .clamp(0, w as isize - 1) as usize;
+                let sx =
+                    (x as isize + k as isize - half as isize).clamp(0, w as isize - 1) as usize;
                 sum += data[y * w + sx] * kernel[k];
             }
             tmp[y * w + x] = sum;
@@ -6662,8 +6729,8 @@ fn blur_1ch_f32(data: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
         for x in 0..w {
             let mut sum = 0.0f32;
             for k in 0..ksize {
-                let sy = (y as isize + k as isize - half as isize)
-                    .clamp(0, h as isize - 1) as usize;
+                let sy =
+                    (y as isize + k as isize - half as isize).clamp(0, h as isize - 1) as usize;
                 sum += tmp[sy * w + x] * kernel[k];
             }
             out[y * w + x] = sum;
@@ -8377,6 +8444,280 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
                 0.5,
             );
             pixels[(y * width + x) as usize] = ((n * 0.5 + 0.5) * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    }
+    pixels
+}
+
+// ─── Gradient & Pattern Generators ───────────────────────────────────────
+
+/// Generate a linear gradient image between two colors at a given angle.
+///
+/// Angle 0 = left-to-right, 90 = top-to-bottom, etc.
+/// IM equivalent: `magick -size WxH gradient:color1-color2 -rotate angle`
+#[rasmcore_macros::register_filter(name = "gradient_linear", category = "generator")]
+pub fn gradient_linear(
+    width: u32,
+    height: u32,
+    color1_r: u32,
+    color1_g: u32,
+    color1_b: u32,
+    color2_r: u32,
+    color2_g: u32,
+    color2_b: u32,
+    angle: f32,
+) -> Vec<u8> {
+    let w = width.max(1) as usize;
+    let h = height.max(1) as usize;
+    let mut pixels = vec![0u8; w * h * 3];
+
+    let c1 = [
+        color1_r.min(255) as f32,
+        color1_g.min(255) as f32,
+        color1_b.min(255) as f32,
+    ];
+    let c2 = [
+        color2_r.min(255) as f32,
+        color2_g.min(255) as f32,
+        color2_b.min(255) as f32,
+    ];
+
+    let rad = angle.to_radians();
+    let dx = rad.cos();
+    let dy = rad.sin();
+    // Project image corners onto gradient axis to find extent
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
+    let half_extent = (cx * dx.abs() + cy * dy.abs()).max(1.0);
+
+    for y in 0..h {
+        for x in 0..w {
+            let proj = (x as f32 - cx) * dx + (y as f32 - cy) * dy;
+            let t = ((proj / half_extent) * 0.5 + 0.5).clamp(0.0, 1.0);
+            let idx = (y * w + x) * 3;
+            pixels[idx] = (c1[0] + (c2[0] - c1[0]) * t + 0.5) as u8;
+            pixels[idx + 1] = (c1[1] + (c2[1] - c1[1]) * t + 0.5) as u8;
+            pixels[idx + 2] = (c1[2] + (c2[2] - c1[2]) * t + 0.5) as u8;
+        }
+    }
+    pixels
+}
+
+/// Generate a radial gradient image between two colors from center outward.
+///
+/// IM equivalent: `magick -size WxH radial-gradient:color1-color2`
+#[rasmcore_macros::register_filter(name = "gradient_radial", category = "generator")]
+pub fn gradient_radial(
+    width: u32,
+    height: u32,
+    color1_r: u32,
+    color1_g: u32,
+    color1_b: u32,
+    color2_r: u32,
+    color2_g: u32,
+    color2_b: u32,
+    center_x: f32,
+    center_y: f32,
+) -> Vec<u8> {
+    let w = width.max(1) as usize;
+    let h = height.max(1) as usize;
+    let mut pixels = vec![0u8; w * h * 3];
+
+    let c1 = [
+        color1_r.min(255) as f32,
+        color1_g.min(255) as f32,
+        color1_b.min(255) as f32,
+    ];
+    let c2 = [
+        color2_r.min(255) as f32,
+        color2_g.min(255) as f32,
+        color2_b.min(255) as f32,
+    ];
+
+    let cx = center_x * w as f32;
+    let cy = center_y * h as f32;
+    // Max radius: distance from center to farthest corner
+    let max_r = [
+        (cx * cx + cy * cy).sqrt(),
+        ((w as f32 - cx).powi(2) + cy * cy).sqrt(),
+        (cx * cx + (h as f32 - cy).powi(2)).sqrt(),
+        ((w as f32 - cx).powi(2) + (h as f32 - cy).powi(2)).sqrt(),
+    ]
+    .iter()
+    .cloned()
+    .fold(0.0f32, f32::max)
+    .max(1.0);
+
+    for y in 0..h {
+        for x in 0..w {
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
+            let t = ((dx * dx + dy * dy).sqrt() / max_r).clamp(0.0, 1.0);
+            let idx = (y * w + x) * 3;
+            pixels[idx] = (c1[0] + (c2[0] - c1[0]) * t + 0.5) as u8;
+            pixels[idx + 1] = (c1[1] + (c2[1] - c1[1]) * t + 0.5) as u8;
+            pixels[idx + 2] = (c1[2] + (c2[2] - c1[2]) * t + 0.5) as u8;
+        }
+    }
+    pixels
+}
+
+/// Generate a checkerboard pattern image.
+///
+/// IM equivalent: `magick -size WxH pattern:checkerboard`
+#[rasmcore_macros::register_filter(name = "checkerboard", category = "generator")]
+pub fn checkerboard(
+    width: u32,
+    height: u32,
+    cell_size: u32,
+    color1_r: u32,
+    color1_g: u32,
+    color1_b: u32,
+    color2_r: u32,
+    color2_g: u32,
+    color2_b: u32,
+) -> Vec<u8> {
+    let w = width.max(1) as usize;
+    let h = height.max(1) as usize;
+    let cell = cell_size.max(1) as usize;
+    let mut pixels = vec![0u8; w * h * 3];
+
+    let c1 = [
+        color1_r.min(255) as u8,
+        color1_g.min(255) as u8,
+        color1_b.min(255) as u8,
+    ];
+    let c2 = [
+        color2_r.min(255) as u8,
+        color2_g.min(255) as u8,
+        color2_b.min(255) as u8,
+    ];
+
+    for y in 0..h {
+        for x in 0..w {
+            let color = if ((x / cell) + (y / cell)) % 2 == 0 {
+                &c1
+            } else {
+                &c2
+            };
+            let idx = (y * w + x) * 3;
+            pixels[idx] = color[0];
+            pixels[idx + 1] = color[1];
+            pixels[idx + 2] = color[2];
+        }
+    }
+    pixels
+}
+
+/// Generate a plasma fractal noise image via diamond-square algorithm.
+///
+/// Produces colorful fractal patterns. Deterministic for a given seed.
+/// IM equivalent: `magick -size WxH plasma:`
+#[rasmcore_macros::register_filter(name = "plasma", category = "generator")]
+pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
+    let w = width.max(1) as usize;
+    let h = height.max(1) as usize;
+    let turbulence = turbulence.clamp(0.1, 10.0);
+
+    // Use diamond-square on a power-of-2 grid, then sample
+    let size = w.max(h).next_power_of_two() + 1;
+    let mut grid = vec![0.0f32; size * size];
+
+    // Simple LCG seeded random
+    let mut rng_state = seed;
+    let mut rng = || -> f32 {
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((rng_state >> 33) as f32 / (u32::MAX as f32)) * 2.0 - 1.0
+    };
+
+    // Seed corners
+    grid[0] = rng();
+    grid[size - 1] = rng();
+    grid[(size - 1) * size] = rng();
+    grid[(size - 1) * size + size - 1] = rng();
+
+    let mut step = size - 1;
+    let mut scale = turbulence;
+
+    while step > 1 {
+        let half = step / 2;
+
+        // Diamond step
+        for y in (0..size - 1).step_by(step) {
+            for x in (0..size - 1).step_by(step) {
+                let avg = (grid[y * size + x]
+                    + grid[y * size + x + step]
+                    + grid[(y + step) * size + x]
+                    + grid[(y + step) * size + x + step])
+                    / 4.0;
+                grid[(y + half) * size + x + half] = avg + rng() * scale;
+            }
+        }
+
+        // Square step
+        for y in (0..size).step_by(half) {
+            let x_start = if (y / half) % 2 == 0 { half } else { 0 };
+            for x in (x_start..size).step_by(step) {
+                let mut sum = 0.0f32;
+                let mut count = 0.0f32;
+                if y >= half {
+                    sum += grid[(y - half) * size + x];
+                    count += 1.0;
+                }
+                if y + half < size {
+                    sum += grid[(y + half) * size + x];
+                    count += 1.0;
+                }
+                if x >= half {
+                    sum += grid[y * size + x - half];
+                    count += 1.0;
+                }
+                if x + half < size {
+                    sum += grid[y * size + x + half];
+                    count += 1.0;
+                }
+                grid[y * size + x] = sum / count + rng() * scale;
+            }
+        }
+
+        step = half;
+        scale *= 0.5;
+    }
+
+    // Normalize grid to [0, 1]
+    let min_v = grid.iter().cloned().fold(f32::INFINITY, f32::min);
+    let max_v = grid.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let range = (max_v - min_v).max(1e-6);
+
+    // Generate RGB from normalized values using a simple color mapping
+    let mut pixels = vec![0u8; w * h * 3];
+    for y in 0..h {
+        for x in 0..w {
+            let gx = (x as f32 / w as f32 * (size - 1) as f32) as usize;
+            let gy = (y as f32 / h as f32 * (size - 1) as f32) as usize;
+            let t = (grid[gy.min(size - 1) * size + gx.min(size - 1)] - min_v) / range;
+
+            // Map to a colorful gradient: blue -> cyan -> green -> yellow -> red
+            let (r, g, b) = if t < 0.25 {
+                let s = t / 0.25;
+                (0.0, s, 1.0)
+            } else if t < 0.5 {
+                let s = (t - 0.25) / 0.25;
+                (0.0, 1.0, 1.0 - s)
+            } else if t < 0.75 {
+                let s = (t - 0.5) / 0.25;
+                (s, 1.0, 0.0)
+            } else {
+                let s = (t - 0.75) / 0.25;
+                (1.0, 1.0 - s, 0.0)
+            };
+
+            let idx = (y * w + x) * 3;
+            pixels[idx] = (r * 255.0 + 0.5) as u8;
+            pixels[idx + 1] = (g * 255.0 + 0.5) as u8;
+            pixels[idx + 2] = (b * 255.0 + 0.5) as u8;
         }
     }
     pixels
@@ -12463,7 +12804,8 @@ mod shadow_highlight_tests {
         // shadow=0, highlight=0 should be identity
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 0.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+        let result =
+            shadow_highlight(&pixels, &info, 0.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -12472,7 +12814,8 @@ mod shadow_highlight_tests {
         // Create dark image (all pixels at 30)
         let pixels = vec![30u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 100.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+        let result =
+            shadow_highlight(&pixels, &info, 100.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         // All pixels should be brighter than original
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -12487,7 +12830,8 @@ mod shadow_highlight_tests {
         // Create bright image (all pixels at 230)
         let pixels = vec![230u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 0.0, -100.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+        let result =
+            shadow_highlight(&pixels, &info, 0.0, -100.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -12501,7 +12845,8 @@ mod shadow_highlight_tests {
         // Create mid-tone image (all pixels at 128)
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+        let result =
+            shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
         let max_diff: u8 = pixels
             .iter()
@@ -12528,7 +12873,8 @@ mod shadow_highlight_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+        let result =
+            shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         // Alpha should be exactly preserved
         for i in 0..64 {
             assert_eq!(
