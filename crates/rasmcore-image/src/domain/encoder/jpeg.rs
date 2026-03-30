@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_decodable_by_image_crate() {
+    fn encode_decodable_roundtrip() {
         let mut pixels = Vec::with_capacity(32 * 32 * 3);
         for y in 0..32u8 {
             for x in 0..32u8 {
@@ -263,14 +263,10 @@ mod tests {
         let config = JpegEncodeConfig::default();
         let jpeg = encode_pixels(&pixels, &info, &config).unwrap();
 
-        let result = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg);
-        assert!(
-            result.is_ok(),
-            "JPEG should be decodable: {:?}",
-            result.err()
-        );
-        let img = result.unwrap().to_rgb8();
-        assert_eq!(img.dimensions(), (32, 32));
+        // Verify our own decoder can read it back
+        let decoded = rasmcore_jpeg::decode(&jpeg).unwrap();
+        assert_eq!(decoded.width, 32);
+        assert_eq!(decoded.height, 32);
     }
 
     #[test]

@@ -206,6 +206,11 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
         return decode_svg(data);
     }
 
+    // JPEG — native decode via rasmcore-jpeg (always on)
+    if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
+        return decode_native_jpeg(data);
+    }
+
     // Native trivial codecs — opt-in via feature flags, bypass image crate
     #[cfg(feature = "native-qoi")]
     if data.len() >= 4 && &data[..4] == b"qoif" {
@@ -382,6 +387,35 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
             return Ok(decoded);
         }
         // Otherwise, use image crate for format conversion
+        let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
+        let (pixels, format) = match target_format {
+            PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
+            PixelFormat::Rgba8 => (img.to_rgba8().into_raw(), PixelFormat::Rgba8),
+            PixelFormat::Gray8 => (img.to_luma8().into_raw(), PixelFormat::Gray8),
+            other => {
+                return Err(ImageError::UnsupportedFormat(format!(
+                    "conversion to {other:?} not supported"
+                )));
+            }
+        };
+        return Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: decoded.info.width,
+                height: decoded.info.height,
+                format,
+                color_space: decoded.info.color_space,
+            },
+            icc_profile: decoded.icc_profile,
+        });
+    }
+
+    // JPEG — use native decoder, then convert format
+    if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
+        let decoded = decode_native_jpeg(data)?;
+        if decoded.info.format == target_format {
+            return Ok(decoded);
+        }
         let img = crate::domain::encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info)?;
         let (pixels, format) = match target_format {
             PixelFormat::Rgb8 => (img.to_rgb8().into_raw(), PixelFormat::Rgb8),
@@ -807,6 +841,81 @@ fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
     })
 }
 
+/// Decode JPEG using rasmcore-jpeg (pure Rust, supports sequential/progressive/arithmetic).
+fn decode_native_jpeg(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    // Extract ICC profile from APP2 markers before decoding pixels
+    let icc_profile = extract_jpeg_icc_profile(data);
+
+    let decoded =
+        rasmcore_jpeg::decode(data).map_err(|e| ImageError::InvalidInput(format!("JPEG: {e}")))?;
+    let format = match decoded.format {
+        rasmcore_jpeg::PixelFormat::Rgb8 => PixelFormat::Rgb8,
+        rasmcore_jpeg::PixelFormat::Gray8 => PixelFormat::Gray8,
+        rasmcore_jpeg::PixelFormat::Rgba8 => PixelFormat::Rgba8,
+    };
+    Ok(DecodedImage {
+        pixels: decoded.pixels,
+        info: ImageInfo {
+            width: decoded.width,
+            height: decoded.height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile,
+    })
+}
+
+/// Extract ICC profile from JPEG APP2 markers (ICC_PROFILE signature).
+///
+/// Handles multi-chunk profiles per the ICC spec: each APP2 marker contains
+/// a chunk with sequence number and total count.
+fn extract_jpeg_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
+    const ICC_SIG: &[u8] = b"ICC_PROFILE\0";
+    let mut chunks: Vec<(u8, Vec<u8>)> = Vec::new();
+    let mut pos = 2; // skip SOI
+
+    while pos + 4 < data.len() {
+        if data[pos] != 0xFF {
+            pos += 1;
+            continue;
+        }
+        let marker = data[pos + 1];
+        if marker == 0xD9 {
+            break; // EOI
+        }
+        if marker == 0x00 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            pos += 2;
+            continue;
+        }
+        if pos + 4 > data.len() {
+            break;
+        }
+        let seg_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
+        if marker == 0xE2 && seg_len > ICC_SIG.len() + 4 {
+            // APP2 marker — check for ICC_PROFILE signature
+            let seg_start = pos + 4;
+            if seg_start + ICC_SIG.len() + 2 <= data.len()
+                && &data[seg_start..seg_start + ICC_SIG.len()] == ICC_SIG
+            {
+                let seq = data[seg_start + ICC_SIG.len()]; // chunk sequence (1-based)
+                let _total = data[seg_start + ICC_SIG.len() + 1];
+                let profile_data = &data[seg_start + ICC_SIG.len() + 2..pos + 2 + seg_len];
+                chunks.push((seq, profile_data.to_vec()));
+            }
+        }
+        pos += 2 + seg_len;
+    }
+
+    if chunks.is_empty() {
+        return None;
+    }
+
+    // Sort by sequence number and concatenate
+    chunks.sort_by_key(|(seq, _)| *seq);
+    let profile: Vec<u8> = chunks.into_iter().flat_map(|(_, data)| data).collect();
+    Some(profile)
+}
+
 /// Decode TIFF using the tiff crate directly (bypasses image crate).
 fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let cursor = std::io::Cursor::new(data);
@@ -950,13 +1059,20 @@ mod tests {
     }
 
     fn make_jpeg(width: u32, height: u32) -> Vec<u8> {
-        let img = image::RgbImage::from_fn(width, height, |x, y| {
-            image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
-        });
-        let mut buf = Vec::new();
-        let mut cursor = std::io::Cursor::new(&mut buf);
-        img.write_to(&mut cursor, ImageFormat::Jpeg).unwrap();
-        buf
+        let pixels: Vec<u8> = (0..width * height)
+            .flat_map(|i| {
+                let x = i % width;
+                let y = i / width;
+                [(x % 256) as u8, (y % 256) as u8, 128u8]
+            })
+            .collect();
+        let info = ImageInfo {
+            width,
+            height,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        crate::domain::encoder::encode(&pixels, &info, "jpeg", Some(90)).unwrap()
     }
 
     #[test]
