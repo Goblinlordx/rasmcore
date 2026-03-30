@@ -8,13 +8,9 @@
 //!
 //! Tolerance: max +/-1 per channel to account for FP rounding.
 //!
-//! Known reference divergences:
+//! Known reference divergence:
 //! - SoftLight: IM 7 Q16-HDRI uses a different formula than the W3C spec.
 //!   We follow the W3C/vips formula and only validate against vips for this mode.
-//! - HardMix: IM uses `>` comparison while we use `>=` (matching Photoshop).
-//!   At the exact boundary fg+bg=255, FP precision in IM causes inconsistent
-//!   results depending on the specific values (0+255 vs 1+254). We compare
-//!   against IM with a tolerance that accounts for this boundary difference.
 
 use rasmcore_image::domain::filters::{blend, BlendMode};
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
@@ -250,47 +246,6 @@ fn compare_pixels(ours: &[u8], reference: &[u8]) -> (u8, usize) {
     (max_diff, num_diff)
 }
 
-/// Compare pixels for HardMix, allowing the IM boundary divergence.
-///
-/// When fg_channel + bg_channel == 255, our `>=` gives 255 while IM's FP
-/// comparison may give 0 or 255 depending on rounding.  We skip those channels.
-fn compare_pixels_hardmix(
-    ours: &[u8],
-    reference: &[u8],
-    fg_pixels: &[u8],
-    bg_pixels: &[u8],
-) -> (u8, usize, usize) {
-    assert_eq!(ours.len(), reference.len());
-    let mut max_diff: u8 = 0;
-    let mut num_diff = 0;
-    let mut num_boundary_skipped = 0;
-    for (i, (&a, &b)) in ours.iter().zip(reference.iter()).enumerate() {
-        let diff = (a as i16 - b as i16).unsigned_abs() as u8;
-        if diff > 0 {
-            // Check if this is the HardMix boundary: fg + bg == 255
-            let fg_val = fg_pixels[i] as u16;
-            let bg_val = bg_pixels[i] as u16;
-            if fg_val + bg_val == 255 {
-                num_boundary_skipped += 1;
-                continue;
-            }
-            num_diff += 1;
-            if diff > max_diff {
-                max_diff = diff;
-                if diff > 1 {
-                    let px = i / 3;
-                    let ch = i % 3;
-                    eprintln!(
-                        "  MISMATCH at pixel {px} channel {ch}: ours={a} ref={b} diff={diff} (fg={} bg={})",
-                        fg_pixels[i], bg_pixels[i]
-                    );
-                }
-            }
-        }
-    }
-    (max_diff, num_diff, num_boundary_skipped)
-}
-
 // ── Mode definitions ─────────────────────────────────────────────────
 
 struct ModeSpec {
@@ -302,8 +257,6 @@ struct ModeSpec {
     magick_name: &'static str,
     /// Skip ImageMagick cross-validation (IM uses different formula)
     skip_magick_cross: bool,
-    /// Use HardMix-specific boundary-aware comparison
-    hardmix_boundary: bool,
 }
 
 fn all_modes() -> Vec<ModeSpec> {
@@ -314,7 +267,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(14),
             magick_name: "Multiply",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Screen,
@@ -322,7 +275,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(15),
             magick_name: "Screen",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Overlay,
@@ -330,7 +283,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(16),
             magick_name: "Overlay",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Darken,
@@ -338,7 +291,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(17),
             magick_name: "Darken",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Lighten,
@@ -346,7 +299,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(18),
             magick_name: "Lighten",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::ColorDodge,
@@ -354,7 +307,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(19),
             magick_name: "ColorDodge",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::ColorBurn,
@@ -362,7 +315,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(20),
             magick_name: "ColorBurn",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::HardLight,
@@ -370,7 +323,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(21),
             magick_name: "HardLight",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::SoftLight,
@@ -380,7 +333,7 @@ fn all_modes() -> Vec<ModeSpec> {
             // IM 7 Q16-HDRI SoftLight uses a different formula than the W3C spec.
             // vips matches W3C. We validate against vips only.
             skip_magick_cross: true,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Difference,
@@ -388,7 +341,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(23),
             magick_name: "Difference",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Exclusion,
@@ -396,7 +349,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: Some(24),
             magick_name: "Exclusion",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         // Extended modes (ImageMagick only)
         ModeSpec {
@@ -405,7 +358,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "VividLight",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::LinearDodge,
@@ -413,7 +366,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "LinearDodge",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::LinearBurn,
@@ -421,7 +374,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "LinearBurn",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::LinearLight,
@@ -429,7 +382,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "LinearLight",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::PinLight,
@@ -437,7 +390,7 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "PinLight",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::HardMix,
@@ -445,9 +398,6 @@ fn all_modes() -> Vec<ModeSpec> {
             vips_num: None,
             magick_name: "HardMix",
             skip_magick_cross: false,
-            // IM FP comparison diverges at exactly fg+bg=255 due to rounding.
-            // Our >= (Photoshop spec) vs IM's effective > at that boundary.
-            hardmix_boundary: true,
         },
         ModeSpec {
             blend_mode: BlendMode::Subtract,
@@ -456,7 +406,7 @@ fn all_modes() -> Vec<ModeSpec> {
             // IM MinusSrc = Dest - Src = bg - fg, matching our Subtract semantics
             magick_name: "MinusSrc",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
         ModeSpec {
             blend_mode: BlendMode::Divide,
@@ -465,7 +415,7 @@ fn all_modes() -> Vec<ModeSpec> {
             // IM DivideDst = Dest / Src = bg / fg, matching our Divide semantics
             magick_name: "DivideDst",
             skip_magick_cross: false,
-            hardmix_boundary: false,
+
         },
     ]
 }
@@ -490,36 +440,19 @@ fn test_mode(spec: &ModeSpec) {
         (run_magick(&fg_ppm, &bg_ppm, spec.magick_name), "magick")
     };
 
-    if spec.hardmix_boundary {
-        let (max_diff, num_diff, num_skipped) =
-            compare_pixels_hardmix(&ours, &ref_pixels, &fg_raw, &bg_raw);
-        eprintln!(
-            "[GRADIENT] {:15} vs {ref_tool:6}: max_diff={max_diff}, \
-             differing_channels={num_diff}/{}, boundary_skipped={num_skipped}",
-            spec.name,
-            ours.len()
-        );
-        assert!(
-            max_diff <= TOLERANCE,
-            "{}: gradient test FAILED against {ref_tool} - max diff {max_diff} \
-             exceeds tolerance {TOLERANCE} (after excluding boundary)",
-            spec.name
-        );
-    } else {
-        let (max_diff, num_diff) = compare_pixels(&ours, &ref_pixels);
-        eprintln!(
-            "[GRADIENT] {:15} vs {ref_tool:6}: max_diff={max_diff}, \
-             differing_channels={num_diff}/{}",
-            spec.name,
-            ours.len()
-        );
-        assert!(
-            max_diff <= TOLERANCE,
-            "{}: gradient test FAILED against {ref_tool} - max diff {max_diff} \
-             exceeds tolerance {TOLERANCE}",
-            spec.name
-        );
-    }
+    let (max_diff, num_diff) = compare_pixels(&ours, &ref_pixels);
+    eprintln!(
+        "[GRADIENT] {:15} vs {ref_tool:6}: max_diff={max_diff}, \
+         differing_channels={num_diff}/{}",
+        spec.name,
+        ours.len()
+    );
+    assert!(
+        max_diff <= TOLERANCE,
+        "{}: gradient test FAILED against {ref_tool} - max diff {max_diff} \
+         exceeds tolerance {TOLERANCE}",
+        spec.name
+    );
 
     // Cross-validate against ImageMagick if we used vips above
     if spec.vips_num.is_some() && !spec.skip_magick_cross {
@@ -556,24 +489,13 @@ fn test_mode(spec: &ModeSpec) {
             run_magick(&fg_solid_ppm, &bg_solid_ppm, spec.magick_name)
         };
 
-        if spec.hardmix_boundary {
-            let (max_diff_s, _, _) =
-                compare_pixels_hardmix(&ours_solid, &ref_solid, &fg_solid, &bg_solid);
-            assert!(
-                max_diff_s <= TOLERANCE,
-                "{}: edge case '{pair_name}' FAILED - max diff {max_diff_s} \
-                 exceeds tolerance {TOLERANCE}",
-                spec.name
-            );
-        } else {
-            let (max_diff_s, _) = compare_pixels(&ours_solid, &ref_solid);
-            assert!(
-                max_diff_s <= TOLERANCE,
-                "{}: edge case '{pair_name}' FAILED - max diff {max_diff_s} \
-                 exceeds tolerance {TOLERANCE}",
-                spec.name
-            );
-        }
+        let (max_diff_s, _) = compare_pixels(&ours_solid, &ref_solid);
+        assert!(
+            max_diff_s <= TOLERANCE,
+            "{}: edge case '{pair_name}' FAILED - max diff {max_diff_s} \
+             exceeds tolerance {TOLERANCE}",
+            spec.name
+        );
     }
 }
 
@@ -701,13 +623,7 @@ fn blend_parity_all_modes_summary() {
             (run_magick(&fg_ppm, &bg_ppm, spec.magick_name), "magick")
         };
 
-        let (max_diff, num_diff) = if spec.hardmix_boundary {
-            let (md, nd, _) =
-                compare_pixels_hardmix(&ours, &ref_pixels, &fg_raw, &bg_raw);
-            (md, nd)
-        } else {
-            compare_pixels(&ours, &ref_pixels)
-        };
+        let (max_diff, num_diff) = compare_pixels(&ours, &ref_pixels);
 
         let status = if max_diff == 0 {
             "EXACT"

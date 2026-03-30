@@ -180,10 +180,10 @@ ImageMagick 7 Q16-HDRI and achieve pixel-exact results.
 than the W3C Compositing and Blending Level 1 specification. Our implementation
 follows the W3C/vips formula. SoftLight is validated only against vips.
 
-**HardMix note:** At the exact boundary `fg + bg = 255`, our `>=` comparison
-(matching Photoshop's documented behavior) gives 255 while ImageMagick's
-floating-point `>` comparison gives inconsistent results depending on FP rounding.
-This boundary condition is excluded from ImageMagick cross-validation.
+**HardMix note:** HardMix is implemented as "threshold VividLight result at 0.5",
+not the simplified `a + b >= 1`. The simplified formula diverges at fg=0, bg=255
+where VividLight(0, 1) = ColorBurn(0, 1) = 0, so threshold gives 0 (not 255).
+Using the full VividLight-based formula achieves pixel-exact match vs ImageMagick.
 
 ---
 

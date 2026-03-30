@@ -1,5 +1,8 @@
 //! Color space conversions and color science operations.
 //!
+//! Color matrices use full 16-digit reference precision from colour-science.
+#![allow(clippy::excessive_precision)]
+//!
 //! - CIE Lab (via XYZ, D65 illuminant)
 //! - OKLab (Ottosson 2020)
 //! - White balance (gray-world, manual temperature/tint)
@@ -163,7 +166,6 @@ const D65_Z: f64 = 1.0890577507598784;
 /// sRGB to XYZ matrix (D65, IEC 61966-2-1).
 /// Full 16-digit precision from colour-science 0.4.7:
 ///   colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ
-#[allow(clippy::excessive_precision)] // full-precision reference matrix
 fn rgb_to_xyz(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let rl = srgb_to_linear(r);
     let gl = srgb_to_linear(g);

@@ -2279,7 +2279,7 @@ pub enum BlendMode {
     LinearLight,
     /// `min(b, 2a)` if a <= 0.5, `max(b, 2a-1)` otherwise; validated vs ImageMagick (exact).
     PinLight,
-    /// 0 or 1 based on `a + b >= 1`; validated vs ImageMagick (exact).
+    /// Threshold VividLight result at 0.5; validated vs ImageMagick (exact).
     HardMix,
     /// `b - a`, clamped; validated vs ImageMagick (exact).
     Subtract,
@@ -2382,12 +2382,29 @@ fn blend_channel(a: u8, b: u8, mode: BlendMode) -> u8 {
             }
         }
         BlendMode::HardMix => {
-            // Threshold: 0 or 1 based on VividLight result
-            if af + bf >= 1.0 {
-                1.0
+            // Threshold the VividLight result at 0.5.
+            // Note: the simplified `a + b >= 1` is wrong at fg=0, bg=255
+            // where VividLight(0,1) = ColorBurn(0,1) = 0, so threshold → 0.
+            let vl = if af <= 0.5 {
+                let a2 = 2.0 * af;
+                if a2 <= 0.0 {
+                    0.0
+                } else if bf >= 1.0 {
+                    1.0
+                } else {
+                    1.0 - ((1.0 - bf) / a2).min(1.0)
+                }
             } else {
-                0.0
-            }
+                let a2 = 2.0 * (af - 0.5);
+                if a2 >= 1.0 {
+                    1.0
+                } else if bf == 0.0 {
+                    0.0
+                } else {
+                    (bf / (1.0 - a2)).min(1.0)
+                }
+            };
+            if vl >= 0.5 { 1.0 } else { 0.0 }
         }
         BlendMode::Subtract => bf - af, // clamped below
         BlendMode::Divide => {
@@ -9009,10 +9026,11 @@ mod blend_tests {
 
     #[test]
     fn hard_mix_threshold() {
-        // a + b >= 1.0 → 255, else → 0
+        // Threshold of VividLight result at 0.5
         assert_eq!(bc(128, 128, BlendMode::HardMix), 255);
         assert_eq!(bc(64, 64, BlendMode::HardMix), 0);
-        assert_eq!(bc(0, 255, BlendMode::HardMix), 255);
+        // fg=0: VividLight(0, b) = ColorBurn(0, b) = 0 → threshold → 0
+        assert_eq!(bc(0, 255, BlendMode::HardMix), 0);
         assert_eq!(bc(255, 0, BlendMode::HardMix), 255);
     }
 
