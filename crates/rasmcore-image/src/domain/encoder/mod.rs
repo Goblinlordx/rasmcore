@@ -41,8 +41,8 @@ pub fn registered_encoders() -> Vec<&'static StaticEncoderRegistration> {
 }
 
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tiff", "avif", "heic", "bmp", "ico", "qoi", "tga", "hdr", "pnm",
-    "exr", "dds", "jp2", "fits",
+    "png", "jpeg", "webp", "gif", "tiff", "heic", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
+    "dds", "jp2", "fits",
 ];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
@@ -420,63 +420,12 @@ mod tests {
     }
 
     #[test]
-    #[test]
-    fn encode_avif_produces_valid_avif() {
+    fn encode_avif_returns_unsupported() {
         let (pixels, info) = make_rgb8_pixels(16, 16);
-        let result = encode(&pixels, &info, "avif", Some(50)).unwrap();
-        assert_eq!(&result[4..8], b"ftyp");
-    }
-
-    #[test]
-    fn encode_avif_rgba8() {
-        let (pixels, info) = make_rgba8_pixels(16, 16);
-        let result = encode(&pixels, &info, "avif", None);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn roundtrip_avif_preserves_dimensions() {
-        let (pixels, info) = make_rgb8_pixels(16, 16);
-        let encoded = encode(&pixels, &info, "avif", Some(80)).unwrap();
-        // AVIF decode may not be available in all builds (needs avif-native feature)
-        match crate::domain::decoder::decode(&encoded) {
-            Ok(decoded) => {
-                assert_eq!(decoded.info.width, 16);
-                assert_eq!(decoded.info.height, 16);
-            }
-            Err(_) => {
-                // AVIF decode not available in this build, just verify encode worked
-                assert_eq!(&encoded[4..8], b"ftyp");
-            }
-        }
-    }
-
-    #[test]
-    fn avif_roundtrip_quality_psnr() {
-        let (pixels, info) = make_rgb8_pixels(32, 32);
-        let encoded = encode(&pixels, &info, "avif", Some(80)).unwrap();
-        // AVIF decode may not be available
-        let decoded = match crate::domain::decoder::decode_as(&encoded, PixelFormat::Rgb8) {
-            Ok(d) => d,
-            Err(_) => return, // Skip PSNR test if decode unavailable
-        };
-        let mse: f64 = pixels
-            .iter()
-            .zip(decoded.pixels.iter())
-            .map(|(&a, &b)| {
-                let d = a as f64 - b as f64;
-                d * d
-            })
-            .sum::<f64>()
-            / pixels.len() as f64;
-        let psnr = if mse == 0.0 {
-            f64::INFINITY
-        } else {
-            10.0 * (255.0_f64 * 255.0 / mse).log10()
-        };
+        let result = encode(&pixels, &info, "avif", Some(50));
         assert!(
-            psnr > 25.0,
-            "AVIF roundtrip PSNR too low: {psnr:.1}dB (expected >25dB at quality 80)"
+            result.is_err(),
+            "AVIF encode should return UnsupportedFormat (rav1e removed)"
         );
     }
 
@@ -484,8 +433,8 @@ mod tests {
     fn supported_formats_lists_expected() {
         let fmts = supported_formats();
         for f in [
-            "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm",
-            "exr", "dds", "jp2",
+            "png", "jpeg", "webp", "gif", "tiff", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
+            "dds", "jp2",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing format: {f}");
         }
@@ -505,11 +454,9 @@ mod tests {
     fn roundtrip_tga_preserves_dimensions() {
         let (pixels, info) = make_rgb8_pixels(8, 8);
         let encoded = encode(&pixels, &info, "tga", None).unwrap();
-        // TGA has no magic bytes — image::guess_format may fail.
-        // Use image crate directly with explicit format hint.
-        let img = image::load_from_memory_with_format(&encoded, image::ImageFormat::Tga).unwrap();
-        assert_eq!(img.width(), 8);
-        assert_eq!(img.height(), 8);
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.width, 8);
+        assert_eq!(decoded.info.height, 8);
     }
 
     #[test]
@@ -693,7 +640,6 @@ mod tests {
         assert!(names.contains(&"jpeg"));
         assert!(names.contains(&"png"));
         assert!(names.contains(&"webp"));
-        assert!(names.contains(&"avif"));
         assert!(names.contains(&"tiff"));
         assert!(names.contains(&"bmp"));
         assert!(names.contains(&"qoi"));

@@ -14,8 +14,8 @@ libblur = "0.15"
 moxcms = "0.8"
 wit-bindgen-rt = "0.41.0"
 image = { workspace = true, features = [
-    "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "ico", "qoi",
-    "tga", "hdr", "pnm", "exr", "dds",
+    "png", "jpeg", "gif", "webp", "ico",
+    "hdr", "exr", "dds",
 ] }
 rasmcore-fits = { path = "../rasmcore-fits" }
 rasmcore-jpeg = { path = "../rasmcore-jpeg" }
@@ -37,7 +37,7 @@ rasmcore-isobmff = { path = "../rasmcore-isobmff", optional = true }
 rasmcore-hevc = { path = "../rasmcore-hevc", optional = true }
 
 [features]
-default = []
+default = ["native-trivial"]
 native-qoi = ["dep:rasmcore-qoi"]
 native-pnm = ["dep:rasmcore-pnm"]
 native-bmp = ["dep:rasmcore-bmp"]

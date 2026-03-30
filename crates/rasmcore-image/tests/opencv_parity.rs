@@ -1108,10 +1108,8 @@ fn vignette_gaussian_all_images_match_imagemagick() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_vignette.raw"));
-        let ours = filters::vignette(
-            &input, &info, sigma, x_inset, y_inset, 128, 128, 0, 0,
-        )
-        .unwrap();
+        let ours =
+            filters::vignette(&input, &info, sigma, x_inset, y_inset, 128, 128, 0, 0).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);

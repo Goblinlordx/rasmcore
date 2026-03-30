@@ -26,8 +26,8 @@ pub fn registered_decoders() -> Vec<&'static StaticDecoderRegistration> {
 
 /// Supported decode formats
 const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "gif", "webp", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm", "exr",
-    "dds", "jxl", "jp2", "heic", "fits", "svg",
+    "png", "jpeg", "gif", "webp", "bmp", "tiff", "qoi", "ico", "tga", "hdr", "pnm", "exr", "dds",
+    "jxl", "jp2", "heic", "fits", "svg",
 ];
 
 /// Detect image format from header bytes
@@ -219,8 +219,19 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if data.len() >= 2 && (data[0] == b'P' && data[1].is_ascii_digit()) {
         return decode_native_pnm(data);
     }
-    // TGA has no magic bytes — detect via image crate first, then native decode
-    // (TGA native decode is only used for encode roundtrip, not format detection)
+    // TGA — native decode when feature enabled (TGA has no magic; detected after image crate)
+    #[cfg(feature = "native-tga")]
+    if detect_tga(data) {
+        return decode_native_tga(data);
+    }
+
+    // TIFF — decode via tiff crate directly (dropped from image features)
+    if data.len() >= 4
+        && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
+            || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
+    {
+        return decode_tiff_native(data);
+    }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
 
@@ -796,6 +807,114 @@ fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
     })
 }
 
+/// Decode TIFF using the tiff crate directly (bypasses image crate).
+fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let cursor = std::io::Cursor::new(data);
+    let mut decoder = tiff::decoder::Decoder::new(cursor)
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+    let (width, height) = decoder
+        .dimensions()
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+    let color_type = decoder
+        .colortype()
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+    let result = decoder
+        .read_image()
+        .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
+
+    let (pixels, format) = match (color_type, result) {
+        (tiff::ColorType::Gray(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Gray8)
+        }
+        (tiff::ColorType::Gray(16), tiff::decoder::DecodingResult::U16(buf)) => {
+            let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+            (bytes, PixelFormat::Gray16)
+        }
+        (tiff::ColorType::RGB(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Rgb8)
+        }
+        (tiff::ColorType::RGB(16), tiff::decoder::DecodingResult::U16(buf)) => {
+            let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+            (bytes, PixelFormat::Rgb16)
+        }
+        (tiff::ColorType::RGBA(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Rgba8)
+        }
+        (tiff::ColorType::RGBA(16), tiff::decoder::DecodingResult::U16(buf)) => {
+            let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+            (bytes, PixelFormat::Rgba16)
+        }
+        _ => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "TIFF color type {color_type:?} not supported"
+            )));
+        }
+    };
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width,
+            height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+/// Heuristic TGA detection (TGA has no magic bytes).
+///
+/// Checks header plausibility: valid image type, reasonable dimensions,
+/// valid bit depth, and data length consistent with declared size.
+#[cfg(feature = "native-tga")]
+fn detect_tga(data: &[u8]) -> bool {
+    if data.len() < 18 {
+        return false;
+    }
+    let image_type = data[2];
+    // Valid image types: 1,2,3 (raw) or 9,10,11 (RLE)
+    if !matches!(image_type, 1 | 2 | 3 | 9 | 10 | 11) {
+        return false;
+    }
+    let width = u16::from_le_bytes([data[12], data[13]]) as usize;
+    let height = u16::from_le_bytes([data[14], data[15]]) as usize;
+    let bpp = data[16];
+    if width == 0 || height == 0 || !matches!(bpp, 8 | 16 | 24 | 32) {
+        return false;
+    }
+    // Basic size plausibility
+    let min_size = 18 + width * height * (bpp as usize / 8) / 4; // RLE can compress
+    data.len() >= min_size.min(64)
+}
+
+#[cfg(feature = "native-tga")]
+fn decode_native_tga(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let (header, pixels) =
+        rasmcore_tga::decode(data).map_err(|e| ImageError::InvalidInput(format!("TGA: {e}")))?;
+    let channels = pixels.len() / (header.width as usize * header.height as usize);
+    let format = match channels {
+        4 => PixelFormat::Rgba8,
+        3 => PixelFormat::Rgb8,
+        1 => PixelFormat::Gray8,
+        _ => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "TGA: unexpected {channels} channels"
+            )));
+        }
+    };
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: header.width as u32,
+            height: header.height as u32,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
 fn format_to_str(fmt: ImageFormat) -> Option<&'static str> {
     match fmt {
         ImageFormat::Png => Some("png"),
@@ -934,8 +1053,8 @@ mod tests {
     fn supported_formats_includes_common_formats() {
         let fmts = supported_formats();
         for f in [
-            "png", "jpeg", "webp", "gif", "bmp", "tiff", "avif", "qoi", "ico", "tga", "hdr", "pnm",
-            "exr", "dds", "jxl", "jp2",
+            "png", "jpeg", "webp", "gif", "bmp", "tiff", "qoi", "ico", "tga", "hdr", "pnm", "exr",
+            "dds", "jxl", "jp2",
         ] {
             assert!(fmts.contains(&f.to_string()), "missing decode format: {f}");
         }

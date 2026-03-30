@@ -179,8 +179,7 @@ pub fn write_qoi(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageEr
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
-    let img = encoder::pixels_to_dynamic_image(&pixels, &info)?;
-    encoder::qoi::encode(&img, &info, &encoder::qoi::QoiEncodeConfig)
+    encoder::encode(&pixels, &info, "qoi", None)
 }
 
 /// Write a node's output as WebP with typed config and optional metadata.
