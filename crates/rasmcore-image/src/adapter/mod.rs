@@ -164,6 +164,40 @@ pub fn to_domain_frame_selection(s: pipeline::FrameSelection) -> domain::types::
     }
 }
 
+fn from_wit_disposal_method(d: decoder::DisposalMethod) -> domain::types::DisposalMethod {
+    match d {
+        decoder::DisposalMethod::None => domain::types::DisposalMethod::None,
+        decoder::DisposalMethod::Background => domain::types::DisposalMethod::Background,
+        decoder::DisposalMethod::Previous => domain::types::DisposalMethod::Previous,
+    }
+}
+
+fn wit_frames_to_sequence(
+    frames: Vec<encoder::EncodeFrame>,
+    canvas_width: u32,
+    canvas_height: u32,
+) -> domain::types::FrameSequence {
+    let mut seq = domain::types::FrameSequence::new(canvas_width, canvas_height);
+    for f in frames {
+        let image = domain::types::DecodedImage {
+            pixels: f.pixels,
+            info: to_domain_image_info(&f.info),
+            icc_profile: None,
+        };
+        let fi = domain::types::FrameInfo {
+            index: f.frame_info.index,
+            delay_ms: f.frame_info.delay_ms,
+            disposal: from_wit_disposal_method(f.frame_info.disposal),
+            width: f.frame_info.width,
+            height: f.frame_info.height,
+            x_offset: f.frame_info.x_offset,
+            y_offset: f.frame_info.y_offset,
+        };
+        seq.push(image, fi);
+    }
+    seq
+}
+
 struct Component;
 
 bindings::export!(Component with_types_in bindings);
@@ -415,6 +449,45 @@ impl encoder::Guest for Component {
                 extensions: fi.extensions,
             })
             .collect()
+    }
+
+    fn encode_gif_sequence(
+        frames: Vec<encoder::EncodeFrame>,
+        canvas_width: u32,
+        canvas_height: u32,
+        config: encoder::GifEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let seq = wit_frames_to_sequence(frames, canvas_width, canvas_height);
+        let domain_config = domain::encoder::gif::GifEncodeConfig {
+            repeat: config.repeat.unwrap_or(0),
+        };
+        domain::encoder::gif::encode_sequence(&seq, &domain_config).map_err(to_wit_error)
+    }
+
+    fn encode_tiff_pages(
+        frames: Vec<encoder::EncodeFrame>,
+        config: encoder::TiffEncodeConfig,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let canvas = frames
+            .first()
+            .map(|f| (f.info.width, f.info.height))
+            .unwrap_or((0, 0));
+        let seq = wit_frames_to_sequence(frames, canvas.0, canvas.1);
+        let domain_config = domain::encoder::tiff::TiffEncodeConfig {
+            compression: to_domain_tiff_compression(config.compression),
+        };
+        domain::encoder::tiff::encode_pages(&seq, &domain_config).map_err(to_wit_error)
+    }
+
+    fn encode_sequence(
+        frames: Vec<encoder::EncodeFrame>,
+        canvas_width: u32,
+        canvas_height: u32,
+        format: String,
+        quality: Option<u8>,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let seq = wit_frames_to_sequence(frames, canvas_width, canvas_height);
+        domain::encoder::encode_sequence(&seq, &format, quality).map_err(to_wit_error)
     }
 }
 

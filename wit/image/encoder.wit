@@ -4,6 +4,7 @@ package rasmcore:image@0.1.0;
 interface encoder {
     use rasmcore:core/types.{buffer, image-info, format-info};
     use rasmcore:core/errors.{rasmcore-error};
+    use decoder.{frame-info, decoded-image};
 
     /// JPEG encode configuration
     record jpeg-encode-config {
@@ -137,4 +138,26 @@ interface encoder {
 
     /// Get format metadata for all supported encode formats.
     all-format-info: func() -> list<format-info>;
+
+    // ─── Multi-Frame / Multi-Page Encoding ───
+
+    /// A frame in a sequence: image pixels + per-frame metadata.
+    record encode-frame {
+        pixels: buffer,
+        info: image-info,
+        frame-info: frame-info,
+    }
+
+    /// Encode an animated GIF from a sequence of frames.
+    /// Each frame is independently quantized to a 256-color palette.
+    /// Per-frame delays and disposal methods are preserved.
+    encode-gif-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32, config: gif-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode a multi-page TIFF from a sequence of frames.
+    /// Each frame becomes a separate IFD (page) in the output.
+    encode-tiff-pages: func(frames: list<encode-frame>, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
+
+    /// Encode a frame sequence to a multi-frame format (convenience wrapper).
+    /// Only GIF and TIFF support multi-frame encoding.
+    encode-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 }
