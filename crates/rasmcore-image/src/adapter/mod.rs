@@ -52,8 +52,10 @@ fn to_wit_pixel_format(f: domain::types::PixelFormat) -> types::PixelFormat {
         domain::types::PixelFormat::Yuv422p => types::PixelFormat::Yuv422p,
         domain::types::PixelFormat::Yuv444p => types::PixelFormat::Yuv444p,
         domain::types::PixelFormat::Nv12 => types::PixelFormat::Nv12,
-        domain::types::PixelFormat::Cmyk8 => types::PixelFormat::Rgb8,
-        domain::types::PixelFormat::Cmyka8 => types::PixelFormat::Rgba8,
+        // CMYK formats not exposed over WIT — fall back to Rgba8
+        domain::types::PixelFormat::Cmyk8 | domain::types::PixelFormat::Cmyka8 => {
+            types::PixelFormat::Rgba8
+        }
     }
 }
 

@@ -9,6 +9,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde_json::{json, Value};
+
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let filters_path = Path::new(&manifest_dir).join("src/domain/filters.rs");
@@ -143,64 +145,64 @@ fn main() {
         out_dir.display()
     );
 
-    // ── Generate param-manifest.json ──────────────────────────────────────
+    // ── Generate param-manifest.json via serde_json ────────────────────────
     let param_structs = parse_config_params_structs(&source);
-    let mut manifest = String::from("{\n  \"filters\": [\n");
+    let mut filter_entries: Vec<Value> = Vec::new();
 
-    for (i, f) in filters.iter().enumerate() {
-        // Match filter to its param struct by name convention: blur → BlurParams, bokeh_blur → BokehBlurParams
+    for f in &filters {
         let struct_name = format!("{}Params", to_pascal_case(&f.name));
-        let params = param_structs.get(&struct_name);
+        let params_struct = param_structs.get(&struct_name);
 
-        manifest.push_str("    {\n");
-        manifest.push_str(&format!("      \"name\": \"{}\",\n", f.name));
-        manifest.push_str(&format!("      \"category\": \"{}\",\n", f.category));
-        manifest.push_str(&format!("      \"group\": \"{}\",\n", f.group));
-        manifest.push_str(&format!("      \"variant\": \"{}\",\n", f.variant));
-        manifest.push_str(&format!("      \"reference\": \"{}\",\n", f.reference));
-        manifest.push_str("      \"params\": [");
-
-        if let Some(fields) = params {
-            for (j, field) in fields.iter().enumerate() {
-                if j > 0 {
-                    manifest.push(',');
-                }
-                manifest.push_str(&format!(
-                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"{}\",\"hint\":\"{}\"}}",
-                    field.name, field.param_type,
-                    field.min, field.max, field.step, field.default_val, field.label, field.hint
-                ));
-            }
-            if !fields.is_empty() {
-                manifest.push('\n');
-                manifest.push_str("      ");
-            }
+        let params_json: Vec<Value> = if let Some(fields) = params_struct {
+            fields
+                .iter()
+                .map(|field| {
+                    json!({
+                        "name": field.name,
+                        "type": field.param_type,
+                        "min": parse_json_value(&field.min),
+                        "max": parse_json_value(&field.max),
+                        "step": parse_json_value(&field.step),
+                        "default": parse_json_value(&field.default_val),
+                        "label": field.label,
+                        "hint": field.hint,
+                    })
+                })
+                .collect()
         } else if !f.params.is_empty() {
-            // Fallback: use function signature params with default ranges
-            for (j, (pname, ptype)) in f.params.iter().enumerate() {
-                if j > 0 {
-                    manifest.push(',');
-                }
-                let (min, max, step, def) = default_range_for_type(ptype);
-                manifest.push_str(&format!(
-                    "\n        {{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"label\":\"\",\"hint\":\"\"}}",
-                    pname, ptype, min, max, step, def
-                ));
-            }
-            manifest.push('\n');
-            manifest.push_str("      ");
-        }
+            f.params
+                .iter()
+                .map(|(pname, ptype)| {
+                    let (min, max, step, def) = default_range_for_type(ptype);
+                    json!({
+                        "name": pname,
+                        "type": ptype,
+                        "min": parse_json_value(&min),
+                        "max": parse_json_value(&max),
+                        "step": parse_json_value(&step),
+                        "default": parse_json_value(&def),
+                        "label": "",
+                        "hint": "",
+                    })
+                })
+                .collect()
+        } else {
+            vec![]
+        };
 
-        manifest.push_str("]\n    }");
-        if i < filters.len() - 1 {
-            manifest.push(',');
-        }
-        manifest.push('\n');
+        filter_entries.push(json!({
+            "name": f.name,
+            "category": f.category,
+            "group": f.group,
+            "variant": f.variant,
+            "reference": f.reference,
+            "params": params_json,
+        }));
     }
 
-    manifest.push_str("  ]\n}\n");
-
-    fs::write(out_dir.join("param-manifest.json"), &manifest).unwrap();
+    let manifest = json!({ "filters": filter_entries });
+    let manifest_str = serde_json::to_string_pretty(&manifest).unwrap();
+    fs::write(out_dir.join("param-manifest.json"), &manifest_str).unwrap();
     eprintln!(
         "rasmcore build.rs: Generated param-manifest.json ({} filters)",
         filters.len()
@@ -300,6 +302,45 @@ fn extract_string_attr(line: &str, attr: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Split `#[param(...)]` inner text by commas, respecting quoted strings and brackets.
+/// e.g., `min = 0, max = 1, default = "[[0,0],[1,1]]"` → 3 parts, not 6.
+fn split_param_attrs(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quotes = false;
+    let mut bracket_depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            '[' | '(' if !in_quotes => bracket_depth += 1,
+            ']' | ')' if !in_quotes => bracket_depth -= 1,
+            ',' if !in_quotes && bracket_depth == 0 => {
+                parts.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < s.len() {
+        parts.push(&s[start..]);
+    }
+    parts
+}
+
+/// Parse a string into a serde_json::Value. Handles "null", numbers, booleans,
+/// JSON arrays/objects, and falls back to a JSON string for anything else.
+fn parse_json_value(s: &str) -> Value {
+    if s == "null" || s.is_empty() {
+        return Value::Null;
+    }
+    // Try parsing as valid JSON (number, bool, array, object)
+    if let Ok(v) = serde_json::from_str::<Value>(s) {
+        return v;
+    }
+    // Fall back to a JSON string
+    Value::String(s.to_string())
 }
 
 fn parse_fn_signature(line: &str, name: &str, category: &str) -> Option<FilterReg> {
@@ -440,7 +481,8 @@ fn parse_config_params_raw(source: &str) -> std::collections::HashMap<String, Pa
                         doc_comment = fl.trim_start_matches("///").trim().to_string();
                     } else if fl.starts_with("#[param(") {
                         let inner = fl.trim_start_matches("#[param(").trim_end_matches(")]");
-                        for part in inner.split(',') {
+                        // Split by comma, but respect quoted strings and brackets
+                        for part in split_param_attrs(inner) {
                             let part = part.trim();
                             if let Some((k, v)) = part.split_once('=') {
                                 let k = k.trim();
