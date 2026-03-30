@@ -479,6 +479,16 @@ impl encoder::Guest for Component {
         domain::encoder::tiff::encode_pages(&seq, &domain_config).map_err(to_wit_error)
     }
 
+    fn encode_apng_sequence(
+        frames: Vec<encoder::EncodeFrame>,
+        canvas_width: u32,
+        canvas_height: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let seq = wit_frames_to_sequence(frames, canvas_width, canvas_height);
+        let config = domain::encoder::png::PngEncodeConfig::default();
+        domain::encoder::png::encode_sequence(&seq, &config).map_err(to_wit_error)
+    }
+
     fn encode_sequence(
         frames: Vec<encoder::EncodeFrame>,
         canvas_width: u32,

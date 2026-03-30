@@ -157,7 +157,11 @@ interface encoder {
     /// Each frame becomes a separate IFD (page) in the output.
     encode-tiff-pages: func(frames: list<encode-frame>, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
 
+    /// Encode an animated PNG (APNG) from a sequence of frames.
+    /// All frames are encoded as RGBA8 with per-frame delay and disposal metadata.
+    encode-apng-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32) -> result<buffer, rasmcore-error>;
+
     /// Encode a frame sequence to a multi-frame format (convenience wrapper).
-    /// Only GIF and TIFF support multi-frame encoding.
+    /// Supports GIF, TIFF, and APNG (animated PNG).
     encode-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 }
