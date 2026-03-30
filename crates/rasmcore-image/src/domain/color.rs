@@ -524,6 +524,124 @@ pub fn icc_to_srgb(
     Ok(result)
 }
 
+// ─── CMYK <-> RGB Conversion ──────────────────────────────────────────────────
+
+/// Convert a CMYK pixel buffer to RGB8.
+///
+/// Uses the naive formula: R = 255 * (1-C) * (1-K), etc.
+/// This is the standard unbounded conversion — for ICC-accurate conversion,
+/// use an ICC profile transform instead.
+pub fn cmyk_to_rgb(cmyk_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let n = (info.width as usize) * (info.height as usize);
+    let (src_bpp, has_alpha) = match info.format {
+        PixelFormat::Cmyk8 => (4, false),
+        PixelFormat::Cmyka8 => (5, true),
+        other => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "cmyk_to_rgb requires Cmyk8 or Cmyka8, got {other:?}"
+            )));
+        }
+    };
+
+    if cmyk_pixels.len() != n * src_bpp {
+        return Err(ImageError::InvalidInput("pixel buffer size mismatch".into()));
+    }
+
+    let dst_bpp = if has_alpha { 4 } else { 3 };
+    let mut rgb = vec![0u8; n * dst_bpp];
+
+    for i in 0..n {
+        let si = i * src_bpp;
+        let di = i * dst_bpp;
+        let c = cmyk_pixels[si] as f32 / 255.0;
+        let m = cmyk_pixels[si + 1] as f32 / 255.0;
+        let y = cmyk_pixels[si + 2] as f32 / 255.0;
+        let k = cmyk_pixels[si + 3] as f32 / 255.0;
+
+        rgb[di] = (255.0 * (1.0 - c) * (1.0 - k)).round().clamp(0.0, 255.0) as u8;
+        rgb[di + 1] = (255.0 * (1.0 - m) * (1.0 - k)).round().clamp(0.0, 255.0) as u8;
+        rgb[di + 2] = (255.0 * (1.0 - y) * (1.0 - k)).round().clamp(0.0, 255.0) as u8;
+        if has_alpha {
+            rgb[di + 3] = cmyk_pixels[si + 4];
+        }
+    }
+
+    let out_format = if has_alpha {
+        PixelFormat::Rgba8
+    } else {
+        PixelFormat::Rgb8
+    };
+    Ok((
+        rgb,
+        ImageInfo {
+            format: out_format,
+            ..*info
+        },
+    ))
+}
+
+/// Convert an RGB8 pixel buffer to CMYK.
+///
+/// Uses the naive formula: K = 1 - max(R,G,B)/255, C = (1-R/255-K)/(1-K), etc.
+pub fn rgb_to_cmyk(rgb_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let n = (info.width as usize) * (info.height as usize);
+    let (src_bpp, has_alpha) = match info.format {
+        PixelFormat::Rgb8 => (3, false),
+        PixelFormat::Rgba8 => (4, true),
+        other => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "rgb_to_cmyk requires Rgb8 or Rgba8, got {other:?}"
+            )));
+        }
+    };
+
+    if rgb_pixels.len() != n * src_bpp {
+        return Err(ImageError::InvalidInput("pixel buffer size mismatch".into()));
+    }
+
+    let dst_bpp = if has_alpha { 5 } else { 4 };
+    let mut cmyk = vec![0u8; n * dst_bpp];
+
+    for i in 0..n {
+        let si = i * src_bpp;
+        let di = i * dst_bpp;
+        let r = rgb_pixels[si] as f32 / 255.0;
+        let g = rgb_pixels[si + 1] as f32 / 255.0;
+        let b = rgb_pixels[si + 2] as f32 / 255.0;
+
+        let k = 1.0 - r.max(g).max(b);
+        if k >= 1.0 {
+            // Pure black
+            cmyk[di] = 0;
+            cmyk[di + 1] = 0;
+            cmyk[di + 2] = 0;
+            cmyk[di + 3] = 255;
+        } else {
+            let inv_k = 1.0 / (1.0 - k);
+            cmyk[di] = ((1.0 - r - k) * inv_k * 255.0).round().clamp(0.0, 255.0) as u8;
+            cmyk[di + 1] = ((1.0 - g - k) * inv_k * 255.0).round().clamp(0.0, 255.0) as u8;
+            cmyk[di + 2] = ((1.0 - b - k) * inv_k * 255.0).round().clamp(0.0, 255.0) as u8;
+            cmyk[di + 3] = (k * 255.0).round() as u8;
+        }
+        if has_alpha {
+            cmyk[di + 4] = rgb_pixels[si + 3];
+        }
+    }
+
+    let out_format = if has_alpha {
+        PixelFormat::Cmyka8
+    } else {
+        PixelFormat::Cmyk8
+    };
+    Ok((
+        cmyk,
+        ImageInfo {
+            format: out_format,
+            ..*info
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -785,5 +903,68 @@ mod tests {
 
         let extracted = extract_icc_from_png(&png);
         assert_eq!(extracted, Some(icc_data));
+    }
+
+    #[test]
+    fn cmyk_rgb_round_trip() {
+        // Test RGB -> CMYK -> RGB round-trip within tolerance
+        let info = ImageInfo {
+            width: 4,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        // Test colors: red, green, blue, mid-gray
+        let rgb = vec![
+            255, 0, 0, // red
+            0, 255, 0, // green
+            0, 0, 255, // blue
+            128, 128, 128, // gray
+        ];
+
+        let (cmyk, cmyk_info) = rgb_to_cmyk(&rgb, &info).unwrap();
+        assert_eq!(cmyk_info.format, PixelFormat::Cmyk8);
+        assert_eq!(cmyk.len(), 16); // 4 pixels × 4 channels
+
+        let (rgb2, rgb2_info) = cmyk_to_rgb(&cmyk, &cmyk_info).unwrap();
+        assert_eq!(rgb2_info.format, PixelFormat::Rgb8);
+        assert_eq!(rgb2.len(), 12);
+
+        // Round-trip should be within 1 per channel (rounding)
+        for i in 0..12 {
+            let diff = (rgb[i] as i32 - rgb2[i] as i32).abs();
+            assert!(
+                diff <= 1,
+                "Round-trip error at byte {i}: {orig} -> {rt} (diff {diff})",
+                orig = rgb[i],
+                rt = rgb2[i]
+            );
+        }
+    }
+
+    #[test]
+    fn cmyk_to_rgb_pure_black() {
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Cmyk8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let cmyk = vec![0, 0, 0, 255]; // K=100%
+        let (rgb, _) = cmyk_to_rgb(&cmyk, &info).unwrap();
+        assert_eq!(rgb, vec![0, 0, 0]); // should be black
+    }
+
+    #[test]
+    fn cmyk_to_rgb_pure_white() {
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Cmyk8,
+            color_space: super::super::types::ColorSpace::Srgb,
+        };
+        let cmyk = vec![0, 0, 0, 0]; // all zeros = white
+        let (rgb, _) = cmyk_to_rgb(&cmyk, &info).unwrap();
+        assert_eq!(rgb, vec![255, 255, 255]);
     }
 }
