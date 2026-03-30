@@ -1,88 +1,116 @@
 id: param-parity-compositors-grading_20260331000004Z
-title: "Phase 1+2 — Compositor & Grading Parameter Parity & Multi-Setting Validation"
+title: Phase 1+2 — Compositor & Grading Parameter Parity & Multi-Setting Validation
 type: chore
 status: pending
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-03-30'
 spec:
-  summary: >
-    Audit compositor (blend modes, composite offset, mask) and grading
-    (tonemap, curves, CDL, LUT) params against IM/ffmpeg. Multi-setting
-    validation for each operation.
-  context: |
-    Blend modes are already tested against W3C spec (20 modes). But
+  summary: 'Audit compositor (blend modes, composite offset, mask) and grading (tonemap, curves, CDL, LUT) params against
+    IM/ffmpeg. Multi-setting validation for each operation.
+
+    '
+  context: 'Blend modes are already tested against W3C spec (20 modes). But
+
     composite offset, mask application, and blend_if are less well-tested.
+
     Grading operations (tonemap, curves, ASC CDL, split toning) have
+
     limited or no reference validation. LUT import was just validated
+
     against ffmpeg/IM but only at one setting.
-  codebase_analysis: |
-    Compositors:
+
+    '
+  codebase_analysis: 'Compositors:
+
     - composite (Porter-Duff over, offset params)
+
     - blend (18 modes) — W3C parity exists
+
     - mask_apply (luminance mask, invert flag)
+
     - blend_if (Photoshop Blend-If, luminosity ranges)
 
+
     Grading:
+
     - asc_cdl (slope/offset/power per channel)
+
     - lift_gamma_gain (3-way corrector)
+
     - split_toning (highlight/shadow hue + balance)
+
     - curves (spline-interpolated tone curve)
+
     - tonemap_reinhard/drago/filmic (HDR tone mapping)
+
     - apply_cube_lut (3D LUT) — tested vs ffmpeg at 1 setting
+
     - apply_hald_lut (HALD CLUT) — tested vs IM at 1 setting
+
+    '
   acceptance_criteria:
-    - Composite tested at 3+ offset positions vs IM -compose Over -geometry
-    - Blend modes tested at 2+ opacity levels (not just 100%) vs IM -compose
-    - mask_apply tested with 2+ mask patterns vs IM CopyOpacity
-    - ASC CDL tested at 3+ slope/offset/power combos vs ffmpeg colorbalance
-    - Curves tested at 2+ different control point sets vs IM -curve
-    - Tonemap Reinhard tested at 2+ settings vs reference Python implementation
-    - LUT import tested at 2+ different LUT files vs ffmpeg lut3d
-    - All MAE results documented
-  out_of_scope: |
-    New blend mode implementations. New grading algorithms.
+  - Composite tested at 3+ offset positions vs IM -compose Over -geometry
+  - Blend modes tested at 2+ opacity levels (not just 100%) vs IM -compose
+  - mask_apply tested with 2+ mask patterns vs IM CopyOpacity
+  - ASC CDL tested at 3+ slope/offset/power combos vs ffmpeg colorbalance
+  - Curves tested at 2+ different control point sets vs IM -curve
+  - Tonemap Reinhard tested at 2+ settings vs reference Python implementation
+  - LUT import tested at 2+ different LUT files vs ffmpeg lut3d
+  - All MAE results documented
+  out_of_scope: 'New blend mode implementations. New grading algorithms.
+
     Performance optimization. VMAF/perceptual metrics.
-  technical_notes: |
-    Composite reference:
+
+    '
+  technical_notes: 'Composite reference:
+
     - magick bg.png fg.png -compose Over -geometry +10+20 -composite output.png
 
+
     Blend mode reference (W3C already validated, extend to opacity):
+
     - magick bg.png fg.png -compose Multiply -define compose:args=75 -composite output.png
 
+
     ASC CDL reference (ffmpeg):
+
     - ffmpeg -i input.png -vf "colorbalance=rs=0.1:gs=-0.1:bs=0.05" output.png
 
+
     Tonemap reference (Python colour-science):
+
     - colour.tonemapping.reinhard(img, key=0.18, l_white=1.0)
+
+    '
 plan:
-  - phase: Compositor Validation
-    tasks:
-      - text: Composite multi-offset (0,0 / 10,20 / -5,-5) vs IM -compose Over -geometry
-        done: false
-      - text: Blend mode multi-opacity (50%, 75%, 100%) for multiply/screen/overlay vs IM
-        done: false
-      - text: mask_apply with 2 mask patterns (gradient, binary) vs IM CopyOpacity
-        done: false
-      - text: blend_if multi-setting (different black/white thresholds) vs Photoshop reference
-        done: false
-  - phase: Grading Validation
-    tasks:
-      - text: ASC CDL multi-setting (3 different slope/offset/power combos) vs ffmpeg
-        done: false
-      - text: Curves multi-setting (2 different control point sets) vs IM -curve
-        done: false
-      - text: Tonemap Reinhard multi-setting (2 key values) vs Python colour-science
-        done: false
-      - text: LUT import multi-file (2 different .cube LUTs) vs ffmpeg lut3d
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Write parameter mapping table for compositors vs IM equivalents
-        done: false
-      - text: Write parameter mapping table for grading ops vs ffmpeg/IM
-        done: false
-      - text: Compile MAE results into validation report with per-operation tolerances
-        done: false
-      - text: Document any parameter conventions that differ from reference (e.g., opacity 0-1 vs 0-100)
-        done: false
+- phase: Compositor Validation
+  tasks:
+  - text: Composite multi-offset (0,0 / 10,20 / -5,-5) vs IM -compose Over -geometry
+    done: true
+  - text: Blend mode multi-opacity (50%, 75%, 100%) for multiply/screen/overlay vs IM
+    done: true
+  - text: mask_apply with 2 mask patterns (gradient, binary) vs IM CopyOpacity
+    done: true
+  - text: blend_if multi-setting (different black/white thresholds) vs Photoshop reference
+    done: true
+- phase: Grading Validation
+  tasks:
+  - text: ASC CDL multi-setting (3 different slope/offset/power combos) vs ffmpeg
+    done: true
+  - text: Curves multi-setting (2 different control point sets) vs IM -curve
+    done: true
+  - text: Tonemap Reinhard multi-setting (2 key values) vs Python colour-science
+    done: true
+  - text: LUT import multi-file (2 different .cube LUTs) vs ffmpeg lut3d
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Write parameter mapping table for compositors vs IM equivalents
+    done: true
+  - text: Write parameter mapping table for grading ops vs ffmpeg/IM
+    done: true
+  - text: Compile MAE results into validation report with per-operation tolerances
+    done: true
+  - text: Document any parameter conventions that differ from reference (e.g., opacity 0-1 vs 0-100)
+    done: true
 extra: {}
