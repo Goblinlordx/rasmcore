@@ -1,7 +1,8 @@
 //! Node graph — holds all nodes and dispatches region requests.
 
 use crate::domain::error::ImageError;
-use crate::domain::types::ImageInfo;
+use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
+use crate::domain::types::{DecodedImage, FrameSequence, ImageInfo};
 use rasmcore_pipeline::{Overlap, Rect, SpatialCache};
 
 /// Access pattern hint for cache optimization.
@@ -17,8 +18,19 @@ pub enum AccessPattern {
     GlobalTwoPass,
 }
 
+/// Blanket downcast support for pipeline nodes.
+pub trait AsAny {
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+impl<T: 'static> AsAny for T {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 /// The core trait every pipeline node implements.
-pub trait ImageNode {
+pub trait ImageNode: AsAny {
     /// Image dimensions and format (available without computing pixels).
     fn info(&self) -> ImageInfo;
 
@@ -41,6 +53,7 @@ pub trait ImageNode {
 pub struct NodeGraph {
     nodes: Vec<Box<dyn ImageNode>>,
     cache: SpatialCache,
+    cache_budget: usize,
 }
 
 impl NodeGraph {
@@ -49,6 +62,7 @@ impl NodeGraph {
         Self {
             nodes: Vec::new(),
             cache: SpatialCache::new(cache_budget),
+            cache_budget,
         }
     }
 
@@ -117,6 +131,66 @@ impl NodeGraph {
     /// Number of nodes in the graph.
     pub fn node_count(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// Execute the pipeline in sequence mode: run the graph once per selected
+    /// frame from a FrameSourceNode, collecting results into a FrameSequence.
+    ///
+    /// `source_node_id` must point to a FrameSourceNode. `output_node_id` is
+    /// the final node whose output is captured for each frame.
+    pub fn execute_sequence(
+        &mut self,
+        source_node_id: u32,
+        output_node_id: u32,
+    ) -> Result<FrameSequence, ImageError> {
+        // Get the selected frame indices from the FrameSourceNode.
+        // We need to read them before mutably borrowing for request_region.
+        let (indices, canvas_w, canvas_h) = {
+            let node = self.nodes.get(source_node_id as usize).ok_or_else(|| {
+                ImageError::InvalidParameters(format!("invalid source node id: {source_node_id}"))
+            })?;
+            let frame_src = node
+                .as_any()
+                .downcast_ref::<FrameSourceNode>()
+                .ok_or_else(|| {
+                    ImageError::InvalidParameters(
+                        "source node is not a FrameSourceNode".into(),
+                    )
+                })?;
+            let indices = frame_src.selected_indices();
+            let (cw, ch) = frame_src.canvas_size();
+            (indices, cw, ch)
+        };
+
+        let mut sequence = FrameSequence::new(canvas_w, canvas_h);
+
+        for &frame_idx in &indices {
+            // Advance the source to the next frame
+            let frame_info = {
+                let node = &self.nodes[source_node_id as usize];
+                let frame_src = node.as_any().downcast_ref::<FrameSourceNode>().unwrap();
+                frame_src.set_current_frame(frame_idx)?
+            };
+
+            // Clear cache between frames — cached regions from previous frame are stale
+            self.cache = SpatialCache::new(self.cache_budget);
+
+            // Execute the graph for this frame
+            let info = self.node_info(output_node_id)?;
+            let full = Rect::new(0, 0, info.width, info.height);
+            let pixels = self.request_region(output_node_id, full)?;
+
+            sequence.push(
+                DecodedImage {
+                    pixels,
+                    info,
+                    icc_profile: None,
+                },
+                frame_info,
+            );
+        }
+
+        Ok(sequence)
     }
 }
 
