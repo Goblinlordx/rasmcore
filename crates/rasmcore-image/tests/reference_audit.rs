@@ -6,7 +6,6 @@
 //!
 //! Tests gracefully skip if ImageMagick is not available.
 
-use std::io::Write;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
