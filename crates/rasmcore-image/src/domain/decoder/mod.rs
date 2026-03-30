@@ -53,6 +53,23 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     if header.len() >= 3 && &header[..3] == b"GIF" {
         return Some("gif".to_string());
     }
+    // WebP — RIFF container with WEBP fourcc
+    if header.len() >= 12 && &header[..4] == b"RIFF" && &header[8..12] == b"WEBP" {
+        return Some("webp".to_string());
+    }
+    // DDS — DirectDraw Surface magic "DDS "
+    if header.len() >= 4 && &header[..4] == [0x44, 0x44, 0x53, 0x20] {
+        return Some("dds".to_string());
+    }
+    // ICO — little-endian: reserved=0, type=1(icon) or 2(cursor)
+    if header.len() >= 4
+        && header[0] == 0
+        && header[1] == 0
+        && (header[2] == 1 || header[2] == 2)
+        && header[3] == 0
+    {
+        return Some("ico".to_string());
+    }
     image::guess_format(header)
         .ok()
         .and_then(|fmt| format_to_str(fmt))
@@ -235,9 +252,7 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     }
 
     // PNG — native decode via png crate
-    if data.len() >= 8
-        && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-    {
+    if data.len() >= 8 && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
         return decode_native_png(data);
     }
 
@@ -252,6 +267,17 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     // GIF — decode via gif crate directly (dropped from image features)
     if data.len() >= 6 && &data[..3] == b"GIF" {
         return decode_native_gif(data);
+    }
+
+    // WebP — decode via image-webp crate directly (dropped from image features)
+    if data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        return decode_native_webp(data);
+    }
+
+    // DDS — decode via native implementation (dropped from image features)
+    if data.len() >= 4 && &data[..4] == [0x44, 0x44, 0x53, 0x20] {
+        // DDS magic: "DDS " (0x44445320)
+        return decode_dds_native(data);
     }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
@@ -877,9 +903,7 @@ fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
         decoder.set_transformations(png::Transformations::EXPAND);
     } else {
         // Expand palette / sub-byte / grayscale-alpha -> 8-bit RGB(A)
-        decoder.set_transformations(
-            png::Transformations::EXPAND | png::Transformations::STRIP_16,
-        );
+        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     }
 
     let mut reader = decoder
@@ -1117,6 +1141,150 @@ fn decode_native_gif(data: &[u8]) -> Result<DecodedImage, ImageError> {
         },
         icc_profile: None,
     })
+}
+
+/// Decode WebP using the image-webp crate directly (bypasses image crate).
+fn decode_native_webp(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(data))
+        .map_err(|e| ImageError::InvalidInput(format!("WebP: {e}")))?;
+
+    let (width, height) = decoder.dimensions();
+    let has_alpha = decoder.has_alpha();
+
+    if has_alpha {
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
+        decoder
+            .read_image(&mut pixels)
+            .map_err(|e| ImageError::InvalidInput(format!("WebP decode: {e}")))?;
+        Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width,
+                height,
+                format: PixelFormat::Rgba8,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        })
+    } else {
+        // image-webp always decodes to RGBA when has_alpha, but to RGB when not
+        let mut pixels = vec![0u8; (width * height * 3) as usize];
+        decoder
+            .read_image(&mut pixels)
+            .map_err(|e| ImageError::InvalidInput(format!("WebP decode: {e}")))?;
+        Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width,
+                height,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        })
+    }
+}
+
+/// Decode DDS (DirectDraw Surface) natively.
+///
+/// Supports uncompressed R8G8B8, A8R8G8B8, and luminance formats.
+/// DXT/BCn compressed textures are not yet supported.
+fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    if data.len() < 128 {
+        return Err(ImageError::InvalidInput("DDS: header too short".into()));
+    }
+    // DDS header: magic (4) + header struct (124 bytes minimum)
+    let height = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
+    let width = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
+    let _pitch = u32::from_le_bytes([data[20], data[21], data[22], data[23]]);
+
+    // Pixel format at offset 76
+    let pf_flags = u32::from_le_bytes([data[80], data[81], data[82], data[83]]);
+    let pf_rgb_bit_count = u32::from_le_bytes([data[88], data[89], data[90], data[91]]);
+    let pf_r_mask = u32::from_le_bytes([data[92], data[93], data[94], data[95]]);
+    let pf_g_mask = u32::from_le_bytes([data[96], data[97], data[98], data[99]]);
+    let pf_b_mask = u32::from_le_bytes([data[100], data[101], data[102], data[103]]);
+    let pf_a_mask = u32::from_le_bytes([data[104], data[105], data[106], data[107]]);
+
+    let pixel_data = &data[128..];
+    let npixels = (width * height) as usize;
+
+    const DDPF_RGB: u32 = 0x40;
+    const DDPF_LUMINANCE: u32 = 0x20000;
+    const DDPF_ALPHAPIXELS: u32 = 0x01;
+
+    if pf_flags & DDPF_RGB != 0 {
+        if pf_rgb_bit_count == 32 && pf_flags & DDPF_ALPHAPIXELS != 0 {
+            // A8R8G8B8 → convert to RGBA8
+            let mut pixels = Vec::with_capacity(npixels * 4);
+            for i in 0..npixels {
+                let offset = i * 4;
+                if offset + 4 > pixel_data.len() {
+                    break;
+                }
+                // DDS stores BGRA
+                let b = pixel_data[offset];
+                let g = pixel_data[offset + 1];
+                let r = pixel_data[offset + 2];
+                let a = pixel_data[offset + 3];
+                pixels.extend_from_slice(&[r, g, b, a]);
+            }
+            Ok(DecodedImage {
+                pixels,
+                info: ImageInfo {
+                    width,
+                    height,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                icc_profile: None,
+            })
+        } else if pf_rgb_bit_count == 24 {
+            // R8G8B8 → convert to RGB8
+            let mut pixels = Vec::with_capacity(npixels * 3);
+            for i in 0..npixels {
+                let offset = i * 3;
+                if offset + 3 > pixel_data.len() {
+                    break;
+                }
+                let b = pixel_data[offset];
+                let g = pixel_data[offset + 1];
+                let r = pixel_data[offset + 2];
+                pixels.extend_from_slice(&[r, g, b]);
+            }
+            Ok(DecodedImage {
+                pixels,
+                info: ImageInfo {
+                    width,
+                    height,
+                    format: PixelFormat::Rgb8,
+                    color_space: ColorSpace::Srgb,
+                },
+                icc_profile: None,
+            })
+        } else {
+            Err(ImageError::UnsupportedFormat(format!(
+                "DDS: unsupported RGB bit count {pf_rgb_bit_count}"
+            )))
+        }
+    } else if pf_flags & DDPF_LUMINANCE != 0 && pf_rgb_bit_count == 8 {
+        // L8 → Gray8
+        let pixels = pixel_data[..npixels.min(pixel_data.len())].to_vec();
+        Ok(DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width,
+                height,
+                format: PixelFormat::Gray8,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        })
+    } else {
+        Err(ImageError::UnsupportedFormat(format!(
+            "DDS: unsupported pixel format flags=0x{pf_flags:08X} bits={pf_rgb_bit_count}"
+        )))
+    }
 }
 
 /// Heuristic TGA detection (TGA has no magic bytes).

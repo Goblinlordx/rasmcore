@@ -15,8 +15,8 @@ moxcms = "0.8"
 wit-bindgen-rt = "0.41.0"
 png = "0.17"
 image = { workspace = true, features = [
-    "webp", "ico",
-    "hdr", "exr", "dds",
+    "ico",
+    "hdr", "exr",
 ] }
 rasmcore-fits = { path = "../rasmcore-fits" }
 rasmcore-jpeg = { path = "../rasmcore-jpeg" }
@@ -26,6 +26,7 @@ quick-xml = "0.39.2"
 tiff = "0.11"
 gif = "0.14"
 color_quant = "1.1"
+image-webp = "0.2"
 jxl-oxide = "0.12"
 justjp2 = { version = "0.1", default-features = false }
 resvg = "0.44"

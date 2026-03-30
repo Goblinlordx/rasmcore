@@ -2490,6 +2490,7 @@ dependencies = [
  "fast_image_resize",
  "gif 0.14.1",
  "image",
+ "image-webp 0.2.4",
  "imgref",
  "inventory",
  "justjp2",
