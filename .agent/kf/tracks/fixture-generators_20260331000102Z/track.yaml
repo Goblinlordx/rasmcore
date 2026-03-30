@@ -1,0 +1,118 @@
+id: fixture-generators_20260331000102Z
+title: Replace Binary Test Fixtures with Programmatic Generators
+type: refactor
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Replace 278 committed .raw fixture files (6.6 MB) with programmatic
+    generators that create test data on demand. Cache generated fixtures
+    in a gitignored directory.
+  context: |
+    The tests/fixtures/opencv/ directory contains 278 .raw files totaling
+    6.6 MB. These are synthetic test data: gradients, checkerboards,
+    exposure brackets, displacement maps, and reference outputs. All of
+    this data is deterministic and can be generated programmatically from
+    parameters (dimensions, colors, patterns). The project already uses
+    this pattern extensively — make_animated_gif(), make_multipage_tiff(),
+    gradient_rgb(), solid_rgb() are all programmatic fixture generators.
+  codebase_analysis: |
+    CURRENT FIXTURE FILES (278 files, 6.6 MB):
+    - hdr_*_128_bracket_{0,1,2}.raw — 3-exposure brackets (synthetic gradients)
+    - hdr_*_128_mertens_f32.raw — Mertens fusion f32 reference outputs
+    - hdr_*_128_mertens_rgb.raw — Mertens RGB reference outputs
+    - displace_*_map_{x,y}.raw — Displacement map lookup tables
+    - sharp_edges_128_distance_f32.raw — Distance transform reference
+    - mertens_64x64_3exp_f32.raw — Small Mertens test case
+    - hdr_pyrup_*.raw — Pyramid upscale references
+
+    EXISTING GENERATOR PATTERNS:
+    - tests/reference_audit.rs: gradient_rgb(w, h) → programmatic gradients
+    - tests/pro_filter_parity.rs: make_gradient_rgb(w, h) → test images
+    - domain/decoder tests: make_animated_gif(), make_multipage_tiff()
+    - All parity tests use programmatic input generation
+
+    tests/fixtures/generated/ ALSO has committed files:
+    - photo_256x256_cmyk.tiff (262 KB)
+    - photo_256x256_cmyk.jpeg (83 KB)
+    - histogram_match_reference.json (80 KB)
+    - reference/dng_rawpy_bilinear_rgb8.bin (12 KB)
+
+    APPROACH:
+    - Create a test_fixtures module with generator functions
+    - Generate .raw data on first test run, cache in gitignored dir
+    - Use once_cell::Lazy or std::sync::LazyLock for lazy generation
+    - OR generate inline without caching (small enough for memory)
+  acceptance_criteria:
+    - All 278 .raw files removed from git
+    - Equivalent data generated programmatically in test setup
+    - tests/fixtures/ added to .gitignore (generated cache dir)
+    - All opencv parity tests still pass with generated data
+    - All existing tests pass unchanged
+    - No committed binary test data larger than 10 KB
+  out_of_scope: |
+    Reference implementation binaries (dcraw, rawpy output — these come
+    from external tools and can't be generated programmatically). Git
+    history rewriting (handled by repo-size-cleanup track).
+  technical_notes: |
+    FIXTURE GENERATOR PATTERN:
+
+    mod test_fixtures {
+        use std::sync::LazyLock;
+
+        pub static GRADIENT_128: LazyLock<Vec<u8>> = LazyLock::new(|| {
+            let mut data = Vec::with_capacity(128 * 128 * 3);
+            for y in 0..128u32 {
+                for x in 0..128u32 {
+                    data.push((x * 255 / 127) as u8);
+                    data.push((y * 255 / 127) as u8);
+                    data.push(128);
+                }
+            }
+            data
+        });
+
+        pub fn exposure_bracket(base: &[u8], ev: f32) -> Vec<u8> {
+            base.iter().map(|&v| {
+                (v as f32 * 2.0f32.powf(ev)).clamp(0.0, 255.0) as u8
+            }).collect()
+        }
+    }
+
+    DISPLACEMENT MAPS: generate from math functions
+    - wave_map_x: x + sin(y * freq) * amplitude
+    - barrel_map: radial polynomial r * (1 + k1*r^2)
+
+    HDR BRACKETS: apply exposure scaling to base gradient
+
+    MERTENS REFERENCE: run our own mertens_fusion() with known inputs
+    (the reference IS our implementation — we're testing consistency)
+plan:
+  - phase: Generator Module
+    tasks:
+      - text: Create shared test_fixtures module with gradient, checkerboard, bracket generators
+        done: false
+      - text: Add displacement map generators (wave, barrel) from math functions
+        done: false
+      - text: Add HDR bracket generators (exposure-scaled gradients)
+        done: false
+  - phase: Migration
+    tasks:
+      - text: Replace opencv parity test fixture loads with generator calls
+        done: false
+      - text: Replace tests/fixtures/generated/ binary loads with generators
+        done: false
+      - text: Remove all .raw files from git (git rm)
+        done: false
+      - text: Add tests/fixtures/ and *.raw to .gitignore
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All opencv parity tests pass with generated fixtures
+        done: false
+      - text: No committed binary files larger than 10 KB
+        done: false
+      - text: Full cargo test pass
+        done: false
+extra: {}
