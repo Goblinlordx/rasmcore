@@ -5,69 +5,100 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add dodge (lighten) and burn (darken) filters that adjust exposure in
+  summary: 'Add dodge (lighten) and burn (darken) filters that adjust exposure in
+
     shadows, midtones, or highlights selectively. PS Dodge/Burn tool equivalent
+
     as non-destructive filters with range and exposure params.
-  context: |
-    Dodge and burn are fundamental darkroom techniques digitized in Photoshop.
+
+    '
+  context: 'Dodge and burn are fundamental darkroom techniques digitized in Photoshop.
+
     Dodge lightens (increases exposure), burn darkens (decreases exposure).
+
     Both operate selectively on a tonal range (shadows, midtones, or highlights).
+
     We have brightness (uniform) and shadow_highlight (global shadows/highlights
+
     adjustment) but not the traditional dodge/burn with range selection.
-  codebase_analysis: |
-    EXISTING:
+
+    '
+  codebase_analysis: 'EXISTING:
+
     - brightness — uniform linear offset (point op)
+
     - shadow_highlight — global shadows/highlights recovery
+
     - gamma — power curve (affects midtones more)
+
     - curves — arbitrary tone curve
 
+
     DODGE/BURN DIFFERS:
+
     - Operates on specific tonal range only
+
     - Uses exposure as parameter (f-stop equivalent)
+
     - PS algorithm: for dodge, increase luminosity in target range
+
     - Classic formula: dodge = pixel * (1 + exposure * range_weight)
+
     - range_weight = gaussian(luma, range_center, range_width)
+
+    '
   acceptance_criteria:
-    - dodge filter registered with exposure (0-100%), range (shadows/midtones/highlights)
-    - burn filter registered with exposure (0-100%), range (shadows/midtones/highlights)
-    - dodge with exposure=0 is identity
-    - burn with exposure=0 is identity
-    - dodge on shadows only brightens dark pixels, leaves highlights unchanged
-    - burn on highlights only darkens bright pixels, leaves shadows unchanged
-    - Both support RGB8 and RGBA8
-    - Reference parity test against PS-equivalent NumPy formula
-  out_of_scope: |
-    Brush-based application (spatial mask). Sponge tool (saturation dodge/burn).
+  - dodge filter registered with exposure (0-100%), range (shadows/midtones/highlights)
+  - burn filter registered with exposure (0-100%), range (shadows/midtones/highlights)
+  - dodge with exposure=0 is identity
+  - burn with exposure=0 is identity
+  - dodge on shadows only brightens dark pixels, leaves highlights unchanged
+  - burn on highlights only darkens bright pixels, leaves shadows unchanged
+  - Both support RGB8 and RGBA8
+  - Reference parity test against PS-equivalent NumPy formula
+  out_of_scope: 'Brush-based application (spatial mask). Sponge tool (saturation dodge/burn).
+
     Non-linear blending modes (Color Dodge/Color Burn blend modes already exist).
-  technical_notes: |
-    TONAL RANGE WEIGHTS:
+
+    '
+  technical_notes: 'TONAL RANGE WEIGHTS:
+
     - shadows: weight = 1 - smoothstep(luma, 0.25, 0.75) — peaks at dark values
+
     - midtones: weight = 1 - abs(2*luma - 1) — peaks at mid-gray
+
     - highlights: weight = smoothstep(luma, 0.25, 0.75) — peaks at bright values
 
+
     DODGE: output = pixel + pixel * exposure * range_weight
+
     - Clamp to [0, 255]
+
     - exposure in [0, 1] range (100% = 1 stop)
 
+
     BURN: output = pixel - pixel * exposure * range_weight
+
     - Clamp to [0, 255]
+
     - Or equivalently: output = pixel * (1 - exposure * range_weight)
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Implement dodge filter with exposure and tonal range selection
-        done: false
-      - text: Implement burn filter with exposure and tonal range selection
-        done: false
-      - text: Register both with ConfigParams (exposure 0-100, range enum as u32)
-        done: false
-      - text: Test identity at exposure=0, test range selectivity
-        done: false
-  - phase: Parity & Verification
-    tasks:
-      - text: NumPy reference parity test for dodge/burn (CLOSE tier)
-        done: false
-      - text: Both in param-manifest.json, cargo test pass
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement dodge filter with exposure and tonal range selection
+    done: true
+  - text: Implement burn filter with exposure and tonal range selection
+    done: true
+  - text: Register both with ConfigParams (exposure 0-100, range enum as u32)
+    done: true
+  - text: Test identity at exposure=0, test range selectivity
+    done: true
+- phase: Parity & Verification
+  tasks:
+  - text: NumPy reference parity test for dodge/burn (CLOSE tier)
+    done: true
+  - text: Both in param-manifest.json, cargo test pass
+    done: true
 extra: {}
