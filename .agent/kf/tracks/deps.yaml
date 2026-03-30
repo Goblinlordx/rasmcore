@@ -123,3 +123,6 @@ filter-variant-groups_20260330100630Z: []
 
 # TrueType font rendering — no deps
 truetype-font-rendering_20260330101022Z: []
+
+# Complex text shaping — depends on TTF rendering track (already complete)
+complex-text-shaping_20260330102720Z: []
