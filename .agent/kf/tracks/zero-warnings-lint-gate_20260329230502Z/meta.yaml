@@ -1,8 +1,8 @@
 title: Zero-Warning Workspace and Compile-Time Lint Enforcement
-status: pending
+status: completed
 type: chore
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-30'
 deps:
 - wasm-api-sync_20260329230500Z

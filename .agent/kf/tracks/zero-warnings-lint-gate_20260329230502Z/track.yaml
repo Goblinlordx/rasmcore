@@ -1,148 +1,92 @@
 id: zero-warnings-lint-gate_20260329230502Z
-title: "Zero-Warning Workspace and Compile-Time Lint Enforcement"
+title: Zero-Warning Workspace and Compile-Time Lint Enforcement
 type: chore
 status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Fix all compiler and clippy warnings across the workspace with zero
+  summary: 'Fix all compiler and clippy warnings across the workspace with zero
+
     behavioral changes, then add workspace-level lint configuration to
+
     prevent new warnings from being introduced.
-  context: |
-    Current warning inventory:
-    - 44 compiler warnings across 4 crates (rasmcore-image: 28,
-      rasmcore-webp: 10, rasmcore-hevc: 3, rasmcore-jpeg: 3)
-    - 213 clippy warnings across workspace (rasmcore-image: 105,
-      rasmcore-webp: 68, rasmcore-jpeg: 19, rasmcore-hevc: 8)
 
-    Top warning categories:
-    - 46x loop variable used to index (use iter/enumerate)
-    - 16x manually reimplementing std method
-    - 13x unused variable
-    - 8x value assigned but never read
-    - 8x unused import
-    - 6x dead function
-    - 6x field assignment outside Default::default() initializer
-    - 5x unnecessary same-type cast
-
-    No workspace lint configuration exists. No clippy.toml. No rustfmt.toml.
-    The validate.sh script runs clippy with -D warnings but this gate is
-    currently failing.
-
-    CRITICAL CONSTRAINT: Warning fixes must NOT change output or behavior.
-    Only cosmetic changes allowed: prefix unused vars with _, remove dead
-    imports, fix unnecessary casts, use idiomatic patterns. Dead functions
-    should be prefixed with _ rather than deleted unless proven unreachable.
-  codebase_analysis: |
-    Crates requiring fixes:
-    - rasmcore-image (105 clippy warnings): largest crate, filters.rs and
-      pipeline code have most warnings. Many loop-index patterns, unused
-      vars, dead helper functions.
-    - rasmcore-webp (68 clippy warnings): codec crate, many loop-index
-      and unnecessary cast warnings in DCT/quantization code.
-    - rasmcore-jpeg (19 clippy warnings): codec crate, similar patterns.
-    - rasmcore-hevc (8 clippy warnings): codec crate, minor.
-    - rasmcore-macros (3 clippy warnings): proc macro crate.
-    - rasmcore-trellis (1 clippy warning): minor.
-
-    Warning fix safety rules:
-    - Unused variables: prefix with _ (never delete — may be intentional)
-    - Unused imports: remove (confirmed unused by compiler)
-    - Dead functions: prefix with _ (may be used in future tracks)
-    - Loop index patterns: use .iter().enumerate() or .iter()
-    - Unnecessary casts: remove cast (e.g., x as f64 where x is already f64)
-    - Field assignment outside default: use struct update syntax
-    - Reimplemented std methods: use the std method directly
-    - All changes must be verified with cargo test --workspace --lib to
-      confirm no behavioral change
-
-    Enforcement approach:
-    - Add [workspace.lints.rust] and [workspace.lints.clippy] to root
-      Cargo.toml. Each crate's Cargo.toml gets [lints] workspace = true.
-    - Key lints to deny: unused_imports, unused_variables, dead_code,
-      unused_assignments, unused_mut
-    - Key clippy lints to warn/deny: needless_range_loop, unnecessary_cast,
-      redundant_closure, manual_memcpy
+    '
+  context: "Current warning inventory:\n- 44 compiler warnings across 4 crates (rasmcore-image: 28,\n  rasmcore-webp: 10,\
+    \ rasmcore-hevc: 3, rasmcore-jpeg: 3)\n- 213 clippy warnings across workspace (rasmcore-image: 105,\n  rasmcore-webp:\
+    \ 68, rasmcore-jpeg: 19, rasmcore-hevc: 8)\n\nTop warning categories:\n- 46x loop variable used to index (use iter/enumerate)\n\
+    - 16x manually reimplementing std method\n- 13x unused variable\n- 8x value assigned but never read\n- 8x unused import\n\
+    - 6x dead function\n- 6x field assignment outside Default::default() initializer\n- 5x unnecessary same-type cast\n\n\
+    No workspace lint configuration exists. No clippy.toml. No rustfmt.toml.\nThe validate.sh script runs clippy with -D warnings\
+    \ but this gate is\ncurrently failing.\n\nCRITICAL CONSTRAINT: Warning fixes must NOT change output or behavior.\nOnly\
+    \ cosmetic changes allowed: prefix unused vars with _, remove dead\nimports, fix unnecessary casts, use idiomatic patterns.\
+    \ Dead functions\nshould be prefixed with _ rather than deleted unless proven unreachable.\n"
+  codebase_analysis: "Crates requiring fixes:\n- rasmcore-image (105 clippy warnings): largest crate, filters.rs and\n  pipeline\
+    \ code have most warnings. Many loop-index patterns, unused\n  vars, dead helper functions.\n- rasmcore-webp (68 clippy\
+    \ warnings): codec crate, many loop-index\n  and unnecessary cast warnings in DCT/quantization code.\n- rasmcore-jpeg\
+    \ (19 clippy warnings): codec crate, similar patterns.\n- rasmcore-hevc (8 clippy warnings): codec crate, minor.\n- rasmcore-macros\
+    \ (3 clippy warnings): proc macro crate.\n- rasmcore-trellis (1 clippy warning): minor.\n\nWarning fix safety rules:\n\
+    - Unused variables: prefix with _ (never delete — may be intentional)\n- Unused imports: remove (confirmed unused by compiler)\n\
+    - Dead functions: prefix with _ (may be used in future tracks)\n- Loop index patterns: use .iter().enumerate() or .iter()\n\
+    - Unnecessary casts: remove cast (e.g., x as f64 where x is already f64)\n- Field assignment outside default: use struct\
+    \ update syntax\n- Reimplemented std methods: use the std method directly\n- All changes must be verified with cargo test\
+    \ --workspace --lib to\n  confirm no behavioral change\n\nEnforcement approach:\n- Add [workspace.lints.rust] and [workspace.lints.clippy]\
+    \ to root\n  Cargo.toml. Each crate's Cargo.toml gets [lints] workspace = true.\n- Key lints to deny: unused_imports,\
+    \ unused_variables, dead_code,\n  unused_assignments, unused_mut\n- Key clippy lints to warn/deny: needless_range_loop,\
+    \ unnecessary_cast,\n  redundant_closure, manual_memcpy\n"
   acceptance_criteria:
-    - cargo check --workspace produces 0 warnings
-    - cargo clippy --workspace -- -D warnings passes cleanly
-    - validate.sh step 2 (clippy) passes
-    - cargo test --workspace --lib passes with identical results before and after
-    - No behavioral changes — only cosmetic warning fixes
-    - "[workspace.lints]" section in root Cargo.toml denying key warnings
-    - Each crate Cargo.toml inherits workspace lints
-    - clippy.toml exists with project-appropriate configuration
-  out_of_scope: |
-    Fixing the WASM build errors (Track 1). Restructuring code or
+  - cargo check --workspace produces 0 warnings
+  - cargo clippy --workspace -- -D warnings passes cleanly
+  - validate.sh step 2 (clippy) passes
+  - cargo test --workspace --lib passes with identical results before and after
+  - No behavioral changes — only cosmetic warning fixes
+  - workspace.lints section in root Cargo.toml denying key warnings
+  - Each crate Cargo.toml inherits workspace lints
+  - clippy.toml exists with project-appropriate configuration
+  out_of_scope: 'Fixing the WASM build errors (Track 1). Restructuring code or
+
     refactoring modules. Adding new tests. Changing any algorithm or
+
     output-affecting code path.
-  technical_notes: |
-    Implementation approach:
 
-    Phase 1 — Fix warnings per crate (largest first):
-    Use cargo clippy --fix --lib -p <crate> for auto-fixable warnings,
-    then manually fix the rest. After each crate, run cargo test --lib
-    -p <crate> to confirm no regressions.
-
-    Safety protocol for each fix:
-    a) Unused variable x → rename to _x (NEVER delete)
-    b) Unused import → remove (compiler-confirmed unused)
-    c) Dead function f → rename to _f OR add #[allow(dead_code)] with
-       comment explaining why it is kept
-    d) Loop index: for i in 0..arr.len() { arr[i] } → for (i, v) in
-       arr.iter().enumerate() OR for v in arr.iter() if index not needed
-    e) Unnecessary cast: x as f64 where x: f64 → just x
-    f) Manual memcpy: loop copying bytes → use copy_from_slice
-    g) Redundant closure: .map(|x| foo(x)) → .map(foo)
-
-    Phase 2 — Add workspace lint config:
-
-    Root Cargo.toml:
-    [workspace.lints.rust]
-    unused_imports = "deny"
-    unused_variables = "warn"
-    dead_code = "warn"
-    unused_assignments = "warn"
-    unused_mut = "warn"
-
-    [workspace.lints.clippy]
-    needless_range_loop = "warn"
-    unnecessary_cast = "warn"
-    redundant_closure = "warn"
-
-    Each crate Cargo.toml:
-    [lints]
-    workspace = true
-
-    Phase 3 — Verify:
-    Full cargo clippy --workspace -- -D warnings clean pass.
-    Full cargo test --workspace --lib pass.
+    '
+  technical_notes: "Implementation approach:\n\nPhase 1 — Fix warnings per crate (largest first):\nUse cargo clippy --fix\
+    \ --lib -p <crate> for auto-fixable warnings,\nthen manually fix the rest. After each crate, run cargo test --lib\n-p\
+    \ <crate> to confirm no regressions.\n\nSafety protocol for each fix:\na) Unused variable x → rename to _x (NEVER delete)\n\
+    b) Unused import → remove (compiler-confirmed unused)\nc) Dead function f → rename to _f OR add #[allow(dead_code)] with\n\
+    \   comment explaining why it is kept\nd) Loop index: for i in 0..arr.len() { arr[i] } → for (i, v) in\n   arr.iter().enumerate()\
+    \ OR for v in arr.iter() if index not needed\ne) Unnecessary cast: x as f64 where x: f64 → just x\nf) Manual memcpy: loop\
+    \ copying bytes → use copy_from_slice\ng) Redundant closure: .map(|x| foo(x)) → .map(foo)\n\nPhase 2 — Add workspace lint\
+    \ config:\n\nRoot Cargo.toml:\n[workspace.lints.rust]\nunused_imports = \"deny\"\nunused_variables = \"warn\"\ndead_code\
+    \ = \"warn\"\nunused_assignments = \"warn\"\nunused_mut = \"warn\"\n\n[workspace.lints.clippy]\nneedless_range_loop =\
+    \ \"warn\"\nunnecessary_cast = \"warn\"\nredundant_closure = \"warn\"\n\nEach crate Cargo.toml:\n[lints]\nworkspace =\
+    \ true\n\nPhase 3 — Verify:\nFull cargo clippy --workspace -- -D warnings clean pass.\nFull cargo test --workspace --lib\
+    \ pass.\n"
 plan:
-  - phase: Fix Warnings By Crate
-    tasks:
-      - text: Fix rasmcore-image warnings (105 clippy) — auto-fix then manual, verify tests pass
-        done: false
-      - text: Fix rasmcore-webp warnings (68 clippy) — auto-fix then manual, verify tests pass
-        done: false
-      - text: Fix rasmcore-jpeg warnings (19 clippy) — auto-fix then manual, verify tests pass
-        done: false
-      - text: Fix rasmcore-hevc warnings (8 clippy) — auto-fix then manual, verify tests pass
-        done: false
-      - text: Fix remaining crates (rasmcore-macros, rasmcore-trellis) warnings
-        done: false
-  - phase: Lint Enforcement
-    tasks:
-      - text: Add [workspace.lints] to root Cargo.toml with deny/warn levels
-        done: false
-      - text: Add [lints] workspace = true to each crate Cargo.toml
-        done: false
-      - text: Create clippy.toml with project configuration
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify cargo clippy --workspace -- -D warnings passes with zero warnings
-        done: false
-      - text: Verify cargo test --workspace --lib passes with no regressions
-        done: false
+- phase: Fix Warnings By Crate
+  tasks:
+  - text: Fix rasmcore-image warnings (105 clippy) — auto-fix then manual, verify tests pass
+    done: true
+  - text: Fix rasmcore-webp warnings (68 clippy) — auto-fix then manual, verify tests pass
+    done: true
+  - text: Fix rasmcore-jpeg warnings (19 clippy) — auto-fix then manual, verify tests pass
+    done: true
+  - text: Fix rasmcore-hevc warnings (8 clippy) — auto-fix then manual, verify tests pass
+    done: true
+  - text: Fix remaining crates (rasmcore-macros, rasmcore-trellis) warnings
+    done: true
+- phase: Lint Enforcement
+  tasks:
+  - text: Add [workspace.lints] to root Cargo.toml with deny/warn levels
+    done: true
+  - text: Add [lints] workspace = true to each crate Cargo.toml
+    done: true
+  - text: Create clippy.toml with project configuration
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify cargo clippy --workspace -- -D warnings passes with zero warnings
+    done: true
+  - text: Verify cargo test --workspace --lib passes with no regressions
+    done: true
 extra: {}
