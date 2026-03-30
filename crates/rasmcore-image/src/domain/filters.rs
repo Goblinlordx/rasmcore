@@ -9342,7 +9342,19 @@ pub struct AscCdlParams {
 }
 
 #[rasmcore_macros::register_filter(name = "asc_cdl", category = "grading")]
-pub fn asc_cdl_registered(pixels: &[u8], info: &ImageInfo, slope_r: f32, slope_g: f32, slope_b: f32, offset_r: f32, offset_g: f32, offset_b: f32, power_r: f32, power_g: f32, power_b: f32) -> Result<Vec<u8>, ImageError> {
+pub fn asc_cdl_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    slope_r: f32,
+    slope_g: f32,
+    slope_b: f32,
+    offset_r: f32,
+    offset_g: f32,
+    offset_b: f32,
+    power_r: f32,
+    power_g: f32,
+    power_b: f32,
+) -> Result<Vec<u8>, ImageError> {
     let cdl = super::color_grading::AscCdl {
         slope: [slope_r, slope_g, slope_b],
         offset: [offset_r, offset_g, offset_b],
@@ -9385,7 +9397,19 @@ pub struct LiftGammaGainParams {
 }
 
 #[rasmcore_macros::register_filter(name = "lift_gamma_gain", category = "grading")]
-pub fn lift_gamma_gain_registered(pixels: &[u8], info: &ImageInfo, lift_r: f32, lift_g: f32, lift_b: f32, gamma_r: f32, gamma_g: f32, gamma_b: f32, gain_r: f32, gain_g: f32, gain_b: f32) -> Result<Vec<u8>, ImageError> {
+pub fn lift_gamma_gain_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    lift_r: f32,
+    lift_g: f32,
+    lift_b: f32,
+    gamma_r: f32,
+    gamma_g: f32,
+    gamma_b: f32,
+    gain_r: f32,
+    gain_g: f32,
+    gain_b: f32,
+) -> Result<Vec<u8>, ImageError> {
     let lgg = super::color_grading::LiftGammaGain {
         lift: [lift_r, lift_g, lift_b],
         gamma: [gamma_r, gamma_g, gamma_b],
@@ -9427,7 +9451,13 @@ fn hue_to_rgb_tint(hue_deg: f32) -> [f32; 3] {
 }
 
 #[rasmcore_macros::register_filter(name = "split_toning", category = "grading")]
-pub fn split_toning_registered(pixels: &[u8], info: &ImageInfo, highlight_hue: f32, shadow_hue: f32, balance: f32) -> Result<Vec<u8>, ImageError> {
+pub fn split_toning_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    highlight_hue: f32,
+    shadow_hue: f32,
+    balance: f32,
+) -> Result<Vec<u8>, ImageError> {
     let st = super::color_grading::SplitToning {
         highlight_color: hue_to_rgb_tint(highlight_hue),
         shadow_color: hue_to_rgb_tint(shadow_hue),
@@ -9472,10 +9502,16 @@ fn parse_curve_points(json: &str) -> Result<Vec<(f32, f32)>, ImageError> {
                         )));
                     }
                     let x: f32 = parts[0].trim().parse().map_err(|_| {
-                        ImageError::InvalidParameters(format!("invalid x in curve point: {}", parts[0].trim()))
+                        ImageError::InvalidParameters(format!(
+                            "invalid x in curve point: {}",
+                            parts[0].trim()
+                        ))
                     })?;
                     let y: f32 = parts[1].trim().parse().map_err(|_| {
-                        ImageError::InvalidParameters(format!("invalid y in curve point: {}", parts[1].trim()))
+                        ImageError::InvalidParameters(format!(
+                            "invalid y in curve point: {}",
+                            parts[1].trim()
+                        ))
                     })?;
                     points.push((x, y));
                 }
@@ -9500,7 +9536,11 @@ pub struct CurvesMasterParams {
 }
 
 #[rasmcore_macros::register_filter(name = "curves_master", category = "grading")]
-pub fn curves_master(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+pub fn curves_master(
+    pixels: &[u8],
+    info: &ImageInfo,
+    points: String,
+) -> Result<Vec<u8>, ImageError> {
     let pts = parse_curve_points(&points)?;
     let tc = super::color_grading::ToneCurves {
         r: pts.clone(),
@@ -9539,7 +9579,11 @@ pub struct CurvesGreenParams {
 }
 
 #[rasmcore_macros::register_filter(name = "curves_green", category = "grading")]
-pub fn curves_green(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+pub fn curves_green(
+    pixels: &[u8],
+    info: &ImageInfo,
+    points: String,
+) -> Result<Vec<u8>, ImageError> {
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
     let tc = super::color_grading::ToneCurves {
@@ -9587,7 +9631,13 @@ pub struct FilmGrainParams {
 }
 
 #[rasmcore_macros::register_filter(name = "film_grain", category = "effect")]
-pub fn film_grain_registered(pixels: &[u8], info: &ImageInfo, amount: f32, size: f32, seed: u32) -> Result<Vec<u8>, ImageError> {
+pub fn film_grain_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    amount: f32,
+    size: f32,
+    seed: u32,
+) -> Result<Vec<u8>, ImageError> {
     let params = super::color_grading::FilmGrainParams {
         amount,
         size,
@@ -9613,11 +9663,12 @@ pub struct TonemapDragoParams {
 }
 
 #[rasmcore_macros::register_filter(name = "tonemap_drago", category = "tonemapping")]
-pub fn tonemap_drago_registered(pixels: &[u8], info: &ImageInfo, bias: f32) -> Result<Vec<u8>, ImageError> {
-    let params = super::color_grading::DragoParams {
-        l_max: 1.0,
-        bias,
-    };
+pub fn tonemap_drago_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    bias: f32,
+) -> Result<Vec<u8>, ImageError> {
+    let params = super::color_grading::DragoParams { l_max: 1.0, bias };
     super::color_grading::tonemap_drago(pixels, info, &params)
 }
 
@@ -9642,7 +9693,15 @@ pub struct TonemapFilmicParams {
 }
 
 #[rasmcore_macros::register_filter(name = "tonemap_filmic", category = "tonemapping")]
-pub fn tonemap_filmic_registered(pixels: &[u8], info: &ImageInfo, shoulder_strength: f32, linear_strength: f32, linear_angle: f32, toe_strength: f32, toe_numerator: f32) -> Result<Vec<u8>, ImageError> {
+pub fn tonemap_filmic_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    shoulder_strength: f32,
+    linear_strength: f32,
+    linear_angle: f32,
+    toe_strength: f32,
+    toe_numerator: f32,
+) -> Result<Vec<u8>, ImageError> {
     let params = super::color_grading::FilmicParams {
         a: shoulder_strength,
         b: linear_strength,
@@ -9667,7 +9726,12 @@ pub struct SmartCropParams {
 }
 
 #[rasmcore_macros::register_filter(name = "smart_crop", category = "transform")]
-pub fn smart_crop_registered(pixels: &[u8], info: &ImageInfo, target_width: u32, target_height: u32) -> Result<Vec<u8>, ImageError> {
+pub fn smart_crop_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    target_width: u32,
+    target_height: u32,
+) -> Result<Vec<u8>, ImageError> {
     let result = super::smart_crop::smart_crop(
         pixels,
         info,
@@ -9687,7 +9751,11 @@ pub struct SeamCarveWidthParams {
 }
 
 #[rasmcore_macros::register_filter(name = "seam_carve_width", category = "transform")]
-pub fn seam_carve_width_registered(pixels: &[u8], info: &ImageInfo, target_width: u32) -> Result<Vec<u8>, ImageError> {
+pub fn seam_carve_width_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    target_width: u32,
+) -> Result<Vec<u8>, ImageError> {
     let (data, _new_info) = super::content_aware::seam_carve_width(pixels, info, target_width)?;
     Ok(data)
 }
@@ -9701,7 +9769,11 @@ pub struct SeamCarveHeightParams {
 }
 
 #[rasmcore_macros::register_filter(name = "seam_carve_height", category = "transform")]
-pub fn seam_carve_height_registered(pixels: &[u8], info: &ImageInfo, target_height: u32) -> Result<Vec<u8>, ImageError> {
+pub fn seam_carve_height_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    target_height: u32,
+) -> Result<Vec<u8>, ImageError> {
     let (data, _new_info) = super::content_aware::seam_carve_height(pixels, info, target_height)?;
     Ok(data)
 }
@@ -9727,7 +9799,15 @@ pub struct SelectiveColorParams {
 }
 
 #[rasmcore_macros::register_filter(name = "selective_color", category = "color")]
-pub fn selective_color_registered(pixels: &[u8], info: &ImageInfo, target_hue: f32, hue_range: f32, hue_shift: f32, saturation: f32, lightness: f32) -> Result<Vec<u8>, ImageError> {
+pub fn selective_color_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    target_hue: f32,
+    hue_range: f32,
+    hue_shift: f32,
+    saturation: f32,
+    lightness: f32,
+) -> Result<Vec<u8>, ImageError> {
     let params = super::content_aware::SelectiveColorParams {
         hue_range: super::content_aware::HueRange {
             center: target_hue,
