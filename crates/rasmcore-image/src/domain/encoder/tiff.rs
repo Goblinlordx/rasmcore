@@ -134,10 +134,7 @@ pub fn encode(
 ///
 /// Each frame becomes a separate IFD (page) in the output. The tiff crate
 /// automatically chains IFDs when `new_image()` is called multiple times.
-pub fn encode_pages(
-    seq: &FrameSequence,
-    config: &TiffEncodeConfig,
-) -> Result<Vec<u8>, ImageError> {
+pub fn encode_pages(seq: &FrameSequence, config: &TiffEncodeConfig) -> Result<Vec<u8>, ImageError> {
     if seq.is_empty() {
         return Err(ImageError::InvalidInput(
             "cannot encode empty frame sequence as TIFF".into(),
@@ -226,7 +223,9 @@ pub fn encode_pages(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::{ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
+    use crate::domain::types::{
+        ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence,
+    };
 
     fn make_rgb8(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();
@@ -422,7 +421,14 @@ mod tests {
 
     // ── encode_pages tests ─────────────────────────────────────────
 
-    fn make_solid_page(w: u32, h: u32, r: u8, g: u8, b: u8, index: u32) -> (DecodedImage, FrameInfo) {
+    fn make_solid_page(
+        w: u32,
+        h: u32,
+        r: u8,
+        g: u8,
+        b: u8,
+        index: u32,
+    ) -> (DecodedImage, FrameInfo) {
         let pixels: Vec<u8> = (0..(w * h)).flat_map(|_| [r, g, b]).collect();
         let image = DecodedImage {
             pixels,

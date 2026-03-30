@@ -157,9 +157,7 @@ pub fn encode_sequence(
                     has_transparency = true;
                     indices.push(0u8);
                 } else {
-                    indices.push(
-                        nq.index_of(&[pixel[0], pixel[1], pixel[2], pixel[3]]) as u8,
-                    );
+                    indices.push(nq.index_of(&[pixel[0], pixel[1], pixel[2], pixel[3]]) as u8);
                 }
             }
 
@@ -197,7 +195,9 @@ pub fn encode_sequence(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::{ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
+    use crate::domain::types::{
+        ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence,
+    };
 
     fn make_rgb_image(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();
@@ -282,7 +282,15 @@ mod tests {
 
     // ── encode_sequence tests ──────────────────────────────────────
 
-    fn make_solid_frame(w: u32, h: u32, r: u8, g: u8, b: u8, index: u32, delay_ms: u32) -> (DecodedImage, FrameInfo) {
+    fn make_solid_frame(
+        w: u32,
+        h: u32,
+        r: u8,
+        g: u8,
+        b: u8,
+        index: u32,
+        delay_ms: u32,
+    ) -> (DecodedImage, FrameInfo) {
         let pixels: Vec<u8> = (0..(w * h)).flat_map(|_| [r, g, b]).collect();
         let image = DecodedImage {
             pixels,
