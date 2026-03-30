@@ -397,7 +397,7 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
 
 /// Return the total number of frames/pages in the image without full decode.
 ///
-/// Returns 1 for single-frame formats. Supports GIF, WebP (animated), and TIFF (multi-page).
+/// Returns 1 for single-frame formats. Supports GIF, WebP (animated), TIFF (multi-page), and APNG.
 pub fn frame_count(data: &[u8]) -> Result<u32, ImageError> {
     if data.len() >= 6 && &data[..3] == b"GIF" {
         return gif_frame_count(data);
@@ -410,6 +410,9 @@ pub fn frame_count(data: &[u8]) -> Result<u32, ImageError> {
             || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
     {
         return tiff_page_count(data);
+    }
+    if is_png(data) {
+        return apng_frame_count(data);
     }
     Ok(1)
 }
@@ -430,6 +433,13 @@ pub fn decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo)
             || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
     {
         return tiff_decode_frame(data, index);
+    }
+    if is_png(data) {
+        if let Some(count) = apng_animation_frame_count(data)? {
+            if count > 1 {
+                return apng_decode_frame(data, index);
+            }
+        }
     }
     // Single-frame fallback
     if index != 0 {
@@ -1936,6 +1946,228 @@ fn tiff_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo
     ))
 }
 
+// ─── APNG Multi-Frame ──────────────────────────────────────────────────────
+
+/// Check if data is a PNG file (8-byte magic).
+fn is_png(data: &[u8]) -> bool {
+    data.len() >= 8 && data[..4] == [0x89, 0x50, 0x4E, 0x47]
+}
+
+/// Read the APNG acTL frame count via the png crate. Returns None if not animated.
+fn apng_animation_frame_count(data: &[u8]) -> Result<Option<u32>, ImageError> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(data));
+    let reader = decoder
+        .read_info()
+        .map_err(|e| ImageError::InvalidInput(format!("PNG: {e}")))?;
+    let info = reader.info();
+    Ok(info.animation_control().map(|ac| ac.num_frames))
+}
+
+/// Return frame count for PNG/APNG. Returns 1 for static PNG.
+fn apng_frame_count(data: &[u8]) -> Result<u32, ImageError> {
+    Ok(apng_animation_frame_count(data)?.unwrap_or(1))
+}
+
+/// Decode a specific APNG frame by index with compositing onto the canvas.
+fn apng_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo), ImageError> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| ImageError::InvalidInput(format!("PNG: {e}")))?;
+
+    let canvas_width = reader.info().width;
+    let canvas_height = reader.info().height;
+
+    // Determine output pixel format from the reader
+    let (out_color, _out_depth) = reader.output_color_type();
+    let channels: u32 = match out_color {
+        png::ColorType::Rgba | png::ColorType::GrayscaleAlpha => 4,
+        png::ColorType::Rgb => 3,
+        png::ColorType::Grayscale => 1,
+        png::ColorType::Indexed => 4, // after EXPAND
+    };
+    let format = if channels == 4 {
+        PixelFormat::Rgba8
+    } else if channels == 3 {
+        PixelFormat::Rgb8
+    } else {
+        PixelFormat::Gray8
+    };
+
+    // Canvas for compositing (RGBA8 for proper alpha blending)
+    let canvas_stride = (canvas_width * 4) as usize;
+    let mut canvas = vec![0u8; canvas_stride * canvas_height as usize];
+    let mut prev_canvas = canvas.clone();
+
+    for i in 0..=index {
+        let mut buf = vec![0u8; reader.output_buffer_size()];
+        let output_info = reader
+            .next_frame(&mut buf)
+            .map_err(|e| ImageError::InvalidInput(format!("APNG frame {i}: {e}")))?;
+        buf.truncate(output_info.buffer_size());
+
+        // Get fcTL metadata for this frame
+        let fc = reader.info().frame_control().cloned();
+
+        let (fw, fh, fx, fy) = if let Some(ref fc) = fc {
+            (fc.width, fc.height, fc.x_offset, fc.y_offset)
+        } else {
+            // First frame with no fcTL: full canvas
+            (canvas_width, canvas_height, 0, 0)
+        };
+
+        let dispose_op = fc
+            .as_ref()
+            .map(|f| f.dispose_op)
+            .unwrap_or(png::DisposeOp::None);
+        let blend_op = fc
+            .as_ref()
+            .map(|f| f.blend_op)
+            .unwrap_or(png::BlendOp::Source);
+
+        // Save canvas before this frame for Previous disposal
+        if dispose_op == png::DisposeOp::Previous {
+            prev_canvas.copy_from_slice(&canvas);
+        }
+
+        // Convert frame buffer to RGBA8 for compositing
+        let rgba_buf = to_rgba8(&buf, channels);
+
+        // Composite frame onto canvas
+        for y in 0..fh {
+            let dy = (fy + y) as usize;
+            if dy >= canvas_height as usize {
+                break;
+            }
+            for x in 0..fw {
+                let dx = (fx + x) as usize;
+                if dx >= canvas_width as usize {
+                    break;
+                }
+                let src_idx = ((y * fw + x) * 4) as usize;
+                let dst_idx = dy * canvas_stride + dx * 4;
+
+                match blend_op {
+                    png::BlendOp::Source => {
+                        canvas[dst_idx..dst_idx + 4]
+                            .copy_from_slice(&rgba_buf[src_idx..src_idx + 4]);
+                    }
+                    png::BlendOp::Over => {
+                        let sa = rgba_buf[src_idx + 3] as u16;
+                        if sa == 255 {
+                            canvas[dst_idx..dst_idx + 4]
+                                .copy_from_slice(&rgba_buf[src_idx..src_idx + 4]);
+                        } else if sa > 0 {
+                            let da = canvas[dst_idx + 3] as u16;
+                            let out_a = sa + da * (255 - sa) / 255;
+                            if out_a > 0 {
+                                for c in 0..3 {
+                                    let sc = rgba_buf[src_idx + c] as u16;
+                                    let dc = canvas[dst_idx + c] as u16;
+                                    canvas[dst_idx + c] =
+                                        ((sc * sa + dc * da * (255 - sa) / 255) / out_a) as u8;
+                                }
+                                canvas[dst_idx + 3] = out_a as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if i == index {
+            let delay_ms = if let Some(ref fc) = fc {
+                let den = if fc.delay_den == 0 { 100 } else { fc.delay_den as u32 };
+                (fc.delay_num as u32 * 1000) / den
+            } else {
+                0
+            };
+
+            let disposal = match dispose_op {
+                png::DisposeOp::Background => DisposalMethod::Background,
+                png::DisposeOp::Previous => DisposalMethod::Previous,
+                _ => DisposalMethod::None,
+            };
+
+            // Return the composited canvas in the original pixel format
+            let pixels = match format {
+                PixelFormat::Rgba8 => canvas.clone(),
+                PixelFormat::Rgb8 => canvas
+                    .chunks_exact(4)
+                    .flat_map(|c| [c[0], c[1], c[2]])
+                    .collect(),
+                PixelFormat::Gray8 => canvas.chunks_exact(4).map(|c| c[0]).collect(),
+                _ => canvas.clone(),
+            };
+
+            return Ok((
+                DecodedImage {
+                    pixels,
+                    info: ImageInfo {
+                        width: canvas_width,
+                        height: canvas_height,
+                        format,
+                        color_space: ColorSpace::Srgb,
+                    },
+                    icc_profile: None,
+                },
+                FrameInfo {
+                    index,
+                    delay_ms,
+                    disposal,
+                    width: fw,
+                    height: fh,
+                    x_offset: fx,
+                    y_offset: fy,
+                },
+            ));
+        }
+
+        // Apply disposal for next frame
+        match dispose_op {
+            png::DisposeOp::Background => {
+                for y in 0..fh {
+                    let dy = (fy + y) as usize;
+                    if dy >= canvas_height as usize {
+                        break;
+                    }
+                    for x in 0..fw {
+                        let dx = (fx + x) as usize;
+                        if dx >= canvas_width as usize {
+                            break;
+                        }
+                        let idx = dy * canvas_stride + dx * 4;
+                        canvas[idx..idx + 4].copy_from_slice(&[0, 0, 0, 0]);
+                    }
+                }
+            }
+            png::DisposeOp::Previous => {
+                canvas.copy_from_slice(&prev_canvas);
+            }
+            _ => {}
+        }
+    }
+
+    Err(ImageError::InvalidParameters(format!(
+        "APNG frame index {index} out of range"
+    )))
+}
+
+/// Convert pixel buffer to RGBA8 (for compositing).
+fn to_rgba8(buf: &[u8], channels: u32) -> Vec<u8> {
+    match channels {
+        4 => buf.to_vec(),
+        3 => buf
+            .chunks_exact(3)
+            .flat_map(|c| [c[0], c[1], c[2], 255])
+            .collect(),
+        1 => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        _ => buf.to_vec(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2407,5 +2639,111 @@ mod tests {
         assert_eq!(single.info.width, frame0.info.width);
         assert_eq!(single.info.height, frame0.info.height);
         assert_eq!(single.pixels, frame0.pixels);
+    }
+
+    // ─── APNG Tests ───────────────────────────────────────────────────────
+
+    /// Create a 3-frame APNG: red, green, blue — each 4x4, 100ms delay.
+    fn make_apng(width: u32, height: u32) -> Vec<u8> {
+        let num_frames = 3u32;
+        let mut buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut buf, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.set_animated(num_frames, 0).unwrap();
+            encoder.set_frame_delay(10, 100).unwrap(); // 100ms
+
+            let mut writer = encoder.write_header().unwrap();
+
+            let colors: [[u8; 4]; 3] = [
+                [255, 0, 0, 255],   // red
+                [0, 255, 0, 255],   // green
+                [0, 0, 255, 255],   // blue
+            ];
+
+            for color in &colors {
+                let pixels: Vec<u8> = (0..width * height)
+                    .flat_map(|_| *color)
+                    .collect();
+                writer.set_frame_delay(10, 100).unwrap(); // 100ms
+                writer.write_image_data(&pixels).unwrap();
+            }
+        }
+        buf
+    }
+
+    #[test]
+    fn apng_frame_count_3() {
+        let data = make_apng(4, 4);
+        assert_eq!(frame_count(&data).unwrap(), 3);
+    }
+
+    #[test]
+    fn apng_decode_frame_0_red() {
+        let data = make_apng(4, 4);
+        let (img, info) = decode_frame(&data, 0).unwrap();
+        assert_eq!(img.info.width, 4);
+        assert_eq!(img.info.height, 4);
+        assert_eq!(img.info.format, PixelFormat::Rgba8);
+        assert_eq!(info.index, 0);
+        assert_eq!(info.delay_ms, 100);
+        // First pixel should be red
+        assert_eq!(img.pixels[0], 255); // R
+        assert_eq!(img.pixels[1], 0);   // G
+        assert_eq!(img.pixels[2], 0);   // B
+        assert_eq!(img.pixels[3], 255); // A
+    }
+
+    #[test]
+    fn apng_decode_frame_1_green() {
+        let data = make_apng(4, 4);
+        let (img, info) = decode_frame(&data, 1).unwrap();
+        assert_eq!(info.index, 1);
+        assert_eq!(info.delay_ms, 100);
+        // First pixel should be green
+        assert_eq!(img.pixels[0], 0);
+        assert_eq!(img.pixels[1], 255);
+        assert_eq!(img.pixels[2], 0);
+        assert_eq!(img.pixels[3], 255);
+    }
+
+    #[test]
+    fn apng_decode_frame_2_blue() {
+        let data = make_apng(4, 4);
+        let (img, info) = decode_frame(&data, 2).unwrap();
+        assert_eq!(info.index, 2);
+        // First pixel should be blue
+        assert_eq!(img.pixels[0], 0);
+        assert_eq!(img.pixels[1], 0);
+        assert_eq!(img.pixels[2], 255);
+        assert_eq!(img.pixels[3], 255);
+    }
+
+    #[test]
+    fn apng_decode_all_frames_count() {
+        let data = make_apng(4, 4);
+        let frames = decode_all_frames(&data).unwrap();
+        assert_eq!(frames.len(), 3);
+    }
+
+    #[test]
+    fn apng_frame_out_of_range() {
+        let data = make_apng(4, 4);
+        assert!(decode_frame(&data, 5).is_err());
+    }
+
+    #[test]
+    fn static_png_frame_count_unchanged() {
+        let data = make_png(8, 8);
+        assert_eq!(frame_count(&data).unwrap(), 1);
+    }
+
+    #[test]
+    fn static_png_backward_compat() {
+        let data = make_png(8, 8);
+        // Static PNG decode() should still work exactly as before
+        let decoded = decode(&data).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Rgb8);
     }
 }
