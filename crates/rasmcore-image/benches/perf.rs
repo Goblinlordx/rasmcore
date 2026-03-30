@@ -15,6 +15,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use std::path::Path;
 
 use rasmcore_image::domain::types::*;
+use rasmcore_image::domain::filters::MertensParams;
 use rasmcore_image::domain::{decoder, encoder, filters, transform};
 
 // ─── Fixture Helpers ─────────────────────────────────────────────────────
@@ -561,6 +562,309 @@ fn filter_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── Enhancement Filter Benchmarks ──────────────────────────────────────
+
+fn enhancement_filter_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("enhancement");
+    group.sample_size(10); // these are expensive multi-pass algorithms
+
+    for &size in &[256u32, 512] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+
+        // Ensure RGB8 for filters
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Retinex SSR (sigma=80)
+        let px = pixels.clone();
+        let inf = info;
+        group.bench_function(BenchmarkId::new("retinex_ssr/rasmcore", size), |b| {
+            b.iter(|| filters::retinex_ssr(&px, &inf, 80.0).unwrap());
+        });
+
+        // Dehaze (patch_radius=7, omega=0.95, t_min=0.1)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("dehaze/rasmcore", size), |b| {
+            b.iter(|| filters::dehaze(&px, &inf, 7, 0.95, 0.1).unwrap());
+        });
+
+        // Clarity (amount=0.5, sigma=2.0)
+        let px = pixels.clone();
+        group.bench_function(BenchmarkId::new("clarity/rasmcore", size), |b| {
+            b.iter(|| filters::clarity(&px, &inf, 0.5, 2.0).unwrap());
+        });
+    }
+
+    // Mertens fusion at 256 only (very expensive, 3 input images)
+    {
+        let size = 256u32;
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        // Generate 3 "exposures" by adjusting brightness
+        let dark: Vec<u8> = pixels.iter().map(|&p| (p as f32 * 0.5) as u8).collect();
+        let bright: Vec<u8> = pixels
+            .iter()
+            .map(|&p| ((p as f32 * 1.5).min(255.0)) as u8)
+            .collect();
+
+        let images: Vec<&[u8]> = vec![dark.as_slice(), pixels.as_slice(), bright.as_slice()];
+        let params = MertensParams {
+            contrast_weight: 1.0,
+            saturation_weight: 1.0,
+            exposure_weight: 1.0,
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        group.bench_function(BenchmarkId::new("mertens_fusion/rasmcore", size), |b| {
+            b.iter(|| filters::mertens_fusion(&images, &info, &params).unwrap());
+        });
+    }
+
+    group.finish();
+}
+
+// ─── Geometric Warp Benchmarks ──────────────────────────────────────────
+
+fn geometric_warp_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("geometric");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        let (pixels, info) = if dec.info.format == PixelFormat::Rgba8 {
+            let rgb: Vec<u8> = dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            (
+                rgb,
+                ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..dec.info
+                },
+            )
+        } else {
+            (dec.pixels.clone(), dec.info)
+        };
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Perspective warp — moderate rotation (~10% corner shift)
+        // Homography matrix for a mild perspective transform
+        let shift = size as f64 * 0.1;
+        let s = size as f64;
+        // Simple perspective: map unit square corners with slight shift
+        // Using a pre-computed homography for corners shifted by ~10%
+        let matrix: [f64; 9] = {
+            // Source corners: (0,0), (s,0), (s,s), (0,s)
+            // Dest corners:   (shift,0), (s-shift,0), (s,s), (0,s)
+            // Approximate with a simple projective matrix
+            let sx = (s - 2.0 * shift) / s;
+            [sx, 0.0, shift, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        };
+
+        let px = pixels.clone();
+        let inf = info;
+        group.bench_function(BenchmarkId::new("perspective_warp/rasmcore", size), |b| {
+            b.iter(|| filters::perspective_warp(&px, &inf, &matrix, size, size).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            let args_str = format!(
+                "0,0,{shift},0  {s},0,{},0  {s},{s},{s},{s}  0,{s},0,{s}",
+                s - shift
+            );
+            group.bench_function(
+                BenchmarkId::new("perspective_warp/imagemagick", size),
+                |b| {
+                    b.iter(|| {
+                        ref_tools::magick_pipeline(
+                            &p,
+                            &["-distort", "Perspective", &args_str],
+                            "png",
+                            None,
+                        )
+                    });
+                },
+            );
+        }
+
+        // Displacement map — barrel distortion
+        let pixel_count = (size * size) as usize;
+        let cx = size as f32 / 2.0;
+        let cy = size as f32 / 2.0;
+        let k = 0.0001_f32; // mild barrel distortion coefficient
+        let mut map_x = vec![0.0_f32; pixel_count];
+        let mut map_y = vec![0.0_f32; pixel_count];
+        for y in 0..size {
+            for x in 0..size {
+                let dx = x as f32 - cx;
+                let dy = y as f32 - cy;
+                let r2 = dx * dx + dy * dy;
+                let factor = 1.0 + k * r2;
+                map_x[(y * size + x) as usize] = cx + dx * factor;
+                map_y[(y * size + x) as usize] = cy + dy * factor;
+            }
+        }
+
+        let px = pixels.clone();
+        group.bench_function(
+            BenchmarkId::new("displacement_map/rasmcore", size),
+            |b| {
+                b.iter(|| filters::displacement_map(&px, &inf, &map_x, &map_y).unwrap());
+            },
+        );
+
+        // Affine — 15-degree rotation around center
+        let angle_rad = 15.0_f64 * std::f64::consts::PI / 180.0;
+        let cos_a = angle_rad.cos();
+        let sin_a = angle_rad.sin();
+        let cx64 = size as f64 / 2.0;
+        let cy64 = size as f64 / 2.0;
+        // Affine: rotate around center = translate(-cx,-cy) * rotate * translate(cx,cy)
+        let tx = cx64 - cos_a * cx64 + sin_a * cy64;
+        let ty = cy64 - sin_a * cx64 - cos_a * cy64;
+        let affine_matrix: [f64; 6] = [cos_a, -sin_a, tx, sin_a, cos_a, ty];
+
+        let px = pixels.clone();
+        let bg = [0u8, 0, 0];
+        group.bench_function(BenchmarkId::new("affine/rasmcore", size), |b| {
+            b.iter(|| transform::affine(&px, &inf, &affine_matrix, size, size, &bg).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("affine/imagemagick", size), |b| {
+                b.iter(|| {
+                    ref_tools::magick_pipeline(
+                        &p,
+                        &["-distort", "SRT", "15"],
+                        "png",
+                        None,
+                    )
+                });
+            });
+        }
+    }
+
+    group.finish();
+}
+
+// ─── Transform Benchmarks ───────────────────────────────────────────────
+
+fn transform_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("transform");
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_data = std::fs::read(&png_path).unwrap();
+        let dec = decoder::decode(&png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Crop — center 50%
+        let crop_size = size / 2;
+        let crop_offset = size / 4;
+        group.bench_function(BenchmarkId::new("crop/rasmcore", size), |b| {
+            b.iter(|| {
+                transform::crop(&dec.pixels, &dec.info, crop_offset, crop_offset, crop_size, crop_size)
+                    .unwrap()
+            });
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            let geom = format!("{crop_size}x{crop_size}+{crop_offset}+{crop_offset}");
+            group.bench_function(BenchmarkId::new("crop/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-crop", &geom], "png", None));
+            });
+        }
+
+        // Rotate 90
+        group.bench_function(BenchmarkId::new("rotate_90/rasmcore", size), |b| {
+            b.iter(|| transform::rotate(&dec.pixels, &dec.info, Rotation::R90).unwrap());
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("rotate_90/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-rotate", "90"], "png", None));
+            });
+        }
+
+        // Flip horizontal
+        group.bench_function(BenchmarkId::new("flip_horizontal/rasmcore", size), |b| {
+            b.iter(|| {
+                transform::flip(&dec.pixels, &dec.info, FlipDirection::Horizontal).unwrap()
+            });
+        });
+
+        if ref_tools::has_tool("magick") {
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new("flip_horizontal/imagemagick", size), |b| {
+                b.iter(|| ref_tools::magick_pipeline(&p, &["-flop"], "png", None));
+            });
+        }
+
+        // Pad — add 10px border
+        let fill = [0u8, 0, 0];
+        group.bench_function(BenchmarkId::new("pad/rasmcore", size), |b| {
+            b.iter(|| transform::pad(&dec.pixels, &dec.info, 10, 10, 10, 10, &fill).unwrap());
+        });
+
+        // Trim
+        group.bench_function(BenchmarkId::new("trim/rasmcore", size), |b| {
+            b.iter(|| transform::trim(&dec.pixels, &dec.info, 10).unwrap());
+        });
+    }
+
+    group.finish();
+}
+
 // ─── Pipeline Benchmarks ─────────────────────────────────────────────────
 
 fn pipeline_benchmarks(c: &mut Criterion) {
@@ -899,6 +1203,9 @@ criterion_group!(
     decoder_benchmarks,
     encoder_benchmarks,
     filter_benchmarks,
+    enhancement_filter_benchmarks,
+    geometric_warp_benchmarks,
+    transform_benchmarks,
     pipeline_benchmarks,
     cli_decoder_benchmarks,
     cli_encoder_benchmarks
