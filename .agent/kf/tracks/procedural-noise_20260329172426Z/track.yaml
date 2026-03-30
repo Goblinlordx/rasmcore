@@ -3,13 +3,49 @@ title: Procedural Noise — Perlin and Simplex Generation
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-30'
 spec:
   summary: Deterministic noise generation with statistical validation.
-  context: ''
-  codebase_analysis: ''
-  acceptance_criteria: []
-  out_of_scope: ''
-  technical_notes: ''
-plan: []
+  context: |
+    Procedural noise is used for textures, displacement maps, terrain, and
+    creative effects. Perlin and Simplex are the two standard algorithms.
+    Both must be seeded for determinism and produce values in [0, 255] for Gray8.
+  codebase_analysis: |
+    No existing noise generation. NLM denoising exists but is unrelated.
+    Generator functions differ from filters: they produce output from parameters
+    only, with no input image. They take (width, height, seed, scale, octaves).
+  acceptance_criteria:
+    - Perlin noise generator producing Gray8 image from (width, height, seed, scale, octaves)
+    - Simplex noise generator producing Gray8 image from (width, height, seed, scale, octaves)
+    - Deterministic given same seed
+    - Output range uses full [0, 255] span
+    - Statistical validation (mean near 128, reasonable stddev)
+    - Registered with register_filter + ConfigParams
+  out_of_scope: 3D/4D noise, Worley/cellular noise, GPU acceleration
+  technical_notes: |
+    Perlin: improved Perlin noise (Perlin 2002) with permutation table from seed.
+    Simplex: OpenSimplex algorithm (public domain, avoids Perlin patent issues).
+    Both use octave layering (fBm) for natural-looking results.
+    Reference: Ken Perlin "Improving Noise" (SIGGRAPH 2002).
+plan:
+  - title: "Core noise algorithms"
+    tasks:
+      - title: Implement improved Perlin noise 2D with seeded permutation table
+        done: false
+      - title: Implement OpenSimplex noise 2D with seeded permutation table
+        done: false
+      - title: Implement fBm (fractional Brownian motion) octave layering
+        done: false
+  - title: "Filter registration and integration"
+    tasks:
+      - title: Create perlin_noise and simplex_noise generator functions with register_filter
+        done: false
+      - title: Add WIT declarations and adapter wiring
+        done: false
+  - title: "Testing"
+    tasks:
+      - title: Add determinism, statistical, and property tests
+        done: false
+      - title: Run cargo test and verify
+        done: false
 extra: {}
