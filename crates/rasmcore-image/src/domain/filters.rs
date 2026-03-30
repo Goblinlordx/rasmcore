@@ -992,11 +992,15 @@ pub struct SpinBlurParams {
     pub angle: f32,
 }
 
-/// Apply rotational (spin) blur around a center point.
+/// Apply rotational (spin) blur around image center.
 ///
-/// Samples along circular arcs at each pixel's radius from center.
-/// The blur amount increases with distance from center (like a spinning disc).
-/// IM equivalent: -radial-blur angle
+/// Matches ImageMagick's `-rotational-blur` algorithm exactly:
+/// - Global sample count based on angle and image diagonal
+/// - Uniform angular sweep for all pixels (same rotation range everywhere)
+/// - Position-vector rotation (not arc sampling)
+/// - Bilinear interpolation with edge clamp
+///
+/// center_x/center_y are normalized (0.5 = image center, matching IM default).
 #[rasmcore_macros::register_filter(name = "spin_blur", category = "spatial")]
 pub fn spin_blur(
     pixels: &[u8],
@@ -1022,45 +1026,42 @@ pub fn spin_blur(
     let ch = channels(info.format);
     let cx = center_x * w as f32;
     let cy = center_y * h as f32;
-    let max_angle_rad = angle.to_radians();
+    let angle_rad = (angle as f64).to_radians();
 
-    // Max radius (distance from center to farthest corner)
-    let max_radius = ((w as f32).powi(2) + (h as f32).powi(2)).sqrt();
+    // IM algorithm: global sample count = (2 * ceil(angle_rad * diagonal/2) + 2) | 1
+    let half_diag = ((w as f64 / 2.0).powi(2) + (h as f64 / 2.0).powi(2)).sqrt();
+    let mut n = (2.0 * (angle_rad * half_diag).ceil() + 2.0) as usize;
+    if n % 2 == 0 {
+        n += 1;
+    }
+    n = n.max(3);
 
+    // Precompute cos/sin table: rotation offsets centered around zero
+    let half_n = n / 2;
+    let mut cos_table = vec![0.0f64; n];
+    let mut sin_table = vec![0.0f64; n];
+    for i in 0..n {
+        let offset = angle_rad * (i as f64 - half_n as f64) / n as f64;
+        cos_table[i] = offset.cos();
+        sin_table[i] = offset.sin();
+    }
+
+    let inv_n = 1.0 / n as f64;
     let mut out = vec![0u8; w * h * ch];
 
     for py in 0..h {
         for px in 0..w {
-            let dx = px as f32 - cx;
-            let dy = py as f32 - cy;
-            let radius = (dx * dx + dy * dy).sqrt();
-            let base_theta = dy.atan2(dx);
+            let dx = px as f64 - cx as f64;
+            let dy = py as f64 - cy as f64;
 
-            if radius < 0.5 {
-                // At center: no blur
-                let src = (py * w + px) * ch;
-                out[src..src + ch].copy_from_slice(&pixels[src..src + ch]);
-                continue;
-            }
+            let mut accum = vec![0.0f64; ch];
 
-            // Angular range proportional to distance from center
-            let frac = (radius / max_radius).min(1.0);
-            let sweep = max_angle_rad * frac;
+            for j in 0..n {
+                // Rotate (dx, dy) by the j-th angle offset
+                let sx = cx as f64 + dx * cos_table[j] - dy * sin_table[j];
+                let sy = cy as f64 + dx * sin_table[j] + dy * cos_table[j];
 
-            // Adaptive sample count based on arc length
-            let arc_len = radius * sweep;
-            let n_samples = (arc_len.ceil() as usize).clamp(3, 100);
-            let d_theta = sweep / n_samples as f32;
-            let half_sweep = sweep / 2.0;
-
-            let mut accum = vec![0.0f32; ch];
-
-            for i in 0..n_samples {
-                let theta = base_theta - half_sweep + d_theta * i as f32;
-                let sx = cx + radius * theta.cos();
-                let sy = cy + radius * theta.sin();
-
-                // Bilinear sample with clamp
+                // Bilinear interpolation with edge clamp
                 let fx = sx.floor();
                 let fy = sy.floor();
                 let frac_x = sx - fx;
@@ -1081,15 +1082,14 @@ pub fn spin_blur(
                 let i11 = (y1 * w + x1) * ch;
 
                 for c in 0..ch {
-                    accum[c] += pixels[i00 + c] as f32 * w00
-                        + pixels[i10 + c] as f32 * w10
-                        + pixels[i01 + c] as f32 * w01
-                        + pixels[i11 + c] as f32 * w11;
+                    accum[c] += pixels[i00 + c] as f64 * w00
+                        + pixels[i10 + c] as f64 * w10
+                        + pixels[i01 + c] as f64 * w01
+                        + pixels[i11 + c] as f64 * w11;
                 }
             }
 
             let dst = (py * w + px) * ch;
-            let inv_n = 1.0 / n_samples as f32;
             for c in 0..ch {
                 out[dst + c] = (accum[c] * inv_n + 0.5).clamp(0.0, 255.0) as u8;
             }
@@ -14126,12 +14126,21 @@ pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u
             let (sx_my, sy_my) = distort(xf, yf - h_step);
             let inv_2h = 1.0 / (2.0 * h_step);
             let j: super::ewa::Jacobian = [
-                [((sx_px - sx_mx) * inv_2h) as f32, ((sx_py - sx_my) * inv_2h) as f32],
-                [((sy_px - sy_mx) * inv_2h) as f32, ((sy_py - sy_my) * inv_2h) as f32],
+                [
+                    ((sx_px - sx_mx) * inv_2h) as f32,
+                    ((sx_py - sx_my) * inv_2h) as f32,
+                ],
+                [
+                    ((sy_px - sy_mx) * inv_2h) as f32,
+                    ((sy_py - sy_my) * inv_2h) as f32,
+                ],
             ];
             let off = (y * w + x) * ch;
             for c in 0..ch {
-                out[off + c] = sampler.sample_clamp(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
+                out[off + c] = sampler
+                    .sample_clamp(sx, sy, &j, c)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
             }
         }
     }
@@ -14652,7 +14661,11 @@ mod distortion_effect_tests {
         let info = rgb_info(w, h);
         let result = barrel(&pixels, &info, 0.5, 0.1).unwrap();
         let off = (cy * w as usize + cx) * 3;
-        assert!(result[off] > 100, "barrel center R should be > 100, got {}", result[off]);
+        assert!(
+            result[off] > 100,
+            "barrel center R should be > 100, got {}",
+            result[off]
+        );
         assert_eq!(result[off + 1], 100);
         assert_eq!(result[off + 2], 50);
     }
@@ -15597,7 +15610,13 @@ mod kuwahara_rank_tests {
 ///
 /// The `cube_data` parameter is the full text content of the .cube file.
 /// The LUT is parsed and applied via tetrahedral interpolation.
-#[rasmcore_macros::register_filter(name = "apply_cube_lut", category = "grading", group = "lut_import", variant = "cube", reference = "Adobe/Resolve .cube 3D LUT format")]
+#[rasmcore_macros::register_filter(
+    name = "apply_cube_lut",
+    category = "grading",
+    group = "lut_import",
+    variant = "cube",
+    reference = "Adobe/Resolve .cube 3D LUT format"
+)]
 pub fn apply_cube_lut(
     pixels: &[u8],
     info: &ImageInfo,
@@ -15611,7 +15630,13 @@ pub fn apply_cube_lut(
 ///
 /// The `hald_pixels` parameter is the raw RGB8 pixel data of the HALD image,
 /// and `hald_dim` is its width/height (must be square, dimension = level²).
-#[rasmcore_macros::register_filter(name = "apply_hald_lut", category = "grading", group = "lut_import", variant = "hald", reference = "ImageMagick HALD CLUT format")]
+#[rasmcore_macros::register_filter(
+    name = "apply_hald_lut",
+    category = "grading",
+    group = "lut_import",
+    variant = "hald",
+    reference = "ImageMagick HALD CLUT format"
+)]
 pub fn apply_hald_lut(
     pixels: &[u8],
     info: &ImageInfo,

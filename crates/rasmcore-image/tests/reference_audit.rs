@@ -1436,9 +1436,7 @@ fn gegl_op(
     for (k, v) in params {
         cmd.arg(format!("{k}={v}"));
     }
-    cmd.output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    cmd.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 #[test]
@@ -1771,17 +1769,18 @@ fn close_photo_filter_warm() {
 }
 
 #[test]
-fn algorithm_spin_blur() {
+fn close_spin_blur() {
+    // IM 7 renamed -radial-blur to -rotational-blur
     if let Some(error) = check_parity_rgb(
         64,
         64,
         |px, info| rasmcore_image::domain::filters::spin_blur(px, info, 0.5, 0.5, 10.0).unwrap(),
-        &["-radial-blur", "10"],
+        &["-rotational-blur", "10"],
         "spin_blur 10deg",
     ) {
         assert!(
-            error < 15.0,
-            "ALGORITHM: spin_blur MAE should be < 15.0, got {error:.4}"
+            error < 2.0,
+            "CLOSE: spin_blur MAE should be < 2.0, got {error:.4}"
         );
     }
 }
