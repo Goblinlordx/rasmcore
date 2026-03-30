@@ -2067,6 +2067,61 @@ fn pro_filter_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── Shrink-on-Load Benchmarks ──────────────────────────────────────────
+
+fn shrink_on_load_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("shrink_on_load");
+
+    let size = 1024u32;
+    let png_path = ensure_input("png", size);
+    let png_data = std::fs::read(&png_path).unwrap();
+    let dec = decoder::decode(&png_data).unwrap();
+
+    let jpeg_data = encoder::encode(&dec.pixels, &dec.info, "jpeg", Some(90)).unwrap();
+    let target = size / 4; // 256x256
+
+    group.throughput(Throughput::Elements((size * size) as u64));
+
+    group.bench_function(BenchmarkId::new("full_decode_resize", size), |b| {
+        b.iter(|| {
+            let full = decoder::decode(&jpeg_data).unwrap();
+            transform::resize(&full.pixels, &full.info, target, target, ResizeFilter::Lanczos3)
+                .unwrap()
+        });
+    });
+
+    group.bench_function(BenchmarkId::new("smart_resize", size), |b| {
+        b.iter(|| decoder::smart_resize(&jpeg_data, target, target).unwrap());
+    });
+
+    for &scale in &[2u8, 4, 8] {
+        let label = format!("decode_scale_{scale}x");
+        let jd = jpeg_data.clone();
+        group.bench_function(BenchmarkId::new(&label, size), |b| {
+            b.iter(|| rasmcore_jpeg::decode_with_scale(&jd, scale).unwrap());
+        });
+    }
+
+    if ref_tools::has_tool("magick") {
+        let tmp_jpeg = std::env::temp_dir().join("rasmcore_bench_sol.jpeg");
+        std::fs::write(&tmp_jpeg, &jpeg_data).unwrap();
+        let p = tmp_jpeg.to_str().unwrap().to_string();
+        let sz = format!("{target}x{target}!");
+        group.bench_function(BenchmarkId::new("imagemagick_resize", size), |b| {
+            b.iter(|| {
+                ref_tools::magick_pipeline(
+                    &p,
+                    &["-define", "jpeg:size=512x512", "-resize", &sz],
+                    "png",
+                    None,
+                )
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     decoder_benchmarks,
@@ -2082,6 +2137,7 @@ criterion_group!(
     threshold_benchmarks,
     alpha_blend_benchmarks,
     pipeline_benchmarks,
+    shrink_on_load_benchmarks,
     cli_decoder_benchmarks,
     cli_encoder_benchmarks,
     pro_filter_benchmarks
