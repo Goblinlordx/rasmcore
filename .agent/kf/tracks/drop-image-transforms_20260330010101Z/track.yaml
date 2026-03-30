@@ -1,0 +1,67 @@
+id: drop-image-transforms_20260330010101Z
+title: "Replace image::DynamicImage in transform.rs with raw buffer ops"
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Rewrite crop, rotate, flip, and format conversion in transform.rs to
+    operate on raw pixel buffers, eliminating the DynamicImage dependency.
+  context: |
+    transform.rs uses image::DynamicImage for crop, rotate90/180/270, fliph,
+    flipv, and format conversion (to_rgb8, to_rgba8, etc.). All other domain
+    code (filters.rs) already works on raw buffers. This is the last major
+    use of DynamicImage outside of the encoder path.
+  codebase_analysis: |
+    Functions using DynamicImage in transform.rs:
+      - crop: img.crop_imm(x, y, w, h)
+      - rotate: img.rotate90/180/270()
+      - flip: img.fliph/flipv()
+      - convert_format: img.to_rgb8/rgba8/luma8/etc.
+
+    All of these are straightforward raw buffer operations:
+      - crop: memcpy row slices
+      - rotate90: transpose + flip
+      - rotate180: reverse entire buffer
+      - flip_h: reverse each row
+      - flip_v: swap row pairs
+      - convert_format: channel add/drop/reorder
+
+    Resize already uses fast_image_resize (no DynamicImage).
+    rotate_arbitrary already uses raw buffer math.
+  acceptance_criteria:
+    - crop, rotate, flip operate on raw &[u8] + ImageInfo
+    - No image::DynamicImage usage in transform.rs
+    - All transform parity tests pass
+    - Performance equivalent or better (no extra allocations from DynamicImage conversion)
+  out_of_scope: |
+    Resize (already uses fast_image_resize).
+    rotate_arbitrary (already raw buffer).
+  technical_notes: |
+    These are simple buffer operations. Follow the pattern from filters.rs:
+    take &[u8] + &ImageInfo, return Vec<u8> or (Vec<u8>, ImageInfo).
+plan:
+  - phase: "Raw buffer transforms"
+    tasks:
+      - text: "Rewrite crop to operate on raw pixel slices (row-by-row memcpy)"
+        done: false
+      - text: "Rewrite rotate90/180/270 on raw buffers"
+        done: false
+      - text: "Rewrite fliph/flipv on raw buffers"
+        done: false
+      - text: "Rewrite convert_format without DynamicImage"
+        done: false
+  - phase: "Remove DynamicImage"
+    tasks:
+      - text: "Remove image::DynamicImage import from transform.rs"
+        done: false
+      - text: "Remove pixels_to_dynamic_image calls from transform path"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All transform parity tests pass"
+        done: false
+      - text: "Benchmark crop/rotate/flip -- no performance regression"
+        done: false
+extra: {}

@@ -1,0 +1,9 @@
+title: Drop remaining image features — native WebP decode, ICO, HDR, EXR, DDS
+status: pending
+type: refactor
+approved: false
+created: '2026-03-30'
+updated: '2026-03-30'
+deps:
+- drop-image-trivial-codecs_20260330010100Z
+- drop-image-transforms_20260330010101Z

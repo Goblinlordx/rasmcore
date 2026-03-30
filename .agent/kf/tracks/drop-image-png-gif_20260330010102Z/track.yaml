@@ -1,0 +1,83 @@
+id: drop-image-png-gif_20260330010102Z
+title: "Drop remaining image features \u2014 native WebP decode, ICO, HDR, EXR, DDS"
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Replace the remaining image crate usages: WebP decode (use image-webp
+    directly), ICO/HDR encode (write native), EXR (use exr crate directly),
+    DDS decode (native). Eliminate image crate dependency entirely.
+  context: |
+    After the first track drops jpeg/png/gif/avif/bmp/qoi/tga/pnm/tiff from
+    image features, only webp/dds/exr/ico/hdr remain. This track eliminates
+    those and removes the image crate from Cargo.toml entirely.
+  codebase_analysis: |
+    Remaining image-dependent codecs after Track 1:
+      - WebP decode: uses image-webp internally. image-webp is a standalone
+        crate (3 deps) that can be used directly.
+      - ICO encode: trivial BMP-in-container format. ~50 lines to write native.
+      - HDR encode: Radiance RGBE format. Simple header + pixel encoding.
+      - EXR encode/decode: uses exr crate internally. Can use directly.
+      - DDS decode: uses image DDS decoder. Custom encoder already exists.
+
+    Also need to replace:
+      - image::guess_format() -- write custom magic-byte detection
+      - pixels_to_dynamic_image() helper -- remove entirely
+      - image::DynamicImage in remaining encoder paths
+
+    This track depends on the transform rewrite (Track 2) completing first,
+    since transform.rs is the other major DynamicImage user.
+  acceptance_criteria:
+    - image crate completely removed from Cargo.toml
+    - WebP decode uses image-webp crate directly
+    - ICO encode is native (no image crate)
+    - HDR encode is native (no image crate)
+    - EXR encode/decode uses exr crate directly
+    - DDS decode is native
+    - Custom format detection replaces image::guess_format()
+    - All parity tests pass
+    - Significant binary size reduction measurable
+  out_of_scope: |
+    AVIF encode (already dropped in Track 1).
+    Writing native WebP decoder (image-webp as standalone dep is fine).
+  technical_notes: |
+    image-webp can be added as a direct dependency. It is the same crate
+    image uses internally, just without the DynamicImage wrapper.
+
+    Format detection: check magic bytes in order (JPEG FFD8, PNG 89504E47,
+    GIF GIF8, WebP RIFF/WEBP, BMP BM, TIFF 4949/4D4D, QOI qoif, etc.).
+    This is ~30 lines of code.
+plan:
+  - phase: "Direct crate replacements"
+    tasks:
+      - text: "Add image-webp as direct dependency, wire WebP decode without image crate"
+        done: false
+      - text: "Use exr crate directly for EXR encode/decode"
+        done: false
+      - text: "Write native DDS decoder (replace image DDS path)"
+        done: false
+  - phase: "Native trivial encoders"
+    tasks:
+      - text: "Write native ICO encoder (~50 lines, BMP-in-container)"
+        done: false
+      - text: "Write native HDR/Radiance encoder (RGBE format)"
+        done: false
+  - phase: "Remove image crate"
+    tasks:
+      - text: "Write custom format detection to replace image::guess_format()"
+        done: false
+      - text: "Remove pixels_to_dynamic_image() helper"
+        done: false
+      - text: "Remove image from Cargo.toml entirely"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All decode/encode parity tests pass"
+        done: false
+      - text: "Measure binary size reduction (native + WASM)"
+        done: false
+      - text: "cargo tree shows image crate fully eliminated"
+        done: false
+extra: {}

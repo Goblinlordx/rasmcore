@@ -52,3 +52,11 @@ kf-metadata-styleguide_20260329230501Z: []
 # Zero-warnings — depends on WASM build fix (can't clippy-clean broken crate)
 zero-warnings-lint-gate_20260329230502Z:
   - wasm-api-sync_20260329230500Z
+
+# Image crate elimination chain
+drop-image-trivial-codecs_20260330010100Z: []
+drop-image-transforms_20260330010101Z:
+  - drop-image-trivial-codecs_20260330010100Z
+drop-image-png-gif_20260330010102Z:
+  - drop-image-trivial-codecs_20260330010100Z
+  - drop-image-transforms_20260330010101Z

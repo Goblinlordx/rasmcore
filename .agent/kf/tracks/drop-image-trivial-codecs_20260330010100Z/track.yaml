@@ -1,0 +1,132 @@
+id: drop-image-trivial-codecs_20260330010100Z
+title: "Drop image crate features for all codecs with native replacements"
+type: refactor
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Enable all native codec features by default, wire rasmcore-jpeg decode,
+    use tiff/png/gif crates directly where possible, and strip the image
+    features list to the bare minimum. Maximize crate count reduction now.
+  context: |
+    The image crate pulls 90 transitive dependencies including rav1e (50
+    crates for AVIF encode that fails at runtime). We have native replacements
+    for most codecs. This track drops every image feature we can replace today.
+  codebase_analysis: |
+    Native replacements ready NOW:
+      - BMP: rasmcore-bmp (behind native-bmp flag)
+      - QOI: rasmcore-qoi (behind native-qoi flag)
+      - TGA: rasmcore-tga (behind native-tga flag)
+      - PNM: rasmcore-pnm (behind native-pnm flag)
+      - JPEG encode: rasmcore-jpeg (always on)
+      - JPEG decode: rasmcore-jpeg has decoder, just not wired as default
+      - TIFF: tiff crate used directly (not through image)
+      - WebP encode: rasmcore-webp (always on)
+
+    Can bypass image wrapper with direct crate usage:
+      - PNG: use png crate directly (image uses it internally anyway)
+      - GIF: use gif crate directly (image uses it internally)
+
+    AVIF encode uses ravif/rav1e (50 crates) but fails at runtime.
+    Drop it entirely.
+
+    Remaining image usages after this track:
+      - WebP DECODE: image-webp sub-crate (lightweight, ~3 deps). Keep for now.
+      - DDS decode: image crate. Keep for now.
+      - EXR decode/encode: exr crate (7 deps). Could use directly.
+      - ICO encode: simple format, could write native.
+      - HDR encode: simple format, could write native.
+      - image::DynamicImage in transform.rs: needs raw buffer rewrite.
+      - image::guess_format(): need custom format detection.
+      - pixels_to_dynamic_image() helper: used by remaining image-dependent encoders.
+
+    After this track, the image features list should be minimal:
+      webp (for decode), dds, exr, ico, hdr
+  acceptance_criteria:
+    - native-trivial included in default features
+    - rasmcore-jpeg wired as default JPEG decoder
+    - PNG encode uses png crate directly (not image::codecs::png)
+    - PNG decode uses png crate directly (not image::load_from_memory)
+    - GIF encode/decode uses gif crate directly
+    - Drop features from image: jpeg, bmp, qoi, tga, pnm, tiff, avif, png, gif
+    - AVIF encode removed (ravif/rav1e eliminated)
+    - All parity and domain tests still pass
+    - cargo tree shows significant crate count reduction
+    - WASM build still succeeds
+  out_of_scope: |
+    Replacing image for: WebP decode, DDS, EXR, ICO, HDR.
+    Removing image::DynamicImage from transform.rs (separate track).
+    Removing image crate entirely (needs transform rewrite first).
+  technical_notes: |
+    Order of operations:
+    1. Enable native-trivial by default (BMP/QOI/TGA/PNM)
+    2. Wire rasmcore-jpeg decode in decoder dispatch
+    3. Replace PNG encode: use png crate PngEncoder directly on raw buffers
+    4. Replace PNG decode: use png crate Decoder directly
+    5. Replace GIF encode/decode: use gif crate directly
+    6. Drop avif feature (removes ravif + rav1e, 50 crates)
+    7. Drop tiff feature (already using tiff crate directly)
+    8. Update image features list to: webp, dds, exr, ico, hdr
+    9. Update pixels_to_dynamic_image to only handle remaining formats
+    10. Run full test suite
+
+    For PNG, the image crate internally uses the png crate. We can use
+    png::Decoder and png::Encoder directly. The encoder/png.rs already
+    wraps image::codecs::png::PngEncoder -- replace with direct png crate.
+
+    For GIF, image uses the gif crate internally. Use gif::DecodeOptions
+    and gif::Encoder directly.
+
+    For AVIF, just remove the encode path and return UnsupportedFormat.
+    AVIF decode also fails at runtime, so remove that too.
+plan:
+  - phase: "Native trivial codecs"
+    tasks:
+      - text: "Add native-trivial to default features in Cargo.toml"
+        done: false
+      - text: "Verify BMP/QOI/TGA/PNM decode+encode via native path"
+        done: false
+  - phase: "JPEG decode native"
+    tasks:
+      - text: "Wire rasmcore-jpeg decoder in decoder/mod.rs (JPEG SOI check)"
+        done: false
+      - text: "Drop jpeg from image features"
+        done: false
+      - text: "Verify JPEG decode parity tests pass"
+        done: false
+  - phase: "PNG direct crate usage"
+    tasks:
+      - text: "Rewrite encoder/png.rs to use png crate Encoder directly (no DynamicImage)"
+        done: false
+      - text: "Add png decode path in decoder/mod.rs using png crate Decoder directly"
+        done: false
+      - text: "Drop png from image features"
+        done: false
+      - text: "Verify PNG encode/decode parity tests pass"
+        done: false
+  - phase: "GIF direct crate usage"
+    tasks:
+      - text: "Rewrite encoder/gif.rs to use gif crate Encoder directly"
+        done: false
+      - text: "Add GIF decode path in decoder/mod.rs using gif crate directly"
+        done: false
+      - text: "Drop gif from image features"
+        done: false
+  - phase: "Drop AVIF and TIFF from image"
+    tasks:
+      - text: "Remove AVIF encode path (return UnsupportedFormat) and drop avif feature"
+        done: false
+      - text: "Drop tiff from image features (already using tiff crate directly)"
+        done: false
+  - phase: "Cleanup and verification"
+    tasks:
+      - text: "Update image features to only: webp, dds, exr, ico, hdr"
+        done: false
+      - text: "Trim pixels_to_dynamic_image to only handle remaining image-dependent formats"
+        done: false
+      - text: "Run cargo tree and count crate reduction"
+        done: false
+      - text: "Run full test suite -- parity, domain, and WASM build"
+        done: false
+extra: {}
