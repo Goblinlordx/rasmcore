@@ -168,7 +168,7 @@ pub fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Result<Vec
                 result[base + 1] = lut[pixels[base + 1] as usize];
                 result[base + 2] = lut[pixels[base + 2] as usize];
                 result[base + 3] = pixels[base + 3]; // alpha
-                // Pixel 1
+                                                     // Pixel 1
                 result[base + 4] = lut[pixels[base + 4] as usize];
                 result[base + 5] = lut[pixels[base + 5] as usize];
                 result[base + 6] = lut[pixels[base + 6] as usize];

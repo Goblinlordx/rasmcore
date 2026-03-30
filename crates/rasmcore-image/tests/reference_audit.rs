@@ -63,13 +63,12 @@ fn read_png_rgb(path: &std::path::Path) -> Vec<u8> {
         }
         PixelFormat::Gray8 => {
             // Expand to RGB
-            decoded
-                .pixels
-                .iter()
-                .flat_map(|&g| [g, g, g])
-                .collect()
+            decoded.pixels.iter().flat_map(|&g| [g, g, g]).collect()
         }
-        _ => panic!("unsupported format for read_png_rgb: {:?}", decoded.info.format),
+        _ => panic!(
+            "unsupported format for read_png_rgb: {:?}",
+            decoded.info.format
+        ),
     }
 }
 
@@ -86,7 +85,10 @@ fn read_png_rgba(path: &std::path::Path) -> Vec<u8> {
                 .flat_map(|c| [c[0], c[1], c[2], 255])
                 .collect()
         }
-        _ => panic!("unsupported format for read_png_rgba: {:?}", decoded.info.format),
+        _ => panic!(
+            "unsupported format for read_png_rgba: {:?}",
+            decoded.info.format
+        ),
     }
 }
 
@@ -106,16 +108,15 @@ fn read_png_gray(path: &std::path::Path) -> Vec<u8> {
                 })
                 .collect()
         }
-        PixelFormat::Rgba8 => {
-            decoded
-                .pixels
-                .chunks_exact(4)
-                .map(|c| {
-                    ((c[0] as u32 * 77 + c[1] as u32 * 150 + c[2] as u32 * 29 + 128) >> 8) as u8
-                })
-                .collect()
-        }
-        _ => panic!("unsupported format for read_png_gray: {:?}", decoded.info.format),
+        PixelFormat::Rgba8 => decoded
+            .pixels
+            .chunks_exact(4)
+            .map(|c| ((c[0] as u32 * 77 + c[1] as u32 * 150 + c[2] as u32 * 29 + 128) >> 8) as u8)
+            .collect(),
+        _ => panic!(
+            "unsupported format for read_png_gray: {:?}",
+            decoded.info.format
+        ),
     }
 }
 
@@ -523,8 +524,7 @@ fn algorithm_rotate_arbitrary() {
                     let oi = ((our_oy + y) * ow * 3 + (our_ox + x) * 3 + c) as usize;
                     let mi = ((mag_oy + y) * mw * 3 + (mag_ox + x) * 3 + c) as usize;
                     if oi < our_result.pixels.len() && mi < magick_rgb.len() {
-                        total_diff +=
-                            (our_result.pixels[oi] as f64 - magick_rgb[mi] as f64).abs();
+                        total_diff += (our_result.pixels[oi] as f64 - magick_rgb[mi] as f64).abs();
                         count += 1;
                     }
                 }
@@ -578,7 +578,7 @@ fn algorithm_trim() {
     // Create image with 8px uniform border
     let (w, h) = (48u32, 48u32);
     let mut pixels = vec![200u8; (w * h * 3) as usize]; // uniform border color
-    // Fill center 32x32 with gradient
+                                                        // Fill center 32x32 with gradient
     for y in 8..40 {
         for x in 8..40 {
             let idx = ((y * w + x) * 3) as usize;
@@ -732,7 +732,7 @@ fn magick_fx_per_channel(
 fn deterministic_asc_cdl_sop() {
     // ASC-CDL: out = clamp01((in * slope + offset) ^ power)
     // slope=[1.5, 0.8, 1.2], offset=[0.1, -0.05, 0.0], power=[1.2, 0.9, 1.5]
-    use rasmcore_image::domain::color_grading::{AscCdl, asc_cdl};
+    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
 
     if !magick_available() {
         eprintln!("SKIP asc_cdl: magick not available");
@@ -779,7 +779,7 @@ fn deterministic_asc_cdl_sop() {
 #[test]
 fn deterministic_asc_cdl_per_channel() {
     // Test with very different values per channel to ensure independence
-    use rasmcore_image::domain::color_grading::{AscCdl, asc_cdl};
+    use rasmcore_image::domain::color_grading::{asc_cdl, AscCdl};
 
     if !magick_available() {
         eprintln!("SKIP asc_cdl_per_channel: magick not available");
@@ -825,7 +825,7 @@ fn deterministic_asc_cdl_per_channel() {
 #[test]
 fn deterministic_lift_gamma_gain() {
     // Lift/Gamma/Gain: out = gain * (in + lift*(1-in))^(1/gamma)
-    use rasmcore_image::domain::color_grading::{LiftGammaGain, lift_gamma_gain};
+    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
 
     if !magick_available() {
         eprintln!("SKIP lift_gamma_gain: magick not available");
@@ -871,7 +871,7 @@ fn deterministic_lift_gamma_gain() {
 #[test]
 fn deterministic_lift_gamma_gain_per_channel() {
     // Test per-channel independence: red lift, green gamma, blue gain
-    use rasmcore_image::domain::color_grading::{LiftGammaGain, lift_gamma_gain};
+    use rasmcore_image::domain::color_grading::{lift_gamma_gain, LiftGammaGain};
 
     if !magick_available() {
         eprintln!("SKIP lgg_per_channel: magick not available");
@@ -990,7 +990,7 @@ fn deterministic_curves_lut() {
 fn exact_split_toning() {
     // Split toning: validate against ImageMagick -fx using the exact same formula.
     // Each channel processed independently from the original image.
-    use rasmcore_image::domain::color_grading::{SplitToning, split_toning};
+    use rasmcore_image::domain::color_grading::{split_toning, SplitToning};
 
     if !magick_available() {
         eprintln!("SKIP split_toning: magick not available");

@@ -131,9 +131,7 @@ fn benchmark_artistic_filters() {
     bench("Solarize t=128", || {
         filters::solarize(&pixels, &info, 128).unwrap()
     });
-    bench("Emboss", || {
-        filters::emboss(&pixels, &info).unwrap()
-    });
+    bench("Emboss", || filters::emboss(&pixels, &info).unwrap());
     bench("Oil paint r=3", || {
         filters::oil_paint(&pixels, &info, 3).unwrap()
     });
