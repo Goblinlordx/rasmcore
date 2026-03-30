@@ -8,6 +8,10 @@ pub struct JpegEncodeConfig {
     pub quality: u8,
     /// Emit progressive JPEG (default: false).
     pub progressive: bool,
+    /// Turbo mode: skip trellis quantization, Huffman optimization, and EOB
+    /// optimization for 3-10x faster encoding. Produces libjpeg-equivalent
+    /// output instead of mozjpeg-quality output. Default: false.
+    pub turbo: bool,
 }
 
 impl Default for JpegEncodeConfig {
@@ -15,6 +19,7 @@ impl Default for JpegEncodeConfig {
         Self {
             quality: 85,
             progressive: false,
+            turbo: false,
         }
     }
 }
@@ -41,10 +46,17 @@ pub fn encode_pixels(
 ) -> Result<Vec<u8>, ImageError> {
     let jpeg_format = to_jpeg_format(info.format)?;
 
-    let jpeg_config = rasmcore_jpeg::EncodeConfig {
-        quality: config.quality,
-        progressive: config.progressive,
-        ..Default::default()
+    let jpeg_config = if config.turbo {
+        rasmcore_jpeg::EncodeConfig {
+            progressive: config.progressive,
+            ..rasmcore_jpeg::EncodeConfig::turbo(config.quality)
+        }
+    } else {
+        rasmcore_jpeg::EncodeConfig {
+            quality: config.quality,
+            progressive: config.progressive,
+            ..Default::default()
+        }
     };
 
     rasmcore_jpeg::encode(pixels, info.width, info.height, jpeg_format, &jpeg_config)
@@ -200,7 +212,7 @@ mod tests {
             &info,
             &JpegEncodeConfig {
                 quality: 50,
-                progressive: false,
+                ..Default::default()
             },
         );
         assert!(result.is_ok());

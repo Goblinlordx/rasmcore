@@ -805,10 +805,14 @@ fn cli_encoder_benchmarks(c: &mut Criterion) {
         group.throughput(Throughput::Elements((size * size) as u64));
 
         // Lossy codecs with quality sweep
-        for &(codec, qualities) in &[
-            ("jpeg", &[75u8, 85, 95] as &[u8]),
-            ("webp", &[75u8, 85, 95]),
-        ] {
+        // Lossy codecs: (display_name, encode_format, qualities)
+        let lossy_codecs: &[(&str, &str, &[u8])] = &[
+            ("jpeg-quality", "jpeg", &[75, 85, 95]),
+            ("jpeg-turbo", "jpeg-turbo", &[75, 85, 95]),
+            ("webp", "webp", &[75, 85, 95]),
+        ];
+
+        for &(display, enc_fmt, qualities) in lossy_codecs {
             for &quality in qualities {
                 let label = format!("{size}/q{quality}");
                 let q_str = quality.to_string();
@@ -816,30 +820,40 @@ fn cli_encoder_benchmarks(c: &mut Criterion) {
                 // rasmcore CLI
                 let bin = rasmcore_bin.to_string();
                 let p = png_path_str.clone();
-                group.bench_function(BenchmarkId::new(format!("{codec}/rasmcore"), &label), |b| {
-                    b.iter(|| {
-                        let out = std::process::Command::new(&bin)
-                            .args(["encode", &p, codec, &q_str])
-                            .stdout(std::process::Stdio::null())
-                            .output()
-                            .unwrap();
-                        assert!(out.status.success());
-                    });
-                });
+                let fmt = enc_fmt.to_string();
+                group.bench_function(
+                    BenchmarkId::new(format!("{display}/rasmcore"), &label),
+                    |b| {
+                        b.iter(|| {
+                            let out = std::process::Command::new(&bin)
+                                .args(["encode", &p, &fmt, &q_str])
+                                .stdout(std::process::Stdio::null())
+                                .output()
+                                .unwrap();
+                            assert!(out.status.success());
+                        });
+                    },
+                );
 
-                // ImageMagick
-                if ref_tools::has_tool("magick") {
+                // ImageMagick (same reference for both jpeg modes)
+                if (display == "jpeg-quality" || display == "webp") && ref_tools::has_tool("magick")
+                {
+                    let magick_fmt = if display.starts_with("jpeg") {
+                        "jpeg"
+                    } else {
+                        enc_fmt
+                    };
                     let p = png_path_str.clone();
                     group.bench_function(
-                        BenchmarkId::new(format!("{codec}/imagemagick"), &label),
+                        BenchmarkId::new(format!("{display}/imagemagick"), &label),
                         |b| {
-                            b.iter(|| ref_tools::magick_encode(&p, codec, Some(quality)));
+                            b.iter(|| ref_tools::magick_encode(&p, magick_fmt, Some(quality)));
                         },
                     );
                 }
 
                 // cwebp for WebP
-                if codec == "webp" && ref_tools::has_tool("cwebp") {
+                if display == "webp" && ref_tools::has_tool("cwebp") {
                     let p = png_path_str.clone();
                     group.bench_function(BenchmarkId::new("webp/cwebp", &label), |b| {
                         b.iter(|| ref_tools::cwebp_encode(&p, quality));

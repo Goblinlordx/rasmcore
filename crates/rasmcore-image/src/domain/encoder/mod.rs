@@ -59,6 +59,15 @@ pub fn encode(
             let config = jpeg::JpegEncodeConfig {
                 quality: quality.unwrap_or(85),
                 progressive: false,
+                turbo: false,
+            };
+            jpeg::encode_pixels(pixels, info, &config)
+        }
+        "jpeg-turbo" => {
+            let config = jpeg::JpegEncodeConfig {
+                quality: quality.unwrap_or(85),
+                progressive: false,
+                turbo: true,
             };
             jpeg::encode_pixels(pixels, info, &config)
         }
