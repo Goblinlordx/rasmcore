@@ -717,6 +717,279 @@ impl filters::Guest for Component {
         let di = to_domain_image_info(&info);
         domain::filters::perspective_correct(&pixels, &di, strength).map_err(to_wit_error)
     }
+
+    // ─── Edge Detection ──────────────────────────────────────────────────
+
+    fn scharr(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::scharr(&pixels, &di).map_err(to_wit_error)
+    }
+
+    fn laplacian(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::laplacian(&pixels, &di).map_err(to_wit_error)
+    }
+
+    // ─── Enhancement ─────────────────────────────────────────────────────
+
+    fn clahe(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        clip_limit: f32,
+        tile_grid: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::clahe(&pixels, &di, clip_limit, tile_grid).map_err(to_wit_error)
+    }
+
+    fn dehaze(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        patch_radius: u32,
+        omega: f32,
+        t_min: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::dehaze(&pixels, &di, patch_radius, omega, t_min).map_err(to_wit_error)
+    }
+
+    fn clarity(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        amount: f32,
+        sigma: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::clarity(&pixels, &di, amount, sigma).map_err(to_wit_error)
+    }
+
+    fn pyramid_detail_remap(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma: f32,
+        num_levels: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::pyramid_detail_remap(&pixels, &di, sigma, num_levels).map_err(to_wit_error)
+    }
+
+    fn retinex_ssr(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::retinex_ssr(&pixels, &di, sigma).map_err(to_wit_error)
+    }
+
+    fn retinex_msr(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma_small: f32,
+        sigma_medium: f32,
+        sigma_large: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::retinex_msr(&pixels, &di, &[sigma_small, sigma_medium, sigma_large])
+            .map_err(to_wit_error)
+    }
+
+    fn retinex_msrcr(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma_small: f32,
+        sigma_medium: f32,
+        sigma_large: f32,
+        alpha: f32,
+        beta: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::retinex_msrcr(
+            &pixels,
+            &di,
+            &[sigma_small, sigma_medium, sigma_large],
+            alpha,
+            beta,
+        )
+        .map_err(to_wit_error)
+    }
+
+    fn nlm_denoise(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        h: f32,
+        patch_size: u32,
+        search_size: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::nlm_denoise(
+            &pixels,
+            &di,
+            &domain::filters::NlmParams {
+                h,
+                patch_size,
+                search_size,
+                algorithm: domain::filters::NlmAlgorithm::OpenCv,
+            },
+        )
+        .map_err(to_wit_error)
+    }
+
+    // ─── Spatial Filters ─────────────────────────────────────────────────
+
+    fn bilateral(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        diameter: u32,
+        sigma_color: f32,
+        sigma_space: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::bilateral(&pixels, &di, diameter, sigma_color, sigma_space)
+            .map_err(to_wit_error)
+    }
+
+    fn guided_filter(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        radius: u32,
+        epsilon: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::guided_filter(&pixels, &di, radius, epsilon).map_err(to_wit_error)
+    }
+
+    fn gaussian_blur_cv(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        sigma: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::gaussian_blur_cv(&pixels, &di, sigma).map_err(to_wit_error)
+    }
+
+    // ─── Morphology ──────────────────────────────────────────────────────
+
+    fn erode(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::erode_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    fn dilate(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::dilate_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    fn morph_open(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::morph_open_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    fn morph_close(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::morph_close_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    fn morph_gradient(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::morph_gradient_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    fn morph_tophat(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::morph_tophat_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    fn morph_blackhat(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        ksize: u32,
+        shape: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::morph_blackhat_registered(&pixels, &di, ksize, shape).map_err(to_wit_error)
+    }
+
+    // ─── Threshold ───────────────────────────────────────────────────────
+
+    fn threshold_binary(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        thresh: u8,
+        max_value: u8,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::threshold_binary(&pixels, &di, thresh, max_value).map_err(to_wit_error)
+    }
+
+    fn adaptive_threshold(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        max_value: u8,
+        method: u32,
+        block_size: u32,
+        c: f32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::adaptive_threshold_registered(
+            &pixels, &di, max_value, method, block_size, c,
+        )
+        .map_err(to_wit_error)
+    }
+
+    // ─── Tools ───────────────────────────────────────────────────────────
+
+    fn flood_fill(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        seed_x: u32,
+        seed_y: u32,
+        new_val: u8,
+        tolerance: u8,
+        connectivity: u32,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let di = to_domain_image_info(&info);
+        domain::filters::flood_fill_registered(
+            &pixels,
+            &di,
+            seed_x,
+            seed_y,
+            new_val,
+            tolerance,
+            connectivity,
+        )
+        .map_err(to_wit_error)
+    }
 }
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {

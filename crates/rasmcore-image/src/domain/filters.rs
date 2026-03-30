@@ -254,9 +254,9 @@ pub struct GuidedFilterParams {
     pub epsilon: f32,
 }
 
-/// Parameters for morphological operations.
+/// Parameters for morphological erosion.
 #[derive(rasmcore_macros::ConfigParams)]
-pub struct MorphParams {
+pub struct ErodeParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
     pub ksize: u32,
@@ -265,9 +265,75 @@ pub struct MorphParams {
     pub shape: u32,
 }
 
-/// Parameters for NLM denoising (simplified for user-facing API).
+/// Parameters for morphological dilation.
 #[derive(rasmcore_macros::ConfigParams)]
-pub struct NlmDenoiseSimpleParams {
+pub struct DilateParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for morphological opening.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MorphOpenParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for morphological closing.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MorphCloseParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for morphological gradient.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MorphGradientParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for morphological top-hat.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MorphTophatParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for morphological black-hat.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct MorphBlackhatParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
+/// Parameters for NLM denoising.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct NlmDenoiseParams {
     /// Filter strength (higher = more denoising)
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 10.0)]
     pub h: f32,
@@ -5253,7 +5319,15 @@ pub fn flood_fill_registered(
     tolerance: u8,
     connectivity: u32,
 ) -> Result<Vec<u8>, ImageError> {
-    let (result, _count) = flood_fill(pixels, info, seed_x, seed_y, new_val, tolerance, connectivity)?;
+    let (result, _count) = flood_fill(
+        pixels,
+        info,
+        seed_x,
+        seed_y,
+        new_val,
+        tolerance,
+        connectivity,
+    )?;
     Ok(result)
 }
 

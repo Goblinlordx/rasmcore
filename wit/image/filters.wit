@@ -110,4 +110,86 @@ interface filters {
     /// Automatic perspective correction — detects lines and rectifies.
     /// Strength 0.0 = no correction, 1.0 = full correction.
     perspective-correct: func(pixels: buffer, info: image-info, strength: f32) -> result<buffer, rasmcore-error>;
+
+    // ─── Edge Detection ──────────────────────────────────────────────────
+
+    /// Scharr edge detection — more rotationally symmetric than Sobel.
+    scharr: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+
+    /// Laplacian edge detection — second-order derivative.
+    laplacian: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+
+    // ─── Enhancement ─────────────────────────────────────────────────────
+
+    /// CLAHE — contrast limited adaptive histogram equalization (Gray8 only).
+    clahe: func(pixels: buffer, info: image-info, clip-limit: f32, tile-grid: u32) -> result<buffer, rasmcore-error>;
+
+    /// Dehaze using dark channel prior.
+    dehaze: func(pixels: buffer, info: image-info, patch-radius: u32, omega: f32, t-min: f32) -> result<buffer, rasmcore-error>;
+
+    /// Clarity — midtone-weighted local contrast enhancement.
+    clarity: func(pixels: buffer, info: image-info, amount: f32, sigma: f32) -> result<buffer, rasmcore-error>;
+
+    /// Pyramid detail remapping — edge-aware detail enhancement/smoothing.
+    pyramid-detail-remap: func(pixels: buffer, info: image-info, sigma: f32, num-levels: u32) -> result<buffer, rasmcore-error>;
+
+    /// Single-scale Retinex enhancement.
+    retinex-ssr: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+
+    /// Multi-scale Retinex with 3 sigma scales.
+    retinex-msr: func(pixels: buffer, info: image-info, sigma-small: f32, sigma-medium: f32, sigma-large: f32) -> result<buffer, rasmcore-error>;
+
+    /// Multi-scale Retinex with color restoration.
+    retinex-msrcr: func(pixels: buffer, info: image-info, sigma-small: f32, sigma-medium: f32, sigma-large: f32, alpha: f32, beta: f32) -> result<buffer, rasmcore-error>;
+
+    /// Non-local means denoising (Gray8 only).
+    nlm-denoise: func(pixels: buffer, info: image-info, h: f32, patch-size: u32, search-size: u32) -> result<buffer, rasmcore-error>;
+
+    // ─── Spatial Filters ─────────────────────────────────────────────────
+
+    /// Bilateral filter — edge-preserving smoothing.
+    bilateral: func(pixels: buffer, info: image-info, diameter: u32, sigma-color: f32, sigma-space: f32) -> result<buffer, rasmcore-error>;
+
+    /// Guided filter — O(N) edge-preserving smoothing (Gray8 only).
+    guided-filter: func(pixels: buffer, info: image-info, radius: u32, epsilon: f32) -> result<buffer, rasmcore-error>;
+
+    /// OpenCV-compatible Gaussian blur.
+    gaussian-blur-cv: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+
+    // ─── Morphology ──────────────────────────────────────────────────────
+    // shape param: 0=rect, 1=ellipse, 2=cross
+
+    /// Morphological erosion.
+    erode: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    /// Morphological dilation.
+    dilate: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    /// Morphological opening (erode then dilate).
+    morph-open: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    /// Morphological closing (dilate then erode).
+    morph-close: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    /// Morphological gradient (dilate - erode).
+    morph-gradient: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    /// Top-hat transform (input - opening).
+    morph-tophat: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    /// Black-hat transform (closing - input).
+    morph-blackhat: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+
+    // ─── Threshold ───────────────────────────────────────────────────────
+
+    /// Binary threshold (Gray8 only).
+    threshold-binary: func(pixels: buffer, info: image-info, thresh: u8, max-value: u8) -> result<buffer, rasmcore-error>;
+
+    /// Adaptive threshold (Gray8 only). Method: 0=mean, 1=gaussian.
+    adaptive-threshold: func(pixels: buffer, info: image-info, max-value: u8, method: u32, block-size: u32, c: f32) -> result<buffer, rasmcore-error>;
+
+    // ─── Tools ───────────────────────────────────────────────────────────
+
+    /// Flood fill from seed point (Gray8 only). Returns filled image.
+    flood-fill: func(pixels: buffer, info: image-info, seed-x: u32, seed-y: u32, new-val: u8, tolerance: u8, connectivity: u32) -> result<buffer, rasmcore-error>;
 }
