@@ -680,11 +680,213 @@ fn pipeline_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── CLI Comparison Benchmarks ──────────────────────────────────────────
+//
+// Fair apples-to-apples comparison: all tools measured as process spawns
+// (including rasmcore). This captures process startup, library init, file I/O,
+// and actual codec work — the same conditions a user experiences.
+
+use std::sync::OnceLock;
+
+/// Build the bench_codec example binary (release mode) once per benchmark run.
+fn bench_codec_bin() -> &'static str {
+    static BIN: OnceLock<String> = OnceLock::new();
+    BIN.get_or_init(|| {
+        // The binary should already be built by `cargo bench` since it compiles
+        // the whole crate. Locate it relative to the current executable.
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let target_dir = manifest_dir.join("../../target/release/examples/bench_codec");
+        if target_dir.exists() {
+            return target_dir.to_str().unwrap().to_string();
+        }
+        // Fallback: try to build it
+        let status = std::process::Command::new("cargo")
+            .args([
+                "build",
+                "--release",
+                "--example",
+                "bench_codec",
+                "-p",
+                "rasmcore-image",
+            ])
+            .status()
+            .expect("failed to build bench_codec");
+        assert!(status.success(), "cargo build bench_codec failed");
+        target_dir.to_str().unwrap().to_string()
+    })
+}
+
+fn cli_decoder_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cli_decoder");
+    group.sample_size(10); // process spawns are slow
+
+    let rasmcore_bin = bench_codec_bin();
+
+    for &size in &[256u32, 512, 1024] {
+        let pixel_count = (size * size) as u64;
+        group.throughput(Throughput::Elements(pixel_count));
+
+        let codecs: &[(&str, &str)] = &[
+            ("jpeg", "jpeg"),
+            ("png", "png"),
+            ("webp", "webp"),
+            ("tiff", "tiff"),
+            ("gif", "gif"),
+            ("bmp", "bmp"),
+            ("qoi", "qoi"),
+        ];
+
+        for &(codec, ext) in codecs {
+            let path = ensure_input(ext, size);
+            let path_str = path.to_str().unwrap().to_string();
+
+            // rasmcore CLI
+            let bin = rasmcore_bin.to_string();
+            let p = path_str.clone();
+            group.bench_function(BenchmarkId::new(format!("{codec}/rasmcore"), size), |b| {
+                b.iter(|| {
+                    let out = std::process::Command::new(&bin)
+                        .args(["decode", &p])
+                        .output()
+                        .unwrap();
+                    assert!(out.status.success());
+                });
+            });
+
+            // ImageMagick
+            if ref_tools::has_tool("magick") {
+                let p = path_str.clone();
+                group.bench_function(
+                    BenchmarkId::new(format!("{codec}/imagemagick"), size),
+                    |b| {
+                        b.iter(|| ref_tools::magick_decode(&p));
+                    },
+                );
+            }
+
+            // Codec-specific reference tools
+            match codec {
+                "jpeg" if ref_tools::has_tool("djpeg") => {
+                    let p = path_str.clone();
+                    group.bench_function(BenchmarkId::new("jpeg/libjpeg-turbo", size), |b| {
+                        b.iter(|| ref_tools::djpeg_decode(&p));
+                    });
+                }
+                "webp" if ref_tools::has_tool("dwebp") => {
+                    let p = path_str.clone();
+                    group.bench_function(BenchmarkId::new("webp/dwebp", size), |b| {
+                        b.iter(|| ref_tools::dwebp_decode(&p));
+                    });
+                }
+                "png" | "tiff" if ref_tools::has_tool("vips") => {
+                    let p = path_str.clone();
+                    group.bench_function(BenchmarkId::new(format!("{codec}/libvips"), size), |b| {
+                        b.iter(|| ref_tools::vips_decode(&p));
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    group.finish();
+}
+
+fn cli_encoder_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cli_encoder");
+    group.sample_size(10);
+
+    let rasmcore_bin = bench_codec_bin();
+
+    for &size in &[256u32, 512, 1024] {
+        let png_path = ensure_input("png", size);
+        let png_path_str = png_path.to_str().unwrap().to_string();
+
+        group.throughput(Throughput::Elements((size * size) as u64));
+
+        // Lossy codecs with quality sweep
+        for &(codec, qualities) in &[
+            ("jpeg", &[75u8, 85, 95] as &[u8]),
+            ("webp", &[75u8, 85, 95]),
+        ] {
+            for &quality in qualities {
+                let label = format!("{size}/q{quality}");
+                let q_str = quality.to_string();
+
+                // rasmcore CLI
+                let bin = rasmcore_bin.to_string();
+                let p = png_path_str.clone();
+                group.bench_function(BenchmarkId::new(format!("{codec}/rasmcore"), &label), |b| {
+                    b.iter(|| {
+                        let out = std::process::Command::new(&bin)
+                            .args(["encode", &p, codec, &q_str])
+                            .stdout(std::process::Stdio::null())
+                            .output()
+                            .unwrap();
+                        assert!(out.status.success());
+                    });
+                });
+
+                // ImageMagick
+                if ref_tools::has_tool("magick") {
+                    let p = png_path_str.clone();
+                    group.bench_function(
+                        BenchmarkId::new(format!("{codec}/imagemagick"), &label),
+                        |b| {
+                            b.iter(|| ref_tools::magick_encode(&p, codec, Some(quality)));
+                        },
+                    );
+                }
+
+                // cwebp for WebP
+                if codec == "webp" && ref_tools::has_tool("cwebp") {
+                    let p = png_path_str.clone();
+                    group.bench_function(BenchmarkId::new("webp/cwebp", &label), |b| {
+                        b.iter(|| ref_tools::cwebp_encode(&p, quality));
+                    });
+                }
+            }
+        }
+
+        // Lossless codecs
+        for &codec in &["png", "tiff", "qoi"] {
+            // rasmcore CLI
+            let bin = rasmcore_bin.to_string();
+            let p = png_path_str.clone();
+            group.bench_function(BenchmarkId::new(format!("{codec}/rasmcore"), size), |b| {
+                b.iter(|| {
+                    let out = std::process::Command::new(&bin)
+                        .args(["encode", &p, codec])
+                        .stdout(std::process::Stdio::null())
+                        .output()
+                        .unwrap();
+                    assert!(out.status.success());
+                });
+            });
+
+            // ImageMagick (not for QOI)
+            if codec != "qoi" && ref_tools::has_tool("magick") {
+                let p = png_path_str.clone();
+                group.bench_function(
+                    BenchmarkId::new(format!("{codec}/imagemagick"), size),
+                    |b| {
+                        b.iter(|| ref_tools::magick_encode(&p, codec, None));
+                    },
+                );
+            }
+        }
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     decoder_benchmarks,
     encoder_benchmarks,
     filter_benchmarks,
-    pipeline_benchmarks
+    pipeline_benchmarks,
+    cli_decoder_benchmarks,
+    cli_encoder_benchmarks
 );
 criterion_main!(benches);
