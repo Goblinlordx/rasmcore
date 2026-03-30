@@ -2486,9 +2486,11 @@ name = "rasmcore-image"
 version = "0.1.0"
 dependencies = [
  "butteraugli",
+ "color_quant",
  "criterion",
  "dssim-core",
  "fast_image_resize",
+ "gif 0.14.1",
  "image",
  "imgref",
  "inventory",

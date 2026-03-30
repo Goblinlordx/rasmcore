@@ -49,6 +49,10 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     if is_svg(header) {
         return Some("svg".to_string());
     }
+    // GIF — native detection (GIF87a or GIF89a magic)
+    if header.len() >= 3 && &header[..3] == b"GIF" {
+        return Some("gif".to_string());
+    }
     image::guess_format(header)
         .ok()
         .and_then(|fmt| format_to_str(fmt))
@@ -243,6 +247,11 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
             || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
     {
         return decode_tiff_native(data);
+    }
+
+    // GIF — decode via gif crate directly (dropped from image features)
+    if data.len() >= 6 && &data[..3] == b"GIF" {
+        return decode_native_gif(data);
     }
 
     let img = image::load_from_memory(data).map_err(|e| ImageError::InvalidInput(e.to_string()))?;
@@ -1043,6 +1052,67 @@ fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
             width,
             height,
             format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+/// Decode GIF using the gif crate directly (bypasses image crate).
+///
+/// Decodes the first frame of a GIF image. Supports GIF87a and GIF89a.
+/// Output is always RGBA8 (GIF uses palette + optional transparency).
+fn decode_native_gif(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let mut opts = gif::DecodeOptions::new();
+    opts.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = opts
+        .read_info(data)
+        .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?;
+
+    // Get logical screen dimensions before borrowing decoder for frame read
+    let screen_width = decoder.width() as u32;
+    let screen_height = decoder.height() as u32;
+
+    let frame = decoder
+        .read_next_frame()
+        .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?
+        .ok_or_else(|| ImageError::InvalidInput("GIF: no frames".into()))?;
+
+    let frame_width = frame.width as u32;
+    let frame_height = frame.height as u32;
+
+    let pixels = if frame_width == screen_width
+        && frame_height == screen_height
+        && frame.left == 0
+        && frame.top == 0
+    {
+        // Frame covers entire canvas — use directly
+        frame.buffer.to_vec()
+    } else {
+        // Frame is a sub-region — composite onto transparent canvas
+        let mut canvas = vec![0u8; (screen_width * screen_height * 4) as usize];
+        let left = frame.left as u32;
+        let top = frame.top as u32;
+        for y in 0..frame_height {
+            let dst_y = top + y;
+            if dst_y >= screen_height {
+                break;
+            }
+            let src_row = (y * frame_width * 4) as usize;
+            let dst_row = ((dst_y * screen_width + left) * 4) as usize;
+            let copy_width = frame_width.min(screen_width - left) as usize * 4;
+            canvas[dst_row..dst_row + copy_width]
+                .copy_from_slice(&frame.buffer[src_row..src_row + copy_width]);
+        }
+        canvas
+    };
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: screen_width,
+            height: screen_height,
+            format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         },
         icc_profile: None,
