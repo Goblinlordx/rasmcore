@@ -5,88 +5,126 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: |
-    Add image generation filters for linear gradients, radial gradients,
+  summary: 'Add image generation filters for linear gradients, radial gradients,
+
     checkerboard patterns, and plasma fractal noise. These generate new images
+
     from parameters (no input required). IM equivalents validated.
-  context: |
-    ImageMagick can generate gradient, plasma, and pattern images directly
+
+    '
+  context: 'ImageMagick can generate gradient, plasma, and pattern images directly
+
     (e.g., magick -size 256x256 gradient: output.png). We have perlin_noise
+
     and simplex_noise generators but lack gradient and pattern generators.
+
     These are commonly used as masks, backgrounds, displacement maps, and
+
     test images.
-  codebase_analysis: |
-    EXISTING GENERATORS:
+
+    '
+  codebase_analysis: 'EXISTING GENERATORS:
+
     - perlin_noise(w, h, seed, scale, octaves) -> Gray8 buffer
+
     - simplex_noise(w, h, seed, scale, octaves) -> Gray8 buffer
+
     Both registered, return raw pixel buffers (not wrapped in ImageInfo).
 
+
     NEW GENERATORS:
+
     - gradient_linear(w, h, color1, color2, angle) -> RGB8
+
     - gradient_radial(w, h, color1, color2, center_x, center_y) -> RGB8
+
     - checkerboard(w, h, size, color1, color2) -> RGB8
+
     - plasma(w, h, seed, turbulence) -> RGB8 (diamond-square fractal)
 
+
     IM EQUIVALENTS:
+
     - gradient_linear: magick -size WxH gradient:color1-color2 -rotate angle
+
     - gradient_radial: magick -size WxH radial-gradient:color1-color2
+
     - checkerboard: magick -size WxH pattern:checkerboard
+
     - plasma: magick -size WxH plasma:color1-color2
+
+    '
   acceptance_criteria:
-    - gradient_linear generates smooth gradient between two colors at any angle
-    - gradient_radial generates circular gradient from center to edges
-    - checkerboard generates alternating color squares of configurable size
-    - plasma generates fractal noise pattern with configurable turbulence
-    - All 4 registered with ConfigParams
-    - IM parity test for gradient_linear vs IM gradient (CLOSE tier)
-    - IM parity test for radial gradient (CLOSE tier)
-    - All support arbitrary dimensions
-  out_of_scope: |
-    Conic/angular gradients. Multi-stop gradients (covered by gradient_map).
+  - gradient_linear generates smooth gradient between two colors at any angle
+  - gradient_radial generates circular gradient from center to edges
+  - checkerboard generates alternating color squares of configurable size
+  - plasma generates fractal noise pattern with configurable turbulence
+  - All 4 registered with ConfigParams
+  - IM parity test for gradient_linear vs IM gradient (CLOSE tier)
+  - IM parity test for radial gradient (CLOSE tier)
+  - All support arbitrary dimensions
+  out_of_scope: 'Conic/angular gradients. Multi-stop gradients (covered by gradient_map).
+
     Seamless tiling. Brick/hexagonal patterns.
-  technical_notes: |
-    GRADIENT LINEAR:
+
+    '
+  technical_notes: 'GRADIENT LINEAR:
+
     - For each pixel, project onto gradient axis (rotated by angle)
+
     - t = dot(pixel - origin, axis_direction) / length
+
     - color = lerp(color1, color2, t)
+
 
     GRADIENT RADIAL:
+
     - t = distance(pixel, center) / max_radius
+
     - color = lerp(color1, color2, t)
 
+
     CHECKERBOARD:
+
     - color = ((x / size) + (y / size)) % 2 == 0 ? color1 : color2
 
+
     PLASMA (diamond-square):
+
     - Initialize corners with random values
+
     - Recursively subdivide: diamond step + square step
+
     - Add random displacement scaled by turbulence * step_size
+
     - Normalize to [0, 255], map to color gradient
+
+    '
 plan:
-  - phase: Gradient Generation
-    tasks:
-      - text: Implement gradient_linear with angle rotation and color interpolation
-        done: false
-      - text: Implement gradient_radial with center point and radius
-        done: false
-      - text: Register both with ConfigParams (width, height, colors, angle/center)
-        done: false
-      - text: IM parity test vs gradient and radial-gradient (CLOSE tier)
-        done: false
-  - phase: Pattern Generation
-    tasks:
-      - text: Implement checkerboard with configurable cell size and colors
-        done: false
-      - text: Implement plasma via diamond-square fractal algorithm
-        done: false
-      - text: Register both with ConfigParams
-        done: false
-      - text: Test determinism (same seed produces same output)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All 4 generators appear in param-manifest.json
-        done: false
-      - text: Full cargo test pass
-        done: false
+- phase: Gradient Generation
+  tasks:
+  - text: Implement gradient_linear with angle rotation and color interpolation
+    done: true
+  - text: Implement gradient_radial with center point and radius
+    done: true
+  - text: Register both with ConfigParams (width, height, colors, angle/center)
+    done: true
+  - text: IM parity test vs gradient and radial-gradient (CLOSE tier)
+    done: true
+- phase: Pattern Generation
+  tasks:
+  - text: Implement checkerboard with configurable cell size and colors
+    done: true
+  - text: Implement plasma via diamond-square fractal algorithm
+    done: true
+  - text: Register both with ConfigParams
+    done: true
+  - text: Test determinism (same seed produces same output)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 4 generators appear in param-manifest.json
+    done: true
+  - text: Full cargo test pass
+    done: true
 extra: {}
