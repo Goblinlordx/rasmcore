@@ -1455,12 +1455,13 @@ fn algorithm_shadow_highlight_vs_gegl() {
     let pixels = gradient_rgb(w, h);
     let info = test_info(w, h, PixelFormat::Rgb8);
 
-    // Our shadow_highlight: shadow=50, highlight=50, radius=30
-    let our_output =
-        rasmcore_image::domain::filters::shadow_highlight(&pixels, &info, 50.0, 50.0, 30.0)
-            .unwrap();
+    // Match GEGL defaults: shadows=50, highlights=-50, whitepoint=0,
+    // radius=30, compress=50, shadows_ccorrect=100, highlights_ccorrect=50
+    let our_output = rasmcore_image::domain::filters::shadow_highlight(
+        &pixels, &info, 50.0, -50.0, 0.0, 30.0, 50.0, 100.0, 50.0,
+    )
+    .unwrap();
 
-    // GEGL: shadows=50 (lighten), highlights=-50 (darken), radius=30
     let input_path = write_png(&pixels, w, h, 3);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let ref_path = std::env::temp_dir().join(format!("refaudit_sh_{id}.png"));
@@ -1469,7 +1470,14 @@ fn algorithm_shadow_highlight_vs_gegl() {
         &gegl_bin,
         &input_path,
         "gegl:shadows-highlights",
-        &[("shadows", "50"), ("highlights", "-50"), ("radius", "30")],
+        &[
+            ("shadows", "50"),
+            ("highlights", "-50"),
+            ("radius", "30"),
+            ("compress", "50"),
+            ("shadows-ccorrect", "100"),
+            ("highlights-ccorrect", "50"),
+        ],
         &ref_path,
     );
 
@@ -1485,12 +1493,12 @@ fn algorithm_shadow_highlight_vs_gegl() {
 
     cleanup(&[&input_path, &ref_path]);
 
-    // ALGORITHM tier: our RGB-based local tone mapping vs GEGL's CIE LAB approach.
-    // Different color spaces and weight functions produce structurally similar
-    // but numerically different results.
+    // ALGORITHM tier: exact GEGL darktable algorithm ported to Rust.
+    // Remaining MAE ~4.5 from gaussian blur kernel differences and
+    // Gray8 quantization of L* channel during blur (GEGL blurs in float).
     assert!(
-        error < 30.0,
-        "shadow_highlight vs GEGL: MAE = {error:.4} (expected < 30.0, ALGORITHM tier)"
+        error < 6.0,
+        "shadow_highlight vs GEGL: MAE = {error:.4} (expected < 6.0)"
     );
 }
 

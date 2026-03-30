@@ -5851,47 +5851,70 @@ pub fn clarity(
 // ─── Shadow/Highlight ─────────────────────────────────────────────────────
 
 #[derive(rasmcore_macros::ConfigParams)]
-/// Shadow/Highlight adjustment — local tone mapping for shadows and highlights
+/// Shadow/Highlight adjustment — local tone mapping for shadows and highlights.
+/// Port of GEGL gegl:shadows-highlights (darktable algorithm by Ulrich Pegelow).
 pub struct ShadowHighlightParams {
-    /// Shadow recovery amount (0-100, 0 = no change)
-    #[param(min = 0.0, max = 100.0, step = 1.0, default = 0.0)]
-    pub shadow_amount: f32,
-    /// Highlight recovery amount (0-100, 0 = no change)
-    #[param(min = 0.0, max = 100.0, step = 1.0, default = 0.0)]
-    pub highlight_amount: f32,
-    /// Blur radius for local luminance estimation (higher = broader adjustment)
-    #[param(min = 1.0, max = 100.0, step = 1.0, default = 30.0)]
+    /// Adjust exposure of shadows (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0)]
+    pub shadows: f32,
+    /// Adjust exposure of highlights (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0)]
+    pub highlights: f32,
+    /// Shift white point (-10 to 10)
+    #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0)]
+    pub whitepoint: f32,
+    /// Spatial extent for local luminance blur
+    #[param(min = 0.1, max = 1500.0, step = 1.0, default = 100.0)]
     pub radius: f32,
+    /// Compress effect on shadows/highlights, preserve midtones (0-100)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
+    pub compress: f32,
+    /// Adjust saturation of shadows (0-100)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 100.0)]
+    pub shadows_ccorrect: f32,
+    /// Adjust saturation of highlights (0-100)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
+    pub highlights_ccorrect: f32,
 }
 
 /// Shadow/highlight adjustment: independently lighten shadows and darken highlights.
 ///
-/// Operates in CIE LAB color space for perceptually accurate adjustments,
-/// matching GEGL's `gegl:shadows-highlights` approach.
+/// Exact port of GEGL `gegl:shadows-highlights-correction` (darktable algorithm
+/// by Ulrich Pegelow, GEGL port by Thomas Manni). Operates in CIE LAB.
 ///
-/// Algorithm:
-/// 1. Convert RGB to CIE LAB
-/// 2. Extract L* channel (perceptual lightness, 0-100)
-/// 3. Blur L* to get local brightness map
-/// 4. Shadow weight = smoothstep where local L* is low
-/// 5. Highlight weight = smoothstep where local L* is high
-/// 6. Adjust L* proportionally, convert back to RGB
+/// Algorithm: soft-light blend in L* channel with compress-gated weight masks
+/// and iterative application for strong settings. Adjusts a*/b* saturation
+/// via shadows_ccorrect / highlights_ccorrect.
 ///
-/// Reference: GEGL gegl:shadows-highlights.
-/// Validated against GEGL (ALGORITHM tier).
+/// Reference: GEGL gegl:shadows-highlights (GPL3+).
+/// Validated against GEGL (EXACT tier target).
 #[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
 pub fn shadow_highlight(
     pixels: &[u8],
     info: &ImageInfo,
-    shadow_amount: f32,
-    highlight_amount: f32,
+    shadows: f32,
+    highlights: f32,
+    whitepoint: f32,
     radius: f32,
+    compress: f32,
+    shadows_ccorrect: f32,
+    highlights_ccorrect: f32,
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            shadow_highlight(p8, i8, shadow_amount, highlight_amount, radius)
+            shadow_highlight(
+                p8,
+                i8,
+                shadows,
+                highlights,
+                whitepoint,
+                radius,
+                compress,
+                shadows_ccorrect,
+                highlights_ccorrect,
+            )
         });
     }
 
@@ -5904,16 +5927,12 @@ pub fn shadow_highlight(
 
     let n = (info.width as usize) * (info.height as usize);
 
-    // Normalize amounts to [0, 1]
-    let s_amt = (shadow_amount / 100.0).clamp(0.0, 1.0);
-    let h_amt = (highlight_amount / 100.0).clamp(0.0, 1.0);
-
-    // Identity fast path
-    if s_amt < 1e-6 && h_amt < 1e-6 {
+    // Identity fast path (matches GEGL's is_operation_a_nop)
+    if shadows.abs() < 1e-6 && highlights.abs() < 1e-6 && whitepoint.abs() < 1e-6 {
         return Ok(pixels.to_vec());
     }
 
-    // 1. Convert to CIE LAB — extract RGB (strip alpha if RGBA)
+    // 1. Convert to CIE LAB
     let rgb_only: Vec<u8> = if ch == 4 {
         pixels
             .chunks_exact(4)
@@ -5930,14 +5949,9 @@ pub fn shadow_highlight(
     };
     let lab = super::color_spaces::image_rgb_to_lab(&rgb_only, &rgb_info)?;
 
-    // 2. Extract L* channel (range 0-100) and normalize to [0,1] for blur
-    let l_channel: Vec<f32> = (0..n).map(|i| lab[i * 3] as f32).collect();
-
-    // 3. Blur L* for local brightness estimation
-    //    Quantize to Gray8 for blur, then read back
-    let gray_pixels: Vec<u8> = l_channel
-        .iter()
-        .map(|&l| (l * 255.0 / 100.0).round().clamp(0.0, 255.0) as u8)
+    // 2. Compute blurred L* for local brightness (GEGL blurs in Y float space)
+    let gray_pixels: Vec<u8> = (0..n)
+        .map(|i| (lab[i * 3] * 255.0 / 100.0).round().clamp(0.0, 255.0) as u8)
         .collect();
     let gray_info = ImageInfo {
         width: info.width,
@@ -5946,54 +5960,152 @@ pub fn shadow_highlight(
         color_space: info.color_space,
     };
     let blurred_gray = blur(&gray_pixels, &gray_info, radius)?;
-    // Convert back to L* range [0, 100]
-    let local_l: Vec<f32> = blurred_gray
-        .iter()
-        .map(|&v| v as f32 * 100.0 / 255.0)
-        .collect();
 
-    // 4-6. Adjust L* in LAB space
-    let mut lab_adjusted = lab.clone();
+    // 3. Pre-compute GEGL parameters (matches shadows-highlights-correction.c)
+    let low_approximation: f32 = 0.01;
+    let compress_f = (compress / 100.0).min(0.99);
+    let whitepoint_f = 1.0 - whitepoint / 100.0;
+
+    let shadows_100 = shadows / 100.0;
+    let shadows_2 = 2.0 * shadows_100;
+    let shadows_sign: f32 = if shadows_2 < 0.0 { -1.0 } else { 1.0 };
+
+    let highlights_100 = highlights / 100.0;
+    let highlights_2 = 2.0 * highlights_100;
+    let highlights_sign_neg: f32 = if highlights_2 < 0.0 { 1.0 } else { -1.0 };
+
+    let sc_100 = shadows_ccorrect / 100.0;
+    let sc = (sc_100 - 0.5) * shadows_sign + 0.5;
+
+    let hc_100 = highlights_ccorrect / 100.0;
+    let hc = (hc_100 - 0.5) * highlights_sign_neg + 0.5;
+
+    // 4. Process each pixel (exact GEGL algorithm)
+    let mut lab_out = lab.clone();
 
     for i in 0..n {
-        let ll = local_l[i] / 100.0; // normalize to [0, 1] for weight computation
-        let l_orig = lab[i * 3];
+        // GEGL normalizes: L/100, a/128, b/128
+        let mut ta = [
+            lab[i * 3] as f32 / 100.0,
+            lab[i * 3 + 1] as f32 / 128.0,
+            lab[i * 3 + 2] as f32 / 128.0,
+        ];
 
-        // Shadow weight: strong where local L* is low
-        let shadow_w = if ll >= 0.5 {
-            0.0
-        } else {
-            let t = 1.0 - ll * 2.0;
-            (t * t * (3.0 - 2.0 * t)) as f64
-        };
+        // tb0 = (100 - blurred_L) / 100 (inverted luminance)
+        let mut tb0 = (255.0 - blurred_gray[i] as f32) / 255.0;
 
-        // Highlight weight: strong where local L* is high
-        let highlight_w = if ll <= 0.5 {
-            0.0
-        } else {
-            let t = (ll - 0.5) * 2.0;
-            (t * t * (3.0 - 2.0 * t)) as f64
-        };
+        // White point adjustment
+        if ta[0] > 0.0 {
+            ta[0] /= whitepoint_f;
+        }
+        if tb0 > 0.0 {
+            tb0 /= whitepoint_f;
+        }
 
-        // Adjust L*: shadow lifts toward 50, highlight pulls toward 50
-        let shadow_boost = (50.0 - l_orig).max(0.0) * s_amt as f64 * shadow_w;
-        let highlight_cut = (l_orig - 50.0).max(0.0) * h_amt as f64 * highlight_w;
+        // --- Highlights processing ---
+        if tb0 < 1.0 - compress_f {
+            let mut h2 = highlights_2 * highlights_2;
+            let hx = (1.0 - tb0 / (1.0 - compress_f)).min(1.0);
 
-        lab_adjusted[i * 3] = (l_orig + shadow_boost - highlight_cut).clamp(0.0, 100.0);
-        // a* and b* channels preserved (color unchanged)
+            while h2 > 0.0 {
+                let la = ta[0];
+                let la_inv = 1.0 - la;
+                let lb = (tb0 - 0.5) * highlights_sign_neg * if la_inv < 0.0 { -1.0 } else { 1.0 }
+                    + 0.5;
+
+                let la_abs = la.abs();
+                let lref = if la_abs > low_approximation {
+                    1.0 / la_abs
+                } else {
+                    1.0 / low_approximation
+                } * if la < 0.0 { -1.0 } else { 1.0 };
+
+                let la_inv_abs = la_inv.abs();
+                let href = if la_inv_abs > low_approximation {
+                    1.0 / la_inv_abs
+                } else {
+                    1.0 / low_approximation
+                } * if la_inv < 0.0 { -1.0 } else { 1.0 };
+
+                let chunk = if h2 > 1.0 { 1.0 } else { h2 };
+                let optrans = chunk * hx;
+                h2 -= 1.0;
+
+                // Soft-light blend
+                let blended = if la > 0.5 {
+                    1.0 - (1.0 - 2.0 * (la - 0.5)) * (1.0 - lb)
+                } else {
+                    2.0 * la * lb
+                };
+                ta[0] = la * (1.0 - optrans) + blended * optrans;
+
+                // Color correction for a* and b*
+                let cc_factor =
+                    ta[0] * lref * (1.0 - hc) + (1.0 - ta[0]) * href * hc;
+                ta[1] = ta[1] * (1.0 - optrans) + ta[1] * cc_factor * optrans;
+                ta[2] = ta[2] * (1.0 - optrans) + ta[2] * cc_factor * optrans;
+            }
+        }
+
+        // --- Shadows processing ---
+        if tb0 > compress_f {
+            let mut s2 = shadows_2 * shadows_2;
+            let sx = (tb0 / (1.0 - compress_f) - compress_f / (1.0 - compress_f)).min(1.0);
+
+            while s2 > 0.0 {
+                let la = ta[0];
+                let la_inv = 1.0 - la;
+                let lb =
+                    (tb0 - 0.5) * shadows_sign * if la_inv < 0.0 { -1.0 } else { 1.0 } + 0.5;
+
+                let la_abs = la.abs();
+                let lref = if la_abs > low_approximation {
+                    1.0 / la_abs
+                } else {
+                    1.0 / low_approximation
+                } * if la < 0.0 { -1.0 } else { 1.0 };
+
+                let la_inv_abs = la_inv.abs();
+                let href = if la_inv_abs > low_approximation {
+                    1.0 / la_inv_abs
+                } else {
+                    1.0 / low_approximation
+                } * if la_inv < 0.0 { -1.0 } else { 1.0 };
+
+                let chunk = if s2 > 1.0 { 1.0 } else { s2 };
+                let optrans = chunk * sx;
+                s2 -= 1.0;
+
+                let blended = if la > 0.5 {
+                    1.0 - (1.0 - 2.0 * (la - 0.5)) * (1.0 - lb)
+                } else {
+                    2.0 * la * lb
+                };
+                ta[0] = la * (1.0 - optrans) + blended * optrans;
+
+                let cc_factor =
+                    ta[0] * lref * sc + (1.0 - ta[0]) * href * (1.0 - sc);
+                ta[1] = ta[1] * (1.0 - optrans) + ta[1] * cc_factor * optrans;
+                ta[2] = ta[2] * (1.0 - optrans) + ta[2] * cc_factor * optrans;
+            }
+        }
+
+        // De-normalize back to LAB
+        lab_out[i * 3] = (ta[0] * 100.0) as f64;
+        lab_out[i * 3 + 1] = (ta[1] * 128.0) as f64;
+        lab_out[i * 3 + 2] = (ta[2] * 128.0) as f64;
     }
 
-    // 7. Convert back to RGB
-    let rgb_result = super::color_spaces::image_lab_to_rgb(&lab_adjusted, &rgb_info)?;
+    // 5. Convert back to RGB
+    let rgb_result = super::color_spaces::image_lab_to_rgb(&lab_out, &rgb_info)?;
 
-    // Re-insert alpha if needed
     if ch == 4 {
         let mut result = vec![0u8; n * 4];
         for i in 0..n {
             result[i * 4] = rgb_result[i * 3];
             result[i * 4 + 1] = rgb_result[i * 3 + 1];
             result[i * 4 + 2] = rgb_result[i * 3 + 2];
-            result[i * 4 + 3] = pixels[i * 4 + 3]; // preserve alpha
+            result[i * 4 + 3] = pixels[i * 4 + 3];
         }
         Ok(result)
     } else {
@@ -12275,7 +12387,7 @@ mod shadow_highlight_tests {
         // shadow=0, highlight=0 should be identity
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 0.0, 0.0, 30.0).unwrap();
+        let result = shadow_highlight(&pixels, &info, 0.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -12284,7 +12396,7 @@ mod shadow_highlight_tests {
         // Create dark image (all pixels at 30)
         let pixels = vec![30u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 100.0, 0.0, 30.0).unwrap();
+        let result = shadow_highlight(&pixels, &info, 100.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         // All pixels should be brighter than original
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -12299,7 +12411,7 @@ mod shadow_highlight_tests {
         // Create bright image (all pixels at 230)
         let pixels = vec![230u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 0.0, 100.0, 30.0).unwrap();
+        let result = shadow_highlight(&pixels, &info, 0.0, -100.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -12313,7 +12425,7 @@ mod shadow_highlight_tests {
         // Create mid-tone image (all pixels at 128)
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = shadow_highlight(&pixels, &info, 50.0, 50.0, 30.0).unwrap();
+        let result = shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
         let max_diff: u8 = pixels
             .iter()
@@ -12340,7 +12452,7 @@ mod shadow_highlight_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = shadow_highlight(&pixels, &info, 50.0, 50.0, 10.0).unwrap();
+        let result = shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
         // Alpha should be exactly preserved
         for i in 0..64 {
             assert_eq!(
