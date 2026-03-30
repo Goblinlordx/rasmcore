@@ -230,6 +230,13 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
         return decode_native_tga(data);
     }
 
+    // PNG — native decode via png crate
+    if data.len() >= 8
+        && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+    {
+        return decode_native_png(data);
+    }
+
     // TIFF — decode via tiff crate directly (dropped from image features)
     if data.len() >= 4
         && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
@@ -838,6 +845,76 @@ fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
             color_space: ColorSpace::Srgb,
         },
         icc_profile: None,
+    })
+}
+
+/// Decode PNG using the `png` crate directly (bypasses image crate).
+fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let icc_profile = extract_icc_profile(data);
+
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
+
+    // Read IHDR to inspect source color type / bit depth before setting transforms.
+    let header_info = decoder
+        .read_header_info()
+        .map_err(|e| ImageError::InvalidInput(format!("PNG: {e}")))?;
+
+    let src_depth = header_info.bit_depth;
+
+    // For 16-bit sources: keep full precision (no STRIP_16).
+    // For indexed / grayscale-alpha / sub-8-bit: expand to 8-bit RGB(A).
+    if src_depth == png::BitDepth::Sixteen {
+        // EXPAND handles palette and sub-byte, but do NOT strip 16 to 8
+        decoder.set_transformations(png::Transformations::EXPAND);
+    } else {
+        // Expand palette / sub-byte / grayscale-alpha -> 8-bit RGB(A)
+        decoder.set_transformations(
+            png::Transformations::EXPAND | png::Transformations::STRIP_16,
+        );
+    }
+
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| ImageError::InvalidInput(format!("PNG: {e}")))?;
+
+    let (out_color, out_depth) = reader.output_color_type();
+    let info = reader.info();
+    let (width, height) = (info.width, info.height);
+
+    let format = match (out_color, out_depth) {
+        (png::ColorType::Grayscale, png::BitDepth::Sixteen) => PixelFormat::Gray16,
+        (png::ColorType::Grayscale, _) => PixelFormat::Gray8,
+        (png::ColorType::Rgb, png::BitDepth::Sixteen) => PixelFormat::Rgb16,
+        (png::ColorType::Rgb, _) => PixelFormat::Rgb8,
+        (png::ColorType::Rgba, png::BitDepth::Sixteen) => PixelFormat::Rgba16,
+        (png::ColorType::Rgba, _) => PixelFormat::Rgba8,
+        (png::ColorType::GrayscaleAlpha, png::BitDepth::Sixteen) => PixelFormat::Rgba16,
+        (png::ColorType::GrayscaleAlpha, _) => PixelFormat::Rgba8,
+        (png::ColorType::Indexed, _) => PixelFormat::Rgba8,
+    };
+
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let output_info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| ImageError::InvalidInput(format!("PNG: {e}")))?;
+    buf.truncate(output_info.buffer_size());
+
+    // PNG stores 16-bit samples in big-endian; our internal format is little-endian.
+    if out_depth == png::BitDepth::Sixteen {
+        for chunk in buf.chunks_exact_mut(2) {
+            chunk.swap(0, 1);
+        }
+    }
+
+    Ok(DecodedImage {
+        pixels: buf,
+        info: ImageInfo {
+            width,
+            height,
+            format,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile,
     })
 }
 

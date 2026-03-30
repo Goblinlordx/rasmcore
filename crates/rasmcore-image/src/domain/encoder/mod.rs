@@ -73,9 +73,8 @@ pub fn encode(
             jpeg::encode_pixels(pixels, info, &config)
         }
         "png" => {
-            let img = pixels_to_dynamic_image(pixels, info)?;
             let config = png::PngEncodeConfig::default();
-            png::encode(&img, info, &config)
+            png::encode(pixels, info, &config)
         }
         "webp" => {
             let config = webp::WebpEncodeConfig {

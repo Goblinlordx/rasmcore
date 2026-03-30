@@ -4385,6 +4385,7 @@ pub fn dehaze(
 
     #[cfg(not(target_arch = "wasm32"))]
     {
+        #[allow(clippy::needless_range_loop)]
         for i in 0..n {
             let t = refined[i].max(t_min);
             let inv_t = 1.0 / t;

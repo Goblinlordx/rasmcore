@@ -1,8 +1,5 @@
-use image::DynamicImage;
-use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-
 use crate::domain::error::ImageError;
-use crate::domain::types::ImageInfo;
+use crate::domain::types::{ImageInfo, PixelFormat};
 
 /// PNG filter type selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,49 +31,82 @@ impl Default for PngEncodeConfig {
     }
 }
 
-/// Map compression level (0-9) to image crate CompressionType.
+/// Map compression level (0-9) to png crate Compression.
 ///
-/// The image crate's `Fast` mode uses fdeflate, a custom DEFLATE implementation
+/// The png crate's `Fast` mode uses fdeflate, a custom DEFLATE implementation
 /// that is both faster AND produces better compression than flate2's `Default`
-/// and `Best` modes for most images. This is counterintuitive but well-documented:
-/// fdeflate was designed specifically to outperform traditional deflate.
-///
-/// We use `Fast` (fdeflate) for all levels since it produces the best results.
-/// The compression_level parameter still affects filter selection behavior in
-/// the encoder, providing meaningful size variation.
-fn map_compression(_level: u8) -> CompressionType {
-    // fdeflate (Fast) produces equal or better compression than flate2 (Default/Best)
-    // while also being significantly faster. Use it unconditionally.
-    CompressionType::Fast
+/// and `Best` modes for most images. We use `Fast` unconditionally.
+fn map_compression(_level: u8) -> png::Compression {
+    png::Compression::Fast
 }
 
-/// Map domain filter type to image crate FilterType.
-fn map_filter(filter: PngFilterType) -> FilterType {
+/// Map domain filter type to png crate FilterType.
+fn map_filter(filter: PngFilterType) -> png::FilterType {
     match filter {
-        PngFilterType::NoFilter => FilterType::NoFilter,
-        PngFilterType::Sub => FilterType::Sub,
-        PngFilterType::Up => FilterType::Up,
-        PngFilterType::Avg => FilterType::Avg,
-        PngFilterType::Paeth => FilterType::Paeth,
-        PngFilterType::Adaptive => FilterType::Adaptive,
+        PngFilterType::NoFilter => png::FilterType::NoFilter,
+        PngFilterType::Sub => png::FilterType::Sub,
+        PngFilterType::Up => png::FilterType::Up,
+        PngFilterType::Avg => png::FilterType::Avg,
+        PngFilterType::Paeth | PngFilterType::Adaptive => png::FilterType::Paeth,
     }
 }
 
-/// Encode pixel data to PNG with the given configuration.
+/// Whether to enable adaptive filtering for the given filter type.
+fn map_adaptive(filter: PngFilterType) -> png::AdaptiveFilterType {
+    match filter {
+        PngFilterType::Adaptive => png::AdaptiveFilterType::Adaptive,
+        _ => png::AdaptiveFilterType::NonAdaptive,
+    }
+}
+
+/// Encode raw pixel data to PNG with the given configuration.
 pub fn encode(
-    img: &DynamicImage,
-    _info: &ImageInfo,
+    pixels: &[u8],
+    info: &ImageInfo,
     config: &PngEncodeConfig,
 ) -> Result<Vec<u8>, ImageError> {
+    let (color_type, bit_depth) = match info.format {
+        PixelFormat::Gray8 => (png::ColorType::Grayscale, png::BitDepth::Eight),
+        PixelFormat::Rgb8 => (png::ColorType::Rgb, png::BitDepth::Eight),
+        PixelFormat::Rgba8 => (png::ColorType::Rgba, png::BitDepth::Eight),
+        PixelFormat::Gray16 => (png::ColorType::Grayscale, png::BitDepth::Sixteen),
+        PixelFormat::Rgb16 => (png::ColorType::Rgb, png::BitDepth::Sixteen),
+        PixelFormat::Rgba16 => (png::ColorType::Rgba, png::BitDepth::Sixteen),
+        other => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "PNG encode from {other:?} not supported"
+            )));
+        }
+    };
+
     let mut buf = Vec::new();
-    let cursor = std::io::Cursor::new(&mut buf);
-    let encoder = PngEncoder::new_with_quality(
-        cursor,
-        map_compression(config.compression_level),
-        map_filter(config.filter_type),
-    );
-    img.write_with_encoder(encoder)
-        .map_err(|e| ImageError::ProcessingFailed(e.to_string()))?;
+    {
+        let mut encoder = png::Encoder::new(&mut buf, info.width, info.height);
+        encoder.set_color(color_type);
+        encoder.set_depth(bit_depth);
+        encoder.set_compression(map_compression(config.compression_level));
+        encoder.set_filter(map_filter(config.filter_type));
+        encoder.set_adaptive_filter(map_adaptive(config.filter_type));
+
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| ImageError::ProcessingFailed(format!("PNG: {e}")))?;
+
+        // For 16-bit: convert from our LE storage to PNG's required BE byte order.
+        if bit_depth == png::BitDepth::Sixteen {
+            let mut be_pixels = pixels.to_vec();
+            for chunk in be_pixels.chunks_exact_mut(2) {
+                chunk.swap(0, 1);
+            }
+            writer
+                .write_image_data(&be_pixels)
+                .map_err(|e| ImageError::ProcessingFailed(format!("PNG: {e}")))?;
+        } else {
+            writer
+                .write_image_data(pixels)
+                .map_err(|e| ImageError::ProcessingFailed(format!("PNG: {e}")))?;
+        }
+    }
     Ok(buf)
 }
 
@@ -248,10 +278,9 @@ pub fn embed_exif(png_data: &[u8], exif_data: &[u8]) -> Result<Vec<u8>, ImageErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::encoder::pixels_to_dynamic_image;
-    use crate::domain::types::{ColorSpace, ImageInfo, PixelFormat};
+    use crate::domain::types::{ColorSpace, ImageInfo};
 
-    fn make_test_image() -> (DynamicImage, ImageInfo) {
+    fn make_test_pixels() -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(16 * 16 * 3)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {
             width: 16,
@@ -259,12 +288,10 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let img = pixels_to_dynamic_image(&pixels, &info).unwrap();
-        (img, info)
+        (pixels, info)
     }
 
-    fn make_larger_test_image() -> (DynamicImage, ImageInfo) {
-        // Larger image makes compression differences more visible
+    fn make_larger_test_pixels() -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(64 * 64 * 3)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {
             width: 64,
@@ -272,14 +299,13 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let img = pixels_to_dynamic_image(&pixels, &info).unwrap();
-        (img, info)
+        (pixels, info)
     }
 
     #[test]
     fn encode_produces_valid_png() {
-        let (img, info) = make_test_image();
-        let result = encode(&img, &info, &PngEncodeConfig::default()).unwrap();
+        let (pixels, info) = make_test_pixels();
+        let result = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
         assert_eq!(&result[..4], &[0x89, 0x50, 0x4E, 0x47]);
     }
 
@@ -298,10 +324,10 @@ mod tests {
 
     #[test]
     fn compression_level_affects_output_size() {
-        let (img, info) = make_larger_test_image();
+        let (pixels, info) = make_larger_test_pixels();
 
         let fast = encode(
-            &img,
+            &pixels,
             &info,
             &PngEncodeConfig {
                 compression_level: 0,
@@ -311,7 +337,7 @@ mod tests {
         .unwrap();
 
         let best = encode(
-            &img,
+            &pixels,
             &info,
             &PngEncodeConfig {
                 compression_level: 9,
@@ -331,7 +357,7 @@ mod tests {
 
     #[test]
     fn all_filter_types_produce_valid_png() {
-        let (img, info) = make_test_image();
+        let (pixels, info) = make_test_pixels();
         let filters = [
             PngFilterType::NoFilter,
             PngFilterType::Sub,
@@ -345,7 +371,7 @@ mod tests {
                 compression_level: 6,
                 filter_type: filter,
             };
-            let result = encode(&img, &info, &config).unwrap();
+            let result = encode(&pixels, &info, &config).unwrap();
             assert_eq!(
                 &result[..4],
                 &[0x89, 0x50, 0x4E, 0x47],
@@ -356,8 +382,7 @@ mod tests {
 
     #[test]
     fn all_filter_types_roundtrip_pixel_exact() {
-        let (img, info) = make_test_image();
-        let original_pixels: Vec<u8> = (0..(16 * 16 * 3)).map(|i| (i % 256) as u8).collect();
+        let (pixels, info) = make_test_pixels();
         let filters = [
             PngFilterType::NoFilter,
             PngFilterType::Sub,
@@ -371,10 +396,10 @@ mod tests {
                 compression_level: 6,
                 filter_type: filter,
             };
-            let encoded = encode(&img, &info, &config).unwrap();
+            let encoded = encode(&pixels, &info, &config).unwrap();
             let decoded = crate::domain::decoder::decode(&encoded).unwrap();
             assert_eq!(
-                decoded.pixels, original_pixels,
+                decoded.pixels, pixels,
                 "filter {filter:?} roundtrip should be pixel-exact"
             );
         }
@@ -399,8 +424,7 @@ mod tests {
             format: PixelFormat::Rgb16,
             color_space: ColorSpace::Srgb,
         };
-        let img = pixels_to_dynamic_image(&pixel_bytes, &info).unwrap();
-        let encoded = encode(&img, &info, &PngEncodeConfig::default()).unwrap();
+        let encoded = encode(&pixel_bytes, &info, &PngEncodeConfig::default()).unwrap();
         let decoded = crate::domain::decoder::decode(&encoded).unwrap();
         assert_eq!(decoded.info.format, PixelFormat::Rgb16);
         assert_eq!(decoded.info.width, w);
@@ -413,13 +437,13 @@ mod tests {
 
     #[test]
     fn determinism_same_input_same_output() {
-        let (img, info) = make_larger_test_image();
+        let (pixels, info) = make_larger_test_pixels();
         let config = PngEncodeConfig {
             compression_level: 6,
             filter_type: PngFilterType::Adaptive,
         };
-        let result1 = encode(&img, &info, &config).unwrap();
-        let result2 = encode(&img, &info, &config).unwrap();
+        let result1 = encode(&pixels, &info, &config).unwrap();
+        let result2 = encode(&pixels, &info, &config).unwrap();
         assert_eq!(
             result1, result2,
             "encoding same input twice must produce byte-identical output"

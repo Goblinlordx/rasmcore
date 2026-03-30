@@ -287,9 +287,8 @@ fn parity_png_encode_determinism() {
     let decoded = decoder::decode(&data).unwrap();
 
     let config = encoder::png::PngEncodeConfig::default();
-    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
-    let result1 = encoder::png::encode(&img, &decoded.info, &config).unwrap();
-    let result2 = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+    let result1 = encoder::png::encode(&decoded.pixels, &decoded.info, &config).unwrap();
+    let result2 = encoder::png::encode(&decoded.pixels, &decoded.info, &config).unwrap();
     assert_eq!(
         result1, result2,
         "PNG encode must be deterministic (byte-identical)"
@@ -304,7 +303,6 @@ fn parity_png_encode_filter_size_variation() {
     use encoder::png::PngFilterType;
     let data = load_fixture("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
-    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
 
     let filters = [
         ("NoFilter", PngFilterType::NoFilter),
@@ -321,7 +319,7 @@ fn parity_png_encode_filter_size_variation() {
             compression_level: 6,
             filter_type: *filter,
         };
-        let encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let encoded = encoder::png::encode(&decoded.pixels, &decoded.info, &config).unwrap();
         sizes.push((name, encoded.len()));
     }
 
@@ -352,14 +350,13 @@ fn parity_png_encode_filter_size_variation() {
 fn parity_png_encode_all_compressions_pixel_exact() {
     let data = load_fixture("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
-    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
 
     for level in [0u8, 3, 6, 9] {
         let config = encoder::png::PngEncodeConfig {
             compression_level: level,
             filter_type: encoder::png::PngFilterType::Adaptive,
         };
-        let encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let encoded = encoder::png::encode(&decoded.pixels, &decoded.info, &config).unwrap();
         let re_decoded = decoder::decode(&encoded).unwrap();
         assert_eq!(
             re_decoded.pixels, decoded.pixels,
@@ -373,7 +370,6 @@ fn parity_png_encode_all_filters_pixel_exact() {
     use encoder::png::PngFilterType;
     let data = load_fixture("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
-    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
 
     let filters = [
         PngFilterType::NoFilter,
@@ -389,7 +385,7 @@ fn parity_png_encode_all_filters_pixel_exact() {
             compression_level: 6,
             filter_type: filter,
         };
-        let encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let encoded = encoder::png::encode(&decoded.pixels, &decoded.info, &config).unwrap();
         let re_decoded = decoder::decode(&encoded).unwrap();
         assert_eq!(
             re_decoded.pixels, decoded.pixels,
@@ -404,7 +400,6 @@ fn parity_png_encode_vs_imagemagick_pixel_exact() {
     // decoded pixels MUST be identical regardless of compression settings.
     let data = load_fixture("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
-    let img = encoder::pixels_to_dynamic_image(&decoded.pixels, &decoded.info).unwrap();
 
     for (level, ref_name) in [
         (0, "png_compress_0.png"),
@@ -426,7 +421,7 @@ fn parity_png_encode_vs_imagemagick_pixel_exact() {
             compression_level: level,
             filter_type: encoder::png::PngFilterType::Adaptive,
         };
-        let our_encoded = encoder::png::encode(&img, &decoded.info, &config).unwrap();
+        let our_encoded = encoder::png::encode(&decoded.pixels, &decoded.info, &config).unwrap();
         let ratio = our_encoded.len() as f64 / ref_data.len() as f64;
         eprintln!(
             "PNG compression {level}: rasmcore={} bytes, ImageMagick={} bytes, ratio={ratio:.2}x",

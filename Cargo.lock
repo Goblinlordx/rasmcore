@@ -2497,6 +2497,7 @@ dependencies = [
  "kamadak-exif",
  "libblur",
  "moxcms",
+ "png 0.17.16",
  "proc-macro2",
  "quick-xml",
  "quote",
