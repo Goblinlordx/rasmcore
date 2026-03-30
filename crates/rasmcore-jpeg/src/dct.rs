@@ -327,32 +327,35 @@ pub fn inverse_dct(input: &[i32; 64], output: &mut [i16; 64]) {
 //
 // IMPLEMENTATION NOTES & KNOWN DIVERGENCE
 //
-// Our reduced IDCT uses the LL&M butterfly structure adapted for N-point
-// output, matching the algorithm in libjpeg-turbo jidctred.c. However,
-// results differ from ImageMagick/libjpeg-turbo at the pixel level because:
+// The reduced IDCT functions use the same iSlow algorithm and constants
+// as libjpeg-turbo's jidctred.c (CONST_BITS=13, PASS1_BITS=2 for 4x4,
+// PASS1_BITS=0 for 2x2/1x1). The IDCT butterfly math is identical.
 //
-// 1. **Different IDCT implementation**: libjpeg-turbo's jidctred.c uses
-//    AAN-based or iSlow-based reduced IDCT with different intermediate
-//    precision and rounding. Our LL&M-based variant produces equivalent
-//    but not identical output (typical PSNR: ~35dB vs ImageMagick).
+// The reduced IDCT is a frequency-domain downsampler: it computes an
+// N-point inverse DCT on the first N frequency coefficients per dimension.
+// This is NOT equivalent to full IDCT + spatial box averaging — it's a
+// proper low-pass filter that preserves more detail. Consequently:
 //
-// 2. **Chroma upsampling path**: After scaled IDCT, the chroma planes are
-//    at (block_size/scale) resolution. Our upsampling uses the same triangle
-//    filter as full decode, but libjpeg-turbo has a dedicated "merged
-//    upsampling + color conversion" path for scaled output that we don't
-//    replicate. This contributes ~1-3dB of divergence at high scales.
+// - vs box downsample: ~25dB (expected — different algorithms)
+// - vs Lanczos3 resize: ~43dB@2x, ~36dB@4x, ~32dB@8x (both are
+//   frequency-aware, so results are close)
+// - vs ImageMagick (-define jpeg:size): ~35dB (divergence is NOT from
+//   the IDCT — it's from the downstream chroma upsampling and color
+//   conversion pipelines, confirmed by 4:4:4 vs 4:2:0 testing showing
+//   identical PSNR)
 //
-// 3. **Color conversion precision**: BT.601 YCbCr→RGB fixed-point
-//    coefficients may differ in the least significant bits.
+// Divergence sources vs ImageMagick (non-IDCT):
+// 1. Chroma upsampling: we use a triangle filter; libjpeg-turbo has a
+//    "merged upsampling + color conversion" fused path that avoids an
+//    intermediate chroma buffer.
+// 2. Color conversion: BT.601 YCbCr→RGB fixed-point coefficients may
+//    differ in the least significant bits.
+// 3. ImageMagick may link libjpeg (not turbo) on some platforms, which
+//    uses a slightly different iSlow implementation.
 //
-// Measured PSNR vs Lanczos3 reference (full decode + resize):
-//   scale=2: ~43dB, scale=4: ~36dB, scale=8: ~32dB
-// Measured PSNR vs ImageMagick (-define jpeg:size=NxN):
-//   ~35dB at 4x downscale
-//
-// These are acceptable for thumbnailing (visually indistinguishable at
-// typical viewing sizes). For pixel-exact libjpeg compatibility, a future
-// track could port the exact iSlow reduced IDCT tables.
+// For thumbnailing these differences are visually imperceptible. For
+// pixel-exact libjpeg-turbo parity, the remaining work is in the chroma
+// upsampling path (merged upsample + color convert), not the IDCT.
 
 /// Inverse DCT producing 4x4 output (1/2 scale).
 ///

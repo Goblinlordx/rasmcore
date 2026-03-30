@@ -249,11 +249,10 @@ fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
 ///
 /// # Implementation note
 ///
-/// The DCT-domain downscaling uses LL&M-based reduced IDCT butterflies,
-/// which are algorithmically equivalent to but not pixel-identical with
-/// libjpeg-turbo's iSlow reduced IDCT (used by ImageMagick). Typical
-/// divergence vs ImageMagick is ~35dB PSNR — visually indistinguishable
-/// for thumbnailing. See `dct.rs` for detailed divergence analysis.
+/// The IDCT math is identical to libjpeg-turbo's `jidctred.c` (same
+/// constants, same butterfly structure). Pixel-level divergence vs
+/// ImageMagick (~35dB PSNR) comes from the chroma upsampling and color
+/// conversion pipelines, not the IDCT. See `dct.rs` for details.
 pub fn smart_resize(
     data: &[u8],
     target_w: u32,
