@@ -495,12 +495,13 @@ pub fn icc_to_srgb(
 
     let dst_profile = ColorProfile::new_srgb();
 
-    let (src_layout, dst_layout) = match info.format {
-        PixelFormat::Rgb8 => (Layout::Rgb, Layout::Rgb),
-        PixelFormat::Rgba8 => (Layout::Rgba, Layout::Rgba),
+    let (src_layout, dst_layout, dst_format) = match info.format {
+        PixelFormat::Rgb8 => (Layout::Rgb, Layout::Rgb, PixelFormat::Rgb8),
+        PixelFormat::Rgba8 => (Layout::Rgba, Layout::Rgba, PixelFormat::Rgba8),
+        PixelFormat::Cmyka8 => (Layout::Cmyka, Layout::Rgba, PixelFormat::Rgba8),
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
-                "ICC conversion from {other:?} not supported — convert to RGB8 or RGBA8 first"
+                "ICC conversion from {other:?} not supported — convert to RGB8, RGBA8, or CMYK8 first"
             )));
         }
     };
@@ -516,7 +517,16 @@ pub fn icc_to_srgb(
             ImageError::ProcessingFailed(format!("ICC transform creation failed: {e:?}"))
         })?;
 
-    let mut result = vec![0u8; pixels.len()];
+    // Output buffer: for CMYK→RGBA the output is 4 bytes/pixel (RGBA)
+    // even though input is also 4 bytes/pixel (CMYK). For RGB→RGB and RGBA→RGBA
+    // the sizes match. Use dst_layout to compute output size.
+    let dst_bpp = match dst_layout {
+        Layout::Rgb => 3,
+        Layout::Rgba => 4,
+        _ => 4,
+    };
+    let n = (info.width as usize) * (info.height as usize);
+    let mut result = vec![0u8; n * dst_bpp];
     transform
         .transform(pixels, &mut result)
         .map_err(|e| ImageError::ProcessingFailed(format!("ICC transform failed: {e:?}")))?;
@@ -526,11 +536,50 @@ pub fn icc_to_srgb(
 
 // ─── CMYK <-> RGB Conversion ──────────────────────────────────────────────────
 
-/// Convert a CMYK pixel buffer to RGB8.
+/// Convert a CMYK pixel buffer to RGB8 using ICC profile if available,
+/// falling back to the naive formula.
 ///
-/// Uses the naive formula: R = 255 * (1-C) * (1-K), etc.
-/// This is the standard unbounded conversion — for ICC-accurate conversion,
-/// use an ICC profile transform instead.
+/// When an ICC profile is provided, uses moxcms for device-accurate conversion
+/// (CMYK → PCS → sRGB). Without a profile, uses the standard naive formula:
+/// R = 255 * (1-C) * (1-K), etc.
+pub fn cmyk_to_rgb_icc(
+    cmyk_pixels: &[u8],
+    info: &ImageInfo,
+    icc_profile: Option<&[u8]>,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    if let Some(profile) = icc_profile {
+        // moxcms uses Layout::Cmyka (5 channels: CMYK + alpha).
+        // If input is Cmyk8 (4 channels), pad to Cmyka8 (5 channels) with alpha=255.
+        let (icc_pixels, icc_info) = if info.format == PixelFormat::Cmyk8 {
+            let padded: Vec<u8> = cmyk_pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2], c[3], 255])
+                .collect();
+            let padded_info = ImageInfo {
+                format: PixelFormat::Cmyka8,
+                ..*info
+            };
+            (padded, padded_info)
+        } else {
+            (cmyk_pixels.to_vec(), info.clone())
+        };
+
+        // ICC-based conversion: CMYKA → RGBA via moxcms
+        let rgba = icc_to_srgb(&icc_pixels, &icc_info, profile)?;
+        let out_info = ImageInfo {
+            format: PixelFormat::Rgba8,
+            ..*info
+        };
+        return Ok((rgba, out_info));
+    }
+    // Fallback to naive conversion
+    cmyk_to_rgb(cmyk_pixels, info)
+}
+
+/// Convert a CMYK pixel buffer to RGB8 using the naive formula.
+///
+/// R = 255 * (1-C) * (1-K), G = 255 * (1-M) * (1-K), B = 255 * (1-Y) * (1-K).
+/// This matches ImageMagick's non-ICC CMYK conversion within MAE < 1.5.
 pub fn cmyk_to_rgb(cmyk_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let n = (info.width as usize) * (info.height as usize);
     let (src_bpp, has_alpha) = match info.format {
