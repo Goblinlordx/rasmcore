@@ -3,13 +3,47 @@ title: ProPhoto RGB and Adobe RGB Color Space Conversions
 type: feature
 status: pending
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-03-30'
 spec:
-  summary: Professional color spaces validated against colour-science 0.4.7.
-  context: ''
-  codebase_analysis: ''
-  acceptance_criteria: []
-  out_of_scope: ''
-  technical_notes: ''
-plan: []
+  summary: ProPhoto RGB and Adobe RGB color space conversions validated against colour-science 0.4.7.
+  context: |
+    Professional photography workflows require ProPhoto RGB (wide gamut, D50) and
+    Adobe RGB 1998 (wider than sRGB, D65). The codebase already has sRGB, LinearSrgb,
+    DisplayP3, BT.709, BT.2020 with full transfer function and XYZ matrix support.
+  codebase_analysis: |
+    ColorSpace enum in types.rs + WIT. Transfer functions + XYZ matrices in color_spaces.rs.
+    Pattern: enum variant + to_linear/from_linear + rgb_to_xyz matrix + adapter match arms.
+    Existing validation achieves F64_LIMIT precision against colour-science 0.4.7.
+  acceptance_criteria:
+    - ProPhoto RGB and Adobe RGB enum variants in WIT and domain types
+    - Transfer functions for both spaces (ProPhoto gamma 1.8, Adobe gamma 2.199)
+    - XYZ conversion matrices derived from CIE primaries
+    - Chromatic adaptation for ProPhoto (D50 illuminant) via Bradford
+    - Parity tests against colour-science 0.4.7 reference values
+    - Adapter wiring for bidirectional WIT conversion
+  out_of_scope: YCbCr matrices for these spaces, ICC profile generation
+  technical_notes: |
+    ProPhoto RGB: primaries R(0.7347,0.2653) G(0.1596,0.7468) B(0.0366,0.0001),
+    D50 illuminant, gamma 1.8 with linear segment below Et=1/512.
+    Adobe RGB 1998: primaries R(0.64,0.33) G(0.21,0.71) B(0.15,0.06),
+    D65 illuminant, simple gamma 2.199.
+plan:
+  - title: "Enum and adapter wiring"
+    tasks:
+      - title: Add ProPhoto and AdobeRgb variants to domain ColorSpace enum and WIT
+        done: false
+      - title: Update adapter match statements for bidirectional conversion
+        done: false
+  - title: "Transfer functions and XYZ matrices"
+    tasks:
+      - title: Implement ProPhoto and Adobe RGB transfer functions and XYZ matrices
+        done: false
+      - title: Add color space conversion functions (to/from sRGB via XYZ)
+        done: false
+  - title: "Testing and verification"
+    tasks:
+      - title: Add parity tests against colour-science reference values
+        done: false
+      - title: Run cargo test and verify all pass
+        done: false
 extra: {}
