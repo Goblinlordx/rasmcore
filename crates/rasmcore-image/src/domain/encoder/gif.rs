@@ -1,5 +1,5 @@
 use crate::domain::error::ImageError;
-use crate::domain::types::{ImageInfo, PixelFormat};
+use crate::domain::types::{DisposalMethod, FrameSequence, ImageInfo, PixelFormat};
 
 /// GIF encode configuration.
 #[derive(Debug, Clone, Default)]
@@ -95,10 +95,109 @@ pub fn encode_pixels(
     Ok(buf)
 }
 
+/// Encode a FrameSequence to an animated GIF.
+///
+/// Each frame is independently quantized to a 256-color palette via NeuQuant.
+/// Per-frame delays and disposal methods are preserved from the FrameInfo metadata.
+pub fn encode_sequence(
+    seq: &FrameSequence,
+    config: &GifEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
+    if seq.is_empty() {
+        return Err(ImageError::InvalidInput(
+            "cannot encode empty frame sequence as GIF".into(),
+        ));
+    }
+
+    let canvas_w = seq.canvas_width as u16;
+    let canvas_h = seq.canvas_height as u16;
+
+    let mut buf = Vec::new();
+    {
+        // Use empty global color table — each frame has its own local palette
+        let mut encoder = gif::Encoder::new(&mut buf, canvas_w, canvas_h, &[])
+            .map_err(|e| ImageError::ProcessingFailed(format!("GIF encoder init: {e}")))?;
+
+        let repeat = if config.repeat == 0 {
+            gif::Repeat::Infinite
+        } else {
+            gif::Repeat::Finite(config.repeat)
+        };
+        encoder
+            .set_repeat(repeat)
+            .map_err(|e| ImageError::ProcessingFailed(format!("GIF repeat: {e}")))?;
+
+        for (image, frame_info) in &seq.frames {
+            let w = frame_info.width as u16;
+            let h = frame_info.height as u16;
+
+            // Convert to RGBA8 for uniform NeuQuant processing
+            let rgba = match image.info.format {
+                PixelFormat::Rgba8 => image.pixels.clone(),
+                PixelFormat::Rgb8 => image
+                    .pixels
+                    .chunks_exact(3)
+                    .flat_map(|c| [c[0], c[1], c[2], 255])
+                    .collect(),
+                PixelFormat::Gray8 => image.pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+                _ => {
+                    return Err(ImageError::UnsupportedFormat(
+                        "GIF encode requires RGB8, RGBA8, or Gray8 frames".into(),
+                    ));
+                }
+            };
+
+            // Quantize to 256-color palette
+            let nq = color_quant::NeuQuant::new(10, 256, &rgba);
+            let mut indices = Vec::with_capacity((w as u32 * h as u32) as usize);
+            let mut has_transparency = false;
+
+            for pixel in rgba.chunks_exact(4) {
+                if pixel[3] < 128 {
+                    has_transparency = true;
+                    indices.push(0u8);
+                } else {
+                    indices.push(
+                        nq.index_of(&[pixel[0], pixel[1], pixel[2], pixel[3]]) as u8,
+                    );
+                }
+            }
+
+            let palette = nq.color_map_rgb();
+
+            let mut frame = gif::Frame {
+                width: w,
+                height: h,
+                left: frame_info.x_offset as u16,
+                top: frame_info.y_offset as u16,
+                delay: (frame_info.delay_ms / 10) as u16,
+                dispose: match frame_info.disposal {
+                    DisposalMethod::None => gif::DisposalMethod::Keep,
+                    DisposalMethod::Background => gif::DisposalMethod::Background,
+                    DisposalMethod::Previous => gif::DisposalMethod::Previous,
+                },
+                palette: Some(palette),
+                buffer: std::borrow::Cow::Owned(indices),
+                ..Default::default()
+            };
+
+            if has_transparency {
+                frame.transparent = Some(0);
+            }
+
+            encoder
+                .write_frame(&frame)
+                .map_err(|e| ImageError::ProcessingFailed(format!("GIF frame: {e}")))?;
+        }
+    }
+
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::ColorSpace;
+    use crate::domain::types::{ColorSpace, DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
 
     fn make_rgb_image(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();
@@ -179,5 +278,91 @@ mod tests {
         };
         let result = encode_pixels(&pixels, &info, &GifEncodeConfig::default()).unwrap();
         assert_eq!(&result[..3], b"GIF");
+    }
+
+    // ── encode_sequence tests ──────────────────────────────────────
+
+    fn make_solid_frame(w: u32, h: u32, r: u8, g: u8, b: u8, index: u32, delay_ms: u32) -> (DecodedImage, FrameInfo) {
+        let pixels: Vec<u8> = (0..(w * h)).flat_map(|_| [r, g, b]).collect();
+        let image = DecodedImage {
+            pixels,
+            info: ImageInfo {
+                width: w,
+                height: h,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+            icc_profile: None,
+        };
+        let info = FrameInfo {
+            index,
+            delay_ms,
+            disposal: DisposalMethod::None,
+            width: w,
+            height: h,
+            x_offset: 0,
+            y_offset: 0,
+        };
+        (image, info)
+    }
+
+    #[test]
+    fn encode_sequence_3_frames_roundtrip() {
+        let mut seq = FrameSequence::new(4, 4);
+        seq.push(
+            make_solid_frame(4, 4, 255, 0, 0, 0, 100).0,
+            make_solid_frame(4, 4, 255, 0, 0, 0, 100).1,
+        );
+        seq.push(
+            make_solid_frame(4, 4, 0, 255, 0, 1, 200).0,
+            make_solid_frame(4, 4, 0, 255, 0, 1, 200).1,
+        );
+        seq.push(
+            make_solid_frame(4, 4, 0, 0, 255, 2, 300).0,
+            make_solid_frame(4, 4, 0, 0, 255, 2, 300).1,
+        );
+
+        let encoded = encode_sequence(&seq, &GifEncodeConfig::default()).unwrap();
+        assert_eq!(&encoded[..3], b"GIF");
+
+        // Decode back
+        let frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
+        assert_eq!(frames.len(), 3, "should have 3 frames");
+
+        // Verify delays (stored as centiseconds, we set 100/200/300 ms → 10/20/30 cs)
+        assert_eq!(frames[0].1.delay_ms, 100);
+        assert_eq!(frames[1].1.delay_ms, 200);
+        assert_eq!(frames[2].1.delay_ms, 300);
+    }
+
+    #[test]
+    fn encode_sequence_preserves_frame_count() {
+        let mut seq = FrameSequence::new(8, 8);
+        for i in 0..5 {
+            let (img, fi) = make_solid_frame(8, 8, (i * 50) as u8, 0, 0, i, 100);
+            seq.push(img, fi);
+        }
+
+        let encoded = encode_sequence(&seq, &GifEncodeConfig::default()).unwrap();
+        let count = crate::domain::decoder::frame_count(&encoded).unwrap();
+        assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn encode_sequence_empty_returns_error() {
+        let seq = FrameSequence::new(4, 4);
+        let result = encode_sequence(&seq, &GifEncodeConfig::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encode_sequence_with_repeat_config() {
+        let mut seq = FrameSequence::new(4, 4);
+        let (img, fi) = make_solid_frame(4, 4, 128, 128, 128, 0, 100);
+        seq.push(img, fi);
+
+        let config = GifEncodeConfig { repeat: 3 };
+        let encoded = encode_sequence(&seq, &config).unwrap();
+        assert_eq!(&encoded[..3], b"GIF");
     }
 }
