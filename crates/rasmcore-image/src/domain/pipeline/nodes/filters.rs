@@ -337,7 +337,7 @@ impl ImageNode for ConvolveNode {
             &self.source_info,
             self.upstream,
             upstream_fn,
-            |px, info| filters::convolve(px, info, kernel, kw, kh, divisor),
+            |px, info| filters::convolve(px, info, kernel, kw as u32, kh as u32, divisor),
         )
     }
     fn overlap(&self) -> Overlap {

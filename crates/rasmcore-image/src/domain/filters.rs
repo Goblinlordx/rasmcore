@@ -780,8 +780,12 @@ pub fn bokeh_blur(
     pixels: &[u8],
     info: &ImageInfo,
     radius: u32,
-    shape: BokehShape,
+    shape: u32,
 ) -> Result<Vec<u8>, ImageError> {
+    let shape = match shape {
+        1 => BokehShape::Hexagon,
+        _ => BokehShape::Disc,
+    };
     if radius == 0 {
         return Ok(pixels.to_vec());
     }
@@ -793,7 +797,7 @@ pub fn bokeh_blur(
     if divisor == 0.0 {
         return Ok(pixels.to_vec());
     }
-    convolve(pixels, info, &kernel, side, side, divisor)
+    convolve(pixels, info, &kernel, side as u32, side as u32, divisor)
 }
 
 /// Directional motion blur using a linear kernel at the given angle.
@@ -857,7 +861,7 @@ pub fn motion_blur(
         return Ok(pixels.to_vec());
     }
 
-    convolve(pixels, info, &kernel, side, side, count as f32)
+    convolve(pixels, info, &kernel, side as u32, side as u32, count as f32)
 }
 
 /// Zoom motion blur — radial streak from a center point.
@@ -1386,13 +1390,15 @@ pub struct ColorizeParams {
 pub fn colorize(
     pixels: &[u8],
     info: &ImageInfo,
-    target: [u8; 3],
+    target_r: u8,
+    target_g: u8,
+    target_b: u8,
     amount: f32,
 ) -> Result<Vec<u8>, ImageError> {
     let target_norm = [
-        target[0] as f32 / 255.0,
-        target[1] as f32 / 255.0,
-        target[2] as f32 / 255.0,
+        target_r as f32 / 255.0,
+        target_g as f32 / 255.0,
+        target_b as f32 / 255.0,
     ];
     apply_color_op(
         pixels,
@@ -2409,10 +2415,12 @@ pub fn convolve(
     pixels: &[u8],
     info: &ImageInfo,
     kernel: &[f32],
-    kw: usize,
-    kh: usize,
+    kw: u32,
+    kh: u32,
     divisor: f32,
 ) -> Result<Vec<u8>, ImageError> {
+    let kw = kw as usize;
+    let kh = kh as usize;
     if kw.is_multiple_of(2) || kh.is_multiple_of(2) || kw * kh != kernel.len() {
         return Err(ImageError::InvalidParameters(
             "kernel dimensions must be odd and match kernel length".into(),
@@ -2423,7 +2431,7 @@ pub fn convolve(
     // 16-bit: process in f32 domain, then convert back
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            convolve(p8, i8, kernel, kw, kh, divisor)
+            convolve(p8, i8, kernel, kw as u32, kh as u32, divisor)
         });
     }
 
@@ -4758,10 +4766,15 @@ fn cv_round(v: f64) -> i32 {
 pub fn perspective_warp(
     pixels: &[u8],
     info: &ImageInfo,
-    matrix: &[f64; 9],
+    matrix: &[f64],
     out_width: u32,
     out_height: u32,
 ) -> Result<Vec<u8>, ImageError> {
+    if matrix.len() != 9 {
+        return Err(ImageError::InvalidParameters(
+            format!("perspective_warp requires 9-element matrix, got {}", matrix.len()),
+        ));
+    }
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
@@ -7092,7 +7105,7 @@ pub fn gaussian_blur_cv(
         }
     }
 
-    convolve(pixels, info, &kernel_2d, ksize, ksize, 1.0)
+    convolve(pixels, info, &kernel_2d, ksize as u32, ksize as u32, 1.0)
 }
 
 /// Generate a 1D Gaussian kernel matching OpenCV's `getGaussianKernel`.
@@ -17166,7 +17179,7 @@ pub fn lens_blur(
         return Ok(pixels.to_vec());
     }
 
-    convolve(pixels, info, &kernel, side, side, divisor)
+    convolve(pixels, info, &kernel, side as u32, side as u32, divisor)
 }
 
 #[cfg(test)]

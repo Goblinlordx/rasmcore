@@ -110,32 +110,41 @@ fn main() {
     adapter_code.push_str("impl filters::Guest for Component {\n");
 
     for f in &filters {
-        let trait_method = &f.name; // WIT name (snake_case) = trait method name
-        let domain_fn = &f.fn_name; // Rust function name (may differ, e.g., erode_registered)
-        // Strip leading underscores from param names (matching WIT generation)
-        let params_sig: Vec<String> = f
-            .params
-            .iter()
-            .map(|(n, t)| {
-                let clean_n = n.trim_start_matches('_');
-                format!("{clean_n}: {t}")
-            })
-            .collect();
-        let params_call: Vec<String> = f.params.iter().map(|(n, _)| n.clone()).collect();
+        let trait_method = &f.name;
+        let domain_fn = &f.fn_name;
 
-        let full_sig = if params_sig.is_empty() {
+        // Map Rust domain types to WIT binding types for the trait signature,
+        // and generate the call expression (adding & for slice params)
+        let mut sig_params = Vec::new();
+        let mut call_params = Vec::new();
+        for (n, t) in &f.params {
+            let clean_n = n.trim_start_matches('_');
+            let (binding_type, call_expr) = match t.as_str() {
+                "&[f32]" => ("Vec<f32>", format!("&{clean_n}")),
+                "&[f64]" => ("Vec<f64>", format!("&{clean_n}")),
+                "&[u8]" => ("Vec<u8>", format!("&{clean_n}")),
+                "&[u32]" => ("Vec<u32>", format!("&{clean_n}")),
+                "&str" => ("String", format!("&{clean_n}")),
+                "String" => ("String", clean_n.to_string()),
+                _ => (t.as_str(), clean_n.to_string()), // scalars pass through
+            };
+            sig_params.push(format!("{clean_n}: {binding_type}"));
+            call_params.push(call_expr);
+        }
+
+        let full_sig = if sig_params.is_empty() {
             "pixels: Vec<u8>, info: types::ImageInfo".to_string()
         } else {
             format!(
                 "pixels: Vec<u8>, info: types::ImageInfo, {}",
-                params_sig.join(", ")
+                sig_params.join(", ")
             )
         };
 
-        let full_call = if params_call.is_empty() {
+        let full_call = if call_params.is_empty() {
             "&pixels, &di".to_string()
         } else {
-            format!("&pixels, &di, {}", params_call.join(", "))
+            format!("&pixels, &di, {}", call_params.join(", "))
         };
 
         adapter_code.push_str(&format!(
