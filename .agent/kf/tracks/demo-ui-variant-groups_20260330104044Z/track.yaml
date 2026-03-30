@@ -1,0 +1,113 @@
+id: demo-ui-variant-groups_20260330104044Z
+title: "Demo UI — Filter Variant Group Navigation"
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Update demo pipeline UI to render filters hierarchically using
+    group/variant metadata from param-manifest.json. Groups show as
+    collapsible sections within their category; standalone filters
+    render directly under category as before.
+  context: |
+    The param-manifest.json now includes group, variant, and reference
+    fields for all 105 filters (from filter-variant-groups track). The
+    demo UI currently renders a flat list under each category header.
+    Users need to see related variants grouped together — when they
+    select "blur", they should see gaussian/bokeh/motion/zoom as
+    sub-options rather than 5 separate items cluttering the palette.
+
+    Navigation model:
+    - Category (e.g., "Spatial") -> group header (e.g., "blur") -> variants
+    - Category -> standalone filter (no group)
+    - Clicking a group header expands/collapses its variants
+    - Clicking a variant adds it to the pipeline (same as today)
+    - Reference/provenance shown as tooltip on hover
+  codebase_analysis: |
+    Current UI flow (demo/src/pipeline.js):
+    - Line 66-111: loadManifest() fetches /sdk/param-manifest.json
+    - Line 169-193: renderPalette() groups by MANIFEST_CATEGORIES[name]
+    - Renders: <h3> category header, then flat <div class="palette-item"> per filter
+    - PARAM_META stores per-filter param metadata
+    - MANIFEST_CATEGORIES maps filter name -> category string
+
+    Manifest structure (per filter):
+    {
+      "name": "bokeh_blur",
+      "category": "spatial",
+      "group": "blur",
+      "variant": "bokeh",
+      "reference": "physical optic disc/polygon aperture model",
+      "params": [...]
+    }
+
+    Changes needed:
+    1. Parse group/variant/reference from manifest in loadManifest()
+    2. In renderPalette(), within each category, sub-group by group field
+    3. Render group headers as collapsible containers
+    4. Variants as indented palette-items within the group
+    5. Standalone filters (empty group) render at category level as before
+    6. Tooltip with reference text on hover
+  acceptance_criteria:
+    - Filters with a group field are rendered under a collapsible group header within their category
+    - Standalone filters (empty group) render directly under their category header
+    - Clicking a group header toggles expand/collapse of its variants
+    - Each variant shows its variant name (not the full filter name) when inside a group
+    - Hovering a filter shows its reference/provenance as a tooltip
+    - Groups start collapsed by default (clean initial view)
+    - Group header shows count badge (e.g., "blur (5)")
+    - Adding a variant to the pipeline works exactly as before (same click behavior)
+    - All existing filter params still render correctly when a filter is selected
+  out_of_scope: |
+    Changing the pipeline execution logic.
+    Changing param controls or hint rendering.
+    Search/filter functionality within the palette.
+    Drag-and-drop reordering of groups.
+  technical_notes: |
+    Rendering approach:
+
+    Within renderPalette(), after grouping by category:
+    1. For each category, collect filters into { grouped: Map<group, filter[]>, standalone: filter[] }
+    2. Render standalone filters first (or after groups — TBD)
+    3. For each group: render a <div class="palette-group"> with:
+       - <div class="palette-group-header"> showing group name + variant count + toggle arrow
+       - <div class="palette-group-items"> (initially hidden) containing variant palette-items
+
+    CSS additions:
+    - .palette-group-header: similar to palette-item but with arrow indicator
+    - .palette-group-items: collapsible container (display: none when collapsed)
+    - .palette-group-items .palette-item: left padding for indent
+    - .palette-item[title]: tooltip via native title attribute for reference
+
+    Group label: use the group field value, title-cased (e.g., "blur" -> "Blur")
+    Variant label: use variant field if present, else full filter name
+    Standalone label: use filter name (same as today)
+plan:
+  - phase: Data Model
+    tasks:
+      - text: Parse group, variant, reference fields in loadManifest()
+        done: false
+      - text: Store group/variant/reference in a new MANIFEST_GROUPS lookup alongside existing PARAM_META
+        done: false
+  - phase: Palette Rendering
+    tasks:
+      - text: Refactor renderPalette() to sub-group filters by group within each category
+        done: false
+      - text: Render group headers as collapsible containers with variant count badge
+        done: false
+      - text: Render variant items indented within their group container
+        done: false
+      - text: Render standalone filters directly under category (unchanged behavior)
+        done: false
+      - text: Add click handler on group headers to toggle expand/collapse
+        done: false
+      - text: Add reference tooltip (title attribute) on filter items
+        done: false
+  - phase: Styling & Verification
+    tasks:
+      - text: Add CSS for palette-group-header, palette-group-items, indent, collapse animation
+        done: false
+      - text: Manual verification — groups collapse/expand, variants add to pipeline, params render correctly
+        done: false
+extra: {}

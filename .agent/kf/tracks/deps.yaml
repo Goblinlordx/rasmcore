@@ -126,3 +126,6 @@ truetype-font-rendering_20260330101022Z: []
 
 # Complex text shaping — depends on TTF rendering track (already complete)
 complex-text-shaping_20260330102720Z: []
+
+# Demo UI variant groups — no deps (filter-variant-groups already merged)
+demo-ui-variant-groups_20260330104044Z: []
