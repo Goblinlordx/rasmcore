@@ -1,0 +1,65 @@
+id: demo-ui-fixes_20260330002117Z
+title: "Demo UI Fixes — Pipeline imageInfo Bug + Dynamic Format Discovery"
+type: bug
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Fix pipeline builder ReferenceError and replace hardcoded format dropdowns
+    with dynamic discovery from the WASM backend.
+  context: |
+    The pipeline builder demo crashes on image load because imageInfo is assigned
+    without declaration at pipeline.js:283. The simple demo hardcodes only 3 formats
+    (PNG/JPEG/WebP) in the export dropdown despite the backend supporting 17 formats.
+    The pipeline builder already has correct auto-discovery code via
+    sdk.pipeline.supportedWriteFormats() — the simple demo needs the same pattern.
+  codebase_analysis: |
+    Pipeline bug: demo/src/pipeline.js line 283 assigns imageInfo without let/const/var.
+    All other module-level state vars (workerReady, isProcessing, queuedRequest) are
+    properly declared near line 198-200. Fix is adding let imageInfo = null there.
+
+    Simple demo format gap: demo/index.html lines 185-190 hardcode a 3-option select.
+    demo/src/main.js lines 203-237 hardcode format dispatch. The pipeline builder
+    (pipeline.js lines 24-39) already correctly calls supportedWriteFormats() and
+    dynamically populates — same pattern should be applied to main.js.
+
+    Backend supports: png, jpeg, webp, gif, tiff, avif, heic, bmp, ico, qoi, tga,
+    hdr, pnm, exr, dds, jp2, fits (17 formats in SUPPORTED_FORMATS constant).
+    Pipeline WIT has 9 write methods. Generic write() handles all 17.
+  acceptance_criteria:
+    - Pipeline builder loads images without ReferenceError
+    - Simple demo export dropdown dynamically lists all formats from supportedWriteFormats()
+    - Simple demo dispatches export via generic write() or per-format methods
+    - No hardcoded format lists in demo JS or HTML
+  out_of_scope: >
+    Backend encoder changes, new codec implementations, WASM build fixes
+  technical_notes: |
+    For the simple demo, use the same pattern as pipeline.js lines 24-39:
+    call supportedWriteFormats(), populate select dynamically, dispatch via
+    generic write(format, pixels, info, config) for formats without dedicated
+    write methods.
+plan:
+  - title: "Fix pipeline.js imageInfo bug"
+    tasks:
+      - title: Add let imageInfo = null declaration near line 200 in pipeline.js
+        done: false
+      - title: Verify pipeline builder loads and processes images without error
+        done: false
+  - title: "Dynamic format discovery in simple demo"
+    tasks:
+      - title: Remove hardcoded format select options from demo/index.html
+        done: false
+      - title: Add supportedWriteFormats() call to main.js to populate dropdown dynamically
+        done: false
+      - title: Replace hardcoded format dispatch with dynamic dispatch via generic write() or per-format methods
+        done: false
+      - title: Verify all backend-supported formats appear in dropdown
+        done: false
+  - title: "Verification"
+    tasks:
+      - title: Test simple demo export for PNG, JPEG, WebP, AVIF, TIFF, BMP, QOI, GIF
+        done: false
+      - title: Test pipeline builder end-to-end with image load and export
+        done: false
+extra: {}
