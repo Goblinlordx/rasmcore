@@ -5866,21 +5866,19 @@ pub struct ShadowHighlightParams {
 
 /// Shadow/highlight adjustment: independently lighten shadows and darken highlights.
 ///
-/// Uses local luminance estimation via gaussian blur to identify shadow and
-/// highlight regions, then applies separate tonal adjustments to each.
-/// Unlike global brightness/contrast, mid-tones are preserved.
+/// Operates in CIE LAB color space for perceptually accurate adjustments,
+/// matching GEGL's `gegl:shadows-highlights` approach.
 ///
 /// Algorithm:
-/// 1. Compute per-pixel luminance (BT.709)
-/// 2. Blur luminance to get local brightness map
-/// 3. Shadow weight = smoothstep(0, 0.5, 1 - local_lum) — strong in dark areas
-/// 4. Highlight weight = smoothstep(0.5, 1, local_lum) — strong in bright areas
-/// 5. For shadows: lighten proportional to shadow_amount * shadow_weight
-/// 6. For highlights: darken proportional to highlight_amount * highlight_weight
+/// 1. Convert RGB to CIE LAB
+/// 2. Extract L* channel (perceptual lightness, 0-100)
+/// 3. Blur L* to get local brightness map
+/// 4. Shadow weight = smoothstep where local L* is low
+/// 5. Highlight weight = smoothstep where local L* is high
+/// 6. Adjust L* proportionally, convert back to RGB
 ///
-/// Reference: Photoshop Image > Adjustments > Shadow/Highlight.
-/// Validated against GEGL gegl:shadows-highlights (ALGORITHM tier, MAE ~11).
-/// Divergence from CIE LAB approach (GEGL) vs RGB luminance (ours).
+/// Reference: GEGL gegl:shadows-highlights.
+/// Validated against GEGL (ALGORITHM tier).
 #[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
 pub fn shadow_highlight(
     pixels: &[u8],
@@ -5904,9 +5902,7 @@ pub fn shadow_highlight(
         ));
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let n = w * h;
+    let n = (info.width as usize) * (info.height as usize);
 
     // Normalize amounts to [0, 1]
     let s_amt = (shadow_amount / 100.0).clamp(0.0, 1.0);
@@ -5917,19 +5913,32 @@ pub fn shadow_highlight(
         return Ok(pixels.to_vec());
     }
 
-    // 1. Compute per-pixel luminance (BT.709)
-    let mut luma = vec![0.0f32; n];
-    for i in 0..n {
-        let pi = i * ch;
-        luma[i] = (0.2126 * pixels[pi] as f32
-            + 0.7152 * pixels[pi + 1] as f32
-            + 0.0722 * pixels[pi + 2] as f32)
-            / 255.0;
-    }
+    // 1. Convert to CIE LAB — extract RGB (strip alpha if RGBA)
+    let rgb_only: Vec<u8> = if ch == 4 {
+        pixels
+            .chunks_exact(4)
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect()
+    } else {
+        pixels.to_vec()
+    };
+    let rgb_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Rgb8,
+        color_space: info.color_space,
+    };
+    let lab = super::color_spaces::image_rgb_to_lab(&rgb_only, &rgb_info)?;
 
-    // 2. Blur luminance to get local brightness map
-    //    Build a Gray8 image from luminance, blur it, read back
-    let gray_pixels: Vec<u8> = luma.iter().map(|&l| (l * 255.0 + 0.5) as u8).collect();
+    // 2. Extract L* channel (range 0-100) and normalize to [0,1] for blur
+    let l_channel: Vec<f32> = (0..n).map(|i| lab[i * 3] as f32).collect();
+
+    // 3. Blur L* for local brightness estimation
+    //    Quantize to Gray8 for blur, then read back
+    let gray_pixels: Vec<u8> = l_channel
+        .iter()
+        .map(|&l| (l * 255.0 / 100.0).round().clamp(0.0, 255.0) as u8)
+        .collect();
     let gray_info = ImageInfo {
         width: info.width,
         height: info.height,
@@ -5937,51 +5946,59 @@ pub fn shadow_highlight(
         color_space: info.color_space,
     };
     let blurred_gray = blur(&gray_pixels, &gray_info, radius)?;
-    let local_lum: Vec<f32> = blurred_gray.iter().map(|&v| v as f32 / 255.0).collect();
+    // Convert back to L* range [0, 100]
+    let local_l: Vec<f32> = blurred_gray
+        .iter()
+        .map(|&v| v as f32 * 100.0 / 255.0)
+        .collect();
 
-    // 3-6. Apply shadow/highlight adjustments
-    let mut result = vec![0u8; pixels.len()];
+    // 4-6. Adjust L* in LAB space
+    let mut lab_adjusted = lab.clone();
 
     for i in 0..n {
-        let ll = local_lum[i];
+        let ll = local_l[i] / 100.0; // normalize to [0, 1] for weight computation
+        let l_orig = lab[i * 3];
 
-        // Shadow weight: strong where local luminance is low
-        // smoothstep from 0 at ll=0.5 to 1 at ll=0
+        // Shadow weight: strong where local L* is low
         let shadow_w = if ll >= 0.5 {
             0.0
         } else {
-            let t = 1.0 - ll * 2.0; // 1 at ll=0, 0 at ll=0.5
-            t * t * (3.0 - 2.0 * t) // smoothstep
+            let t = 1.0 - ll * 2.0;
+            (t * t * (3.0 - 2.0 * t)) as f64
         };
 
-        // Highlight weight: strong where local luminance is high
-        // smoothstep from 0 at ll=0.5 to 1 at ll=1
+        // Highlight weight: strong where local L* is high
         let highlight_w = if ll <= 0.5 {
             0.0
         } else {
-            let t = (ll - 0.5) * 2.0; // 0 at ll=0.5, 1 at ll=1
-            t * t * (3.0 - 2.0 * t) // smoothstep
+            let t = (ll - 0.5) * 2.0;
+            (t * t * (3.0 - 2.0 * t)) as f64
         };
 
-        let pi = i * ch;
-        for c in 0..3 {
-            let orig = pixels[pi + c] as f32;
+        // Adjust L*: shadow lifts toward 50, highlight pulls toward 50
+        let shadow_boost = (50.0 - l_orig).max(0.0) * s_amt as f64 * shadow_w;
+        let highlight_cut = (l_orig - 50.0).max(0.0) * h_amt as f64 * highlight_w;
 
-            // Shadow: lighten dark areas (boost toward 128)
-            let shadow_boost = (128.0 - orig).max(0.0) * s_amt * shadow_w;
-
-            // Highlight: darken bright areas (pull toward 128)
-            let highlight_cut = (orig - 128.0).max(0.0) * h_amt * highlight_w;
-
-            let adjusted = orig + shadow_boost - highlight_cut;
-            result[pi + c] = adjusted.round().clamp(0.0, 255.0) as u8;
-        }
-        if ch == 4 {
-            result[pi + 3] = pixels[pi + 3]; // preserve alpha
-        }
+        lab_adjusted[i * 3] = (l_orig + shadow_boost - highlight_cut).clamp(0.0, 100.0);
+        // a* and b* channels preserved (color unchanged)
     }
 
-    Ok(result)
+    // 7. Convert back to RGB
+    let rgb_result = super::color_spaces::image_lab_to_rgb(&lab_adjusted, &rgb_info)?;
+
+    // Re-insert alpha if needed
+    if ch == 4 {
+        let mut result = vec![0u8; n * 4];
+        for i in 0..n {
+            result[i * 4] = rgb_result[i * 3];
+            result[i * 4 + 1] = rgb_result[i * 3 + 1];
+            result[i * 4 + 2] = rgb_result[i * 3 + 2];
+            result[i * 4 + 3] = pixels[i * 4 + 3]; // preserve alpha
+        }
+        Ok(result)
+    } else {
+        Ok(rgb_result)
+    }
 }
 
 // ─── Frequency Separation ──────────────────────────────────────────────────
