@@ -65,3 +65,6 @@ drop-image-png-gif_20260330010102Z:
 drop-image-jpeg-decode_20260330020800Z: []
 drop-image-png-direct_20260330020801Z: []
 drop-image-gif-direct_20260330020802Z: []
+
+# JPEG CMYK/YCCK decode gap
+jpeg-cmyk-decode_20260330023000Z: []

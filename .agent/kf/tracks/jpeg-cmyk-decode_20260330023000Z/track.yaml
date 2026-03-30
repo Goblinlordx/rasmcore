@@ -1,0 +1,126 @@
+id: jpeg-cmyk-decode_20260330023000Z
+title: "JPEG Decoder \u2014 CMYK/YCCK 4-Component Support"
+type: feature
+status: pending
+created: '2026-03-30'
+updated: '2026-03-30'
+spec:
+  summary: >
+    Add CMYK and YCCK (4-component) JPEG decode to rasmcore-jpeg. This is
+    the only decode coverage gap vs zune-jpeg/image crate. Used in print
+    workflows (Photoshop CMYK export).
+  context: |
+    rasmcore-jpeg was wired as the default JPEG decoder, replacing the image
+    crate's zune-jpeg backend. The coverage audit (COVERAGE.md) identified
+    CMYK/YCCK as the only feature gap. CMYK JPEGs are rare in web/consumer
+    contexts but exist in professional print workflows (Photoshop, InDesign).
+  codebase_analysis: |
+    The decoder's scan/MCU/plane machinery already handles 4 components
+    generically -- the SOF parser, block decoder, scan processor, and
+    upsample function all work with arbitrary num_components. The gap is
+    entirely in the output path:
+
+    1. decode.rs:661-700 -- hardcodes 3-component YCbCr->RGB conversion.
+       Panics if components.len() != 1 and != 3 (no 4-component path).
+    2. decode.rs:1037-1074 -- same hardcoding in progressive decoder output.
+    3. decode_arith.rs:147 -- same in arithmetic decoder output.
+    4. No APP14 (Adobe) marker parsing -- needed to detect CMYK vs YCCK
+       and whether values are inverted (Adobe convention: 255-C, 255-M, 255-Y, 255-K).
+    5. color.rs -- only has ycbcr_to_rgb_fixed, no CMYK/YCCK conversions.
+
+    Good news: the heavy lifting (entropy decode, IDCT, upsampling) all works.
+    The fix is concentrated in 3 output functions + 1 marker parser + 2 color
+    conversion functions.
+  acceptance_criteria:
+    - Decode 4-component CMYK JPEGs (non-Adobe and Adobe-inverted)
+    - Decode 4-component YCCK JPEGs (YCbCr + K channel)
+    - APP14 marker parsed to detect Adobe color transform (0=CMYK, 2=YCCK)
+    - Adobe CMYK inversion handled automatically (255-value)
+    - Output as CMYK raw bytes (4 channels) or converted to RGB (3 channels)
+    - Progressive CMYK decode works (SOF2 + 4 components)
+    - Arithmetic CMYK decode works (SOF9/SOF10 + 4 components)
+    - Parity test vs ImageMagick on real CMYK JPEG test images
+    - Update COVERAGE.md to mark CMYK/YCCK as supported
+  out_of_scope: |
+    12-bit sample precision (SOF1) -- separate track if needed.
+    Lossless JPEG (SOF3/7/11/15) -- largely superseded by JPEG-LS.
+    CMYK JPEG encoding (not common; decode is the priority).
+  technical_notes: |
+    IMPLEMENTATION ORDER:
+
+    Phase 1 -- Refactor output path:
+      The 3 output functions (sequential, progressive, arithmetic) each have
+      a hardcoded 3-component YCbCr->RGB block. Refactor to dispatch based on
+      num_components: 1=grayscale, 3=YCbCr->RGB, 4=CMYK/YCCK.
+      Extract a shared output_pixels() function to avoid 3x duplication.
+
+    Phase 2 -- APP14 parsing:
+      Parse APP14 marker (0xFFEE) during marker scan. Look for "Adobe"
+      signature (bytes 0-4 of payload). Read color_transform byte (byte 11):
+        0 = Unknown (treat as CMYK if 4 components)
+        1 = YCbCr (standard 3-component)
+        2 = YCCK (YCbCr encoding of CMYK)
+      Store as field on JpegFrame or in a decode context struct.
+
+    Phase 3 -- Color conversions:
+      YCCK->CMYK: Apply YCbCr->RGB conversion to first 3 components, keep K.
+        C = 255 - R, M = 255 - G, Y = 255 - B (where R,G,B from YCbCr)
+      CMYK->RGB (for final output):
+        R = 255 - min(255, C * (255-K)/255 + K)  (or simpler: R = (255-C)*(255-K)/255)
+        G = (255-M)*(255-K)/255
+        B = (255-Y)*(255-K)/255
+      Adobe inversion: if APP14 color_transform==0 and 4 components,
+        invert all channels: C=255-C, M=255-M, Y=255-Y, K=255-K before
+        CMYK->RGB conversion.
+
+    Phase 4 -- Parity validation:
+      Generate CMYK JPEG test images via ImageMagick:
+        magick convert input.png -colorspace CMYK output_cmyk.jpg
+      Decode with both rasmcore-jpeg and ImageMagick, compare RGB output.
+      Use Photoshop-exported CMYK JPEGs if available for real-world testing.
+
+    PIXEL FORMAT:
+      Add PixelFormat::Cmyk8 or output as Rgba8 with CMYK->RGB conversion.
+      For maximum flexibility, support both: raw CMYK output and auto-converted
+      RGB output. The decoder should default to RGB output (most consumers
+      expect RGB) but allow CMYK passthrough via a decode option.
+plan:
+  - phase: "Refactor output path"
+    tasks:
+      - text: "Extract shared output_pixels() function from sequential decoder (decode.rs:661-700)"
+        done: false
+      - text: "Wire output_pixels() into progressive decoder output (decode.rs:1037-1074)"
+        done: false
+      - text: "Wire output_pixels() into arithmetic decoder output (decode_arith.rs:147)"
+        done: false
+      - text: "Add 4-component dispatch in output_pixels (return error for now)"
+        done: false
+  - phase: "APP14 marker parsing"
+    tasks:
+      - text: "Parse APP14 marker during marker scan -- detect Adobe signature and color_transform byte"
+        done: false
+      - text: "Store adobe_color_transform on JpegFrame or decode context"
+        done: false
+  - phase: "CMYK/YCCK color conversion"
+    tasks:
+      - text: "Implement YCCK-to-RGB conversion in color.rs (YCbCr on 3 channels + K pullout)"
+        done: false
+      - text: "Implement CMYK-to-RGB conversion in color.rs (standard formula)"
+        done: false
+      - text: "Implement Adobe CMYK inversion (255-value for all 4 channels)"
+        done: false
+      - text: "Wire conversions into output_pixels 4-component path"
+        done: false
+  - phase: "Validation"
+    tasks:
+      - text: "Generate CMYK and YCCK test JPEGs via ImageMagick"
+        done: false
+      - text: "Add parity test -- decode CMYK JPEG, compare RGB output vs ImageMagick"
+        done: false
+      - text: "Add parity test -- decode YCCK JPEG (Adobe Photoshop style)"
+        done: false
+      - text: "Test progressive CMYK decode (SOF2 + 4 components)"
+        done: false
+      - text: "Update COVERAGE.md to mark CMYK/YCCK as supported"
+        done: false
+extra: {}
