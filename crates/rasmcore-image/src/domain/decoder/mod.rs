@@ -425,6 +425,60 @@ pub fn decode_as(data: &[u8], target_format: PixelFormat) -> Result<DecodedImage
     convert_pixels(decoded, target_format)
 }
 
+/// Check if a JPEG image contains CMYK/YCCK data (4-component with Adobe APP14 marker).
+///
+/// Returns true if the JPEG has 4 color components, indicating CMYK or YCCK encoding.
+pub fn is_jpeg_cmyk(data: &[u8]) -> bool {
+    // Check for JPEG SOI marker
+    if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+        return false;
+    }
+    // Scan for SOF marker to check component count
+    let mut pos = 2;
+    while pos + 4 < data.len() {
+        if data[pos] != 0xFF {
+            pos += 1;
+            continue;
+        }
+        let marker = data[pos + 1];
+        // SOF0-SOF3 (baseline, progressive, etc.)
+        if (0xC0..=0xC3).contains(&marker) {
+            // SOF: length(2) + precision(1) + height(2) + width(2) + num_components(1)
+            if pos + 9 < data.len() {
+                let num_components = data[pos + 9];
+                return num_components == 4;
+            }
+            return false;
+        }
+        // Skip marker segment
+        if marker == 0x00 || marker == 0xFF {
+            pos += 1;
+            continue;
+        }
+        if pos + 3 < data.len() {
+            let len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
+            pos += 2 + len;
+        } else {
+            break;
+        }
+    }
+    false
+}
+
+/// Decode an image, preserving CMYK pixel format for CMYK JPEGs.
+///
+/// For CMYK JPEGs, the decode path converts CMYK→RGB internally (matching libjpeg-turbo),
+/// then this function converts RGB back to CMYK8 to preserve the CMYK color space.
+/// For all other formats, behaves identically to `decode()`.
+pub fn decode_preserve_cmyk(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let decoded = decode(data)?;
+    if is_jpeg_cmyk(data) && decoded.info.format == PixelFormat::Rgb8 {
+        convert_pixels(decoded, PixelFormat::Cmyk8)
+    } else {
+        Ok(decoded)
+    }
+}
+
 /// Convert decoded image pixels to a different pixel format.
 fn convert_pixels(decoded: DecodedImage, target: PixelFormat) -> Result<DecodedImage, ImageError> {
     let w = decoded.info.width as usize;
@@ -457,6 +511,30 @@ fn convert_pixels(decoded: DecodedImage, target: PixelFormat) -> Result<DecodedI
         // Gray8 → RGBA8
         (PixelFormat::Gray8, PixelFormat::Rgba8) => {
             src.iter().flat_map(|&g| [g, g, g, 255]).collect()
+        }
+        // RGB8 → CMYK8
+        (PixelFormat::Rgb8, PixelFormat::Cmyk8) => {
+            let (cmyk, _) = color::rgb_to_cmyk(src, &decoded.info)?;
+            return Ok(DecodedImage {
+                pixels: cmyk,
+                info: ImageInfo {
+                    format: PixelFormat::Cmyk8,
+                    ..decoded.info
+                },
+                icc_profile: decoded.icc_profile,
+            });
+        }
+        // CMYK8 → RGB8
+        (PixelFormat::Cmyk8, PixelFormat::Rgb8) => {
+            let (rgb, _) = color::cmyk_to_rgb(src, &decoded.info)?;
+            return Ok(DecodedImage {
+                pixels: rgb,
+                info: ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..decoded.info
+                },
+                icc_profile: decoded.icc_profile,
+            });
         }
         _ => {
             return Err(ImageError::UnsupportedFormat(format!(
@@ -1010,6 +1088,9 @@ fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
         (tiff::ColorType::RGBA(16), tiff::decoder::DecodingResult::U16(buf)) => {
             let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
             (bytes, PixelFormat::Rgba16)
+        }
+        (tiff::ColorType::CMYK(8), tiff::decoder::DecodingResult::U8(buf)) => {
+            (buf, PixelFormat::Cmyk8)
         }
         _ => {
             return Err(ImageError::UnsupportedFormat(format!(
