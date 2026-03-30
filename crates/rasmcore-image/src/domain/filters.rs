@@ -9342,6 +9342,7 @@ pub struct AscCdlParams {
 }
 
 #[rasmcore_macros::register_filter(name = "asc_cdl", category = "grading")]
+#[allow(clippy::too_many_arguments)]
 pub fn asc_cdl_registered(
     pixels: &[u8],
     info: &ImageInfo,
@@ -9397,6 +9398,7 @@ pub struct LiftGammaGainParams {
 }
 
 #[rasmcore_macros::register_filter(name = "lift_gamma_gain", category = "grading")]
+#[allow(clippy::too_many_arguments)]
 pub fn lift_gamma_gain_registered(
     pixels: &[u8],
     info: &ImageInfo,
