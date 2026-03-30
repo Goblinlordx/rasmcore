@@ -253,15 +253,17 @@ fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// constants, same butterfly structure). Pixel-level divergence vs
 /// ImageMagick (~35dB PSNR) comes from the chroma upsampling and color
 /// conversion pipelines, not the IDCT. See `dct.rs` for details.
-pub fn smart_resize(
-    data: &[u8],
-    target_w: u32,
-    target_h: u32,
-) -> Result<DecodedImage, ImageError> {
+pub fn smart_resize(data: &[u8], target_w: u32, target_h: u32) -> Result<DecodedImage, ImageError> {
     let is_jpeg = data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8;
     if !is_jpeg {
         let dec = decode(data)?;
-        return super::transform::resize(&dec.pixels, &dec.info, target_w, target_h, ResizeFilter::Lanczos3);
+        return super::transform::resize(
+            &dec.pixels,
+            &dec.info,
+            target_w,
+            target_h,
+            ResizeFilter::Lanczos3,
+        );
     }
 
     // Peek at JPEG dimensions without full decode
@@ -290,7 +292,13 @@ pub fn smart_resize(
         return Ok(dec);
     }
 
-    super::transform::resize(&dec.pixels, &dec.info, target_w, target_h, ResizeFilter::Lanczos3)
+    super::transform::resize(
+        &dec.pixels,
+        &dec.info,
+        target_w,
+        target_h,
+        ResizeFilter::Lanczos3,
+    )
 }
 
 /// Decode an image from raw bytes
@@ -1712,8 +1720,7 @@ fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
                     "DDS: DX10 header too short".into(),
                 ));
             }
-            let dxgi_format =
-                u32::from_le_bytes([data[128], data[129], data[130], data[131]]);
+            let dxgi_format = u32::from_le_bytes([data[128], data[129], data[130], data[131]]);
             let fmt = match dxgi_format {
                 DXGI_FORMAT_BC1_UNORM | DXGI_FORMAT_BC1_UNORM_SRGB => DdsBcFormat::Bc1,
                 DXGI_FORMAT_BC2_UNORM | DXGI_FORMAT_BC2_UNORM_SRGB => DdsBcFormat::Bc2,
@@ -1928,9 +1935,7 @@ fn gif_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo)
             .read_next_frame()
             .map_err(|e| ImageError::InvalidInput(format!("GIF: {e}")))?
             .ok_or_else(|| {
-                ImageError::InvalidParameters(format!(
-                    "GIF frame index {index} out of range"
-                ))
+                ImageError::InvalidParameters(format!("GIF frame index {index} out of range"))
             })?;
 
         if i == index {
@@ -2104,11 +2109,9 @@ fn tiff_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo
 
     // Seek to the requested IFD
     if index > 0 {
-        decoder
-            .seek_to_image(index as usize)
-            .map_err(|e| ImageError::InvalidParameters(format!(
-                "TIFF page index {index} out of range: {e}"
-            )))?;
+        decoder.seek_to_image(index as usize).map_err(|e| {
+            ImageError::InvalidParameters(format!("TIFF page index {index} out of range: {e}"))
+        })?;
     }
 
     let (width, height) = decoder
@@ -2943,12 +2946,7 @@ mod tests {
     }
 
     /// Build a DDS file with DX10 extended header.
-    fn make_dds_dx10(
-        width: u32,
-        height: u32,
-        dxgi_format: u32,
-        blocks: &[u8],
-    ) -> Vec<u8> {
+    fn make_dds_dx10(width: u32, height: u32, dxgi_format: u32, blocks: &[u8]) -> Vec<u8> {
         let mut buf = make_dds_fourcc(width, height, b"DX10", &[]);
         // DX10 header extension (20 bytes):
         // DXGI_FORMAT
@@ -3073,7 +3071,7 @@ mod tests {
         // Alpha block: endpoints 255, 255, indices all 0 → alpha=255
         block[0] = 255; // alpha endpoint 0
         block[1] = 255; // alpha endpoint 1
-        // Alpha indices: all 0
+                        // Alpha indices: all 0
         block[2..8].copy_from_slice(&[0; 6]);
         // Color block: solid green (G=63 in RGB565 = 0x07E0)
         block[8..10].copy_from_slice(&0x07E0u16.to_le_bytes());
@@ -3150,7 +3148,7 @@ mod tests {
         buf.extend_from_slice(&0u32.to_le_bytes()); // depth
         buf.extend_from_slice(&0u32.to_le_bytes()); // mipmaps
         buf.extend_from_slice(&[0u8; 44]); // reserved
-        // Pixel format
+                                           // Pixel format
         buf.extend_from_slice(&32u32.to_le_bytes()); // size
         let pf_flags: u32 = 0x40 | 0x01; // DDPF_RGB | DDPF_ALPHAPIXELS
         buf.extend_from_slice(&pf_flags.to_le_bytes());
@@ -3160,7 +3158,7 @@ mod tests {
         buf.extend_from_slice(&0x0000FF00u32.to_le_bytes()); // G mask
         buf.extend_from_slice(&0x000000FFu32.to_le_bytes()); // B mask
         buf.extend_from_slice(&0xFF000000u32.to_le_bytes()); // A mask
-        // Caps
+                                                             // Caps
         buf.extend_from_slice(&0x1000u32.to_le_bytes());
         buf.extend_from_slice(&[0u8; 16]);
         assert_eq!(buf.len(), 128);
