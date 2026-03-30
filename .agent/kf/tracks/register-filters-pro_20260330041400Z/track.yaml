@@ -5,129 +5,123 @@ status: pending
 created: '2026-03-30'
 updated: '2026-03-30'
 spec:
-  summary: >
-    Register 12 implemented-but-invisible pro filters with #[register_filter] + ConfigParams:
-    curves (4 channel variants), ASC CDL, lift/gamma/gain, split toning, tonemap
-    Reinhard/Drago/Filmic, film grain, smart_crop, seam_carve (2), selective_color.
-  context: |
-    Professional color grading (ASC CDL, lift/gamma/gain, curves, split toning),
+  summary: 'Register 12 implemented-but-invisible pro filters with #[register_filter] + ConfigParams: curves (4 channel variants),
+    ASC CDL, lift/gamma/gain, split toning, tonemap Reinhard/Drago/Filmic, film grain, smart_crop, seam_carve (2), selective_color.
+
+    '
+  context: 'Professional color grading (ASC CDL, lift/gamma/gain, curves, split toning),
+
     HDR tone mapping (Reinhard, Drago, Filmic), and content-aware operations
+
     (smart crop, seam carving, selective color) are fully implemented but invisible
+
     to WASM/SDK/UI because they lack #[register_filter] annotations.
 
+
     These are high-value differentiators — ASC CDL and lift/gamma/gain are
+
     industry-standard grading tools, and content-aware resize/crop compete
+
     directly with vips smartcrop and IM liquid-rescale.
-  codebase_analysis: |
-    UNREGISTERED FUNCTIONS TO REGISTER (12 filters, curves splits to 4):
 
-    color_grading.rs — professional grading:
-      1. asc_cdl(pixels, info, cdl: &AscCdl)
-         → ConfigParams {slope_r, slope_g, slope_b, offset_r, offset_g, offset_b,
-            power_r, power_g, power_b: f32}, category "grading"
-      2. lift_gamma_gain(pixels, info, lgg: &LiftGammaGain)
-         → ConfigParams {lift_r..b, gamma_r..b, gain_r..b: f32}, category "grading"
-      3. split_toning(pixels, info, st: &SplitToning)
-         → ConfigParams {highlight_hue, shadow_hue: f32 [0..360],
-            balance: f32 [-1..1]}, category "grading"
-      4-7. curves — split into 4 registered filters sharing build_curve_lut:
-         - curves_master(pixels, info, points) → applies to all channels
-         - curves_red / curves_green / curves_blue → per-channel
-         ConfigParams for each: {points: string (JSON array of [x,y] pairs)}
-         Category "grading"
-      8. film_grain(pixels, info, ...) → ConfigParams {amount: f32, size: f32,
-         seed: u32}, category "effect"
-
-    color_grading.rs — HDR tone mapping:
-      9. tonemap_reinhard(pixels, info) → no params, category "tonemapping"
-     10. tonemap_drago(pixels, info, params) → ConfigParams {bias: f32 [0.5..1.0]},
-         category "tonemapping"
-     11. tonemap_filmic(pixels, info, params) → ConfigParams {shoulder_strength,
-         linear_strength, linear_angle, toe_strength, toe_numerator,
-         toe_denominator: f32}, category "tonemapping"
-
-    smart_crop.rs — content-aware crop:
-     12. smart_crop(pixels, info, target_w, target_h)
-         → ConfigParams {target_width, target_height: u32}, category "transform"
-
-    content_aware.rs — seam carving + selective color:
-     13. seam_carve_width(pixels, info, target_w)
-         → ConfigParams {target_width: u32}, category "transform"
-     14. seam_carve_height(pixels, info, target_h)
-         → ConfigParams {target_height: u32}, category "transform"
-     15. selective_color(pixels, info, target_hue, range, adjustment)
-         → ConfigParams {target_hue: f32, hue_range: f32, cyan, magenta,
-            yellow, black: f32}, category "color"
-
-    CURVES DESIGN NOTE:
-    ToneCurves has per-channel control points (variable-length arrays). Options:
-    a) Serialize as JSON string param → works but loses slider UI benefit
-    b) Fixed 5-point per channel → 30 float params, unwieldy
-    c) Split into 4 filters (master/R/G/B) each with points as JSON string
-    Recommend option (c) — cleaner API, each filter is independently useful,
-    and JSON string is parsed by the wrapper function.
+    '
+  codebase_analysis: "UNREGISTERED FUNCTIONS TO REGISTER (12 filters, curves splits to 4):\n\ncolor_grading.rs — professional\
+    \ grading:\n  1. asc_cdl(pixels, info, cdl: &AscCdl)\n     → ConfigParams {slope_r, slope_g, slope_b, offset_r, offset_g,\
+    \ offset_b,\n        power_r, power_g, power_b: f32}, category \"grading\"\n  2. lift_gamma_gain(pixels, info, lgg: &LiftGammaGain)\n\
+    \     → ConfigParams {lift_r..b, gamma_r..b, gain_r..b: f32}, category \"grading\"\n  3. split_toning(pixels, info, st:\
+    \ &SplitToning)\n     → ConfigParams {highlight_hue, shadow_hue: f32 [0..360],\n        balance: f32 [-1..1]}, category\
+    \ \"grading\"\n  4-7. curves — split into 4 registered filters sharing build_curve_lut:\n     - curves_master(pixels,\
+    \ info, points) → applies to all channels\n     - curves_red / curves_green / curves_blue → per-channel\n     ConfigParams\
+    \ for each: {points: string (JSON array of [x,y] pairs)}\n     Category \"grading\"\n  8. film_grain(pixels, info, ...)\
+    \ → ConfigParams {amount: f32, size: f32,\n     seed: u32}, category \"effect\"\n\ncolor_grading.rs — HDR tone mapping:\n\
+    \  9. tonemap_reinhard(pixels, info) → no params, category \"tonemapping\"\n 10. tonemap_drago(pixels, info, params) →\
+    \ ConfigParams {bias: f32 [0.5..1.0]},\n     category \"tonemapping\"\n 11. tonemap_filmic(pixels, info, params) → ConfigParams\
+    \ {shoulder_strength,\n     linear_strength, linear_angle, toe_strength, toe_numerator,\n     toe_denominator: f32}, category\
+    \ \"tonemapping\"\n\nsmart_crop.rs — content-aware crop:\n 12. smart_crop(pixels, info, target_w, target_h)\n     → ConfigParams\
+    \ {target_width, target_height: u32}, category \"transform\"\n\ncontent_aware.rs — seam carving + selective color:\n 13.\
+    \ seam_carve_width(pixels, info, target_w)\n     → ConfigParams {target_width: u32}, category \"transform\"\n 14. seam_carve_height(pixels,\
+    \ info, target_h)\n     → ConfigParams {target_height: u32}, category \"transform\"\n 15. selective_color(pixels, info,\
+    \ target_hue, range, adjustment)\n     → ConfigParams {target_hue: f32, hue_range: f32, cyan, magenta,\n        yellow,\
+    \ black: f32}, category \"color\"\n\nCURVES DESIGN NOTE:\nToneCurves has per-channel control points (variable-length arrays).\
+    \ Options:\na) Serialize as JSON string param → works but loses slider UI benefit\nb) Fixed 5-point per channel → 30 float\
+    \ params, unwieldy\nc) Split into 4 filters (master/R/G/B) each with points as JSON string\nRecommend option (c) — cleaner\
+    \ API, each filter is independently useful,\nand JSON string is parsed by the wrapper function.\n"
   acceptance_criteria:
-    - All 15 filter registrations (12 functions, curves as 4 variants) have #[register_filter]
-    - ConfigParams structs with meaningful ranges, defaults, and labels
-    - All appear in param-manifest.json after cargo build
-    - Existing tests pass unchanged
-    - Curves accepts JSON-serialized control points and produces correct output
-  out_of_scope: |
-    Multi-image filters (blend with 16 modes, inpaint) — require pipeline
+  - All 15 filter registrations (12 functions, curves as 4 variants) have
+  - ConfigParams structs with meaningful ranges, defaults, and labels
+  - All appear in param-manifest.json after cargo build
+  - Existing tests pass unchanged
+  - Curves accepts JSON-serialized control points and produces correct output
+  out_of_scope: 'Multi-image filters (blend with 16 modes, inpaint) — require pipeline
+
     multi-input architecture, deferred separately.
+
     3D CLUT operations (compose, absorb) — pipeline internals, not user-facing.
+
     Delta E metrics — return scalar, not pixel data.
+
     Mertens fusion / Debevec HDR — multi-image operations, same deferral as blend.
-  technical_notes: |
-    All functions are already implemented and tested. This is registration-only work.
+
+    '
+  technical_notes: 'All functions are already implemented and tested. This is registration-only work.
+
 
     For curves: build_curve_lut() already converts control points to a 256-entry
+
     LUT. The registered wrapper parses JSON points string, builds LUT, applies.
+
     This makes curves LUT-collapsible in the pipeline optimizer.
 
+
     For selective_color: models Photoshop-style selective color adjustment. The
+
     function targets a hue range and adjusts CMYK-like channels within that range.
 
+
     For seam_carve: these resize the image content-aware (removing low-energy seams).
+
     Output dimensions differ from input, which is unusual for filters. The
+
     ConfigParams should document that output size changes.
+
+    '
 plan:
-  - phase: Color Grading Registration
-    tasks:
-      - text: "Register asc_cdl — 9 float params (slope/offset/power per RGB), category grading"
-        done: false
-      - text: "Register lift_gamma_gain — 9 float params (LGG per RGB), category grading"
-        done: false
-      - text: "Register split_toning — highlight_hue, shadow_hue, balance params"
-        done: false
-      - text: "Register curves_master — JSON points string param, applies LUT to all channels"
-        done: false
-      - text: "Register curves_red / curves_green / curves_blue — same pattern, per-channel"
-        done: false
-      - text: "Register film_grain — amount, size, seed params, category effect"
-        done: false
-  - phase: Tone Mapping Registration
-    tasks:
-      - text: "Register tonemap_reinhard — no params, category tonemapping"
-        done: false
-      - text: "Register tonemap_drago — bias param, category tonemapping"
-        done: false
-      - text: "Register tonemap_filmic — 6 float params, category tonemapping"
-        done: false
-  - phase: Content-Aware Registration
-    tasks:
-      - text: "Register smart_crop — target_width, target_height params, category transform"
-        done: false
-      - text: "Register seam_carve_width — target_width param, category transform"
-        done: false
-      - text: "Register seam_carve_height — target_height param, category transform"
-        done: false
-      - text: "Register selective_color — target_hue, range, CMYK adjustment params"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "cargo build — verify all 15 registrations appear in param-manifest.json"
-        done: false
-      - text: "cargo test — all existing tests pass, no regressions"
-        done: false
+- phase: Color Grading Registration
+  tasks:
+  - text: Register asc_cdl — 9 float params (slope/offset/power per RGB), category grading
+    done: true
+  - text: Register lift_gamma_gain — 9 float params (LGG per RGB), category grading
+    done: true
+  - text: Register split_toning — highlight_hue, shadow_hue, balance params
+    done: true
+  - text: Register curves_master — JSON points string param, applies LUT to all channels
+    done: true
+  - text: Register curves_red / curves_green / curves_blue — same pattern, per-channel
+    done: true
+  - text: Register film_grain — amount, size, seed params, category effect
+    done: true
+- phase: Tone Mapping Registration
+  tasks:
+  - text: Register tonemap_reinhard — no params, category tonemapping
+    done: true
+  - text: Register tonemap_drago — bias param, category tonemapping
+    done: true
+  - text: Register tonemap_filmic — 6 float params, category tonemapping
+    done: true
+- phase: Content-Aware Registration
+  tasks:
+  - text: Register smart_crop — target_width, target_height params, category transform
+    done: true
+  - text: Register seam_carve_width — target_width param, category transform
+    done: true
+  - text: Register seam_carve_height — target_height param, category transform
+    done: true
+  - text: Register selective_color — target_hue, range, CMYK adjustment params
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo build — verify all 15 registrations appear in param-manifest.json
+    done: true
+  - text: cargo test — all existing tests pass, no regressions
+    done: true
 extra: {}
