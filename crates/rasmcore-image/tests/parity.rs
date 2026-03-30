@@ -489,6 +489,7 @@ fn parity_jpeg_determinism() {
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
         progressive: false,
+        ..Default::default()
     };
     let out1 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
     let out2 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
@@ -502,6 +503,7 @@ fn parity_jpeg_determinism_progressive() {
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
         progressive: true,
+        ..Default::default()
     };
     let out1 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
     let out2 = encoder::jpeg::encode_pixels(&decoded.pixels, &decoded.info, &config).unwrap();
@@ -525,6 +527,7 @@ fn parity_jpeg_quality_per_byte_butteraugli() {
         let config = encoder::jpeg::JpegEncodeConfig {
             quality: q,
             progressive: false,
+        ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
@@ -572,6 +575,7 @@ fn parity_jpeg_quality_per_byte_dssim() {
         let config = encoder::jpeg::JpegEncodeConfig {
             quality: q,
             progressive: false,
+        ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
@@ -615,6 +619,7 @@ fn parity_jpeg_quality_curve_filesize() {
         let config = encoder::jpeg::JpegEncodeConfig {
             quality: q,
             progressive: false,
+        ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
@@ -643,6 +648,7 @@ fn parity_jpeg_quality_monotonic() {
             let config = encoder::jpeg::JpegEncodeConfig {
                 quality: q,
                 progressive: false,
+            ..Default::default()
             };
             encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config)
                 .unwrap()
@@ -671,6 +677,7 @@ fn parity_jpeg_progressive_structure() {
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
         progressive: true,
+        ..Default::default()
     };
     let jpeg_data = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
 
@@ -689,6 +696,7 @@ fn parity_jpeg_progressive_structure() {
     let baseline_config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
         progressive: false,
+        ..Default::default()
     };
     let baseline_data =
         encoder::jpeg::encode_pixels(&source.pixels, &source.info, &baseline_config).unwrap();
@@ -714,6 +722,7 @@ fn parity_jpeg_edge_quality_1() {
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 1,
         progressive: false,
+        ..Default::default()
     };
     let result = encoder::jpeg::encode_pixels(&pixels, &info, &config);
     assert!(result.is_ok(), "Quality 1 should succeed");
@@ -732,6 +741,7 @@ fn parity_jpeg_edge_quality_100() {
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 100,
         progressive: false,
+        ..Default::default()
     };
     let result = encoder::jpeg::encode_pixels(&pixels, &info, &config);
     assert!(result.is_ok(), "Quality 100 should succeed");

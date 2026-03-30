@@ -469,7 +469,7 @@ fn pyramid_detail_remap_vs_python_pyramid() {
     let pixels = generate_detail_image(w, h);
     let info = test_info(w, h);
     let sigma = 0.5f32;
-    let levels = 4usize;
+    let levels = 4u32;
 
     // Our Local Laplacian
     let ours = filters::pyramid_detail_remap(&pixels, &info, sigma, levels).unwrap();
