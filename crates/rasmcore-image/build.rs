@@ -9,7 +9,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -27,18 +27,26 @@ fn main() {
         return;
     }
 
-    // Combine sources: param_types first (defines reusable types), then filters, then composite
-    let mut source = String::new();
-    if param_types_path.exists() {
-        source.push_str(&fs::read_to_string(&param_types_path).unwrap());
-        source.push('\n');
+    // Parse each source file separately via syn (concatenation breaks AST parsing)
+    let filters_source = fs::read_to_string(&filters_path).unwrap();
+    let param_types_source = if param_types_path.exists() {
+        fs::read_to_string(&param_types_path).unwrap()
+    } else {
+        String::new()
+    };
+    let composite_source = if composite_path.exists() {
+        fs::read_to_string(&composite_path).unwrap()
+    } else {
+        String::new()
+    };
+
+    // Collect filters from all source files
+    let mut filters = parse_registered_filters(&filters_source);
+    if !composite_source.is_empty() {
+        filters.extend(parse_registered_filters(&composite_source));
     }
-    source.push_str(&fs::read_to_string(&filters_path).unwrap());
-    if composite_path.exists() {
-        source.push('\n');
-        source.push_str(&fs::read_to_string(&composite_path).unwrap());
-    }
-    let filters = parse_registered_filters(&source);
+
+    // Each file parsed separately via syn — no combined source needed
 
     if filters.is_empty() {
         // Write empty generated file
@@ -214,7 +222,10 @@ fn main() {
         let ctor_sig = if ctor_params.is_empty() {
             "upstream: u32, source_info: ImageInfo".to_string()
         } else {
-            format!("upstream: u32, source_info: ImageInfo, {}", ctor_params.join(", "))
+            format!(
+                "upstream: u32, source_info: ImageInfo, {}",
+                ctor_params.join(", ")
+            )
         };
         let ctor_fields: Vec<String> = f
             .params
@@ -226,10 +237,7 @@ fn main() {
 
         nodes_code.push_str(&format!("impl {node_name} {{\n"));
         nodes_code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
-        nodes_code.push_str(&format!(
-            "        Self {{ {} }}\n",
-            all_fields.join(", ")
-        ));
+        nodes_code.push_str(&format!("        Self {{ {} }}\n", all_fields.join(", ")));
         nodes_code.push_str("    }\n");
         nodes_code.push_str("}\n\n");
 
@@ -273,11 +281,14 @@ fn main() {
         nodes_code.push_str("    fn compute_region(\n");
         nodes_code.push_str("        &self,\n");
         nodes_code.push_str("        request: Rect,\n");
-        nodes_code.push_str("        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n");
+        nodes_code.push_str(
+            "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
+        );
         nodes_code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
         nodes_code.push_str("        let overlap = self.overlap();\n");
         nodes_code.push_str("        let upstream_rect = request.expand(&overlap, self.source_info.width, self.source_info.height);\n");
-        nodes_code.push_str("        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;\n");
+        nodes_code
+            .push_str("        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;\n");
         nodes_code.push_str("        let region_info = ImageInfo {\n");
         nodes_code.push_str("            width: upstream_rect.width,\n");
         nodes_code.push_str("            height: upstream_rect.height,\n");
@@ -298,8 +309,12 @@ fn main() {
         nodes_code.push_str("            Ok(crop_region(&filtered, out_rect, sub, bpp))\n");
         nodes_code.push_str("        }\n");
         nodes_code.push_str("    }\n\n");
-        nodes_code.push_str(&format!("    fn overlap(&self) -> Overlap {{ {overlap_expr} }}\n"));
-        nodes_code.push_str("    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n");
+        nodes_code.push_str(&format!(
+            "    fn overlap(&self) -> Overlap {{ {overlap_expr} }}\n"
+        ));
+        nodes_code.push_str(
+            "    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n",
+        );
         nodes_code.push_str("}\n\n");
     }
 
@@ -350,9 +365,7 @@ fn main() {
             "    fn {trait_method}({full_sig}) -> Result<NodeId, RasmcoreError> {{\n"
         ));
         pipe_adapter.push_str("        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;\n");
-        pipe_adapter.push_str(&format!(
-            "        let node = {ctor_call};\n"
-        ));
+        pipe_adapter.push_str(&format!("        let node = {ctor_call};\n"));
         pipe_adapter.push_str("        Ok(self.graph.borrow_mut().add_node(Box::new(node)))\n");
         pipe_adapter.push_str("    }\n\n");
     }
@@ -368,7 +381,12 @@ fn main() {
     );
 
     // ── Generate param-manifest.json via serde_json ────────────────────────
-    let param_structs = parse_config_params_structs(&source);
+    // Parse ConfigParams structs from each file separately, then merge
+    let mut param_structs = parse_config_params_structs(&param_types_source);
+    param_structs.extend(parse_config_params_structs(&filters_source));
+    if !composite_source.is_empty() {
+        param_structs.extend(parse_config_params_structs(&composite_source));
+    }
     let mut filter_entries: Vec<Value> = Vec::new();
 
     for f in &filters {
@@ -422,10 +440,24 @@ fn main() {
         }));
     }
 
-    // Parse generators, compositors, mappers for manifest
-    let generators = parse_registered_by_kind(&source, "register_generator");
-    let compositors = parse_registered_by_kind(&source, "register_compositor");
-    let mappers = parse_registered_by_kind(&source, "register_mapper");
+    // Parse generators, compositors, mappers from each file separately
+    let mut generators = parse_registered_by_kind(&filters_source, "register_generator");
+    let mut compositors = parse_registered_by_kind(&filters_source, "register_compositor");
+    let mut mappers = parse_registered_by_kind(&filters_source, "register_mapper");
+    if !composite_source.is_empty() {
+        generators.extend(parse_registered_by_kind(
+            &composite_source,
+            "register_generator",
+        ));
+        compositors.extend(parse_registered_by_kind(
+            &composite_source,
+            "register_compositor",
+        ));
+        mappers.extend(parse_registered_by_kind(
+            &composite_source,
+            "register_mapper",
+        ));
+    }
 
     let gen_entries: Vec<serde_json::Value> = generators
         .iter()
@@ -479,7 +511,10 @@ fn main() {
     fs::write(out_dir.join("param-manifest.json"), &manifest_str).unwrap();
     eprintln!(
         "rasmcore build.rs: Generated param-manifest.json ({} filters, {} generators, {} compositors, {} mappers)",
-        filters.len(), generators.len(), compositors.len(), mappers.len()
+        filters.len(),
+        generators.len(),
+        compositors.len(),
+        mappers.len()
     );
 }
 
@@ -495,79 +530,138 @@ struct FilterReg {
     params: Vec<(String, String)>, // (param_name, rust_type)
 }
 
-/// Parse #[register_filter(...)] annotations from Rust source.
+/// Parse #[register_filter(...)] annotations from Rust source via syn AST.
 fn parse_registered_filters(source: &str) -> Vec<FilterReg> {
+    let file = match syn::parse_file(source) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("build.rs: syn parse error: {e}");
+            return Vec::new();
+        }
+    };
+
     let mut filters = Vec::new();
-
-    // Simple regex-based parsing (avoids full syn in build.rs for speed)
-    // Pattern: #[register_filter(name = "...", category = "...")] or
-    //          #[rasmcore_macros::register_filter(name = "...", category = "...")]
-    //          pub fn name(pixels: &[u8], info: &ImageInfo, param: type, ...) -> Result<...>
-
-    let lines: Vec<&str> = source.lines().collect();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i].trim();
-
-        // Look for register_filter attribute (may span multiple lines)
-        if line.contains("register_filter(") && !line.starts_with("//") {
-            // Collect the full attribute text (may span multiple lines)
-            let mut attr_text = line.to_string();
-            let mut k = i + 1;
-            while !attr_text.contains(")]") && k < lines.len() {
-                attr_text.push(' ');
-                attr_text.push_str(lines[k].trim());
-                k += 1;
-            }
-
-            // Extract name and category (required)
-            let name = extract_string_attr(&attr_text, "name");
-            let category = extract_string_attr(&attr_text, "category");
-            // Extract optional group/variant/reference
-            let group = extract_string_attr(&attr_text, "group").unwrap_or_default();
-            let variant = extract_string_attr(&attr_text, "variant").unwrap_or_default();
-            let reference = extract_string_attr(&attr_text, "reference").unwrap_or_default();
-            let overlap = extract_string_attr(&attr_text, "overlap").unwrap_or_else(|| "zero".to_string());
-
-            if let (Some(name), Some(category)) = (name, category) {
-                // Find the next pub fn AFTER the attribute ends (k is past the closing `)]`)
-                let mut j = k;
-                while j < lines.len() {
-                    let fn_line = lines[j].trim();
-                    if fn_line.starts_with("pub fn ") {
-                        // Collect lines until we find the closing ')' and '->'
-                        let mut full_sig = fn_line.to_string();
-                        while !full_sig.contains("->") && j + 1 < lines.len() {
-                            j += 1;
-                            full_sig.push(' ');
-                            full_sig.push_str(lines[j].trim());
-                        }
-                        if let Some(mut reg) = parse_fn_signature(&full_sig, &name, &category) {
-                            reg.group = group.clone();
-                            reg.variant = variant.clone();
-                            reg.reference = reference.clone();
-                            reg.overlap = overlap.clone();
-                            filters.push(reg);
-                        }
-                        break;
-                    }
-                    // Skip comments, blank lines, and other attributes before pub fn
-                    if fn_line.starts_with("//")
-                        || fn_line.starts_with("///")
-                        || fn_line.starts_with("#[")
-                        || fn_line.is_empty()
-                    {
-                        j += 1;
-                        continue;
-                    }
-                    break; // unexpected line, skip
-                }
+    for item in &file.items {
+        if let syn::Item::Fn(func) = item {
+            if let Some(reg) = extract_filter_reg(func) {
+                filters.push(reg);
             }
         }
-        i += 1;
     }
-
     filters
+}
+
+/// Extract FilterReg from a function with #[register_filter] or #[rasmcore_macros::register_filter].
+fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
+    for attr in &func.attrs {
+        let path = attr.path();
+        let is_register = path.is_ident("register_filter")
+            || path
+                .segments
+                .last()
+                .map(|s| s.ident == "register_filter")
+                .unwrap_or(false);
+        if !is_register {
+            continue;
+        }
+
+        // Parse attribute arguments: name = "...", category = "...", etc.
+        let mut name = None;
+        let mut category = None;
+        let mut group = String::new();
+        let mut variant = String::new();
+        let mut reference = String::new();
+        let mut overlap = "zero".to_string();
+
+        if let syn::Meta::List(meta_list) = &attr.meta {
+            let tokens = meta_list.tokens.to_string();
+            // Parse key = "value" pairs from the token stream
+            name = extract_kv_string(&tokens, "name");
+            category = extract_kv_string(&tokens, "category");
+            group = extract_kv_string(&tokens, "group").unwrap_or_default();
+            variant = extract_kv_string(&tokens, "variant").unwrap_or_default();
+            reference = extract_kv_string(&tokens, "reference").unwrap_or_default();
+            overlap = extract_kv_string(&tokens, "overlap").unwrap_or_else(|| "zero".to_string());
+        }
+
+        let name = name?;
+        let category = category?;
+        let fn_name = func.sig.ident.to_string();
+
+        // Extract params from function signature, skipping pixels/info
+        let params = extract_fn_params(&func.sig);
+
+        return Some(FilterReg {
+            name,
+            category,
+            group,
+            variant,
+            reference,
+            overlap,
+            fn_name,
+            params,
+        });
+    }
+    None
+}
+
+/// Extract named parameters from a function signature, skipping pixels/info.
+fn extract_fn_params(sig: &syn::Signature) -> Vec<(String, String)> {
+    let mut params = Vec::new();
+    for input in &sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = input {
+            let name = quote::quote!(#pat_type).to_string();
+            // Skip pixels, info, and self params
+            if name.contains("pixels")
+                || name.contains("info")
+                || name.contains("ImageInfo")
+                || name.contains("self")
+            {
+                continue;
+            }
+            // Extract clean name and type
+            let param_name = match pat_type.pat.as_ref() {
+                syn::Pat::Ident(ident) => ident.ident.to_string(),
+                _ => continue,
+            };
+            let param_type = type_to_string(&pat_type.ty);
+            params.push((param_name, param_type));
+        }
+    }
+    params
+}
+
+/// Convert a syn::Type to a clean string representation.
+fn type_to_string(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Reference(r) => {
+            let inner = type_to_string(&r.elem);
+            format!("&{inner}")
+        }
+        syn::Type::Slice(s) => {
+            let inner = type_to_string(&s.elem);
+            format!("[{inner}]")
+        }
+        syn::Type::Path(p) => p
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default(),
+        _ => quote::quote!(#ty).to_string().replace(' ', ""),
+    }
+}
+
+/// Extract a key="value" pair from a stringified token stream.
+fn extract_kv_string(tokens: &str, key: &str) -> Option<String> {
+    let pattern = format!("{key} = \"");
+    if let Some(start) = tokens.find(&pattern) {
+        let rest = &tokens[start + pattern.len()..];
+        if let Some(end) = rest.find('"') {
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
 }
 
 /// Simple registration entry for generators/compositors/mappers (no params needed for manifest).
@@ -579,52 +673,42 @@ struct SimpleReg {
     reference: String,
 }
 
-/// Parse registrations of a specific kind (e.g., "register_generator").
+/// Parse registrations of a specific kind (e.g., "register_generator") via syn AST.
 fn parse_registered_by_kind(source: &str, kind: &str) -> Vec<SimpleReg> {
+    let file = match syn::parse_file(source) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+
     let mut regs = Vec::new();
-    let lines: Vec<&str> = source.lines().collect();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let line = lines[i].trim();
-        if line.contains(kind) && !line.starts_with("//") {
-            // Collect full attribute text (may span multiple lines)
-            let mut attr_text = line.to_string();
-            let mut k = i + 1;
-            while !attr_text.contains(")]") && k < lines.len() {
-                attr_text.push(' ');
-                attr_text.push_str(lines[k].trim());
-                k += 1;
-            }
-
-            if let Some(name) = extract_string_attr(&attr_text, "name") {
-                let category = extract_string_attr(&attr_text, "category").unwrap_or_default();
-                let group = extract_string_attr(&attr_text, "group").unwrap_or_default();
-                let variant = extract_string_attr(&attr_text, "variant").unwrap_or_default();
-                let reference = extract_string_attr(&attr_text, "reference").unwrap_or_default();
-                regs.push(SimpleReg {
-                    name,
-                    category,
-                    group,
-                    variant,
-                    reference,
-                });
+    for item in &file.items {
+        if let syn::Item::Fn(func) = item {
+            for attr in &func.attrs {
+                let is_kind = attr
+                    .path()
+                    .segments
+                    .last()
+                    .map(|s| s.ident == kind)
+                    .unwrap_or(false);
+                if !is_kind {
+                    continue;
+                }
+                if let syn::Meta::List(meta_list) = &attr.meta {
+                    let tokens = meta_list.tokens.to_string();
+                    if let Some(name) = extract_kv_string(&tokens, "name") {
+                        regs.push(SimpleReg {
+                            name,
+                            category: extract_kv_string(&tokens, "category").unwrap_or_default(),
+                            group: extract_kv_string(&tokens, "group").unwrap_or_default(),
+                            variant: extract_kv_string(&tokens, "variant").unwrap_or_default(),
+                            reference: extract_kv_string(&tokens, "reference").unwrap_or_default(),
+                        });
+                    }
+                }
             }
         }
-        i += 1;
     }
     regs
-}
-
-fn extract_string_attr(line: &str, attr: &str) -> Option<String> {
-    let pattern = format!("{attr} = \"");
-    if let Some(start) = line.find(&pattern) {
-        let rest = &line[start + pattern.len()..];
-        if let Some(end) = rest.find('"') {
-            return Some(rest[..end].to_string());
-        }
-    }
-    None
 }
 
 /// Split `#[param(...)]` inner text by commas, respecting quoted strings and brackets.
@@ -666,47 +750,7 @@ fn parse_json_value(s: &str) -> Value {
     Value::String(s.to_string())
 }
 
-fn parse_fn_signature(line: &str, name: &str, category: &str) -> Option<FilterReg> {
-    // pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<...>
-    let fn_start = line.find("fn ")? + 3;
-    let paren_start = line.find('(')?;
-    let fn_name = line[fn_start..paren_start].trim().to_string();
-
-    let paren_end = line.find(')')?;
-    let params_str = &line[paren_start + 1..paren_end];
-
-    // Parse params, skip pixels and info
-    let mut params = Vec::new();
-    for param in params_str.split(',') {
-        let param = param.trim();
-        if param.is_empty()
-            || param.contains("pixels")
-            || param.contains("info")
-            || param.contains("&[u8]")
-            || param.contains("ImageInfo")
-        {
-            continue;
-        }
-        // name: type
-        let parts: Vec<&str> = param.splitn(2, ':').collect();
-        if parts.len() == 2 {
-            let pname = parts[0].trim().to_string();
-            let ptype = parts[1].trim().to_string();
-            params.push((pname, ptype));
-        }
-    }
-
-    Some(FilterReg {
-        name: name.to_string(),
-        category: category.to_string(),
-        group: String::new(),
-        variant: String::new(),
-        reference: String::new(),
-        overlap: "zero".to_string(),
-        fn_name,
-        params,
-    })
-}
+// parse_fn_signature removed — replaced by syn-based extract_fn_params()
 
 // ─── ConfigParams struct parser ─────────────────────────────────────────────
 
@@ -741,139 +785,138 @@ fn parse_config_params_structs(source: &str) -> std::collections::HashMap<String
     result
 }
 
+/// Parse ConfigParams structs from source via syn AST.
 fn parse_config_params_raw(source: &str) -> std::collections::HashMap<String, ParsedStruct> {
+    let file = match syn::parse_file(source) {
+        Ok(f) => f,
+        Err(_) => return std::collections::HashMap::new(),
+    };
+
     let mut result = std::collections::HashMap::new();
-    let lines: Vec<&str> = source.lines().collect();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let line = lines[i].trim();
-        if line.contains("derive") && line.contains("ConfigParams") {
-            // Look backwards/forwards for #[config_hint("...")] on the struct
-            let mut struct_hint = String::new();
-
-            // Check lines between derive and struct for #[config_hint("...")]
-            let mut j = i + 1;
-            while j < lines.len() {
-                let fl = lines[j].trim();
-                if fl.starts_with("#[config_hint(") {
-                    if let Some(h) = extract_config_hint_value(fl) {
-                        struct_hint = h;
-                    }
-                } else if fl.starts_with("///") || fl.is_empty() {
-                    // skip doc comments and blank lines
+    for item in &file.items {
+        if let syn::Item::Struct(s) = item {
+            // Check if this struct derives ConfigParams
+            let has_config_params = s.attrs.iter().any(|attr| {
+                if let syn::Meta::List(ml) = &attr.meta {
+                    let tokens = ml.tokens.to_string();
+                    tokens.contains("ConfigParams")
                 } else {
-                    break;
+                    false
                 }
-                j += 1;
+            });
+            if !has_config_params {
+                continue;
             }
 
-            // Also check if config_hint was on a line before the derive
-            if struct_hint.is_empty() && i > 0 {
-                let prev = lines[i - 1].trim();
-                if prev.starts_with("#[config_hint(") {
-                    if let Some(h) = extract_config_hint_value(prev) {
-                        struct_hint = h;
+            let struct_name = s.ident.to_string();
+
+            // Extract #[config_hint("...")] if present
+            let config_hint = s
+                .attrs
+                .iter()
+                .filter_map(|attr| {
+                    if attr.path().is_ident("config_hint") {
+                        if let syn::Meta::List(ml) = &attr.meta {
+                            let tokens = ml.tokens.to_string();
+                            let t = tokens.trim().trim_matches('"');
+                            return Some(t.to_string());
+                        }
                     }
-                }
-            }
+                    None
+                })
+                .next()
+                .unwrap_or_default();
 
-            if j < lines.len() && lines[j].trim().starts_with("pub struct ") {
-                let struct_line = lines[j].trim();
-                let struct_name = struct_line
-                    .strip_prefix("pub struct ")
-                    .and_then(|s| s.split([' ', '{']).next())
-                    .unwrap_or("")
-                    .to_string();
+            // Extract fields
+            let mut fields = Vec::new();
+            if let syn::Fields::Named(named) = &s.fields {
+                for field in &named.named {
+                    let fname = field
+                        .ident
+                        .as_ref()
+                        .map(|i| i.to_string())
+                        .unwrap_or_default();
+                    let ftype = type_to_string(&field.ty);
 
-                // Parse fields until closing brace
-                let mut fields = Vec::new();
-                let mut doc_comment = String::new();
-                let mut param_min = "null".to_string();
-                let mut param_max = "null".to_string();
-                let mut param_step = "null".to_string();
-                let mut param_default = String::new();
-                let mut param_hint = String::new();
-                j += 1;
-                while j < lines.len() {
-                    let fl = lines[j].trim();
-                    if fl == "}" {
-                        break;
-                    }
+                    // Extract doc comment
+                    let label = field
+                        .attrs
+                        .iter()
+                        .filter_map(|a| {
+                            if let syn::Meta::NameValue(nv) = &a.meta {
+                                if nv.path.is_ident("doc") {
+                                    if let syn::Expr::Lit(lit) = &nv.value {
+                                        if let syn::Lit::Str(s) = &lit.lit {
+                                            return Some(s.value().trim().to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            None
+                        })
+                        .next()
+                        .unwrap_or_default();
 
-                    if fl.starts_with("///") {
-                        doc_comment = fl.trim_start_matches("///").trim().to_string();
-                    } else if fl.starts_with("#[param(") {
-                        let inner = fl.trim_start_matches("#[param(").trim_end_matches(")]");
-                        // Split by comma, but respect quoted strings and brackets
-                        for part in split_param_attrs(inner) {
-                            let part = part.trim();
-                            if let Some((k, v)) = part.split_once('=') {
-                                let k = k.trim();
-                                let v = v.trim().trim_matches('"');
-                                match k {
-                                    "min" => param_min = v.to_string(),
-                                    "max" => param_max = v.to_string(),
-                                    "step" => param_step = v.to_string(),
-                                    "default" => param_default = v.to_string(),
-                                    "hint" => param_hint = v.to_string(),
-                                    _ => {}
+                    // Extract #[param(...)] attributes
+                    let mut min = "null".to_string();
+                    let mut max = "null".to_string();
+                    let mut step = "null".to_string();
+                    let mut default_val = String::new();
+                    let mut hint = String::new();
+
+                    for attr in &field.attrs {
+                        if attr.path().is_ident("param") {
+                            if let syn::Meta::List(ml) = &attr.meta {
+                                let tokens = ml.tokens.to_string();
+                                // Parse key = value pairs from token string
+                                for part in split_param_attrs(&tokens) {
+                                    let part = part.trim();
+                                    if let Some((k, v)) = part.split_once('=') {
+                                        let k = k.trim();
+                                        let v = v.trim().trim_matches('"');
+                                        match k {
+                                            "min" => min = v.to_string(),
+                                            "max" => max = v.to_string(),
+                                            "step" => step = v.to_string(),
+                                            "default" => default_val = v.to_string(),
+                                            "hint" => hint = v.to_string(),
+                                            _ => {}
+                                        }
+                                    }
                                 }
                             }
                         }
-                    } else if fl.starts_with("pub ") && fl.contains(':') {
-                        let field_str = fl.strip_prefix("pub ").unwrap_or(fl);
-                        if let Some((fname, ftype)) = field_str.split_once(':') {
-                            let fname = fname.trim().to_string();
-                            let ftype = ftype.trim().trim_end_matches(',').trim().to_string();
-                            let default = if param_default.is_empty() {
-                                default_for_type(&ftype)
-                            } else {
-                                param_default.clone()
-                            };
-                            fields.push(ParamField {
-                                name: fname,
-                                param_type: ftype,
-                                min: param_min.clone(),
-                                max: param_max.clone(),
-                                step: param_step.clone(),
-                                default_val: default,
-                                label: doc_comment.clone(),
-                                hint: param_hint.clone(),
-                            });
-                            doc_comment.clear();
-                            param_min = "null".into();
-                            param_max = "null".into();
-                            param_step = "null".into();
-                            param_default.clear();
-                            param_hint.clear();
-                        }
                     }
-                    j += 1;
-                }
 
-                if !fields.is_empty() {
-                    result.insert(
-                        struct_name,
-                        ParsedStruct {
-                            fields,
-                            config_hint: struct_hint.clone(),
-                        },
-                    );
+                    if default_val.is_empty() {
+                        default_val = default_for_type(&ftype);
+                    }
+
+                    fields.push(ParamField {
+                        name: fname,
+                        param_type: ftype,
+                        min,
+                        max,
+                        step,
+                        default_val,
+                        label,
+                        hint,
+                    });
                 }
             }
+
+            if !fields.is_empty() {
+                result.insert(
+                    struct_name,
+                    ParsedStruct {
+                        fields,
+                        config_hint,
+                    },
+                );
+            }
         }
-        i += 1;
     }
     result
-}
-
-/// Extract value from `#[config_hint("rc.color_rgba")]`
-fn extract_config_hint_value(line: &str) -> Option<String> {
-    let start = line.find("config_hint(\"")? + "config_hint(\"".len();
-    let rest = &line[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
 }
 
 /// Resolve nested struct fields: if a field type matches a known ConfigParams struct,
