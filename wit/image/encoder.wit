@@ -2,7 +2,7 @@ package rasmcore:image@0.1.0;
 
 /// Image encoding to various formats
 interface encoder {
-    use rasmcore:core/types.{buffer, image-info};
+    use rasmcore:core/types.{buffer, image-info, format-info};
     use rasmcore:core/errors.{rasmcore-error};
 
     /// JPEG encode configuration
@@ -130,4 +130,11 @@ interface encoder {
 
     /// List supported encode formats
     supported-formats: func() -> list<string>;
+
+    /// Get format metadata (MIME type, extensions) for a specific format.
+    /// Returns none if the format is not supported.
+    format-info: func(format: string) -> option<format-info>;
+
+    /// Get format metadata for all supported encode formats.
+    all-format-info: func() -> list<format-info>;
 }

@@ -13,6 +13,7 @@ let Pipeline = null;
 let imageBytes = null;
 let thumbBytes = null;
 const THUMB_MAX = 256;
+let formatMimeMap = {}; // Populated from SDK: { jpeg: "image/jpeg", ... }
 
 // ─── SDK Loading ────────────────────────────────────────────────────────────
 
@@ -20,6 +21,17 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
+
+    // Build MIME map from backend format metadata
+    try {
+      const infos = sdk.encoder.allFormatInfo();
+      for (const fi of infos) {
+        formatMimeMap[fi.name] = fi.mimeType;
+      }
+    } catch (_) {
+      // Fallback: SDK may not have allFormatInfo yet
+    }
+
     self.postMessage({ type: 'ready' });
   } catch (e) {
     self.postMessage({ type: 'error', message: `SDK init failed: ${e.message}` });
@@ -135,17 +147,9 @@ function exportImage(chain, format, quality) {
       node = pipe[step.name](node, ...args);
     }
 
-    // Use generic write() for all formats — supports all 17 backend formats
-    const MIME_MAP = {
-      jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
-      tiff: 'image/tiff', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',
-      qoi: 'application/octet-stream', heic: 'image/heic', tga: 'application/octet-stream',
-      hdr: 'application/octet-stream', pnm: 'application/octet-stream',
-      exr: 'application/octet-stream', dds: 'application/octet-stream',
-      jp2: 'image/jp2', fits: 'application/octet-stream',
-    };
+    // Use generic write() — MIME resolved from backend metadata (no hardcoded map)
     const output = pipe.write(node, format, quality > 0 ? quality : undefined, undefined);
-    const mime = MIME_MAP[format] || 'application/octet-stream';
+    const mime = formatMimeMap[format] || 'application/octet-stream';
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'exported', data: buf, mime, format }, [buf]);

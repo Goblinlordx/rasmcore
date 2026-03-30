@@ -145,6 +145,11 @@ impl CodecRegistry {
             "jp2" => Some("image/jp2"),
             "qoi" => Some("image/qoi"),
             "fits" | "fit" => Some("image/fits"),
+            "tga" => Some("image/x-tga"),
+            "hdr" => Some("image/vnd.radiance"),
+            "pnm" | "ppm" | "pgm" | "pbm" => Some("image/x-portable-anymap"),
+            "exr" => Some("image/x-exr"),
+            "dds" => Some("image/vnd-ms.dds"),
             _ => None,
         }
     }
@@ -167,6 +172,10 @@ impl CodecRegistry {
             "qoi" => &["qoi"],
             "fits" => &["fits", "fit"],
             "pnm" => &["pnm", "ppm", "pgm", "pbm"],
+            "tga" => &["tga"],
+            "hdr" => &["hdr"],
+            "exr" => &["exr"],
+            "dds" => &["dds"],
             _ => &[],
         }
     }

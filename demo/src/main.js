@@ -13,6 +13,7 @@ const timingEl = document.getElementById('timing');
 
 let sdk = null;
 let Pipeline = null;
+let formatMimeMap = {}; // Populated from SDK: { jpeg: "image/jpeg", ... }
 
 try {
   sdk = await import('../sdk/rasmcore-image.js');
@@ -20,22 +21,39 @@ try {
   statusEl.textContent = 'SDK ready';
   statusEl.style.color = '#4ade80';
 
-  // Auto-discover export formats from the WASM backend
+  // Auto-discover export formats and MIME types from the WASM backend
   try {
-    const writeFormats = sdk.pipeline.supportedWriteFormats();
+    const infos = sdk.encoder.allFormatInfo();
     const formatSelect = document.getElementById('export-format');
-    if (writeFormats && writeFormats.length > 0) {
+    if (infos && infos.length > 0) {
       formatSelect.innerHTML = '';
-      for (const fmt of writeFormats) {
+      for (const fi of infos) {
+        formatMimeMap[fi.name] = fi.mimeType;
         const opt = document.createElement('option');
-        opt.value = fmt;
-        opt.textContent = fmt.toUpperCase();
-        if (fmt === 'jpeg') opt.selected = true;
+        opt.value = fi.name;
+        opt.textContent = fi.name.toUpperCase();
+        if (fi.name === 'jpeg') opt.selected = true;
         formatSelect.appendChild(opt);
       }
     }
   } catch (e) {
-    console.warn('Could not auto-discover write formats:', e.message);
+    // Fallback: use supportedWriteFormats() if allFormatInfo not available yet
+    try {
+      const writeFormats = sdk.pipeline.supportedWriteFormats();
+      const formatSelect = document.getElementById('export-format');
+      if (writeFormats && writeFormats.length > 0) {
+        formatSelect.innerHTML = '';
+        for (const fmt of writeFormats) {
+          const opt = document.createElement('option');
+          opt.value = fmt;
+          opt.textContent = fmt.toUpperCase();
+          if (fmt === 'jpeg') opt.selected = true;
+          formatSelect.appendChild(opt);
+        }
+      }
+    } catch (e2) {
+      console.warn('Could not auto-discover write formats:', e2.message);
+    }
   }
 } catch (e) {
   statusEl.textContent = `SDK failed: ${e.message}`;
@@ -240,17 +258,9 @@ document.getElementById('download-btn').addEventListener('click', () => {
     node = pipe.resize(node, resizeWidth, Math.round(imageHeight * ratio), 'lanczos3');
   }
 
-  // Encode in selected format using generic write() — supports all backend formats
-  const MIME_MAP = {
-    jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
-    tiff: 'image/tiff', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',
-    qoi: 'application/octet-stream', heic: 'image/heic', tga: 'application/octet-stream',
-    hdr: 'application/octet-stream', pnm: 'application/octet-stream',
-    exr: 'application/octet-stream', dds: 'application/octet-stream',
-    jp2: 'image/jp2', fits: 'application/octet-stream',
-  };
+  // Encode — MIME resolved from backend metadata (no hardcoded map)
   const outputBytes = pipe.write(node, format, quality > 0 ? quality : undefined, undefined);
-  const mimeType = MIME_MAP[format] || 'application/octet-stream';
+  const mimeType = formatMimeMap[format] || 'application/octet-stream';
 
   // Trigger download
   const blob = new Blob([outputBytes], { type: mimeType });

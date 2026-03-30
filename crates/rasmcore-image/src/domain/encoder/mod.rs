@@ -26,6 +26,7 @@ pub struct StaticEncoderRegistration {
     pub name: &'static str,
     pub format: &'static str,
     pub mime: &'static str,
+    pub extensions: &'static [&'static str],
     pub fn_name: &'static str,
 }
 
@@ -162,6 +163,39 @@ pub fn encode(
 /// List supported encode formats.
 pub fn supported_formats() -> Vec<String> {
     SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
+}
+
+/// Format metadata: name, MIME type, and file extensions.
+#[derive(Debug, Clone)]
+pub struct FormatInfo {
+    pub name: String,
+    pub mime_type: String,
+    pub extensions: Vec<String>,
+}
+
+/// Get format metadata for a specific format.
+pub fn format_info(format: &str) -> Option<FormatInfo> {
+    if !SUPPORTED_FORMATS.contains(&format) {
+        return None;
+    }
+    Some(FormatInfo {
+        name: format.to_string(),
+        mime_type: super::codec::CodecRegistry::mime_type(format)
+            .unwrap_or("application/octet-stream")
+            .to_string(),
+        extensions: super::codec::CodecRegistry::extensions(format)
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    })
+}
+
+/// Get format metadata for all supported encode formats.
+pub fn all_format_info() -> Vec<FormatInfo> {
+    SUPPORTED_FORMATS
+        .iter()
+        .filter_map(|&fmt| format_info(fmt))
+        .collect()
 }
 
 /// Encode a DynamicImage using the image crate's built-in format encoder.
@@ -636,5 +670,60 @@ mod tests {
         assert_eq!(decoded.info.height, 8);
         // QOI is lossless
         assert_eq!(decoded.pixels, pixels);
+    }
+
+    #[test]
+    fn format_info_jpeg() {
+        let fi = format_info("jpeg").expect("jpeg should be supported");
+        assert_eq!(fi.name, "jpeg");
+        assert_eq!(fi.mime_type, "image/jpeg");
+        assert!(fi.extensions.contains(&"jpg".to_string()));
+        assert!(fi.extensions.contains(&"jpeg".to_string()));
+    }
+
+    #[test]
+    fn format_info_unknown_returns_none() {
+        assert!(format_info("nosuchformat").is_none());
+    }
+
+    #[test]
+    fn all_format_info_covers_supported() {
+        let infos = all_format_info();
+        let names: Vec<&str> = infos.iter().map(|fi| fi.name.as_str()).collect();
+        assert!(names.contains(&"jpeg"));
+        assert!(names.contains(&"png"));
+        assert!(names.contains(&"webp"));
+        assert!(names.contains(&"avif"));
+        assert!(names.contains(&"tiff"));
+        assert!(names.contains(&"bmp"));
+        assert!(names.contains(&"qoi"));
+        assert!(names.contains(&"gif"));
+        assert_eq!(infos.len(), SUPPORTED_FORMATS.len());
+    }
+
+    #[test]
+    fn all_format_info_has_mime_for_every_format() {
+        for fi in all_format_info() {
+            assert!(
+                !fi.mime_type.is_empty(),
+                "format {} has empty MIME",
+                fi.name
+            );
+            // Every format should have at least one extension
+            assert!(
+                !fi.extensions.is_empty(),
+                "format {} has no extensions",
+                fi.name
+            );
+        }
+    }
+
+    #[test]
+    fn format_info_default_mime() {
+        // Formats without well-known IANA types should get a mime anyway
+        for fmt in &["tga", "hdr", "exr", "dds"] {
+            let fi = format_info(fmt).unwrap();
+            assert!(!fi.mime_type.is_empty(), "{fmt} should have a MIME type");
+        }
     }
 }

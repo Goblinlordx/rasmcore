@@ -21,9 +21,9 @@
 //! ```
 
 use proc_macro::TokenStream;
-use quote::{quote, format_ident};
-use syn::{parse_macro_input, ItemFn, ItemStruct, LitStr, Ident, Token, Fields, Meta, Expr, Lit};
+use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
+use syn::{Expr, Fields, Ident, ItemFn, ItemStruct, Lit, LitStr, Meta, Token, parse_macro_input};
 
 // ─── Filter Registration ────────────────────────────────────────────────────
 
@@ -42,16 +42,32 @@ impl Parse for RegisterFilterArgs {
             let _: Token![=] = input.parse()?;
 
             match ident.to_string().as_str() {
-                "name" => { let lit: LitStr = input.parse()?; name = lit.value(); }
-                "category" => { let lit: LitStr = input.parse()?; category = lit.value(); }
-                other => return Err(syn::Error::new(ident.span(), format!("unknown attribute: {other}"))),
+                "name" => {
+                    let lit: LitStr = input.parse()?;
+                    name = lit.value();
+                }
+                "category" => {
+                    let lit: LitStr = input.parse()?;
+                    category = lit.value();
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("unknown attribute: {other}"),
+                    ));
+                }
             }
 
-            if input.peek(Token![,]) { let _: Token![,] = input.parse()?; }
+            if input.peek(Token![,]) {
+                let _: Token![,] = input.parse()?;
+            }
         }
 
         if name.is_empty() {
-            return Err(syn::Error::new(proc_macro2::Span::call_site(), "missing required `name` attribute"));
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "missing required `name` attribute",
+            ));
         }
 
         Ok(RegisterFilterArgs { name, category })
@@ -91,13 +107,19 @@ pub fn register_filter(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 // ─── Encoder Registration ───────────────────────────────────────────────────
 
-struct RegisterEncoderArgs { name: String, format: String, mime: String }
+struct RegisterEncoderArgs {
+    name: String,
+    format: String,
+    mime: String,
+    extensions: Vec<String>,
+}
 
 impl Parse for RegisterEncoderArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = String::new();
         let mut format = String::new();
         let mut mime = String::new();
+        let mut extensions = Vec::new();
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
             let _: Token![=] = input.parse()?;
@@ -106,11 +128,25 @@ impl Parse for RegisterEncoderArgs {
                 "name" => name = lit.value(),
                 "format" => format = lit.value(),
                 "mime" => mime = lit.value(),
+                "extensions" => {
+                    extensions = lit
+                        .value()
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                }
                 other => return Err(syn::Error::new(ident.span(), format!("unknown: {other}"))),
             }
-            if input.peek(Token![,]) { let _: Token![,] = input.parse()?; }
+            if input.peek(Token![,]) {
+                let _: Token![,] = input.parse()?;
+            }
         }
-        Ok(RegisterEncoderArgs { name, format, mime })
+        Ok(RegisterEncoderArgs {
+            name,
+            format,
+            mime,
+            extensions,
+        })
     }
 }
 
@@ -122,6 +158,7 @@ pub fn register_encoder(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = &args.name;
     let format = &args.format;
     let mime = &args.mime;
+    let ext_strs: Vec<_> = args.extensions.iter().map(|e| quote! { #e }).collect();
     let reg_ident = format_ident!("__RASMCORE_ENCODER_{}", fn_name.to_string().to_uppercase());
     let expanded = quote! {
         #input_fn
@@ -129,7 +166,11 @@ pub fn register_encoder(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[allow(non_upper_case_globals)]
         pub static #reg_ident: ::rasmcore_image::domain::encoder::StaticEncoderRegistration =
             ::rasmcore_image::domain::encoder::StaticEncoderRegistration {
-                name: #name, format: #format, mime: #mime, fn_name: stringify!(#fn_name),
+                name: #name,
+                format: #format,
+                mime: #mime,
+                extensions: &[#(#ext_strs),*],
+                fn_name: stringify!(#fn_name),
             };
         inventory::submit!(&#reg_ident);
     };
@@ -138,7 +179,10 @@ pub fn register_encoder(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 // ─── Decoder Registration ───────────────────────────────────────────────────
 
-struct RegisterDecoderArgs { name: String, formats: String }
+struct RegisterDecoderArgs {
+    name: String,
+    formats: String,
+}
 
 impl Parse for RegisterDecoderArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
@@ -153,7 +197,9 @@ impl Parse for RegisterDecoderArgs {
                 "formats" => formats = lit.value(),
                 other => return Err(syn::Error::new(ident.span(), format!("unknown: {other}"))),
             }
-            if input.peek(Token![,]) { let _: Token![,] = input.parse()?; }
+            if input.peek(Token![,]) {
+                let _: Token![,] = input.parse()?;
+            }
         }
         Ok(RegisterDecoderArgs { name, formats })
     }
@@ -229,7 +275,9 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
         let field_type_str = quote!(#field_type).to_string().replace(' ', "");
 
         // Extract doc comment as label
-        let label = field.attrs.iter()
+        let label = field
+            .attrs
+            .iter()
             .filter(|a| a.path().is_ident("doc"))
             .filter_map(|a| {
                 if let Meta::NameValue(nv) = &a.meta
@@ -250,7 +298,9 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
         let mut hint_s = String::new();
 
         for attr in &field.attrs {
-            if !attr.path().is_ident("param") { continue; }
+            if !attr.path().is_ident("param") {
+                continue;
+            }
             let _ = attr.parse_nested_meta(|meta| {
                 let key = meta.path.get_ident().unwrap().to_string();
                 let value = meta.value()?;

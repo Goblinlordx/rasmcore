@@ -69,6 +69,17 @@ interface types {
         id: string,
         name: string,
         mime-type: string,
+        extensions: list<string>,
         is-patent-encumbered: bool,
+    }
+
+    /// Format metadata for encoder output — MIME type and file extensions.
+    record format-info {
+        /// Format identifier (e.g., "jpeg", "png", "webp")
+        name: string,
+        /// MIME type (e.g., "image/jpeg"); defaults to "application/octet-stream"
+        mime-type: string,
+        /// File extensions without dot (e.g., ["jpg", "jpeg"])
+        extensions: list<string>,
     }
 }

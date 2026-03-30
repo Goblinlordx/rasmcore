@@ -337,6 +337,25 @@ impl encoder::Guest for Component {
     fn supported_formats() -> Vec<String> {
         domain::encoder::supported_formats()
     }
+
+    fn format_info(format: String) -> Option<types::FormatInfo> {
+        domain::encoder::format_info(&format).map(|fi| types::FormatInfo {
+            name: fi.name,
+            mime_type: fi.mime_type,
+            extensions: fi.extensions,
+        })
+    }
+
+    fn all_format_info() -> Vec<types::FormatInfo> {
+        domain::encoder::all_format_info()
+            .into_iter()
+            .map(|fi| types::FormatInfo {
+                name: fi.name,
+                mime_type: fi.mime_type,
+                extensions: fi.extensions,
+            })
+            .collect()
+    }
 }
 
 impl transform::Guest for Component {
