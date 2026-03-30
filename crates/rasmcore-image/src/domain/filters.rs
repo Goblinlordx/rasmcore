@@ -13324,6 +13324,8 @@ pub fn wave(
     let wl = if wavelength.abs() < 1e-6 { 1.0 } else { wavelength };
 
     let mut out = vec![0u8; pixels.len()];
+    // IM's -wave uses bilinear interpolation (effect.c WaveImage),
+    // not EWA resampling. Match IM exactly by using bilinear here.
     let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
 
     for y in 0..h {
@@ -13335,10 +13337,9 @@ pub fn wave(
             } else {
                 (xf, yf - amplitude * (two_pi * xf / wl).sin())
             };
-            let j = super::ewa::jacobian_wave(xf, yf, amplitude, wl, is_vert);
             let off = (y * w + x) * ch;
             for c in 0..ch {
-                out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
+                out[off + c] = sampler.bilinear_pub(sx, sy, c).round().clamp(0.0, 255.0) as u8;
             }
         }
     }
@@ -13934,7 +13935,7 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("wave IM parity MAE: {mae:.2}");
-        assert!(mae < 3.0, "wave IM parity MAE = {mae:.2} > 3.0");
+        assert!(mae < 1.0, "wave IM parity MAE = {mae:.2} > 1.0");
     }
 
     #[test]
@@ -13998,7 +13999,9 @@ mod distortion_effect_tests {
         eprintln!("polar IM parity MAE: {mae:.2}");
         // EWA Robidoux vs IM's EWA — differences from filter kernel precision
         // and Jacobian computation approach.
-        assert!(mae < 10.0, "polar IM parity MAE = {mae:.2} > 10.0");
+        // Residual from ClampUpAxes eigenvector precision and IM's Q16-HDRI
+        // internal precision. 2.55 is within FP math range for f32 vs f64.
+        assert!(mae < 3.0, "polar IM parity MAE = {mae:.2} > 3.0");
     }
 }
 

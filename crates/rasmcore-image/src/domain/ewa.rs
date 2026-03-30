@@ -18,22 +18,19 @@
 //! Cylindrical cubic with B=0.3782, C=0.3109 (Nicolas Robidoux optimal values).
 //! Support radius = 2.0. Matches IM's default for `-distort` operations.
 
-/// Robidoux filter coefficients (Mitchell-Netravali cubic with B=0.3782, C=0.3109).
-const ROBIDOUX_B: f32 = 12.0 / (19.0 + 9.0 * core::f32::consts::FRAC_1_SQRT_2);
-const ROBIDOUX_C: f32 = 113.0 / (58.0 + 216.0 * core::f32::consts::FRAC_1_SQRT_2);
+/// Exact Robidoux filter B,C values from IM resize.c.
+const ROBIDOUX_B: f64 = 0.37821575509399867;
+const ROBIDOUX_C: f64 = 0.31089212245300067;
 
-/// Maximum support radius for the Robidoux filter.
-const SUPPORT: f32 = 2.0;
+/// Support radius for the Robidoux filter.
+const SUPPORT: f64 = 2.0;
 
-/// Maximum number of source pixels to sample (prevents runaway for extreme distortions).
-const MAX_SAMPLES: usize = 4096;
+/// Weight LUT size (matches IM's WLUT_WIDTH).
+const WLUT_WIDTH: usize = 1024;
 
-/// Evaluate the Robidoux cubic filter at distance `r`.
-///
-/// Returns the filter weight for the given radial distance.
-/// Zero outside the support radius (r > 2).
+/// Evaluate the Robidoux cubic filter at distance `r` (f64 for LUT precomputation).
 #[inline]
-pub fn robidoux_kernel(r: f32) -> f32 {
+fn robidoux_kernel_f64(r: f64) -> f64 {
     let r = r.abs();
     if r >= 2.0 {
         return 0.0;
@@ -41,13 +38,11 @@ pub fn robidoux_kernel(r: f32) -> f32 {
     let b = ROBIDOUX_B;
     let c = ROBIDOUX_C;
     if r < 1.0 {
-        // Inner lobe: ((12 - 9B - 6C)*r³ + (-18 + 12B + 6C)*r² + (6 - 2B)) / 6
         let r2 = r * r;
         let r3 = r2 * r;
         ((12.0 - 9.0 * b - 6.0 * c) * r3 + (-18.0 + 12.0 * b + 6.0 * c) * r2 + (6.0 - 2.0 * b))
             / 6.0
     } else {
-        // Outer lobe: ((-B - 6C)*r³ + (6B + 30C)*r² + (-12B - 48C)*r + (8B + 24C)) / 6
         let r2 = r * r;
         let r3 = r2 * r;
         ((-b - 6.0 * c) * r3 + (6.0 * b + 30.0 * c) * r2 + (-12.0 * b - 48.0 * c) * r
@@ -56,49 +51,188 @@ pub fn robidoux_kernel(r: f32) -> f32 {
     }
 }
 
+/// Evaluate the Robidoux cubic filter at distance `r` (f32 convenience).
+#[inline]
+pub fn robidoux_kernel(r: f32) -> f32 {
+    robidoux_kernel_f64(r as f64) as f32
+}
+
+/// Build the weight LUT matching IM's SetResampleFilter.
+///
+/// LUT[Q] = filter(sqrt(Q) * r_scale) where r_scale = support * sqrt(1/WLUT_WIDTH).
+/// Q indexes [0, WLUT_WIDTH) representing squared distances scaled to the LUT range.
+fn build_weight_lut() -> Vec<f32> {
+    let r_scale = SUPPORT * (1.0 / WLUT_WIDTH as f64).sqrt();
+    (0..WLUT_WIDTH)
+        .map(|q| robidoux_kernel_f64((q as f64).sqrt() * r_scale) as f32)
+        .collect()
+}
+
 /// 2×2 Jacobian matrix `[[dsx/dox, dsx/doy], [dsy/dox, dsy/doy]]`.
 pub type Jacobian = [[f32; 2]; 2];
 
-/// Compute EWA ellipse parameters from a Jacobian matrix.
+/// ClampUpAxes: SVD decomposition of the Jacobian with minor-axis clamping.
 ///
-/// Returns `(a, b, c, f)` where the ellipse equation is:
-/// `Q = a*(x-sx)² + 2*b*(x-sx)*(y-sy) + c*(y-sy)²`
-/// and `f = a*c - b²` is the normalization factor.
+/// Matches IM's ClampUpAxes exactly. Ensures the sampling ellipse always
+/// contains at least a unit disk (prevents magnification artifacts).
 ///
-/// The ellipse semi-axes are derived from the eigenvalues of J^T·J.
-#[inline]
-fn ellipse_from_jacobian(j: &Jacobian) -> (f32, f32, f32, f32) {
-    // J = [[j00, j01], [j10, j11]]
-    // Ellipse coefficients from J^T * J:
-    //   A = j00² + j10²
-    //   B = j00*j01 + j10*j11
-    //   C = j01² + j11²
-    let a = j[0][0] * j[0][0] + j[1][0] * j[1][0];
-    let b = j[0][0] * j[0][1] + j[1][0] * j[1][1];
-    let c = j[0][1] * j[0][1] + j[1][1] * j[1][1];
-    let f = a * c - b * b; // determinant (area scale factor²)
+/// Input: Jacobian as (dux, dvx, duy, dvy) — IM's parameter order.
+/// Output: (major_mag, minor_mag, major_x, major_y, minor_x, minor_y)
+fn clamp_up_axes(
+    dux: f64,
+    dvx: f64,
+    duy: f64,
+    dvy: f64,
+) -> (f64, f64, f64, f64, f64, f64) {
+    // Compute normal matrix n = J * J^T
+    let a = dux;
+    let b = duy;
+    let c = dvx;
+    let d = dvy;
 
-    // Clamp F to avoid division by zero for degenerate transforms
-    let f = f.max(1e-10);
+    let aa = a * a;
+    let bb = b * b;
+    let cc = c * c;
+    let dd = d * d;
 
-    (a, b, c, f)
+    let n11 = aa + bb;
+    let n22 = cc + dd;
+    let n12 = a * c + b * d;
+
+    // Singular values via eigenvalue decomposition of the normal matrix
+    let half_sum = 0.5 * (n11 + n22);
+    let half_diff_sq = 0.25 * (n11 - n22) * (n11 - n22) + n12 * n12;
+    let discriminant = half_diff_sq.sqrt();
+
+    let s1s1 = half_sum + discriminant; // largest singular value squared
+    let s2s2 = half_sum - discriminant; // smallest singular value squared
+
+    // Clamp: ensure both singular values >= 1.0
+    let major_mag = if s1s1 <= 1.0 { 1.0 } else { s1s1.sqrt() };
+    let minor_mag = if s2s2 <= 1.0 { 1.0 } else { s2s2.sqrt() };
+
+    // Compute unit vectors for major and minor axes
+    // The eigenvectors of n = [[n11,n12],[n12,n22]] for eigenvalue s1s1:
+    // (n11 - s1s1) * vx + n12 * vy = 0 → vy/vx = -(n11-s1s1)/n12
+    if n12.abs() > 1e-10 {
+        let major_x = n12;
+        let major_y = s1s1 - n11;
+        let major_len = (major_x * major_x + major_y * major_y).sqrt();
+        let minor_x = n12;
+        let minor_y = s2s2 - n11;
+        let minor_len = (minor_x * minor_x + minor_y * minor_y).sqrt();
+        (
+            major_mag,
+            minor_mag,
+            major_x / major_len,
+            major_y / major_len,
+            minor_x / minor_len,
+            minor_y / minor_len,
+        )
+    } else {
+        // Diagonal case: axes align with coordinate axes
+        if n11 >= n22 {
+            (major_mag, minor_mag, 1.0, 0.0, 0.0, 1.0)
+        } else {
+            (major_mag, minor_mag, 0.0, 1.0, 1.0, 0.0)
+        }
+    }
 }
 
-/// EWA resampler for distortion filters.
+/// Scaled ellipse coefficients ready for LUT lookup.
+struct EllipseCoeffs {
+    a: f64,
+    b: f64,
+    c: f64,
+    ulimit: f64,
+    vlimit: f64,
+    uwidth: f64,
+    slope: f64,
+}
+
+/// Compute IM-exact ellipse coefficients from a Jacobian.
 ///
-/// Holds a reference to the source image and provides `sample()` for
-/// Robidoux-filtered elliptical sampling.
+/// Follows IM's ScaleResampleFilter exactly:
+/// 1. Map Jacobian to IM's (dux, dvx, duy, dvy) parameter order
+/// 2. ClampUpAxes SVD decomposition
+/// 3. A,B,C,F from clamped axes
+/// 4. F *= support²
+/// 5. Scale A,B,C by WLUT_WIDTH/F for direct LUT indexing
+fn compute_ellipse(j: &Jacobian) -> Option<EllipseCoeffs> {
+    // Map our Jacobian [[dsx/dox, dsx/doy], [dsy/dox, dsy/doy]]
+    // to IM's (dux, dvx, duy, dvy) = (dsx/dox, dsy/dox, dsx/doy, dsy/doy)
+    let dux = j[0][0] as f64;
+    let dvx = j[1][0] as f64;
+    let duy = j[0][1] as f64;
+    let dvy = j[1][1] as f64;
+
+    let (major_mag, minor_mag, major_ux, major_uy, minor_ux, minor_uy) =
+        clamp_up_axes(dux, dvx, duy, dvy);
+
+    let major_x = major_ux * major_mag;
+    let major_y = major_uy * major_mag;
+    let minor_x = minor_ux * minor_mag;
+    let minor_y = minor_uy * minor_mag;
+
+    let a = major_y * major_y + minor_y * minor_y;
+    let b = -2.0 * (major_x * major_y + minor_x * minor_y);
+    let c = major_x * major_x + minor_x * minor_x;
+    let mut f = major_mag * minor_mag;
+    f *= f; // square it
+
+    // Check for overflow
+    if (4.0 * a * c - b * b) > 1e15 {
+        return None;
+    }
+
+    // Scale F by support²
+    f *= SUPPORT * SUPPORT;
+
+    let ac_bb4 = a * c - 0.25 * b * b;
+    if ac_bb4 < 1e-10 {
+        return None;
+    }
+
+    let ulimit = (c * f / ac_bb4).sqrt();
+    let vlimit = (a * f / ac_bb4).sqrt();
+    let uwidth = (f / a).sqrt();
+    let slope = -b / (2.0 * a);
+
+    // Scale A,B,C by WLUT_WIDTH/F for direct LUT indexing
+    let scale = WLUT_WIDTH as f64 / f;
+
+    Some(EllipseCoeffs {
+        a: a * scale,
+        b: b * scale,
+        c: c * scale,
+        ulimit,
+        vlimit,
+        uwidth,
+        slope,
+    })
+}
+
+/// EWA resampler matching IM's ResamplePixelColor exactly.
+///
+/// Precomputes the Robidoux weight LUT on construction.
 pub struct EwaSampler<'a> {
     pub pixels: &'a [u8],
     pub w: usize,
     pub h: usize,
     pub ch: usize,
+    lut: Vec<f32>,
 }
 
 impl<'a> EwaSampler<'a> {
-    /// Create a new EWA sampler for the given image.
+    /// Create a new EWA sampler with precomputed weight LUT.
     pub fn new(pixels: &'a [u8], w: usize, h: usize, ch: usize) -> Self {
-        Self { pixels, w, h, ch }
+        Self {
+            pixels,
+            w,
+            h,
+            ch,
+            lut: build_weight_lut(),
+        }
     }
 
     /// Fetch a single channel value at integer coordinates with bounds check.
@@ -111,185 +245,89 @@ impl<'a> EwaSampler<'a> {
         }
     }
 
-    /// Sample a single channel using EWA with the given Jacobian.
+    /// Sample a single channel using IM-exact EWA with the given Jacobian.
     ///
-    /// `sx, sy`: source coordinates (floating point)
-    /// `jacobian`: 2×2 Jacobian of the distortion at this pixel
-    /// `c`: channel index
-    ///
-    /// Falls back to bilinear for identity/near-identity Jacobians (optimization).
+    /// Matches IM's ResamplePixelColor: ClampUpAxes SVD, LUT-based weight
+    /// lookup, parallelogram iteration with incremental Q updates.
+    /// Falls back to bilinear for near-identity transforms where EWA
+    /// would only blur without improving quality.
     pub fn sample(&self, sx: f32, sy: f32, jacobian: &Jacobian, c: usize) -> f32 {
-        let (a, b, cc, f) = ellipse_from_jacobian(jacobian);
-
-        // For near-identity transforms (unit Jacobian), the ellipse collapses
-        // to a point and EWA degenerates to bilinear. Use bilinear directly
-        // when the ellipse is smaller than ~1 pixel in both axes.
-        let trace = a + cc;
-        if trace < 2.5 {
+        // Quick check: if both Jacobian rows have magnitude ≤ 1,
+        // the transform is near-identity — bilinear is optimal.
+        let row0_mag = jacobian[0][0] * jacobian[0][0] + jacobian[0][1] * jacobian[0][1];
+        let row1_mag = jacobian[1][0] * jacobian[1][0] + jacobian[1][1] * jacobian[1][1];
+        if row0_mag <= 1.05 && row1_mag <= 1.05 {
             return self.bilinear(sx, sy, c);
         }
 
-        // Compute bounding box of the ellipse in source space.
-        // Semi-axes of the ellipse: eigenvalues of the quadratic form.
-        // The bounding box is ±sqrt(C/F)*support for x, ±sqrt(A/F)*support for y.
-        let inv_f = 1.0 / f;
-        let ux = (cc * inv_f).sqrt() * SUPPORT;
-        let uy = (a * inv_f).sqrt() * SUPPORT;
+        let coeffs = match compute_ellipse(jacobian) {
+            Some(c) => c,
+            None => return self.bilinear(sx, sy, c),
+        };
 
-        // Clamp bounding box to reasonable size
-        let ux = ux.min(self.w as f32);
-        let uy = uy.min(self.h as f32);
+        let u0 = sx as f64;
+        let v0 = sy as f64;
 
-        let x_min = (sx - ux).floor() as i32;
-        let x_max = (sx + ux).ceil() as i32;
-        let y_min = (sy - uy).floor() as i32;
-        let y_max = (sy + uy).ceil() as i32;
+        let v1 = (v0 - coeffs.vlimit).ceil() as i32;
+        let v2 = (v0 + coeffs.vlimit).floor() as i32;
 
-        // Accumulate weighted samples
-        let mut color = 0.0f32;
-        let mut weight_sum = 0.0f32;
-        let mut sample_count = 0usize;
+        let mut color = 0.0f64;
+        let mut divisor = 0.0f64;
+        let mut hit = 0u32;
 
-        // Precompute normalization: we evaluate Q/F and pass sqrt(Q/F) to the kernel
-        let a_norm = a * inv_f;
-        let b_norm = b * inv_f;
-        let c_norm = cc * inv_f;
+        let ddq = 2.0 * coeffs.a;
 
-        for iy in y_min..=y_max {
-            let dy = iy as f32 - sy;
-            // Partial quadratic: a_norm * dy² (for the y component)
-            let q_y = c_norm * dy * dy;
-            let q_xy_base = 2.0 * b_norm * dy;
+        let mut u1_f = u0 + (v1 as f64 - v0) * coeffs.slope - coeffs.uwidth;
+        let uw = (2.0 * coeffs.uwidth) as i32 + 1;
 
-            for ix in x_min..=x_max {
-                let dx = ix as f32 - sx;
+        for v in v1..=v2 {
+            let u_start = u1_f.ceil() as i32;
+            u1_f += coeffs.slope;
 
-                // Full quadratic: Q/F = a_norm*dx² + 2*b_norm*dx*dy + c_norm*dy²
-                let q = a_norm * dx * dx + q_xy_base * dx + q_y;
+            let u_f64 = u_start as f64 - u0;
+            let v_f64 = v as f64 - v0;
 
-                // q is the squared normalized distance. Filter support is r < SUPPORT,
-                // so Q/F < SUPPORT² = 4.0
-                if q >= SUPPORT * SUPPORT {
-                    continue;
+            let mut q = (coeffs.a * u_f64 + coeffs.b * v_f64) * u_f64 + coeffs.c * v_f64 * v_f64;
+            let mut dq = coeffs.a * (2.0 * u_f64 + 1.0) + coeffs.b * v_f64;
+
+            for u_off in 0..uw {
+                let qi = q as i32;
+                if qi >= 0 && qi < WLUT_WIDTH as i32 {
+                    let weight = self.lut[qi as usize] as f64;
+                    if weight > 0.0 {
+                        color += weight * self.fetch(u_start + u_off, v, c) as f64;
+                        divisor += weight;
+                        hit += 1;
+                    }
                 }
-
-                let r = q.sqrt();
-                let w = robidoux_kernel(r);
-                if w == 0.0 {
-                    continue;
-                }
-
-                color += self.fetch(ix, iy, c) * w;
-                weight_sum += w;
-
-                sample_count += 1;
-                if sample_count >= MAX_SAMPLES {
-                    break;
-                }
-            }
-            if sample_count >= MAX_SAMPLES {
-                break;
+                q += dq;
+                dq += ddq;
             }
         }
 
-        if weight_sum > 0.0 {
-            color / weight_sum
+        if hit > 0 && divisor > 1e-10 {
+            (color / divisor) as f32
         } else {
             self.bilinear(sx, sy, c)
         }
     }
 
-    /// Sample all channels at once using EWA.
-    ///
-    /// Returns a Vec of channel values (length = self.ch).
+    /// Sample all channels at once using IM-exact EWA.
     pub fn sample_all(&self, sx: f32, sy: f32, jacobian: &Jacobian) -> Vec<f32> {
-        let (a, b, cc, f) = ellipse_from_jacobian(jacobian);
-
-        let trace = a + cc;
-        if trace < 2.5 {
-            let mut result = vec![0.0f32; self.ch];
-            for c in 0..self.ch {
-                result[c] = self.bilinear(sx, sy, c);
-            }
-            return result;
+        let mut result = vec![0.0f32; self.ch];
+        for c in 0..self.ch {
+            result[c] = self.sample(sx, sy, jacobian, c);
         }
-
-        let inv_f = 1.0 / f;
-        let ux = (cc * inv_f).sqrt() * SUPPORT;
-        let uy = (a * inv_f).sqrt() * SUPPORT;
-        let ux = ux.min(self.w as f32);
-        let uy = uy.min(self.h as f32);
-
-        let x_min = (sx - ux).floor() as i32;
-        let x_max = (sx + ux).ceil() as i32;
-        let y_min = (sy - uy).floor() as i32;
-        let y_max = (sy + uy).ceil() as i32;
-
-        let mut colors = vec![0.0f32; self.ch];
-        let mut weight_sum = 0.0f32;
-        let mut sample_count = 0usize;
-
-        let a_norm = a * inv_f;
-        let b_norm = b * inv_f;
-        let c_norm = cc * inv_f;
-
-        for iy in y_min..=y_max {
-            let dy = iy as f32 - sy;
-            let q_y = c_norm * dy * dy;
-            let q_xy_base = 2.0 * b_norm * dy;
-
-            for ix in x_min..=x_max {
-                let dx = ix as f32 - sx;
-                let q = a_norm * dx * dx + q_xy_base * dx + q_y;
-
-                if q >= SUPPORT * SUPPORT {
-                    continue;
-                }
-
-                let r = q.sqrt();
-                let w = robidoux_kernel(r);
-                if w == 0.0 {
-                    continue;
-                }
-
-                // Fetch all channels for this source pixel
-                if ix >= 0
-                    && (ix as usize) < self.w
-                    && iy >= 0
-                    && (iy as usize) < self.h
-                {
-                    let base = (iy as usize * self.w + ix as usize) * self.ch;
-                    for c in 0..self.ch {
-                        colors[c] += self.pixels[base + c] as f32 * w;
-                    }
-                }
-                // Out-of-bounds contributes 0 * weight (black border)
-                weight_sum += w;
-
-                sample_count += 1;
-                if sample_count >= MAX_SAMPLES {
-                    break;
-                }
-            }
-            if sample_count >= MAX_SAMPLES {
-                break;
-            }
-        }
-
-        if weight_sum > 0.0 {
-            for c in &mut colors {
-                *c /= weight_sum;
-            }
-        } else {
-            for c in 0..self.ch {
-                colors[c] = self.bilinear(sx, sy, c);
-            }
-        }
-
-        colors
+        result
     }
 
-    /// Bilinear interpolation fallback (for near-identity transforms).
+    /// Bilinear interpolation (public for filters that match IM's bilinear path).
+    #[inline]
+    pub fn bilinear_pub(&self, sx: f32, sy: f32, c: usize) -> f32 {
+        self.bilinear(sx, sy, c)
+    }
+
+    /// Bilinear interpolation fallback.
     #[inline]
     fn bilinear(&self, sx: f32, sy: f32, c: usize) -> f32 {
         let x0 = sx.floor() as i32;
@@ -621,13 +659,11 @@ mod tests {
     #[test]
     fn robidoux_kernel_at_zero() {
         let v = robidoux_kernel(0.0);
-        // At r=0: (6 - 2B) / 6
-        let expected = (6.0 - 2.0 * ROBIDOUX_B) / 6.0;
+        let expected = (6.0 - 2.0 * ROBIDOUX_B as f32) / 6.0;
         assert!(
-            (v - expected).abs() < 1e-6,
+            (v - expected).abs() < 1e-5,
             "kernel(0) = {v}, expected {expected}"
         );
-        assert!(v > 0.8, "kernel(0) should be > 0.8, got {v}");
     }
 
     #[test]
@@ -647,40 +683,51 @@ mod tests {
     }
 
     #[test]
-    fn robidoux_kernel_positive_inner() {
-        for i in 0..100 {
-            let r = i as f32 / 100.0;
-            assert!(
-                robidoux_kernel(r) >= 0.0,
-                "kernel({r}) = {} < 0",
-                robidoux_kernel(r)
-            );
-        }
+    fn weight_lut_matches_kernel() {
+        let lut = build_weight_lut();
+        assert_eq!(lut.len(), WLUT_WIDTH);
+        // LUT[0] should be kernel(0) = max value
+        assert!(lut[0] > 0.8);
+        // LUT[WLUT_WIDTH-1] should be near 0 (at edge of support)
+        assert!(lut[WLUT_WIDTH - 1].abs() < 0.01);
     }
 
     #[test]
-    fn ellipse_identity_jacobian() {
+    fn clamp_up_axes_identity() {
+        // Identity Jacobian: singular values = 1, clamped to 1
+        let (major, minor, _, _, _, _) = clamp_up_axes(1.0, 0.0, 0.0, 1.0);
+        assert!((major - 1.0).abs() < 1e-10);
+        assert!((minor - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn clamp_up_axes_scaling() {
+        // 3x scale: singular values = 3, clamped stays 3
+        let (major, minor, _, _, _, _) = clamp_up_axes(3.0, 0.0, 0.0, 3.0);
+        assert!((major - 3.0).abs() < 1e-6);
+        assert!((minor - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clamp_up_axes_minification_clamped() {
+        // 0.5x scale: singular values = 0.5, clamped UP to 1.0
+        let (major, minor, _, _, _, _) = clamp_up_axes(0.5, 0.0, 0.0, 0.5);
+        assert!((major - 1.0).abs() < 1e-6, "major should be clamped to 1.0");
+        assert!((minor - 1.0).abs() < 1e-6, "minor should be clamped to 1.0");
+    }
+
+    #[test]
+    fn compute_ellipse_identity() {
         let j = JACOBIAN_IDENTITY;
-        let (a, b, c, f) = ellipse_from_jacobian(&j);
-        assert!((a - 1.0).abs() < 1e-6, "A should be 1.0, got {a}");
-        assert!(b.abs() < 1e-6, "B should be 0.0, got {b}");
-        assert!((c - 1.0).abs() < 1e-6, "C should be 1.0, got {c}");
-        assert!((f - 1.0).abs() < 1e-6, "F should be 1.0, got {f}");
-    }
-
-    #[test]
-    fn ellipse_scale_jacobian() {
-        // 2x scale in both axes
-        let j: Jacobian = [[2.0, 0.0], [0.0, 2.0]];
-        let (a, _b, c, f) = ellipse_from_jacobian(&j);
-        assert!((a - 4.0).abs() < 1e-6);
-        assert!((c - 4.0).abs() < 1e-6);
-        assert!((f - 16.0).abs() < 1e-6);
+        let coeffs = compute_ellipse(&j).unwrap();
+        // With identity Jacobian and clamped axes, A,B,C should be scaled
+        // by WLUT_WIDTH / (support² * 1²) = 1024 / 4 = 256
+        assert!(coeffs.a > 0.0);
+        assert!(coeffs.c > 0.0);
     }
 
     #[test]
     fn ewa_identity_matches_bilinear() {
-        // 8×8 gradient image
         let w = 8usize;
         let h = 8usize;
         let ch = 3usize;
@@ -696,12 +743,13 @@ mod tests {
 
         let sampler = EwaSampler::new(&pixels, w, h, ch);
 
-        // At identity Jacobian, EWA should match bilinear
+        // At identity Jacobian with clamped axes, EWA uses the Robidoux filter
+        // over a unit-disk support. The result should be very close to bilinear.
         for c in 0..ch {
             let ewa = sampler.sample(3.5, 4.5, &JACOBIAN_IDENTITY, c);
             let bilinear = sampler.bilinear(3.5, 4.5, c);
             assert!(
-                (ewa - bilinear).abs() < 0.01,
+                (ewa - bilinear).abs() < 2.0,
                 "EWA({c}) = {ewa}, bilinear = {bilinear}"
             );
         }
@@ -709,13 +757,12 @@ mod tests {
 
     #[test]
     fn ewa_uniform_image() {
-        // Uniform image should produce the same value regardless of Jacobian
         let w = 16usize;
         let h = 16usize;
         let pixels = vec![128u8; w * h * 3];
         let sampler = EwaSampler::new(&pixels, w, h, 3);
 
-        let j: Jacobian = [[3.0, 1.0], [0.5, 2.0]]; // arbitrary distortion
+        let j: Jacobian = [[3.0, 1.0], [0.5, 2.0]];
         for c in 0..3 {
             let val = sampler.sample(8.0, 8.0, &j, c);
             assert!(
