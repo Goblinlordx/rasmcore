@@ -1518,8 +1518,6 @@ fn close_gradient_map_bw() {
 
 #[test]
 fn algorithm_kuwahara() {
-    // IM -kuwahara uses similar quadrant-based algorithm but may differ
-    // in border handling and variance computation.
     if let Some(error) = check_parity_rgb(
         64,
         64,
@@ -1536,7 +1534,6 @@ fn algorithm_kuwahara() {
 
 #[test]
 fn close_rank_minimum() {
-    // IM -statistic Minimum with a radius of 2 (5x5 window).
     if let Some(error) = check_parity_rgb(
         64,
         64,
@@ -1553,7 +1550,6 @@ fn close_rank_minimum() {
 
 #[test]
 fn close_rank_maximum() {
-    // IM -statistic Maximum with a radius of 2 (5x5 window).
     if let Some(error) = check_parity_rgb(
         64,
         64,
@@ -1564,6 +1560,58 @@ fn close_rank_maximum() {
         assert!(
             error < 2.0,
             "rank maximum MAE = {error:.4} (expected < 2.0, CLOSE tier)"
+        );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sparse Color & Modulate
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn close_modulate_identity() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::modulate(px, info, 100.0, 100.0, 0.0).unwrap(),
+        &["-modulate", "100,100,100"],
+        "modulate identity",
+    ) {
+        assert!(
+            error < 0.01,
+            "EXACT: modulate identity MAE should be ~0, got {error:.4}"
+        );
+    }
+}
+
+#[test]
+fn close_modulate_brightness_50() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::modulate(px, info, 50.0, 100.0, 0.0).unwrap(),
+        &["-modulate", "50,100,100"],
+        "modulate brightness=50",
+    ) {
+        assert!(
+            error < 2.0,
+            "CLOSE: modulate brightness=50 MAE should be < 2.0, got {error:.4}"
+        );
+    }
+}
+
+#[test]
+fn close_modulate_saturation_0() {
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| rasmcore_image::domain::filters::modulate(px, info, 100.0, 0.0, 0.0).unwrap(),
+        &["-modulate", "100,0,100"],
+        "modulate saturation=0",
+    ) {
+        assert!(
+            error < 2.0,
+            "CLOSE: modulate saturation=0 MAE should be < 2.0, got {error:.4}"
         );
     }
 }

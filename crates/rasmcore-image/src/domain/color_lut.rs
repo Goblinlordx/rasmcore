@@ -338,13 +338,13 @@ impl ColorOp {
                 saturation,
                 hue,
             } => {
-                // IM -modulate uses HSB (B = max(R,G,B) = Value in HSV)
-                let (h, s, v) = rgb_to_hsv(r, g, b);
-                let new_v = (v * brightness).clamp(0.0, 1.0);
+                // IM -modulate uses HSL (verified: red with sat=0 gives gray at L=0.5)
+                let (h, s, l) = rgb_to_hsl(r, g, b);
+                let new_l = (l * brightness).clamp(0.0, 1.0);
                 let new_s = (s * saturation).clamp(0.0, 1.0);
                 let new_h = (h + hue) % 360.0;
                 let new_h = if new_h < 0.0 { new_h + 360.0 } else { new_h };
-                hsv_to_rgb(new_h, new_s, new_v)
+                hsl_to_rgb(new_h, new_s, new_l)
             }
         }
     }

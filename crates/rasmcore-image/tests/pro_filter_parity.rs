@@ -756,3 +756,86 @@ sys.stdout.buffer.write(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8).toby
     let reference = run_python_ref(&script);
     assert_close("channel_mixer", &ours, &reference, 0.5);
 }
+
+#[test]
+fn parity_sparse_color_shepard() {
+    let (w, h) = (32, 32);
+    let pixels = vec![0u8; (w * h * 3) as usize];
+    let info = info_rgb8(w, h);
+
+    // Red at (0,0), Blue at (31,31)
+    let ours = rasmcore_image::domain::filters::sparse_color(
+        &pixels,
+        &info,
+        "0,0:FF0000;31,31:0000FF".to_string(),
+        2.0,
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np
+w, h = {w}, {h}
+pts = [(0, 0, np.array([255, 0, 0], dtype=np.float64)),
+       (31, 31, np.array([0, 0, 255], dtype=np.float64))]
+out = np.zeros((h, w, 3), dtype=np.float64)
+for y in range(h):
+    for x in range(w):
+        sum_w = 0.0
+        sum_c = np.zeros(3)
+        exact = None
+        for cx, cy, color in pts:
+            dx = x - cx
+            dy = y - cy
+            d2 = dx*dx + dy*dy
+            if d2 < 0.001:
+                exact = color
+                break
+            w_i = 1.0 / d2
+            sum_c += w_i * color
+            sum_w += w_i
+        if exact is not None:
+            out[y, x] = exact
+        elif sum_w > 0:
+            out[y, x] = sum_c / sum_w
+sys.stdout.buffer.write(np.clip(out + 0.5, 0, 255).astype(np.uint8).tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_close("sparse_color_shepard", &ours, &reference, 0.5);
+}
+
+#[test]
+fn parity_modulate_hsl() {
+    let (w, h) = (64, 64);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    // brightness=80%, saturation=120%, hue=30 degrees
+    let ours =
+        rasmcore_image::domain::filters::modulate(&pixels, &info, 80.0, 120.0, 30.0).unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np, colorsys
+px = np.frombuffer(bytes({pixels:?}), dtype=np.uint8).reshape(-1, 3).astype(np.float64) / 255.0
+bri, sat, hue_deg = 0.8, 1.2, 30.0
+out = np.empty_like(px)
+for i in range(len(px)):
+    r, g, b = px[i]
+    # RGB to HLS (Python colorsys uses HLS order, H in [0,1])
+    h_norm, l, s = colorsys.rgb_to_hls(r, g, b)
+    h = h_norm * 360.0
+    # Modulate
+    l = min(1.0, max(0.0, l * bri))
+    s = min(1.0, max(0.0, s * sat))
+    h = (h + hue_deg) % 360.0
+    # HLS to RGB
+    r2, g2, b2 = colorsys.hls_to_rgb(h / 360.0, l, s)
+    out[i] = [r2, g2, b2]
+sys.stdout.buffer.write(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8).tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_close("modulate_hsl", &ours, &reference, 1.0);
+}
