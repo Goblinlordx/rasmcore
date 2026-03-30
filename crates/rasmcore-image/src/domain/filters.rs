@@ -2228,32 +2228,69 @@ pub fn remove_alpha(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageIn
 }
 
 // ─── Blend Modes ─────────────────────────────────────────────────────────
+//
+// Formulas follow the W3C Compositing and Blending Level 1 specification
+// and Adobe Photoshop reference behavior. All 19 modes are validated
+// pixel-by-pixel against libvips 8.18 and/or ImageMagick 7 in
+// tests/codec-parity/tests/blend_parity.rs.
+//
+// Validation results (8x8 gradient + 7 solid-color edge cases):
+//   - Pixel-exact vs reference: Darken, Lighten, VividLight, LinearDodge,
+//     LinearBurn, LinearLight, PinLight, HardMix, Subtract, Divide
+//   - Within +/-1 (f32 vs f64 rounding): Multiply, Screen, Overlay,
+//     ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion
 
 /// Supported blend modes for compositing operations.
+///
+/// All formulas operate on normalized \[0, 1\] channel values where
+/// `a` is the foreground (top) layer and `b` is the background (bottom).
+/// Results are clamped to \[0, 1\] before conversion back to u8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlendMode {
+    /// `a * b` — darkens; validated vs vips (+/-1).
     Multiply,
+    /// `1 - (1-a)(1-b)` — lightens; validated vs vips (+/-1).
     Screen,
+    /// Multiply if b < 0.5, Screen otherwise; validated vs vips (+/-1).
     Overlay,
+    /// `min(a, b)`; validated vs vips (exact).
     Darken,
+    /// `max(a, b)`; validated vs vips (exact).
     Lighten,
+    /// W3C spec formula (not Photoshop legacy); validated vs vips (+/-1).
     SoftLight,
+    /// Overlay with layers swapped; validated vs vips (+/-1).
     HardLight,
+    /// `|a - b|`; validated vs vips (+/-1).
     Difference,
+    /// `a + b - 2ab`; validated vs vips (+/-1).
     Exclusion,
+    /// `b / (1 - a)`, clamped; validated vs vips + ImageMagick (+/-1).
     ColorDodge,
+    /// `1 - (1-b) / a`, clamped; validated vs vips + ImageMagick (+/-1).
     ColorBurn,
+    /// ColorBurn for a < 0.5, ColorDodge for a >= 0.5; validated vs ImageMagick (exact).
     VividLight,
+    /// `a + b` (Add), clamped; validated vs ImageMagick (exact).
     LinearDodge,
+    /// `a + b - 1`, clamped; validated vs ImageMagick (exact).
     LinearBurn,
+    /// `b + 2a - 1`, clamped; validated vs ImageMagick (exact).
     LinearLight,
+    /// `min(b, 2a)` if a <= 0.5, `max(b, 2a-1)` otherwise; validated vs ImageMagick (exact).
     PinLight,
+    /// 0 or 1 based on `a + b >= 1`; validated vs ImageMagick (exact).
     HardMix,
+    /// `b - a`, clamped; validated vs ImageMagick (exact).
     Subtract,
+    /// `b / a`, clamped; validated vs ImageMagick (exact).
     Divide,
 }
 
-/// Apply per-pixel blend formula.
+/// Apply per-pixel blend formula in normalized [0, 1] space.
+///
+/// `a` = foreground channel, `b` = background channel.
+/// See [`BlendMode`] variants for individual formulas and validation status.
 #[inline]
 fn blend_channel(a: u8, b: u8, mode: BlendMode) -> u8 {
     let af = a as f32 / 255.0;
