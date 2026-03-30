@@ -1005,17 +1005,15 @@ impl filters::Guest for Component {
         domain::filters::frequency_high(&pixels, &di, sigma).map_err(to_wit_error)
     }
 
-    fn radial_blur(
+    fn zoom_blur(
         pixels: Vec<u8>,
         info: types::ImageInfo,
         center_x: f32,
         center_y: f32,
-        strength: u32,
-        amount: f32,
+        factor: f32,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let di = to_domain_image_info(&info);
-        domain::filters::radial_blur(&pixels, &di, center_x, center_y, strength, amount)
-            .map_err(to_wit_error)
+        domain::filters::zoom_blur(&pixels, &di, center_x, center_y, factor).map_err(to_wit_error)
     }
 
     fn perlin_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u32) -> Vec<u8> {

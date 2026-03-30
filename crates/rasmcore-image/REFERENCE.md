@@ -922,6 +922,34 @@ canonical and matching its exact internal details.
 and f64 paths must produce bit-identical u8 output against these snapshots.
 Tests: `tests/noise_regression.rs`
 
+### Zoom Motion Blur — GIMP/GEGL Algorithm Match (NOT ImageMagick)
+
+**Reference:** GIMP/GEGL `motion-blur-zoom` (Teo Mazars, 2013)
+**Source:** `GNOME/gegl` repo, `operations/common-gpl3+/motion-blur-zoom.c`
+
+| Property | Our Implementation | GIMP/GEGL |
+|----------|-------------------|-----------|
+| Algorithm | Adaptive ray sampling | Same |
+| Sample count | ceil(dist) + 1, min 3 | Same |
+| Performance cap | Soft cap at 100, hard cap 200 | Same |
+| Sample weighting | Equal (box filter) | Same |
+| Interpolation | Bilinear (lerp columns, then across) | Same |
+| Boundary handling | Edge-clamp (clamp coords to [0, dim-1]) | Same |
+| Direction | Toward center (positive factor) | Same |
+
+**IMPORTANT: This is NOT the same as ImageMagick's `-radial-blur`.**
+ImageMagick's radial blur is a *rotational/spin* blur (samples along a
+circular arc). Our zoom blur samples along *radial lines* from each pixel
+toward the center (zoom-in effect). These are fundamentally different effects.
+
+**Parity status:** Algorithmic match — same adaptive sample count formula,
+same bilinear interpolation, same edge-clamp boundary handling. Pixel-exact
+parity testing requires GIMP/GEGL to be installed for fixture generation.
+Fixture generator: `tests/fixtures/gen_zoom_blur_gimp.py` (template — requires
+GIMP 2.10+ or GEGL CLI).
+
+**Tests:** `domain::filters::zoom_blur_tests::*`
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:
