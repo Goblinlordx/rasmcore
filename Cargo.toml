@@ -15,6 +15,7 @@ members = [
     "crates/rasmcore-bmp",
     "crates/rasmcore-tga",
     "crates/rasmcore-fits",
+    "crates/rasmcore-raw",
     "crates/rasmcore-isobmff",
     "crates/rasmcore-dct",
     "crates/rasmcore-hevc",
