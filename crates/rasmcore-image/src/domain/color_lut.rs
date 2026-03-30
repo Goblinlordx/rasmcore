@@ -224,6 +224,168 @@ pub fn compose_cluts(first: &ColorLut3D, second: &ColorLut3D) -> ColorLut3D {
     })
 }
 
+// ─── External LUT Import (.cube / HALD) ───────────────────────────────────
+
+/// Parse an Adobe/Resolve .cube 3D LUT file into a ColorLut3D.
+///
+/// Supports the standard .cube format:
+/// - `TITLE "..."` (optional)
+/// - `DOMAIN_MIN r g b` (optional, defaults to 0 0 0)
+/// - `DOMAIN_MAX r g b` (optional, defaults to 1 1 1)
+/// - `LUT_3D_SIZE N` (required)
+/// - `LUT_1D_SIZE N` (skipped — 1D LUTs not imported)
+/// - Comment lines starting with `#`
+/// - RGB triplets (one per line, space or tab separated, values in [DOMAIN_MIN..DOMAIN_MAX])
+///
+/// R varies fastest, then G, then B — same as our internal storage order.
+pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, ImageError> {
+    let mut grid_size: Option<usize> = None;
+    let mut domain_min = [0.0f32; 3];
+    let mut domain_max = [1.0f32; 3];
+    let mut data: Vec<[f32; 3]> = Vec::new();
+    let mut in_1d = false;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if line.starts_with("TITLE") || line.starts_with("title") {
+            continue; // skip title
+        }
+
+        if let Some(rest) = line
+            .strip_prefix("DOMAIN_MIN")
+            .or_else(|| line.strip_prefix("domain_min"))
+        {
+            let vals: Vec<f32> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            if vals.len() == 3 {
+                domain_min = [vals[0], vals[1], vals[2]];
+            }
+            continue;
+        }
+
+        if let Some(rest) = line
+            .strip_prefix("DOMAIN_MAX")
+            .or_else(|| line.strip_prefix("domain_max"))
+        {
+            let vals: Vec<f32> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            if vals.len() == 3 {
+                domain_max = [vals[0], vals[1], vals[2]];
+            }
+            continue;
+        }
+
+        if let Some(rest) = line
+            .strip_prefix("LUT_3D_SIZE")
+            .or_else(|| line.strip_prefix("lut_3d_size"))
+        {
+            grid_size = rest.trim().parse().ok();
+            in_1d = false;
+            continue;
+        }
+
+        if line.starts_with("LUT_1D_SIZE") || line.starts_with("lut_1d_size") {
+            in_1d = true;
+            continue;
+        }
+
+        // Skip 1D data lines
+        if in_1d && grid_size.is_none() {
+            continue;
+        }
+        // Reset 1D flag once we have 3D size
+        if grid_size.is_some() {
+            in_1d = false;
+        }
+
+        // Try parsing as RGB triplet
+        let vals: Vec<f32> = line.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+        if vals.len() >= 3 && grid_size.is_some() {
+            // Normalize from domain range to [0, 1]
+            let r = (vals[0] - domain_min[0]) / (domain_max[0] - domain_min[0]);
+            let g = (vals[1] - domain_min[1]) / (domain_max[1] - domain_min[1]);
+            let b = (vals[2] - domain_min[2]) / (domain_max[2] - domain_min[2]);
+            data.push([r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]);
+        }
+    }
+
+    let n = grid_size.ok_or_else(|| {
+        ImageError::InvalidInput("missing LUT_3D_SIZE in .cube file".into())
+    })?;
+
+    let expected = n * n * n;
+    if data.len() != expected {
+        return Err(ImageError::InvalidInput(format!(
+            ".cube LUT_3D_SIZE={n} expects {expected} entries, got {}",
+            data.len()
+        )));
+    }
+
+    Ok(ColorLut3D {
+        grid_size: n,
+        data,
+    })
+}
+
+/// Parse a HALD CLUT PNG image into a ColorLut3D.
+///
+/// A HALD CLUT of level N is an image of N² × N² pixels encoding an N×N×N
+/// 3D LUT. The identity HALD has pixel (x,y) = the color that maps to itself.
+/// Color grading tools modify the HALD image to bake their grade.
+///
+/// HALD images must be RGB8. The grid level is derived from image dimensions:
+/// `level = round(sqrt(width))`, then `width == level * level`.
+pub fn parse_hald_lut(pixels: &[u8], info: &ImageInfo) -> Result<ColorLut3D, ImageError> {
+    if info.format != PixelFormat::Rgb8 && info.format != PixelFormat::Rgba8 {
+        return Err(ImageError::InvalidParameters(
+            "HALD CLUT must be RGB8 or RGBA8".into(),
+        ));
+    }
+
+    if info.width != info.height {
+        return Err(ImageError::InvalidParameters(format!(
+            "HALD CLUT must be square (got {}x{})",
+            info.width, info.height
+        )));
+    }
+
+    let dim = info.width as usize;
+    // level² = dim, so level = sqrt(dim). Must be an exact integer.
+    let level = (dim as f64).sqrt().round() as usize;
+    if level * level != dim {
+        return Err(ImageError::InvalidParameters(format!(
+            "HALD CLUT dimension {dim} is not a perfect square (expected level²)"
+        )));
+    }
+
+    let grid_size = level;
+    let total = grid_size * grid_size * grid_size;
+    let channels = if info.format == PixelFormat::Rgba8 { 4 } else { 3 };
+    let mut data = Vec::with_capacity(total);
+
+    // HALD pixel order: read left-to-right, top-to-bottom.
+    // Pixel i corresponds to 3D LUT index i, with R varying fastest.
+    for i in 0..total {
+        let base = i * channels;
+        if base + 2 >= pixels.len() {
+            return Err(ImageError::InvalidInput(format!(
+                "HALD CLUT pixel data too short (need {total} pixels, ran out at {i})"
+            )));
+        }
+        let r = pixels[base] as f32 / 255.0;
+        let g = pixels[base + 1] as f32 / 255.0;
+        let b = pixels[base + 2] as f32 / 255.0;
+        data.push([r, g, b]);
+    }
+
+    Ok(ColorLut3D {
+        grid_size,
+        data,
+    })
+}
+
 /// Absorb a 1D LUT into a 3D CLUT as pre-curves (applied to input before CLUT).
 ///
 /// Produces a new CLUT that has the 1D transform baked into its sampling grid.
@@ -760,5 +922,129 @@ mod tests {
         let lut = ColorLut3D::identity(33);
         let bytes = lut.data.len() * std::mem::size_of::<[f32; 3]>();
         assert!(bytes < 500_000, "33³ CLUT should be < 500KB, got {bytes}");
+    }
+
+    // ── .cube Import ───────────────────────────────────────────────────
+
+    #[test]
+    fn parse_cube_identity_roundtrip() {
+        // Generate a .cube identity LUT text
+        let n = 4;
+        let mut text = format!("TITLE \"identity\"\nLUT_3D_SIZE {n}\n");
+        let scale = 1.0 / (n - 1) as f64;
+        for b in 0..n {
+            for g in 0..n {
+                for r in 0..n {
+                    text.push_str(&format!(
+                        "{:.6} {:.6} {:.6}\n",
+                        r as f64 * scale,
+                        g as f64 * scale,
+                        b as f64 * scale
+                    ));
+                }
+            }
+        }
+
+        let lut = parse_cube_lut(&text).unwrap();
+        assert_eq!(lut.grid_size, 4);
+        assert_eq!(lut.data.len(), 64);
+
+        // Identity LUT: lookup should return input
+        let (r, g, b) = lut.lookup(0.5, 0.3, 0.7);
+        assert!((r - 0.5).abs() < 0.02, "r={r}");
+        assert!((g - 0.3).abs() < 0.02, "g={g}");
+        assert!((b - 0.7).abs() < 0.02, "b={b}");
+    }
+
+    #[test]
+    fn parse_cube_with_domain() {
+        let text = "LUT_3D_SIZE 2\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\
+                    0.0 0.0 0.0\n1.0 0.0 0.0\n0.0 1.0 0.0\n1.0 1.0 0.0\n\
+                    0.0 0.0 1.0\n1.0 0.0 1.0\n0.0 1.0 1.0\n1.0 1.0 1.0\n";
+        let lut = parse_cube_lut(text).unwrap();
+        assert_eq!(lut.grid_size, 2);
+        assert_eq!(lut.data.len(), 8);
+    }
+
+    #[test]
+    fn parse_cube_with_comments() {
+        let text = "# This is a comment\nTITLE \"test\"\nLUT_3D_SIZE 2\n# Another comment\n\
+                    0.0 0.0 0.0\n1.0 0.0 0.0\n0.0 1.0 0.0\n1.0 1.0 0.0\n\
+                    0.0 0.0 1.0\n1.0 0.0 1.0\n0.0 1.0 1.0\n1.0 1.0 1.0\n";
+        let lut = parse_cube_lut(text).unwrap();
+        assert_eq!(lut.grid_size, 2);
+    }
+
+    #[test]
+    fn parse_cube_missing_size_errors() {
+        let text = "0.0 0.0 0.0\n1.0 1.0 1.0\n";
+        assert!(parse_cube_lut(text).is_err());
+    }
+
+    #[test]
+    fn parse_cube_wrong_entry_count_errors() {
+        let text = "LUT_3D_SIZE 2\n0.0 0.0 0.0\n1.0 1.0 1.0\n";
+        assert!(parse_cube_lut(text).is_err());
+    }
+
+    // ── HALD Import ────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_hald_identity_roundtrip() {
+        // Create a level-4 HALD identity (16x16 = 256 pixels, 4x4x4 = 64 LUT entries)
+        let level = 4usize;
+        let dim = level * level; // 16
+        let total = level * level * level; // 64
+        let mut pixels = Vec::with_capacity(total * 3);
+        let scale = 255.0 / (level - 1) as f32;
+        for b in 0..level {
+            for g in 0..level {
+                for r in 0..level {
+                    pixels.push((r as f32 * scale).round() as u8);
+                    pixels.push((g as f32 * scale).round() as u8);
+                    pixels.push((b as f32 * scale).round() as u8);
+                }
+            }
+        }
+
+        let info = ImageInfo {
+            width: dim as u32,
+            height: dim as u32,
+            format: PixelFormat::Rgb8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+
+        let lut = parse_hald_lut(&pixels, &info).unwrap();
+        assert_eq!(lut.grid_size, level);
+
+        // Identity: lookup should return input
+        let (r, g, b) = lut.lookup(0.5, 0.3, 0.7);
+        assert!((r - 0.5).abs() < 0.05, "r={r}");
+        assert!((g - 0.3).abs() < 0.05, "g={g}");
+        assert!((b - 0.7).abs() < 0.05, "b={b}");
+    }
+
+    #[test]
+    fn parse_hald_non_square_errors() {
+        let pixels = vec![0u8; 48]; // 4x4 = 16 pixels * 3 channels
+        let info = ImageInfo {
+            width: 8,
+            height: 4,
+            format: PixelFormat::Rgb8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        assert!(parse_hald_lut(&pixels, &info).is_err());
+    }
+
+    #[test]
+    fn parse_hald_non_perfect_square_dim_errors() {
+        let pixels = vec![0u8; 3 * 15]; // 15 is not a perfect square
+        let info = ImageInfo {
+            width: 15,
+            height: 15,
+            format: PixelFormat::Rgb8,
+            color_space: crate::domain::types::ColorSpace::Srgb,
+        };
+        assert!(parse_hald_lut(&pixels, &info).is_err());
     }
 }
