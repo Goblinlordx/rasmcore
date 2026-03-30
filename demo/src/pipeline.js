@@ -358,14 +358,16 @@ worker.onmessage = (e) => {
   }
 
   if (type === 'loaded') {
+    isProcessing = false;
+    setProcessing(false);
     imageInfo = e.data.info;
     compareBtn.style.display = 'inline-block';
     dropHint.style.display = 'block';
     if (imageInfo) {
       previewInfo.textContent = `${imageInfo.width}×${imageInfo.height}`;
     }
-    // Trigger initial render
-    requestWorker({ type: 'process', chain: serializeChain(), mode: 'full' });
+    // Trigger initial render with loaded image
+    applyFullChain();
     return;
   }
 
@@ -520,15 +522,20 @@ async function addLayer(file) {
   layers.push(layer);
   if (layers.length === 1) {
     activeLayerId = layer.id;
-    // Render original for before/after
+    // Render original for before/after AND show on preview canvas immediately
     try {
       const blob = new Blob([bytes], { type: file.type || 'image/png' });
       const url = URL.createObjectURL(blob);
       const img = new Image();
       img.onload = () => {
+        // Draw to original canvas (for Before/After comparison)
         originalCanvas.width = img.width;
         originalCanvas.height = img.height;
         originalCanvas.getContext('2d').drawImage(img, 0, 0);
+        // Also draw to preview canvas so user sees the image immediately
+        previewCanvas.width = img.width;
+        previewCanvas.height = img.height;
+        previewCanvas.getContext('2d').drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
       };
       img.src = url;
