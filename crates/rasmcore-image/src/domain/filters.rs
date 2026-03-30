@@ -1742,19 +1742,11 @@ pub fn canny(
     // Step 1: Convert to grayscale
     let gray = to_grayscale(pixels, channels);
 
-    // Step 2: Gaussian blur (sigma ~1.4, via 3x3 kernel approximation)
-    let gray_info = ImageInfo {
-        width: info.width,
-        height: info.height,
-        format: PixelFormat::Gray8,
-        color_space: info.color_space,
-    };
-    let blurred = blur(&gray, &gray_info, 1.4)?;
-
-    // Step 3: Sobel gradient magnitude and direction (unrolled, padded)
+    // Step 2: Sobel gradient magnitude and direction
+    // Note: no internal blur — matches OpenCV cv2.Canny behavior.
+    // Caller should pre-blur if desired (e.g., GaussianBlur then Canny).
     let mut magnitude = vec![0.0f32; w * h];
-    let mut direction = vec![0u8; w * h];
-    let padded = pad_reflect(&blurred, w, h, 1, 1);
+    let padded = pad_reflect(&gray, w, h, 1, 1);
     let pw = w + 2;
 
     for y in 0..h {
@@ -1774,69 +1766,100 @@ pub fn canny(
             let gx = -p00 + p02 - 2.0 * p10 + 2.0 * p12 - p20 + p22;
             let gy = -p00 - 2.0 * p01 - p02 + p20 + 2.0 * p21 + p22;
 
-            magnitude[y * w + x] = (gx * gx + gy * gy).sqrt();
-
-            // Quantize angle to 4 directions
-            let angle = gy.atan2(gx).to_degrees();
-            let angle = if angle < 0.0 { angle + 180.0 } else { angle };
-            direction[y * w + x] = if !(22.5..157.5).contains(&angle) {
-                0 // horizontal
-            } else if angle < 67.5 {
-                1 // 45 degrees
-            } else if angle < 112.5 {
-                2 // vertical
-            } else {
-                3 // 135 degrees
-            };
+            // L1 gradient magnitude (matches OpenCV default: |gx| + |gy|)
+            magnitude[y * w + x] = gx.abs() + gy.abs();
         }
     }
 
-    // Step 4: Non-maximum suppression
-    let mut nms = vec![0.0f32; w * h];
+    // Step 4: Non-maximum suppression (matches OpenCV's tangent-ratio method)
+    //
+    // OpenCV uses TG22 = tan(22.5°) * 2^15 = 13573 to classify angles into
+    // 3 bins without atan2. Asymmetric comparison (> on one side, >= on other)
+    // ensures consistent tie-breaking.
+    let mut nms = vec![0u8; w * h]; // 0=suppressed, 1=weak candidate, 2=strong edge
+
+    // Recompute Sobel components for NMS direction (need signed gx, gy)
+    let padded_nms = pad_reflect(&gray, w, h, 1, 1);
+    let pw_nms = w + 2;
+
     for y in 1..h.saturating_sub(1) {
         for x in 1..w.saturating_sub(1) {
             let mag = magnitude[y * w + x];
-            let (n1, n2) = match direction[y * w + x] {
-                0 => (magnitude[y * w + x - 1], magnitude[y * w + x + 1]),
-                1 => (
-                    magnitude[(y - 1) * w + x + 1],
-                    magnitude[(y + 1) * w + x - 1],
-                ),
-                2 => (magnitude[(y - 1) * w + x], magnitude[(y + 1) * w + x]),
-                _ => (
-                    magnitude[(y - 1) * w + x - 1],
-                    magnitude[(y + 1) * w + x + 1],
-                ),
+            if mag <= low_threshold {
+                continue;
+            }
+
+            let r0 = y * pw_nms;
+            let r1 = (y + 1) * pw_nms;
+            let r2 = (y + 2) * pw_nms;
+            let p00 = padded_nms[r0 + x] as f32;
+            let p01 = padded_nms[r0 + x + 1] as f32;
+            let p02 = padded_nms[r0 + x + 2] as f32;
+            let p10 = padded_nms[r1 + x] as f32;
+            let p12 = padded_nms[r1 + x + 2] as f32;
+            let p20 = padded_nms[r2 + x] as f32;
+            let p21 = padded_nms[r2 + x + 1] as f32;
+            let p22 = padded_nms[r2 + x + 2] as f32;
+
+            let gx = -p00 + p02 - 2.0 * p10 + 2.0 * p12 - p20 + p22;
+            let gy = -p00 - 2.0 * p01 - p02 + p20 + 2.0 * p21 + p22;
+
+            // OpenCV tangent-ratio NMS: TG22 = tan(22.5°) * 2^15 = 13573
+            let ax = gx.abs();
+            let ay = gy.abs();
+            let tg22x = ax * 13573.0;
+            let y_shifted = ay * 32768.0; // ay << 15
+
+            let is_max = if y_shifted < tg22x {
+                // Near-horizontal edge: compare left/right
+                mag > magnitude[y * w + x - 1] && mag >= magnitude[y * w + x + 1]
+            } else {
+                let tg67x = tg22x + ax * 65536.0; // tg22x + (ax << 16)
+                if y_shifted > tg67x {
+                    // Near-vertical edge: compare up/down
+                    mag > magnitude[(y - 1) * w + x] && mag >= magnitude[(y + 1) * w + x]
+                } else {
+                    // Diagonal edge: compare diagonal neighbors
+                    let s: i32 = if (gx < 0.0) != (gy < 0.0) { -1 } else { 1 };
+                    mag > magnitude[(y - 1) * w + (x as i32 - s) as usize]
+                        && mag > magnitude[(y + 1) * w + (x as i32 + s) as usize]
+                }
             };
-            nms[y * w + x] = if mag >= n1 && mag >= n2 { mag } else { 0.0 };
+
+            if is_max {
+                if mag >= high_threshold {
+                    nms[y * w + x] = 2; // strong edge
+                } else {
+                    nms[y * w + x] = 1; // weak candidate
+                }
+            }
         }
     }
 
-    // Step 5: Hysteresis thresholding
+    // Step 5: Hysteresis thresholding (stack-based BFS, matches OpenCV)
     let mut out = vec![0u8; w * h];
-    // Mark strong edges
-    for i in 0..w * h {
-        if nms[i] >= high_threshold {
-            out[i] = 255;
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+
+    // Seed stack with strong edges
+    for y in 1..h.saturating_sub(1) {
+        for x in 1..w.saturating_sub(1) {
+            if nms[y * w + x] == 2 {
+                out[y * w + x] = 255;
+                stack.push((x, y));
+            }
         }
     }
-    // Extend to weak edges connected to strong edges
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for y in 1..h.saturating_sub(1) {
-            for x in 1..w.saturating_sub(1) {
-                if out[y * w + x] == 0 && nms[y * w + x] >= low_threshold {
-                    // Check 8-connected neighbors for strong edge
-                    let has_strong = (-1..=1i32).any(|dy| {
-                        (-1..=1i32).any(|dx| {
-                            out[(y as i32 + dy) as usize * w + (x as i32 + dx) as usize] == 255
-                        })
-                    });
-                    if has_strong {
-                        out[y * w + x] = 255;
-                        changed = true;
-                    }
+
+    // BFS: extend strong edges to connected weak edges
+    while let Some((x, y)) = stack.pop() {
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < w && ny < h && nms[ny * w + nx] == 1 && out[ny * w + nx] == 0 {
+                    out[ny * w + nx] = 255;
+                    nms[ny * w + nx] = 2; // mark as visited
+                    stack.push((nx, ny));
                 }
             }
         }

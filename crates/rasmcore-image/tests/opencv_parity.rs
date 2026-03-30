@@ -1352,17 +1352,9 @@ fn canny_all_images_match_opencv() {
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
         eprintln!("canny {name:20}: MAE={e:.4}, max_err={m}");
-        // Canny is implementation-dependent due to non-maximum suppression
-        // and hysteresis traversal order. We validate that edges are detected
-        // in roughly the same locations, not pixel-exact match.
-        // Checker pattern diverges most (high-frequency edges everywhere).
-        // Canny diverges on noisy/high-frequency images due to non-maximum suppression
-        // and hysteresis traversal differences. Exact match on smooth images, tolerate
-        // up to MAE=100 on noisy ones.
-        assert!(
-            e < 100.0,
-            "canny {name}: MAE={e:.4} >= 100 (fundamentally wrong)"
-        );
+        // Matches OpenCV's tangent-ratio NMS and stack-based hysteresis.
+        // Small residual on noisy images from f32 vs int16 precision in TG22.
+        assert!(e < 10.0, "canny {name}: MAE={e:.4} >= 10.0");
     }
 }
 
