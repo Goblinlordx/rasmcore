@@ -728,11 +728,7 @@ impl JpegArithEncoder {
 
         // Magnitude bit pattern
         st += 14;
-        let bits_in_v = if v > 0 {
-            32 - v.leading_zeros()
-        } else {
-            0
-        };
+        let bits_in_v = if v > 0 { 32 - v.leading_zeros() } else { 0 };
         let mut m2 = if bits_in_v > 1 {
             1i32 << (bits_in_v as i32 - 2)
         } else {

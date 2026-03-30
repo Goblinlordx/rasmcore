@@ -1832,10 +1832,8 @@ fn cjpeg_encode_gray(pixels: &[u8], w: u32, h: u32, quality: u32) -> Vec<u8> {
 /// Decode JPEG with djpeg to raw PPM bytes, return just the pixel data.
 fn djpeg_decode_rgb(jpeg: &[u8]) -> Vec<u8> {
     let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let jpg_path = std::env::temp_dir().join(format!(
-        "rasmcore_djpeg_{}_{id}.jpg",
-        std::process::id()
-    ));
+    let jpg_path =
+        std::env::temp_dir().join(format!("rasmcore_djpeg_{}_{id}.jpg", std::process::id()));
     let ppm_path = jpg_path.with_extension("ppm");
     std::fs::write(&jpg_path, jpeg).unwrap();
     let output = Command::new("djpeg")
@@ -1872,10 +1870,8 @@ fn djpeg_decode_rgb(jpeg: &[u8]) -> Vec<u8> {
 /// Decode JPEG with djpeg to raw PGM bytes (grayscale).
 fn djpeg_decode_gray(jpeg: &[u8]) -> Vec<u8> {
     let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let jpg_path = std::env::temp_dir().join(format!(
-        "rasmcore_djpeg_{}_{id}.jpg",
-        std::process::id()
-    ));
+    let jpg_path =
+        std::env::temp_dir().join(format!("rasmcore_djpeg_{}_{id}.jpg", std::process::id()));
     let pgm_path = jpg_path.with_extension("pgm");
     std::fs::write(&jpg_path, jpeg).unwrap();
     let output = Command::new("djpeg")
@@ -1942,7 +1938,10 @@ fn decode_parity_solid_color_baseline_444() {
     let m = mae(&our_decoded.pixels, &djpeg_out);
     let mx = max_err(&our_decoded.pixels, &djpeg_out);
     let diffs = diff_count(&our_decoded.pixels, &djpeg_out);
-    eprintln!("  decode solid 444: MAE={m:.4}, max_err={mx}, diffs={diffs}/{}", djpeg_out.len());
+    eprintln!(
+        "  decode solid 444: MAE={m:.4}, max_err={mx}, diffs={diffs}/{}",
+        djpeg_out.len()
+    );
     assert!(
         mx <= 1,
         "Solid color decode: max_err={mx} (expect ≤1 from IDCT rounding)"
@@ -2050,11 +2049,7 @@ fn decode_parity_q75_various_subsampling() {
     let (w, h) = (32u32, 32);
     let pixels = gradient_pixels(w, h);
 
-    for (sample, label, max_allowed) in [
-        ("1x1", "444", 1),
-        ("2x1", "422", 2),
-        ("2x2", "420", 2),
-    ] {
+    for (sample, label, max_allowed) in [("1x1", "444", 1), ("2x1", "422", 2), ("2x2", "420", 2)] {
         let jpeg = cjpeg_encode(&pixels, w, h, 75, &["-sample", sample]);
         let djpeg_out = djpeg_decode_rgb(&jpeg);
         let our_decoded = rasmcore_jpeg::decode(&jpeg).unwrap();

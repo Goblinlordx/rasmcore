@@ -36,6 +36,19 @@ pub(crate) struct JpegFrame {
     pub(crate) is_arithmetic: bool,
 }
 
+/// Adobe APP14 color transform indicator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum AdobeColorTransform {
+    /// No APP14 marker found — infer from component count.
+    Unknown,
+    /// APP14 color_transform=0: CMYK (or RGB for 3-component).
+    Cmyk,
+    /// APP14 color_transform=1: YCbCr (standard 3-component).
+    YCbCr,
+    /// APP14 color_transform=2: YCCK (YCbCr-encoded CMYK).
+    Ycck,
+}
+
 #[derive(Clone)]
 pub(crate) struct FrameComponent {
     pub(crate) id: u8,
@@ -134,6 +147,7 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
     let mut frame: Option<JpegFrame> = None;
     let mut restart_interval: u16 = 0;
     let mut is_progressive = false;
+    let mut adobe_transform = AdobeColorTransform::Unknown;
 
     // Parse markers
     loop {
@@ -206,13 +220,19 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                         &mut dc_tables,
                         &mut ac_tables,
                         restart_interval,
+                        adobe_transform,
                     );
                 }
 
                 let pixels = if frm.is_arithmetic {
                     // QmDecoder handles byte-stuffing internally — pass raw bytes
                     let raw_data = extract_raw_entropy_data(data, &mut pos);
-                    crate::decode_arith::decode_scan_arithmetic(&raw_data, frm, &quant_tables)?
+                    crate::decode_arith::decode_scan_arithmetic(
+                        &raw_data,
+                        frm,
+                        &quant_tables,
+                        adobe_transform,
+                    )?
                 } else {
                     let entropy_data = extract_entropy_data(data, &mut pos);
                     decode_scan(
@@ -223,14 +243,33 @@ pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError
                         &dc_tables,
                         &ac_tables,
                         restart_interval,
+                        adobe_transform,
                     )?
                 };
 
                 let is_gray = frm.components.len() == 1;
                 return Ok((pixels, frm.width as u32, frm.height as u32, is_gray));
             }
-            // Skip APP markers and other non-essential markers
-            0xE0..=0xEF | 0xFE | 0xC5..=0xC7 | 0xCB | 0xCD..=0xCF => {
+            // APP14 (Adobe) marker — detect CMYK/YCCK color transform
+            0xEE => {
+                if pos + 2 > data.len() {
+                    break;
+                }
+                let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                // Check for "Adobe" signature (5 bytes at offset 2 in payload)
+                if len >= 14 && pos + len <= data.len() && &data[pos + 2..pos + 7] == b"Adobe" {
+                    let color_transform = data[pos + 13];
+                    adobe_transform = match color_transform {
+                        0 => AdobeColorTransform::Cmyk,
+                        1 => AdobeColorTransform::YCbCr,
+                        2 => AdobeColorTransform::Ycck,
+                        _ => AdobeColorTransform::Unknown,
+                    };
+                }
+                pos += len;
+            }
+            // Skip other APP markers and non-essential markers
+            0xE0..=0xED | 0xEF | 0xFE | 0xC5..=0xC7 | 0xCB | 0xCD..=0xCF => {
                 if pos + 2 > data.len() {
                     break;
                 }
@@ -532,6 +571,7 @@ fn decode_scan(
     dc_tables: &[Option<HuffmanTable>; 4],
     ac_tables: &[Option<HuffmanTable>; 4],
     _restart_interval: u16,
+    adobe_transform: AdobeColorTransform,
 ) -> Result<Vec<u8>, EncodeError> {
     let w = frame.width as usize;
     let h = frame.height as usize;
@@ -658,44 +698,129 @@ fn decode_scan(
         }
     }
 
-    // Convert planes to RGB output
-    if is_gray {
-        let mut output = vec![0u8; w * h];
-        let pw = plane_widths[0];
-        for y in 0..h {
-            for x in 0..w {
-                output[y * w + x] = planes[0][y * pw + x].clamp(0, 255) as u8;
+    planes_to_pixels(&planes, &plane_widths, frame, w, h, adobe_transform)
+}
+
+// ─── Planes to Pixels (shared output conversion) ──────────────────────────
+
+/// Convert decoded component planes to output pixels.
+///
+/// Supports 1 component (grayscale), 3 components (YCbCr→RGB), and
+/// 4 components (CMYK or YCCK→RGB). Adobe APP14 color transform
+/// controls CMYK vs YCCK interpretation.
+pub(crate) fn planes_to_pixels(
+    planes: &[Vec<i16>],
+    plane_widths: &[usize],
+    frame: &JpegFrame,
+    w: usize,
+    h: usize,
+    adobe_transform: AdobeColorTransform,
+) -> Result<Vec<u8>, EncodeError> {
+    let num_components = frame.components.len();
+
+    match num_components {
+        1 => {
+            // Grayscale
+            let mut output = vec![0u8; w * h];
+            let pw = plane_widths[0];
+            for y in 0..h {
+                for x in 0..w {
+                    output[y * w + x] = planes[0][y * pw + x].clamp(0, 255) as u8;
+                }
             }
+            Ok(output)
         }
-        Ok(output)
-    } else {
-        // Upsample chroma planes to full resolution, then convert YCbCr → RGB
-        let y_comp = &frame.components[0];
-        let cb_comp = &frame.components[1];
-        let h_ratio = y_comp.h_sampling as usize / cb_comp.h_sampling as usize;
-        let v_ratio = y_comp.v_sampling as usize / cb_comp.v_sampling as usize;
+        3 => {
+            // YCbCr → RGB
+            let y_comp = &frame.components[0];
+            let cb_comp = &frame.components[1];
+            let h_ratio = y_comp.h_sampling as usize / cb_comp.h_sampling.max(1) as usize;
+            let v_ratio = y_comp.v_sampling as usize / cb_comp.v_sampling.max(1) as usize;
 
-        let cb_up = upsample_plane(&planes[1], plane_widths[1], w, h, h_ratio, v_ratio);
-        let cr_up = upsample_plane(&planes[2], plane_widths[2], w, h, h_ratio, v_ratio);
+            let cb_up = upsample_plane(&planes[1], plane_widths[1], w, h, h_ratio, v_ratio);
+            let cr_up = upsample_plane(&planes[2], plane_widths[2], w, h, h_ratio, v_ratio);
 
-        let mut output = vec![0u8; w * h * 3];
-        let y_pw = plane_widths[0];
-        for py in 0..h {
-            for px in 0..w {
-                let y_val = planes[0][py * y_pw + px] as i32;
-                let cb_val = cb_up[py * w + px] as i32;
-                let cr_val = cr_up[py * w + px] as i32;
-
-                // YCbCr → RGB (BT.601, i32 fixed-point)
-                let (r, g, b) = crate::color::ycbcr_to_rgb_fixed(y_val, cb_val, cr_val);
-
-                let idx = (py * w + px) * 3;
-                output[idx] = r;
-                output[idx + 1] = g;
-                output[idx + 2] = b;
+            let mut output = vec![0u8; w * h * 3];
+            let y_pw = plane_widths[0];
+            for py in 0..h {
+                for px in 0..w {
+                    let y_val = planes[0][py * y_pw + px] as i32;
+                    let cb_val = cb_up[py * w + px] as i32;
+                    let cr_val = cr_up[py * w + px] as i32;
+                    let (r, g, b) = crate::color::ycbcr_to_rgb_fixed(y_val, cb_val, cr_val);
+                    let idx = (py * w + px) * 3;
+                    output[idx] = r;
+                    output[idx + 1] = g;
+                    output[idx + 2] = b;
+                }
             }
+            Ok(output)
         }
-        Ok(output)
+        4 => {
+            // 4-component: CMYK or YCCK
+            let y_comp = &frame.components[0];
+            let c1_comp = &frame.components[1];
+            let h_ratio = y_comp.h_sampling as usize / c1_comp.h_sampling.max(1) as usize;
+            let v_ratio = y_comp.v_sampling as usize / c1_comp.v_sampling.max(1) as usize;
+
+            // K channel may have different subsampling — upsample all chroma planes
+            let c1_up = upsample_plane(&planes[1], plane_widths[1], w, h, h_ratio, v_ratio);
+            let c2_up = upsample_plane(&planes[2], plane_widths[2], w, h, h_ratio, v_ratio);
+
+            // K channel: check if it needs upsampling too
+            let k_comp = &frame.components[3];
+            let k_h_ratio = y_comp.h_sampling as usize / k_comp.h_sampling.max(1) as usize;
+            let k_v_ratio = y_comp.v_sampling as usize / k_comp.v_sampling.max(1) as usize;
+            let k_up = if k_h_ratio > 1 || k_v_ratio > 1 {
+                upsample_plane(&planes[3], plane_widths[3], w, h, k_h_ratio, k_v_ratio)
+            } else {
+                // K at full resolution — just copy/crop
+                let pw = plane_widths[3];
+                let mut k = vec![0i16; w * h];
+                for y in 0..h {
+                    for x in 0..w {
+                        k[y * w + x] = planes[3][y * pw + x];
+                    }
+                }
+                k
+            };
+
+            let mut output = vec![0u8; w * h * 3];
+            let y_pw = plane_widths[0];
+
+            let is_ycck = adobe_transform == AdobeColorTransform::Ycck
+                || adobe_transform == AdobeColorTransform::Unknown;
+
+            for py in 0..h {
+                for px in 0..w {
+                    let v0 = planes[0][py * y_pw + px] as i32;
+                    let v1 = c1_up[py * w + px] as i32;
+                    let v2 = c2_up[py * w + px] as i32;
+                    let k_val = k_up[py * w + px].clamp(0, 255) as u8;
+
+                    let (r, g, b) = if is_ycck {
+                        // YCCK: YCbCr→RGB on first 3, then apply K
+                        crate::color::ycck_to_rgb(v0, v1, v2, k_val)
+                    } else {
+                        // Raw CMYK (Adobe transform=0): values are inverted
+                        let c = (255 - v0.clamp(0, 255)) as u8;
+                        let m = (255 - v1.clamp(0, 255)) as u8;
+                        let y = (255 - v2.clamp(0, 255)) as u8;
+                        let k = 255 - k_val;
+                        crate::color::cmyk_to_rgb(c, m, y, k)
+                    };
+
+                    let idx = (py * w + px) * 3;
+                    output[idx] = r;
+                    output[idx + 1] = g;
+                    output[idx + 2] = b;
+                }
+            }
+            Ok(output)
+        }
+        n => Err(EncodeError::DecodeFailed(format!(
+            "unsupported number of components: {n}"
+        ))),
     }
 }
 
@@ -821,6 +946,7 @@ fn decode_progressive(
     dc_tables: &mut [Option<HuffmanTable>; 4],
     ac_tables: &mut [Option<HuffmanTable>; 4],
     restart_interval: u16,
+    adobe_transform: AdobeColorTransform,
 ) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
     let w = frame.width as usize;
     let h = frame.height as usize;
@@ -1034,44 +1160,9 @@ fn decode_progressive(
         }
     }
 
-    // Convert planes to output pixels (same as baseline)
-    if is_gray {
-        let mut output = vec![0u8; w * h];
-        let pw = plane_widths[0];
-        for y in 0..h {
-            for x in 0..w {
-                output[y * w + x] = planes[0][y * pw + x].clamp(0, 255) as u8;
-            }
-        }
-        Ok((output, frame.width as u32, frame.height as u32, true))
-    } else {
-        let y_comp = &frame.components[0];
-        let cb_comp = &frame.components[1];
-        let h_ratio = y_comp.h_sampling as usize / cb_comp.h_sampling as usize;
-        let v_ratio = y_comp.v_sampling as usize / cb_comp.v_sampling as usize;
-
-        let cb_up = upsample_plane(&planes[1], plane_widths[1], w, h, h_ratio, v_ratio);
-        let cr_up = upsample_plane(&planes[2], plane_widths[2], w, h, h_ratio, v_ratio);
-
-        let mut output = vec![0u8; w * h * 3];
-        let y_pw = plane_widths[0];
-        for py in 0..h {
-            for px in 0..w {
-                let y_val = planes[0][py * y_pw + px] as i32;
-                let cb_val = cb_up[py * w + px] as i32;
-                let cr_val = cr_up[py * w + px] as i32;
-
-                // YCbCr → RGB (BT.601, i32 fixed-point)
-                let (r, g, b) = crate::color::ycbcr_to_rgb_fixed(y_val, cb_val, cr_val);
-
-                let idx = (py * w + px) * 3;
-                output[idx] = r;
-                output[idx + 1] = g;
-                output[idx + 2] = b;
-            }
-        }
-        Ok((output, frame.width as u32, frame.height as u32, false))
-    }
+    let output = planes_to_pixels(&planes, &plane_widths, frame, w, h, adobe_transform)?;
+    let is_gray = frame.components.len() == 1;
+    Ok((output, frame.width as u32, frame.height as u32, is_gray))
 }
 
 /// Process a single progressive scan, filling coefficient buffers.
@@ -1506,8 +1597,7 @@ mod tests {
             arithmetic_coding: true,
             ..Default::default()
         };
-        let jpeg =
-            crate::encode(&pixels, 8, 8, crate::PixelFormat::Gray8, &config).unwrap();
+        let jpeg = crate::encode(&pixels, 8, 8, crate::PixelFormat::Gray8, &config).unwrap();
 
         // Truncate at various points — all should return Err or Ok, never panic.
         // Missing EOI (last 2 bytes) is tolerated by most decoders, so we test
@@ -1529,16 +1619,12 @@ mod tests {
             quality: 75,
             ..Default::default()
         };
-        let jpeg =
-            crate::encode(&pixels, 16, 16, crate::PixelFormat::Rgb8, &config).unwrap();
+        let jpeg = crate::encode(&pixels, 16, 16, crate::PixelFormat::Rgb8, &config).unwrap();
 
         for cut in [10, 50, 100, jpeg.len() / 4, jpeg.len() / 2] {
             let truncated = &jpeg[..cut.min(jpeg.len())];
             let result = std::panic::catch_unwind(|| jpeg_decode(truncated));
-            assert!(
-                result.is_ok(),
-                "truncated Huffman at {cut} bytes panicked"
-            );
+            assert!(result.is_ok(), "truncated Huffman at {cut} bytes panicked");
         }
     }
 

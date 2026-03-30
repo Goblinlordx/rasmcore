@@ -4,7 +4,7 @@
 // progressive decode (SOF2) implementation.
 
 use crate::dct;
-use crate::decode::JpegFrame;
+use crate::decode::{AdobeColorTransform, JpegFrame};
 use crate::error::EncodeError;
 use crate::qm_coder::JpegArithDecoder;
 use crate::quantize;
@@ -14,6 +14,7 @@ pub(crate) fn decode_scan_arithmetic(
     entropy_data: &[u8],
     frame: &JpegFrame,
     quant_tables: &[Option<[u16; 64]>; 4],
+    adobe_transform: AdobeColorTransform,
 ) -> Result<Vec<u8>, EncodeError> {
     let w = frame.width as usize;
     let h = frame.height as usize;
@@ -119,42 +120,7 @@ pub(crate) fn decode_scan_arithmetic(
         }
     }
 
-    if is_gray {
-        let mut output = vec![0u8; w * h];
-        let pw = plane_widths[0];
-        for y in 0..h {
-            for x in 0..w {
-                output[y * w + x] = planes[0][y * pw + x].clamp(0, 255) as u8;
-            }
-        }
-        Ok(output)
-    } else {
-        let mut output = vec![0u8; w * h * 3];
-        let y_pw = plane_widths[0];
-        let cb_pw = plane_widths[1];
-        let cr_pw = plane_widths[2];
-        let y_comp = &frame.components[0];
-        let cb_comp = &frame.components[1];
-
-        for py in 0..h {
-            for px in 0..w {
-                let y_val = planes[0][py * y_pw + px] as i32;
-                let cb_x = px * cb_comp.h_sampling as usize / y_comp.h_sampling as usize;
-                let cb_y = py * cb_comp.v_sampling as usize / y_comp.v_sampling as usize;
-                let cb_val = planes[1][cb_y * cb_pw + cb_x] as i32;
-                let cr_val = planes[2][cb_y * cr_pw + cb_x] as i32;
-
-                // YCbCr → RGB (BT.601, i32 fixed-point)
-                let (r, g, b) = crate::color::ycbcr_to_rgb_fixed(y_val, cb_val, cr_val);
-
-                let idx = (py * w + px) * 3;
-                output[idx] = r;
-                output[idx + 1] = g;
-                output[idx + 2] = b;
-            }
-        }
-        Ok(output)
-    }
+    crate::decode::planes_to_pixels(&planes, &plane_widths, frame, w, h, adobe_transform)
 }
 
 #[cfg(test)]

@@ -1779,3 +1779,98 @@ fn turbo_vs_default_speed_and_validity() {
         turbo_jpeg.len()
     );
 }
+
+// ── CMYK/YCCK Decode Tests ──────────────────────────────────────────
+
+#[test]
+fn decode_cmyk_jpeg() {
+    let tmp = std::env::temp_dir().join("rasmcore_test_cmyk.jpg");
+    let status = std::process::Command::new("magick")
+        .args([
+            "-size",
+            "32x32",
+            "xc:cmyk(50%,30%,80%,10%)",
+            "-colorspace",
+            "CMYK",
+            tmp.to_str().unwrap(),
+        ])
+        .status();
+    if status.is_err() || !status.unwrap().success() {
+        eprintln!("ImageMagick not available — skipping CMYK decode test");
+        return;
+    }
+    let data = std::fs::read(&tmp).unwrap();
+    let result = decode(&data);
+    assert!(
+        result.is_ok(),
+        "CMYK JPEG decode failed: {:?}",
+        result.err()
+    );
+    let decoded = result.unwrap();
+    assert_eq!(decoded.width, 32);
+    assert_eq!(decoded.height, 32);
+    assert_eq!(decoded.format, PixelFormat::Rgb8);
+    assert_eq!(decoded.pixels.len(), 32 * 32 * 3);
+    let sum: u64 = decoded.pixels.iter().map(|&v| v as u64).sum();
+    assert!(sum > 0, "decoded pixels should not be all black");
+    assert!(
+        sum < 255 * decoded.pixels.len() as u64,
+        "decoded pixels should not be all white"
+    );
+}
+
+#[test]
+fn decode_cmyk_gradient_parity() {
+    let tmp_cmyk = std::env::temp_dir().join("rasmcore_test_cmyk_grad.jpg");
+    let tmp_rgb = std::env::temp_dir().join("rasmcore_test_cmyk_grad_rgb.rgb");
+    let status = std::process::Command::new("magick")
+        .args([
+            "-size",
+            "32x32",
+            "gradient:white-black",
+            "-colorspace",
+            "CMYK",
+            tmp_cmyk.to_str().unwrap(),
+        ])
+        .status();
+    if status.is_err() || !status.unwrap().success() {
+        eprintln!("ImageMagick not available — skipping CMYK parity test");
+        return;
+    }
+    let status = std::process::Command::new("magick")
+        .args([
+            tmp_cmyk.to_str().unwrap(),
+            "-colorspace",
+            "sRGB",
+            "-depth",
+            "8",
+            &format!("rgb:{}", tmp_rgb.to_str().unwrap()),
+        ])
+        .status();
+    if status.is_err() || !status.unwrap().success() {
+        return;
+    }
+    let reference_rgb = std::fs::read(&tmp_rgb).unwrap();
+    let data = std::fs::read(&tmp_cmyk).unwrap();
+    let decoded = decode(&data).unwrap();
+    assert_eq!(decoded.pixels.len(), reference_rgb.len());
+    let mae: f64 = decoded
+        .pixels
+        .iter()
+        .zip(reference_rgb.iter())
+        .map(|(&a, &b)| (a as f64 - b as f64).abs())
+        .sum::<f64>()
+        / decoded.pixels.len() as f64;
+    let max_err: u8 = decoded
+        .pixels
+        .iter()
+        .zip(reference_rgb.iter())
+        .map(|(&a, &b)| (a as i16 - b as i16).unsigned_abs() as u8)
+        .max()
+        .unwrap_or(0);
+    eprintln!("CMYK decode parity: MAE={mae:.2}, max_err={max_err}");
+    assert!(
+        mae < 5.0,
+        "CMYK decode MAE={mae:.2} too high (expected <5.0)"
+    );
+}
