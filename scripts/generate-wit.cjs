@@ -153,7 +153,7 @@ function parseRegisteredFilters(source) {
       const [pname, ...ptypeArr] = trimmed.split(':');
       const ptype = ptypeArr.join(':').trim();
       const name = pname.trim();
-      if (name === 'pixels' || name === 'info' || ptype === '&[u8]' || ptype === '&ImageInfo') continue;
+      if (name === 'pixels' || name === 'info' || name === 'request' || name === 'upstream' || ptype === '&[u8]' || ptype === '&ImageInfo' || ptype.includes('UpstreamFn')) continue;
       // Normalize fully-qualified paths: &[crate::domain::param_types::Point2D] → &[Point2D]
       let normalizedType = ptype;
       const sliceMatch = ptype.match(/^&\[(.+)\]$/);
