@@ -1,8 +1,8 @@
 title: Repo Size Cleanup — Gitignore Generated Files, Purge History Blobs
-status: pending
+status: completed
 type: chore
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-03-31'
 deps:
 - repo-guidelines-no-binaries_20260331000103Z
