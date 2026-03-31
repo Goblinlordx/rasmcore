@@ -646,6 +646,13 @@ impl GuestImagePipeline for PipelineResource {
             WitBlendMode::HardMix => domain::filters::BlendMode::HardMix,
             WitBlendMode::Subtract => domain::filters::BlendMode::Subtract,
             WitBlendMode::Divide => domain::filters::BlendMode::Divide,
+            WitBlendMode::Dissolve => domain::filters::BlendMode::Dissolve,
+            WitBlendMode::DarkerColor => domain::filters::BlendMode::DarkerColor,
+            WitBlendMode::LighterColor => domain::filters::BlendMode::LighterColor,
+            WitBlendMode::Hue => domain::filters::BlendMode::Hue,
+            WitBlendMode::Saturation => domain::filters::BlendMode::Saturation,
+            WitBlendMode::Color => domain::filters::BlendMode::Color,
+            WitBlendMode::Luminosity => domain::filters::BlendMode::Luminosity,
         });
         let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y, domain_mode);
         let fg_hash = self.graph.borrow().node_hash(fg);

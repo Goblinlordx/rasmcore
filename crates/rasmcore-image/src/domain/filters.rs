@@ -4526,6 +4526,20 @@ pub enum BlendMode {
     Subtract,
     /// `b / a`, clamped; validated vs ImageMagick (exact).
     Divide,
+    /// Probabilistic pixel selection based on alpha/hash — NOT per-channel.
+    Dissolve,
+    /// Select entire pixel with lower luminance; NOT per-channel.
+    DarkerColor,
+    /// Select entire pixel with higher luminance; NOT per-channel.
+    LighterColor,
+    /// Take hue from top layer, sat+lum from bottom; NOT per-channel (HSL).
+    Hue,
+    /// Take saturation from top layer, hue+lum from bottom; NOT per-channel (HSL).
+    Saturation,
+    /// Take hue+saturation from top layer, luminosity from bottom; NOT per-channel (HSL).
+    Color,
+    /// Take luminosity from top layer, hue+sat from bottom; NOT per-channel (HSL).
+    Luminosity,
 }
 
 /// Apply per-pixel blend formula in normalized [0, 1] space.
@@ -4655,8 +4669,147 @@ fn blend_channel(a: u8, b: u8, mode: BlendMode) -> u8 {
                 (bf / af).min(1.0)
             }
         }
+        // Pixel-level modes — handled in blend(), not here.
+        BlendMode::Dissolve
+        | BlendMode::DarkerColor
+        | BlendMode::LighterColor
+        | BlendMode::Hue
+        | BlendMode::Saturation
+        | BlendMode::Color
+        | BlendMode::Luminosity => unreachable!("pixel-level mode in blend_channel"),
     };
     (result.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+}
+
+/// Compute BT.601 luminance from 0–255 RGB values.
+#[inline]
+fn pixel_luminance(r: u8, g: u8, b: u8) -> f32 {
+    0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32
+}
+
+/// Convert 0–255 RGB to HSL (h in 0–360, s/l in 0–1).
+#[inline]
+fn rgb_to_hsl_f32(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+    let rf = r as f32 / 255.0;
+    let gf = g as f32 / 255.0;
+    let bf = b as f32 / 255.0;
+    let max = rf.max(gf).max(bf);
+    let min = rf.min(gf).min(bf);
+    let l = (max + min) / 2.0;
+    let delta = max - min;
+    if delta == 0.0 {
+        return (0.0, 0.0, l);
+    }
+    let s = if l < 0.5 {
+        delta / (max + min)
+    } else {
+        delta / (2.0 - max - min)
+    };
+    let h = if max == rf {
+        60.0 * (((gf - bf) / delta) % 6.0)
+    } else if max == gf {
+        60.0 * ((bf - rf) / delta + 2.0)
+    } else {
+        60.0 * ((rf - gf) / delta + 4.0)
+    };
+    let h = if h < 0.0 { h + 360.0 } else { h };
+    (h, s, l)
+}
+
+/// Convert HSL (h 0–360, s/l 0–1) back to 0–255 RGB.
+#[inline]
+fn hsl_to_rgb_u8(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
+    if s == 0.0 {
+        let v = (l.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        return (v, v, v);
+    }
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h / 60.0;
+    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
+    let (r1, g1, b1) = if hp < 1.0 {
+        (c, x, 0.0)
+    } else if hp < 2.0 {
+        (x, c, 0.0)
+    } else if hp < 3.0 {
+        (0.0, c, x)
+    } else if hp < 4.0 {
+        (0.0, x, c)
+    } else if hp < 5.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    let m = l - c / 2.0;
+    (
+        ((r1 + m).clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        ((g1 + m).clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        ((b1 + m).clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+    )
+}
+
+/// Blend a single pixel using a pixel-level (non-per-channel) mode.
+///
+/// `fg` and `bg` are RGB slices (3 bytes). `px_idx` is the pixel index
+/// used for Dissolve's deterministic hash.
+#[inline]
+fn blend_pixel(fg: &[u8], bg: &[u8], mode: BlendMode, px_idx: u32) -> (u8, u8, u8) {
+    match mode {
+        BlendMode::Dissolve => {
+            // Deterministic hash-based dither: hash the pixel index to get
+            // a pseudo-random threshold. If threshold < 128, show fg; else bg.
+            // This matches PS behavior for fully-opaque layers (alpha=1.0 → always fg).
+            // For the general compositing path (RGBA with partial alpha), the
+            // composite node pre-multiplies, so Dissolve on fully-opaque RGB
+            // always selects the foreground pixel.
+            let hash = px_idx
+                .wrapping_mul(2654435761) // Knuth multiplicative hash
+                .wrapping_shr(16) as u8;
+            if hash < 128 {
+                (fg[0], fg[1], fg[2])
+            } else {
+                (bg[0], bg[1], bg[2])
+            }
+        }
+        BlendMode::DarkerColor => {
+            let fg_lum = pixel_luminance(fg[0], fg[1], fg[2]);
+            let bg_lum = pixel_luminance(bg[0], bg[1], bg[2]);
+            if fg_lum <= bg_lum {
+                (fg[0], fg[1], fg[2])
+            } else {
+                (bg[0], bg[1], bg[2])
+            }
+        }
+        BlendMode::LighterColor => {
+            let fg_lum = pixel_luminance(fg[0], fg[1], fg[2]);
+            let bg_lum = pixel_luminance(bg[0], bg[1], bg[2]);
+            if fg_lum >= bg_lum {
+                (fg[0], fg[1], fg[2])
+            } else {
+                (bg[0], bg[1], bg[2])
+            }
+        }
+        BlendMode::Hue => {
+            let (fg_h, _fg_s, _fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
+            let (_bg_h, bg_s, bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
+            hsl_to_rgb_u8(fg_h, bg_s, bg_l)
+        }
+        BlendMode::Saturation => {
+            let (_fg_h, fg_s, _fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
+            let (bg_h, _bg_s, bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
+            hsl_to_rgb_u8(bg_h, fg_s, bg_l)
+        }
+        BlendMode::Color => {
+            let (fg_h, fg_s, _fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
+            let (_bg_h, _bg_s, bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
+            hsl_to_rgb_u8(fg_h, fg_s, bg_l)
+        }
+        BlendMode::Luminosity => {
+            let (_fg_h, _fg_s, fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
+            let (bg_h, bg_s, _bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
+            hsl_to_rgb_u8(bg_h, bg_s, fg_l)
+        }
+        _ => unreachable!("per-channel mode in blend_pixel"),
+    }
 }
 
 /// Blend two same-size RGB8 or RGBA8 images using the given blend mode.
@@ -4669,7 +4822,7 @@ fn blend_channel(a: u8, b: u8, mode: BlendMode) -> u8 {
     category = "composite",
     group = "composite",
     variant = "blend",
-    reference = "18-mode photographic blend (multiply, screen, overlay, etc.)"
+    reference = "27-mode photographic blend (multiply, screen, overlay, hue, saturation, etc.)"
 )]
 pub fn blend(
     fg_pixels: &[u8],
@@ -4696,15 +4849,40 @@ pub fn blend(
         }
     };
 
+    let pixel_level = matches!(
+        mode,
+        BlendMode::Dissolve
+            | BlendMode::DarkerColor
+            | BlendMode::LighterColor
+            | BlendMode::Hue
+            | BlendMode::Saturation
+            | BlendMode::Color
+            | BlendMode::Luminosity
+    );
+
     let mut result = bg_pixels.to_vec();
-    for (fg_chunk, bg_chunk) in fg_pixels
-        .chunks_exact(bpp)
-        .zip(result.chunks_exact_mut(bpp))
-    {
-        bg_chunk[0] = blend_channel(fg_chunk[0], bg_chunk[0], mode);
-        bg_chunk[1] = blend_channel(fg_chunk[1], bg_chunk[1], mode);
-        bg_chunk[2] = blend_channel(fg_chunk[2], bg_chunk[2], mode);
-        // Alpha stays from bg (bottom layer) for RGBA8
+    if pixel_level {
+        for (px_idx, (fg_chunk, bg_chunk)) in fg_pixels
+            .chunks_exact(bpp)
+            .zip(result.chunks_exact_mut(bpp))
+            .enumerate()
+        {
+            let (r, g, b) = blend_pixel(fg_chunk, bg_chunk, mode, px_idx as u32);
+            bg_chunk[0] = r;
+            bg_chunk[1] = g;
+            bg_chunk[2] = b;
+            // Alpha stays from bg (bottom layer) for RGBA8
+        }
+    } else {
+        for (fg_chunk, bg_chunk) in fg_pixels
+            .chunks_exact(bpp)
+            .zip(result.chunks_exact_mut(bpp))
+        {
+            bg_chunk[0] = blend_channel(fg_chunk[0], bg_chunk[0], mode);
+            bg_chunk[1] = blend_channel(fg_chunk[1], bg_chunk[1], mode);
+            bg_chunk[2] = blend_channel(fg_chunk[2], bg_chunk[2], mode);
+            // Alpha stays from bg (bottom layer) for RGBA8
+        }
     }
     Ok(result)
 }
@@ -10974,11 +11152,86 @@ mod tests {
             BlendMode::HardLight,
             BlendMode::Difference,
             BlendMode::Exclusion,
+            BlendMode::ColorDodge,
+            BlendMode::ColorBurn,
+            BlendMode::VividLight,
+            BlendMode::LinearDodge,
+            BlendMode::LinearBurn,
+            BlendMode::LinearLight,
+            BlendMode::PinLight,
+            BlendMode::HardMix,
+            BlendMode::Subtract,
+            BlendMode::Divide,
+            BlendMode::Dissolve,
+            BlendMode::DarkerColor,
+            BlendMode::LighterColor,
+            BlendMode::Hue,
+            BlendMode::Saturation,
+            BlendMode::Color,
+            BlendMode::Luminosity,
         ] {
             let result = blend(&px, &info, &px2, &info, mode);
             assert!(result.is_ok(), "blend mode {mode:?} failed");
             assert_eq!(result.unwrap().len(), px.len());
         }
+    }
+
+    #[test]
+    fn blend_dissolve_deterministic() {
+        let (px, info) = make_image(4, 4);
+        let px2: Vec<u8> = (0..(4 * 4 * 3)).map(|i| ((i * 3) % 256) as u8).collect();
+        let r1 = blend(&px, &info, &px2, &info, BlendMode::Dissolve).unwrap();
+        let r2 = blend(&px, &info, &px2, &info, BlendMode::Dissolve).unwrap();
+        assert_eq!(r1, r2, "Dissolve must be deterministic for same inputs");
+    }
+
+    #[test]
+    fn blend_dissolve_selects_whole_pixel() {
+        // Each output pixel must be either fg or bg (no blending)
+        let fg = vec![255, 0, 0, 0, 255, 0]; // red, green
+        let bg = vec![0, 0, 255, 128, 128, 128]; // blue, gray
+        let info = ImageInfo {
+            width: 2,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = blend(&fg, &info, &bg, &info, BlendMode::Dissolve).unwrap();
+        for px in result.chunks_exact(3) {
+            assert!(
+                px == &fg[0..3] || px == &bg[0..3] || px == &fg[3..6] || px == &bg[3..6],
+                "Dissolve pixel {px:?} is neither fg nor bg"
+            );
+        }
+    }
+
+    #[test]
+    fn blend_darker_color_selects_darker() {
+        // fg: bright red (high lum), bg: dark blue (low lum)
+        let fg = vec![255, 200, 200]; // lum ≈ 213
+        let bg = vec![0, 0, 50];      // lum ≈ 6
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = blend(&fg, &info, &bg, &info, BlendMode::DarkerColor).unwrap();
+        assert_eq!(&result, &bg, "DarkerColor should select the darker pixel");
+    }
+
+    #[test]
+    fn blend_lighter_color_selects_lighter() {
+        let fg = vec![255, 200, 200]; // lum ≈ 213
+        let bg = vec![0, 0, 50];      // lum ≈ 6
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = blend(&fg, &info, &bg, &info, BlendMode::LighterColor).unwrap();
+        assert_eq!(&result, &fg, "LighterColor should select the lighter pixel");
     }
 
     #[test]
