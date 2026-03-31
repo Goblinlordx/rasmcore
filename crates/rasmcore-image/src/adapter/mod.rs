@@ -221,6 +221,10 @@ impl pipeline::Guest for Component {
     fn supported_write_formats() -> Vec<String> {
         domain::encoder::supported_formats()
     }
+
+    fn get_filter_manifest() -> String {
+        include_str!(concat!(env!("OUT_DIR"), "/param-manifest.json")).to_string()
+    }
 }
 
 impl decoder::Guest for Component {

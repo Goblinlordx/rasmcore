@@ -124,4 +124,10 @@ interface pipeline {
     detect-format: func(header: buffer) -> option<string>;
     supported-read-formats: func() -> list<string>;
     supported-write-formats: func() -> list<string>;
+
+    /// Return the full filter/operation manifest as JSON.
+    /// Contains all registered filters, generators, compositors, and mappers
+    /// with parameter names, types, ranges, defaults, and UI hints.
+    /// Enables runtime introspection — no external manifest file needed.
+    get-filter-manifest: func() -> string;
 }
