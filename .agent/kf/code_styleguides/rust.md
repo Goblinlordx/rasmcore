@@ -173,7 +173,64 @@ When you encounter warnings:
 | Loop index: `for i in 0..v.len()` | Use `.iter().enumerate()` or `.iter()` | Leave it |
 | Manual memcpy loop | Use `copy_from_slice` | Leave it |
 
+### Platform-Specific Variables (WASM / Native)
+
+Variables used only inside `#[cfg(target_arch = "wasm32")]` or `#[cfg(not(...))]` blocks
+will trigger `unused_variables` warnings on the other target. Handle with:
+
+```rust
+// Option 1: cfg-gate the binding itself (preferred when the variable is
+// only computed for one target)
+#[cfg(target_arch = "wasm32")]
+let simd_lut = build_simd_table();
+
+// Option 2: use the variable on both paths (preferred when the variable
+// is always needed but consumed differently)
+let len = data.len();
+#[cfg(target_arch = "wasm32")]
+{
+    simd_process(data.as_ptr(), len);
+}
+#[cfg(not(target_arch = "wasm32"))]
+{
+    scalar_process(data, len);
+}
+
+// Option 3: targeted allow (last resort — use when cfg-gating the
+// binding is awkward, e.g., destructuring or multi-use)
+#[allow(unused_variables)] // used only under wasm32 SIMD path
+let stride = width * 4;
+```
+
+**Do NOT** blanket-`#[allow(unused)]` on modules or functions — always scope the
+allow to the narrowest item.
+
+**When adding new code**, compile-check both targets before committing:
+
+```bash
+cargo check                              # native
+cargo check --target wasm32-wasip1       # WASM
+```
+
+This catches platform-conditional warnings early. CI runs both, but local
+checking prevents noise for other developers.
+
 **Critical rule:** Warning fixes must NEVER change output or behavior. They are purely cosmetic.
+
+### Build Warning Hygiene for New Code
+
+When adding new features, filters, encoders, or other functionality:
+
+1. **Run `cargo clippy --workspace` before committing.** New code must not introduce warnings.
+2. **Run `cargo check --target wasm32-wasip1`** if the code has any platform-conditional logic.
+3. **Generated code (bindings.rs, build.rs output):** Suppress warnings at the include site with
+   `#[allow(warnings)]` on the generated module — do not litter the generator with per-lint allows.
+4. **New filter registrations** that add params: verify the params are used in the filter body.
+   Unused params (e.g., reserved fields) should use `let _ = param;` explicitly.
+5. **New encoder configs:** After adding an encoder, check that both the adapter and WIT codegen
+   produce warning-free output. Run `cargo component build` to validate the full WASM build.
+
+If CI fails on warnings, fix them **in the same PR** — do not leave warnings for a follow-up.
 
 ## Clippy Lints
 
