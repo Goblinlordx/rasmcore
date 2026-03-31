@@ -78,7 +78,7 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
-            overlap: "zero".to_string(),
+            rect_request: true,
             fn_name: "zoom_blur".to_string(),
             params: vec![
                 ("center_x".to_string(), "f32".to_string()),
@@ -102,7 +102,7 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
-            overlap: "zero".to_string(),
+            rect_request: true,
             fn_name: "grayscale".to_string(),
             params: vec![],
             config_struct: None,
@@ -122,10 +122,12 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
-            overlap: "zero".to_string(),
+            rect_request: true,
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: Some("BlurParams".to_string()),
+            point_op: false,
+            color_op: false,
         }];
         let wit = generate(&filters);
         assert!(
