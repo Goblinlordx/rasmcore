@@ -6553,16 +6553,24 @@ pub fn perspective_warp(
     reference = "automatic perspective rectification"
 )]
 pub fn perspective_correct(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &PerspectiveCorrectParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let strength = config.strength;
 
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| perspective_correct(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            perspective_correct(r, &mut u, i8, config)
+        });
     }
 
     if strength <= 0.0 {
@@ -17169,28 +17177,36 @@ mod perspective_tests {
     #[test]
     fn correct_zero_strength_is_identity() {
         let (px, info) = make_rgb_image(32, 32);
-        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn correct_preserves_dimensions() {
         let (px, info) = make_rgb_image(64, 48);
-        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn correct_rgba_preserves_length() {
         let (px, info) = make_rgba_image(32, 32);
-        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn correct_gray_preserves_length() {
         let (px, info) = make_gray_image(32, 32);
-        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
