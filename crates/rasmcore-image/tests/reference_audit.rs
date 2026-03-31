@@ -2097,7 +2097,11 @@ fn close_spin_blur() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::spin_blur(px, info, 0.5, 0.5, 10.0).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::spin_blur(r, &mut u, info, &rasmcore_image::domain::filters::SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 10.0 }).unwrap()
+        },
         &["-rotational-blur", "10"],
         "spin_blur 10deg",
     ) {

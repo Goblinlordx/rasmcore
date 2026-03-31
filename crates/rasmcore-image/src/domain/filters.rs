@@ -1554,10 +1554,14 @@ pub struct SpinBlurParams {
 /// center_x/center_y are normalized (0.5 = image center, matching IM default).
 #[rasmcore_macros::register_filter(name = "spin_blur", category = "spatial")]
 pub fn spin_blur(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SpinBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     let center_x = config.center_x;
@@ -1569,7 +1573,11 @@ pub fn spin_blur(
     }
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| spin_blur(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            spin_blur(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -3503,7 +3511,7 @@ mod color_manipulation_tests {
     fn spin_blur_angle_zero_is_identity() {
         let pixels = solid_rgb(8, 8, 100, 150, 200);
         let info = info_rgb8(8, 8);
-        let result = spin_blur(&pixels, &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 0.0 }).unwrap();
+        let result = spin_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3520,7 +3528,7 @@ mod color_manipulation_tests {
             }
         }
         let info = info_rgb8(32, 32);
-        let result = spin_blur(&pixels, &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 30.0 }).unwrap();
+        let result = spin_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 30.0 }).unwrap();
         assert_ne!(result, pixels, "spin blur should modify pixels");
     }
 
@@ -3533,7 +3541,7 @@ mod color_manipulation_tests {
         pixels[center + 1] = 0;
         pixels[center + 2] = 0;
         let info = info_rgb8(16, 16);
-        let result = spin_blur(&pixels, &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 45.0 }).unwrap();
+        let result = spin_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 45.0 }).unwrap();
         // Center pixel should be close to original (radius ≈ 0, no arc blur)
         assert_eq!(result[center], 255, "center should stay red");
     }
