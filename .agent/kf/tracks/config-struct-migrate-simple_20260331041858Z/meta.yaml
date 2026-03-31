@@ -1,5 +1,5 @@
 title: Migrate Simple Filters to Config Struct Signatures
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-31'

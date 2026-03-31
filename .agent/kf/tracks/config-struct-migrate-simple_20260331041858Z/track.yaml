@@ -1,66 +1,63 @@
 id: config-struct-migrate-simple_20260331041858Z
-title: "Migrate Simple Filters to Config Struct Signatures"
+title: Migrate Simple Filters to Config Struct Signatures
 type: refactor
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Change remaining 1-2 param filter signatures to config structs. Complete
-    the migration so all parameterized filters use config struct API.
-  context: |
-    After multi-param filters are migrated, this track handles the simple
+  summary: 'Change remaining 1-2 param filter signatures to config structs. Complete the migration so all parameterized filters
+    use config struct API.
+
+    '
+  context: 'After multi-param filters are migrated, this track handles the simple
+
     cases (1-2 params). These are lower priority since single-param functions
+
     like blur(pixels, info, radius) are already clean, but migration gives
+
     consistency across the entire API.
-  codebase_analysis: |
-    Simple filters (~75):
-    - 1-param: blur, sharpen, brightness, contrast, gamma, hue_rotate,
-      saturate, sepia, equalize, normalize, invert, posterize, etc.
-    - 2-param: some distortion filters, dither, quantize, etc.
-    - 0-param: sobel, scharr, laplacian, emboss, premultiply, etc. (EXCLUDED)
 
-    Zero-param filters are excluded — no config struct needed.
+    '
+  codebase_analysis: "Simple filters (~75):\n- 1-param: blur, sharpen, brightness, contrast, gamma, hue_rotate,\n  saturate,\
+    \ sepia, equalize, normalize, invert, posterize, etc.\n- 2-param: some distortion filters, dither, quantize, etc.\n- 0-param:\
+    \ sobel, scharr, laplacian, emboss, premultiply, etc. (EXCLUDED)\n\nZero-param filters are excluded — no config struct\
+    \ needed.\n"
   acceptance_criteria:
-    - All filters with 1+ params use config struct signature
-    - Zero-param filters unchanged (no config struct)
-    - All test call sites updated
-    - Full cargo test pass
-    - Codegen generates config-based code for all parameterized filters
-    - WIT has record types for all parameterized filters
-  out_of_scope: |
-    Zero-param filter changes. New filters.
-  technical_notes: |
-    For 1-param filters, the config struct is trivial:
-      struct BlurConfig { radius: f32 }
-      fn blur(pixels, info, config: &BlurConfig) { ... config.radius ... }
+  - All filters with 1+ params use config struct signature
+  - Zero-param filters unchanged (no config struct)
+  - All test call sites updated
+  - Full cargo test pass
+  - Codegen generates config-based code for all parameterized filters
+  - WIT has record types for all parameterized filters
+  out_of_scope: 'Zero-param filter changes. New filters.
 
-    This is slightly more verbose but gives API consistency.
-    Consider whether this is worth the churn — if the team decides
-    1-param filters should stay as-is, this track can be skipped.
+    '
+  technical_notes: "For 1-param filters, the config struct is trivial:\n  struct BlurConfig { radius: f32 }\n  fn blur(pixels,\
+    \ info, config: &BlurConfig) { ... config.radius ... }\n\nThis is slightly more verbose but gives API consistency.\nConsider\
+    \ whether this is worth the churn — if the team decides\n1-param filters should stay as-is, this track can be skipped.\n"
 plan:
-  - phase: 1-Param Filters
-    tasks:
-      - text: Migrate spatial 1-param filters (blur, sharpen, median, etc.)
-        done: false
-      - text: Migrate adjustment 1-param filters (brightness, contrast, gamma, etc.)
-        done: false
-      - text: Migrate color 1-param filters (hue_rotate, saturate, sepia, etc.)
-        done: false
-      - text: Update all test call sites
-        done: false
-  - phase: 2-Param + Verification
-    tasks:
-      - text: Migrate 2-param filters (dither, quantize, etc.)
-        done: false
-      - text: Full cargo test pass
-        done: false
-      - text: Verify all parameterized filters use config struct in WIT
-        done: false
-      - text: Count final state (X config struct filters + Y zero-param filters)
-        done: false
-      - text: Verify WASM build passes
-        done: false
-      - text: Verify demo/web-ui still works with new WIT
-        done: false
+- phase: 1-Param Filters
+  tasks:
+  - text: Migrate spatial 1-param filters (blur, sharpen, median, etc.)
+    done: true
+  - text: Migrate adjustment 1-param filters (brightness, contrast, gamma, etc.)
+    done: true
+  - text: Migrate color 1-param filters (hue_rotate, saturate, sepia, etc.)
+    done: true
+  - text: Update all test call sites
+    done: true
+- phase: 2-Param + Verification
+  tasks:
+  - text: Migrate 2-param filters (dither, quantize, etc.)
+    done: true
+  - text: Full cargo test pass
+    done: true
+  - text: Verify all parameterized filters use config struct in WIT
+    done: true
+  - text: Count final state (X config struct filters + Y zero-param filters)
+    done: true
+  - text: Verify WASM build passes
+    done: true
+  - text: Verify demo/web-ui still works with new WIT
+    done: true
 extra: {}
