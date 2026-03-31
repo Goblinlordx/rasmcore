@@ -7691,10 +7691,14 @@ fn nlm_denoise_classic(
     reference = "He et al. 2009 dark channel prior dehazing"
 )]
 pub fn dehaze(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DehazeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let patch_radius = config.patch_radius;
     let omega = config.omega;
     let t_min = config.t_min;
@@ -13124,7 +13128,9 @@ mod photo_enhance_tests {
             }
         }
         let info = test_info(w, h, PixelFormat::Rgb8);
-        let result = dehaze(&pixels, &info, &DehazeParams { patch_radius: 7, omega: 0.95, t_min: 0.1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = dehaze(r, &mut u, &info, &DehazeParams { patch_radius: 7, omega: 0.95, t_min: 0.1 }).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Dehazed image should have more contrast (wider range)
@@ -13146,7 +13152,9 @@ mod photo_enhance_tests {
             pixels[i * 4 + 3] = 128; // set alpha
         }
         let info = test_info(w, h, PixelFormat::Rgba8);
-        let result = dehaze(&pixels, &info, &DehazeParams { patch_radius: 5, omega: 0.8, t_min: 0.1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = dehaze(r, &mut u, &info, &DehazeParams { patch_radius: 5, omega: 0.8, t_min: 0.1 }).unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 128, "alpha must be preserved");
         }
