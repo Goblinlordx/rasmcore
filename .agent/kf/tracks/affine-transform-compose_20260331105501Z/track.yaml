@@ -1,0 +1,169 @@
+id: affine-transform-compose_20260331105501Z
+title: Affine Transform Composition — Single-Resample Quality Optimization
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: >
+    Add an AffineOp trait on transform ConfigParams/nodes that exposes a
+    2x3 affine matrix. The pipeline optimizer composes consecutive affine
+    transforms into a single matrix and resamples once, eliminating
+    multi-pass interpolation quality loss.
+  context: |
+    When a pipeline chains resize -> rotate -> flip, each transform
+    resamples the image independently. Each resample pass introduces
+    interpolation artifacts (softening, ringing). Composing the
+    transforms into a single affine matrix and resampling once gives
+    both better quality (one interpolation) and better performance
+    (one pass instead of N).
+
+    This is how Photoshop and libvips handle transform chains. The
+    codebase already has transform::affine() with full 2x3 matrix
+    support and bilinear interpolation. All existing transform nodes
+    (resize, crop, rotate, flip) are expressible as affine matrices.
+
+    This is a QUALITY optimization first, performance second. The
+    single-resample result is measurably sharper than multi-resample.
+  codebase_analysis: |
+    EXISTING AFFINE INFRASTRUCTURE (transform.rs):
+    - affine(pixels, info, matrix: &[f64; 6], out_w, out_h, bg) -> Result
+    - Matrix format: [a, b, tx, c, d, ty] representing:
+      x' = a*x + b*y + tx
+      y' = c*x + d*y + ty
+    - Inverse mapping with bilinear interpolation
+    - WASM32 f32x4 SIMD path + scalar f64 fallback
+
+    TRANSFORM NODES (pipeline/nodes/transform.rs):
+    - ResizeNode: target_width, target_height, filter
+    - CropNode: x, y, width, height
+    - RotateNode: rotation (R90, R180, R270)
+    - FlipNode: direction (Horizontal, Vertical)
+    - AutoOrientNode: ExifOrientation (8 codes)
+
+    AFFINE MATRIX REPRESENTATIONS:
+    - Resize: [sx, 0, 0, 0, sy, 0] where sx=tw/sw, sy=th/sh
+    - Crop: [1, 0, -x, 0, 1, -y] (translation, output dims = crop dims)
+    - Rotate90: [0, -1, h, 1, 0, 0] (swap axes)
+    - Rotate180: [-1, 0, w, 0, -1, h]
+    - Rotate270: [0, 1, 0, -1, 0, w]
+    - FlipH: [-1, 0, w, 0, 1, 0]
+    - FlipV: [1, 0, 0, 0, -1, h]
+
+    COMPOSITION: multiply two 2x3 matrices (treating as 3x3 with [0,0,1]):
+    - [a1,b1,tx1] * [a2,b2,tx2] = [a1*a2+b1*c2, a1*b2+b1*d2, a1*tx2+b1*ty2+tx1]
+    - [c1,d1,ty1]   [c2,d2,ty2]   [c1*a2+d1*c2, c1*b2+d1*d2, c1*tx2+d1*ty2+ty1]
+
+    EWA RESAMPLER (ewa.rs):
+    - Uses Jacobian (2x2 differential) for nonlinear distortions
+    - Orthogonal to affine composition (different transform model)
+    - Could potentially use the composed affine Jacobian for quality
+      resampling, but that's a stretch goal
+
+    RESAMPLING FILTERS:
+    - Resize uses fast_image_resize (Nearest, Bilinear, Bicubic, Lanczos3)
+    - affine() uses bilinear only (hardcoded)
+    - Composed transform should use the highest-quality filter from the chain
+  acceptance_criteria:
+    - AffineOp trait exists with to_affine_matrix() method
+    - ResizeNode, CropNode, RotateNode, FlipNode implement AffineOp
+    - Pipeline optimizer detects consecutive AffineOp nodes
+    - Consecutive affine nodes compose into single matrix + one resample
+    - Output dimensions correctly computed from composed transform
+    - Single-resample output is visually sharper than multi-resample
+    - Pixel-difference test showing single-resample has less interpolation loss
+    - Resampling filter selection uses highest quality from the chain
+    - docs/extending.md updated with AffineOp section
+    - implementation-rules.md updated with AffineOp guidance
+  out_of_scope: |
+    Perspective (projective) transforms — only 2D affine (6 params).
+    Nonlinear distortions (barrel, swirl) — those use EWA/Jacobian.
+    GPU-accelerated resampling. Lanczos for affine() (currently bilinear).
+  technical_notes: |
+    DESIGN (follows LutPointOp pattern):
+
+    1. AffineOp Trait (in transform.rs or pipeline/graph.rs)
+       ```rust
+       pub trait AffineOp {
+           /// Return the 2x3 affine matrix [a, b, tx, c, d, ty]
+           /// and the output dimensions for this transform.
+           fn to_affine(&self) -> ([f64; 6], u32, u32);
+       }
+       ```
+
+    2. Implement on transform nodes directly (not ConfigParams, since
+       transform nodes are hand-written, not codegen'd)
+       ```rust
+       impl AffineOp for ResizeNode {
+           fn to_affine(&self) -> ([f64; 6], u32, u32) {
+               let sx = self.target_width as f64 / self.source_info.width as f64;
+               let sy = self.target_height as f64 / self.source_info.height as f64;
+               ([sx, 0.0, 0.0, 0.0, sy, 0.0], self.target_width, self.target_height)
+           }
+       }
+       ```
+
+    3. Matrix Composition
+       ```rust
+       fn compose_affine(a: &[f64; 6], b: &[f64; 6]) -> [f64; 6] {
+           // Standard 2x3 matrix multiplication (homogeneous)
+       }
+       ```
+       Output dimensions: compute bounding box of transformed corners
+
+    4. Pipeline Integration
+       Add as_affine_op() to ImageNode trait
+       Transform nodes override it
+       Optimizer walks DAG, composes consecutive affine nodes
+       Replaces chain with single ComposedAffineNode
+
+    5. ComposedAffineNode
+       Stores composed matrix + output dims + resample filter
+       compute_region calls transform::affine() with the composed matrix
+
+    6. Quality: use the highest-quality ResizeFilter from the chain
+       (Lanczos3 > Bicubic > Bilinear > Nearest)
+
+    7. Documentation
+       Update docs/extending.md with AffineOp section
+       Update implementation-rules.md with transform composition guidance
+plan:
+  - phase: AffineOp Trait & Matrix Math
+    tasks:
+      - text: Define AffineOp trait with to_affine() returning matrix + output dims
+        done: false
+      - text: Implement compose_affine() for 2x3 matrix multiplication
+        done: false
+      - text: Implement output dimension computation from composed matrix (bounding box)
+        done: false
+      - text: Implement AffineOp for ResizeNode, CropNode, RotateNode, FlipNode
+        done: false
+  - phase: Pipeline Fusion
+    tasks:
+      - text: Add as_affine_op() to ImageNode trait with default None
+        done: false
+      - text: Implement ComposedAffineNode that applies a single composed transform
+        done: false
+      - text: Implement affine fusion pass in pipeline optimizer
+        done: false
+      - text: Implement resampling filter quality selection (highest from chain)
+        done: false
+  - phase: Documentation
+    tasks:
+      - text: Update docs/extending.md with AffineOp trait section and examples
+        done: false
+      - text: Update implementation-rules.md with transform composition guidance
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test resize -> rotate -> flip composes into single matrix
+        done: false
+      - text: Test composed output dimensions are correct for all combinations
+        done: false
+      - text: Test single-resample is sharper than multi-resample (PSNR comparison)
+        done: false
+      - text: Test non-affine nodes (blur) act as composition barriers
+        done: false
+      - text: All existing transform and pipeline tests pass
+        done: false
+extra: {}

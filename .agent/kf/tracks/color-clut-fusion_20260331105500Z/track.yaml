@@ -1,0 +1,160 @@
+id: color-clut-fusion_20260331105500Z
+title: 3D CLUT Fusion — ColorLutOp Trait + Pipeline Optimizer for Multi-Channel Ops
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: >
+    Add a ColorLutOp trait on ConfigParams structs for multi-channel color
+    operations, enabling automatic 3D CLUT fusion in the pipeline.
+    Consecutive color ops compose into a single 33x33x33 lookup table.
+  context: |
+    The LutPointOp trait handles per-channel point ops (brightness, contrast,
+    etc.) but 13 color/grading filters depend on all 3 channels together
+    (hue_rotate needs R+G+B to compute each output channel). These cannot
+    use 1D LUTs.
+
+    The codebase ALREADY has complete 3D CLUT infrastructure:
+    - ColorLut3D with tetrahedral interpolation (color_lut.rs)
+    - compose_cluts(first, second) for sequential composition
+    - absorb_1d_pre/post for 1D+3D fusion (shaper-CLUT-shaper)
+    - ColorOp::to_clut() to bake ColorOps into CLUTs
+    - ColorLut3D::from_fn() to bake arbitrary (r,g,b)->(r,g,b) closures
+
+    What is missing is the pipeline integration: a trait on ConfigParams
+    that the pipeline optimizer can discover and fuse automatically.
+    Same pattern as LutPointOp but for 3D CLUTs.
+  codebase_analysis: |
+    EXISTING INFRASTRUCTURE (color_lut.rs):
+    - ColorLut3D struct: grid-based 3D LUT with tetrahedral interpolation
+    - from_fn(grid_size, f) -> ColorLut3D: build from color transform
+    - compose_cluts(first, second) -> ColorLut3D: O(grid^3) composition
+    - absorb_1d_pre/post: incorporate 1D LUTs as pre/post curves
+    - apply(pixels, info) -> Result: O(1) per-pixel evaluation
+    - Default grid size: 33x33x33 (35,937 entries)
+
+    COLOROP-BASED FILTERS (7 filters, already have to_clut()):
+    - hue_rotate (HueRotateParams) -> ColorOp::HueRotate
+    - saturate (SaturateParams) -> ColorOp::Saturate
+    - sepia (SepiaParams) -> ColorOp::Sepia
+    - colorize (ColorizeParams) -> ColorOp::Colorize
+    - channel_mixer (ChannelMixerParams) -> ColorOp::ChannelMix
+    - vibrance (VibranceParams) -> ColorOp::Vibrance
+    - modulate (ModulateParams) -> ColorOp::Modulate
+
+    COLOR GRADING FILTERS (5 filters, use apply_rgb_transform closures):
+    - color_balance (ColorBalanceParams) -> color_balance_pixel()
+    - asc_cdl (AscCdlParams) -> asc_cdl_pixel()
+    - lift_gamma_gain (LiftGammaGainParams) -> lift_gamma_gain_pixel()
+    - split_toning (SplitToningParams) -> split_toning_pixel()
+    - film_grain (FilmGrainParams) -> NOT fuseable (position-dependent noise)
+
+    CROSS-DOMAIN FUSION:
+    - absorb_1d_pre/post can fuse 1D LUTs into 3D CLUTs
+    - A chain of brightness -> hue_rotate -> contrast could fuse into
+      one 3D CLUT: absorb brightness LUT, compose hue CLUT, absorb contrast
+  acceptance_criteria:
+    - ColorLutOp trait exists with build_clut() method
+    - All 7 ColorOp-based ConfigParams implement ColorLutOp
+    - All 4 fuseable color grading ConfigParams implement ColorLutOp
+    - Pipeline optimizer detects consecutive ColorLutOp nodes and fuses CLUTs
+    - Cross-domain fusion works (1D LUT + 3D CLUT via absorb)
+    - Fused chain produces byte-identical output to unfused chain
+    - Pipeline test confirming hue_rotate -> saturate -> colorize fuses to 1 CLUT
+    - film_grain correctly excluded from fusion (position-dependent)
+    - docs/extending.md updated with ColorLutOp section
+    - implementation-rules.md updated with ColorLutOp guidance
+  out_of_scope: |
+    External .cube/.hald LUT import (already implemented).
+    GPU-accelerated CLUT evaluation.
+    Adaptive grid size optimization.
+  technical_notes: |
+    DESIGN (follows LutPointOp pattern):
+
+    1. ColorLutOp Trait (in color_lut.rs)
+       ```rust
+       pub trait ColorLutOp {
+           fn build_clut(&self) -> ColorLut3D;
+       }
+       ```
+
+    2. Implement on ConfigParams
+       ColorOp-based: delegate to existing to_clut()
+       ```rust
+       impl ColorLutOp for HueRotateParams {
+           fn build_clut(&self) -> ColorLut3D {
+               ColorOp::HueRotate(self.degrees).to_clut(33)
+           }
+       }
+       ```
+       Grading-based: use ColorLut3D::from_fn()
+       ```rust
+       impl ColorLutOp for AscCdlParams {
+           fn build_clut(&self) -> ColorLut3D {
+               let params = self.clone();
+               ColorLut3D::from_fn(33, move |r, g, b| {
+                   asc_cdl_pixel(r, g, b, &params)
+               })
+           }
+       }
+       ```
+
+    3. Pipeline Integration
+       Add as_color_lut_op() to ImageNode (like as_point_op_lut)
+       Codegen generates override when point_op attribute is set
+       (may need a new attribute like color_op = "true")
+
+    4. Pipeline Optimizer (extend fuse_point_ops or add fuse_color_ops)
+       Walk DAG, detect consecutive ColorLutOp nodes
+       Compose via compose_cluts()
+       Replace with FusedClutNode
+
+    5. Cross-Domain: when a 1D LUT chain meets a 3D CLUT chain,
+       absorb the 1D into the 3D using absorb_1d_pre/post
+
+    6. Documentation
+       Update docs/extending.md with ColorLutOp section
+       Update implementation-rules.md with when to use ColorLutOp vs LutPointOp
+plan:
+  - phase: ColorLutOp Trait
+    tasks:
+      - text: Define ColorLutOp trait in color_lut.rs with build_clut() method
+        done: false
+      - text: Implement ColorLutOp for 7 ColorOp-based ConfigParams structs
+        done: false
+      - text: Implement ColorLutOp for 4 fuseable color grading ConfigParams structs
+        done: false
+      - text: Add color_op attribute to register_filter for the 11 filters
+        done: false
+  - phase: Pipeline Fusion
+    tasks:
+      - text: Add as_color_lut_op() to ImageNode trait with default None
+        done: false
+      - text: Update codegen to generate as_color_lut_op() for color_op nodes
+        done: false
+      - text: Implement FusedClutNode that applies a pre-composed 3D CLUT
+        done: false
+      - text: Implement color op fusion in pipeline optimizer (extend or parallel to fuse_point_ops)
+        done: false
+      - text: Implement cross-domain 1D+3D absorption in the fusion pass
+        done: false
+  - phase: Documentation
+    tasks:
+      - text: Update docs/extending.md with ColorLutOp trait section and examples
+        done: false
+      - text: Update implementation-rules.md with ColorLutOp vs LutPointOp guidance
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test fused hue_rotate -> saturate -> colorize matches unfused
+        done: false
+      - text: Test cross-domain fusion (brightness LUT + hue_rotate CLUT)
+        done: false
+      - text: Test film_grain correctly excluded from fusion
+        done: false
+      - text: Test longer chains (5+ color ops)
+        done: false
+      - text: All existing color op and pipeline tests pass
+        done: false
+extra: {}
