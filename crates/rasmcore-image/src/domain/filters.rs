@@ -4936,10 +4936,14 @@ pub fn vignette_full(
     reference = "power-law radial falloff"
 )]
 pub fn vignette_powerlaw(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &VignettePowerlawParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let strength = config.strength;
     let falloff = config.falloff;
     let full_width = config.full_width;
@@ -4949,7 +4953,11 @@ pub fn vignette_powerlaw(
 
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| vignette_powerlaw(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            vignette_powerlaw(r, &mut u, i8, config)
+        });
     }
 
     let ch = channels(info.format);
