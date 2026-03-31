@@ -1,0 +1,15 @@
+id: fix-sdk-codegen-imports_20260331094236Z
+title: Fix SDK codegen — import ConfigParams types
+type: bug
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: SDK generator fails to import ConfigParams structs, causing 91 type resolution errors
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
