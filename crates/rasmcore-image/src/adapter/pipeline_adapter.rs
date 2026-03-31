@@ -256,7 +256,7 @@ impl GuestLayerCache for LayerCacheResource {
     fn stats(&self) -> CacheStats {
         let s = self.inner.borrow().stats();
         CacheStats {
-            entries: s.entries,
+            entries: s.entries as u64,
             hits: s.hits,
             misses: s.misses,
             size_bytes: s.size_bytes,
@@ -343,13 +343,13 @@ impl GuestImagePipeline for PipelineResource {
                     rasmcore_pipeline::MetadataValue::Int(orient as i64),
                 );
             }
-            if let Some(ref make) = exif.make {
+            if let Some(ref make) = exif.camera_make {
                 meta.set(
                     "exif.Make",
                     rasmcore_pipeline::MetadataValue::String(make.clone()),
                 );
             }
-            if let Some(ref model) = exif.model {
+            if let Some(ref model) = exif.camera_model {
                 meta.set(
                     "exif.Model",
                     rasmcore_pipeline::MetadataValue::String(model.clone()),
@@ -660,7 +660,7 @@ impl GuestImagePipeline for PipelineResource {
         let combined = rasmcore_pipeline::compute_hash(
             &fg_hash,
             "composite_fg",
-            format!("{x},{y},{blend_mode:?}").as_bytes(),
+            format!("{x},{y},{mode:?}").as_bytes(),
         );
         let hash = rasmcore_pipeline::compute_hash(&combined, "composite_bg", &bg_hash);
         Ok(self

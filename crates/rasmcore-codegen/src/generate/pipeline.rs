@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::types::{FilterReg, ParamField};
 
-use super::helpers::{to_binding_type, to_owned_type, to_pascal_case};
+use super::helpers::{to_binding_type, to_owned_type, to_pascal_case, to_qualified_binding_type};
 
 /// Generate pipeline node structs + ImageNode impls + pipeline adapter macro.
 pub fn generate_nodes(
@@ -311,7 +311,13 @@ fn detect_expansion_field(params: &[(String, String)], prefix: &str) -> Option<S
 }
 
 /// Generate the pipeline adapter macro (filter methods on PipelineResource).
-pub fn generate_adapter_macro(filters: &[FilterReg]) -> String {
+///
+/// Pipeline WIT uses the same config records as filters — ConfigParams = WIT record.
+/// The macro accepts WIT binding types and converts them to domain types.
+pub fn generate_adapter_macro(
+    filters: &[FilterReg],
+    param_structs: &HashMap<String, Vec<ParamField>>,
+) -> String {
     let mut code = String::new();
     code.push_str("// Auto-generated pipeline filter adapter methods.\n");
     code.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
@@ -322,12 +328,71 @@ pub fn generate_adapter_macro(filters: &[FilterReg]) -> String {
         let trait_method = &f.name;
         let node_name = format!("{}Node", to_pascal_case(&f.name));
 
+        // The WIT pipeline signature mirrors the filter signature:
+        // (source, [extra params...], [config: record])
+        // The adapter converts WIT binding types → domain types
         let mut sig_params = Vec::new();
         let mut node_ctor_args = Vec::new();
+        let mut body_lines = Vec::new();
+        let mut hash_args = Vec::new();
+
         for (n, t) in &f.params {
             let clean_n = n.trim_start_matches('_');
-            sig_params.push(format!("{clean_n}: {}", to_binding_type(t)));
-            node_ctor_args.push(clean_n.to_string());
+
+            if t.starts_with('&') && t.ends_with("Params") {
+                // Config struct — accept WIT config record, convert to domain type
+                let struct_name = &t[1..];
+                let wit_config_type = format!(
+                    "crate::bindings::exports::rasmcore::image::pipeline::{}Config",
+                    to_pascal_case(&f.name)
+                );
+                // Use the struct name without & for the owned domain type
+                let domain_type = to_qualified_binding_type(struct_name);
+                sig_params.push(format!("wit_config: {wit_config_type}"));
+                hash_args.push("wit_config".to_string());
+
+                // Generate field-by-field conversion
+                if let Some(fields) = param_structs.get(struct_name) {
+                    let field_inits: Vec<String> = fields.iter().map(|field| {
+                        let fname = field.name.trim_start_matches('_');
+                        let nested = param_structs.get(&field.param_type);
+                        if let Some(nested_fields) = nested {
+                            let nested_type = to_qualified_binding_type(&field.param_type);
+                            let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
+                                let nfname = nf.name.trim_start_matches('_');
+                                format!("                {nfname}: wit_config.{fname}.{nfname}")
+                            }).collect();
+                            format!(
+                                "            {fname}: {nested_type} {{\n{}\n            }}",
+                                nested_inits.join(",\n")
+                            )
+                        } else {
+                            format!("            {fname}: wit_config.{fname}")
+                        }
+                    }).collect();
+                    body_lines.push(format!(
+                        "        let config = {domain_type} {{\n{}\n        }};",
+                        field_inits.join(",\n")
+                    ));
+                }
+                node_ctor_args.push("config".to_string());
+            } else if t == "&[Point2D]" {
+                // Point2D: WIT list<point2d> binding → domain Vec<Point2D>
+                sig_params.push(format!(
+                    "{clean_n}: Vec<crate::bindings::rasmcore::core::types::Point2d>"
+                ));
+                hash_args.push(clean_n.to_string());
+                body_lines.push(format!(
+                    "        let {clean_n}_domain: Vec<crate::domain::param_types::Point2D> = \
+                     {clean_n}.iter().map(|p| crate::domain::param_types::Point2D {{ x: p.x, y: p.y }}).collect();"
+                ));
+                node_ctor_args.push(format!("{clean_n}_domain"));
+            } else {
+                // Primitive extra params — same type in WIT and domain
+                sig_params.push(format!("{clean_n}: {}", to_qualified_binding_type(t)));
+                node_ctor_args.push(clean_n.to_string());
+                hash_args.push(clean_n.to_string());
+            }
         }
 
         let full_sig = if sig_params.is_empty() {
@@ -352,26 +417,26 @@ pub fn generate_adapter_macro(filters: &[FilterReg]) -> String {
         code.push_str(
             "        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;\n",
         );
-        code.push_str(&format!("        let node = {ctor_call};\n"));
 
-        // Compute content hash for layer cache: hash(upstream_hash, op_name, params)
-        let hash_param_bytes = if node_ctor_args.is_empty() {
+        // Compute hash before conversion (which may move values)
+        let hash_param_bytes = if hash_args.is_empty() {
             "b\"\"".to_string()
         } else {
-            // We can't easily get byte repr of all types, so use the debug string
             format!(
                 "format!(\"{}\").as_bytes()",
-                node_ctor_args
-                    .iter()
-                    .map(|n| format!("{{{n}:?}}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
+                hash_args.iter().map(|n| format!("{{{n}:?}}")).collect::<Vec<_>>().join(",")
             )
         };
         code.push_str("        let upstream_hash = self.graph.borrow().node_hash(source);\n");
         code.push_str(&format!(
             "        let content_hash = rasmcore_pipeline::compute_hash(&upstream_hash, \"{trait_method}\", {hash_param_bytes});\n"
         ));
+
+        for line in &body_lines {
+            code.push_str(line);
+            code.push('\n');
+        }
+        code.push_str(&format!("        let node = {ctor_call};\n"));
         code.push_str("        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), content_hash))\n");
         code.push_str("    }\n\n");
     }

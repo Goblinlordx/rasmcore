@@ -35,7 +35,7 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     fs::write(out_dir.join("param-manifest.hash"), format!("{hash:016x}")).unwrap();
 
     // Filter adapter dispatch code
-    let adapter_code = adapter::generate(&data.filters);
+    let adapter_code = adapter::generate(&data.filters, &data.param_structs);
     fs::write(out_dir.join("generated_filter_adapter.rs"), &adapter_code).unwrap();
 
     // Pipeline node structs (filters + mappers)
@@ -44,7 +44,7 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     fs::write(out_dir.join("generated_pipeline_nodes.rs"), &nodes_code).unwrap();
 
     // Pipeline adapter macro (filters)
-    let pipe_adapter = pipeline::generate_adapter_macro(&data.filters);
+    let pipe_adapter = pipeline::generate_adapter_macro(&data.filters, &data.param_structs);
     fs::write(out_dir.join("generated_pipeline_adapter.rs"), &pipe_adapter).unwrap();
 
     // Pipeline mapper adapter macro

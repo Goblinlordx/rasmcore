@@ -71,6 +71,38 @@ pub fn to_binding_type(rust_type: &str) -> &str {
     }
 }
 
+/// Convert a Rust domain type to a fully-qualified path for use in the
+/// WASM pipeline adapter macro (which lacks `use domain::filters::*`).
+/// Types that live in `crate::domain::param_types` (not `crate::domain::filters`).
+const PARAM_TYPES: &[&str] = &["ColorRgba", "ColorRgb", "Point2D"];
+
+pub fn to_qualified_binding_type(rust_type: &str) -> String {
+    match rust_type {
+        "&[f32]" => "Vec<f32>".to_string(),
+        "&[f64]" => "Vec<f64>".to_string(),
+        "&[u8]" => "Vec<u8>".to_string(),
+        "&[u32]" => "Vec<u32>".to_string(),
+        "&[Point2D]" => "Vec<crate::domain::param_types::Point2D>".to_string(),
+        "&str" => "String".to_string(),
+        "f32" | "f64" | "u8" | "u16" | "u32" | "u64" | "i32" | "i64" | "bool" | "String" => {
+            rust_type.to_string()
+        }
+        other => {
+            let (prefix, inner) = if other.starts_with('&') {
+                ("&", &other[1..])
+            } else {
+                ("", other)
+            };
+            let module = if PARAM_TYPES.contains(&inner) {
+                "crate::domain::param_types"
+            } else {
+                "crate::domain::filters"
+            };
+            format!("{prefix}{module}::{inner}")
+        }
+    }
+}
+
 /// Default range values for a given Rust type (min, max, step, default).
 pub fn default_range_for_type(ty: &str) -> (&str, &str, &str, &str) {
     match ty {
