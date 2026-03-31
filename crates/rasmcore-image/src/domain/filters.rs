@@ -1153,8 +1153,7 @@ pub struct WhiteBalanceTemperatureParams {
     name = "blur",
     category = "spatial",
     group = "blur",
-    reference = "Gaussian convolution",
-    overlap = "uniform(10)"
+    reference = "Gaussian convolution"
 )]
 pub fn blur(
     pixels: &[u8],
@@ -1840,8 +1839,7 @@ pub fn box_blur(
     category = "spatial",
     group = "blur",
     variant = "average",
-    reference = "Photoshop Average blur",
-    overlap = "full"
+    reference = "Photoshop Average blur"
 )]
 pub fn average_blur(
     request: Rect,
@@ -2040,8 +2038,7 @@ pub fn smart_sharpen(
 #[rasmcore_macros::register_filter(
     name = "sharpen",
     category = "spatial",
-    reference = "unsharp mask",
-    overlap = "uniform(2)"
+    reference = "unsharp mask"
 )]
 pub fn sharpen(
     pixels: &[u8],
@@ -4226,8 +4223,6 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
     group = "edge_detect",
     variant = "sobel",
     reference = "Sobel 1968 gradient operator",
-
-    overlap = "uniform(1)",
     output_format = "Gray8"
 )]
 pub fn sobel_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
@@ -4300,8 +4295,6 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     group = "edge_detect",
     variant = "scharr",
     reference = "Scharr 2000 rotationally symmetric gradient",
-
-    overlap = "uniform(1)",
     output_format = "Gray8"
 )]
 pub fn scharr_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
@@ -4367,8 +4360,6 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     group = "edge_detect",
     variant = "laplacian",
     reference = "second-order derivative operator",
-
-    overlap = "uniform(1)",
     output_format = "Gray8"
 )]
 pub fn laplacian_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
@@ -4500,8 +4491,6 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
     group = "edge_detect",
     variant = "canny",
     reference = "Canny 1986 multi-stage edge detector",
-
-    overlap = "uniform(2)",
     output_format = "Gray8"
 )]
 pub fn canny_mapper(
@@ -7140,8 +7129,7 @@ pub fn bilateral(
     category = "spatial",
     group = "denoise",
     variant = "guided",
-    reference = "He et al. 2010 guided image filtering",
-    overlap = "param(radius, 2)"
+    reference = "He et al. 2010 guided image filtering"
 )]
 pub fn guided_filter(
     pixels: &[u8],
@@ -16177,8 +16165,7 @@ pub fn solarize(
 #[rasmcore_macros::register_filter(
     name = "emboss",
     category = "effect",
-    reference = "3D relief embossing via directional kernel",
-    overlap = "uniform(1)"
+    reference = "3D relief embossing via directional kernel"
 )]
 pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     // Standard emboss kernel: directional highlight along the diagonal
