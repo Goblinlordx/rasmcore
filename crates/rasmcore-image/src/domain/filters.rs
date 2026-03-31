@@ -15721,10 +15721,14 @@ pub struct HueVsSatParams {
     reference = "DaVinci Resolve Hue vs Sat curve"
 )]
 pub fn hue_vs_sat(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_hue_curve_lut(&pts);
     super::color_grading::hue_vs_sat(pixels, info, &lut)
@@ -15752,10 +15756,14 @@ pub struct HueVsLumParams {
     reference = "DaVinci Resolve Hue vs Lum curve"
 )]
 pub fn hue_vs_lum(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_hue_curve_lut(&pts);
     super::color_grading::hue_vs_lum(pixels, info, &lut)
@@ -15783,10 +15791,14 @@ pub struct LumVsSatParams {
     reference = "DaVinci Resolve Lum vs Sat curve"
 )]
 pub fn lum_vs_sat(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_norm_curve_lut(&pts);
     super::color_grading::lum_vs_sat(pixels, info, &lut)
@@ -15814,10 +15826,14 @@ pub struct SatVsSatParams {
     reference = "DaVinci Resolve Sat vs Sat curve"
 )]
 pub fn sat_vs_sat(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_norm_curve_lut(&pts);
     super::color_grading::sat_vs_sat(pixels, info, &lut)
@@ -15875,7 +15891,10 @@ pub fn film_grain_registered(
     variant = "reinhard",
     reference = "Reinhard et al. 2002 photographic tone reproduction"
 )]
-pub fn tonemap_reinhard_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn tonemap_reinhard_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     super::color_grading::tonemap_reinhard(pixels, info)
 }
 
@@ -15895,10 +15914,14 @@ pub struct TonemapDragoParams {
     reference = "Drago et al. 2003 logarithmic tone mapping"
 )]
 pub fn tonemap_drago_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &TonemapDragoParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let bias = config.bias;
 
     let params = super::color_grading::DragoParams { l_max: 1.0, bias };
@@ -15933,10 +15956,14 @@ pub struct TonemapFilmicParams {
     reference = "Hable 2010 Uncharted 2 filmic curve"
 )]
 pub fn tonemap_filmic_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &TonemapFilmicParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let shoulder_strength = config.shoulder_strength;
     let linear_strength = config.linear_strength;
     let linear_angle = config.linear_angle;
@@ -15972,10 +15999,14 @@ pub struct SmartCropParams {
     reference = "saliency-based automatic crop"
 )]
 pub fn smart_crop_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SmartCropParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let target_width = config.target_width;
     let target_height = config.target_height;
 
@@ -16005,10 +16036,14 @@ pub struct SeamCarveWidthParams {
     reference = "Avidan & Shamir 2007 content-aware width resize"
 )]
 pub fn seam_carve_width_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SeamCarveWidthParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let target_width = config.target_width;
 
     let (data, _new_info) = super::content_aware::seam_carve_width(pixels, info, target_width)?;
@@ -16031,10 +16066,14 @@ pub struct SeamCarveHeightParams {
     reference = "Avidan & Shamir 2007 content-aware height resize"
 )]
 pub fn seam_carve_height_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SeamCarveHeightParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let target_height = config.target_height;
 
     let (data, _new_info) = super::content_aware::seam_carve_height(pixels, info, target_height)?;
@@ -16172,15 +16211,23 @@ pub struct OilPaintParams {
     reference = "Kuwahara-variant oil painting simulation"
 )]
 pub fn oil_paint(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &OilPaintParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
 
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| oil_paint(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            oil_paint(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -18183,16 +18230,24 @@ pub struct PixelateParams {
     reference = "block mosaic pixelation"
 )]
 pub fn pixelate(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &PixelateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let block_size = config.block_size;
 
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| pixelate(px, i8, config));
+        return process_via_8bit(pixels, info, |px, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            pixelate(r, &mut u, i8, config)
+        });
     }
 
     let bs = block_size.max(1) as usize;
@@ -18258,10 +18313,14 @@ pub struct HalftoneParams {
     reference = "CMYK-style halftone dot pattern"
 )]
 pub fn halftone(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &HalftoneParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let dot_size = config.dot_size;
     let angle_offset = config.angle_offset;
 
@@ -18269,7 +18328,9 @@ pub fn halftone(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |px, i8| {
-            halftone(px, i8, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            halftone(r, &mut u, i8, config)
         });
     }
 
@@ -18387,17 +18448,25 @@ pub struct SwirlParams {
     reference = "vortex rotation distortion"
 )]
 pub fn swirl(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SwirlParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let angle = config.angle;
     let radius = config.radius;
 
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| swirl(px, i8, config));
+        return process_via_8bit(pixels, info, |px, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            swirl(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -18461,16 +18530,24 @@ pub struct SpherizeParams {
     reference = "spherical bulge distortion"
 )]
 pub fn spherize(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SpherizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amount = config.amount;
 
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| spherize(px, i8, config));
+        return process_via_8bit(pixels, info, |px, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            spherize(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -18536,17 +18613,25 @@ pub struct BarrelParams {
     reference = "Brown-Conrady radial distortion model"
 )]
 pub fn barrel(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &BarrelParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let k1 = config.k1;
     let k2 = config.k2;
 
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| barrel(px, i8, config));
+        return process_via_8bit(pixels, info, |px, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            barrel(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -18631,11 +18716,18 @@ pub fn barrel(
     variant = "to_polar",
     reference = "Cartesian to polar coordinate transform"
 )]
-pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn polar(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, polar);
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            polar(r, &mut u, i8)
+        });
     }
 
     let w = info.width as usize;
@@ -18684,11 +18776,18 @@ pub fn polar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     variant = "from_polar",
     reference = "polar to Cartesian coordinate transform"
 )]
-pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn depolar(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, depolar);
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            depolar(r, &mut u, i8)
+        });
     }
 
     let w = info.width as usize;
@@ -18769,10 +18868,14 @@ pub struct WaveParams {
     reference = "sinusoidal wave displacement"
 )]
 pub fn wave(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &WaveParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amplitude = config.amplitude;
     let wavelength = config.wavelength;
     let vertical = config.vertical;
@@ -18781,7 +18884,9 @@ pub fn wave(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |px, i8| {
-            wave(px, i8, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            wave(r, &mut u, i8, config)
         });
     }
 
@@ -18848,10 +18953,14 @@ pub struct RippleParams {
     reference = "concentric ripple displacement"
 )]
 pub fn ripple(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &RippleParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amplitude = config.amplitude;
     let wavelength = config.wavelength;
     let center_x = config.center_x;
@@ -18861,7 +18970,9 @@ pub fn ripple(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |px, i8| {
-            ripple(px, i8, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            ripple(r, &mut u, i8, config)
         });
     }
 
@@ -19734,10 +19845,14 @@ pub struct KuwaharaParams {
     reference = "Kuwahara 1976 edge-preserving smoothing"
 )]
 pub fn kuwahara(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &KuwaharaParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
 
     if radius == 0 {
@@ -19746,7 +19861,11 @@ pub fn kuwahara(
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| kuwahara(px, i8, config));
+        return process_via_8bit(pixels, info, |px, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            kuwahara(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -19884,10 +20003,14 @@ pub struct RankFilterParams {
     reference = "generalized rank/order statistic filter"
 )]
 pub fn rank_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &RankFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
     let rank = config.rank;
 
@@ -19897,7 +20020,11 @@ pub fn rank_filter(
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| rank_filter(px, i8, config));
+        return process_via_8bit(pixels, info, |px, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            rank_filter(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -20144,10 +20271,14 @@ mod kuwahara_rank_tests {
     reference = "Adobe/Resolve .cube 3D LUT format"
 )]
 pub fn apply_cube_lut(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     cube_data: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let lut = super::color_lut::parse_cube_lut(&cube_data)?;
     lut.apply(pixels, info)
 }
@@ -20170,10 +20301,14 @@ pub struct ApplyHaldLutParams {
     reference = "ImageMagick HALD CLUT format"
 )]
 pub fn apply_hald_lut(
-    _pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     _info: &ImageInfo,
     _config: &ApplyHaldLutParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let _pixels = upstream(request)?;
+    let _info = &ImageInfo { width: request.width, height: request.height, ..*_info };
+    let _pixels = _pixels.as_slice();
 
     // For the registered filter, hald_dim is a placeholder — the actual HALD
     // pixel data must be provided programmatically via parse_hald_lut + apply.
@@ -20203,10 +20338,14 @@ pub struct ConnectedComponentsParams {
     reference = "two-pass connected component labeling"
 )]
 pub fn connected_components_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ConnectedComponentsParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let connectivity = config.connectivity;
 
     let conn = if connectivity == 4 { 4 } else { 8 };
@@ -20590,10 +20729,14 @@ pub struct TiltShiftParams {
     reference = "graduated blur mask with Gaussian blur"
 )]
 pub fn tilt_shift(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &TiltShiftParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let focus_position = config.focus_position;
     let band_size = config.band_size;
     let blur_radius = config.blur_radius;
@@ -20720,10 +20863,14 @@ fn make_polygon_kernel(radius: u32, sides: u32, rotation_deg: f32) -> (Vec<f32>,
     reference = "shaped bokeh kernel depth-of-field simulation"
 )]
 pub fn lens_blur(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &LensBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
     let blade_count = config.blade_count;
     let rotation = config.rotation;
