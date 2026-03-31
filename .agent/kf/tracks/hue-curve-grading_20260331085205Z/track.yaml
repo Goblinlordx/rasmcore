@@ -1,93 +1,99 @@
 id: hue-curve-grading_20260331085205Z
-title: "Hue-vs-X curve grading (DaVinci Resolve parity)"
+title: Hue-vs-X curve grading (DaVinci Resolve parity)
 type: feature
 status: pending
 created: 2026-03-31
-updated: 2026-03-31
+updated: '2026-03-31'
 spec:
-  summary: >
-    Add Hue vs Sat, Hue vs Lum, Lum vs Sat, Sat vs Sat curve operations.
-    DaVinci Resolve signature grading tool. Makes rasmcore grading suite
-    competitive with professional color grading software.
-  context: |
-    DaVinci Resolve has 6 curve types — Custom (RGB), plus 5 Hue/Sat/Lum
+  summary: 'Add Hue vs Sat, Hue vs Lum, Lum vs Sat, Sat vs Sat curve operations. DaVinci Resolve signature grading tool. Makes
+    rasmcore grading suite competitive with professional color grading software.
+
+    '
+  context: 'DaVinci Resolve has 6 curve types — Custom (RGB), plus 5 Hue/Sat/Lum
+
     cross-curves. These enable precise color grading like "desaturate
+
     only the blues" or "brighten only skin tones" without masks.
 
+
     rasmcore has RGB curves (master + R/G/B via ToneCurves) but no
+
     hue-domain curves. Adding these 4 cross-curves would give us the
+
     most-used Resolve grading tools.
 
+
     Cross-curves work in HSL space: the X axis is one component (e.g.,
+
     hue 0-360), the curve maps to an adjustment of another component
+
     (e.g., saturation multiplier 0-2x).
-  codebase_analysis: |
-    EXISTING (color_grading.rs):
-    - ToneCurves struct (line 212): per-channel control points
-    - build_curve_lut(points) -> [u8; 256]: monotone cubic spline
-    - curves() / curves_pixel(): apply RGB curves
 
-    EXISTING COLOR SPACE (color_spaces.rs):
-    - rgb_to_lab / lab_to_rgb: CIELab conversions
-    - rgb_to_oklab / oklab_to_rgb: Oklab conversions
-    - No explicit rgb_to_hsl / hsl_to_rgb (but hue_rotate uses HSV)
-
-    HSV USAGE (filters.rs):
-    - hue_rotate (line 1482): converts to HSV, rotates H, converts back
-    - saturate (line 1492): converts to HSV, modifies S
-    - Inline HSV conversion — should extract to reusable helpers
-
-    PATTERN:
-    - Build 360-entry hue LUT (one entry per degree)
-    - For each pixel: convert to HSL, look up adjustment from curve,
-      apply adjustment, convert back to RGB
+    '
+  codebase_analysis: "EXISTING (color_grading.rs):\n- ToneCurves struct (line 212): per-channel control points\n- build_curve_lut(points)\
+    \ -> [u8; 256]: monotone cubic spline\n- curves() / curves_pixel(): apply RGB curves\n\nEXISTING COLOR SPACE (color_spaces.rs):\n\
+    - rgb_to_lab / lab_to_rgb: CIELab conversions\n- rgb_to_oklab / oklab_to_rgb: Oklab conversions\n- No explicit rgb_to_hsl\
+    \ / hsl_to_rgb (but hue_rotate uses HSV)\n\nHSV USAGE (filters.rs):\n- hue_rotate (line 1482): converts to HSV, rotates\
+    \ H, converts back\n- saturate (line 1492): converts to HSV, modifies S\n- Inline HSV conversion — should extract to reusable\
+    \ helpers\n\nPATTERN:\n- Build 360-entry hue LUT (one entry per degree)\n- For each pixel: convert to HSL, look up adjustment\
+    \ from curve,\n  apply adjustment, convert back to RGB\n"
   acceptance_criteria:
-    - hue_vs_sat filter — curve maps hue (0-360) to saturation multiplier
-    - hue_vs_lum filter — curve maps hue (0-360) to luminance adjustment
-    - lum_vs_sat filter — curve maps luminance (0-1) to saturation multiplier
-    - sat_vs_sat filter — curve maps saturation (0-1) to new saturation
-    - All accept control points as serialized string (same format as ToneCurves)
-    - Smooth interpolation between control points (cubic spline)
-    - Identity curve produces no change
-    - Registered with ConfigParams and rc.curve param hint
-  out_of_scope: |
-    Hue vs Hue curve (color shifting). Interactive curve editor UI.
+  - hue_vs_sat filter — curve maps hue (0-360) to saturation multiplier
+  - hue_vs_lum filter — curve maps hue (0-360) to luminance adjustment
+  - lum_vs_sat filter — curve maps luminance (0-1) to saturation multiplier
+  - sat_vs_sat filter — curve maps saturation (0-1) to new saturation
+  - All accept control points as serialized string (same format as ToneCurves)
+  - Smooth interpolation between control points (cubic spline)
+  - Identity curve produces no change
+  - Registered with ConfigParams and rc.curve param hint
+  out_of_scope: 'Hue vs Hue curve (color shifting). Interactive curve editor UI.
+
     Real-time preview. 3D color warper (mesh-based).
-  technical_notes: |
-    Implementation approach:
+
+    '
+  technical_notes: 'Implementation approach:
+
     1. Extract rgb_to_hsl / hsl_to_rgb as reusable functions
+
     2. Build curve LUT from control points (reuse build_curve_lut)
+
     3. For hue curves: 360-entry LUT indexed by hue degree
+
     4. For lum/sat curves: 256-entry LUT indexed by normalized value
+
     5. Per-pixel: RGB -> HSL -> lookup adjustment -> apply -> HSL -> RGB
 
+
     Performance: HSL conversion is the bottleneck. Could use Oklab
+
     instead for perceptual uniformity, but HSL matches DaVinci behavior.
+
+    '
 plan:
-  - phase: "Foundation"
-    tasks:
-      - text: "Extract rgb_to_hsl / hsl_to_rgb as standalone functions in color_spaces.rs"
-        done: false
-      - text: "Create build_hue_curve_lut(points) -> [f32; 360] for hue-indexed curves"
-        done: false
-      - text: "Create build_norm_curve_lut(points) -> [f32; 256] for normalized-value curves"
-        done: false
-  - phase: "Core implementation"
-    tasks:
-      - text: "Implement hue_vs_sat filter — per-pixel HSL with hue-indexed saturation adjustment"
-        done: false
-      - text: "Implement hue_vs_lum filter — per-pixel HSL with hue-indexed luminance adjustment"
-        done: false
-      - text: "Implement lum_vs_sat filter — per-pixel HSL with luminance-indexed saturation adjustment"
-        done: false
-      - text: "Implement sat_vs_sat filter — per-pixel HSL with saturation-indexed saturation adjustment"
-        done: false
-  - phase: "Registration and verification"
-    tasks:
-      - text: "Register all 4 with ConfigParams, rc.curve hint for control points"
-        done: false
-      - text: "Unit tests: identity curve (diagonal) produces no change"
-        done: false
-      - text: "Unit tests: hue_vs_sat with flat-zero curve desaturates target hue range"
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Extract rgb_to_hsl / hsl_to_rgb as standalone functions in color_spaces.rs
+    done: true
+  - text: Create build_hue_curve_lut(points) -> [f32; 360] for hue-indexed curves
+    done: true
+  - text: Create build_norm_curve_lut(points) -> [f32; 256] for normalized-value curves
+    done: true
+- phase: Core implementation
+  tasks:
+  - text: Implement hue_vs_sat filter — per-pixel HSL with hue-indexed saturation adjustment
+    done: true
+  - text: Implement hue_vs_lum filter — per-pixel HSL with hue-indexed luminance adjustment
+    done: true
+  - text: Implement lum_vs_sat filter — per-pixel HSL with luminance-indexed saturation adjustment
+    done: true
+  - text: Implement sat_vs_sat filter — per-pixel HSL with saturation-indexed saturation adjustment
+    done: true
+- phase: Registration and verification
+  tasks:
+  - text: Register all 4 with ConfigParams, rc.curve hint for control points
+    done: true
+  - text: 'Unit tests: identity curve (diagonal) produces no change'
+    done: true
+  - text: 'Unit tests: hue_vs_sat with flat-zero curve desaturates target hue range'
+    done: true
 extra: {}
