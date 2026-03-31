@@ -8510,10 +8510,14 @@ pub fn frequency_high(
     reference = "Laplacian pyramid detail enhancement"
 )]
 pub fn pyramid_detail_remap(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &PyramidDetailRemapParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let sigma = config.sigma;
     let num_levels = config.num_levels;
 
@@ -13222,16 +13226,20 @@ mod photo_enhance_tests {
     #[test]
     fn pyramid_detail_remap_preserves_dimensions() {
         let (px, info) = make_rgb(32, 32);
-        let result = pyramid_detail_remap(&px, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn pyramid_detail_remap_sigma_1_near_identity() {
         let (px, info) = make_rgb(32, 32);
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
         // sigma=1.0 means the remapping d * 1.0 / (1.0 + |d|) ≈ d for small d
         // This is close to identity (slight compression of large gradients)
-        let result = pyramid_detail_remap(&px, &info, &PyramidDetailRemapParams { sigma: 1.0, num_levels: 4 }).unwrap();
+        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 1.0, num_levels: 4 }).unwrap();
         let diff: f64 = px
             .iter()
             .zip(result.iter())
@@ -13247,7 +13255,9 @@ mod photo_enhance_tests {
     #[test]
     fn pyramid_detail_remap_small_sigma_produces_output() {
         let (px, info) = make_rgb(64, 64);
-        let result = pyramid_detail_remap(&px, &info, &PyramidDetailRemapParams { sigma: 0.2, num_levels: 0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 0.2, num_levels: 0 }).unwrap();
         assert_eq!(result.len(), px.len());
         // Result should differ from input (enhancement applied)
         let diff: usize = px
@@ -13269,7 +13279,9 @@ mod photo_enhance_tests {
             pixels[i * 4 + 3] = 200;
         }
         let info = test_info(w, h, PixelFormat::Rgba8);
-        let result = pyramid_detail_remap(&pixels, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 3 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 3 }).unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
         }
