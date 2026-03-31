@@ -8456,10 +8456,14 @@ pub fn frequency_low(
     reference = "Gaussian high-pass separation"
 )]
 pub fn frequency_high(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &FrequencyHighParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
     validate_format(info.format)?;
@@ -17656,7 +17660,9 @@ mod frequency_separation_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
-        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
+        let r2 = Rect::new(0, 0, info.width, info.height);
+        let mut u2 = |_: Rect| Ok(pixels.clone());
+        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
 
         assert_eq!(low.len(), pixels.len());
         assert_eq!(high.len(), pixels.len());
@@ -17696,7 +17702,9 @@ mod frequency_separation_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
-        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
+        let r2 = Rect::new(0, 0, info.width, info.height);
+        let mut u2 = |_: Rect| Ok(pixels.clone());
+        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
 
         // Check alpha preserved in high-pass
         for i in 0..pixels.len() / 4 {
@@ -17724,7 +17732,9 @@ mod frequency_separation_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: 0.0 }).unwrap();
-        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: 0.0 }).unwrap();
+        let r2 = Rect::new(0, 0, info.width, info.height);
+        let mut u2 = |_: Rect| Ok(pixels.clone());
+        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: 0.0 }).unwrap();
 
         assert_eq!(low, pixels, "sigma=0 low-pass should equal original");
         assert!(
@@ -17744,7 +17754,9 @@ mod frequency_separation_tests {
         };
         let pixels = vec![100u8; 16 * 16 * 3];
 
-        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: 5.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let high = frequency_high(r, &mut u, &info, &FrequencyHighParams { sigma: 5.0 }).unwrap();
 
         // For a flat image, blur = original, so high = orig - blur + 128 = 128
         for (i, &v) in high.iter().enumerate() {
@@ -17768,7 +17780,9 @@ mod frequency_separation_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: 2.0 }).unwrap();
-        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: 2.0 }).unwrap();
+        let r2 = Rect::new(0, 0, info.width, info.height);
+        let mut u2 = |_: Rect| Ok(pixels.clone());
+        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: 2.0 }).unwrap();
 
         let mut max_err = 0i16;
         for i in 0..pixels.len() {
