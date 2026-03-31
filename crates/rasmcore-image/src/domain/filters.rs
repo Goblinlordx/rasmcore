@@ -1632,6 +1632,280 @@ pub fn spin_blur(
     Ok(out)
 }
 
+// ─── Box Blur ─────────────────────────────────────────────────────────────
+
+/// Parameters for box blur (uniform-weight kernel).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BoxBlurParams {
+    /// Blur radius in pixels (kernel width = 2*radius + 1)
+    #[param(min = 1, max = 100, step = 1, default = 3)]
+    pub radius: u32,
+}
+
+/// Box blur — separable uniform-weight kernel with O(1) running-sum.
+///
+/// Each output pixel is the mean of all pixels in a (2r+1)x(2r+1) window.
+/// Implemented as two separable passes (horizontal then vertical), each
+/// using a running sum: add the entering pixel, subtract the leaving pixel.
+/// Cost is O(1) per pixel regardless of radius.
+///
+/// Reference: matches Photoshop's Box Blur and OpenCV's cv2.blur().
+#[rasmcore_macros::register_filter(
+    name = "box_blur",
+    category = "spatial",
+    group = "blur",
+    variant = "box",
+    reference = "Photoshop Box Blur / OpenCV cv2.blur"
+)]
+pub fn box_blur(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &BoxBlurParams,
+) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+    validate_format(info.format)?;
+
+    if radius == 0 {
+        return Ok(pixels.to_vec());
+    }
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| box_blur(p8, i8, config));
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let r = radius as usize;
+
+    // Horizontal pass
+    let mut hpass = vec![0u8; pixels.len()];
+    for y in 0..h {
+        for c in 0..ch {
+            // Skip alpha channel for RGBA
+            if ch == 4 && c == 3 {
+                for x in 0..w {
+                    hpass[(y * w + x) * ch + c] = pixels[(y * w + x) * ch + c];
+                }
+                continue;
+            }
+            let mut sum: u32 = 0;
+            let diam = 2 * r + 1;
+            // Initialize sum for first pixel (clamped boundary)
+            for k in 0..=r {
+                let sx = k.min(w - 1);
+                sum += pixels[(y * w + sx) * ch + c] as u32;
+            }
+            // Add clamped left boundary pixels
+            for _ in 0..r {
+                sum += pixels[(y * w) * ch + c] as u32;
+            }
+            hpass[(y * w) * ch + c] = (sum / diam as u32) as u8;
+
+            for x in 1..w {
+                // Add entering pixel (right edge)
+                let add_x = (x + r).min(w - 1);
+                sum += pixels[(y * w + add_x) * ch + c] as u32;
+                // Subtract leaving pixel (left edge)
+                let sub_x = if x > r { x - r - 1 } else { 0 };
+                // For clamped boundary, we added pixel[0] for positions < 0
+                if x <= r {
+                    sum -= pixels[(y * w) * ch + c] as u32;
+                } else {
+                    sum -= pixels[(y * w + sub_x) * ch + c] as u32;
+                }
+                hpass[(y * w + x) * ch + c] = (sum / diam as u32) as u8;
+            }
+        }
+    }
+
+    // Vertical pass
+    let mut out = vec![0u8; pixels.len()];
+    for x in 0..w {
+        for c in 0..ch {
+            if ch == 4 && c == 3 {
+                for y in 0..h {
+                    out[(y * w + x) * ch + c] = hpass[(y * w + x) * ch + c];
+                }
+                continue;
+            }
+            let mut sum: u32 = 0;
+            let diam = 2 * r + 1;
+            for k in 0..=r {
+                let sy = k.min(h - 1);
+                sum += hpass[(sy * w + x) * ch + c] as u32;
+            }
+            for _ in 0..r {
+                sum += hpass[x * ch + c] as u32;
+            }
+            out[x * ch + c] = (sum / diam as u32) as u8;
+
+            for y in 1..h {
+                let add_y = (y + r).min(h - 1);
+                sum += hpass[(add_y * w + x) * ch + c] as u32;
+                if y <= r {
+                    sum -= hpass[x * ch + c] as u32;
+                } else {
+                    let sub_y = y - r - 1;
+                    sum -= hpass[(sub_y * w + x) * ch + c] as u32;
+                }
+                out[(y * w + x) * ch + c] = (sum / diam as u32) as u8;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+// ─── Average Blur ─────────────────────────────────────────────────────────
+
+/// Average blur — compute the mean color of the entire image and fill.
+///
+/// Computes per-channel mean of all pixels and returns a solid-color image.
+/// Matches Photoshop's Average blur behavior: reduces an image to its
+/// dominant color.
+#[rasmcore_macros::register_filter(
+    name = "average_blur",
+    category = "spatial",
+    group = "blur",
+    variant = "average",
+    reference = "Photoshop Average blur",
+    overlap = "full"
+)]
+pub fn average_blur(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| average_blur(p8, i8));
+    }
+
+    let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let pixel_count = pixels.len() / ch;
+    if pixel_count == 0 {
+        return Ok(pixels.to_vec());
+    }
+
+    // Sum each channel
+    let mut sums = vec![0u64; ch];
+    for i in 0..pixel_count {
+        for c in 0..ch {
+            sums[c] += pixels[i * ch + c] as u64;
+        }
+    }
+
+    // Compute mean per channel
+    let means: Vec<u8> = sums.iter().map(|&s| (s / pixel_count as u64) as u8).collect();
+
+    // Fill output with mean color
+    let mut out = vec![0u8; pixels.len()];
+    for i in 0..pixel_count {
+        for c in 0..ch {
+            out[i * ch + c] = means[c];
+        }
+    }
+
+    Ok(out)
+}
+
+// ─── Smart Sharpen ────────────────────────────────────────────────────────
+
+/// Parameters for smart sharpen (edge-preserving unsharp mask).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct SmartSharpenParams {
+    /// Sharpening amount (0-5, 1.0 = standard)
+    #[param(min = 0.0, max = 5.0, step = 0.1, default = 1.0)]
+    pub amount: f32,
+    /// Bilateral filter radius for edge-preserving blur
+    #[param(min = 1, max = 20, step = 1, default = 3)]
+    pub radius: u32,
+    /// Edge threshold — higher values preserve more edges (bilateral sigma_range)
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)]
+    pub threshold: f32,
+}
+
+/// Smart sharpen — edge-preserving unsharp mask using bilateral filter.
+///
+/// Computes: output = original + amount * (original - bilateral_blurred)
+///
+/// Unlike standard sharpen (which uses Gaussian blur), smart sharpen
+/// uses bilateral filtering for the blur pass. This preserves edges
+/// while smoothing flat regions, producing sharpening without halos
+/// along strong edges.
+///
+/// Reference: similar to Photoshop's Smart Sharpen (Remove: Lens Blur mode).
+#[rasmcore_macros::register_filter(
+    name = "smart_sharpen",
+    category = "spatial",
+    group = "sharpen",
+    variant = "smart",
+    reference = "Photoshop Smart Sharpen (bilateral-based)"
+)]
+pub fn smart_sharpen(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SmartSharpenParams,
+) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+    let radius = config.radius;
+    let threshold = config.threshold;
+
+    validate_format(info.format)?;
+
+    if amount == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| smart_sharpen(p8, i8, config));
+    }
+
+    // Use bilateral filter for edge-preserving blur
+    let bilateral_config = BilateralParams {
+        diameter: radius * 2 + 1,
+        sigma_color: threshold,
+        sigma_space: radius as f32,
+    };
+
+    // Bilateral requires Gray8 or Rgb8 — convert if needed
+    let (work_pixels, work_info) = if info.format == PixelFormat::Rgba8 {
+        // Strip alpha, process RGB, restore alpha
+        let rgb: Vec<u8> = pixels.chunks(4).flat_map(|c| &c[..3]).copied().collect();
+        let rgb_info = ImageInfo {
+            format: PixelFormat::Rgb8,
+            ..*info
+        };
+        (rgb, rgb_info)
+    } else {
+        (pixels.to_vec(), info.clone())
+    };
+
+    let blurred = bilateral(&work_pixels, &work_info, &bilateral_config)?;
+
+    // Unsharp mask: output = original + amount * (original - blurred)
+    let ch = crate::domain::pipeline::graph::bytes_per_pixel(work_info.format) as usize;
+    let mut result = vec![0u8; work_pixels.len()];
+    for i in 0..work_pixels.len() {
+        let orig = work_pixels[i] as f32;
+        let blur = blurred[i] as f32;
+        let sharpened = orig + amount * (orig - blur);
+        result[i] = sharpened.clamp(0.0, 255.0) as u8;
+    }
+
+    // Restore alpha if stripped
+    if info.format == PixelFormat::Rgba8 {
+        let mut rgba = vec![0u8; pixels.len()];
+        for i in 0..(pixels.len() / 4) {
+            rgba[i * 4] = result[i * 3];
+            rgba[i * 4 + 1] = result[i * 3 + 1];
+            rgba[i * 4 + 2] = result[i * 3 + 2];
+            rgba[i * 4 + 3] = pixels[i * 4 + 3]; // preserve original alpha
+        }
+        Ok(rgba)
+    } else {
+        Ok(result)
+    }
+}
+
 /// Apply sharpening (unsharp mask).
 ///
 /// Computes: output = original + amount * (original - blurred)
@@ -11376,6 +11650,92 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let result = blur(&px, &info, &BlurParams { radius: -1.0 });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn box_blur_preserves_dimensions() {
+        let (px, info) = make_image(16, 16);
+        let result = box_blur(&px, &info, &BoxBlurParams { radius: 3 }).unwrap();
+        assert_eq!(result.len(), px.len());
+    }
+
+    #[test]
+    fn box_blur_reduces_variance() {
+        // Box blur should reduce the variance of pixel values
+        let (px, info) = make_image(16, 16);
+        let result = box_blur(&px, &info, &BoxBlurParams { radius: 5 }).unwrap();
+        // Compute variance of R channel before and after
+        let ch = 4;
+        let n = px.len() / ch;
+        let mean_before: f64 = (0..n).map(|i| px[i * ch] as f64).sum::<f64>() / n as f64;
+        let var_before: f64 = (0..n).map(|i| (px[i * ch] as f64 - mean_before).powi(2)).sum::<f64>() / n as f64;
+        let mean_after: f64 = (0..n).map(|i| result[i * ch] as f64).sum::<f64>() / n as f64;
+        let var_after: f64 = (0..n).map(|i| (result[i * ch] as f64 - mean_after).powi(2)).sum::<f64>() / n as f64;
+        assert!(var_after < var_before, "Box blur should reduce variance: {var_before} -> {var_after}");
+    }
+
+    #[test]
+    fn average_blur_returns_mean_color() {
+        // Solid white image → average should be white
+        let pixels = vec![255u8; 4 * 4 * 4]; // 4x4 white Rgba8
+        let info = ImageInfo {
+            width: 4, height: 4,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = average_blur(&pixels, &info).unwrap();
+        for i in 0..16 {
+            assert_eq!(result[i * 4], 255);
+            assert_eq!(result[i * 4 + 1], 255);
+            assert_eq!(result[i * 4 + 2], 255);
+        }
+    }
+
+    #[test]
+    fn average_blur_checkerboard() {
+        // 2x2 checkerboard: [0,0,0,255], [255,255,255,255] alternating
+        let pixels = vec![
+            0, 0, 0, 255,     255, 255, 255, 255,
+            255, 255, 255, 255, 0, 0, 0, 255,
+        ];
+        let info = ImageInfo {
+            width: 2, height: 2,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = average_blur(&pixels, &info).unwrap();
+        // Mean should be ~127-128 for each channel
+        for i in 0..4 {
+            assert!((result[i * 4] as i16 - 127).unsigned_abs() <= 1);
+        }
+    }
+
+    #[test]
+    fn smart_sharpen_preserves_dimensions() {
+        let info = ImageInfo {
+            width: 16, height: 16,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = vec![128u8; 16 * 16 * 3];
+        let result = smart_sharpen(&pixels, &info, &SmartSharpenParams {
+            amount: 1.0, radius: 2, threshold: 50.0,
+        }).unwrap();
+        assert_eq!(result.len(), pixels.len());
+    }
+
+    #[test]
+    fn smart_sharpen_zero_amount_identity() {
+        let info = ImageInfo {
+            width: 8, height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels: Vec<u8> = (0..8*8*3).map(|i| (i % 256) as u8).collect();
+        let result = smart_sharpen(&pixels, &info, &SmartSharpenParams {
+            amount: 0.0, radius: 2, threshold: 50.0,
+        }).unwrap();
+        assert_eq!(result, pixels);
     }
 
     #[test]
