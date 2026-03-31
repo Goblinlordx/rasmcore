@@ -5,92 +5,118 @@ status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Change sink write methods to request tiles instead of the full image,
-    enabling processing of images larger than available memory. Single-
-    threaded — tiles are processed sequentially and stitched for encoding.
-  context: >
-    Currently sink::write() requests Rect(0, 0, width, height) — the full
-    image. For a 100MP photo at 8-bit RGB, that is 300MB just for the final
-    buffer, plus intermediate buffers. By requesting tiles (e.g., 512x512)
-    and stitching, we reduce peak memory to ~tile_size * pipeline_depth.
-    This is how libvips achieves its memory efficiency.
+  summary: 'Change sink write methods to request tiles instead of the full image, enabling processing of images larger than
+    available memory. Single- threaded — tiles are processed sequentially and stitched for encoding.
 
-    Threading is explicitly deferred. The user notes that web worker-based
-    parallelism (multiple WASM instances each with a copy of input) is a
-    possible future approach but complicates codegen/portability. Single-
-    process performance is already competitive, so tiling for memory
-    efficiency is the priority, not throughput.
-  codebase_analysis: |
-    CURRENT SINK (pipeline/nodes/sink.rs):
+    '
+  context: 'Currently sink::write() requests Rect(0, 0, width, height) — the full image. For a 100MP photo at 8-bit RGB, that
+    is 300MB just for the final buffer, plus intermediate buffers. By requesting tiles (e.g., 512x512) and stitching, we reduce
+    peak memory to ~tile_size * pipeline_depth. This is how libvips achieves its memory efficiency.
+
+    Threading is explicitly deferred. The user notes that web worker-based parallelism (multiple WASM instances each with
+    a copy of input) is a possible future approach but complicates codegen/portability. Single- process performance is already
+    competitive, so tiling for memory efficiency is the priority, not throughput.
+
+    '
+  codebase_analysis: 'CURRENT SINK (pipeline/nodes/sink.rs):
+
     - write() calls graph.request_region(node_id, Rect::new(0, 0, w, h))
+
     - Returns complete pixel buffer to encoder
+
     - Encoder processes buffer as a single unit
 
+
     SPATIAL CACHE:
+
     - SpatialCache in graph.rs with configurable budget (default 16MB)
+
     - Already supports sub-region queries and overlap reuse
+
     - Would naturally cache overlapping tile edges
 
+
     ENCODERS:
+
     - All accept complete pixel buffers
+
     - TIFF encoder supports strip-based writing (potential for streaming)
+
     - PNG, JPEG, WebP: buffer-based (need full image or scanline access)
+
     - For non-streaming encoders: stitch tiles into full buffer before encode
 
+
     TILE SIZE CONSIDERATIONS:
+
     - Too small: cache thrashing, excessive overhead
+
     - Too large: defeats memory savings
+
     - 512x512 is a reasonable default (768KB per tile at RGB8)
+
     - Should be configurable per sink
+
+    '
   acceptance_criteria:
-    - Sink write methods request tiles instead of full image
-    - Tile size configurable (default 512x512)
-    - Output is pixel-identical to full-image execution
-    - Peak memory reduced for large images (verified via benchmark)
-    - Spatial cache correctly reuses overlapping tile edges
-    - All existing encode parity tests pass unchanged
-    - TIFF strip-based writing works with tiled execution
-  out_of_scope: >
-    Multi-threaded tile dispatch (future work, possibly via web workers).
-    Streaming encoders (progressive JPEG, etc).
-    Tile size auto-tuning based on available memory.
-  technical_notes: |
-    APPROACH:
+  - Sink write methods request tiles instead of full image
+  - Tile size configurable (default 512x512)
+  - Output is pixel-identical to full-image execution
+  - Peak memory reduced for large images (verified via benchmark)
+  - Spatial cache correctly reuses overlapping tile edges
+  - All existing encode parity tests pass unchanged
+  - TIFF strip-based writing works with tiled execution
+  out_of_scope: 'Multi-threaded tile dispatch (future work, possibly via web workers). Streaming encoders (progressive JPEG,
+    etc). Tile size auto-tuning based on available memory.
+
+    '
+  technical_notes: 'APPROACH:
+
     1. Add tile_size parameter to write methods (default 512)
+
     2. Iterate output tiles: for y in (0..h).step_by(tile_h) { for x in (0..w).step_by(tile_w) }
+
     3. For each tile: request_region(node_id, tile_rect)
+
     4. Stitch tiles into output buffer (or stream to encoder if supported)
+
     5. Clear spatial cache between tile rows to bound memory
 
+
     STREAMING POTENTIAL (future):
+
     - TIFF: can write strips directly from tiles
+
     - PNG: could use interlaced writing
+
     - JPEG: could use scanline-based encoding with libjpeg
+
     - For now: stitch into buffer, then encode (simplest, correctness-first)
+
+    '
 plan:
-  - phase: Tiled Sink
-    tasks:
-      - text: Add tile iteration to sink::write with configurable tile size
-        done: false
-      - text: Implement tile stitching into output buffer
-        done: false
-      - text: Verify pixel-identical output vs full-image execution
-        done: false
-      - text: Add memory benchmark comparing tiled vs full-image for large images
-        done: false
-  - phase: Cache Integration
-    tasks:
-      - text: Verify spatial cache reuses tile edge overlaps correctly
-        done: false
-      - text: Add cache eviction between tile rows to bound memory
-        done: false
-      - text: Verify all encode parity tests pass
-        done: false
-  - phase: Encoder Optimizations
-    tasks:
-      - text: TIFF strip-based writing from tiles (avoid full-image buffer)
-        done: false
-      - text: Document which encoders support streaming vs require full buffer
-        done: false
+- phase: Tiled Sink
+  tasks:
+  - text: Add tile iteration to sink::write with configurable tile size
+    done: true
+  - text: Implement tile stitching into output buffer
+    done: true
+  - text: Verify pixel-identical output vs full-image execution
+    done: true
+  - text: Add memory benchmark comparing tiled vs full-image for large images
+    done: true
+- phase: Cache Integration
+  tasks:
+  - text: Verify spatial cache reuses tile edge overlaps correctly
+    done: true
+  - text: Add cache eviction between tile rows to bound memory
+    done: true
+  - text: Verify all encode parity tests pass
+    done: true
+- phase: Encoder Optimizations
+  tasks:
+  - text: TIFF strip-based writing from tiles (avoid full-image buffer)
+    done: true
+  - text: Document which encoders support streaming vs require full buffer
+    done: true
 extra: {}
