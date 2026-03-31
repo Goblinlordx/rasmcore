@@ -44,3 +44,8 @@ crates/rasmcore-image/tests/fixtures/noise/*.raw
 .env
 .env.local
 tests/fixtures/.venv/
+
+# Web UI
+web-ui/node_modules/
+web-ui/dist/
+web-ui/sdk
