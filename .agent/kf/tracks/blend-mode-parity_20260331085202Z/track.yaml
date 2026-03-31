@@ -1,89 +1,124 @@
 id: blend-mode-parity_20260331085202Z
-title: "Blend mode parity — add 8 missing PS modes (19 to 27)"
+title: Blend mode parity — add 8 missing PS modes (19 to 27)
 type: feature
 status: pending
 created: 2026-03-31
-updated: 2026-03-31
+updated: '2026-03-31'
 spec:
-  summary: >
-    Add 8 missing Photoshop blend modes to reach full PS parity (27 modes).
-    Current: 19 modes (Multiply through Divide). Missing: Dissolve,
-    Darker/Lighter Color, Hue, Saturation, Color, Luminosity.
-  context: |
-    rasmcore has 19 blend modes in the BlendMode enum (filters.rs).
+  summary: 'Add 8 missing Photoshop blend modes to reach full PS parity (27 modes). Current: 19 modes (Multiply through Divide).
+    Missing: Dissolve, Darker/Lighter Color, Hue, Saturation, Color, Luminosity.
+
+    '
+  context: 'rasmcore has 19 blend modes in the BlendMode enum (filters.rs).
+
     Photoshop has 27 standard layer blend modes. The 8 missing modes
+
     are needed for professional compositing parity:
 
+
     - Dissolve: probabilistic pixel selection (dither-based)
+
     - Darker Color / Lighter Color: per-pixel luminance comparison
+
     - Hue / Saturation / Color / Luminosity: HSL component modes
 
+
     The HSL component modes are particularly important — they enable
+
     color grading workflows like "apply color from one layer, luminosity
+
     from another" which is fundamental to compositing.
 
+
     Blend modes are currently in BlendMode enum + blend_channel() but
-    are NOT individually registered as filters — they're used internally
+
+    are NOT individually registered as filters — they''re used internally
+
     by the blend() function. The blend function itself uses a string
+
     mode parameter.
-  codebase_analysis: |
-    EXISTING:
+
+    '
+  codebase_analysis: 'EXISTING:
+
     - BlendMode enum (filters.rs:4196) — 19 variants
+
     - blend_channel(a, b, mode) (filters.rs:4242) — per-channel formula
+
     - blend() filter (filters.rs:4374) — registered, takes mode string
+
     - All current modes are per-channel (operate on R,G,B independently)
 
+
     NEW MODES NEEDED:
+
     - Dissolve: NOT per-channel — probabilistic, needs pixel-level logic
+
     - Darker/Lighter Color: NOT per-channel — compare luminance of whole pixel
+
     - Hue/Saturation/Color/Luminosity: NOT per-channel — need HSL conversion
 
+
     PATTERN:
+
     - Add variants to BlendMode enum
+
     - Extend blend_channel() or add blend_pixel() for non-per-channel modes
+
     - String parsing in blend() already maps mode names to enum variants
+
+    '
   acceptance_criteria:
-    - BlendMode enum extended with 8 new variants
-    - Dissolve mode uses deterministic seed-based dither (reproducible)
-    - Darker/Lighter Color compare pixel luminance, select whole pixel
-    - Hue/Saturation/Color/Luminosity use HSL decomposition
-    - All modes accessible via blend filter mode parameter
-    - Reference tests against PS or GIMP output for each new mode
-    - Existing 19 modes unchanged (no regression)
-  out_of_scope: |
-    GIMP-specific modes (Grain Extract/Merge, LCh modes). Behind/Clear
+  - BlendMode enum extended with 8 new variants
+  - Dissolve mode uses deterministic seed-based dither (reproducible)
+  - Darker/Lighter Color compare pixel luminance, select whole pixel
+  - Hue/Saturation/Color/Luminosity use HSL decomposition
+  - All modes accessible via blend filter mode parameter
+  - Reference tests against PS or GIMP output for each new mode
+  - Existing 19 modes unchanged (no regression)
+  out_of_scope: 'GIMP-specific modes (Grain Extract/Merge, LCh modes). Behind/Clear
+
     modes (painting-only in PS). Pass Through (group-only).
-  technical_notes: |
-    Dissolve: for each pixel, use hash(x, y, seed) to decide whether
+
+    '
+  technical_notes: 'Dissolve: for each pixel, use hash(x, y, seed) to decide whether
+
     to show foreground or background. Threshold based on alpha.
 
+
     HSL component modes require converting both layers to HSL, swapping
+
     the target component, converting back. Use existing HSV/HSL
+
     conversion functions from color_spaces.rs.
 
+
     Darker/Lighter Color: compute luminance (0.299R + 0.587G + 0.114B),
+
     select entire pixel from whichever layer has lower/higher luminance.
+
+    '
 plan:
-  - phase: "Per-channel modes"
-    tasks:
-      - text: "Add Dissolve variant — probabilistic dither blend"
-        done: false
-      - text: "Add DarkerColor and LighterColor variants — luminance comparison"
-        done: false
-  - phase: "HSL component modes"
-    tasks:
-      - text: "Add rgb_to_hsl / hsl_to_rgb helpers if not already available"
-        done: false
-      - text: "Add Hue mode — take hue from top layer, sat+lum from bottom"
-        done: false
-      - text: "Add Saturation mode — take saturation from top layer"
-        done: false
-      - text: "Add Color mode — take hue+saturation from top layer, luminosity from bottom"
-        done: false
-      - text: "Add Luminosity mode — take luminosity from top layer, hue+sat from bottom"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Reference tests for all 8 new modes against PS/GIMP output"
-        done: false
+- phase: Per-channel modes
+  tasks:
+  - text: Add Dissolve variant — probabilistic dither blend
+    done: true
+  - text: Add DarkerColor and LighterColor variants — luminance comparison
+    done: true
+- phase: HSL component modes
+  tasks:
+  - text: Add rgb_to_hsl / hsl_to_rgb helpers if not already available
+    done: true
+  - text: Add Hue mode — take hue from top layer, sat+lum from bottom
+    done: true
+  - text: Add Saturation mode — take saturation from top layer
+    done: true
+  - text: Add Color mode — take hue+saturation from top layer, luminosity from bottom
+    done: true
+  - text: Add Luminosity mode — take luminosity from top layer, hue+sat from bottom
+    done: true
+- phase: Verification
+  tasks:
+  - text: Reference tests for all 8 new modes against PS/GIMP output
+    done: true
 extra: {}
