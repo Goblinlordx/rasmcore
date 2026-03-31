@@ -1,10 +1,10 @@
 /**
- * @rasmcore/sdk — Image processing powered by WebAssembly.
+ * @rasmcore/image — Image processing powered by WebAssembly.
  *
  * Two usage modes:
  *
  * Dynamic (works with any module, no codegen needed):
- *   import { RcImage } from '@rasmcore/sdk';
+ *   import { RcImage } from '@rasmcore/image';
  *   const img = RcImage.load(wasmModule, pngBytes);
  *   const jpeg = img.apply('blur', { radius: 3.0 }).encode('jpeg', { quality: 85 });
  *

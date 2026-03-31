@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	go run github.com/ArtProcessors/rasmcore-go/cmd/typegen manifest.json > rasmcore_typed.go
-//	go run github.com/ArtProcessors/rasmcore-go/cmd/typegen manifest.json -o rasmcore_typed.go
+//	go run github.com/ArtProcessors/rasmcore-image-go/cmd/typegen manifest.json > rasmcore_typed.go
+//	go run github.com/ArtProcessors/rasmcore-image-go/cmd/typegen manifest.json -o rasmcore_typed.go
 //
 // Reads param-manifest.json and emits a typed Go file with methods for
 // all operations. The generated code extends the dynamic RcImage.
@@ -142,7 +142,7 @@ func generateTypedSDK(m *manifest, manifestHash string) string {
 	b.WriteString(fmt.Sprintf("// Operations: %d\n", len(m.Filters)))
 	b.WriteString("//\n")
 	b.WriteString("// Do not edit — regenerate with:\n")
-	b.WriteString("//   go run github.com/ArtProcessors/rasmcore-go/cmd/typegen <manifest.json>\n")
+	b.WriteString("//   go run github.com/ArtProcessors/rasmcore-image-go/cmd/typegen <manifest.json>\n")
 	b.WriteString("\npackage rasmcore\n\n")
 	b.WriteString("import \"fmt\"\n\n")
 	b.WriteString(fmt.Sprintf("const ManifestHash = %q\n\n", manifestHash))

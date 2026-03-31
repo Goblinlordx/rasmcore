@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rasmcore-image"
+version = "0.1.0"
+description = "Image processing SDK powered by WebAssembly — dynamic runtime with optional typed wrappers"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = [
+    "wasmtime>=21.0.0",
+]
+
+[project.scripts]
+rasmcore-image-typegen = "rasmcore.typegen:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "mypy"]

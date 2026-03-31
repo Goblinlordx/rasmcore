@@ -1,5 +1,5 @@
 {
-  "name": "@rasmcore/sdk",
+  "name": "@rasmcore/image",
   "version": "0.1.0",
   "description": "Image processing SDK powered by WebAssembly — dynamic runtime with optional typed wrappers",
   "license": "MIT",

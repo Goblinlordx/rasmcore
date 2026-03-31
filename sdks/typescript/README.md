@@ -1,4 +1,4 @@
-# @rasmcore/sdk — TypeScript SDK
+# @rasmcore/image — TypeScript SDK
 
 Image processing SDK powered by WebAssembly. Load any rasmcore-compatible
 WASM module and apply filters, transforms, and encoders.
@@ -6,13 +6,13 @@ WASM module and apply filters, transforms, and encoders.
 ## Install
 
 ```bash
-npm install @rasmcore/sdk
+npm install @rasmcore/image
 ```
 
 ## Usage (Dynamic — works with any module)
 
 ```typescript
-import { RcImage } from '@rasmcore/sdk';
+import { RcImage } from '@rasmcore/image';
 import * as rasmcore from './rasmcore-image.js'; // jco-transpiled WASM
 
 const img = RcImage.load(rasmcore, pngBytes);

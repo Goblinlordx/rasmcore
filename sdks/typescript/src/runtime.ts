@@ -1,5 +1,5 @@
 /**
- * @rasmcore/sdk — Dynamic runtime for any rasmcore-compatible WASM module.
+ * @rasmcore/image — Dynamic runtime for any rasmcore-compatible WASM module.
  *
  * Loads a WASM module, reads its manifest via getFilterManifest(),
  * and provides dynamic dispatch for all operations the module supports.

@@ -76,8 +76,8 @@ function generateTypedSdk(manifest: Manifest, manifestHash: string): string {
   lines.push(`//`);
   lines.push(`// ${manifest.filters.length} operations`);
   lines.push(``);
-  lines.push(`import { RcImage as RcImageDynamic } from '@rasmcore/sdk';`);
-  lines.push(`import type { WasmModule } from '@rasmcore/sdk';`);
+  lines.push(`import { RcImage as RcImageDynamic } from '@rasmcore/image';`);
+  lines.push(`import type { WasmModule } from '@rasmcore/image';`);
   lines.push(``);
   lines.push(`const MANIFEST_HASH = '${manifestHash}';`);
   lines.push(``);
@@ -94,7 +94,7 @@ function generateTypedSdk(manifest: Manifest, manifestHash: string): string {
   lines.push(`    const base = RcImageDynamic.load(module, data);`);
   lines.push(`    if (base.manifestHash && base.manifestHash !== MANIFEST_HASH) {`);
   lines.push(`      console.warn(`);
-  lines.push(`        \`@rasmcore/sdk: typed SDK was generated for module \${MANIFEST_HASH.slice(0, 8)}, \` +`);
+  lines.push(`        \`@rasmcore/image: typed SDK was generated for module \${MANIFEST_HASH.slice(0, 8)}, \` +`);
   lines.push(`        \`but loaded module is \${base.manifestHash.slice(0, 8)}. \` +`);
   lines.push(`        \`Some methods may be missing or have changed. Regenerate with: npx rasmcore-typegen <module.wasm>\``);
   lines.push(`      );`);
