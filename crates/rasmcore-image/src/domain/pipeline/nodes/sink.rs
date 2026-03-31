@@ -394,3 +394,127 @@ pub fn write_webp_tiled(
         _ => Ok(encoded),
     }
 }
+
+#[cfg(test)]
+mod tiled_sink_tests {
+    use super::*;
+    use crate::domain::pipeline::graph::{crop_region, ImageNode, NodeGraph};
+    use crate::domain::types::*;
+    use rasmcore_pipeline::rect::Rect;
+
+    /// Raw pixel source that serves sub-regions on demand.
+    struct RawSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+    }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let bpp = bytes_per_pixel(self.info.format);
+            Ok(crop_region(
+                &self.pixels,
+                Rect::new(0, 0, self.info.width, self.info.height),
+                request,
+                bpp,
+            ))
+        }
+        fn access_pattern(&self) -> crate::domain::pipeline::graph::AccessPattern {
+            crate::domain::pipeline::graph::AccessPattern::Sequential
+        }
+    }
+
+    fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
+        let mut px = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(((x * 255) / w.max(1)) as u8);
+                px.push(((y * 255) / h.max(1)) as u8);
+                px.push(128);
+            }
+        }
+        px
+    }
+
+    fn make_graph(w: u32, h: u32) -> (NodeGraph, u32) {
+        let pixels = gradient_rgb(w, h);
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let mut g = NodeGraph::new(16 * 1024 * 1024);
+        let src = g.add_node(Box::new(RawSource { pixels, info }));
+        (g, src)
+    }
+
+    #[test]
+    fn request_tiled_identity_with_full() {
+        let w = 100u32;
+        let h = 80u32;
+        let bpp = 3u32;
+
+        // Full-image request
+        let (mut g1, src1) = make_graph(w, h);
+        let full = g1.request_region(src1, Rect::new(0, 0, w, h)).unwrap();
+
+        // Tiled request with tile_size=32 (non-evenly-divisible)
+        let (mut g2, src2) = make_graph(w, h);
+        let tiled = request_tiled(&mut g2, src2, w, h, bpp, 32).unwrap();
+
+        assert_eq!(full.len(), tiled.len());
+        assert_eq!(full, tiled, "tiled output must be byte-identical to full");
+    }
+
+    #[test]
+    fn request_tiled_various_sizes() {
+        let w = 100u32;
+        let h = 100u32;
+        let bpp = 3u32;
+
+        let (mut g_ref, src_ref) = make_graph(w, h);
+        let reference = g_ref.request_region(src_ref, Rect::new(0, 0, w, h)).unwrap();
+
+        for tile_size in [1, 7, 32, 50, 64, 99, 100, 200, 512] {
+            let (mut g, src) = make_graph(w, h);
+            let result = request_tiled(&mut g, src, w, h, bpp, tile_size).unwrap();
+            assert_eq!(
+                reference, result,
+                "tile_size={tile_size} produced different output"
+            );
+        }
+    }
+
+    #[test]
+    fn request_tiled_disabled() {
+        let w = 50u32;
+        let h = 50u32;
+        let bpp = 3u32;
+
+        // tile_size=0 should fall back to full-image request
+        let (mut g1, src1) = make_graph(w, h);
+        let full = g1.request_region(src1, Rect::new(0, 0, w, h)).unwrap();
+
+        let (mut g2, src2) = make_graph(w, h);
+        let result = request_tiled(&mut g2, src2, w, h, bpp, 0).unwrap();
+        assert_eq!(full, result);
+    }
+
+    #[test]
+    fn tile_config_default_is_512() {
+        let cfg = TileConfig::default();
+        assert_eq!(cfg.tile_size, 512);
+    }
+
+    #[test]
+    fn tile_config_disabled_is_zero() {
+        let cfg = TileConfig::disabled();
+        assert_eq!(cfg.tile_size, 0);
+    }
+}
