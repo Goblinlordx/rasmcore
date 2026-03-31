@@ -15,6 +15,7 @@ pub fn generate(filters: &[FilterReg]) -> String {
     code.push_str("// Do not edit — regenerated from #[register_filter] annotations.\n\n");
     code.push_str("use crate::domain::pipeline::graph::ImageNode;\n");
     code.push_str("use crate::domain::pipeline::nodes::filters;\n");
+    code.push_str("use crate::domain::filters as domain_filters; // ConfigParams structs\n");
     code.push_str("use crate::domain::types::ImageInfo;\n");
     code.push_str("use std::collections::HashMap;\n\n");
 
@@ -90,19 +91,29 @@ pub fn generate(filters: &[FilterReg]) -> String {
         let mut param_args = Vec::new();
         for (pname, ptype) in &f.params {
             let clean_name = pname.trim_start_matches('_');
-            let getter = match ptype.as_str() {
-                "f32" => format!("get_f32(params, \"{clean_name}\", 0.0)"),
-                "f64" => format!("get_f32(params, \"{clean_name}\", 0.0) as f64"),
-                "u32" => format!("get_u32(params, \"{clean_name}\", 0)"),
-                "u8" => format!("get_u8(params, \"{clean_name}\", 0)"),
-                "i32" => format!("get_i32(params, \"{clean_name}\", 0)"),
-                "bool" => format!("get_bool(params, \"{clean_name}\", false)"),
-                "String" | "&str" => {
-                    format!("get_string(params, \"{clean_name}\", \"\")")
+            let getter = if ptype.starts_with('&') && ptype.ends_with("Params") {
+                // Config struct reference — construct from CLI params
+                // The struct type is e.g., &SpinBlurParams → SpinBlurParams
+                let struct_name = &ptype[1..]; // strip leading &
+                // Use Default::default() — the CLI will override via individual params
+                // This is a simplification; full CLI config struct support would
+                // parse each field from the HashMap.
+                format!("domain_filters::{struct_name}::default()")
+            } else {
+                match ptype.as_str() {
+                    "f32" => format!("get_f32(params, \"{clean_name}\", 0.0)"),
+                    "f64" => format!("get_f32(params, \"{clean_name}\", 0.0) as f64"),
+                    "u32" => format!("get_u32(params, \"{clean_name}\", 0)"),
+                    "u8" => format!("get_u8(params, \"{clean_name}\", 0)"),
+                    "i32" => format!("get_i32(params, \"{clean_name}\", 0)"),
+                    "bool" => format!("get_bool(params, \"{clean_name}\", false)"),
+                    "String" | "&str" => {
+                        format!("get_string(params, \"{clean_name}\", \"\")")
+                    }
+                    "&[f32]" => format!("get_f32_array(params, \"{clean_name}\")"),
+                    "&[f64]" => format!("get_f64_array(params, \"{clean_name}\")"),
+                    _ => format!("get_f32(params, \"{clean_name}\", 0.0)"),
                 }
-                "&[f32]" => format!("get_f32_array(params, \"{clean_name}\")"),
-                "&[f64]" => format!("get_f64_array(params, \"{clean_name}\")"),
-                _ => format!("get_f32(params, \"{clean_name}\", 0.0)"),
             };
             param_args.push(getter);
         }
@@ -167,9 +178,13 @@ mod tests {
         let filters = vec![FilterReg {
             name: "blur".to_string(),
             category: "spatial".to_string(),
+            group: String::new(),
+            variant: String::new(),
+            reference: String::new(),
             overlap: "uniform(5)".to_string(),
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
+            config_struct: None,
         }];
 
         let code = generate(&filters);

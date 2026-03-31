@@ -1116,7 +1116,7 @@ pub fn zoom_blur(
 
 // ─── Spin Blur (rotational motion blur) ──────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Spin Blur — rotational motion blur around a center point.
 pub struct SpinBlurParams {
     /// Center X as fraction of width (0.0 = left, 0.5 = center, 1.0 = right)
@@ -1143,20 +1143,20 @@ pub struct SpinBlurParams {
 pub fn spin_blur(
     pixels: &[u8],
     info: &ImageInfo,
-    center_x: f32,
-    center_y: f32,
-    angle: f32,
+    config: &SpinBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
+
+    let center_x = config.center_x;
+    let center_y = config.center_y;
+    let angle = config.angle;
 
     if angle == 0.0 {
         return Ok(pixels.to_vec());
     }
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            spin_blur(p8, i8, center_x, center_y, angle)
-        });
+        return process_via_8bit(pixels, info, |p8, i8| spin_blur(p8, i8, config));
     }
 
     let w = info.width as usize;
@@ -1544,7 +1544,7 @@ pub fn colorize(
 
 // ─── Photo Filter ────────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Photo Filter — warming/cooling color overlay like a camera lens filter.
 pub struct PhotoFilterParams {
     /// Filter color red
@@ -1573,13 +1573,15 @@ pub struct PhotoFilterParams {
 pub fn photo_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    color_r: u32,
-    color_g: u32,
-    color_b: u32,
-    density: f32,
-    preserve_luminosity: u32,
+    config: &PhotoFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
+
+    let color_r = config.color_r;
+    let color_g = config.color_g;
+    let color_b = config.color_b;
+    let density = config.density;
+    let preserve_luminosity = config.preserve_luminosity;
 
     let density = (density / 100.0).clamp(0.0, 1.0);
     if density == 0.0 {
@@ -2300,7 +2302,7 @@ mod color_manipulation_tests {
     fn photo_filter_density_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = photo_filter(&pixels, &info, 255, 200, 0, 0.0, 1).unwrap();
+        let result = photo_filter(&pixels, &info, &PhotoFilterParams { color_r: 255, color_g: 200, color_b: 0, density: 0.0, preserve_luminosity: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -2309,7 +2311,7 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(4, 4, 128, 128, 128);
         let info = info_rgb8(4, 4);
         // Warm filter (orange) at 50% density
-        let result = photo_filter(&pixels, &info, 236, 138, 0, 50.0, 0).unwrap();
+        let result = photo_filter(&pixels, &info, &PhotoFilterParams { color_r: 236, color_g: 138, color_b: 0, density: 50.0, preserve_luminosity: 0 }).unwrap();
         // Red should increase, blue should decrease
         assert!(result[0] > 128, "warm filter should increase red");
         assert!(result[2] < 128, "warm filter should decrease blue");
@@ -2319,7 +2321,7 @@ mod color_manipulation_tests {
     fn photo_filter_preserve_luminosity() {
         let pixels = solid_rgb(4, 4, 128, 128, 128);
         let info = info_rgb8(4, 4);
-        let result = photo_filter(&pixels, &info, 255, 0, 0, 50.0, 1).unwrap();
+        let result = photo_filter(&pixels, &info, &PhotoFilterParams { color_r: 255, color_g: 0, color_b: 0, density: 50.0, preserve_luminosity: 1 }).unwrap();
         // With preserve_luminosity, the total brightness should be similar
         let orig_luma = 128u32; // gray pixel
         let new_luma =
@@ -2336,7 +2338,7 @@ mod color_manipulation_tests {
     fn spin_blur_angle_zero_is_identity() {
         let pixels = solid_rgb(8, 8, 100, 150, 200);
         let info = info_rgb8(8, 8);
-        let result = spin_blur(&pixels, &info, 0.5, 0.5, 0.0).unwrap();
+        let result = spin_blur(&pixels, &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -2353,7 +2355,7 @@ mod color_manipulation_tests {
             }
         }
         let info = info_rgb8(32, 32);
-        let result = spin_blur(&pixels, &info, 0.5, 0.5, 30.0).unwrap();
+        let result = spin_blur(&pixels, &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 30.0 }).unwrap();
         assert_ne!(result, pixels, "spin blur should modify pixels");
     }
 
@@ -2366,7 +2368,7 @@ mod color_manipulation_tests {
         pixels[center + 1] = 0;
         pixels[center + 2] = 0;
         let info = info_rgb8(16, 16);
-        let result = spin_blur(&pixels, &info, 0.5, 0.5, 45.0).unwrap();
+        let result = spin_blur(&pixels, &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 45.0 }).unwrap();
         // Center pixel should be close to original (radius ≈ 0, no arc blur)
         assert_eq!(result[center], 255, "center should stay red");
     }
@@ -6531,7 +6533,7 @@ pub fn clarity(
 
 // ─── Shadow/Highlight ─────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Shadow/Highlight adjustment — local tone mapping for shadows and highlights.
 /// Port of GEGL gegl:shadows-highlights (darktable algorithm by Ulrich Pegelow).
 pub struct ShadowHighlightParams {
@@ -6579,29 +6581,21 @@ pub struct ShadowHighlightParams {
 pub fn shadow_highlight(
     pixels: &[u8],
     info: &ImageInfo,
-    shadows: f32,
-    highlights: f32,
-    whitepoint: f32,
-    radius: f32,
-    compress: f32,
-    shadows_ccorrect: f32,
-    highlights_ccorrect: f32,
+    config: &ShadowHighlightParams,
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
+    let shadows = config.shadows;
+    let highlights = config.highlights;
+    let whitepoint = config.whitepoint;
+    let radius = config.radius;
+    let compress = config.compress;
+    let shadows_ccorrect = config.shadows_ccorrect;
+    let highlights_ccorrect = config.highlights_ccorrect;
+
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            shadow_highlight(
-                p8,
-                i8,
-                shadows,
-                highlights,
-                whitepoint,
-                radius,
-                compress,
-                shadows_ccorrect,
-                highlights_ccorrect,
-            )
+            shadow_highlight(p8, i8, config)
         });
     }
 
@@ -9641,7 +9635,7 @@ pub fn draw_text_filter(
     Ok(result)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// TrueType text rendering parameters.
 pub struct DrawTextTtfParams {
     /// X position of text origin
@@ -9675,16 +9669,13 @@ pub struct DrawTextTtfParams {
 pub fn draw_text_ttf_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    x: u32,
-    y: u32,
     text: &str,
-    font_size_pt: f32,
-    color_r: u32,
-    color_g: u32,
-    color_b: u32,
-    color_a: u32,
+    config: &DrawTextTtfParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
+    let x = config.x;
+    let y = config.y;
+    let font_size_pt = config.font_size_pt;
+    let color = [config.color_r as u8, config.color_g as u8, config.color_b as u8, config.color_a as u8];
     // Without font data (scalar params only), fall back to bitmap
     let scale = (font_size_pt / 12.0).round().max(1.0) as u32;
     let (result, _) = super::draw::draw_text(pixels, info, x, y, text, scale, color)?;
@@ -13630,7 +13621,7 @@ mod shadow_highlight_tests {
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
         let result =
-            shadow_highlight(&pixels, &info, 0.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 0.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -13640,7 +13631,7 @@ mod shadow_highlight_tests {
         let pixels = vec![30u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
         let result =
-            shadow_highlight(&pixels, &info, 100.0, 0.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 100.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         // All pixels should be brighter than original
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -13656,7 +13647,7 @@ mod shadow_highlight_tests {
         let pixels = vec![230u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
         let result =
-            shadow_highlight(&pixels, &info, 0.0, -100.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 0.0, highlights: -100.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -13671,7 +13662,7 @@ mod shadow_highlight_tests {
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
         let result =
-            shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
         let max_diff: u8 = pixels
             .iter()
@@ -13699,7 +13690,7 @@ mod shadow_highlight_tests {
             color_space: ColorSpace::Srgb,
         };
         let result =
-            shadow_highlight(&pixels, &info, 50.0, -50.0, 0.0, 100.0, 50.0, 100.0, 50.0).unwrap();
+            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         // Alpha should be exactly preserved
         for i in 0..64 {
             assert_eq!(

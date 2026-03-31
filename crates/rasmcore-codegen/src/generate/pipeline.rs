@@ -11,6 +11,7 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
     code.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
     code.push_str("use crate::domain::error::ImageError;\n");
     code.push_str("use crate::domain::filters;\n");
+    code.push_str("use crate::domain::filters::*; // ConfigParams structs\n");
     code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
     code.push_str("use crate::domain::types::*;\n");
     code.push_str("use rasmcore_pipeline::{Overlap, Rect};\n\n");
@@ -77,6 +78,9 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             .map(|(n, t)| {
                 let clean_n = n.trim_start_matches('_');
                 if t.starts_with("&[") || t == "&str" {
+                    format!("&self.{clean_n}")
+                } else if t.starts_with('&') {
+                    // Reference to a struct (e.g., &SpinBlurParams) — pass as reference
                     format!("&self.{clean_n}")
                 } else if t == "String" {
                     format!("self.{clean_n}.clone()")

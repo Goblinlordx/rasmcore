@@ -41,6 +41,7 @@ pub fn to_wit_type(rust_type: &str) -> String {
 }
 
 /// Convert Rust domain type to owned type (for node struct fields).
+/// Strips leading `&` for references (e.g., `&SpinBlurParams` → `SpinBlurParams`).
 pub fn to_owned_type(rust_type: &str) -> &str {
     match rust_type {
         "&[f32]" => "Vec<f32>",
@@ -48,11 +49,13 @@ pub fn to_owned_type(rust_type: &str) -> &str {
         "&[u8]" => "Vec<u8>",
         "&[u32]" => "Vec<u32>",
         "&str" => "String",
+        other if other.starts_with('&') => &other[1..],
         other => other,
     }
 }
 
 /// Convert Rust domain type to WIT binding type (for trait signatures).
+/// Strips leading `&` for references (owned at WIT boundary).
 pub fn to_binding_type(rust_type: &str) -> &str {
     match rust_type {
         "&[f32]" => "Vec<f32>",
@@ -60,6 +63,7 @@ pub fn to_binding_type(rust_type: &str) -> &str {
         "&[u8]" => "Vec<u8>",
         "&[u32]" => "Vec<u32>",
         "&str" => "String",
+        other if other.starts_with('&') => &other[1..],
         other => other,
     }
 }
