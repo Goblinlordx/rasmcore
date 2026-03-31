@@ -1,5 +1,5 @@
 title: Rust Native SDK (No WASM, Direct Linking)
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-31'
