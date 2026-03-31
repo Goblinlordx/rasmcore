@@ -280,9 +280,9 @@ fn detect_expansion_field(params: &[(String, String)], prefix: &str) -> Option<S
                 let expr = as_u32(clean);
                 return Some(format!("output.expand_uniform({expr}, bounds_w, bounds_h)"));
             }
-            "ksize" => {
+            "ksize" | "kw" | "kh" => {
                 return Some(format!(
-                    "output.expand_uniform({prefix}.ksize / 2, bounds_w, bounds_h)"
+                    "output.expand_uniform({prefix}.{clean} / 2, bounds_w, bounds_h)"
                 ));
             }
             "sigma" => {
