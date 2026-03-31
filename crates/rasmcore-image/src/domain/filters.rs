@@ -4982,7 +4982,10 @@ pub fn vignette_powerlaw(
     variant = "premultiply",
     reference = "premultiplied alpha conversion"
 )]
-pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn premultiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
             "premultiply requires RGBA8".into(),
@@ -12269,7 +12272,7 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let pre = premultiply(&pixels, &info).unwrap();
+        let pre = premultiply(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.clone()), &info).unwrap();
         let unpre = unpremultiply(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pre.clone()), &info).unwrap();
         for i in (0..pixels.len()).step_by(4) {
             for c in 0..3 {
