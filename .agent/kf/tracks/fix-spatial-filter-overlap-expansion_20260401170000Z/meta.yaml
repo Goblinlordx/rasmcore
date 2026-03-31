@@ -1,5 +1,5 @@
 title: Restore overlap expansion for spatial filters in rect-request model
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-03-31'

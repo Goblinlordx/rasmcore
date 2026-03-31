@@ -1,127 +1,108 @@
 id: fix-spatial-filter-overlap-expansion_20260401170000Z
-title: "Restore overlap expansion for spatial filters in rect-request model"
+title: Restore overlap expansion for spatial filters in rect-request model
 type: bug
 status: pending
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-03-31'
 spec:
-  summary: |
-    Spatial filters must expand their upstream request rect by their overlap
+  summary: 'Spatial filters must expand their upstream request rect by their overlap
+
     radius, then crop the result back to the original request. Currently all
+
     filters pass request unchanged, causing edge artifacts in tiled pipelines.
-  context: |
-    The rect-request migration (filter-rect-request-foundation track) changed
+
+    '
+  context: 'The rect-request migration (filter-rect-request-foundation track) changed
+
     all filter signatures from (pixels, info, config) to (request, upstream, info, config).
+
     The migration intentionally deferred overlap expansion: "Making spatial filters
+
     actually request expanded rects (future -- for now they just do upstream(request)
+
     same as point ops)."
 
+
     This causes 7 tiled parity test failures and breaks real tiled pipeline execution.
+
     The old codegen did this expansion automatically via input_rect_body() -- that code
+
     was removed during cleanup. Now each filter is responsible for its own expansion.
-  codebase_analysis: |
-    CURRENT STATE:
-    - Generated compute_region just calls: filters::blur(request, &mut upstream, info, config)
-    - blur() does: let pixels = upstream(request)? -- NO expansion
-    - Tiled execution requests e.g. a 256x256 tile -- blur gets exactly 256x256 pixels
-    - Blur needs N extra pixels on each side (where N = ceil(radius * 3) * 2 + 1) / 2
-    - Without them, edge pixels are computed from missing/clamped data -> artifacts
 
-    FAILING TESTS (7):
-    - tiled_parity_blur, tiled_parity_sharpen, tiled_parity_median
-    - tiled_parity_bilateral, tiled_parity_guided_filter
-    - tiled_parity_erode, tiled_parity_motion_blur
-
-    PASSING TESTS (3):
-    - tiled_parity_point_op (brightness -- no expansion needed)
-    - tiled_parity_contrast (point op -- no expansion needed)
-    - tiled_parity_canny (mapper -- separate codegen, still has old expansion)
-
-    FILTERS NEEDING EXPANSION (spatial filters):
-    - blur (radius-based)
-    - sharpen (fixed small radius -- uses blur internally)
-    - smart_sharpen (radius-based)
-    - median (radius-based)
-    - bilateral (diameter-based)
-    - guided_filter (radius-based)
-    - box_blur (radius-based)
-    - convolve (kernel-size-based)
-    - bokeh_blur (radius-based)
-    - motion_blur (length-based)
-    - zoom_blur (factor-based, technically full image)
-    - spin_blur (angle-based, technically full image)
-    - erode/dilate (radius-based)
-    - morph_* (radius-based, via erode/dilate)
-    - oil_paint (radius-based)
-    - kuwahara (radius-based)
-    - rank_filter (radius-based)
-    - gaussian_blur_cv (ksize-based)
-
-    APPROACH:
-    Each spatial filter should:
-    1. Compute its overlap from its config params
-    2. Call upstream(request.expand_uniform(overlap, info.width, info.height))
-    3. Run the filter on the expanded region
-    4. Crop the result back to the original request dimensions
-
-    For filters using _impl (blur, sharpen, guided_filter, emboss):
-    The wrapper function handles expansion, _impl processes the expanded region.
-
-    The Rect type already has expand_uniform() and expand() methods.
-    The crop_region() helper in graph.rs can extract a sub-rect from pixel data.
-
-    IMPORTANT: The preamble pattern must change for spatial filters:
-    OLD (current, wrong for spatial):
-      let pixels = upstream(request)?;
-      let info = &ImageInfo { width: request.width, height: request.height, ..*info };
-      let pixels = pixels.as_slice();
-    NEW (correct for spatial):
-      let overlap = compute_overlap_from_config(config);
-      let expanded = request.expand_uniform(overlap, info.width, info.height);
-      let pixels = upstream(expanded)?;
-      let expanded_info = &ImageInfo { width: expanded.width, height: expanded.height, ..*info };
-      let pixels = pixels.as_slice();
-      // ... run filter on expanded pixels ...
-      // ... crop result back to request dimensions ...
+    '
+  codebase_analysis: "CURRENT STATE:\n- Generated compute_region just calls: filters::blur(request, &mut upstream, info, config)\n\
+    - blur() does: let pixels = upstream(request)? -- NO expansion\n- Tiled execution requests e.g. a 256x256 tile -- blur\
+    \ gets exactly 256x256 pixels\n- Blur needs N extra pixels on each side (where N = ceil(radius * 3) * 2 + 1) / 2\n- Without\
+    \ them, edge pixels are computed from missing/clamped data -> artifacts\n\nFAILING TESTS (7):\n- tiled_parity_blur, tiled_parity_sharpen,\
+    \ tiled_parity_median\n- tiled_parity_bilateral, tiled_parity_guided_filter\n- tiled_parity_erode, tiled_parity_motion_blur\n\
+    \nPASSING TESTS (3):\n- tiled_parity_point_op (brightness -- no expansion needed)\n- tiled_parity_contrast (point op --\
+    \ no expansion needed)\n- tiled_parity_canny (mapper -- separate codegen, still has old expansion)\n\nFILTERS NEEDING\
+    \ EXPANSION (spatial filters):\n- blur (radius-based)\n- sharpen (fixed small radius -- uses blur internally)\n- smart_sharpen\
+    \ (radius-based)\n- median (radius-based)\n- bilateral (diameter-based)\n- guided_filter (radius-based)\n- box_blur (radius-based)\n\
+    - convolve (kernel-size-based)\n- bokeh_blur (radius-based)\n- motion_blur (length-based)\n- zoom_blur (factor-based,\
+    \ technically full image)\n- spin_blur (angle-based, technically full image)\n- erode/dilate (radius-based)\n- morph_*\
+    \ (radius-based, via erode/dilate)\n- oil_paint (radius-based)\n- kuwahara (radius-based)\n- rank_filter (radius-based)\n\
+    - gaussian_blur_cv (ksize-based)\n\nAPPROACH:\nEach spatial filter should:\n1. Compute its overlap from its config params\n\
+    2. Call upstream(request.expand_uniform(overlap, info.width, info.height))\n3. Run the filter on the expanded region\n\
+    4. Crop the result back to the original request dimensions\n\nFor filters using _impl (blur, sharpen, guided_filter, emboss):\n\
+    The wrapper function handles expansion, _impl processes the expanded region.\n\nThe Rect type already has expand_uniform()\
+    \ and expand() methods.\nThe crop_region() helper in graph.rs can extract a sub-rect from pixel data.\n\nIMPORTANT: The\
+    \ preamble pattern must change for spatial filters:\nOLD (current, wrong for spatial):\n  let pixels = upstream(request)?;\n\
+    \  let info = &ImageInfo { width: request.width, height: request.height, ..*info };\n  let pixels = pixels.as_slice();\n\
+    NEW (correct for spatial):\n  let overlap = compute_overlap_from_config(config);\n  let expanded = request.expand_uniform(overlap,\
+    \ info.width, info.height);\n  let pixels = upstream(expanded)?;\n  let expanded_info = &ImageInfo { width: expanded.width,\
+    \ height: expanded.height, ..*info };\n  let pixels = pixels.as_slice();\n  // ... run filter on expanded pixels ...\n\
+    \  // ... crop result back to request dimensions ...\n"
   acceptance_criteria:
-    - All 7 failing tiled_parity tests pass
-    - Point op tests still pass (no regression)
-    - cargo build + cargo component build pass
-    - Tiled and non-tiled execution produce identical results for all spatial filters
-  out_of_scope: |
-    Optimizing overlap amounts (e.g., blur could use tighter bounds).
+  - All 7 failing tiled_parity tests pass
+  - Point op tests still pass (no regression)
+  - cargo build + cargo component build pass
+  - Tiled and non-tiled execution produce identical results for all spatial filters
+  out_of_scope: 'Optimizing overlap amounts (e.g., blur could use tighter bounds).
+
     Adding overlap to distortion filters (barrel, swirl, etc.) -- these need
+
     full-image access and are correctly handled as GlobalTwoPass.
+
     Changing the _impl function internals.
-  technical_notes: |
-    For blur_impl-style filters: the registered wrapper (blur) handles expansion
+
+    '
+  technical_notes: 'For blur_impl-style filters: the registered wrapper (blur) handles expansion
+
     before calling blur_impl. blur_impl stays unchanged.
 
+
     For directly-migrated spatial filters (convolve, median, etc.): the preamble
+
     inside the function body must change from upstream(request) to
+
     upstream(expanded_request), then crop after processing.
 
+
     The crop can use crop_region() from pipeline::graph or a simple slice op
+
     since the output is always in row-major pixel order.
+
+    '
 plan:
-  - phase: Core spatial filter fixes
-    tasks:
-      - text: Fix blur -- expand request by ceil(radius*3)*2+1 pixels, crop result
-        done: false
-      - text: Fix sharpen -- expand by fixed overlap (uses blur internally with radius 1.0)
-        done: false
-      - text: Fix median -- expand by radius
-        done: false
-      - text: Fix bilateral -- expand by diameter/2
-        done: false
-      - text: Fix guided_filter -- expand by radius
-        done: false
-      - text: Fix erode/dilate registered wrappers -- expand by radius
-        done: false
-      - text: Fix motion_blur -- expand by length
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All 7 tiled_parity tests pass, all 3 passing tests still pass
-        done: false
+- phase: Core spatial filter fixes
+  tasks:
+  - text: Fix blur -- expand request by ceil(radius*3)*2+1 pixels, crop result
+    done: true
+  - text: Fix sharpen -- expand by fixed overlap (uses blur internally with radius 1.0)
+    done: true
+  - text: Fix median -- expand by radius
+    done: true
+  - text: Fix bilateral -- expand by diameter/2
+    done: true
+  - text: Fix guided_filter -- expand by radius
+    done: true
+  - text: Fix erode/dilate registered wrappers -- expand by radius
+    done: true
+  - text: Fix motion_blur -- expand by length
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 7 tiled_parity tests pass, all 3 passing tests still pass
+    done: true
 extra: {}
