@@ -8128,10 +8128,14 @@ pub struct ShadowHighlightParams {
 /// Validated against GEGL (EXACT tier target).
 #[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
 pub fn shadow_highlight(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ShadowHighlightParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     let shadows = config.shadows;
@@ -8144,7 +8148,9 @@ pub fn shadow_highlight(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            shadow_highlight(p8, i8, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            shadow_highlight(r, &mut u, i8, config)
         });
     }
 
@@ -16430,8 +16436,10 @@ mod shadow_highlight_tests {
         // shadow=0, highlight=0 should be identity
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
+        let r = Rect::new(0, 0, 16, 16);
+        let mut u = |_: Rect| Ok(pixels.clone());
         let result =
-            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 0.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 0.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16440,8 +16448,10 @@ mod shadow_highlight_tests {
         // Create dark image (all pixels at 30)
         let pixels = vec![30u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
+        let r = Rect::new(0, 0, 16, 16);
+        let mut u = |_: Rect| Ok(pixels.clone());
         let result =
-            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 100.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 100.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         // All pixels should be brighter than original
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -16456,8 +16466,10 @@ mod shadow_highlight_tests {
         // Create bright image (all pixels at 230)
         let pixels = vec![230u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
+        let r = Rect::new(0, 0, 16, 16);
+        let mut u = |_: Rect| Ok(pixels.clone());
         let result =
-            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 0.0, highlights: -100.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 0.0, highlights: -100.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -16471,8 +16483,10 @@ mod shadow_highlight_tests {
         // Create mid-tone image (all pixels at 128)
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
+        let r = Rect::new(0, 0, 16, 16);
+        let mut u = |_: Rect| Ok(pixels.clone());
         let result =
-            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
         let max_diff: u8 = pixels
             .iter()
@@ -16499,8 +16513,11 @@ mod shadow_highlight_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
+        let px = pixels.clone();
+        let r = Rect::new(0, 0, 8, 8);
+        let mut u = |_: Rect| Ok(px.clone());
         let result =
-            shadow_highlight(&pixels, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
         // Alpha should be exactly preserved
         for i in 0..64 {
             assert_eq!(
