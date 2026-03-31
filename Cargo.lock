@@ -2285,6 +2285,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-cli"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-image",
+ "rasmcore-pipeline",
+]
+
+[[package]]
 name = "rasmcore-codec-avif"
 version = "0.1.0"
 dependencies = [
