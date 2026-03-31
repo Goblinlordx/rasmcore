@@ -1,95 +1,81 @@
 id: sdk-python-runtime_20260331045702Z
-title: "Python SDK — Dynamic Runtime + Typegen CLI"
+title: Python SDK — Dynamic Runtime + Typegen CLI
 type: feature
 status: pending
-created: "2026-03-31"
-updated: "2026-03-31"
+created: '2026-03-31'
+updated: '2026-03-31'
 spec:
-  summary: |
-    Build the Python SDK as a PyPI package with dynamic runtime (loads any
+  summary: 'Build the Python SDK as a PyPI package with dynamic runtime (loads any
+
     WASM module via wasmtime-py + manifest introspection) and a typegen CLI
+
     that generates typed wrappers with full type hints.
-  context: |
-    Same two-layer architecture as TypeScript SDK but in Python.
+
+    '
+  context: 'Same two-layer architecture as TypeScript SDK but in Python.
+
     Dynamic runtime uses wasmtime-py to load WASM components.
+
     Typed layer generates a Python class with methods, docstrings with
+
     param ranges/defaults, and .pyi stub files for IDE autocomplete.
+
     Typegen runs in pure Python — no Rust or Node needed.
-  codebase_analysis: |
-    sdks/python/ (after restructure):
-    - rasmcore/runtime.py — RcImageDynamic class (dynamic, universal)
-    - rasmcore/types.py — FilterManifest, ParamMeta dataclasses
-    - rasmcore/typegen.py — CLI: python -m rasmcore.typegen ./module.wasm
-    - pyproject.toml — rasmcore package, console_scripts entry
 
-    Consumer workflow:
-    - pip install rasmcore
-    - Dynamic: from rasmcore import RcImage; img = RcImage.load(wasm_path, data).apply('blur', radius=3)
-    - Typed: python -m rasmcore.typegen ./rasmcore.wasm > rasmcore_typed.py
-             from rasmcore_typed import RcImage; img = RcImage.load(wasm_path, data).blur(radius=3)
+    '
+  codebase_analysis: "sdks/python/ (after restructure):\n- rasmcore/runtime.py — RcImageDynamic class (dynamic, universal)\n\
+    - rasmcore/types.py — FilterManifest, ParamMeta dataclasses\n- rasmcore/typegen.py — CLI: python -m rasmcore.typegen ./module.wasm\n\
+    - pyproject.toml — rasmcore package, console_scripts entry\n\nConsumer workflow:\n- pip install rasmcore\n- Dynamic: from\
+    \ rasmcore import RcImage; img = RcImage.load(wasm_path, data).apply('blur', radius=3)\n- Typed: python -m rasmcore.typegen\
+    \ ./rasmcore.wasm > rasmcore_typed.py\n         from rasmcore_typed import RcImage; img = RcImage.load(wasm_path, data).blur(radius=3)\n"
   acceptance_criteria:
-    - sdks/python/rasmcore/runtime.py implements RcImageDynamic with apply() and encode()
-    - Runtime loads WASM module via wasmtime-py, discovers filters via get_filter_manifest()
-    - Runtime validates params against manifest metadata
-    - "python -m rasmcore.typegen generates typed RcImage class with docstrings"
-    - Generated .pyi stub file provides IDE autocomplete
-    - Generated class embeds manifest hash for version validation
-    - Terminal methods generated from registered encoders
-    - Basic smoke test passes
-    - Package publishable as rasmcore on PyPI
-  out_of_scope: |
-    Go/Rust SDKs. async API. Numpy/PIL integration. Publishing to PyPI.
-  technical_notes: |
-    RUNTIME:
-    ```python
-    class RcImageDynamic:
-        @classmethod
-        def load(cls, wasm_path: str, data: bytes) -> 'RcImageDynamic': ...
-        def apply(self, filter_name: str, **params) -> 'RcImageDynamic': ...
-        def encode(self, format: str, **config) -> bytes: ...
-        @property
-        def manifest(self) -> FilterManifest: ...
-    ```
+  - sdks/python/rasmcore/runtime.py implements RcImageDynamic with apply() and encode()
+  - Runtime loads WASM module via wasmtime-py, discovers filters via get_filter_manifest()
+  - Runtime validates params against manifest metadata
+  - python -m rasmcore.typegen generates typed RcImage class with docstrings
+  - Generated .pyi stub file provides IDE autocomplete
+  - Generated class embeds manifest hash for version validation
+  - Terminal methods generated from registered encoders
+  - Basic smoke test passes
+  - Package publishable as rasmcore on PyPI
+  out_of_scope: 'Go/Rust SDKs. async API. Numpy/PIL integration. Publishing to PyPI.
 
-    TYPEGEN OUTPUT:
-    ```python
-    class RcImage(RcImageDynamic):
-        def blur(self, radius: float = 3.0) -> 'RcImage':
-            '''Gaussian blur. radius: 0.0-100.0'''
-            return self.apply("blur", radius=radius)
-        def to_jpeg(self, quality: int = 85) -> bytes:
-            '''Encode as JPEG.'''
-            return self.encode("jpeg", quality=quality)
-    ```
+    '
+  technical_notes: "RUNTIME:\n```python\nclass RcImageDynamic:\n    @classmethod\n    def load(cls, wasm_path: str, data:\
+    \ bytes) -> 'RcImageDynamic': ...\n    def apply(self, filter_name: str, **params) -> 'RcImageDynamic': ...\n    def encode(self,\
+    \ format: str, **config) -> bytes: ...\n    @property\n    def manifest(self) -> FilterManifest: ...\n```\n\nTYPEGEN OUTPUT:\n\
+    ```python\nclass RcImage(RcImageDynamic):\n    def blur(self, radius: float = 3.0) -> 'RcImage':\n        '''Gaussian\
+    \ blur. radius: 0.0-100.0'''\n        return self.apply(\"blur\", radius=radius)\n    def to_jpeg(self, quality: int =\
+    \ 85) -> bytes:\n        '''Encode as JPEG.'''\n        return self.encode(\"jpeg\", quality=quality)\n```\n"
 plan:
-  - phase: Runtime Core
-    tasks:
-      - text: Implement RcImageDynamic with wasmtime-py WASM loading
-        done: false
-      - text: Implement apply(), encode(), manifest property
-        done: false
-      - text: Implement param validation from manifest
-        done: false
-  - phase: Typegen CLI
-    tasks:
-      - text: "Implement python -m rasmcore.typegen — load WASM, emit typed class"
-        done: false
-      - text: Generate methods with docstrings (param ranges, defaults from manifest)
-        done: false
-      - text: Generate .pyi stub for IDE autocomplete
-        done: false
-      - text: Embed manifest hash for version validation
-        done: false
-  - phase: Package Setup
-    tasks:
-      - text: pyproject.toml with console_scripts entry
-        done: false
-      - text: README with examples
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Smoke test — load WASM, apply filter, encode JPEG
-        done: false
-      - text: Typegen output compiles and passes mypy
-        done: false
+- phase: Runtime Core
+  tasks:
+  - text: Implement RcImageDynamic with wasmtime-py WASM loading
+    done: true
+  - text: Implement apply(), encode(), manifest property
+    done: true
+  - text: Implement param validation from manifest
+    done: true
+- phase: Typegen CLI
+  tasks:
+  - text: Implement python -m rasmcore.typegen — load WASM, emit typed class
+    done: true
+  - text: Generate methods with docstrings (param ranges, defaults from manifest)
+    done: true
+  - text: Generate .pyi stub for IDE autocomplete
+    done: true
+  - text: Embed manifest hash for version validation
+    done: true
+- phase: Package Setup
+  tasks:
+  - text: pyproject.toml with console_scripts entry
+    done: true
+  - text: README with examples
+    done: true
+- phase: Verification
+  tasks:
+  - text: Smoke test — load WASM, apply filter, encode JPEG
+    done: true
+  - text: Typegen output compiles and passes mypy
+    done: true
 extra: {}
