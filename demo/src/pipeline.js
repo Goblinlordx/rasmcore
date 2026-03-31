@@ -418,8 +418,9 @@ worker.onmessage = (e) => {
     if (e.data.mode === 'full' && e.data.timings) {
       totalTimeEl.textContent = `Total: ${e.data.totalMs}ms (${e.data.timings.length} ops)`;
       totalTimeEl.style.color = '#4ade80';
+      const currentChain = getChain();
       for (const t of e.data.timings) {
-        for (const cn of chain) {
+        for (const cn of currentChain) {
           if (cn.op.name === t.name) {
             cn.timingMs = t.ms;
             break;
@@ -427,7 +428,7 @@ worker.onmessage = (e) => {
         }
       }
       // Update timing in cards
-      for (const cn of chain) {
+      for (const cn of currentChain) {
         const card = chainEl.querySelector(`[data-id="${cn.id}"]`);
         if (card) {
           const tEl = card.querySelector('.node-timing');
