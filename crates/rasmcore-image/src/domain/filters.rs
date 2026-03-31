@@ -2918,7 +2918,10 @@ fn interpolate_gradient(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
     category = "color",
     reference = "luminance-to-gradient color mapping"
 )]
-pub fn gradient_map(pixels: &[u8], info: &ImageInfo, stops: String) -> Result<Vec<u8>, ImageError> {
+pub fn gradient_map(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, stops: String) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     let gradient_stops = parse_gradient_stops(&stops)?;
 
@@ -3261,7 +3264,7 @@ mod color_manipulation_tests {
     fn gradient_map_bw_produces_grayscale() {
         let info = info_rgb8(2, 2);
         let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
-        let result = gradient_map(&pixels, &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
+        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
         // Each pixel's RGB should all be equal (grayscale)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], chunk[1], "R should equal G for BW gradient");
@@ -3273,7 +3276,7 @@ mod color_manipulation_tests {
     fn gradient_map_solid_black() {
         let pixels = solid_rgb(2, 2, 0, 0, 0);
         let info = info_rgb8(2, 2);
-        let result = gradient_map(&pixels, &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
+        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
         // Luminance 0 → first stop (red)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 255);
@@ -3286,7 +3289,7 @@ mod color_manipulation_tests {
     fn gradient_map_solid_white() {
         let pixels = solid_rgb(2, 2, 255, 255, 255);
         let info = info_rgb8(2, 2);
-        let result = gradient_map(&pixels, &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
+        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
         // Luminance 1.0 → last stop (blue)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 0);
@@ -3299,7 +3302,7 @@ mod color_manipulation_tests {
     fn gradient_map_invalid_stops_returns_error() {
         let pixels = solid_rgb(2, 2, 128, 128, 128);
         let info = info_rgb8(2, 2);
-        let result = gradient_map(&pixels, &info, "invalid".to_string());
+        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "invalid".to_string());
         assert!(result.is_err());
     }
 
@@ -3312,7 +3315,7 @@ mod color_manipulation_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128, 128, 128, 200, 0, 0, 0, 100];
-        let result = gradient_map(&pixels, &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
+        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
         assert_eq!(result[3], 200, "alpha should be preserved");
         assert_eq!(result[7], 100, "alpha should be preserved");
     }
