@@ -593,7 +593,12 @@ impl ImageFilter for ContrastFilter {
     }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
         let amount = input.params.get_float("amount").unwrap_or(0.0);
-        filters::contrast(input.pixels, input.info, &filters::ContrastParams { amount })
+        {
+            let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+            let p = input.pixels;
+            let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+            filters::contrast(r, &mut u, input.info, &filters::ContrastParams { amount })
+        }
     }
     fn is_lut_collapsible(&self) -> bool {
         true

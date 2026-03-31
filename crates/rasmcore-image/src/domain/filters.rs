@@ -2131,10 +2131,14 @@ pub fn brightness(
     point_op = "true"
 )]
 pub fn contrast(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ContrastParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amount = config.amount;
 
     if !(-1.0..=1.0).contains(&amount) {
@@ -2144,7 +2148,11 @@ pub fn contrast(
     }
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| contrast(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            contrast(r, &mut u, i8, config)
+        });
     }
     let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Contrast(amount));
     super::point_ops::apply_lut(pixels, info, &lut)
@@ -11849,14 +11857,24 @@ mod tests {
     #[test]
     fn contrast_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = contrast(&px, &info, &ContrastParams { amount: 0.5 }).unwrap();
+        let result = contrast(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &ContrastParams { amount: 0.5 },
+        ).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn contrast_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
-        assert!(contrast(&px, &info, &ContrastParams { amount: 2.0 }).is_err());
+        assert!(contrast(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &ContrastParams { amount: 2.0 },
+        ).is_err());
     }
 
     #[test]
@@ -11887,7 +11905,12 @@ mod tests {
         assert!(blur(&pixels, &info, &BlurParams { radius: 1.0 }).is_ok());
         assert!(sharpen(&pixels, &info, &SharpenParams { amount: 1.0 }).is_ok());
         assert!(brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BrightnessParams { amount: 0.2 }).is_ok());
-        assert!(contrast(&pixels, &info, &ContrastParams { amount: 0.2 }).is_ok());
+        assert!(contrast(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &ContrastParams { amount: 0.2 },
+        ).is_ok());
         assert!(grayscale(&pixels, &info).is_ok());
     }
 
@@ -11895,7 +11918,12 @@ mod tests {
     fn contrast_lut_produces_expected_values() {
         // Zero contrast should be near identity
         let (px, info) = make_image(4, 4);
-        let result = contrast(&px, &info, &ContrastParams { amount: 0.0 }).unwrap();
+        let result = contrast(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &ContrastParams { amount: 0.0 },
+        ).unwrap();
         assert_eq!(result, px);
     }
 
