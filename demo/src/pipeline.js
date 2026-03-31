@@ -438,6 +438,11 @@ worker.onmessage = (e) => {
 
     setProcessing(false);
 
+    // Update cache stats
+    if (e.data.cacheStats) {
+      updateCacheStats(e.data.cacheStats);
+    }
+
     // Show Before/After button once we have a result to compare
     if (e.data.mode === 'full' && compareBtn) {
       compareBtn.style.display = '';
@@ -460,6 +465,16 @@ worker.onmessage = (e) => {
     a.href = URL.createObjectURL(blob);
     a.download = `rasmcore-pipeline.${e.data.format}`;
     a.click();
+    return;
+  }
+
+  if (type === 'cache-cleared') {
+    updateCacheStats(null);
+    return;
+  }
+
+  if (type === 'cache-stats') {
+    updateCacheStats(e.data.stats);
     return;
   }
 
@@ -1065,6 +1080,41 @@ compareBtn.addEventListener('click', () => {
   compareBtn.textContent = showingOriginal ? 'Show Result' : 'Before/After';
   compareBtn.style.background = showingOriginal ? '#8b5cf6' : '#333';
 });
+
+// ─── Layer Cache Controls ────────────────────────────────────────────────────
+
+const cacheToggle = document.getElementById('cache-toggle');
+const cacheStatsEl = document.getElementById('cache-stats');
+const cacheClearBtn = document.getElementById('cache-clear-btn');
+
+// Restore toggle state from localStorage
+const savedCacheEnabled = localStorage.getItem('rasmcore-demo-cache-enabled');
+if (savedCacheEnabled !== null) {
+  cacheToggle.checked = savedCacheEnabled !== 'false';
+}
+
+cacheToggle.addEventListener('change', () => {
+  const enabled = cacheToggle.checked;
+  localStorage.setItem('rasmcore-demo-cache-enabled', String(enabled));
+  worker.postMessage({ type: 'cache-toggle', enabled });
+});
+
+cacheClearBtn.addEventListener('click', () => {
+  worker.postMessage({ type: 'cache-clear' });
+  cacheStatsEl.textContent = 'cleared';
+  cacheClearBtn.style.display = 'none';
+});
+
+function updateCacheStats(stats) {
+  if (!stats) {
+    cacheStatsEl.textContent = '';
+    cacheClearBtn.style.display = 'none';
+    return;
+  }
+  const mb = (stats.sizeBytes / (1024 * 1024)).toFixed(1);
+  cacheStatsEl.textContent = `${stats.entries} entries | ${stats.hits} hits | ${mb} MB`;
+  cacheClearBtn.style.display = stats.entries > 0 ? '' : 'none';
+}
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 

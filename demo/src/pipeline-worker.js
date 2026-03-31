@@ -10,6 +10,9 @@
  */
 
 let Pipeline = null;
+let LayerCacheClass = null;
+let layerCache = null;
+let cacheEnabled = true;
 let imageBytes = null;
 let thumbBytes = null;
 const THUMB_MAX = 256;
@@ -21,6 +24,15 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
+    LayerCacheClass = sdk.pipeline.LayerCache;
+
+    // Create layer cache (64 MB budget, persists across pipeline invocations)
+    try {
+      layerCache = new LayerCacheClass(64);
+    } catch (_) {
+      // SDK may not support LayerCache yet — fall back to uncached
+      layerCache = null;
+    }
 
     // Build MIME map from backend format metadata
     try {
@@ -100,6 +112,12 @@ function processChain(chain, mode) {
 
   try {
     const pipe = new Pipeline();
+
+    // Attach layer cache for cross-invocation result reuse
+    if (cacheEnabled && layerCache) {
+      try { pipe.setLayerCache(layerCache); } catch (_) { /* SDK may not support yet */ }
+    }
+
     let node = pipe.read(source);
 
     for (const step of chain) {
@@ -124,7 +142,13 @@ function processChain(chain, mode) {
     const totalMs = Math.round(performance.now() - t0);
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
 
-    self.postMessage({ type: 'result', png: buf, timings, totalMs, mode }, [buf]);
+    // Collect cache stats
+    let cacheStats = null;
+    if (layerCache) {
+      try { cacheStats = layerCache.stats(); } catch (_) {}
+    }
+
+    self.postMessage({ type: 'result', png: buf, timings, totalMs, mode, cacheStats }, [buf]);
   } catch (e) {
     self.postMessage({ type: 'error', message: e.message });
   }
@@ -221,6 +245,25 @@ self.onmessage = (e) => {
       break;
     case 'composite':
       compositeLayers(e.data.layers);
+      break;
+    case 'cache-toggle':
+      cacheEnabled = !!e.data.enabled;
+      if (cacheEnabled && !layerCache && LayerCacheClass) {
+        layerCache = new LayerCacheClass(64);
+      }
+      break;
+    case 'cache-clear':
+      if (layerCache) { try { layerCache.clear(); } catch (_) {} }
+      self.postMessage({ type: 'cache-cleared' });
+      break;
+    case 'cache-stats':
+      if (layerCache) {
+        try {
+          self.postMessage({ type: 'cache-stats', stats: layerCache.stats() });
+        } catch (_) {
+          self.postMessage({ type: 'cache-stats', stats: null });
+        }
+      }
       break;
   }
 };
