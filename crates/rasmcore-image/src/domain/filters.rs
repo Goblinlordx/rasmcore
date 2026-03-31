@@ -9533,6 +9533,44 @@ pub fn quantize_registered(
     super::quantize::quantize(pixels, info, &palette)
 }
 
+/// K-means color quantization — cluster pixels into k colors using Lloyd's algorithm.
+/// NOT validated against ImageMagick -kmeans or other reference; property-tested only.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct KmeansQuantizeParams {
+    /// Number of output colors (k clusters)
+    #[param(min = 2, max = 256, step = 1, default = 8)]
+    pub k: u32,
+    /// Maximum Lloyd iterations before returning best result
+    #[param(min = 1, max = 200, step = 1, default = 30)]
+    pub max_iterations: u32,
+    /// Random seed for deterministic initialization
+    #[param(min = 0, max = 4294967295, step = 1, default = 0, hint = "rc.seed")]
+    pub seed: u32,
+}
+
+#[rasmcore_macros::register_filter(
+    name = "kmeans_quantize",
+    category = "color",
+    group = "quantize",
+    variant = "kmeans",
+    reference = "Lloyd's k-means color clustering (not reference-validated)"
+)]
+pub fn kmeans_quantize_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &KmeansQuantizeParams,
+) -> Result<Vec<u8>, ImageError> {
+    let palette = super::quantize::kmeans_palette(
+        pixels,
+        info,
+        config.k as usize,
+        config.max_iterations,
+        config.seed as u64,
+    )?;
+    super::quantize::quantize(pixels, info, &palette)
+}
+
 /// Floyd-Steinberg error-diffusion dithering with median-cut palette.
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]

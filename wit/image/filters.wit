@@ -142,6 +142,8 @@ interface filters {
     triangle-threshold: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// median cut palette quantization
     quantize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// Lloyd's k-means color clustering (not reference-validated)
+    kmeans-quantize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Floyd & Steinberg 1976 error diffusion
     dither-floyd-steinberg: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Bayer matrix ordered dithering
@@ -164,6 +166,12 @@ interface filters {
     draw-rect: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// filled/outlined circle
     draw-circle: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// filled/outlined polygon
+    draw-polygon: func(pixels: buffer, info: image-info, points: f32, config: f32) -> result<buffer, rasmcore-error>;
+    /// filled/outlined ellipse
+    draw-ellipse: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// elliptical arc stroke
+    draw-arc: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// bitmap 8x16 text rendering
     draw-text: func(pixels: buffer, info: image-info, text: string, config: f32) -> result<buffer, rasmcore-error>;
     /// draw_text_ttf filter

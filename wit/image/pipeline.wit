@@ -159,6 +159,7 @@ interface pipeline {
         otsu-threshold: func(source: node-id) -> result<node-id, rasmcore-error>;
         triangle-threshold: func(source: node-id) -> result<node-id, rasmcore-error>;
         quantize: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        kmeans-quantize: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         dither-floyd-steinberg: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         dither-ordered: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         white-balance-gray-world: func(source: node-id) -> result<node-id, rasmcore-error>;
@@ -170,6 +171,9 @@ interface pipeline {
         draw-line: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         draw-rect: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         draw-circle: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        draw-polygon: func(source: node-id, points: f32, config: f32) -> result<node-id, rasmcore-error>;
+        draw-ellipse: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        draw-arc: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         draw-text: func(source: node-id, text: string, config: f32) -> result<node-id, rasmcore-error>;
         draw-text-ttf: func(source: node-id, text: string, config: f32) -> result<node-id, rasmcore-error>;
         threshold-binary: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
