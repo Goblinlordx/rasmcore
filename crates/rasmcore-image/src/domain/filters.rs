@@ -10168,7 +10168,9 @@ pub fn auto_level_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>,
 )]
 pub fn otsu_threshold_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let t = otsu_threshold(pixels, info)?;
-    threshold_binary(pixels, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
+    let r = Rect::new(0, 0, info.width, info.height);
+    let mut u = |_: Rect| Ok(pixels.to_vec());
+    threshold_binary(r, &mut u, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
 }
 
 /// Triangle auto-threshold — compute optimal threshold then binarize.
@@ -10184,7 +10186,9 @@ pub fn triangle_threshold_registered(
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
     let t = triangle_threshold(pixels, info)?;
-    threshold_binary(pixels, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
+    let r = Rect::new(0, 0, info.width, info.height);
+    let mut u = |_: Rect| Ok(pixels.to_vec());
+    threshold_binary(r, &mut u, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
 }
 
 /// Convert to grayscale using BT.709 weights.
@@ -13610,10 +13614,14 @@ pub fn triangle_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageEr
     reference = "fixed-level binary threshold"
 )]
 pub fn threshold_binary(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ThresholdBinaryParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let thresh = config.thresh;
     let max_value = config.max_value;
 
@@ -13919,7 +13927,9 @@ mod threshold_tests {
     fn threshold_binary_basic() {
         let px = vec![50, 100, 150, 200];
         let info = gray_info(2, 2);
-        let out = threshold_binary(&px, &info, &ThresholdBinaryParams { thresh: 120, max_value: 255 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.to_vec());
+        let out = threshold_binary(r, &mut u, &info, &ThresholdBinaryParams { thresh: 120, max_value: 255 }).unwrap();
         assert_eq!(out, vec![0, 0, 255, 255]);
     }
 

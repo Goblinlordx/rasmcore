@@ -800,7 +800,9 @@ builtin_filter!(OtsuThresholdFilter, "otsu_threshold", FilterCategory::Contrast,
     params: [],
     apply: |input| {
         let t = filters::otsu_threshold(input.pixels, input.info)?;
-        filters::threshold_binary(input.pixels, input.info, &filters::ThresholdBinaryParams { thresh: t, max_value: 255 })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| Ok(input.pixels.to_vec());
+        filters::threshold_binary(r, &mut u, input.info, &filters::ThresholdBinaryParams { thresh: t, max_value: 255 })
     }
 );
 
@@ -808,7 +810,9 @@ builtin_filter!(TriangleThresholdFilter, "triangle_threshold", FilterCategory::C
     params: [],
     apply: |input| {
         let t = filters::triangle_threshold(input.pixels, input.info)?;
-        filters::threshold_binary(input.pixels, input.info, &filters::ThresholdBinaryParams { thresh: t, max_value: 255 })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| Ok(input.pixels.to_vec());
+        filters::threshold_binary(r, &mut u, input.info, &filters::ThresholdBinaryParams { thresh: t, max_value: 255 })
     }
 );
 
