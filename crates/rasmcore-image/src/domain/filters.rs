@@ -9584,7 +9584,13 @@ pub struct GaussianNoiseParams {
     #[param(min = 0.0, max = 100.0, step = 0.5, default = 25.0)]
     pub sigma: f32,
     /// Random seed for reproducibility
-    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
     pub seed: u64,
 }
 
@@ -9637,7 +9643,13 @@ pub struct SaltPepperNoiseParams {
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.05)]
     pub density: f32,
     /// Random seed for reproducibility
-    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
     pub seed: u64,
 }
 
@@ -9673,7 +9685,11 @@ pub fn salt_pepper_noise(
         if r < density {
             let color_ch = if has_alpha { ch - 1 } else { ch };
             // First half → salt (white), second half → pepper (black)
-            let val = if xorshift64_f64(&mut rng) < 0.5 { 255u8 } else { 0u8 };
+            let val = if xorshift64_f64(&mut rng) < 0.5 {
+                255u8
+            } else {
+                0u8
+            };
             for c in &mut pixel[..color_ch] {
                 *c = val;
             }
@@ -9691,7 +9707,13 @@ pub struct PoissonNoiseParams {
     #[param(min = 0.0, max = 100.0, step = 0.5, default = 10.0)]
     pub scale: f32,
     /// Random seed for reproducibility
-    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
     pub seed: u64,
 }
 
@@ -9767,7 +9789,13 @@ pub struct UniformNoiseParams {
     #[param(min = 0.0, max = 128.0, step = 0.5, default = 20.0)]
     pub range: f32,
     /// Random seed for reproducibility
-    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
     pub seed: u64,
 }
 
