@@ -11856,11 +11856,15 @@ pub fn draw_circle_filter(
     reference = "filled/outlined polygon"
 )]
 pub fn draw_polygon_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: &[crate::domain::param_types::Point2D],
     config: &DrawPolygonParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let fill_color = [
         config.fill_color.r,
         config.fill_color.g,
@@ -11894,10 +11898,14 @@ pub fn draw_polygon_filter(
     reference = "filled/outlined ellipse"
 )]
 pub fn draw_ellipse_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DrawEllipseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let color = [
         config.color.r,
         config.color.g,
@@ -11927,10 +11935,14 @@ pub fn draw_ellipse_filter(
     reference = "elliptical arc stroke"
 )]
 pub fn draw_arc_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DrawArcParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let color = [
         config.color.r,
         config.color.g,
@@ -11961,11 +11973,15 @@ pub fn draw_arc_filter(
     reference = "bitmap 8x16 text rendering"
 )]
 pub fn draw_text_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     text: &str,
     config: &DrawTextParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let x = config.x;
     let y = config.y;
     let scale = config.scale;
@@ -12011,11 +12027,15 @@ pub struct DrawTextTtfParams {
 /// Falls back to bitmap font when font_data is empty.
 #[rasmcore_macros::register_filter(name = "draw_text_ttf", category = "draw")]
 pub fn draw_text_ttf_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     text: &str,
     config: &DrawTextTtfParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let x = config.x;
     let y = config.y;
     let font_size_pt = config.font_size_pt;
