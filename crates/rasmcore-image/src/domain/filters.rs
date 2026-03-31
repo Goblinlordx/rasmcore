@@ -3032,11 +3032,15 @@ fn parse_sparse_points(points: &str) -> Result<Vec<(f32, f32, [u8; 3])>, ImageEr
     reference = "Shepard interpolation from sparse points"
 )]
 pub fn sparse_color(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
     config: &SparseColorParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let power = config.power;
 
     validate_format(info.format)?;
@@ -3326,7 +3330,9 @@ mod color_manipulation_tests {
     fn sparse_color_single_point_fills_uniform() {
         let pixels = solid_rgb(4, 4, 0, 0, 0);
         let info = info_rgb8(4, 4);
-        let result = sparse_color(&pixels, &info, "2,2:FF0000".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
+        let r = Rect::new(0, 0, 4, 4);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = sparse_color(r, &mut u, &info, "2,2:FF0000".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
         // All pixels should be red (only one control point)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk, [255, 0, 0]);
@@ -3337,9 +3343,11 @@ mod color_manipulation_tests {
     fn sparse_color_two_points_gradient() {
         let pixels = solid_rgb(8, 1, 0, 0, 0);
         let info = info_rgb8(8, 1);
+        let r = Rect::new(0, 0, 8, 1);
+        let mut u = |_: Rect| Ok(pixels.clone());
         // Red at x=0, blue at x=7
         let result =
-            sparse_color(&pixels, &info, "0,0:FF0000;7,0:0000FF".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
+            sparse_color(r, &mut u, &info, "0,0:FF0000;7,0:0000FF".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
         // First pixel should be close to red
         assert!(
             result[0] > 200,
@@ -3364,7 +3372,9 @@ mod color_manipulation_tests {
     fn sparse_color_invalid_points_error() {
         let pixels = solid_rgb(4, 4, 0, 0, 0);
         let info = info_rgb8(4, 4);
-        assert!(sparse_color(&pixels, &info, "invalid".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).is_err());
+        let r = Rect::new(0, 0, 4, 4);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        assert!(sparse_color(r, &mut u, &info, "invalid".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).is_err());
     }
 
     // ── Modulate ──
