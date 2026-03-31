@@ -298,11 +298,6 @@ impl GuestImagePipeline for PipelineResource {
         }
     }
 
-    fn keep_metadata(&self) -> Result<NodeId, RasmcoreError> {
-        *self.metadata_filter.borrow_mut() = rasmcore_pipeline::MetadataFilter::KeepAll;
-        Ok(0) // return dummy node-id (metadata ops are pipeline-level)
-    }
-
     fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {
         let cache_resource = cache.get::<LayerCacheResource>();
         let lc = cache_resource.inner.clone();
@@ -830,7 +825,40 @@ impl GuestImagePipeline for PipelineResource {
 
     fn keep_metadata(&self) -> Result<NodeId, RasmcoreError> {
         self.metadata_ops.borrow_mut().keep = true;
+        *self.metadata_filter.borrow_mut() = rasmcore_pipeline::MetadataFilter::KeepAll;
         Ok(0)
+    }
+
+    fn node_metadata_dump(&self, node: NodeId) -> Result<String, RasmcoreError> {
+        let graph = self.graph.borrow();
+        let meta = graph.node_metadata(node);
+        Ok(meta.to_json())
+    }
+
+    fn node_metadata_read(
+        &self,
+        node: NodeId,
+        key: String,
+    ) -> Result<Option<String>, RasmcoreError> {
+        let graph = self.graph.borrow();
+        let meta = graph.node_metadata(node);
+        Ok(meta.get(&key).map(|v| match v {
+            rasmcore_pipeline::MetadataValue::String(s) => s.clone(),
+            rasmcore_pipeline::MetadataValue::Int(i) => i.to_string(),
+            rasmcore_pipeline::MetadataValue::Float(f) => f.to_string(),
+            rasmcore_pipeline::MetadataValue::Bool(b) => b.to_string(),
+            rasmcore_pipeline::MetadataValue::Bytes(b) => format!("<{} bytes>", b.len()),
+        }))
+    }
+
+    fn include_metadata(&self, patterns: Vec<String>) {
+        *self.metadata_filter.borrow_mut() =
+            rasmcore_pipeline::MetadataFilter::Include(patterns);
+    }
+
+    fn exclude_metadata(&self, patterns: Vec<String>) {
+        *self.metadata_filter.borrow_mut() =
+            rasmcore_pipeline::MetadataFilter::Exclude(patterns);
     }
 
     fn set_metadata(&self, path: String, value: String) -> Result<NodeId, RasmcoreError> {

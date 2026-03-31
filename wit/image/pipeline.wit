@@ -244,6 +244,24 @@ interface pipeline {
         load-metadata: func(json: string) -> result<node-id, rasmcore-error>;
         strip-metadata: func(path: string) -> result<node-id, rasmcore-error>;
 
+        // ─── Flowing Metadata (per-node access) ───
+
+        /// Dump all metadata at a specific node as JSON.
+        /// Shows the metadata state at that point in the pipeline.
+        node-metadata-dump: func(node: node-id) -> result<string, rasmcore-error>;
+
+        /// Read a single metadata value by key at a specific node.
+        node-metadata-read: func(node: node-id, key: string) -> result<option<string>, rasmcore-error>;
+
+        /// Whitelist: only metadata keys matching these glob patterns are
+        /// embedded at write time. Implies keep-metadata.
+        /// Patterns support * wildcard (e.g., "exif.*", "iptc.Caption").
+        include-metadata: func(patterns: list<string>);
+
+        /// Blacklist: metadata keys matching these glob patterns are dropped
+        /// at write time. Everything else is kept. Implies keep-metadata.
+        exclude-metadata: func(patterns: list<string>);
+
         // ─── Write ───
         write-jpeg: func(source: node-id, config: jpeg-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
         write-png: func(source: node-id, config: png-write-config, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;
