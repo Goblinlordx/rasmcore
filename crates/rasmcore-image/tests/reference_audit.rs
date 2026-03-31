@@ -2290,8 +2290,10 @@ fn property_adaptive_threshold() {
     }
     let info = test_info(w, h, PixelFormat::Gray8);
 
+    let r = rasmcore_pipeline::Rect::new(0, 0, w, h);
+    let mut u = |_: rasmcore_pipeline::Rect| Ok(gray.clone());
     let result = rasmcore_image::domain::filters::adaptive_threshold_registered(
-        &gray, &info, 255, 0, 9, 0.0,
+        r, &mut u, &info, &rasmcore_image::domain::filters::AdaptiveThresholdParams { max_value: 255, method: 0, block_size: 9, c: 0.0 },
     )
     .unwrap();
 

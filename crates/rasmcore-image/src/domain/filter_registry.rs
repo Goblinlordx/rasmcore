@@ -842,7 +842,10 @@ builtin_filter!(AdaptiveThresholdFilter, "adaptive_threshold", FilterCategory::C
     apply: |input| {
         let block_size = input.params.get_uint("block_size").unwrap_or(11);
         let c = input.params.get_float("c").unwrap_or(2.0) as f64;
-        filters::adaptive_threshold(input.pixels, input.info, 255, filters::AdaptiveMethod::Mean, block_size, c)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::adaptive_threshold_registered(r, &mut u, input.info, &filters::AdaptiveThresholdParams { max_value: 255, method: 0, block_size, c: c as f32 })
     }
 );
 

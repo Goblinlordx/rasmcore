@@ -10188,10 +10188,14 @@ pub fn retinex_msrcr_registered(
     reference = "local block-based adaptive threshold"
 )]
 pub fn adaptive_threshold_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &AdaptiveThresholdParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let max_value = config.max_value;
     let method = config.method;
     let block_size = config.block_size;
@@ -10211,10 +10215,14 @@ pub fn adaptive_threshold_registered(
     reference = "seed-based flood fill"
 )]
 pub fn flood_fill_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &FloodFillParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let seed_x = config.seed_x;
     let seed_y = config.seed_y;
     let new_val = config.new_val;
