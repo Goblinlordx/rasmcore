@@ -4,8 +4,8 @@
 mod tests {
     use crate::domain::pipeline::graph::NodeGraph;
     use crate::domain::pipeline::nodes::composite::CompositeNode;
-    use crate::domain::pipeline::nodes::filters::{BlurNode, GrayscaleMapperNode};
-    use crate::domain::filters::BlurParams;
+    use crate::domain::pipeline::nodes::filters::{BlurNode, CharcoalMapperNode, GrayscaleMapperNode};
+    use crate::domain::filters::{BlurParams, CharcoalParams};
     use crate::domain::pipeline::nodes::sink;
     use crate::domain::pipeline::nodes::source::SourceNode;
     use crate::domain::pipeline::nodes::transform::{CropNode, FlipNode, ResizeNode, RotateNode};
@@ -158,6 +158,42 @@ mod tests {
         let output = sink::write(&mut graph, gray, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();
         assert_eq!(decoded.info.format, PixelFormat::Gray8);
+    }
+
+    #[test]
+    fn pipeline_charcoal_blur_chain() {
+        // Charcoal outputs Gray8 — verify downstream blur works correctly on Gray8
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+
+        let src = graph.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let src_info = graph.node_info(src).unwrap();
+
+        // Charcoal mapper: RGB8 → Gray8
+        let charcoal_node = graph.add_node(Box::new(
+            CharcoalMapperNode::new(
+                src,
+                src_info,
+                CharcoalParams { radius: 1.0, sigma: 0.5 },
+            ),
+        ));
+
+        // Query charcoal's output info — should be Gray8 thanks to output_format
+        let charcoal_out_info = graph.node_info(charcoal_node).unwrap();
+        assert_eq!(charcoal_out_info.format, PixelFormat::Gray8);
+
+        // Blur on Gray8 output — this was broken before the mapper fix
+        let blurred = graph.add_node(Box::new(
+            BlurNode::new(charcoal_node, charcoal_out_info, BlurParams { radius: 1.0 }),
+        ));
+
+        let output = sink::write(&mut graph, blurred, "png", None, None).unwrap();
+        let decoded = crate::domain::decoder::decode(&output).unwrap();
+        // Final output should be Gray8 (charcoal converts, blur preserves)
+        assert_eq!(decoded.info.format, PixelFormat::Gray8);
+        // Verify dimensions preserved
+        assert_eq!(decoded.info.width, 64);
+        assert_eq!(decoded.info.height, 64);
     }
 
     #[test]

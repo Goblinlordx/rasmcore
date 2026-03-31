@@ -284,6 +284,7 @@ mod tests {
             fn_name: "grayscale_mapper".to_string(),
             params: vec![],
             config_struct: None,
+            output_format: Some("Gray8".to_string()),
         }];
 
         let code = generate(&[], &mappers);

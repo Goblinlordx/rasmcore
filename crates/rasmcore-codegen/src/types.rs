@@ -52,6 +52,10 @@ pub struct MapperReg {
     pub params: Vec<(String, String)>,
     /// If set, the struct name for config-based codegen.
     pub config_struct: Option<String>,
+    /// Static output pixel format (e.g., "Gray8", "Rgb8", "Rgba8").
+    /// When set, the pipeline node reports this format from `info()`
+    /// at construction time. Required for correct downstream node setup.
+    pub output_format: Option<String>,
 }
 
 /// A parsed field from a `#[derive(ConfigParams)]` struct.

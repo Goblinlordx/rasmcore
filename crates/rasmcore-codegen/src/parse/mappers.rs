@@ -43,6 +43,7 @@ fn extract_mapper_reg(func: &syn::ItemFn) -> Option<MapperReg> {
 
         let fn_name = func.sig.ident.to_string();
         let params = extract_mapper_params(&func.sig);
+        let output_format = extract_kv(&tokens, "output_format");
 
         return Some(MapperReg {
             name,
@@ -53,6 +54,7 @@ fn extract_mapper_reg(func: &syn::ItemFn) -> Option<MapperReg> {
             fn_name,
             params,
             config_struct: None,
+            output_format,
         });
     }
     None
@@ -89,7 +91,7 @@ mod tests {
     #[test]
     fn parse_mapper_with_params() {
         let source = r#"
-            #[register_mapper(name = "add_alpha", category = "alpha", group = "alpha", variant = "add")]
+            #[register_mapper(name = "add_alpha", category = "alpha", group = "alpha", variant = "add", output_format = "Rgba8")]
             pub fn add_alpha(pixels: &[u8], info: &ImageInfo, alpha: u8) -> Result<(Vec<u8>, ImageInfo), ImageError> {
                 todo!()
             }

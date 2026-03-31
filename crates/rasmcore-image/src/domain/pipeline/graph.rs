@@ -540,7 +540,7 @@ mod tests {
 mod tiled_parity_tests {
     use super::*;
     use crate::domain::pipeline::nodes::filters::{
-        BilateralNode, BlurNode, BrightnessNode, CannyNode, ContrastNode, ErodeNode,
+        BilateralNode, BlurNode, BrightnessNode, CannyMapperNode, ContrastNode, ErodeNode,
         GuidedFilterNode, MedianNode, MotionBlurNode, SharpenNode,
     };
     use crate::domain::filters::{
@@ -857,7 +857,7 @@ mod tiled_parity_tests {
                     color_space: ColorSpace::Srgb,
                 },
             )));
-            let canny = g.add_node(Box::new(CannyNode::new(
+            let canny = g.add_node(Box::new(CannyMapperNode::new(
                 src,
                 ImageInfo {
                     width: w,

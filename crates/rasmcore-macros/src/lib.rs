@@ -73,6 +73,11 @@ impl Parse for RegisterFilterArgs {
                     // The proc macro just skips it.
                     let _lit: LitStr = input.parse()?;
                 }
+                "output_format" => {
+                    // Output format is parsed by build.rs for mapper pipeline node generation.
+                    // The proc macro just skips it.
+                    let _lit: LitStr = input.parse()?;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),

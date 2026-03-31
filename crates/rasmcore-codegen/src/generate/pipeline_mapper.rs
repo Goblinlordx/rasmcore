@@ -58,10 +58,22 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str(&format!("impl {node_name} {{\n"));
         code.push_str("    #[allow(clippy::too_many_arguments)]\n");
         code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
+        // If output_format is declared, compute output_info at construction time
+        if let Some(ref fmt) = m.output_format {
+            code.push_str(&format!("        let output_info = ImageInfo {{\n"));
+            code.push_str(&format!("            format: PixelFormat::{fmt},\n"));
+            code.push_str("            ..source_info\n");
+            code.push_str("        };\n");
+        }
+
         code.push_str("        Self {\n");
         code.push_str("            upstream,\n");
         code.push_str("            source_info,\n");
-        code.push_str("            output_info: RefCell::new(None),\n");
+        if m.output_format.is_some() {
+            code.push_str("            output_info: RefCell::new(Some(output_info)),\n");
+        } else {
+            code.push_str("            output_info: RefCell::new(None),\n");
+        }
         for (pname, _) in &m.params {
             let clean_n = pname.trim_start_matches('_');
             code.push_str(&format!("            {clean_n},\n"));
@@ -133,10 +145,6 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str("        Ok(crop_region(&mapped_pixels, out_rect, request, out_bpp))\n");
         code.push_str("    }\n\n");
 
-        // Mappers always need the full image (format changes can't be tiled)
-        code.push_str(
-            "    fn overlap(&self) -> Overlap { Overlap::uniform(u32::MAX) }\n",
-        );
         code.push_str(
             "    fn access_pattern(&self) -> AccessPattern { AccessPattern::GlobalTwoPass }\n",
         );
@@ -230,6 +238,7 @@ mod tests {
             fn_name: "grayscale_mapper".to_string(),
             params: vec![],
             config_struct: None,
+            output_format: Some("Gray8".to_string()),
         }];
         let code = generate_mapper_nodes(&mappers);
         assert!(code.contains("pub struct GrayscaleMapperNode {"));
@@ -251,6 +260,7 @@ mod tests {
             fn_name: "add_alpha".to_string(),
             params: vec![("alpha".to_string(), "u8".to_string())],
             config_struct: None,
+            output_format: Some("Rgba8".to_string()),
         }];
         let code = generate_mapper_nodes(&mappers);
         assert!(code.contains("pub struct AddAlphaMapperNode {"));
@@ -269,6 +279,7 @@ mod tests {
             fn_name: "grayscale_mapper".to_string(),
             params: vec![],
             config_struct: None,
+            output_format: Some("Gray8".to_string()),
         }];
         let code = generate_mapper_adapter_macro(&mappers);
         assert!(code.contains("fn grayscale("));

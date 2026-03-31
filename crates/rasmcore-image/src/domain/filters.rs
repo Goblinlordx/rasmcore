@@ -2743,9 +2743,9 @@ mod color_manipulation_tests {
     }
 }
 
-// =============================================================================
+// ======================================================================
 // Convolution filters
-// =============================================================================
+// ======================================================================
 
 /// Predefined convolution kernels.
 pub mod kernels {
@@ -3231,7 +3231,9 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
     group = "edge_detect",
     variant = "sobel",
     reference = "Sobel 1968 gradient operator",
-    overlap = "uniform(1)"
+
+    overlap = "uniform(1)",
+    output_format = "Gray8"
 )]
 pub fn sobel_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let gray_pixels = sobel(pixels, info)?;
@@ -3303,7 +3305,9 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     group = "edge_detect",
     variant = "scharr",
     reference = "Scharr 2000 rotationally symmetric gradient",
-    overlap = "uniform(1)"
+
+    overlap = "uniform(1)",
+    output_format = "Gray8"
 )]
 pub fn scharr_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let gray_pixels = scharr(pixels, info)?;
@@ -3368,7 +3372,9 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     group = "edge_detect",
     variant = "laplacian",
     reference = "second-order derivative operator",
-    overlap = "uniform(1)"
+
+    overlap = "uniform(1)",
+    output_format = "Gray8"
 )]
 pub fn laplacian_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let gray_pixels = laplacian(pixels, info)?;
@@ -3499,7 +3505,9 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
     group = "edge_detect",
     variant = "canny",
     reference = "Canny 1986 multi-stage edge detector",
-    overlap = "uniform(2)"
+
+    overlap = "uniform(2)",
+    output_format = "Gray8"
 )]
 pub fn canny_mapper(
     pixels: &[u8],
@@ -4174,7 +4182,8 @@ pub fn flatten(
     category = "alpha",
     group = "alpha",
     variant = "add",
-    reference = "RGB8 to RGBA8 with uniform alpha"
+    reference = "RGB8 to RGBA8 with uniform alpha",
+    output_format = "Rgba8"
 )]
 pub fn add_alpha(
     pixels: &[u8],
@@ -4211,7 +4220,8 @@ pub fn add_alpha(
     category = "alpha",
     group = "alpha",
     variant = "remove",
-    reference = "RGBA8 to RGB8 by dropping alpha channel"
+    reference = "RGBA8 to RGB8 by dropping alpha channel",
+    output_format = "Rgb8"
 )]
 pub fn remove_alpha(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     if info.format != PixelFormat::Rgba8 {
@@ -9034,7 +9044,8 @@ pub fn triangle_threshold_registered(
 #[rasmcore_macros::register_mapper(
     name = "grayscale",
     category = "color",
-    reference = "luminance-weighted desaturation"
+    reference = "luminance-weighted desaturation",
+    output_format = "Gray8"
 )]
 pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let decoded = grayscale(pixels, info)?;
@@ -9048,7 +9059,8 @@ pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>,
     category = "alpha",
     group = "alpha",
     variant = "flatten",
-    reference = "composite onto background color"
+    reference = "composite onto background color",
+    output_format = "Rgb8"
 )]
 pub fn flatten_registered(
     pixels: &[u8],
@@ -14196,7 +14208,8 @@ pub struct CharcoalParams {
 #[rasmcore_macros::register_mapper(
     name = "charcoal",
     category = "effect",
-    reference = "charcoal drawing edge effect"
+    reference = "charcoal drawing edge effect",
+    output_format = "Gray8"
 )]
 pub fn charcoal(
     pixels: &[u8],
