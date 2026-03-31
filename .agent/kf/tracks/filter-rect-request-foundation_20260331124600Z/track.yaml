@@ -1,9 +1,9 @@
 id: filter-rect-request-foundation_20260331124600Z
 title: Filter rect-request model -- codegen + signature change
 type: refactor
-status: pending
+status: completed
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-01'
 spec:
   summary: 'Change all filter function signatures to receive (request: Rect,
 
