@@ -1303,7 +1303,11 @@ pub fn bokeh_blur(
     if divisor == 0.0 {
         return Ok(pixels.to_vec());
     }
-    convolve(pixels, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+    {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        convolve(r, &mut u, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+    }
 }
 
 /// Directional motion blur using a linear kernel at the given angle.
@@ -1376,16 +1380,21 @@ pub fn motion_blur(
         return Ok(pixels.to_vec());
     }
 
-    convolve(
-        pixels,
-        info,
-        &kernel,
-        &ConvolveParams {
-            kw: side as u32,
-            kh: side as u32,
-            divisor: count as f32,
-        },
-    )
+    {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        convolve(
+            r,
+            &mut u,
+            info,
+            &kernel,
+            &ConvolveParams {
+                kw: side as u32,
+                kh: side as u32,
+                divisor: count as f32,
+            },
+        )
+    }
 }
 
 /// Zoom motion blur — radial streak from a center point.
@@ -3708,11 +3717,15 @@ pub struct ConvolveParams {
     reference = "custom NxN kernel convolution"
 )]
 pub fn convolve(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     kernel: &[f32],
     config: &ConvolveParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let kw = config.kw;
     let kh = config.kh;
     let divisor = config.divisor;
@@ -3729,7 +3742,9 @@ pub fn convolve(
     // 16-bit: process in f32 domain, then convert back
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            convolve(p8, i8, kernel, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            convolve(r, &mut u, i8, kernel, config)
         });
     }
 
@@ -8793,7 +8808,11 @@ pub fn gaussian_blur_cv(
         }
     }
 
-    convolve(pixels, info, &kernel_2d, &ConvolveParams { kw: ksize as u32, kh: ksize as u32, divisor: 1.0 })
+    {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        convolve(r, &mut u, info, &kernel_2d, &ConvolveParams { kw: ksize as u32, kh: ksize as u32, divisor: 1.0 })
+    }
 }
 
 /// Generate a 1D Gaussian kernel matching OpenCV's `getGaussianKernel`.
@@ -12250,7 +12269,9 @@ mod tests {
         let pixels: Vec<u8> = (0..16).collect();
         // Identity kernel: [0,0,0, 0,1,0, 0,0,0]
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
-        let result = convolve(&pixels, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = convolve(r, &mut u, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -12265,7 +12286,9 @@ mod tests {
         let pixels = vec![128u8; 16];
         // Sharpen kernel: center=5, neighbors=-1
         let kernel = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
-        let result = convolve(&pixels, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = convolve(r, &mut u, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
         // Uniform input → sharpen produces same output (no edges)
         assert!(result.iter().all(|&v| (v as i32 - 128).unsigned_abs() < 2));
     }
@@ -12700,7 +12723,9 @@ mod optimization_tests {
         let pixels = vec![128u8; 1024 * 1024];
 
         let start = std::time::Instant::now();
-        let _ = convolve(&pixels, &info,  &kernels::BOX_BLUR_3X3, &ConvolveParams { kw: 3, kh: 3, divisor: 9.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let _ = convolve(r, &mut u, &info,  &kernels::BOX_BLUR_3X3, &ConvolveParams { kw: 3, kh: 3, divisor: 9.0 }).unwrap();
         let elapsed = start.elapsed();
 
         // Separable path should handle 1024x1024 in under 500ms
@@ -12954,7 +12979,9 @@ mod tests_16bit {
     fn convolve_16bit_identity_kernel() {
         let (px, info) = make_gray16(4, 4, 50000);
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
-        let result = convolve(&px, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = convolve(r, &mut u, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
         // Should be close to original (some precision loss from 16→8→16)
         let orig = bytes_to_u16(&px);
         let out = bytes_to_u16(&result);
@@ -15803,7 +15830,11 @@ pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
         -1.0,  1.0,  1.0,
          0.0,  1.0,  2.0,
     ];
-    convolve(pixels, info, &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 })
+    {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        convolve(r, &mut u, info, &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 })
+    }
 }
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
@@ -20298,7 +20329,11 @@ pub fn lens_blur(
         return Ok(pixels.to_vec());
     }
 
-    convolve(pixels, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+    {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        convolve(r, &mut u, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+    }
 }
 
 #[cfg(test)]
