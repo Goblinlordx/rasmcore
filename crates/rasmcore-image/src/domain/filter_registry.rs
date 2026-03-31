@@ -692,7 +692,12 @@ builtin_filter!(SaturateFilter, "saturate", FilterCategory::Color,
     params: [ParamDescriptor::float("factor", 0.0, 3.0, 1.0)],
     apply: |input| {
         let factor = input.params.get_float("factor").unwrap_or(1.0);
-        filters::saturate(input.pixels, input.info, &filters::SaturateParams { factor })
+        {
+            let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+            let pixels = input.pixels.to_vec();
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(pixels.clone());
+            filters::saturate(r, &mut u, input.info, &filters::SaturateParams { factor })
+        }
     }
 );
 

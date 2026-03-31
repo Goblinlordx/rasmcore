@@ -2555,10 +2555,14 @@ pub fn hue_rotate(
     color_op = "true"
 )]
 pub fn saturate(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SaturateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let factor = config.factor;
 
     apply_color_op(pixels, info, &ColorOp::Saturate(factor))
@@ -12036,7 +12040,10 @@ mod tests {
     fn saturate_one_is_identity() {
         // Saturation factor 1.0 should preserve pixels
         let (px, info) = make_image(8, 8);
-        let result = saturate(&px, &info, &SaturateParams { factor: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px2 = px.clone();
+        let mut u = |_: Rect| Ok(px2.clone());
+        let result = saturate(r, &mut u, &info, &SaturateParams { factor: 1.0 }).unwrap();
         for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
             assert!(
                 (orig as i16 - out as i16).abs() <= 1,
@@ -12072,7 +12079,10 @@ mod tests {
     #[test]
     fn saturate_zero_is_grayscale() {
         let (px, info) = make_image(8, 8);
-        let result = saturate(&px, &info, &SaturateParams { factor: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px2 = px.clone();
+        let mut u = |_: Rect| Ok(px2.clone());
+        let result = saturate(r, &mut u, &info, &SaturateParams { factor: 0.0 }).unwrap();
         // All pixels should have r≈g≈b
         for chunk in result.chunks_exact(3) {
             let spread = chunk.iter().map(|&v| v as i32).max().unwrap()
@@ -12087,7 +12097,10 @@ mod tests {
     #[test]
     fn saturate_one_near_identity() {
         let (px, info) = make_image(8, 8);
-        let result = saturate(&px, &info, &SaturateParams { factor: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px2 = px.clone();
+        let mut u = |_: Rect| Ok(px2.clone());
+        let result = saturate(r, &mut u, &info, &SaturateParams { factor: 1.0 }).unwrap();
         let mae: f64 = px
             .iter()
             .zip(result.iter())
@@ -12250,7 +12263,7 @@ mod tests {
             color_space: ColorSpace::Srgb,
         };
         assert!(hue_rotate(&pixels, &info, &HueRotateParams { degrees: 45.0 }).is_ok());
-        assert!(saturate(&pixels, &info, &SaturateParams { factor: 1.5 }).is_ok());
+        assert!(saturate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SaturateParams { factor: 1.5 }).is_ok());
         assert!(sepia(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SepiaParams { intensity: 0.8 }).is_ok());
         assert!(colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
     }
