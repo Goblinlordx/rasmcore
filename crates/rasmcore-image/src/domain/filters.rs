@@ -10403,7 +10403,10 @@ pub fn sigmoidal_contrast(
     category = "enhancement",
     reference = "histogram equalization"
 )]
-pub fn equalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn equalize_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     super::histogram::equalize(pixels, info)
 }
 
@@ -10413,7 +10416,10 @@ pub fn equalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, I
     category = "enhancement",
     reference = "min-max normalization to full range"
 )]
-pub fn normalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn normalize_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     super::histogram::normalize(pixels, info)
 }
 
@@ -10423,7 +10429,10 @@ pub fn normalize_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, 
     category = "enhancement",
     reference = "automatic black/white point"
 )]
-pub fn auto_level_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn auto_level_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     super::histogram::auto_level(pixels, info)
 }
 

@@ -1803,7 +1803,11 @@ fn parity_equalize_normalize() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::equalize_registered(px, info).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError> { Ok(px.to_vec()) };
+            rasmcore_image::domain::filters::equalize_registered(r, &mut u, info).unwrap()
+        },
         &["-equalize"],
         "equalize",
     ) {
@@ -1814,7 +1818,11 @@ fn parity_equalize_normalize() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::normalize_registered(px, info).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError> { Ok(px.to_vec()) };
+            rasmcore_image::domain::filters::normalize_registered(r, &mut u, info).unwrap()
+        },
         &["-normalize"],
         "normalize",
     ) {

@@ -730,17 +730,32 @@ builtin_filter!(SepiaFilter, "sepia", FilterCategory::Color,
 // Histogram operations
 builtin_filter!(EqualizeFilter, "equalize", FilterCategory::Contrast,
     params: [],
-    apply: |input| histogram::equalize(input.pixels, input.info)
+    apply: |input| {
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::equalize_registered(r, &mut u, input.info)
+    }
 );
 
 builtin_filter!(NormalizeFilter, "normalize", FilterCategory::Contrast,
     params: [],
-    apply: |input| histogram::normalize(input.pixels, input.info)
+    apply: |input| {
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::normalize_registered(r, &mut u, input.info)
+    }
 );
 
 builtin_filter!(AutoLevelFilter, "auto_level", FilterCategory::Contrast,
     params: [],
-    apply: |input| histogram::auto_level(input.pixels, input.info)
+    apply: |input| {
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::auto_level_registered(r, &mut u, input.info)
+    }
 );
 
 // OpenCV-tier filters
