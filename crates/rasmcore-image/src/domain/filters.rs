@@ -11130,13 +11130,21 @@ pub struct UniformNoiseParams {
     reference = "additive uniform noise"
 )]
 pub fn uniform_noise(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &UniformNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| uniform_noise(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            uniform_noise(r, &mut u, i8, config)
+        });
     }
 
     let range = config.range as f64;
@@ -16227,7 +16235,9 @@ mod add_noise_tests {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
         let config = UniformNoiseParams { range: 0.0, seed: 42 };
-        let result = uniform_noise(&pixels, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = uniform_noise(r, &mut u, &info, &config).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16236,8 +16246,11 @@ mod add_noise_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         let config = UniformNoiseParams { range: 30.0, seed: 33 };
-        let r1 = uniform_noise(&pixels, &info, &config).unwrap();
-        let r2 = uniform_noise(&pixels, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u1 = |_: Rect| Ok(pixels.clone());
+        let mut u2 = |_: Rect| Ok(pixels.clone());
+        let r1 = uniform_noise(r, &mut u1, &info, &config).unwrap();
+        let r2 = uniform_noise(r, &mut u2, &info, &config).unwrap();
         assert_eq!(r1, r2);
     }
 
@@ -16247,7 +16260,9 @@ mod add_noise_tests {
         let pixels = vec![128u8; 64 * 64];
         let info = gray_info(64, 64);
         let config = UniformNoiseParams { range: 50.0, seed: 42 };
-        let result = uniform_noise(&pixels, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = uniform_noise(r, &mut u, &info, &config).unwrap();
         for &v in &result {
             assert!(
                 v >= 78 && v <= 178,
@@ -16262,7 +16277,9 @@ mod add_noise_tests {
         let pixels = vec![128u8; 64 * 64];
         let info = gray_info(64, 64);
         let config = UniformNoiseParams { range: 30.0, seed: 42 };
-        let result = uniform_noise(&pixels, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = uniform_noise(r, &mut u, &info, &config).unwrap();
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
             (mean - 128.0).abs() < 5.0,
