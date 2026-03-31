@@ -545,7 +545,10 @@ impl ImageFilter for GammaFilter {
     }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
         let gamma = input.params.get_float("gamma").unwrap_or(1.0);
-        point_ops::gamma(input.pixels, input.info, gamma)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::gamma_registered(r, &mut u, input.info, &filters::GammaParams { gamma_value: gamma })
     }
     fn is_lut_collapsible(&self) -> bool {
         true
@@ -624,7 +627,10 @@ impl ImageFilter for InvertFilter {
         vec![]
     }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
-        point_ops::invert(input.pixels, input.info)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::invert_registered(r, &mut u, input.info)
     }
     fn is_lut_collapsible(&self) -> bool {
         true
@@ -671,7 +677,10 @@ impl ImageFilter for PosterizeFilter {
     }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
         let levels = input.params.get_uint("levels").unwrap_or(4) as u8;
-        point_ops::posterize(input.pixels, input.info, levels)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::posterize_registered(r, &mut u, input.info, &filters::PosterizeParams { levels })
     }
     fn is_lut_collapsible(&self) -> bool {
         true

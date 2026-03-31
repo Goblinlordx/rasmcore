@@ -10228,10 +10228,14 @@ pub fn flood_fill_registered(
     point_op = "true"
 )]
 pub fn gamma_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &GammaParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let gamma_value = config.gamma_value;
 
     super::point_ops::gamma(pixels, info, gamma_value)
@@ -10244,7 +10248,10 @@ pub fn gamma_registered(
     reference = "channel value inversion",
     point_op = "true"
 )]
-pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn invert_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     super::point_ops::invert(pixels, info)
 }
 
@@ -10256,10 +10263,14 @@ pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, Ima
     point_op = "true"
 )]
 pub fn posterize_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &PosterizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let levels = config.levels;
 
     super::point_ops::posterize(pixels, info, levels)
