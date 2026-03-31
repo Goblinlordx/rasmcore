@@ -4869,10 +4869,14 @@ fn build_aa_ellipse_mask(w: usize, h: usize, cx: f64, cy: f64, rx: f64, ry: f64)
     reference = "Gaussian radial darkening"
 )]
 pub fn vignette(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &VignetteParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let sigma = config.sigma;
     let x_inset = config.x_inset;
     let y_inset = config.y_inset;
@@ -4883,7 +4887,11 @@ pub fn vignette(
 
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| vignette(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            vignette(r, &mut u, i8, config)
+        });
     }
 
     let fw = full_width as usize;
@@ -4930,8 +4938,11 @@ pub fn vignette_full(
     x_inset: u32,
     y_inset: u32,
 ) -> Result<Vec<u8>, ImageError> {
+    let r = Rect::new(0, 0, info.width, info.height);
+    let mut u = |_: Rect| Ok(pixels.to_vec());
     vignette(
-        pixels,
+        r,
+        &mut u,
         info,
         &VignetteParams {
             sigma,
