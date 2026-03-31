@@ -1,8 +1,8 @@
 title: Replace Binary Test Fixtures with Programmatic Generators
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-03-31'
 deps:
 - repo-guidelines-no-binaries_20260331000103Z
