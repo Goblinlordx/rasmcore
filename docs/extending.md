@@ -11,7 +11,7 @@ and building external plugin crates.
 1. [Extension Model Overview](#extension-model-overview)
 2. [Adding a Filter](#adding-a-filter)
 3. [ConfigParams — Typed Parameter Structs](#configparams--typed-parameter-structs)
-4. [Point Operations vs Spatial Operations](#point-operations-vs-spatial-operations)
+4. [Point Operations vs Spatial Operations](#point-operations-vs-spatial-operations) (includes PointOp trait for LUT fusion)
 5. [Adding a Decoder](#adding-a-decoder)
 6. [Adding an Encoder](#adding-an-encoder)
 7. [Adding Generators, Compositors, and Mappers](#adding-generators-compositors-and-mappers)
@@ -253,6 +253,89 @@ only on the input pixel at the same position.
 
 Point operations use the default `input_rect()` (returns output rect
 unchanged). No `overlap` attribute needed.
+
+#### Implementing point ops with the PointOp trait (LUT fusion)
+
+If your filter is a **per-channel mapping** (each output channel value
+depends only on the corresponding input channel value), implement the
+`PointOp` trait on your ConfigParams struct. This enables automatic
+**LUT fusion** in the pipeline — consecutive point ops are composed into
+a single 256-entry lookup table and applied in one memory pass.
+
+```rust
+use crate::domain::point_ops::{PointOp, apply_lut};
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BrightnessParams {
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub amount: f32,
+}
+
+impl PointOp for BrightnessParams {
+    fn build_lut(&self) -> [u8; 256] {
+        let mut lut = [0u8; 256];
+        let offset = (self.amount * 255.0).round() as i16;
+        for (i, entry) in lut.iter_mut().enumerate() {
+            *entry = (i as i16 + offset).clamp(0, 255) as u8;
+        }
+        lut
+    }
+}
+
+#[register_filter(name = "brightness", category = "adjustment")]
+pub fn brightness(pixels: &[u8], info: &ImageInfo, config: &BrightnessParams)
+    -> Result<Vec<u8>, ImageError>
+{
+    apply_lut(pixels, info, &config.build_lut())
+}
+```
+
+The filter function body is always the same one-liner:
+`apply_lut(pixels, info, &config.build_lut())`. The `PointOp` trait is
+what enables the pipeline optimizer to fuse your filter with adjacent
+point ops automatically.
+
+#### How LUT fusion works
+
+When the pipeline encounters consecutive point-op nodes, it composes
+their LUTs at plan time and replaces them with a single fused node:
+
+```
+Pipeline DAG:
+  source -> brightness -> contrast -> gamma -> blur -> levels -> invert -> write
+
+Fusion (plan time):
+  Run 1: [brightness, contrast, gamma]  -> compose into 1 LUT (O(256))
+  Barrier: blur (spatial op, breaks fusion)
+  Run 2: [levels, invert]              -> compose into 1 LUT (O(256))
+
+Execution:
+  source -> fused_lut_1 -> blur -> fused_lut_2 -> write
+  (3 adjustments = 1 memory pass)    (2 adjustments = 1 memory pass)
+```
+
+LUT composition is `fused[i] = second[first[i]]` — 256 iterations,
+trivial cost. The savings come from eliminating memory passes: on a
+100MP RGBA8 image, each pass touches 400MB. Fusing 5 ops saves 1.6GB
+of memory bandwidth.
+
+**SIMD note:** SIMD can accelerate LUT *construction* (computing the
+256 mapping values in batches), but the LUT *application* (table lookup)
+is inherently scalar since each lookup is a random memory access. The
+primary optimization is fusion (fewer passes over pixel data), not
+vectorizing individual lookups.
+
+#### When NOT to use PointOp
+
+Do **not** implement `PointOp` if your filter:
+
+- Depends on **multiple channels** (e.g., hue rotation needs R, G, and B
+  together to compute each output channel)
+- Depends on **pixel position** (e.g., vignette, gradient map)
+- Depends on **neighboring pixels** (any spatial operation)
+
+Multi-channel per-pixel operations (hue, saturation, color grading) are
+a different category and will use 3D CLUT fusion in the future.
 
 ### Spatial operations
 

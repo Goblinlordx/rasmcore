@@ -96,7 +96,30 @@ The validation script (`scripts/validate.sh`) enforces this.
 
 ---
 
-## Rule 7: Validate Before Completion
+## Rule 7: Point Ops Must Implement PointOp Trait
+
+If a filter is a **per-channel mapping** (output channel depends only on
+the corresponding input channel — brightness, contrast, gamma, levels,
+posterize, solarize, invert, exposure, sigmoidal contrast), it MUST:
+
+1. Implement `PointOp` trait on its ConfigParams struct (`build_lut()`)
+2. Use `apply_lut(pixels, info, &config.build_lut())` as the function body
+
+This enables automatic LUT fusion in the pipeline: consecutive point ops
+compose into a single 256-entry table and execute in one memory pass.
+
+SIMD can be used to accelerate LUT construction (computing the 256 values
+in batches), but the LUT application (table lookup) is scalar.
+
+Do NOT implement PointOp for multi-channel ops (hue rotation, channel
+mixing, saturation) or position-dependent ops (vignette, gradient).
+
+See `docs/extending.md` section "Implementing point ops with the PointOp
+trait" for the full pattern.
+
+---
+
+## Rule 8: Validate Before Completion
 
 Before marking any track complete, run the full validation:
 
@@ -118,9 +141,10 @@ When implementing a new filter:
 - [ ] Filter function with `#[register_filter(...)]`
 - [ ] `reference` attribute citing the reference implementation
 - [ ] `overlap` attribute or appropriate config field for spatial filters
+- [ ] `PointOp` trait impl if filter is a per-channel mapping (enables LUT fusion)
 - [ ] Basic unit tests
 - [ ] Parity test against reference implementation
-- [ ] SIMD implementation (not scalar-only)
+- [ ] SIMD for spatial/color ops; SIMD optional for LUT construction in point ops
 - [ ] `cargo clippy -- -D warnings` passes
 - [ ] `cargo test` passes
 
