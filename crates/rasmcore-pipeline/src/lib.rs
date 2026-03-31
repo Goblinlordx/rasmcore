@@ -6,10 +6,12 @@
 
 pub mod cache;
 pub mod layer_cache;
+pub mod metadata;
 pub mod rect;
 
 pub use cache::{CacheQuery, RegionHandle, RegionKey, SpatialCache};
 pub use layer_cache::{
     compute_hash, compute_source_hash, CacheStats, ContentHash, LayerCache, ZERO_HASH,
 };
+pub use metadata::{glob_match, Metadata, MetadataFilter, MetadataValue};
 pub use rect::{Overlap, Rect};
