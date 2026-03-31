@@ -7926,10 +7926,14 @@ pub struct BurnParams {
 /// Validated: pixel-exact match against reference formula (max_diff=0).
 #[rasmcore_macros::register_filter(name = "burn", category = "enhancement")]
 pub fn burn(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &BurnParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let exposure = config.exposure;
     let range = config.range;
 
@@ -20066,7 +20070,9 @@ mod dodge_burn_tests {
     fn burn_identity_at_zero() {
         let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(8, 8);
-        let result = burn(&pixels, &info, &BurnParams { exposure: 0.0, range: 1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = burn(r, &mut u, &info, &BurnParams { exposure: 0.0, range: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20120,7 +20126,9 @@ mod dodge_burn_tests {
             pixels[pi + 2] = 230;
         }
         let info = rgb_info(8, 8);
-        let result = burn(&pixels, &info, &BurnParams { exposure: 100.0, range: 2 }).unwrap(); // highlights only
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = burn(r, &mut u, &info, &BurnParams { exposure: 100.0, range: 2 }).unwrap(); // highlights only
 
         // Dark pixels should be unchanged
         let dark_diff = (result[0] as i16 - 30).abs();
@@ -20218,7 +20226,9 @@ mod dodge_burn_tests {
         let info = rgb_info(w, h);
 
         // Burn highlights at 75%
-        let result = burn(&pixels, &info, &BurnParams { exposure: 75.0, range: 2 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = burn(r, &mut u, &info, &BurnParams { exposure: 75.0, range: 2 }).unwrap();
         let exposure = 0.75f32;
 
         let mut max_diff = 0u8;

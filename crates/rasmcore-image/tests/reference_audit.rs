@@ -1534,7 +1534,11 @@ fn exact_burn_midtones_vs_im() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::burn(px, info, 75.0, 1).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::burn(r, &mut u, info, &rasmcore_image::domain::filters::BurnParams { exposure: 75.0, range: 1 }).unwrap()
+        },
         &["-fx", "u * (1 - 0.75 * min(4*intensity*(1-intensity), 1))"],
         "burn_midtones_75",
     ) {
