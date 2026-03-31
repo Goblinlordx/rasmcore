@@ -472,7 +472,10 @@ impl NodeGraph {
             self.touched_hashes.insert(*hash);
         }
 
-        // Check layer cache hit first (pre-populated during add_node_with_hash)
+        // Check layer cache hit first (pre-populated during add_node_with_hash).
+        // Only use cache for full-image requests that exactly match cached dimensions.
+        // Sub-region (tile) requests fall through to normal computation to avoid
+        // crop offset bugs when cached dimensions don't match expectations.
         if self.cache_hit_nodes.contains(&node_id)
             && let Some((pixels, cached_w, cached_h)) = self.cache_hit_pixels.get(&node_id)
         {
@@ -480,12 +483,7 @@ impl NodeGraph {
             if request == cached_rect {
                 return Ok(pixels.clone());
             }
-            if cached_rect.contains(&request) {
-                let info = self.node_info(node_id)?;
-                let bpp = bytes_per_pixel(info.format);
-                return Ok(crop_region(pixels, cached_rect, request, bpp));
-            }
-            // Cached data doesn't cover the request — fall through to compute
+            // Sub-region request — fall through to compute (cache only helps full-image)
         }
 
         let info = self.node_info(node_id)?;
