@@ -13,45 +13,45 @@ interface filters {
     // ─── Generated Filter Functions ───────────────────────────────────────
 
     /// Gaussian convolution
-    blur: func(pixels: buffer, info: image-info, radius: f32) -> result<buffer, rasmcore-error>;
+    blur: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// physical optic disc/polygon aperture model
-    bokeh-blur: func(pixels: buffer, info: image-info, radius: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    bokeh-blur: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// linear kernel simulating camera motion
-    motion-blur: func(pixels: buffer, info: image-info, length: u32, angle-degrees: f32) -> result<buffer, rasmcore-error>;
+    motion-blur: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// radial kernel simulating lens zoom
-    zoom-blur: func(pixels: buffer, info: image-info, center-x: f32, center-y: f32, factor: f32) -> result<buffer, rasmcore-error>;
+    zoom-blur: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// spin_blur filter
-    spin-blur: func(pixels: buffer, info: image-info, center-x: f32, center-y: f32, angle: f32) -> result<buffer, rasmcore-error>;
+    spin-blur: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// unsharp mask
-    sharpen: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+    sharpen: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// additive brightness offset
-    brightness: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+    brightness: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// multiplicative contrast
-    contrast: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+    contrast: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// HSV hue rotation
-    hue-rotate: func(pixels: buffer, info: image-info, degrees: f32) -> result<buffer, rasmcore-error>;
+    hue-rotate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// HSV saturation scaling
-    saturate: func(pixels: buffer, info: image-info, factor: f32) -> result<buffer, rasmcore-error>;
+    saturate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// sepia tone matrix
-    sepia: func(pixels: buffer, info: image-info, intensity: f32) -> result<buffer, rasmcore-error>;
+    sepia: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// linear color tint blend
-    colorize: func(pixels: buffer, info: image-info, target-r: u8, target-g: u8, target-b: u8, amount: f32) -> result<buffer, rasmcore-error>;
+    colorize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// photo_filter filter
-    photo-filter: func(pixels: buffer, info: image-info, color-r: u32, color-g: u32, color-b: u32, density: f32, preserve-luminosity: u32) -> result<buffer, rasmcore-error>;
+    photo-filter: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// RGB channel matrix multiplication
-    channel-mixer: func(pixels: buffer, info: image-info, rr: f32, rg: f32, rb: f32, gr: f32, gg: f32, gb: f32, br: f32, bg: f32, bb: f32) -> result<buffer, rasmcore-error>;
+    channel-mixer: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// saturation-weighted chroma boost
-    vibrance: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+    vibrance: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// luminance-to-gradient color mapping
     gradient-map: func(pixels: buffer, info: image-info, stops: string) -> result<buffer, rasmcore-error>;
     /// Shepard interpolation from sparse points
-    sparse-color: func(pixels: buffer, info: image-info, points: string, power: f32) -> result<buffer, rasmcore-error>;
+    sparse-color: func(pixels: buffer, info: image-info, points: string, config: f32) -> result<buffer, rasmcore-error>;
     /// luma-preserving HSL modulation
-    modulate: func(pixels: buffer, info: image-info, brightness: f32, saturation: f32, hue: f32) -> result<buffer, rasmcore-error>;
+    modulate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// custom NxN kernel convolution
-    convolve: func(pixels: buffer, info: image-info, kernel: list<f32>, kw: u32, kh: u32, divisor: f32) -> result<buffer, rasmcore-error>;
+    convolve: func(pixels: buffer, info: image-info, kernel: list<f32>, config: f32) -> result<buffer, rasmcore-error>;
     /// median rank filter
-    median: func(pixels: buffer, info: image-info, radius: u32) -> result<buffer, rasmcore-error>;
+    median: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Sobel 1968 gradient operator
     sobel: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Scharr 2000 rotationally symmetric gradient
@@ -59,81 +59,81 @@ interface filters {
     /// second-order derivative operator
     laplacian: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Canny 1986 multi-stage edge detector
-    canny: func(pixels: buffer, info: image-info, low-threshold: f32, high-threshold: f32) -> result<buffer, rasmcore-error>;
+    canny: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Gaussian radial darkening
-    vignette: func(pixels: buffer, info: image-info, sigma: f32, x-inset: u32, y-inset: u32, full-width: u32, full-height: u32, tile-offset-x: u32, tile-offset-y: u32) -> result<buffer, rasmcore-error>;
+    vignette: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// power-law radial falloff
-    vignette-powerlaw: func(pixels: buffer, info: image-info, strength: f32, falloff: f32, full-width: u32, full-height: u32, offset-x: u32, offset-y: u32) -> result<buffer, rasmcore-error>;
+    vignette-powerlaw: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// premultiplied alpha conversion
     premultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// straight alpha conversion
     unpremultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// 3x3 homography transformation
-    perspective-warp: func(pixels: buffer, info: image-info, matrix: list<f64>, out-width: u32, out-height: u32) -> result<buffer, rasmcore-error>;
+    perspective-warp: func(pixels: buffer, info: image-info, matrix: list<f64>, config: f32) -> result<buffer, rasmcore-error>;
     /// automatic perspective rectification
-    perspective-correct: func(pixels: buffer, info: image-info, strength: f32) -> result<buffer, rasmcore-error>;
+    perspective-correct: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Zuiderveld 1994 contrast-limited adaptive histogram equalization
-    clahe: func(pixels: buffer, info: image-info, clip-limit: f32, tile-grid: u32) -> result<buffer, rasmcore-error>;
+    clahe: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Tomasi & Manduchi 1998
-    bilateral: func(pixels: buffer, info: image-info, diameter: u32, sigma-color: f32, sigma-space: f32) -> result<buffer, rasmcore-error>;
+    bilateral: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// He et al. 2010 guided image filtering
-    guided-filter: func(pixels: buffer, info: image-info, radius: u32, epsilon: f32) -> result<buffer, rasmcore-error>;
+    guided-filter: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// He et al. 2009 dark channel prior dehazing
-    dehaze: func(pixels: buffer, info: image-info, patch-radius: u32, omega: f32, t-min: f32) -> result<buffer, rasmcore-error>;
+    dehaze: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// dodge filter
-    dodge: func(pixels: buffer, info: image-info, exposure: f32, range: u32) -> result<buffer, rasmcore-error>;
+    dodge: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// burn filter
-    burn: func(pixels: buffer, info: image-info, exposure: f32, range: u32) -> result<buffer, rasmcore-error>;
+    burn: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// midtone-weighted local contrast
-    clarity: func(pixels: buffer, info: image-info, amount: f32, sigma: f32) -> result<buffer, rasmcore-error>;
+    clarity: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// shadow_highlight filter
-    shadow-highlight: func(pixels: buffer, info: image-info, shadows: f32, highlights: f32, whitepoint: f32, radius: f32, compress: f32, shadows-ccorrect: f32, highlights-ccorrect: f32) -> result<buffer, rasmcore-error>;
+    shadow-highlight: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Gaussian low-pass separation
-    frequency-low: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+    frequency-low: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Gaussian high-pass separation
-    frequency-high: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+    frequency-high: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Laplacian pyramid detail enhancement
-    pyramid-detail-remap: func(pixels: buffer, info: image-info, sigma: f32, num-levels: u32) -> result<buffer, rasmcore-error>;
+    pyramid-detail-remap: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// OpenCV-compatible separable Gaussian
-    gaussian-blur-cv: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+    gaussian-blur-cv: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Land 1977 single-scale Retinex
-    retinex-ssr: func(pixels: buffer, info: image-info, sigma: f32) -> result<buffer, rasmcore-error>;
+    retinex-ssr: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// displacement mapping
     displacement-map: func(pixels: buffer, info: image-info, map-x: list<f32>, map-y: list<f32>) -> result<buffer, rasmcore-error>;
     /// binary erosion
-    erode: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    erode: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// binary dilation
-    dilate: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    dilate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// erosion then dilation
-    morph-open: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    morph-open: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// dilation then erosion
-    morph-close: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    morph-close: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// dilation minus erosion
-    morph-gradient: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    morph-gradient: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// input minus opening
-    morph-tophat: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    morph-tophat: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// closing minus input
-    morph-blackhat: func(pixels: buffer, info: image-info, ksize: u32, shape: u32) -> result<buffer, rasmcore-error>;
+    morph-blackhat: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Buades et al. 2005 non-local means
-    nlm-denoise: func(pixels: buffer, info: image-info, h: f32, patch-size: u32, search-size: u32) -> result<buffer, rasmcore-error>;
+    nlm-denoise: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Jobson et al. 1997 multi-scale Retinex
-    retinex-msr: func(pixels: buffer, info: image-info, sigma-small: f32, sigma-medium: f32, sigma-large: f32) -> result<buffer, rasmcore-error>;
+    retinex-msr: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Jobson et al. 1997 multi-scale Retinex with color restoration
-    retinex-msrcr: func(pixels: buffer, info: image-info, sigma-small: f32, sigma-medium: f32, sigma-large: f32, alpha: f32, beta: f32) -> result<buffer, rasmcore-error>;
+    retinex-msrcr: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// local block-based adaptive threshold
-    adaptive-threshold: func(pixels: buffer, info: image-info, max-value: u8, method: u32, block-size: u32, c: f32) -> result<buffer, rasmcore-error>;
+    adaptive-threshold: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// seed-based flood fill
-    flood-fill: func(pixels: buffer, info: image-info, seed-x: u32, seed-y: u32, new-val: u8, tolerance: u8, connectivity: u32) -> result<buffer, rasmcore-error>;
+    flood-fill: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// power-law gamma correction
-    gamma: func(pixels: buffer, info: image-info, gamma-value: f32) -> result<buffer, rasmcore-error>;
+    gamma: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// channel value inversion
     invert: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// bit-depth reduction
-    posterize: func(pixels: buffer, info: image-info, levels: u8) -> result<buffer, rasmcore-error>;
+    posterize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// input/output level remapping
-    levels: func(pixels: buffer, info: image-info, black-point: f32, white-point: f32, gamma: f32) -> result<buffer, rasmcore-error>;
+    levels: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// sigmoidal transfer function contrast
-    sigmoidal-contrast: func(pixels: buffer, info: image-info, strength: f32, midpoint: f32, sharpen: bool) -> result<buffer, rasmcore-error>;
+    sigmoidal-contrast: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// histogram equalization
     equalize: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// min-max normalization to full range
@@ -147,35 +147,35 @@ interface filters {
     /// luminance-weighted desaturation
     grayscale: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// composite onto background color
-    flatten: func(pixels: buffer, info: image-info, bg-r: u8, bg-g: u8, bg-b: u8) -> result<buffer, rasmcore-error>;
+    flatten: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// median cut palette quantization
-    quantize: func(pixels: buffer, info: image-info, max-colors: u32) -> result<buffer, rasmcore-error>;
+    quantize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Floyd & Steinberg 1976 error diffusion
-    dither-floyd-steinberg: func(pixels: buffer, info: image-info, max-colors: u32) -> result<buffer, rasmcore-error>;
+    dither-floyd-steinberg: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Bayer matrix ordered dithering
-    dither-ordered: func(pixels: buffer, info: image-info, max-colors: u32, map-size: u32) -> result<buffer, rasmcore-error>;
+    dither-ordered: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// gray world assumption
     white-balance-gray-world: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Planckian locus color temperature
-    white-balance-temperature: func(pixels: buffer, info: image-info, temperature: f32, tint: f32) -> result<buffer, rasmcore-error>;
+    white-balance-temperature: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Bresenham/anti-aliased line
-    draw-line: func(pixels: buffer, info: image-info, x1: f32, y1: f32, x2: f32, y2: f32, color-r: u32, color-g: u32, color-b: u32, color-a: u32, width: f32) -> result<buffer, rasmcore-error>;
+    draw-line: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// filled/outlined rectangle
-    draw-rect: func(pixels: buffer, info: image-info, x: f32, y: f32, rect-width: f32, rect-height: f32, color-r: u32, color-g: u32, color-b: u32, color-a: u32, stroke-width: f32, filled: bool) -> result<buffer, rasmcore-error>;
+    draw-rect: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// filled/outlined circle
-    draw-circle: func(pixels: buffer, info: image-info, cx: f32, cy: f32, radius: f32, color-r: u32, color-g: u32, color-b: u32, color-a: u32, stroke-width: f32, filled: bool) -> result<buffer, rasmcore-error>;
+    draw-circle: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// bitmap 8x16 text rendering
-    draw-text: func(pixels: buffer, info: image-info, x: u32, y: u32, text: string, scale: u32, color-r: u32, color-g: u32, color-b: u32, color-a: u32) -> result<buffer, rasmcore-error>;
+    draw-text: func(pixels: buffer, info: image-info, text: string, config: f32) -> result<buffer, rasmcore-error>;
     /// draw_text_ttf filter
-    draw-text-ttf: func(pixels: buffer, info: image-info, x: u32, y: u32, text: string, font-size-pt: f32, color-r: u32, color-g: u32, color-b: u32, color-a: u32) -> result<buffer, rasmcore-error>;
+    draw-text-ttf: func(pixels: buffer, info: image-info, text: string, config: f32) -> result<buffer, rasmcore-error>;
     /// fixed-level binary threshold
-    threshold-binary: func(pixels: buffer, info: image-info, thresh: u8, max-value: u8) -> result<buffer, rasmcore-error>;
+    threshold-binary: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// ASC CDL slope/offset/power color decision list
-    asc-cdl: func(pixels: buffer, info: image-info, slope-r: f32, slope-g: f32, slope-b: f32, offset-r: f32, offset-g: f32, offset-b: f32, power-r: f32, power-g: f32, power-b: f32) -> result<buffer, rasmcore-error>;
+    asc-cdl: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// three-way color corrector (shadows/midtones/highlights)
-    lift-gamma-gain: func(pixels: buffer, info: image-info, lift-r: f32, lift-g: f32, lift-b: f32, gamma-r: f32, gamma-g: f32, gamma-b: f32, gain-r: f32, gain-g: f32, gain-b: f32) -> result<buffer, rasmcore-error>;
+    lift-gamma-gain: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// shadow/highlight hue tinting
-    split-toning: func(pixels: buffer, info: image-info, highlight-hue: f32, shadow-hue: f32, balance: f32) -> result<buffer, rasmcore-error>;
+    split-toning: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// spline-interpolated tone curve (all channels)
     curves-master: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
     /// spline-interpolated tone curve (red channel)
@@ -185,62 +185,62 @@ interface filters {
     /// spline-interpolated tone curve (blue channel)
     curves-blue: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
     /// photographic film grain overlay
-    film-grain: func(pixels: buffer, info: image-info, amount: f32, size: f32, seed: u32) -> result<buffer, rasmcore-error>;
+    film-grain: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Reinhard et al. 2002 photographic tone reproduction
     tonemap-reinhard: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Drago et al. 2003 logarithmic tone mapping
-    tonemap-drago: func(pixels: buffer, info: image-info, bias: f32) -> result<buffer, rasmcore-error>;
+    tonemap-drago: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Hable 2010 Uncharted 2 filmic curve
-    tonemap-filmic: func(pixels: buffer, info: image-info, shoulder-strength: f32, linear-strength: f32, linear-angle: f32, toe-strength: f32, toe-numerator: f32) -> result<buffer, rasmcore-error>;
+    tonemap-filmic: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// saliency-based automatic crop
-    smart-crop: func(pixels: buffer, info: image-info, target-width: u32, target-height: u32) -> result<buffer, rasmcore-error>;
+    smart-crop: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Avidan & Shamir 2007 content-aware width resize
-    seam-carve-width: func(pixels: buffer, info: image-info, target-width: u32) -> result<buffer, rasmcore-error>;
+    seam-carve-width: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Avidan & Shamir 2007 content-aware height resize
-    seam-carve-height: func(pixels: buffer, info: image-info, target-height: u32) -> result<buffer, rasmcore-error>;
+    seam-carve-height: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// hue-range-targeted color adjustment
-    selective-color: func(pixels: buffer, info: image-info, target-hue: f32, hue-range: f32, hue-shift: f32, saturation: f32, lightness: f32) -> result<buffer, rasmcore-error>;
+    selective-color: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Man Ray solarization effect
-    solarize: func(pixels: buffer, info: image-info, threshold: u8) -> result<buffer, rasmcore-error>;
+    solarize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// 3D relief embossing via directional kernel
     emboss: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Kuwahara-variant oil painting simulation
-    oil-paint: func(pixels: buffer, info: image-info, radius: u32) -> result<buffer, rasmcore-error>;
+    oil-paint: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// charcoal drawing edge effect
-    charcoal: func(pixels: buffer, info: image-info, radius: f32, sigma: f32) -> result<buffer, rasmcore-error>;
+    charcoal: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// block mosaic pixelation
-    pixelate: func(pixels: buffer, info: image-info, block-size: u32) -> result<buffer, rasmcore-error>;
+    pixelate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// CMYK-style halftone dot pattern
-    halftone: func(pixels: buffer, info: image-info, dot-size: f32, angle-offset: f32) -> result<buffer, rasmcore-error>;
+    halftone: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// vortex rotation distortion
-    swirl: func(pixels: buffer, info: image-info, angle: f32, radius: f32) -> result<buffer, rasmcore-error>;
+    swirl: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// spherical bulge distortion
-    spherize: func(pixels: buffer, info: image-info, amount: f32) -> result<buffer, rasmcore-error>;
+    spherize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Brown-Conrady radial distortion model
-    barrel: func(pixels: buffer, info: image-info, k1: f32, k2: f32) -> result<buffer, rasmcore-error>;
+    barrel: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Cartesian to polar coordinate transform
     polar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// polar to Cartesian coordinate transform
     depolar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// sinusoidal wave displacement
-    wave: func(pixels: buffer, info: image-info, amplitude: f32, wavelength: f32, vertical: f32) -> result<buffer, rasmcore-error>;
+    wave: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// concentric ripple displacement
-    ripple: func(pixels: buffer, info: image-info, amplitude: f32, wavelength: f32, center-x: f32, center-y: f32) -> result<buffer, rasmcore-error>;
+    ripple: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Kuwahara 1976 edge-preserving smoothing
-    kuwahara: func(pixels: buffer, info: image-info, radius: u32) -> result<buffer, rasmcore-error>;
+    kuwahara: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// generalized rank/order statistic filter
-    rank-filter: func(pixels: buffer, info: image-info, radius: u32, rank: f32) -> result<buffer, rasmcore-error>;
+    rank-filter: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Adobe/Resolve .cube 3D LUT format
     apply-cube-lut: func(pixels: buffer, info: image-info, cube-data: string) -> result<buffer, rasmcore-error>;
     /// ImageMagick HALD CLUT format
-    apply-hald-lut: func(pixels: buffer, info: image-info, hald-dim: u32) -> result<buffer, rasmcore-error>;
+    apply-hald-lut: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// two-pass connected component labeling
-    connected-components: func(pixels: buffer, info: image-info, connectivity: u32) -> result<buffer, rasmcore-error>;
+    connected-components: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// probabilistic Hough transform (Matas et al. 2000)
-    hough-lines: func(pixels: buffer, info: image-info, threshold: u32, min-length: u32, max-gap: u32) -> result<buffer, rasmcore-error>;
+    hough-lines: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// graduated blur mask with Gaussian blur
-    tilt-shift: func(pixels: buffer, info: image-info, focus-position: f32, band-size: f32, blur-radius: f32, angle: f32) -> result<buffer, rasmcore-error>;
+    tilt-shift: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// shaped bokeh kernel depth-of-field simulation
-    lens-blur: func(pixels: buffer, info: image-info, radius: u32, blade-count: u32, rotation: f32) -> result<buffer, rasmcore-error>;
+    lens-blur: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
 
 }
