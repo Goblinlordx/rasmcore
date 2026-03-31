@@ -2664,10 +2664,14 @@ pub struct PhotoFilterParams {
 /// maintained (only hue/saturation shifts). PS Photo Filter equivalent.
 #[rasmcore_macros::register_filter(name = "photo_filter", category = "color")]
 pub fn photo_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &PhotoFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     let color_r = config.color_r;
@@ -3417,7 +3421,9 @@ mod color_manipulation_tests {
     fn photo_filter_density_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = photo_filter(&pixels, &info, &PhotoFilterParams { color_r: 255, color_g: 200, color_b: 0, density: 0.0, preserve_luminosity: 1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = photo_filter(r, &mut u, &info, &PhotoFilterParams { color_r: 255, color_g: 200, color_b: 0, density: 0.0, preserve_luminosity: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3425,8 +3431,10 @@ mod color_manipulation_tests {
     fn photo_filter_warm_tint() {
         let pixels = solid_rgb(4, 4, 128, 128, 128);
         let info = info_rgb8(4, 4);
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
         // Warm filter (orange) at 50% density
-        let result = photo_filter(&pixels, &info, &PhotoFilterParams { color_r: 236, color_g: 138, color_b: 0, density: 50.0, preserve_luminosity: 0 }).unwrap();
+        let result = photo_filter(r, &mut u, &info, &PhotoFilterParams { color_r: 236, color_g: 138, color_b: 0, density: 50.0, preserve_luminosity: 0 }).unwrap();
         // Red should increase, blue should decrease
         assert!(result[0] > 128, "warm filter should increase red");
         assert!(result[2] < 128, "warm filter should decrease blue");
@@ -3436,7 +3444,9 @@ mod color_manipulation_tests {
     fn photo_filter_preserve_luminosity() {
         let pixels = solid_rgb(4, 4, 128, 128, 128);
         let info = info_rgb8(4, 4);
-        let result = photo_filter(&pixels, &info, &PhotoFilterParams { color_r: 255, color_g: 0, color_b: 0, density: 50.0, preserve_luminosity: 1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = photo_filter(r, &mut u, &info, &PhotoFilterParams { color_r: 255, color_g: 0, color_b: 0, density: 50.0, preserve_luminosity: 1 }).unwrap();
         // With preserve_luminosity, the total brightness should be similar
         let orig_luma = 128u32; // gray pixel
         let new_luma =
