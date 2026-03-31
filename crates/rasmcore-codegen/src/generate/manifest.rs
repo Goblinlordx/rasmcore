@@ -170,6 +170,7 @@ mod tests {
                 fn_name: "blur".to_string(),
                 params: vec![("radius".to_string(), "f32".to_string())],
                 config_struct: None,
+            point_op: false,
             }],
             generators: vec![],
             compositors: vec![],

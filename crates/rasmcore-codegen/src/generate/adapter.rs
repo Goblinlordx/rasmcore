@@ -124,6 +124,7 @@ mod tests {
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
+            point_op: false,
         }];
         let code = generate(&filters);
         assert!(code.contains("fn blur("));
@@ -143,6 +144,7 @@ mod tests {
             fn_name: "test".to_string(),
             params: vec![("data".to_string(), "&[u8]".to_string())],
             config_struct: None,
+            point_op: false,
         }];
         let code = generate(&filters);
         assert!(code.contains("data: Vec<u8>"));

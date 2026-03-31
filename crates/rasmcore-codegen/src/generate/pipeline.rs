@@ -17,6 +17,7 @@ pub fn generate_nodes(
     code.push_str("use crate::domain::error::ImageError;\n");
     code.push_str("use crate::domain::filters;\n");
     code.push_str("use crate::domain::filters::*; // ConfigParams structs\n");
+    code.push_str("use crate::domain::point_ops::LutPointOp; // for as_point_op_lut()\n");
     code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
     code.push_str("use crate::domain::types::*;\n");
     code.push_str("use rasmcore_pipeline::Rect;\n\n");
@@ -128,6 +129,29 @@ pub fn generate_nodes(
         code.push_str("        }\n");
         code.push_str("    }\n\n");
         code.push_str(&input_rect_body);
+
+        // upstream_id() for graph traversal
+        code.push_str(
+            "    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }\n",
+        );
+
+        // Generate as_point_op_lut() for LUT-fuseable point operations
+        if f.point_op {
+            if f.config_struct.is_some() {
+                code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(self.config.build_point_lut()) }\n");
+            } else {
+                // Zero-param point op (e.g., invert) — inline the LUT
+                let op_name = &f.name;
+                code.push_str(&format!(
+                    "    fn as_point_op_lut(&self) -> Option<[u8; 256]> {{ Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::{op})) }}\n",
+                    op = match op_name.as_str() {
+                        "invert" => "Invert".to_string(),
+                        _ => format!("/* unknown zero-param point op: {op_name} */"),
+                    }
+                ));
+            }
+        }
+
         code.push_str(
             "    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n",
         );
@@ -371,6 +395,7 @@ mod tests {
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
+            point_op: false,
         }];
         let code = generate_nodes(&filters, &empty_structs());
         assert!(code.contains("pub struct BlurNode {"));
@@ -392,6 +417,7 @@ mod tests {
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
+            point_op: false,
         }];
         let code = generate_adapter_macro(&filters);
         assert!(code.contains("fn blur("));
@@ -411,6 +437,7 @@ mod tests {
             fn_name: "median".to_string(),
             params: vec![("radius".to_string(), "u32".to_string())],
             config_struct: None,
+            point_op: false,
         };
         let code = generate_nodes(&[f], &empty_structs());
         // u32 radius — no cast needed
@@ -458,6 +485,7 @@ mod tests {
                 ("shape".to_string(), "u32".to_string()),
             ],
             config_struct: None,
+            point_op: false,
         };
         let code = generate_nodes(&[f], &empty_structs());
         assert!(code.contains("output.expand_uniform(self.ksize / 2,"));
@@ -476,6 +504,7 @@ mod tests {
             fn_name: "invert".to_string(),
             params: vec![],
             config_struct: None,
+            point_op: false,
         };
         let code = generate_nodes(&[f], &empty_structs());
         // Should NOT contain input_rect override — uses trait default

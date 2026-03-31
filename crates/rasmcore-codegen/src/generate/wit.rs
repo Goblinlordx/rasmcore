@@ -85,6 +85,7 @@ mod tests {
                 ("factor".to_string(), "f32".to_string()),
             ],
             config_struct: None,
+            point_op: false,
         }];
         let wit = generate(&filters);
         assert!(wit.contains(
@@ -104,6 +105,7 @@ mod tests {
             fn_name: "grayscale".to_string(),
             params: vec![],
             config_struct: None,
+            point_op: false,
         }];
         let wit = generate(&filters);
         assert!(wit.contains("grayscale: func(pixels: buffer, info: image-info)"));

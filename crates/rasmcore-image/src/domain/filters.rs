@@ -1553,7 +1553,8 @@ pub fn sharpen(
 #[rasmcore_macros::register_filter(
     name = "brightness",
     category = "adjustment",
-    reference = "additive brightness offset"
+    reference = "additive brightness offset",
+    point_op = "true"
 )]
 pub fn brightness(
     pixels: &[u8],
@@ -1581,7 +1582,8 @@ pub fn brightness(
 #[rasmcore_macros::register_filter(
     name = "contrast",
     category = "adjustment",
-    reference = "multiplicative contrast"
+    reference = "multiplicative contrast",
+    point_op = "true"
 )]
 pub fn contrast(
     pixels: &[u8],
@@ -1609,7 +1611,8 @@ pub fn contrast(
 #[rasmcore_macros::register_filter(
     name = "exposure",
     category = "adjustment",
-    reference = "Photoshop exposure (EV stops + offset + gamma)"
+    reference = "Photoshop exposure (EV stops + offset + gamma)",
+    point_op = "true"
 )]
 pub fn exposure(
     pixels: &[u8],
@@ -9196,7 +9199,8 @@ pub fn flood_fill_registered(
 #[rasmcore_macros::register_filter(
     name = "gamma",
     category = "adjustment",
-    reference = "power-law gamma correction"
+    reference = "power-law gamma correction",
+    point_op = "true"
 )]
 pub fn gamma_registered(
     pixels: &[u8],
@@ -9212,7 +9216,8 @@ pub fn gamma_registered(
 #[rasmcore_macros::register_filter(
     name = "invert",
     category = "adjustment",
-    reference = "channel value inversion"
+    reference = "channel value inversion",
+    point_op = "true"
 )]
 pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     super::point_ops::invert(pixels, info)
@@ -9222,7 +9227,8 @@ pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, Ima
 #[rasmcore_macros::register_filter(
     name = "posterize",
     category = "adjustment",
-    reference = "bit-depth reduction"
+    reference = "bit-depth reduction",
+    point_op = "true"
 )]
 pub fn posterize_registered(
     pixels: &[u8],
@@ -9253,7 +9259,8 @@ pub struct LevelsParams {
 #[rasmcore_macros::register_filter(
     name = "levels",
     category = "adjustment",
-    reference = "input/output level remapping"
+    reference = "input/output level remapping",
+    point_op = "true"
 )]
 pub fn levels(
     pixels: &[u8],
@@ -9313,7 +9320,8 @@ impl LutPointOp for SigmoidalContrastParams {
 #[rasmcore_macros::register_filter(
     name = "sigmoidal_contrast",
     category = "adjustment",
-    reference = "sigmoidal transfer function contrast"
+    reference = "sigmoidal transfer function contrast",
+    point_op = "true"
 )]
 pub fn sigmoidal_contrast(
     pixels: &[u8],
@@ -14744,7 +14752,8 @@ impl LutPointOp for SolarizeParams {
 #[rasmcore_macros::register_filter(
     name = "solarize",
     category = "effect",
-    reference = "Man Ray solarization effect"
+    reference = "Man Ray solarization effect",
+    point_op = "true"
 )]
 pub fn solarize(
     pixels: &[u8],

@@ -40,6 +40,9 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
         let variant = extract_kv(&tokens, "variant").unwrap_or_default();
         let reference = extract_kv(&tokens, "reference").unwrap_or_default();
         let overlap = extract_kv(&tokens, "overlap").unwrap_or_else(|| "zero".to_string());
+        let point_op = extract_kv(&tokens, "point_op")
+            .map(|v| v == "true")
+            .unwrap_or(false);
 
         let fn_name = func.sig.ident.to_string();
         let params = extract_fn_params(&func.sig);
@@ -51,6 +54,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             variant,
             reference,
             overlap,
+            point_op,
             fn_name,
             params,
             config_struct: None, // populated later by parse_source_files

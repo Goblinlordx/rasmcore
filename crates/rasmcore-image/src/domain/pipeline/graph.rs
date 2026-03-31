@@ -48,6 +48,19 @@ pub trait ImageNode {
 
     /// Access pattern hint.
     fn access_pattern(&self) -> AccessPattern;
+
+    /// If this node is a fuseable per-channel point operation, return its LUT.
+    /// The pipeline optimizer composes consecutive LUTs into a single fused
+    /// lookup table, eliminating redundant pixel passes.
+    fn as_point_op_lut(&self) -> Option<[u8; 256]> {
+        None
+    }
+
+    /// Return the upstream node id, if this node has exactly one upstream.
+    /// Used by the LUT fusion optimizer to walk chains of point operations.
+    fn upstream_id(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// Rc wrapper around FrameSourceNode that implements ImageNode by delegation.
@@ -68,6 +81,41 @@ impl ImageNode for FrameSourceRcWrapper {
     }
     fn access_pattern(&self) -> AccessPattern {
         self.0.access_pattern()
+    }
+}
+
+/// A pipeline node that applies a pre-composed LUT, replacing a chain of
+/// consecutive point operations with a single fused lookup table pass.
+struct FusedLutNode {
+    upstream: u32,
+    source_info: ImageInfo,
+    lut: [u8; 256],
+}
+
+impl ImageNode for FusedLutNode {
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
+
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let src_pixels = upstream_fn(self.upstream, request)?;
+        crate::domain::point_ops::apply_lut(&src_pixels, &self.source_info, &self.lut)
+    }
+
+    fn as_point_op_lut(&self) -> Option<[u8; 256]> {
+        Some(self.lut)
+    }
+
+    fn upstream_id(&self) -> Option<u32> {
+        Some(self.upstream)
+    }
+
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
     }
 }
 
@@ -206,6 +254,61 @@ impl NodeGraph {
             .get(node_id as usize)
             .map(|n| n.info())
             .ok_or_else(|| ImageError::InvalidParameters(format!("invalid node id: {node_id}")))
+    }
+
+    /// Fuse consecutive per-channel point operations into single LUT nodes.
+    ///
+    /// Walks the graph and for each node that returns `as_point_op_lut()`,
+    /// follows the upstream chain composing LUTs until hitting a non-point-op
+    /// barrier. Replaces the entire chain with a single FusedLutNode.
+    ///
+    /// Call this after building the graph and before requesting regions.
+    pub fn fuse_point_ops(&mut self) {
+        let n = self.nodes.len();
+        // Track which nodes have been consumed into a fused chain
+        let mut fused_into: Vec<Option<u32>> = vec![None; n];
+
+        // Walk from output (last) toward source (first)
+        for i in (0..n).rev() {
+            // Skip nodes already consumed into another fusion
+            if fused_into[i].is_some() {
+                continue;
+            }
+
+            let Some(mut lut) = self.nodes[i].as_point_op_lut() else {
+                continue;
+            };
+
+            // Walk upstream composing LUTs
+            let mut chain_root_upstream = self.nodes[i].upstream_id();
+            let mut current = i;
+
+            while let Some(up_id) = self.nodes[current].upstream_id() {
+                let up = up_id as usize;
+                if up >= n || fused_into[up].is_some() {
+                    break;
+                }
+                let Some(up_lut) = self.nodes[up].as_point_op_lut() else {
+                    break;
+                };
+                // Compose: up_lut first, then our accumulated lut
+                lut = crate::domain::point_ops::compose_luts(&up_lut, &lut);
+                chain_root_upstream = self.nodes[up].upstream_id();
+                fused_into[up] = Some(i as u32);
+                current = up;
+            }
+
+            // If we consumed at least one upstream node, replace this node with a fused one
+            if current != i {
+                let upstream = chain_root_upstream.unwrap_or(0);
+                let info = self.nodes[i].info();
+                self.nodes[i] = Box::new(FusedLutNode {
+                    upstream,
+                    source_info: info,
+                    lut,
+                });
+            }
+        }
     }
 
     /// Request a region from a node. Uses the spatial cache for reuse.

@@ -263,6 +263,7 @@ mod tests {
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
+            point_op: false,
         }];
 
         let code = generate(&filters, &[]);
@@ -284,6 +285,7 @@ mod tests {
             fn_name: "grayscale_mapper".to_string(),
             params: vec![],
             config_struct: None,
+            point_op: false,
             output_format: Some("Gray8".to_string()),
         }];
 

@@ -78,6 +78,11 @@ impl Parse for RegisterFilterArgs {
                     // The proc macro just skips it.
                     let _lit: LitStr = input.parse()?;
                 }
+                "point_op" => {
+                    // Point op flag is parsed by build.rs for LUT fusion.
+                    // The proc macro just skips it.
+                    let _lit: LitStr = input.parse()?;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),
