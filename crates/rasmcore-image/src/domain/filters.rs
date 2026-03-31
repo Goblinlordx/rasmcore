@@ -2410,7 +2410,10 @@ pub fn evaluate_log(
     group = "evaluate", variant = "abs",
     reference = "ImageMagick -evaluate Abs"
 )]
-pub fn evaluate_abs(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_abs(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     Ok(pixels.to_vec()) // identity for unsigned types
 }
