@@ -1,0 +1,103 @@
+id: layer-cache-wit_20260331012430Z
+title: LayerCache WIT Resource & Pipeline Adapter Wiring
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Expose LayerCache as a WIT resource and wire it into the pipeline
+    adapter so WASM consumers can create, share, and manage layer caches
+    across pipeline invocations.
+  context: |
+    The LayerCache domain implementation is complete (rasmcore-pipeline
+    layer_cache.rs + NodeGraph integration in graph.rs). It works from
+    native Rust but is not yet accessible from WASM consumers via WIT.
+    This track adds the WIT resource definition, adapter wiring, and
+    ensures the pipeline constructor accepts an optional cache handle.
+  codebase_analysis: |
+    EXISTING:
+    - LayerCache struct in rasmcore-pipeline/src/layer_cache.rs
+    - NodeGraph::with_layer_cache() constructor
+    - NodeGraph::finalize_layer_cache() for post-write cleanup
+    - PipelineResource in adapter/pipeline_adapter.rs creates NodeGraph
+
+    NEEDS:
+    - WIT resource definition for layer-cache in pipeline.wit
+    - Adapter struct wrapping Rc<RefCell<LayerCache>>
+    - Pipeline constructor extended to accept optional borrow<layer-cache>
+    - Pipeline write methods call finalize_layer_cache() after encoding
+    - Pipeline node-add methods compute content hashes and use add_node_with_hash
+
+    PATTERN TO FOLLOW:
+    - ImagePipeline is already a WIT resource (pipeline_adapter.rs)
+    - It uses RefCell<NodeGraph> internally
+    - Adding a second resource (LayerCache) follows the same pattern
+  acceptance_criteria:
+    - layer-cache WIT resource with constructor(memory-budget-mb), stats(), clear()
+    - Pipeline constructor accepts optional borrow<layer-cache>
+    - Pipeline write methods call finalize_layer_cache() on completion
+    - Pipeline node-add methods compute and pass content hashes
+    - cache-stats WIT record with entries, hits, misses, size-bytes
+    - WASM component builds successfully with new WIT types
+    - Test from TypeScript SDK showing cache reuse across two pipeline calls
+  out_of_scope: |
+    Domain layer changes (already complete). Additional cache strategies.
+    Disk persistence. Cache serialization.
+  technical_notes: |
+    WIT ADDITIONS (pipeline.wit):
+
+    resource layer-cache {
+        constructor(memory-budget-mb: u32);
+        stats: func() -> cache-stats;
+        clear: func();
+    }
+
+    record cache-stats {
+        entries: u32,
+        hits: u64,
+        misses: u64,
+        size-bytes: u64,
+    }
+
+    Extend image-pipeline resource:
+    - Add constructor variant or init method accepting layer-cache
+
+    ADAPTER WIRING:
+    - LayerCacheResource wraps Rc<RefCell<LayerCache>>
+    - PipelineResource stores Option<Rc<RefCell<LayerCache>>>
+    - On read(): compute source hash, use add_node_with_hash
+    - On filter/transform: compute chain hash, use add_node_with_hash
+    - On write_*(): call graph.finalize_layer_cache() after encoding
+
+    HASH COMPUTATION IN ADAPTER:
+    Each node-add method needs to:
+    1. Get upstream hash from graph.node_hash(upstream_id)
+    2. Compute this_hash = compute_hash(upstream, op_name, param_bytes)
+    3. Call graph.add_node_with_hash(node, this_hash)
+plan:
+  - phase: WIT Definition
+    tasks:
+      - text: Add layer-cache resource and cache-stats record to pipeline.wit
+        done: false
+      - text: Add set-layer-cache method to image-pipeline resource
+        done: false
+  - phase: Adapter Implementation
+    tasks:
+      - text: Implement LayerCacheResource adapter struct
+        done: false
+      - text: Wire pipeline constructor to accept and store layer cache
+        done: false
+      - text: Add hash computation to pipeline read/filter/transform methods
+        done: false
+      - text: Call finalize_layer_cache in all write methods
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo component check passes with new WIT types
+        done: false
+      - text: Existing pipeline tests pass unchanged
+        done: false
+      - text: Test layer cache reuse across two pipeline invocations
+        done: false
+extra: {}
