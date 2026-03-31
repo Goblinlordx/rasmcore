@@ -113,13 +113,13 @@ plan:
 - phase: Verification
   tasks:
   - text: Test that fused brightness→contrast→gamma produces byte-identical output to unfused
-    done: false
+    done: true
   - text: Test fusion across longer chains (5+ ops)
-    done: false
+    done: true
   - text: Test that non-point-op nodes act as fusion barriers
-    done: false
+    done: true
   - text: Test 16-bit fusion path
-    done: false
+    done: true
   - text: All existing point-op and pipeline tests pass
-    done: false
+    done: true
 extra: {}
