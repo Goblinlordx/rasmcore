@@ -20,7 +20,7 @@ jpeg = img.apply("blur", radius=3.0).encode("jpeg", quality=85)
 ## Usage (Typed)
 
 ```bash
-rasmcore-image-typegen manifest.json --output rasmcore_typed.py
+rcimg-typegen manifest.json --output rasmcore_typed.py
 ```
 
 ```python

@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "rasmcore-typegen": "./dist/bin/typegen.js"
+    "rcimg-typegen": "./dist/bin/typegen.js"
   },
   "files": [
     "dist/",

@@ -30,7 +30,7 @@ to discover available operations and validate parameters.
 Generate typed wrappers from your specific WASM module:
 
 ```bash
-npx rasmcore-typegen ./rasmcore_image.wasm --output src/rasmcore-typed.ts
+npx rcimg-typegen ./rasmcore_image.wasm --output src/rasmcore-typed.ts
 ```
 
 ```typescript

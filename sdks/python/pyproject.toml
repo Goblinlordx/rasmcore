@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-rasmcore-image-typegen = "rasmcore.typegen:main"
+rcimg-typegen = "rasmcore.typegen:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "mypy"]
