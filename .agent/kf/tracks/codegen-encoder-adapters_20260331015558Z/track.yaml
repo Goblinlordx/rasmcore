@@ -1,0 +1,137 @@
+id: codegen-encoder-adapters_20260331015558Z
+title: Auto-Generate Pipeline Write Methods from Registered Encoders
+type: refactor
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Replace the 10 hard-coded write_jpeg/write_png/... pipeline adapter
+    methods with auto-generated code from #[register_encoder] annotations.
+    Adding a new encoder should automatically produce a pipeline write
+    method and WIT declaration — no manual adapter wiring.
+  context: |
+    The pipeline adapter has 10 hand-written write methods (write_jpeg,
+    write_png, write_webp, write_bmp, write_ico, write_qoi, write_gif,
+    write_avif, write_tiff, write). Each one manually maps WIT config
+    types to domain config structs and calls the corresponding sink
+    function. This means adding a new encoder requires:
+    1. Add the domain encoder function
+    2. Add a WIT write config record
+    3. Add a WIT write method to image-pipeline
+    4. Add an adapter method in pipeline_adapter.rs
+    5. Wire the WIT config mapping
+
+    Steps 2-5 should be auto-generated from the encoder registration,
+    the same way filter methods are auto-generated from #[register_filter].
+    The rasmcore-codegen crate already parses #[register_encoder] — it
+    just needs a new generation target for pipeline write methods.
+  codebase_analysis: |
+    CURRENT STATE:
+    - 10 write methods in pipeline_adapter.rs (lines 480-640)
+    - Each maps WIT config -> domain config -> sink::write_xxx()
+    - WIT pipeline.wit has 10 write-xxx functions + 10 config records
+    - rasmcore-codegen parses #[register_encoder] but only generates
+      encoder adapter code, not pipeline write methods
+
+    ENCODER REGISTRATIONS:
+    - #[register_encoder(name, format, mime, extensions)]
+    - Each encoder has a typed config struct (JpegEncodeConfig, etc.)
+    - Sink module has write_xxx functions for each format
+
+    CODEGEN INTEGRATION:
+    - rasmcore-codegen/src/parse/filters.rs handles register_filter
+    - Need: rasmcore-codegen/src/parse/encoders.rs for register_encoder
+    - rasmcore-codegen/src/generate/ needs pipeline_write.rs generator
+    - build.rs already calls rasmcore_codegen — just needs new output
+
+    WHAT TO GENERATE:
+    1. WIT write config records (from encoder ConfigParams)
+    2. WIT write-xxx methods on image-pipeline resource
+    3. Adapter methods mapping WIT config -> domain config -> sink call
+    4. Each generated method includes finalize_layer_cache() call
+  acceptance_criteria:
+    - All 10 existing write methods replaced with generated code
+    - Generated from #[register_encoder] + encoder config structs
+    - Adding a new encoder with registration auto-generates pipeline write method
+    - Generated WIT declarations match current ones (backward compatible)
+    - Generated adapter code includes finalize_layer_cache() calls
+    - Pipeline tests pass unchanged
+    - WASM component builds with generated write methods
+  out_of_scope: |
+    Decoder pipeline registration (read methods). Filter method generation
+    changes (already working). New encoder implementations.
+  technical_notes: |
+    GENERATION PIPELINE:
+
+    1. Parse #[register_encoder] from encoder files:
+       - Extract: name, format, mime, extensions
+       - Find matching encode config struct (e.g., JpegEncodeConfig)
+       - Parse config struct fields as typed params
+
+    2. Generate WIT write config records:
+       record jpeg-write-config {
+           quality: option<u8>,
+           progressive: option<bool>,
+       }
+
+    3. Generate WIT write methods:
+       write-jpeg: func(source: node-id, config: jpeg-write-config,
+                        metadata: option<metadata-set>)
+                   -> result<buffer, rasmcore-error>;
+
+    4. Generate adapter methods:
+       fn write_jpeg(&self, source: NodeId, config: JpegWriteConfig, ...)
+           -> Result<Vec<u8>, RasmcoreError> {
+           let cfg = to_domain_config(&config);
+           let result = sink::write_jpeg(&mut self.graph.borrow_mut(), ...);
+           self.finalize_cache();
+           result
+       }
+
+    NEW CODEGEN MODULE:
+    rasmcore-codegen/src/generate/pipeline_write.rs
+    - generate_wit_write_configs(encoders) -> String
+    - generate_wit_write_methods(encoders) -> String
+    - generate_adapter_write_methods(encoders) -> String
+
+    ENCODER CONFIG MAPPING:
+    Each encoder's config struct is parsed the same way as ConfigParams.
+    The WIT type mapping is: Rust f32->f32, u8->u8, bool->bool, etc.
+    Optional fields become option<T> in WIT.
+plan:
+  - phase: Parse Encoders
+    tasks:
+      - text: Add encoder parsing to rasmcore-codegen (extract name, format, config struct)
+        done: false
+      - text: Parse encoder config structs into typed field metadata
+        done: false
+      - text: Test encoder parsing with known encoder snippets
+        done: false
+  - phase: Generate Pipeline Write Code
+    tasks:
+      - text: Create generate/pipeline_write.rs for WIT config records
+        done: false
+      - text: Generate WIT write methods for image-pipeline resource
+        done: false
+      - text: Generate adapter write methods with config mapping + finalize_cache
+        done: false
+      - text: Test generated code matches current hand-written output
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Wire new generator into build.rs output
+        done: false
+      - text: Replace hand-written write methods with include! of generated code
+        done: false
+      - text: Replace hand-written WIT write declarations with generated ones
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Pipeline tests pass with generated write methods
+        done: false
+      - text: WASM component builds cleanly
+        done: false
+      - text: Verify adding a mock encoder auto-generates write method
+        done: false
+extra: {}
