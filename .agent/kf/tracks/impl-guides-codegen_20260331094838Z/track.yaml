@@ -5,151 +5,174 @@ status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Create user-facing developer documentation in docs/ explaining how to
-    extend rasmcore with custom filters, codecs, transforms, and plugins —
-    including in external crates. Then add a concise agent-facing guide in
-    code_styleguides/ that references the user docs and adds agent-specific
-    rules (no editing generated files, reference validation, PRNG).
-  context: |
-    Users and AI agents both need to understand how rasmcore's extension
+  summary: 'Create user-facing developer documentation in docs/ explaining how to extend rasmcore with custom filters, codecs,
+    transforms, and plugins — including in external crates. Then add a concise agent-facing guide in code_styleguides/ that
+    references the user docs and adds agent-specific rules (no editing generated files, reference validation, PRNG).
+
+    '
+  context: 'Users and AI agents both need to understand how rasmcore''s extension
+
     system works. Currently there is no documentation explaining:
 
+
     - How to add a new filter (register_filter, ConfigParams, pipeline)
+
     - How to add a decoder or encoder (register_decoder/encoder, inventory)
+
     - How codegen produces generated files that must never be hand-edited
+
     - How to create filters/codecs in external crates (plugin model)
+
     - What the reference validation requirement is for all implementations
+
     - How the pipeline tile system (input_rect) affects spatial filters
 
+
     The docs/architecture.md explains the pipeline concept but not HOW to
+
     extend it. The docs/REFERENCE_VALIDATION.md explains the validation
+
     principle but not how to structure parity tests.
 
+
     This needs to be user-facing documentation first (in docs/) so that
+
     both human developers and SDK users can learn the extension model.
+
     Agent-specific guidance (in .agent/kf/code_styleguides/) then
+
     references those docs and adds workflow rules.
-  codebase_analysis: |
-    EXISTING DOCS (docs/):
+
+    '
+  codebase_analysis: 'EXISTING DOCS (docs/):
+
     - architecture.md — Pipeline concept, spatial cache, vips comparison
+
     - REFERENCE_VALIDATION.md — Validation principle + codec parity table
 
+
     EXISTING AGENT GUIDES (.agent/kf/code_styleguides/):
+
     - rust.md — Rust style conventions
+
     - repo-hygiene.md — No binaries, no generated files committed
+
     - codec-validation.md — Three-way validation standard
+
     - encoder-params.md — Encoder parameter reference
+
     - param-hints.md — UI hint vocabulary
 
+
     REGISTRATION MACROS (crates/rasmcore-macros/src/lib.rs):
+
     - register_filter — attrs: name, category, group, variant, reference, overlap
+
     - register_generator — procedural image sources (no pixel input)
+
     - register_compositor — multi-input blending
+
     - register_mapper — format-changing ops (RGB→Gray)
+
     - register_encoder — format, mime, extensions attrs
+
     - register_decoder — formats attr
+
     - ConfigParams derive — param attributes: min, max, step, default, hint
 
+
     CODEGEN (crates/rasmcore-codegen/):
+
     - parse/ — Extracts registrations from source AST
+
     - generate/ — Produces adapter, pipeline nodes, SDK, CLI, manifest, WIT
+
     - build.rs orchestrates: source → parse → CodegenData → generate → OUT_DIR
 
+
     GENERATED OUTPUT (never edit):
+
     - generated_filter_adapter.rs, generated_pipeline_nodes.rs
+
     - generated_pipeline_adapter.rs, generated_pipeline_write_adapter.rs
+
     - generated_sdk_rust.rs, generated_cli_dispatch.rs
+
     - param-manifest.json, param-manifest.hash
 
+
     PLUGIN MODEL:
+
     - inventory crate collects registrations across crate boundaries
+
     - External crates can use register_filter et al + inventory::submit!
+
     - Codegen currently only parses the main filters.rs file
+
     - For external crates, users would implement ImageNode manually
+
+    '
   acceptance_criteria:
-    - docs/extending.md exists — user-facing guide covering filters, codecs, ConfigParams, transforms
-    - docs/extending.md explains how to extend in external crates (plugin model)
-    - docs/extending.md documents all registration macros with attributes and examples
-    - docs/extending.md documents ConfigParams derive with param attributes
-    - docs/extending.md documents generated files with DO NOT EDIT warnings
-    - docs/extending.md documents reference validation requirement and PRNG mandate
-    - docs/extending.md documents input_rect/overlap for spatial filters
-    - .agent/kf/code_styleguides/implementation-rules.md exists — agent guide referencing docs/extending.md
-    - Agent guide adds workflow-specific rules (commit conventions, test structure, validation commands)
-    - All code examples are accurate against the current codebase
-  out_of_scope: |
-    Changing any source code, codegen, or macros. Documentation only.
+  - docs/extending.md exists — user-facing guide covering filters, codecs, ConfigParams, transforms
+  - docs/extending.md explains how to extend in external crates (plugin model)
+  - docs/extending.md documents all registration macros with attributes and examples
+  - docs/extending.md documents ConfigParams derive with param attributes
+  - docs/extending.md documents generated files with DO NOT EDIT warnings
+  - docs/extending.md documents reference validation requirement and PRNG mandate
+  - docs/extending.md documents input_rect/overlap for spatial filters
+  - .agent/kf/code_styleguides/implementation-rules.md exists — agent guide referencing docs/extending.md
+  - Agent guide adds workflow-specific rules (commit conventions, test structure, validation commands)
+  - All code examples are accurate against the current codebase
+  out_of_scope: 'Changing any source code, codegen, or macros. Documentation only.
+
     API reference docs (rustdoc handles that). SDK-specific guides
+
     (TypeScript, Go, Python — each has their own README).
-  technical_notes: |
-    DELIVERABLES:
 
-    1. docs/extending.md — User-facing developer guide
-       Sections:
-       a. Overview — rasmcore extension model, what can be extended
-       b. Adding a Filter
-          - Function signature (pixels, info, config) → Result
-          - register_filter attributes (name, category, group, variant, reference, overlap)
-          - ConfigParams derive (param attrs: min, max, step, default, hint, config_hint)
-          - Nested ConfigParams (ColorRgba, ColorRgb)
-          - Point ops vs spatial ops (input_rect for tiling)
-          - Testing: reference validation, parity tests, PRNG for randomness
-          - What codegen produces from your registration
-       c. Adding a Decoder
-          - register_decoder macro, DecodedImage return, format detection
-          - Validation: three-way parity
-       d. Adding an Encoder
-          - register_encoder macro, encode config struct, quality/format attrs
-          - Validation: roundtrip + reference comparison
-       e. Adding Generators, Compositors, Mappers
-          - Brief coverage of each registration type
-       f. Pipeline Integration
-          - How filters become pipeline nodes (codegen)
-          - How transforms are manually implemented
-          - ImageNode trait: info(), compute_region(), input_rect()
-       g. Generated Files — DO NOT EDIT
-          - Complete list, what produces each, how to regenerate
-       h. External Crates / Plugin Model
-          - Using registration macros from external crates
-          - inventory-based collection
-          - Manual ImageNode impl for custom pipeline nodes
-
-    2. .agent/kf/code_styleguides/implementation-rules.md — Agent guide
-       - Points to docs/extending.md for all implementation patterns
-       - Adds agent-specific rules:
-         * Never edit generated files — modify source and rebuild
-         * Always validate against reference (cite ref, document alignment)
-         * PRNG only (no OsRng/thread_rng) — seeded for determinism
-         * ConfigParams required for all parameterized filters (no exceptions)
-         * SIMD required from initial implementation
-         * Zero-warning policy
-         * Run validate.sh before marking complete
+    '
+  technical_notes: "DELIVERABLES:\n\n1. docs/extending.md — User-facing developer guide\n   Sections:\n   a. Overview — rasmcore\
+    \ extension model, what can be extended\n   b. Adding a Filter\n      - Function signature (pixels, info, config) → Result\n\
+    \      - register_filter attributes (name, category, group, variant, reference, overlap)\n      - ConfigParams derive\
+    \ (param attrs: min, max, step, default, hint, config_hint)\n      - Nested ConfigParams (ColorRgba, ColorRgb)\n     \
+    \ - Point ops vs spatial ops (input_rect for tiling)\n      - Testing: reference validation, parity tests, PRNG for randomness\n\
+    \      - What codegen produces from your registration\n   c. Adding a Decoder\n      - register_decoder macro, DecodedImage\
+    \ return, format detection\n      - Validation: three-way parity\n   d. Adding an Encoder\n      - register_encoder macro,\
+    \ encode config struct, quality/format attrs\n      - Validation: roundtrip + reference comparison\n   e. Adding Generators,\
+    \ Compositors, Mappers\n      - Brief coverage of each registration type\n   f. Pipeline Integration\n      - How filters\
+    \ become pipeline nodes (codegen)\n      - How transforms are manually implemented\n      - ImageNode trait: info(), compute_region(),\
+    \ input_rect()\n   g. Generated Files — DO NOT EDIT\n      - Complete list, what produces each, how to regenerate\n  \
+    \ h. External Crates / Plugin Model\n      - Using registration macros from external crates\n      - inventory-based collection\n\
+    \      - Manual ImageNode impl for custom pipeline nodes\n\n2. .agent/kf/code_styleguides/implementation-rules.md — Agent\
+    \ guide\n   - Points to docs/extending.md for all implementation patterns\n   - Adds agent-specific rules:\n     * Never\
+    \ edit generated files — modify source and rebuild\n     * Always validate against reference (cite ref, document alignment)\n\
+    \     * PRNG only (no OsRng/thread_rng) — seeded for determinism\n     * ConfigParams required for all parameterized filters\
+    \ (no exceptions)\n     * SIMD required from initial implementation\n     * Zero-warning policy\n     * Run validate.sh\
+    \ before marking complete\n"
 plan:
-  - phase: Write User-Facing Guide
-    tasks:
-      - text: Write docs/extending.md — filter registration with ConfigParams and examples
-        done: false
-      - text: Write docs/extending.md — decoder and encoder registration with examples
-        done: false
-      - text: Write docs/extending.md — generators, compositors, mappers
-        done: false
-      - text: Write docs/extending.md — pipeline integration (ImageNode, input_rect, codegen)
-        done: false
-      - text: Write docs/extending.md — generated files list with DO NOT EDIT contract
-        done: false
-      - text: Write docs/extending.md — external crates / plugin model
-        done: false
-      - text: Write docs/extending.md — reference validation and PRNG requirements
-        done: false
-  - phase: Write Agent Guide
-    tasks:
-      - text: Write .agent/kf/code_styleguides/implementation-rules.md referencing docs/extending.md
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Cross-check all code examples against current source for accuracy
-        done: false
-      - text: Verify no duplication with existing guides (rust.md, codec-validation.md, etc.)
-        done: false
+- phase: Write User-Facing Guide
+  tasks:
+  - text: Write docs/extending.md — filter registration with ConfigParams and examples
+    done: true
+  - text: Write docs/extending.md — decoder and encoder registration with examples
+    done: true
+  - text: Write docs/extending.md — generators, compositors, mappers
+    done: true
+  - text: Write docs/extending.md — pipeline integration (ImageNode, input_rect, codegen)
+    done: true
+  - text: Write docs/extending.md — generated files list with DO NOT EDIT contract
+    done: true
+  - text: Write docs/extending.md — external crates / plugin model
+    done: true
+  - text: Write docs/extending.md — reference validation and PRNG requirements
+    done: true
+- phase: Write Agent Guide
+  tasks:
+  - text: Write .agent/kf/code_styleguides/implementation-rules.md referencing docs/extending.md
+    done: true
+- phase: Verification
+  tasks:
+  - text: Cross-check all code examples against current source for accuracy
+    done: true
+  - text: Verify no duplication with existing guides (rust.md, codec-validation.md, etc.)
+    done: true
 extra: {}
