@@ -9355,7 +9355,10 @@ pub fn retinex_ssr(
 /// Reference: Jobson, Rahman, Woodell — "A Multiscale Retinex for Bridging
 /// the Gap Between Color Images and the Human Observation of Scenes"
 /// (IEEE Trans. Image Processing, 1997)
-pub fn retinex_msr(pixels: &[u8], info: &ImageInfo, sigmas: &[f32]) -> Result<Vec<u8>, ImageError> {
+pub fn retinex_msr(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, sigmas: &[f32]) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -9426,12 +9429,16 @@ pub fn retinex_msr(pixels: &[u8], info: &ImageInfo, sigmas: &[f32]) -> Result<Ve
 /// the Gap Between Color Images and the Human Observation of Scenes"
 /// (IEEE Trans. Image Processing, 1997)
 pub fn retinex_msrcr(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     sigmas: &[f32],
     alpha: f32,
     beta: f32,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -10130,7 +10137,8 @@ pub fn nlm_denoise_registered(
     reference = "Jobson et al. 1997 multi-scale Retinex"
 )]
 pub fn retinex_msr_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &RetinexMsrParams,
 ) -> Result<Vec<u8>, ImageError> {
@@ -10138,7 +10146,7 @@ pub fn retinex_msr_registered(
     let sigma_medium = config.sigma_medium;
     let sigma_large = config.sigma_large;
 
-    retinex_msr(pixels, info, &[sigma_small, sigma_medium, sigma_large])
+    retinex_msr(request, upstream, info, &[sigma_small, sigma_medium, sigma_large])
 }
 
 /// Multi-scale Retinex with color restoration (user-facing wrapper).
@@ -10150,7 +10158,8 @@ pub fn retinex_msr_registered(
     reference = "Jobson et al. 1997 multi-scale Retinex with color restoration"
 )]
 pub fn retinex_msrcr_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &RetinexMsrcrParams,
 ) -> Result<Vec<u8>, ImageError> {
@@ -10161,7 +10170,8 @@ pub fn retinex_msrcr_registered(
     let beta = config.beta;
 
     retinex_msrcr(
-        pixels,
+        request,
+        upstream,
         info,
         &[sigma_small, sigma_medium, sigma_large],
         alpha,
@@ -13695,7 +13705,9 @@ mod retinex_tests {
     #[test]
     fn msr_produces_output() {
         let (px, info) = make_rgb(32, 32);
-        let result = retinex_msr(&px, &info, &[15.0, 80.0, 250.0]).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = retinex_msr(r, &mut u, &info, &[15.0, 80.0, 250.0]).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -13705,7 +13717,8 @@ mod retinex_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
         let ssr = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
-        let msr = retinex_msr(&px, &info, &[80.0]).unwrap();
+        let mut u2 = |_: Rect| Ok(px.clone());
+        let msr = retinex_msr(r, &mut u2, &info, &[80.0]).unwrap();
         // MSR with one scale should equal SSR
         assert_eq!(ssr, msr, "MSR with single scale should match SSR");
     }
@@ -13713,7 +13726,9 @@ mod retinex_tests {
     #[test]
     fn msrcr_produces_output() {
         let (px, info) = make_rgb(32, 32);
-        let result = retinex_msrcr(&px, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = retinex_msrcr(r, &mut u, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -13733,7 +13748,9 @@ mod retinex_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = retinex_msrcr(&pixels, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = retinex_msrcr(r, &mut u, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
         }
@@ -13742,7 +13759,9 @@ mod retinex_tests {
     #[test]
     fn msrcr_output_uses_full_range() {
         let (px, info) = make_rgb(64, 64);
-        let result = retinex_msrcr(&px, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = retinex_msrcr(r, &mut u, &info, &[15.0, 80.0, 250.0], 125.0, 46.0).unwrap();
         let stats = crate::domain::histogram::statistics(&result, &info).unwrap();
         // Normalized output should span most of 0-255
         assert!(

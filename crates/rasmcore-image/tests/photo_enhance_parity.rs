@@ -661,7 +661,9 @@ fn msr_vs_python_opencv_blur() {
     let pixels = generate_midtone_image(w, h);
     let info = test_info(w, h);
 
-    let ours = filters::retinex_msr(&pixels, &info, &[15.0, 80.0, 250.0]).unwrap();
+    let r = Rect::new(0, 0, w, h);
+    let mut u = |_: Rect| Ok(pixels.clone());
+    let ours = filters::retinex_msr(r, &mut u, &info, &[15.0, 80.0, 250.0]).unwrap();
 
     let input_path = write_png(&pixels, w, h, 3);
     let script = format!(
@@ -721,7 +723,9 @@ fn msrcr_vs_python_opencv_blur() {
     let alpha = 125.0f32;
     let beta = 46.0f32;
 
-    let ours = filters::retinex_msrcr(&pixels, &info, &[15.0, 80.0, 250.0], alpha, beta).unwrap();
+    let r = Rect::new(0, 0, w, h);
+    let mut u = |_: Rect| Ok(pixels.clone());
+    let ours = filters::retinex_msrcr(r, &mut u, &info, &[15.0, 80.0, 250.0], alpha, beta).unwrap();
 
     let input_path = write_png(&pixels, w, h, 3);
     let script = format!(
