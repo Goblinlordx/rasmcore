@@ -1,0 +1,143 @@
+id: cli-graph-builder_20260331053718Z
+title: "CLI — Graph-Based Image Processing with DAG Builder"
+type: feature
+status: pending
+created: 2026-03-31
+updated: 2026-03-31
+spec:
+  summary: >
+    New rasmcore-cli crate implementing a graph-based CLI that maps args
+    left-to-right into pipeline DAG nodes. Uses codegen dispatch table
+    for filter/generator resolution. Supports references for multi-branch
+    workflows.
+  context: |
+    The project has a complete pipeline API (NodeGraph, SourceNode, 115+
+    filter nodes, sink write functions) but no CLI. Users interact via
+    the demo web UI or programmatically via Rust/WASM. A CLI enables
+    shell scripting, batch processing, and CI/CD integration.
+
+    The CLI is thin — it parses args and calls existing pipeline APIs.
+    No image processing logic lives in the CLI itself. It maps 1:1
+    to the fluent API that the demo UI and SDKs already use.
+  codebase_analysis: |
+    EXISTING INFRASTRUCTURE:
+    - NodeGraph in pipeline/graph.rs — add_node(), node_info(), request_region()
+    - SourceNode — decodes image bytes lazily
+    - 115+ auto-generated filter nodes (BlurNode, SharpenNode, etc.)
+    - sink::write() — drives pipeline and encodes output
+    - filter_registry with inventory-based discovery
+    - rasmcore-codegen already generates pipeline_nodes.rs and pipeline_adapter.rs
+    - param-manifest.json generated at build time with all filter metadata
+
+    NO EXISTING CLI — no clap dependency, no main.rs, no CLI crate.
+
+    CODEGEN PATTERN:
+    - build.rs calls rasmcore-codegen to parse #[register_filter] annotations
+    - Generates typed Node structs and pipeline adapter methods
+    - Same pattern can generate a dispatch_filter() function for CLI use
+    - Any third-party module using #[register_filter] gets dispatch for free
+  acceptance_criteria:
+    - New crate crates/rasmcore-cli with clap-based arg parser
+    - Stateful graph builder processing args left-to-right
+    - -i/--input loads image file, sets active node
+    - Generator ops (checkerboard, solid, gradient) create source nodes from params
+    - Filter ops chain from active node with key=value params
+    - -ref/--as bookmarks active node in reference registry
+    - -o/--output triggers pipeline execution and writes file
+    - Reference resolution in params (value matches ref name -> substitute node ID)
+    - Pre-flight validation (refs used before defined -> error with helpful message)
+    - Output format inferred from extension (.jpg, .png, .webp, etc.)
+    - Multi-branch workflow works (the -composite example from spec)
+    - Codegen dispatch table in rasmcore-codegen for filter/generator resolution
+    - Third-party modules using register_filter get CLI dispatch automatically
+  out_of_scope: |
+    Interactive/REPL mode. GUI. Progress bars (future track).
+    Batch glob processing (future track). Plugin system.
+  technical_notes: |
+    ARCHITECTURE:
+
+    1. rasmcore-codegen generates dispatch_filter() and dispatch_generator():
+       pub fn dispatch_filter(
+           name: &str, source: u32, info: ImageInfo, params: &ParamMap,
+       ) -> Result<Box<dyn ImageNode>, Error>
+       — Single match on name, constructs the typed node from params
+       — Generated from the same FilterReg data used for other codegen
+
+    2. rasmcore-cli is a thin binary:
+       - Parses args into Vec<CliCommand> (Input/Generator/Filter/Ref/Output)
+       - Walks left-to-right: active_node, ref_registry: HashMap<String, u32>
+       - For Input: fs::read(path) -> SourceNode -> graph.add_node()
+       - For Generator: dispatch_generator(name, params) -> graph.add_node()
+       - For Filter: dispatch_filter(name, active_node, info, params)
+       - For Ref: ref_registry.insert(name, active_node)
+       - For Output: sink::write(graph, active_node, format) -> fs::write(path)
+
+    3. Param parsing:
+       - All params are key=value pairs: -blur radius=5.0
+       - Optional positional shorthand: -blur 5.0 (maps to first param)
+       - Type coercion from string based on manifest param type
+       - Reference resolution: if value matches a ref name, use node ID
+
+    EXAMPLE FLOWS:
+      # Simple chain
+      rasmcore -i photo.jpg -blur radius=5 -sharpen amount=1.0 -o out.png
+
+      # Generator as source
+      rasmcore -checkerboard width=256 height=256 -blur radius=3 -o pattern.png
+
+      # Multi-branch composite
+      rasmcore -i bg.jpg -contrast 1.2 -ref bg \
+               -i overlay.png -resize width=500 -ref fg \
+               -composite base=bg top=fg mode=multiply -o final.jpg
+
+    CLAP STRUCTURE:
+      Not traditional subcommands — use raw OsString arg walking since
+      the CLI is a sequential instruction stream, not a tree of commands.
+      clap is used for --help, --version, and global flags only.
+      The actual command parsing is custom left-to-right walking.
+plan:
+  - phase: "Codegen Dispatch Table"
+    tasks:
+      - text: "Add dispatch_filter() codegen to rasmcore-codegen — match on name, parse params, construct node"
+        done: false
+      - text: "Add dispatch_generator() codegen for generator ops (no upstream source)"
+        done: false
+      - text: "Include generated dispatch in rasmcore-image build output alongside existing codegen"
+        done: false
+      - text: "Test dispatch for blur, resize, checkerboard with param parsing"
+        done: false
+  - phase: "CLI Crate Scaffold"
+    tasks:
+      - text: "Create crates/rasmcore-cli with Cargo.toml (clap, rasmcore-image deps)"
+        done: false
+      - text: "Implement left-to-right arg walker producing Vec<CliCommand>"
+        done: false
+      - text: "Implement ParamMap parser for key=value and optional positional params"
+        done: false
+      - text: "Wire --help, --version, --list-filters via clap"
+        done: false
+  - phase: "Graph Builder & Execution"
+    tasks:
+      - text: "Implement graph builder — active_node, ref_registry, NodeGraph construction"
+        done: false
+      - text: "Wire -i (file input), generator ops (source creation), filter ops (chaining)"
+        done: false
+      - text: "Wire -ref (bookmark), -o (sink + file write, format from extension)"
+        done: false
+      - text: "Reference resolution — substitute node IDs for ref names in params"
+        done: false
+      - text: "Pre-flight validation — check all ref uses have prior definitions"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Test simple chain (input -> filter -> output)"
+        done: false
+      - text: "Test multi-branch workflow (two inputs, refs, composite, output)"
+        done: false
+      - text: "Test generator as source (checkerboard -> filter -> output)"
+        done: false
+      - text: "Test error cases (missing input, bad params, undefined ref)"
+        done: false
+      - text: "cargo build produces working rasmcore binary"
+        done: false
+extra: {}
