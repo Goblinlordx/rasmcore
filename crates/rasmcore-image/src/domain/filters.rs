@@ -830,6 +830,74 @@ pub struct DrawTextParams {
     pub color: crate::domain::param_types::ColorRgba,
 }
 
+/// Parameters for draw_polygon.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawPolygonParams {
+    /// Fill color
+    pub fill_color: crate::domain::param_types::ColorRgba,
+    /// Stroke color
+    pub stroke_color: crate::domain::param_types::ColorRgba,
+    /// Stroke width (0 = no stroke)
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 0.0)]
+    pub stroke_width: f32,
+    /// Fill the polygon
+    #[param(default = true, hint = "rc.toggle")]
+    pub filled: bool,
+}
+
+/// Parameters for draw_ellipse.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawEllipseParams {
+    /// Center X
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub cx: f32,
+    /// Center Y
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub cy: f32,
+    /// Radius X
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 40.0, hint = "rc.log_slider")]
+    pub rx: f32,
+    /// Radius Y
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0, hint = "rc.log_slider")]
+    pub ry: f32,
+    /// Color
+    pub color: crate::domain::param_types::ColorRgba,
+    /// Stroke width (for outline mode)
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub stroke_width: f32,
+    /// Fill the ellipse
+    #[param(default = true, hint = "rc.toggle")]
+    pub filled: bool,
+}
+
+/// Parameters for draw_arc.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawArcParams {
+    /// Center X
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub cx: f32,
+    /// Center Y
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub cy: f32,
+    /// Radius X
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 40.0, hint = "rc.log_slider")]
+    pub rx: f32,
+    /// Radius Y
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0, hint = "rc.log_slider")]
+    pub ry: f32,
+    /// Start angle in degrees (0 = right, counter-clockwise)
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    pub start_angle: f32,
+    /// End angle in degrees
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 180.0, hint = "rc.angle_deg")]
+    pub end_angle: f32,
+    /// Stroke color
+    pub color: crate::domain::param_types::ColorRgba,
+    /// Stroke width
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub stroke_width: f32,
+}
+
 /// Parameters for white balance temperature adjustment.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct WhiteBalanceTemperatureParams {
@@ -10538,6 +10606,142 @@ pub fn draw_circle_filter(
     let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
     let (result, _) =
         super::draw::draw_circle(pixels, info, cx, cy, radius, color, stroke_width, filled)?;
+    Ok(result)
+}
+
+/// Draw a polygon on the image from vertex coordinates.
+#[rasmcore_macros::register_filter(
+    name = "draw_polygon",
+    category = "draw",
+    group = "draw",
+    variant = "polygon",
+    reference = "filled/outlined polygon"
+)]
+pub fn draw_polygon_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    vertices: &str,
+    config: &DrawPolygonParams,
+) -> Result<Vec<u8>, ImageError> {
+    let vertices = parse_vertices(vertices)?;
+    let fill_color = [
+        config.fill_color.r,
+        config.fill_color.g,
+        config.fill_color.b,
+        config.fill_color.a,
+    ];
+    let stroke_color = [
+        config.stroke_color.r,
+        config.stroke_color.g,
+        config.stroke_color.b,
+        config.stroke_color.a,
+    ];
+    let (result, _) = super::draw::draw_polygon(
+        pixels,
+        info,
+        &vertices,
+        fill_color,
+        stroke_color,
+        config.stroke_width,
+        config.filled,
+    )?;
+    Ok(result)
+}
+
+/// Parse a "x1,y1;x2,y2;x3,y3" vertex string into coordinate pairs.
+fn parse_vertices(s: &str) -> Result<Vec<(f32, f32)>, ImageError> {
+    let mut vertices = Vec::new();
+    for pair in s.split(';') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = pair.split(',').collect();
+        if parts.len() != 2 {
+            return Err(ImageError::InvalidParameters(format!(
+                "draw_polygon: invalid vertex '{pair}', expected 'x,y'"
+            )));
+        }
+        let x: f32 = parts[0].trim().parse().map_err(|_| {
+            ImageError::InvalidParameters(format!("draw_polygon: invalid x in '{pair}'"))
+        })?;
+        let y: f32 = parts[1].trim().parse().map_err(|_| {
+            ImageError::InvalidParameters(format!("draw_polygon: invalid y in '{pair}'"))
+        })?;
+        vertices.push((x, y));
+    }
+    if vertices.len() < 3 {
+        return Err(ImageError::InvalidParameters(
+            "draw_polygon: need at least 3 vertices".into(),
+        ));
+    }
+    Ok(vertices)
+}
+
+/// Draw an ellipse on the image.
+#[rasmcore_macros::register_filter(
+    name = "draw_ellipse",
+    category = "draw",
+    group = "draw",
+    variant = "ellipse",
+    reference = "filled/outlined ellipse"
+)]
+pub fn draw_ellipse_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &DrawEllipseParams,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [
+        config.color.r,
+        config.color.g,
+        config.color.b,
+        config.color.a,
+    ];
+    let (result, _) = super::draw::draw_ellipse(
+        pixels,
+        info,
+        config.cx,
+        config.cy,
+        config.rx,
+        config.ry,
+        color,
+        config.stroke_width,
+        config.filled,
+    )?;
+    Ok(result)
+}
+
+/// Draw an arc (partial ellipse outline) on the image.
+#[rasmcore_macros::register_filter(
+    name = "draw_arc",
+    category = "draw",
+    group = "draw",
+    variant = "arc",
+    reference = "elliptical arc stroke"
+)]
+pub fn draw_arc_filter(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &DrawArcParams,
+) -> Result<Vec<u8>, ImageError> {
+    let color = [
+        config.color.r,
+        config.color.g,
+        config.color.b,
+        config.color.a,
+    ];
+    let (result, _) = super::draw::draw_arc(
+        pixels,
+        info,
+        config.cx,
+        config.cy,
+        config.rx,
+        config.ry,
+        config.start_angle,
+        config.end_angle,
+        color,
+        config.stroke_width,
+    )?;
     Ok(result)
 }
 
