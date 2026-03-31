@@ -97,6 +97,34 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
     code.push_str("    }\n");
     code.push_str("}\n\n");
 
+    // Point2D array: parse "x1,y1;x2,y2;x3,y3" or "x1,y1,x2,y2,x3,y3" into Vec<Point2D>
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str("fn get_point2d_array(params: &HashMap<String, String>, key: &str) -> Vec<crate::domain::param_types::Point2D> {\n");
+    code.push_str("    use crate::domain::param_types::Point2D;\n");
+    code.push_str("    match params.get(key) {\n");
+    code.push_str("        Some(v) => {\n");
+    code.push_str("            // Try semicolon-separated pairs first: \"x1,y1;x2,y2\"\n");
+    code.push_str("            if v.contains(';') {\n");
+    code.push_str("                v.split(';')\n");
+    code.push_str("                    .filter_map(|pair| {\n");
+    code.push_str("                        let parts: Vec<&str> = pair.split(',').collect();\n");
+    code.push_str("                        if parts.len() == 2 {\n");
+    code.push_str("                            Some(Point2D {\n");
+    code.push_str("                                x: parts[0].trim().parse().ok()?,\n");
+    code.push_str("                                y: parts[1].trim().parse().ok()?,\n");
+    code.push_str("                            })\n");
+    code.push_str("                        } else { None }\n");
+    code.push_str("                    }).collect()\n");
+    code.push_str("            } else {\n");
+    code.push_str("                // Flat comma-separated: \"x1,y1,x2,y2\"\n");
+    code.push_str("                let vals: Vec<f32> = v.split(',').filter_map(|s| s.trim().parse().ok()).collect();\n");
+    code.push_str("                vals.chunks_exact(2).map(|c| Point2D { x: c[0], y: c[1] }).collect()\n");
+    code.push_str("            }\n");
+    code.push_str("        }\n");
+    code.push_str("        None => Vec::new(),\n");
+    code.push_str("    }\n");
+    code.push_str("}\n\n");
+
     // Main dispatch function
     code.push_str("/// Dispatch a filter by name: parse string params, construct typed node.\n");
     code.push_str("pub fn dispatch_filter(\n");
@@ -135,6 +163,7 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
                     }
                     "&[f32]" => format!("get_f32_array(params, \"{clean_name}\")"),
                     "&[f64]" => format!("get_f64_array(params, \"{clean_name}\")"),
+                    "&[Point2D]" => format!("get_point2d_array(params, \"{clean_name}\")"),
                     _ => format!("get_f32(params, \"{clean_name}\", 0.0)"),
                 }
             };

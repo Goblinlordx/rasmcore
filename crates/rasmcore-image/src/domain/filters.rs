@@ -10761,7 +10761,7 @@ pub fn draw_circle_filter(
     Ok(result)
 }
 
-/// Draw a polygon on the image. Points are flat `[x1,y1,x2,y2,...]` coordinates.
+/// Draw a polygon on the image. Points are `[{x, y}, ...]` coordinates.
 #[rasmcore_macros::register_filter(
     name = "draw_polygon",
     category = "draw",
@@ -10772,7 +10772,7 @@ pub fn draw_circle_filter(
 pub fn draw_polygon_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    points: &[f32],
+    points: &[crate::domain::param_types::Point2D],
     config: &DrawPolygonParams,
 ) -> Result<Vec<u8>, ImageError> {
     let fill_color = [

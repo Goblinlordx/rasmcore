@@ -35,6 +35,7 @@ pub fn to_wit_type(rust_type: &str) -> String {
         "&[f64]" => "list<f64>".to_string(),
         "&[u8]" => "list<u8>".to_string(),
         "&[u32]" => "list<u32>".to_string(),
+        "&[Point2D]" => "list<point2d>".to_string(),
         "String" | "&str" => "string".to_string(),
         other => other.to_string(),
     }
@@ -48,6 +49,7 @@ pub fn to_owned_type(rust_type: &str) -> &str {
         "&[f64]" => "Vec<f64>",
         "&[u8]" => "Vec<u8>",
         "&[u32]" => "Vec<u32>",
+        "&[Point2D]" => "Vec<Point2D>",
         "&str" => "String",
         other if other.starts_with('&') => &other[1..],
         other => other,
@@ -62,6 +64,7 @@ pub fn to_binding_type(rust_type: &str) -> &str {
         "&[f64]" => "Vec<f64>",
         "&[u8]" => "Vec<u8>",
         "&[u32]" => "Vec<u32>",
+        "&[Point2D]" => "Vec<Point2D>",
         "&str" => "String",
         other if other.starts_with('&') => &other[1..],
         other => other,

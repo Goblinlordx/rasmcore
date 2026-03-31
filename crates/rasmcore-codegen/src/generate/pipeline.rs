@@ -17,6 +17,7 @@ pub fn generate_nodes(
     code.push_str("use crate::domain::error::ImageError;\n");
     code.push_str("use crate::domain::filters;\n");
     code.push_str("use crate::domain::filters::*; // ConfigParams structs\n");
+    code.push_str("use crate::domain::param_types::Point2D;\n");
     code.push_str("use crate::domain::point_ops::LutPointOp; // for as_point_op_lut()\n");
     code.push_str("use crate::domain::color_lut::ColorLutOp; // for as_color_lut_op()\n");
     code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");

@@ -264,28 +264,27 @@ pub fn draw_circle(
     Ok((pixmap_to_pixels(&pixmap), out_info))
 }
 
-/// Draw a polygon on the image from a flat coordinate array.
+/// Draw a polygon on the image from a list of 2D points.
 ///
-/// `points` is `[x1, y1, x2, y2, x3, y3, ...]` — must have even length
-/// and at least 3 pairs (6 values). The path is closed automatically.
+/// `points` must have at least 3 entries. The path is closed automatically.
 /// If `filled` is true, the polygon is filled. Otherwise only the outline
 /// is drawn with the given `stroke_width`.
 pub fn draw_polygon(
     pixels: &[u8],
     info: &ImageInfo,
-    points: &[f32],
+    points: &[super::param_types::Point2D],
     fill_color: [u8; 4],
     stroke_color: [u8; 4],
     stroke_width: f32,
     filled: bool,
 ) -> Result<(Vec<u8>, ImageInfo), ImageError> {
-    if points.len() < 6 || !points.len().is_multiple_of(2) {
+    if points.len() < 3 {
         return Err(ImageError::InvalidParameters(format!(
-            "draw_polygon: need at least 3 coordinate pairs (6 values), got {}",
+            "draw_polygon: need at least 3 points, got {}",
             points.len()
         )));
     }
-    let vertices: Vec<(f32, f32)> = points.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let vertices: Vec<(f32, f32)> = points.iter().map(|p| (p.x, p.y)).collect();
     let (rgba, out_info) = ensure_rgba8(pixels, info)?;
     let mut pixmap = pixels_to_pixmap(&rgba, out_info.width, out_info.height)?;
 
@@ -1074,8 +1073,13 @@ mod tests {
 
     #[test]
     fn draw_polygon_triangle_filled() {
+        use crate::domain::param_types::Point2D;
         let (px, info) = white_rgba(100, 100);
-        let points = [50.0, 10.0, 10.0, 90.0, 90.0, 90.0]; // x1,y1,x2,y2,x3,y3
+        let points = [
+            Point2D { x: 50.0, y: 10.0 },
+            Point2D { x: 10.0, y: 90.0 },
+            Point2D { x: 90.0, y: 90.0 },
+        ];
         let (result, _) = draw_polygon(
             &px,
             &info,
@@ -1094,8 +1098,14 @@ mod tests {
 
     #[test]
     fn draw_polygon_square_stroked() {
+        use crate::domain::param_types::Point2D;
         let (px, info) = white_rgba(100, 100);
-        let points = [20.0, 20.0, 80.0, 20.0, 80.0, 80.0, 20.0, 80.0];
+        let points = [
+            Point2D { x: 20.0, y: 20.0 },
+            Point2D { x: 80.0, y: 20.0 },
+            Point2D { x: 80.0, y: 80.0 },
+            Point2D { x: 20.0, y: 80.0 },
+        ];
         let (result, _) = draw_polygon(
             &px,
             &info,
@@ -1117,27 +1127,12 @@ mod tests {
 
     #[test]
     fn draw_polygon_too_few_points_errors() {
-        let (px, info) = white_rgba(100, 100);
-        // Only 2 pairs (4 values) — need at least 3 pairs (6 values)
-        let result = draw_polygon(
-            &px,
-            &info,
-            &[10.0, 10.0, 20.0, 20.0],
-            [0, 0, 0, 255],
-            [0, 0, 0, 255],
-            1.0,
-            true,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn draw_polygon_odd_length_errors() {
+        use crate::domain::param_types::Point2D;
         let (px, info) = white_rgba(100, 100);
         let result = draw_polygon(
             &px,
             &info,
-            &[10.0, 10.0, 20.0, 20.0, 30.0], // odd — invalid
+            &[Point2D { x: 10.0, y: 10.0 }, Point2D { x: 20.0, y: 20.0 }],
             [0, 0, 0, 255],
             [0, 0, 0, 255],
             1.0,

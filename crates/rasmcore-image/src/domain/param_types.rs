@@ -33,6 +33,16 @@ pub struct ColorRgba {
     pub a: u8,
 }
 
+/// 2D point coordinate.
+///
+/// Used for polygon vertices and other operations that take point lists.
+/// Codegen maps `&[Point2D]` → WIT `list<point2d>` → SDK `[x, y][]`.
+#[derive(Debug, Clone, Copy)]
+pub struct Point2D {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// RGB color with 8-bit channels (0-255).
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 #[config_hint("rc.color_rgb")]

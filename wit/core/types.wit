@@ -40,6 +40,13 @@ interface types {
         u8-sample,
     }
 
+    /// 2D point coordinate — used for polygon vertices and point lists.
+    /// SDK generators should expose this as `[x, y]` tuple/array.
+    record point2d {
+        x: f32,
+        y: f32,
+    }
+
     /// Image dimensions and format metadata
     record image-info {
         width: u32,

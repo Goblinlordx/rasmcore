@@ -36,7 +36,7 @@ fn generate_config_method(code: &mut String, f: &FilterReg, trait_method: &str, 
         .map(|(n, t)| {
             let clean_n = n.trim_start_matches('_');
             match t.as_str() {
-                "&[f32]" | "&[f64]" | "&[u8]" | "&[u32]" | "&str" => {
+                "&[f32]" | "&[f64]" | "&[u8]" | "&[u32]" | "&[Point2D]" | "&str" => {
                     format!("&config.{clean_n}")
                 }
                 _ => format!("config.{clean_n}"),
@@ -75,6 +75,7 @@ fn generate_individual_method(
             "&[f64]" => ("Vec<f64>", format!("&{clean_n}")),
             "&[u8]" => ("Vec<u8>", format!("&{clean_n}")),
             "&[u32]" => ("Vec<u32>", format!("&{clean_n}")),
+            "&[Point2D]" => ("Vec<Point2D>", format!("&{clean_n}")),
             "&str" => ("String", format!("&{clean_n}")),
             "String" => ("String", clean_n.to_string()),
             _ => (t.as_str(), clean_n.to_string()),
