@@ -11,7 +11,7 @@ pub mod rect;
 
 pub use cache::{CacheQuery, RegionHandle, RegionKey, SpatialCache};
 pub use layer_cache::{
-    compute_hash, compute_source_hash, CacheStats, ContentHash, LayerCache, ZERO_HASH,
+    CacheStats, ContentHash, LayerCache, ZERO_HASH, compute_hash, compute_source_hash,
 };
-pub use metadata::{glob_match, Metadata, MetadataFilter, MetadataValue};
+pub use metadata::{Metadata, MetadataFilter, MetadataValue, glob_match};
 pub use rect::{Overlap, Rect};

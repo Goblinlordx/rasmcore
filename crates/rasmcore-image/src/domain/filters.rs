@@ -107,7 +107,13 @@ where
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct BlurParams {
     /// Blur radius in pixels
-    #[param(min = 0.0, max = 100.0, step = 0.5, default = 3.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.0,
+        max = 100.0,
+        step = 0.5,
+        default = 3.0,
+        hint = "rc.log_slider"
+    )]
     pub radius: f32,
 }
 
@@ -186,7 +192,13 @@ pub struct CropParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct VignetteParams {
     /// Gaussian blur sigma controlling the softness of the transition
-    #[param(min = 1.0, max = 100.0, step = 1.0, default = 20.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 100.0,
+        step = 1.0,
+        default = 20.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma: f32,
     /// Horizontal inset from edges (pixels) where darkening begins
     #[param(min = 0, max = 4000, step = 1, default = 10, hint = "rc.pixels")]
@@ -236,10 +248,22 @@ pub struct BilateralParams {
     #[param(min = 0, max = 31, step = 2, default = 5, hint = "rc.log_slider")]
     pub diameter: u32,
     /// Filter sigma in color/intensity space (10-150 typical)
-    #[param(min = 1.0, max = 300.0, step = 1.0, default = 75.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 300.0,
+        step = 1.0,
+        default = 75.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma_color: f32,
     /// Filter sigma in coordinate space (10-150 typical)
-    #[param(min = 1.0, max = 300.0, step = 1.0, default = 75.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 300.0,
+        step = 1.0,
+        default = 75.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma_space: f32,
 }
 
@@ -366,7 +390,13 @@ pub struct ClarityParams {
     #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
     pub amount: f32,
     /// Blur radius for local contrast (30-50 typical)
-    #[param(min = 5.0, max = 100.0, step = 1.0, default = 40.0, hint = "rc.log_slider")]
+    #[param(
+        min = 5.0,
+        max = 100.0,
+        step = 1.0,
+        default = 40.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma: f32,
 }
 
@@ -374,7 +404,13 @@ pub struct ClarityParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct FrequencyLowParams {
     /// Gaussian sigma controlling separation frequency (higher = more in low-pass)
-    #[param(min = 0.5, max = 50.0, step = 0.5, default = 4.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.5,
+        max = 50.0,
+        step = 0.5,
+        default = 4.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma: f32,
 }
 
@@ -382,7 +418,13 @@ pub struct FrequencyLowParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct FrequencyHighParams {
     /// Gaussian sigma controlling separation frequency (higher = finer detail in high-pass)
-    #[param(min = 0.5, max = 50.0, step = 0.5, default = 4.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.5,
+        max = 50.0,
+        step = 0.5,
+        default = 4.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma: f32,
 }
 
@@ -390,7 +432,13 @@ pub struct FrequencyHighParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct GaussianBlurCvParams {
     /// Gaussian standard deviation
-    #[param(min = 0.1, max = 50.0, step = 0.1, default = 1.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.1,
+        max = 50.0,
+        step = 0.1,
+        default = 1.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma: f32,
 }
 
@@ -409,7 +457,13 @@ pub struct PyramidDetailRemapParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct RetinexSsrParams {
     /// Gaussian scale for surround function
-    #[param(min = 10.0, max = 300.0, step = 10.0, default = 80.0, hint = "rc.log_slider")]
+    #[param(
+        min = 10.0,
+        max = 300.0,
+        step = 10.0,
+        default = 80.0,
+        hint = "rc.log_slider"
+    )]
     pub sigma: f32,
 }
 
@@ -556,16 +610,40 @@ pub struct DitherOrderedParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct DrawLineParams {
     /// Start X coordinate
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 0.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.pixels"
+    )]
     pub x1: f32,
     /// Start Y coordinate
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 0.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.pixels"
+    )]
     pub y1: f32,
     /// End X coordinate
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 100.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
     pub x2: f32,
     /// End Y coordinate
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 100.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
     pub y2: f32,
     /// Line color
     pub color: super::param_types::ColorRgba,
@@ -578,16 +656,40 @@ pub struct DrawLineParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct DrawRectParams {
     /// Rectangle X position
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 10.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 10.0,
+        hint = "rc.pixels"
+    )]
     pub x: f32,
     /// Rectangle Y position
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 10.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 10.0,
+        hint = "rc.pixels"
+    )]
     pub y: f32,
     /// Rectangle width
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 100.0, hint = "rc.pixels")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
     pub rect_width: f32,
     /// Rectangle height
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 100.0, hint = "rc.pixels")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
     pub rect_height: f32,
     /// Shape color
     pub color: super::param_types::ColorRgba,
@@ -603,13 +705,31 @@ pub struct DrawRectParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct DrawCircleParams {
     /// Center X coordinate
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
     pub cx: f32,
     /// Center Y coordinate
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
     pub cy: f32,
     /// Circle radius
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 25.0,
+        hint = "rc.log_slider"
+    )]
     pub radius: f32,
     /// Shape color
     pub color: super::param_types::ColorRgba,
@@ -641,7 +761,13 @@ pub struct DrawTextParams {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct WhiteBalanceTemperatureParams {
     /// Color temperature in Kelvin
-    #[param(min = 2000.0, max = 12000.0, step = 100.0, default = 6500.0, hint = "rc.temperature_k")]
+    #[param(
+        min = 2000.0,
+        max = 12000.0,
+        step = 100.0,
+        default = 6500.0,
+        hint = "rc.temperature_k"
+    )]
     pub temperature: f32,
     /// Tint adjustment
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.signed_slider")]
@@ -862,7 +988,14 @@ pub fn motion_blur(
         return Ok(pixels.to_vec());
     }
 
-    convolve(pixels, info, &kernel, side as u32, side as u32, count as f32)
+    convolve(
+        pixels,
+        info,
+        &kernel,
+        side as u32,
+        side as u32,
+        count as f32,
+    )
 }
 
 /// Zoom motion blur — radial streak from a center point.
@@ -4807,9 +4940,10 @@ pub fn perspective_warp(
     out_height: u32,
 ) -> Result<Vec<u8>, ImageError> {
     if matrix.len() != 9 {
-        return Err(ImageError::InvalidParameters(
-            format!("perspective_warp requires 9-element matrix, got {}", matrix.len()),
-        ));
+        return Err(ImageError::InvalidParameters(format!(
+            "perspective_warp requires 9-element matrix, got {}",
+            matrix.len()
+        )));
     }
     validate_format(info.format)?;
 
@@ -6297,7 +6431,7 @@ fn dodge_burn_impl(
             }
             2 => {
                 // Highlights: strong at bright, fades at mid
-                let t = ((luma - 0.5) * 2.0).max(0.0).min(1.0);
+                let t = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
                 t * t * (3.0 - 2.0 * t) // smoothstep(0.5, 1.0)
             }
             _ => {
@@ -6411,7 +6545,13 @@ pub struct ShadowHighlightParams {
     #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0, hint = "rc.signed_slider")]
     pub whitepoint: f32,
     /// Spatial extent for local luminance blur
-    #[param(min = 0.1, max = 1500.0, step = 1.0, default = 100.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.1,
+        max = 1500.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.log_slider"
+    )]
     pub radius: f32,
     /// Compress effect on shadows/highlights, preserve midtones (0-100)
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
@@ -12791,7 +12931,13 @@ fn parse_curve_points(json: &str) -> Result<Vec<(f32, f32)>, ImageError> {
 /// Tone curve applied to all RGB channels
 pub struct CurvesMasterParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
-    #[param(min = "null", max = "null", step = "null", default = "[[0,0],[1,1]]", hint = "rc.text")]
+    #[param(
+        min = "null",
+        max = "null",
+        step = "null",
+        default = "[[0,0],[1,1]]",
+        hint = "rc.text"
+    )]
     pub points: String,
 }
 
@@ -12820,7 +12966,13 @@ pub fn curves_master(
 /// Tone curve applied to red channel only
 pub struct CurvesRedParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
-    #[param(min = "null", max = "null", step = "null", default = "[[0,0],[1,1]]", hint = "rc.text")]
+    #[param(
+        min = "null",
+        max = "null",
+        step = "null",
+        default = "[[0,0],[1,1]]",
+        hint = "rc.text"
+    )]
     pub points: String,
 }
 
@@ -12846,7 +12998,13 @@ pub fn curves_red(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec
 /// Tone curve applied to green channel only
 pub struct CurvesGreenParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
-    #[param(min = "null", max = "null", step = "null", default = "[[0,0],[1,1]]", hint = "rc.text")]
+    #[param(
+        min = "null",
+        max = "null",
+        step = "null",
+        default = "[[0,0],[1,1]]",
+        hint = "rc.text"
+    )]
     pub points: String,
 }
 
@@ -12876,7 +13034,13 @@ pub fn curves_green(
 /// Tone curve applied to blue channel only
 pub struct CurvesBlueParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
-    #[param(min = "null", max = "null", step = "null", default = "[[0,0],[1,1]]", hint = "rc.text")]
+    #[param(
+        min = "null",
+        max = "null",
+        step = "null",
+        default = "[[0,0],[1,1]]",
+        hint = "rc.text"
+    )]
     pub points: String,
 }
 
@@ -15031,7 +15195,13 @@ pub struct SwirlParams {
     #[param(min = -720.0, max = 720.0, step = 5.0, default = 90.0, hint = "rc.signed_slider")]
     pub angle: f32,
     /// Radius of effect (0 = auto from image size)
-    #[param(min = 0.0, max = 2000.0, step = 10.0, default = 0.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.0,
+        max = 2000.0,
+        step = 10.0,
+        default = 0.0,
+        hint = "rc.log_slider"
+    )]
     pub radius: f32,
 }
 
@@ -17134,10 +17304,22 @@ pub struct TiltShiftParams {
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
     pub band_size: f32,
     /// Maximum blur radius in pixels
-    #[param(min = 0.0, max = 100.0, step = 0.5, default = 8.0, hint = "rc.log_slider")]
+    #[param(
+        min = 0.0,
+        max = 100.0,
+        step = 0.5,
+        default = 8.0,
+        hint = "rc.log_slider"
+    )]
     pub blur_radius: f32,
     /// Focus band angle in degrees (0=horizontal, 90=vertical)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
     pub angle: f32,
 }
 
@@ -17224,7 +17406,13 @@ pub struct LensBlurParams {
     #[param(min = 0, max = 12, step = 1, default = 0)]
     pub blade_count: u32,
     /// Blade rotation angle in degrees
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
     pub rotation: f32,
 }
 
@@ -17453,7 +17641,13 @@ mod tilt_shift_lens_blur_tests {
 #[derive(rasmcore_macros::ConfigParams)]
 pub struct HueRotateParams {
     /// Hue rotation in degrees (0-360)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
     pub degrees: f32,
 }
 
@@ -17480,4 +17674,3 @@ pub struct PerspectiveCorrectParams {
     #[param(min = 0.0, max = 2.0, step = 0.1, default = 1.0)]
     pub strength: f32,
 }
-

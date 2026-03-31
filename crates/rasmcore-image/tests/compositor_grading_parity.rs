@@ -15,67 +15,108 @@ use std::process::Command;
 fn venv_python() -> Option<String> {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let venv = manifest.join("../../tests/fixtures/.venv/bin/python3");
-    if venv.exists() { Some(venv.to_string_lossy().into_owned()) } else { None }
+    if venv.exists() {
+        Some(venv.to_string_lossy().into_owned())
+    } else {
+        None
+    }
 }
 
 fn run_python_ref(script: &str) -> Vec<u8> {
     let python = venv_python().expect("Python venv not found");
-    let output = Command::new(&python).arg("-c").arg(script).output()
+    let output = Command::new(&python)
+        .arg("-c")
+        .arg(script)
+        .output()
         .unwrap_or_else(|e| panic!("Failed to run python: {e}"));
-    assert!(output.status.success(), "Python failed:\n{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Python failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     output.stdout
 }
 
 fn has_tool(name: &str) -> bool {
-    Command::new("which").arg(name).output().map(|o| o.status.success()).unwrap_or(false)
+    Command::new("which")
+        .arg(name)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 fn info_rgb8(w: u32, h: u32) -> ImageInfo {
-    ImageInfo { width: w, height: h, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb }
+    ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Rgb8,
+        color_space: ColorSpace::Srgb,
+    }
 }
 
 fn info_rgba8(w: u32, h: u32) -> ImageInfo {
-    ImageInfo { width: w, height: h, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb }
+    ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Rgba8,
+        color_space: ColorSpace::Srgb,
+    }
 }
 
 fn make_gradient_rgb(w: u32, h: u32) -> Vec<u8> {
     let mut px = Vec::with_capacity((w * h * 3) as usize);
-    for y in 0..h { for x in 0..w {
-        px.push((x * 255 / w.max(1)) as u8);
-        px.push((y * 255 / h.max(1)) as u8);
-        px.push(((x + y) * 128 / (w + h).max(1)) as u8);
-    }}
+    for y in 0..h {
+        for x in 0..w {
+            px.push((x * 255 / w.max(1)) as u8);
+            px.push((y * 255 / h.max(1)) as u8);
+            px.push(((x + y) * 128 / (w + h).max(1)) as u8);
+        }
+    }
     px
 }
 
 fn make_gradient_rgba(w: u32, h: u32) -> Vec<u8> {
     let mut px = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h { for x in 0..w {
-        px.push((x * 255 / w.max(1)) as u8);
-        px.push((y * 255 / h.max(1)) as u8);
-        px.push(128u8);
-        px.push(((x + y) * 255 / (w + h).max(1)) as u8);
-    }}
+    for y in 0..h {
+        for x in 0..w {
+            px.push((x * 255 / w.max(1)) as u8);
+            px.push((y * 255 / h.max(1)) as u8);
+            px.push(128u8);
+            px.push(((x + y) * 255 / (w + h).max(1)) as u8);
+        }
+    }
     px
 }
 
 fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
     assert_eq!(a.len(), b.len());
-    if a.is_empty() { return 0.0; }
-    a.iter().zip(b.iter()).map(|(&x, &y)| (x as f64 - y as f64).abs()).sum::<f64>() / a.len() as f64
+    if a.is_empty() {
+        return 0.0;
+    }
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x as f64 - y as f64).abs())
+        .sum::<f64>()
+        / a.len() as f64
 }
 
 fn assert_close(label: &str, ours: &[u8], reference: &[u8], max_mae: f64) {
     let mae = mean_absolute_error(ours, reference);
     eprintln!("  {label}: MAE={mae:.4}");
-    assert!(mae <= max_mae, "{label}: MAE={mae:.4} exceeds threshold {max_mae}");
+    assert!(
+        mae <= max_mae,
+        "{label}: MAE={mae:.4} exceeds threshold {max_mae}"
+    );
 }
 
 // ─── COMPOSITOR: Composite Multi-Offset ───────────────────────────────────
 
 #[test]
 fn composite_multi_offset_vs_python() {
-    if venv_python().is_none() { eprintln!("SKIP: no venv"); return; }
+    if venv_python().is_none() {
+        eprintln!("SKIP: no venv");
+        return;
+    }
 
     let (w, h) = (32, 32);
     let fg = make_gradient_rgba(w, h);
@@ -112,7 +153,12 @@ sys.stdout.buffer.write(np.clip(out + 0.5, 0, 255).astype(np.uint8).tobytes())
         // which introduces rounding differences vs naive straight-alpha Python reference.
         // Both are correct implementations of Porter-Duff "over" — the difference is in
         // the intermediate precision path (premul→composite→unpremul vs direct).
-        assert_close(&format!("composite offset ({ox},{oy})"), &ours, &reference, 5.0);
+        assert_close(
+            &format!("composite offset ({ox},{oy})"),
+            &ours,
+            &reference,
+            5.0,
+        );
     }
 }
 
@@ -120,7 +166,10 @@ sys.stdout.buffer.write(np.clip(out + 0.5, 0, 255).astype(np.uint8).tobytes())
 
 #[test]
 fn blend_overlay_darken_difference_vs_python() {
-    if venv_python().is_none() { eprintln!("SKIP: no venv"); return; }
+    if venv_python().is_none() {
+        eprintln!("SKIP: no venv");
+        return;
+    }
 
     let (w, h) = (16, 16);
     let fg = make_gradient_rgb(w, h);
@@ -129,12 +178,17 @@ fn blend_overlay_darken_difference_vs_python() {
 
     // Test 3 additional blend modes beyond the existing Multiply/Screen tests
     let modes = [
-        ("Overlay", filters::BlendMode::Overlay,
-         "np.where(b < 128, (2*a*b+127)//255, 255 - (2*(255-a)*(255-b)+127)//255)"),
-        ("Darken", filters::BlendMode::Darken,
-         "np.minimum(a, b)"),
-        ("Difference", filters::BlendMode::Difference,
-         "np.abs(a.astype(np.int16) - b.astype(np.int16)).astype(np.uint16)"),
+        (
+            "Overlay",
+            filters::BlendMode::Overlay,
+            "np.where(b < 128, (2*a*b+127)//255, 255 - (2*(255-a)*(255-b)+127)//255)",
+        ),
+        ("Darken", filters::BlendMode::Darken, "np.minimum(a, b)"),
+        (
+            "Difference",
+            filters::BlendMode::Difference,
+            "np.abs(a.astype(np.int16) - b.astype(np.int16)).astype(np.uint16)",
+        ),
     ];
 
     for (name, mode, formula) in &modes {
@@ -157,21 +211,37 @@ sys.stdout.buffer.write(out.tobytes())
 
 #[test]
 fn asc_cdl_multi_setting_vs_python() {
-    if venv_python().is_none() { eprintln!("SKIP: no venv"); return; }
+    if venv_python().is_none() {
+        eprintln!("SKIP: no venv");
+        return;
+    }
 
     let (w, h) = (64, 64);
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
     let settings = [
-        ([1.0f32, 1.0, 1.0], [0.0f32, 0.0, 0.0], [1.0f32, 1.0, 1.0], "identity"),
+        (
+            [1.0f32, 1.0, 1.0],
+            [0.0f32, 0.0, 0.0],
+            [1.0f32, 1.0, 1.0],
+            "identity",
+        ),
         ([1.5, 0.8, 1.2], [0.1, -0.05, 0.0], [0.8, 1.2, 1.0], "warm"),
-        ([0.7, 1.3, 0.9], [-0.02, 0.08, -0.03], [1.1, 0.9, 1.3], "cool"),
+        (
+            [0.7, 1.3, 0.9],
+            [-0.02, 0.08, -0.03],
+            [1.1, 0.9, 1.3],
+            "cool",
+        ),
     ];
 
     for (slope, offset, power, label) in &settings {
         let cdl = color_grading::AscCdl {
-            slope: *slope, offset: *offset, power: *power, saturation: 1.0,
+            slope: *slope,
+            offset: *offset,
+            power: *power,
+            saturation: 1.0,
         };
         let ours = color_grading::asc_cdl(&pixels, &info, &cdl).unwrap();
 
@@ -195,21 +265,41 @@ sys.stdout.buffer.write((out*255.0+0.5).astype(np.uint8).tobytes())
 
 #[test]
 fn lift_gamma_gain_multi_setting_vs_python() {
-    if venv_python().is_none() { eprintln!("SKIP: no venv"); return; }
+    if venv_python().is_none() {
+        eprintln!("SKIP: no venv");
+        return;
+    }
 
     let (w, h) = (64, 64);
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
     let settings = [
-        ([0.0f32, 0.0, 0.0], [1.0f32, 1.0, 1.0], [1.0f32, 1.0, 1.0], "identity"),
-        ([0.1, -0.05, 0.0], [0.9, 1.1, 1.0], [1.2, 0.9, 1.1], "warm shadows"),
-        ([-0.1, 0.05, 0.1], [1.2, 0.8, 1.0], [0.8, 1.2, 0.9], "cool highlights"),
+        (
+            [0.0f32, 0.0, 0.0],
+            [1.0f32, 1.0, 1.0],
+            [1.0f32, 1.0, 1.0],
+            "identity",
+        ),
+        (
+            [0.1, -0.05, 0.0],
+            [0.9, 1.1, 1.0],
+            [1.2, 0.9, 1.1],
+            "warm shadows",
+        ),
+        (
+            [-0.1, 0.05, 0.1],
+            [1.2, 0.8, 1.0],
+            [0.8, 1.2, 0.9],
+            "cool highlights",
+        ),
     ];
 
     for (lift, gamma, gain, label) in &settings {
         let lgg = color_grading::LiftGammaGain {
-            lift: *lift, gamma: *gamma, gain: *gain,
+            lift: *lift,
+            gamma: *gamma,
+            gain: *gain,
         };
         let ours = color_grading::lift_gamma_gain(&pixels, &info, &lgg).unwrap();
 
@@ -236,7 +326,10 @@ sys.stdout.buffer.write((out*255.0+0.5).astype(np.uint8).tobytes())
 
 #[test]
 fn tonemap_drago_multi_bias_vs_python() {
-    if venv_python().is_none() { eprintln!("SKIP: no venv"); return; }
+    if venv_python().is_none() {
+        eprintln!("SKIP: no venv");
+        return;
+    }
 
     let (w, h) = (64, 64);
     let pixels = make_gradient_rgb(w, h);
@@ -261,7 +354,12 @@ sys.stdout.buffer.write((out*255.0+0.5).astype(np.uint8).tobytes())
 "#
         );
         let reference = run_python_ref(&script);
-        assert_close(&format!("tonemap_drago bias={bias}"), &ours, &reference, 1.5);
+        assert_close(
+            &format!("tonemap_drago bias={bias}"),
+            &ours,
+            &reference,
+            1.5,
+        );
     }
 }
 
@@ -283,7 +381,11 @@ fn make_cube_lut(name: &str, transform: &str) -> String {
                     "desat" => {
                         let lum = rf * 0.2126 + gf * 0.7152 + bf * 0.0722;
                         let mix = 0.5;
-                        (rf * (1.0-mix) + lum * mix, gf * (1.0-mix) + lum * mix, bf * (1.0-mix) + lum * mix)
+                        (
+                            rf * (1.0 - mix) + lum * mix,
+                            gf * (1.0 - mix) + lum * mix,
+                            bf * (1.0 - mix) + lum * mix,
+                        )
                     }
                     _ => (rf, gf, bf),
                 };
@@ -296,7 +398,10 @@ fn make_cube_lut(name: &str, transform: &str) -> String {
 
 #[test]
 fn cube_lut_multi_file_vs_ffmpeg() {
-    if !has_tool("ffmpeg") { eprintln!("SKIP: no ffmpeg"); return; }
+    if !has_tool("ffmpeg") {
+        eprintln!("SKIP: no ffmpeg");
+        return;
+    }
 
     let (w, h) = (32, 32);
     let pixels = make_gradient_rgb(w, h);
@@ -320,20 +425,33 @@ fn cube_lut_multi_file_vs_ffmpeg() {
         std::fs::write(&cube_file, &cube_text).unwrap();
 
         let out = Command::new("ffmpeg")
-            .args(["-y", "-i", input_png.to_str().unwrap(),
-                   "-vf", &format!("lut3d={}", cube_file.to_str().unwrap()),
-                   ff_out.to_str().unwrap()])
-            .output().unwrap();
+            .args([
+                "-y",
+                "-i",
+                input_png.to_str().unwrap(),
+                "-vf",
+                &format!("lut3d={}", cube_file.to_str().unwrap()),
+                ff_out.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
 
         if !out.status.success() {
-            eprintln!("  ffmpeg lut3d failed for {name}"); continue;
+            eprintln!("  ffmpeg lut3d failed for {name}");
+            continue;
         }
 
         let ff_data = std::fs::read(&ff_out).unwrap();
         let ff_dec = rasmcore_image::domain::decoder::decode(&ff_data).unwrap();
         let ff_rgb = if ff_dec.info.format == PixelFormat::Rgba8 {
-            ff_dec.pixels.chunks_exact(4).flat_map(|c| [c[0], c[1], c[2]]).collect()
-        } else { ff_dec.pixels };
+            ff_dec
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect()
+        } else {
+            ff_dec.pixels
+        };
 
         let mae = mean_absolute_error(&ours, &ff_rgb);
         eprintln!("  .cube LUT '{name}': MAE={mae:.4} vs ffmpeg");
@@ -352,34 +470,53 @@ fn mask_apply_multi_pattern() {
     let info = info_rgb8(w, h);
 
     // Gradient mask (top=black, bottom=white)
-    let gradient_mask: Vec<u8> = (0..w * h).map(|i| {
-        let y = i / w;
-        (y * 255 / h.max(1)) as u8
-    }).collect();
+    let gradient_mask: Vec<u8> = (0..w * h)
+        .map(|i| {
+            let y = i / w;
+            (y * 255 / h.max(1)) as u8
+        })
+        .collect();
 
     // Binary mask (left half=black, right half=white)
-    let binary_mask: Vec<u8> = (0..w * h).map(|i| {
-        let x = i % w;
-        if x < w / 2 { 0u8 } else { 255u8 }
-    }).collect();
+    let binary_mask: Vec<u8> = (0..w * h)
+        .map(|i| {
+            let x = i % w;
+            if x < w / 2 { 0u8 } else { 255u8 }
+        })
+        .collect();
 
     for (name, mask) in [("gradient", &gradient_mask), ("binary", &binary_mask)] {
         let result = filters::mask_apply(&pixels, &info, mask, w, h, 0).unwrap();
         // Result should be RGBA8 (mask adds alpha)
-        assert_eq!(result.len(), (w * h * 4) as usize, "{name}: expected RGBA8 output");
+        assert_eq!(
+            result.len(),
+            (w * h * 4) as usize,
+            "{name}: expected RGBA8 output"
+        );
 
         // Verify mask is applied (non-uniform alpha in gradient case)
         if name == "gradient" {
             // Top-left should have low alpha, bottom-right should have high alpha
-            assert!(result[3] < 50, "{name}: top-left alpha should be low, got {}", result[3]);
+            assert!(
+                result[3] < 50,
+                "{name}: top-left alpha should be low, got {}",
+                result[3]
+            );
             let last = result.len() - 1;
-            assert!(result[last] > 200, "{name}: bottom-right alpha should be high, got {}", result[last]);
+            assert!(
+                result[last] > 200,
+                "{name}: bottom-right alpha should be high, got {}",
+                result[last]
+            );
         }
 
         // Inverted mask should flip alpha
         let inverted = filters::mask_apply(&pixels, &info, mask, w, h, 1).unwrap();
         if name == "gradient" {
-            assert!(inverted[3] > 200, "{name} inverted: top-left alpha should be high");
+            assert!(
+                inverted[3] > 200,
+                "{name} inverted: top-left alpha should be high"
+            );
         }
     }
 }

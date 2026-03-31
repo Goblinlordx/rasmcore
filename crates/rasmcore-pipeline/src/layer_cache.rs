@@ -112,14 +112,7 @@ impl LayerCache {
     }
 
     /// Store a layer's output in the cache.
-    pub fn store(
-        &mut self,
-        hash: ContentHash,
-        pixels: Vec<u8>,
-        width: u32,
-        height: u32,
-        bpp: u32,
-    ) {
+    pub fn store(&mut self, hash: ContentHash, pixels: Vec<u8>, width: u32, height: u32, bpp: u32) {
         let size = pixels.len();
 
         // Evict unreferenced entries first

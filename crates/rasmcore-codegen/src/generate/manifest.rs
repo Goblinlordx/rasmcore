@@ -25,7 +25,7 @@ pub fn generate(data: &CodegenData) -> String {
         let params_struct = data.param_structs.get(&struct_name);
 
         let params_json: Vec<Value> = if let Some(fields) = params_struct {
-            fields.iter().map(|field| field_to_json(field)).collect()
+            fields.iter().map(field_to_json).collect()
         } else if !f.params.is_empty() {
             f.params
                 .iter()

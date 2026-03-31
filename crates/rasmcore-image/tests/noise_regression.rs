@@ -31,10 +31,9 @@ fn load_or_generate(name: &str, generate: impl FnOnce() -> Vec<u8>) -> Vec<u8> {
 
 #[test]
 fn perlin_64x64_seed42_matches_fixture() {
-    let fixture =
-        load_or_generate("perlin_64x64_seed42_s005_o4.raw", || {
-            filters::perlin_noise(64, 64, 42, 0.05, 4)
-        });
+    let fixture = load_or_generate("perlin_64x64_seed42_s005_o4.raw", || {
+        filters::perlin_noise(64, 64, 42, 0.05, 4)
+    });
     let result = filters::perlin_noise(64, 64, 42, 0.05, 4);
     assert_eq!(result.len(), fixture.len());
     assert_eq!(
@@ -45,10 +44,9 @@ fn perlin_64x64_seed42_matches_fixture() {
 
 #[test]
 fn perlin_128x128_seed1_matches_fixture() {
-    let fixture =
-        load_or_generate("perlin_128x128_seed1_s002_o6.raw", || {
-            filters::perlin_noise(128, 128, 1, 0.02, 6)
-        });
+    let fixture = load_or_generate("perlin_128x128_seed1_s002_o6.raw", || {
+        filters::perlin_noise(128, 128, 1, 0.02, 6)
+    });
     let result = filters::perlin_noise(128, 128, 1, 0.02, 6);
     assert_eq!(result.len(), fixture.len());
     assert_eq!(
@@ -59,10 +57,9 @@ fn perlin_128x128_seed1_matches_fixture() {
 
 #[test]
 fn simplex_64x64_seed42_matches_fixture() {
-    let fixture =
-        load_or_generate("simplex_64x64_seed42_s005_o4.raw", || {
-            filters::simplex_noise(64, 64, 42, 0.05, 4)
-        });
+    let fixture = load_or_generate("simplex_64x64_seed42_s005_o4.raw", || {
+        filters::simplex_noise(64, 64, 42, 0.05, 4)
+    });
     let result = filters::simplex_noise(64, 64, 42, 0.05, 4);
     assert_eq!(result.len(), fixture.len());
     assert_eq!(
@@ -73,10 +70,9 @@ fn simplex_64x64_seed42_matches_fixture() {
 
 #[test]
 fn simplex_128x128_seed1_matches_fixture() {
-    let fixture =
-        load_or_generate("simplex_128x128_seed1_s002_o6.raw", || {
-            filters::simplex_noise(128, 128, 1, 0.02, 6)
-        });
+    let fixture = load_or_generate("simplex_128x128_seed1_s002_o6.raw", || {
+        filters::simplex_noise(128, 128, 1, 0.02, 6)
+    });
     let result = filters::simplex_noise(128, 128, 1, 0.02, 6);
     assert_eq!(result.len(), fixture.len());
     assert_eq!(

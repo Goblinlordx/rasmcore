@@ -102,7 +102,9 @@ mod tests {
 
     #[test]
     fn parse_full_param() {
-        let attr = parse_param(r#"min = 0.0, max = 1.0, step = 0.01, default = 0.5, hint = "rc.angle_deg""#);
+        let attr = parse_param(
+            r#"min = 0.0, max = 1.0, step = 0.01, default = 0.5, hint = "rc.angle_deg""#,
+        );
         assert_eq!(attr.min, Some(LitValue::Float(0.0)));
         assert_eq!(attr.max, Some(LitValue::Float(1.0)));
         assert_eq!(attr.step, Some(LitValue::Float(0.01)));

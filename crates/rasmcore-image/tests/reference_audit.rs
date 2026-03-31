@@ -1559,13 +1559,17 @@ fn parity_blur_multi_radius() {
     eprintln!("  blur multi-radius:");
     for (r, im_sigma, threshold) in cases {
         if let Some(error) = check_parity_rgb(
-            64, 64,
+            64,
+            64,
             |px, info| rasmcore_image::domain::filters::blur(px, info, *r).unwrap(),
             &["-blur", im_sigma],
             &format!("blur_r{r}"),
         ) {
             eprintln!("    r={r}: MAE = {error:.4}");
-            assert!(error < *threshold, "blur r={r}: MAE = {error:.4} exceeds {threshold}");
+            assert!(
+                error < *threshold,
+                "blur r={r}: MAE = {error:.4} exceeds {threshold}"
+            );
         }
     }
 }
@@ -1607,13 +1611,17 @@ fn parity_median_multi_radius() {
     eprintln!("  median multi-radius:");
     for (r, im_r, threshold) in cases {
         if let Some(error) = check_parity_rgb(
-            64, 64,
+            64,
+            64,
             |px, info| rasmcore_image::domain::filters::median(px, info, *r).unwrap(),
             &["-median", im_r],
             &format!("median_r{r}"),
         ) {
             eprintln!("    r={r}: MAE = {error:.4}");
-            assert!(error < *threshold, "median r={r}: MAE = {error:.4} exceeds {threshold}");
+            assert!(
+                error < *threshold,
+                "median r={r}: MAE = {error:.4} exceeds {threshold}"
+            );
         }
     }
 }
@@ -1626,7 +1634,15 @@ fn parity_morphology_multi_kernel() {
         eprintln!("SKIP morphology: magick not available");
         return;
     }
-    let ops: &[(&str, fn(&[u8], &ImageInfo, u32, rasmcore_image::domain::filters::MorphShape) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>)] = &[
+    let ops: &[(
+        &str,
+        fn(
+            &[u8],
+            &ImageInfo,
+            u32,
+            rasmcore_image::domain::filters::MorphShape,
+        ) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>,
+    )] = &[
         ("Erode", rasmcore_image::domain::filters::erode),
         ("Dilate", rasmcore_image::domain::filters::dilate),
     ];
@@ -1670,21 +1686,14 @@ fn parity_hue_rotate_multi() {
     }
     // IM -modulate: brightness%, saturation%, hue%
     // hue% = 100 + (degrees / 360 * 200) per IM docs: 100 = no change, 200 = +180deg
-    let angles: &[(f32, f64)] = &[
-        (45.0, 2.0),
-        (90.0, 2.0),
-        (180.0, 2.0),
-        (270.0, 5.0),
-    ];
+    let angles: &[(f32, f64)] = &[(45.0, 2.0), (90.0, 2.0), (180.0, 2.0), (270.0, 5.0)];
     eprintln!("  hue_rotate:");
     for (deg, threshold) in angles {
         let im_hue = 100.0 + deg / 360.0 * 200.0;
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| {
-                rasmcore_image::domain::filters::hue_rotate(px, info, *deg).unwrap()
-            },
+            |px, info| rasmcore_image::domain::filters::hue_rotate(px, info, *deg).unwrap(),
             &["-modulate", &format!("100,100,{im_hue}")],
             &format!("hue_rotate_{deg}"),
         ) {
@@ -1704,19 +1713,14 @@ fn parity_brightness_contrast_multi() {
         return;
     }
     // Brightness: -0.3, 0.0, +0.3 (we use -1..1, IM uses -100..100)
-    let values: &[(f32, &str, f64)] = &[
-        (-0.3, "-30x0", 2.0),
-        (0.0, "0x0", 0.01),
-        (0.3, "30x0", 2.0),
-    ];
+    let values: &[(f32, &str, f64)] =
+        &[(-0.3, "-30x0", 2.0), (0.0, "0x0", 0.01), (0.3, "30x0", 2.0)];
     eprintln!("  brightness:");
     for (val, im_arg, threshold) in values {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| {
-                rasmcore_image::domain::filters::brightness(px, info, *val).unwrap()
-            },
+            |px, info| rasmcore_image::domain::filters::brightness(px, info, *val).unwrap(),
             &["-brightness-contrast", im_arg],
             &format!("brightness_{val}"),
         ) {
@@ -1735,13 +1739,17 @@ fn parity_gamma_multi() {
     eprintln!("  gamma multi-value:");
     for (g, im_g, threshold) in cases {
         if let Some(error) = check_parity_rgb(
-            64, 64,
+            64,
+            64,
             |px, info| rasmcore_image::domain::point_ops::gamma(px, info, *g).unwrap(),
             &["-gamma", im_g],
             &format!("gamma_{g}"),
         ) {
             eprintln!("    gamma={g}: MAE = {error:.4}");
-            assert!(error < *threshold, "gamma {g}: MAE = {error:.4} exceeds {threshold}");
+            assert!(
+                error < *threshold,
+                "gamma {g}: MAE = {error:.4} exceeds {threshold}"
+            );
         }
     }
 }

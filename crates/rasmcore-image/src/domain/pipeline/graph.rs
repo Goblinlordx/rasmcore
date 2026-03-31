@@ -131,9 +131,7 @@ impl NodeGraph {
     pub fn node_metadata(&self, node_id: u32) -> &rasmcore_pipeline::Metadata {
         static EMPTY: std::sync::LazyLock<rasmcore_pipeline::Metadata> =
             std::sync::LazyLock::new(rasmcore_pipeline::Metadata::new);
-        self.node_metadata
-            .get(node_id as usize)
-            .unwrap_or(&EMPTY)
+        self.node_metadata.get(node_id as usize).unwrap_or(&EMPTY)
     }
 
     /// Get mutable metadata for a node (for set_metadata operations).
@@ -211,10 +209,10 @@ impl NodeGraph {
         }
 
         // Check layer cache hit first (pre-populated during add_node_with_hash)
-        if self.cache_hit_nodes.contains(&node_id) {
-            if let Some(pixels) = self.cache_hit_pixels.get(&node_id) {
-                return Ok(pixels.clone());
-            }
+        if self.cache_hit_nodes.contains(&node_id)
+            && let Some(pixels) = self.cache_hit_pixels.get(&node_id)
+        {
+            return Ok(pixels.clone());
         }
 
         let info = self.node_info(node_id)?;

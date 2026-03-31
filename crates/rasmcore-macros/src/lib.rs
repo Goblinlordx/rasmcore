@@ -158,7 +158,10 @@ pub fn register_generator(attr: TokenStream, item: TokenStream) -> TokenStream {
     let gen_group = &args.group;
     let gen_variant = &args.variant;
     let gen_reference = &args.reference;
-    let reg_ident = format_ident!("__RASMCORE_GENERATOR_{}", fn_name.to_string().to_uppercase());
+    let reg_ident = format_ident!(
+        "__RASMCORE_GENERATOR_{}",
+        fn_name.to_string().to_uppercase()
+    );
     let params = &input_fn.sig.inputs;
     let param_count = params.len();
 
@@ -201,7 +204,10 @@ pub fn register_compositor(attr: TokenStream, item: TokenStream) -> TokenStream 
     let comp_group = &args.group;
     let comp_variant = &args.variant;
     let comp_reference = &args.reference;
-    let reg_ident = format_ident!("__RASMCORE_COMPOSITOR_{}", fn_name.to_string().to_uppercase());
+    let reg_ident = format_ident!(
+        "__RASMCORE_COMPOSITOR_{}",
+        fn_name.to_string().to_uppercase()
+    );
     let params = &input_fn.sig.inputs;
     let param_count = params.len();
 

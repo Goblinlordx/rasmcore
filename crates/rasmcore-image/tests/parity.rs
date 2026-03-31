@@ -10,10 +10,8 @@ use butteraugli::{ButteraugliParams, butteraugli};
 use dssim_core::Dssim;
 use imgref::Img;
 use rasmcore_image::domain::types::*;
+use rasmcore_image::domain::types::{DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
 use rasmcore_image::domain::{concat, decoder, encoder, filters, transform};
-use rasmcore_image::domain::types::{
-    DecodedImage, DisposalMethod, FrameInfo, FrameSequence,
-};
 use rgb::RGB8;
 
 fn fixtures_dir() -> std::path::PathBuf {
@@ -1295,13 +1293,11 @@ fn parity_webp_multi_quality_vs_cwebp() {
 
     for quality in [25u8, 50, 75, 95] {
         // Our encode
-        let our_webp =
-            encoder::encode(&pixels, &info, "webp", Some(quality)).unwrap();
+        let our_webp = encoder::encode(&pixels, &info, "webp", Some(quality)).unwrap();
         let our_size = our_webp.len();
 
         // cwebp encode
-        let cwebp_path =
-            std::env::temp_dir().join(format!("webp_parity_cwebp_q{quality}.webp"));
+        let cwebp_path = std::env::temp_dir().join(format!("webp_parity_cwebp_q{quality}.webp"));
         let result = std::process::Command::new("cwebp")
             .args([
                 "-q",
@@ -1319,11 +1315,9 @@ fn parity_webp_multi_quality_vs_cwebp() {
         let cwebp_size = std::fs::metadata(&cwebp_path).unwrap().len();
 
         // Decode our WebP with dwebp to get reference-decoded pixels
-        let our_webp_path =
-            std::env::temp_dir().join(format!("webp_parity_ours_q{quality}.webp"));
+        let our_webp_path = std::env::temp_dir().join(format!("webp_parity_ours_q{quality}.webp"));
         std::fs::write(&our_webp_path, &our_webp).unwrap();
-        let our_png_path =
-            std::env::temp_dir().join(format!("webp_parity_ours_q{quality}.png"));
+        let our_png_path = std::env::temp_dir().join(format!("webp_parity_ours_q{quality}.png"));
         let _ = std::process::Command::new("dwebp")
             .args([
                 our_webp_path.to_str().unwrap(),
@@ -1334,8 +1328,7 @@ fn parity_webp_multi_quality_vs_cwebp() {
             .unwrap();
 
         // Decode cwebp output with dwebp
-        let cwebp_png_path =
-            std::env::temp_dir().join(format!("webp_parity_cwebp_q{quality}.png"));
+        let cwebp_png_path = std::env::temp_dir().join(format!("webp_parity_cwebp_q{quality}.png"));
         let _ = std::process::Command::new("dwebp")
             .args([
                 cwebp_path.to_str().unwrap(),
@@ -1347,8 +1340,7 @@ fn parity_webp_multi_quality_vs_cwebp() {
 
         if our_png_path.exists() && cwebp_png_path.exists() {
             let our_dec = decoder::decode(&std::fs::read(&our_png_path).unwrap()).unwrap();
-            let cwebp_dec =
-                decoder::decode(&std::fs::read(&cwebp_png_path).unwrap()).unwrap();
+            let cwebp_dec = decoder::decode(&std::fs::read(&cwebp_png_path).unwrap()).unwrap();
 
             let our_psnr = psnr(&pixels, &our_dec.pixels);
             let cwebp_psnr = psnr(&pixels, &cwebp_dec.pixels);
@@ -1463,10 +1455,14 @@ fn parity_gif_animation_timing() {
     // Verify via ffprobe
     let output = std::process::Command::new("ffprobe")
         .args([
-            "-v", "quiet",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=nb_frames,r_frame_rate,duration",
-            "-of", "json",
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_frames,r_frame_rate,duration",
+            "-of",
+            "json",
             gif_path.to_str().unwrap(),
         ])
         .output()
@@ -1475,10 +1471,7 @@ fn parity_gif_animation_timing() {
     let probe_json = String::from_utf8_lossy(&output.stdout);
     eprintln!("GIF timing ffprobe: {probe_json}");
 
-    assert!(
-        output.status.success(),
-        "ffprobe failed on encoded GIF"
-    );
+    assert!(output.status.success(), "ffprobe failed on encoded GIF");
     assert!(
         probe_json.contains("nb_frames") || probe_json.contains("stream"),
         "ffprobe didn't detect video stream in GIF"
@@ -1549,9 +1542,11 @@ fn parity_apng_disposal_modes() {
         let _ = std::fs::create_dir_all(&frame_dir);
         let result = std::process::Command::new("ffmpeg")
             .args([
-                "-y", "-i",
+                "-y",
+                "-i",
                 apng_path.to_str().unwrap(),
-                "-vsync", "0",
+                "-vsync",
+                "0",
                 &format!("{}/frame_%03d.png", frame_dir.to_str().unwrap()),
             ])
             .output()
@@ -1566,7 +1561,12 @@ fn parity_apng_disposal_modes() {
             .unwrap()
             .filter(|e| {
                 e.as_ref()
-                    .map(|e| e.path().extension().map(|ext| ext == "png").unwrap_or(false))
+                    .map(|e| {
+                        e.path()
+                            .extension()
+                            .map(|ext| ext == "png")
+                            .unwrap_or(false)
+                    })
                     .unwrap_or(false)
             })
             .count();

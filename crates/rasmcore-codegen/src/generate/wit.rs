@@ -53,7 +53,9 @@ mod tests {
             ],
         }];
         let wit = generate(&filters);
-        assert!(wit.contains("zoom-blur: func(pixels: buffer, info: image-info, center-x: f32, factor: f32)"));
+        assert!(wit.contains(
+            "zoom-blur: func(pixels: buffer, info: image-info, center-x: f32, factor: f32)"
+        ));
     }
 
     #[test]

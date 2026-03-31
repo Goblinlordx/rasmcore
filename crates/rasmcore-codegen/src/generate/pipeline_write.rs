@@ -1,7 +1,7 @@
 //! Generate pipeline write adapter methods and WIT declarations from encoder configs.
 
-use crate::parse::encoders::EncoderInfo;
 use super::helpers::to_pascal_case;
+use crate::parse::encoders::EncoderInfo;
 
 /// Generate WIT write config records for all encoders.
 pub fn generate_wit_configs(encoders: &[EncoderInfo]) -> String {
@@ -13,17 +13,32 @@ pub fn generate_wit_configs(encoders: &[EncoderInfo]) -> String {
                 enc.format.replace('_', "-")
             ));
         } else {
-            wit.push_str(&format!("    record {}-write-config {{\n", enc.format.replace('_', "-")));
+            wit.push_str(&format!(
+                "    record {}-write-config {{\n",
+                enc.format.replace('_', "-")
+            ));
             for field in &enc.fields {
                 if field.is_enum {
                     let wit_enum = field.rust_type.replace('_', "-").to_lowercase();
-                    wit.push_str(&format!("        {}: option<{}>,\n", field.name.replace('_', "-"), wit_enum));
+                    wit.push_str(&format!(
+                        "        {}: option<{}>,\n",
+                        field.name.replace('_', "-"),
+                        wit_enum
+                    ));
                 } else {
                     let wit_type = match field.rust_type.as_str() {
-                        "u8" => "u8", "u16" => "u16", "u32" => "u32",
-                        "bool" => "bool", "f32" => "f32", _ => "u32",
+                        "u8" => "u8",
+                        "u16" => "u16",
+                        "u32" => "u32",
+                        "bool" => "bool",
+                        "f32" => "f32",
+                        _ => "u32",
                     };
-                    wit.push_str(&format!("        {}: option<{}>,\n", field.name.replace('_', "-"), wit_type));
+                    wit.push_str(&format!(
+                        "        {}: option<{}>,\n",
+                        field.name.replace('_', "-"),
+                        wit_type
+                    ));
                 }
             }
             wit.push_str("    }\n\n");
@@ -41,15 +56,25 @@ pub fn generate_wit_enums(encoders: &[EncoderInfo]) -> String {
             if field.is_enum && !seen.contains(&field.rust_type) {
                 seen.insert(field.rust_type.clone());
                 let wit_name = field.rust_type.replace('_', "-").to_lowercase();
-                let variants: Vec<String> = field.enum_variants.iter().map(|v| {
-                    let mut kebab = String::new();
-                    for (i, ch) in v.chars().enumerate() {
-                        if ch.is_uppercase() && i > 0 { kebab.push('-'); }
-                        kebab.push(ch.to_lowercase().next().unwrap());
-                    }
-                    kebab
-                }).collect();
-                wit.push_str(&format!("    enum {} {{ {} }}\n\n", wit_name, variants.join(", ")));
+                let variants: Vec<String> = field
+                    .enum_variants
+                    .iter()
+                    .map(|v| {
+                        let mut kebab = String::new();
+                        for (i, ch) in v.chars().enumerate() {
+                            if ch.is_uppercase() && i > 0 {
+                                kebab.push('-');
+                            }
+                            kebab.push(ch.to_lowercase().next().unwrap());
+                        }
+                        kebab
+                    })
+                    .collect();
+                wit.push_str(&format!(
+                    "    enum {} {{ {} }}\n\n",
+                    wit_name,
+                    variants.join(", ")
+                ));
             }
         }
     }
@@ -74,7 +99,9 @@ pub fn generate_wit_write_methods(encoders: &[EncoderInfo]) -> String {
 pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
     let mut code = String::new();
     code.push_str("// Auto-generated pipeline write adapter methods.\n");
-    code.push_str("// All write methods take (source, config). Metadata comes from pipeline chain state.\n\n");
+    code.push_str(
+        "// All write methods take (source, config). Metadata comes from pipeline chain state.\n\n",
+    );
 
     for enc in encoders {
         let method_name = format!("write_{}", enc.format);
@@ -95,17 +122,24 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
         if !enc.fields.is_empty() {
             let module = &enc.module;
             let config_struct = &enc.config_struct;
-            code.push_str(&format!("        let cfg = domain::encoder::{module}::{config_struct} {{\n"));
+            code.push_str(&format!(
+                "        let cfg = domain::encoder::{module}::{config_struct} {{\n"
+            ));
             for field in &enc.fields {
                 if field.is_enum {
                     code.push_str(&format!(
                         "            {}: to_domain_{}_pipeline(config.{}),\n",
-                        field.name, field.rust_type.to_lowercase(), field.name
+                        field.name,
+                        field.rust_type.to_lowercase(),
+                        field.name
                     ));
                 } else {
                     let default = if field.default_val.is_empty() {
                         match field.rust_type.as_str() {
-                            "u8" => "0", "u16" => "0", "bool" => "false", _ => "0",
+                            "u8" => "0",
+                            "u16" => "0",
+                            "bool" => "false",
+                            _ => "0",
                         }
                     } else {
                         &field.default_val
@@ -155,19 +189,38 @@ mod tests {
 
     fn jpeg_encoder() -> EncoderInfo {
         EncoderInfo {
-            format: "jpeg".into(), config_struct: "JpegEncodeConfig".into(),
+            format: "jpeg".into(),
+            config_struct: "JpegEncodeConfig".into(),
             fields: vec![
-                EncoderField { name: "quality".into(), rust_type: "u8".into(), is_enum: false, enum_variants: vec![], default_val: "85".into() },
-                EncoderField { name: "progressive".into(), rust_type: "bool".into(), is_enum: false, enum_variants: vec![], default_val: "false".into() },
+                EncoderField {
+                    name: "quality".into(),
+                    rust_type: "u8".into(),
+                    is_enum: false,
+                    enum_variants: vec![],
+                    default_val: "85".into(),
+                },
+                EncoderField {
+                    name: "progressive".into(),
+                    rust_type: "bool".into(),
+                    is_enum: false,
+                    enum_variants: vec![],
+                    default_val: "false".into(),
+                },
             ],
-            encode_fn: "encode_pixels".into(), module: "jpeg".into(), sink_takes_metadata: true,
+            encode_fn: "encode_pixels".into(),
+            module: "jpeg".into(),
+            sink_takes_metadata: true,
         }
     }
 
     fn bmp_encoder() -> EncoderInfo {
         EncoderInfo {
-            format: "bmp".into(), config_struct: "BmpEncodeConfig".into(),
-            fields: vec![], encode_fn: "encode_pixels".into(), module: "bmp".into(), sink_takes_metadata: false,
+            format: "bmp".into(),
+            config_struct: "BmpEncodeConfig".into(),
+            fields: vec![],
+            encode_fn: "encode_pixels".into(),
+            module: "bmp".into(),
+            sink_takes_metadata: false,
         }
     }
 

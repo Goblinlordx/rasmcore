@@ -47,12 +47,19 @@ pub fn extract_encoder_configs(file: &syn::File) -> Vec<EncoderInfo> {
             if !name.ends_with("EncodeConfig") {
                 continue;
             }
-            let format = name.strip_suffix("EncodeConfig").unwrap_or(&name).to_lowercase();
+            let format = name
+                .strip_suffix("EncodeConfig")
+                .unwrap_or(&name)
+                .to_lowercase();
             let mut fields = Vec::new();
 
             if let syn::Fields::Named(named) = &s.fields {
                 for field in &named.named {
-                    let fname = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
+                    let fname = field
+                        .ident
+                        .as_ref()
+                        .map(|i| i.to_string())
+                        .unwrap_or_default();
                     let ftype = super::type_to_string(&field.ty);
                     let is_enum = enums.contains_key(&ftype);
                     let enum_variants = enums.get(&ftype).cloned().unwrap_or_default();

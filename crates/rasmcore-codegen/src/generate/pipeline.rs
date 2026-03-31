@@ -54,11 +54,9 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
         );
 
         code.push_str(&format!("impl {node_name} {{\n"));
+        code.push_str("    #[allow(clippy::too_many_arguments)]\n");
         code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
-        code.push_str(&format!(
-            "        Self {{ {} }}\n",
-            all_fields.join(", ")
-        ));
+        code.push_str(&format!("        Self {{ {} }}\n", all_fields.join(", ")));
         code.push_str("    }\n");
         code.push_str("}\n\n");
 
@@ -101,7 +99,9 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
         code.push_str("    fn compute_region(\n");
         code.push_str("        &self,\n");
         code.push_str("        request: Rect,\n");
-        code.push_str("        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n");
+        code.push_str(
+            "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
+        );
         code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
         code.push_str("        let overlap = self.overlap();\n");
         code.push_str("        let upstream_rect = request.expand(&overlap, self.source_info.width, self.source_info.height);\n");
@@ -173,6 +173,7 @@ pub fn generate_adapter_macro(filters: &[FilterReg]) -> String {
             )
         };
 
+        code.push_str("    #[allow(clippy::too_many_arguments)]\n");
         code.push_str(&format!(
             "    fn {trait_method}({full_sig}) -> Result<NodeId, RasmcoreError> {{\n"
         ));
@@ -185,20 +186,17 @@ pub fn generate_adapter_macro(filters: &[FilterReg]) -> String {
         let hash_param_bytes = if node_ctor_args.is_empty() {
             "b\"\"".to_string()
         } else {
-            // Serialize params to bytes for hashing
-            let parts: Vec<String> = node_ctor_args
-                .iter()
-                .map(|n| format!("&{n}.to_le_bytes()"))
-                .collect();
             // We can't easily get byte repr of all types, so use the debug string
             format!(
                 "format!(\"{}\").as_bytes()",
-                node_ctor_args.iter().map(|n| format!("{{{n}:?}}")).collect::<Vec<_>>().join(",")
+                node_ctor_args
+                    .iter()
+                    .map(|n| format!("{{{n}:?}}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
             )
         };
-        code.push_str(&format!(
-            "        let upstream_hash = self.graph.borrow().node_hash(source);\n"
-        ));
+        code.push_str("        let upstream_hash = self.graph.borrow().node_hash(source);\n");
         code.push_str(&format!(
             "        let content_hash = rasmcore_pipeline::compute_hash(&upstream_hash, \"{trait_method}\", {hash_param_bytes});\n"
         ));

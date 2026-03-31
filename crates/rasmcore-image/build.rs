@@ -119,8 +119,11 @@ fn main() {
     if !encoder_configs.is_empty() {
         let write_adapter =
             rasmcore_codegen::generate::pipeline_write::generate_adapter_methods(&encoder_configs);
-        std::fs::write(out_dir.join("generated_pipeline_write_adapter.rs"), &write_adapter)
-            .unwrap();
+        std::fs::write(
+            out_dir.join("generated_pipeline_write_adapter.rs"),
+            &write_adapter,
+        )
+        .unwrap();
 
         eprintln!(
             "rasmcore build.rs: Generated {} pipeline write adapter method(s)",

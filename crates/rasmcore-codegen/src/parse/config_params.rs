@@ -127,7 +127,13 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
             }
 
             if !fields.is_empty() {
-                result.insert(struct_name, ParsedStruct { fields, config_hint });
+                result.insert(
+                    struct_name,
+                    ParsedStruct {
+                        fields,
+                        config_hint,
+                    },
+                );
             }
         }
     }

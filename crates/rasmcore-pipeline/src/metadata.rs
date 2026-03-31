@@ -71,7 +71,6 @@ impl Metadata {
         Self::default()
     }
 
-
     /// Get a value by key.
     pub fn get(&self, key: &str) -> Option<&MetadataValue> {
         self.entries.get(key)
@@ -221,7 +220,7 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
 /// Simple base64 encoding (no external dependency).
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
@@ -244,9 +243,10 @@ fn base64_encode(data: &[u8]) -> String {
 }
 
 /// Metadata filter mode for write operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum MetadataFilter {
     /// Drop all metadata (default — safe, no PII leak).
+    #[default]
     DropAll,
     /// Keep all metadata.
     KeepAll,
@@ -254,12 +254,6 @@ pub enum MetadataFilter {
     Include(Vec<String>),
     /// Blacklist: keys matching these glob patterns are removed.
     Exclude(Vec<String>),
-}
-
-impl Default for MetadataFilter {
-    fn default() -> Self {
-        MetadataFilter::DropAll
-    }
 }
 
 impl MetadataFilter {

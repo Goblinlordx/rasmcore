@@ -19,14 +19,19 @@ fn has_tool(name: &str) -> bool {
 
 fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
     assert_eq!(a.len(), b.len());
-    if a.is_empty() { return 0.0; }
-    a.iter().zip(b.iter())
+    if a.is_empty() {
+        return 0.0;
+    }
+    a.iter()
+        .zip(b.iter())
         .map(|(&x, &y)| (x as f64 - y as f64).abs())
-        .sum::<f64>() / a.len() as f64
+        .sum::<f64>()
+        / a.len() as f64
 }
 
 fn max_absolute_error(a: &[u8], b: &[u8]) -> u8 {
-    a.iter().zip(b.iter())
+    a.iter()
+        .zip(b.iter())
         .map(|(&x, &y)| (x as i16 - y as i16).unsigned_abs() as u8)
         .max()
         .unwrap_or(0)
@@ -42,7 +47,8 @@ fn make_gradient(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         }
     }
     let info = ImageInfo {
-        width: w, height: h,
+        width: w,
+        height: h,
         format: PixelFormat::Rgb8,
         color_space: ColorSpace::Srgb,
     };
@@ -65,9 +71,8 @@ fn lens_blur_disc_vs_imagemagick_disk_convolve() {
     let radius = 3u32;
 
     // Our lens_blur disc mode
-    let our_output = rasmcore_image::domain::filters::lens_blur(
-        &pixels, &info, radius, 0, 0.0
-    ).unwrap();
+    let our_output =
+        rasmcore_image::domain::filters::lens_blur(&pixels, &info, radius, 0, 0.0).unwrap();
 
     // ImageMagick disc convolution
     let tmp = std::env::temp_dir().join("rasmcore_lens_blur_parity");
@@ -84,17 +89,26 @@ fn lens_blur_disc_vs_imagemagick_disk_convolve() {
     let out = Command::new("magick")
         .args([
             input_png.to_str().unwrap(),
-            "-depth", "8",
-            "-define", "convolve:scale=!",
-            "-morphology", "Convolve", &format!("Disk:{radius}"),
+            "-depth",
+            "8",
+            "-define",
+            "convolve:scale=!",
+            "-morphology",
+            "Convolve",
+            &format!("Disk:{radius}"),
             "-clamp",
-            "-depth", "8",
+            "-depth",
+            "8",
             im_output_png.to_str().unwrap(),
         ])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
     if !out.status.success() {
-        eprintln!("  magick Disk convolve failed: {}", String::from_utf8_lossy(&out.stderr));
+        eprintln!(
+            "  magick Disk convolve failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let _ = std::fs::remove_dir_all(&tmp);
         return;
     }
@@ -102,15 +116,22 @@ fn lens_blur_disc_vs_imagemagick_disk_convolve() {
     let im_data = std::fs::read(&im_output_png).unwrap();
     let im_decoded = rasmcore_image::domain::decoder::decode(&im_data).unwrap();
     let im_rgb = if im_decoded.info.format == PixelFormat::Rgba8 {
-        im_decoded.pixels.chunks_exact(4)
+        im_decoded
+            .pixels
+            .chunks_exact(4)
             .flat_map(|c| [c[0], c[1], c[2]])
             .collect::<Vec<u8>>()
     } else {
         im_decoded.pixels.clone()
     };
 
-    assert_eq!(our_output.len(), im_rgb.len(),
-        "size mismatch: ours={} IM={}", our_output.len(), im_rgb.len());
+    assert_eq!(
+        our_output.len(),
+        im_rgb.len(),
+        "size mismatch: ours={} IM={}",
+        our_output.len(),
+        im_rgb.len()
+    );
 
     let mae = mean_absolute_error(&our_output, &im_rgb);
     let max_err = max_absolute_error(&our_output, &im_rgb);
@@ -140,11 +161,12 @@ fn lens_blur_identity_vs_imagemagick() {
     let (pixels, info) = make_gradient(32, 32);
 
     // Our lens_blur with radius 0 = identity
-    let our_output = rasmcore_image::domain::filters::lens_blur(
-        &pixels, &info, 0, 0, 0.0
-    ).unwrap();
+    let our_output = rasmcore_image::domain::filters::lens_blur(&pixels, &info, 0, 0, 0.0).unwrap();
 
-    assert_eq!(our_output, pixels, "radius=0 should be pixel-perfect identity");
+    assert_eq!(
+        our_output, pixels,
+        "radius=0 should be pixel-perfect identity"
+    );
     eprintln!("  lens_blur identity: pixel-perfect (MAE=0.0000)");
 }
 
@@ -167,9 +189,8 @@ fn tilt_shift_center_band_sharp_vs_imagemagick_compose() {
     let (pixels, info) = make_gradient(64, 64);
 
     // Our tilt-shift: center band should be exact input
-    let our_output = rasmcore_image::domain::filters::tilt_shift(
-        &pixels, &info, 0.5, 0.3, 10.0, 0.0
-    ).unwrap();
+    let our_output =
+        rasmcore_image::domain::filters::tilt_shift(&pixels, &info, 0.5, 0.3, 10.0, 0.0).unwrap();
 
     // IM composed tilt-shift:
     // 1. Create blurred version
@@ -188,19 +209,31 @@ fn tilt_shift_center_band_sharp_vs_imagemagick_compose() {
     let out = Command::new("magick")
         .args([
             input_png.to_str().unwrap(),
-            "(", "+clone", "-blur", "0x10", ")",
-            "(", "-size", "64x64",
-                // Gradient mask: black center band (rows 22-42), white edges
-                "-fx", "abs(j/h - 0.5) < 0.15 ? 0 : min(1, (abs(j/h - 0.5) - 0.15) / 0.35)",
+            "(",
+            "+clone",
+            "-blur",
+            "0x10",
+            ")",
+            "(",
+            "-size",
+            "64x64",
+            // Gradient mask: black center band (rows 22-42), white edges
+            "-fx",
+            "abs(j/h - 0.5) < 0.15 ? 0 : min(1, (abs(j/h - 0.5) - 0.15) / 0.35)",
             ")",
             "-composite",
-            "-depth", "8",
+            "-depth",
+            "8",
             im_output_png.to_str().unwrap(),
         ])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
     if !out.status.success() {
-        eprintln!("  magick tilt-shift compose failed: {}", String::from_utf8_lossy(&out.stderr));
+        eprintln!(
+            "  magick tilt-shift compose failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         // This is expected to fail on some IM versions — skip gracefully
         let _ = std::fs::remove_dir_all(&tmp);
         eprintln!("  tilt_shift_vs_im: SKIP (IM -fx compose not supported)");
@@ -210,7 +243,9 @@ fn tilt_shift_center_band_sharp_vs_imagemagick_compose() {
     let im_data = std::fs::read(&im_output_png).unwrap();
     let im_decoded = rasmcore_image::domain::decoder::decode(&im_data).unwrap();
     let im_rgb = if im_decoded.info.format == PixelFormat::Rgba8 {
-        im_decoded.pixels.chunks_exact(4)
+        im_decoded
+            .pixels
+            .chunks_exact(4)
             .flat_map(|c| [c[0], c[1], c[2]])
             .collect::<Vec<u8>>()
     } else {
@@ -219,7 +254,7 @@ fn tilt_shift_center_band_sharp_vs_imagemagick_compose() {
 
     // Both should have sharp center bands — compare center rows only
     let center_start = 28 * 64 * 3; // row 28 (in focus band)
-    let center_end = 36 * 64 * 3;   // row 36
+    let center_end = 36 * 64 * 3; // row 36
     let our_center = &our_output[center_start..center_end];
     let orig_center = &pixels[center_start..center_end];
     let im_center = &im_rgb[center_start..center_end];

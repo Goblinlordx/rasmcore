@@ -316,7 +316,10 @@ impl GuestImagePipeline for PipelineResource {
 
         // Detect format
         if let Some(fmt) = domain::decoder::detect_format(&data) {
-            meta.set("format", rasmcore_pipeline::MetadataValue::String(fmt.clone()));
+            meta.set(
+                "format",
+                rasmcore_pipeline::MetadataValue::String(fmt.clone()),
+            );
 
             // Extract ICC profile
             let icc = match fmt.as_str() {
@@ -325,7 +328,10 @@ impl GuestImagePipeline for PipelineResource {
                 _ => None,
             };
             if let Some(profile) = icc {
-                meta.set("icc_profile", rasmcore_pipeline::MetadataValue::Bytes(profile));
+                meta.set(
+                    "icc_profile",
+                    rasmcore_pipeline::MetadataValue::Bytes(profile),
+                );
             }
         }
 
@@ -422,10 +428,17 @@ impl GuestImagePipeline for PipelineResource {
         let node = transform::ResizeNode::new(source, src_info, width, height, domain_filter);
         let mut graph = self.graph.borrow_mut();
         let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "resize", format!("{width},{height},{filter:?}").as_bytes());
+        let hash = rasmcore_pipeline::compute_hash(
+            &upstream_hash,
+            "resize",
+            format!("{width},{height},{filter:?}").as_bytes(),
+        );
         let mut meta = graph.node_metadata(source).clone();
         meta.set("width", rasmcore_pipeline::MetadataValue::Int(width as i64));
-        meta.set("height", rasmcore_pipeline::MetadataValue::Int(height as i64));
+        meta.set(
+            "height",
+            rasmcore_pipeline::MetadataValue::Int(height as i64),
+        );
         Ok(graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta))
     }
 
@@ -445,10 +458,17 @@ impl GuestImagePipeline for PipelineResource {
         let node = transform::CropNode::new(source, src_info, x, y, width, height);
         let mut graph = self.graph.borrow_mut();
         let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "crop", format!("{x},{y},{width},{height}").as_bytes());
+        let hash = rasmcore_pipeline::compute_hash(
+            &upstream_hash,
+            "crop",
+            format!("{x},{y},{width},{height}").as_bytes(),
+        );
         let mut meta = graph.node_metadata(source).clone();
         meta.set("width", rasmcore_pipeline::MetadataValue::Int(width as i64));
-        meta.set("height", rasmcore_pipeline::MetadataValue::Int(height as i64));
+        meta.set(
+            "height",
+            rasmcore_pipeline::MetadataValue::Int(height as i64),
+        );
         Ok(graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta))
     }
 
@@ -465,8 +485,15 @@ impl GuestImagePipeline for PipelineResource {
         };
         let node = transform::RotateNode::new(source, src_info, domain_rot);
         let upstream_hash = self.graph.borrow().node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "rotate", format!("{angle:?}").as_bytes());
-        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))
+        let hash = rasmcore_pipeline::compute_hash(
+            &upstream_hash,
+            "rotate",
+            format!("{angle:?}").as_bytes(),
+        );
+        Ok(self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(node), hash))
     }
 
     fn flip(&self, source: NodeId, direction: FlipDirection) -> Result<NodeId, RasmcoreError> {
@@ -481,8 +508,15 @@ impl GuestImagePipeline for PipelineResource {
         };
         let node = transform::FlipNode::new(source, src_info, domain_dir);
         let upstream_hash = self.graph.borrow().node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "flip", format!("{direction:?}").as_bytes());
-        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))
+        let hash = rasmcore_pipeline::compute_hash(
+            &upstream_hash,
+            "flip",
+            format!("{direction:?}").as_bytes(),
+        );
+        Ok(self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(node), hash))
     }
 
     fn convert_format(
@@ -566,19 +600,19 @@ impl GuestImagePipeline for PipelineResource {
         let node = transform::AutoOrientNode::new(source, src_info, domain_orient);
         let mut graph = self.graph.borrow_mut();
         let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "auto_orient", format!("{orientation:?}").as_bytes());
-        let mut meta = graph.node_metadata(source).clone();
-        meta.set(
-            "exif.Orientation",
-            rasmcore_pipeline::MetadataValue::Int(1),
+        let hash = rasmcore_pipeline::compute_hash(
+            &upstream_hash,
+            "auto_orient",
+            format!("{orientation:?}").as_bytes(),
         );
+        let mut meta = graph.node_metadata(source).clone();
+        meta.set("exif.Orientation", rasmcore_pipeline::MetadataValue::Int(1));
         let id = graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta);
         Ok(id)
     }
 
     // Auto-generated pipeline filter methods (all registered filters)
     generated_pipeline_filter_methods!();
-
 
     fn composite(
         &self,
@@ -616,9 +650,16 @@ impl GuestImagePipeline for PipelineResource {
         let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y, domain_mode);
         let fg_hash = self.graph.borrow().node_hash(fg);
         let bg_hash = self.graph.borrow().node_hash(bg);
-        let combined = rasmcore_pipeline::compute_hash(&fg_hash, "composite_fg", format!("{x},{y},{blend_mode:?}").as_bytes());
+        let combined = rasmcore_pipeline::compute_hash(
+            &fg_hash,
+            "composite_fg",
+            format!("{x},{y},{blend_mode:?}").as_bytes(),
+        );
         let hash = rasmcore_pipeline::compute_hash(&combined, "composite_bg", &bg_hash);
-        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))
+        Ok(self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(node), hash))
     }
 
     fn write_jpeg(
@@ -770,7 +811,8 @@ impl GuestImagePipeline for PipelineResource {
         let cfg = domain::encoder::tiff::TiffEncodeConfig {
             compression: to_domain_tiff_compression_pipeline(config.compression),
         };
-        let result = sink::write_tiff(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error);
+        let result =
+            sink::write_tiff(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error);
         self.finalize_cache();
         result
     }
@@ -867,13 +909,11 @@ impl GuestImagePipeline for PipelineResource {
     }
 
     fn include_metadata(&self, patterns: Vec<String>) {
-        *self.metadata_filter.borrow_mut() =
-            rasmcore_pipeline::MetadataFilter::Include(patterns);
+        *self.metadata_filter.borrow_mut() = rasmcore_pipeline::MetadataFilter::Include(patterns);
     }
 
     fn exclude_metadata(&self, patterns: Vec<String>) {
-        *self.metadata_filter.borrow_mut() =
-            rasmcore_pipeline::MetadataFilter::Exclude(patterns);
+        *self.metadata_filter.borrow_mut() = rasmcore_pipeline::MetadataFilter::Exclude(patterns);
     }
 
     fn set_metadata(&self, path: String, value: String) -> Result<NodeId, RasmcoreError> {
