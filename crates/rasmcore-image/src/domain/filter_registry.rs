@@ -482,7 +482,6 @@ macro_rules! builtin_filter {
 use super::filters;
 use super::histogram;
 use super::point_ops::{self, PointOp};
-use super::quantize;
 
 // Blur filters
 builtin_filter!(BlurFilter, "blur", FilterCategory::Blur,
@@ -869,8 +868,10 @@ builtin_filter!(QuantizeFilter, "quantize", FilterCategory::Color,
     params: [ParamDescriptor::float("colors", 2.0, 256.0, 16.0).with_description("Number of palette colors")],
     apply: |input| {
         let colors = input.params.get_float("colors").unwrap_or(16.0) as usize;
-        let palette = quantize::median_cut(input.pixels, input.info, colors)?;
-        quantize::quantize(input.pixels, input.info, &palette)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::quantize_registered(r, &mut u, input.info, &filters::QuantizeParams { max_colors: colors as u32 })
     }
 );
 
@@ -878,8 +879,10 @@ builtin_filter!(DitherFSFilter, "dither_floyd_steinberg", FilterCategory::Color,
     params: [ParamDescriptor::float("colors", 2.0, 256.0, 16.0).with_description("Number of palette colors")],
     apply: |input| {
         let colors = input.params.get_float("colors").unwrap_or(16.0) as usize;
-        let palette = quantize::median_cut(input.pixels, input.info, colors)?;
-        quantize::dither_floyd_steinberg(input.pixels, input.info, &palette)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::dither_floyd_steinberg_registered(r, &mut u, input.info, &filters::DitherFloydSteinbergParams { max_colors: colors as u32 })
     }
 );
 
@@ -891,8 +894,10 @@ builtin_filter!(DitherOrderedFilter, "dither_ordered", FilterCategory::Color,
     apply: |input| {
         let colors = input.params.get_float("colors").unwrap_or(16.0) as usize;
         let matrix_size = input.params.get_float("matrix_size").unwrap_or(4.0) as usize;
-        let palette = quantize::median_cut(input.pixels, input.info, colors)?;
-        quantize::dither_ordered(input.pixels, input.info, &palette, matrix_size)
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::dither_ordered_registered(r, &mut u, input.info, &filters::DitherOrderedParams { max_colors: colors as u32, map_size: matrix_size as u32 })
     }
 );
 

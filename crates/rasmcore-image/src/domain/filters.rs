@@ -10452,7 +10452,10 @@ pub fn auto_level_registered(request: Rect, upstream: &mut UpstreamFn, info: &Im
     variant = "otsu",
     reference = "Otsu 1979 automatic bimodal threshold"
 )]
-pub fn otsu_threshold_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn otsu_threshold_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let t = otsu_threshold(pixels, info)?;
     let r = Rect::new(0, 0, info.width, info.height);
     let mut u = |_: Rect| Ok(pixels.to_vec());
@@ -10468,9 +10471,13 @@ pub fn otsu_threshold_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<
     reference = "Zack et al. 1977 triangle method"
 )]
 pub fn triangle_threshold_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let t = triangle_threshold(pixels, info)?;
     let r = Rect::new(0, 0, info.width, info.height);
     let mut u = |_: Rect| Ok(pixels.to_vec());
@@ -10520,10 +10527,14 @@ pub fn flatten_registered(
     reference = "median cut palette quantization"
 )]
 pub fn quantize_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &QuantizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let max_colors = config.max_colors;
 
     let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
@@ -10583,10 +10594,14 @@ pub struct DitherFloydSteinbergParams {
     reference = "Floyd & Steinberg 1976 error diffusion"
 )]
 pub fn dither_floyd_steinberg_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DitherFloydSteinbergParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let max_colors = config.max_colors;
 
     let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
@@ -10602,10 +10617,14 @@ pub fn dither_floyd_steinberg_registered(
     reference = "Bayer matrix ordered dithering"
 )]
 pub fn dither_ordered_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DitherOrderedParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let max_colors = config.max_colors;
     let map_size = config.map_size;
 
@@ -10622,9 +10641,13 @@ pub fn dither_ordered_registered(
     reference = "gray world assumption"
 )]
 pub fn white_balance_gray_world_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     super::color_spaces::white_balance_gray_world(pixels, info)
 }
 
@@ -10637,10 +10660,14 @@ pub fn white_balance_gray_world_registered(
     reference = "Planckian locus color temperature"
 )]
 pub fn white_balance_temperature_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &WhiteBalanceTemperatureParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let temperature = config.temperature;
     let tint = config.tint;
 
