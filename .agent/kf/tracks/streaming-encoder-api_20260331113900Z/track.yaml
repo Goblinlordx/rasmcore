@@ -1,103 +1,105 @@
 id: streaming-encoder-api_20260331113900Z
-title: "Streaming Encoder API \u2014 Tile-Direct Writes for BMP, TIFF, QOI, HDR, FITS"
+title: Streaming Encoder API — Tile-Direct Writes for BMP, TIFF, QOI, HDR, FITS
 type: feature
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: |
-    Define a StreamingEncoder trait and implement it for 5 trivial/low-effort
+  summary: 'Define a StreamingEncoder trait and implement it for 5 trivial/low-effort
+
     encoders (BMP, QOI, TIFF, HDR, FITS), then wire into the sink tiled
+
     execution path so tiles write directly to the encoder without assembling
+
     a full pixel buffer. Eliminates the peak-memory stitch step for these formats.
-  context: |
-    The pipeline-tiled-sink track added tiled execution to sink writes, reducing
+
+    '
+  context: 'The pipeline-tiled-sink track added tiled execution to sink writes, reducing
+
     peak memory by requesting 512x512 tiles instead of the full image. However,
+
     tiles are still stitched into a complete pixel buffer before encoding because
+
     all encoders take &[u8] (complete buffer). For formats that are inherently
+
     sequential or scanline-based, this stitch step is unnecessary -- tiles can be
+
     written directly into the encoded output.
 
+
     This track targets the 5 encoders where streaming is trivial or low-effort:
+
     - BMP: uncompressed scanlines, trivial
+
     - QOI: sequential pixel encoding with minimal state
+
     - TIFF: strip-based writing supported by the tiff crate
+
     - HDR: uncompressed RGBE scanlines
+
     - FITS: raw binary pixel data
 
+
     PNG and JPEG are deferred -- they require careful filter/MCU handling.
+
     WebP, GIF, HEIC, EXR are infeasible or very high effort.
-  codebase_analysis: |
-    CURRENT SINK (pipeline/nodes/sink.rs):
-    - request_tiled() iterates tiles and stitches into full buffer
-    - All write_*_tiled() functions: request_tiled() -> encoder::encode()
-    - TileConfig already exists with configurable tile_size
 
-    ENCODER APIS:
-    - BMP: encode_pixels(&[u8], &ImageInfo, &Config) via rasmcore-bmp native
-    - TIFF: encode(&[u8], &ImageInfo, &TiffEncodeConfig) via tiff crate v0.11
-      - tiff crate supports strip-based writing natively
-    - QOI: encode via rasmcore-qoi native, sequential pixel encoding
-    - HDR: encode_pixels() custom RGBE, uncompressed scanlines
-    - FITS: encode_pixels() via rasmcore-fits, raw binary data
-
-    TILE ORDERING: request_tiled() iterates top-to-bottom, left-to-right
-    (raster order) which aligns with all target formats.
+    '
+  codebase_analysis: "CURRENT SINK (pipeline/nodes/sink.rs):\n- request_tiled() iterates tiles and stitches into full buffer\n\
+    - All write_*_tiled() functions: request_tiled() -> encoder::encode()\n- TileConfig already exists with configurable tile_size\n\
+    \nENCODER APIS:\n- BMP: encode_pixels(&[u8], &ImageInfo, &Config) via rasmcore-bmp native\n- TIFF: encode(&[u8], &ImageInfo,\
+    \ &TiffEncodeConfig) via tiff crate v0.11\n  - tiff crate supports strip-based writing natively\n- QOI: encode via rasmcore-qoi\
+    \ native, sequential pixel encoding\n- HDR: encode_pixels() custom RGBE, uncompressed scanlines\n- FITS: encode_pixels()\
+    \ via rasmcore-fits, raw binary data\n\nTILE ORDERING: request_tiled() iterates top-to-bottom, left-to-right\n(raster\
+    \ order) which aligns with all target formats.\n"
   acceptance_criteria:
-    - StreamingEncoder trait defined with write_tile() and finish() methods
-    - BMP streaming encoder produces byte-identical output to buffer encoder
-    - QOI streaming encoder produces byte-identical output to buffer encoder
-    - TIFF streaming encoder produces byte-identical output to buffer encoder
-    - HDR streaming encoder produces byte-identical output to buffer encoder
-    - FITS streaming encoder produces byte-identical output to buffer encoder
-    - sink write functions use streaming path when encoder supports it
-    - Non-streaming encoders (PNG, JPEG, WebP, etc.) continue using stitch path
-    - All existing encode parity tests pass unchanged
-  out_of_scope: |
-    PNG streaming (filter chain complexity). JPEG streaming (MCU refactor).
+  - StreamingEncoder trait defined with write_tile() and finish() methods
+  - BMP streaming encoder produces byte-identical output to buffer encoder
+  - QOI streaming encoder produces byte-identical output to buffer encoder
+  - TIFF streaming encoder produces byte-identical output to buffer encoder
+  - HDR streaming encoder produces byte-identical output to buffer encoder
+  - FITS streaming encoder produces byte-identical output to buffer encoder
+  - sink write functions use streaming path when encoder supports it
+  - Non-streaming encoders (PNG, JPEG, WebP, etc.) continue using stitch path
+  - All existing encode parity tests pass unchanged
+  out_of_scope: 'PNG streaming (filter chain complexity). JPEG streaming (MCU refactor).
+
     WebP/GIF/HEIC/EXR streaming (infeasible or very high effort).
+
     Memory benchmarking (covered by pipeline-tiled-sink track).
-  technical_notes: |
-    APPROACH:
-    1. Define StreamingEncoder trait in encoder/mod.rs:
-       - write_tile(&mut self, pixels: &[u8], x: u32, y: u32, w: u32, h: u32)
-       - finish(self) -> Result<Vec<u8>, ImageError>
-    2. Implement for each format (BMP, QOI, TIFF, HDR, FITS)
-    3. Add request_tiled_streaming() to sink.rs that calls write_tile()
-       per tile instead of stitching, then finish()
-    4. Modify write_*_tiled() to use streaming path for supported encoders
 
-    TILE ORDERING CONTRACT: Tiles arrive in raster order (row-major,
-    top-to-bottom within rows, left-to-right within columns). Encoders
-    can rely on this for scanline-based formats.
-
-    BMP SPECIAL CASE: BMP stores rows bottom-to-top. The streaming
-    encoder must buffer or reverse row order internally. Since the
-    encoded output is a Vec<u8>, this is still a memory win -- we avoid
-    the full decoded pixel buffer, only keeping the smaller encoded buffer.
+    '
+  technical_notes: "APPROACH:\n1. Define StreamingEncoder trait in encoder/mod.rs:\n   - write_tile(&mut self, pixels: &[u8],\
+    \ x: u32, y: u32, w: u32, h: u32)\n   - finish(self) -> Result<Vec<u8>, ImageError>\n2. Implement for each format (BMP,\
+    \ QOI, TIFF, HDR, FITS)\n3. Add request_tiled_streaming() to sink.rs that calls write_tile()\n   per tile instead of stitching,\
+    \ then finish()\n4. Modify write_*_tiled() to use streaming path for supported encoders\n\nTILE ORDERING CONTRACT: Tiles\
+    \ arrive in raster order (row-major,\ntop-to-bottom within rows, left-to-right within columns). Encoders\ncan rely on\
+    \ this for scanline-based formats.\n\nBMP SPECIAL CASE: BMP stores rows bottom-to-top. The streaming\nencoder must buffer\
+    \ or reverse row order internally. Since the\nencoded output is a Vec<u8>, this is still a memory win -- we avoid\nthe\
+    \ full decoded pixel buffer, only keeping the smaller encoded buffer.\n"
 plan:
-  - phase: Streaming trait
-    tasks:
-      - text: Define StreamingEncoder trait in encoder/mod.rs with write_tile() and finish()
-        done: false
-      - text: Add request_tiled_streaming() to sink.rs that dispatches tiles to StreamingEncoder
-        done: false
-  - phase: Encoder implementations
-    tasks:
-      - text: Implement StreamingEncoder for BMP (scanline writes, handle bottom-to-top order)
-        done: false
-      - text: Implement StreamingEncoder for QOI (sequential pixel state machine)
-        done: false
-      - text: Implement StreamingEncoder for TIFF (strip-based via tiff crate)
-        done: false
-      - text: Implement StreamingEncoder for HDR (RGBE scanline writes)
-        done: false
-      - text: Implement StreamingEncoder for FITS (raw binary pixel writes)
-        done: false
-  - phase: Integration and verification
-    tasks:
-      - text: Wire streaming encoders into sink write_*_tiled() functions
-        done: false
-      - text: Add parity tests verifying streaming output matches buffer output byte-for-byte
-        done: false
+- phase: Streaming trait
+  tasks:
+  - text: Define StreamingEncoder trait in encoder/mod.rs with write_tile() and finish()
+    done: true
+  - text: Add request_tiled_streaming() to sink.rs that dispatches tiles to StreamingEncoder
+    done: true
+- phase: Encoder implementations
+  tasks:
+  - text: Implement StreamingEncoder for BMP (scanline writes, handle bottom-to-top order)
+    done: true
+  - text: Implement StreamingEncoder for QOI (sequential pixel state machine)
+    done: true
+  - text: Implement StreamingEncoder for TIFF (strip-based via tiff crate)
+    done: true
+  - text: Implement StreamingEncoder for HDR (RGBE scanline writes)
+    done: true
+  - text: Implement StreamingEncoder for FITS (raw binary pixel writes)
+    done: true
+- phase: Integration and verification
+  tasks:
+  - text: Wire streaming encoders into sink write_*_tiled() functions
+    done: true
+  - text: Add parity tests verifying streaming output matches buffer output byte-for-byte
+    done: true
 extra: {}
