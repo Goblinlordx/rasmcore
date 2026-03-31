@@ -7999,10 +7999,14 @@ fn dodge_burn_impl(
     reference = "midtone-weighted local contrast"
 )]
 pub fn clarity(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ClarityParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amount = config.amount;
     let sigma = config.sigma;
 
@@ -13128,7 +13132,9 @@ mod photo_enhance_tests {
             }
         }
         let info = test_info(w, h, PixelFormat::Rgb8);
-        let result = clarity(&pixels, &info, &ClarityParams { amount: 1.0, sigma: 10.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = clarity(r, &mut u, &info, &ClarityParams { amount: 1.0, sigma: 10.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Clarity should increase local contrast (stddev should increase)
@@ -13143,7 +13149,9 @@ mod photo_enhance_tests {
     #[test]
     fn clarity_zero_amount_is_near_identity() {
         let (px, info) = make_rgb(32, 32);
-        let result = clarity(&px, &info, &ClarityParams { amount: 0.0, sigma: 10.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = clarity(r, &mut u, &info, &ClarityParams { amount: 0.0, sigma: 10.0 }).unwrap();
         // With amount=0, the detail weighting is 0, so output ≈ input
         let diff: f64 = px
             .iter()
