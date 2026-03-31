@@ -2572,10 +2572,14 @@ pub fn saturate(
     color_op = "true"
 )]
 pub fn sepia(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SepiaParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let intensity = config.intensity;
 
     apply_color_op(pixels, info, &ColorOp::Sepia(intensity.clamp(0.0, 1.0)))
@@ -12088,14 +12092,18 @@ mod tests {
     #[test]
     fn sepia_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = sepia(&px, &info, &SepiaParams { intensity: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = sepia(r, &mut u, &info, &SepiaParams { intensity: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn sepia_zero_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = sepia(&px, &info, &SepiaParams { intensity: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = sepia(r, &mut u, &info, &SepiaParams { intensity: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
@@ -12232,7 +12240,8 @@ mod tests {
         };
         assert!(hue_rotate(&pixels, &info, &HueRotateParams { degrees: 45.0 }).is_ok());
         assert!(saturate(&pixels, &info, &SaturateParams { factor: 1.5 }).is_ok());
-        assert!(sepia(&pixels, &info, &SepiaParams { intensity: 0.8 }).is_ok());
+        let r = Rect::new(0, 0, info.width, info.height);
+        assert!(sepia(r, &mut |_: Rect| Ok(pixels.clone()), &info, &SepiaParams { intensity: 0.8 }).is_ok());
         assert!(colorize(&pixels, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
     }
 
@@ -12882,7 +12891,9 @@ mod tests_16bit {
     #[test]
     fn sepia_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = sepia(&px, &info, &SepiaParams { intensity: 1.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = sepia(r, &mut u, &info, &SepiaParams { intensity: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 }

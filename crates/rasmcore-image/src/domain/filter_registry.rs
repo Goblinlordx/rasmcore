@@ -700,7 +700,9 @@ builtin_filter!(SepiaFilter, "sepia", FilterCategory::Color,
     params: [ParamDescriptor::float("intensity", 0.0, 1.0, 1.0)],
     apply: |input| {
         let intensity = input.params.get_float("intensity").unwrap_or(1.0);
-        filters::sepia(input.pixels, input.info, &filters::SepiaParams { intensity })
+        let r = crate::domain::tile::Rect::new(0, 0, input.info.width, input.info.height);
+        let pixels = input.pixels.to_vec();
+        filters::sepia(r, &mut |_| Ok(pixels.clone()), input.info, &filters::SepiaParams { intensity })
     }
 );
 
