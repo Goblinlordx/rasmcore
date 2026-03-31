@@ -5,7 +5,11 @@
 //! (ImageNode, VideoNode) are defined in their respective crates.
 
 pub mod cache;
+pub mod layer_cache;
 pub mod rect;
 
 pub use cache::{CacheQuery, RegionHandle, RegionKey, SpatialCache};
+pub use layer_cache::{
+    compute_hash, compute_source_hash, CacheStats, ContentHash, LayerCache, ZERO_HASH,
+};
 pub use rect::{Overlap, Rect};

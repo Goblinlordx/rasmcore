@@ -69,6 +69,12 @@ pub struct NodeGraph {
     nodes: Vec<Box<dyn ImageNode>>,
     cache: SpatialCache,
     cache_budget: usize,
+    // Layer cache (optional, persists across pipeline lifetimes)
+    layer_cache: Option<std::rc::Rc<std::cell::RefCell<rasmcore_pipeline::LayerCache>>>,
+    node_hashes: Vec<rasmcore_pipeline::ContentHash>,
+    touched_hashes: std::collections::HashSet<rasmcore_pipeline::ContentHash>,
+    cache_hit_nodes: std::collections::HashSet<u32>,
+    cache_hit_pixels: std::collections::HashMap<u32, Vec<u8>>,
 }
 
 impl NodeGraph {
@@ -78,14 +84,60 @@ impl NodeGraph {
             nodes: Vec::new(),
             cache: SpatialCache::new(cache_budget),
             cache_budget,
+            layer_cache: None,
+            node_hashes: Vec::new(),
+            touched_hashes: std::collections::HashSet::new(),
+            cache_hit_nodes: std::collections::HashSet::new(),
+            cache_hit_pixels: std::collections::HashMap::new(),
         }
+    }
+
+    /// Create a new graph with an optional layer cache for cross-pipeline reuse.
+    pub fn with_layer_cache(
+        cache_budget: usize,
+        layer_cache: std::rc::Rc<std::cell::RefCell<rasmcore_pipeline::LayerCache>>,
+    ) -> Self {
+        let mut graph = Self::new(cache_budget);
+        graph.layer_cache = Some(layer_cache);
+        graph
     }
 
     /// Add a node to the graph. Returns its node-id.
     pub fn add_node(&mut self, node: Box<dyn ImageNode>) -> u32 {
         let id = self.nodes.len() as u32;
         self.nodes.push(node);
+        self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         id
+    }
+
+    /// Add a node with a content hash for layer caching.
+    pub fn add_node_with_hash(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        hash: rasmcore_pipeline::ContentHash,
+    ) -> u32 {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(node);
+        self.node_hashes.push(hash);
+
+        // Check layer cache for this hash
+        if let Some(lc) = &self.layer_cache {
+            let mut lc = lc.borrow_mut();
+            if let Some((pixels, _w, _h, _bpp)) = lc.get(&hash) {
+                self.cache_hit_pixels.insert(id, pixels.to_vec());
+                self.cache_hit_nodes.insert(id);
+            }
+        }
+
+        id
+    }
+
+    /// Get the content hash for a node.
+    pub fn node_hash(&self, node_id: u32) -> rasmcore_pipeline::ContentHash {
+        self.node_hashes
+            .get(node_id as usize)
+            .copied()
+            .unwrap_or(rasmcore_pipeline::ZERO_HASH)
     }
 
     /// Get image info for a node (no pixel computation).
@@ -98,10 +150,22 @@ impl NodeGraph {
 
     /// Request a region from a node. Uses the spatial cache for reuse.
     pub fn request_region(&mut self, node_id: u32, request: Rect) -> Result<Vec<u8>, ImageError> {
+        // Track this node's hash as "touched" for layer cache reference tracking
+        if let Some(hash) = self.node_hashes.get(node_id as usize) {
+            self.touched_hashes.insert(*hash);
+        }
+
+        // Check layer cache hit first (pre-populated during add_node_with_hash)
+        if self.cache_hit_nodes.contains(&node_id) {
+            if let Some(pixels) = self.cache_hit_pixels.get(&node_id) {
+                return Ok(pixels.clone());
+            }
+        }
+
         let info = self.node_info(node_id)?;
         let bpp = bytes_per_pixel(info.format);
 
-        // Check cache first
+        // Check spatial cache
         let query = self.cache.query(node_id, request);
         if query.fully_cached {
             let handle = query.hits[0];
@@ -143,6 +207,56 @@ impl NodeGraph {
         &self.cache
     }
 
+    /// Finalize layer cache after pipeline execution completes.
+    ///
+    /// Pushes newly computed node outputs to the layer cache and cleans
+    /// unreferenced entries. Called by pipeline write methods after encoding.
+    pub fn finalize_layer_cache(&mut self) {
+        let layer_cache = match &self.layer_cache {
+            Some(lc) => lc.clone(),
+            None => return,
+        };
+        let mut lc = layer_cache.borrow_mut();
+
+        // Reset references for this run
+        lc.reset_references();
+
+        // Push newly computed nodes (not cache hits) and mark all as referenced
+        for (node_id, hash) in self.node_hashes.iter().enumerate() {
+            if *hash == rasmcore_pipeline::ZERO_HASH {
+                continue;
+            }
+            // Mark as referenced regardless of hit/miss
+            lc.mark_referenced(hash);
+
+            // If this was NOT a cache hit, push the computed output
+            if !self.cache_hit_nodes.contains(&(node_id as u32)) {
+                let info = match self.nodes.get(node_id) {
+                    Some(n) => n.info(),
+                    None => continue,
+                };
+                let bpp = bytes_per_pixel(info.format);
+                let full_rect = Rect::new(0, 0, info.width, info.height);
+
+                // Try to get from spatial cache
+                let query = self.cache.query(node_id as u32, full_rect);
+                if query.fully_cached {
+                    let handle = query.hits[0];
+                    let pixels = self.cache.read(handle).to_vec();
+                    lc.store(*hash, pixels, info.width, info.height, bpp);
+                }
+            }
+        }
+
+        // Mark all touched hashes as referenced
+        for hash in &self.touched_hashes {
+            lc.mark_referenced(hash);
+        }
+
+        // Clean entries not referenced by this pipeline run
+        lc.cleanup_unreferenced();
+    }
+
     /// Number of nodes in the graph.
     pub fn node_count(&self) -> usize {
         self.nodes.len()
@@ -154,6 +268,7 @@ impl NodeGraph {
         let rc = Rc::new(node);
         let id = self.nodes.len() as u32;
         self.nodes.push(Box::new(FrameSourceRcWrapper(rc.clone())));
+        self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         (id, rc)
     }
 
