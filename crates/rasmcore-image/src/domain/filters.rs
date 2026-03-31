@@ -2807,10 +2807,14 @@ pub struct VibranceParams {
     color_op = "true"
 )]
 pub fn vibrance(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &VibranceParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amount = config.amount;
 
     apply_color_op(pixels, info, &ColorOp::Vibrance(amount))
@@ -3197,7 +3201,7 @@ mod color_manipulation_tests {
     fn vibrance_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = vibrance(&pixels, &info, &VibranceParams { amount: 0.0 }).unwrap();
+        let result = vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &VibranceParams { amount: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3208,7 +3212,7 @@ mod color_manipulation_tests {
         // Pixel 2: high saturation (vivid red)
         let pixels = vec![120, 130, 125, 255, 20, 20];
 
-        let result = vibrance(&pixels, &info, &VibranceParams { amount: 50.0 }).unwrap();
+        let result = vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &VibranceParams { amount: 50.0 }).unwrap();
 
         // The muted pixel should change more than the vivid one
         let muted_change = (result[0] as i32 - 120).abs()
@@ -3229,7 +3233,7 @@ mod color_manipulation_tests {
         // Use a moderately saturated color (not fully saturated)
         let pixels = solid_rgb(2, 2, 200, 100, 80);
         let info = info_rgb8(2, 2);
-        let result = vibrance(&pixels, &info, &VibranceParams { amount: -80.0 }).unwrap();
+        let result = vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &VibranceParams { amount: -80.0 }).unwrap();
         // Should become less saturated: channels should converge toward each other
         let orig_range = 200i32 - 80;
         let new_range = (result[0] as i32 - result[2] as i32).abs();
