@@ -9955,10 +9955,14 @@ pub fn erode_registered(
     reference = "binary dilation"
 )]
 pub fn dilate_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DilateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
