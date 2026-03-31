@@ -1,0 +1,109 @@
+id: filter-rect-request-foundation_20260331124600Z
+title: "Filter rect-request model -- codegen + signature change"
+type: refactor
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Change all filter function signatures to receive (request: Rect,
+    upstream_fn, ...) so each filter explicitly requests its own upstream
+    pixels. Remove the overlap heuristic, overlap attribute parsing, and
+    input_rect codegen entirely.
+  context: |
+    Currently filter authors write plain functions (pixels in, pixels out)
+    and the codegen system guesses what upstream rect to request based on
+    field name heuristics (radius, ksize, sigma, etc.) or explicit overlap
+    attributes. This is fragile -- convolve was broken because its params
+    were named kw/kh instead of ksize.
+
+    The new model: every filter function receives (request, upstream_fn)
+    and calls upstream_fn(rect) with whatever rect it needs. Point ops
+    pass request through. Spatial ops expand it. The expansion is visible
+    right in the filter code -- no hidden codegen layer.
+  codebase_analysis: |
+    CURRENT SYSTEM:
+    - 134 registered filters in filters.rs
+    - 9 explicit overlap attributes (uniform(1), uniform(2), uniform(10), param(...), full)
+    - Heuristic in codegen/generate/pipeline.rs detects radius/ksize/sigma/diameter/kw/kh
+    - Generated compute_region() calls input_rect() then upstream_fn()
+    - Filter function never sees Rect or upstream_fn
+
+    CODEGEN FILES:
+    - crates/rasmcore-codegen/src/generate/pipeline.rs -- input_rect_body(),
+      input_rect_expand_expr(), detect_expansion_field()
+    - crates/rasmcore-macros/src/lib.rs -- register_filter proc macro
+    - crates/rasmcore-codegen/src/parse/filters.rs -- overlap attribute parsing
+
+    NEW SIGNATURE:
+    fn filter(request: Rect, upstream: &mut dyn FnMut(Rect) -> Result<RegionPixels>,
+              config: &Params) -> Result<Vec<u8>>
+
+    HELPERS ALREADY EXIST:
+    - Rect::expand_uniform(amount, bounds_w, bounds_h)
+    - Rect::expand_asymmetric(left, top, right, bottom, bounds)
+    - Rect::expand(&self, &Overlap, bounds_w, bounds_h)
+  acceptance_criteria:
+    - All filter functions receive (request, upstream_fn) as first two params
+    - Codegen passes request and upstream_fn through to filter functions
+    - input_rect_body(), input_rect_expand_expr(), detect_expansion_field() removed from codegen
+    - overlap attribute parsing removed from register_filter macro
+    - All 9 explicit overlap attributes removed from filters.rs
+    - grep for 'overlap = "' in filters.rs returns 0 matches
+    - All existing tests pass (behavior unchanged)
+  out_of_scope: |
+    Changing filter logic itself -- this track only changes the plumbing.
+    Each filter initially just does upstream(request) for point ops or
+    upstream(request.expand_uniform(N)) matching the old hardcoded overlap.
+    Subsequent tracks can refine individual filter expansion logic.
+  technical_notes: |
+    APPROACH -- two phases:
+    1. Update codegen to generate the new compute_region that passes
+       (request, upstream_fn) directly to the filter function. Remove
+       all overlap/heuristic code. The filter function signature changes
+       from fn(pixels, info, config) to fn(request, upstream_fn, config).
+    2. Update every filter function to accept the new signature. For the
+       initial migration, spatial filters use upstream(request.expand_uniform(N))
+       matching their old overlap value, and point ops use upstream(request).
+
+    PARALLELIZATION: Phase 2 is mechanical -- each filter is independent.
+    The developer track should spawn isolated worktree agents per category
+    batch. Each agent: verify tests pass, update batch, verify again, commit,
+    merge back.
+
+    REGRESSION SAFETY: The tiled parity tests in graph.rs already verify
+    that tiled output matches full-image output for blur, sharpen, contrast,
+    median, erode, bilateral, guided_filter, canny, motion_blur. These tests
+    validate correctness after the refactor.
+plan:
+  - phase: Codegen changes
+    tasks:
+      - text: Update register_filter macro to accept new filter signature (request, upstream_fn, ...)
+        done: false
+      - text: Update pipeline.rs codegen to pass (request, upstream_fn) through to filter function
+        done: false
+      - text: Remove input_rect_body(), input_rect_expand_expr(), detect_expansion_field() from codegen
+        done: false
+      - text: Remove overlap attribute parsing from register_filter macro and filter parser
+        done: false
+  - phase: Filter migration
+    tasks:
+      - text: Migrate spatial filters (19) -- blur, sharpen, median, convolve, bilateral, etc.
+        done: false
+      - text: Migrate morphology + edge filters (11) -- erode, dilate, sobel, canny, etc.
+        done: false
+      - text: Migrate enhancement filters with spatial behavior (10) -- clarity, dehaze, shadow_highlight, etc.
+        done: false
+      - text: Migrate global filters (19) -- equalize, auto_level, histogram, average_blur, etc.
+        done: false
+      - text: Migrate effect + distortion filters (18) -- emboss, solarize, barrel, ripple, etc.
+        done: false
+      - text: Migrate point operation filters (57) -- brightness, contrast, color ops, grading, etc.
+        done: false
+  - phase: Cleanup and verification
+    tasks:
+      - text: Verify 0 overlap attributes remain -- grep count before/after
+        done: false
+      - text: Run full tiled parity test suite to verify no regressions
+        done: false
+extra: {}
