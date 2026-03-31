@@ -10325,10 +10325,14 @@ pub struct LevelsParams {
     point_op = "true"
 )]
 pub fn levels(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &LevelsParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let black_point = config.black_point;
     let white_point = config.white_point;
     let gamma = config.gamma;
@@ -10386,10 +10390,14 @@ impl LutPointOp for SigmoidalContrastParams {
     point_op = "true"
 )]
 pub fn sigmoidal_contrast(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SigmoidalContrastParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let strength = config.strength;
     let midpoint = config.midpoint;
     let sharpen = config.sharpen;

@@ -1178,7 +1178,11 @@ fn exact_levels() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::levels(px, info, 10.0, 90.0, 1.5).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::levels(r, &mut u, info, &rasmcore_image::domain::filters::LevelsParams { black_point: 10.0, white_point: 90.0, gamma: 1.5 }).unwrap()
+        },
         &["-level", "10%,90%,1.5"],
         "levels_10_90_1.5",
     ) {
@@ -1192,7 +1196,11 @@ fn exact_levels_identity() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::levels(px, info, 0.0, 100.0, 1.0).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::levels(r, &mut u, info, &rasmcore_image::domain::filters::LevelsParams { black_point: 0.0, white_point: 100.0, gamma: 1.0 }).unwrap()
+        },
         &["-level", "0%,100%,1.0"],
         "levels_identity",
     ) {
@@ -1210,7 +1218,9 @@ fn exact_sigmoidal_contrast() {
         64,
         64,
         |px, info| {
-            rasmcore_image::domain::filters::sigmoidal_contrast(px, info, 5.0, 50.0, true).unwrap()
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::sigmoidal_contrast(r, &mut u, info, &rasmcore_image::domain::filters::SigmoidalContrastParams { strength: 5.0, midpoint: 50.0, sharpen: true }).unwrap()
         },
         &["-sigmoidal-contrast", "5x50%"],
         "sigmoidal_5x50",
@@ -1229,7 +1239,9 @@ fn exact_sigmoidal_contrast_soften() {
         64,
         64,
         |px, info| {
-            rasmcore_image::domain::filters::sigmoidal_contrast(px, info, 5.0, 50.0, false).unwrap()
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::sigmoidal_contrast(r, &mut u, info, &rasmcore_image::domain::filters::SigmoidalContrastParams { strength: 5.0, midpoint: 50.0, sharpen: false }).unwrap()
         },
         &["+sigmoidal-contrast", "5x50%"],
         "sigmoidal_soften_5x50",
@@ -1777,7 +1789,9 @@ fn parity_levels_multi() {
             64,
             64,
             |px, info| {
-                rasmcore_image::domain::filters::levels(px, info, *black, *white, *g).unwrap()
+                let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+                rasmcore_image::domain::filters::levels(r, &mut u, info, &rasmcore_image::domain::filters::LevelsParams { black_point: *black, white_point: *white, gamma: *g }).unwrap()
             },
             &["-level", im_arg],
             &format!("levels_{black}_{white}_{g}"),
