@@ -10,7 +10,7 @@ rasmcore-image = { path = "../rasmcore-image" }
 rasmcore-pipeline = { path = "../rasmcore-pipeline" }
 
 [[bin]]
-name = "rasim"
+name = "rcim"
 path = "src/main.rs"
 
 [lints]

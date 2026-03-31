@@ -2655,6 +2655,14 @@ name = "rasmcore-raw"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-sdk"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-codegen",
+ "rasmcore-image",
+]
+
+[[package]]
 name = "rasmcore-tga"
 version = "0.1.0"
 

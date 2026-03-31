@@ -1,11 +1,11 @@
-//! rasim — graph-based image processing CLI.
+//! rcim — graph-based image processing CLI.
 //!
 //! Builds a pipeline DAG from left-to-right arguments:
-//!   rasim -i photo.jpg -blur radius=5 -sharpen amount=1.0 -o out.png
-//!   rasim -i bg.jpg -ref bg -i fg.png -ref fg -composite base=bg top=fg -o result.jpg
-//!   rasim --list-filters
+//!   rcim -i photo.jpg -blur radius=5 -sharpen amount=1.0 -o out.png
+//!   rcim -i bg.jpg -ref bg -i fg.png -ref fg -composite base=bg top=fg -o result.jpg
+//!   rcim --list-filters
 //!
-//! See `rasim --help` for usage.
+//! See `rcim --help` for usage.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -49,7 +49,7 @@ fn parse_args(args: &[String]) -> Result<Vec<CliCommand>, String> {
             process::exit(0);
         }
         if arg == "--version" || arg == "-V" {
-            println!("rasim {}", env!("CARGO_PKG_VERSION"));
+            println!("rcim {}", env!("CARGO_PKG_VERSION"));
             process::exit(0);
         }
         if arg == "--list-filters" {
@@ -222,10 +222,10 @@ fn build_and_execute(commands: Vec<CliCommand>) -> Result<(), String> {
 
 fn print_help() {
     eprintln!(
-        r#"rasim — graph-based image processing CLI
+        r#"rcim — graph-based image processing CLI
 
 USAGE:
-  rasim -i <input> [-filter key=value ...] [-ref <name>] [-o <output>]
+  rcim -i <input> [-filter key=value ...] [-ref <name>] [-o <output>]
 
 FLAGS:
   -i, --input <path>     Load image file (resets active node)
@@ -238,18 +238,18 @@ FLAGS:
 
 EXAMPLES:
   # Simple chain
-  rasim -i photo.jpg -blur radius=5 -sharpen amount=1.0 -o out.png
+  rcim -i photo.jpg -blur radius=5 -sharpen amount=1.0 -o out.png
 
   # Positional shorthand (first param)
-  rasim -i photo.jpg -blur 5 -o out.png
+  rcim -i photo.jpg -blur 5 -o out.png
 
   # Multi-branch composite
-  rasim -i bg.jpg -contrast 1.2 -ref bg \
+  rcim -i bg.jpg -contrast 1.2 -ref bg \
         -i overlay.png -resize width=500 height=500 filter=lanczos3 -ref fg \
         -composite base=bg top=fg mode=multiply -o final.jpg
 
   # Generator as source
-  rasim -checkerboard width=256 height=256 size=32 -blur radius=3 -o pattern.png
+  rcim -checkerboard width=256 height=256 size=32 -blur radius=3 -o pattern.png
 "#
     );
 }
