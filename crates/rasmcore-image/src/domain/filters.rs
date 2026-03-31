@@ -5002,7 +5002,10 @@ pub fn premultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageErro
     variant = "unpremultiply",
     reference = "straight alpha conversion"
 )]
-pub fn unpremultiply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn unpremultiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
             "unpremultiply requires RGBA8".into(),
@@ -12258,7 +12261,7 @@ mod tests {
             color_space: ColorSpace::Srgb,
         };
         let pre = premultiply(&pixels, &info).unwrap();
-        let unpre = unpremultiply(&pre, &info).unwrap();
+        let unpre = unpremultiply(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pre.clone()), &info).unwrap();
         for i in (0..pixels.len()).step_by(4) {
             for c in 0..3 {
                 assert!(
