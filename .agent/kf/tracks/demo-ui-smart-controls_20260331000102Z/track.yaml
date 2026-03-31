@@ -1,112 +1,134 @@
 id: demo-ui-smart-controls_20260331000102Z
-title: "Demo UI — Smart Controls from Parameter Hints"
+title: Demo UI — Smart Controls from Parameter Hints
 type: feature
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Update demo pipeline UI to render different control types based on
-    parameter hints. Spinners for pixel coords, log sliders for blur radius,
-    toggles for booleans, bipolar sliders for signed ranges, dropdowns for enums.
-  context: |
-    After the param-hint-vocabulary track annotates all params with appropriate
+  summary: 'Update demo pipeline UI to render different control types based on parameter hints. Spinners for pixel coords,
+    log sliders for blur radius, toggles for booleans, bipolar sliders for signed ranges, dropdowns for enums.
+
+    '
+  context: 'After the param-hint-vocabulary track annotates all params with appropriate
+
     rc.* hints, the demo UI needs to consume them and render the right controls.
+
     Currently pipeline.js maps rc.color_rgb -> color picker and rc.angle_deg ->
+
     number input, but everything else is a plain linear slider.
 
+
     Target UX (from GIMP/Photoshop patterns):
+
     - rc.pixels -> number input with up/down spinner arrows, no slider
+
     - rc.log_slider -> slider with logarithmic scale (low values get more range)
+
     - rc.seed -> number input field only (slider meaningless for seeds)
+
     - rc.temperature_k -> slider with blue-to-warm color gradient track
+
     - rc.toggle -> toggle switch (CSS-styled checkbox)
+
     - rc.text -> text input field
+
     - rc.opacity -> thin slider + adjacent text input showing value
+
     - rc.signed_slider -> slider visually centered at 0, negative left, positive right
+
     - rc.spinner -> number input with step buttons
+
     - rc.enum -> handled by existing select dropdown
-  codebase_analysis: |
-    demo/src/pipeline.js param rendering (lines 766-820):
-    - Color hints -> <input type="color">
-    - Number params -> <input type="range"> with min/max/step
-    - Enum params -> <select> dropdown
-    - All rendering happens in the node card editing section
 
-    CSS in demo/pipeline.html (lines 38-42):
-    - .node-param for parameter container
-    - .node-param label for label + value display
-    - .node-param input[type=range] for slider styling
-
-    Changes needed:
-    1. Extend hint-to-control mapping in pipeline.js loadManifest()
-    2. Add rendering branches for each new hint type
-    3. Add CSS for toggle switches, log slider track, temperature gradient,
-       bipolar slider, spinner buttons
+    '
+  codebase_analysis: "demo/src/pipeline.js param rendering (lines 766-820):\n- Color hints -> <input type=\"color\">\n- Number\
+    \ params -> <input type=\"range\"> with min/max/step\n- Enum params -> <select> dropdown\n- All rendering happens in the\
+    \ node card editing section\n\nCSS in demo/pipeline.html (lines 38-42):\n- .node-param for parameter container\n- .node-param\
+    \ label for label + value display\n- .node-param input[type=range] for slider styling\n\nChanges needed:\n1. Extend hint-to-control\
+    \ mapping in pipeline.js loadManifest()\n2. Add rendering branches for each new hint type\n3. Add CSS for toggle switches,\
+    \ log slider track, temperature gradient,\n   bipolar slider, spinner buttons\n"
   acceptance_criteria:
-    - rc.pixels renders as number input with spinner (no slider)
-    - rc.log_slider renders as slider with logarithmic feel (more precision at low end)
-    - rc.seed renders as number input only
-    - rc.temperature_k renders as slider with blue-to-warm gradient track
-    - rc.toggle renders as toggle switch
-    - rc.text renders as text input field
-    - rc.opacity renders as thin slider + text value display
-    - rc.signed_slider renders as slider visually centered at zero
-    - rc.spinner renders as number input with step buttons
-    - All existing controls (color picker, angle, percentage) still work
-    - Pipeline execution still works with all control types
-  out_of_scope: |
-    Curve editor (interactive spline). Histogram overlay.
+  - rc.pixels renders as number input with spinner (no slider)
+  - rc.log_slider renders as slider with logarithmic feel (more precision at low end)
+  - rc.seed renders as number input only
+  - rc.temperature_k renders as slider with blue-to-warm gradient track
+  - rc.toggle renders as toggle switch
+  - rc.text renders as text input field
+  - rc.opacity renders as thin slider + text value display
+  - rc.signed_slider renders as slider visually centered at zero
+  - rc.spinner renders as number input with step buttons
+  - All existing controls (color picker, angle, percentage) still work
+  - Pipeline execution still works with all control types
+  out_of_scope: 'Curve editor (interactive spline). Histogram overlay.
+
     Drag-to-adjust on canvas (like Photoshop scrubby sliders).
+
     Mobile/touch optimization.
-  technical_notes: |
-    Log slider implementation:
+
+    '
+  technical_notes: 'Log slider implementation:
+
     - Store/display the actual value, but map slider position logarithmically
+
     - position = log(value - min + 1) / log(max - min + 1) * 100
+
     - value = (max - min + 1)^(position/100) + min - 1
+
     - This gives ~50% of slider range to the first 10% of the value range
 
+
     Bipolar slider (rc.signed_slider):
+
     - CSS: left half one color (blue), right half another (orange/red)
+
     - Center mark at 0 position
+
     - Value display shows +/- sign
 
+
     Temperature gradient:
+
     - CSS linear-gradient on slider track: #4466ff (cool) -> #ffaa33 (warm)
+
     - Map 2000K-12000K range
 
+
     Toggle switch:
+
     - CSS-only toggle using checkbox + label with ::before/::after
+
     - On/off state with color change
+
+    '
 plan:
-  - phase: Control Rendering
-    tasks:
-      - text: Add rc.pixels rendering as number input with step buttons (type=number with min/max/step)
-        done: false
-      - text: Add rc.log_slider rendering with logarithmic position mapping
-        done: false
-      - text: Add rc.seed rendering as plain number input (no slider)
-        done: false
-      - text: Add rc.toggle rendering as CSS toggle switch
-        done: false
-      - text: Add rc.text rendering as text input field
-        done: false
-      - text: Add rc.opacity rendering as thin slider + text value display
-        done: false
-      - text: Add rc.signed_slider rendering centered at 0 with bipolar styling
-        done: false
-      - text: Add rc.temperature_k rendering with blue-to-warm gradient track
-        done: false
-      - text: Add rc.spinner rendering as number input with step buttons
-        done: false
-  - phase: CSS Styling
-    tasks:
-      - text: Add CSS for toggle switch, temperature gradient track, bipolar slider, spinner buttons
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Manual verification that each control type renders and updates pipeline correctly
-        done: false
-      - text: Verify no regression in existing color/angle/percentage controls
-        done: false
+- phase: Control Rendering
+  tasks:
+  - text: Add rc.pixels rendering as number input with step buttons (type=number with min/max/step)
+    done: true
+  - text: Add rc.log_slider rendering with logarithmic position mapping
+    done: true
+  - text: Add rc.seed rendering as plain number input (no slider)
+    done: true
+  - text: Add rc.toggle rendering as CSS toggle switch
+    done: true
+  - text: Add rc.text rendering as text input field
+    done: true
+  - text: Add rc.opacity rendering as thin slider + text value display
+    done: true
+  - text: Add rc.signed_slider rendering centered at 0 with bipolar styling
+    done: true
+  - text: Add rc.temperature_k rendering with blue-to-warm gradient track
+    done: true
+  - text: Add rc.spinner rendering as number input with step buttons
+    done: true
+- phase: CSS Styling
+  tasks:
+  - text: Add CSS for toggle switch, temperature gradient track, bipolar slider, spinner buttons
+    done: true
+- phase: Verification
+  tasks:
+  - text: Manual verification that each control type renders and updates pipeline correctly
+    done: true
+  - text: Verify no regression in existing color/angle/percentage controls
+    done: true
 extra: {}
