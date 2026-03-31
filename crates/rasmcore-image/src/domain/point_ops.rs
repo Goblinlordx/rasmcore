@@ -1365,4 +1365,109 @@ mod tests {
             assert_eq!(fused[v as usize], inv[exp[v as usize] as usize]);
         }
     }
+
+    // ── Evaluate (per-pixel arithmetic) tests ─────────────────────────
+
+    #[test]
+    fn eval_add_zero_is_identity() {
+        let lut = build_lut(&PointOp::EvalAdd(0));
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i);
+        }
+    }
+
+    #[test]
+    fn eval_add_clamps() {
+        let lut = build_lut(&PointOp::EvalAdd(100));
+        assert_eq!(lut[0], 100);
+        assert_eq!(lut[200], 255); // clamped
+    }
+
+    #[test]
+    fn eval_subtract_clamps_at_zero() {
+        let lut = build_lut(&PointOp::EvalSubtract(100));
+        assert_eq!(lut[0], 0); // clamped
+        assert_eq!(lut[100], 0);
+        assert_eq!(lut[200], 100);
+    }
+
+    #[test]
+    fn eval_multiply_one_is_identity() {
+        let lut = build_lut(&PointOp::EvalMultiply(1.0));
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i);
+        }
+    }
+
+    #[test]
+    fn eval_multiply_doubles() {
+        let lut = build_lut(&PointOp::EvalMultiply(2.0));
+        assert_eq!(lut[0], 0);
+        assert_eq!(lut[64], 128);
+        assert_eq!(lut[200], 255); // clamped
+    }
+
+    #[test]
+    fn eval_divide_one_is_identity() {
+        let lut = build_lut(&PointOp::EvalDivide(1.0));
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i);
+        }
+    }
+
+    #[test]
+    fn eval_pow_one_is_identity() {
+        let lut = build_lut(&PointOp::EvalPow(1.0));
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i, "pow(1) identity at {i}");
+        }
+    }
+
+    #[test]
+    fn eval_pow_two_squares() {
+        let lut = build_lut(&PointOp::EvalPow(2.0));
+        assert_eq!(lut[0], 0);
+        assert_eq!(lut[255], 255);
+        // 128/255 ≈ 0.502, 0.502^2 ≈ 0.252, 0.252*255 ≈ 64
+        assert!((lut[128] as i16 - 64).abs() <= 1, "pow(2) midpoint: {}", lut[128]);
+    }
+
+    #[test]
+    fn eval_min_floors() {
+        let lut = build_lut(&PointOp::EvalMin(100));
+        assert_eq!(lut[0], 100);
+        assert_eq!(lut[50], 100);
+        assert_eq!(lut[150], 150);
+    }
+
+    #[test]
+    fn eval_max_ceilings() {
+        let lut = build_lut(&PointOp::EvalMax(200));
+        assert_eq!(lut[0], 0);
+        assert_eq!(lut[200], 200);
+        assert_eq!(lut[255], 200);
+    }
+
+    #[test]
+    fn eval_abs_is_identity() {
+        let lut = build_lut(&PointOp::EvalAbs);
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i);
+        }
+    }
+
+    #[test]
+    fn eval_add_multiply_fusion() {
+        // Add 50 then multiply by 2: should compose into single LUT
+        let add = build_lut(&PointOp::EvalAdd(50));
+        let mul = build_lut(&PointOp::EvalMultiply(2.0));
+        let fused = compose_luts(&add, &mul);
+        // Verify: (0+50)*2=100, (100+50)*2=255(clamped), (128+50)*2=255(clamped)
+        assert_eq!(fused[0], 100);
+        assert_eq!(fused[100], 255); // (100+50)*2 = 300 → 255
+        // Verify matches sequential
+        for v in 0..=255u8 {
+            assert_eq!(fused[v as usize], mul[add[v as usize] as usize]);
+        }
+    }
 }
