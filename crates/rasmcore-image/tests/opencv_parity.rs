@@ -14,6 +14,7 @@
 
 use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
+use rasmcore_pipeline::Rect;
 
 /// Load an OpenCV reference fixture. Returns the data if available.
 /// If the fixture file is missing (not generated yet), panics with a helpful message.
@@ -1050,7 +1051,9 @@ fn displacement_map_barrel_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_displace_barrel.raw"));
-        let ours = filters::displacement_map(&input, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(input.clone());
+        let ours = filters::displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1070,7 +1073,9 @@ fn displacement_map_wave_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_displace_wave.raw"));
-        let ours = filters::displacement_map(&input, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(input.clone());
+        let ours = filters::displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);

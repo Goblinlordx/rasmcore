@@ -14,6 +14,7 @@ mod ref_tools;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::path::Path;
 
+use rasmcore_pipeline::Rect;
 use rasmcore_image::domain::filters::{
     AdaptiveMethod, BlendMode, BokehShape, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
 };
@@ -1060,7 +1061,11 @@ fn geometric_warp_benchmarks(c: &mut Criterion) {
 
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("displacement_map/rasmcore", size), |b| {
-            b.iter(|| filters::displacement_map(&px, &inf, &map_x, &map_y).unwrap());
+            b.iter(|| {
+                let r = Rect::new(0, 0, inf.width, inf.height);
+                let mut u = |_: Rect| Ok(px.clone());
+                filters::displacement_map(r, &mut u, &inf, &map_x, &map_y).unwrap()
+            });
         });
 
         // Affine — 15-degree rotation around center

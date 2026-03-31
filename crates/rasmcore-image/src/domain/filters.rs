@@ -9777,16 +9777,22 @@ pub fn pyr_up(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), I
     reference = "displacement mapping"
 )]
 pub fn displacement_map(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     map_x: &[f32],
     map_y: &[f32],
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| {
-            displacement_map(px, i8, map_x, map_y)
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            displacement_map(r, &mut u, i8, map_x, map_y)
         });
     }
 
@@ -16864,7 +16870,9 @@ mod spatial_tests {
                 map_y[idx] = y as f32;
             }
         }
-        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
         assert_eq!(
             result, pixels,
             "identity displacement should reproduce input"
@@ -16892,7 +16900,9 @@ mod spatial_tests {
                 map_y[idx] = y as f32;
             }
         }
-        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
         // First column should be black (source x = -1 → out of bounds)
         for y in 0..h as usize {
             assert_eq!(result[y * w as usize], 0, "left edge should be black");
@@ -16918,7 +16928,9 @@ mod spatial_tests {
         // All map coordinates point outside the image
         let map_x = vec![-10.0f32; (w * h) as usize];
         let map_y = vec![-10.0f32; (w * h) as usize];
-        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
         assert!(result.iter().all(|&v| v == 0), "all OOB → all black");
     }
 
@@ -16943,7 +16955,9 @@ mod spatial_tests {
                 map_y[idx] = y as f32;
             }
         }
-        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16953,7 +16967,9 @@ mod spatial_tests {
         let pixels = vec![0u8; 16];
         let map_x = vec![0.0f32; 8]; // wrong size
         let map_y = vec![0.0f32; 16];
-        assert!(displacement_map(&pixels, &info, &map_x, &map_y).is_err());
+        let r = Rect::new(0, 0, 4, 4);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        assert!(displacement_map(r, &mut u, &info, &map_x, &map_y).is_err());
     }
 
     #[test]
@@ -16966,7 +16982,9 @@ mod spatial_tests {
         // Sample at x=0.5 → blend of pixel 0 (0) and pixel 1 (100)
         let map_x = vec![0.5f32, 1.5, 2.5, 0.0];
         let map_y = vec![0.0f32; 4];
-        let result = displacement_map(&pixels, &info, &map_x, &map_y).unwrap();
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = displacement_map(r, &mut u, &info, &map_x, &map_y).unwrap();
         assert_eq!(result[0], 50, "blend(0, 100) at 0.5 = 50");
         assert_eq!(result[1], 150, "blend(100, 200) at 0.5 = 150");
         assert_eq!(result[2], 125, "blend(200, 50) at 0.5 = 125");
