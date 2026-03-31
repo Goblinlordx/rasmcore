@@ -7699,7 +7699,7 @@ pub fn retinex_ssr(
     let n = (info.width as usize) * (info.height as usize);
 
     // Gaussian blur for surround function (OpenCV-compatible for reference alignment)
-    let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma: sigma })?;
+    let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma })?;
 
     // Compute log(I/blur(I)) per channel using log(a/b) identity, then normalize
     let mut retinex = vec![0.0f32; n * 3];
@@ -7875,7 +7875,7 @@ pub fn retinex_msr(pixels: &[u8], info: &ImageInfo, sigmas: &[f32]) -> Result<Ve
     let mut retinex = vec![0.0f32; n * 3];
 
     for &sigma in sigmas {
-        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma: sigma })?;
+        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma })?;
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
@@ -7946,7 +7946,7 @@ pub fn retinex_msrcr(
     // Compute MSR (OpenCV-compatible blur for reference alignment)
     let mut msr = vec![0.0f32; n * 3];
     for &sigma in sigmas {
-        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma: sigma })?;
+        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma })?;
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
@@ -13737,7 +13737,7 @@ pub fn charcoal(
 
     // 3. Post-blur to soften the edges (on the grayscale edge image)
     let blurred = if radius > 0.0 {
-        blur(&edges, &gray_info, &BlurParams { radius: radius })?
+        blur(&edges, &gray_info, &BlurParams { radius })?
     } else {
         edges
     };

@@ -11,7 +11,9 @@ use super::helpers::to_pascal_case;
 /// - `list_filters() -> Vec<FilterMeta>` for --list-filters
 pub fn generate(filters: &[FilterReg]) -> String {
     let mut code = String::new();
-    code.push_str("// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n");
+    code.push_str(
+        "// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n",
+    );
     code.push_str("// Do not edit — regenerated from #[register_filter] annotations.\n\n");
     code.push_str("use crate::domain::pipeline::graph::ImageNode;\n");
     code.push_str("use crate::domain::pipeline::nodes::filters;\n");
@@ -20,31 +22,48 @@ pub fn generate(filters: &[FilterReg]) -> String {
     code.push_str("use std::collections::HashMap;\n\n");
 
     // Helper to parse typed values from string
-    code.push_str("fn get_f32(params: &HashMap<String, String>, key: &str, default: f32) -> f32 {\n");
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str(
+        "fn get_f32(params: &HashMap<String, String>, key: &str, default: f32) -> f32 {\n",
+    );
     code.push_str("    params.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)\n");
     code.push_str("}\n\n");
 
-    code.push_str("fn get_u32(params: &HashMap<String, String>, key: &str, default: u32) -> u32 {\n");
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str(
+        "fn get_u32(params: &HashMap<String, String>, key: &str, default: u32) -> u32 {\n",
+    );
     code.push_str("    params.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)\n");
     code.push_str("}\n\n");
 
+    code.push_str("#[allow(dead_code)]\n");
     code.push_str("fn get_u8(params: &HashMap<String, String>, key: &str, default: u8) -> u8 {\n");
     code.push_str("    params.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)\n");
     code.push_str("}\n\n");
 
-    code.push_str("fn get_i32(params: &HashMap<String, String>, key: &str, default: i32) -> i32 {\n");
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str(
+        "fn get_i32(params: &HashMap<String, String>, key: &str, default: i32) -> i32 {\n",
+    );
     code.push_str("    params.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)\n");
     code.push_str("}\n\n");
 
-    code.push_str("fn get_bool(params: &HashMap<String, String>, key: &str, default: bool) -> bool {\n");
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str(
+        "fn get_bool(params: &HashMap<String, String>, key: &str, default: bool) -> bool {\n",
+    );
     code.push_str("    params.get(key).map(|v| v == \"true\" || v == \"1\" || v == \"yes\").unwrap_or(default)\n");
     code.push_str("}\n\n");
 
-    code.push_str("fn get_string(params: &HashMap<String, String>, key: &str, default: &str) -> String {\n");
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str(
+        "fn get_string(params: &HashMap<String, String>, key: &str, default: &str) -> String {\n",
+    );
     code.push_str("    params.get(key).cloned().unwrap_or_else(|| default.to_string())\n");
     code.push_str("}\n\n");
 
     // Array parsing: comma-separated values, with optional "WxH:" prefix for 2D matrices
+    code.push_str("#[allow(dead_code)]\n");
     code.push_str("fn get_f32_array(params: &HashMap<String, String>, key: &str) -> Vec<f32> {\n");
     code.push_str("    match params.get(key) {\n");
     code.push_str("        Some(v) => {\n");
@@ -54,7 +73,9 @@ pub fn generate(filters: &[FilterReg]) -> String {
     code.push_str("            } else {\n");
     code.push_str("                v.as_str()\n");
     code.push_str("            };\n");
-    code.push_str("            values_str.split(',').filter_map(|s| s.trim().parse().ok()).collect()\n");
+    code.push_str(
+        "            values_str.split(',').filter_map(|s| s.trim().parse().ok()).collect()\n",
+    );
     code.push_str("        }\n");
     code.push_str("        None => Vec::new(),\n");
     code.push_str("    }\n");
@@ -68,7 +89,9 @@ pub fn generate(filters: &[FilterReg]) -> String {
     code.push_str("            } else {\n");
     code.push_str("                v.as_str()\n");
     code.push_str("            };\n");
-    code.push_str("            values_str.split(',').filter_map(|s| s.trim().parse().ok()).collect()\n");
+    code.push_str(
+        "            values_str.split(',').filter_map(|s| s.trim().parse().ok()).collect()\n",
+    );
     code.push_str("        }\n");
     code.push_str("        None => Vec::new(),\n");
     code.push_str("    }\n");
@@ -95,9 +118,9 @@ pub fn generate(filters: &[FilterReg]) -> String {
                 // Config struct reference — construct from CLI params
                 // The struct type is e.g., &SpinBlurParams → SpinBlurParams
                 let struct_name = &ptype[1..]; // strip leading &
-                // Use Default::default() — the CLI will override via individual params
-                // This is a simplification; full CLI config struct support would
-                // parse each field from the HashMap.
+                                               // Use Default::default() — the CLI will override via individual params
+                                               // This is a simplification; full CLI config struct support would
+                                               // parse each field from the HashMap.
                 format!("domain_filters::{struct_name}::default()")
             } else {
                 match ptype.as_str() {

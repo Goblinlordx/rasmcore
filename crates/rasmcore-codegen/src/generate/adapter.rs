@@ -27,10 +27,7 @@ pub fn generate(filters: &[FilterReg]) -> String {
 }
 
 fn generate_config_method(code: &mut String, f: &FilterReg, trait_method: &str, domain_fn: &str) {
-    let wit_config_type = format!(
-        "filters::{}Config",
-        super::helpers::to_pascal_case(&f.name)
-    );
+    let wit_config_type = format!("filters::{}Config", super::helpers::to_pascal_case(&f.name));
 
     // Destructure config fields to call domain function with individual params
     let call_params: Vec<String> = f

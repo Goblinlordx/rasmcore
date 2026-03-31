@@ -137,9 +137,9 @@ plan:
 - phase: Cleanup
   tasks:
   - text: Remove deprecated overlap() from ImageNode trait
-    done: false
+    done: true
   - text: Remove overlap field from FilterReg and Overlap from pipeline node structs
-    done: false
+    done: true
   - text: Update documentation (ewa.rs, architecture docs)
-    done: false
+    done: true
 extra: {}

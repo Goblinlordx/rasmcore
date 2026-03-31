@@ -140,8 +140,8 @@ fn build_and_execute(commands: Vec<CliCommand>) -> Result<(), String> {
     for cmd in &commands {
         match cmd {
             CliCommand::Input(path) => {
-                let bytes = std::fs::read(path)
-                    .map_err(|e| format!("Failed to read {path}: {e}"))?;
+                let bytes =
+                    std::fs::read(path).map_err(|e| format!("Failed to read {path}: {e}"))?;
                 let node = source::SourceNode::new(bytes)
                     .map_err(|e| format!("Failed to decode {path}: {e}"))?;
                 let id = graph.add_node(Box::new(node));
@@ -185,15 +185,13 @@ fn build_and_execute(commands: Vec<CliCommand>) -> Result<(), String> {
             }
 
             CliCommand::Ref(name) => {
-                let node = active_node
-                    .ok_or_else(|| format!("-ref {name} has no active node"))?;
+                let node = active_node.ok_or_else(|| format!("-ref {name} has no active node"))?;
                 refs.insert(name.clone(), node);
                 eprintln!("  [ref] {name} = node {node}");
             }
 
             CliCommand::Output(path) => {
-                let node = active_node
-                    .ok_or_else(|| "-o has no active node".to_string())?;
+                let node = active_node.ok_or_else(|| "-o has no active node".to_string())?;
 
                 // Infer format from extension
                 let format = Path::new(path)
@@ -208,8 +206,7 @@ fn build_and_execute(commands: Vec<CliCommand>) -> Result<(), String> {
                 eprintln!("  [write] node {node} → {path} ({format})");
                 let bytes = sink::write(&mut graph, node, format, None, None)
                     .map_err(|e| format!("Failed to encode {format}: {e}"))?;
-                std::fs::write(path, &bytes)
-                    .map_err(|e| format!("Failed to write {path}: {e}"))?;
+                std::fs::write(path, &bytes).map_err(|e| format!("Failed to write {path}: {e}"))?;
                 eprintln!("  [done] {} bytes written", bytes.len());
             }
         }

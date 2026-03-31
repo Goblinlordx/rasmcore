@@ -21,13 +21,24 @@ fn main() {
 
     let data = rasmcore_codegen::parse::parse_source_files(
         &filters_path,
-        if param_types_path.exists() { Some(param_types_path.as_path()) } else { None },
-        if composite_path.exists() { Some(composite_path.as_path()) } else { None },
+        if param_types_path.exists() {
+            Some(param_types_path.as_path())
+        } else {
+            None
+        },
+        if composite_path.exists() {
+            Some(composite_path.as_path())
+        } else {
+            None
+        },
     );
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let sdk_code = rasmcore_codegen::generate::sdk_rust::generate(&data.filters);
     fs::write(Path::new(&out_dir).join("generated_sdk_rust.rs"), sdk_code).unwrap();
 
-    eprintln!("rasmcore-sdk: Generated SDK with {} filter methods", data.filters.len());
+    eprintln!(
+        "rasmcore-sdk: Generated SDK with {} filter methods",
+        data.filters.len()
+    );
 }

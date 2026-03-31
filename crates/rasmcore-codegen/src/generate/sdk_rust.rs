@@ -3,7 +3,6 @@
 //! Generates a `RcImage` struct with chainable methods for all registered filters.
 //! No WASM overhead — direct Rust linking to rasmcore-image domain.
 
-use crate::generate::helpers::to_pascal_case;
 use crate::types::FilterReg;
 
 /// Generate the Rust SDK source code.
@@ -18,7 +17,9 @@ pub fn generate(filters: &[FilterReg]) -> String {
     // RcImage struct
     code.push_str("/// An image with a fluent processing API.\n");
     code.push_str("///\n");
-    code.push_str("/// Chain filter/transform methods and finalize with `to_jpeg()`, `to_png()`, etc.\n");
+    code.push_str(
+        "/// Chain filter/transform methods and finalize with `to_jpeg()`, `to_png()`, etc.\n",
+    );
     code.push_str("pub struct RcImage {\n");
     code.push_str("    pixels: Vec<u8>,\n");
     code.push_str("    info: ImageInfo,\n");

@@ -143,10 +143,7 @@ pub fn generate_nodes(
 /// 1. Explicit overlap attribute (legacy, non-"zero") — convert to equivalent input_rect
 /// 2. Config struct heuristic — detect radius/ksize/sigma/diameter fields
 /// 3. Default — zero expansion (point operation)
-fn input_rect_body(
-    f: &FilterReg,
-    param_structs: &HashMap<String, Vec<ParamField>>,
-) -> String {
+fn input_rect_body(f: &FilterReg, param_structs: &HashMap<String, Vec<ParamField>>) -> String {
     // Determine the expansion expression
     let expand_expr = input_rect_expand_expr(f, param_structs);
     let Some(expr) = expand_expr else {
@@ -226,11 +223,18 @@ fn input_rect_expand_expr(
 fn detect_expansion_field(params: &[(String, String)], prefix: &str) -> Option<String> {
     for (pname, ptype) in params {
         let clean = pname.trim_start_matches('_');
+        // Helper: convert to u32 only if not already u32
+        let as_u32 = |field: &str| -> String {
+            if ptype == "u32" {
+                format!("{prefix}.{field}")
+            } else {
+                format!("{prefix}.{field} as u32")
+            }
+        };
         match clean {
             "radius" | "blur_radius" => {
-                return Some(format!(
-                    "output.expand_uniform({prefix}.{clean} as u32, bounds_w, bounds_h)"
-                ));
+                let expr = as_u32(clean);
+                return Some(format!("output.expand_uniform({expr}, bounds_w, bounds_h)"));
             }
             "ksize" => {
                 return Some(format!(
@@ -253,9 +257,8 @@ fn detect_expansion_field(params: &[(String, String)], prefix: &str) -> Option<S
                 ));
             }
             "length" if ptype == "u32" || ptype == "f32" => {
-                return Some(format!(
-                    "output.expand_uniform({prefix}.length as u32, bounds_w, bounds_h)"
-                ));
+                let expr = as_u32("length");
+                return Some(format!("output.expand_uniform({expr}, bounds_w, bounds_h)"));
             }
             _ => {}
         }
@@ -410,7 +413,8 @@ mod tests {
             config_struct: None,
         };
         let code = generate_nodes(&[f], &empty_structs());
-        assert!(code.contains("output.expand_uniform(self.radius as u32,"));
+        // u32 radius — no cast needed
+        assert!(code.contains("output.expand_uniform(self.radius,"));
     }
 
     #[test]
@@ -434,8 +438,8 @@ mod tests {
         };
         let code = generate_nodes(&[f], &structs);
         assert!(
-            code.contains("output.expand_uniform(self.config.radius as u32,"),
-            "Expected config.radius access, got:\n{code}"
+            code.contains("output.expand_uniform(self.config.radius,"),
+            "Expected config.radius access (no cast for u32), got:\n{code}"
         );
     }
 
