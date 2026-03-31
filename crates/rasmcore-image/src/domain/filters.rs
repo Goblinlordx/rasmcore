@@ -141,6 +141,55 @@ pub struct ContrastParams {
     pub amount: f32,
 }
 
+/// Parameters for Photoshop-style exposure adjustment.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ExposureParams {
+    /// Exposure value in stops (-5 to +5, 0 = unchanged)
+    #[param(min = -5.0, max = 5.0, step = 0.1, default = 0.0, hint = "rc.signed_slider")]
+    pub ev: f32,
+    /// Offset applied before exposure scaling (-0.5 to 0.5)
+    #[param(min = -0.5, max = 0.5, step = 0.01, default = 0.0, hint = "rc.signed_slider")]
+    pub offset: f32,
+    /// Gamma correction applied after exposure (0.01-9.99, 1.0 = linear)
+    #[param(min = 0.01, max = 9.99, step = 0.01, default = 1.0)]
+    pub gamma_correction: f32,
+}
+
+/// Parameters for Photoshop-style color balance adjustment.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ColorBalanceParams {
+    /// Shadow Cyan-Red (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadow_cyan_red: f32,
+    /// Shadow Magenta-Green (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadow_magenta_green: f32,
+    /// Shadow Yellow-Blue (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadow_yellow_blue: f32,
+    /// Midtone Cyan-Red (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub midtone_cyan_red: f32,
+    /// Midtone Magenta-Green (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub midtone_magenta_green: f32,
+    /// Midtone Yellow-Blue (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub midtone_yellow_blue: f32,
+    /// Highlight Cyan-Red (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlight_cyan_red: f32,
+    /// Highlight Magenta-Green (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlight_magenta_green: f32,
+    /// Highlight Yellow-Blue (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlight_yellow_blue: f32,
+    /// Preserve luminosity after color shifts
+    #[param(default = true)]
+    pub preserve_luminosity: bool,
+}
+
 /// Parameters for median filter.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MedianParams {
@@ -1446,6 +1495,71 @@ pub fn contrast(
     }
     let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Contrast(amount));
     super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Photoshop-style exposure adjustment — logarithmic brightness with offset and gamma.
+///
+/// Uses the composable LUT infrastructure from `point_ops`. Fully LUT-collapsible.
+#[rasmcore_macros::register_filter(
+    name = "exposure",
+    category = "adjustment",
+    reference = "Photoshop exposure (EV stops + offset + gamma)"
+)]
+pub fn exposure(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &ExposureParams,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if config.gamma_correction <= 0.0 {
+        return Err(ImageError::InvalidParameters(
+            "exposure gamma_correction must be > 0".into(),
+        ));
+    }
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| exposure(p8, i8, config));
+    }
+    super::point_ops::exposure(pixels, info, config.ev, config.offset, config.gamma_correction)
+}
+
+/// Photoshop-style color balance — per-tonal-range CMY-RGB adjustment.
+///
+/// Shifts colors along Cyan-Red, Magenta-Green, and Yellow-Blue axes
+/// independently for shadows, midtones, and highlights. Tonal ranges use
+/// smooth luminance-based weighting with Rec. 709 luma coefficients.
+#[rasmcore_macros::register_filter(
+    name = "color_balance",
+    category = "adjustment",
+    reference = "Photoshop color balance (shadow/midtone/highlight CMY-RGB)"
+)]
+pub fn color_balance(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &ColorBalanceParams,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| color_balance(p8, i8, config));
+    }
+    let cb = super::color_grading::ColorBalance {
+        shadow: [
+            config.shadow_cyan_red / 100.0,
+            config.shadow_magenta_green / 100.0,
+            config.shadow_yellow_blue / 100.0,
+        ],
+        midtone: [
+            config.midtone_cyan_red / 100.0,
+            config.midtone_magenta_green / 100.0,
+            config.midtone_yellow_blue / 100.0,
+        ],
+        highlight: [
+            config.highlight_cyan_red / 100.0,
+            config.highlight_magenta_green / 100.0,
+            config.highlight_yellow_blue / 100.0,
+        ],
+        preserve_luminosity: config.preserve_luminosity,
+    };
+    super::color_grading::color_balance(pixels, info, &cb)
 }
 
 /// Convert to grayscale using weighted channel sum.

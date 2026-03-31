@@ -53,6 +53,15 @@ pub enum PointOp {
         midpoint: f32,
         sharpen: bool,
     },
+    /// Photoshop-style exposure adjustment.
+    /// `LUT[i] = clamp01((i/255 + offset) * 2^ev) ^ (1/gamma)`
+    /// ev is in exposure stops, offset shifts before scaling, gamma_correction
+    /// is a post-curve (1.0 = linear). Matches PS Exposure dialog.
+    Exposure {
+        ev: f32,
+        offset: f32,
+        gamma_correction: f32,
+    },
 }
 
 /// Build a 256-entry LUT for a single point operation.
@@ -157,6 +166,29 @@ pub fn build_lut(op: &PointOp) -> [u8; 256] {
                     };
                     *entry = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
                 }
+            }
+        }
+        PointOp::Exposure {
+            ev,
+            offset,
+            gamma_correction,
+        } => {
+            // PS Exposure: out = clamp01((in + offset) * 2^ev) ^ (1/gamma)
+            let scale = 2.0f32.powf(*ev);
+            let inv_gamma = if *gamma_correction > 0.0 {
+                1.0 / gamma_correction
+            } else {
+                1.0
+            };
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let x = i as f32 / 255.0;
+                let scaled = ((x + offset) * scale).clamp(0.0, 1.0);
+                let corrected = if (inv_gamma - 1.0).abs() < 1e-6 {
+                    scaled
+                } else {
+                    scaled.powf(inv_gamma)
+                };
+                *entry = (corrected * 255.0 + 0.5) as u8;
             }
         }
     }
@@ -376,6 +408,28 @@ pub fn build_lut_u16(op: &PointOp) -> Vec<u16> {
                 }
             }
         }
+        PointOp::Exposure {
+            ev,
+            offset,
+            gamma_correction,
+        } => {
+            let scale = 2.0f32.powf(*ev);
+            let inv_gamma = if *gamma_correction > 0.0 {
+                1.0 / gamma_correction
+            } else {
+                1.0
+            };
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let x = i as f32 / MAX16;
+                let scaled = ((x + offset) * scale).clamp(0.0, 1.0);
+                let corrected = if (inv_gamma - 1.0).abs() < 1e-6 {
+                    scaled
+                } else {
+                    scaled.powf(inv_gamma)
+                };
+                *entry = (corrected * MAX16 + 0.5) as u16;
+            }
+        }
     }
     lut
 }
@@ -519,6 +573,33 @@ pub fn levels(
             black,
             white,
             gamma,
+        },
+    )
+}
+
+/// Exposure adjustment: logarithmic brightness with offset and gamma.
+/// ev is exposure value in stops (0 = unchanged, +1 = double, -1 = halve).
+/// offset shifts the input before scaling (-0.5 to 0.5, default 0).
+/// gamma_correction is a post-curve (1.0 = linear, >1 brightens midtones).
+pub fn exposure(
+    pixels: &[u8],
+    info: &ImageInfo,
+    ev: f32,
+    offset: f32,
+    gamma_correction: f32,
+) -> Result<Vec<u8>, ImageError> {
+    if gamma_correction <= 0.0 {
+        return Err(ImageError::InvalidParameters(
+            "exposure gamma_correction must be > 0".into(),
+        ));
+    }
+    apply_op(
+        pixels,
+        info,
+        &PointOp::Exposure {
+            ev,
+            offset,
+            gamma_correction,
         },
     )
 }

@@ -201,6 +201,102 @@ pub fn split_toning(
     apply_rgb_transform(pixels, info, |r, g, b| split_toning_pixel(r, g, b, st))
 }
 
+// ─── Color Balance (Photoshop-style) ─────────────────────────────────────
+
+/// Photoshop-style color balance — per-tonal-range CMY-RGB shifts.
+///
+/// Each tonal range (shadow, midtone, highlight) has three axes:
+/// - Cyan(-1)–Red(+1)
+/// - Magenta(-1)–Green(+1)
+/// - Yellow(-1)–Blue(+1)
+///
+/// Tonal ranges are separated by luminance using smooth overlap weights:
+/// - Shadow weight peaks at luma=0, fades to 0 at ~0.67
+/// - Highlight weight peaks at luma=1, fades to 0 at ~0.33
+/// - Midtone weight = 1 - shadow_weight - highlight_weight (peaks at luma=0.5)
+///
+/// When `preserve_luminosity` is true (PS default), the output is rescaled
+/// to maintain the original Rec. 709 luminance.
+#[derive(Debug, Clone, Copy)]
+pub struct ColorBalance {
+    /// Shadow [cyan_red, magenta_green, yellow_blue] in [-1, 1]
+    pub shadow: [f32; 3],
+    /// Midtone [cyan_red, magenta_green, yellow_blue] in [-1, 1]
+    pub midtone: [f32; 3],
+    /// Highlight [cyan_red, magenta_green, yellow_blue] in [-1, 1]
+    pub highlight: [f32; 3],
+    /// Preserve luminosity after color shifts (PS default: true)
+    pub preserve_luminosity: bool,
+}
+
+impl Default for ColorBalance {
+    fn default() -> Self {
+        Self {
+            shadow: [0.0; 3],
+            midtone: [0.0; 3],
+            highlight: [0.0; 3],
+            preserve_luminosity: true,
+        }
+    }
+}
+
+/// Apply color balance to a single pixel.
+///
+/// The three CMY-RGB axes map to channel adjustments:
+/// - Cyan-Red: positive adds to R, negative adds to (G+B) i.e. cyan
+/// - Magenta-Green: positive adds to G, negative adds to (R+B) i.e. magenta
+/// - Yellow-Blue: positive adds to B, negative adds to (R+G) i.e. yellow
+///
+/// PS uses a simpler additive model: shift adds/subtracts directly from channels.
+#[inline]
+pub fn color_balance_pixel(r: f32, g: f32, b: f32, cb: &ColorBalance) -> (f32, f32, f32) {
+    // Luminance (Rec. 709) for tonal range weighting
+    let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+    // Tonal range weights — smooth overlap using quadratic falloff.
+    // Shadow: 1 at luma=0, 0 at luma=1. Quadratic: (1 - luma)^2 scaled.
+    // Highlight: 0 at luma=0, 1 at luma=1. Quadratic: luma^2 scaled.
+    // Midtone: complement of shadow + highlight, peaks at 0.5.
+    //
+    // PS uses a proprietary curve; this approximation matches the visual behavior:
+    // shadow and highlight have gentle overlap in the midtone region.
+    let shadow_w = ((1.0 - luma) * (1.0 - luma) * 1.5).min(1.0);
+    let highlight_w = (luma * luma * 1.5).min(1.0);
+    let midtone_w = (1.0 - shadow_w - highlight_w).max(0.0);
+
+    // Compute per-channel shift from all three tonal ranges.
+    // Each axis: cyan_red → R channel, magenta_green → G channel, yellow_blue → B channel.
+    let dr = cb.shadow[0] * shadow_w + cb.midtone[0] * midtone_w + cb.highlight[0] * highlight_w;
+    let dg = cb.shadow[1] * shadow_w + cb.midtone[1] * midtone_w + cb.highlight[1] * highlight_w;
+    let db = cb.shadow[2] * shadow_w + cb.midtone[2] * midtone_w + cb.highlight[2] * highlight_w;
+
+    let mut out_r = (r + dr).clamp(0.0, 1.0);
+    let mut out_g = (g + dg).clamp(0.0, 1.0);
+    let mut out_b = (b + db).clamp(0.0, 1.0);
+
+    // Preserve luminosity: rescale to maintain original luma
+    if cb.preserve_luminosity {
+        let new_luma = 0.2126 * out_r + 0.7152 * out_g + 0.0722 * out_b;
+        if new_luma > 1e-6 {
+            let scale = luma / new_luma;
+            out_r = (out_r * scale).clamp(0.0, 1.0);
+            out_g = (out_g * scale).clamp(0.0, 1.0);
+            out_b = (out_b * scale).clamp(0.0, 1.0);
+        }
+    }
+
+    (out_r, out_g, out_b)
+}
+
+/// Apply color balance to an image pixel buffer.
+pub fn color_balance(
+    pixels: &[u8],
+    info: &ImageInfo,
+    cb: &ColorBalance,
+) -> Result<Vec<u8>, ImageError> {
+    apply_rgb_transform(pixels, info, |r, g, b| color_balance_pixel(r, g, b, cb))
+}
+
 // ─── Cubic Spline Curves ──────────────────────────────────────────────────
 
 /// Per-channel tone curve from control points.
