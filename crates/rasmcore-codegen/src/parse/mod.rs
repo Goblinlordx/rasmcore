@@ -56,6 +56,18 @@ pub fn parse_source_files(
         all_params.extend(config_params::extract_config_params(&file));
     }
 
+    // Auto-detect config structs by naming convention:
+    // If param_structs contains "{PascalCaseName}Params", link it to the filter.
+    for filter in &mut all_filters {
+        let expected = format!(
+            "{}Params",
+            crate::generate::helpers::to_pascal_case(&filter.name)
+        );
+        if all_params.contains_key(&expected) {
+            filter.config_struct = Some(expected);
+        }
+    }
+
     CodegenData {
         filters: all_filters,
         generators: all_generators,

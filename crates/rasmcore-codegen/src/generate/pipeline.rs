@@ -224,6 +224,7 @@ mod tests {
             overlap: "param(radius)".to_string(),
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
+            config_struct: None,
         }];
         let code = generate_nodes(&filters);
         assert!(code.contains("pub struct BlurNode {"));
@@ -242,6 +243,7 @@ mod tests {
             overlap: "zero".to_string(),
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
+            config_struct: None,
         }];
         let code = generate_adapter_macro(&filters);
         assert!(code.contains("fn blur("));

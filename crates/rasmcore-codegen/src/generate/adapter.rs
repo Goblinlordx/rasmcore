@@ -13,50 +13,102 @@ pub fn generate(filters: &[FilterReg]) -> String {
         let trait_method = &f.name;
         let domain_fn = &f.fn_name;
 
-        let mut sig_params = Vec::new();
-        let mut call_params = Vec::new();
-        for (n, t) in &f.params {
-            let clean_n = n.trim_start_matches('_');
-            let (binding_type, call_expr) = match t.as_str() {
-                "&[f32]" => ("Vec<f32>", format!("&{clean_n}")),
-                "&[f64]" => ("Vec<f64>", format!("&{clean_n}")),
-                "&[u8]" => ("Vec<u8>", format!("&{clean_n}")),
-                "&[u32]" => ("Vec<u32>", format!("&{clean_n}")),
-                "&str" => ("String", format!("&{clean_n}")),
-                "String" => ("String", clean_n.to_string()),
-                _ => (t.as_str(), clean_n.to_string()),
-            };
-            sig_params.push(format!("{clean_n}: {binding_type}"));
-            call_params.push(call_expr);
+        if f.config_struct.is_some() {
+            // Config-struct-based signature
+            generate_config_method(&mut code, f, trait_method, domain_fn);
+        } else {
+            // Individual-parameter signature (current behavior)
+            generate_individual_method(&mut code, f, trait_method, domain_fn);
         }
-
-        let full_sig = if sig_params.is_empty() {
-            "pixels: Vec<u8>, info: types::ImageInfo".to_string()
-        } else {
-            format!(
-                "pixels: Vec<u8>, info: types::ImageInfo, {}",
-                sig_params.join(", ")
-            )
-        };
-
-        let full_call = if call_params.is_empty() {
-            "&pixels, &di".to_string()
-        } else {
-            format!("&pixels, &di, {}", call_params.join(", "))
-        };
-
-        code.push_str(&format!(
-            "    fn {trait_method}({full_sig}) -> Result<Vec<u8>, RasmcoreError> {{\n"
-        ));
-        code.push_str("        let di = to_domain_image_info(&info);\n");
-        code.push_str(&format!(
-            "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
-        ));
-        code.push_str("    }\n\n");
     }
 
     code.push_str("}\n");
     code
+}
+
+fn generate_config_method(code: &mut String, f: &FilterReg, trait_method: &str, domain_fn: &str) {
+    let wit_config_type = format!(
+        "filters::{}Config",
+        super::helpers::to_pascal_case(&f.name)
+    );
+
+    // Destructure config fields to call domain function with individual params
+    let call_params: Vec<String> = f
+        .params
+        .iter()
+        .map(|(n, t)| {
+            let clean_n = n.trim_start_matches('_');
+            match t.as_str() {
+                "&[f32]" | "&[f64]" | "&[u8]" | "&[u32]" | "&str" => {
+                    format!("&config.{clean_n}")
+                }
+                _ => format!("config.{clean_n}"),
+            }
+        })
+        .collect();
+
+    let full_call = if call_params.is_empty() {
+        "&pixels, &di".to_string()
+    } else {
+        format!("&pixels, &di, {}", call_params.join(", "))
+    };
+
+    code.push_str(&format!(
+        "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo, config: {wit_config_type}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+    ));
+    code.push_str("        let di = to_domain_image_info(&info);\n");
+    code.push_str(&format!(
+        "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
+    ));
+    code.push_str("    }\n\n");
+}
+
+fn generate_individual_method(
+    code: &mut String,
+    f: &FilterReg,
+    trait_method: &str,
+    domain_fn: &str,
+) {
+    let mut sig_params = Vec::new();
+    let mut call_params = Vec::new();
+    for (n, t) in &f.params {
+        let clean_n = n.trim_start_matches('_');
+        let (binding_type, call_expr) = match t.as_str() {
+            "&[f32]" => ("Vec<f32>", format!("&{clean_n}")),
+            "&[f64]" => ("Vec<f64>", format!("&{clean_n}")),
+            "&[u8]" => ("Vec<u8>", format!("&{clean_n}")),
+            "&[u32]" => ("Vec<u32>", format!("&{clean_n}")),
+            "&str" => ("String", format!("&{clean_n}")),
+            "String" => ("String", clean_n.to_string()),
+            _ => (t.as_str(), clean_n.to_string()),
+        };
+        sig_params.push(format!("{clean_n}: {binding_type}"));
+        call_params.push(call_expr);
+    }
+
+    let full_sig = if sig_params.is_empty() {
+        "pixels: Vec<u8>, info: types::ImageInfo".to_string()
+    } else {
+        format!(
+            "pixels: Vec<u8>, info: types::ImageInfo, {}",
+            sig_params.join(", ")
+        )
+    };
+
+    let full_call = if call_params.is_empty() {
+        "&pixels, &di".to_string()
+    } else {
+        format!("&pixels, &di, {}", call_params.join(", "))
+    };
+
+    code.push_str(&format!(
+        "    fn {trait_method}({full_sig}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+    ));
+    code.push_str("        let di = to_domain_image_info(&info);\n");
+    code.push_str(&format!(
+        "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
+    ));
+    code.push_str("    }\n\n");
 }
 
 #[cfg(test)]
@@ -74,6 +126,7 @@ mod tests {
             overlap: "zero".to_string(),
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
+            config_struct: None,
         }];
         let code = generate(&filters);
         assert!(code.contains("fn blur("));
@@ -92,9 +145,38 @@ mod tests {
             overlap: "zero".to_string(),
             fn_name: "test".to_string(),
             params: vec![("data".to_string(), "&[u8]".to_string())],
+            config_struct: None,
         }];
         let code = generate(&filters);
         assert!(code.contains("data: Vec<u8>"));
         assert!(code.contains("&data"));
+    }
+
+    #[test]
+    fn generate_adapter_config_struct() {
+        let filters = vec![FilterReg {
+            name: "blur".to_string(),
+            category: "spatial".to_string(),
+            group: String::new(),
+            variant: String::new(),
+            reference: String::new(),
+            overlap: "zero".to_string(),
+            fn_name: "blur".to_string(),
+            params: vec![("radius".to_string(), "f32".to_string())],
+            config_struct: Some("BlurParams".to_string()),
+        }];
+        let code = generate(&filters);
+        assert!(
+            code.contains("config: filters::BlurConfig"),
+            "should use config struct param: {code}"
+        );
+        assert!(
+            code.contains("config.radius"),
+            "should destructure config: {code}"
+        );
+        assert!(
+            !code.contains("radius: f32"),
+            "should NOT have individual param: {code}"
+        );
     }
 }

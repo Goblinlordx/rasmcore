@@ -53,6 +53,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             overlap,
             fn_name,
             params,
+            config_struct: None, // populated later by parse_source_files
         });
     }
     None

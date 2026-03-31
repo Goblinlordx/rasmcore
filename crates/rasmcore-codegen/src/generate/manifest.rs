@@ -142,6 +142,7 @@ mod tests {
                 overlap: "zero".to_string(),
                 fn_name: "blur".to_string(),
                 params: vec![("radius".to_string(), "f32".to_string())],
+            config_struct: None,
             }],
             generators: vec![],
             compositors: vec![],

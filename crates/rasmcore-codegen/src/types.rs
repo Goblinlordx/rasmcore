@@ -18,6 +18,11 @@ pub struct FilterReg {
     pub fn_name: String,
     /// (param_name, rust_type) pairs, excluding pixels/info.
     pub params: Vec<(String, String)>,
+    /// If set, the struct name (e.g., "BlurParams") for config-based codegen.
+    /// Detected by naming convention: `to_pascal_case(name) + "Params"`.
+    /// When Some, generators produce config-struct-based signatures.
+    /// When None, generators produce individual-parameter signatures (current behavior).
+    pub config_struct: Option<String>,
 }
 
 /// A parsed simple registration (generator, compositor, mapper).
