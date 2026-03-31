@@ -1,0 +1,66 @@
+id: fix-wasm-build_20260331113204Z
+title: Fix WASM component build — adapter codegen + WIT sync
+type: bug
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: Fix 116+ WASM build errors caused by stale codegen output. All fixes in rasmcore-codegen generators, never in generated
+    files.
+  context: 'The WASM component build (cargo component build -p rasmcore-image) fails with 263 errors. Root cause: mass filter
+    refactorings (ConfigParams migration, new filter types, Point2D) updated the domain code and native codegen but left the
+    WASM adapter codegen and WIT definitions out of sync. The native build works because the adapter layer is #[cfg(target_arch
+    = "wasm32")].'
+  codebase_analysis: "THREE ROOT CAUSES (all in generators, not generated output):\n\n1. PIPELINE ADAPTER CODEGEN (generate/pipeline.rs\
+    \ — generate_adapter_macro):\n   Emits bare type names (BlurParams, Point2D) in the macro body. When the macro\n   is\
+    \ expanded inside adapter/pipeline_adapter.rs, these types are not in scope.\n   Fix: emit fully-qualified paths (crate::domain::filters::BlurParams)\
+    \ or add\n   use-imports at the top of the macro output.\n\n2. FILTER ADAPTER CODEGEN (generate/adapter.rs — generate_config_method):\n\
+    \   For filters with mixed params (&str + config, &[Point2D] + config), the generated\n   WIT config record doesn't include\
+    \ the extra params. The adapter function signature\n   only takes (pixels, info, config) but the WIT trait expects (pixels,\
+    \ info, extra_param, config).\n   Fix: adapter generator must detect extra params alongside config structs and include\n\
+    \   them in the function signature.\n\n3. WIT CODEGEN (generate/wit.rs):\n   The generated WIT for config-struct filters\
+    \ flattens all params into a single record.\n   But filters with mixed params (config struct + &str/&[f32]/&[Point2D])\
+    \ need the extra\n   params as separate WIT parameters alongside the config record.\n   Fix: wit generator must separate\
+    \ extra params from config fields in the signature.\n\nAFFECTED GENERATORS (all in crates/rasmcore-codegen/src/generate/):\n\
+    - pipeline.rs: generate_adapter_macro() — type qualification\n- adapter.rs: generate_config_method() — mixed param signatures\n\
+    - wit.rs: generate() — mixed param WIT signatures\n- helpers.rs: already has Point2D mappings (added earlier)\n\nNOT AFFECTED\
+    \ (do not modify):\n- Generated files in target/\n- adapter/mod.rs, adapter/pipeline_adapter.rs (handwritten adapter glue)\n\
+    - wit/image/filters.wit (generated from wit.rs, will be regenerated)"
+  acceptance_criteria:
+  - cargo component build -p rasmcore-image succeeds with zero errors
+  - All registered filters appear in the generated WIT with correct signatures
+  - Pipeline adapter macro compiles in WASM context without missing types
+  - Filters with mixed params (config + &str, config + &[Point2D]) have correct WIT and adapter signatures
+  - All fixes are in rasmcore-codegen generators, not in generated output or handwritten adapter code
+  - workflow.yaml verification includes WASM build check
+  out_of_scope: Handwritten adapter code changes (adapter/mod.rs, pipeline_adapter.rs). Manual WIT edits. New filter implementations.
+    Validation script fixes (license check, clippy warnings).
+  technical_notes: All three fixes are in rasmcore-codegen generators. After fixing the generators, rebuild to regenerate
+    all output. Verify with 'cargo component build -p rasmcore-image' (must produce a valid .wasm component). Add WASM build
+    check to the verification command in workflow.yaml so future tracks catch regressions.
+plan: []
+extra: {}
+plan:
+- phase: Fix codegen generators
+  tasks:
+  - text: "Fix pipeline.rs generate_adapter_macro() — emit fully-qualified type paths (crate::domain::filters::XParams, crate::domain::param_types::Point2D) so the macro compiles in the WASM adapter context"
+    done: false
+  - text: "Fix adapter.rs generate_config_method() — for filters with mixed params (config struct + extra &str/&[f32]/&[Point2D]), include extra params in the adapter function signature alongside config"
+    done: false
+  - text: "Fix wit.rs generate() — for filters with mixed params, emit extra params as separate WIT parameters alongside the config record (not flattened into the record)"
+    done: false
+- phase: Regenerate and verify
+  tasks:
+  - text: "Rebuild with cargo component build -p rasmcore-image — verify zero errors"
+    done: false
+  - text: "Verify generated WIT has correct signatures for all filter categories: pure config, no params, mixed params"
+    done: false
+  - text: "Spot-check generated adapter code for draw_polygon (Point2D), draw_text (str + config), perspective_warp (f64 slice + config)"
+    done: false
+- phase: Add WASM build to validation
+  tasks:
+  - text: "Update workflow.yaml verification commands to include WASM build check"
+    done: false
+  - text: "Verify the full validation script passes the WASM step"
+    done: false
+extra: {}
