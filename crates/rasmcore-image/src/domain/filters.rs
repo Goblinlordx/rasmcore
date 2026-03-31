@@ -2602,10 +2602,14 @@ pub struct ColorizeParams {
     color_op = "true"
 )]
 pub fn colorize(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ColorizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let target_r = config.target.r;
     let target_g = config.target.g;
     let target_b = config.target.b;
@@ -12113,14 +12117,14 @@ mod tests {
     #[test]
     fn colorize_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(&px, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.5 }).unwrap();
+        let result = colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn colorize_zero_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(&px, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.0 }).unwrap();
+        let result = colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
@@ -12243,9 +12247,8 @@ mod tests {
         };
         assert!(hue_rotate(&pixels, &info, &HueRotateParams { degrees: 45.0 }).is_ok());
         assert!(saturate(&pixels, &info, &SaturateParams { factor: 1.5 }).is_ok());
-        let r = Rect::new(0, 0, info.width, info.height);
-        assert!(sepia(r, &mut |_: Rect| Ok(pixels.clone()), &info, &SepiaParams { intensity: 0.8 }).is_ok());
-        assert!(colorize(&pixels, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
+        assert!(sepia(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SepiaParams { intensity: 0.8 }).is_ok());
+        assert!(colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
     }
 
     fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
