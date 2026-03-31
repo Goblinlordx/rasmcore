@@ -9141,10 +9141,14 @@ fn yvv_blur_1d(buf: &mut [f32], b: &[f64; 4], _m: &[[f64; 3]; 3]) {
     reference = "Land 1977 single-scale Retinex"
 )]
 pub fn retinex_ssr(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &RetinexSsrParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
     validate_format(info.format)?;
@@ -13576,7 +13580,9 @@ mod retinex_tests {
     #[test]
     fn ssr_produces_output() {
         let (px, info) = make_rgb(32, 32);
-        let result = retinex_ssr(&px, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -13596,7 +13602,9 @@ mod retinex_tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let result = retinex_ssr(&pixels, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
 
         let stats_before = crate::domain::histogram::statistics(&pixels, &info).unwrap();
         let stats_after = crate::domain::histogram::statistics(&result, &info).unwrap();
@@ -13618,7 +13626,9 @@ mod retinex_tests {
     #[test]
     fn msr_single_scale_matches_ssr() {
         let (px, info) = make_rgb(32, 32);
-        let ssr = retinex_ssr(&px, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let ssr = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
         let msr = retinex_msr(&px, &info, &[80.0]).unwrap();
         // MSR with one scale should equal SSR
         assert_eq!(ssr, msr, "MSR with single scale should match SSR");
@@ -13694,7 +13704,9 @@ mod retinex_tests {
         };
 
         // Run retinex_ssr which uses the box blur path for sigma=80
-        let result = retinex_ssr(&pixels, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Result should use a reasonable dynamic range (normalized output)

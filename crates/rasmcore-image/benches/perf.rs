@@ -19,6 +19,7 @@ use rasmcore_image::domain::filters::{
     AdaptiveMethod, BlendMode, BokehBlurParams, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
 };
 use rasmcore_image::domain::types::*;
+use rasmcore_pipeline::Rect;
 use rasmcore_image::domain::{color_grading, content_aware, decoder, encoder, filters, transform};
 
 // ─── Fixture Helpers ─────────────────────────────────────────────────────
@@ -879,7 +880,11 @@ fn enhancement_filter_benchmarks(c: &mut Criterion) {
         let px = pixels.clone();
         let inf = info;
         group.bench_function(BenchmarkId::new("retinex_ssr/rasmcore", size), |b| {
-            b.iter(|| filters::retinex_ssr(&px, &inf, 80.0).unwrap());
+            b.iter(|| {
+                let r = Rect::new(0, 0, inf.width, inf.height);
+                let mut u = |_: Rect| Ok(px.clone());
+                filters::retinex_ssr(r, &mut u, &inf, &filters::RetinexSsrParams { sigma: 80.0 }).unwrap()
+            });
         });
 
         // Dehaze (patch_radius=7, omega=0.95, t_min=0.1)
