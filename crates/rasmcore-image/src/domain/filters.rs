@@ -1932,10 +1932,14 @@ pub struct SmartSharpenParams {
     reference = "Photoshop Smart Sharpen (bilateral-based)"
 )]
 pub fn smart_sharpen(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SmartSharpenParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amount = config.amount;
     let radius = config.radius;
     let threshold = config.threshold;
@@ -1947,7 +1951,11 @@ pub fn smart_sharpen(
     }
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| smart_sharpen(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            smart_sharpen(r, &mut u, i8, config)
+        });
     }
 
     // Use bilateral filter for edge-preserving blur
@@ -2238,10 +2246,14 @@ pub fn contrast(
     point_op = "true"
 )]
 pub fn exposure(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ExposureParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if config.gamma_correction <= 0.0 {
         return Err(ImageError::InvalidParameters(
@@ -2249,7 +2261,11 @@ pub fn exposure(
         ));
     }
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| exposure(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            exposure(r, &mut u, i8, config)
+        });
     }
     super::point_ops::exposure(pixels, info, config.ev, config.offset, config.gamma_correction)
 }
@@ -2266,13 +2282,21 @@ pub fn exposure(
     color_op = "true"
 )]
 pub fn color_balance(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ColorBalanceParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| color_balance(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            color_balance(r, &mut u, i8, config)
+        });
     }
     let cb = super::color_grading::ColorBalance {
         shadow: [
@@ -10590,10 +10614,14 @@ pub struct KmeansQuantizeParams {
     reference = "Lloyd's k-means color clustering (not reference-validated)"
 )]
 pub fn kmeans_quantize_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &KmeansQuantizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let palette = super::quantize::kmeans_palette(
         pixels,
         info,
@@ -11280,13 +11308,21 @@ pub struct SaltPepperNoiseParams {
     reference = "impulse noise (salt and pepper)"
 )]
 pub fn salt_pepper_noise(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SaltPepperNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| salt_pepper_noise(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            salt_pepper_noise(r, &mut u, i8, config)
+        });
     }
 
     let density = config.density as f64;
@@ -15449,10 +15485,14 @@ pub struct LiftGammaGainParams {
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn lift_gamma_gain_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &LiftGammaGainParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let lift_r = config.lift_r;
     let lift_g = config.lift_g;
     let lift_b = config.lift_b;
@@ -15625,10 +15665,14 @@ pub struct CurvesMasterParams {
     reference = "spline-interpolated tone curve (all channels)"
 )]
 pub fn curves_master(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let tc = super::color_grading::ToneCurves {
         r: pts.clone(),
@@ -15659,7 +15703,10 @@ pub struct CurvesRedParams {
     variant = "red",
     reference = "spline-interpolated tone curve (red channel)"
 )]
-pub fn curves_red(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+pub fn curves_red(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
     let tc = super::color_grading::ToneCurves {
@@ -15692,10 +15739,14 @@ pub struct CurvesGreenParams {
     reference = "spline-interpolated tone curve (green channel)"
 )]
 pub fn curves_green(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
     let tc = super::color_grading::ToneCurves {
@@ -15727,7 +15778,10 @@ pub struct CurvesBlueParams {
     variant = "blue",
     reference = "spline-interpolated tone curve (blue channel)"
 )]
-pub fn curves_blue(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+pub fn curves_blue(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
     let tc = super::color_grading::ToneCurves {
@@ -20427,10 +20481,14 @@ pub struct HoughLinesParams {
     reference = "probabilistic Hough transform (Matas et al. 2000)"
 )]
 pub fn hough_lines_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &HoughLinesParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let threshold = config.threshold;
     let min_length = config.min_length;
     let max_gap = config.max_gap;
