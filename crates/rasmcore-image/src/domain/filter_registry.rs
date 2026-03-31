@@ -708,9 +708,10 @@ builtin_filter!(SepiaFilter, "sepia", FilterCategory::Color,
     params: [ParamDescriptor::float("intensity", 0.0, 1.0, 1.0)],
     apply: |input| {
         let intensity = input.params.get_float("intensity").unwrap_or(1.0);
-        let r = crate::domain::tile::Rect::new(0, 0, input.info.width, input.info.height);
-        let pixels = input.pixels.to_vec();
-        filters::sepia(r, &mut |_| Ok(pixels.clone()), input.info, &filters::SepiaParams { intensity })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::sepia(r, &mut u, input.info, &filters::SepiaParams { intensity })
     }
 );
 
