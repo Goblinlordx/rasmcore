@@ -1,95 +1,90 @@
 id: fix-mapper-pipeline_20260331085200Z
-title: "Fix format-changing filters in pipeline (mapper codegen)"
+title: Fix format-changing filters in pipeline (mapper codegen)
 type: bug
 status: pending
 created: 2026-03-31
-updated: 2026-03-31
+updated: '2026-03-31'
 spec:
-  summary: >
-    Pipeline nodes ignore format changes from Gray8-outputting filters
-    (charcoal, sobel, canny, grayscale, flatten). Extend codegen to
-    generate mapper pipeline nodes and re-register affected filters.
-  context: |
-    Six filters output a different pixel format than their input but are
+  summary: 'Pipeline nodes ignore format changes from Gray8-outputting filters (charcoal, sobel, canny, grayscale, flatten).
+    Extend codegen to generate mapper pipeline nodes and re-register affected filters.
+
+    '
+  context: 'Six filters output a different pixel format than their input but are
+
     registered as #[register_filter] instead of #[register_mapper]. The
+
     pipeline node codegen only generates nodes for filters (which pass
+
     through source_info unchanged). Downstream nodes receive wrong
+
     bytes_per_pixel, causing data corruption.
 
+
     Affected filters: charcoal, sobel, scharr, laplacian, canny (all
+
     output Gray8), grayscale (outputs Gray8), flatten (outputs RGB8 from
+
     RGBA8).
 
+
     Existing mappers (add_alpha, remove_alpha) are correctly registered
-    but cannot be used in pipelines because codegen doesn't generate
+
+    but cannot be used in pipelines because codegen doesn''t generate
+
     mapper pipeline nodes.
 
+
     Ignored test at pipeline/tests.rs:147 confirms the bug.
-  codebase_analysis: |
-    CODEGEN:
-    - rasmcore-codegen/src/parse/simple_regs.rs: Already parses
-      #[register_mapper] annotations into CodegenData::mappers
-    - rasmcore-codegen/src/generate/pipeline.rs: Only generates
-      nodes from data.filters, NOT data.mappers
-    - rasmcore-codegen/src/generate/mod.rs: Prints mapper count
-      but skips pipeline node generation for them
-    - Generated nodes use source_info.clone() for info() — no format update
 
-    FILTERS TO CONVERT:
-    - grayscale_registered (filters.rs:8858) — wraps fn returning
-      DecodedImage with Gray8
-    - flatten_registered (filters.rs:8869) — wraps fn returning
-      (Vec<u8>, ImageInfo) with RGB8
-    - charcoal, sobel, scharr, laplacian, canny — output Gray8 but
-      return Vec<u8> only, need signature change
-
-    MACRO:
-    - #[register_mapper] requires Result<(Vec<u8>, ImageInfo), ImageError>
-    - StaticMapperRegistration in filter_registry.rs lines 366-379
-    - inventory::collect! already set up for mappers
+    '
+  codebase_analysis: "CODEGEN:\n- rasmcore-codegen/src/parse/simple_regs.rs: Already parses\n  #[register_mapper] annotations\
+    \ into CodegenData::mappers\n- rasmcore-codegen/src/generate/pipeline.rs: Only generates\n  nodes from data.filters, NOT\
+    \ data.mappers\n- rasmcore-codegen/src/generate/mod.rs: Prints mapper count\n  but skips pipeline node generation for\
+    \ them\n- Generated nodes use source_info.clone() for info() — no format update\n\nFILTERS TO CONVERT:\n- grayscale_registered\
+    \ (filters.rs:8858) — wraps fn returning\n  DecodedImage with Gray8\n- flatten_registered (filters.rs:8869) — wraps fn\
+    \ returning\n  (Vec<u8>, ImageInfo) with RGB8\n- charcoal, sobel, scharr, laplacian, canny — output Gray8 but\n  return\
+    \ Vec<u8> only, need signature change\n\nMACRO:\n- #[register_mapper] requires Result<(Vec<u8>, ImageInfo), ImageError>\n\
+    - StaticMapperRegistration in filter_registry.rs lines 366-379\n- inventory::collect! already set up for mappers\n"
   acceptance_criteria:
-    - Codegen generates pipeline nodes for mappers (not just filters)
-    - Mapper nodes return correct output ImageInfo (format, dimensions)
-    - grayscale, flatten re-registered as mappers with correct signatures
-    - charcoal, sobel, scharr, laplacian, canny converted to mapper signatures
-    - Pipeline test pipeline_grayscale_chain un-ignored and passes
-    - Pipeline chain charcoal -> blur works correctly (Gray8 blur)
-    - Existing mapper filters (add_alpha, remove_alpha) work in pipelines
-    - param-manifest.json still includes all mappers with kind=mapper
-  out_of_scope: |
-    Converting non-format-changing filters. Pipeline performance optimization.
-  technical_notes: |
-    Two-part fix:
-    1. CODEGEN: Add generate_mapper_nodes() that produces pipeline node
-       structs for mappers. Key difference: info() returns ImageInfo from
-       the mapper output tuple, not source_info.
-    2. FILTERS: Convert affected filters to mapper signature — change
-       return from Result<Vec<u8>> to Result<(Vec<u8>, ImageInfo)>.
+  - Codegen generates pipeline nodes for mappers (not just filters)
+  - Mapper nodes return correct output ImageInfo (format, dimensions)
+  - grayscale, flatten re-registered as mappers with correct signatures
+  - charcoal, sobel, scharr, laplacian, canny converted to mapper signatures
+  - Pipeline test pipeline_grayscale_chain un-ignored and passes
+  - Pipeline chain charcoal -> blur works correctly (Gray8 blur)
+  - Existing mapper filters (add_alpha, remove_alpha) work in pipelines
+  - param-manifest.json still includes all mappers with kind=mapper
+  out_of_scope: 'Converting non-format-changing filters. Pipeline performance optimization.
+
+    '
+  technical_notes: "Two-part fix:\n1. CODEGEN: Add generate_mapper_nodes() that produces pipeline node\n   structs for mappers.\
+    \ Key difference: info() returns ImageInfo from\n   the mapper output tuple, not source_info.\n2. FILTERS: Convert affected\
+    \ filters to mapper signature — change\n   return from Result<Vec<u8>> to Result<(Vec<u8>, ImageInfo)>.\n"
 plan:
-  - phase: "Codegen — mapper pipeline nodes"
-    tasks:
-      - text: "Add generate_mapper_nodes() to rasmcore-codegen that produces pipeline node structs for mappers"
-        done: false
-      - text: "Mapper node info() returns output ImageInfo from mapper result, not source_info"
-        done: false
-      - text: "Update generate/mod.rs to call generate_mapper_nodes() alongside generate_nodes()"
-        done: false
-      - text: "Update pipeline dispatch to route mapper names to mapper nodes"
-        done: false
-  - phase: "Re-register affected filters as mappers"
-    tasks:
-      - text: "Convert grayscale_registered and flatten_registered from register_filter to register_mapper"
-        done: false
-      - text: "Convert charcoal to mapper signature — return (Vec<u8>, ImageInfo) with Gray8"
-        done: false
-      - text: "Convert sobel, scharr, laplacian, canny to mapper signatures"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Un-ignore pipeline_grayscale_chain test — verify it passes"
-        done: false
-      - text: "Add pipeline test: charcoal -> blur chain produces valid Gray8 output"
-        done: false
-      - text: "Verify param-manifest.json includes all mappers correctly"
-        done: false
+- phase: Codegen — mapper pipeline nodes
+  tasks:
+  - text: Add generate_mapper_nodes() to rasmcore-codegen that produces pipeline node structs for mappers
+    done: true
+  - text: Mapper node info() returns output ImageInfo from mapper result, not source_info
+    done: true
+  - text: Update generate/mod.rs to call generate_mapper_nodes() alongside generate_nodes()
+    done: true
+  - text: Update pipeline dispatch to route mapper names to mapper nodes
+    done: true
+- phase: Re-register affected filters as mappers
+  tasks:
+  - text: Convert grayscale_registered and flatten_registered from register_filter to register_mapper
+    done: true
+  - text: Convert charcoal to mapper signature — return (Vec<u8>, ImageInfo) with Gray8
+    done: true
+  - text: Convert sobel, scharr, laplacian, canny to mapper signatures
+    done: true
+- phase: Verification
+  tasks:
+  - text: Un-ignore pipeline_grayscale_chain test — verify it passes
+    done: true
+  - text: 'Add pipeline test: charcoal -> blur chain produces valid Gray8 output'
+    done: true
+  - text: Verify param-manifest.json includes all mappers correctly
+    done: true
 extra: {}
