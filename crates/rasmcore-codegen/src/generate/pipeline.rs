@@ -200,10 +200,21 @@ fn input_rect_expand_expr(
             return Some(format!("output.expand_uniform({n}, bounds_w, bounds_h)"));
         }
         s if s.starts_with("param(") => {
-            let param_name = s.trim_start_matches("param(").trim_end_matches(')');
-            return Some(format!(
-                "output.expand_uniform(self.{param_name} as u32, bounds_w, bounds_h)"
-            ));
+            let inner = s.trim_start_matches("param(").trim_end_matches(')');
+            // Use config struct prefix if the filter has a config struct
+            let prefix = if f.config_struct.is_some() { "self.config" } else { "self" };
+            // Support optional multiplier: param(radius, 2)
+            return if let Some((param_name, mul_str)) = inner.split_once(',') {
+                let param_name = param_name.trim();
+                let mul: u32 = mul_str.trim().parse().unwrap_or(1);
+                Some(format!(
+                    "output.expand_uniform({prefix}.{param_name} as u32 * {mul}, bounds_w, bounds_h)"
+                ))
+            } else {
+                Some(format!(
+                    "output.expand_uniform({prefix}.{inner} as u32, bounds_w, bounds_h)"
+                ))
+            };
         }
         _ => {} // "zero" or unset — fall through to heuristic
     }

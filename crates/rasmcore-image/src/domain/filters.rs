@@ -6289,7 +6289,8 @@ pub fn bilateral(
     category = "spatial",
     group = "denoise",
     variant = "guided",
-    reference = "He et al. 2010 guided image filtering"
+    reference = "He et al. 2010 guided image filtering",
+    overlap = "param(radius, 2)"
 )]
 pub fn guided_filter(
     pixels: &[u8],

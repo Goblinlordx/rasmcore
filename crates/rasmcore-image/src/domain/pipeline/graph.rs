@@ -1201,7 +1201,6 @@ mod tiled_parity_tests {
     }
 
     #[test]
-    #[ignore = "guided_filter needs 2*radius expansion (two box_mean passes); manual input_rect override needed"]
     fn tiled_parity_guided_filter() {
         assert_tiled_matches_full(|| {
             let w = 64;
