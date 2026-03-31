@@ -601,4 +601,161 @@ mod tiled_sink_tests {
         let cfg = TileConfig::disabled();
         assert_eq!(cfg.tile_size, 0);
     }
+
+    // ── Streaming interleave validation ────────────────────────────────
+    //
+    // Proves that tiles are written to the encoder BEFORE the next tile
+    // is read from the source — true incremental processing, not batch.
+
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Event {
+        Read(u32, u32, u32, u32),  // x, y, w, h
+        Write(u32, u32, u32, u32), // x, y, w, h
+    }
+
+    /// Source node that logs Read events to a shared event log.
+    struct LoggingSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+        log: Arc<Mutex<Vec<Event>>>,
+    }
+
+    impl ImageNode for LoggingSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            self.log.lock().unwrap().push(Event::Read(
+                request.x,
+                request.y,
+                request.width,
+                request.height,
+            ));
+            let bpp = bytes_per_pixel(self.info.format);
+            Ok(crop_region(
+                &self.pixels,
+                Rect::new(0, 0, self.info.width, self.info.height),
+                request,
+                bpp,
+            ))
+        }
+        fn access_pattern(&self) -> crate::domain::pipeline::graph::AccessPattern {
+            crate::domain::pipeline::graph::AccessPattern::Sequential
+        }
+    }
+
+    /// Wrapper that logs Write events, delegating to an inner encoder.
+    struct LoggingEncoder {
+        inner: Box<dyn StreamingEncoder>,
+        log: Arc<Mutex<Vec<Event>>>,
+    }
+
+    impl StreamingEncoder for LoggingEncoder {
+        fn write_tile(
+            &mut self,
+            pixels: &[u8],
+            x: u32,
+            y: u32,
+            w: u32,
+            h: u32,
+        ) -> Result<(), ImageError> {
+            self.log
+                .lock()
+                .unwrap()
+                .push(Event::Write(x, y, w, h));
+            self.inner.write_tile(pixels, x, y, w, h)
+        }
+        fn finish(&mut self) -> Result<Vec<u8>, ImageError> {
+            self.inner.finish()
+        }
+    }
+
+    #[test]
+    fn streaming_encoder_interleaves_reads_and_writes() {
+        let w = 64u32;
+        let h = 64u32;
+        let tile_size = 32u32;
+        let log = Arc::new(Mutex::new(Vec::new()));
+
+        // Build graph with logging source
+        let pixels = gradient_rgb(w, h);
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let mut graph = NodeGraph::new(16 * 1024 * 1024);
+        let src = graph.add_node(Box::new(LoggingSource {
+            pixels,
+            info: info.clone(),
+            log: Arc::clone(&log),
+        }));
+
+        // Create logging BMP streaming encoder
+        let bmp_enc =
+            encoder::streaming::BmpStreamingEncoder::new(&info).unwrap();
+        let mut logging_enc = LoggingEncoder {
+            inner: Box::new(bmp_enc),
+            log: Arc::clone(&log),
+        };
+
+        // Feed tiles
+        let bpp = bytes_per_pixel(info.format);
+        feed_tiles_to_encoder(
+            &mut graph,
+            src,
+            w,
+            h,
+            bpp,
+            tile_size,
+            &mut logging_enc,
+        )
+        .unwrap();
+        let encoded = logging_enc.finish().unwrap();
+
+        // Verify: encoded output is valid BMP
+        assert_eq!(&encoded[..2], b"BM");
+
+        // Verify interleaving: events must alternate Read, Write, Read, Write...
+        let events = log.lock().unwrap();
+        let expected_tiles = 4; // 64/32 = 2 columns × 2 rows = 4 tiles
+        assert_eq!(
+            events.len(),
+            expected_tiles * 2,
+            "expected {expected_tiles} read-write pairs, got {} events",
+            events.len()
+        );
+
+        for i in 0..expected_tiles {
+            let read_idx = i * 2;
+            let write_idx = i * 2 + 1;
+            assert!(
+                matches!(events[read_idx], Event::Read(..)),
+                "event {read_idx} should be Read, got {:?}",
+                events[read_idx]
+            );
+            assert!(
+                matches!(events[write_idx], Event::Write(..)),
+                "event {write_idx} should be Write, got {:?}",
+                events[write_idx]
+            );
+            // The write's rect must match the preceding read's rect
+            if let (Event::Read(rx, ry, rw, rh), Event::Write(wx, wy, ww, wh)) =
+                (&events[read_idx], &events[write_idx])
+            {
+                assert_eq!(
+                    (rx, ry, rw, rh),
+                    (wx, wy, ww, wh),
+                    "write at index {write_idx} doesn't match read at {read_idx}"
+                );
+            }
+        }
+    }
 }
