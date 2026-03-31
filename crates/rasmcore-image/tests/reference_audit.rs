@@ -10,6 +10,7 @@ use std::io::BufWriter;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use rasmcore_image::domain::pipeline::Rect;
 use rasmcore_image::domain::types::*;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -350,7 +351,7 @@ fn deterministic_brightness() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::brightness(px, info, 0.3).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::brightness(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BrightnessParams { amount: 0.3 }).unwrap() },
         &["-brightness-contrast", "30x0"],
         "brightness_30",
     ) {
@@ -363,7 +364,7 @@ fn deterministic_contrast() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::contrast(px, info, 0.5).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::contrast(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::ContrastParams { amount: 0.5 }).unwrap() },
         &["-brightness-contrast", "0x50"],
         "contrast_50",
     ) {
@@ -383,7 +384,7 @@ fn algorithm_blur() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::blur(px, info, 3.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::blur(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BlurParams { radius: 3.0 }).unwrap() },
         &["-blur", "0x3"],
         "blur_3",
     ) {
@@ -399,7 +400,7 @@ fn algorithm_median() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::median(px, info, 1).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::median(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::MedianParams { radius: 1 }).unwrap() },
         &["-median", "1"],
         "median_1",
     ) {
@@ -469,7 +470,7 @@ fn algorithm_hue_rotate() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::hue_rotate(px, info, 90.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::hue_rotate(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::HueRotateParams { degrees: 90.0 }).unwrap() },
         &["-modulate", "100,100,150"],
         "hue_rotate_90",
     ) {
@@ -482,7 +483,7 @@ fn algorithm_saturate() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::saturate(px, info, 0.5).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::saturate(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::SaturateParams { factor: 0.5 }).unwrap() },
         &["-modulate", "100,50,100"],
         "saturate_50pct",
     ) {
@@ -1078,7 +1079,7 @@ fn exact_solarize() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::solarize(px, info, 128).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::solarize(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::SolarizeParams { threshold: 128 }).unwrap() },
         &["-solarize", "50%"],
         "solarize_128",
     ) {
@@ -1100,7 +1101,7 @@ fn exact_emboss() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::emboss(px, info).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::emboss(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-morphology", "Correlate", "3: -2,-1,0  -1,1,1  0,1,2"],
         "emboss",
     ) {
@@ -1120,7 +1121,7 @@ fn algorithm_oil_paint() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::oil_paint(px, info, 3).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::oil_paint(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::OilPaintParams { radius: 3 }).unwrap() },
         &["-paint", "3"],
         "oil_paint_r3",
     ) {
@@ -1148,7 +1149,7 @@ fn algorithm_charcoal() {
     let pixels = gradient_rgb(w, h);
     let info = test_info(w, h, PixelFormat::Rgb8);
 
-    let our_output = rasmcore_image::domain::filters::charcoal(&pixels, &info, 1.0, 0.5).unwrap();
+    let (our_output, _) = rasmcore_image::domain::filters::charcoal(&pixels, &info, &rasmcore_image::domain::filters::CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap();
 
     let input_path = write_png(&pixels, w, h, 3);
     if let Some(ref_path) = magick_op(&input_path, &["-charcoal", "1"]) {
@@ -1508,7 +1509,12 @@ fn algorithm_shadow_highlight_vs_gegl() {
     // Match GEGL defaults: shadows=50, highlights=-50, whitepoint=0,
     // radius=30, compress=50, shadows_ccorrect=100, highlights_ccorrect=50
     let our_output = rasmcore_image::domain::filters::shadow_highlight(
-        &pixels, &info, 50.0, -50.0, 0.0, 30.0, 50.0, 100.0, 50.0,
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &rasmcore_image::domain::filters::ShadowHighlightParams {
+            shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 30.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0,
+        },
     )
     .unwrap();
 
@@ -1566,7 +1572,7 @@ fn exact_dodge_midtones_vs_im() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::dodge(px, info, 50.0, 1).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::dodge(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::DodgeParams { exposure: 50.0, range: 1 }).unwrap() },
         &["-fx", "u + u * 0.5 * min(4*intensity*(1-intensity), 1)"],
         "dodge_midtones_50",
     ) {
@@ -1626,7 +1632,7 @@ fn parity_blur_multi_radius() {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| rasmcore_image::domain::filters::blur(px, info, *r).unwrap(),
+            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::blur(rect, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BlurParams { radius: *r }).unwrap() },
             &["-blur", im_sigma],
             &format!("blur_r{r}"),
         ) {
@@ -1656,9 +1662,9 @@ fn parity_motion_blur_multi() {
             64,
             64,
             |px, info| {
-                let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
-                let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
-                rasmcore_image::domain::filters::motion_blur(r, &mut u, info, *len, *angle).unwrap()
+                let r = Rect::new(0, 0, info.width, info.height);
+                let mut u = |_: Rect| Ok(px.to_vec());
+                rasmcore_image::domain::filters::motion_blur(r, &mut u, info, &rasmcore_image::domain::filters::MotionBlurParams { length: *len, angle_degrees: *angle }).unwrap()
             },
             &["-motion-blur", &format!("{angle}x{len}+0")],
             &format!("motion_blur_l{len}_a{angle}"),
@@ -1680,7 +1686,7 @@ fn parity_median_multi_radius() {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| rasmcore_image::domain::filters::median(px, info, *r).unwrap(),
+            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::median(rect, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::MedianParams { radius: *r }).unwrap() },
             &["-median", im_r],
             &format!("median_r{r}"),
         ) {
@@ -1760,7 +1766,7 @@ fn parity_hue_rotate_multi() {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| rasmcore_image::domain::filters::hue_rotate(px, info, *deg).unwrap(),
+            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::hue_rotate(rect, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::HueRotateParams { degrees: *deg }).unwrap() },
             &["-modulate", &format!("100,100,{im_hue}")],
             &format!("hue_rotate_{deg}"),
         ) {
@@ -1787,7 +1793,7 @@ fn parity_brightness_contrast_multi() {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| rasmcore_image::domain::filters::brightness(px, info, *val).unwrap(),
+            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::brightness(rect, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BrightnessParams { amount: *val }).unwrap() },
             &["-brightness-contrast", im_arg],
             &format!("brightness_{val}"),
         ) {
@@ -1920,7 +1926,7 @@ fn exact_pixelate() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::pixelate(px, info, 8).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::pixelate(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::PixelateParams { block_size: 8 }).unwrap() },
         &["-scale", "12.5%", "-scale", "800%"],
         "pixelate_8",
     ) {
@@ -1938,7 +1944,7 @@ fn algorithm_swirl() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::swirl(px, info, 90.0, 0.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::swirl(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::SwirlParams { angle: 90.0, radius: 0.0 }).unwrap() },
         &["-swirl", "90"],
         "swirl_90",
     ) {
@@ -1958,7 +1964,7 @@ fn algorithm_barrel() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::barrel(px, info, 0.3, 0.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::barrel(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BarrelParams { k1: 0.3, k2: 0.0 }).unwrap() },
         &["-distort", "Barrel", "0.0 0.3 0.0 1.0"],
         "barrel_k1_0.3",
     ) {
@@ -1979,8 +1985,10 @@ fn exact_channel_mixer_identity() {
         64,
         64,
         |px, info| {
+            let r = Rect::new(0, 0, info.width, info.height);
             rasmcore_image::domain::filters::channel_mixer(
-                px, info, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
+                r, &mut |_| Ok(px.to_vec()), info,
+                &rasmcore_image::domain::filters::ChannelMixerParams { rr: 1.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 1.0 },
             )
             .unwrap()
         },
@@ -2001,8 +2009,10 @@ fn close_channel_mixer_swap_rg() {
         64,
         64,
         |px, info| {
+            let r = Rect::new(0, 0, info.width, info.height);
             rasmcore_image::domain::filters::channel_mixer(
-                px, info, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                r, &mut |_| Ok(px.to_vec()), info,
+                &rasmcore_image::domain::filters::ChannelMixerParams { rr: 0.0, rg: 1.0, rb: 0.0, gr: 1.0, gg: 0.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 1.0 },
             )
             .unwrap()
         },
@@ -2024,8 +2034,10 @@ fn close_gradient_map_bw() {
         64,
         64,
         |px, info| {
+            let r = Rect::new(0, 0, info.width, info.height);
             rasmcore_image::domain::filters::gradient_map(
-                px,
+                r,
+                &mut |_| Ok(px.to_vec()),
                 info,
                 "0.0:000000,1.0:FFFFFF".to_string(),
             )
@@ -2055,7 +2067,7 @@ fn algorithm_kuwahara() {
     if let Some(error) = check_parity_rgb(
         256,
         256,
-        |px, info| rasmcore_image::domain::filters::kuwahara(px, info, 3).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::kuwahara(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::KuwaharaParams { radius: 3 }).unwrap() },
         &["-kuwahara", "3"],
         "kuwahara_3",
     ) {
@@ -2071,7 +2083,7 @@ fn close_rank_minimum() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::rank_filter(px, info, 2, 0.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::rank_filter(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::RankFilterParams { radius: 2, rank: 0.0 }).unwrap() },
         &["-statistic", "Minimum", "5x5"],
         "rank_min_r2",
     ) {
@@ -2087,7 +2099,7 @@ fn close_rank_maximum() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::rank_filter(px, info, 2, 1.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::rank_filter(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::RankFilterParams { radius: 2, rank: 1.0 }).unwrap() },
         &["-statistic", "Maximum", "5x5"],
         "rank_max_r2",
     ) {
@@ -2107,7 +2119,7 @@ fn close_modulate_identity() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::modulate(px, info, 100.0, 100.0, 0.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::modulate(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::ModulateParams { brightness: 100.0, saturation: 100.0, hue: 0.0 }).unwrap() },
         &["-modulate", "100,100,100"],
         "modulate identity",
     ) {
@@ -2123,7 +2135,7 @@ fn close_modulate_brightness_50() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::modulate(px, info, 50.0, 100.0, 0.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::modulate(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::ModulateParams { brightness: 50.0, saturation: 100.0, hue: 0.0 }).unwrap() },
         &["-modulate", "50,100,100"],
         "modulate brightness=50",
     ) {
@@ -2139,7 +2151,7 @@ fn close_modulate_saturation_0() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::modulate(px, info, 100.0, 0.0, 0.0).unwrap(),
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::modulate(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::ModulateParams { brightness: 100.0, saturation: 0.0, hue: 0.0 }).unwrap() },
         &["-modulate", "100,0,100"],
         "modulate saturation=0",
     ) {
@@ -2160,7 +2172,8 @@ fn close_photo_filter_warm() {
         64,
         64,
         |px, info| {
-            rasmcore_image::domain::filters::photo_filter(px, info, 236, 138, 0, 50.0, 0).unwrap()
+            let r = Rect::new(0, 0, info.width, info.height);
+            rasmcore_image::domain::filters::photo_filter(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::PhotoFilterParams { color_r: 236, color_g: 138, color_b: 0, density: 50.0, preserve_luminosity: 0 }).unwrap()
         },
         &["-fill", "rgb(236,138,0)", "-colorize", "50%"],
         "photo_filter warm 50%",
@@ -2216,9 +2229,9 @@ fn algorithm_motion_blur() {
         64,
         64,
         |px, info| {
-            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
-            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
-            rasmcore_image::domain::filters::motion_blur(r, &mut u, info, 5, 0.0).unwrap()
+            let r = Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::motion_blur(r, &mut u, info, &rasmcore_image::domain::filters::MotionBlurParams { length: 5, angle_degrees: 0.0 }).unwrap()
         },
         &["-motion-blur", "0x5+0"],
         "motion_blur_5_0deg",
@@ -2338,7 +2351,7 @@ fn algorithm_canny() {
     let info = test_info(w, h, PixelFormat::Rgb8);
 
     // Our canny with low thresholds to detect the rectangle edges
-    let our_result = rasmcore_image::domain::filters::canny(&pixels, &info, 20.0, 60.0).unwrap();
+    let our_result = rasmcore_image::domain::filters::canny(&pixels, &info, &rasmcore_image::domain::filters::CannyParams { low_threshold: 20.0, high_threshold: 60.0 }).unwrap();
     let our_edge_count = our_result.iter().filter(|&&v| v > 0).count();
 
     // IM canny
@@ -2438,7 +2451,13 @@ fn algorithm_perspective_warp() {
         0.0001, 0.0001, 1.0, // row 2
     ];
     let our_result =
-        rasmcore_image::domain::filters::perspective_warp(&pixels, &info, &matrix, w, h).unwrap();
+        rasmcore_image::domain::filters::perspective_warp(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &matrix,
+            &rasmcore_image::domain::filters::PerspectiveWarpParams { out_width: w, out_height: h },
+        ).unwrap();
 
     // Just verify it produces valid output of correct size
     assert_eq!(
@@ -2464,7 +2483,7 @@ fn property_vibrance_identity() {
     // vibrance at amount=0.0 should be identity
     let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
     let info = test_info(32, 32, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::vibrance(&pixels, &info, 0.0).unwrap();
+    let result = rasmcore_image::domain::filters::vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::VibranceParams { amount: 0.0 }).unwrap();
     assert_eq!(result, pixels, "vibrance at 0.0 should be identity");
 }
 
@@ -2474,8 +2493,8 @@ fn property_vibrance_monotonic() {
     // Test: mean saturation increases with positive vibrance.
     let pixels = gradient_rgb(32, 32);
     let info = test_info(32, 32, PixelFormat::Rgb8);
-    let weak = rasmcore_image::domain::filters::vibrance(&pixels, &info, 0.3).unwrap();
-    let strong = rasmcore_image::domain::filters::vibrance(&pixels, &info, 0.8).unwrap();
+    let weak = rasmcore_image::domain::filters::vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::VibranceParams { amount: 0.3 }).unwrap();
+    let strong = rasmcore_image::domain::filters::vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::VibranceParams { amount: 0.8 }).unwrap();
 
     // Compute mean channel spread (rough saturation proxy)
     let spread = |px: &[u8]| -> f64 {
@@ -2502,7 +2521,7 @@ fn property_bilateral_identity() {
     // On a uniform image, output should equal input.
     let pixels = vec![128u8; 32 * 32 * 3];
     let info = test_info(32, 32, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::bilateral(&pixels, &info, 5, 20.0, 20.0).unwrap();
+    let result = rasmcore_image::domain::filters::bilateral(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::BilateralParams { diameter: 5, sigma_color: 20.0, sigma_space: 20.0 }).unwrap();
     assert_eq!(
         result, pixels,
         "bilateral on uniform image should be identity"
@@ -2524,7 +2543,7 @@ fn property_bilateral_edge_preservation() {
         }
     }
     let info = test_info(w, h, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::bilateral(&pixels, &info, 5, 30.0, 30.0).unwrap();
+    let result = rasmcore_image::domain::filters::bilateral(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::BilateralParams { diameter: 5, sigma_color: 30.0, sigma_space: 30.0 }).unwrap();
 
     // Check that the edge is still sharp: pixel at (14,16) should be dark,
     // pixel at (18,16) should be bright
@@ -2544,8 +2563,8 @@ fn property_frequency_reconstruction() {
     let info = test_info(32, 32, PixelFormat::Rgb8);
     let sigma = 3.0;
 
-    let low = rasmcore_image::domain::filters::frequency_low(&pixels, &info, sigma).unwrap();
-    let high = rasmcore_image::domain::filters::frequency_high(&pixels, &info, sigma).unwrap();
+    let low = rasmcore_image::domain::filters::frequency_low(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::FrequencyLowParams { sigma }).unwrap();
+    let high = rasmcore_image::domain::filters::frequency_high(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::FrequencyHighParams { sigma }).unwrap();
 
     // Reconstruct: for each channel, result = low + high - 128
     let mut reconstructed = vec![0u8; pixels.len()];

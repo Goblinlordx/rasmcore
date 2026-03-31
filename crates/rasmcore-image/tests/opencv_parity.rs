@@ -109,7 +109,7 @@ fn clahe_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_clahe.raw"));
-        let ours = filters::clahe(&input, &info, 2.0, 8).unwrap();
+        let ours = filters::clahe(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -143,7 +143,7 @@ fn bilateral_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bilateral.raw"));
-        let ours = filters::bilateral(&input, &info, 9, 75.0, 75.0).unwrap();
+        let ours = filters::bilateral(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::BilateralParams { diameter: 9, sigma_color: 75.0, sigma_space: 75.0 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -177,7 +177,7 @@ fn guided_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_guided.raw"));
-        let ours = filters::guided_filter(&input, &info, 4, 0.01).unwrap();
+        let ours = filters::guided_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1221,7 +1221,7 @@ fn vignette_gaussian_all_images_match_imagemagick() {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_vignette.raw"));
         let ours =
-            filters::vignette(&input, &info, sigma, x_inset, y_inset, 128, 128, 0, 0).unwrap();
+            filters::vignette(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::VignetteParams { sigma, x_inset, y_inset, full_width: 128, full_height: 128, tile_offset_x: 0, tile_offset_y: 0 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1258,7 +1258,7 @@ fn perspective_warp_identity_is_exact() {
     };
 
     let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    let result = filters::perspective_warp(&input, &info, &identity, 128, 128).unwrap();
+    let result = filters::perspective_warp(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &identity, &filters::PerspectiveWarpParams { out_width: 128, out_height: 128 }).unwrap();
 
     let e = mae(&result, &input);
     let m = max_error(&result, &input);
@@ -1284,7 +1284,7 @@ fn perspective_warp_translation_is_exact() {
 
     // Shift right by 5, down by 3: output pixel (x,y) reads input (x+5, y+3)
     let mat = [1.0, 0.0, 5.0, 0.0, 1.0, 3.0, 0.0, 0.0, 1.0];
-    let result = filters::perspective_warp(&input, &info, &mat, 128, 128).unwrap();
+    let result = filters::perspective_warp(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &mat, &filters::PerspectiveWarpParams { out_width: 128, out_height: 128 }).unwrap();
 
     // Verify shifted region matches exactly
     let mut mismatches = 0;
@@ -1468,7 +1468,7 @@ fn canny_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_canny_50_150.raw"));
-        let ours = filters::canny(&input, &info, 50.0, 150.0).unwrap();
+        let ours = filters::canny(&input, &info, &filters::CannyParams { low_threshold: 50.0, high_threshold: 150.0 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);

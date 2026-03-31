@@ -3610,7 +3610,8 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
         let result = channel_mixer(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
             &info,
             &ChannelMixerParams {
                 rr: 1.0,
@@ -3634,7 +3635,8 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         // Output red = 1.0*R + 0*G + 0*B, green = 0, blue = 0
         let result = channel_mixer(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
             &info,
             &ChannelMixerParams {
                 rr: 1.0,
@@ -3662,7 +3664,8 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         // Swap R and B channels
         let result = channel_mixer(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
             &info,
             &ChannelMixerParams {
                 rr: 0.0,
@@ -3690,7 +3693,8 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         // 2.0 * R would overflow — should clamp to 255
         let result = channel_mixer(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
             &info,
             &ChannelMixerParams {
                 rr: 2.0,
@@ -13320,7 +13324,8 @@ mod tests {
         };
         let pixels = vec![128u8; 16 * 16 * 3];
         let result = smart_sharpen(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
             &info,
             &SmartSharpenParams {
                 amount: 1.0,
@@ -13342,7 +13347,8 @@ mod tests {
         };
         let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
         let result = smart_sharpen(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
             &info,
             &SmartSharpenParams {
                 amount: 0.0,
@@ -18281,7 +18287,12 @@ mod add_noise_tests {
             density: 0.0,
             seed: 42,
         };
-        let result = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        let result = salt_pepper_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        ).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -18293,8 +18304,18 @@ mod add_noise_tests {
             density: 0.1,
             seed: 77,
         };
-        let r1 = salt_pepper_noise(&pixels, &info, &config).unwrap();
-        let r2 = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        let r1 = salt_pepper_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        ).unwrap();
+        let r2 = salt_pepper_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        ).unwrap();
         assert_eq!(r1, r2);
     }
 
@@ -18306,7 +18327,12 @@ mod add_noise_tests {
             density: 1.0,
             seed: 42,
         };
-        let result = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        let result = salt_pepper_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        ).unwrap();
         // Every pixel should be either 0 or 255 (density=1 means all replaced)
         for chunk in result.chunks_exact(3) {
             assert!(
@@ -21683,7 +21709,6 @@ mod distortion_effect_tests {
         assert_eq!(result.len(), pixels.len());
     }
 
-    #[test]
     #[test]
     fn ripple_center_near_original() {
         // Ripple with small amplitude — center region should be minimally affected

@@ -246,7 +246,7 @@ fn dehaze_vs_python_dark_channel_prior() {
     let info = test_info(w, h);
 
     // Our dehaze
-    let ours = filters::dehaze(&hazy, &info, 7, 0.95, 0.1).unwrap();
+    let ours = filters::dehaze(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(hazy.to_vec()), &info, &filters::DehazeParams { patch_radius: 7, omega: 0.95, t_min: 0.1 }).unwrap();
 
     // Python reference: exact mirror of our Rust implementation
     // Uses same boundary handling (clamp/saturating_sub), same atmospheric light
@@ -347,7 +347,7 @@ fn dehaze_clear_image_near_identity() {
         }
     }
     let info = test_info(w as u32, h as u32);
-    let result = filters::dehaze(&clear, &info, 7, 0.95, 0.1).unwrap();
+    let result = filters::dehaze(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(clear.to_vec()), &info, &filters::DehazeParams { patch_radius: 7, omega: 0.95, t_min: 0.1 }).unwrap();
 
     let mae = mean_absolute_error(&clear, &result);
     eprintln!("  dehaze on clear image: MAE={mae:.4}");
@@ -369,7 +369,7 @@ fn clarity_vs_python_usm_midtone() {
     let sigma = 10.0f32;
 
     // Our clarity
-    let ours = filters::clarity(&pixels, &info, amount, sigma).unwrap();
+    let ours = filters::clarity(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &filters::ClarityParams { amount, sigma }).unwrap();
 
     // Python reference: exact same formula
     let input_path = write_png(&pixels, w, h, 3);
@@ -428,7 +428,7 @@ fn clarity_zero_amount_is_identity() {
     let pixels = generate_midtone_image(w, h);
     let info = test_info(w, h);
 
-    let result = filters::clarity(&pixels, &info, 0.0, 10.0).unwrap();
+    let result = filters::clarity(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &filters::ClarityParams { amount: 0.0, sigma: 10.0 }).unwrap();
     let mae = mean_absolute_error(&pixels, &result);
     eprintln!("  clarity amount=0: MAE={mae:.4}");
     assert!(
@@ -452,7 +452,7 @@ fn pyramid_detail_remap_large_sigma_near_identity() {
     let pixels = generate_detail_image(w, h);
     let info = test_info(w, h);
 
-    let result = filters::pyramid_detail_remap(&pixels, &info, 100.0, 4).unwrap();
+    let result = filters::pyramid_detail_remap(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &filters::PyramidDetailRemapParams { sigma: 100.0, num_levels: 4 }).unwrap();
     let mae = mean_absolute_error(&pixels, &result);
     eprintln!("  pyramid_detail_remap sigma=100: MAE={mae:.4}");
 
@@ -473,7 +473,7 @@ fn pyramid_detail_remap_vs_python_pyramid() {
     let levels = 4u32;
 
     // Our Local Laplacian
-    let ours = filters::pyramid_detail_remap(&pixels, &info, sigma, levels).unwrap();
+    let ours = filters::pyramid_detail_remap(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &filters::PyramidDetailRemapParams { sigma, num_levels: levels }).unwrap();
 
     // Python reference: same pyramid algorithm
     let input_path = write_png(&pixels, w, h, 3);

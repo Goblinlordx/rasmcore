@@ -12,6 +12,7 @@
 //!   tests/fixtures/.venv/bin/pip install numpy Pillow opencv-python-headless
 
 use rasmcore_image::domain::filters;
+use rasmcore_image::domain::pipeline::Rect;
 use rasmcore_image::domain::types::*;
 use std::path::Path;
 use std::process::Command;
@@ -142,7 +143,11 @@ fn exact_premultiply() {
         format: PixelFormat::Rgba8,
         color_space: ColorSpace::Srgb,
     };
-    let ours = filters::premultiply(&pixels, &info).unwrap();
+    let ours = filters::premultiply(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+    ).unwrap();
     let script = format!(
         "import sys\npx={pixels:?}\no=[]\nfor i in range(0,len(px),4):\n r,g,b,a=px[i],px[i+1],px[i+2],px[i+3]\n o.extend([(r*a+127)//255,(g*a+127)//255,(b*a+127)//255,a])\nsys.stdout.buffer.write(bytes(o))"
     );
@@ -158,8 +163,16 @@ fn exact_premultiply_roundtrip() {
         format: PixelFormat::Rgba8,
         color_space: ColorSpace::Srgb,
     };
-    let premul = filters::premultiply(&pixels, &info).unwrap();
-    let roundtrip = filters::unpremultiply(&premul, &info).unwrap();
+    let premul = filters::premultiply(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+    ).unwrap();
+    let roundtrip = filters::unpremultiply(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(premul.to_vec()),
+        &info,
+    ).unwrap();
     let max_err = max_absolute_error(&pixels, &roundtrip);
     assert!(max_err <= 1, "premultiply roundtrip max_err={max_err}");
     eprintln!("  premultiply roundtrip: max_err={max_err} ✓");
@@ -181,7 +194,13 @@ fn exact_convolve_identity() {
     let pixels = make_gradient_rgb(8, 8);
     let info = info_rgb8(8, 8);
     let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
-    let result = filters::convolve(&pixels, &info, &kernel, 3, 3, 1.0).unwrap();
+    let result = filters::convolve(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &kernel,
+        &filters::ConvolveParams { kw: 3, kh: 3, divisor: 1.0 },
+    ).unwrap();
     assert_exact("convolve identity", &result, &pixels);
 }
 
@@ -189,7 +208,12 @@ fn exact_convolve_identity() {
 fn exact_brightness_zero() {
     let pixels: Vec<u8> = (0..=255).collect();
     let info = info_gray8(256, 1);
-    let result = filters::brightness(&pixels, &info, 0.0).unwrap();
+    let result = filters::brightness(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::BrightnessParams { amount: 0.0 },
+    ).unwrap();
     assert_exact("brightness(0)", &result, &pixels);
 }
 
@@ -202,7 +226,12 @@ fn exact_median_against_pillow() {
     pixels[5 * 16 + 5] = 0;
     pixels[10 * 16 + 10] = 255;
     let info = info_gray8(w, h);
-    let ours = filters::median(&pixels, &info, 1).unwrap();
+    let ours = filters::median(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::MedianParams { radius: 1 },
+    ).unwrap();
     let script = format!(
         "import sys\nfrom PIL import Image,ImageFilter\nimport warnings\nwarnings.filterwarnings('ignore')\n\
          img=Image.frombytes('L',({w},{h}),bytes({pixels:?}))\n\
@@ -221,7 +250,12 @@ fn close_sepia_against_numpy() {
     let h = 16;
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
-    let ours = filters::sepia(&pixels, &info, 1.0).unwrap();
+    let ours = filters::sepia(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::SepiaParams { intensity: 1.0 },
+    ).unwrap();
     let script = format!(
         "import sys\nimport numpy as np\npx=np.array({pixels:?},dtype=np.uint8).reshape(-1,3)\n\
          m=np.array([[0.393,0.769,0.189],[0.349,0.686,0.168],[0.272,0.534,0.131]])\n\
@@ -269,7 +303,13 @@ fn close_convolve_sharpen_against_opencv() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
     let kernel = filters::kernels::EDGE_ENHANCE;
-    let ours = filters::convolve(&pixels, &info, &kernel, 3, 3, 1.0).unwrap();
+    let ours = filters::convolve(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &kernel,
+        &filters::ConvolveParams { kw: 3, kh: 3, divisor: 1.0 },
+    ).unwrap();
     let script = format!(
         "import sys\nimport numpy as np\nimport cv2\n\
          px=np.array({pixels:?},dtype=np.uint8).reshape({h},{w},3)\n\
@@ -287,7 +327,13 @@ fn close_box_blur_against_opencv() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
     let kernel = filters::kernels::BOX_BLUR_3X3;
-    let ours = filters::convolve(&pixels, &info, &kernel, 3, 3, 9.0).unwrap();
+    let ours = filters::convolve(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &kernel,
+        &filters::ConvolveParams { kw: 3, kh: 3, divisor: 9.0 },
+    ).unwrap();
     let script = format!(
         "import sys\nimport numpy as np\nimport cv2\n\
          px=np.array({pixels:?},dtype=np.uint8).reshape({h},{w},3)\n\
@@ -475,16 +521,29 @@ fn morphology_open_close_matches_opencv() {
     let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/generated/inputs/photo_256x256.png");
     let (input, w, h) = if fixture_path.exists() {
-        let img = image::open(&fixture_path).unwrap().to_luma8();
-        let w = img.width();
-        let h = img.height();
-        (img.into_raw(), w, h)
+        // Decode with rasmcore's own decoder and convert to gray8
+        let raw = std::fs::read(&fixture_path).unwrap();
+        let decoded = rasmcore_image::domain::decoder::decode(&raw).unwrap();
+        let gray = if decoded.info.format == PixelFormat::Gray8 {
+            decoded.pixels.clone()
+        } else {
+            // Convert RGB8/RGBA8 to Gray8 using luminance
+            let bpp = match decoded.info.format {
+                PixelFormat::Rgba8 | PixelFormat::Bgra8 => 4,
+                PixelFormat::Rgb8 | PixelFormat::Bgr8 => 3,
+                _ => 3,
+            };
+            decoded.pixels.chunks_exact(bpp).map(|c| {
+                ((c[0] as u32 * 77 + c[1] as u32 * 150 + c[2] as u32 * 29) >> 8) as u8
+            }).collect()
+        };
+        (gray, decoded.info.width, decoded.info.height)
     } else {
         // Fallback: synthetic gradient
         let w = 64u32;
         let h = 64u32;
         let mut px = Vec::with_capacity((w * h) as usize);
-        for y in 0..h {
+        for _y in 0..h {
             for x in 0..w {
                 px.push(((x * 255) / w) as u8);
             }
@@ -920,7 +979,12 @@ fn close_vignette_gaussian_against_imagemagick() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
-    let ours = filters::vignette(&pixels, &info, sigma, ox, oy, w, h, 0, 0).unwrap();
+    let ours = filters::vignette(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::VignetteParams { sigma, x_inset: ox, y_inset: oy, full_width: w, full_height: h, tile_offset_x: 0, tile_offset_y: 0 },
+    ).unwrap();
     let reference = im_vignette(&pixels, w, h, sigma, ox, oy);
 
     assert_close("vignette gaussian vs IM 128x128", &ours, &reference, 1.5);
@@ -941,7 +1005,12 @@ fn close_vignette_gaussian_256_against_imagemagick() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
-    let ours = filters::vignette(&pixels, &info, sigma, ox, oy, w, h, 0, 0).unwrap();
+    let ours = filters::vignette(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::VignetteParams { sigma, x_inset: ox, y_inset: oy, full_width: w, full_height: h, tile_offset_x: 0, tile_offset_y: 0 },
+    ).unwrap();
     let reference = im_vignette(&pixels, w, h, sigma, ox, oy);
 
     assert_close("vignette gaussian vs IM 256x256", &ours, &reference, 1.5);
@@ -966,7 +1035,12 @@ fn vignette_gaussian_alpha_preserved() {
         format: PixelFormat::Rgba8,
         color_space: ColorSpace::Srgb,
     };
-    let result = filters::vignette(&pixels, &info, 10.0, 5, 5, w, h, 0, 0).unwrap();
+    let result = filters::vignette(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::VignetteParams { sigma: 10.0, x_inset: 5, y_inset: 5, full_width: w, full_height: h, tile_offset_x: 0, tile_offset_y: 0 },
+    ).unwrap();
     for i in 0..(w * h) as usize {
         assert_eq!(
             result[i * 4 + 3],
@@ -989,7 +1063,12 @@ fn exact_vignette_powerlaw_rgb8_against_numpy() {
     let falloff = 2.0f32;
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
-    let ours = filters::vignette_powerlaw(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
+    let ours = filters::vignette_powerlaw(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::VignettePowerlawParams { strength, falloff, full_width: w, full_height: h, offset_x: 0, offset_y: 0 },
+    ).unwrap();
     let script = format!(
         "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w},3).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  for c in range(3):\n   px[row,col,c]=int(np.clip(round(px[row,col,c]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
     );
@@ -1009,7 +1088,12 @@ fn exact_vignette_powerlaw_gray8_against_numpy() {
         }
     }
     let info = info_gray8(w, h);
-    let ours = filters::vignette_powerlaw(&pixels, &info, strength, falloff, w, h, 0, 0).unwrap();
+    let ours = filters::vignette_powerlaw(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::VignettePowerlawParams { strength, falloff, full_width: w, full_height: h, offset_x: 0, offset_y: 0 },
+    ).unwrap();
     let script = format!(
         "import sys,numpy as np\npx=np.frombuffer(bytes({pixels:?}),dtype=np.uint8).reshape({h},{w}).copy()\ncy,cx={h}/2.0,{w}/2.0\nmax_dist=np.sqrt(cx**2+cy**2)\nfor row in range({h}):\n for col in range({w}):\n  dx=col+0.5-cx; dy=row+0.5-cy\n  dist=np.sqrt(dx*dx+dy*dy)\n  t=(dist/max_dist)**{falloff}\n  factor=1.0-{strength}*t\n  px[row,col]=int(np.clip(round(px[row,col]*factor),0,255))\nsys.stdout.buffer.write(px.astype(np.uint8).tobytes())"
     );
@@ -1020,7 +1104,12 @@ fn exact_vignette_powerlaw_gray8_against_numpy() {
 fn vignette_powerlaw_zero_strength_is_identity() {
     let pixels = make_gradient_rgb(16, 16);
     let info = info_rgb8(16, 16);
-    let result = filters::vignette_powerlaw(&pixels, &info, 0.0, 2.0, 16, 16, 0, 0).unwrap();
+    let result = filters::vignette_powerlaw(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::VignettePowerlawParams { strength: 0.0, falloff: 2.0, full_width: 16, full_height: 16, offset_x: 0, offset_y: 0 },
+    ).unwrap();
     assert_exact("vignette_powerlaw(0)", &result, &pixels);
 }
 
@@ -1039,7 +1128,12 @@ fn frequency_low_vs_scipy() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
-    let ours = filters::frequency_low(&pixels, &info, sigma).unwrap();
+    let ours = filters::frequency_low(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::FrequencyLowParams { sigma },
+        ).unwrap();
 
     // Python reference: scipy gaussian_filter per channel
     let script = format!(
@@ -1100,8 +1194,18 @@ fn frequency_high_vs_numpy() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
-    let low = filters::frequency_low(&pixels, &info, sigma).unwrap();
-    let high = filters::frequency_high(&pixels, &info, sigma).unwrap();
+    let low = filters::frequency_low(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::FrequencyLowParams { sigma },
+        ).unwrap();
+    let high = filters::frequency_high(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::FrequencyHighParams { sigma },
+        ).unwrap();
 
     // Verify high-pass matches np.clip(original - low + 128, 0, 255)
     let mut expected_high = vec![0u8; pixels.len()];
@@ -1125,8 +1229,18 @@ fn frequency_separation_roundtrip_exact() {
     let info = info_rgb8(w, h);
 
     for sigma in [1.0f32, 4.0, 10.0, 25.0] {
-        let low = filters::frequency_low(&pixels, &info, sigma).unwrap();
-        let high = filters::frequency_high(&pixels, &info, sigma).unwrap();
+        let low = filters::frequency_low(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::FrequencyLowParams { sigma },
+        ).unwrap();
+        let high = filters::frequency_high(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::FrequencyHighParams { sigma },
+        ).unwrap();
 
         let mut max_err: i16 = 0;
         for i in 0..pixels.len() {
@@ -1148,7 +1262,12 @@ fn frequency_high_flat_image_is_neutral() {
     let info = info_rgb8(32, 32);
     let pixels = vec![100u8; 32 * 32 * 3];
 
-    let high = filters::frequency_high(&pixels, &info, 5.0).unwrap();
+    let high = filters::frequency_high(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::FrequencyHighParams { sigma: 5.0 },
+    ).unwrap();
     assert_exact("frequency_high(flat)", &high, &vec![128u8; pixels.len()]);
 }
 
@@ -1264,7 +1383,12 @@ fn exact_exposure_identity() {
         offset: 0.0,
         gamma_correction: 1.0,
     };
-    let result = filters::exposure(&pixels, &info, &config).unwrap();
+    let result = filters::exposure(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
     assert_exact("exposure(0EV)", &result, &pixels);
 }
 
@@ -1279,7 +1403,12 @@ fn exact_exposure_plus1ev_against_numpy() {
         offset: 0.0,
         gamma_correction: 1.0,
     };
-    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+    let ours = filters::exposure(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1301,7 +1430,12 @@ fn exact_exposure_minus1ev_against_numpy() {
         offset: 0.0,
         gamma_correction: 1.0,
     };
-    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+    let ours = filters::exposure(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1323,7 +1457,12 @@ fn exact_exposure_offset_against_numpy() {
         offset: 0.1,
         gamma_correction: 1.0,
     };
-    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+    let ours = filters::exposure(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1345,7 +1484,12 @@ fn exact_exposure_gamma_against_numpy() {
         offset: 0.0,
         gamma_correction: 2.2,
     };
-    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+    let ours = filters::exposure(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1369,7 +1513,12 @@ fn exact_exposure_combined_against_numpy() {
         offset: -0.05,
         gamma_correction: 1.5,
     };
-    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+    let ours = filters::exposure(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1410,7 +1559,12 @@ fn exact_color_balance_identity() {
         highlight_yellow_blue: 0.0,
         preserve_luminosity: true,
     };
-    let result = filters::color_balance(&pixels, &info, &config).unwrap();
+    let result = filters::color_balance(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
     assert_exact("color_balance(identity)", &result, &pixels);
 }
 
@@ -1432,7 +1586,12 @@ fn close_color_balance_shadow_red_against_numpy() {
         highlight_yellow_blue: 0.0,
         preserve_luminosity: false,
     };
-    let ours = filters::color_balance(&pixels, &info, &config).unwrap();
+    let ours = filters::color_balance(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1477,7 +1636,12 @@ fn close_color_balance_midtone_green_against_numpy() {
         highlight_yellow_blue: 0.0,
         preserve_luminosity: false,
     };
-    let ours = filters::color_balance(&pixels, &info, &config).unwrap();
+    let ours = filters::color_balance(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
@@ -1522,7 +1686,12 @@ fn close_color_balance_preserve_luminosity_against_numpy() {
         highlight_yellow_blue: 60.0,
         preserve_luminosity: true,
     };
-    let ours = filters::color_balance(&pixels, &info, &config).unwrap();
+    let ours = filters::color_balance(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    ).unwrap();
 
     let script = format!(
         "import sys\nimport numpy as np\n\
