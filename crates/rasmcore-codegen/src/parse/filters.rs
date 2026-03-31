@@ -39,6 +39,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
         let group = extract_kv(&tokens, "group").unwrap_or_default();
         let variant = extract_kv(&tokens, "variant").unwrap_or_default();
         let reference = extract_kv(&tokens, "reference").unwrap_or_default();
+        let overlap = extract_kv(&tokens, "overlap").unwrap_or_else(|| "zero".to_string());
         let point_op = extract_kv(&tokens, "point_op")
             .map(|v| v == "true")
             .unwrap_or(false);
@@ -47,7 +48,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             .unwrap_or(false);
 
         let fn_name = func.sig.ident.to_string();
-        let rect_request = true;
+        let rect_request = detect_rect_request_sig(&func.sig);
         let params = extract_fn_params(&func.sig);
 
         return Some(FilterReg {
@@ -56,6 +57,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             group,
             variant,
             reference,
+            overlap,
             point_op,
             color_op,
             rect_request,
@@ -67,8 +69,20 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
     None
 }
 
-/// Extract named parameters from function signature, skipping
-/// request/upstream/info (rect-request style).
+/// Detect if a function uses the new rect-request signature.
+/// Checks if the first parameter is `request: Rect`.
+fn detect_rect_request_sig(sig: &syn::Signature) -> bool {
+    for input in &sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = input {
+            let full = quote::quote!(#pat_type).to_string();
+            return full.contains("request") && full.contains("Rect");
+        }
+    }
+    false
+}
+
+/// Extract named parameters from function signature, skipping pixels/info
+/// (legacy) or request/upstream/info (new rect-request style).
 fn extract_fn_params(sig: &syn::Signature) -> Vec<(String, String)> {
     let mut params = Vec::new();
     for input in &sig.inputs {
@@ -135,7 +149,7 @@ mod tests {
     #[test]
     fn parse_filter_with_all_attrs() {
         let source = r#"
-            #[register_filter(name = "zoom_blur", category = "spatial", group = "blur", variant = "zoom", reference = "GEGL algorithm")]
+            #[register_filter(name = "zoom_blur", category = "spatial", group = "blur", variant = "zoom", reference = "GEGL algorithm", overlap = "full")]
             pub fn zoom_blur(pixels: &[u8], info: &ImageInfo, center_x: f32, center_y: f32, factor: f32) -> Result<Vec<u8>, ImageError> {
                 todo!()
             }
@@ -146,6 +160,7 @@ mod tests {
         assert_eq!(filters[0].group, "blur");
         assert_eq!(filters[0].variant, "zoom");
         assert_eq!(filters[0].reference, "GEGL algorithm");
+        assert_eq!(filters[0].overlap, "full");
         assert_eq!(filters[0].params.len(), 3);
     }
 

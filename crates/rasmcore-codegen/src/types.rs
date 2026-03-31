@@ -13,6 +13,8 @@ pub struct FilterReg {
     pub group: String,
     pub variant: String,
     pub reference: String,
+    /// Overlap strategy: "zero", "uniform(N)", "full", "param(name)"
+    pub overlap: String,
     /// Whether this filter is a per-channel LUT point operation (fuseable).
     /// Set via `point_op = "true"` in register_filter attributes.
     pub point_op: bool,

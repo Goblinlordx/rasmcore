@@ -117,16 +117,23 @@ fn generate_config_method(
         code.push('\n');
     }
 
-    let extra_call = if call_params.is_empty() {
-        String::new()
+    if f.rect_request {
+        let extra_call = if call_params.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", call_params.join(", "))
+        };
+        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
+        ));
     } else {
-        format!(", {}", call_params.join(", "))
-    };
-    code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
-    code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
-    code.push_str(&format!(
-        "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
-    ));
+        let full_call = format!("&pixels, &di, {}", call_params.join(", "));
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
+        ));
+    }
     code.push_str("    }\n\n");
 }
 
@@ -163,21 +170,33 @@ fn generate_individual_method(
         )
     };
 
+    let full_call = if call_params.is_empty() {
+        "&pixels, &di".to_string()
+    } else {
+        format!("&pixels, &di, {}", call_params.join(", "))
+    };
+
     code.push_str(&format!(
         "    fn {trait_method}({full_sig}) -> Result<Vec<u8>, RasmcoreError> {{\n"
     ));
     code.push_str("        let di = to_domain_image_info(&info);\n");
 
-    let extra_call = if call_params.is_empty() {
-        String::new()
+    if f.rect_request {
+        let extra_call = if call_params.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", call_params.join(", "))
+        };
+        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
+        ));
     } else {
-        format!(", {}", call_params.join(", "))
-    };
-    code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
-    code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
-    code.push_str(&format!(
-        "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
-    ));
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
+        ));
+    }
     code.push_str("    }\n\n");
 }
 
@@ -193,18 +212,17 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
+            overlap: "zero".to_string(),
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
             point_op: false,
             color_op: false,
-            rect_request: true,
         }];
-        let code = generate(&filters, &HashMap::new());
+        let code = generate(&filters);
         assert!(code.contains("fn blur("));
         assert!(code.contains("radius: f32"));
-        // rect-request style: full_rect + upstream closure
-        assert!(code.contains("domain::filters::blur(full_rect, &mut upstream, &di, radius)"));
+        assert!(code.contains("domain::filters::blur(&pixels, &di, radius)"));
     }
 
     #[test]
@@ -215,14 +233,14 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
+            overlap: "zero".to_string(),
             fn_name: "test".to_string(),
             params: vec![("data".to_string(), "&[u8]".to_string())],
             config_struct: None,
             point_op: false,
             color_op: false,
-            rect_request: true,
         }];
-        let code = generate(&filters, &HashMap::new());
+        let code = generate(&filters);
         assert!(code.contains("data: Vec<u8>"));
         assert!(code.contains("&data"));
     }
@@ -235,14 +253,12 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
+            overlap: "zero".to_string(),
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: Some("BlurParams".to_string()),
-            point_op: false,
-            color_op: false,
-            rect_request: true,
         }];
-        let code = generate(&filters, &HashMap::new());
+        let code = generate(&filters);
         assert!(
             code.contains("config: filters::BlurConfig"),
             "should use config struct param: {code}"

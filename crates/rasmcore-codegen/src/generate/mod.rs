@@ -39,7 +39,7 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     fs::write(out_dir.join("generated_filter_adapter.rs"), &adapter_code).unwrap();
 
     // Pipeline node structs (filters + mappers)
-    let mut nodes_code = pipeline::generate_nodes(&data.filters);
+    let mut nodes_code = pipeline::generate_nodes(&data.filters, &data.param_structs);
     nodes_code.push_str(&pipeline_mapper::generate_mapper_nodes(&data.mappers));
     fs::write(out_dir.join("generated_pipeline_nodes.rs"), &nodes_code).unwrap();
 
