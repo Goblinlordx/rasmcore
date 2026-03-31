@@ -1,0 +1,108 @@
+id: simd-box-blur-sharpen_20260331114400Z
+title: WASM SIMD128 Optimization — Box Blur + Smart Sharpen
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: >
+    Add WASM SIMD128 (std::arch::wasm32) fast paths for box_blur and
+    smart_sharpen. Box blur processes 4 channels in parallel via u32x4
+    running sums. Smart sharpen uses f32x4 for the unsharp mask arithmetic.
+  context: |
+    box_blur and smart_sharpen were added in the spatial-filter-gaps track
+    with scalar implementations. All rasmcore filters must use SIMD from
+    initial implementation per project rules. The existing sharpen()
+    filter already has a WASM SIMD128 fast path (f32x4 unsharp mask
+    arithmetic) that serves as the reference pattern.
+
+    WASM SIMD128 uses std::arch::wasm32 intrinsics behind
+    #[cfg(target_arch = "wasm32")] with scalar fallback for native builds.
+  codebase_analysis: |
+    EXISTING SIMD PATTERN (sharpen, filters.rs ~1954-1995):
+    - #[cfg(target_arch = "wasm32")] block with std::arch::wasm32::*
+    - f32x4 for arithmetic: f32x4_splat, f32x4_add, f32x4_sub, f32x4_mul
+    - f32x4_max/min for clamping
+    - f32x4_extract_lane for store back to u8
+    - Scalar fallback in #[cfg(not(target_arch = "wasm32"))] block
+    - Process 4 bytes per iteration (one RGBA pixel or 4 channels)
+
+    BOX BLUR CURRENT (filters.rs ~1600-1650):
+    - Per-channel running sum in u32
+    - Separate horizontal and vertical passes
+    - Loops: for c in 0..ch { for x/y in 0..w/h }
+    - Opportunity: process 4 channels simultaneously with i32x4/u32x4
+
+    SMART SHARPEN CURRENT (filters.rs ~1780-1800):
+    - Scalar loop: output[i] = orig + amount * (orig - blurred)
+    - Same formula as sharpen() SIMD path — can reuse the pattern
+    - Currently processes Rgb8 after stripping RGBA alpha
+
+    SIMD APPROACH FOR BOX BLUR:
+    - Horizontal pass: accumulate 4-channel sums as i32x4
+      - Load pixel as u8x4, widen to i32x4, add to running sum
+      - Subtract leaving pixel, divide by diameter
+      - Extract and store 4 u8 values
+    - Vertical pass: same pattern but column-wise
+    - Key: i32x4_add, i32x4_sub for accumulation
+    - Division by diameter: multiply by reciprocal (f32x4) or
+      use integer division via shift if diameter is power of 2
+  acceptance_criteria:
+    - box_blur has WASM SIMD128 fast path processing 4 channels in parallel
+    - smart_sharpen unsharp mask step has WASM SIMD128 fast path
+    - Both have scalar fallback for non-WASM builds
+    - Output is byte-identical between SIMD and scalar paths
+    - Existing box_blur and smart_sharpen tests pass unchanged
+  out_of_scope: |
+    average_blur SIMD (trivial sum reduction, rarely used).
+    Bilateral filter SIMD (complex data-dependent kernel, separate track).
+    NEON/SSE native SIMD (WASM only for now).
+  technical_notes: |
+    BOX BLUR SIMD STRATEGY:
+    For RGBA8 (most common), process all 4 channels in one v128:
+    - Running sum as i32x4 (4 x 32-bit accumulators)
+    - For each pixel entering: load 4 bytes, widen to i32x4, add
+    - For each pixel leaving: same, subtract
+    - Divide: convert to f32x4, multiply by 1.0/diameter, convert back
+    - Store: narrow i32x4 to u8x4
+
+    For RGB8 (3 channels), process 3 channels + padding in i32x4.
+    For Gray8, scalar is fine (single channel, no SIMD benefit).
+
+    SMART SHARPEN SIMD:
+    Identical to existing sharpen() SIMD pattern:
+    - Load 4 bytes original + 4 bytes blurred as f32x4
+    - Compute: orig + amount * (orig - blurred)
+    - Clamp to [0, 255]
+    - Store back as u8
+    - Process Rgb8 in 3-byte chunks (load 3, pad to 4)
+
+    VERIFICATION:
+    Run both scalar and SIMD paths on same input, compare byte-for-byte.
+    The scalar path is the reference — SIMD must match exactly.
+plan:
+  - phase: Box Blur SIMD
+    tasks:
+      - text: Add WASM SIMD128 horizontal pass for box_blur using i32x4 running sums
+        done: false
+      - text: Add WASM SIMD128 vertical pass for box_blur
+        done: false
+      - text: Add scalar fallback under cfg(not(target_arch = wasm32))
+        done: false
+      - text: Verify byte-identical output between SIMD and scalar
+        done: false
+  - phase: Smart Sharpen SIMD
+    tasks:
+      - text: Add WASM SIMD128 unsharp mask arithmetic using f32x4 (same pattern as sharpen)
+        done: false
+      - text: Add scalar fallback
+        done: false
+      - text: Verify byte-identical output between SIMD and scalar
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All existing box_blur and smart_sharpen tests pass
+        done: false
+      - text: Clippy clean (no warnings)
+        done: false
+extra: {}
