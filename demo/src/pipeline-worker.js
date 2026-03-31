@@ -57,17 +57,41 @@ function hexToRgb(hex) {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-function expandArgs(params, paramValues) {
-  const args = [];
+// Methods that take flat positional args (not a config record)
+const FLAT_ARG_METHODS = new Set([
+  'resize', 'crop', 'rotate', 'flip', 'convertFormat', 'iccToSrgb', 'autoOrient',
+  'gradientMap', 'sparseColor', 'displacementMap',
+  'curvesMaster', 'curvesRed', 'curvesGreen', 'curvesBlue',
+  'hueVsSat', 'hueVsLum', 'lumVsSat', 'satVsSat',
+  'applyCubeLut', 'applyHaldLut',
+]);
+
+function expandArgs(name, params, paramValues) {
+  // Flat-arg methods: return array of positional values
+  if (FLAT_ARG_METHODS.has(name)) {
+    const args = [];
+    for (const p of params) {
+      if (p.type === 'color') {
+        const [r, g, b] = hexToRgb(paramValues[p.name] || '#808080');
+        args.push(r, g, b);
+      } else {
+        args.push(paramValues[p.name]);
+      }
+    }
+    return args;
+  }
+
+  // Config-record methods: return single config object
+  const config = {};
   for (const p of params) {
     if (p.type === 'color') {
       const [r, g, b] = hexToRgb(paramValues[p.name] || '#808080');
-      args.push(r, g, b);
+      config[p.name] = { r, g, b };
     } else {
-      args.push(paramValues[p.name]);
+      config[p.name] = paramValues[p.name];
     }
   }
-  return args;
+  return [config];
 }
 
 // ─── Image Loading ──────────────────────────────────────────────────────────
@@ -122,7 +146,7 @@ function processChain(chain, mode) {
 
     for (const step of chain) {
       const t = performance.now();
-      const args = expandArgs(step.params, step.paramValues);
+      const args = expandArgs(step.name, step.params, step.paramValues);
 
       if (step.name === 'resize' && mode === 'thumb') {
         const info = pipe.nodeInfo(node);
@@ -167,7 +191,7 @@ function exportImage(chain, format, quality) {
     let node = pipe.read(imageBytes);
 
     for (const step of chain) {
-      const args = expandArgs(step.params, step.paramValues);
+      const args = expandArgs(step.name, step.params, step.paramValues);
       node = pipe[step.name](node, ...args);
     }
 
@@ -203,7 +227,7 @@ function compositeLayers(layerDefs) {
 
       // Apply per-layer chain
       for (const step of layer.chain) {
-        const args = expandArgs(step.params, step.paramValues);
+        const args = expandArgs(step.name, step.params, step.paramValues);
         node = pipe[step.name](node, ...args);
       }
 
