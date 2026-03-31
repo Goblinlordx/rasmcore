@@ -3128,10 +3128,14 @@ pub struct ModulateParams {
     color_op = "true"
 )]
 pub fn modulate(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ModulateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let brightness = config.brightness;
     let saturation = config.saturation;
     let hue = config.hue;
@@ -3383,7 +3387,9 @@ mod color_manipulation_tests {
     fn modulate_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = modulate(&pixels, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 0.0 }).unwrap();
         // Identity: (100%, 100%, 0 deg) should preserve pixels
         for (a, b) in result.iter().zip(pixels.iter()) {
             assert!(
@@ -3397,7 +3403,9 @@ mod color_manipulation_tests {
     fn modulate_brightness_zero_is_black() {
         let pixels = solid_rgb(2, 2, 100, 150, 200);
         let info = info_rgb8(2, 2);
-        let result = modulate(&pixels, &info, &ModulateParams { brightness: 0.0, saturation: 100.0, hue: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 0.0, saturation: 100.0, hue: 0.0 }).unwrap();
         for &v in &result {
             assert_eq!(v, 0, "brightness=0 should produce black");
         }
@@ -3407,7 +3415,9 @@ mod color_manipulation_tests {
     fn modulate_saturation_zero_is_gray() {
         let pixels = solid_rgb(2, 2, 255, 0, 0);
         let info = info_rgb8(2, 2);
-        let result = modulate(&pixels, &info, &ModulateParams { brightness: 100.0, saturation: 0.0, hue: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 100.0, saturation: 0.0, hue: 0.0 }).unwrap();
         // Desaturated: all channels should be equal (gray)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], chunk[1], "R should equal G when desaturated");
@@ -3420,7 +3430,9 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 255, 0, 0);
         let info = info_rgb8(2, 2);
         // Rotate hue by 120 degrees: red -> green
-        let result = modulate(&pixels, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 120.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 120.0 }).unwrap();
         // Should be approximately green
         assert!(
             result[1] > result[0],
