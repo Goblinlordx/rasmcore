@@ -1,5 +1,5 @@
 title: WASM SIMD128 Optimization — Box Blur + Smart Sharpen
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-31'
