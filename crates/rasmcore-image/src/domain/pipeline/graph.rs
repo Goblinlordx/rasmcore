@@ -57,8 +57,15 @@ pub trait ImageNode {
     }
 
     /// Return the upstream node id, if this node has exactly one upstream.
-    /// Used by the LUT fusion optimizer to walk chains of point operations.
+    /// Used by the LUT fusion and affine composition optimizers to walk chains.
     fn upstream_id(&self) -> Option<u32> {
+        None
+    }
+
+    /// If this node is an affine transform, return its matrix and output dims.
+    /// Used by the affine fusion optimizer to compose consecutive transforms
+    /// into a single resample pass.
+    fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
         None
     }
 }
@@ -307,6 +314,82 @@ impl NodeGraph {
                     source_info: info,
                     lut,
                 });
+            }
+        }
+    }
+
+    /// Compose consecutive affine transform nodes into a single resample pass.
+    ///
+    /// Walks the node graph backwards from each output node. When a chain of
+    /// consecutive AffineOp nodes is found (resize → rotate → flip, etc.), they
+    /// are composed into a single affine matrix and replaced with a single
+    /// `ComposedAffineNode`. This eliminates multi-pass interpolation artifacts
+    /// and improves both quality and performance.
+    pub fn fuse_affine_transforms(&mut self) {
+        use crate::domain::pipeline::nodes::transform::{compose_affine, ComposedAffineNode};
+
+        let n = self.nodes.len();
+        let mut fused_into: Vec<Option<u32>> = vec![None; n];
+
+        for i in (0..n).rev() {
+            if fused_into[i].is_some() {
+                continue;
+            }
+
+            let Some((mut matrix, mut out_w, mut out_h)) = self.nodes[i].as_affine_op() else {
+                continue;
+            };
+
+            // Walk upstream composing affine matrices
+            let mut chain_root_upstream = self.nodes[i].upstream_id();
+            let mut chain_root_info = None;
+            let mut current = i;
+
+            while let Some(up_id) = self.nodes[current].upstream_id() {
+                let up = up_id as usize;
+                if up >= n || fused_into[up].is_some() {
+                    break;
+                }
+                let Some((up_matrix, _up_w, _up_h)) = self.nodes[up].as_affine_op() else {
+                    break;
+                };
+                // Compose: current(upstream(x)) = current_matrix * upstream_matrix
+                matrix = compose_affine(&matrix, &up_matrix);
+                chain_root_upstream = self.nodes[up].upstream_id();
+                // Track the source info from the deepest node in the chain
+                chain_root_info = Some(up);
+                fused_into[up] = Some(i as u32);
+                current = up;
+            }
+
+            // If we consumed at least one upstream node, replace with composed
+            if current != i {
+                let upstream = chain_root_upstream.unwrap_or(0);
+                // Get the source_info from the chain root's upstream
+                let source_info = if let Some(root_up) = chain_root_upstream {
+                    self.nodes[root_up as usize].info()
+                } else {
+                    self.nodes[current].info()
+                };
+                // Compute output dimensions from the composed matrix
+                let (final_w, final_h) =
+                    crate::domain::pipeline::nodes::transform::affine_output_dims(
+                        &matrix,
+                        source_info.width,
+                        source_info.height,
+                    );
+                // Use explicitly declared output dims if they match better
+                // (the original chain's output info is authoritative)
+                let out_info = self.nodes[i].info();
+                let (use_w, use_h) = (out_info.width, out_info.height);
+
+                self.nodes[i] = Box::new(ComposedAffineNode::new(
+                    upstream,
+                    source_info,
+                    matrix,
+                    use_w,
+                    use_h,
+                ));
             }
         }
     }
