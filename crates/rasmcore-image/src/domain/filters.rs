@@ -1921,7 +1921,9 @@ pub fn smart_sharpen(
         (pixels.to_vec(), info.clone())
     };
 
-    let blurred = bilateral(&work_pixels, &work_info, &bilateral_config)?;
+    let r = Rect::new(0, 0, work_info.width, work_info.height);
+    let mut u = |_: Rect| Ok(work_pixels.clone());
+    let blurred = bilateral(r, &mut u, &work_info, &bilateral_config)?;
 
     // Unsharp mask: output = original + amount * (original - blurred)
     let mut result = vec![0u8; work_pixels.len()];
@@ -6933,10 +6935,14 @@ fn reflect101(idx: isize, size: isize) -> isize {
     reference = "Tomasi & Manduchi 1998"
 )]
 pub fn bilateral(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &BilateralParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let diameter = config.diameter;
     let sigma_color = config.sigma_color;
     let sigma_space = config.sigma_space;
@@ -12828,7 +12834,9 @@ mod optimization_tests {
                 pixels[y * 32 + x] = 255;
             }
         }
-        let result = bilateral(&pixels, &info, &BilateralParams { diameter: 5, sigma_color: 50.0, sigma_space: 50.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = bilateral(r, &mut u, &info, &BilateralParams { diameter: 5, sigma_color: 50.0, sigma_space: 50.0 }).unwrap();
 
         // Edge should be preserved: pixels at x=14 should still be dark, x=18 still bright
         let mid_y = 16;
@@ -12851,7 +12859,9 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..256)
             .map(|i| (128i32 + ((i * 17 + 5) % 21) as i32 - 10).clamp(0, 255) as u8)
             .collect();
-        let result = bilateral(&pixels, &info, &BilateralParams { diameter: 5, sigma_color: 25.0, sigma_space: 25.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = bilateral(r, &mut u, &info, &BilateralParams { diameter: 5, sigma_color: 25.0, sigma_space: 25.0 }).unwrap();
 
         // Should reduce variance
         let var_in: f64 = pixels

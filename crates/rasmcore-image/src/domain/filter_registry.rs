@@ -757,7 +757,9 @@ builtin_filter!(BilateralFilter, "bilateral", FilterCategory::Denoise,
         let d = input.params.get_uint("diameter").unwrap_or(9);
         let sc = input.params.get_float("sigma_color").unwrap_or(75.0);
         let ss = input.params.get_float("sigma_space").unwrap_or(75.0);
-        filters::bilateral(input.pixels, input.info, &filters::BilateralParams { diameter: d, sigma_color: sc, sigma_space: ss })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(input.pixels.to_vec()) };
+        filters::bilateral(r, &mut u, input.info, &filters::BilateralParams { diameter: d, sigma_color: sc, sigma_space: ss })
     }
 );
 
