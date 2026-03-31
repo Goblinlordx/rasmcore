@@ -480,7 +480,6 @@ macro_rules! builtin_filter {
 }
 
 use super::filters;
-use super::histogram;
 use super::point_ops::{self, PointOp};
 
 // Blur filters
