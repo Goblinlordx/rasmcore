@@ -1111,7 +1111,7 @@ function updateCacheStats(stats) {
     cacheClearBtn.style.display = 'none';
     return;
   }
-  const mb = (stats.sizeBytes / (1024 * 1024)).toFixed(1);
+  const mb = (Number(stats.sizeBytes) / (1024 * 1024)).toFixed(1);
   cacheStatsEl.textContent = `${stats.entries} entries | ${stats.hits} hits | ${mb} MB`;
   cacheClearBtn.style.display = stats.entries > 0 ? '' : 'none';
 }
