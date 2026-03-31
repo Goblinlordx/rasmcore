@@ -1,175 +1,249 @@
 id: pipeline-read-api-redesign_20260331023844Z
-title: Pipeline Read API Redesign — Immediate Metadata, Lazy Pixels, Vips-Parity
+title: Pipeline Metadata Architecture — Flowing Metadata, Immediate Read, Vips-Parity
 type: refactor
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
   summary: |
-    Redesign pipeline read() to return structured metadata immediately
-    (parsed from headers) while deferring pixel decode. Eliminates raw
-    byte cloning, provides rich metadata access, and aligns with the
-    libvips API model. Benchmark against vips for API completeness.
+    Redesign the pipeline so metadata flows as a first-class value alongside
+    pixels through every node. Read() parses metadata immediately. Nodes
+    consume, update, or pass through metadata. Eliminates explicit metadata
+    parameter passing (ICC profiles, orientation, etc.). Vips API parity.
   context: |
-    Current read() clones the entire input buffer, stashes it on the
-    pipeline resource, and parses metadata lazily when metadata-dump()
-    is called. This wastes memory (full buffer clone), delays metadata
-    access (not available until explicit query), and couples metadata
-    to the pipeline lifetime instead of making it a first-class output.
+    Currently metadata is a sidecar stashed on the pipeline resource,
+    parsed lazily from cloned raw bytes. ICC profiles and EXIF orientation
+    are passed as explicit parameters to operations that need them. This
+    creates awkward "extract then pass back" patterns.
 
-    libvips reference API:
-    - vips_image_new_from_buffer() → VipsImage with headers loaded
-    - vips_image_get_fields() → list of all metadata field names
-    - vips_image_get_string(field) → field value (available immediately)
-    - vips_image_get_int(field) → typed access
-    - Pixel data decoded on first access (demand-driven)
-    - vips_image_get_typeof(field) → field type discovery
+    The fix: make metadata a generic dictionary that flows through the
+    pipeline graph. Each node receives upstream metadata and can read,
+    modify, or pass it through. Operations that need metadata (icc_to_srgb,
+    auto_orient, DPI-aware resize) read it from the flowing state instead
+    of taking it as a parameter.
 
-    ImageMagick reference:
-    - MagickReadImage() → MagickWand with full metadata
-    - MagickGetImageProperty() → any metadata field
-    - MagickIdentifyImage() → full metadata dump
-
-    Both provide metadata immediately after read, before any pixel access.
-
-    Target API:
-    read(data) returns a structured result with:
-    1. metadata (MetadataSet) — parsed from container headers, immediately
-    2. source (node-id) — lazy pixel access, decoded on demand
-    3. format (string) — detected format name
-    4. warnings (list) — non-fatal parsing issues (corrupt EXIF, etc.)
+    This matches how libvips works: every VipsImage carries a metadata
+    dictionary, and operations propagate/update it automatically.
   codebase_analysis: |
-    CURRENT FLOW:
-    1. read() clones full input buffer into metadata_ops.source_data
-    2. SourceNode::new(data) stores full buffer for lazy decode
-    3. metadata_dump() parses EXIF/IPTC/XMP from stashed source_data
-    4. Two copies of the full input exist in memory
+    CURRENT METADATA HANDLING:
+    - Pipeline stashes raw source bytes for lazy metadata parsing
+    - ICC profile: extracted by decoder, passed explicitly to icc_to_srgb()
+    - EXIF orientation: passed explicitly to auto_orient()
+    - keep-metadata/set-metadata: sidecar flags on pipeline resource
+    - Metadata not visible to filter nodes
 
-    METADATA PARSING (domain/metadata.rs):
-    - read_exif(data) — parses EXIF from JPEG APP1 or TIFF IFD
-    - read_iptc(data) — parses IPTC from JPEG APP13
-    - read_xmp(data) — parses XMP from JPEG APP1/PNG iTXt
-    - All operate on raw bytes, return structured data
-    - Already fast — just header scanning, no pixel decode
+    WHAT CHANGES:
+    - ImageNode trait gains metadata in/out
+    - NodeGraph tracks metadata per node (not per tile — metadata is global)
+    - read() parses metadata immediately, attaches to source node
+    - Each node receives upstream metadata, returns (possibly modified) metadata
+    - icc_to_srgb reads metadata["icc_profile"] instead of taking it as param
+    - auto_orient reads metadata["exif.Orientation"] instead of taking it as param
+    - write() reads final metadata state to embed in output
+    - Helper functions for typed access: metadata.icc_profile(), metadata.exif_orientation()
 
-    WIT PIPELINE INTERFACE:
-    - read: func(data: buffer) -> result<node-id, rasmcore-error>
-    - metadata-dump: func() -> result<string, rasmcore-error>
-    - metadata-read: func(path: string) -> result<option<string>, rasmcore-error>
+    METADATA STRUCTURE:
+    - Generic: HashMap<String, MetadataValue>
+    - MetadataValue: String, Int(i64), Float(f64), Bytes(Vec<u8>), Bool
+    - Namespaced keys: "exif.Orientation", "iptc.Caption", "xmp.Creator", "icc_profile"
+    - Format-specific helpers for typed access
 
-    PROPOSED NEW WIT:
-    record read-result {
-        source: node-id,
-        metadata: metadata-set,
-        format: string,
-        width: u32,
-        height: u32,
-        warnings: list<string>,
+    VIPS COMPARISON:
+    - vips_image_get/set_string/int/double/blob — typed metadata access
+    - vips_image_get_fields() — list all metadata keys
+    - Metadata propagated automatically through operations
+    - Operations update metadata (e.g., resize updates width/height)
+    - VipsImage is both pixels + metadata — not separate
+
+    NODE METADATA FLOW:
+    - Most nodes: pass through unchanged (blur, sharpen, brightness)
+    - auto_orient: reads exif.Orientation, applies transform, sets to 1
+    - icc_to_srgb: reads icc_profile, converts, removes from metadata
+    - resize: updates exif.Width, exif.Height
+    - crop: updates exif.Width, exif.Height
+    - set_metadata: adds/overwrites a key
+    - strip_metadata: removes a key or namespace
+    - write: reads final metadata state for embedding
+
+    CACHE IMPLICATIONS:
+    - Layer cache hash should include metadata state
+    - For pass-through nodes: metadata hash is same as upstream (no invalidation)
+    - For metadata-modifying nodes: hash changes (correct invalidation)
+  acceptance_criteria:
+    - Metadata is a generic Map type flowing through every node
+    - read() returns metadata immediately (parsed from headers at read time)
+    - icc_to_srgb no longer takes icc_profile parameter (reads from metadata)
+    - auto_orient no longer takes orientation parameter (reads from metadata)
+    - Metadata state is different at each pipeline step (correct mutation)
+    - Helper functions for typed access (icc_profile, exif_orientation, etc.)
+    - keep-metadata/set-metadata/strip-metadata work on the flowing metadata
+    - write embeds final metadata state in output
+    - Width/height/format available immediately from read-result
+    - Non-fatal metadata parse errors collected as warnings
+    - Memory usage reduced (no duplicate buffer)
+    - Vips field access coverage benchmark
+    - All existing pipeline tests pass (with updated API calls)
+  out_of_scope: |
+    Per-tile metadata (metadata is per-node, not per-region).
+    Streaming metadata (metadata fully available at node creation).
+    Custom metadata types beyond string/int/float/bytes/bool.
+    Metadata validation schemas.
+  technical_notes: |
+    METADATA TYPE:
+
+    ```rust
+    #[derive(Debug, Clone)]
+    pub enum MetadataValue {
+        String(String),
+        Int(i64),
+        Float(f64),
+        Bytes(Vec<u8>),
+        Bool(bool),
     }
 
-    read: func(data: buffer) -> result<read-result, rasmcore-error>
-  acceptance_criteria:
-    - read() returns read-result with metadata, source, format, dimensions, warnings
-    - Metadata parsed from headers at read time (no deferred parsing)
-    - Raw input buffer NOT cloned for metadata (parse once, discard headers)
-    - Pixel decode still lazy (only on downstream pull)
-    - metadata-dump() still works (reads from pre-parsed metadata-set)
-    - metadata-read() still works (queries pre-parsed metadata)
-    - Width/height available immediately (from header, no full decode)
-    - Format detected and returned (jpeg, png, etc.)
-    - Non-fatal metadata parse errors collected as warnings
-    - Benchmark against vips API for field access completeness
-    - All existing pipeline tests pass
-    - Memory usage reduced (no duplicate buffer)
-  out_of_scope: |
-    Streaming decode (progressive pixel access). Multi-image read (GIF frames).
-    Metadata write API changes (keep-metadata/set-metadata stay as-is).
-    ICC profile handling changes. New metadata formats.
-  technical_notes: |
-    VIPS API COMPARISON:
+    #[derive(Debug, Clone, Default)]
+    pub struct Metadata {
+        entries: HashMap<String, MetadataValue>,
+    }
 
-    | Operation | libvips | rasmcore (current) | rasmcore (proposed) |
-    |-----------|---------|-------------------|---------------------|
-    | Read + get metadata | Immediate | Lazy (query stashed bytes) | Immediate (parse at read) |
-    | Get dimensions | Immediate | node-info() (separate call) | In read-result |
-    | Get format | From loader name | detect-format() (separate) | In read-result |
-    | Pixel access | On demand | On demand | On demand (unchanged) |
-    | Memory model | Ref-counted regions | Clone full buffer | Parse headers, pass ownership |
+    impl Metadata {
+        pub fn get(&self, key: &str) -> Option<&MetadataValue> { ... }
+        pub fn set(&mut self, key: &str, value: MetadataValue) { ... }
+        pub fn remove(&mut self, key: &str) -> Option<MetadataValue> { ... }
+        pub fn keys(&self) -> impl Iterator<Item = &str> { ... }
 
-    IMPLEMENTATION:
+        // Typed helpers
+        pub fn icc_profile(&self) -> Option<&[u8]> { ... }
+        pub fn exif_orientation(&self) -> Option<u32> { ... }
+        pub fn width(&self) -> Option<u32> { ... }
+        pub fn height(&self) -> Option<u32> { ... }
+    }
+    ```
 
-    1. At read() time:
-       a. detect_format(data) → format string
-       b. Parse container headers for dimensions (JPEG SOF, PNG IHDR, etc.)
-       c. Extract all metadata (EXIF, IPTC, XMP, ICC) into MetadataSet
-       d. Create SourceNode with data (ownership transfer, no clone)
-       e. Return read-result with metadata + node-id + format + dims
+    IMAGENODE TRAIT CHANGE:
 
-    2. Remove source_data stash from metadata_ops:
-       - metadata_dump() reads from pre-parsed metadata
-       - metadata_read() queries pre-parsed metadata
-       - No raw bytes kept for metadata (just the structured MetadataSet)
+    ```rust
+    // Current:
+    trait ImageNode {
+        fn info(&self) -> ImageInfo;
+        fn compute_region(&self, request, upstream_fn) -> Result<Vec<u8>>;
+    }
 
-    3. SourceNode still owns the raw bytes for lazy pixel decode.
-       Only ONE copy of the input exists (in the SourceNode).
+    // New: metadata flows alongside
+    trait ImageNode {
+        fn info(&self) -> ImageInfo;
+        fn metadata(&self) -> &Metadata;  // this node's output metadata
+        fn compute_region(&self, request, upstream_fn) -> Result<Vec<u8>>;
+    }
+    ```
 
-    WIT CHANGE:
+    Metadata is set at node creation time (from upstream) and stored
+    on the node. compute_region doesn't change — it only handles pixels.
+    The metadata flow is determined when the graph is built, not during
+    tile execution.
+
+    NODE CREATION FLOW:
+    ```rust
+    // Adding a blur node:
+    fn add_blur(&mut self, source: NodeId, radius: f32) -> NodeId {
+        let upstream_meta = self.node_metadata(source).clone();
+        // Blur doesn't modify metadata — pass through
+        let node = BlurNode::new(source, src_info, radius, upstream_meta);
+        self.add_node(Box::new(node))
+    }
+
+    // Adding auto_orient:
+    fn add_auto_orient(&mut self, source: NodeId) -> NodeId {
+        let mut meta = self.node_metadata(source).clone();
+        let orientation = meta.exif_orientation().unwrap_or(1);
+        meta.set("exif.Orientation", MetadataValue::Int(1)); // reset after applying
+        let node = AutoOrientNode::new(source, src_info, orientation, meta);
+        self.add_node(Box::new(node))
+    }
+    ```
+
+    WIT CHANGES:
     ```wit
     record read-result {
         source: node-id,
-        metadata: metadata-set,
         format: string,
         width: u32,
         height: u32,
         warnings: list<string>,
     }
 
-    // Replace: read: func(data: buffer) -> result<node-id, ...>
-    // With:    read: func(data: buffer) -> result<read-result, ...>
-    ```
+    // read returns structured result
+    read: func(data: buffer) -> result<read-result, rasmcore-error>;
 
-    BACKWARD COMPATIBILITY:
-    - Breaking WIT change (read return type changes)
-    - SDK consumers need to update: read(data).source instead of read(data)
-    - metadata-dump/metadata-read still work but read from pre-parsed data
-    - All filter/transform/write methods unchanged
+    // Metadata access at any node (reads flowing metadata state)
+    node-metadata-dump: func(node: node-id) -> result<string, rasmcore-error>;
+    node-metadata-read: func(node: node-id, path: string) -> result<option<string>, rasmcore-error>;
+
+    // icc_to_srgb simplified (reads ICC from metadata)
+    icc-to-srgb: func(source: node-id) -> result<node-id, rasmcore-error>;
+
+    // auto_orient simplified (reads orientation from metadata)
+    auto-orient: func(source: node-id) -> result<node-id, rasmcore-error>;
+    ```
 plan:
   - phase: Research
     tasks:
-      - text: Document full vips API for image loading and metadata access
+      - text: Document full vips metadata API (get/set/fields/types)
         done: false
-      - text: Benchmark vips field access coverage vs our current metadata support
+      - text: Benchmark vips field coverage vs our current metadata support
         done: false
-      - text: Identify missing metadata fields that vips exposes but we dont
+      - text: Identify all operations that currently take explicit metadata params
         done: false
-  - phase: Header Parsing
+  - phase: Metadata Type
     tasks:
-      - text: Implement fast header-only dimension extraction per format (no full decode)
+      - text: Define Metadata struct with generic Map + MetadataValue enum
         done: false
-      - text: Implement metadata extraction at read time (parse once into MetadataSet)
+      - text: Implement typed helper methods (icc_profile, exif_orientation, width, height)
         done: false
-      - text: Collect non-fatal parse warnings into Vec
+      - text: Implement merge/clone/serialize for metadata flowing through nodes
         done: false
-  - phase: API Redesign
+  - phase: Node Integration
     tasks:
-      - text: Define read-result WIT record
+      - text: Add metadata field to ImageNode trait (or node wrapper in graph)
         done: false
-      - text: Update read() to return read-result with metadata + source + format + dims
+      - text: Propagate metadata at node creation (most nodes pass-through)
         done: false
-      - text: Remove source_data stash from metadata_ops (use pre-parsed metadata)
+      - text: Update auto_orient to read metadata instead of taking parameter
         done: false
-      - text: Update metadata-dump and metadata-read to use pre-parsed data
+      - text: Update icc_to_srgb to read metadata instead of taking parameter
+        done: false
+      - text: Update resize/crop to update width/height in metadata
+        done: false
+  - phase: Read API
+    tasks:
+      - text: Parse metadata at read() time from container headers
+        done: false
+      - text: Return read-result with metadata + source + format + dimensions
+        done: false
+      - text: Remove source_data stash (use flowing metadata instead)
+        done: false
+      - text: Update metadata-dump/metadata-read to use node metadata
+        done: false
+  - phase: Write Integration
+    tasks:
+      - text: Write methods read final node metadata for embedding
+        done: false
+      - text: Remove metadata parameter from write WIT signatures
+        done: false
+      - text: keep-metadata/set-metadata/strip-metadata modify flowing metadata
         done: false
   - phase: Verification
     tasks:
-      - text: Verify metadata available immediately after read (before any pixel access)
+      - text: Test metadata available immediately after read
         done: false
-      - text: Verify pixel decode still lazy (only on write/request_region)
+      - text: Test metadata changes at each pipeline step
         done: false
-      - text: Verify no duplicate buffer (memory reduced)
+      - text: Test icc_to_srgb works without explicit profile parameter
         done: false
-      - text: All existing pipeline tests pass
+      - text: Test auto_orient works without explicit orientation parameter
         done: false
-      - text: Benchmark metadata access time vs vips (should be comparable)
+      - text: All existing pipeline tests pass with updated API
+        done: false
+      - text: Benchmark metadata access time vs vips
         done: false
 extra: {}
