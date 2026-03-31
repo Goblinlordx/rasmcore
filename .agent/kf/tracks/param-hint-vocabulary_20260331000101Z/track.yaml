@@ -1,119 +1,173 @@
 id: param-hint-vocabulary_20260331000101Z
-title: "Expand Parameter Hint Vocabulary & Annotate All Filters"
+title: Expand Parameter Hint Vocabulary & Annotate All Filters
 type: chore
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Add 10 new rc.* hint types based on GIMP/Photoshop UI patterns. Annotate
-    all 115+ filter params with the appropriate hint so the UI can render
-    optimal controls (spinners, log sliders, toggles, dropdowns) instead of
-    plain linear sliders for everything.
-  context: |
-    Current state: only 4 hint types exist (rc.color_rgb, rc.color_rgba,
+  summary: 'Add 10 new rc.* hint types based on GIMP/Photoshop UI patterns. Annotate all 115+ filter params with the appropriate
+    hint so the UI can render optimal controls (spinners, log sliders, toggles, dropdowns) instead of plain linear sliders
+    for everything.
+
+    '
+  context: 'Current state: only 4 hint types exist (rc.color_rgb, rc.color_rgba,
+
     rc.angle_deg, rc.percentage). Everything else renders as a linear
+
     <input type="range"> slider. This causes major UX problems:
 
+
     - Pixel coordinates (0-65535) are unusable as sliders — 1px drag = hundreds of pixels
+
     - Blur radius (0-100) has high impact at low values but slider is linear
+
     - Random seeds (0-4294967295) are meaningless as sliders
+
     - Boolean params have no toggle
+
     - Enum params (blend mode, bokeh shape) have no dropdown
+
     - Signed params (-1.0 to 1.0) need a bipolar slider centered at 0
 
+
     GIMP/Photoshop patterns:
+
     - Pixel coords/dimensions: number input with spinner arrows
+
     - Blur radius: slider + number input, often logarithmic feel
+
     - Opacity: thin slider + text input (0-100%)
+
     - Hue: slider with color bar underneath
+
     - Boolean: checkbox or toggle switch
+
     - Mode/shape: dropdown select
+
     - Temperature: slider with blue-to-warm gradient
+
     - Levels: draggable points on histogram
+
     - Curves: spline editor
-  codebase_analysis: |
-    Current hint system:
+
+    '
+  codebase_analysis: 'Current hint system:
+
     - Defined in code_styleguides/param-hints.md
+
     - Parsed by ConfigParams derive macro (#[param(hint = "rc.*")])
+
     - Stored in ParamDescriptorJson.hint field
+
     - Emitted in param-manifest.json per param
+
     - Consumed by demo/src/pipeline.js to choose control type
 
+
     Params needing new hints (from audit):
+
     - 12 params with max > 8000 (pixel coords/dims) -> rc.pixels
+
     - 8+ blur/radius params where low values matter most -> rc.log_slider
+
     - 5+ seed/noise params with huge ranges -> rc.seed
+
     - 1 temperature param (2000-12000K) -> rc.temperature_k
+
     - 6+ boolean params -> rc.toggle
+
     - ~10 params that are 0.0-1.0 normalized values -> rc.opacity
+
     - ~15 params that are -1.0 to 1.0 signed -> rc.signed_slider
+
     - String params (curves points JSON) -> rc.text
+
+    '
   acceptance_criteria:
-    - 10 new hint types documented in code_styleguides/param-hints.md
-    - All drawing filter coordinate params annotated with rc.pixels
-    - All blur/radius params annotated with rc.log_slider where appropriate
-    - All seed params annotated with rc.seed
-    - Temperature param annotated with rc.temperature_k
-    - Boolean params annotated with rc.toggle
-    - 0-1 normalized params annotated with rc.opacity where semantically opacity
-    - Signed -1 to 1 params annotated with rc.signed_slider
-    - String params annotated with rc.text
-    - Manifest correctly emits all new hints
-    - No regression in existing hint rendering
-  out_of_scope: |
-    UI rendering changes (separate track).
+  - 10 new hint types documented in code_styleguides/param-hints.md
+  - All drawing filter coordinate params annotated with rc.pixels
+  - All blur/radius params annotated with rc.log_slider where appropriate
+  - All seed params annotated with rc.seed
+  - Temperature param annotated with rc.temperature_k
+  - Boolean params annotated with rc.toggle
+  - 0-1 normalized params annotated with rc.opacity where semantically opacity
+  - Signed -1 to 1 params annotated with rc.signed_slider
+  - String params annotated with rc.text
+  - Manifest correctly emits all new hints
+  - No regression in existing hint rendering
+  out_of_scope: 'UI rendering changes (separate track).
+
     Curve editor or histogram editor hints (too specialized for this pass).
+
     Changing param ranges or defaults.
-  technical_notes: |
-    New hint vocabulary:
+
+    '
+  technical_notes: 'New hint vocabulary:
+
 
     | Hint | UI Control | When to use |
+
     |------|-----------|-------------|
+
     | rc.pixels | Number spinner (no slider) | Pixel coordinates, image dimensions |
+
     | rc.log_slider | Logarithmic slider | Radius/sigma where low values matter (blur, denoise) |
+
     | rc.seed | Number input (no slider) | Random seeds, large integer ranges |
+
     | rc.temperature_k | Slider with blue-warm gradient | Color temperature in Kelvin |
+
     | rc.enum | Dropdown select | Mode/shape/method selection (when type is String/u32 encoding) |
+
     | rc.toggle | Toggle switch | Boolean on/off params |
+
     | rc.text | Text input field | String params (JSON, paths) |
+
     | rc.opacity | Thin slider + text (0-1 or 0-100) | Opacity, amount, strength, blend factor |
+
     | rc.signed_slider | Bipolar slider centered at 0 | Params with -N to +N range (brightness, balance) |
+
     | rc.spinner | Number input with up/down arrows | Any numeric param better as precise input than slider |
 
+
     Annotation approach: add hint="rc.xxx" to #[param(...)] attributes on
+
     ConfigParams fields. For params without ConfigParams (function signature
-    only), the hint won't propagate to the manifest — those need ConfigParams
+
+    only), the hint won''t propagate to the manifest — those need ConfigParams
+
     structs first (separate concern).
+
+    '
 plan:
-  - phase: Documentation
-    tasks:
-      - text: Update code_styleguides/param-hints.md with 10 new hint types, usage guidelines, and GIMP/PS reference
-        done: false
-  - phase: Annotate Filters
-    tasks:
-      - text: Annotate drawing filter params (x, y, width, height, cx, cy, radius) with rc.pixels
-        done: false
-      - text: Annotate blur/denoise radius/sigma params with rc.log_slider
-        done: false
-      - text: Annotate seed params (perlin, simplex, plasma, film_grain) with rc.seed
-        done: false
-      - text: Annotate temperature param with rc.temperature_k
-        done: false
-      - text: Annotate boolean params (filled, progressive) with rc.toggle
-        done: false
-      - text: Annotate 0-1 amount/strength/opacity params with rc.opacity
-        done: false
-      - text: Annotate signed params (brightness, contrast, balance, offset) with rc.signed_slider
-        done: false
-      - text: Annotate string params (curves points, gradient stops) with rc.text
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Rebuild manifest and verify all new hints appear correctly
-        done: false
-      - text: Verify no regression in existing rc.color_rgb/rgba/angle_deg hints
-        done: false
-      - text: Count params by hint type and document coverage
-        done: false
+- phase: Documentation
+  tasks:
+  - text: Update code_styleguides/param-hints.md with 10 new hint types, usage guidelines, and GIMP/PS reference
+    done: true
+- phase: Annotate Filters
+  tasks:
+  - text: Annotate drawing filter params (x, y, width, height, cx, cy, radius) with rc.pixels
+    done: true
+  - text: Annotate blur/denoise radius/sigma params with rc.log_slider
+    done: true
+  - text: Annotate seed params (perlin, simplex, plasma, film_grain) with rc.seed
+    done: true
+  - text: Annotate temperature param with rc.temperature_k
+    done: true
+  - text: Annotate boolean params (filled, progressive) with rc.toggle
+    done: true
+  - text: Annotate 0-1 amount/strength/opacity params with rc.opacity
+    done: true
+  - text: Annotate signed params (brightness, contrast, balance, offset) with rc.signed_slider
+    done: true
+  - text: Annotate string params (curves points, gradient stops) with rc.text
+    done: true
+- phase: Verification
+  tasks:
+  - text: Rebuild manifest and verify all new hints appear correctly
+    done: true
+  - text: Verify no regression in existing rc.color_rgb/rgba/angle_deg hints
+    done: true
+  - text: Count params by hint type and document coverage
+    done: true
 extra: {}
