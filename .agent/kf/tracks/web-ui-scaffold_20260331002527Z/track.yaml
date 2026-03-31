@@ -1,0 +1,128 @@
+id: web-ui-scaffold_20260331002527Z
+title: "Extract Pipeline Builder to web-ui/ TypeScript Package"
+type: refactor
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: >
+    Move the pipeline builder from demo/ to a standalone web-ui/ TypeScript
+    package with Vite, ESLint, strict type checking, and a cargo-based
+    build/serve workflow. Configurable SDK path via env var.
+  context: |
+    The demo/ folder contains a Vite-based ES module application with two
+    entry points (index.html for simple demo, pipeline.html for chain
+    builder). The pipeline builder is the primary product UI. It should be
+    extracted to its own package with proper TypeScript, linting, and build
+    infrastructure so it can be developed independently and pointed at any
+    SDK build.
+
+    Current issues:
+    - All JS, no TypeScript (despite .d.ts being available from jco)
+    - npm at project root (inconsistent with Rust-first tooling)
+    - No lint/type checks in verification workflow
+    - SDK path hardcoded to ../sdk/
+    - Build script in bash (demo/build.sh)
+  codebase_analysis: |
+    Current structure:
+    - demo/pipeline.html (175 lines, dark-themed 4-pane layout)
+    - demo/src/pipeline.js (1204 lines, well-sectioned)
+    - demo/src/pipeline-worker.js (226 lines, Web Worker for WASM)
+    - demo/sdk/ (~12MB, jco-transpiled WASM SDK)
+    - demo/package.json (Vite 6.0)
+    - demo/vite.config.js (COOP/COEP headers, WASM assets)
+    - demo/build.sh (full build pipeline)
+
+    The SDK is loaded as ES module from relative path.
+    The worker loads SDK independently.
+    param-manifest.json is fetched at runtime.
+
+    Cargo tooling: xtask pattern could work for build/serve commands.
+    Alternative: simple shell scripts wrapped in Cargo aliases.
+  acceptance_criteria:
+    - web-ui/ directory exists as standalone package
+    - pipeline.ts (converted from pipeline.js) compiles with strict TS
+    - pipeline-worker.ts converted with proper message typing
+    - ESLint configured with TS rules, passes with no errors
+    - Vite config in web-ui/ with COOP/COEP headers
+    - SDK path configurable via VITE_SDK_PATH env var (default ./sdk/)
+    - cargo-based build command (cargo xtask web-ui-build or similar)
+    - cargo-based serve command (cargo xtask web-ui-serve)
+    - No npm/node commands needed at project root
+    - param-manifest.json loaded from configurable SDK path
+    - demo/ folder remains for backward compat (can be removed later)
+    - Verification workflow includes TS type check + ESLint
+  out_of_scope: |
+    Layout changes (separate track).
+    New UI features (separate track).
+    Removing the old demo/ folder (keep for backward compat).
+    React/Svelte/framework migration (vanilla TS is sufficient).
+  technical_notes: |
+    Package structure:
+    web-ui/
+      package.json          (Vite + TS + ESLint deps)
+      tsconfig.json         (strict: true, target: ES2022)
+      .eslintrc.cjs         (TS rules)
+      vite.config.ts        (COOP/COEP, SDK path alias)
+      index.html            (pipeline builder entry point)
+      src/
+        pipeline.ts         (main app logic, converted from JS)
+        pipeline-worker.ts  (Web Worker, typed messages)
+        types.ts            (shared types for params, nodes, layers)
+      public/               (static assets if any)
+
+    Cargo integration:
+    - Add xtask crate or scripts/ shell wrappers
+    - `cargo xtask web-ui-build` = cd web-ui && npm install && npx vite build
+    - `cargo xtask web-ui-serve` = cd web-ui && npx vite --port 3000
+    - Or simpler: Makefile targets (make web-ui-build, make web-ui-serve)
+
+    SDK path configuration:
+    - VITE_SDK_PATH env var, defaults to ./sdk/
+    - In pipeline.ts: const SDK_PATH = import.meta.env.VITE_SDK_PATH || './sdk/'
+    - Dynamic import: await import(`${SDK_PATH}/rasmcore-image.js`)
+    - Worker: receives SDK path via init message
+
+    TS conversion approach:
+    - Start with renaming .js -> .ts and adding type annotations
+    - Use the existing rasmcore-image.d.ts for SDK types
+    - Define interfaces for internal types (NodeState, LayerState, ParamMeta)
+    - Strict null checks catch real bugs
+plan:
+  - phase: Package Scaffold
+    tasks:
+      - text: Create web-ui/ directory with package.json (Vite + TypeScript + ESLint deps)
+        done: false
+      - text: Create tsconfig.json with strict mode, ES2022 target, DOM lib
+        done: false
+      - text: Create .eslintrc.cjs with TypeScript ESLint rules
+        done: false
+      - text: Create vite.config.ts with COOP/COEP headers and SDK path alias
+        done: false
+  - phase: TypeScript Conversion
+    tasks:
+      - text: Create src/types.ts with interfaces for ParamMeta, NodeState, LayerState, WorkerMessage
+        done: false
+      - text: Convert pipeline.js to pipeline.ts with type annotations
+        done: false
+      - text: Convert pipeline-worker.js to pipeline-worker.ts with typed messages
+        done: false
+      - text: Create index.html entry point (extracted from pipeline.html)
+        done: false
+  - phase: Build & Serve
+    tasks:
+      - text: Add SDK path configuration via VITE_SDK_PATH env var
+        done: false
+      - text: Create scripts/web-ui-build.sh and scripts/web-ui-serve.sh
+        done: false
+      - text: Add Makefile targets (make web-ui-build, make web-ui-serve)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify tsc --noEmit passes (type check)
+        done: false
+      - text: Verify ESLint passes with no errors
+        done: false
+      - text: Verify Vite build produces dist/ output
+        done: false
+extra: {}
