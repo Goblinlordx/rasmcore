@@ -1,0 +1,70 @@
+id: monorepo-sdks-restructure_20260331045700Z
+title: "Monorepo Restructure — sdks/ Per-Language Package Layout"
+type: refactor
+status: pending
+created: "2026-03-31"
+updated: "2026-03-31"
+spec:
+  summary: |
+    Move sdk/typescript/ to sdks/typescript/, create sdks/python/ and sdks/go/
+    scaffolds with package.json/pyproject.toml/go.mod. Each is a publishable
+    package. Remove Node.js codegen scripts (generate-wit.cjs, generate-fluent-sdk.cjs).
+  context: |
+    The SDK architecture has evolved. Each language SDK is now a self-contained
+    publishable package with two layers: a dynamic runtime (loads any WASM module
+    via getFilterManifest introspection) and an optional typed layer (generated
+    per-module by a typegen CLI written in that language). The monorepo needs
+    sdks/ with proper package scaffolds so each can be published independently.
+  codebase_analysis: |
+    CURRENT:
+    - sdk/typescript/ — partially generated rcimage.ts, tests
+    - scripts/generate-wit.cjs — Node.js WIT generator (to be removed)
+    - scripts/generate-fluent-sdk.cjs — Node.js TS SDK generator (to be removed)
+    - demo/build.sh — references Node scripts
+
+    TARGET:
+    - sdks/typescript/ — npm package (@rasmcore/sdk)
+    - sdks/python/ — PyPI package (rasmcore)
+    - sdks/go/ — Go module
+    - scripts/generate-*.cjs removed
+    - demo/build.sh uses cargo run -p rasmcore-codegen for WIT generation
+  acceptance_criteria:
+    - sdk/ renamed to sdks/
+    - sdks/typescript/ has package.json for @rasmcore/sdk
+    - sdks/python/ scaffold with pyproject.toml, rasmcore/__init__.py
+    - sdks/go/ scaffold with go.mod, rasmcore/
+    - scripts/generate-wit.cjs and generate-fluent-sdk.cjs removed
+    - demo/build.sh updated for new paths
+    - All existing tests pass
+  out_of_scope: |
+    SDK implementations (separate tracks). Publishing setup. CI/CD.
+  technical_notes: |
+    This is a structural move — no logic changes. The key constraint is
+    updating all path references (demo/build.sh, .gitignore, imports in
+    existing TS files).
+plan:
+  - phase: Directory Restructure
+    tasks:
+      - text: "Move sdk/typescript/ to sdks/typescript/"
+        done: false
+      - text: Create sdks/python/ scaffold (pyproject.toml, rasmcore/__init__.py, README.md)
+        done: false
+      - text: Create sdks/go/ scaffold (go.mod, rasmcore/rasmcore.go, README.md)
+        done: false
+  - phase: Remove Node Codegen Scripts
+    tasks:
+      - text: Remove scripts/generate-wit.cjs
+        done: false
+      - text: Remove scripts/generate-fluent-sdk.cjs
+        done: false
+      - text: Update demo/build.sh to use cargo run -p rasmcore-codegen -- --wit
+        done: false
+  - phase: Update References
+    tasks:
+      - text: Update .gitignore for new sdks/ paths
+        done: false
+      - text: Update any import paths in existing TS files
+        done: false
+      - text: Verify cargo test and demo build pass
+        done: false
+extra: {}

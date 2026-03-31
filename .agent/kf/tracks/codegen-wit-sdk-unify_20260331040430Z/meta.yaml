@@ -1,5 +1,5 @@
 title: Unify WIT + SDK Generation into rasmcore-codegen (Rust)
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-31'

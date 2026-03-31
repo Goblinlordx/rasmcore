@@ -1,0 +1,8 @@
+title: Python SDK — Dynamic Runtime + Typegen CLI
+status: pending
+type: feature
+approved: false
+created: '2026-03-31'
+updated: '2026-03-31'
+deps:
+- monorepo-sdks-restructure_20260331045700Z

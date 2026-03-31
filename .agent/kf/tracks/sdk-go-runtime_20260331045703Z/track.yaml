@@ -1,0 +1,87 @@
+id: sdk-go-runtime_20260331045703Z
+title: "Go SDK — Dynamic Runtime + Typegen CLI"
+type: feature
+status: pending
+created: "2026-03-31"
+updated: "2026-03-31"
+spec:
+  summary: |
+    Build the Go SDK as a Go module with dynamic runtime (loads any WASM module
+    via wasmtime-go + manifest introspection) and a typegen CLI that generates
+    typed wrappers with Go structs.
+  context: |
+    Same architecture as TS/Python SDKs. Dynamic runtime uses wasmtime-go
+    to load WASM components. Typed layer generates a Go file with methods
+    and config structs. Typegen runs in pure Go — no Rust/Node/Python needed.
+  codebase_analysis: |
+    sdks/go/ (after restructure):
+    - rasmcore/runtime.go — RcImageDynamic with Apply/Encode
+    - rasmcore/types.go — FilterManifest, ParamMeta structs
+    - cmd/typegen/main.go — go run ./cmd/typegen ./module.wasm
+    - go.mod — github.com/rasmcore/rasmcore-go
+
+    Consumer workflow:
+    - go get github.com/rasmcore/rasmcore-go
+    - Dynamic: img.Apply("blur", map[string]any{"radius": 3.0})
+    - Typed: go run github.com/rasmcore/rasmcore-go/cmd/typegen ./rasmcore.wasm > rasmcore_typed.go
+             img.Blur(3.0).ToJPEG(rasmcore.JPEGConfig{Quality: 85})
+  acceptance_criteria:
+    - sdks/go/rasmcore/runtime.go implements dynamic Apply/Encode
+    - Runtime loads WASM module via wasmtime-go
+    - "go run cmd/typegen generates typed Go file with filter methods"
+    - Generated config structs for each filter from manifest params
+    - Terminal methods generated from registered encoders
+    - Basic smoke test passes
+  out_of_scope: |
+    CGo bindings. Publishing to pkg.go.dev. gRPC/HTTP server wrapper.
+  technical_notes: |
+    RUNTIME:
+    ```go
+    type RcImage struct { ... }
+    func Load(wasmPath string, data []byte) (*RcImage, error)
+    func (r *RcImage) Apply(name string, params map[string]any) *RcImage
+    func (r *RcImage) Encode(format string, config map[string]any) ([]byte, error)
+    ```
+
+    TYPEGEN OUTPUT:
+    ```go
+    func (r *RcImage) Blur(radius float32) *RcImage {
+        return r.Apply("blur", map[string]any{"radius": radius})
+    }
+    type JPEGConfig struct { Quality uint8 }
+    func (r *RcImage) ToJPEG(config JPEGConfig) ([]byte, error) {
+        return r.Encode("jpeg", map[string]any{"quality": config.Quality})
+    }
+    ```
+plan:
+  - phase: Runtime Core
+    tasks:
+      - text: Implement RcImage with wasmtime-go WASM loading
+        done: false
+      - text: Implement Apply/Encode with manifest-based dispatch
+        done: false
+      - text: Implement param validation from manifest
+        done: false
+  - phase: Typegen CLI
+    tasks:
+      - text: "Implement cmd/typegen — load WASM, emit typed Go file"
+        done: false
+      - text: Generate filter methods with typed params
+        done: false
+      - text: Generate config structs per filter from manifest
+        done: false
+      - text: Generate encoder terminal methods
+        done: false
+  - phase: Package Setup
+    tasks:
+      - text: go.mod, go.sum, package structure
+        done: false
+      - text: README with examples
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Smoke test — load WASM, apply filter, encode
+        done: false
+      - text: "go vet and go build pass on generated code"
+        done: false
+extra: {}
