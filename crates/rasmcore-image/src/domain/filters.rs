@@ -104,7 +104,7 @@ where
 // ─── Filter Config Structs (auto-generate param metadata via ConfigParams) ──
 
 /// Parameters for Gaussian blur.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct BlurParams {
     /// Blur radius in pixels
     #[param(
@@ -118,7 +118,7 @@ pub struct BlurParams {
 }
 
 /// Parameters for unsharp mask sharpening.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SharpenParams {
     /// Sharpening amount
     #[param(min = 0.0, max = 10.0, step = 0.1, default = 1.0)]
@@ -126,7 +126,7 @@ pub struct SharpenParams {
 }
 
 /// Parameters for brightness adjustment.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct BrightnessParams {
     /// Brightness offset (-1 to 1)
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0, hint = "rc.signed_slider")]
@@ -134,7 +134,7 @@ pub struct BrightnessParams {
 }
 
 /// Parameters for contrast adjustment.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ContrastParams {
     /// Contrast factor (-1 to 1)
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0, hint = "rc.signed_slider")]
@@ -142,7 +142,7 @@ pub struct ContrastParams {
 }
 
 /// Parameters for median filter.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MedianParams {
     /// Filter radius in pixels
     #[param(min = 1, max = 20, step = 1, default = 3, hint = "rc.log_slider")]
@@ -150,7 +150,7 @@ pub struct MedianParams {
 }
 
 /// Parameters for Canny edge detection.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct CannyParams {
     /// Low hysteresis threshold
     #[param(min = 0.0, max = 255.0, step = 1.0, default = 50.0)]
@@ -161,7 +161,7 @@ pub struct CannyParams {
 }
 
 /// Parameters for resize transform.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ResizeParams {
     /// Target width in pixels
     #[param(min = 1, max = 8000, step = 1, default = 800, hint = "rc.pixels")]
@@ -172,7 +172,7 @@ pub struct ResizeParams {
 }
 
 /// Parameters for crop transform.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct CropParams {
     /// X offset
     #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.pixels")]
@@ -189,7 +189,7 @@ pub struct CropParams {
 }
 
 /// Parameters for the default (Gaussian) vignette effect.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct VignetteParams {
     /// Gaussian blur sigma controlling the softness of the transition
     #[param(
@@ -202,14 +202,26 @@ pub struct VignetteParams {
     pub sigma: f32,
     /// Horizontal inset from edges (pixels) where darkening begins
     #[param(min = 0, max = 4000, step = 1, default = 10, hint = "rc.pixels")]
-    pub x_offset: u32,
+    pub x_inset: u32,
     /// Vertical inset from edges (pixels) where darkening begins
     #[param(min = 0, max = 4000, step = 1, default = 10, hint = "rc.pixels")]
-    pub y_offset: u32,
+    pub y_inset: u32,
+    /// Full canvas width (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_width: u32,
+    /// Full canvas height (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_height: u32,
+    /// Tile X offset (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub tile_offset_x: u32,
+    /// Tile Y offset (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub tile_offset_y: u32,
 }
 
 /// Parameters for the power-law vignette mode.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct VignettePowerlawParams {
     /// Darkening strength (0=none, 1=fully black at corners)
     #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
@@ -217,10 +229,22 @@ pub struct VignettePowerlawParams {
     /// Radial falloff exponent (higher = sharper transition)
     #[param(min = 0.5, max = 5.0, step = 0.1, default = 2.0)]
     pub falloff: f32,
+    /// Full canvas width
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_width: u32,
+    /// Full canvas height
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_height: u32,
+    /// X offset
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub offset_x: u32,
+    /// Y offset
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub offset_y: u32,
 }
 
 /// Parameters for bokeh (lens) blur.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct BokehBlurParams {
     /// Kernel half-size in pixels (kernel side = 2*radius+1)
     #[param(min = 1, max = 50, step = 1, default = 5, hint = "rc.log_slider")]
@@ -231,7 +255,7 @@ pub struct BokehBlurParams {
 }
 
 /// Parameters for CLAHE contrast enhancement.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ClaheParams {
     /// Contrast amplification clip limit (2.0-4.0 typical)
     #[param(min = 1.0, max = 40.0, step = 0.5, default = 2.0)]
@@ -242,7 +266,7 @@ pub struct ClaheParams {
 }
 
 /// Parameters for bilateral filter.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct BilateralParams {
     /// Filter size (0 for auto from sigma_space; typical 5-9)
     #[param(min = 0, max = 31, step = 2, default = 5, hint = "rc.log_slider")]
@@ -268,7 +292,7 @@ pub struct BilateralParams {
 }
 
 /// Parameters for guided filter.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct GuidedFilterParams {
     /// Window radius (4-8 typical)
     #[param(min = 1, max = 30, step = 1, default = 4, hint = "rc.log_slider")]
@@ -279,7 +303,7 @@ pub struct GuidedFilterParams {
 }
 
 /// Parameters for morphological erosion.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ErodeParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -290,7 +314,7 @@ pub struct ErodeParams {
 }
 
 /// Parameters for morphological dilation.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DilateParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -301,7 +325,7 @@ pub struct DilateParams {
 }
 
 /// Parameters for morphological opening.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MorphOpenParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -312,7 +336,7 @@ pub struct MorphOpenParams {
 }
 
 /// Parameters for morphological closing.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MorphCloseParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -323,7 +347,7 @@ pub struct MorphCloseParams {
 }
 
 /// Parameters for morphological gradient.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MorphGradientParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -334,7 +358,7 @@ pub struct MorphGradientParams {
 }
 
 /// Parameters for morphological top-hat.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MorphTophatParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -345,7 +369,7 @@ pub struct MorphTophatParams {
 }
 
 /// Parameters for morphological black-hat.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct MorphBlackhatParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -356,7 +380,7 @@ pub struct MorphBlackhatParams {
 }
 
 /// Parameters for NLM denoising.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct NlmDenoiseParams {
     /// Filter strength (higher = more denoising)
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 10.0)]
@@ -370,7 +394,7 @@ pub struct NlmDenoiseParams {
 }
 
 /// Parameters for dehaze (dark channel prior).
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DehazeParams {
     /// Local patch size for dark channel (typical: 7-15)
     #[param(min = 1, max = 30, step = 1, default = 7)]
@@ -384,7 +408,7 @@ pub struct DehazeParams {
 }
 
 /// Parameters for clarity (midtone local contrast).
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ClarityParams {
     /// Enhancement strength (0.0-2.0 typical)
     #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
@@ -401,7 +425,7 @@ pub struct ClarityParams {
 }
 
 /// Parameters for frequency separation — low-pass (structure) layer.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct FrequencyLowParams {
     /// Gaussian sigma controlling separation frequency (higher = more in low-pass)
     #[param(
@@ -415,7 +439,7 @@ pub struct FrequencyLowParams {
 }
 
 /// Parameters for frequency separation — high-pass (detail) layer.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct FrequencyHighParams {
     /// Gaussian sigma controlling separation frequency (higher = finer detail in high-pass)
     #[param(
@@ -429,7 +453,7 @@ pub struct FrequencyHighParams {
 }
 
 /// Parameters for OpenCV-compatible Gaussian blur.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct GaussianBlurCvParams {
     /// Gaussian standard deviation
     #[param(
@@ -443,7 +467,7 @@ pub struct GaussianBlurCvParams {
 }
 
 /// Parameters for pyramid detail remapping.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct PyramidDetailRemapParams {
     /// Detail remapping strength (0.2=enhance, 1.0=neutral, 3.0=smooth)
     #[param(min = 0.1, max = 5.0, step = 0.1, default = 1.0)]
@@ -454,7 +478,7 @@ pub struct PyramidDetailRemapParams {
 }
 
 /// Parameters for single-scale Retinex.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct RetinexSsrParams {
     /// Gaussian scale for surround function
     #[param(
@@ -468,7 +492,7 @@ pub struct RetinexSsrParams {
 }
 
 /// Parameters for multi-scale Retinex.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct RetinexMsrParams {
     /// Small-scale Gaussian sigma
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 15.0)]
@@ -482,7 +506,7 @@ pub struct RetinexMsrParams {
 }
 
 /// Parameters for multi-scale Retinex with color restoration.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct RetinexMsrcrParams {
     /// Small-scale Gaussian sigma
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 15.0)]
@@ -502,7 +526,7 @@ pub struct RetinexMsrcrParams {
 }
 
 /// Parameters for binary threshold.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ThresholdBinaryParams {
     /// Threshold value
     #[param(min = 0, max = 255, step = 1, default = 128)]
@@ -513,7 +537,7 @@ pub struct ThresholdBinaryParams {
 }
 
 /// Parameters for adaptive threshold.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct AdaptiveThresholdParams {
     /// Maximum output value
     #[param(min = 0, max = 255, step = 1, default = 255)]
@@ -530,7 +554,7 @@ pub struct AdaptiveThresholdParams {
 }
 
 /// Parameters for flood fill.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct FloodFillParams {
     /// Seed X coordinate
     #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.pixels")]
@@ -550,7 +574,7 @@ pub struct FloodFillParams {
 }
 
 /// Parameters for gamma correction.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct GammaParams {
     /// Gamma value (>1 brightens, <1 darkens)
     #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
@@ -558,7 +582,7 @@ pub struct GammaParams {
 }
 
 /// Parameters for posterize.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct PosterizeParams {
     /// Number of discrete levels per channel
     #[param(min = 2, max = 255, step = 1, default = 8)]
@@ -566,7 +590,7 @@ pub struct PosterizeParams {
 }
 
 /// Parameters for flatten (alpha compositing onto background).
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct FlattenParams {
     /// Background red component
     #[param(min = 0, max = 255, step = 1, default = 255)]
@@ -580,7 +604,7 @@ pub struct FlattenParams {
 }
 
 /// Parameters for color quantization.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct QuantizeParams {
     /// Maximum number of palette colors
     #[param(min = 2, max = 256, step = 1, default = 256)]
@@ -588,7 +612,7 @@ pub struct QuantizeParams {
 }
 
 /// Parameters for Floyd-Steinberg dithering.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DitherFSParams {
     /// Maximum number of palette colors
     #[param(min = 2, max = 256, step = 1, default = 256)]
@@ -596,7 +620,7 @@ pub struct DitherFSParams {
 }
 
 /// Parameters for ordered (Bayer) dithering.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DitherOrderedParams {
     /// Maximum number of palette colors
     #[param(min = 2, max = 256, step = 1, default = 256)]
@@ -607,7 +631,7 @@ pub struct DitherOrderedParams {
 }
 
 /// Parameters for draw_line.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawLineParams {
     /// Start X coordinate
     #[param(
@@ -653,7 +677,7 @@ pub struct DrawLineParams {
 }
 
 /// Parameters for draw_rect.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawRectParams {
     /// Rectangle X position
     #[param(
@@ -702,7 +726,7 @@ pub struct DrawRectParams {
 }
 
 /// Parameters for draw_circle.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawCircleParams {
     /// Center X coordinate
     #[param(
@@ -742,7 +766,7 @@ pub struct DrawCircleParams {
 }
 
 /// Parameters for draw_text.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawTextParams {
     /// Text X position
     #[param(min = 0, max = 65535, step = 1, default = 10, hint = "rc.pixels")]
@@ -758,7 +782,7 @@ pub struct DrawTextParams {
 }
 
 /// Parameters for white balance temperature adjustment.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct WhiteBalanceTemperatureParams {
     /// Color temperature in Kelvin
     #[param(
@@ -785,7 +809,13 @@ pub struct WhiteBalanceTemperatureParams {
     reference = "Gaussian convolution",
     overlap = "uniform(10)"
 )]
-pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, ImageError> {
+pub fn blur(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &BlurParams,
+) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+
     if radius < 0.0 {
         return Err(ImageError::InvalidParameters(
             "blur radius must be >= 0".into(),
@@ -804,7 +834,7 @@ pub fn blur(pixels: &[u8], info: &ImageInfo, radius: f32) -> Result<Vec<u8>, Ima
 
     // 16-bit: delegate to 8-bit path via process_via_8bit (libblur only supports u8)
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| blur(p8, i8, radius));
+        return process_via_8bit(pixels, info, |p8, i8| blur(p8, i8, config));
     }
 
     let channels = match info.format {
@@ -906,9 +936,11 @@ fn make_hex_kernel(radius: u32) -> (Vec<f32>, usize) {
 pub fn bokeh_blur(
     pixels: &[u8],
     info: &ImageInfo,
-    radius: u32,
-    shape: u32,
+    config: &BokehBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+    let shape = config.shape;
+
     let shape = match shape {
         1 => 1,
         _ => 0,
@@ -924,7 +956,7 @@ pub fn bokeh_blur(
     if divisor == 0.0 {
         return Ok(pixels.to_vec());
     }
-    convolve(pixels, info, &kernel, side as u32, side as u32, divisor)
+    convolve(pixels, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
 }
 
 /// Directional motion blur using a linear kernel at the given angle.
@@ -939,6 +971,13 @@ pub fn bokeh_blur(
 ///
 /// Validated against OpenCV `filter2D` with the same kernel — see
 /// `tests/codec-parity/tests/blend_parity.rs` (planned: motion_blur_parity).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct MotionBlurParams {
+    pub length: u32,
+    pub angle_degrees: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "motion_blur",
     category = "spatial",
@@ -949,9 +988,11 @@ pub fn bokeh_blur(
 pub fn motion_blur(
     pixels: &[u8],
     info: &ImageInfo,
-    length: u32,
-    angle_degrees: f32,
+    config: &MotionBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let length = config.length;
+    let angle_degrees = config.angle_degrees;
+
     if length == 0 {
         return Ok(pixels.to_vec());
     }
@@ -992,9 +1033,11 @@ pub fn motion_blur(
         pixels,
         info,
         &kernel,
-        side as u32,
-        side as u32,
-        count as f32,
+        &ConvolveParams {
+            kw: side as u32,
+            kh: side as u32,
+            divisor: count as f32,
+        },
     )
 }
 
@@ -1013,6 +1056,14 @@ pub fn motion_blur(
 ///   (0.0 = no blur, 0.1 = subtle, 1.0 = full ray to center)
 ///
 /// Reference: GEGL `operations/common-gpl3+/motion-blur-zoom.c`
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ZoomBlurParams {
+    pub center_x: f32,
+    pub center_y: f32,
+    pub factor: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "zoom_blur",
     category = "spatial",
@@ -1023,10 +1074,12 @@ pub fn motion_blur(
 pub fn zoom_blur(
     pixels: &[u8],
     info: &ImageInfo,
-    center_x: f32,
-    center_y: f32,
-    factor: f32,
+    config: &ZoomBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let center_x = config.center_x;
+    let center_y = config.center_y;
+    let factor = config.factor;
+
     validate_format(info.format)?;
 
     if factor == 0.0 {
@@ -1035,7 +1088,7 @@ pub fn zoom_blur(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            zoom_blur(p8, i8, center_x, center_y, factor)
+            zoom_blur(p8, i8, config)
         });
     }
 
@@ -1247,7 +1300,13 @@ pub fn spin_blur(
     reference = "unsharp mask",
     overlap = "uniform(2)"
 )]
-pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+pub fn sharpen(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SharpenParams,
+) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+
     validate_format(info.format)?;
 
     // 16-bit: work in f32 for full precision
@@ -1262,7 +1321,7 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
             },
             ..*info
         };
-        let blurred = blur(pixels, info, 1.0)?;
+        let blurred = blur(pixels, info, &BlurParams { radius: 1.0 })?;
         let blur_f32 = u16_pixels_to_f32(&blurred);
         let result_f32: Vec<f32> = orig_f32
             .iter()
@@ -1273,7 +1332,7 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
     }
 
     // Blur with a small radius for the unsharp mask
-    let blurred = blur(pixels, info, 1.0)?;
+    let blurred = blur(pixels, info, &BlurParams { radius: 1.0 })?;
 
     let mut result = vec![0u8; pixels.len()];
 
@@ -1341,7 +1400,13 @@ pub fn sharpen(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, 
     category = "adjustment",
     reference = "additive brightness offset"
 )]
-pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+pub fn brightness(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &BrightnessParams,
+) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
             "brightness must be between -1.0 and 1.0".into(),
@@ -1349,7 +1414,7 @@ pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8
     }
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| brightness(p8, i8, amount));
+        return process_via_8bit(pixels, info, |p8, i8| brightness(p8, i8, config));
     }
     let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Brightness(amount));
     super::point_ops::apply_lut(pixels, info, &lut)
@@ -1363,7 +1428,13 @@ pub fn brightness(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8
     category = "adjustment",
     reference = "multiplicative contrast"
 )]
-pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+pub fn contrast(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &ContrastParams,
+) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+
     if !(-1.0..=1.0).contains(&amount) {
         return Err(ImageError::InvalidParameters(
             "contrast must be between -1.0 and 1.0".into(),
@@ -1371,7 +1442,7 @@ pub fn contrast(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
     }
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| contrast(p8, i8, amount));
+        return process_via_8bit(pixels, info, |p8, i8| contrast(p8, i8, config));
     }
     let lut = super::point_ops::build_lut(&super::point_ops::PointOp::Contrast(amount));
     super::point_ops::apply_lut(pixels, info, &lut)
@@ -1483,7 +1554,13 @@ fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u
     category = "color",
     reference = "HSV hue rotation"
 )]
-pub fn hue_rotate(pixels: &[u8], info: &ImageInfo, degrees: f32) -> Result<Vec<u8>, ImageError> {
+pub fn hue_rotate(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &HueRotateParams,
+) -> Result<Vec<u8>, ImageError> {
+    let degrees = config.degrees;
+
     apply_color_op(pixels, info, &ColorOp::HueRotate(degrees))
 }
 
@@ -1493,7 +1570,13 @@ pub fn hue_rotate(pixels: &[u8], info: &ImageInfo, degrees: f32) -> Result<Vec<u
     category = "color",
     reference = "HSV saturation scaling"
 )]
-pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>, ImageError> {
+pub fn saturate(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SaturateParams,
+) -> Result<Vec<u8>, ImageError> {
+    let factor = config.factor;
+
     apply_color_op(pixels, info, &ColorOp::Saturate(factor))
 }
 
@@ -1503,11 +1586,17 @@ pub fn saturate(pixels: &[u8], info: &ImageInfo, factor: f32) -> Result<Vec<u8>,
     category = "color",
     reference = "sepia tone matrix"
 )]
-pub fn sepia(pixels: &[u8], info: &ImageInfo, intensity: f32) -> Result<Vec<u8>, ImageError> {
+pub fn sepia(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SepiaParams,
+) -> Result<Vec<u8>, ImageError> {
+    let intensity = config.intensity;
+
     apply_color_op(pixels, info, &ColorOp::Sepia(intensity.clamp(0.0, 1.0)))
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ColorizeParams {
     /// Target color to blend toward
     pub target: super::param_types::ColorRgb,
@@ -1525,11 +1614,13 @@ pub struct ColorizeParams {
 pub fn colorize(
     pixels: &[u8],
     info: &ImageInfo,
-    target_r: u8,
-    target_g: u8,
-    target_b: u8,
-    amount: f32,
+    config: &ColorizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let target_r = config.target.r;
+    let target_g = config.target.g;
+    let target_b = config.target.b;
+    let amount = config.amount;
+
     let target_norm = [
         target_r as f32 / 255.0,
         target_g as f32 / 255.0,
@@ -1635,7 +1726,7 @@ pub fn photo_filter(
 
 // ─── Channel Mixer ───────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Channel mixer — cross-mix RGB channels via a 3x3 matrix.
 pub struct ChannelMixerParams {
     /// Red-from-Red weight
@@ -1680,16 +1771,18 @@ pub struct ChannelMixerParams {
 pub fn channel_mixer(
     pixels: &[u8],
     info: &ImageInfo,
-    rr: f32,
-    rg: f32,
-    rb: f32,
-    gr: f32,
-    gg: f32,
-    gb: f32,
-    br: f32,
-    bg: f32,
-    bb: f32,
+    config: &ChannelMixerParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let rr = config.rr;
+    let rg = config.rg;
+    let rb = config.rb;
+    let gr = config.gr;
+    let gg = config.gg;
+    let gb = config.gb;
+    let br = config.br;
+    let bg = config.bg;
+    let bb = config.bb;
+
     apply_color_op(
         pixels,
         info,
@@ -1699,7 +1792,7 @@ pub fn channel_mixer(
 
 // ─── Vibrance ────────────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Vibrance — perceptually weighted saturation boost.
 pub struct VibranceParams {
     /// Vibrance amount (-100 to 100). Positive boosts muted colors more.
@@ -1717,7 +1810,13 @@ pub struct VibranceParams {
     category = "color",
     reference = "saturation-weighted chroma boost"
 )]
-pub fn vibrance(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+pub fn vibrance(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &VibranceParams,
+) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+
     apply_color_op(pixels, info, &ColorOp::Vibrance(amount))
 }
 
@@ -1846,10 +1945,13 @@ pub fn gradient_map(pixels: &[u8], info: &ImageInfo, stops: String) -> Result<Ve
 // ─── Sparse Color (Shepard Interpolation) ────────────────────────────────
 
 /// Sparse color parameters (control points as string).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SparseColorParams {
     /// Control points as "x,y:RRGGBB" entries separated by semicolons.
+    #[param(default = "")]
     pub points: String,
     /// Inverse distance power (default 2.0). Higher = sharper falloff.
+    #[param(min = 0.1, max = 10.0, step = 0.1, default = 2.0)]
     pub power: f32,
 }
 
@@ -1918,8 +2020,10 @@ pub fn sparse_color(
     pixels: &[u8],
     info: &ImageInfo,
     points: String,
-    power: f32,
+    config: &SparseColorParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let power = config.power;
+
     validate_format(info.format)?;
     let ctrl = parse_sparse_points(&points)?;
     let power = if power <= 0.0 { 2.0 } else { power };
@@ -1979,7 +2083,7 @@ pub fn sparse_color(
 
 // ─── HSB Modulate ────────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// HSB modulate — combined brightness, saturation, hue adjustment.
 pub struct ModulateParams {
     /// Brightness percentage (100 = unchanged, 0 = black, 200 = 2x bright)
@@ -2006,10 +2110,12 @@ pub struct ModulateParams {
 pub fn modulate(
     pixels: &[u8],
     info: &ImageInfo,
-    brightness: f32,
-    saturation: f32,
-    hue: f32,
+    config: &ModulateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let brightness = config.brightness;
+    let saturation = config.saturation;
+    let hue = config.hue;
+
     apply_color_op(
         pixels,
         info,
@@ -2544,6 +2650,14 @@ pub mod kernels {
 /// Automatically detects separable (rank-1) kernels and uses two 1D passes
 /// for O(2K) instead of O(K^2) per pixel. Uses padded input buffer to
 /// eliminate per-pixel boundary checks for interior pixels.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ConvolveParams {
+    pub kw: u32,
+    pub kh: u32,
+    pub divisor: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "convolve",
     category = "spatial",
@@ -2553,10 +2667,12 @@ pub fn convolve(
     pixels: &[u8],
     info: &ImageInfo,
     kernel: &[f32],
-    kw: u32,
-    kh: u32,
-    divisor: f32,
+    config: &ConvolveParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let kw = config.kw;
+    let kh = config.kh;
+    let divisor = config.divisor;
+
     let kw = kw as usize;
     let kh = kh as usize;
     if kw.is_multiple_of(2) || kh.is_multiple_of(2) || kw * kh != kernel.len() {
@@ -2569,7 +2685,7 @@ pub fn convolve(
     // 16-bit: process in f32 domain, then convert back
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            convolve(p8, i8, kernel, kw as u32, kh as u32, divisor)
+            convolve(p8, i8, kernel, config)
         });
     }
 
@@ -2850,7 +2966,13 @@ fn reflect(v: i32, size: usize) -> usize {
     variant = "median",
     reference = "median rank filter"
 )]
-pub fn median(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
+pub fn median(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &MedianParams,
+) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+
     if radius == 0 {
         return Ok(pixels.to_vec());
     }
@@ -2858,7 +2980,7 @@ pub fn median(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, I
 
     // 16-bit: delegate to 8-bit path (histogram-based median would need 65536 bins)
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| median(p8, i8, radius));
+        return process_via_8bit(pixels, info, |p8, i8| median(p8, i8, config));
     }
 
     let w = info.width as usize;
@@ -3223,14 +3345,16 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
 pub fn canny(
     pixels: &[u8],
     info: &ImageInfo,
-    low_threshold: f32,
-    high_threshold: f32,
+    config: &CannyParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let low_threshold = config.low_threshold;
+    let high_threshold = config.high_threshold;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            canny(p8, i8, low_threshold, high_threshold)
+            canny(p8, i8, config)
         });
     }
 
@@ -3646,29 +3770,19 @@ fn build_aa_ellipse_mask(w: usize, h: usize, cx: f64, cy: f64, rx: f64, ry: f64)
 pub fn vignette(
     pixels: &[u8],
     info: &ImageInfo,
-    sigma: f32,
-    x_inset: u32,
-    y_inset: u32,
-    full_width: u32,
-    full_height: u32,
-    tile_offset_x: u32,
-    tile_offset_y: u32,
+    config: &VignetteParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let sigma = config.sigma;
+    let x_inset = config.x_inset;
+    let y_inset = config.y_inset;
+    let full_width = config.full_width;
+    let full_height = config.full_height;
+    let tile_offset_x = config.tile_offset_x;
+    let tile_offset_y = config.tile_offset_y;
+
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            vignette(
-                p8,
-                i8,
-                sigma,
-                x_inset,
-                y_inset,
-                full_width,
-                full_height,
-                tile_offset_x,
-                tile_offset_y,
-            )
-        });
+        return process_via_8bit(pixels, info, |p8, i8| vignette(p8, i8, config));
     }
 
     let fw = full_width as usize;
@@ -3718,13 +3832,15 @@ pub fn vignette_full(
     vignette(
         pixels,
         info,
-        sigma,
-        x_inset,
-        y_inset,
-        info.width,
-        info.height,
-        0,
-        0,
+        &VignetteParams {
+            sigma,
+            x_inset,
+            y_inset,
+            full_width: info.width,
+            full_height: info.height,
+            tile_offset_x: 0,
+            tile_offset_y: 0,
+        },
     )
 }
 
@@ -3744,27 +3860,18 @@ pub fn vignette_full(
 pub fn vignette_powerlaw(
     pixels: &[u8],
     info: &ImageInfo,
-    strength: f32,
-    falloff: f32,
-    full_width: u32,
-    full_height: u32,
-    offset_x: u32,
-    offset_y: u32,
+    config: &VignettePowerlawParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let strength = config.strength;
+    let falloff = config.falloff;
+    let full_width = config.full_width;
+    let full_height = config.full_height;
+    let offset_x = config.offset_x;
+    let offset_y = config.offset_y;
+
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            vignette_powerlaw(
-                p8,
-                i8,
-                strength,
-                falloff,
-                full_width,
-                full_height,
-                offset_x,
-                offset_y,
-            )
-        });
+        return process_via_8bit(pixels, info, |p8, i8| vignette_powerlaw(p8, i8, config));
     }
 
     let ch = channels(info.format);
@@ -3957,7 +4064,7 @@ pub fn remove_alpha(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageIn
 
 // ─── Mask Apply ──────────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Mask apply parameters.
 pub struct MaskApplyParams {
     /// Invert mask (0 = normal, 1 = inverted)
@@ -4067,7 +4174,7 @@ fn blend_if_smoothstep(x: f32, edge0: f32, edge1: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Blend-If — Photoshop-style conditional compositing by luminosity.
 pub struct BlendIfParams {
     /// This layer: black point (shadows become transparent below this)
@@ -4927,6 +5034,13 @@ fn cv_round(v: f64) -> i32 {
 /// were set). If you have a forward mapping, invert it first.
 ///
 /// Reference: OpenCV 4.x modules/imgproc/src/imgwarp.cpp warpPerspective
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct PerspectiveWarpParams {
+    pub out_width: u32,
+    pub out_height: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "perspective_warp",
     category = "advanced",
@@ -4938,9 +5052,11 @@ pub fn perspective_warp(
     pixels: &[u8],
     info: &ImageInfo,
     matrix: &[f64],
-    out_width: u32,
-    out_height: u32,
+    config: &PerspectiveWarpParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let out_width = config.out_width;
+    let out_height = config.out_height;
+
     if matrix.len() != 9 {
         return Err(ImageError::InvalidParameters(format!(
             "perspective_warp requires 9-element matrix, got {}",
@@ -4951,7 +5067,7 @@ pub fn perspective_warp(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            perspective_warp(p8, i8, matrix, out_width, out_height)
+            perspective_warp(p8, i8, matrix, config)
         });
     }
 
@@ -5053,12 +5169,14 @@ pub fn perspective_warp(
 pub fn perspective_correct(
     pixels: &[u8],
     info: &ImageInfo,
-    strength: f32,
+    config: &PerspectiveCorrectParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let strength = config.strength;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| perspective_correct(p8, i8, strength));
+        return process_via_8bit(pixels, info, |p8, i8| perspective_correct(p8, i8, config));
     }
 
     if strength <= 0.0 {
@@ -5069,7 +5187,7 @@ pub fn perspective_correct(
     let h = info.height as i32;
 
     // Step 1: Edge detection
-    let edge_map = canny(pixels, info, 50.0, 150.0)?;
+    let edge_map = canny(pixels, info, &CannyParams { low_threshold: 50.0, high_threshold: 150.0 })?;
     let edge_info = ImageInfo {
         width: info.width,
         height: info.height,
@@ -5187,7 +5305,7 @@ pub fn perspective_correct(
         None => return Ok(pixels.to_vec()),
     };
 
-    perspective_warp(pixels, info, &h_mat, info.width, info.height)
+    perspective_warp(pixels, info, &h_mat, &PerspectiveWarpParams { out_width: info.width, out_height: info.height })
 }
 
 /// Estimate vanishing point from line segments using weighted median of
@@ -5278,9 +5396,11 @@ fn line_intersection(l1: &LineSegment, l2: &LineSegment) -> Option<(f32, f32)> {
 pub fn clahe(
     pixels: &[u8],
     info: &ImageInfo,
-    clip_limit: f32,
-    tile_grid: u32,
+    config: &ClaheParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let clip_limit = config.clip_limit;
+    let tile_grid = config.tile_grid;
+
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::UnsupportedFormat(
             "CLAHE requires Gray8 input".into(),
@@ -5431,10 +5551,12 @@ fn reflect101(idx: isize, size: isize) -> isize {
 pub fn bilateral(
     pixels: &[u8],
     info: &ImageInfo,
-    diameter: u32,
-    sigma_color: f32,
-    sigma_space: f32,
+    config: &BilateralParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let diameter = config.diameter;
+    let sigma_color = config.sigma_color;
+    let sigma_space = config.sigma_space;
+
     if info.format != PixelFormat::Gray8 && info.format != PixelFormat::Rgb8 {
         return Err(ImageError::UnsupportedFormat(
             "bilateral filter requires Gray8 or Rgb8".into(),
@@ -5571,9 +5693,11 @@ pub fn bilateral(
 pub fn guided_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    radius: u32,
-    epsilon: f32,
+    config: &GuidedFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+    let epsilon = config.epsilon;
+
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::UnsupportedFormat(
             "guided filter requires Gray8 input".into(),
@@ -6156,10 +6280,12 @@ fn nlm_denoise_classic(
 pub fn dehaze(
     pixels: &[u8],
     info: &ImageInfo,
-    patch_radius: u32,
-    omega: f32,
-    t_min: f32,
+    config: &DehazeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let patch_radius = config.patch_radius;
+    let omega = config.omega;
+    let t_min = config.t_min;
+
     validate_format(info.format)?;
     let (w, h) = (info.width as usize, info.height as usize);
     let channels = match info.format {
@@ -6252,7 +6378,7 @@ pub fn dehaze(
         format: PixelFormat::Gray8,
         color_space: info.color_space,
     };
-    let refined_u8 = guided_filter(&t_u8, &gray_info, patch_radius.min(15), 0.001)?;
+    let refined_u8 = guided_filter(&t_u8, &gray_info, &GuidedFilterParams { radius: patch_radius.min(15), epsilon: 0.001 })?;
     let refined: Vec<f32> = refined_u8.iter().map(|&v| v as f32 / 255.0).collect();
 
     // Step 5: Recover scene — J = (I - A) / max(t, t_min) + A
@@ -6326,7 +6452,7 @@ pub fn dehaze(
 
 // ─── Dodge & Burn ─────────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Dodge — lighten exposure in a selected tonal range
 pub struct DodgeParams {
     /// Exposure increase (0-100%)
@@ -6352,13 +6478,15 @@ pub struct DodgeParams {
 pub fn dodge(
     pixels: &[u8],
     info: &ImageInfo,
-    exposure: f32,
-    range: u32,
+    config: &DodgeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let exposure = config.exposure;
+    let range = config.range;
+
     dodge_burn_impl(pixels, info, exposure / 100.0, range, true)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Burn — darken exposure in a selected tonal range
 pub struct BurnParams {
     /// Exposure decrease (0-100%)
@@ -6379,9 +6507,11 @@ pub struct BurnParams {
 pub fn burn(
     pixels: &[u8],
     info: &ImageInfo,
-    exposure: f32,
-    range: u32,
+    config: &BurnParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let exposure = config.exposure;
+    let range = config.range;
+
     dodge_burn_impl(pixels, info, exposure / 100.0, range, false)
 }
 
@@ -6480,9 +6610,11 @@ fn dodge_burn_impl(
 pub fn clarity(
     pixels: &[u8],
     info: &ImageInfo,
-    amount: f32,
-    sigma: f32,
+    config: &ClarityParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+    let sigma = config.sigma;
+
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -6507,7 +6639,7 @@ pub fn clarity(
     }
 
     // Apply large-radius blur
-    let blurred = blur(pixels, info, sigma)?;
+    let blurred = blur(pixels, info, &BlurParams { radius: sigma })?;
 
     // Midtone weight function: bell curve centered at 0.5, zero at 0 and 1
     // w(l) = 4 * l * (1 - l) — parabola peaking at 0.5 with w(0.5) = 1.0
@@ -6836,12 +6968,18 @@ pub fn shadow_highlight(
     variant = "low",
     reference = "Gaussian low-pass separation"
 )]
-pub fn frequency_low(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
+pub fn frequency_low(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &FrequencyLowParams,
+) -> Result<Vec<u8>, ImageError> {
+    let sigma = config.sigma;
+
     validate_format(info.format)?;
     if sigma <= 0.0 {
         return Ok(pixels.to_vec());
     }
-    blur(pixels, info, sigma)
+    blur(pixels, info, &BlurParams { radius: sigma })
 }
 
 /// Frequency separation — high-pass (detail) layer.
@@ -6863,7 +7001,13 @@ pub fn frequency_low(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<
     variant = "high",
     reference = "Gaussian high-pass separation"
 )]
-pub fn frequency_high(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
+pub fn frequency_high(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &FrequencyHighParams,
+) -> Result<Vec<u8>, ImageError> {
+    let sigma = config.sigma;
+
     validate_format(info.format)?;
     if sigma <= 0.0 {
         // No blur means no low-pass content → high-pass is all-128 (neutral)
@@ -6873,7 +7017,7 @@ pub fn frequency_high(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec
     // 16-bit path: compute in f32 for precision
     if is_16bit(info.format) {
         let orig_f32 = u16_pixels_to_f32(pixels);
-        let blurred = blur(pixels, info, sigma)?;
+        let blurred = blur(pixels, info, &BlurParams { radius: sigma })?;
         let blur_f32 = u16_pixels_to_f32(&blurred);
         // high = orig - blur + 0.5 (mid-gray in normalized [0,1])
         let result_f32: Vec<f32> = orig_f32
@@ -6884,7 +7028,7 @@ pub fn frequency_high(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec
         return Ok(f32_to_u16_pixels(&result_f32));
     }
 
-    let blurred = blur(pixels, info, sigma)?;
+    let blurred = blur(pixels, info, &BlurParams { radius: sigma })?;
     let ch = channels(info.format);
     let n = pixels.len();
     let mut result = vec![0u8; n];
@@ -6929,9 +7073,11 @@ pub fn frequency_high(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec
 pub fn pyramid_detail_remap(
     pixels: &[u8],
     info: &ImageInfo,
-    sigma: f32,
-    num_levels: u32,
+    config: &PyramidDetailRemapParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let sigma = config.sigma;
+    let num_levels = config.num_levels;
+
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -7247,8 +7393,10 @@ fn gaussian_blur_box_approx(
 pub fn gaussian_blur_cv(
     pixels: &[u8],
     info: &ImageInfo,
-    sigma: f32,
+    config: &GaussianBlurCvParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let sigma = config.sigma;
+
     if sigma <= 0.0 {
         return Ok(pixels.to_vec());
     }
@@ -7275,7 +7423,7 @@ pub fn gaussian_blur_cv(
         }
     }
 
-    convolve(pixels, info, &kernel_2d, ksize as u32, ksize as u32, 1.0)
+    convolve(pixels, info, &kernel_2d, &ConvolveParams { kw: ksize as u32, kh: ksize as u32, divisor: 1.0 })
 }
 
 /// Generate a 1D Gaussian kernel matching OpenCV's `getGaussianKernel`.
@@ -7527,7 +7675,13 @@ fn yvv_blur_1d(buf: &mut [f32], b: &[f64; 4], _m: &[[f64; 3]; 3]) {
     variant = "ssr",
     reference = "Land 1977 single-scale Retinex"
 )]
-pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8>, ImageError> {
+pub fn retinex_ssr(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &RetinexSsrParams,
+) -> Result<Vec<u8>, ImageError> {
+    let sigma = config.sigma;
+
     validate_format(info.format)?;
     let channels = match info.format {
         PixelFormat::Rgb8 => 3,
@@ -7541,7 +7695,7 @@ pub fn retinex_ssr(pixels: &[u8], info: &ImageInfo, sigma: f32) -> Result<Vec<u8
     let n = (info.width as usize) * (info.height as usize);
 
     // Gaussian blur for surround function (OpenCV-compatible for reference alignment)
-    let blurred = gaussian_blur_cv(pixels, info, sigma)?;
+    let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma: sigma })?;
 
     // Compute log(I/blur(I)) per channel using log(a/b) identity, then normalize
     let mut retinex = vec![0.0f32; n * 3];
@@ -7717,7 +7871,7 @@ pub fn retinex_msr(pixels: &[u8], info: &ImageInfo, sigmas: &[f32]) -> Result<Ve
     let mut retinex = vec![0.0f32; n * 3];
 
     for &sigma in sigmas {
-        let blurred = gaussian_blur_cv(pixels, info, sigma)?;
+        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma: sigma })?;
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
@@ -7788,7 +7942,7 @@ pub fn retinex_msrcr(
     // Compute MSR (OpenCV-compatible blur for reference alignment)
     let mut msr = vec![0.0f32; n * 3];
     for &sigma in sigmas {
-        let blurred = gaussian_blur_cv(pixels, info, sigma)?;
+        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma: sigma })?;
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
@@ -8268,9 +8422,11 @@ fn morph_shape_from_u32(v: u32) -> MorphShape {
 pub fn erode_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &ErodeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     erode(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8285,9 +8441,11 @@ pub fn erode_registered(
 pub fn dilate_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &DilateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     dilate(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8302,9 +8460,11 @@ pub fn dilate_registered(
 pub fn morph_open_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &MorphOpenParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     morph_open(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8319,9 +8479,11 @@ pub fn morph_open_registered(
 pub fn morph_close_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &MorphCloseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     morph_close(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8336,9 +8498,11 @@ pub fn morph_close_registered(
 pub fn morph_gradient_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &MorphGradientParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     morph_gradient(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8353,9 +8517,11 @@ pub fn morph_gradient_registered(
 pub fn morph_tophat_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &MorphTophatParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     morph_tophat(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8370,9 +8536,11 @@ pub fn morph_tophat_registered(
 pub fn morph_blackhat_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    ksize: u32,
-    shape: u32,
+    config: &MorphBlackhatParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let ksize = config.ksize;
+    let shape = config.shape;
+
     morph_blackhat(pixels, info, ksize, morph_shape_from_u32(shape))
 }
 
@@ -8387,10 +8555,12 @@ pub fn morph_blackhat_registered(
 pub fn nlm_denoise_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    h: f32,
-    patch_size: u32,
-    search_size: u32,
+    config: &NlmDenoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let h = config.h;
+    let patch_size = config.patch_size;
+    let search_size = config.search_size;
+
     nlm_denoise(
         pixels,
         info,
@@ -8414,10 +8584,12 @@ pub fn nlm_denoise_registered(
 pub fn retinex_msr_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    sigma_small: f32,
-    sigma_medium: f32,
-    sigma_large: f32,
+    config: &RetinexMsrParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let sigma_small = config.sigma_small;
+    let sigma_medium = config.sigma_medium;
+    let sigma_large = config.sigma_large;
+
     retinex_msr(pixels, info, &[sigma_small, sigma_medium, sigma_large])
 }
 
@@ -8432,12 +8604,14 @@ pub fn retinex_msr_registered(
 pub fn retinex_msrcr_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    sigma_small: f32,
-    sigma_medium: f32,
-    sigma_large: f32,
-    alpha: f32,
-    beta: f32,
+    config: &RetinexMsrcrParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let sigma_small = config.sigma_small;
+    let sigma_medium = config.sigma_medium;
+    let sigma_large = config.sigma_large;
+    let alpha = config.alpha;
+    let beta = config.beta;
+
     retinex_msrcr(
         pixels,
         info,
@@ -8458,11 +8632,13 @@ pub fn retinex_msrcr_registered(
 pub fn adaptive_threshold_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    max_value: u8,
-    method: u32,
-    block_size: u32,
-    c: f32,
+    config: &AdaptiveThresholdParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let max_value = config.max_value;
+    let method = config.method;
+    let block_size = config.block_size;
+    let c = config.c;
+
     let m = match method {
         1 => AdaptiveMethod::Gaussian,
         _ => AdaptiveMethod::Mean,
@@ -8479,12 +8655,14 @@ pub fn adaptive_threshold_registered(
 pub fn flood_fill_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    seed_x: u32,
-    seed_y: u32,
-    new_val: u8,
-    tolerance: u8,
-    connectivity: u32,
+    config: &FloodFillParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let seed_x = config.seed_x;
+    let seed_y = config.seed_y;
+    let new_val = config.new_val;
+    let tolerance = config.tolerance;
+    let connectivity = config.connectivity;
+
     let (result, _count) = flood_fill(
         pixels,
         info,
@@ -8511,8 +8689,10 @@ pub fn flood_fill_registered(
 pub fn gamma_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    gamma_value: f32,
+    config: &GammaParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let gamma_value = config.gamma_value;
+
     super::point_ops::gamma(pixels, info, gamma_value)
 }
 
@@ -8535,12 +8715,14 @@ pub fn invert_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, Ima
 pub fn posterize_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    levels: u8,
+    config: &PosterizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let levels = config.levels;
+
     super::point_ops::posterize(pixels, info, levels)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Levels adjustment — remap input black/white points with gamma
 pub struct LevelsParams {
     /// Input black point (0-100%)
@@ -8564,10 +8746,12 @@ pub struct LevelsParams {
 pub fn levels(
     pixels: &[u8],
     info: &ImageInfo,
-    black_point: f32,
-    white_point: f32,
-    gamma: f32,
+    config: &LevelsParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let black_point = config.black_point;
+    let white_point = config.white_point;
+    let gamma = config.gamma;
+
     // Convert percentage to fraction
     super::point_ops::levels(
         pixels,
@@ -8578,7 +8762,7 @@ pub fn levels(
     )
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Sigmoidal contrast — S-curve contrast adjustment
 pub struct SigmoidalContrastParams {
     /// Contrast strength (0-20, 0 = identity)
@@ -8602,10 +8786,12 @@ pub struct SigmoidalContrastParams {
 pub fn sigmoidal_contrast(
     pixels: &[u8],
     info: &ImageInfo,
-    strength: f32,
-    midpoint: f32,
-    sharpen: bool,
+    config: &SigmoidalContrastParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let strength = config.strength;
+    let midpoint = config.midpoint;
+    let sharpen = config.sharpen;
+
     super::point_ops::sigmoidal_contrast(pixels, info, strength, midpoint / 100.0, sharpen)
 }
 
@@ -8649,7 +8835,7 @@ pub fn auto_level_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>,
 )]
 pub fn otsu_threshold_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let t = otsu_threshold(pixels, info)?;
-    threshold_binary(pixels, info, t, 255)
+    threshold_binary(pixels, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
 }
 
 /// Triangle auto-threshold — compute optimal threshold then binarize.
@@ -8665,7 +8851,7 @@ pub fn triangle_threshold_registered(
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
     let t = triangle_threshold(pixels, info)?;
-    threshold_binary(pixels, info, t, 255)
+    threshold_binary(pixels, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
 }
 
 /// Convert to grayscale using BT.709 weights.
@@ -8690,10 +8876,12 @@ pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, 
 pub fn flatten_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    bg_r: u8,
-    bg_g: u8,
-    bg_b: u8,
+    config: &FlattenParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let bg_r = config.bg_r;
+    let bg_g = config.bg_g;
+    let bg_b = config.bg_b;
+
     let (rgb, _info) = flatten(pixels, info, [bg_r, bg_g, bg_b])?;
     Ok(rgb)
 }
@@ -8708,13 +8896,21 @@ pub fn flatten_registered(
 pub fn quantize_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    max_colors: u32,
+    config: &QuantizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let max_colors = config.max_colors;
+
     let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
     super::quantize::quantize(pixels, info, &palette)
 }
 
 /// Floyd-Steinberg error-diffusion dithering with median-cut palette.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DitherFloydSteinbergParams {
+    pub max_colors: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "dither_floyd_steinberg",
     category = "color",
@@ -8725,8 +8921,10 @@ pub fn quantize_registered(
 pub fn dither_floyd_steinberg_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    max_colors: u32,
+    config: &DitherFloydSteinbergParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let max_colors = config.max_colors;
+
     let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
     super::quantize::dither_floyd_steinberg(pixels, info, &palette)
 }
@@ -8742,9 +8940,11 @@ pub fn dither_floyd_steinberg_registered(
 pub fn dither_ordered_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    max_colors: u32,
-    map_size: u32,
+    config: &DitherOrderedParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let max_colors = config.max_colors;
+    let map_size = config.map_size;
+
     let palette = super::quantize::median_cut(pixels, info, max_colors as usize)?;
     super::quantize::dither_ordered(pixels, info, &palette, map_size as usize)
 }
@@ -8775,9 +8975,11 @@ pub fn white_balance_gray_world_registered(
 pub fn white_balance_temperature_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    temperature: f32,
-    tint: f32,
+    config: &WhiteBalanceTemperatureParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let temperature = config.temperature;
+    let tint = config.tint;
+
     super::color_spaces::white_balance_temperature(pixels, info, temperature as f64, tint as f64)
 }
 
@@ -9529,16 +9731,18 @@ pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
 pub fn draw_line_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-    color_r: u32,
-    color_g: u32,
-    color_b: u32,
-    color_a: u32,
-    width: f32,
+    config: &DrawLineParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let x1 = config.x1;
+    let y1 = config.y1;
+    let x2 = config.x2;
+    let y2 = config.y2;
+    let color_r = config.color.r as u32;
+    let color_g = config.color.g as u32;
+    let color_b = config.color.b as u32;
+    let color_a = config.color.a as u32;
+    let width = config.width;
+
     let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
     let (result, _) = super::draw::draw_line(pixels, info, x1, y1, x2, y2, color, width)?;
     Ok(result)
@@ -9556,17 +9760,19 @@ pub fn draw_line_filter(
 pub fn draw_rect_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    x: f32,
-    y: f32,
-    rect_width: f32,
-    rect_height: f32,
-    color_r: u32,
-    color_g: u32,
-    color_b: u32,
-    color_a: u32,
-    stroke_width: f32,
-    filled: bool,
+    config: &DrawRectParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let x = config.x;
+    let y = config.y;
+    let rect_width = config.rect_width;
+    let rect_height = config.rect_height;
+    let color_r = config.color.r as u32;
+    let color_g = config.color.g as u32;
+    let color_b = config.color.b as u32;
+    let color_a = config.color.a as u32;
+    let stroke_width = config.stroke_width;
+    let filled = config.filled;
+
     let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
     let (result, _) = super::draw::draw_rect(
         pixels,
@@ -9594,16 +9800,18 @@ pub fn draw_rect_filter(
 pub fn draw_circle_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    cx: f32,
-    cy: f32,
-    radius: f32,
-    color_r: u32,
-    color_g: u32,
-    color_b: u32,
-    color_a: u32,
-    stroke_width: f32,
-    filled: bool,
+    config: &DrawCircleParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let cx = config.cx;
+    let cy = config.cy;
+    let radius = config.radius;
+    let color_r = config.color.r as u32;
+    let color_g = config.color.g as u32;
+    let color_b = config.color.b as u32;
+    let color_a = config.color.a as u32;
+    let stroke_width = config.stroke_width;
+    let filled = config.filled;
+
     let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
     let (result, _) =
         super::draw::draw_circle(pixels, info, cx, cy, radius, color, stroke_width, filled)?;
@@ -9621,15 +9829,17 @@ pub fn draw_circle_filter(
 pub fn draw_text_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    x: u32,
-    y: u32,
     text: &str,
-    scale: u32,
-    color_r: u32,
-    color_g: u32,
-    color_b: u32,
-    color_a: u32,
+    config: &DrawTextParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let x = config.x;
+    let y = config.y;
+    let scale = config.scale;
+    let color_r = config.color.r as u32;
+    let color_g = config.color.g as u32;
+    let color_b = config.color.b as u32;
+    let color_a = config.color.a as u32;
+
     let color = [color_r as u8, color_g as u8, color_b as u8, color_a as u8];
     let (result, _) = super::draw::draw_text(pixels, info, x, y, text, scale, color)?;
     Ok(result)
@@ -11413,9 +11623,11 @@ pub fn triangle_threshold(pixels: &[u8], info: &ImageInfo) -> Result<u8, ImageEr
 pub fn threshold_binary(
     pixels: &[u8],
     info: &ImageInfo,
-    thresh: u8,
-    max_value: u8,
+    config: &ThresholdBinaryParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let thresh = config.thresh;
+    let max_value = config.max_value;
+
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::UnsupportedFormat(
             "threshold requires Gray8 input".into(),
@@ -12602,7 +12814,7 @@ fn solve_least_squares(a: &[f64], b: &[f64], m: usize, n: usize) -> Vec<f64> {
 
 // ─── Pro Filters: Color Grading ──────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// ASC CDL color grading (slope/offset/power per RGB channel)
 pub struct AscCdlParams {
     /// Red slope
@@ -12679,16 +12891,18 @@ pub struct AscCdlParams {
 pub fn asc_cdl_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    slope_r: f32,
-    slope_g: f32,
-    slope_b: f32,
-    offset_r: f32,
-    offset_g: f32,
-    offset_b: f32,
-    power_r: f32,
-    power_g: f32,
-    power_b: f32,
+    config: &AscCdlParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let slope_r = config.slope_r;
+    let slope_g = config.slope_g;
+    let slope_b = config.slope_b;
+    let offset_r = config.offset_r;
+    let offset_g = config.offset_g;
+    let offset_b = config.offset_b;
+    let power_r = config.power_r;
+    let power_g = config.power_g;
+    let power_b = config.power_b;
+
     let cdl = super::color_grading::AscCdl {
         slope: [slope_r, slope_g, slope_b],
         offset: [offset_r, offset_g, offset_b],
@@ -12698,7 +12912,7 @@ pub fn asc_cdl_registered(
     super::color_grading::asc_cdl(pixels, info, &cdl)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Lift/Gamma/Gain 3-way color corrector
 pub struct LiftGammaGainParams {
     /// Red lift
@@ -12775,16 +12989,18 @@ pub struct LiftGammaGainParams {
 pub fn lift_gamma_gain_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    lift_r: f32,
-    lift_g: f32,
-    lift_b: f32,
-    gamma_r: f32,
-    gamma_g: f32,
-    gamma_b: f32,
-    gain_r: f32,
-    gain_g: f32,
-    gain_b: f32,
+    config: &LiftGammaGainParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let lift_r = config.lift_r;
+    let lift_g = config.lift_g;
+    let lift_b = config.lift_b;
+    let gamma_r = config.gamma_r;
+    let gamma_g = config.gamma_g;
+    let gamma_b = config.gamma_b;
+    let gain_r = config.gain_r;
+    let gain_g = config.gain_g;
+    let gain_b = config.gain_b;
+
     let lgg = super::color_grading::LiftGammaGain {
         lift: [lift_r, lift_g, lift_b],
         gamma: [gamma_r, gamma_g, gamma_b],
@@ -12793,7 +13009,7 @@ pub fn lift_gamma_gain_registered(
     super::color_grading::lift_gamma_gain(pixels, info, &lgg)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Split toning — tint shadows and highlights with different hues
 pub struct SplitToningParams {
     /// Highlight hue (degrees)
@@ -12845,10 +13061,12 @@ fn hue_to_rgb_tint(hue_deg: f32) -> [f32; 3] {
 pub fn split_toning_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    highlight_hue: f32,
-    shadow_hue: f32,
-    balance: f32,
+    config: &SplitToningParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let highlight_hue = config.highlight_hue;
+    let shadow_hue = config.shadow_hue;
+    let balance = config.balance;
+
     let st = super::color_grading::SplitToning {
         highlight_color: hue_to_rgb_tint(highlight_hue),
         shadow_color: hue_to_rgb_tint(shadow_hue),
@@ -12918,7 +13136,7 @@ fn parse_curve_points(json: &str) -> Result<Vec<(f32, f32)>, ImageError> {
     Ok(points)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Tone curve applied to all RGB channels
 pub struct CurvesMasterParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
@@ -12953,7 +13171,7 @@ pub fn curves_master(
     super::color_grading::curves(pixels, info, &tc)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Tone curve applied to red channel only
 pub struct CurvesRedParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
@@ -12985,7 +13203,7 @@ pub fn curves_red(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Vec
     super::color_grading::curves(pixels, info, &tc)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Tone curve applied to green channel only
 pub struct CurvesGreenParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
@@ -13021,7 +13239,7 @@ pub fn curves_green(
     super::color_grading::curves(pixels, info, &tc)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Tone curve applied to blue channel only
 pub struct CurvesBlueParams {
     /// Control points as JSON array [[x,y],...] in [0,1]
@@ -13055,7 +13273,7 @@ pub fn curves_blue(pixels: &[u8], info: &ImageInfo, points: String) -> Result<Ve
 
 // ─── Pro Filters: Film Grain ─────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Film grain simulation
 pub struct FilmGrainParams {
     /// Grain amount (0 = none, 1 = heavy)
@@ -13077,10 +13295,12 @@ pub struct FilmGrainParams {
 pub fn film_grain_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    amount: f32,
-    size: f32,
-    seed: u32,
+    config: &FilmGrainParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+    let size = config.size;
+    let seed = config.seed;
+
     let params = super::color_grading::FilmGrainParams {
         amount,
         size,
@@ -13103,7 +13323,7 @@ pub fn tonemap_reinhard_registered(pixels: &[u8], info: &ImageInfo) -> Result<Ve
     super::color_grading::tonemap_reinhard(pixels, info)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Drago logarithmic HDR tone mapping
 pub struct TonemapDragoParams {
     /// Bias parameter (0.5 = low contrast, 1.0 = high contrast)
@@ -13121,13 +13341,15 @@ pub struct TonemapDragoParams {
 pub fn tonemap_drago_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    bias: f32,
+    config: &TonemapDragoParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let bias = config.bias;
+
     let params = super::color_grading::DragoParams { l_max: 1.0, bias };
     super::color_grading::tonemap_drago(pixels, info, &params)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Filmic/ACES tone mapping (Narkowicz 2015)
 pub struct TonemapFilmicParams {
     /// Shoulder strength (a coefficient)
@@ -13157,12 +13379,14 @@ pub struct TonemapFilmicParams {
 pub fn tonemap_filmic_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    shoulder_strength: f32,
-    linear_strength: f32,
-    linear_angle: f32,
-    toe_strength: f32,
-    toe_numerator: f32,
+    config: &TonemapFilmicParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let shoulder_strength = config.shoulder_strength;
+    let linear_strength = config.linear_strength;
+    let linear_angle = config.linear_angle;
+    let toe_strength = config.toe_strength;
+    let toe_numerator = config.toe_numerator;
+
     let params = super::color_grading::FilmicParams {
         a: shoulder_strength,
         b: linear_strength,
@@ -13175,7 +13399,7 @@ pub fn tonemap_filmic_registered(
 
 // ─── Pro Filters: Content-Aware ──────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Content-aware smart crop
 pub struct SmartCropParams {
     /// Target crop width in pixels
@@ -13194,9 +13418,11 @@ pub struct SmartCropParams {
 pub fn smart_crop_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    target_width: u32,
-    target_height: u32,
+    config: &SmartCropParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let target_width = config.target_width;
+    let target_height = config.target_height;
+
     let result = super::smart_crop::smart_crop(
         pixels,
         info,
@@ -13207,7 +13433,7 @@ pub fn smart_crop_registered(
     Ok(result.pixels)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Content-aware width resize via seam carving (output width changes)
 pub struct SeamCarveWidthParams {
     /// Target width in pixels (must be less than current width)
@@ -13225,13 +13451,15 @@ pub struct SeamCarveWidthParams {
 pub fn seam_carve_width_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    target_width: u32,
+    config: &SeamCarveWidthParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let target_width = config.target_width;
+
     let (data, _new_info) = super::content_aware::seam_carve_width(pixels, info, target_width)?;
     Ok(data)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Content-aware height resize via seam carving (output height changes)
 pub struct SeamCarveHeightParams {
     /// Target height in pixels (must be less than current height)
@@ -13249,13 +13477,15 @@ pub struct SeamCarveHeightParams {
 pub fn seam_carve_height_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    target_height: u32,
+    config: &SeamCarveHeightParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let target_height = config.target_height;
+
     let (data, _new_info) = super::content_aware::seam_carve_height(pixels, info, target_height)?;
     Ok(data)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Selective color — adjust pixels within a specific hue range
 pub struct SelectiveColorParams {
     /// Target center hue in degrees (0-360)
@@ -13289,12 +13519,14 @@ pub struct SelectiveColorParams {
 pub fn selective_color_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    target_hue: f32,
-    hue_range: f32,
-    hue_shift: f32,
-    saturation: f32,
-    lightness: f32,
+    config: &SelectiveColorParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let target_hue = config.target_hue;
+    let hue_range = config.hue_range;
+    let hue_shift = config.hue_shift;
+    let saturation = config.saturation;
+    let lightness = config.lightness;
+
     let params = super::content_aware::SelectiveColorParams {
         hue_range: super::content_aware::HueRange {
             center: target_hue,
@@ -13309,7 +13541,7 @@ pub fn selective_color_registered(
 
 // ─── Artistic Filters ────────────────────────────────────────────────────────
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Solarize — invert pixels above threshold for a partial-negative effect
 pub struct SolarizeParams {
     /// Threshold (0-255): pixels above this are inverted
@@ -13322,7 +13554,13 @@ pub struct SolarizeParams {
     category = "effect",
     reference = "Man Ray solarization effect"
 )]
-pub fn solarize(pixels: &[u8], info: &ImageInfo, threshold: u8) -> Result<Vec<u8>, ImageError> {
+pub fn solarize(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SolarizeParams,
+) -> Result<Vec<u8>, ImageError> {
+    let threshold = config.threshold;
+
     super::point_ops::solarize(pixels, info, threshold)
 }
 
@@ -13339,10 +13577,10 @@ pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
         -1.0,  1.0,  1.0,
          0.0,  1.0,  2.0,
     ];
-    convolve(pixels, info, &kernel, 3, 3, 1.0)
+    convolve(pixels, info, &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 })
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Oil paint effect — neighborhood mode filter
 pub struct OilPaintParams {
     /// Radius of the neighborhood (1-10)
@@ -13357,10 +13595,16 @@ pub struct OilPaintParams {
     category = "effect",
     reference = "Kuwahara-variant oil painting simulation"
 )]
-pub fn oil_paint(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
+pub fn oil_paint(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &OilPaintParams,
+) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| oil_paint(p8, i8, radius));
+        return process_via_8bit(pixels, info, |p8, i8| oil_paint(p8, i8, config));
     }
 
     let w = info.width as usize;
@@ -13441,7 +13685,7 @@ pub fn oil_paint(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>
     Ok(out)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Charcoal sketch effect — edge detection + blur + invert
 pub struct CharcoalParams {
     /// Blur radius for smoothing the edge image
@@ -13465,12 +13709,14 @@ pub struct CharcoalParams {
 pub fn charcoal(
     pixels: &[u8],
     info: &ImageInfo,
-    radius: f32,
-    sigma: f32,
+    config: &CharcoalParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+    let sigma = config.sigma;
+
     // 1. Optional pre-blur to control edge sensitivity
     let smoothed = if sigma > 0.0 {
-        blur(pixels, info, sigma)?
+        blur(pixels, info, &BlurParams { radius: sigma })?
     } else {
         pixels.to_vec()
     };
@@ -13486,7 +13732,7 @@ pub fn charcoal(
 
     // 3. Post-blur to soften the edges (on the grayscale edge image)
     let blurred = if radius > 0.0 {
-        blur(&edges, &gray_info, radius)?
+        blur(&edges, &gray_info, &BlurParams { radius: radius })?
     } else {
         edges
     };
@@ -15007,16 +15253,28 @@ mod zoom_blur_tests {
 
 /// Pixelate (mosaic): divide image into blocks, fill each with block average.
 /// Equivalent to ImageMagick `-scale {1/n}% -scale {n*100}%`.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct PixelateParams {
+    pub block_size: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "pixelate",
     category = "effect",
     reference = "block mosaic pixelation"
 )]
-pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<u8>, ImageError> {
+pub fn pixelate(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &PixelateParams,
+) -> Result<Vec<u8>, ImageError> {
+    let block_size = config.block_size;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| pixelate(px, i8, block_size));
+        return process_via_8bit(pixels, info, |px, i8| pixelate(px, i8, config));
     }
 
     let bs = block_size.max(1) as usize;
@@ -15069,6 +15327,13 @@ pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<
 /// Halftone: simulate CMYK dot-screen print effect.
 /// Converts to CMYK, applies rotated threshold grids per channel at standard
 /// press angles (C=15°, M=75°, Y=0°, K=45°), then converts back to RGB.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct HalftoneParams {
+    pub dot_size: f32,
+    pub angle_offset: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "halftone",
     category = "effect",
@@ -15077,14 +15342,16 @@ pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<
 pub fn halftone(
     pixels: &[u8],
     info: &ImageInfo,
-    dot_size: f32,
-    angle_offset: f32,
+    config: &HalftoneParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let dot_size = config.dot_size;
+    let angle_offset = config.angle_offset;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |px, i8| {
-            halftone(px, i8, dot_size, angle_offset)
+            halftone(px, i8, config)
         });
     }
 
@@ -15180,7 +15447,7 @@ pub fn halftone(
 /// - Default radius = max(width/2, height/2)
 /// - Factor = 1 - sqrt(distance²) / radius, then angle = degrees * factor²
 /// - Aspect ratio scaling for non-square images
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SwirlParams {
     /// Rotation angle in degrees
     #[param(min = -720.0, max = 720.0, step = 5.0, default = 90.0, hint = "rc.signed_slider")]
@@ -15204,13 +15471,15 @@ pub struct SwirlParams {
 pub fn swirl(
     pixels: &[u8],
     info: &ImageInfo,
-    angle: f32,
-    radius: f32,
+    config: &SwirlParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let angle = config.angle;
+    let radius = config.radius;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| swirl(px, i8, angle, radius));
+        return process_via_8bit(pixels, info, |px, i8| swirl(px, i8, config));
     }
 
     let w = info.width as usize;
@@ -15261,7 +15530,7 @@ pub fn swirl(
 /// Spherize: apply spherical projection for bulge/pinch effect.
 /// `amount > 0` = bulge (fisheye), `amount < 0` = pinch.
 /// `amount = 0` is identity.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SpherizeParams {
     /// Bulge/pinch amount (-1 to 1, positive = bulge)
     #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.5, hint = "rc.signed_slider")]
@@ -15273,11 +15542,17 @@ pub struct SpherizeParams {
     category = "distortion",
     reference = "spherical bulge distortion"
 )]
-pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>, ImageError> {
+pub fn spherize(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SpherizeParams,
+) -> Result<Vec<u8>, ImageError> {
+    let amount = config.amount;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| spherize(px, i8, amount));
+        return process_via_8bit(pixels, info, |px, i8| spherize(px, i8, config));
     }
 
     let w = info.width as usize;
@@ -15327,7 +15602,7 @@ pub fn spherize(pixels: &[u8], info: &ImageInfo, amount: f32) -> Result<Vec<u8>,
 /// `k1 > 0` = barrel, `k1 < 0` = pincushion.
 /// This is the inverse of the `undistort` correction filter.
 /// Matches ImageMagick `-distort Barrel` normalization: `rscale = 2/min(w,h)`.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct BarrelParams {
     /// Radial distortion coefficient (positive = barrel, negative = pincushion)
     #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.3, hint = "rc.signed_slider")]
@@ -15342,11 +15617,18 @@ pub struct BarrelParams {
     category = "distortion",
     reference = "Brown-Conrady radial distortion model"
 )]
-pub fn barrel(pixels: &[u8], info: &ImageInfo, k1: f32, k2: f32) -> Result<Vec<u8>, ImageError> {
+pub fn barrel(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &BarrelParams,
+) -> Result<Vec<u8>, ImageError> {
+    let k1 = config.k1;
+    let k2 = config.k2;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| barrel(px, i8, k1, k2));
+        return process_via_8bit(pixels, info, |px, i8| barrel(px, i8, config));
     }
 
     let w = info.width as usize;
@@ -15544,7 +15826,7 @@ pub fn depolar(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     Ok(out)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct WaveParams {
     /// Displacement amplitude in pixels
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 10.0)]
@@ -15571,15 +15853,17 @@ pub struct WaveParams {
 pub fn wave(
     pixels: &[u8],
     info: &ImageInfo,
-    amplitude: f32,
-    wavelength: f32,
-    vertical: f32,
+    config: &WaveParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let amplitude = config.amplitude;
+    let wavelength = config.wavelength;
+    let vertical = config.vertical;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |px, i8| {
-            wave(px, i8, amplitude, wavelength, vertical)
+            wave(px, i8, config)
         });
     }
 
@@ -15618,7 +15902,7 @@ pub fn wave(
     Ok(out)
 }
 
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct RippleParams {
     /// Displacement amplitude in pixels
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 8.0)]
@@ -15648,16 +15932,18 @@ pub struct RippleParams {
 pub fn ripple(
     pixels: &[u8],
     info: &ImageInfo,
-    amplitude: f32,
-    wavelength: f32,
-    center_x: f32,
-    center_y: f32,
+    config: &RippleParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let amplitude = config.amplitude;
+    let wavelength = config.wavelength;
+    let center_x = config.center_x;
+    let center_y = config.center_y;
+
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |px, i8| {
-            ripple(px, i8, amplitude, wavelength, center_x, center_y)
+            ripple(px, i8, config)
         });
     }
 
@@ -16518,19 +16804,31 @@ fn gaussian_blur_f32(
 /// 2. For each pixel, evaluate 4 non-overlapping quadrants of size (radius+1)²
 /// 3. Compute luma-only variance per quadrant (BT.709)
 /// 4. Output = center pixel of the lowest-variance quadrant (from blurred image)
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct KuwaharaParams {
+    pub radius: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "kuwahara",
     category = "spatial",
     reference = "Kuwahara 1976 edge-preserving smoothing"
 )]
-pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>, ImageError> {
+pub fn kuwahara(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &KuwaharaParams,
+) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+
     if radius == 0 {
         return Ok(pixels.to_vec());
     }
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| kuwahara(px, i8, radius));
+        return process_via_8bit(pixels, info, |px, i8| kuwahara(px, i8, config));
     }
 
     let w = info.width as usize;
@@ -16655,6 +16953,13 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
 ///
 /// Uses histogram sliding-window (Huang algorithm) for O(1) amortized per pixel.
 /// Equivalent to ImageMagick `-statistic Minimum/Maximum/Median`.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct RankFilterParams {
+    pub radius: u32,
+    pub rank: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "rank_filter",
     category = "spatial",
@@ -16663,16 +16968,18 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
 pub fn rank_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    radius: u32,
-    rank: f32,
+    config: &RankFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+    let rank = config.rank;
+
     if radius == 0 {
         return Ok(pixels.to_vec());
     }
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| rank_filter(px, i8, radius, rank));
+        return process_via_8bit(pixels, info, |px, i8| rank_filter(px, i8, config));
     }
 
     let w = info.width as usize;
@@ -16931,6 +17238,12 @@ pub fn apply_cube_lut(
 ///
 /// The `hald_pixels` parameter is the raw RGB8 pixel data of the HALD image,
 /// and `hald_dim` is its width/height (must be square, dimension = level²).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ApplyHaldLutParams {
+    pub hald_dim: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "apply_hald_lut",
     category = "grading",
@@ -16941,8 +17254,9 @@ pub fn apply_cube_lut(
 pub fn apply_hald_lut(
     _pixels: &[u8],
     _info: &ImageInfo,
-    _hald_dim: u32,
+    _config: &ApplyHaldLutParams,
 ) -> Result<Vec<u8>, ImageError> {
+
     // For the registered filter, hald_dim is a placeholder — the actual HALD
     // pixel data must be provided programmatically via parse_hald_lut + apply.
     // This filter exists for manifest/registry purposes; the pipeline dispatches
@@ -16957,6 +17271,12 @@ pub fn apply_hald_lut(
 /// Connected components: label connected regions in a binary/grayscale image.
 /// Returns a Gray8 image where each pixel's value is its component ID (mod 256).
 /// Requires Gray8 input. `connectivity`: 4 or 8 (default 8).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ConnectedComponentsParams {
+    pub connectivity: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "connected_components",
     category = "analysis",
@@ -16967,8 +17287,10 @@ pub fn apply_hald_lut(
 pub fn connected_components_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    connectivity: u32,
+    config: &ConnectedComponentsParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let connectivity = config.connectivity;
+
     let conn = if connectivity == 4 { 4 } else { 8 };
     let (labels, _count) = connected_components(pixels, info, conn)?;
     // Convert u32 labels to u8 (mod 256) for visualization
@@ -16982,6 +17304,14 @@ pub fn connected_components_registered(
 /// - `threshold`: minimum votes (intersections) to detect a line
 /// - `min_length`: minimum line segment length in pixels
 /// - `max_gap`: maximum gap between points on the same line
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct HoughLinesParams {
+    pub threshold: u32,
+    pub min_length: u32,
+    pub max_gap: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "hough_lines",
     category = "analysis",
@@ -16992,10 +17322,12 @@ pub fn connected_components_registered(
 pub fn hough_lines_registered(
     pixels: &[u8],
     info: &ImageInfo,
-    threshold: u32,
-    min_length: u32,
-    max_gap: u32,
+    config: &HoughLinesParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let threshold = config.threshold;
+    let min_length = config.min_length;
+    let max_gap = config.max_gap;
+
     let lines = hough_lines_p(
         pixels,
         info,
@@ -17286,7 +17618,7 @@ mod dodge_burn_tests {
 // ─── Tilt-Shift & Lens Blur ───────────────────────────────────────────────
 
 /// Tilt-shift blur config.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct TiltShiftParams {
     /// Focus band center position (0.0=top, 0.5=middle, 1.0=bottom)
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
@@ -17328,11 +17660,13 @@ pub struct TiltShiftParams {
 pub fn tilt_shift(
     pixels: &[u8],
     info: &ImageInfo,
-    focus_position: f32,
-    band_size: f32,
-    blur_radius: f32,
-    angle: f32,
+    config: &TiltShiftParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let focus_position = config.focus_position;
+    let band_size = config.band_size;
+    let blur_radius = config.blur_radius;
+    let angle = config.angle;
+
     validate_format(info.format)?;
 
     if blur_radius <= 0.0 || band_size >= 1.0 {
@@ -17344,7 +17678,7 @@ pub fn tilt_shift(
     let bpp = channels(info.format);
 
     // Generate the fully blurred version
-    let blurred = blur(pixels, info, blur_radius)?;
+    let blurred = blur(pixels, info, &BlurParams { radius: blur_radius })?;
 
     // Compute per-pixel blur mask based on distance from focus band
     let angle_rad = angle.to_radians();
@@ -17388,7 +17722,7 @@ pub fn tilt_shift(
 }
 
 /// Lens blur config.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct LensBlurParams {
     /// Blur radius in pixels
     #[param(min = 0, max = 50, step = 1, default = 5, hint = "rc.log_slider")]
@@ -17456,10 +17790,12 @@ fn make_polygon_kernel(radius: u32, sides: u32, rotation_deg: f32) -> (Vec<f32>,
 pub fn lens_blur(
     pixels: &[u8],
     info: &ImageInfo,
-    radius: u32,
-    blade_count: u32,
-    rotation: f32,
+    config: &LensBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let radius = config.radius;
+    let blade_count = config.blade_count;
+    let rotation = config.rotation;
+
     if radius == 0 {
         return Ok(pixels.to_vec());
     }
@@ -17475,7 +17811,7 @@ pub fn lens_blur(
         return Ok(pixels.to_vec());
     }
 
-    convolve(pixels, info, &kernel, side as u32, side as u32, divisor)
+    convolve(pixels, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
 }
 
 #[cfg(test)]
@@ -17629,7 +17965,7 @@ mod tilt_shift_lens_blur_tests {
 // ─── Missing ConfigParams for manifest completeness ──────────────────────
 
 /// Parameters for hue_rotate.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct HueRotateParams {
     /// Hue rotation in degrees (0-360)
     #[param(
@@ -17643,7 +17979,7 @@ pub struct HueRotateParams {
 }
 
 /// Parameters for saturate.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SaturateParams {
     /// Saturation factor (0=grayscale, 1=unchanged, 2=double)
     #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
@@ -17651,7 +17987,7 @@ pub struct SaturateParams {
 }
 
 /// Parameters for sepia.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SepiaParams {
     /// Sepia intensity (0=none, 1=full)
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
@@ -17659,7 +17995,7 @@ pub struct SepiaParams {
 }
 
 /// Parameters for perspective_correct.
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct PerspectiveCorrectParams {
     /// Correction strength (0=none, 1=full)
     #[param(min = 0.0, max = 2.0, step = 0.1, default = 1.0)]

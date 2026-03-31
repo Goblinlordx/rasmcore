@@ -16,7 +16,7 @@
 //! ```
 
 /// RGBA color with 8-bit channels (0-255).
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 #[config_hint("rc.color_rgba")]
 pub struct ColorRgba {
     /// Red channel
@@ -34,7 +34,7 @@ pub struct ColorRgba {
 }
 
 /// RGB color with 8-bit channels (0-255).
-#[derive(rasmcore_macros::ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams, Clone)]
 #[config_hint("rc.color_rgb")]
 pub struct ColorRgb {
     /// Red channel

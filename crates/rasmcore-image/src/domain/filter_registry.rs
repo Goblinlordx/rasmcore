@@ -489,7 +489,7 @@ builtin_filter!(BlurFilter, "blur", FilterCategory::Blur,
     params: [ParamDescriptor::float("radius", 0.0, 100.0, 1.0).with_description("Gaussian blur radius")],
     apply: |input| {
         let radius = input.params.get_float("radius").unwrap_or(1.0);
-        filters::blur(input.pixels, input.info, radius)
+        filters::blur(input.pixels, input.info, &filters::BlurParams { radius })
     }
 );
 
@@ -497,7 +497,7 @@ builtin_filter!(SharpenFilter, "sharpen", FilterCategory::Sharpen,
     params: [ParamDescriptor::float("amount", 0.0, 10.0, 1.0).with_description("Unsharp mask amount")],
     apply: |input| {
         let amount = input.params.get_float("amount").unwrap_or(1.0);
-        filters::sharpen(input.pixels, input.info, amount)
+        filters::sharpen(input.pixels, input.info, &filters::SharpenParams { amount })
     }
 );
 
@@ -505,7 +505,7 @@ builtin_filter!(MedianFilter, "median", FilterCategory::Denoise,
     params: [ParamDescriptor::uint("radius", 1, 50, 3).with_description("Median filter radius")],
     apply: |input| {
         let radius = input.params.get_uint("radius").unwrap_or(3);
-        filters::median(input.pixels, input.info, radius)
+        filters::median(input.pixels, input.info, &filters::MedianParams { radius })
     }
 );
 
@@ -523,7 +523,7 @@ builtin_filter!(CannyFilter, "canny", FilterCategory::EdgeDetection,
     apply: |input| {
         let low = input.params.get_float("low_threshold").unwrap_or(50.0);
         let high = input.params.get_float("high_threshold").unwrap_or(150.0);
-        filters::canny(input.pixels, input.info, low, high)
+        filters::canny(input.pixels, input.info, &filters::CannyParams { low_threshold: low, high_threshold: high })
     }
 );
 
@@ -566,7 +566,7 @@ impl ImageFilter for BrightnessFilter {
     }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
         let amount = input.params.get_float("amount").unwrap_or(0.0);
-        filters::brightness(input.pixels, input.info, amount)
+        filters::brightness(input.pixels, input.info, &filters::BrightnessParams { amount })
     }
     fn is_lut_collapsible(&self) -> bool {
         true
@@ -590,7 +590,7 @@ impl ImageFilter for ContrastFilter {
     }
     fn apply(&self, input: &FilterInput) -> Result<Vec<u8>, ImageError> {
         let amount = input.params.get_float("amount").unwrap_or(0.0);
-        filters::contrast(input.pixels, input.info, amount)
+        filters::contrast(input.pixels, input.info, &filters::ContrastParams { amount })
     }
     fn is_lut_collapsible(&self) -> bool {
         true
@@ -676,7 +676,7 @@ builtin_filter!(HueRotateFilter, "hue_rotate", FilterCategory::Color,
     params: [ParamDescriptor::float("degrees", -360.0, 360.0, 0.0)],
     apply: |input| {
         let degrees = input.params.get_float("degrees").unwrap_or(0.0);
-        filters::hue_rotate(input.pixels, input.info, degrees)
+        filters::hue_rotate(input.pixels, input.info, &filters::HueRotateParams { degrees })
     }
 );
 
@@ -684,7 +684,7 @@ builtin_filter!(SaturateFilter, "saturate", FilterCategory::Color,
     params: [ParamDescriptor::float("factor", 0.0, 3.0, 1.0)],
     apply: |input| {
         let factor = input.params.get_float("factor").unwrap_or(1.0);
-        filters::saturate(input.pixels, input.info, factor)
+        filters::saturate(input.pixels, input.info, &filters::SaturateParams { factor })
     }
 );
 
@@ -692,7 +692,7 @@ builtin_filter!(SepiaFilter, "sepia", FilterCategory::Color,
     params: [ParamDescriptor::float("intensity", 0.0, 1.0, 1.0)],
     apply: |input| {
         let intensity = input.params.get_float("intensity").unwrap_or(1.0);
-        filters::sepia(input.pixels, input.info, intensity)
+        filters::sepia(input.pixels, input.info, &filters::SepiaParams { intensity })
     }
 );
 
@@ -721,7 +721,7 @@ builtin_filter!(ClaheFilter, "clahe", FilterCategory::Contrast,
     apply: |input| {
         let clip = input.params.get_float("clip_limit").unwrap_or(2.0);
         let grid = input.params.get_uint("tile_grid").unwrap_or(8);
-        filters::clahe(input.pixels, input.info, clip, grid)
+        filters::clahe(input.pixels, input.info, &filters::ClaheParams { clip_limit: clip, tile_grid: grid })
     }
 );
 
@@ -735,7 +735,7 @@ builtin_filter!(BilateralFilter, "bilateral", FilterCategory::Denoise,
         let d = input.params.get_uint("diameter").unwrap_or(9);
         let sc = input.params.get_float("sigma_color").unwrap_or(75.0);
         let ss = input.params.get_float("sigma_space").unwrap_or(75.0);
-        filters::bilateral(input.pixels, input.info, d, sc, ss)
+        filters::bilateral(input.pixels, input.info, &filters::BilateralParams { diameter: d, sigma_color: sc, sigma_space: ss })
     }
 );
 
@@ -747,7 +747,7 @@ builtin_filter!(GuidedFilterEntry, "guided_filter", FilterCategory::Denoise,
     apply: |input| {
         let r = input.params.get_uint("radius").unwrap_or(4);
         let eps = input.params.get_float("epsilon").unwrap_or(0.01);
-        filters::guided_filter(input.pixels, input.info, r, eps)
+        filters::guided_filter(input.pixels, input.info, &filters::GuidedFilterParams { radius: r, epsilon: eps })
     }
 );
 
@@ -782,7 +782,7 @@ builtin_filter!(OtsuThresholdFilter, "otsu_threshold", FilterCategory::Contrast,
     params: [],
     apply: |input| {
         let t = filters::otsu_threshold(input.pixels, input.info)?;
-        filters::threshold_binary(input.pixels, input.info, t, 255)
+        filters::threshold_binary(input.pixels, input.info, &filters::ThresholdBinaryParams { thresh: t, max_value: 255 })
     }
 );
 
@@ -790,7 +790,7 @@ builtin_filter!(TriangleThresholdFilter, "triangle_threshold", FilterCategory::C
     params: [],
     apply: |input| {
         let t = filters::triangle_threshold(input.pixels, input.info)?;
-        filters::threshold_binary(input.pixels, input.info, t, 255)
+        filters::threshold_binary(input.pixels, input.info, &filters::ThresholdBinaryParams { thresh: t, max_value: 255 })
     }
 );
 
