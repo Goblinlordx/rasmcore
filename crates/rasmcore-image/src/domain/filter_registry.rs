@@ -684,7 +684,10 @@ builtin_filter!(HueRotateFilter, "hue_rotate", FilterCategory::Color,
     params: [ParamDescriptor::float("degrees", -360.0, 360.0, 0.0)],
     apply: |input| {
         let degrees = input.params.get_float("degrees").unwrap_or(0.0);
-        filters::hue_rotate(input.pixels, input.info, &filters::HueRotateParams { degrees })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::hue_rotate(r, &mut u, input.info, &filters::HueRotateParams { degrees })
     }
 );
 

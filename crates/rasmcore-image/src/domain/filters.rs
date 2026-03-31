@@ -2538,10 +2538,14 @@ fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u
     color_op = "true"
 )]
 pub fn hue_rotate(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &HueRotateParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let degrees = config.degrees;
 
     apply_color_op(pixels, info, &ColorOp::HueRotate(degrees))
@@ -12027,7 +12031,7 @@ mod tests {
     fn hue_rotate_zero_is_identity() {
         // Hue rotate by 0 degrees should preserve pixels (via ColorOp delegation)
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 0.0 }).unwrap();
+        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 0.0 }).unwrap();
         for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
             assert!(
                 (orig as i16 - out as i16).abs() <= 1,
@@ -12055,14 +12059,14 @@ mod tests {
     #[test]
     fn hue_rotate_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 90.0 }).unwrap();
+        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 90.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn hue_rotate_360_identity() {
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 360.0 }).unwrap();
+        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 360.0 }).unwrap();
         // Should be very close to original (within rounding)
         let mae: f64 = px
             .iter()
@@ -12262,7 +12266,7 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(hue_rotate(&pixels, &info, &HueRotateParams { degrees: 45.0 }).is_ok());
+        assert!(hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HueRotateParams { degrees: 45.0 }).is_ok());
         assert!(saturate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SaturateParams { factor: 1.5 }).is_ok());
         assert!(sepia(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SepiaParams { intensity: 0.8 }).is_ok());
         assert!(colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
@@ -12891,7 +12895,7 @@ mod tests_16bit {
     #[test]
     fn hue_rotate_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 90.0 }).unwrap();
+        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 90.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
