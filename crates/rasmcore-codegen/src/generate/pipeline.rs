@@ -99,6 +99,7 @@ pub fn generate_nodes(
             )
         };
 
+        code.push_str("#[allow(clippy::unnecessary_cast, unused_variables)]\n");
         code.push_str(&format!("impl ImageNode for {node_name} {{\n"));
         code.push_str("    fn info(&self) -> ImageInfo { self.source_info.clone() }\n\n");
         code.push_str("    fn compute_region(\n");
@@ -181,8 +182,9 @@ fn input_rect_body(f: &FilterReg, param_structs: &HashMap<String, Vec<ParamField
         // No expansion needed — use trait default (point operation)
         return String::new();
     };
+    let output_param = if expr.contains("output") { "output" } else { "_output" };
     format!(
-        "    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {{ {} }}\n",
+        "    fn input_rect(&self, {output_param}: Rect, bounds_w: u32, bounds_h: u32) -> Rect {{ {} }}\n",
         expr
     )
 }

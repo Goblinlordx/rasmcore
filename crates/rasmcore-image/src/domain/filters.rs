@@ -1776,7 +1776,7 @@ pub fn average_blur(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageErr
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| average_blur(p8, i8));
+        return process_via_8bit(pixels, info, average_blur);
     }
 
     let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
@@ -1882,7 +1882,6 @@ pub fn smart_sharpen(
     let blurred = bilateral(&work_pixels, &work_info, &bilateral_config)?;
 
     // Unsharp mask: output = original + amount * (original - blurred)
-    let ch = crate::domain::pipeline::graph::bytes_per_pixel(work_info.format) as usize;
     let mut result = vec![0u8; work_pixels.len()];
     for i in 0..work_pixels.len() {
         let orig = work_pixels[i] as f32;
