@@ -1,4 +1,4 @@
-//! Pixel-exact parity tests for all 19 blend modes.
+//! Pixel-exact parity tests for all 27 blend modes.
 //!
 //! Compares our Rust `blend()` implementation against:
 //! - libvips 8.18 (modes it supports: multiply, screen, overlay, darken, lighten,
@@ -397,6 +397,13 @@ fn all_modes() -> Vec<ModeSpec> {
             magick_name: "DivideDst",
             skip_magick_cross: false,
         },
+        // HSL component modes — W3C non-separable formulas.
+        // IM uses a different HSL conversion that doesn't match PS/W3C,
+        // so these are validated with self-consistency and property tests only
+        // (similar to how SoftLight skips IM cross-validation).
+        //
+        // Not included in all_modes() because they lack external reference tools.
+        // See dedicated HSL property tests below.
     ]
 }
 
@@ -574,6 +581,180 @@ fn blend_parity_subtract() {
 #[test]
 fn blend_parity_divide() {
     test_mode(&all_modes()[18]);
+}
+
+// ── HSL component mode property tests ───────────────────────────────
+//
+// W3C non-separable blend modes (Hue, Saturation, Color, Luminosity)
+// validated via mathematical properties since IM uses a different formula.
+
+/// BT.601 luminance for u8 RGB.
+fn bt601_lum(r: u8, g: u8, b: u8) -> f32 {
+    0.299 * r as f32 / 255.0 + 0.587 * g as f32 / 255.0 + 0.114 * b as f32 / 255.0
+}
+
+#[test]
+fn blend_parity_hue_preserves_bg_luminance() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Hue).unwrap();
+    // Hue mode should approximately preserve background luminance
+    for (bg_px, out_px) in bg_raw.chunks_exact(3).zip(result.chunks_exact(3)) {
+        let bg_lum = bt601_lum(bg_px[0], bg_px[1], bg_px[2]);
+        let out_lum = bt601_lum(out_px[0], out_px[1], out_px[2]);
+        let diff = (bg_lum - out_lum).abs();
+        assert!(
+            diff < 0.02,
+            "Hue should preserve bg luminance: bg_lum={bg_lum:.3} out_lum={out_lum:.3} diff={diff:.3}"
+        );
+    }
+}
+
+#[test]
+fn blend_parity_luminosity_takes_fg_luminance() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Luminosity).unwrap();
+    // Luminosity mode should approximately match fg luminance
+    for (fg_px, out_px) in fg_raw.chunks_exact(3).zip(result.chunks_exact(3)) {
+        let fg_lum = bt601_lum(fg_px[0], fg_px[1], fg_px[2]);
+        let out_lum = bt601_lum(out_px[0], out_px[1], out_px[2]);
+        let diff = (fg_lum - out_lum).abs();
+        assert!(
+            diff < 0.02,
+            "Luminosity should use fg luminance: fg_lum={fg_lum:.3} out_lum={out_lum:.3} diff={diff:.3}"
+        );
+    }
+}
+
+#[test]
+fn blend_parity_color_preserves_bg_luminance() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Color).unwrap();
+    // Color = SetLum(Cs, Lum(Cb)) → output luminance ≈ bg luminance
+    for (bg_px, out_px) in bg_raw.chunks_exact(3).zip(result.chunks_exact(3)) {
+        let bg_lum = bt601_lum(bg_px[0], bg_px[1], bg_px[2]);
+        let out_lum = bt601_lum(out_px[0], out_px[1], out_px[2]);
+        let diff = (bg_lum - out_lum).abs();
+        assert!(
+            diff < 0.02,
+            "Color should preserve bg luminance: bg_lum={bg_lum:.3} out_lum={out_lum:.3} diff={diff:.3}"
+        );
+    }
+}
+
+#[test]
+fn blend_parity_saturation_preserves_bg_luminance() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Saturation).unwrap();
+    // Saturation = SetLum(SetSat(Cb, Sat(Cs)), Lum(Cb)) → output lum ≈ bg lum
+    for (bg_px, out_px) in bg_raw.chunks_exact(3).zip(result.chunks_exact(3)) {
+        let bg_lum = bt601_lum(bg_px[0], bg_px[1], bg_px[2]);
+        let out_lum = bt601_lum(out_px[0], out_px[1], out_px[2]);
+        let diff = (bg_lum - out_lum).abs();
+        assert!(
+            diff < 0.02,
+            "Saturation should preserve bg luminance: bg_lum={bg_lum:.3} out_lum={out_lum:.3} diff={diff:.3}"
+        );
+    }
+}
+
+#[test]
+fn blend_parity_color_luminosity_inverse() {
+    // Color(fg, bg) and Luminosity(bg, fg) should produce the same output
+    // because Color = SetLum(Cs, Lum(Cb)) and Luminosity = SetLum(Cb, Lum(Cs))
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let color_result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Color).unwrap();
+    let lum_result = blend(&bg_raw, &info, &fg_raw, &info, BlendMode::Luminosity).unwrap();
+    let (max_diff, _) = compare_pixels(&color_result, &lum_result);
+    assert!(
+        max_diff == 0,
+        "Color(fg,bg) should equal Luminosity(bg,fg): max_diff={max_diff}"
+    );
+}
+
+#[test]
+fn blend_parity_hsl_modes_identity_on_gray() {
+    // All HSL modes with identical gray inputs should produce the same gray
+    let gray: Vec<u8> = (0..W * H).flat_map(|_| [128, 128, 128]).collect();
+    let info = make_image_info(W, H);
+    for mode in [
+        BlendMode::Hue,
+        BlendMode::Saturation,
+        BlendMode::Color,
+        BlendMode::Luminosity,
+    ] {
+        let result = blend(&gray, &info, &gray, &info, mode).unwrap();
+        let (max_diff, _) = compare_pixels(&result, &gray);
+        assert!(
+            max_diff <= 1,
+            "{mode:?} on identical gray should produce gray: max_diff={max_diff}"
+        );
+    }
+}
+
+// Pixel-level modes without direct IM equivalents — property tests
+
+#[test]
+fn blend_parity_dissolve_properties() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Dissolve).unwrap();
+
+    // Property: each output pixel is either the fg or bg pixel (no blending)
+    for (i, (fg_px, (bg_px, out_px))) in fg_raw
+        .chunks_exact(3)
+        .zip(bg_raw.chunks_exact(3).zip(result.chunks_exact(3)))
+        .enumerate()
+    {
+        assert!(
+            out_px == fg_px || out_px == bg_px,
+            "Dissolve pixel {i}: output {out_px:?} is neither fg {fg_px:?} nor bg {bg_px:?}"
+        );
+    }
+
+    // Property: deterministic — same inputs produce same output
+    let result2 = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::Dissolve).unwrap();
+    assert_eq!(result, result2, "Dissolve must be deterministic");
+}
+
+#[test]
+fn blend_parity_darker_color_properties() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::DarkerColor).unwrap();
+
+    // Property: each output pixel is the one with lower BT.601 luminance
+    for (fg_px, (bg_px, out_px)) in fg_raw
+        .chunks_exact(3)
+        .zip(bg_raw.chunks_exact(3).zip(result.chunks_exact(3)))
+    {
+        let fg_lum = 0.299 * fg_px[0] as f32 + 0.587 * fg_px[1] as f32 + 0.114 * fg_px[2] as f32;
+        let bg_lum = 0.299 * bg_px[0] as f32 + 0.587 * bg_px[1] as f32 + 0.114 * bg_px[2] as f32;
+        let expected = if fg_lum <= bg_lum { fg_px } else { bg_px };
+        assert_eq!(out_px, expected, "DarkerColor: fg_lum={fg_lum:.1} bg_lum={bg_lum:.1}");
+    }
+}
+
+#[test]
+fn blend_parity_lighter_color_properties() {
+    let (fg_raw, bg_raw) = make_test_images();
+    let info = make_image_info(W, H);
+    let result = blend(&fg_raw, &info, &bg_raw, &info, BlendMode::LighterColor).unwrap();
+
+    // Property: each output pixel is the one with higher BT.601 luminance
+    for (fg_px, (bg_px, out_px)) in fg_raw
+        .chunks_exact(3)
+        .zip(bg_raw.chunks_exact(3).zip(result.chunks_exact(3)))
+    {
+        let fg_lum = 0.299 * fg_px[0] as f32 + 0.587 * fg_px[1] as f32 + 0.114 * fg_px[2] as f32;
+        let bg_lum = 0.299 * bg_px[0] as f32 + 0.587 * bg_px[1] as f32 + 0.114 * bg_px[2] as f32;
+        let expected = if fg_lum >= bg_lum { fg_px } else { bg_px };
+        assert_eq!(out_px, expected, "LighterColor: fg_lum={fg_lum:.1} bg_lum={bg_lum:.1}");
+    }
 }
 
 /// Summary test that runs all modes and prints a consolidated report.

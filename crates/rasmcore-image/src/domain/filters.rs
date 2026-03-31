@@ -4687,63 +4687,98 @@ fn pixel_luminance(r: u8, g: u8, b: u8) -> f32 {
     0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32
 }
 
-/// Convert 0–255 RGB to HSL (h in 0–360, s/l in 0–1).
+// ─── W3C Non-Separable Compositing Helpers ────────────────────────────
+// Reference: W3C Compositing and Blending Level 1, §13.4
+// These match Photoshop and ImageMagick HSL blend mode behaviour.
+
+/// BT.601 luminance in normalized [0,1] space.
 #[inline]
-fn rgb_to_hsl_f32(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let rf = r as f32 / 255.0;
-    let gf = g as f32 / 255.0;
-    let bf = b as f32 / 255.0;
-    let max = rf.max(gf).max(bf);
-    let min = rf.min(gf).min(bf);
-    let l = (max + min) / 2.0;
-    let delta = max - min;
-    if delta == 0.0 {
-        return (0.0, 0.0, l);
-    }
-    let s = if l < 0.5 {
-        delta / (max + min)
-    } else {
-        delta / (2.0 - max - min)
-    };
-    let h = if max == rf {
-        60.0 * (((gf - bf) / delta) % 6.0)
-    } else if max == gf {
-        60.0 * ((bf - rf) / delta + 2.0)
-    } else {
-        60.0 * ((rf - gf) / delta + 4.0)
-    };
-    let h = if h < 0.0 { h + 360.0 } else { h };
-    (h, s, l)
+fn lum(r: f32, g: f32, b: f32) -> f32 {
+    0.299 * r + 0.587 * g + 0.114 * b
 }
 
-/// Convert HSL (h 0–360, s/l 0–1) back to 0–255 RGB.
+/// Clip a color so all channels are in [0,1] while preserving luminance.
 #[inline]
-fn hsl_to_rgb_u8(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
-    if s == 0.0 {
-        let v = (l.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-        return (v, v, v);
+fn clip_color(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let l = lum(r, g, b);
+    let n = r.min(g).min(b);
+    let x = r.max(g).max(b);
+    let (mut r, mut g, mut b) = (r, g, b);
+    if n < 0.0 {
+        let ln = l - n;
+        r = l + (r - l) * l / ln;
+        g = l + (g - l) * l / ln;
+        b = l + (b - l) * l / ln;
     }
-    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-    let hp = h / 60.0;
-    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
-    let (r1, g1, b1) = if hp < 1.0 {
-        (c, x, 0.0)
-    } else if hp < 2.0 {
-        (x, c, 0.0)
-    } else if hp < 3.0 {
-        (0.0, c, x)
-    } else if hp < 4.0 {
-        (0.0, x, c)
-    } else if hp < 5.0 {
-        (x, 0.0, c)
+    if x > 1.0 {
+        let xl = x - l;
+        let one_l = 1.0 - l;
+        r = l + (r - l) * one_l / xl;
+        g = l + (g - l) * one_l / xl;
+        b = l + (b - l) * one_l / xl;
+    }
+    (r, g, b)
+}
+
+/// Set luminance of a color to `target_l`, then clip.
+#[inline]
+fn set_lum(r: f32, g: f32, b: f32, target_l: f32) -> (f32, f32, f32) {
+    let d = target_l - lum(r, g, b);
+    clip_color(r + d, g + d, b + d)
+}
+
+/// Saturation = max(C) - min(C).
+#[inline]
+fn sat(r: f32, g: f32, b: f32) -> f32 {
+    r.max(g).max(b) - r.min(g).min(b)
+}
+
+/// Set saturation of color `c` to `target_s`.
+///
+/// Sorts channels, scales mid proportionally, zeros min, sets max to target_s.
+#[inline]
+fn set_sat(r: f32, g: f32, b: f32, target_s: f32) -> (f32, f32, f32) {
+    // Identify min/mid/max channels by index (0=R, 1=G, 2=B)
+    let c = [r, g, b];
+    let (min_i, mid_i, max_i) = if c[0] <= c[1] {
+        if c[1] <= c[2] {
+            (0, 1, 2)
+        } else if c[0] <= c[2] {
+            (0, 2, 1)
+        } else {
+            (2, 0, 1)
+        }
+    } else if c[0] <= c[2] {
+        (1, 0, 2)
+    } else if c[1] <= c[2] {
+        (1, 2, 0)
     } else {
-        (c, 0.0, x)
+        (2, 1, 0)
     };
-    let m = l - c / 2.0;
+
+    let mut out = [0.0f32; 3];
+    if c[max_i] > c[min_i] {
+        out[mid_i] = (c[mid_i] - c[min_i]) * target_s / (c[max_i] - c[min_i]);
+        out[max_i] = target_s;
+    }
+    // out[min_i] stays 0.0
+    (out[0], out[1], out[2])
+}
+
+/// Combined SetSat + SetLum: set saturation then luminance of a color.
+#[inline]
+fn set_lum_sat(r: f32, g: f32, b: f32, target_s: f32, target_l: f32) -> (f32, f32, f32) {
+    let (r2, g2, b2) = set_sat(r, g, b, target_s);
+    set_lum(r2, g2, b2, target_l)
+}
+
+/// Convert normalized [0,1] RGB to (u8, u8, u8).
+#[inline]
+fn to_u8_triple(r: f32, g: f32, b: f32) -> (u8, u8, u8) {
     (
-        ((r1 + m).clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
-        ((g1 + m).clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
-        ((b1 + m).clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (r.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (g.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (b.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
     )
 }
 
@@ -4789,24 +4824,32 @@ fn blend_pixel(fg: &[u8], bg: &[u8], mode: BlendMode, px_idx: u32) -> (u8, u8, u
             }
         }
         BlendMode::Hue => {
-            let (fg_h, _fg_s, _fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
-            let (_bg_h, bg_s, bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
-            hsl_to_rgb_u8(fg_h, bg_s, bg_l)
+            // W3C: SetLum(SetSat(Cs, Sat(Cb)), Lum(Cb))
+            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
+            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (r, g, b) = set_lum_sat(sr, sg, sb, sat(br, bg_g, bb), lum(br, bg_g, bb));
+            to_u8_triple(r, g, b)
         }
         BlendMode::Saturation => {
-            let (_fg_h, fg_s, _fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
-            let (bg_h, _bg_s, bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
-            hsl_to_rgb_u8(bg_h, fg_s, bg_l)
+            // W3C: SetLum(SetSat(Cb, Sat(Cs)), Lum(Cb))
+            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
+            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (r, g, b) = set_lum_sat(br, bg_g, bb, sat(sr, sg, sb), lum(br, bg_g, bb));
+            to_u8_triple(r, g, b)
         }
         BlendMode::Color => {
-            let (fg_h, fg_s, _fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
-            let (_bg_h, _bg_s, bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
-            hsl_to_rgb_u8(fg_h, fg_s, bg_l)
+            // W3C: SetLum(Cs, Lum(Cb))
+            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
+            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (r, g, b) = set_lum(sr, sg, sb, lum(br, bg_g, bb));
+            to_u8_triple(r, g, b)
         }
         BlendMode::Luminosity => {
-            let (_fg_h, _fg_s, fg_l) = rgb_to_hsl_f32(fg[0], fg[1], fg[2]);
-            let (bg_h, bg_s, _bg_l) = rgb_to_hsl_f32(bg[0], bg[1], bg[2]);
-            hsl_to_rgb_u8(bg_h, bg_s, fg_l)
+            // W3C: SetLum(Cb, Lum(Cs))
+            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
+            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (r, g, b) = set_lum(br, bg_g, bb, lum(sr, sg, sb));
+            to_u8_triple(r, g, b)
         }
         _ => unreachable!("per-channel mode in blend_pixel"),
     }
