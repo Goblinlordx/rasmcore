@@ -1,0 +1,81 @@
+id: draw-primitives-ext_20260331085207Z
+title: "Extended draw primitives — polygon, ellipse, arc"
+type: feature
+status: pending
+created: 2026-03-31
+updated: 2026-03-31
+spec:
+  summary: >
+    Add polygon (arbitrary vertices), ellipse (separate from circle),
+    and arc drawing primitives. Uses existing tiny_skia PathBuilder.
+    Closes Pillow parity gap for shape primitives.
+  context: |
+    Pillow has polygon, ellipse, arc, chord, and pie slice drawing.
+    rasmcore has line, rect, circle, text, and flood fill. The missing
+    shapes are commonly needed for annotations, overlays, and
+    visualization.
+
+    The existing draw.rs already uses tiny_skia (via resvg) for
+    anti-aliased rendering with PathBuilder. Adding new shapes is
+    straightforward — tiny_skia PathBuilder supports arbitrary paths.
+  codebase_analysis: |
+    EXISTING (draw.rs):
+    - draw_line(): uses tiny_skia PathBuilder::line_to
+    - draw_rect(): uses tiny_skia rect primitives
+    - draw_circle(): uses tiny_skia circle path
+    - All follow same pattern: create Pixmap, build path, stroke/fill,
+      composite result back onto source image
+    - Import: use resvg::tiny_skia (line 10)
+
+    TINY_SKIA CAPABILITIES:
+    - PathBuilder::line_to, quad_to, cubic_to for arbitrary paths
+    - Can construct ellipses via cubic bezier approximation
+    - Arc via cubic_to segments
+  acceptance_criteria:
+    - draw_polygon filter with vertices param (serialized point list), fill_color, stroke_color, stroke_width
+    - draw_ellipse filter with cx, cy, rx, ry, fill_color, stroke_color, stroke_width
+    - draw_arc filter with cx, cy, rx, ry, start_angle, end_angle, stroke_color, stroke_width
+    - All anti-aliased via tiny_skia
+    - All registered with ConfigParams and appropriate param hints
+    - Polygon supports both filled and stroked modes
+  out_of_scope: |
+    Bezier curves as standalone primitive. Rounded rectangles (can use
+    existing rect + arc). Pie slice and chord (can compose from arc +
+    lines). SVG path string parser.
+  technical_notes: |
+    Polygon: PathBuilder::move_to(first), line_to(each), close().
+    Fill or stroke.
+
+    Ellipse: 4-segment cubic bezier approximation (standard technique).
+    Control point offset = radius * 0.5522847498 (kappa constant).
+
+    Arc: similar to ellipse but only render the arc segment between
+    start_angle and end_angle. Use cubic bezier segments for each
+    quadrant spanned.
+
+    Vertices/points serialized as "x1,y1;x2,y2;x3,y3" string to
+    work with the ConfigParams string param type.
+plan:
+  - phase: "Polygon"
+    tasks:
+      - text: "Implement draw_polygon with vertex list, fill, stroke support"
+        done: false
+      - text: "Register with ConfigParams (vertices as rc.polygon hint)"
+        done: false
+  - phase: "Ellipse"
+    tasks:
+      - text: "Implement draw_ellipse using 4-segment cubic bezier approximation"
+        done: false
+      - text: "Register with ConfigParams (cx, cy, rx, ry, colors)"
+        done: false
+  - phase: "Arc"
+    tasks:
+      - text: "Implement draw_arc using cubic bezier segments per quadrant"
+        done: false
+      - text: "Register with ConfigParams (cx, cy, rx, ry, start_angle, end_angle)"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Unit tests: triangle polygon, square polygon, filled vs stroked"
+        done: false
+extra: {}

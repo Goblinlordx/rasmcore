@@ -1,0 +1,77 @@
+id: ps-adjustment-parity_20260331085201Z
+title: "Photoshop adjustment parity — Exposure + Color Balance"
+type: feature
+status: pending
+created: 2026-03-31
+updated: 2026-03-31
+spec:
+  summary: >
+    Add the 2 missing Photoshop adjustment equivalents: Exposure
+    (logarithmic offset+gamma) and Color Balance (shadows/mids/highlights
+    CMY-RGB). Gets rasmcore from 14/16 to 16/16 PS adjustment parity.
+  context: |
+    Photoshop has 16 adjustment layer types. rasmcore implements 14 of them.
+    The two missing are Exposure and Color Balance — both standard photo
+    editing operations expected by users coming from any professional tool.
+
+    Exposure: Controls image brightness using a logarithmic model
+    (EV stops), with offset and gamma correction. Different from linear
+    brightness — matches camera exposure behavior.
+
+    Color Balance: Adjusts color per tonal range (shadows, midtones,
+    highlights) along three axes: Cyan-Red, Magenta-Green, Yellow-Blue.
+    Our lift/gamma/gain is similar but uses a different control model.
+  codebase_analysis: |
+    EXISTING RELATED:
+    - brightness (filters.rs) — linear brightness, LUT-collapsible
+    - gamma (filters.rs:8513) — gamma correction, LUT-collapsible
+    - dodge/burn (filters.rs:6349/6376) — have exposure param but
+      operate per-tonal-range, not global exposure
+    - asc_cdl (color_grading.rs:31) — slope/offset/power per-channel
+    - lift_gamma_gain (color_grading.rs) — 3-way grading
+
+    PATTERN TO FOLLOW:
+    - Register with #[register_filter] + #[derive(ConfigParams)]
+    - Use point_ops LUT pattern for exposure (single LUT: 2^(EV) * pixel)
+    - Color balance needs tonal-range weighting like shadow_highlight
+  acceptance_criteria:
+    - exposure filter registered with params (ev, offset, gamma_correction)
+    - color_balance filter registered with params (shadow_cyan_red, shadow_magenta_green, shadow_yellow_blue, midtone_*, highlight_*, preserve_luminosity)
+    - Both produce visually correct results matching PS behavior
+    - LUT-collapsible where possible (exposure is, color balance partial)
+    - Reference tests against known PS output or IM equivalent
+  out_of_scope: |
+    Adjustment layer system (non-destructive stacking). HDR exposure
+    with tone mapping. Color balance with custom tonal ranges.
+  technical_notes: |
+    Exposure formula: output = (input + offset) * 2^EV, then gamma.
+    Implementable as a single 256-entry LUT — fully collapsible.
+
+    Color Balance: weight each pixel into shadow/mid/highlight ranges
+    using smooth transitions. Apply CMY-RGB shifts per range. PS uses
+    luminosity preservation option. Similar to IM -color-balance or
+    the tonal range weighting in shadow_highlight filter.
+plan:
+  - phase: "Exposure adjustment"
+    tasks:
+      - text: "Implement exposure filter with ev, offset, gamma_correction params"
+        done: false
+      - text: "Add ExposureParams ConfigParams struct with param hints"
+        done: false
+      - text: "Register with #[register_filter] — verify in param-manifest.json"
+        done: false
+  - phase: "Color Balance adjustment"
+    tasks:
+      - text: "Implement color_balance filter with shadow/mid/highlight CMY-RGB params"
+        done: false
+      - text: "Add ColorBalanceParams ConfigParams struct (9 sliders + preserve_luminosity)"
+        done: false
+      - text: "Register with #[register_filter] — verify in param-manifest.json"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Add unit tests for exposure (neutral=0EV identity, +1EV doubles, -1EV halves)"
+        done: false
+      - text: "Add unit tests for color_balance (neutral identity, shadow-only shift, luminosity preservation)"
+        done: false
+extra: {}

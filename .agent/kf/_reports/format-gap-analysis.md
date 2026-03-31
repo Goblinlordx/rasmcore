@@ -121,7 +121,7 @@ IM claims ~260 format entries. Here is the breakdown:
 | **JP2 native** | Pure Rust implementation (justjp2) |
 | **Modular** | Each codec is a standalone reusable crate |
 | **Component Model** | WIT interfaces enable cross-language composability |
-| **83+ image ops** | 49 registered filters + 34 unregistered implementations |
+| **137 registered operations** | 128 filters + generators + compositors + mappers + encoders + decoders |
 
 ---
 
@@ -140,4 +140,4 @@ IM claims ~260 format entries. Here is the breakdown:
 8. **Image concatenation** — P2 (1 track)
 9. **PSD decode** — P2 if demand warrants
 
-### After these, rasmcore would cover 22+ format families with 100+ operations — exceeding both IM and vips for raster image coverage while maintaining pure Rust / WASM portability.
+### After these, rasmcore would cover 22+ format families with 137+ registered operations — already exceeding both IM and vips for filter/grading coverage while maintaining pure Rust / WASM portability.

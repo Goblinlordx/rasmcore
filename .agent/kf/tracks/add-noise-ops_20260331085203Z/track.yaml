@@ -1,0 +1,79 @@
+id: add-noise-ops_20260331085203Z
+title: "Add-noise operations (Gaussian, salt-pepper, Poisson, uniform)"
+type: feature
+status: pending
+created: 2026-03-31
+updated: 2026-03-31
+spec:
+  summary: >
+    Add 4 noise-addition filters for testing, ML augmentation, and
+    simulation. Every competitor has add-noise operations. Currently
+    rasmcore only has noise generators (perlin, simplex) but cannot
+    add noise to existing images.
+  context: |
+    Adding noise to images is a fundamental operation for:
+    - ML data augmentation (training robust models)
+    - Testing denoising algorithms (need ground truth + noisy pair)
+    - Simulating sensor noise (camera, medical imaging)
+    - Artistic effects (film grain is related but different)
+
+    ImageMagick has +noise with Gaussian, Impulse, Laplacian,
+    Multiplicative, Poisson, Uniform types. Pillow has ImageFilter
+    noise types. GIMP has 7 noise generators.
+
+    rasmcore has perlin_noise and simplex_noise generators but these
+    create new images — they don't add noise to existing images.
+  codebase_analysis: |
+    EXISTING GENERATORS (filters.rs:9131-9410):
+    - perlin_noise: registered generator, returns Gray8
+    - simplex_noise: registered generator, returns Gray8
+    - Both use fbm_f32/fbm helper, build_perm_table(seed)
+
+    PATTERN FOR ADD-NOISE:
+    - Should be #[register_filter] (input image -> noisy image)
+    - Accept seed for reproducibility + strength/amount param
+    - Operate per-pixel: output = clamp(input + noise * amount)
+    - Can use existing build_perm_table() for deterministic seeding
+  acceptance_criteria:
+    - gaussian_noise filter — adds Gaussian-distributed noise with mean and sigma params
+    - salt_pepper_noise filter — randomly sets pixels to 0 or 255 with density param
+    - poisson_noise filter — adds Poisson-distributed noise (signal-dependent)
+    - uniform_noise filter — adds uniformly distributed noise with range param
+    - All accept seed param for reproducibility
+    - All accept amount/strength param (0 = identity)
+    - All registered with ConfigParams and param hints
+    - Unit tests verify noise statistics (mean, variance within expected range)
+  out_of_scope: |
+    Speckle noise (multiplicative). Periodic noise (frequency domain).
+    Shot noise simulation with actual photon counts.
+  technical_notes: |
+    Use a simple xorshift or PCG PRNG seeded from the seed param.
+    Gaussian: Box-Muller transform from uniform random pairs.
+    Salt-pepper: threshold uniform random against density.
+    Poisson: Knuth algorithm or inverse CDF for small lambda,
+    normal approximation for large lambda.
+    Uniform: direct from PRNG output, scaled to range.
+plan:
+  - phase: "Core implementation"
+    tasks:
+      - text: "Implement gaussian_noise filter with mean, sigma, seed, amount params"
+        done: false
+      - text: "Implement salt_pepper_noise filter with density, seed params"
+        done: false
+      - text: "Implement poisson_noise filter with seed, scale params"
+        done: false
+      - text: "Implement uniform_noise filter with range, seed params"
+        done: false
+  - phase: "Registration"
+    tasks:
+      - text: "Add ConfigParams structs with appropriate param hints for all 4 filters"
+        done: false
+      - text: "Register all 4 with #[register_filter] — verify in param-manifest.json"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Unit tests: identity at amount=0, noise statistics within expected range"
+        done: false
+      - text: "Unit tests: deterministic output with same seed"
+        done: false
+extra: {}

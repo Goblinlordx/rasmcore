@@ -1,0 +1,82 @@
+id: per-pixel-arithmetic_20260331085204Z
+title: "Per-pixel arithmetic / evaluate operations"
+type: feature
+status: pending
+created: 2026-03-31
+updated: 2026-03-31
+spec:
+  summary: >
+    Add evaluate operations (Add, Subtract, Multiply, Divide, Min, Max,
+    Pow, Log, Abs) for per-pixel arithmetic. ImageMagick -evaluate
+    equivalent. LUT-fusible where possible.
+  context: |
+    Per-pixel arithmetic is a fundamental building block for compositing
+    workflows, image math, and programmatic image manipulation. IM's
+    -evaluate supports 20+ operations. We have none.
+
+    Use cases: normalize brightness (multiply), apply masks (multiply by
+    mask), compute differences (subtract), threshold (min/max), gamma-like
+    transforms (pow), exposure compensation (multiply + add).
+
+    The existing PointOp enum + LUT system in point_ops.rs is the natural
+    extension point. Operations that map u8->u8 can be precomputed as
+    256-entry LUTs and fused with other point operations.
+  codebase_analysis: |
+    EXISTING (point_ops.rs):
+    - PointOp enum: Gamma, Invert, Threshold, Posterize, Clamp,
+      Brightness, Contrast, Solarize, Levels, SigmoidalContrast
+    - build_lut(op) -> [u8; 256]: precomputes LUT
+    - apply_lut(pixels, info, lut): applies LUT to image
+    - compose_luts(a, b): fuses two LUTs into one pass
+
+    EXTENSION PATTERN:
+    - Add new PointOp variants: Add(u8), Subtract(u8), Multiply(f32),
+      Divide(f32), Min(u8), Max(u8), Pow(f32), Log(f32), Abs
+    - Implement build_lut() for each
+    - Register as individual filters via #[register_filter]
+  acceptance_criteria:
+    - evaluate_add filter — adds constant value to each channel (clamped)
+    - evaluate_subtract filter — subtracts constant from each channel
+    - evaluate_multiply filter — multiplies by factor (clamped to 0-255)
+    - evaluate_divide filter — divides by factor (clamped)
+    - evaluate_min / evaluate_max filters — clamp to min/max value
+    - evaluate_pow filter — raise normalized value to power
+    - evaluate_log filter — logarithmic transform
+    - evaluate_abs filter — absolute value (useful after subtract)
+    - All LUT-fusible via existing compose_luts mechanism
+    - All registered with ConfigParams
+  out_of_scope: |
+    Two-image arithmetic (image + image). That requires compositor
+    registration. Channel-specific evaluate (R only, G only).
+    Expression parser / -fx equivalent.
+  technical_notes: |
+    All operations are single-value transforms on [0,255] range.
+    LUT building is trivial:
+    - Add(v): lut[i] = clamp(i + v, 0, 255)
+    - Multiply(f): lut[i] = clamp(i as f32 * f, 0, 255) as u8
+    - Pow(p): lut[i] = (((i as f32 / 255.0).powf(p)) * 255.0) as u8
+    - Log(b): lut[i] = ((i as f32 / 255.0).ln() / b.ln() * 255.0).clamp(0,255) as u8
+
+    All compose into single LUT pass with consecutive point ops.
+plan:
+  - phase: "Extend PointOp enum"
+    tasks:
+      - text: "Add Add(u8), Subtract(u8), Multiply(f32), Divide(f32) variants to PointOp"
+        done: false
+      - text: "Add Min(u8), Max(u8), Pow(f32), Log(f32), Abs variants to PointOp"
+        done: false
+      - text: "Implement build_lut() for all 9 new variants"
+        done: false
+  - phase: "Register as filters"
+    tasks:
+      - text: "Create registered filter wrappers for each evaluate operation"
+        done: false
+      - text: "Add ConfigParams structs with appropriate param hints"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Unit tests: identity cases (add 0, multiply 1, pow 1)"
+        done: false
+      - text: "Unit tests: LUT fusion — compose evaluate_add + evaluate_multiply produces correct single LUT"
+        done: false
+extra: {}

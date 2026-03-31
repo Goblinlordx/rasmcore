@@ -1,0 +1,78 @@
+id: kmeans-clustering_20260331085208Z
+title: "K-means color clustering for palette extraction"
+type: feature
+status: pending
+created: 2026-03-31
+updated: 2026-03-31
+spec:
+  summary: >
+    Standard Lloyds k-means algorithm for color palette extraction and
+    image segmentation. Useful for quantization, dominant color detection,
+    poster effects, and segmentation preprocessing.
+  context: |
+    ImageMagick has -kmeans for color clustering. It is commonly used
+    for palette extraction (find N dominant colors), image posterization
+    (reduce to k colors), and as a preprocessing step for segmentation.
+
+    rasmcore has median-cut quantization but no k-means. K-means
+    produces different (often better) results for dominant color
+    detection because it optimizes for minimum total distance rather
+    than recursive splitting.
+  codebase_analysis: |
+    EXISTING (quantize.rs):
+    - median_cut(): splits color space recursively, returns palette
+    - quantize(): maps pixels to nearest palette color
+    - quantize_indexed(): returns indexed image
+    - dither_floyd_steinberg() / dither_ordered(): post-quantization
+
+    NO K-MEANS EXISTS in codebase.
+
+    EXTENSION PATTERN:
+    - Add kmeans() alongside median_cut in quantize.rs
+    - Return palette (Vec<Rgb>) compatible with existing quantize()
+    - Can also register as filter that quantizes image to k colors
+  acceptance_criteria:
+    - kmeans_palette(pixels, info, k, max_iterations, seed) -> Vec<Rgb> function
+    - kmeans_quantize filter — registered, reduces image to k colors
+    - Deterministic with seed parameter
+    - Converges within max_iterations (or returns best result)
+    - Palette quality comparable to or better than median_cut for same k
+    - Works on RGB8 and RGBA8 (ignore alpha for clustering)
+  out_of_scope: |
+    K-means++ initialization (use random or median-cut seeding instead).
+    Weighted k-means. Fuzzy c-means. GPU acceleration.
+  technical_notes: |
+    Standard Lloyds algorithm:
+    1. Initialize k centroids (random pixels or median-cut palette)
+    2. Assign each pixel to nearest centroid (Euclidean RGB distance)
+    3. Recompute centroids as mean of assigned pixels
+    4. Repeat until convergence or max_iterations
+
+    Optimization: subsample for large images (use every Nth pixel for
+    clustering, then assign all pixels to final centroids).
+
+    Register two things:
+    - Public function kmeans_palette() for library users who want the palette
+    - Registered filter kmeans_quantize that applies the palette to the image
+plan:
+  - phase: "Core algorithm"
+    tasks:
+      - text: "Implement kmeans_palette() in quantize.rs with random initialization"
+        done: false
+      - text: "Add convergence check (centroid movement below threshold)"
+        done: false
+      - text: "Add subsampling for large images (>1M pixels use every Nth pixel)"
+        done: false
+  - phase: "Filter registration"
+    tasks:
+      - text: "Implement kmeans_quantize filter wrapper — extract palette then quantize"
+        done: false
+      - text: "Register with ConfigParams (k, max_iterations, seed params)"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Unit test: k=1 produces mean color, k=N (N=unique colors) is identity"
+        done: false
+      - text: "Unit test: deterministic output with same seed"
+        done: false
+extra: {}
