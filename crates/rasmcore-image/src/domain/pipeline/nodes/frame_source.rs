@@ -10,7 +10,7 @@ use crate::domain::decoder;
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel};
 use crate::domain::types::{DecodedImage, FrameInfo, FrameSelection, ImageInfo};
-use rasmcore_pipeline::{Overlap, Rect};
+use rasmcore_pipeline::Rect;
 
 /// Source node for multi-frame images (GIF, WebP, TIFF).
 ///
@@ -125,10 +125,6 @@ impl ImageNode for FrameSourceNode {
         }
 
         Ok(result)
-    }
-
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
     }
 
     fn access_pattern(&self) -> AccessPattern {

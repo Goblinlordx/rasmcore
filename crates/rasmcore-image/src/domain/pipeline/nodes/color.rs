@@ -4,7 +4,7 @@ use crate::domain::color;
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
 use crate::domain::types::{ColorSpace, ImageInfo};
-use rasmcore_pipeline::{Overlap, Rect};
+use rasmcore_pipeline::Rect;
 
 /// Pipeline node that converts pixels from an ICC profile's color space to sRGB.
 pub struct IccToSrgbNode {
@@ -47,10 +47,6 @@ impl ImageNode for IccToSrgbNode {
         let full_src = Rect::new(0, 0, self.source_info.width, self.source_info.height);
         let src_pixels = upstream_fn(self.upstream, full_src)?;
         color::icc_to_srgb(&src_pixels, &self.source_info, &self.icc_profile)
-    }
-
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
     }
 
     fn access_pattern(&self) -> AccessPattern {

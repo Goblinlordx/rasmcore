@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
 use crate::domain::types::{DecodedImage, FrameSequence, ImageInfo};
-use rasmcore_pipeline::{Overlap, Rect, SpatialCache};
+use rasmcore_pipeline::{Rect, SpatialCache};
 
 /// Access pattern hint for cache optimization.
 #[derive(Debug, Clone, Copy)]
@@ -46,13 +46,6 @@ pub trait ImageNode {
         output.clamp(bounds_w, bounds_h)
     }
 
-    /// Overlap this node needs from upstream for each output region.
-    /// DEPRECATED: Use input_rect() instead. Kept for backward compatibility
-    /// during migration — will be removed once all nodes use input_rect().
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
-    }
-
     /// Access pattern hint.
     fn access_pattern(&self) -> AccessPattern;
 }
@@ -72,9 +65,6 @@ impl ImageNode for FrameSourceRcWrapper {
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
         self.0.compute_region(request, upstream_fn)
-    }
-    fn overlap(&self) -> Overlap {
-        self.0.overlap()
     }
     fn access_pattern(&self) -> AccessPattern {
         self.0.access_pattern()
@@ -451,9 +441,6 @@ mod tests {
             Ok(vec![self.value; size])
         }
 
-        fn overlap(&self) -> Overlap {
-            Overlap::zero()
-        }
         fn access_pattern(&self) -> AccessPattern {
             AccessPattern::Sequential
         }
@@ -531,9 +518,6 @@ mod tests {
                 let src = upstream_fn(self.upstream, request)?;
                 Ok(src.iter().map(|&v| v.saturating_mul(2)).collect())
             }
-            fn overlap(&self) -> Overlap {
-                Overlap::zero()
-            }
             fn access_pattern(&self) -> AccessPattern {
                 AccessPattern::Sequential
             }
@@ -591,9 +575,6 @@ mod tiled_parity_tests {
                 request,
                 bpp,
             ))
-        }
-        fn overlap(&self) -> rasmcore_pipeline::Overlap {
-            rasmcore_pipeline::Overlap::zero()
         }
         fn access_pattern(&self) -> AccessPattern {
             AccessPattern::Sequential

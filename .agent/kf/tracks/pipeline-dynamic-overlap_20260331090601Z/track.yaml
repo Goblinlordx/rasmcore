@@ -5,136 +5,141 @@ status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Replace static overlap declarations with operation-computed input rects.
-    Each filter computes the input region it needs from the requested output
-    region, following the libvips generate() model. Prerequisite for real
-    tiled execution.
-  context: >
-    Currently only 2 of 22+ spatial filters declare non-zero overlap, and
-    the overlap attribute is a fixed annotation. This means tiled execution
-    would produce seam artifacts for blur, median, morphology, bilateral,
-    canny, etc. The vips model is better: each operation's generate()
-    function receives the output rect and computes its own input rect by
-    expanding for kernel size. Our compute_region() already has this
-    structure — we just need to make the expansion dynamic per-filter
+  summary: 'Replace static overlap declarations with operation-computed input rects. Each filter computes the input region
+    it needs from the requested output region, following the libvips generate() model. Prerequisite for real tiled execution.
+
+    '
+  context: 'Currently only 2 of 22+ spatial filters declare non-zero overlap, and the overlap attribute is a fixed annotation.
+    This means tiled execution would produce seam artifacts for blur, median, morphology, bilateral, canny, etc. The vips
+    model is better: each operation''s generate() function receives the output rect and computes its own input rect by expanding
+    for kernel size. Our compute_region() already has this structure — we just need to make the expansion dynamic per-filter
     rather than using a static overlap() method.
-  codebase_analysis: |
-    CURRENT MODEL:
+
+    '
+  codebase_analysis: 'CURRENT MODEL:
+
     - ImageNode trait has overlap() -> Overlap method
+
     - overlap attribute on register_filter: "zero", "uniform(N)", "param(name)"
+
     - codegen generates compute_region that calls request.expand(&self.overlap())
+
     - Graph engine calls node.compute_region(request, upstream_fn)
+
     - Overlap struct already supports asymmetric: { top, bottom, left, right }
 
+
     FILTERS NEEDING DYNAMIC OVERLAP (currently declare zero):
+
     - blur, sharpen, median: depends on radius param
+
     - bilateral, guided_filter, nlm_denoise: depends on diameter/radius/search_size
+
     - canny, sobel, scharr, laplacian: fixed 3x3 or 5x5 kernel
+
     - erode, dilate, morph_*: depends on ksize param
+
     - bokeh_blur, motion_blur: depends on radius/length
+
     - kuwahara, oil_paint: depends on radius
+
     - charcoal: depends on radius (uses blur internally)
+
     - gaussian_blur_cv: depends on sigma (kernel size = ceil(3*sigma))
 
+
     CODEGEN (pipeline.rs):
+
     - Generates compute_region that does: overlap = self.overlap(); expand; filter; crop
+
     - overlap() reads from the overlap attribute string
+
     - param(name) form evaluates self.{name} at runtime — already dynamic
 
+
     PROPOSED MODEL:
+
     - Remove overlap() from ImageNode trait
+
     - Add input_rect(&self, output: Rect, bounds: (u32, u32)) -> Rect to ImageNode
+
     - Each node computes its own expansion based on config params
+
     - Point operations: return output unchanged
+
     - Spatial operations: expand by kernel radius (from config struct)
+
     - Distortion operations: compute source bounding box from the transform
+
     - codegen generates input_rect() instead of overlap()
+
+    '
   acceptance_criteria:
-    - ImageNode trait uses input_rect() instead of overlap()
-    - All spatial filters compute correct input expansion from their config
-    - Point operations return output rect unchanged (zero expansion)
-    - Distortion filters compute asymmetric expansion from their transform
-    - Codegen generates input_rect() method for each filter node
-    - overlap attribute removed from register_filter macro
-    - Existing tiled parity tests pass (tiled_parity_point_op, tiled_parity_blur)
-    - New tiled parity tests for median, morphology, canny (verify no seam artifacts)
-    - Full-image execution produces identical output to before (no behavioral change)
-  out_of_scope: >
-    Actually using tiled execution in production sinks (next track).
-    Threading. Encoder integration with tiles.
-  technical_notes: |
-    IMPLEMENTATION APPROACH:
+  - ImageNode trait uses input_rect() instead of overlap()
+  - All spatial filters compute correct input expansion from their config
+  - Point operations return output rect unchanged (zero expansion)
+  - Distortion filters compute asymmetric expansion from their transform
+  - Codegen generates input_rect() method for each filter node
+  - overlap attribute removed from register_filter macro
+  - Existing tiled parity tests pass (tiled_parity_point_op, tiled_parity_blur)
+  - New tiled parity tests for median, morphology, canny (verify no seam artifacts)
+  - Full-image execution produces identical output to before (no behavioral change)
+  out_of_scope: 'Actually using tiled execution in production sinks (next track). Threading. Encoder integration with tiles.
 
-    Phase 1: Change the trait
-      - ImageNode::overlap() -> ImageNode::input_rect(output: Rect, w: u32, h: u32) -> Rect
-      - Default implementation: return output (zero expansion)
-      - Update graph.rs request_region to use input_rect instead of overlap
-
-    Phase 2: Update codegen
-      - Remove overlap parsing from FilterReg
-      - Generate input_rect() per filter based on config struct fields:
-        - If config has "radius: f32|u32" → expand by radius
-        - If config has "ksize: u32" → expand by ksize/2
-        - If config has "sigma: f32" → expand by ceil(3*sigma)
-        - If config has "diameter: u32" → expand by diameter/2
-        - Otherwise → zero expansion (point operation)
-      - This heuristic covers 90%+ of cases
-      - Remaining cases: manual impl in the filter module
-
-    Phase 3: Audit and fix
-      - Run tiled parity tests for every spatial filter
-      - For filters where the heuristic is wrong, add manual input_rect override
-      - Distortion filters (barrel, swirl, etc.): compute bounding box of the
-        inverse transform applied to each corner of the output rect
-
-    VIPS COMPARISON:
-    Our approach is cleaner than vips because:
-    - Vips: each generate() function manually expands its rect inline
-    - Ours: codegen derives expansion from config struct field names
-    - Vips: no declaration, pure code
-    - Ours: heuristic from config + manual override for complex cases
+    '
+  technical_notes: "IMPLEMENTATION APPROACH:\n\nPhase 1: Change the trait\n  - ImageNode::overlap() -> ImageNode::input_rect(output:\
+    \ Rect, w: u32, h: u32) -> Rect\n  - Default implementation: return output (zero expansion)\n  - Update graph.rs request_region\
+    \ to use input_rect instead of overlap\n\nPhase 2: Update codegen\n  - Remove overlap parsing from FilterReg\n  - Generate\
+    \ input_rect() per filter based on config struct fields:\n    - If config has \"radius: f32|u32\" → expand by radius\n\
+    \    - If config has \"ksize: u32\" → expand by ksize/2\n    - If config has \"sigma: f32\" → expand by ceil(3*sigma)\n\
+    \    - If config has \"diameter: u32\" → expand by diameter/2\n    - Otherwise → zero expansion (point operation)\n  -\
+    \ This heuristic covers 90%+ of cases\n  - Remaining cases: manual impl in the filter module\n\nPhase 3: Audit and fix\n\
+    \  - Run tiled parity tests for every spatial filter\n  - For filters where the heuristic is wrong, add manual input_rect\
+    \ override\n  - Distortion filters (barrel, swirl, etc.): compute bounding box of the\n    inverse transform applied to\
+    \ each corner of the output rect\n\nVIPS COMPARISON:\nOur approach is cleaner than vips because:\n- Vips: each generate()\
+    \ function manually expands its rect inline\n- Ours: codegen derives expansion from config struct field names\n- Vips:\
+    \ no declaration, pure code\n- Ours: heuristic from config + manual override for complex cases\n"
 plan:
-  - phase: Trait & Graph Engine
-    tasks:
-      - text: Add input_rect() method to ImageNode trait with default zero-expansion impl
-        done: false
-      - text: Update graph.rs to use input_rect() instead of overlap() for upstream expansion
-        done: false
-      - text: Keep overlap() as deprecated alias (backward compat during migration)
-        done: false
-      - text: Verify existing tests pass with the trait change
-        done: false
-  - phase: Codegen Migration
-    tasks:
-      - text: Update codegen to generate input_rect() based on config struct analysis
-        done: false
-      - text: Implement heuristic — radius/ksize/sigma/diameter field detection
-        done: false
-      - text: Remove overlap attribute parsing from register_filter
-        done: false
-      - text: Generate correct input_rect for all 117 registered filters
-        done: false
-      - text: Verify codegen tests pass
-        done: false
-  - phase: Spatial Filter Audit
-    tasks:
-      - text: Add tiled parity tests for blur, median, morphology (verify no seam artifacts)
-        done: false
-      - text: Add tiled parity tests for canny, bilateral, guided_filter
-        done: false
-      - text: Add tiled parity test for motion_blur (asymmetric expansion)
-        done: false
-      - text: Verify distortion filters compute correct bounding box expansion
-        done: false
-      - text: Full cargo test pass with all new tiled parity tests
-        done: false
-  - phase: Cleanup
-    tasks:
-      - text: Remove deprecated overlap() from ImageNode trait
-        done: false
-      - text: Remove overlap field from FilterReg and Overlap from pipeline node structs
-        done: false
-      - text: Update documentation (ewa.rs, architecture docs)
-        done: false
+- phase: Trait & Graph Engine
+  tasks:
+  - text: Add input_rect() method to ImageNode trait with default zero-expansion impl
+    done: true
+  - text: Update graph.rs to use input_rect() instead of overlap() for upstream expansion
+    done: true
+  - text: Keep overlap() as deprecated alias (backward compat during migration)
+    done: true
+  - text: Verify existing tests pass with the trait change
+    done: true
+- phase: Codegen Migration
+  tasks:
+  - text: Update codegen to generate input_rect() based on config struct analysis
+    done: true
+  - text: Implement heuristic — radius/ksize/sigma/diameter field detection
+    done: true
+  - text: Remove overlap attribute parsing from register_filter
+    done: true
+  - text: Generate correct input_rect for all 117 registered filters
+    done: true
+  - text: Verify codegen tests pass
+    done: true
+- phase: Spatial Filter Audit
+  tasks:
+  - text: Add tiled parity tests for blur, median, morphology (verify no seam artifacts)
+    done: true
+  - text: Add tiled parity tests for canny, bilateral, guided_filter
+    done: true
+  - text: Add tiled parity test for motion_blur (asymmetric expansion)
+    done: true
+  - text: Verify distortion filters compute correct bounding box expansion
+    done: true
+  - text: Full cargo test pass with all new tiled parity tests
+    done: true
+- phase: Cleanup
+  tasks:
+  - text: Remove deprecated overlap() from ImageNode trait
+    done: false
+  - text: Remove overlap field from FilterReg and Overlap from pipeline node structs
+    done: false
+  - text: Update documentation (ewa.rs, architecture docs)
+    done: false
 extra: {}

@@ -6,7 +6,7 @@ use crate::domain::decoder;
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel};
 use crate::domain::types::{DecodedImage, ImageInfo};
-use rasmcore_pipeline::{Overlap, Rect};
+use rasmcore_pipeline::Rect;
 
 /// Source node that decodes an image lazily on first region request.
 pub struct SourceNode {
@@ -65,10 +65,6 @@ impl ImageNode for SourceNode {
         }
 
         Ok(result)
-    }
-
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
     }
 
     fn access_pattern(&self) -> AccessPattern {

@@ -4,7 +4,7 @@
 //! Image-specific node trait and implementations live here.
 
 // Re-export shared primitives
-pub use rasmcore_pipeline::{Overlap, Rect, SpatialCache};
+pub use rasmcore_pipeline::{Rect, SpatialCache};
 pub use rasmcore_pipeline::{cache, rect};
 
 pub mod dispatch;

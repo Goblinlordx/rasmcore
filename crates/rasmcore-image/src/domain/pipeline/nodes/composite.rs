@@ -5,7 +5,7 @@ use crate::domain::error::ImageError;
 use crate::domain::filters::BlendMode;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
 use crate::domain::types::*;
-use rasmcore_pipeline::{Overlap, Rect};
+use rasmcore_pipeline::Rect;
 
 /// Composites foreground over background with an (x, y) offset.
 ///
@@ -102,10 +102,6 @@ impl ImageNode for CompositeNode {
                 )
             }
         }
-    }
-
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
     }
 
     fn access_pattern(&self) -> AccessPattern {

@@ -5,7 +5,7 @@ use crate::domain::metadata::ExifOrientation;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
 use crate::domain::transform;
 use crate::domain::types::*;
-use rasmcore_pipeline::{Overlap, Rect};
+use rasmcore_pipeline::Rect;
 
 /// Resize node.
 pub struct ResizeNode {
@@ -60,9 +60,6 @@ impl ImageNode for ResizeNode {
         Ok(result.pixels)
     }
 
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
-    }
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::LocalNeighborhood
     }
@@ -125,9 +122,6 @@ impl ImageNode for CropNode {
         Ok(result.pixels)
     }
 
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
-    }
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::Sequential
     }
@@ -174,9 +168,6 @@ impl ImageNode for RotateNode {
         Ok(result.pixels)
     }
 
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
-    }
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::RandomAccess
     }
@@ -215,9 +206,6 @@ impl ImageNode for FlipNode {
         Ok(result.pixels)
     }
 
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
-    }
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::RandomAccess
     }
@@ -270,9 +258,6 @@ impl ImageNode for AutoOrientNode {
         Ok(result.pixels)
     }
 
-    fn overlap(&self) -> Overlap {
-        Overlap::zero()
-    }
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::RandomAccess
     }
