@@ -106,6 +106,32 @@ where
     Ok(u16_to_bytes(&result_16))
 }
 
+// ─── Spatial overlap crop helper ─────────────────────────────────────────────
+
+/// Crop a pixel buffer from an expanded region back to the original request.
+/// Used by spatial filters that expand their upstream request for overlap.
+fn crop_to_request(
+    filtered: &[u8],
+    expanded: Rect,
+    request: Rect,
+    format: PixelFormat,
+) -> Vec<u8> {
+    if expanded == request {
+        return filtered.to_vec();
+    }
+    let bpp = crate::domain::pipeline::graph::bytes_per_pixel(format) as usize;
+    let src_stride = expanded.width as usize * bpp;
+    let dst_stride = request.width as usize * bpp;
+    let x_off = (request.x - expanded.x) as usize * bpp;
+    let y_off = (request.y - expanded.y) as usize;
+    let mut out = Vec::with_capacity(request.height as usize * dst_stride);
+    for row in 0..request.height as usize {
+        let start = (y_off + row) * src_stride + x_off;
+        out.extend_from_slice(&filtered[start..start + dst_stride]);
+    }
+    out
+}
+
 // ─── Filter Config Structs (auto-generate param metadata via ConfigParams) ──
 
 /// Parameters for Gaussian blur.
@@ -1260,13 +1286,13 @@ pub fn blur(
     info: &ImageInfo,
     config: &BlurParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    blur_impl(&pixels, info, config)
+    let radius = config.radius;
+    let overlap = if radius > 0.0 { ((radius * 3.0).ceil() as u32).max(1) } else { 0 };
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
+    let expanded_info = ImageInfo { width: expanded.width, height: expanded.height, ..*info };
+    let result = blur_impl(&pixels, &expanded_info, config)?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 pub fn blur_impl(
@@ -1399,10 +1425,12 @@ pub fn bokeh_blur(
     info: &ImageInfo,
     config: &BokehBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.radius;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -1424,10 +1452,11 @@ pub fn bokeh_blur(
     if divisor == 0.0 {
         return Ok(pixels.to_vec());
     }
-    {
+    let full_rect = Rect::new(0, 0, info.width, info.height);
+    let result = {
         let mut u = |_: Rect| Ok(pixels.to_vec());
         convolve(
-            request,
+            full_rect,
             &mut u,
             info,
             &kernel,
@@ -1437,7 +1466,8 @@ pub fn bokeh_blur(
                 divisor,
             },
         )
-    }
+    }?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 /// Directional motion blur using a linear kernel at the given angle.
@@ -1472,10 +1502,12 @@ pub fn motion_blur(
     info: &ImageInfo,
     config: &MotionBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.length;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -1518,11 +1550,11 @@ pub fn motion_blur(
         return Ok(pixels.to_vec());
     }
 
-    {
-        let r = Rect::new(0, 0, info.width, info.height);
+    let full_rect = Rect::new(0, 0, info.width, info.height);
+    let result = {
         let mut u = |_: Rect| Ok(pixels.to_vec());
         convolve(
-            r,
+            full_rect,
             &mut u,
             info,
             &kernel,
@@ -1532,7 +1564,8 @@ pub fn motion_blur(
                 divisor: count as f32,
             },
         )
-    }
+    }?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 /// Zoom motion blur — radial streak from a center point.
@@ -1837,10 +1870,12 @@ pub fn box_blur(
     info: &ImageInfo,
     config: &BoxBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.radius;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -1852,11 +1887,12 @@ pub fn box_blur(
     }
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
+        let result = process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
             box_blur(r, &mut u, i8, config)
-        });
+        })?;
+        return Ok(crop_to_request(&result, expanded, request, info.format));
     }
 
     let w = info.width as usize;
@@ -1996,7 +2032,7 @@ pub fn box_blur(
         }
     }
 
-    Ok(out)
+    Ok(crop_to_request(&out, expanded, request, info.format))
 }
 
 // ─── Average Blur ─────────────────────────────────────────────────────────
@@ -2105,10 +2141,12 @@ pub fn smart_sharpen(
     info: &ImageInfo,
     config: &SmartSharpenParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.radius + 4; // bilateral + blur
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -2123,11 +2161,12 @@ pub fn smart_sharpen(
     }
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
+        let result = process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
             smart_sharpen(r, &mut u, i8, config)
-        });
+        })?;
+        return Ok(crop_to_request(&result, expanded, request, info.format));
     }
 
     // Use bilateral filter for edge-preserving blur
@@ -2208,7 +2247,7 @@ pub fn smart_sharpen(
     }
 
     // Restore alpha if stripped
-    if info.format == PixelFormat::Rgba8 {
+    let full_result = if info.format == PixelFormat::Rgba8 {
         let mut rgba = vec![0u8; pixels.len()];
         for i in 0..(pixels.len() / 4) {
             rgba[i * 4] = result[i * 3];
@@ -2216,10 +2255,11 @@ pub fn smart_sharpen(
             rgba[i * 4 + 2] = result[i * 3 + 2];
             rgba[i * 4 + 3] = pixels[i * 4 + 3]; // preserve original alpha
         }
-        Ok(rgba)
+        rgba
     } else {
-        Ok(result)
-    }
+        result
+    };
+    Ok(crop_to_request(&full_result, expanded, request, info.format))
 }
 
 /// Apply sharpening (unsharp mask).
@@ -2237,13 +2277,12 @@ pub fn sharpen(
     info: &ImageInfo,
     config: &SharpenParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    sharpen_impl(&pixels, info, config)
+    let overlap = 4u32; // blur radius 1.0 → kernel ~7, half = 3, +1 safety
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
+    let expanded_info = ImageInfo { width: expanded.width, height: expanded.height, ..*info };
+    let result = sharpen_impl(&pixels, &expanded_info, config)?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 pub fn sharpen_impl(
@@ -4392,10 +4431,12 @@ pub fn convolve(
     kernel: &[f32],
     config: &ConvolveParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.kw.max(config.kh) / 2;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -4414,11 +4455,12 @@ pub fn convolve(
 
     // 16-bit: process in f32 domain, then convert back
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
+        let result = process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
             convolve(r, &mut u, i8, kernel, config)
-        });
+        })?;
+        return Ok(crop_to_request(&result, expanded, request, info.format));
     }
 
     let w = info.width as usize;
@@ -4427,7 +4469,8 @@ pub fn convolve(
 
     // Try separable path first (O(2K) vs O(K^2))
     if let Some((row_k, col_k)) = is_separable(kernel, kw, kh) {
-        return convolve_separable(pixels, w, h, channels, &row_k, &col_k, divisor);
+        let result = convolve_separable(pixels, w, h, channels, &row_k, &col_k, divisor)?;
+        return Ok(crop_to_request(&result, expanded, request, info.format));
     }
 
     // General 2D convolution with padded input
@@ -4455,7 +4498,7 @@ pub fn convolve(
             }
         }
     }
-    Ok(out)
+    Ok(crop_to_request(&out, expanded, request, info.format))
 }
 
 /// Detect if a 2D kernel is separable (rank-1: K = col * row^T).
@@ -4704,10 +4747,12 @@ pub fn median(
     info: &ImageInfo,
     config: &MedianParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.radius;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -4720,22 +4765,24 @@ pub fn median(
 
     // 16-bit: delegate to 8-bit path (histogram-based median would need 65536 bins)
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
+        let result = process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
             median(r, &mut u, i8, config)
-        });
+        })?;
+        return Ok(crop_to_request(&result, expanded, request, info.format));
     }
 
     let w = info.width as usize;
     let h = info.height as usize;
     let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
 
-    if radius <= 2 {
-        median_sort(pixels, w, h, channels, radius)
+    let result = if radius <= 2 {
+        median_sort(pixels, w, h, channels, radius)?
     } else {
-        median_histogram(pixels, w, h, channels, radius)
-    }
+        median_histogram(pixels, w, h, channels, radius)?
+    };
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 /// Sorting-based median for small radii (radius <= 2).
@@ -7710,10 +7757,12 @@ pub fn bilateral(
     info: &ImageInfo,
     config: &BilateralParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.diameter / 2 + 1;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -7832,7 +7881,7 @@ pub fn bilateral(
         }
     }
 
-    Ok(result)
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 // ─── Guided Filter (He et al. 2010) ──────────────────────────────────────
@@ -7860,13 +7909,12 @@ pub fn guided_filter(
     info: &ImageInfo,
     config: &GuidedFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    guided_filter_impl(&pixels, info, config)
+    let overlap = 2 * config.radius;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
+    let expanded_info = ImageInfo { width: expanded.width, height: expanded.height, ..*info };
+    let result = guided_filter_impl(&pixels, &expanded_info, config)?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 pub fn guided_filter_impl(
@@ -9648,10 +9696,12 @@ pub fn gaussian_blur_cv(
     info: &ImageInfo,
     config: &GaussianBlurCvParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = (config.sigma * 3.0).ceil() as u32 + 1;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
@@ -9665,7 +9715,8 @@ pub fn gaussian_blur_cv(
     // This is dramatically faster: e.g. sigma=80 reduces from 481-tap separable
     // convolution to 3 box blur passes. PSNR >= 35dB for sigma >= 20.
     if sigma >= 20.0 {
-        return gaussian_blur_box_approx(pixels, info, sigma);
+        let result = gaussian_blur_box_approx(pixels, info, sigma)?;
+        return Ok(crop_to_request(&result, expanded, request, info.format));
     }
 
     // Small sigma: exact separable Gaussian (kernel size is manageable)
@@ -9683,10 +9734,11 @@ pub fn gaussian_blur_cv(
         }
     }
 
-    {
+    let full_rect = Rect::new(0, 0, info.width, info.height);
+    let result = {
         let mut u = |_: Rect| Ok(pixels.to_vec());
         convolve(
-            request,
+            full_rect,
             &mut u,
             info,
             &kernel_2d,
@@ -9696,7 +9748,8 @@ pub fn gaussian_blur_cv(
                 divisor: 1.0,
             },
         )
-    }
+    }?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 /// Generate a 1D Gaussian kernel matching OpenCV's `getGaussianKernel`.
@@ -10748,17 +10801,20 @@ pub fn erode_registered(
     info: &ImageInfo,
     config: &ErodeParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.ksize / 2;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
-    erode(pixels, info, ksize, morph_shape_from_u32(shape))
+    let result = erode(pixels, info, ksize, morph_shape_from_u32(shape))?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 /// Morphological dilation (user-facing wrapper).
@@ -10775,17 +10831,20 @@ pub fn dilate_registered(
     info: &ImageInfo,
     config: &DilateParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
+    let overlap = config.ksize / 2;
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
     let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
+        width: expanded.width,
+        height: expanded.height,
         ..*info
     };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
-    dilate(pixels, info, ksize, morph_shape_from_u32(shape))
+    let result = dilate(pixels, info, ksize, morph_shape_from_u32(shape))?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
 }
 
 /// Morphological opening (user-facing wrapper).
