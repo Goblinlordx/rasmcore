@@ -1,0 +1,175 @@
+id: pipeline-read-api-redesign_20260331023844Z
+title: Pipeline Read API Redesign — Immediate Metadata, Lazy Pixels, Vips-Parity
+type: refactor
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Redesign pipeline read() to return structured metadata immediately
+    (parsed from headers) while deferring pixel decode. Eliminates raw
+    byte cloning, provides rich metadata access, and aligns with the
+    libvips API model. Benchmark against vips for API completeness.
+  context: |
+    Current read() clones the entire input buffer, stashes it on the
+    pipeline resource, and parses metadata lazily when metadata-dump()
+    is called. This wastes memory (full buffer clone), delays metadata
+    access (not available until explicit query), and couples metadata
+    to the pipeline lifetime instead of making it a first-class output.
+
+    libvips reference API:
+    - vips_image_new_from_buffer() → VipsImage with headers loaded
+    - vips_image_get_fields() → list of all metadata field names
+    - vips_image_get_string(field) → field value (available immediately)
+    - vips_image_get_int(field) → typed access
+    - Pixel data decoded on first access (demand-driven)
+    - vips_image_get_typeof(field) → field type discovery
+
+    ImageMagick reference:
+    - MagickReadImage() → MagickWand with full metadata
+    - MagickGetImageProperty() → any metadata field
+    - MagickIdentifyImage() → full metadata dump
+
+    Both provide metadata immediately after read, before any pixel access.
+
+    Target API:
+    read(data) returns a structured result with:
+    1. metadata (MetadataSet) — parsed from container headers, immediately
+    2. source (node-id) — lazy pixel access, decoded on demand
+    3. format (string) — detected format name
+    4. warnings (list) — non-fatal parsing issues (corrupt EXIF, etc.)
+  codebase_analysis: |
+    CURRENT FLOW:
+    1. read() clones full input buffer into metadata_ops.source_data
+    2. SourceNode::new(data) stores full buffer for lazy decode
+    3. metadata_dump() parses EXIF/IPTC/XMP from stashed source_data
+    4. Two copies of the full input exist in memory
+
+    METADATA PARSING (domain/metadata.rs):
+    - read_exif(data) — parses EXIF from JPEG APP1 or TIFF IFD
+    - read_iptc(data) — parses IPTC from JPEG APP13
+    - read_xmp(data) — parses XMP from JPEG APP1/PNG iTXt
+    - All operate on raw bytes, return structured data
+    - Already fast — just header scanning, no pixel decode
+
+    WIT PIPELINE INTERFACE:
+    - read: func(data: buffer) -> result<node-id, rasmcore-error>
+    - metadata-dump: func() -> result<string, rasmcore-error>
+    - metadata-read: func(path: string) -> result<option<string>, rasmcore-error>
+
+    PROPOSED NEW WIT:
+    record read-result {
+        source: node-id,
+        metadata: metadata-set,
+        format: string,
+        width: u32,
+        height: u32,
+        warnings: list<string>,
+    }
+
+    read: func(data: buffer) -> result<read-result, rasmcore-error>
+  acceptance_criteria:
+    - read() returns read-result with metadata, source, format, dimensions, warnings
+    - Metadata parsed from headers at read time (no deferred parsing)
+    - Raw input buffer NOT cloned for metadata (parse once, discard headers)
+    - Pixel decode still lazy (only on downstream pull)
+    - metadata-dump() still works (reads from pre-parsed metadata-set)
+    - metadata-read() still works (queries pre-parsed metadata)
+    - Width/height available immediately (from header, no full decode)
+    - Format detected and returned (jpeg, png, etc.)
+    - Non-fatal metadata parse errors collected as warnings
+    - Benchmark against vips API for field access completeness
+    - All existing pipeline tests pass
+    - Memory usage reduced (no duplicate buffer)
+  out_of_scope: |
+    Streaming decode (progressive pixel access). Multi-image read (GIF frames).
+    Metadata write API changes (keep-metadata/set-metadata stay as-is).
+    ICC profile handling changes. New metadata formats.
+  technical_notes: |
+    VIPS API COMPARISON:
+
+    | Operation | libvips | rasmcore (current) | rasmcore (proposed) |
+    |-----------|---------|-------------------|---------------------|
+    | Read + get metadata | Immediate | Lazy (query stashed bytes) | Immediate (parse at read) |
+    | Get dimensions | Immediate | node-info() (separate call) | In read-result |
+    | Get format | From loader name | detect-format() (separate) | In read-result |
+    | Pixel access | On demand | On demand | On demand (unchanged) |
+    | Memory model | Ref-counted regions | Clone full buffer | Parse headers, pass ownership |
+
+    IMPLEMENTATION:
+
+    1. At read() time:
+       a. detect_format(data) → format string
+       b. Parse container headers for dimensions (JPEG SOF, PNG IHDR, etc.)
+       c. Extract all metadata (EXIF, IPTC, XMP, ICC) into MetadataSet
+       d. Create SourceNode with data (ownership transfer, no clone)
+       e. Return read-result with metadata + node-id + format + dims
+
+    2. Remove source_data stash from metadata_ops:
+       - metadata_dump() reads from pre-parsed metadata
+       - metadata_read() queries pre-parsed metadata
+       - No raw bytes kept for metadata (just the structured MetadataSet)
+
+    3. SourceNode still owns the raw bytes for lazy pixel decode.
+       Only ONE copy of the input exists (in the SourceNode).
+
+    WIT CHANGE:
+    ```wit
+    record read-result {
+        source: node-id,
+        metadata: metadata-set,
+        format: string,
+        width: u32,
+        height: u32,
+        warnings: list<string>,
+    }
+
+    // Replace: read: func(data: buffer) -> result<node-id, ...>
+    // With:    read: func(data: buffer) -> result<read-result, ...>
+    ```
+
+    BACKWARD COMPATIBILITY:
+    - Breaking WIT change (read return type changes)
+    - SDK consumers need to update: read(data).source instead of read(data)
+    - metadata-dump/metadata-read still work but read from pre-parsed data
+    - All filter/transform/write methods unchanged
+plan:
+  - phase: Research
+    tasks:
+      - text: Document full vips API for image loading and metadata access
+        done: false
+      - text: Benchmark vips field access coverage vs our current metadata support
+        done: false
+      - text: Identify missing metadata fields that vips exposes but we dont
+        done: false
+  - phase: Header Parsing
+    tasks:
+      - text: Implement fast header-only dimension extraction per format (no full decode)
+        done: false
+      - text: Implement metadata extraction at read time (parse once into MetadataSet)
+        done: false
+      - text: Collect non-fatal parse warnings into Vec
+        done: false
+  - phase: API Redesign
+    tasks:
+      - text: Define read-result WIT record
+        done: false
+      - text: Update read() to return read-result with metadata + source + format + dims
+        done: false
+      - text: Remove source_data stash from metadata_ops (use pre-parsed metadata)
+        done: false
+      - text: Update metadata-dump and metadata-read to use pre-parsed data
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify metadata available immediately after read (before any pixel access)
+        done: false
+      - text: Verify pixel decode still lazy (only on write/request_region)
+        done: false
+      - text: Verify no duplicate buffer (memory reduced)
+        done: false
+      - text: All existing pipeline tests pass
+        done: false
+      - text: Benchmark metadata access time vs vips (should be comparable)
+        done: false
+extra: {}
