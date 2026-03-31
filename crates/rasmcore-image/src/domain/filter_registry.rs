@@ -487,7 +487,7 @@ builtin_filter!(BlurFilter, "blur", FilterCategory::Blur,
     params: [ParamDescriptor::float("radius", 0.0, 100.0, 1.0).with_description("Gaussian blur radius")],
     apply: |input| {
         let radius = input.params.get_float("radius").unwrap_or(1.0);
-        filters::blur(input.pixels, input.info, &filters::BlurParams { radius })
+        filters::blur_impl(input.pixels, input.info, &filters::BlurParams { radius })
     }
 );
 
@@ -495,7 +495,7 @@ builtin_filter!(SharpenFilter, "sharpen", FilterCategory::Sharpen,
     params: [ParamDescriptor::float("amount", 0.0, 10.0, 1.0).with_description("Unsharp mask amount")],
     apply: |input| {
         let amount = input.params.get_float("amount").unwrap_or(1.0);
-        filters::sharpen(input.pixels, input.info, &filters::SharpenParams { amount })
+        filters::sharpen_impl(input.pixels, input.info, &filters::SharpenParams { amount })
     }
 );
 
@@ -796,7 +796,7 @@ builtin_filter!(GuidedFilterEntry, "guided_filter", FilterCategory::Denoise,
     apply: |input| {
         let r = input.params.get_uint("radius").unwrap_or(4);
         let eps = input.params.get_float("epsilon").unwrap_or(0.01);
-        filters::guided_filter(input.pixels, input.info, &filters::GuidedFilterParams { radius: r, epsilon: eps })
+        filters::guided_filter_impl(input.pixels, input.info, &filters::GuidedFilterParams { radius: r, epsilon: eps })
     }
 );
 

@@ -1156,6 +1156,17 @@ pub struct WhiteBalanceTemperatureParams {
     reference = "Gaussian convolution"
 )]
 pub fn blur(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &BlurParams,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    blur_impl(&pixels, info, config)
+}
+
+pub fn blur_impl(
     pixels: &[u8],
     info: &ImageInfo,
     config: &BlurParams,
@@ -1180,7 +1191,7 @@ pub fn blur(
 
     // 16-bit: delegate to 8-bit path via process_via_8bit (libblur only supports u8)
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| blur(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| blur_impl(p8, i8, config));
     }
 
     let channels = match info.format {
@@ -2041,6 +2052,17 @@ pub fn smart_sharpen(
     reference = "unsharp mask"
 )]
 pub fn sharpen(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &SharpenParams,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    sharpen_impl(&pixels, info, config)
+}
+
+pub fn sharpen_impl(
     pixels: &[u8],
     info: &ImageInfo,
     config: &SharpenParams,
@@ -2061,7 +2083,7 @@ pub fn sharpen(
             },
             ..*info
         };
-        let blurred = blur(pixels, info, &BlurParams { radius: 1.0 })?;
+        let blurred = blur_impl(pixels, info, &BlurParams { radius: 1.0 })?;
         let blur_f32 = u16_pixels_to_f32(&blurred);
         let result_f32: Vec<f32> = orig_f32
             .iter()
@@ -2072,7 +2094,7 @@ pub fn sharpen(
     }
 
     // Blur with a small radius for the unsharp mask
-    let blurred = blur(pixels, info, &BlurParams { radius: 1.0 })?;
+    let blurred = blur_impl(pixels, info, &BlurParams { radius: 1.0 })?;
 
     let mut result = vec![0u8; pixels.len()];
 
@@ -2824,10 +2846,14 @@ pub struct ChannelMixerParams {
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn channel_mixer(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ChannelMixerParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let rr = config.rr;
     let rg = config.rg;
     let rb = config.rb;
@@ -7132,6 +7158,17 @@ pub fn bilateral(
     reference = "He et al. 2010 guided image filtering"
 )]
 pub fn guided_filter(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &GuidedFilterParams,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    guided_filter_impl(&pixels, info, config)
+}
+
+pub fn guided_filter_impl(
     pixels: &[u8],
     info: &ImageInfo,
     config: &GuidedFilterParams,
@@ -7823,7 +7860,7 @@ pub fn dehaze(
         format: PixelFormat::Gray8,
         color_space: info.color_space,
     };
-    let refined_u8 = guided_filter(&t_u8, &gray_info, &GuidedFilterParams { radius: patch_radius.min(15), epsilon: 0.001 })?;
+    let refined_u8 = guided_filter_impl(&t_u8, &gray_info, &GuidedFilterParams { radius: patch_radius.min(15), epsilon: 0.001 })?;
     let refined: Vec<f32> = refined_u8.iter().map(|&v| v as f32 / 255.0).collect();
 
     // Step 5: Recover scene — J = (I - A) / max(t, t_min) + A
@@ -8096,7 +8133,7 @@ pub fn clarity(
     }
 
     // Apply large-radius blur
-    let blurred = blur(pixels, info, &BlurParams { radius: sigma })?;
+    let blurred = blur_impl(pixels, info, &BlurParams { radius: sigma })?;
 
     // Midtone weight function: bell curve centered at 0.5, zero at 0 and 1
     // w(l) = 4 * l * (1 - l) — parabola peaking at 0.5 with w(0.5) = 1.0
@@ -8446,7 +8483,7 @@ pub fn frequency_low(
     if sigma <= 0.0 {
         return Ok(pixels.to_vec());
     }
-    blur(pixels, info, &BlurParams { radius: sigma })
+    blur_impl(pixels, info, &BlurParams { radius: sigma })
 }
 
 /// Frequency separation — high-pass (detail) layer.
@@ -8488,7 +8525,7 @@ pub fn frequency_high(
     // 16-bit path: compute in f32 for precision
     if is_16bit(info.format) {
         let orig_f32 = u16_pixels_to_f32(pixels);
-        let blurred = blur(pixels, info, &BlurParams { radius: sigma })?;
+        let blurred = blur_impl(pixels, info, &BlurParams { radius: sigma })?;
         let blur_f32 = u16_pixels_to_f32(&blurred);
         // high = orig - blur + 0.5 (mid-gray in normalized [0,1])
         let result_f32: Vec<f32> = orig_f32
@@ -8499,7 +8536,7 @@ pub fn frequency_high(
         return Ok(f32_to_u16_pixels(&result_f32));
     }
 
-    let blurred = blur(pixels, info, &BlurParams { radius: sigma })?;
+    let blurred = blur_impl(pixels, info, &BlurParams { radius: sigma })?;
     let ch = channels(info.format);
     let n = pixels.len();
     let mut result = vec![0u8; n];
@@ -11746,10 +11783,14 @@ pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn draw_line_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DrawLineParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let x1 = config.x1;
     let y1 = config.y1;
     let x2 = config.x2;
@@ -11775,10 +11816,14 @@ pub fn draw_line_filter(
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn draw_rect_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DrawRectParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let x = config.x;
     let y = config.y;
     let rect_width = config.rect_width;
@@ -11815,10 +11860,14 @@ pub fn draw_rect_filter(
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn draw_circle_filter(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DrawCircleParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let cx = config.cx;
     let cy = config.cy;
     let radius = config.radius;
@@ -12175,21 +12224,21 @@ mod tests {
     #[test]
     fn blur_preserves_dimensions() {
         let (px, info) = make_image(16, 16);
-        let result = blur(&px, &info, &BlurParams { radius: 2.0 }).unwrap();
+        let result = blur_impl(&px, &info, &BlurParams { radius: 2.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn blur_zero_radius_preserves_pixels() {
         let (px, info) = make_image(8, 8);
-        let result = blur(&px, &info, &BlurParams { radius: 0.0 }).unwrap();
+        let result = blur_impl(&px, &info, &BlurParams { radius: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn blur_negative_radius_returns_error() {
         let (px, info) = make_image(8, 8);
-        let result = blur(&px, &info, &BlurParams { radius: -1.0 });
+        let result = blur_impl(&px, &info, &BlurParams { radius: -1.0 });
         assert!(result.is_err());
     }
 
@@ -12286,7 +12335,7 @@ mod tests {
     #[test]
     fn sharpen_preserves_dimensions() {
         let (px, info) = make_image(16, 16);
-        let result = sharpen(&px, &info, &SharpenParams { amount: 1.0 }).unwrap();
+        let result = sharpen_impl(&px, &info, &SharpenParams { amount: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -12355,8 +12404,8 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(blur(&pixels, &info, &BlurParams { radius: 1.0 }).is_ok());
-        assert!(sharpen(&pixels, &info, &SharpenParams { amount: 1.0 }).is_ok());
+        assert!(blur_impl(&pixels, &info, &BlurParams { radius: 1.0 }).is_ok());
+        assert!(sharpen_impl(&pixels, &info, &SharpenParams { amount: 1.0 }).is_ok());
         assert!(brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BrightnessParams { amount: 0.2 }).is_ok());
         assert!(contrast(
             Rect::new(0, 0, info.width, info.height),
@@ -13147,7 +13196,7 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(32 * 32))
             .map(|i| (128i32 + ((i * 17 + 3) % 21) as i32 - 10).clamp(0, 255) as u8)
             .collect();
-        let result = guided_filter(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
+        let result = guided_filter_impl(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
 
         // Should reduce variance from mean
         let mean_in = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
@@ -13177,7 +13226,7 @@ mod optimization_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![100u8; 16 * 16];
-        let result = guided_filter(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
+        let result = guided_filter_impl(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
         // Flat input should produce flat output
         for &v in &result {
             assert!((v as i32 - 100).abs() <= 1, "flat pixel changed to {v}");
@@ -13219,21 +13268,21 @@ mod tests_16bit {
     #[test]
     fn blur_16bit_identity() {
         let (px, info) = make_rgb16(8, 8, 32768);
-        let result = blur(&px, &info, &BlurParams { radius: 0.0 }).unwrap();
+        let result = blur_impl(&px, &info, &BlurParams { radius: 0.0 }).unwrap();
         assert_eq!(result, px, "zero-radius blur should be identity");
     }
 
     #[test]
     fn blur_16bit_produces_output() {
         let (px, info) = make_rgb16(8, 8, 32768);
-        let result = blur(&px, &info, &BlurParams { radius: 1.0 }).unwrap();
+        let result = blur_impl(&px, &info, &BlurParams { radius: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len(), "output length should match");
     }
 
     #[test]
     fn sharpen_16bit_produces_output() {
         let (px, info) = make_rgb16(8, 8, 32768);
-        let result = sharpen(&px, &info, &SharpenParams { amount: 1.0 }).unwrap();
+        let result = sharpen_impl(&px, &info, &SharpenParams { amount: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -15297,10 +15346,14 @@ pub struct AscCdlParams {
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn asc_cdl_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &AscCdlParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let slope_r = config.slope_r;
     let slope_g = config.slope_g;
     let slope_b = config.slope_b;
@@ -16167,7 +16220,17 @@ pub fn solarize(
     category = "effect",
     reference = "3D relief embossing via directional kernel"
 )]
-pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn emboss(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    emboss_impl(&pixels, info)
+}
+
+pub fn emboss_impl(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     // Standard emboss kernel: directional highlight along the diagonal
     #[rustfmt::skip]
     let kernel: [f32; 9] = [
@@ -16328,7 +16391,7 @@ pub fn charcoal(
 
     // 1. Optional pre-blur to control edge sensitivity
     let smoothed = if sigma > 0.0 {
-        blur(pixels, info, &BlurParams { radius: sigma })?
+        blur_impl(pixels, info, &BlurParams { radius: sigma })?
     } else {
         pixels.to_vec()
     };
@@ -16344,7 +16407,7 @@ pub fn charcoal(
 
     // 3. Post-blur to soften the edges (on the grayscale edge image)
     let blurred = if radius > 0.0 {
-        blur(&edges, &gray_info, &BlurParams { radius })?
+        blur_impl(&edges, &gray_info, &BlurParams { radius })?
     } else {
         edges
     };
@@ -16405,7 +16468,7 @@ mod artistic_filter_tests {
     fn emboss_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = emboss(&pixels, &info).unwrap();
+        let result = emboss_impl(&pixels, &info).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16414,7 +16477,7 @@ mod artistic_filter_tests {
         // Uniform image should produce mostly mid-gray after emboss
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = emboss(&pixels, &info).unwrap();
+        let result = emboss_impl(&pixels, &info).unwrap();
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         // Emboss of flat field: center weight=1 → ~128
         assert!(
@@ -20740,7 +20803,7 @@ pub fn tilt_shift(
     let bpp = channels(info.format);
 
     // Generate the fully blurred version
-    let blurred = blur(pixels, info, &BlurParams { radius: blur_radius })?;
+    let blurred = blur_impl(pixels, info, &BlurParams { radius: blur_radius })?;
 
     // Compute per-pixel blur mask based on distance from focus band
     let angle_rad = angle.to_radians();
