@@ -276,6 +276,8 @@ pub struct PipelineResource {
     frame_source: RefCell<Option<std::rc::Rc<frame_source::FrameSourceNode>>>,
     /// Optional layer cache for cross-pipeline result reuse.
     layer_cache: RefCell<Option<std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>>>,
+    /// Metadata filter for write operations (default: drop all).
+    metadata_filter: RefCell<rasmcore_pipeline::MetadataFilter>,
 }
 
 impl PipelineResource {
@@ -292,7 +294,13 @@ impl GuestImagePipeline for PipelineResource {
             metadata_ops: RefCell::new(MetadataOps::default()),
             frame_source: RefCell::new(None),
             layer_cache: RefCell::new(None),
+            metadata_filter: RefCell::new(rasmcore_pipeline::MetadataFilter::DropAll),
         }
+    }
+
+    fn keep_metadata(&self) -> Result<NodeId, RasmcoreError> {
+        *self.metadata_filter.borrow_mut() = rasmcore_pipeline::MetadataFilter::KeepAll;
+        Ok(0) // return dummy node-id (metadata ops are pipeline-level)
     }
 
     fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {
@@ -306,10 +314,70 @@ impl GuestImagePipeline for PipelineResource {
     }
 
     fn read(&self, data: Vec<u8>) -> Result<NodeId, RasmcoreError> {
-        // Capture source data for metadata operations
+        // Parse metadata immediately from container headers (before pixel decode)
+        let mut meta = rasmcore_pipeline::Metadata::new();
+
+        // Detect format
+        if let Some(fmt) = domain::decoder::detect_format(&data) {
+            meta.set("format", rasmcore_pipeline::MetadataValue::String(fmt.clone()));
+
+            // Extract ICC profile
+            let icc = match fmt.as_str() {
+                "jpeg" | "jpg" => domain::color::extract_icc_from_jpeg(&data),
+                "png" => domain::color::extract_icc_from_png(&data),
+                _ => None,
+            };
+            if let Some(profile) = icc {
+                meta.set("icc_profile", rasmcore_pipeline::MetadataValue::Bytes(profile));
+            }
+        }
+
+        // Extract EXIF metadata (non-fatal — corrupt EXIF shouldn't block decode)
+        if let Ok(exif) = domain::metadata::read_exif(&data) {
+            if let Some(orient) = exif.orientation {
+                meta.set(
+                    "exif.Orientation",
+                    rasmcore_pipeline::MetadataValue::Int(orient as i64),
+                );
+            }
+            if let Some(ref make) = exif.make {
+                meta.set(
+                    "exif.Make",
+                    rasmcore_pipeline::MetadataValue::String(make.clone()),
+                );
+            }
+            if let Some(ref model) = exif.model {
+                meta.set(
+                    "exif.Model",
+                    rasmcore_pipeline::MetadataValue::String(model.clone()),
+                );
+            }
+            if let Some(ref software) = exif.software {
+                meta.set(
+                    "exif.Software",
+                    rasmcore_pipeline::MetadataValue::String(software.clone()),
+                );
+            }
+            if let Some(ref date) = exif.date_time {
+                meta.set(
+                    "exif.DateTime",
+                    rasmcore_pipeline::MetadataValue::String(date.clone()),
+                );
+            }
+            if let Some(w) = exif.width {
+                meta.set("width", rasmcore_pipeline::MetadataValue::Int(w as i64));
+            }
+            if let Some(h) = exif.height {
+                meta.set("height", rasmcore_pipeline::MetadataValue::Int(h as i64));
+            }
+        }
+
+        // Still stash source data for legacy metadata operations
         self.metadata_ops.borrow_mut().source_data = Some(data.clone());
+
+        // Create source node with metadata attached
         let node = source::SourceNode::new(data).map_err(to_wit_error)?;
-        let id = self.graph.borrow_mut().add_node(Box::new(node));
+        let id = self.graph.borrow_mut().add_node_with_metadata(Box::new(node), meta);
         Ok(id)
     }
 
@@ -351,7 +419,12 @@ impl GuestImagePipeline for PipelineResource {
             ResizeFilter::Lanczos3 => domain::types::ResizeFilter::Lanczos3,
         };
         let node = transform::ResizeNode::new(source, src_info, width, height, domain_filter);
-        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+        let mut graph = self.graph.borrow_mut();
+        // Propagate metadata with updated dimensions
+        let mut meta = graph.node_metadata(source).clone();
+        meta.set("width", rasmcore_pipeline::MetadataValue::Int(width as i64));
+        meta.set("height", rasmcore_pipeline::MetadataValue::Int(height as i64));
+        Ok(graph.add_node_with_metadata(Box::new(node), meta))
     }
 
     fn crop(
@@ -368,7 +441,11 @@ impl GuestImagePipeline for PipelineResource {
             .node_info(source)
             .map_err(to_wit_error)?;
         let node = transform::CropNode::new(source, src_info, x, y, width, height);
-        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+        let mut graph = self.graph.borrow_mut();
+        let mut meta = graph.node_metadata(source).clone();
+        meta.set("width", rasmcore_pipeline::MetadataValue::Int(width as i64));
+        meta.set("height", rasmcore_pipeline::MetadataValue::Int(height as i64));
+        Ok(graph.add_node_with_metadata(Box::new(node), meta))
     }
 
     fn rotate(&self, source: NodeId, angle: Rotation) -> Result<NodeId, RasmcoreError> {
@@ -409,14 +486,34 @@ impl GuestImagePipeline for PipelineResource {
     }
 
     fn icc_to_srgb(&self, source: NodeId, icc_profile: Vec<u8>) -> Result<NodeId, RasmcoreError> {
-        let src_info = self
-            .graph
-            .borrow()
-            .node_info(source)
-            .map_err(to_wit_error)?;
-        let node =
-            color::IccToSrgbNode::new(source, src_info, icc_profile).map_err(to_wit_error)?;
-        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+        let graph = self.graph.borrow();
+        let src_info = graph.node_info(source).map_err(to_wit_error)?;
+
+        // Use explicit profile if provided, otherwise try metadata
+        let profile = if !icc_profile.is_empty() {
+            icc_profile
+        } else {
+            graph
+                .node_metadata(source)
+                .icc_profile()
+                .map(|b| b.to_vec())
+                .unwrap_or_default()
+        };
+        drop(graph);
+
+        if profile.is_empty() {
+            // No ICC profile — pass through unchanged
+            return Ok(source);
+        }
+
+        let node = color::IccToSrgbNode::new(source, src_info, profile).map_err(to_wit_error)?;
+        let mut graph = self.graph.borrow_mut();
+
+        // Propagate metadata with ICC profile removed (consumed)
+        let mut meta = graph.node_metadata(source).clone();
+        meta.remove("icc_profile");
+        let id = graph.add_node_with_metadata(Box::new(node), meta);
+        Ok(id)
     }
 
     fn auto_orient(
@@ -424,13 +521,28 @@ impl GuestImagePipeline for PipelineResource {
         source: NodeId,
         orientation: ExifOrientation,
     ) -> Result<NodeId, RasmcoreError> {
-        let src_info = self
-            .graph
-            .borrow()
-            .node_info(source)
-            .map_err(to_wit_error)?;
+        let graph = self.graph.borrow();
+        let src_info = graph.node_info(source).map_err(to_wit_error)?;
+
+        // Use explicit orientation if not Normal, otherwise try metadata
         let domain_orient = match orientation {
-            ExifOrientation::Normal => domain::metadata::ExifOrientation::Normal,
+            ExifOrientation::Normal => {
+                // Check metadata for orientation
+                let meta_orient = graph.node_metadata(source).exif_orientation().unwrap_or(1);
+                match meta_orient {
+                    2 => domain::metadata::ExifOrientation::FlipHorizontal,
+                    3 => domain::metadata::ExifOrientation::Rotate180,
+                    4 => domain::metadata::ExifOrientation::FlipVertical,
+                    5 => domain::metadata::ExifOrientation::Transpose,
+                    6 => domain::metadata::ExifOrientation::Rotate90,
+                    7 => domain::metadata::ExifOrientation::Transverse,
+                    8 => domain::metadata::ExifOrientation::Rotate270,
+                    _ => {
+                        drop(graph);
+                        return Ok(source); // Already normal — pass through
+                    }
+                }
+            }
             ExifOrientation::FlipHorizontal => domain::metadata::ExifOrientation::FlipHorizontal,
             ExifOrientation::Rotate180 => domain::metadata::ExifOrientation::Rotate180,
             ExifOrientation::FlipVertical => domain::metadata::ExifOrientation::FlipVertical,
@@ -439,8 +551,19 @@ impl GuestImagePipeline for PipelineResource {
             ExifOrientation::Transverse => domain::metadata::ExifOrientation::Transverse,
             ExifOrientation::Rotate270 => domain::metadata::ExifOrientation::Rotate270,
         };
+        drop(graph);
+
         let node = transform::AutoOrientNode::new(source, src_info, domain_orient);
-        Ok(self.graph.borrow_mut().add_node(Box::new(node)))
+        let mut graph = self.graph.borrow_mut();
+
+        // Propagate metadata with orientation reset to 1 (Normal)
+        let mut meta = graph.node_metadata(source).clone();
+        meta.set(
+            "exif.Orientation",
+            rasmcore_pipeline::MetadataValue::Int(1),
+        );
+        let id = graph.add_node_with_metadata(Box::new(node), meta);
+        Ok(id)
     }
 
     // Auto-generated pipeline filter methods (all registered filters)
