@@ -9542,6 +9542,19 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
 // Per-pixel noise addition to existing images (Gaussian, salt-pepper,
 // Poisson, uniform). All are seeded for reproducibility and use a fast
 // xorshift64 PRNG. LLVM auto-vectorizes the inner loops to SIMD128.
+//
+// Validation: no external reference parity (ImageMagick, OpenCV, etc.)
+// because noise output depends on the exact PRNG sequence — our xorshift64
+// won't match any external library's RNG. Instead we validate via:
+//   1. Determinism — identical seed always produces identical output.
+//   2. Identity — zero strength/amount/range/density is a bit-exact passthrough.
+//   3. Statistical properties — mean, variance, and distribution shape are
+//      checked against expected values (e.g. Gaussian mean ≈ 0, uniform
+//      variance ≈ range²/3, Poisson variance scales with signal intensity).
+//   4. Structural invariants — alpha preserved, salt-pepper only produces
+//      {0, 255}, output length matches input.
+// Future: golden-value tests (hash a fixed-seed output to catch regressions)
+// would strengthen coverage without requiring external reference parity.
 
 /// xorshift64 PRNG — fast, deterministic, good enough for noise generation.
 #[inline]
