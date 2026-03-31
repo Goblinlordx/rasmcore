@@ -86,6 +86,7 @@ mod tests {
             ],
             config_struct: None,
             point_op: false,
+            color_op: false,
         }];
         let wit = generate(&filters);
         assert!(wit.contains(
@@ -106,6 +107,7 @@ mod tests {
             params: vec![],
             config_struct: None,
             point_op: false,
+            color_op: false,
         }];
         let wit = generate(&filters);
         assert!(wit.contains("grayscale: func(pixels: buffer, info: image-info)"));

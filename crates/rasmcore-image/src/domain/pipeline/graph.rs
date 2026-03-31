@@ -68,6 +68,11 @@ pub trait ImageNode {
     fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
         None
     }
+
+    /// If this node is a fuseable multi-channel color operation, return its 3D CLUT.
+    fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> {
+        None
+    }
 }
 
 /// Rc wrapper around FrameSourceNode that implements ImageNode by delegation.
@@ -124,6 +129,31 @@ impl ImageNode for FusedLutNode {
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::Sequential
     }
+}
+
+/// A pipeline node that applies a pre-composed 3D CLUT, replacing a chain
+/// of consecutive multi-channel color operations with a single lookup.
+struct FusedClutNode {
+    upstream: u32,
+    source_info: ImageInfo,
+    clut: crate::domain::color_lut::ColorLut3D,
+}
+
+impl ImageNode for FusedClutNode {
+    fn info(&self) -> ImageInfo { self.source_info.clone() }
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let src = upstream_fn(self.upstream, request)?;
+        self.clut.apply(&src, &self.source_info)
+    }
+    fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> {
+        Some(self.clut.clone())
+    }
+    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }
+    fn access_pattern(&self) -> AccessPattern { AccessPattern::Sequential }
 }
 
 /// Pipeline-owned node graph.
@@ -390,6 +420,32 @@ impl NodeGraph {
                     use_w,
                     use_h,
                 ));
+            }
+        }
+    }
+
+    /// Fuse consecutive multi-channel color operations into single 3D CLUT nodes.
+    pub fn fuse_color_ops(&mut self) {
+        let n = self.nodes.len();
+        let mut fused_into: Vec<Option<u32>> = vec![None; n];
+        for i in (0..n).rev() {
+            if fused_into[i].is_some() { continue; }
+            let Some(mut clut) = self.nodes[i].as_color_lut_op() else { continue; };
+            let mut chain_root_upstream = self.nodes[i].upstream_id();
+            let mut current = i;
+            while let Some(up_id) = self.nodes[current].upstream_id() {
+                let up = up_id as usize;
+                if up >= n || fused_into[up].is_some() { break; }
+                let Some(up_clut) = self.nodes[up].as_color_lut_op() else { break; };
+                clut = crate::domain::color_lut::compose_cluts(&up_clut, &clut);
+                chain_root_upstream = self.nodes[up].upstream_id();
+                fused_into[up] = Some(i as u32);
+                current = up;
+            }
+            if current != i {
+                let upstream = chain_root_upstream.unwrap_or(0);
+                let info = self.nodes[i].info();
+                self.nodes[i] = Box::new(FusedClutNode { upstream, source_info: info, clut });
             }
         }
     }
@@ -1346,6 +1402,47 @@ mod lut_fusion_tests {
         };
 
         assert_eq!(build_graph(false), build_graph(true));
+    }
+}
+
+#[cfg(test)]
+mod color_clut_fusion_tests {
+    use super::*;
+    use crate::domain::pipeline::nodes::filters::{HueRotateNode, SaturateNode, SepiaNode};
+    use crate::domain::filters::{HueRotateParams, SaturateParams, SepiaParams};
+    use crate::domain::types::*;
+
+    struct RawSource { pixels: Vec<u8>, info: ImageInfo }
+    impl RawSource { fn new(pixels: Vec<u8>, info: ImageInfo) -> Self { Self { pixels, info } } }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo { self.info.clone() }
+        fn compute_region(&self, request: Rect, _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>) -> Result<Vec<u8>, ImageError> {
+            Ok(crop_region(&self.pixels, Rect::new(0, 0, self.info.width, self.info.height), request, bytes_per_pixel(self.info.format)))
+        }
+        fn access_pattern(&self) -> AccessPattern { AccessPattern::Sequential }
+    }
+
+    fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
+        (0..w*h).flat_map(|i| { let x = i % w; let y = i / w; vec![((x*255)/w) as u8, ((y*255)/h) as u8, 128u8] }).collect()
+    }
+
+    #[test]
+    fn fused_hue_saturate_sepia_matches_unfused() {
+        let (w, h) = (16, 16);
+        let info = ImageInfo { width: w, height: h, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb };
+        let pixels = gradient_rgb(w, h);
+        let build = |fuse: bool| {
+            let mut g = NodeGraph::new(1024*1024);
+            let s = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+            let h = g.add_node(Box::new(HueRotateNode::new(s, info.clone(), HueRotateParams { degrees: 90.0 })));
+            let sa = g.add_node(Box::new(SaturateNode::new(h, info.clone(), SaturateParams { factor: 1.5 })));
+            let se = g.add_node(Box::new(SepiaNode::new(sa, info.clone(), SepiaParams { intensity: 0.3 })));
+            if fuse { g.fuse_color_ops(); }
+            g.request_region(se, Rect::new(0, 0, w, h)).unwrap()
+        };
+        let (unfused, fused) = (build(false), build(true));
+        let mae: f64 = unfused.iter().zip(fused.iter()).map(|(&a, &b)| (a as f64 - b as f64).abs()).sum::<f64>() / unfused.len() as f64;
+        assert!(mae < 1.0, "3D CLUT fusion MAE: {mae} (expected < 1.0)");
     }
 }
 

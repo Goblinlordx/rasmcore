@@ -181,6 +181,86 @@ impl LutPointOp for ExposureParams {
     }
 }
 
+// ─── ColorLutOp trait impls for fuseable multi-channel color operations ───
+
+use super::color_lut::{ColorLutOp, ColorLut3D, ColorOp as ColorOp, DEFAULT_CLUT_GRID};
+
+impl ColorLutOp for HueRotateParams {
+    fn build_clut(&self) -> ColorLut3D { ColorOp::HueRotate(self.degrees).to_clut(DEFAULT_CLUT_GRID) }
+}
+impl ColorLutOp for SaturateParams {
+    fn build_clut(&self) -> ColorLut3D { ColorOp::Saturate(self.factor).to_clut(DEFAULT_CLUT_GRID) }
+}
+impl ColorLutOp for SepiaParams {
+    fn build_clut(&self) -> ColorLut3D { ColorOp::Sepia(self.intensity).to_clut(DEFAULT_CLUT_GRID) }
+}
+impl ColorLutOp for ColorizeParams {
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Colorize(
+            [self.target.r as f32 / 255.0, self.target.g as f32 / 255.0, self.target.b as f32 / 255.0],
+            self.amount,
+        ).to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+impl ColorLutOp for ChannelMixerParams {
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::ChannelMix([self.rr, self.rg, self.rb, self.gr, self.gg, self.gb, self.br, self.bg, self.bb])
+            .to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+impl ColorLutOp for VibranceParams {
+    fn build_clut(&self) -> ColorLut3D { ColorOp::Vibrance(self.amount).to_clut(DEFAULT_CLUT_GRID) }
+}
+impl ColorLutOp for ModulateParams {
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Modulate { brightness: self.brightness, saturation: self.saturation, hue: self.hue }
+            .to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+impl ColorLutOp for ColorBalanceParams {
+    fn build_clut(&self) -> ColorLut3D {
+        let cb = super::color_grading::ColorBalance {
+            shadow: [self.shadow_cyan_red / 100.0, self.shadow_magenta_green / 100.0, self.shadow_yellow_blue / 100.0],
+            midtone: [self.midtone_cyan_red / 100.0, self.midtone_magenta_green / 100.0, self.midtone_yellow_blue / 100.0],
+            highlight: [self.highlight_cyan_red / 100.0, self.highlight_magenta_green / 100.0, self.highlight_yellow_blue / 100.0],
+            preserve_luminosity: self.preserve_luminosity,
+        };
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::color_balance_pixel(r, g, b, &cb))
+    }
+}
+impl ColorLutOp for AscCdlParams {
+    fn build_clut(&self) -> ColorLut3D {
+        let cdl = super::color_grading::AscCdl {
+            slope: [self.slope_r, self.slope_g, self.slope_b],
+            offset: [self.offset_r, self.offset_g, self.offset_b],
+            power: [self.power_r, self.power_g, self.power_b],
+            saturation: 1.0,
+        };
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::asc_cdl_pixel(r, g, b, &cdl))
+    }
+}
+impl ColorLutOp for LiftGammaGainParams {
+    fn build_clut(&self) -> ColorLut3D {
+        let lgg = super::color_grading::LiftGammaGain {
+            lift: [self.lift_r, self.lift_g, self.lift_b],
+            gamma: [self.gamma_r, self.gamma_g, self.gamma_b],
+            gain: [self.gain_r, self.gain_g, self.gain_b],
+        };
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::lift_gamma_gain_pixel(r, g, b, &lgg))
+    }
+}
+impl ColorLutOp for SplitToningParams {
+    fn build_clut(&self) -> ColorLut3D {
+        let st = super::color_grading::SplitToning {
+            shadow_color: hue_to_rgb_tint(self.shadow_hue),
+            highlight_color: hue_to_rgb_tint(self.highlight_hue),
+            balance: self.balance,
+            strength: 0.5,
+        };
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::split_toning_pixel(r, g, b, &st))
+    }
+}
+
 /// Parameters for Photoshop-style color balance adjustment.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ColorBalanceParams {
@@ -1639,7 +1719,8 @@ pub fn exposure(
 #[rasmcore_macros::register_filter(
     name = "color_balance",
     category = "adjustment",
-    reference = "Photoshop color balance (shadow/midtone/highlight CMY-RGB)"
+    reference = "Photoshop color balance (shadow/midtone/highlight CMY-RGB)",
+    color_op = "true"
 )]
 pub fn color_balance(
     pixels: &[u8],
@@ -1722,8 +1803,6 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
 // (single source of truth). The direct per-pixel evaluation avoids
 // 3D CLUT allocation overhead for non-pipeline callers.
 
-use super::color_lut::ColorOp;
-
 /// Apply a ColorOp to a pixel buffer via direct per-pixel evaluation.
 ///
 /// No CLUT allocation — evaluates ColorOp::apply() on each pixel's
@@ -1775,7 +1854,8 @@ fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u
 #[rasmcore_macros::register_filter(
     name = "hue_rotate",
     category = "color",
-    reference = "HSV hue rotation"
+    reference = "HSV hue rotation",
+    color_op = "true"
 )]
 pub fn hue_rotate(
     pixels: &[u8],
@@ -1791,7 +1871,8 @@ pub fn hue_rotate(
 #[rasmcore_macros::register_filter(
     name = "saturate",
     category = "color",
-    reference = "HSV saturation scaling"
+    reference = "HSV saturation scaling",
+    color_op = "true"
 )]
 pub fn saturate(
     pixels: &[u8],
@@ -1807,7 +1888,8 @@ pub fn saturate(
 #[rasmcore_macros::register_filter(
     name = "sepia",
     category = "color",
-    reference = "sepia tone matrix"
+    reference = "sepia tone matrix",
+    color_op = "true"
 )]
 pub fn sepia(
     pixels: &[u8],
@@ -1832,7 +1914,8 @@ pub struct ColorizeParams {
 #[rasmcore_macros::register_filter(
     name = "colorize",
     category = "color",
-    reference = "linear color tint blend"
+    reference = "linear color tint blend",
+    color_op = "true"
 )]
 pub fn colorize(
     pixels: &[u8],
@@ -1988,7 +2071,8 @@ pub struct ChannelMixerParams {
 #[rasmcore_macros::register_filter(
     name = "channel_mixer",
     category = "color",
-    reference = "RGB channel matrix multiplication"
+    reference = "RGB channel matrix multiplication",
+    color_op = "true"
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn channel_mixer(
@@ -2031,7 +2115,8 @@ pub struct VibranceParams {
 #[rasmcore_macros::register_filter(
     name = "vibrance",
     category = "color",
-    reference = "saturation-weighted chroma boost"
+    reference = "saturation-weighted chroma boost",
+    color_op = "true"
 )]
 pub fn vibrance(
     pixels: &[u8],
@@ -2328,7 +2413,8 @@ pub struct ModulateParams {
 #[rasmcore_macros::register_filter(
     name = "modulate",
     category = "color",
-    reference = "luma-preserving HSL modulation"
+    reference = "luma-preserving HSL modulation",
+    color_op = "true"
 )]
 pub fn modulate(
     pixels: &[u8],
@@ -13922,7 +14008,8 @@ pub struct AscCdlParams {
 #[rasmcore_macros::register_filter(
     name = "asc_cdl",
     category = "grading",
-    reference = "ASC CDL slope/offset/power color decision list"
+    reference = "ASC CDL slope/offset/power color decision list",
+    color_op = "true"
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn asc_cdl_registered(
@@ -14020,7 +14107,8 @@ pub struct LiftGammaGainParams {
 #[rasmcore_macros::register_filter(
     name = "lift_gamma_gain",
     category = "grading",
-    reference = "three-way color corrector (shadows/midtones/highlights)"
+    reference = "three-way color corrector (shadows/midtones/highlights)",
+    color_op = "true"
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn lift_gamma_gain_registered(
@@ -14093,7 +14181,8 @@ fn hue_to_rgb_tint(hue_deg: f32) -> [f32; 3] {
 #[rasmcore_macros::register_filter(
     name = "split_toning",
     category = "grading",
-    reference = "shadow/highlight hue tinting"
+    reference = "shadow/highlight hue tinting",
+    color_op = "true"
 )]
 pub fn split_toning_registered(
     pixels: &[u8],

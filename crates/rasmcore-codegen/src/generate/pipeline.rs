@@ -18,6 +18,7 @@ pub fn generate_nodes(
     code.push_str("use crate::domain::filters;\n");
     code.push_str("use crate::domain::filters::*; // ConfigParams structs\n");
     code.push_str("use crate::domain::point_ops::LutPointOp; // for as_point_op_lut()\n");
+    code.push_str("use crate::domain::color_lut::ColorLutOp; // for as_color_lut_op()\n");
     code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
     code.push_str("use crate::domain::types::*;\n");
     code.push_str("use rasmcore_pipeline::Rect;\n\n");
@@ -150,6 +151,11 @@ pub fn generate_nodes(
                     }
                 ));
             }
+        }
+
+        // Generate as_color_lut_op() for 3D CLUT-fuseable color operations
+        if f.color_op && f.config_struct.is_some() {
+            code.push_str("    fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> { Some(self.config.build_clut()) }\n");
         }
 
         code.push_str(
@@ -396,6 +402,7 @@ mod tests {
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
             point_op: false,
+            color_op: false,
         }];
         let code = generate_nodes(&filters, &empty_structs());
         assert!(code.contains("pub struct BlurNode {"));
@@ -418,6 +425,7 @@ mod tests {
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
             point_op: false,
+            color_op: false,
         }];
         let code = generate_adapter_macro(&filters);
         assert!(code.contains("fn blur("));
@@ -438,6 +446,7 @@ mod tests {
             params: vec![("radius".to_string(), "u32".to_string())],
             config_struct: None,
             point_op: false,
+            color_op: false,
         };
         let code = generate_nodes(&[f], &empty_structs());
         // u32 radius — no cast needed
@@ -486,6 +495,7 @@ mod tests {
             ],
             config_struct: None,
             point_op: false,
+            color_op: false,
         };
         let code = generate_nodes(&[f], &empty_structs());
         assert!(code.contains("output.expand_uniform(self.ksize / 2,"));
@@ -505,6 +515,7 @@ mod tests {
             params: vec![],
             config_struct: None,
             point_op: false,
+            color_op: false,
         };
         let code = generate_nodes(&[f], &empty_structs());
         // Should NOT contain input_rect override — uses trait default

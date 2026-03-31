@@ -83,6 +83,11 @@ impl Parse for RegisterFilterArgs {
                     // The proc macro just skips it.
                     let _lit: LitStr = input.parse()?;
                 }
+                "color_op" => {
+                    // Color op flag is parsed by build.rs for 3D CLUT fusion.
+                    // The proc macro just skips it.
+                    let _lit: LitStr = input.parse()?;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),

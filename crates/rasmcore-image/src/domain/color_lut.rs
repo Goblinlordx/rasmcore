@@ -608,6 +608,26 @@ impl ColorOp {
     }
 }
 
+/// Default grid size for 3D CLUT fusion (industry standard).
+pub const DEFAULT_CLUT_GRID: usize = 33;
+
+/// Trait for types that can produce a 3D color lookup table.
+///
+/// Implement this on ConfigParams structs for filters that perform
+/// multi-channel color transforms (hue rotation, saturation, channel
+/// mixing, color grading). Enables automatic 3D CLUT fusion in the
+/// pipeline via `fuse_color_ops()`.
+pub trait ColorLutOp {
+    /// Build a 3D CLUT representing this color transform.
+    fn build_clut(&self) -> ColorLut3D;
+}
+
+impl ColorLutOp for ColorOp {
+    fn build_clut(&self) -> ColorLut3D {
+        self.to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+
 // ─── HSV/HSL conversions (normalized 0-1 input/output) ─────────────────────
 
 #[allow(dead_code)] // reserved for HSV-based LUT operations

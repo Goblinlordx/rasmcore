@@ -264,6 +264,7 @@ mod tests {
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
             point_op: false,
+            color_op: false,
         }];
 
         let code = generate(&filters, &[]);
@@ -286,6 +287,7 @@ mod tests {
             params: vec![],
             config_struct: None,
             point_op: false,
+            color_op: false,
             output_format: Some("Gray8".to_string()),
         }];
 
