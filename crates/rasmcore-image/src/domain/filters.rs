@@ -11072,13 +11072,21 @@ fn poisson_random(lambda: f64, rng: &mut u64) -> f64 {
     reference = "signal-dependent Poisson noise"
 )]
 pub fn poisson_noise(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &PoissonNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| poisson_noise(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            poisson_noise(r, &mut u, i8, config)
+        });
     }
 
     let scale = config.scale as f64;
@@ -16188,7 +16196,10 @@ mod add_noise_tests {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
         let config = PoissonNoiseParams { scale: 0.0, seed: 42 };
-        let result = poisson_noise(&pixels, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px = pixels.clone();
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = poisson_noise(r, &mut u, &info, &config).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16197,8 +16208,12 @@ mod add_noise_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         let config = PoissonNoiseParams { scale: 5.0, seed: 55 };
-        let r1 = poisson_noise(&pixels, &info, &config).unwrap();
-        let r2 = poisson_noise(&pixels, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px = pixels.clone();
+        let mut u1 = |_: Rect| Ok(px.clone());
+        let mut u2 = |_: Rect| Ok(px.clone());
+        let r1 = poisson_noise(r, &mut u1, &info, &config).unwrap();
+        let r2 = poisson_noise(r, &mut u2, &info, &config).unwrap();
         assert_eq!(r1, r2);
     }
 
@@ -16212,8 +16227,13 @@ mod add_noise_tests {
         let bright: Vec<u8> = vec![200u8; n];
         let info = gray_info(w, h);
         let config = PoissonNoiseParams { scale: 5.0, seed: 42 };
-        let dark_result = poisson_noise(&dark, &info, &config).unwrap();
-        let bright_result = poisson_noise(&bright, &info, &config).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let dk = dark.clone();
+        let br = bright.clone();
+        let mut u_dark = |_: Rect| Ok(dk.clone());
+        let mut u_bright = |_: Rect| Ok(br.clone());
+        let dark_result = poisson_noise(r, &mut u_dark, &info, &config).unwrap();
+        let bright_result = poisson_noise(r, &mut u_bright, &info, &config).unwrap();
         let dark_var: f64 = {
             let m: f64 = dark_result.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
             dark_result.iter().map(|&v| (v as f64 - m).powi(2)).sum::<f64>() / n as f64
