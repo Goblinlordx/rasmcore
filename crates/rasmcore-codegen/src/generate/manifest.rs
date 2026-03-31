@@ -91,6 +91,32 @@ pub fn generate(data: &CodegenData) -> String {
         .mappers
         .iter()
         .map(|m| {
+            let struct_name = format!("{}Params", to_pascal_case(&m.name));
+            let params_struct = data.param_structs.get(&struct_name);
+
+            let params_json: Vec<Value> = if let Some(fields) = params_struct {
+                fields.iter().map(field_to_json).collect()
+            } else if !m.params.is_empty() {
+                m.params
+                    .iter()
+                    .map(|(pname, ptype)| {
+                        let (min, max, step, def) = default_range_for_type(ptype);
+                        json!({
+                            "name": pname,
+                            "type": ptype,
+                            "min": parse_json_value(min),
+                            "max": parse_json_value(max),
+                            "step": parse_json_value(step),
+                            "default": parse_json_value(def),
+                            "label": "",
+                            "hint": "",
+                        })
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+
             json!({
                 "name": m.name,
                 "category": m.category,
@@ -98,6 +124,7 @@ pub fn generate(data: &CodegenData) -> String {
                 "variant": m.variant,
                 "reference": m.reference,
                 "kind": "mapper",
+                "params": params_json,
             })
         })
         .collect();

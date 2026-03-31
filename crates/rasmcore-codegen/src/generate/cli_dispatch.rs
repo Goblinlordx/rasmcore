@@ -1,6 +1,6 @@
-//! Generate CLI dispatch function — maps filter name + string params to typed node construction.
+//! Generate CLI dispatch function — maps filter/mapper name + string params to typed node construction.
 
-use crate::types::FilterReg;
+use crate::types::{FilterReg, MapperReg};
 
 use super::helpers::to_pascal_case;
 
@@ -9,7 +9,7 @@ use super::helpers::to_pascal_case;
 /// Produces `generated_cli_dispatch.rs` with:
 /// - `dispatch_filter(name, upstream, info, params) -> Result<Box<dyn ImageNode>, String>`
 /// - `list_filters() -> Vec<FilterMeta>` for --list-filters
-pub fn generate(filters: &[FilterReg]) -> String {
+pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
     let mut code = String::new();
     code.push_str(
         "// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n",
@@ -153,6 +153,43 @@ pub fn generate(filters: &[FilterReg]) -> String {
         ));
     }
 
+    // Mapper dispatch arms — mappers are also dispatched by name
+    for m in mappers {
+        let node_name = format!("{}MapperNode", to_pascal_case(&m.name));
+
+        let mut param_args = Vec::new();
+        for (pname, ptype) in &m.params {
+            let clean_name = pname.trim_start_matches('_');
+            let getter = if ptype.starts_with('&') && ptype.ends_with("Params") {
+                let struct_name = &ptype[1..];
+                format!("domain_filters::{struct_name}::default()")
+            } else {
+                match ptype.as_str() {
+                    "f32" => format!("get_f32(params, \"{clean_name}\", 0.0)"),
+                    "f64" => format!("get_f32(params, \"{clean_name}\", 0.0) as f64"),
+                    "u32" => format!("get_u32(params, \"{clean_name}\", 0)"),
+                    "u8" => format!("get_u8(params, \"{clean_name}\", 0)"),
+                    "i32" => format!("get_i32(params, \"{clean_name}\", 0)"),
+                    "bool" => format!("get_bool(params, \"{clean_name}\", false)"),
+                    "String" | "&str" => format!("get_string(params, \"{clean_name}\", \"\")"),
+                    _ => format!("get_f32(params, \"{clean_name}\", 0.0)"),
+                }
+            };
+            param_args.push(getter);
+        }
+
+        let args_joined = if param_args.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", param_args.join(", "))
+        };
+
+        code.push_str(&format!(
+            "        \"{}\" => Ok(Box::new(filters::{node_name}::new(upstream, info{args_joined}))),\n",
+            m.name
+        ));
+    }
+
     code.push_str("        _ => Err(format!(\"Unknown filter: {name}\")),\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");
@@ -186,6 +223,24 @@ pub fn generate(filters: &[FilterReg]) -> String {
         ));
     }
 
+    // Include mappers in the filter list (they're dispatched the same way)
+    for m in mappers {
+        let params_array: Vec<String> = m
+            .params
+            .iter()
+            .map(|(n, t)| {
+                let clean = n.trim_start_matches('_');
+                format!("(\"{clean}\", \"{}\")", t)
+            })
+            .collect();
+        code.push_str(&format!(
+            "        FilterMeta {{ name: \"{}\", category: \"{}\", params: &[{}] }},\n",
+            m.name,
+            m.category,
+            params_array.join(", ")
+        ));
+    }
+
     code.push_str("    ]\n");
     code.push_str("}\n");
 
@@ -210,11 +265,29 @@ mod tests {
             config_struct: None,
         }];
 
-        let code = generate(&filters);
+        let code = generate(&filters, &[]);
         assert!(code.contains("\"blur\" => Ok(Box::new("));
         assert!(code.contains("BlurNode::new"));
         assert!(code.contains("get_f32(params, \"radius\""));
         assert!(code.contains("pub fn dispatch_filter"));
         assert!(code.contains("pub fn list_filters"));
+    }
+
+    #[test]
+    fn generates_dispatch_for_mapper() {
+        let mappers = vec![crate::types::MapperReg {
+            name: "grayscale".to_string(),
+            category: "color".to_string(),
+            group: String::new(),
+            variant: String::new(),
+            reference: String::new(),
+            fn_name: "grayscale_mapper".to_string(),
+            params: vec![],
+            config_struct: None,
+        }];
+
+        let code = generate(&[], &mappers);
+        assert!(code.contains("\"grayscale\" => Ok(Box::new("));
+        assert!(code.contains("GrayscaleMapperNode::new"));
     }
 }

@@ -9,6 +9,7 @@
 pub mod config_params;
 pub mod encoders;
 pub mod filters;
+pub mod mappers;
 pub mod param_attr;
 pub mod simple_regs;
 
@@ -52,12 +53,12 @@ pub fn parse_source_files(
         all_filters.extend(filters::extract_filters(&file));
         all_generators.extend(simple_regs::extract_by_kind(&file, "register_generator"));
         all_compositors.extend(simple_regs::extract_by_kind(&file, "register_compositor"));
-        all_mappers.extend(simple_regs::extract_by_kind(&file, "register_mapper"));
+        all_mappers.extend(mappers::extract_mappers(&file));
         all_params.extend(config_params::extract_config_params(&file));
     }
 
     // Auto-detect config structs by naming convention:
-    // If param_structs contains "{PascalCaseName}Params", link it to the filter.
+    // If param_structs contains "{PascalCaseName}Params", link it to the filter/mapper.
     for filter in &mut all_filters {
         let expected = format!(
             "{}Params",
@@ -65,6 +66,15 @@ pub fn parse_source_files(
         );
         if all_params.contains_key(&expected) {
             filter.config_struct = Some(expected);
+        }
+    }
+    for mapper in &mut all_mappers {
+        let expected = format!(
+            "{}Params",
+            crate::generate::helpers::to_pascal_case(&mapper.name)
+        );
+        if all_params.contains_key(&expected) {
+            mapper.config_struct = Some(expected);
         }
     }
 

@@ -25,7 +25,7 @@ pub struct FilterReg {
     pub config_struct: Option<String>,
 }
 
-/// A parsed simple registration (generator, compositor, mapper).
+/// A parsed simple registration (generator, compositor).
 #[derive(Debug, Clone, Serialize)]
 pub struct SimpleReg {
     pub name: String,
@@ -33,6 +33,25 @@ pub struct SimpleReg {
     pub group: String,
     pub variant: String,
     pub reference: String,
+}
+
+/// A parsed `#[register_mapper]` registration with full metadata.
+///
+/// Like `FilterReg` but for format-changing operations that return
+/// `Result<(Vec<u8>, ImageInfo), ImageError>` — the output ImageInfo
+/// may differ from the input (e.g., RGB8 → Gray8 for grayscale).
+#[derive(Debug, Clone, Serialize)]
+pub struct MapperReg {
+    pub name: String,
+    pub category: String,
+    pub group: String,
+    pub variant: String,
+    pub reference: String,
+    pub fn_name: String,
+    /// (param_name, rust_type) pairs, excluding pixels/info.
+    pub params: Vec<(String, String)>,
+    /// If set, the struct name for config-based codegen.
+    pub config_struct: Option<String>,
 }
 
 /// A parsed field from a `#[derive(ConfigParams)]` struct.
@@ -84,6 +103,6 @@ pub struct CodegenData {
     pub filters: Vec<FilterReg>,
     pub generators: Vec<SimpleReg>,
     pub compositors: Vec<SimpleReg>,
-    pub mappers: Vec<SimpleReg>,
+    pub mappers: Vec<MapperReg>,
     pub param_structs: std::collections::HashMap<String, Vec<ParamField>>,
 }

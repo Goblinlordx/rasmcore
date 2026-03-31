@@ -7,6 +7,7 @@ pub mod cli_dispatch;
 pub mod helpers;
 pub mod manifest;
 pub mod pipeline;
+pub mod pipeline_mapper;
 pub mod pipeline_write;
 pub mod sdk_rust;
 pub mod wit;
@@ -37,20 +38,25 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     let adapter_code = adapter::generate(&data.filters);
     fs::write(out_dir.join("generated_filter_adapter.rs"), &adapter_code).unwrap();
 
-    // Pipeline node structs
-    let nodes_code = pipeline::generate_nodes(&data.filters, &data.param_structs);
+    // Pipeline node structs (filters + mappers)
+    let mut nodes_code = pipeline::generate_nodes(&data.filters, &data.param_structs);
+    nodes_code.push_str(&pipeline_mapper::generate_mapper_nodes(&data.mappers));
     fs::write(out_dir.join("generated_pipeline_nodes.rs"), &nodes_code).unwrap();
 
-    // Pipeline adapter macro
+    // Pipeline adapter macro (filters)
     let pipe_adapter = pipeline::generate_adapter_macro(&data.filters);
     fs::write(out_dir.join("generated_pipeline_adapter.rs"), &pipe_adapter).unwrap();
+
+    // Pipeline mapper adapter macro
+    let mapper_adapter = pipeline_mapper::generate_mapper_adapter_macro(&data.mappers);
+    fs::write(out_dir.join("generated_pipeline_mapper_adapter.rs"), &mapper_adapter).unwrap();
 
     // Rust native SDK
     let sdk_rs = sdk_rust::generate(&data.filters);
     fs::write(out_dir.join("generated_sdk_rust.rs"), &sdk_rs).unwrap();
 
-    // CLI dispatch table
-    let cli_dispatch = cli_dispatch::generate(&data.filters);
+    // CLI dispatch table (filters + mappers)
+    let cli_dispatch = cli_dispatch::generate(&data.filters, &data.mappers);
     fs::write(out_dir.join("generated_cli_dispatch.rs"), &cli_dispatch).unwrap();
 
     // WIT declarations (to stderr for review)
