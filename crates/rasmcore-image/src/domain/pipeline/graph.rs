@@ -75,6 +75,8 @@ pub struct NodeGraph {
     touched_hashes: std::collections::HashSet<rasmcore_pipeline::ContentHash>,
     cache_hit_nodes: std::collections::HashSet<u32>,
     cache_hit_pixels: std::collections::HashMap<u32, Vec<u8>>,
+    // Per-node metadata — set at creation, immutable during tile execution
+    node_metadata: Vec<rasmcore_pipeline::Metadata>,
 }
 
 impl NodeGraph {
@@ -89,6 +91,7 @@ impl NodeGraph {
             touched_hashes: std::collections::HashSet::new(),
             cache_hit_nodes: std::collections::HashSet::new(),
             cache_hit_pixels: std::collections::HashMap::new(),
+            node_metadata: Vec::new(),
         }
     }
 
@@ -107,7 +110,35 @@ impl NodeGraph {
         let id = self.nodes.len() as u32;
         self.nodes.push(node);
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
+        self.node_metadata.push(rasmcore_pipeline::Metadata::new());
         id
+    }
+
+    /// Add a node with metadata (flows from upstream, possibly modified).
+    pub fn add_node_with_metadata(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        metadata: rasmcore_pipeline::Metadata,
+    ) -> u32 {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(node);
+        self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
+        self.node_metadata.push(metadata);
+        id
+    }
+
+    /// Get the metadata for a node.
+    pub fn node_metadata(&self, node_id: u32) -> &rasmcore_pipeline::Metadata {
+        static EMPTY: std::sync::LazyLock<rasmcore_pipeline::Metadata> =
+            std::sync::LazyLock::new(rasmcore_pipeline::Metadata::new);
+        self.node_metadata
+            .get(node_id as usize)
+            .unwrap_or(&EMPTY)
+    }
+
+    /// Get mutable metadata for a node (for set_metadata operations).
+    pub fn node_metadata_mut(&mut self, node_id: u32) -> Option<&mut rasmcore_pipeline::Metadata> {
+        self.node_metadata.get_mut(node_id as usize)
     }
 
     /// Add a node with a content hash for layer caching.
@@ -119,6 +150,7 @@ impl NodeGraph {
         let id = self.nodes.len() as u32;
         self.nodes.push(node);
         self.node_hashes.push(hash);
+        self.node_metadata.push(rasmcore_pipeline::Metadata::new());
 
         // Check layer cache for this hash
         if let Some(lc) = &self.layer_cache {
@@ -269,6 +301,7 @@ impl NodeGraph {
         let id = self.nodes.len() as u32;
         self.nodes.push(Box::new(FrameSourceRcWrapper(rc.clone())));
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
+        self.node_metadata.push(rasmcore_pipeline::Metadata::new());
         (id, rc)
     }
 

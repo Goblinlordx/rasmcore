@@ -71,6 +71,7 @@ impl Metadata {
         Self::default()
     }
 
+
     /// Get a value by key.
     pub fn get(&self, key: &str) -> Option<&MetadataValue> {
         self.entries.get(key)
