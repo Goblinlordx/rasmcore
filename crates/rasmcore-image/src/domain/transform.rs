@@ -1978,7 +1978,11 @@ mod tests {
         // 3. Apply brightness +0.1 (16-bit auto-dispatch)
         let after_bright = {
             use crate::domain::filters;
-            filters::brightness(&after_gamma, &info, &filters::BrightnessParams { amount: 0.1 }).unwrap()
+            {
+                let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(after_gamma.clone());
+                filters::brightness(r, &mut u, &info, &filters::BrightnessParams { amount: 0.1 }).unwrap()
+            }
         };
 
         // 4. Resize to 16x16 (fast_image_resize U16x3)
