@@ -180,7 +180,29 @@ pub fn generate_adapter_macro(filters: &[FilterReg]) -> String {
             "        let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;\n",
         );
         code.push_str(&format!("        let node = {ctor_call};\n"));
-        code.push_str("        Ok(self.graph.borrow_mut().add_node(Box::new(node)))\n");
+
+        // Compute content hash for layer cache: hash(upstream_hash, op_name, params)
+        let hash_param_bytes = if node_ctor_args.is_empty() {
+            "b\"\"".to_string()
+        } else {
+            // Serialize params to bytes for hashing
+            let parts: Vec<String> = node_ctor_args
+                .iter()
+                .map(|n| format!("&{n}.to_le_bytes()"))
+                .collect();
+            // We can't easily get byte repr of all types, so use the debug string
+            format!(
+                "format!(\"{}\").as_bytes()",
+                node_ctor_args.iter().map(|n| format!("{{{n}:?}}")).collect::<Vec<_>>().join(",")
+            )
+        };
+        code.push_str(&format!(
+            "        let upstream_hash = self.graph.borrow().node_hash(source);\n"
+        ));
+        code.push_str(&format!(
+            "        let content_hash = rasmcore_pipeline::compute_hash(&upstream_hash, \"{trait_method}\", {hash_param_bytes});\n"
+        ));
+        code.push_str("        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), content_hash))\n");
         code.push_str("    }\n\n");
     }
 

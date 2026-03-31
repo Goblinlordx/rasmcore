@@ -164,6 +164,29 @@ impl NodeGraph {
         id
     }
 
+    /// Add a node with both a content hash and metadata.
+    pub fn add_node_with_hash_and_metadata(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        hash: rasmcore_pipeline::ContentHash,
+        metadata: rasmcore_pipeline::Metadata,
+    ) -> u32 {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(node);
+        self.node_hashes.push(hash);
+        self.node_metadata.push(metadata);
+
+        if let Some(lc) = &self.layer_cache {
+            let mut lc = lc.borrow_mut();
+            if let Some((pixels, _w, _h, _bpp)) = lc.get(&hash) {
+                self.cache_hit_pixels.insert(id, pixels.to_vec());
+                self.cache_hit_nodes.insert(id);
+            }
+        }
+
+        id
+    }
+
     /// Get the content hash for a node.
     pub fn node_hash(&self, node_id: u32) -> rasmcore_pipeline::ContentHash {
         self.node_hashes
