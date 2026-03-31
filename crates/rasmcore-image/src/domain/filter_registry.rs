@@ -743,7 +743,10 @@ builtin_filter!(ClaheFilter, "clahe", FilterCategory::Contrast,
     apply: |input| {
         let clip = input.params.get_float("clip_limit").unwrap_or(2.0);
         let grid = input.params.get_uint("tile_grid").unwrap_or(8);
-        filters::clahe(input.pixels, input.info, &filters::ClaheParams { clip_limit: clip, tile_grid: grid })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::clahe(r, &mut u, input.info, &filters::ClaheParams { clip_limit: clip, tile_grid: grid })
     }
 );
 

@@ -6780,10 +6780,14 @@ fn line_intersection(l1: &LineSegment, l2: &LineSegment) -> Option<(f32, f32)> {
     reference = "Zuiderveld 1994 contrast-limited adaptive histogram equalization"
 )]
 pub fn clahe(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ClaheParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let clip_limit = config.clip_limit;
     let tile_grid = config.tile_grid;
 
@@ -12780,7 +12784,9 @@ mod optimization_tests {
         };
         // Low-contrast input: values 100-155
         let pixels: Vec<u8> = (0..(64 * 64)).map(|i| (100 + (i % 56)) as u8).collect();
-        let result = clahe(&pixels, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = clahe(r, &mut u, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
 
         // CLAHE should expand dynamic range
         let in_range = *pixels.iter().max().unwrap() as i32 - *pixels.iter().min().unwrap() as i32;
@@ -12802,7 +12808,9 @@ mod optimization_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 32 * 32];
-        let result = clahe(&pixels, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 4 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = clahe(r, &mut u, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 4 }).unwrap();
         // All output pixels should be the same value (uniform)
         let first = result[0];
         for &v in &result {
@@ -12818,7 +12826,9 @@ mod optimization_tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(clahe(&vec![0u8; 48], &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).is_err());
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(vec![0u8; 48]);
+        assert!(clahe(r, &mut u, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).is_err());
     }
 
     // ─── Bilateral Filter Tests ───────────────────────────────────────────
