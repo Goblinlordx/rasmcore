@@ -207,8 +207,9 @@ for (const name of methodNames) {
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 
-const paletteEl = document.getElementById('palette-items');
-paletteEl.innerHTML = '';
+// Populate toolbar dropdown menus instead of sidebar palette
+const paletteEl = document.getElementById('palette-items'); // may not exist in new layout
+if (paletteEl) paletteEl.innerHTML = '';
 
 // Group operations by category
 const grouped = {};
@@ -297,6 +298,79 @@ for (const [cat, ops] of Object.entries(grouped)) {
     paletteEl.appendChild(div);
   }
 }
+
+// ─── Toolbar Dropdown Menus ──────────────────────────────────────────────────
+
+// Map categories to toolbar menus
+const MENU_MAP = {
+  'Filters': 'dropdown-filters',
+  'Enhancement': 'dropdown-filters',
+  'Edge': 'dropdown-filters',
+  'Morphology': 'dropdown-filters',
+  'Transform': 'dropdown-transforms',
+  'Distortion': 'dropdown-transforms',
+  'Effects': 'dropdown-effects',
+  'Effect': 'dropdown-effects',
+  'Draw': 'dropdown-effects',
+  'Generator': 'dropdown-effects',
+  'Grading': 'dropdown-grading',
+  'Tonemapping': 'dropdown-grading',
+  'Color': 'dropdown-grading',
+  'Adjustment': 'dropdown-grading',
+};
+
+for (const [cat, ops] of Object.entries(grouped)) {
+  const menuId = MENU_MAP[cat] || 'dropdown-filters';
+  const dropdown = document.getElementById(menuId);
+  if (!dropdown) continue;
+
+  // Category header
+  const header = document.createElement('div');
+  header.className = 'dropdown-header';
+  header.textContent = cat;
+  dropdown.appendChild(header);
+
+  for (const op of ops) {
+    const item = document.createElement('div');
+    item.className = 'dropdown-item';
+    const meta = MANIFEST_GROUPS[op.name];
+    item.textContent = opLabel(op);
+    if (meta && meta.reference) item.title = meta.reference;
+    item.addEventListener('click', () => {
+      addNode(op);
+      // Close dropdown
+      dropdown.classList.remove('open');
+      dropdown.parentElement.classList.remove('active');
+    });
+    dropdown.appendChild(item);
+  }
+
+  const divider = document.createElement('div');
+  divider.className = 'dropdown-divider';
+  dropdown.appendChild(divider);
+}
+
+// Dropdown toggle behavior
+document.querySelectorAll('.menu-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const dropdown = btn.querySelector('.dropdown');
+    if (!dropdown) return;
+    const wasOpen = dropdown.classList.contains('open');
+    // Close all dropdowns
+    document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+    if (!wasOpen) {
+      dropdown.classList.add('open');
+      btn.classList.add('active');
+    }
+    e.stopPropagation();
+  });
+});
+// Close dropdowns on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+});
 
 // ─── Web Worker ─────────────────────────────────────────────────────────────
 
@@ -795,7 +869,7 @@ function renderChain() {
     if (editingNodeId === node.id) {
       for (const p of node.op.params) {
         const paramDiv = document.createElement('div');
-        paramDiv.className = 'node-param';
+        paramDiv.className = 'param-row';
 
         if (p.type === 'color') {
           const label = document.createElement('label');
