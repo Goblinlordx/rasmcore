@@ -2392,6 +2392,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-codegen"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
 name = "rasmcore-color"
 version = "0.1.0"
 
@@ -2519,10 +2530,9 @@ dependencies = [
  "libblur",
  "moxcms",
  "png 0.17.16",
- "proc-macro2",
  "quick-xml",
- "quote",
  "rasmcore-bmp",
+ "rasmcore-codegen",
  "rasmcore-color",
  "rasmcore-fits",
  "rasmcore-hevc",
@@ -2540,7 +2550,6 @@ dependencies = [
  "rustybuzz",
  "serde",
  "serde_json",
- "syn",
  "tiff",
  "unicode-bidi",
  "unicode-linebreak",
