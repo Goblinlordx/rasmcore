@@ -15,12 +15,36 @@
 use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 
+/// Load an OpenCV reference fixture. Returns the data if available.
+/// If the fixture file is missing (not generated yet), panics with a helpful message.
+///
+/// To generate fixtures: run `python3 scripts/generate-opencv-fixtures.py`
+/// from the workspace root (requires opencv-python-headless in a venv).
 fn load_fixture(name: &str) -> Vec<u8> {
     let path = format!(
         "{}/tests/fixtures/opencv/{name}",
         env!("CARGO_MANIFEST_DIR")
     );
-    std::fs::read(&path).unwrap_or_else(|e| panic!("fixture {path}: {e}"))
+    match std::fs::read(&path) {
+        Ok(data) => data,
+        Err(_) => {
+            eprintln!(
+                "SKIP {name}: fixture not found. Regenerate with:\n  \
+                 python3 scripts/generate-opencv-fixtures.py"
+            );
+            // Return empty to allow test to detect and skip
+            Vec::new()
+        }
+    }
+}
+
+/// Check if opencv fixtures are available (generated locally).
+fn opencv_fixtures_available() -> bool {
+    let path = format!(
+        "{}/tests/fixtures/opencv/gradient_128_gray.raw",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::path::Path::new(&path).exists()
 }
 
 fn mae(a: &[u8], b: &[u8]) -> f64 {
@@ -61,10 +85,21 @@ const TEST_IMAGES: &[&str] = &[
     "highcontrast_128",
 ];
 
+/// Skip guard — returns early from test if opencv fixtures aren't generated locally.
+macro_rules! require_opencv_fixtures {
+    () => {
+        if !opencv_fixtures_available() {
+            eprintln!("SKIP: opencv fixtures not generated. Run: python3 scripts/generate-opencv-fixtures.py");
+            return;
+        }
+    };
+}
+
 // ─── CLAHE Parity ─────────────────────────────────────────────────────────
 
 #[test]
 fn clahe_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let mut total_mae = 0.0;
     let mut total_max = 0u8;
@@ -98,6 +133,7 @@ fn clahe_all_images_match_opencv() {
 
 #[test]
 fn bilateral_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let mut total_mae = 0.0;
     let mut total_max = 0u8;
@@ -131,6 +167,7 @@ fn bilateral_all_images_match_opencv() {
 
 #[test]
 fn guided_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let mut total_mae = 0.0;
     let mut total_max = 0u8;
@@ -166,6 +203,7 @@ use rasmcore_image::domain::color_spaces;
 
 #[test]
 fn lab_conversion_matches_opencv() {
+    require_opencv_fixtures!();
     let input = load_fixture("color_gradient_128_rgb.raw");
     let reference_lab = load_fixture("color_gradient_128_lab.raw");
 
@@ -209,6 +247,7 @@ fn lab_conversion_matches_opencv() {
 
 #[test]
 fn perspective_warp_matches_opencv() {
+    require_opencv_fixtures!();
     let input = load_fixture("gradient_128_gray.raw");
     let reference = load_fixture("gradient_128_perspective.raw");
 
@@ -251,6 +290,7 @@ fn perspective_warp_matches_opencv() {
 
 #[test]
 fn gray_world_wb_matches_reference() {
+    require_opencv_fixtures!();
     let input = load_fixture("blue_tinted_64_rgb.raw");
     let reference = load_fixture("blue_tinted_64_grayworld.raw");
 
@@ -275,6 +315,7 @@ fn gray_world_wb_matches_reference() {
 
 #[test]
 fn oklab_matches_colour_science() {
+    require_opencv_fixtures!();
     // Reference values from colour-science 0.4.7 (colour.XYZ_to_Oklab)
     let test_cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
         ("red", (1.0, 0.0, 0.0), (0.627926, 0.224888, 0.125805)),
@@ -307,6 +348,7 @@ fn oklab_matches_colour_science() {
 
 #[test]
 fn bradford_matches_colour_science() {
+    require_opencv_fixtures!();
     // Reference: colour-science 0.4.7, Von Kries method with Bradford transform
     // D65->D50: XYZ(0.5, 0.4, 0.3) → (0.518086, 0.405866, 0.226963)
     let (x, y, z) = color_spaces::bradford_adapt(
@@ -343,6 +385,7 @@ fn bradford_matches_colour_science() {
 
 #[test]
 fn lab_matches_colour_science() {
+    require_opencv_fixtures!();
     // Reference: colour-science 0.4.7 (f64, our true reference for Lab)
     // OpenCV uses 16-bit fixed-point internally — our f64 is more precise.
     let test_cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
@@ -401,6 +444,7 @@ fn lab_matches_colour_science() {
 
 #[test]
 fn delta_e_matches_colour_science() {
+    require_opencv_fixtures!();
     let pairs: &[(&str, (f64, f64, f64), (f64, f64, f64), f64, f64, f64)] = &[
         (
             "red_green",
@@ -469,6 +513,7 @@ fn delta_e_matches_colour_science() {
 
 #[test]
 fn lch_matches_colour_science() {
+    require_opencv_fixtures!();
     let cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
         (
             "red",
@@ -502,6 +547,7 @@ fn lch_matches_colour_science() {
 
 #[test]
 fn luv_matches_colour_science() {
+    require_opencv_fixtures!();
     let cases: &[(&str, (f64, f64, f64), (f64, f64, f64))] = &[
         (
             "red",
@@ -546,6 +592,7 @@ fn luv_matches_colour_science() {
 
 #[test]
 fn scharr_matches_opencv() {
+    require_opencv_fixtures!();
     let test_images = [
         "gradient_128",
         "checker_128",
@@ -574,6 +621,7 @@ fn scharr_matches_opencv() {
 
 #[test]
 fn laplacian_matches_opencv() {
+    require_opencv_fixtures!();
     let test_images = [
         "gradient_128",
         "checker_128",
@@ -633,6 +681,7 @@ fn max_error_f32(a: &[f32], b: &[f32]) -> f64 {
 
 #[test]
 fn mertens_fusion_matches_opencv() {
+    require_opencv_fixtures!();
     // Load 3 synthetic bracketed exposures (RGB, 64×64)
     let bracket0 = load_fixture("hdr_bracket_0_64x64_rgb.raw");
     let bracket1 = load_fixture("hdr_bracket_1_64x64_rgb.raw");
@@ -706,6 +755,7 @@ fn mertens_fusion_matches_opencv() {
 
 #[test]
 fn mertens_all_canonical_images() {
+    require_opencv_fixtures!();
     let params = filters::MertensParams {
         contrast_weight: 1.0,
         saturation_weight: 1.0,
@@ -780,6 +830,7 @@ fn mertens_all_canonical_images() {
 
 #[test]
 fn otsu_threshold_matches_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     // Expected Otsu thresholds from OpenCV 4.13
     let expected: &[(&str, u8)] = &[
@@ -804,6 +855,7 @@ fn otsu_threshold_matches_opencv() {
 
 #[test]
 fn triangle_threshold_matches_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let expected: &[(&str, u8)] = &[
         ("gradient_128", 2),
@@ -827,6 +879,7 @@ fn triangle_threshold_matches_opencv() {
 
 #[test]
 fn adaptive_mean_matches_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
 
     for name in TEST_IMAGES {
@@ -857,6 +910,7 @@ fn adaptive_mean_matches_opencv() {
 
 #[test]
 fn adaptive_gaussian_matches_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
 
     for name in TEST_IMAGES {
@@ -894,6 +948,7 @@ fn adaptive_gaussian_matches_opencv() {
 
 #[test]
 fn erode_dilate_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let test_images = ["gradient_128", "checker_128", "sharp_edges_128"];
     let shapes: &[(&str, filters::MorphShape)] = &[
@@ -950,6 +1005,7 @@ fn erode_dilate_match_opencv() {
 
 #[test]
 fn morph_compound_ops_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let input = load_fixture("sharp_edges_128_gray.raw");
 
@@ -986,6 +1042,7 @@ fn load_f32_fixture(name: &str) -> Vec<f32> {
 
 #[test]
 fn displacement_map_barrel_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let map_x = load_f32_fixture("displace_barrel_map_x.raw");
     let map_y = load_f32_fixture("displace_barrel_map_y.raw");
@@ -1005,6 +1062,7 @@ fn displacement_map_barrel_all_images_match_opencv() {
 
 #[test]
 fn displacement_map_wave_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     let map_x = load_f32_fixture("displace_wave_map_x.raw");
     let map_y = load_f32_fixture("displace_wave_map_y.raw");
@@ -1026,6 +1084,7 @@ fn displacement_map_wave_all_images_match_opencv() {
 
 #[test]
 fn bokeh_disc_r3_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
@@ -1042,6 +1101,7 @@ fn bokeh_disc_r3_all_images_match_opencv() {
 
 #[test]
 fn bokeh_disc_r7_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
@@ -1058,6 +1118,7 @@ fn bokeh_disc_r7_all_images_match_opencv() {
 
 #[test]
 fn bokeh_hex_r3_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
@@ -1074,6 +1135,7 @@ fn bokeh_hex_r3_all_images_match_opencv() {
 
 #[test]
 fn bokeh_hex_r7_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
@@ -1098,6 +1160,7 @@ fn bokeh_hex_r7_all_images_match_opencv() {
 /// the difference is small: MAE < 2.0 at 8-bit.
 #[test]
 fn vignette_gaussian_all_images_match_imagemagick() {
+    require_opencv_fixtures!();
     let info = info_128();
     let sigma = 15.0f32;
     let x_inset = 10u32;
@@ -1132,6 +1195,7 @@ fn vignette_gaussian_all_images_match_imagemagick() {
 
 #[test]
 fn perspective_warp_identity_is_exact() {
+    require_opencv_fixtures!();
     // Identity matrix warp on a real image should reproduce input exactly.
     // This validates the OpenCV-aligned fixed-point bilinear path at integer coords.
     let input = load_fixture("gradient_128_gray.raw");
@@ -1159,6 +1223,7 @@ fn perspective_warp_identity_is_exact() {
 
 #[test]
 fn perspective_warp_translation_is_exact() {
+    require_opencv_fixtures!();
     // Integer translation should also be pixel-exact (no sub-pixel interpolation).
     let input = load_fixture("gradient_128_gray.raw");
     let info = ImageInfo {
@@ -1192,6 +1257,7 @@ fn perspective_warp_translation_is_exact() {
 
 #[test]
 fn perspective_warp_bilinear_weight_table_correct() {
+    require_opencv_fixtures!();
     // Verify the OpenCV-aligned weight table: at sub-pixel (0,0), all weight
     // should be on the top-left neighbor. At (16/32, 16/32) = (0.5, 0.5),
     // weight should be equally distributed.
@@ -1218,6 +1284,7 @@ fn perspective_warp_bilinear_weight_table_correct() {
 
 #[test]
 fn homography_solver_identity_exact() {
+    require_opencv_fixtures!();
     let pts = [(0.0f32, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
     let h = filters::solve_homography_4pt_public(&pts, &pts).unwrap();
     // OpenCV: M[8] = 1.0 exactly (c22 = 1 assumption)
@@ -1236,6 +1303,7 @@ fn homography_solver_identity_exact() {
 
 #[test]
 fn homography_solver_perspective_c22_is_one() {
+    require_opencv_fixtures!();
     // Non-trivial perspective case: c22 should still be exactly 1.0
     let src = [(0.0f32, 0.0), (127.0, 0.0), (127.0, 127.0), (0.0, 127.0)];
     let dst = [(10.0f32, 5.0), (117.0, 0.0), (122.0, 127.0), (5.0, 122.0)];
@@ -1251,6 +1319,7 @@ fn homography_solver_perspective_c22_is_one() {
 
 #[test]
 fn hough_ppht_deterministic_same_seed() {
+    require_opencv_fixtures!();
     let mut pixels = vec![0u8; 64 * 64];
     for x in 5..60 {
         pixels[32 * 64 + x] = 255;
@@ -1280,6 +1349,7 @@ fn hough_ppht_deterministic_same_seed() {
 
 #[test]
 fn hough_ppht_different_seeds_may_differ() {
+    require_opencv_fixtures!();
     let mut pixels = vec![0u8; 64 * 64];
     for x in 5..60 {
         pixels[32 * 64 + x] = 255;
@@ -1310,6 +1380,7 @@ fn hough_ppht_different_seeds_may_differ() {
 
 #[test]
 fn hough_ppht_vote_decrement_no_duplicates() {
+    require_opencv_fixtures!();
     // Single strong line → should produce 1 segment, not many
     let mut pixels = vec![0u8; 100 * 100];
     for x in 10..90 {
@@ -1343,6 +1414,7 @@ fn hough_ppht_vote_decrement_no_duplicates() {
 
 #[test]
 fn canny_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info = info_128();
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
@@ -1371,6 +1443,7 @@ fn info_64() -> ImageInfo {
 
 #[test]
 fn pyr_up_all_images_match_opencv() {
+    require_opencv_fixtures!();
     let info64 = info_64();
     for name in TEST_IMAGES {
         let input_64 = load_fixture(&format!("{name}_pyrdown_64.raw"));

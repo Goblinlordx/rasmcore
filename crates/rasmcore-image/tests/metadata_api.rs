@@ -5,14 +5,6 @@ use rasmcore_image::domain::metadata_query;
 use rasmcore_image::domain::metadata_set::MetadataSet;
 use std::collections::BTreeMap;
 
-fn load_fixture(name: &str) -> Vec<u8> {
-    let path = format!(
-        "{}/tests/fixtures/opencv/{name}",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    std::fs::read(&path).unwrap_or_else(|e| panic!("fixture {path}: {e}"))
-}
-
 /// Build a minimal JPEG with EXIF containing Make, Model, Software fields.
 /// Uses write_exif which produces valid EXIF that read_exif can parse.
 fn build_jpeg_with_exif() -> Vec<u8> {
