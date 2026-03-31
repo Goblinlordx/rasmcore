@@ -1435,10 +1435,14 @@ pub struct ZoomBlurParams {
     reference = "radial kernel simulating lens zoom"
 )]
 pub fn zoom_blur(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ZoomBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let center_x = config.center_x;
     let center_y = config.center_y;
     let factor = config.factor;
@@ -1451,7 +1455,9 @@ pub fn zoom_blur(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            zoom_blur(p8, i8, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            zoom_blur(r, &mut u, i8, config)
         });
     }
 
@@ -17919,21 +17925,27 @@ mod zoom_blur_tests {
     #[test]
     fn zero_factor_is_identity() {
         let (px, info) = make_gray(32, 32, 128);
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn preserves_dimensions() {
         let (px, info) = make_gray(64, 48, 128);
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn uniform_image_stays_uniform() {
         let (px, info) = make_gray(32, 32, 100);
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
         for &v in &result {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -17948,7 +17960,9 @@ mod zoom_blur_tests {
         // With a 64x64 image and factor=0.5, corner pixels have a longer ray
         // than pixels near center. This test just verifies it runs without panic.
         let (px, info) = make_gray(64, 64, 128);
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -17961,7 +17975,9 @@ mod zoom_blur_tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         let px = vec![128u8; 16 * 16 * 3];
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
         assert_eq!(result.len(), 16 * 16 * 3);
     }
 
@@ -17974,7 +17990,9 @@ mod zoom_blur_tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         let px = vec![128u8; 16 * 16 * 4];
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
     }
 
@@ -17991,7 +18009,9 @@ mod zoom_blur_tests {
             format: PixelFormat::Gray8,
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
-        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
         let center_val = result[16 * w as usize + 16];
         // Center pixel samples near itself → stays close to original
         assert!(

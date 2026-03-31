@@ -2460,7 +2460,9 @@ fn property_zoom_blur_identity() {
     // zoom_blur with factor=0 should be identity
     let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
     let info = test_info(32, 32, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::zoom_blur(&pixels, &info, 0.5, 0.5, 0.0).unwrap();
+    let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+    let mut u = |_: rasmcore_pipeline::Rect| Ok(pixels.clone());
+    let result = rasmcore_image::domain::filters::zoom_blur(r, &mut u, &info, &rasmcore_image::domain::filters::ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.0 }).unwrap();
     assert_eq!(result, pixels, "zoom_blur at factor=0 should be identity");
 }
 
@@ -2469,7 +2471,9 @@ fn property_zoom_blur_uniform() {
     // zoom_blur on a uniform image should preserve all values
     let pixels = vec![100u8; 32 * 32 * 3];
     let info = test_info(32, 32, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::zoom_blur(&pixels, &info, 0.5, 0.5, 0.5).unwrap();
+    let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+    let mut u = |_: rasmcore_pipeline::Rect| Ok(pixels.clone());
+    let result = rasmcore_image::domain::filters::zoom_blur(r, &mut u, &info, &rasmcore_image::domain::filters::ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
     for &v in &result {
         assert!(
             (v as i16 - 100).abs() <= 1,
