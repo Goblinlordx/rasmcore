@@ -528,7 +528,10 @@ pub struct TiffStreamingEncoder {
 }
 
 impl TiffStreamingEncoder {
-    pub fn new(info: &ImageInfo, config: &super::tiff::TiffEncodeConfig) -> Result<Self, ImageError> {
+    pub fn new(
+        info: &ImageInfo,
+        config: &super::tiff::TiffEncodeConfig,
+    ) -> Result<Self, ImageError> {
         let bpp = match info.format {
             PixelFormat::Rgb8 => 3,
             PixelFormat::Rgba8 => 4,
@@ -658,7 +661,10 @@ mod tests {
 
         let mut enc = BmpStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_single_tile(&mut enc, &pixels, info.width, info.height);
-        assert_eq!(buffer_out, stream_out, "BMP streaming must match buffer encoding");
+        assert_eq!(
+            buffer_out, stream_out,
+            "BMP streaming must match buffer encoding"
+        );
     }
 
     #[test]
@@ -668,7 +674,10 @@ mod tests {
 
         let mut enc = BmpStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_tiled(&mut enc, &pixels, 40, 30, 3, 7);
-        assert_eq!(buffer_out, stream_out, "BMP tiled streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "BMP tiled streaming must match buffer"
+        );
     }
 
     #[test]
@@ -678,7 +687,10 @@ mod tests {
 
         let mut enc = BmpStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_single_tile(&mut enc, &pixels, info.width, info.height);
-        assert_eq!(buffer_out, stream_out, "BMP gray streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "BMP gray streaming must match buffer"
+        );
     }
 
     // ── HDR parity ─────────────────────────────────────────────────────
@@ -692,7 +704,10 @@ mod tests {
 
         let mut enc = HdrStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_single_tile(&mut enc, &pixels, info.width, info.height);
-        assert_eq!(buffer_out, stream_out, "HDR streaming must match buffer encoding");
+        assert_eq!(
+            buffer_out, stream_out,
+            "HDR streaming must match buffer encoding"
+        );
     }
 
     #[test]
@@ -704,7 +719,10 @@ mod tests {
 
         let mut enc = HdrStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_tiled(&mut enc, &pixels, 40, 30, 3, 11);
-        assert_eq!(buffer_out, stream_out, "HDR tiled streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "HDR tiled streaming must match buffer"
+        );
     }
 
     // ── FITS parity ────────────────────────────────────────────────────
@@ -726,7 +744,10 @@ mod tests {
 
         let mut enc = FitsStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_tiled(&mut enc, &pixels, 40, 30, 1, 9);
-        assert_eq!(buffer_out, stream_out, "FITS tiled streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "FITS tiled streaming must match buffer"
+        );
     }
 
     #[test]
@@ -736,7 +757,10 @@ mod tests {
 
         let mut enc = FitsStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_single_tile(&mut enc, &pixels, info.width, info.height);
-        assert_eq!(buffer_out, stream_out, "FITS RGB streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "FITS RGB streaming must match buffer"
+        );
     }
 
     // ── QOI parity ─────────────────────────────────────────────────────
@@ -760,7 +784,10 @@ mod tests {
 
         let mut enc = QoiStreamingEncoder::new(&info).unwrap();
         let stream_out = encode_tiled(&mut enc, &pixels, 40, 30, 3, 13);
-        assert_eq!(buffer_out, stream_out, "QOI tiled streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "QOI tiled streaming must match buffer"
+        );
     }
 
     // ── TIFF parity ────────────────────────────────────────────────────
@@ -784,7 +811,10 @@ mod tests {
 
         let mut enc = TiffStreamingEncoder::new(&info, &config).unwrap();
         let stream_out = encode_tiled(&mut enc, &pixels, 40, 30, 3, 7);
-        assert_eq!(buffer_out, stream_out, "TIFF tiled streaming must match buffer");
+        assert_eq!(
+            buffer_out, stream_out,
+            "TIFF tiled streaming must match buffer"
+        );
     }
 }
 
@@ -797,14 +827,24 @@ pub fn create_streaming_encoder(
     info: &ImageInfo,
 ) -> Option<Box<dyn StreamingEncoder>> {
     match format {
-        "bmp" => BmpStreamingEncoder::new(info).ok().map(|e| Box::new(e) as _),
-        "hdr" => HdrStreamingEncoder::new(info).ok().map(|e| Box::new(e) as _),
-        "fits" | "fit" => FitsStreamingEncoder::new(info).ok().map(|e| Box::new(e) as _),
+        "bmp" => BmpStreamingEncoder::new(info)
+            .ok()
+            .map(|e| Box::new(e) as _),
+        "hdr" => HdrStreamingEncoder::new(info)
+            .ok()
+            .map(|e| Box::new(e) as _),
+        "fits" | "fit" => FitsStreamingEncoder::new(info)
+            .ok()
+            .map(|e| Box::new(e) as _),
         #[cfg(feature = "native-qoi")]
-        "qoi" => QoiStreamingEncoder::new(info).ok().map(|e| Box::new(e) as _),
+        "qoi" => QoiStreamingEncoder::new(info)
+            .ok()
+            .map(|e| Box::new(e) as _),
         "tiff" | "tif" => {
             let config = super::tiff::TiffEncodeConfig::default();
-            TiffStreamingEncoder::new(info, &config).ok().map(|e| Box::new(e) as _)
+            TiffStreamingEncoder::new(info, &config)
+                .ok()
+                .map(|e| Box::new(e) as _)
         }
         _ => None,
     }

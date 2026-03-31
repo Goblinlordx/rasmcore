@@ -735,7 +735,10 @@ fn blend_parity_darker_color_properties() {
         let fg_lum = 0.299 * fg_px[0] as f32 + 0.587 * fg_px[1] as f32 + 0.114 * fg_px[2] as f32;
         let bg_lum = 0.299 * bg_px[0] as f32 + 0.587 * bg_px[1] as f32 + 0.114 * bg_px[2] as f32;
         let expected = if fg_lum <= bg_lum { fg_px } else { bg_px };
-        assert_eq!(out_px, expected, "DarkerColor: fg_lum={fg_lum:.1} bg_lum={bg_lum:.1}");
+        assert_eq!(
+            out_px, expected,
+            "DarkerColor: fg_lum={fg_lum:.1} bg_lum={bg_lum:.1}"
+        );
     }
 }
 
@@ -753,7 +756,10 @@ fn blend_parity_lighter_color_properties() {
         let fg_lum = 0.299 * fg_px[0] as f32 + 0.587 * fg_px[1] as f32 + 0.114 * fg_px[2] as f32;
         let bg_lum = 0.299 * bg_px[0] as f32 + 0.587 * bg_px[1] as f32 + 0.114 * bg_px[2] as f32;
         let expected = if fg_lum >= bg_lum { fg_px } else { bg_px };
-        assert_eq!(out_px, expected, "LighterColor: fg_lum={fg_lum:.1} bg_lum={bg_lum:.1}");
+        assert_eq!(
+            out_px, expected,
+            "LighterColor: fg_lum={fg_lum:.1} bg_lum={bg_lum:.1}"
+        );
     }
 }
 

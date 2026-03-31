@@ -1,7 +1,7 @@
 //! Generate Rust filter adapter dispatch code.
 
-use std::collections::HashMap;
 use crate::types::{FilterReg, ParamField};
+use std::collections::HashMap;
 
 /// Generate the filter adapter impl block (filters::Guest for Component).
 pub fn generate(filters: &[FilterReg], param_structs: &HashMap<String, Vec<ParamField>>) -> String {
@@ -52,21 +52,30 @@ fn generate_config_method(
 
             // Generate conversion from WIT config → domain config
             if let Some(fields) = param_structs.get(struct_name) {
-                let field_inits: Vec<String> = fields.iter().map(|field| {
-                    let fname = field.name.trim_start_matches('_');
-                    let nested = param_structs.get(&field.param_type);
-                    if let Some(nested_fields) = nested {
-                        // Nested ConfigParams (e.g., ColorRgba) — construct from WIT nested fields
-                        let nested_type = qualified(&field.param_type);
-                        let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
-                            let nfname = nf.name.trim_start_matches('_');
-                            format!("                {nfname}: wit_config.{fname}.{nfname}")
-                        }).collect();
-                        format!("            {fname}: {nested_type} {{\n{}\n            }}", nested_inits.join(",\n"))
-                    } else {
-                        format!("            {fname}: wit_config.{fname}")
-                    }
-                }).collect();
+                let field_inits: Vec<String> = fields
+                    .iter()
+                    .map(|field| {
+                        let fname = field.name.trim_start_matches('_');
+                        let nested = param_structs.get(&field.param_type);
+                        if let Some(nested_fields) = nested {
+                            // Nested ConfigParams (e.g., ColorRgba) — construct from WIT nested fields
+                            let nested_type = qualified(&field.param_type);
+                            let nested_inits: Vec<String> = nested_fields
+                                .iter()
+                                .map(|nf| {
+                                    let nfname = nf.name.trim_start_matches('_');
+                                    format!("                {nfname}: wit_config.{fname}.{nfname}")
+                                })
+                                .collect();
+                            format!(
+                                "            {fname}: {nested_type} {{\n{}\n            }}",
+                                nested_inits.join(",\n")
+                            )
+                        } else {
+                            format!("            {fname}: wit_config.{fname}")
+                        }
+                    })
+                    .collect();
                 body_lines.push(format!(
                     "        let domain_config = {domain_type} {{\n{}\n        }};",
                     field_inits.join(",\n")
@@ -84,7 +93,11 @@ fn generate_config_method(
                     let convert = format!(
                         "        let {clean_n}_domain: Vec<crate::domain::param_types::Point2D> = {clean_n}.iter().map(|p| crate::domain::param_types::Point2D {{ x: p.x, y: p.y }}).collect();\n"
                     );
-                    ("Vec<types::Point2d>", format!("&{clean_n}_domain"), Some(convert))
+                    (
+                        "Vec<types::Point2d>",
+                        format!("&{clean_n}_domain"),
+                        Some(convert),
+                    )
                 }
                 "&str" => ("String", format!("&{clean_n}"), None),
                 "String" => ("String", clean_n.to_string(), None),
@@ -122,7 +135,9 @@ fn generate_config_method(
     } else {
         format!(", {}", call_params.join(", "))
     };
-    code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+    code.push_str(
+        "        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n",
+    );
     code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
     code.push_str(&format!(
         "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
@@ -173,7 +188,9 @@ fn generate_individual_method(
     } else {
         format!(", {}", call_params.join(", "))
     };
-    code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+    code.push_str(
+        "        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n",
+    );
     code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
     code.push_str(&format!(
         "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"

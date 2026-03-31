@@ -353,14 +353,12 @@ pub fn draw_ellipse(
     let (rgba, out_info) = ensure_rgba8(pixels, info)?;
     let mut pixmap = pixels_to_pixmap(&rgba, out_info.width, out_info.height)?;
 
-    let oval_rect =
-        resvg::tiny_skia::Rect::from_xywh(cx - rx, cy - ry, rx * 2.0, ry * 2.0).ok_or_else(
-            || {
-                ImageError::InvalidParameters(format!(
-                    "draw_ellipse: invalid oval ({cx},{cy},{rx},{ry})"
-                ))
-            },
-        )?;
+    let oval_rect = resvg::tiny_skia::Rect::from_xywh(cx - rx, cy - ry, rx * 2.0, ry * 2.0)
+        .ok_or_else(|| {
+            ImageError::InvalidParameters(format!(
+                "draw_ellipse: invalid oval ({cx},{cy},{rx},{ry})"
+            ))
+        })?;
     let path = resvg::tiny_skia::PathBuilder::from_oval(oval_rect).ok_or_else(|| {
         ImageError::InvalidParameters("draw_ellipse: failed to build oval path".into())
     })?;
@@ -1122,7 +1120,11 @@ mod tests {
         assert_eq!(result[center + 1], 255);
         // Edge (20, 20) should have blue stroke
         let edge = (20 * 100 + 20) * 4;
-        assert_ne!(result[edge..edge + 3], [255, 255, 255], "edge should be stroked");
+        assert_ne!(
+            result[edge..edge + 3],
+            [255, 255, 255],
+            "edge should be stroked"
+        );
     }
 
     #[test]
@@ -1146,9 +1148,18 @@ mod tests {
     #[test]
     fn draw_ellipse_filled() {
         let (px, info) = white_rgba(100, 100);
-        let (result, _) =
-            draw_ellipse(&px, &info, 50.0, 50.0, 30.0, 15.0, [0, 255, 0, 255], 1.0, true)
-                .unwrap();
+        let (result, _) = draw_ellipse(
+            &px,
+            &info,
+            50.0,
+            50.0,
+            30.0,
+            15.0,
+            [0, 255, 0, 255],
+            1.0,
+            true,
+        )
+        .unwrap();
         // Center (50, 50) should be green
         let idx = (50 * 100 + 50) * 4;
         assert_eq!(result[idx + 1], 255, "green at center");
@@ -1201,7 +1212,21 @@ mod tests {
     #[test]
     fn draw_arc_invalid_radius_errors() {
         let (px, info) = white_rgba(100, 100);
-        assert!(draw_arc(&px, &info, 50.0, 50.0, 0.0, 30.0, 0.0, 90.0, [0, 0, 0, 255], 1.0).is_err());
+        assert!(
+            draw_arc(
+                &px,
+                &info,
+                50.0,
+                50.0,
+                0.0,
+                30.0,
+                0.0,
+                90.0,
+                [0, 0, 0, 255],
+                1.0
+            )
+            .is_err()
+        );
     }
 
     #[test]

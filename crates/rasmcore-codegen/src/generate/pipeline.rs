@@ -107,9 +107,7 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
         code.push_str("    }\n\n");
 
         // upstream_id() for graph traversal
-        code.push_str(
-            "    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }\n",
-        );
+        code.push_str("    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }\n");
 
         // Generate as_point_op_lut() for LUT-fuseable point operations
         if f.point_op {
@@ -185,23 +183,27 @@ pub fn generate_adapter_macro(
 
                 // Generate field-by-field conversion
                 if let Some(fields) = param_structs.get(struct_name) {
-                    let field_inits: Vec<String> = fields.iter().map(|field| {
-                        let fname = field.name.trim_start_matches('_');
-                        let nested = param_structs.get(&field.param_type);
-                        if let Some(nested_fields) = nested {
-                            let nested_type = to_qualified_binding_type(&field.param_type);
-                            let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
+                    let field_inits: Vec<String> =
+                        fields
+                            .iter()
+                            .map(|field| {
+                                let fname = field.name.trim_start_matches('_');
+                                let nested = param_structs.get(&field.param_type);
+                                if let Some(nested_fields) = nested {
+                                    let nested_type = to_qualified_binding_type(&field.param_type);
+                                    let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
                                 let nfname = nf.name.trim_start_matches('_');
                                 format!("                {nfname}: wit_config.{fname}.{nfname}")
                             }).collect();
-                            format!(
-                                "            {fname}: {nested_type} {{\n{}\n            }}",
-                                nested_inits.join(",\n")
-                            )
-                        } else {
-                            format!("            {fname}: wit_config.{fname}")
-                        }
-                    }).collect();
+                                    format!(
+                                        "            {fname}: {nested_type} {{\n{}\n            }}",
+                                        nested_inits.join(",\n")
+                                    )
+                                } else {
+                                    format!("            {fname}: wit_config.{fname}")
+                                }
+                            })
+                            .collect();
                     body_lines.push(format!(
                         "        let config = {domain_type} {{\n{}\n        }};",
                         field_inits.join(",\n")
@@ -256,7 +258,11 @@ pub fn generate_adapter_macro(
         } else {
             format!(
                 "format!(\"{}\").as_bytes()",
-                hash_args.iter().map(|n| format!("{{{n}:?}}")).collect::<Vec<_>>().join(",")
+                hash_args
+                    .iter()
+                    .map(|n| format!("{{{n}:?}}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
             )
         };
         code.push_str("        let upstream_hash = self.graph.borrow().node_hash(source);\n");

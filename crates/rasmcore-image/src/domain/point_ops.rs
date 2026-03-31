@@ -1429,7 +1429,11 @@ mod tests {
         assert_eq!(lut[0], 0);
         assert_eq!(lut[255], 255);
         // 128/255 ≈ 0.502, 0.502^2 ≈ 0.252, 0.252*255 ≈ 64
-        assert!((lut[128] as i16 - 64).abs() <= 1, "pow(2) midpoint: {}", lut[128]);
+        assert!(
+            (lut[128] as i16 - 64).abs() <= 1,
+            "pow(2) midpoint: {}",
+            lut[128]
+        );
     }
 
     #[test]

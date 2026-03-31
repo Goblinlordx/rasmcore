@@ -14,13 +14,13 @@ mod ref_tools;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::path::Path;
 
-use rasmcore_pipeline::Rect;
 use rasmcore_image::domain::filters::{
     AdaptiveMethod, BlendMode, BokehBlurParams, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
 };
 use rasmcore_image::domain::types::*;
-use rasmcore_pipeline::Rect;
 use rasmcore_image::domain::{color_grading, content_aware, decoder, encoder, filters, transform};
+use rasmcore_pipeline::Rect;
+use rasmcore_pipeline::Rect;
 
 // ─── Fixture Helpers ─────────────────────────────────────────────────────
 
@@ -624,7 +624,16 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let px2 = px.clone();
                 let mut u = |_: rasmcore_pipeline::Rect| Ok(px2.clone());
-                filters::bokeh_blur(r, &mut u, &inf, &filters::BokehBlurParams { radius: 5, shape: 0 }).unwrap()
+                filters::bokeh_blur(
+                    r,
+                    &mut u,
+                    &inf,
+                    &filters::BokehBlurParams {
+                        radius: 5,
+                        shape: 0,
+                    },
+                )
+                .unwrap()
             });
         });
 
@@ -635,7 +644,16 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let px2 = px.clone();
                 let mut u = |_: rasmcore_pipeline::Rect| Ok(px2.clone());
-                filters::bokeh_blur(r, &mut u, &inf, &filters::BokehBlurParams { radius: 5, shape: 1 }).unwrap()
+                filters::bokeh_blur(
+                    r,
+                    &mut u,
+                    &inf,
+                    &filters::BokehBlurParams {
+                        radius: 5,
+                        shape: 1,
+                    },
+                )
+                .unwrap()
             });
         });
 
@@ -659,7 +677,13 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let r = rasmcore_pipeline::Rect::new(0, 0, inf.width, inf.height);
                 let mut u = |_: rasmcore_pipeline::Rect| Ok(px.clone());
-                filters::gaussian_blur_cv(r, &mut u, &inf, &filters::GaussianBlurCvParams { sigma: 2.0 }).unwrap()
+                filters::gaussian_blur_cv(
+                    r,
+                    &mut u,
+                    &inf,
+                    &filters::GaussianBlurCvParams { sigma: 2.0 },
+                )
+                .unwrap()
             });
         });
 
@@ -740,7 +764,13 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let r = rasmcore_pipeline::Rect::new(0, 0, inf.width, inf.height);
                 let mut u = |_: rasmcore_pipeline::Rect| Ok(px.clone());
-                filters::gaussian_blur_cv(r, &mut u, &inf, &filters::GaussianBlurCvParams { sigma: 2.0 }).unwrap()
+                filters::gaussian_blur_cv(
+                    r,
+                    &mut u,
+                    &inf,
+                    &filters::GaussianBlurCvParams { sigma: 2.0 },
+                )
+                .unwrap()
             });
         });
 
@@ -883,7 +913,8 @@ fn enhancement_filter_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let r = Rect::new(0, 0, inf.width, inf.height);
                 let mut u = |_: Rect| Ok(px.clone());
-                filters::retinex_ssr(r, &mut u, &inf, &filters::RetinexSsrParams { sigma: 80.0 }).unwrap()
+                filters::retinex_ssr(r, &mut u, &inf, &filters::RetinexSsrParams { sigma: 80.0 })
+                    .unwrap()
             });
         });
 

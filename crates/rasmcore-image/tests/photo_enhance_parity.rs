@@ -586,7 +586,8 @@ fn ssr_vs_python_opencv_blur() {
 
     let r = Rect::new(0, 0, info.width, info.height);
     let mut u = |_: Rect| Ok(pixels.clone());
-    let ours = filters::retinex_ssr(r, &mut u, &info, &filters::RetinexSsrParams { sigma }).unwrap();
+    let ours =
+        filters::retinex_ssr(r, &mut u, &info, &filters::RetinexSsrParams { sigma }).unwrap();
 
     let input_path = write_png(&pixels, w, h, 3);
     let script = format!(

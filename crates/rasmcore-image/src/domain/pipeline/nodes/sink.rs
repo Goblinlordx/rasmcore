@@ -20,7 +20,7 @@ use crate::domain::encoder;
 use crate::domain::encoder::streaming::StreamingEncoder;
 use crate::domain::error::ImageError;
 use crate::domain::metadata_set::MetadataSet;
-use crate::domain::pipeline::graph::{bytes_per_pixel, NodeGraph};
+use crate::domain::pipeline::graph::{NodeGraph, bytes_per_pixel};
 use rasmcore_pipeline::Rect;
 
 /// Default tile size (pixels per side). 512×512 at RGB8 = 768 KB per tile.
@@ -88,8 +88,7 @@ fn request_tiled(
             for row in 0..th as usize {
                 let dst = (y as usize + row) * stride + x as usize * bpp as usize;
                 let src = row * tile_stride;
-                out[dst..dst + tile_stride]
-                    .copy_from_slice(&tile_pixels[src..src + tile_stride]);
+                out[dst..dst + tile_stride].copy_from_slice(&tile_pixels[src..src + tile_stride]);
             }
 
             x += tile_size;
@@ -190,7 +189,14 @@ pub fn write(
     quality: Option<u8>,
     metadata: Option<&MetadataSet>,
 ) -> Result<Vec<u8>, ImageError> {
-    write_tiled(graph, node_id, format, quality, metadata, &TileConfig::default())
+    write_tiled(
+        graph,
+        node_id,
+        format,
+        quality,
+        metadata,
+        &TileConfig::default(),
+    )
 }
 
 /// Write with explicit tile configuration.
@@ -232,7 +238,14 @@ pub fn write_tiled(
     }
 
     // Fallback: stitch tiles into full buffer, then encode
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     // Re-query info after compute — mapper nodes update their output format
     // during compute_region (e.g., RGB8 → Gray8 for grayscale/sobel/charcoal).
     let info = graph.node_info(node_id)?;
@@ -264,7 +277,14 @@ pub fn write_jpeg_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     let encoded = encoder::jpeg::encode_pixels(&pixels, &info, config)?;
 
     match metadata {
@@ -293,7 +313,14 @@ pub fn write_avif_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     let encoded = encoder::avif::encode(&pixels, &info, config)?;
 
     match metadata {
@@ -322,7 +349,14 @@ pub fn write_png_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     let encoded = encoder::png::encode(&pixels, &info, config)?;
 
     match metadata {
@@ -351,7 +385,14 @@ pub fn write_gif_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     let encoded = encoder::gif::encode_pixels(&pixels, &info, config)?;
 
     match metadata {
@@ -379,7 +420,15 @@ pub fn write_tiff_tiled(
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
     let mut enc = encoder::streaming::TiffStreamingEncoder::new(&info, config)?;
-    feed_tiles_to_encoder(graph, node_id, info.width, info.height, bpp, tile_config.tile_size, &mut enc)?;
+    feed_tiles_to_encoder(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+        &mut enc,
+    )?;
     enc.finish()
 }
 
@@ -397,7 +446,15 @@ pub fn write_bmp_tiled(
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
     let mut enc = encoder::streaming::BmpStreamingEncoder::new(&info)?;
-    feed_tiles_to_encoder(graph, node_id, info.width, info.height, bpp, tile_config.tile_size, &mut enc)?;
+    feed_tiles_to_encoder(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+        &mut enc,
+    )?;
     enc.finish()
 }
 
@@ -414,7 +471,14 @@ pub fn write_ico_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     encoder::ico::encode_pixels(&pixels, &info, &encoder::ico::IcoEncodeConfig)
 }
 
@@ -433,7 +497,15 @@ pub fn write_qoi_tiled(
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
     let mut enc = encoder::streaming::QoiStreamingEncoder::new(&info)?;
-    feed_tiles_to_encoder(graph, node_id, info.width, info.height, bpp, tile_config.tile_size, &mut enc)?;
+    feed_tiles_to_encoder(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+        &mut enc,
+    )?;
     enc.finish()
 }
 
@@ -446,7 +518,14 @@ pub fn write_qoi_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     encoder::encode(&pixels, &info, "qoi", None)
 }
 
@@ -470,7 +549,14 @@ pub fn write_webp_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
+    let pixels = request_tiled(
+        graph,
+        node_id,
+        info.width,
+        info.height,
+        bpp,
+        tile_config.tile_size,
+    )?;
     let encoded = encoder::webp::encode_pixels(&pixels, &info, config)?;
 
     match metadata {
@@ -482,7 +568,7 @@ pub fn write_webp_tiled(
 #[cfg(test)]
 mod tiled_sink_tests {
     use super::*;
-    use crate::domain::pipeline::graph::{crop_region, ImageNode, NodeGraph};
+    use crate::domain::pipeline::graph::{ImageNode, NodeGraph, crop_region};
     use crate::domain::types::*;
     use rasmcore_pipeline::rect::Rect;
 
@@ -563,7 +649,9 @@ mod tiled_sink_tests {
         let bpp = 3u32;
 
         let (mut g_ref, src_ref) = make_graph(w, h);
-        let reference = g_ref.request_region(src_ref, Rect::new(0, 0, w, h)).unwrap();
+        let reference = g_ref
+            .request_region(src_ref, Rect::new(0, 0, w, h))
+            .unwrap();
 
         for tile_size in [1, 7, 32, 50, 64, 99, 100, 200, 512] {
             let (mut g, src) = make_graph(w, h);
@@ -665,10 +753,7 @@ mod tiled_sink_tests {
             w: u32,
             h: u32,
         ) -> Result<(), ImageError> {
-            self.log
-                .lock()
-                .unwrap()
-                .push(Event::Write(x, y, w, h));
+            self.log.lock().unwrap().push(Event::Write(x, y, w, h));
             self.inner.write_tile(pixels, x, y, w, h)
         }
         fn finish(&mut self) -> Result<Vec<u8>, ImageError> {
@@ -699,8 +784,7 @@ mod tiled_sink_tests {
         }));
 
         // Create logging BMP streaming encoder
-        let bmp_enc =
-            encoder::streaming::BmpStreamingEncoder::new(&info).unwrap();
+        let bmp_enc = encoder::streaming::BmpStreamingEncoder::new(&info).unwrap();
         let mut logging_enc = LoggingEncoder {
             inner: Box::new(bmp_enc),
             log: Arc::clone(&log),
@@ -708,16 +792,7 @@ mod tiled_sink_tests {
 
         // Feed tiles
         let bpp = bytes_per_pixel(info.format);
-        feed_tiles_to_encoder(
-            &mut graph,
-            src,
-            w,
-            h,
-            bpp,
-            tile_size,
-            &mut logging_enc,
-        )
-        .unwrap();
+        feed_tiles_to_encoder(&mut graph, src, w, h, bpp, tile_size, &mut logging_enc).unwrap();
         let encoded = logging_enc.finish().unwrap();
 
         // Verify: encoded output is valid BMP

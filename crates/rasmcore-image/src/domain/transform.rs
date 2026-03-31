@@ -1981,7 +1981,8 @@ mod tests {
             {
                 let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
                 let mut u = |_: rasmcore_pipeline::Rect| Ok(after_gamma.clone());
-                filters::brightness(r, &mut u, &info, &filters::BrightnessParams { amount: 0.1 }).unwrap()
+                filters::brightness(r, &mut u, &info, &filters::BrightnessParams { amount: 0.1 })
+                    .unwrap()
             }
         };
 

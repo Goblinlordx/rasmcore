@@ -140,7 +140,9 @@ struct FusedClutNode {
 }
 
 impl ImageNode for FusedClutNode {
-    fn info(&self) -> ImageInfo { self.source_info.clone() }
+    fn info(&self) -> ImageInfo {
+        self.source_info.clone()
+    }
     fn compute_region(
         &self,
         request: Rect,
@@ -152,8 +154,12 @@ impl ImageNode for FusedClutNode {
     fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> {
         Some(self.clut.clone())
     }
-    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }
-    fn access_pattern(&self) -> AccessPattern { AccessPattern::Sequential }
+    fn upstream_id(&self) -> Option<u32> {
+        Some(self.upstream)
+    }
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
 }
 
 /// Pipeline-owned node graph.
@@ -356,7 +362,7 @@ impl NodeGraph {
     /// `ComposedAffineNode`. This eliminates multi-pass interpolation artifacts
     /// and improves both quality and performance.
     pub fn fuse_affine_transforms(&mut self) {
-        use crate::domain::pipeline::nodes::transform::{compose_affine, ComposedAffineNode};
+        use crate::domain::pipeline::nodes::transform::{ComposedAffineNode, compose_affine};
 
         let n = self.nodes.len();
         let mut fused_into: Vec<Option<u32>> = vec![None; n];
@@ -426,14 +432,22 @@ impl NodeGraph {
         let n = self.nodes.len();
         let mut fused_into: Vec<Option<u32>> = vec![None; n];
         for i in (0..n).rev() {
-            if fused_into[i].is_some() { continue; }
-            let Some(mut clut) = self.nodes[i].as_color_lut_op() else { continue; };
+            if fused_into[i].is_some() {
+                continue;
+            }
+            let Some(mut clut) = self.nodes[i].as_color_lut_op() else {
+                continue;
+            };
             let mut chain_root_upstream = self.nodes[i].upstream_id();
             let mut current = i;
             while let Some(up_id) = self.nodes[current].upstream_id() {
                 let up = up_id as usize;
-                if up >= n || fused_into[up].is_some() { break; }
-                let Some(up_clut) = self.nodes[up].as_color_lut_op() else { break; };
+                if up >= n || fused_into[up].is_some() {
+                    break;
+                }
+                let Some(up_clut) = self.nodes[up].as_color_lut_op() else {
+                    break;
+                };
                 clut = crate::domain::color_lut::compose_cluts(&up_clut, &clut);
                 chain_root_upstream = self.nodes[up].upstream_id();
                 fused_into[up] = Some(i as u32);
@@ -442,7 +456,11 @@ impl NodeGraph {
             if current != i {
                 let upstream = chain_root_upstream.unwrap_or(0);
                 let info = self.nodes[i].info();
-                self.nodes[i] = Box::new(FusedClutNode { upstream, source_info: info, clut });
+                self.nodes[i] = Box::new(FusedClutNode {
+                    upstream,
+                    source_info: info,
+                    clut,
+                });
             }
         }
     }
@@ -778,13 +796,13 @@ mod tests {
 #[cfg(test)]
 mod tiled_parity_tests {
     use super::*;
-    use crate::domain::pipeline::nodes::filters::{
-        BilateralNode, BlurNode, BrightnessNode, CannyMapperNode, ContrastNode, ErodeNode,
-        GuidedFilterNode, MedianNode, MotionBlurNode, SharpenNode,
-    };
     use crate::domain::filters::{
         BilateralParams, BlurParams, BrightnessParams, CannyParams, ContrastParams, ErodeParams,
         GuidedFilterParams, MedianParams, MotionBlurParams, SharpenParams,
+    };
+    use crate::domain::pipeline::nodes::filters::{
+        BilateralNode, BlurNode, BrightnessNode, CannyMapperNode, ContrastNode, ErodeNode,
+        GuidedFilterNode, MedianNode, MotionBlurNode, SharpenNode,
     };
     use crate::domain::types::*;
 
@@ -1236,10 +1254,10 @@ mod tiled_parity_tests {
 #[cfg(test)]
 mod lut_fusion_tests {
     use super::*;
+    use crate::domain::filters::{BlurParams, BrightnessParams, ContrastParams, GammaParams};
     use crate::domain::pipeline::nodes::filters::{
         BlurNode, BrightnessNode, ContrastNode, GammaNode, InvertNode,
     };
-    use crate::domain::filters::{BlurParams, BrightnessParams, ContrastParams, GammaParams};
     use crate::domain::types::*;
 
     /// Raw pixel source node for testing.
@@ -1306,21 +1324,48 @@ mod lut_fusion_tests {
         // Unfused: build graph, don't fuse, request full image
         let mut g1 = NodeGraph::new(1024 * 1024);
         let src1 = g1.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
-        let b1 = g1.add_node(Box::new(BrightnessNode::new(src1, info.clone(), BrightnessParams { amount: 0.2 })));
-        let c1 = g1.add_node(Box::new(ContrastNode::new(b1, info.clone(), ContrastParams { amount: 0.3 })));
-        let g_node1 = g1.add_node(Box::new(GammaNode::new(c1, info.clone(), GammaParams { gamma_value: 1.5 })));
+        let b1 = g1.add_node(Box::new(BrightnessNode::new(
+            src1,
+            info.clone(),
+            BrightnessParams { amount: 0.2 },
+        )));
+        let c1 = g1.add_node(Box::new(ContrastNode::new(
+            b1,
+            info.clone(),
+            ContrastParams { amount: 0.3 },
+        )));
+        let g_node1 = g1.add_node(Box::new(GammaNode::new(
+            c1,
+            info.clone(),
+            GammaParams { gamma_value: 1.5 },
+        )));
         let unfused = g1.request_region(g_node1, Rect::new(0, 0, w, h)).unwrap();
 
         // Fused: build same graph, fuse, request full image
         let mut g2 = NodeGraph::new(1024 * 1024);
         let src2 = g2.add_node(Box::new(RawSource::new(pixels, info.clone())));
-        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info.clone(), BrightnessParams { amount: 0.2 })));
-        let c2 = g2.add_node(Box::new(ContrastNode::new(b2, info.clone(), ContrastParams { amount: 0.3 })));
-        let g_node2 = g2.add_node(Box::new(GammaNode::new(c2, info.clone(), GammaParams { gamma_value: 1.5 })));
+        let b2 = g2.add_node(Box::new(BrightnessNode::new(
+            src2,
+            info.clone(),
+            BrightnessParams { amount: 0.2 },
+        )));
+        let c2 = g2.add_node(Box::new(ContrastNode::new(
+            b2,
+            info.clone(),
+            ContrastParams { amount: 0.3 },
+        )));
+        let g_node2 = g2.add_node(Box::new(GammaNode::new(
+            c2,
+            info.clone(),
+            GammaParams { gamma_value: 1.5 },
+        )));
         g2.fuse_point_ops();
         let fused = g2.request_region(g_node2, Rect::new(0, 0, w, h)).unwrap();
 
-        assert_eq!(unfused, fused, "Fused output must be byte-identical to unfused");
+        assert_eq!(
+            unfused, fused,
+            "Fused output must be byte-identical to unfused"
+        );
     }
 
     #[test]
@@ -1334,11 +1379,31 @@ mod lut_fusion_tests {
         let build_graph = |fuse: bool| {
             let mut g = NodeGraph::new(1024 * 1024);
             let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
-            let n1 = g.add_node(Box::new(BrightnessNode::new(src, info.clone(), BrightnessParams { amount: 0.1 })));
-            let n2 = g.add_node(Box::new(ContrastNode::new(n1, info.clone(), ContrastParams { amount: 0.2 })));
-            let n3 = g.add_node(Box::new(GammaNode::new(n2, info.clone(), GammaParams { gamma_value: 0.8 })));
-            let n4 = g.add_node(Box::new(BrightnessNode::new(n3, info.clone(), BrightnessParams { amount: -0.1 })));
-            let n5 = g.add_node(Box::new(ContrastNode::new(n4, info.clone(), ContrastParams { amount: -0.15 })));
+            let n1 = g.add_node(Box::new(BrightnessNode::new(
+                src,
+                info.clone(),
+                BrightnessParams { amount: 0.1 },
+            )));
+            let n2 = g.add_node(Box::new(ContrastNode::new(
+                n1,
+                info.clone(),
+                ContrastParams { amount: 0.2 },
+            )));
+            let n3 = g.add_node(Box::new(GammaNode::new(
+                n2,
+                info.clone(),
+                GammaParams { gamma_value: 0.8 },
+            )));
+            let n4 = g.add_node(Box::new(BrightnessNode::new(
+                n3,
+                info.clone(),
+                BrightnessParams { amount: -0.1 },
+            )));
+            let n5 = g.add_node(Box::new(ContrastNode::new(
+                n4,
+                info.clone(),
+                ContrastParams { amount: -0.15 },
+            )));
             if fuse {
                 g.fuse_point_ops();
             }
@@ -1360,18 +1425,42 @@ mod lut_fusion_tests {
         // should NOT be fused together
         let mut g = NodeGraph::new(1024 * 1024);
         let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
-        let b = g.add_node(Box::new(BrightnessNode::new(src, info.clone(), BrightnessParams { amount: 0.2 })));
-        let blur = g.add_node(Box::new(BlurNode::new(b, info.clone(), BlurParams { radius: 2.0 })));
-        let c = g.add_node(Box::new(ContrastNode::new(blur, info.clone(), ContrastParams { amount: 0.3 })));
+        let b = g.add_node(Box::new(BrightnessNode::new(
+            src,
+            info.clone(),
+            BrightnessParams { amount: 0.2 },
+        )));
+        let blur = g.add_node(Box::new(BlurNode::new(
+            b,
+            info.clone(),
+            BlurParams { radius: 2.0 },
+        )));
+        let c = g.add_node(Box::new(ContrastNode::new(
+            blur,
+            info.clone(),
+            ContrastParams { amount: 0.3 },
+        )));
 
         // After fusion, blur should still be in the chain (barrier)
         g.fuse_point_ops();
 
         let mut g2 = NodeGraph::new(1024 * 1024);
         let src2 = g2.add_node(Box::new(RawSource::new(pixels, info.clone())));
-        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info.clone(), BrightnessParams { amount: 0.2 })));
-        let blur2 = g2.add_node(Box::new(BlurNode::new(b2, info.clone(), BlurParams { radius: 2.0 })));
-        let c2 = g2.add_node(Box::new(ContrastNode::new(blur2, info.clone(), ContrastParams { amount: 0.3 })));
+        let b2 = g2.add_node(Box::new(BrightnessNode::new(
+            src2,
+            info.clone(),
+            BrightnessParams { amount: 0.2 },
+        )));
+        let blur2 = g2.add_node(Box::new(BlurNode::new(
+            b2,
+            info.clone(),
+            BlurParams { radius: 2.0 },
+        )));
+        let c2 = g2.add_node(Box::new(ContrastNode::new(
+            blur2,
+            info.clone(),
+            ContrastParams { amount: 0.3 },
+        )));
 
         let fused = g.request_region(c, Rect::new(0, 0, w, h)).unwrap();
         let unfused = g2.request_region(c2, Rect::new(0, 0, w, h)).unwrap();
@@ -1389,7 +1478,11 @@ mod lut_fusion_tests {
         let build_graph = |fuse: bool| {
             let mut g = NodeGraph::new(1024 * 1024);
             let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
-            let b = g.add_node(Box::new(BrightnessNode::new(src, info.clone(), BrightnessParams { amount: 0.2 })));
+            let b = g.add_node(Box::new(BrightnessNode::new(
+                src,
+                info.clone(),
+                BrightnessParams { amount: 0.2 },
+            )));
             let inv = g.add_node(Box::new(InvertNode::new(b, info.clone())));
             if fuse {
                 g.fuse_point_ops();
@@ -1404,40 +1497,90 @@ mod lut_fusion_tests {
 #[cfg(test)]
 mod color_clut_fusion_tests {
     use super::*;
-    use crate::domain::pipeline::nodes::filters::{HueRotateNode, SaturateNode, SepiaNode};
     use crate::domain::filters::{HueRotateParams, SaturateParams, SepiaParams};
+    use crate::domain::pipeline::nodes::filters::{HueRotateNode, SaturateNode, SepiaNode};
     use crate::domain::types::*;
 
-    struct RawSource { pixels: Vec<u8>, info: ImageInfo }
-    impl RawSource { fn new(pixels: Vec<u8>, info: ImageInfo) -> Self { Self { pixels, info } } }
-    impl ImageNode for RawSource {
-        fn info(&self) -> ImageInfo { self.info.clone() }
-        fn compute_region(&self, request: Rect, _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>) -> Result<Vec<u8>, ImageError> {
-            Ok(crop_region(&self.pixels, Rect::new(0, 0, self.info.width, self.info.height), request, bytes_per_pixel(self.info.format)))
+    struct RawSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+    }
+    impl RawSource {
+        fn new(pixels: Vec<u8>, info: ImageInfo) -> Self {
+            Self { pixels, info }
         }
-        fn access_pattern(&self) -> AccessPattern { AccessPattern::Sequential }
+    }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            Ok(crop_region(
+                &self.pixels,
+                Rect::new(0, 0, self.info.width, self.info.height),
+                request,
+                bytes_per_pixel(self.info.format),
+            ))
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
     }
 
     fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
-        (0..w*h).flat_map(|i| { let x = i % w; let y = i / w; vec![((x*255)/w) as u8, ((y*255)/h) as u8, 128u8] }).collect()
+        (0..w * h)
+            .flat_map(|i| {
+                let x = i % w;
+                let y = i / w;
+                vec![((x * 255) / w) as u8, ((y * 255) / h) as u8, 128u8]
+            })
+            .collect()
     }
 
     #[test]
     fn fused_hue_saturate_sepia_matches_unfused() {
         let (w, h) = (16, 16);
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Rgb8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
         let pixels = gradient_rgb(w, h);
         let build = |fuse: bool| {
-            let mut g = NodeGraph::new(1024*1024);
+            let mut g = NodeGraph::new(1024 * 1024);
             let s = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
-            let h = g.add_node(Box::new(HueRotateNode::new(s, info.clone(), HueRotateParams { degrees: 90.0 })));
-            let sa = g.add_node(Box::new(SaturateNode::new(h, info.clone(), SaturateParams { factor: 1.5 })));
-            let se = g.add_node(Box::new(SepiaNode::new(sa, info.clone(), SepiaParams { intensity: 0.3 })));
-            if fuse { g.fuse_color_ops(); }
+            let h = g.add_node(Box::new(HueRotateNode::new(
+                s,
+                info.clone(),
+                HueRotateParams { degrees: 90.0 },
+            )));
+            let sa = g.add_node(Box::new(SaturateNode::new(
+                h,
+                info.clone(),
+                SaturateParams { factor: 1.5 },
+            )));
+            let se = g.add_node(Box::new(SepiaNode::new(
+                sa,
+                info.clone(),
+                SepiaParams { intensity: 0.3 },
+            )));
+            if fuse {
+                g.fuse_color_ops();
+            }
             g.request_region(se, Rect::new(0, 0, w, h)).unwrap()
         };
         let (unfused, fused) = (build(false), build(true));
-        let mae: f64 = unfused.iter().zip(fused.iter()).map(|(&a, &b)| (a as f64 - b as f64).abs()).sum::<f64>() / unfused.len() as f64;
+        let mae: f64 = unfused
+            .iter()
+            .zip(fused.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / unfused.len() as f64;
         assert!(mae < 1.0, "3D CLUT fusion MAE: {mae} (expected < 1.0)");
     }
 }
@@ -1445,8 +1588,8 @@ mod color_clut_fusion_tests {
 #[cfg(test)]
 mod frame_sequence_tests {
     use super::*;
-    use crate::domain::pipeline::nodes::filters::BrightnessNode;
     use crate::domain::filters::BrightnessParams;
+    use crate::domain::pipeline::nodes::filters::BrightnessNode;
     use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
     use crate::domain::types::*;
 
@@ -1527,7 +1670,11 @@ mod frame_sequence_tests {
         let node = FrameSourceNode::new(gif, FrameSelection::All).unwrap();
         let (src_id, rc) = graph.add_frame_source(node);
         let src_info = graph.node_info(src_id).unwrap();
-        let bright = graph.add_node(Box::new(BrightnessNode::new(src_id, src_info, BrightnessParams { amount: 0.2 })));
+        let bright = graph.add_node(Box::new(BrightnessNode::new(
+            src_id,
+            src_info,
+            BrightnessParams { amount: 0.2 },
+        )));
 
         let seq = graph.execute_sequence(&rc, bright).unwrap();
         assert_eq!(seq.len(), 3);
@@ -1564,17 +1711,39 @@ mod frame_sequence_tests {
 mod affine_composition_tests {
     use super::*;
     use crate::domain::pipeline::nodes::transform::*;
-    use crate::domain::types::{ColorSpace, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation};
+    use crate::domain::types::{
+        ColorSpace, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation,
+    };
 
-    struct RawSource { pixels: Vec<u8>, info: ImageInfo }
-    impl RawSource { fn new(pixels: Vec<u8>, info: ImageInfo) -> Self { Self { pixels, info } } }
-    impl ImageNode for RawSource {
-        fn info(&self) -> ImageInfo { self.info.clone() }
-        fn compute_region(&self, request: Rect, _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>) -> Result<Vec<u8>, ImageError> {
-            let bpp = crate::domain::pipeline::graph::bytes_per_pixel(self.info.format);
-            Ok(crop_region(&self.pixels, Rect::new(0, 0, self.info.width, self.info.height), request, bpp))
+    struct RawSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+    }
+    impl RawSource {
+        fn new(pixels: Vec<u8>, info: ImageInfo) -> Self {
+            Self { pixels, info }
         }
-        fn access_pattern(&self) -> AccessPattern { AccessPattern::Sequential }
+    }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let bpp = crate::domain::pipeline::graph::bytes_per_pixel(self.info.format);
+            Ok(crop_region(
+                &self.pixels,
+                Rect::new(0, 0, self.info.width, self.info.height),
+                request,
+                bpp,
+            ))
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
     }
 
     fn make_info(w: u32, h: u32) -> ImageInfo {
@@ -1668,17 +1837,25 @@ mod affine_composition_tests {
         let src = graph.add_node(Box::new(RawSource::new(pixels.clone(), src_info.clone())));
 
         let resize = graph.add_node(Box::new(ResizeNode::new(
-            src, src_info.clone(), 32, 32, ResizeFilter::Bilinear,
+            src,
+            src_info.clone(),
+            32,
+            32,
+            ResizeFilter::Bilinear,
         )));
         let resize_info = graph.node_info(resize).unwrap();
 
         let rotate = graph.add_node(Box::new(RotateNode::new(
-            resize, resize_info.clone(), Rotation::R90,
+            resize,
+            resize_info.clone(),
+            Rotation::R90,
         )));
         let rotate_info = graph.node_info(rotate).unwrap();
 
         let flip = graph.add_node(Box::new(FlipNode::new(
-            rotate, rotate_info, FlipDirection::Horizontal,
+            rotate,
+            rotate_info,
+            FlipDirection::Horizontal,
         )));
 
         // Before fusion: 3 separate transform nodes
@@ -1695,15 +1872,18 @@ mod affine_composition_tests {
         // Verify execution works
         let full = Rect::new(0, 0, info_after.width, info_after.height);
         let result = graph.request_region(flip, full).unwrap();
-        assert_eq!(result.len(), (info_after.width * info_after.height * 3) as usize);
+        assert_eq!(
+            result.len(),
+            (info_after.width * info_after.height * 3) as usize
+        );
     }
 
     #[test]
     fn non_affine_blocks_fusion() {
         // Build: source → resize → blur → rotate
         // Blur should block fusion — resize and rotate should NOT compose
-        use crate::domain::pipeline::nodes::filters::BlurNode;
         use crate::domain::filters::BlurParams;
+        use crate::domain::pipeline::nodes::filters::BlurNode;
 
         let src_info = make_info(64, 64);
         let pixels: Vec<u8> = vec![128u8; 64 * 64 * 3];
@@ -1712,18 +1892,22 @@ mod affine_composition_tests {
         let src = graph.add_node(Box::new(RawSource::new(pixels, src_info.clone())));
 
         let resize = graph.add_node(Box::new(ResizeNode::new(
-            src, src_info.clone(), 32, 32, ResizeFilter::Bilinear,
+            src,
+            src_info.clone(),
+            32,
+            32,
+            ResizeFilter::Bilinear,
         )));
         let resize_info = graph.node_info(resize).unwrap();
 
         let blur = graph.add_node(Box::new(BlurNode::new(
-            resize, resize_info.clone(), BlurParams { radius: 2.0 },
+            resize,
+            resize_info.clone(),
+            BlurParams { radius: 2.0 },
         )));
         let blur_info = graph.node_info(blur).unwrap();
 
-        let rotate = graph.add_node(Box::new(RotateNode::new(
-            blur, blur_info, Rotation::R90,
-        )));
+        let rotate = graph.add_node(Box::new(RotateNode::new(blur, blur_info, Rotation::R90)));
 
         // Fuse — blur should prevent resize+rotate composition
         graph.fuse_affine_transforms();
@@ -1734,7 +1918,10 @@ mod affine_composition_tests {
         let out_info = graph.node_info(rotate).unwrap();
         let full = Rect::new(0, 0, out_info.width, out_info.height);
         let result = graph.request_region(rotate, full).unwrap();
-        assert_eq!(result.len(), (out_info.width * out_info.height * 3) as usize);
+        assert_eq!(
+            result.len(),
+            (out_info.width * out_info.height * 3) as usize
+        );
     }
 
     #[test]

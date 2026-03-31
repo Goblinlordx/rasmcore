@@ -118,7 +118,9 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
     code.push_str("            } else {\n");
     code.push_str("                // Flat comma-separated: \"x1,y1,x2,y2\"\n");
     code.push_str("                let vals: Vec<f32> = v.split(',').filter_map(|s| s.trim().parse().ok()).collect();\n");
-    code.push_str("                vals.chunks_exact(2).map(|c| Point2D { x: c[0], y: c[1] }).collect()\n");
+    code.push_str(
+        "                vals.chunks_exact(2).map(|c| Point2D { x: c[0], y: c[1] }).collect()\n",
+    );
     code.push_str("            }\n");
     code.push_str("        }\n");
     code.push_str("        None => Vec::new(),\n");

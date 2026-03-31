@@ -1,5 +1,4 @@
 pub mod avif;
-pub mod streaming;
 pub mod bmp;
 pub mod dds;
 pub mod exr;
@@ -13,6 +12,7 @@ pub mod jpeg;
 pub mod native_trivial;
 pub mod png;
 pub mod qoi;
+pub mod streaming;
 pub mod tiff;
 pub mod webp;
 

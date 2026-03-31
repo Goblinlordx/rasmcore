@@ -295,49 +295,82 @@ impl LutPointOp for EvaluateLogParams {
 
 // ─── ColorLutOp trait impls for fuseable multi-channel color operations ───
 
-use super::color_lut::{ColorLutOp, ColorLut3D, ColorOp as ColorOp, DEFAULT_CLUT_GRID};
+use super::color_lut::{ColorLut3D, ColorLutOp, ColorOp, DEFAULT_CLUT_GRID};
 
 impl ColorLutOp for HueRotateParams {
-    fn build_clut(&self) -> ColorLut3D { ColorOp::HueRotate(self.degrees).to_clut(DEFAULT_CLUT_GRID) }
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::HueRotate(self.degrees).to_clut(DEFAULT_CLUT_GRID)
+    }
 }
 impl ColorLutOp for SaturateParams {
-    fn build_clut(&self) -> ColorLut3D { ColorOp::Saturate(self.factor).to_clut(DEFAULT_CLUT_GRID) }
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Saturate(self.factor).to_clut(DEFAULT_CLUT_GRID)
+    }
 }
 impl ColorLutOp for SepiaParams {
-    fn build_clut(&self) -> ColorLut3D { ColorOp::Sepia(self.intensity).to_clut(DEFAULT_CLUT_GRID) }
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Sepia(self.intensity).to_clut(DEFAULT_CLUT_GRID)
+    }
 }
 impl ColorLutOp for ColorizeParams {
     fn build_clut(&self) -> ColorLut3D {
         ColorOp::Colorize(
-            [self.target.r as f32 / 255.0, self.target.g as f32 / 255.0, self.target.b as f32 / 255.0],
+            [
+                self.target.r as f32 / 255.0,
+                self.target.g as f32 / 255.0,
+                self.target.b as f32 / 255.0,
+            ],
             self.amount,
-        ).to_clut(DEFAULT_CLUT_GRID)
+        )
+        .to_clut(DEFAULT_CLUT_GRID)
     }
 }
 impl ColorLutOp for ChannelMixerParams {
     fn build_clut(&self) -> ColorLut3D {
-        ColorOp::ChannelMix([self.rr, self.rg, self.rb, self.gr, self.gg, self.gb, self.br, self.bg, self.bb])
-            .to_clut(DEFAULT_CLUT_GRID)
+        ColorOp::ChannelMix([
+            self.rr, self.rg, self.rb, self.gr, self.gg, self.gb, self.br, self.bg, self.bb,
+        ])
+        .to_clut(DEFAULT_CLUT_GRID)
     }
 }
 impl ColorLutOp for VibranceParams {
-    fn build_clut(&self) -> ColorLut3D { ColorOp::Vibrance(self.amount).to_clut(DEFAULT_CLUT_GRID) }
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Vibrance(self.amount).to_clut(DEFAULT_CLUT_GRID)
+    }
 }
 impl ColorLutOp for ModulateParams {
     fn build_clut(&self) -> ColorLut3D {
-        ColorOp::Modulate { brightness: self.brightness, saturation: self.saturation, hue: self.hue }
-            .to_clut(DEFAULT_CLUT_GRID)
+        ColorOp::Modulate {
+            brightness: self.brightness,
+            saturation: self.saturation,
+            hue: self.hue,
+        }
+        .to_clut(DEFAULT_CLUT_GRID)
     }
 }
 impl ColorLutOp for ColorBalanceParams {
     fn build_clut(&self) -> ColorLut3D {
         let cb = super::color_grading::ColorBalance {
-            shadow: [self.shadow_cyan_red / 100.0, self.shadow_magenta_green / 100.0, self.shadow_yellow_blue / 100.0],
-            midtone: [self.midtone_cyan_red / 100.0, self.midtone_magenta_green / 100.0, self.midtone_yellow_blue / 100.0],
-            highlight: [self.highlight_cyan_red / 100.0, self.highlight_magenta_green / 100.0, self.highlight_yellow_blue / 100.0],
+            shadow: [
+                self.shadow_cyan_red / 100.0,
+                self.shadow_magenta_green / 100.0,
+                self.shadow_yellow_blue / 100.0,
+            ],
+            midtone: [
+                self.midtone_cyan_red / 100.0,
+                self.midtone_magenta_green / 100.0,
+                self.midtone_yellow_blue / 100.0,
+            ],
+            highlight: [
+                self.highlight_cyan_red / 100.0,
+                self.highlight_magenta_green / 100.0,
+                self.highlight_yellow_blue / 100.0,
+            ],
             preserve_luminosity: self.preserve_luminosity,
         };
-        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::color_balance_pixel(r, g, b, &cb))
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| {
+            super::color_grading::color_balance_pixel(r, g, b, &cb)
+        })
     }
 }
 impl ColorLutOp for AscCdlParams {
@@ -348,7 +381,9 @@ impl ColorLutOp for AscCdlParams {
             power: [self.power_r, self.power_g, self.power_b],
             saturation: 1.0,
         };
-        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::asc_cdl_pixel(r, g, b, &cdl))
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| {
+            super::color_grading::asc_cdl_pixel(r, g, b, &cdl)
+        })
     }
 }
 impl ColorLutOp for LiftGammaGainParams {
@@ -358,7 +393,9 @@ impl ColorLutOp for LiftGammaGainParams {
             gamma: [self.gamma_r, self.gamma_g, self.gamma_b],
             gain: [self.gain_r, self.gain_g, self.gain_b],
         };
-        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::lift_gamma_gain_pixel(r, g, b, &lgg))
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| {
+            super::color_grading::lift_gamma_gain_pixel(r, g, b, &lgg)
+        })
     }
 }
 impl ColorLutOp for SplitToningParams {
@@ -369,7 +406,9 @@ impl ColorLutOp for SplitToningParams {
             balance: self.balance,
             strength: 0.5,
         };
-        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| super::color_grading::split_toning_pixel(r, g, b, &st))
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| {
+            super::color_grading::split_toning_pixel(r, g, b, &st)
+        })
     }
 }
 
@@ -1079,16 +1118,40 @@ pub struct DrawPolygonParams {
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawEllipseParams {
     /// Center X
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
     pub cx: f32,
     /// Center Y
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
     pub cy: f32,
     /// Radius X
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 40.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 40.0,
+        hint = "rc.log_slider"
+    )]
     pub rx: f32,
     /// Radius Y
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 25.0,
+        hint = "rc.log_slider"
+    )]
     pub ry: f32,
     /// Color
     pub color: crate::domain::param_types::ColorRgba,
@@ -1104,22 +1167,58 @@ pub struct DrawEllipseParams {
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawArcParams {
     /// Center X
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
     pub cx: f32,
     /// Center Y
-    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
     pub cy: f32,
     /// Radius X
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 40.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 40.0,
+        hint = "rc.log_slider"
+    )]
     pub rx: f32,
     /// Radius Y
-    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0, hint = "rc.log_slider")]
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 25.0,
+        hint = "rc.log_slider"
+    )]
     pub ry: f32,
     /// Start angle in degrees (0 = right, counter-clockwise)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
     pub start_angle: f32,
     /// End angle in degrees
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 180.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 180.0,
+        hint = "rc.angle_deg"
+    )]
     pub end_angle: f32,
     /// Stroke color
     pub color: crate::domain::param_types::ColorRgba,
@@ -1162,7 +1261,11 @@ pub fn blur(
     config: &BlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     blur_impl(&pixels, info, config)
 }
 
@@ -1297,7 +1400,11 @@ pub fn bokeh_blur(
     config: &BokehBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
     let shape = config.shape;
@@ -1319,7 +1426,17 @@ pub fn bokeh_blur(
     }
     {
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        convolve(request, &mut u, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+        convolve(
+            request,
+            &mut u,
+            info,
+            &kernel,
+            &ConvolveParams {
+                kw: side as u32,
+                kh: side as u32,
+                divisor,
+            },
+        )
     }
 }
 
@@ -1356,7 +1473,11 @@ pub fn motion_blur(
     config: &MotionBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let length = config.length;
     let angle_degrees = config.angle_degrees;
@@ -1451,7 +1572,11 @@ pub fn zoom_blur(
     config: &ZoomBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let center_x = config.center_x;
     let center_y = config.center_y;
@@ -1579,7 +1704,11 @@ pub fn spin_blur(
     config: &SpinBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -1709,7 +1838,11 @@ pub fn box_blur(
     config: &BoxBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
     validate_format(info.format)?;
@@ -1766,33 +1899,47 @@ pub fn box_blur(
         for k in 0..=r {
             let sx = k.min(w - 1);
             let p = load_pixel(pixels, row + sx * ch, color_ch);
-            for c in 0..color_ch { sums[c] += p[c]; }
+            for c in 0..color_ch {
+                sums[c] += p[c];
+            }
         }
         for _ in 0..r {
             let p = load_pixel(pixels, row, color_ch);
-            for c in 0..color_ch { sums[c] += p[c]; }
+            for c in 0..color_ch {
+                sums[c] += p[c];
+            }
         }
         // Store first pixel
         let mut mean = [0u32; 4];
-        for c in 0..color_ch { mean[c] = sums[c] / diam; }
+        for c in 0..color_ch {
+            mean[c] = sums[c] / diam;
+        }
         store_pixel(&mut hpass, row, mean, ch, pixels);
 
         // Slide across row
         for x in 1..w {
             let add_x = (x + r).min(w - 1);
             let add = load_pixel(pixels, row + add_x * ch, color_ch);
-            for c in 0..color_ch { sums[c] += add[c]; }
+            for c in 0..color_ch {
+                sums[c] += add[c];
+            }
 
             if x <= r {
                 let sub = load_pixel(pixels, row, color_ch);
-                for c in 0..color_ch { sums[c] -= sub[c]; }
+                for c in 0..color_ch {
+                    sums[c] -= sub[c];
+                }
             } else {
                 let sub_x = x - r - 1;
                 let sub = load_pixel(pixels, row + sub_x * ch, color_ch);
-                for c in 0..color_ch { sums[c] -= sub[c]; }
+                for c in 0..color_ch {
+                    sums[c] -= sub[c];
+                }
             }
 
-            for c in 0..color_ch { mean[c] = sums[c] / diam; }
+            for c in 0..color_ch {
+                mean[c] = sums[c] / diam;
+            }
             store_pixel(&mut hpass, row + x * ch, mean, ch, pixels);
         }
     }
@@ -1806,31 +1953,45 @@ pub fn box_blur(
         for k in 0..=r {
             let sy = k.min(h - 1);
             let p = load_pixel(&hpass, (sy * w + x) * ch, color_ch);
-            for c in 0..color_ch { sums[c] += p[c]; }
+            for c in 0..color_ch {
+                sums[c] += p[c];
+            }
         }
         for _ in 0..r {
             let p = load_pixel(&hpass, x * ch, color_ch);
-            for c in 0..color_ch { sums[c] += p[c]; }
+            for c in 0..color_ch {
+                sums[c] += p[c];
+            }
         }
         let mut mean = [0u32; 4];
-        for c in 0..color_ch { mean[c] = sums[c] / diam; }
+        for c in 0..color_ch {
+            mean[c] = sums[c] / diam;
+        }
         store_pixel(&mut out, x * ch, mean, ch, &hpass);
 
         for y in 1..h {
             let add_y = (y + r).min(h - 1);
             let add = load_pixel(&hpass, (add_y * w + x) * ch, color_ch);
-            for c in 0..color_ch { sums[c] += add[c]; }
+            for c in 0..color_ch {
+                sums[c] += add[c];
+            }
 
             if y <= r {
                 let sub = load_pixel(&hpass, x * ch, color_ch);
-                for c in 0..color_ch { sums[c] -= sub[c]; }
+                for c in 0..color_ch {
+                    sums[c] -= sub[c];
+                }
             } else {
                 let sub_y = y - r - 1;
                 let sub = load_pixel(&hpass, (sub_y * w + x) * ch, color_ch);
-                for c in 0..color_ch { sums[c] -= sub[c]; }
+                for c in 0..color_ch {
+                    sums[c] -= sub[c];
+                }
             }
 
-            for c in 0..color_ch { mean[c] = sums[c] / diam; }
+            for c in 0..color_ch {
+                mean[c] = sums[c] / diam;
+            }
             store_pixel(&mut out, (y * w + x) * ch, mean, ch, &hpass);
         }
     }
@@ -1858,7 +2019,11 @@ pub fn average_blur(
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -1885,7 +2050,10 @@ pub fn average_blur(
     }
 
     // Compute mean per channel
-    let means: Vec<u8> = sums.iter().map(|&s| (s / pixel_count as u64) as u8).collect();
+    let means: Vec<u8> = sums
+        .iter()
+        .map(|&s| (s / pixel_count as u64) as u8)
+        .collect();
 
     // Fill output with mean color
     let mut out = vec![0u8; pixels.len()];
@@ -1938,7 +2106,11 @@ pub fn smart_sharpen(
     config: &SmartSharpenParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
     let radius = config.radius;
@@ -2066,7 +2238,11 @@ pub fn sharpen(
     config: &SharpenParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     sharpen_impl(&pixels, info, config)
 }
 
@@ -2178,7 +2354,11 @@ pub fn brightness(
     config: &BrightnessParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
 
@@ -2215,7 +2395,11 @@ pub fn contrast(
     config: &ContrastParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
 
@@ -2252,7 +2436,11 @@ pub fn exposure(
     config: &ExposureParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if config.gamma_correction <= 0.0 {
@@ -2267,7 +2455,13 @@ pub fn exposure(
             exposure(r, &mut u, i8, config)
         });
     }
-    super::point_ops::exposure(pixels, info, config.ev, config.offset, config.gamma_correction)
+    super::point_ops::exposure(
+        pixels,
+        info,
+        config.ev,
+        config.offset,
+        config.gamma_correction,
+    )
 }
 
 /// Photoshop-style color balance — per-tonal-range CMY-RGB adjustment.
@@ -2288,7 +2482,11 @@ pub fn color_balance(
     config: &ColorBalanceParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2323,13 +2521,25 @@ pub fn color_balance(
 
 /// Add a constant value to each channel (clamped to 0-255).
 #[rasmcore_macros::register_filter(
-    name = "evaluate_add", category = "evaluate",
-    group = "evaluate", variant = "add",
-    reference = "ImageMagick -evaluate Add", point_op = "true"
+    name = "evaluate_add",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "add",
+    reference = "ImageMagick -evaluate Add",
+    point_op = "true"
 )]
-pub fn evaluate_add(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, config: &EvaluateAddParams) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_add(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &EvaluateAddParams,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2345,13 +2555,25 @@ pub fn evaluate_add(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, 
 
 /// Subtract a constant value from each channel (clamped to 0-255).
 #[rasmcore_macros::register_filter(
-    name = "evaluate_subtract", category = "evaluate",
-    group = "evaluate", variant = "subtract",
-    reference = "ImageMagick -evaluate Subtract", point_op = "true"
+    name = "evaluate_subtract",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "subtract",
+    reference = "ImageMagick -evaluate Subtract",
+    point_op = "true"
 )]
-pub fn evaluate_subtract(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, config: &EvaluateSubtractParams) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_subtract(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &EvaluateSubtractParams,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2361,19 +2583,33 @@ pub fn evaluate_subtract(request: Rect, upstream: &mut UpstreamFn, info: &ImageI
             evaluate_subtract(r, &mut u, i8, config)
         });
     }
-    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalSubtract(config.value as i16));
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalSubtract(
+        config.value as i16,
+    ));
     super::point_ops::apply_lut(pixels, info, &lut)
 }
 
 /// Multiply each channel by a factor (clamped to 0-255).
 #[rasmcore_macros::register_filter(
-    name = "evaluate_multiply", category = "evaluate",
-    group = "evaluate", variant = "multiply",
-    reference = "ImageMagick -evaluate Multiply", point_op = "true"
+    name = "evaluate_multiply",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "multiply",
+    reference = "ImageMagick -evaluate Multiply",
+    point_op = "true"
 )]
-pub fn evaluate_multiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, config: &EvaluateMultiplyParams) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_multiply(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &EvaluateMultiplyParams,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2389,9 +2625,12 @@ pub fn evaluate_multiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageI
 
 /// Divide each channel by a factor (clamped to 0-255).
 #[rasmcore_macros::register_filter(
-    name = "evaluate_divide", category = "evaluate",
-    group = "evaluate", variant = "divide",
-    reference = "ImageMagick -evaluate Divide", point_op = "true"
+    name = "evaluate_divide",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "divide",
+    reference = "ImageMagick -evaluate Divide",
+    point_op = "true"
 )]
 pub fn evaluate_divide(
     request: Rect,
@@ -2400,7 +2639,11 @@ pub fn evaluate_divide(
     config: &EvaluateDivideParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2416,13 +2659,25 @@ pub fn evaluate_divide(
 
 /// Floor each channel at a minimum value.
 #[rasmcore_macros::register_filter(
-    name = "evaluate_min", category = "evaluate",
-    group = "evaluate", variant = "min",
-    reference = "ImageMagick -evaluate Min", point_op = "true"
+    name = "evaluate_min",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "min",
+    reference = "ImageMagick -evaluate Min",
+    point_op = "true"
 )]
-pub fn evaluate_min(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, config: &EvaluateMinParams) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_min(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &EvaluateMinParams,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2438,9 +2693,12 @@ pub fn evaluate_min(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, 
 
 /// Ceiling each channel at a maximum value.
 #[rasmcore_macros::register_filter(
-    name = "evaluate_max", category = "evaluate",
-    group = "evaluate", variant = "max",
-    reference = "ImageMagick -evaluate Max", point_op = "true"
+    name = "evaluate_max",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "max",
+    reference = "ImageMagick -evaluate Max",
+    point_op = "true"
 )]
 pub fn evaluate_max(
     request: Rect,
@@ -2449,7 +2707,11 @@ pub fn evaluate_max(
     config: &EvaluateMaxParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2465,13 +2727,25 @@ pub fn evaluate_max(
 
 /// Raise normalized channel values to a power.
 #[rasmcore_macros::register_filter(
-    name = "evaluate_pow", category = "evaluate",
-    group = "evaluate", variant = "pow",
-    reference = "ImageMagick -evaluate Pow", point_op = "true"
+    name = "evaluate_pow",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "pow",
+    reference = "ImageMagick -evaluate Pow",
+    point_op = "true"
 )]
-pub fn evaluate_pow(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, config: &EvaluatePowParams) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_pow(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &EvaluatePowParams,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2487,9 +2761,12 @@ pub fn evaluate_pow(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, 
 
 /// Logarithmic transform of channel values.
 #[rasmcore_macros::register_filter(
-    name = "evaluate_log", category = "evaluate",
-    group = "evaluate", variant = "log",
-    reference = "ImageMagick -evaluate Log", point_op = "true"
+    name = "evaluate_log",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "log",
+    reference = "ImageMagick -evaluate Log",
+    point_op = "true"
 )]
 pub fn evaluate_log(
     request: Rect,
@@ -2498,7 +2775,11 @@ pub fn evaluate_log(
     config: &EvaluateLogParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -2514,13 +2795,23 @@ pub fn evaluate_log(
 
 /// Absolute value of channel values (identity for u8, included for pipeline symmetry).
 #[rasmcore_macros::register_filter(
-    name = "evaluate_abs", category = "evaluate",
-    group = "evaluate", variant = "abs",
+    name = "evaluate_abs",
+    category = "evaluate",
+    group = "evaluate",
+    variant = "abs",
     reference = "ImageMagick -evaluate Abs"
 )]
-pub fn evaluate_abs(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn evaluate_abs(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     Ok(pixels.to_vec()) // identity for unsigned types
@@ -2638,7 +2929,11 @@ pub fn hue_rotate(
     config: &HueRotateParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let degrees = config.degrees;
 
@@ -2659,7 +2954,11 @@ pub fn saturate(
     config: &SaturateParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let factor = config.factor;
 
@@ -2680,7 +2979,11 @@ pub fn sepia(
     config: &SepiaParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let intensity = config.intensity;
 
@@ -2710,7 +3013,11 @@ pub fn colorize(
     config: &ColorizeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let target_r = config.target.r;
     let target_g = config.target.g;
@@ -2764,7 +3071,11 @@ pub fn photo_filter(
     config: &PhotoFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -2876,7 +3187,11 @@ pub fn channel_mixer(
     config: &ChannelMixerParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let rr = config.rr;
     let rg = config.rg;
@@ -2923,7 +3238,11 @@ pub fn vibrance(
     config: &VibranceParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
 
@@ -3016,9 +3335,18 @@ fn interpolate_gradient(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
     category = "color",
     reference = "luminance-to-gradient color mapping"
 )]
-pub fn gradient_map(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, stops: String) -> Result<Vec<u8>, ImageError> {
+pub fn gradient_map(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    stops: String,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     let gradient_stops = parse_gradient_stops(&stops)?;
@@ -3137,7 +3465,11 @@ pub fn sparse_color(
     config: &SparseColorParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let power = config.power;
 
@@ -3232,7 +3564,11 @@ pub fn modulate(
     config: &ModulateParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let brightness = config.brightness;
     let saturation = config.saturation;
@@ -3273,8 +3609,22 @@ mod color_manipulation_tests {
     fn channel_mixer_identity_preserves_pixels() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result =
-            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 1.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 1.0 }).unwrap();
+        let result = channel_mixer(
+            &pixels,
+            &info,
+            &ChannelMixerParams {
+                rr: 1.0,
+                rg: 0.0,
+                rb: 0.0,
+                gr: 0.0,
+                gg: 1.0,
+                gb: 0.0,
+                br: 0.0,
+                bg: 0.0,
+                bb: 1.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3283,8 +3633,22 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 100, 150, 200);
         let info = info_rgb8(2, 2);
         // Output red = 1.0*R + 0*G + 0*B, green = 0, blue = 0
-        let result =
-            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 1.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 0.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 0.0 }).unwrap();
+        let result = channel_mixer(
+            &pixels,
+            &info,
+            &ChannelMixerParams {
+                rr: 1.0,
+                rg: 0.0,
+                rb: 0.0,
+                gr: 0.0,
+                gg: 0.0,
+                gb: 0.0,
+                br: 0.0,
+                bg: 0.0,
+                bb: 0.0,
+            },
+        )
+        .unwrap();
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 100);
             assert_eq!(chunk[1], 0);
@@ -3297,8 +3661,22 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 100, 150, 200);
         let info = info_rgb8(2, 2);
         // Swap R and B channels
-        let result =
-            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 0.0, rg: 0.0, rb: 1.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 1.0, bg: 0.0, bb: 0.0 }).unwrap();
+        let result = channel_mixer(
+            &pixels,
+            &info,
+            &ChannelMixerParams {
+                rr: 0.0,
+                rg: 0.0,
+                rb: 1.0,
+                gr: 0.0,
+                gg: 1.0,
+                gb: 0.0,
+                br: 1.0,
+                bg: 0.0,
+                bb: 0.0,
+            },
+        )
+        .unwrap();
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 200); // was blue
             assert_eq!(chunk[1], 150); // green unchanged
@@ -3311,8 +3689,22 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 200, 200, 200);
         let info = info_rgb8(2, 2);
         // 2.0 * R would overflow — should clamp to 255
-        let result =
-            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 2.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 1.0 }).unwrap();
+        let result = channel_mixer(
+            &pixels,
+            &info,
+            &ChannelMixerParams {
+                rr: 2.0,
+                rg: 0.0,
+                rb: 0.0,
+                gr: 0.0,
+                gg: 1.0,
+                gb: 0.0,
+                br: 0.0,
+                bg: 0.0,
+                bb: 1.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result[0], 255);
     }
 
@@ -3322,7 +3714,13 @@ mod color_manipulation_tests {
     fn vibrance_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &VibranceParams { amount: 0.0 }).unwrap();
+        let result = vibrance(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &VibranceParams { amount: 0.0 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3333,7 +3731,13 @@ mod color_manipulation_tests {
         // Pixel 2: high saturation (vivid red)
         let pixels = vec![120, 130, 125, 255, 20, 20];
 
-        let result = vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &VibranceParams { amount: 50.0 }).unwrap();
+        let result = vibrance(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &VibranceParams { amount: 50.0 },
+        )
+        .unwrap();
 
         // The muted pixel should change more than the vivid one
         let muted_change = (result[0] as i32 - 120).abs()
@@ -3354,7 +3758,13 @@ mod color_manipulation_tests {
         // Use a moderately saturated color (not fully saturated)
         let pixels = solid_rgb(2, 2, 200, 100, 80);
         let info = info_rgb8(2, 2);
-        let result = vibrance(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &VibranceParams { amount: -80.0 }).unwrap();
+        let result = vibrance(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &VibranceParams { amount: -80.0 },
+        )
+        .unwrap();
         // Should become less saturated: channels should converge toward each other
         let orig_range = 200i32 - 80;
         let new_range = (result[0] as i32 - result[2] as i32).abs();
@@ -3370,7 +3780,13 @@ mod color_manipulation_tests {
     fn gradient_map_bw_produces_grayscale() {
         let info = info_rgb8(2, 2);
         let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
-        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
+        let result = gradient_map(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            "0.0:000000,1.0:FFFFFF".to_string(),
+        )
+        .unwrap();
         // Each pixel's RGB should all be equal (grayscale)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], chunk[1], "R should equal G for BW gradient");
@@ -3382,7 +3798,13 @@ mod color_manipulation_tests {
     fn gradient_map_solid_black() {
         let pixels = solid_rgb(2, 2, 0, 0, 0);
         let info = info_rgb8(2, 2);
-        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
+        let result = gradient_map(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            "0.0:FF0000,1.0:0000FF".to_string(),
+        )
+        .unwrap();
         // Luminance 0 → first stop (red)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 255);
@@ -3395,7 +3817,13 @@ mod color_manipulation_tests {
     fn gradient_map_solid_white() {
         let pixels = solid_rgb(2, 2, 255, 255, 255);
         let info = info_rgb8(2, 2);
-        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:FF0000,1.0:0000FF".to_string()).unwrap();
+        let result = gradient_map(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            "0.0:FF0000,1.0:0000FF".to_string(),
+        )
+        .unwrap();
         // Luminance 1.0 → last stop (blue)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 0);
@@ -3408,7 +3836,12 @@ mod color_manipulation_tests {
     fn gradient_map_invalid_stops_returns_error() {
         let pixels = solid_rgb(2, 2, 128, 128, 128);
         let info = info_rgb8(2, 2);
-        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "invalid".to_string());
+        let result = gradient_map(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            "invalid".to_string(),
+        );
         assert!(result.is_err());
     }
 
@@ -3421,7 +3854,13 @@ mod color_manipulation_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128, 128, 128, 200, 0, 0, 0, 100];
-        let result = gradient_map(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, "0.0:000000,1.0:FFFFFF".to_string()).unwrap();
+        let result = gradient_map(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            "0.0:000000,1.0:FFFFFF".to_string(),
+        )
+        .unwrap();
         assert_eq!(result[3], 200, "alpha should be preserved");
         assert_eq!(result[7], 100, "alpha should be preserved");
     }
@@ -3434,7 +3873,17 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, 4, 4);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = sparse_color(r, &mut u, &info, "2,2:FF0000".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
+        let result = sparse_color(
+            r,
+            &mut u,
+            &info,
+            "2,2:FF0000".to_string(),
+            &SparseColorParams {
+                points: String::new(),
+                power: 2.0,
+            },
+        )
+        .unwrap();
         // All pixels should be red (only one control point)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk, [255, 0, 0]);
@@ -3448,8 +3897,17 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, 8, 1);
         let mut u = |_: Rect| Ok(pixels.clone());
         // Red at x=0, blue at x=7
-        let result =
-            sparse_color(r, &mut u, &info, "0,0:FF0000;7,0:0000FF".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
+        let result = sparse_color(
+            r,
+            &mut u,
+            &info,
+            "0,0:FF0000;7,0:0000FF".to_string(),
+            &SparseColorParams {
+                points: String::new(),
+                power: 2.0,
+            },
+        )
+        .unwrap();
         // First pixel should be close to red
         assert!(
             result[0] > 200,
@@ -3476,7 +3934,19 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, 4, 4);
         let mut u = |_: Rect| Ok(pixels.clone());
-        assert!(sparse_color(r, &mut u, &info, "invalid".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).is_err());
+        assert!(
+            sparse_color(
+                r,
+                &mut u,
+                &info,
+                "invalid".to_string(),
+                &SparseColorParams {
+                    points: String::new(),
+                    power: 2.0
+                }
+            )
+            .is_err()
+        );
     }
 
     // ── Modulate ──
@@ -3487,7 +3957,17 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 0.0 }).unwrap();
+        let result = modulate(
+            r,
+            &mut u,
+            &info,
+            &ModulateParams {
+                brightness: 100.0,
+                saturation: 100.0,
+                hue: 0.0,
+            },
+        )
+        .unwrap();
         // Identity: (100%, 100%, 0 deg) should preserve pixels
         for (a, b) in result.iter().zip(pixels.iter()) {
             assert!(
@@ -3503,7 +3983,17 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 0.0, saturation: 100.0, hue: 0.0 }).unwrap();
+        let result = modulate(
+            r,
+            &mut u,
+            &info,
+            &ModulateParams {
+                brightness: 0.0,
+                saturation: 100.0,
+                hue: 0.0,
+            },
+        )
+        .unwrap();
         for &v in &result {
             assert_eq!(v, 0, "brightness=0 should produce black");
         }
@@ -3515,7 +4005,17 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 100.0, saturation: 0.0, hue: 0.0 }).unwrap();
+        let result = modulate(
+            r,
+            &mut u,
+            &info,
+            &ModulateParams {
+                brightness: 100.0,
+                saturation: 0.0,
+                hue: 0.0,
+            },
+        )
+        .unwrap();
         // Desaturated: all channels should be equal (gray)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], chunk[1], "R should equal G when desaturated");
@@ -3530,7 +4030,17 @@ mod color_manipulation_tests {
         // Rotate hue by 120 degrees: red -> green
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(r, &mut u, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 120.0 }).unwrap();
+        let result = modulate(
+            r,
+            &mut u,
+            &info,
+            &ModulateParams {
+                brightness: 100.0,
+                saturation: 100.0,
+                hue: 120.0,
+            },
+        )
+        .unwrap();
         // Should be approximately green
         assert!(
             result[1] > result[0],
@@ -3546,7 +4056,19 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = photo_filter(r, &mut u, &info, &PhotoFilterParams { color_r: 255, color_g: 200, color_b: 0, density: 0.0, preserve_luminosity: 1 }).unwrap();
+        let result = photo_filter(
+            r,
+            &mut u,
+            &info,
+            &PhotoFilterParams {
+                color_r: 255,
+                color_g: 200,
+                color_b: 0,
+                density: 0.0,
+                preserve_luminosity: 1,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3557,7 +4079,19 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         // Warm filter (orange) at 50% density
-        let result = photo_filter(r, &mut u, &info, &PhotoFilterParams { color_r: 236, color_g: 138, color_b: 0, density: 50.0, preserve_luminosity: 0 }).unwrap();
+        let result = photo_filter(
+            r,
+            &mut u,
+            &info,
+            &PhotoFilterParams {
+                color_r: 236,
+                color_g: 138,
+                color_b: 0,
+                density: 50.0,
+                preserve_luminosity: 0,
+            },
+        )
+        .unwrap();
         // Red should increase, blue should decrease
         assert!(result[0] > 128, "warm filter should increase red");
         assert!(result[2] < 128, "warm filter should decrease blue");
@@ -3569,7 +4103,19 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = photo_filter(r, &mut u, &info, &PhotoFilterParams { color_r: 255, color_g: 0, color_b: 0, density: 50.0, preserve_luminosity: 1 }).unwrap();
+        let result = photo_filter(
+            r,
+            &mut u,
+            &info,
+            &PhotoFilterParams {
+                color_r: 255,
+                color_g: 0,
+                color_b: 0,
+                density: 50.0,
+                preserve_luminosity: 1,
+            },
+        )
+        .unwrap();
         // With preserve_luminosity, the total brightness should be similar
         let orig_luma = 128u32; // gray pixel
         let new_luma =
@@ -3586,7 +4132,17 @@ mod color_manipulation_tests {
     fn spin_blur_angle_zero_is_identity() {
         let pixels = solid_rgb(8, 8, 100, 150, 200);
         let info = info_rgb8(8, 8);
-        let result = spin_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 0.0 }).unwrap();
+        let result = spin_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SpinBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                angle: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -3603,7 +4159,17 @@ mod color_manipulation_tests {
             }
         }
         let info = info_rgb8(32, 32);
-        let result = spin_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 30.0 }).unwrap();
+        let result = spin_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SpinBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                angle: 30.0,
+            },
+        )
+        .unwrap();
         assert_ne!(result, pixels, "spin blur should modify pixels");
     }
 
@@ -3616,7 +4182,17 @@ mod color_manipulation_tests {
         pixels[center + 1] = 0;
         pixels[center + 2] = 0;
         let info = info_rgb8(16, 16);
-        let result = spin_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpinBlurParams { center_x: 0.5, center_y: 0.5, angle: 45.0 }).unwrap();
+        let result = spin_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SpinBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                angle: 45.0,
+            },
+        )
+        .unwrap();
         // Center pixel should be close to original (radius ≈ 0, no arc blur)
         assert_eq!(result[center], 255, "center should stay red");
     }
@@ -3813,7 +4389,11 @@ pub fn convolve(
     config: &ConvolveParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let kw = config.kw;
     let kh = config.kh;
@@ -4121,7 +4701,11 @@ pub fn median(
     config: &MedianParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
 
@@ -4412,7 +4996,10 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     reference = "second-order derivative operator",
     output_format = "Gray8"
 )]
-pub fn laplacian_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub fn laplacian_mapper(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let gray_pixels = laplacian(pixels, info)?;
     let out_info = ImageInfo {
         width: info.width,
@@ -4559,20 +5146,14 @@ pub fn canny_mapper(
 }
 
 /// Canny edge detection (internal — returns raw Gray8 bytes).
-pub fn canny(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &CannyParams,
-) -> Result<Vec<u8>, ImageError> {
+pub fn canny(pixels: &[u8], info: &ImageInfo, config: &CannyParams) -> Result<Vec<u8>, ImageError> {
     let low_threshold = config.low_threshold;
     let high_threshold = config.high_threshold;
 
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            canny(p8, i8, config)
-        });
+        return process_via_8bit(pixels, info, |p8, i8| canny(p8, i8, config));
     }
 
     let w = info.width as usize;
@@ -4991,7 +5572,11 @@ pub fn vignette(
     config: &VignetteParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let sigma = config.sigma;
     let x_inset = config.x_inset;
@@ -5092,7 +5677,11 @@ pub fn vignette_powerlaw(
     config: &VignettePowerlawParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let strength = config.strength;
     let falloff = config.falloff;
@@ -5156,9 +5745,17 @@ pub fn vignette_powerlaw(
     variant = "premultiply",
     reference = "premultiplied alpha conversion"
 )]
-pub fn premultiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn premultiply(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
@@ -5183,9 +5780,17 @@ pub fn premultiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -
     variant = "unpremultiply",
     reference = "straight alpha conversion"
 )]
-pub fn unpremultiply(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn unpremultiply(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     if info.format != PixelFormat::Rgba8 {
         return Err(ImageError::UnsupportedFormat(
@@ -5884,29 +6489,61 @@ fn blend_pixel(fg: &[u8], bg: &[u8], mode: BlendMode, px_idx: u32) -> (u8, u8, u
         }
         BlendMode::Hue => {
             // W3C: SetLum(SetSat(Cs, Sat(Cb)), Lum(Cb))
-            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
-            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (sr, sg, sb) = (
+                fg[0] as f32 / 255.0,
+                fg[1] as f32 / 255.0,
+                fg[2] as f32 / 255.0,
+            );
+            let (br, bg_g, bb) = (
+                bg[0] as f32 / 255.0,
+                bg[1] as f32 / 255.0,
+                bg[2] as f32 / 255.0,
+            );
             let (r, g, b) = set_lum_sat(sr, sg, sb, sat(br, bg_g, bb), lum(br, bg_g, bb));
             to_u8_triple(r, g, b)
         }
         BlendMode::Saturation => {
             // W3C: SetLum(SetSat(Cb, Sat(Cs)), Lum(Cb))
-            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
-            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (sr, sg, sb) = (
+                fg[0] as f32 / 255.0,
+                fg[1] as f32 / 255.0,
+                fg[2] as f32 / 255.0,
+            );
+            let (br, bg_g, bb) = (
+                bg[0] as f32 / 255.0,
+                bg[1] as f32 / 255.0,
+                bg[2] as f32 / 255.0,
+            );
             let (r, g, b) = set_lum_sat(br, bg_g, bb, sat(sr, sg, sb), lum(br, bg_g, bb));
             to_u8_triple(r, g, b)
         }
         BlendMode::Color => {
             // W3C: SetLum(Cs, Lum(Cb))
-            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
-            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (sr, sg, sb) = (
+                fg[0] as f32 / 255.0,
+                fg[1] as f32 / 255.0,
+                fg[2] as f32 / 255.0,
+            );
+            let (br, bg_g, bb) = (
+                bg[0] as f32 / 255.0,
+                bg[1] as f32 / 255.0,
+                bg[2] as f32 / 255.0,
+            );
             let (r, g, b) = set_lum(sr, sg, sb, lum(br, bg_g, bb));
             to_u8_triple(r, g, b)
         }
         BlendMode::Luminosity => {
             // W3C: SetLum(Cb, Lum(Cs))
-            let (sr, sg, sb) = (fg[0] as f32 / 255.0, fg[1] as f32 / 255.0, fg[2] as f32 / 255.0);
-            let (br, bg_g, bb) = (bg[0] as f32 / 255.0, bg[1] as f32 / 255.0, bg[2] as f32 / 255.0);
+            let (sr, sg, sb) = (
+                fg[0] as f32 / 255.0,
+                fg[1] as f32 / 255.0,
+                fg[2] as f32 / 255.0,
+            );
+            let (br, bg_g, bb) = (
+                bg[0] as f32 / 255.0,
+                bg[1] as f32 / 255.0,
+                bg[2] as f32 / 255.0,
+            );
             let (r, g, b) = set_lum(br, bg_g, bb, lum(sr, sg, sb));
             to_u8_triple(r, g, b)
         }
@@ -6521,7 +7158,11 @@ pub fn perspective_warp(
     config: &PerspectiveWarpParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let out_width = config.out_width;
     let out_height = config.out_height;
@@ -6644,7 +7285,11 @@ pub fn perspective_correct(
     config: &PerspectiveCorrectParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let strength = config.strength;
 
@@ -6666,7 +7311,14 @@ pub fn perspective_correct(
     let h = info.height as i32;
 
     // Step 1: Edge detection
-    let edge_map = canny(pixels, info, &CannyParams { low_threshold: 50.0, high_threshold: 150.0 })?;
+    let edge_map = canny(
+        pixels,
+        info,
+        &CannyParams {
+            low_threshold: 50.0,
+            high_threshold: 150.0,
+        },
+    )?;
     let edge_info = ImageInfo {
         width: info.width,
         height: info.height,
@@ -6787,7 +7439,16 @@ pub fn perspective_correct(
     {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        perspective_warp(r, &mut u, info, &h_mat, &PerspectiveWarpParams { out_width: info.width, out_height: info.height })
+        perspective_warp(
+            r,
+            &mut u,
+            info,
+            &h_mat,
+            &PerspectiveWarpParams {
+                out_width: info.width,
+                out_height: info.height,
+            },
+        )
     }
 }
 
@@ -6883,7 +7544,11 @@ pub fn clahe(
     config: &ClaheParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let clip_limit = config.clip_limit;
     let tile_grid = config.tile_grid;
@@ -7042,7 +7707,11 @@ pub fn bilateral(
     config: &BilateralParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let diameter = config.diameter;
     let sigma_color = config.sigma_color;
@@ -7188,7 +7857,11 @@ pub fn guided_filter(
     config: &GuidedFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     guided_filter_impl(&pixels, info, config)
 }
 
@@ -7786,7 +8459,11 @@ pub fn dehaze(
     config: &DehazeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let patch_radius = config.patch_radius;
     let omega = config.omega;
@@ -7884,7 +8561,14 @@ pub fn dehaze(
         format: PixelFormat::Gray8,
         color_space: info.color_space,
     };
-    let refined_u8 = guided_filter_impl(&t_u8, &gray_info, &GuidedFilterParams { radius: patch_radius.min(15), epsilon: 0.001 })?;
+    let refined_u8 = guided_filter_impl(
+        &t_u8,
+        &gray_info,
+        &GuidedFilterParams {
+            radius: patch_radius.min(15),
+            epsilon: 0.001,
+        },
+    )?;
     let refined: Vec<f32> = refined_u8.iter().map(|&v| v as f32 / 255.0).collect();
 
     // Step 5: Recover scene — J = (I - A) / max(t, t_min) + A
@@ -7988,7 +8672,11 @@ pub fn dodge(
     config: &DodgeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let exposure = config.exposure;
     let range = config.range;
@@ -8021,7 +8709,11 @@ pub fn burn(
     config: &BurnParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let exposure = config.exposure;
     let range = config.range;
@@ -8128,7 +8820,11 @@ pub fn clarity(
     config: &ClarityParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
     let sigma = config.sigma;
@@ -8235,7 +8931,11 @@ pub fn shadow_highlight(
     config: &ShadowHighlightParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -8499,7 +9199,11 @@ pub fn frequency_low(
     config: &FrequencyLowParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
@@ -8536,7 +9240,11 @@ pub fn frequency_high(
     config: &FrequencyHighParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
@@ -8609,7 +9317,11 @@ pub fn pyramid_detail_remap(
     config: &PyramidDetailRemapParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let sigma = config.sigma;
     let num_levels = config.num_levels;
@@ -8933,7 +9645,11 @@ pub fn gaussian_blur_cv(
     config: &GaussianBlurCvParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
@@ -8965,7 +9681,17 @@ pub fn gaussian_blur_cv(
 
     {
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        convolve(request, &mut u, info, &kernel_2d, &ConvolveParams { kw: ksize as u32, kh: ksize as u32, divisor: 1.0 })
+        convolve(
+            request,
+            &mut u,
+            info,
+            &kernel_2d,
+            &ConvolveParams {
+                kw: ksize as u32,
+                kh: ksize as u32,
+                divisor: 1.0,
+            },
+        )
     }
 }
 
@@ -9225,7 +9951,11 @@ pub fn retinex_ssr(
     config: &RetinexSsrParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
@@ -9404,9 +10134,18 @@ pub fn retinex_ssr(
 /// Reference: Jobson, Rahman, Woodell — "A Multiscale Retinex for Bridging
 /// the Gap Between Color Images and the Human Observation of Scenes"
 /// (IEEE Trans. Image Processing, 1997)
-pub fn retinex_msr(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, sigmas: &[f32]) -> Result<Vec<u8>, ImageError> {
+pub fn retinex_msr(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    sigmas: &[f32],
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     let channels = match info.format {
@@ -9486,7 +10225,11 @@ pub fn retinex_msrcr(
     beta: f32,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     let channels = match info.format {
@@ -9891,7 +10634,11 @@ pub fn displacement_map(
     map_y: &[f32],
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -9998,7 +10745,11 @@ pub fn erode_registered(
     config: &ErodeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10021,7 +10772,11 @@ pub fn dilate_registered(
     config: &DilateParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10044,7 +10799,11 @@ pub fn morph_open_registered(
     config: &MorphOpenParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10067,7 +10826,11 @@ pub fn morph_close_registered(
     config: &MorphCloseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10090,7 +10853,11 @@ pub fn morph_gradient_registered(
     config: &MorphGradientParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10113,7 +10880,11 @@ pub fn morph_tophat_registered(
     config: &MorphTophatParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10136,7 +10907,11 @@ pub fn morph_blackhat_registered(
     config: &MorphBlackhatParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
@@ -10159,7 +10934,11 @@ pub fn nlm_denoise_registered(
     config: &NlmDenoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let h = config.h;
     let patch_size = config.patch_size;
@@ -10195,7 +10974,12 @@ pub fn retinex_msr_registered(
     let sigma_medium = config.sigma_medium;
     let sigma_large = config.sigma_large;
 
-    retinex_msr(request, upstream, info, &[sigma_small, sigma_medium, sigma_large])
+    retinex_msr(
+        request,
+        upstream,
+        info,
+        &[sigma_small, sigma_medium, sigma_large],
+    )
 }
 
 /// Multi-scale Retinex with color restoration (user-facing wrapper).
@@ -10243,7 +11027,11 @@ pub fn adaptive_threshold_registered(
     config: &AdaptiveThresholdParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let max_value = config.max_value;
     let method = config.method;
@@ -10270,7 +11058,11 @@ pub fn flood_fill_registered(
     config: &FloodFillParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let seed_x = config.seed_x;
     let seed_y = config.seed_y;
@@ -10309,7 +11101,11 @@ pub fn gamma_registered(
     config: &GammaParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let gamma_value = config.gamma_value;
 
@@ -10323,9 +11119,17 @@ pub fn gamma_registered(
     reference = "channel value inversion",
     point_op = "true"
 )]
-pub fn invert_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn invert_registered(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     super::point_ops::invert(pixels, info)
 }
@@ -10344,7 +11148,11 @@ pub fn posterize_registered(
     config: &PosterizeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let levels = config.levels;
 
@@ -10380,7 +11188,11 @@ pub fn levels(
     config: &LevelsParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let black_point = config.black_point;
     let white_point = config.white_point;
@@ -10445,7 +11257,11 @@ pub fn sigmoidal_contrast(
     config: &SigmoidalContrastParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let strength = config.strength;
     let midpoint = config.midpoint;
@@ -10460,9 +11276,17 @@ pub fn sigmoidal_contrast(
     category = "enhancement",
     reference = "histogram equalization"
 )]
-pub fn equalize_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn equalize_registered(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     super::histogram::equalize(pixels, info)
 }
@@ -10473,9 +11297,17 @@ pub fn equalize_registered(request: Rect, upstream: &mut UpstreamFn, info: &Imag
     category = "enhancement",
     reference = "min-max normalization to full range"
 )]
-pub fn normalize_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn normalize_registered(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     super::histogram::normalize(pixels, info)
 }
@@ -10486,9 +11318,17 @@ pub fn normalize_registered(request: Rect, upstream: &mut UpstreamFn, info: &Ima
     category = "enhancement",
     reference = "automatic black/white point"
 )]
-pub fn auto_level_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn auto_level_registered(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     super::histogram::auto_level(pixels, info)
 }
@@ -10501,14 +11341,30 @@ pub fn auto_level_registered(request: Rect, upstream: &mut UpstreamFn, info: &Im
     variant = "otsu",
     reference = "Otsu 1979 automatic bimodal threshold"
 )]
-pub fn otsu_threshold_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn otsu_threshold_registered(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let t = otsu_threshold(pixels, info)?;
     let r = Rect::new(0, 0, info.width, info.height);
     let mut u = |_: Rect| Ok(pixels.to_vec());
-    threshold_binary(r, &mut u, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
+    threshold_binary(
+        r,
+        &mut u,
+        info,
+        &ThresholdBinaryParams {
+            thresh: t,
+            max_value: 255,
+        },
+    )
 }
 
 /// Triangle auto-threshold — compute optimal threshold then binarize.
@@ -10525,12 +11381,24 @@ pub fn triangle_threshold_registered(
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let t = triangle_threshold(pixels, info)?;
     let r = Rect::new(0, 0, info.width, info.height);
     let mut u = |_: Rect| Ok(pixels.to_vec());
-    threshold_binary(r, &mut u, info, &ThresholdBinaryParams { thresh: t, max_value: 255 })
+    threshold_binary(
+        r,
+        &mut u,
+        info,
+        &ThresholdBinaryParams {
+            thresh: t,
+            max_value: 255,
+        },
+    )
 }
 
 /// Convert to grayscale using BT.709 weights.
@@ -10541,7 +11409,10 @@ pub fn triangle_threshold_registered(
     reference = "luminance-weighted desaturation",
     output_format = "Gray8"
 )]
-pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub fn grayscale_registered(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let decoded = grayscale(pixels, info)?;
     Ok((decoded.pixels, decoded.info))
 }
@@ -10582,7 +11453,11 @@ pub fn quantize_registered(
     config: &QuantizeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let max_colors = config.max_colors;
 
@@ -10620,7 +11495,11 @@ pub fn kmeans_quantize_registered(
     config: &KmeansQuantizeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let palette = super::quantize::kmeans_palette(
         pixels,
@@ -10653,7 +11532,11 @@ pub fn dither_floyd_steinberg_registered(
     config: &DitherFloydSteinbergParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let max_colors = config.max_colors;
 
@@ -10676,7 +11559,11 @@ pub fn dither_ordered_registered(
     config: &DitherOrderedParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let max_colors = config.max_colors;
     let map_size = config.map_size;
@@ -10699,7 +11586,11 @@ pub fn white_balance_gray_world_registered(
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     super::color_spaces::white_balance_gray_world(pixels, info)
 }
@@ -10719,7 +11610,11 @@ pub fn white_balance_temperature_registered(
     config: &WhiteBalanceTemperatureParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let temperature = config.temperature;
     let tint = config.tint;
@@ -11247,7 +12142,11 @@ pub fn gaussian_noise(
     config: &GaussianNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -11314,7 +12213,11 @@ pub fn salt_pepper_noise(
     config: &SaltPepperNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -11410,7 +12313,11 @@ pub fn poisson_noise(
     config: &PoissonNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -11476,7 +12383,11 @@ pub fn uniform_noise(
     config: &UniformNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -11825,7 +12736,11 @@ pub fn draw_line_filter(
     config: &DrawLineParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let x1 = config.x1;
     let y1 = config.y1;
@@ -11858,7 +12773,11 @@ pub fn draw_rect_filter(
     config: &DrawRectParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let x = config.x;
     let y = config.y;
@@ -11902,7 +12821,11 @@ pub fn draw_circle_filter(
     config: &DrawCircleParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let cx = config.cx;
     let cy = config.cy;
@@ -11936,7 +12859,11 @@ pub fn draw_polygon_filter(
     config: &DrawPolygonParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let fill_color = [
         config.fill_color.r,
@@ -11977,7 +12904,11 @@ pub fn draw_ellipse_filter(
     config: &DrawEllipseParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let color = [
         config.color.r,
@@ -12014,7 +12945,11 @@ pub fn draw_arc_filter(
     config: &DrawArcParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let color = [
         config.color.r,
@@ -12053,7 +12988,11 @@ pub fn draw_text_filter(
     config: &DrawTextParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let x = config.x;
     let y = config.y;
@@ -12107,12 +13046,21 @@ pub fn draw_text_ttf_filter(
     config: &DrawTextTtfParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let x = config.x;
     let y = config.y;
     let font_size_pt = config.font_size_pt;
-    let color = [config.color_r as u8, config.color_g as u8, config.color_b as u8, config.color_a as u8];
+    let color = [
+        config.color_r as u8,
+        config.color_g as u8,
+        config.color_b as u8,
+        config.color_a as u8,
+    ];
     // Without font data (scalar params only), fall back to bitmap
     let scale = (font_size_pt / 12.0).round().max(1.0) as u32;
     let (result, _) = super::draw::draw_text(pixels, info, x, y, text, scale, color)?;
@@ -12282,7 +13230,13 @@ mod tests {
     fn box_blur_preserves_dimensions() {
         let (px, info) = make_image(16, 16);
         let r = Rect::new(0, 0, info.width, info.height);
-        let result = box_blur(r, &mut |_| Ok(px.to_vec()), &info, &BoxBlurParams { radius: 3 }).unwrap();
+        let result = box_blur(
+            r,
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &BoxBlurParams { radius: 3 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -12291,15 +13245,30 @@ mod tests {
         // Box blur should reduce the variance of pixel values
         let (px, info) = make_image(16, 16);
         let r = Rect::new(0, 0, info.width, info.height);
-        let result = box_blur(r, &mut |_| Ok(px.to_vec()), &info, &BoxBlurParams { radius: 5 }).unwrap();
+        let result = box_blur(
+            r,
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &BoxBlurParams { radius: 5 },
+        )
+        .unwrap();
         // Compute variance of R channel before and after
         let ch = 4;
         let n = px.len() / ch;
         let mean_before: f64 = (0..n).map(|i| px[i * ch] as f64).sum::<f64>() / n as f64;
-        let var_before: f64 = (0..n).map(|i| (px[i * ch] as f64 - mean_before).powi(2)).sum::<f64>() / n as f64;
+        let var_before: f64 = (0..n)
+            .map(|i| (px[i * ch] as f64 - mean_before).powi(2))
+            .sum::<f64>()
+            / n as f64;
         let mean_after: f64 = (0..n).map(|i| result[i * ch] as f64).sum::<f64>() / n as f64;
-        let var_after: f64 = (0..n).map(|i| (result[i * ch] as f64 - mean_after).powi(2)).sum::<f64>() / n as f64;
-        assert!(var_after < var_before, "Box blur should reduce variance: {var_before} -> {var_after}");
+        let var_after: f64 = (0..n)
+            .map(|i| (result[i * ch] as f64 - mean_after).powi(2))
+            .sum::<f64>()
+            / n as f64;
+        assert!(
+            var_after < var_before,
+            "Box blur should reduce variance: {var_before} -> {var_after}"
+        );
     }
 
     #[test]
@@ -12307,7 +13276,8 @@ mod tests {
         // Solid white image → average should be white
         let pixels = vec![255u8; 4 * 4 * 4]; // 4x4 white Rgba8
         let info = ImageInfo {
-            width: 4, height: 4,
+            width: 4,
+            height: 4,
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
@@ -12324,11 +13294,11 @@ mod tests {
     fn average_blur_checkerboard() {
         // 2x2 checkerboard: [0,0,0,255], [255,255,255,255] alternating
         let pixels = vec![
-            0, 0, 0, 255,     255, 255, 255, 255,
-            255, 255, 255, 255, 0, 0, 0, 255,
+            0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255,
         ];
         let info = ImageInfo {
-            width: 2, height: 2,
+            width: 2,
+            height: 2,
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
@@ -12343,28 +13313,44 @@ mod tests {
     #[test]
     fn smart_sharpen_preserves_dimensions() {
         let info = ImageInfo {
-            width: 16, height: 16,
+            width: 16,
+            height: 16,
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 16 * 16 * 3];
-        let result = smart_sharpen(&pixels, &info, &SmartSharpenParams {
-            amount: 1.0, radius: 2, threshold: 50.0,
-        }).unwrap();
+        let result = smart_sharpen(
+            &pixels,
+            &info,
+            &SmartSharpenParams {
+                amount: 1.0,
+                radius: 2,
+                threshold: 50.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
     #[test]
     fn smart_sharpen_zero_amount_identity() {
         let info = ImageInfo {
-            width: 8, height: 8,
+            width: 8,
+            height: 8,
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let pixels: Vec<u8> = (0..8*8*3).map(|i| (i % 256) as u8).collect();
-        let result = smart_sharpen(&pixels, &info, &SmartSharpenParams {
-            amount: 0.0, radius: 2, threshold: 50.0,
-        }).unwrap();
+        let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
+        let result = smart_sharpen(
+            &pixels,
+            &info,
+            &SmartSharpenParams {
+                amount: 0.0,
+                radius: 2,
+                threshold: 50.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -12378,7 +13364,13 @@ mod tests {
     #[test]
     fn brightness_increases() {
         let (px, info) = make_image(8, 8);
-        let result = brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &BrightnessParams { amount: 0.5 }).unwrap();
+        let result = brightness(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &BrightnessParams { amount: 0.5 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
         let avg_orig: f64 = px.iter().map(|&v| v as f64).sum::<f64>() / px.len() as f64;
         let avg_bright: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -12388,8 +13380,24 @@ mod tests {
     #[test]
     fn brightness_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
-        assert!(brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &BrightnessParams { amount: 1.5 }).is_err());
-        assert!(brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &BrightnessParams { amount: -1.5 }).is_err());
+        assert!(
+            brightness(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(px.to_vec()),
+                &info,
+                &BrightnessParams { amount: 1.5 }
+            )
+            .is_err()
+        );
+        assert!(
+            brightness(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(px.to_vec()),
+                &info,
+                &BrightnessParams { amount: -1.5 }
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -12400,19 +13408,23 @@ mod tests {
             &mut |_| Ok(px.to_vec()),
             &info,
             &ContrastParams { amount: 0.5 },
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn contrast_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
-        assert!(contrast(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(px.to_vec()),
-            &info,
-            &ContrastParams { amount: 2.0 },
-        ).is_err());
+        assert!(
+            contrast(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(px.to_vec()),
+                &info,
+                &ContrastParams { amount: 2.0 },
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -12442,13 +13454,24 @@ mod tests {
         };
         assert!(blur_impl(&pixels, &info, &BlurParams { radius: 1.0 }).is_ok());
         assert!(sharpen_impl(&pixels, &info, &SharpenParams { amount: 1.0 }).is_ok());
-        assert!(brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BrightnessParams { amount: 0.2 }).is_ok());
-        assert!(contrast(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &ContrastParams { amount: 0.2 },
-        ).is_ok());
+        assert!(
+            brightness(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &BrightnessParams { amount: 0.2 }
+            )
+            .is_ok()
+        );
+        assert!(
+            contrast(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &ContrastParams { amount: 0.2 },
+            )
+            .is_ok()
+        );
         assert!(grayscale(&pixels, &info).is_ok());
     }
 
@@ -12461,7 +13484,8 @@ mod tests {
             &mut |_| Ok(px.to_vec()),
             &info,
             &ContrastParams { amount: 0.0 },
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(result, px);
     }
 
@@ -12469,7 +13493,13 @@ mod tests {
     fn hue_rotate_zero_is_identity() {
         // Hue rotate by 0 degrees should preserve pixels (via ColorOp delegation)
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 0.0 }).unwrap();
+        let result = hue_rotate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &HueRotateParams { degrees: 0.0 },
+        )
+        .unwrap();
         for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
             assert!(
                 (orig as i16 - out as i16).abs() <= 1,
@@ -12497,14 +13527,26 @@ mod tests {
     #[test]
     fn hue_rotate_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 90.0 }).unwrap();
+        let result = hue_rotate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &HueRotateParams { degrees: 90.0 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn hue_rotate_360_identity() {
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 360.0 }).unwrap();
+        let result = hue_rotate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &HueRotateParams { degrees: 360.0 },
+        )
+        .unwrap();
         // Should be very close to original (within rounding)
         let mae: f64 = px
             .iter()
@@ -12576,14 +13618,32 @@ mod tests {
     #[test]
     fn colorize_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.5 }).unwrap();
+        let result = colorize(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &ColorizeParams {
+                target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 },
+                amount: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn colorize_zero_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.0 }).unwrap();
+        let result = colorize(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &ColorizeParams {
+                target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 },
+                amount: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, px);
     }
 
@@ -12600,7 +13660,18 @@ mod tests {
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = convolve(r, &mut u, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
+        let result = convolve(
+            r,
+            &mut u,
+            &info,
+            &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -12617,7 +13688,18 @@ mod tests {
         let kernel = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = convolve(r, &mut u, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
+        let result = convolve(
+            r,
+            &mut u,
+            &info,
+            &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
+        )
+        .unwrap();
         // Uniform input → sharpen produces same output (no edges)
         assert!(result.iter().all(|&v| (v as i32 - 128).unsigned_abs() < 2));
     }
@@ -12634,7 +13716,13 @@ mod tests {
         // Add salt-and-pepper noise
         pixels[27] = 0; // pepper
         pixels[35] = 255; // salt
-        let result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 1 }).unwrap();
+        let result = median(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &MedianParams { radius: 1 },
+        )
+        .unwrap();
         // Noise pixels should be replaced by median of neighbors (~128)
         assert!(
             (result[27] as i32 - 128).unsigned_abs() < 10,
@@ -12688,7 +13776,15 @@ mod tests {
                 pixels[r * 16 + c] = 200;
             }
         }
-        let result = canny(&pixels, &info, &CannyParams { low_threshold: 30.0, high_threshold: 100.0 }).unwrap();
+        let result = canny(
+            &pixels,
+            &info,
+            &CannyParams {
+                low_threshold: 30.0,
+                high_threshold: 100.0,
+            },
+        )
+        .unwrap();
         // Should produce binary output (0 or 255 only)
         assert!(
             result.iter().all(|&v| v == 0 || v == 255),
@@ -12708,10 +13804,49 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HueRotateParams { degrees: 45.0 }).is_ok());
-        assert!(saturate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SaturateParams { factor: 1.5 }).is_ok());
-        assert!(sepia(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SepiaParams { intensity: 0.8 }).is_ok());
-        assert!(colorize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
+        assert!(
+            hue_rotate(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &HueRotateParams { degrees: 45.0 }
+            )
+            .is_ok()
+        );
+        assert!(
+            saturate(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &SaturateParams { factor: 1.5 }
+            )
+            .is_ok()
+        );
+        assert!(
+            sepia(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &SepiaParams { intensity: 0.8 }
+            )
+            .is_ok()
+        );
+        assert!(
+            colorize(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &ColorizeParams {
+                    target: crate::domain::param_types::ColorRgb {
+                        r: 0,
+                        g: 128,
+                        b: 255
+                    },
+                    amount: 0.5
+                }
+            )
+            .is_ok()
+        );
     }
 
     fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -12738,8 +13873,18 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let pre = premultiply(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.clone()), &info).unwrap();
-        let unpre = unpremultiply(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pre.clone()), &info).unwrap();
+        let pre = premultiply(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.clone()),
+            &info,
+        )
+        .unwrap();
+        let unpre = unpremultiply(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pre.clone()),
+            &info,
+        )
+        .unwrap();
         for i in (0..pixels.len()).step_by(4) {
             for c in 0..3 {
                 assert!(
@@ -12883,7 +14028,7 @@ mod tests {
     fn blend_darker_color_selects_darker() {
         // fg: bright red (high lum), bg: dark blue (low lum)
         let fg = vec![255, 200, 200]; // lum ≈ 213
-        let bg = vec![0, 0, 50];      // lum ≈ 6
+        let bg = vec![0, 0, 50]; // lum ≈ 6
         let info = ImageInfo {
             width: 1,
             height: 1,
@@ -12897,7 +14042,7 @@ mod tests {
     #[test]
     fn blend_lighter_color_selects_lighter() {
         let fg = vec![255, 200, 200]; // lum ≈ 213
-        let bg = vec![0, 0, 50];      // lum ≈ 6
+        let bg = vec![0, 0, 50]; // lum ≈ 6
         let info = ImageInfo {
             width: 1,
             height: 1,
@@ -12924,7 +14069,16 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 0, shape: 0 }).unwrap();
+        let result = bokeh_blur(
+            r,
+            &mut u,
+            &info,
+            &BokehBlurParams {
+                radius: 0,
+                shape: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, px);
     }
 
@@ -12974,7 +14128,16 @@ mod tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = pixels.clone();
         let mut u = |_: Rect| Ok(px2.clone());
-        let result = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
+        let result = bokeh_blur(
+            r,
+            &mut u,
+            &info,
+            &BokehBlurParams {
+                radius: 3,
+                shape: 0,
+            },
+        )
+        .unwrap();
         for (i, &v) in result.iter().enumerate() {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -12995,7 +14158,15 @@ mod tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = pixels.clone();
         let mut u = |_: Rect| Ok(px2.clone());
-        let result = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 1, shape: 1 });
+        let result = bokeh_blur(
+            r,
+            &mut u,
+            &info,
+            &BokehBlurParams {
+                radius: 1,
+                shape: 1,
+            },
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 64);
     }
@@ -13039,9 +14210,21 @@ mod optimization_tests {
         }
 
         // radius=2: uses sort path
-        let sort_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 2 }).unwrap();
+        let sort_result = median(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &MedianParams { radius: 2 },
+        )
+        .unwrap();
         // radius=3: uses histogram path
-        let hist_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
+        let hist_result = median(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &MedianParams { radius: 3 },
+        )
+        .unwrap();
 
         // Both should produce valid output (different radii = different results, but both correct)
         assert!(!sort_result.is_empty());
@@ -13062,7 +14245,18 @@ mod optimization_tests {
         let start = std::time::Instant::now();
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let _ = convolve(r, &mut u, &info,  &kernels::BOX_BLUR_3X3, &ConvolveParams { kw: 3, kh: 3, divisor: 9.0 }).unwrap();
+        let _ = convolve(
+            r,
+            &mut u,
+            &info,
+            &kernels::BOX_BLUR_3X3,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 9.0,
+            },
+        )
+        .unwrap();
         let elapsed = start.elapsed();
 
         // Separable path should handle 1024x1024 in under 500ms
@@ -13084,7 +14278,13 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(512 * 512)).map(|i| (i % 256) as u8).collect();
 
         let start = std::time::Instant::now();
-        let _ = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
+        let _ = median(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &MedianParams { radius: 3 },
+        )
+        .unwrap();
         let elapsed = start.elapsed();
 
         // Histogram median should handle 512x512 radius=3 in under 500ms
@@ -13109,7 +14309,16 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(64 * 64)).map(|i| (100 + (i % 56)) as u8).collect();
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = clahe(r, &mut u, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
+        let result = clahe(
+            r,
+            &mut u,
+            &info,
+            &ClaheParams {
+                clip_limit: 2.0,
+                tile_grid: 8,
+            },
+        )
+        .unwrap();
 
         // CLAHE should expand dynamic range
         let in_range = *pixels.iter().max().unwrap() as i32 - *pixels.iter().min().unwrap() as i32;
@@ -13133,7 +14342,16 @@ mod optimization_tests {
         let pixels = vec![128u8; 32 * 32];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = clahe(r, &mut u, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 4 }).unwrap();
+        let result = clahe(
+            r,
+            &mut u,
+            &info,
+            &ClaheParams {
+                clip_limit: 2.0,
+                tile_grid: 4,
+            },
+        )
+        .unwrap();
         // All output pixels should be the same value (uniform)
         let first = result[0];
         for &v in &result {
@@ -13151,7 +14369,18 @@ mod optimization_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(vec![0u8; 48]);
-        assert!(clahe(r, &mut u, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).is_err());
+        assert!(
+            clahe(
+                r,
+                &mut u,
+                &info,
+                &ClaheParams {
+                    clip_limit: 2.0,
+                    tile_grid: 8
+                }
+            )
+            .is_err()
+        );
     }
 
     // ─── Bilateral Filter Tests ───────────────────────────────────────────
@@ -13173,7 +14402,17 @@ mod optimization_tests {
         }
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = bilateral(r, &mut u, &info, &BilateralParams { diameter: 5, sigma_color: 50.0, sigma_space: 50.0 }).unwrap();
+        let result = bilateral(
+            r,
+            &mut u,
+            &info,
+            &BilateralParams {
+                diameter: 5,
+                sigma_color: 50.0,
+                sigma_space: 50.0,
+            },
+        )
+        .unwrap();
 
         // Edge should be preserved: pixels at x=14 should still be dark, x=18 still bright
         let mid_y = 16;
@@ -13198,7 +14437,17 @@ mod optimization_tests {
             .collect();
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = bilateral(r, &mut u, &info, &BilateralParams { diameter: 5, sigma_color: 25.0, sigma_space: 25.0 }).unwrap();
+        let result = bilateral(
+            r,
+            &mut u,
+            &info,
+            &BilateralParams {
+                diameter: 5,
+                sigma_color: 25.0,
+                sigma_space: 25.0,
+            },
+        )
+        .unwrap();
 
         // Should reduce variance
         let var_in: f64 = pixels
@@ -13232,7 +14481,15 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(32 * 32))
             .map(|i| (128i32 + ((i * 17 + 3) % 21) as i32 - 10).clamp(0, 255) as u8)
             .collect();
-        let result = guided_filter_impl(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
+        let result = guided_filter_impl(
+            &pixels,
+            &info,
+            &GuidedFilterParams {
+                radius: 4,
+                epsilon: 0.01,
+            },
+        )
+        .unwrap();
 
         // Should reduce variance from mean
         let mean_in = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
@@ -13262,7 +14519,15 @@ mod optimization_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![100u8; 16 * 16];
-        let result = guided_filter_impl(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
+        let result = guided_filter_impl(
+            &pixels,
+            &info,
+            &GuidedFilterParams {
+                radius: 4,
+                epsilon: 0.01,
+            },
+        )
+        .unwrap();
         // Flat input should produce flat output
         for &v in &result {
             assert!((v as i32 - 100).abs() <= 1, "flat pixel changed to {v}");
@@ -13328,7 +14593,18 @@ mod tests_16bit {
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = convolve(r, &mut u, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
+        let result = convolve(
+            r,
+            &mut u,
+            &info,
+            &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
+        )
+        .unwrap();
         // Should be close to original (some precision loss from 16→8→16)
         let orig = bytes_to_u16(&px);
         let out = bytes_to_u16(&result);
@@ -13345,7 +14621,13 @@ mod tests_16bit {
     #[test]
     fn median_16bit_produces_output() {
         let (px, info) = make_gray16(8, 8, 32768);
-        let result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &MedianParams { radius: 1 }).unwrap();
+        let result = median(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &MedianParams { radius: 1 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -13359,14 +14641,26 @@ mod tests_16bit {
     #[test]
     fn hue_rotate_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = hue_rotate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &HueRotateParams { degrees: 90.0 }).unwrap();
+        let result = hue_rotate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &HueRotateParams { degrees: 90.0 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn brightness_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = brightness(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &BrightnessParams { amount: 0.5 }).unwrap();
+        let result = brightness(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(px.to_vec()),
+            &info,
+            &BrightnessParams { amount: 0.5 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
         // Brightened pixels should be higher
         let orig = bytes_to_u16(&px);
@@ -13425,7 +14719,17 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgb8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dehaze(r, &mut u, &info, &DehazeParams { patch_radius: 7, omega: 0.95, t_min: 0.1 }).unwrap();
+        let result = dehaze(
+            r,
+            &mut u,
+            &info,
+            &DehazeParams {
+                patch_radius: 7,
+                omega: 0.95,
+                t_min: 0.1,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Dehazed image should have more contrast (wider range)
@@ -13449,7 +14753,17 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgba8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dehaze(r, &mut u, &info, &DehazeParams { patch_radius: 5, omega: 0.8, t_min: 0.1 }).unwrap();
+        let result = dehaze(
+            r,
+            &mut u,
+            &info,
+            &DehazeParams {
+                patch_radius: 5,
+                omega: 0.8,
+                t_min: 0.1,
+            },
+        )
+        .unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 128, "alpha must be preserved");
         }
@@ -13471,7 +14785,16 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgb8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = clarity(r, &mut u, &info, &ClarityParams { amount: 1.0, sigma: 10.0 }).unwrap();
+        let result = clarity(
+            r,
+            &mut u,
+            &info,
+            &ClarityParams {
+                amount: 1.0,
+                sigma: 10.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Clarity should increase local contrast (stddev should increase)
@@ -13488,7 +14811,16 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = clarity(r, &mut u, &info, &ClarityParams { amount: 0.0, sigma: 10.0 }).unwrap();
+        let result = clarity(
+            r,
+            &mut u,
+            &info,
+            &ClarityParams {
+                amount: 0.0,
+                sigma: 10.0,
+            },
+        )
+        .unwrap();
         // With amount=0, the detail weighting is 0, so output ≈ input
         let diff: f64 = px
             .iter()
@@ -13507,7 +14839,16 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 0 }).unwrap();
+        let result = pyramid_detail_remap(
+            r,
+            &mut u,
+            &info,
+            &PyramidDetailRemapParams {
+                sigma: 0.5,
+                num_levels: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -13518,7 +14859,16 @@ mod photo_enhance_tests {
         let mut u = |_: Rect| Ok(px.clone());
         // sigma=1.0 means the remapping d * 1.0 / (1.0 + |d|) ≈ d for small d
         // This is close to identity (slight compression of large gradients)
-        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 1.0, num_levels: 4 }).unwrap();
+        let result = pyramid_detail_remap(
+            r,
+            &mut u,
+            &info,
+            &PyramidDetailRemapParams {
+                sigma: 1.0,
+                num_levels: 4,
+            },
+        )
+        .unwrap();
         let diff: f64 = px
             .iter()
             .zip(result.iter())
@@ -13536,7 +14886,16 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(64, 64);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 0.2, num_levels: 0 }).unwrap();
+        let result = pyramid_detail_remap(
+            r,
+            &mut u,
+            &info,
+            &PyramidDetailRemapParams {
+                sigma: 0.2,
+                num_levels: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
         // Result should differ from input (enhancement applied)
         let diff: usize = px
@@ -13560,7 +14919,16 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgba8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = pyramid_detail_remap(r, &mut u, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 3 }).unwrap();
+        let result = pyramid_detail_remap(
+            r,
+            &mut u,
+            &info,
+            &PyramidDetailRemapParams {
+                sigma: 0.5,
+                num_levels: 3,
+            },
+        )
+        .unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
         }
@@ -14113,7 +15481,11 @@ pub fn threshold_binary(
     config: &ThresholdBinaryParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let thresh = config.thresh;
     let max_value = config.max_value;
@@ -14422,7 +15794,16 @@ mod threshold_tests {
         let info = gray_info(2, 2);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.to_vec());
-        let out = threshold_binary(r, &mut u, &info, &ThresholdBinaryParams { thresh: 120, max_value: 255 }).unwrap();
+        let out = threshold_binary(
+            r,
+            &mut u,
+            &info,
+            &ThresholdBinaryParams {
+                thresh: 120,
+                max_value: 255,
+            },
+        )
+        .unwrap();
         assert_eq!(out, vec![0, 0, 255, 255]);
     }
 
@@ -15388,7 +16769,11 @@ pub fn asc_cdl_registered(
     config: &AscCdlParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let slope_r = config.slope_r;
     let slope_g = config.slope_g;
@@ -15491,7 +16876,11 @@ pub fn lift_gamma_gain_registered(
     config: &LiftGammaGainParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let lift_r = config.lift_r;
     let lift_g = config.lift_g;
@@ -15568,7 +16957,11 @@ pub fn split_toning_registered(
     config: &SplitToningParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let highlight_hue = config.highlight_hue;
     let shadow_hue = config.shadow_hue;
@@ -15671,7 +17064,11 @@ pub fn curves_master(
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let tc = super::color_grading::ToneCurves {
@@ -15703,9 +17100,18 @@ pub struct CurvesRedParams {
     variant = "red",
     reference = "spline-interpolated tone curve (red channel)"
 )]
-pub fn curves_red(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+pub fn curves_red(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    points: String,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
@@ -15745,7 +17151,11 @@ pub fn curves_green(
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
@@ -15778,9 +17188,18 @@ pub struct CurvesBlueParams {
     variant = "blue",
     reference = "spline-interpolated tone curve (blue channel)"
 )]
-pub fn curves_blue(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo, points: String) -> Result<Vec<u8>, ImageError> {
+pub fn curves_blue(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    points: String,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let identity = vec![(0.0, 0.0), (1.0, 1.0)];
@@ -15822,7 +17241,11 @@ pub fn hue_vs_sat(
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_hue_curve_lut(&pts);
@@ -15857,7 +17280,11 @@ pub fn hue_vs_lum(
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_hue_curve_lut(&pts);
@@ -15892,7 +17319,11 @@ pub fn lum_vs_sat(
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_norm_curve_lut(&pts);
@@ -15927,7 +17358,11 @@ pub fn sat_vs_sat(
     points: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let pts = parse_curve_points(&points)?;
     let lut = super::color_grading::build_norm_curve_lut(&pts);
@@ -15962,7 +17397,11 @@ pub fn film_grain_registered(
     config: &FilmGrainParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
     let size = config.size;
@@ -15986,9 +17425,17 @@ pub fn film_grain_registered(
     variant = "reinhard",
     reference = "Reinhard et al. 2002 photographic tone reproduction"
 )]
-pub fn tonemap_reinhard_registered(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn tonemap_reinhard_registered(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     super::color_grading::tonemap_reinhard(pixels, info)
 }
@@ -16015,7 +17462,11 @@ pub fn tonemap_drago_registered(
     config: &TonemapDragoParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let bias = config.bias;
 
@@ -16057,7 +17508,11 @@ pub fn tonemap_filmic_registered(
     config: &TonemapFilmicParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let shoulder_strength = config.shoulder_strength;
     let linear_strength = config.linear_strength;
@@ -16100,7 +17555,11 @@ pub fn smart_crop_registered(
     config: &SmartCropParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let target_width = config.target_width;
     let target_height = config.target_height;
@@ -16137,7 +17596,11 @@ pub fn seam_carve_width_registered(
     config: &SeamCarveWidthParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let target_width = config.target_width;
 
@@ -16167,7 +17630,11 @@ pub fn seam_carve_height_registered(
     config: &SeamCarveHeightParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let target_height = config.target_height;
 
@@ -16213,7 +17680,11 @@ pub fn selective_color_registered(
     config: &SelectiveColorParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let target_hue = config.target_hue;
     let hue_range = config.hue_range;
@@ -16262,7 +17733,11 @@ pub fn solarize(
     config: &SolarizeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let threshold = config.threshold;
 
@@ -16280,7 +17755,11 @@ pub fn emboss(
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     emboss_impl(&pixels, info)
 }
 
@@ -16295,7 +17774,17 @@ pub fn emboss_impl(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageErro
     {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        convolve(r, &mut u, info, &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 })
+        convolve(
+            r,
+            &mut u,
+            info,
+            &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
+        )
     }
 }
 
@@ -16321,7 +17810,11 @@ pub fn oil_paint(
     config: &OilPaintParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
 
@@ -16544,7 +18037,13 @@ mod artistic_filter_tests {
     fn oil_paint_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = oil_paint(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &OilPaintParams { radius: 2 }).unwrap();
+        let result = oil_paint(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &OilPaintParams { radius: 2 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16553,7 +18052,13 @@ mod artistic_filter_tests {
         // Uniform image → all pixels in same bin → output = input
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = oil_paint(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &OilPaintParams { radius: 3 }).unwrap();
+        let result = oil_paint(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &OilPaintParams { radius: 3 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16562,7 +18067,15 @@ mod artistic_filter_tests {
         // Charcoal outputs Gray8 (from Sobel)
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let (result, out_info) = charcoal(&pixels, &info, &CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap();
+        let (result, out_info) = charcoal(
+            &pixels,
+            &info,
+            &CharcoalParams {
+                radius: 1.0,
+                sigma: 0.5,
+            },
+        )
+        .unwrap();
         // Output is Gray8: 32*32 = 1024 bytes (not 3072)
         assert_eq!(result.len(), 32 * 32);
         assert_eq!(out_info.format, PixelFormat::Gray8);
@@ -16573,7 +18086,15 @@ mod artistic_filter_tests {
         // Flat image → no edges → Sobel = 0 → invert = 255 → white
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let (result, out_info) = charcoal(&pixels, &info, &CharcoalParams { radius: 0.0, sigma: 0.0 }).unwrap();
+        let (result, out_info) = charcoal(
+            &pixels,
+            &info,
+            &CharcoalParams {
+                radius: 0.0,
+                sigma: 0.0,
+            },
+        )
+        .unwrap();
         // Output is Gray8
         assert_eq!(result.len(), 16 * 16);
         assert_eq!(out_info.format, PixelFormat::Gray8);
@@ -16614,8 +18135,19 @@ mod add_noise_tests {
     fn gaussian_noise_identity_at_zero_amount() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let config = GaussianNoiseParams { amount: 0.0, mean: 0.0, sigma: 25.0, seed: 42 };
-        let result = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
+        let config = GaussianNoiseParams {
+            amount: 0.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 42,
+        };
+        let result = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16623,9 +18155,26 @@ mod add_noise_tests {
     fn gaussian_noise_deterministic_with_same_seed() {
         let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(64, 64);
-        let config = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 123 };
-        let r1 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
-        let r2 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
+        let config = GaussianNoiseParams {
+            amount: 50.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 123,
+        };
+        let r1 = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
+        let r2 = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
         assert_eq!(r1, r2, "same seed must produce identical output");
     }
 
@@ -16633,10 +18182,32 @@ mod add_noise_tests {
     fn gaussian_noise_different_seeds_differ() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let c1 = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 1 };
-        let c2 = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 2 };
-        let r1 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &c1).unwrap();
-        let r2 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &c2).unwrap();
+        let c1 = GaussianNoiseParams {
+            amount: 50.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 1,
+        };
+        let c2 = GaussianNoiseParams {
+            amount: 50.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 2,
+        };
+        let r1 = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &c1,
+        )
+        .unwrap();
+        let r2 = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &c2,
+        )
+        .unwrap();
         assert_ne!(r1, r2, "different seeds should produce different output");
     }
 
@@ -16645,15 +18216,30 @@ mod add_noise_tests {
         // On a mid-gray image with mean=0, sigma=25, the output mean should be near 128
         let pixels = vec![128u8; 64 * 64];
         let info = gray_info(64, 64);
-        let config = GaussianNoiseParams { amount: 100.0, mean: 0.0, sigma: 25.0, seed: 42 };
-        let result = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
+        let config = GaussianNoiseParams {
+            amount: 100.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 42,
+        };
+        let result = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
             (mean - 128.0).abs() < 10.0,
             "gaussian mean should be near 128, got {mean:.1}"
         );
         // Variance should be roughly sigma^2 * (amount/100)^2 = 625 at full strength
-        let var: f64 = result.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / result.len() as f64;
+        let var: f64 = result
+            .iter()
+            .map(|&v| (v as f64 - mean).powi(2))
+            .sum::<f64>()
+            / result.len() as f64;
         assert!(
             var > 100.0 && var < 2000.0,
             "gaussian variance should be in reasonable range, got {var:.0}"
@@ -16664,12 +18250,24 @@ mod add_noise_tests {
     fn gaussian_noise_preserves_alpha() {
         let pixels = vec![128, 64, 200, 255]; // one RGBA pixel, alpha=255
         let info = ImageInfo {
-            width: 1, height: 1,
+            width: 1,
+            height: 1,
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let config = GaussianNoiseParams { amount: 100.0, mean: 0.0, sigma: 50.0, seed: 99 };
-        let result = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
+        let config = GaussianNoiseParams {
+            amount: 100.0,
+            mean: 0.0,
+            sigma: 50.0,
+            seed: 99,
+        };
+        let result = gaussian_noise(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
         assert_eq!(result[3], 255, "alpha channel must be preserved");
     }
 
@@ -16679,7 +18277,10 @@ mod add_noise_tests {
     fn salt_pepper_identity_at_zero_density() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let config = SaltPepperNoiseParams { density: 0.0, seed: 42 };
+        let config = SaltPepperNoiseParams {
+            density: 0.0,
+            seed: 42,
+        };
         let result = salt_pepper_noise(&pixels, &info, &config).unwrap();
         assert_eq!(result, pixels);
     }
@@ -16688,7 +18289,10 @@ mod add_noise_tests {
     fn salt_pepper_deterministic_with_same_seed() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let config = SaltPepperNoiseParams { density: 0.1, seed: 77 };
+        let config = SaltPepperNoiseParams {
+            density: 0.1,
+            seed: 77,
+        };
         let r1 = salt_pepper_noise(&pixels, &info, &config).unwrap();
         let r2 = salt_pepper_noise(&pixels, &info, &config).unwrap();
         assert_eq!(r1, r2);
@@ -16698,7 +18302,10 @@ mod add_noise_tests {
     fn salt_pepper_only_produces_extremes() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let config = SaltPepperNoiseParams { density: 1.0, seed: 42 };
+        let config = SaltPepperNoiseParams {
+            density: 1.0,
+            seed: 42,
+        };
         let result = salt_pepper_noise(&pixels, &info, &config).unwrap();
         // Every pixel should be either 0 or 255 (density=1 means all replaced)
         for chunk in result.chunks_exact(3) {
@@ -16716,7 +18323,10 @@ mod add_noise_tests {
     fn poisson_noise_identity_at_zero_scale() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let config = PoissonNoiseParams { scale: 0.0, seed: 42 };
+        let config = PoissonNoiseParams {
+            scale: 0.0,
+            seed: 42,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let px = pixels.clone();
         let mut u = |_: Rect| Ok(px.clone());
@@ -16728,7 +18338,10 @@ mod add_noise_tests {
     fn poisson_noise_deterministic_with_same_seed() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let config = PoissonNoiseParams { scale: 5.0, seed: 55 };
+        let config = PoissonNoiseParams {
+            scale: 5.0,
+            seed: 55,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let px = pixels.clone();
         let mut u1 = |_: Rect| Ok(px.clone());
@@ -16747,7 +18360,10 @@ mod add_noise_tests {
         let dark: Vec<u8> = vec![20u8; n];
         let bright: Vec<u8> = vec![200u8; n];
         let info = gray_info(w, h);
-        let config = PoissonNoiseParams { scale: 5.0, seed: 42 };
+        let config = PoissonNoiseParams {
+            scale: 5.0,
+            seed: 42,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let dk = dark.clone();
         let br = bright.clone();
@@ -16757,11 +18373,19 @@ mod add_noise_tests {
         let bright_result = poisson_noise(r, &mut u_bright, &info, &config).unwrap();
         let dark_var: f64 = {
             let m: f64 = dark_result.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
-            dark_result.iter().map(|&v| (v as f64 - m).powi(2)).sum::<f64>() / n as f64
+            dark_result
+                .iter()
+                .map(|&v| (v as f64 - m).powi(2))
+                .sum::<f64>()
+                / n as f64
         };
         let bright_var: f64 = {
             let m: f64 = bright_result.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
-            bright_result.iter().map(|&v| (v as f64 - m).powi(2)).sum::<f64>() / n as f64
+            bright_result
+                .iter()
+                .map(|&v| (v as f64 - m).powi(2))
+                .sum::<f64>()
+                / n as f64
         };
         assert!(
             bright_var > dark_var,
@@ -16775,7 +18399,10 @@ mod add_noise_tests {
     fn uniform_noise_identity_at_zero_range() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let config = UniformNoiseParams { range: 0.0, seed: 42 };
+        let config = UniformNoiseParams {
+            range: 0.0,
+            seed: 42,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let result = uniform_noise(r, &mut u, &info, &config).unwrap();
@@ -16786,7 +18413,10 @@ mod add_noise_tests {
     fn uniform_noise_deterministic_with_same_seed() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let config = UniformNoiseParams { range: 30.0, seed: 33 };
+        let config = UniformNoiseParams {
+            range: 30.0,
+            seed: 33,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u1 = |_: Rect| Ok(pixels.clone());
         let mut u2 = |_: Rect| Ok(pixels.clone());
@@ -16800,7 +18430,10 @@ mod add_noise_tests {
         // On a 128 image with range=50, no pixel should exceed [78, 178]
         let pixels = vec![128u8; 64 * 64];
         let info = gray_info(64, 64);
-        let config = UniformNoiseParams { range: 50.0, seed: 42 };
+        let config = UniformNoiseParams {
+            range: 50.0,
+            seed: 42,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let result = uniform_noise(r, &mut u, &info, &config).unwrap();
@@ -16817,7 +18450,10 @@ mod add_noise_tests {
         // Mean should remain near original, variance ≈ range^2/3 for uniform [-r,r]
         let pixels = vec![128u8; 64 * 64];
         let info = gray_info(64, 64);
-        let config = UniformNoiseParams { range: 30.0, seed: 42 };
+        let config = UniformNoiseParams {
+            range: 30.0,
+            seed: 42,
+        };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         let result = uniform_noise(r, &mut u, &info, &config).unwrap();
@@ -16826,7 +18462,11 @@ mod add_noise_tests {
             (mean - 128.0).abs() < 5.0,
             "uniform noise mean should be near 128, got {mean:.1}"
         );
-        let var: f64 = result.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / result.len() as f64;
+        let var: f64 = result
+            .iter()
+            .map(|&v| (v as f64 - mean).powi(2))
+            .sum::<f64>()
+            / result.len() as f64;
         // Expected variance for uniform [-30, 30] = 30^2/3 = 300
         assert!(
             var > 100.0 && var < 600.0,
@@ -16856,8 +18496,21 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result =
-            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 0.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+        let result = shadow_highlight(
+            r,
+            &mut u,
+            &info,
+            &ShadowHighlightParams {
+                shadows: 0.0,
+                highlights: 0.0,
+                whitepoint: 0.0,
+                radius: 100.0,
+                compress: 50.0,
+                shadows_ccorrect: 100.0,
+                highlights_ccorrect: 50.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16868,8 +18521,21 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result =
-            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 100.0, highlights: 0.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+        let result = shadow_highlight(
+            r,
+            &mut u,
+            &info,
+            &ShadowHighlightParams {
+                shadows: 100.0,
+                highlights: 0.0,
+                whitepoint: 0.0,
+                radius: 100.0,
+                compress: 50.0,
+                shadows_ccorrect: 100.0,
+                highlights_ccorrect: 50.0,
+            },
+        )
+        .unwrap();
         // All pixels should be brighter than original
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -16886,8 +18552,21 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result =
-            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 0.0, highlights: -100.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+        let result = shadow_highlight(
+            r,
+            &mut u,
+            &info,
+            &ShadowHighlightParams {
+                shadows: 0.0,
+                highlights: -100.0,
+                whitepoint: 0.0,
+                radius: 100.0,
+                compress: 50.0,
+                shadows_ccorrect: 100.0,
+                highlights_ccorrect: 50.0,
+            },
+        )
+        .unwrap();
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_result: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -16903,8 +18582,21 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result =
-            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+        let result = shadow_highlight(
+            r,
+            &mut u,
+            &info,
+            &ShadowHighlightParams {
+                shadows: 50.0,
+                highlights: -50.0,
+                whitepoint: 0.0,
+                radius: 100.0,
+                compress: 50.0,
+                shadows_ccorrect: 100.0,
+                highlights_ccorrect: 50.0,
+            },
+        )
+        .unwrap();
         // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
         let max_diff: u8 = pixels
             .iter()
@@ -16934,8 +18626,21 @@ mod shadow_highlight_tests {
         let px = pixels.clone();
         let r = Rect::new(0, 0, 8, 8);
         let mut u = |_: Rect| Ok(px.clone());
-        let result =
-            shadow_highlight(r, &mut u, &info, &ShadowHighlightParams { shadows: 50.0, highlights: -50.0, whitepoint: 0.0, radius: 100.0, compress: 50.0, shadows_ccorrect: 100.0, highlights_ccorrect: 50.0 }).unwrap();
+        let result = shadow_highlight(
+            r,
+            &mut u,
+            &info,
+            &ShadowHighlightParams {
+                shadows: 50.0,
+                highlights: -50.0,
+                whitepoint: 0.0,
+                radius: 100.0,
+                compress: 50.0,
+                shadows_ccorrect: 100.0,
+                highlights_ccorrect: 50.0,
+            },
+        )
+        .unwrap();
         // Alpha should be exactly preserved
         for i in 0..64 {
             assert_eq!(
@@ -17572,7 +19277,17 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
+        let result = perspective_warp(
+            r,
+            &mut u,
+            &info,
+            &identity,
+            &PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16,
+            },
+        )
+        .unwrap();
         // With fixed-point, identity warp at integer coords should be exact
         assert_eq!(
             result, px,
@@ -17586,7 +19301,17 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 64, out_height: 48 }).unwrap();
+        let result = perspective_warp(
+            r,
+            &mut u,
+            &info,
+            &identity,
+            &PerspectiveWarpParams {
+                out_width: 64,
+                out_height: 48,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), 64 * 48 * 3);
     }
 
@@ -17596,7 +19321,17 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
+        let result = perspective_warp(
+            r,
+            &mut u,
+            &info,
+            &identity,
+            &PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
     }
 
@@ -17606,7 +19341,17 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
+        let result = perspective_warp(
+            r,
+            &mut u,
+            &info,
+            &identity,
+            &PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), 16 * 16);
     }
 
@@ -17630,7 +19375,17 @@ mod perspective_tests {
         let mat = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = perspective_warp(r, &mut u, &info, &mat, &PerspectiveWarpParams { out_width: w, out_height: h }).unwrap();
+        let result = perspective_warp(
+            r,
+            &mut u,
+            &info,
+            &mat,
+            &PerspectiveWarpParams {
+                out_width: w,
+                out_height: h,
+            },
+        )
+        .unwrap();
 
         // White pixel at input (5,5) → output (3,4)
         let expected_idx = (4 * w as usize + 3) * 3;
@@ -17646,7 +19401,13 @@ mod perspective_tests {
         let (px, info) = make_rgb_image(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 0.0 }).unwrap();
+        let result = perspective_correct(
+            r,
+            &mut u,
+            &info,
+            &PerspectiveCorrectParams { strength: 0.0 },
+        )
+        .unwrap();
         assert_eq!(result, px);
     }
 
@@ -17655,7 +19416,13 @@ mod perspective_tests {
         let (px, info) = make_rgb_image(64, 48);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 1.0 }).unwrap();
+        let result = perspective_correct(
+            r,
+            &mut u,
+            &info,
+            &PerspectiveCorrectParams { strength: 1.0 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -17664,7 +19431,13 @@ mod perspective_tests {
         let (px, info) = make_rgba_image(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
+        let result = perspective_correct(
+            r,
+            &mut u,
+            &info,
+            &PerspectiveCorrectParams { strength: 0.5 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -17673,7 +19446,13 @@ mod perspective_tests {
         let (px, info) = make_gray_image(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(r, &mut u, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
+        let result = perspective_correct(
+            r,
+            &mut u,
+            &info,
+            &PerspectiveCorrectParams { strength: 0.5 },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -17988,7 +19767,8 @@ mod frequency_separation_tests {
         let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
         let r2 = Rect::new(0, 0, info.width, info.height);
         let mut u2 = |_: Rect| Ok(pixels.clone());
-        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
+        let high =
+            frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
 
         assert_eq!(low.len(), pixels.len());
         assert_eq!(high.len(), pixels.len());
@@ -18030,7 +19810,8 @@ mod frequency_separation_tests {
         let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
         let r2 = Rect::new(0, 0, info.width, info.height);
         let mut u2 = |_: Rect| Ok(pixels.clone());
-        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
+        let high =
+            frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
 
         // Check alpha preserved in high-pass
         for i in 0..pixels.len() / 4 {
@@ -18139,7 +19920,16 @@ mod motion_blur_tests {
         let (pixels, info) = make_gray(8, 8, 128);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 0, angle_degrees: 45.0 }).unwrap();
+        let result = motion_blur(
+            r,
+            &mut u,
+            &info,
+            &MotionBlurParams {
+                length: 0,
+                angle_degrees: 45.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -18149,7 +19939,16 @@ mod motion_blur_tests {
         let (pixels, info) = make_gray(16, 16, 100);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
+        let result = motion_blur(
+            r,
+            &mut u,
+            &info,
+            &MotionBlurParams {
+                length: 3,
+                angle_degrees: 0.0,
+            },
+        )
+        .unwrap();
         // Interior pixels should be exactly 100 (uniform input)
         // Border pixels may differ due to reflect101 padding
         let w = info.width as usize;
@@ -18177,7 +19976,16 @@ mod motion_blur_tests {
 
         let r = Rect::new(0, 0, w, h);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
+        let result = motion_blur(
+            r,
+            &mut u,
+            &info,
+            &MotionBlurParams {
+                length: 3,
+                angle_degrees: 0.0,
+            },
+        )
+        .unwrap();
 
         // The bright pixel should spread along the horizontal line (row 8)
         // but not vertically (rows 7 and 9 at x=8 should be 0 or near-0)
@@ -18200,7 +20008,16 @@ mod motion_blur_tests {
         let pixels = vec![128u8; 8 * 8 * 3];
         let r = Rect::new(0, 0, 8, 8);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 2, angle_degrees: 45.0 }).unwrap();
+        let result = motion_blur(
+            r,
+            &mut u,
+            &info,
+            &MotionBlurParams {
+                length: 2,
+                angle_degrees: 45.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 }
@@ -18224,7 +20041,17 @@ mod zoom_blur_tests {
         let (px, info) = make_gray(32, 32, 128);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.0 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, px);
     }
 
@@ -18233,7 +20060,17 @@ mod zoom_blur_tests {
         let (px, info) = make_gray(64, 48, 128);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.3,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -18242,7 +20079,17 @@ mod zoom_blur_tests {
         let (px, info) = make_gray(32, 32, 100);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.5,
+            },
+        )
+        .unwrap();
         for &v in &result {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -18259,7 +20106,17 @@ mod zoom_blur_tests {
         let (px, info) = make_gray(64, 64, 128);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -18274,7 +20131,17 @@ mod zoom_blur_tests {
         let px = vec![128u8; 16 * 16 * 3];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.2,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), 16 * 16 * 3);
     }
 
@@ -18289,7 +20156,17 @@ mod zoom_blur_tests {
         let px = vec![128u8; 16 * 16 * 4];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.2,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
     }
 
@@ -18308,7 +20185,17 @@ mod zoom_blur_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = zoom_blur(r, &mut u, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
+        let result = zoom_blur(
+            r,
+            &mut u,
+            &info,
+            &ZoomBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                factor: 0.3,
+            },
+        )
+        .unwrap();
         let center_val = result[16 * w as usize + 16];
         // Center pixel samples near itself → stays close to original
         assert!(
@@ -18340,7 +20227,11 @@ pub fn pixelate(
     config: &PixelateParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let block_size = config.block_size;
 
@@ -18423,7 +20314,11 @@ pub fn halftone(
     config: &HalftoneParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let dot_size = config.dot_size;
     let angle_offset = config.angle_offset;
@@ -18558,7 +20453,11 @@ pub fn swirl(
     config: &SwirlParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let angle = config.angle;
     let radius = config.radius;
@@ -18640,7 +20539,11 @@ pub fn spherize(
     config: &SpherizeParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amount = config.amount;
 
@@ -18723,7 +20626,11 @@ pub fn barrel(
     config: &BarrelParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let k1 = config.k1;
     let k2 = config.k2;
@@ -18820,9 +20727,17 @@ pub fn barrel(
     variant = "to_polar",
     reference = "Cartesian to polar coordinate transform"
 )]
-pub fn polar(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn polar(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -18880,9 +20795,17 @@ pub fn polar(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Resu
     variant = "from_polar",
     reference = "polar to Cartesian coordinate transform"
 )]
-pub fn depolar(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn depolar(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
@@ -18978,7 +20901,11 @@ pub fn wave(
     config: &WaveParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amplitude = config.amplitude;
     let wavelength = config.wavelength;
@@ -19063,7 +20990,11 @@ pub fn ripple(
     config: &RippleParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let amplitude = config.amplitude;
     let wavelength = config.wavelength;
@@ -19152,7 +21083,13 @@ mod distortion_effect_tests {
     fn pixelate_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 4 }).unwrap();
+        let result = pixelate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &PixelateParams { block_size: 4 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19160,7 +21097,13 @@ mod distortion_effect_tests {
     fn pixelate_block_1_is_identity() {
         let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(64, 64);
-        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 1 }).unwrap();
+        let result = pixelate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &PixelateParams { block_size: 1 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19169,7 +21112,13 @@ mod distortion_effect_tests {
         // 4x4 image, block_size=4 → entire image is one block
         let pixels = vec![100u8; 4 * 4 * 3];
         let info = rgb_info(4, 4);
-        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 4 }).unwrap();
+        let result = pixelate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &PixelateParams { block_size: 4 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19178,7 +21127,13 @@ mod distortion_effect_tests {
         // 7x5 with block_size=3 → handles edge blocks correctly
         let pixels = vec![128u8; 7 * 5 * 3];
         let info = rgb_info(7, 5);
-        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 3 }).unwrap();
+        let result = pixelate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &PixelateParams { block_size: 3 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19186,7 +21141,13 @@ mod distortion_effect_tests {
     fn pixelate_gray() {
         let pixels = vec![128u8; 16 * 16];
         let info = gray_info(16, 16);
-        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 4 }).unwrap();
+        let result = pixelate(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &PixelateParams { block_size: 4 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19196,7 +21157,16 @@ mod distortion_effect_tests {
     fn halftone_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19206,7 +21176,16 @@ mod distortion_effect_tests {
         // should be limited to values from {0, 255} combinations
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            },
+        )
+        .unwrap();
         for &v in &result {
             // Each RGB value is product of (1-C/M/Y)(1-K) where each is 0 or 1
             assert!(
@@ -19221,7 +21200,16 @@ mod distortion_effect_tests {
         // Pure white → C=0, M=0, Y=0, K=0 → all screens below threshold → white
         let pixels = vec![255u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            },
+        )
+        .unwrap();
         assert!(result.iter().all(|&v| v == 255));
     }
 
@@ -19230,7 +21218,16 @@ mod distortion_effect_tests {
         // Pure black → K=1 → all K screens fire → black
         let pixels = vec![0u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            },
+        )
+        .unwrap();
         assert!(result.iter().all(|&v| v == 0));
     }
 
@@ -19240,7 +21237,16 @@ mod distortion_effect_tests {
     fn swirl_zero_angle_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 0.0, radius: 0.0 }).unwrap();
+        let result = swirl(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SwirlParams {
+                angle: 0.0,
+                radius: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19248,7 +21254,16 @@ mod distortion_effect_tests {
     fn swirl_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
+        let result = swirl(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SwirlParams {
+                angle: 90.0,
+                radius: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19274,7 +21289,16 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small angle so center is barely affected
-        let result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 10.0, radius: 0.0 }).unwrap();
+        let result = swirl(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SwirlParams {
+                angle: 10.0,
+                radius: 0.0,
+            },
+        )
+        .unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center pixel should be close to the original value (not zero/black)
         assert!(
@@ -19290,7 +21314,13 @@ mod distortion_effect_tests {
     fn spherize_zero_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = spherize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpherizeParams { amount: 0.0 }).unwrap();
+        let result = spherize(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SpherizeParams { amount: 0.0 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19298,7 +21328,13 @@ mod distortion_effect_tests {
     fn spherize_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = spherize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpherizeParams { amount: 0.5 }).unwrap();
+        let result = spherize(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SpherizeParams { amount: 0.5 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19321,7 +21357,13 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = spherize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpherizeParams { amount: 0.5 }).unwrap();
+        let result = spherize(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SpherizeParams { amount: 0.5 },
+        )
+        .unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center should be close to original (spherize barely moves center pixels)
         assert!(
@@ -19339,7 +21381,13 @@ mod distortion_effect_tests {
         // through the filter. Result should be very close to input.
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.0, k2: 0.0 }).unwrap();
+        let result = barrel(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &BarrelParams { k1: 0.0, k2: 0.0 },
+        )
+        .unwrap();
         // Uniform image → still uniform after resampling
         for &v in &result {
             assert!(
@@ -19353,7 +21401,13 @@ mod distortion_effect_tests {
     fn barrel_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
+        let result = barrel(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &BarrelParams { k1: 0.3, k2: 0.0 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19376,7 +21430,13 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
+        let result = barrel(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &BarrelParams { k1: 0.5, k2: 0.1 },
+        )
+        .unwrap();
         let off = (cy * w as usize + cx) * 3;
         assert!(
             result[off] > 100,
@@ -19391,7 +21451,13 @@ mod distortion_effect_tests {
     fn barrel_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
+        let result = barrel(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &BarrelParams { k1: 0.3, k2: 0.0 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19401,7 +21467,12 @@ mod distortion_effect_tests {
     fn polar_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = polar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+        let result = polar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19414,7 +21485,12 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = polar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+        let result = polar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19422,7 +21498,12 @@ mod distortion_effect_tests {
     fn depolar_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = depolar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+        let result = depolar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19449,8 +21530,18 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let polar_result = polar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
-        let roundtrip = depolar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(polar_result.to_vec()), &info).unwrap();
+        let polar_result = polar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+        )
+        .unwrap();
+        let roundtrip = depolar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(polar_result.to_vec()),
+            &info,
+        )
+        .unwrap();
 
         // Interior pixels near center should be similar after roundtrip.
         // Bilinear interpolation causes some loss, so use a tolerance.
@@ -19479,7 +21570,17 @@ mod distortion_effect_tests {
     fn wave_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 0.0, wavelength: 10.0, vertical: 0.0 }).unwrap();
+        let result = wave(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &WaveParams {
+                amplitude: 0.0,
+                wavelength: 10.0,
+                vertical: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19487,7 +21588,17 @@ mod distortion_effect_tests {
     fn wave_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 0.0 }).unwrap();
+        let result = wave(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &WaveParams {
+                amplitude: 5.0,
+                wavelength: 20.0,
+                vertical: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19495,7 +21606,17 @@ mod distortion_effect_tests {
     fn wave_vertical_works() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 1.0 }).unwrap();
+        let result = wave(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &WaveParams {
+                amplitude: 5.0,
+                wavelength: 20.0,
+                vertical: 1.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19508,7 +21629,17 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 3.0, wavelength: 15.0, vertical: 0.0 }).unwrap();
+        let result = wave(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &WaveParams {
+                amplitude: 3.0,
+                wavelength: 15.0,
+                vertical: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19518,7 +21649,18 @@ mod distortion_effect_tests {
     fn ripple_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 0.0, wavelength: 10.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RippleParams {
+                amplitude: 0.0,
+                wavelength: 10.0,
+                center_x: 0.5,
+                center_y: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19526,7 +21668,18 @@ mod distortion_effect_tests {
     fn ripple_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 5.0, wavelength: 20.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RippleParams {
+                amplitude: 5.0,
+                wavelength: 20.0,
+                center_x: 0.5,
+                center_y: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19551,7 +21704,18 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small amplitude, long wavelength — near-center pixels barely move
-        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 1.0, wavelength: 100.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RippleParams {
+                amplitude: 1.0,
+                wavelength: 100.0,
+                center_x: 0.5,
+                center_y: 0.5,
+            },
+        )
+        .unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center pixel should be close to original (displacement at r≈0 is ≈0)
         assert!(
@@ -19570,7 +21734,18 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 3.0, wavelength: 15.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RippleParams {
+                amplitude: 3.0,
+                wavelength: 15.0,
+                center_x: 0.5,
+                center_y: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19624,7 +21799,17 @@ mod distortion_effect_tests {
         let wavelength = 20.0f32;
 
         let info = rgb_info(w, h);
-        let our_result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude, wavelength, vertical: 0.0 }).unwrap();
+        let our_result = wave(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &WaveParams {
+                amplitude,
+                wavelength,
+                vertical: 0.0,
+            },
+        )
+        .unwrap();
 
         // IM -wave extends canvas by 2*amplitude. Crop at offset=amplitude
         // to get the centered portion matching our source mapping.
@@ -19691,7 +21876,12 @@ mod distortion_effect_tests {
         let info = rgb_info(w, h);
         // IM's -distort Polar produces Cartesian output from polar-mapped source
         // — this matches our `depolar` function, not `polar`.
-        let our_result = depolar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+        let our_result = depolar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+        )
+        .unwrap();
 
         let im_raw = std::env::temp_dir().join("polar_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -19753,7 +21943,16 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
+        let our_result = swirl(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &SwirlParams {
+                angle: 90.0,
+                radius: 0.0,
+            },
+        )
+        .unwrap();
 
         let im_raw = std::env::temp_dir().join("swirl_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -19813,7 +22012,13 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
+        let our_result = barrel(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &BarrelParams { k1: 0.5, k2: 0.1 },
+        )
+        .unwrap();
 
         let im_raw = std::env::temp_dir().join("barrel_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -19955,7 +22160,11 @@ pub fn kuwahara(
     config: &KuwaharaParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
 
@@ -20113,7 +22322,11 @@ pub fn rank_filter(
     config: &RankFilterParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
     let rank = config.rank;
@@ -20227,7 +22440,13 @@ mod kuwahara_rank_tests {
     fn kuwahara_radius_0_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 0 }).unwrap();
+        let result = kuwahara(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &KuwaharaParams { radius: 0 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20235,7 +22454,13 @@ mod kuwahara_rank_tests {
     fn kuwahara_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 3 }).unwrap();
+        let result = kuwahara(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &KuwaharaParams { radius: 3 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -20243,7 +22468,13 @@ mod kuwahara_rank_tests {
     fn kuwahara_uniform_is_identity() {
         let pixels = vec![100u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 3 }).unwrap();
+        let result = kuwahara(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &KuwaharaParams { radius: 3 },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20262,7 +22493,13 @@ mod kuwahara_rank_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 2 }).unwrap();
+        let result = kuwahara(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &KuwaharaParams { radius: 2 },
+        )
+        .unwrap();
         // Interior pixels far from edge should be unchanged
         // Left side interior (x=4, y=16) should still be dark
         let left_off = (16 * w as usize + 4) * 3;
@@ -20284,7 +22521,13 @@ mod kuwahara_rank_tests {
     fn kuwahara_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 2 }).unwrap();
+        let result = kuwahara(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &KuwaharaParams { radius: 2 },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -20294,7 +22537,16 @@ mod kuwahara_rank_tests {
     fn rank_filter_radius_0_is_identity() {
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
-        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 0, rank: 0.5 }).unwrap();
+        let result = rank_filter(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RankFilterParams {
+                radius: 0,
+                rank: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20302,7 +22554,16 @@ mod kuwahara_rank_tests {
     fn rank_filter_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 2, rank: 0.5 }).unwrap();
+        let result = rank_filter(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RankFilterParams {
+                radius: 2,
+                rank: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -20313,8 +22574,23 @@ mod kuwahara_rank_tests {
             .map(|i| ((i * 7 + 13) % 256) as u8)
             .collect();
         let info = rgb_info(32, 32);
-        let median_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
-        let rank_result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 3, rank: 0.5 }).unwrap();
+        let median_result = median(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &MedianParams { radius: 3 },
+        )
+        .unwrap();
+        let rank_result = rank_filter(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RankFilterParams {
+                radius: 3,
+                rank: 0.5,
+            },
+        )
+        .unwrap();
         assert_eq!(rank_result, median_result, "rank 0.5 should match median");
     }
 
@@ -20323,7 +22599,16 @@ mod kuwahara_rank_tests {
         // rank=0.0 is local minimum — result should be <= input for each pixel
         let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
         let info = gray_info(16, 16);
-        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 1, rank: 0.0 }).unwrap();
+        let result = rank_filter(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RankFilterParams {
+                radius: 1,
+                rank: 0.0,
+            },
+        )
+        .unwrap();
         // Local min should be <= each pixel's own value (approximately — due to edge reflect)
         let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -20338,7 +22623,16 @@ mod kuwahara_rank_tests {
         // rank=1.0 is local maximum — result should be >= input on average
         let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
         let info = gray_info(16, 16);
-        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 1, rank: 1.0 }).unwrap();
+        let result = rank_filter(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &RankFilterParams {
+                radius: 1,
+                rank: 1.0,
+            },
+        )
+        .unwrap();
         let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -20352,7 +22646,16 @@ mod kuwahara_rank_tests {
         let pixels = vec![100u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
         for rank in [0.0f32, 0.5, 1.0] {
-            let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 2, rank: rank }).unwrap();
+            let result = rank_filter(
+                Rect::new(0, 0, info.width, info.height),
+                &mut |_| Ok(pixels.to_vec()),
+                &info,
+                &RankFilterParams {
+                    radius: 2,
+                    rank: rank,
+                },
+            )
+            .unwrap();
             assert_eq!(
                 result, pixels,
                 "uniform image should be identity at rank={rank}"
@@ -20381,7 +22684,11 @@ pub fn apply_cube_lut(
     cube_data: String,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let lut = super::color_lut::parse_cube_lut(&cube_data)?;
     lut.apply(pixels, info)
@@ -20411,7 +22718,11 @@ pub fn apply_hald_lut(
     _config: &ApplyHaldLutParams,
 ) -> Result<Vec<u8>, ImageError> {
     let _pixels = upstream(request)?;
-    let _info = &ImageInfo { width: request.width, height: request.height, ..*_info };
+    let _info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*_info
+    };
     let _pixels = _pixels.as_slice();
 
     // For the registered filter, hald_dim is a placeholder — the actual HALD
@@ -20448,7 +22759,11 @@ pub fn connected_components_registered(
     config: &ConnectedComponentsParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let connectivity = config.connectivity;
 
@@ -20487,7 +22802,11 @@ pub fn hough_lines_registered(
     config: &HoughLinesParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let threshold = config.threshold;
     let min_length = config.min_length;
@@ -20566,7 +22885,13 @@ mod cube_lut_tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let result = apply_cube_lut(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, cube).unwrap();
+        let result = apply_cube_lut(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            cube,
+        )
+        .unwrap();
         // Identity LUT: output should be close to input
         for i in 0..pixels.len() {
             assert!(
@@ -20600,7 +22925,16 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 0.0, range: 1 }).unwrap();
+        let result = dodge(
+            r,
+            &mut u,
+            &info,
+            &DodgeParams {
+                exposure: 0.0,
+                range: 1,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20610,7 +22944,16 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = burn(r, &mut u, &info, &BurnParams { exposure: 0.0, range: 1 }).unwrap();
+        let result = burn(
+            r,
+            &mut u,
+            &info,
+            &BurnParams {
+                exposure: 0.0,
+                range: 1,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20634,7 +22977,16 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 100.0, range: 0 }).unwrap(); // shadows only
+        let result = dodge(
+            r,
+            &mut u,
+            &info,
+            &DodgeParams {
+                exposure: 100.0,
+                range: 0,
+            },
+        )
+        .unwrap(); // shadows only
 
         // Dark pixels should be brighter
         assert!(result[0] > 30, "dark pixel should be dodged: {}", result[0]);
@@ -20666,7 +23018,16 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = burn(r, &mut u, &info, &BurnParams { exposure: 100.0, range: 2 }).unwrap(); // highlights only
+        let result = burn(
+            r,
+            &mut u,
+            &info,
+            &BurnParams {
+                exposure: 100.0,
+                range: 2,
+            },
+        )
+        .unwrap(); // highlights only
 
         // Dark pixels should be unchanged
         let dark_diff = (result[0] as i16 - 30).abs();
@@ -20698,7 +23059,16 @@ mod dodge_burn_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
+        let result = dodge(
+            r,
+            &mut u,
+            &info,
+            &DodgeParams {
+                exposure: 50.0,
+                range: 1,
+            },
+        )
+        .unwrap();
         for i in 0..16 {
             assert_eq!(result[i * 4 + 3], pixels[i * 4 + 3]);
         }
@@ -20725,7 +23095,16 @@ mod dodge_burn_tests {
         // Dodge midtones at 50%
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
+        let result = dodge(
+            r,
+            &mut u,
+            &info,
+            &DodgeParams {
+                exposure: 50.0,
+                range: 1,
+            },
+        )
+        .unwrap();
         let exposure = 0.5f32;
 
         let mut max_diff = 0u8;
@@ -20766,7 +23145,16 @@ mod dodge_burn_tests {
         // Burn highlights at 75%
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = burn(r, &mut u, &info, &BurnParams { exposure: 75.0, range: 2 }).unwrap();
+        let result = burn(
+            r,
+            &mut u,
+            &info,
+            &BurnParams {
+                exposure: 75.0,
+                range: 2,
+            },
+        )
+        .unwrap();
         let exposure = 0.75f32;
 
         let mut max_diff = 0u8;
@@ -20843,7 +23231,11 @@ pub fn tilt_shift(
     config: &TiltShiftParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let focus_position = config.focus_position;
     let band_size = config.band_size;
@@ -20861,7 +23253,13 @@ pub fn tilt_shift(
     let bpp = channels(info.format);
 
     // Generate the fully blurred version
-    let blurred = blur_impl(pixels, info, &BlurParams { radius: blur_radius })?;
+    let blurred = blur_impl(
+        pixels,
+        info,
+        &BlurParams {
+            radius: blur_radius,
+        },
+    )?;
 
     // Compute per-pixel blur mask based on distance from focus band
     let angle_rad = angle.to_radians();
@@ -20977,7 +23375,11 @@ pub fn lens_blur(
     config: &LensBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
-    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
     let pixels = pixels.as_slice();
     let radius = config.radius;
     let blade_count = config.blade_count;
@@ -21001,7 +23403,17 @@ pub fn lens_blur(
     {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        convolve(r, &mut u, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+        convolve(
+            r,
+            &mut u,
+            info,
+            &kernel,
+            &ConvolveParams {
+                kw: side as u32,
+                kh: side as u32,
+                divisor,
+            },
+        )
     }
 }
 
@@ -21023,7 +23435,18 @@ mod tilt_shift_lens_blur_tests {
     fn tilt_shift_zero_radius_is_identity() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 0.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &TiltShiftParams {
+                focus_position: 0.5,
+                band_size: 0.2,
+                blur_radius: 0.0,
+                angle: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -21031,7 +23454,18 @@ mod tilt_shift_lens_blur_tests {
     fn tilt_shift_full_band_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 1.0, blur_radius: 10.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &TiltShiftParams {
+                focus_position: 0.5,
+                band_size: 1.0,
+                blur_radius: 10.0,
+                angle: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -21050,7 +23484,18 @@ mod tilt_shift_lens_blur_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.3, blur_radius: 10.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &TiltShiftParams {
+                focus_position: 0.5,
+                band_size: 0.3,
+                blur_radius: 10.0,
+                angle: 0.0,
+            },
+        )
+        .unwrap();
 
         // Center row (y=16) should be in the focus band — exactly preserved
         let center_y = 16;
@@ -21076,7 +23521,18 @@ mod tilt_shift_lens_blur_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 8.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &TiltShiftParams {
+                focus_position: 0.5,
+                band_size: 0.2,
+                blur_radius: 8.0,
+                angle: 0.0,
+            },
+        )
+        .unwrap();
 
         // Top edge (y=0) should be heavily blurred — values should be closer to 128
         let top_y = 0;
@@ -21097,7 +23553,17 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_zero_radius_is_identity() {
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 0, blade_count: 0, rotation: 0.0 }).unwrap();
+        let result = lens_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &LensBlurParams {
+                radius: 0,
+                blade_count: 0,
+                rotation: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -21105,7 +23571,17 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_disc_mode() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
+        let result = lens_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &LensBlurParams {
+                radius: 3,
+                blade_count: 0,
+                rotation: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
         // Should be different from input (blurred)
         assert_ne!(result, pixels);
@@ -21116,7 +23592,17 @@ mod tilt_shift_lens_blur_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         // 6-blade hexagon
-        let result = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 3, blade_count: 6, rotation: 0.0 }).unwrap();
+        let result = lens_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &LensBlurParams {
+                radius: 3,
+                blade_count: 6,
+                rotation: 0.0,
+            },
+        )
+        .unwrap();
         assert_eq!(result.len(), pixels.len());
         assert_ne!(result, pixels);
     }
@@ -21125,11 +23611,30 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_disc_matches_bokeh_blur() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let disc = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
+        let disc = lens_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &LensBlurParams {
+                radius: 3,
+                blade_count: 0,
+                rotation: 0.0,
+            },
+        )
+        .unwrap();
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = pixels.clone();
         let mut u = |_: Rect| Ok(px2.clone());
-        let bokeh = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
+        let bokeh = bokeh_blur(
+            r,
+            &mut u,
+            &info,
+            &BokehBlurParams {
+                radius: 3,
+                shape: 0,
+            },
+        )
+        .unwrap();
         // Both use same make_disc_kernel + convolve — should be identical
         assert_eq!(disc, bokeh, "lens_blur disc should match bokeh_blur disc");
     }
@@ -21149,8 +23654,28 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_rotation_changes_output() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let r0 = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 0.0 }).unwrap();
-        let r30 = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 30.0 }).unwrap();
+        let r0 = lens_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &LensBlurParams {
+                radius: 4,
+                blade_count: 6,
+                rotation: 0.0,
+            },
+        )
+        .unwrap();
+        let r30 = lens_blur(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &LensBlurParams {
+                radius: 4,
+                blade_count: 6,
+                rotation: 30.0,
+            },
+        )
+        .unwrap();
         // Different rotation should produce different output
         assert_ne!(r0, r30, "rotated polygon should produce different result");
     }

@@ -52,16 +52,22 @@ pub fn affine_output_dims(matrix: &[f64; 6], src_w: u32, src_h: u32) -> (u32, u3
 
     // Transform the four corners
     let corners = [
-        (tx, ty),                              // (0,0)
-        (a * w + tx, c * w + ty),              // (w,0)
-        (b * h + tx, d * h + ty),              // (0,h)
+        (tx, ty),                                 // (0,0)
+        (a * w + tx, c * w + ty),                 // (w,0)
+        (b * h + tx, d * h + ty),                 // (0,h)
         (a * w + b * h + tx, c * w + d * h + ty), // (w,h)
     ];
 
     let min_x = corners.iter().map(|c| c.0).fold(f64::INFINITY, f64::min);
-    let max_x = corners.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max);
+    let max_x = corners
+        .iter()
+        .map(|c| c.0)
+        .fold(f64::NEG_INFINITY, f64::max);
     let min_y = corners.iter().map(|c| c.1).fold(f64::INFINITY, f64::min);
-    let max_y = corners.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
+    let max_y = corners
+        .iter()
+        .map(|c| c.1)
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let out_w = (max_x - min_x).round().max(1.0) as u32;
     let out_h = (max_y - min_y).round().max(1.0) as u32;
@@ -171,7 +177,11 @@ impl AffineOp for ResizeNode {
     fn to_affine(&self) -> ([f64; 6], u32, u32) {
         let sx = self.target_width as f64 / self.source_info.width as f64;
         let sy = self.target_height as f64 / self.source_info.height as f64;
-        ([sx, 0.0, 0.0, 0.0, sy, 0.0], self.target_width, self.target_height)
+        (
+            [sx, 0.0, 0.0, 0.0, sy, 0.0],
+            self.target_width,
+            self.target_height,
+        )
     }
 }
 
@@ -247,7 +257,11 @@ impl CropNode {
 impl AffineOp for CropNode {
     fn to_affine(&self) -> ([f64; 6], u32, u32) {
         // Crop = translation by (-x, -y), output is crop dimensions
-        ([1.0, 0.0, -(self.x as f64), 0.0, 1.0, -(self.y as f64)], self.width, self.height)
+        (
+            [1.0, 0.0, -(self.x as f64), 0.0, 1.0, -(self.y as f64)],
+            self.width,
+            self.height,
+        )
     }
 }
 
@@ -313,9 +327,21 @@ impl AffineOp for RotateNode {
         let w = self.source_info.width as f64;
         let h = self.source_info.height as f64;
         let (mat, ow, oh) = match self.rotation {
-            Rotation::R90 => ([0.0, -1.0, h, 1.0, 0.0, 0.0], self.source_info.height, self.source_info.width),
-            Rotation::R180 => ([-1.0, 0.0, w, 0.0, -1.0, h], self.source_info.width, self.source_info.height),
-            Rotation::R270 => ([0.0, 1.0, 0.0, -1.0, 0.0, w], self.source_info.height, self.source_info.width),
+            Rotation::R90 => (
+                [0.0, -1.0, h, 1.0, 0.0, 0.0],
+                self.source_info.height,
+                self.source_info.width,
+            ),
+            Rotation::R180 => (
+                [-1.0, 0.0, w, 0.0, -1.0, h],
+                self.source_info.width,
+                self.source_info.height,
+            ),
+            Rotation::R270 => (
+                [0.0, 1.0, 0.0, -1.0, 0.0, w],
+                self.source_info.height,
+                self.source_info.width,
+            ),
         };
         (mat, ow, oh)
     }

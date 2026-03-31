@@ -130,16 +130,22 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str("            height: self.source_info.height,\n");
         code.push_str("            ..self.source_info\n");
         code.push_str("        };\n\n");
-        code.push_str(&format!("        let (mapped_pixels, output_info) = {full_domain_call}?;\n\n"));
+        code.push_str(&format!(
+            "        let (mapped_pixels, output_info) = {full_domain_call}?;\n\n"
+        ));
         code.push_str("        // Cache the output info for info() calls\n");
         code.push_str("        *self.output_info.borrow_mut() = Some(output_info.clone());\n\n");
         code.push_str("        // If requesting the full image, return as-is\n");
         code.push_str("        if request == full_rect {\n");
         code.push_str("            return Ok(mapped_pixels);\n");
         code.push_str("        }\n\n");
-        code.push_str("        // Crop to requested region using output bpp (may differ from input)\n");
+        code.push_str(
+            "        // Crop to requested region using output bpp (may differ from input)\n",
+        );
         code.push_str("        let out_bpp = bytes_per_pixel(output_info.format);\n");
-        code.push_str("        let out_rect = Rect::new(0, 0, output_info.width, output_info.height);\n");
+        code.push_str(
+            "        let out_rect = Rect::new(0, 0, output_info.width, output_info.height);\n",
+        );
         code.push_str("        Ok(crop_region(&mapped_pixels, out_rect, request, out_bpp))\n");
         code.push_str("    }\n\n");
 

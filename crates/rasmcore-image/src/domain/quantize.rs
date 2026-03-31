@@ -469,9 +469,7 @@ pub fn kmeans_palette(
     seed: u64,
 ) -> Result<Vec<Rgb>, ImageError> {
     if !(2..=256).contains(&k) {
-        return Err(ImageError::InvalidParameters(
-            "k must be 2..256".into(),
-        ));
+        return Err(ImageError::InvalidParameters("k must be 2..256".into()));
     }
     let total_pixels = (info.width * info.height) as usize;
     if pixels.len() < total_pixels * 3 {
@@ -501,7 +499,9 @@ pub fn kmeans_palette(
     let mut used = std::collections::HashSet::new();
     for _ in 0..k {
         loop {
-            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng_state = rng_state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let idx = (rng_state >> 33) as usize % samples.len();
             if used.insert(idx) {
                 let s = samples[idx];
@@ -1266,7 +1266,9 @@ mod parity {
         let quantized = quantize(&pixels, &info, &palette).unwrap();
         // Every pixel in output must be a palette color
         for chunk in quantized.chunks_exact(3) {
-            let is_palette = palette.iter().any(|c| c.r == chunk[0] && c.g == chunk[1] && c.b == chunk[2]);
+            let is_palette = palette
+                .iter()
+                .any(|c| c.r == chunk[0] && c.g == chunk[1] && c.b == chunk[2]);
             assert!(is_palette, "pixel {:?} not in palette {:?}", chunk, palette);
         }
     }

@@ -546,7 +546,12 @@ impl ImageFilter for GammaFilter {
         let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
         let p = input.pixels;
         let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
-        filters::gamma_registered(r, &mut u, input.info, &filters::GammaParams { gamma_value: gamma })
+        filters::gamma_registered(
+            r,
+            &mut u,
+            input.info,
+            &filters::GammaParams { gamma_value: gamma },
+        )
     }
     fn is_lut_collapsible(&self) -> bool {
         true
@@ -600,7 +605,8 @@ impl ImageFilter for ContrastFilter {
         {
             let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
             let p = input.pixels;
-            let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+            let mut u =
+                |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
             filters::contrast(r, &mut u, input.info, &filters::ContrastParams { amount })
         }
     }

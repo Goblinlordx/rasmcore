@@ -49,7 +49,11 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
 
     // Pipeline mapper adapter macro
     let mapper_adapter = pipeline_mapper::generate_mapper_adapter_macro(&data.mappers);
-    fs::write(out_dir.join("generated_pipeline_mapper_adapter.rs"), &mapper_adapter).unwrap();
+    fs::write(
+        out_dir.join("generated_pipeline_mapper_adapter.rs"),
+        &mapper_adapter,
+    )
+    .unwrap();
 
     // Rust native SDK
     let sdk_rs = sdk_rust::generate(&data.filters);

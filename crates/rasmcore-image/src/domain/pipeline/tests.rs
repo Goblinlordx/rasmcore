@@ -2,10 +2,12 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::domain::filters::{BlurParams, CharcoalParams};
     use crate::domain::pipeline::graph::NodeGraph;
     use crate::domain::pipeline::nodes::composite::CompositeNode;
-    use crate::domain::pipeline::nodes::filters::{BlurNode, CharcoalMapperNode, GrayscaleMapperNode};
-    use crate::domain::filters::{BlurParams, CharcoalParams};
+    use crate::domain::pipeline::nodes::filters::{
+        BlurNode, CharcoalMapperNode, GrayscaleMapperNode,
+    };
     use crate::domain::pipeline::nodes::sink;
     use crate::domain::pipeline::nodes::source::SourceNode;
     use crate::domain::pipeline::nodes::transform::{CropNode, FlipNode, ResizeNode, RotateNode};
@@ -104,7 +106,11 @@ mod tests {
         )));
         let resized_info = graph.node_info(resized).unwrap();
 
-        let blurred = graph.add_node(Box::new(BlurNode::new(resized, resized_info, BlurParams { radius: 2.0 })));
+        let blurred = graph.add_node(Box::new(BlurNode::new(
+            resized,
+            resized_info,
+            BlurParams { radius: 2.0 },
+        )));
 
         let output = sink::write(&mut graph, blurred, "jpeg", Some(85), None).unwrap();
         // Should produce valid JPEG
@@ -170,22 +176,25 @@ mod tests {
         let src_info = graph.node_info(src).unwrap();
 
         // Charcoal mapper: RGB8 → Gray8
-        let charcoal_node = graph.add_node(Box::new(
-            CharcoalMapperNode::new(
-                src,
-                src_info,
-                CharcoalParams { radius: 1.0, sigma: 0.5 },
-            ),
-        ));
+        let charcoal_node = graph.add_node(Box::new(CharcoalMapperNode::new(
+            src,
+            src_info,
+            CharcoalParams {
+                radius: 1.0,
+                sigma: 0.5,
+            },
+        )));
 
         // Query charcoal's output info — should be Gray8 thanks to output_format
         let charcoal_out_info = graph.node_info(charcoal_node).unwrap();
         assert_eq!(charcoal_out_info.format, PixelFormat::Gray8);
 
         // Blur on Gray8 output — this was broken before the mapper fix
-        let blurred = graph.add_node(Box::new(
-            BlurNode::new(charcoal_node, charcoal_out_info, BlurParams { radius: 1.0 }),
-        ));
+        let blurred = graph.add_node(Box::new(BlurNode::new(
+            charcoal_node,
+            charcoal_out_info,
+            BlurParams { radius: 1.0 },
+        )));
 
         let output = sink::write(&mut graph, blurred, "png", None, None).unwrap();
         let decoded = crate::domain::decoder::decode(&output).unwrap();

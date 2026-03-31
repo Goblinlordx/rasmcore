@@ -904,20 +904,19 @@ fn monotone_tangents(pts: &[(f32, f32)]) -> Vec<f32> {
 /// Evaluate a monotone Hermite spline at position x.
 fn eval_hermite(pts: &[(f32, f32)], m: &[f32], n: usize, x: f32) -> f32 {
     // Find segment
-    let seg = match pts
-        .binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal))
-    {
-        Ok(idx) => return pts[idx].1.clamp(0.0, 1.0),
-        Err(idx) => {
-            if idx == 0 {
-                return pts[0].1.clamp(0.0, 1.0);
+    let seg =
+        match pts.binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal)) {
+            Ok(idx) => return pts[idx].1.clamp(0.0, 1.0),
+            Err(idx) => {
+                if idx == 0 {
+                    return pts[0].1.clamp(0.0, 1.0);
+                }
+                if idx >= n {
+                    return pts[n - 1].1.clamp(0.0, 1.0);
+                }
+                idx - 1
             }
-            if idx >= n {
-                return pts[n - 1].1.clamp(0.0, 1.0);
-            }
-            idx - 1
-        }
-    };
+        };
 
     let x0 = pts[seg].0;
     let x1 = pts[seg + 1].0;
@@ -1632,7 +1631,8 @@ mod tests {
         let red = vec![255u8, 0, 0];
         let result_red = hue_vs_sat(&red, &info, &curve).unwrap();
         assert_eq!(
-            result_red, red,
+            result_red,
+            red,
             "red should be preserved: got {:?}",
             &result_red[..3]
         );
