@@ -88,8 +88,8 @@ pub fn to_qualified_binding_type(rust_type: &str) -> String {
             rust_type.to_string()
         }
         other => {
-            let (prefix, inner) = if other.starts_with('&') {
-                ("&", &other[1..])
+            let (prefix, inner) = if let Some(stripped) = other.strip_prefix('&') {
+                ("&", stripped)
             } else {
                 ("", other)
             };

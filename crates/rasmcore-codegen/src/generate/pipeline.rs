@@ -72,9 +72,7 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             .iter()
             .map(|(n, t)| {
                 let clean_n = n.trim_start_matches('_');
-                if t.starts_with("&[") || t == "&str" {
-                    format!("&self.{clean_n}")
-                } else if t.starts_with('&') {
+                if t.starts_with('&') {
                     format!("&self.{clean_n}")
                 } else if t == "String" {
                     format!("self.{clean_n}.clone()")
