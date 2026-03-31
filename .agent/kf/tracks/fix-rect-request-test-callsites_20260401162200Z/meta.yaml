@@ -1,5 +1,5 @@
 title: Fix broken test call sites after rect-request migration
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-03-31'

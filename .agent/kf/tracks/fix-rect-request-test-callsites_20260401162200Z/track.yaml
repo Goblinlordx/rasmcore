@@ -1,74 +1,71 @@
 id: fix-rect-request-test-callsites_20260401162200Z
-title: "Fix broken test call sites after rect-request migration"
+title: Fix broken test call sites after rect-request migration
 type: bug
 status: pending
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-03-31'
 spec:
-  summary: |
-    Update all remaining test and integration test calls that still use the old
+  summary: 'Update all remaining test and integration test calls that still use the old
+
     (pixels, info, config) signature to the new (Rect, upstream, info, config)
+
     rect-request signature. Lib build + WASM build pass; only test compilation is broken.
-  context: |
-    The rect-request migration (filter-rect-request-foundation track) migrated all
+
+    '
+  context: 'The rect-request migration (filter-rect-request-foundation track) migrated all
+
     134+ filter function signatures but missed updating some test call sites:
+
     - 10 inline test compile errors in filters.rs (channel_mixer, smart_sharpen, salt_pepper_noise, ripple)
+
     - 32 integration test compile errors in filter_reference_parity.rs
+
     - Additional errors in reference_audit.rs and opencv_parity.rs
+
     - 6 pre-existing test failures unrelated to the migration
-  codebase_analysis: |
-    ERRORS BY FILE:
-    - crates/rasmcore-image/src/domain/filters.rs: 10 errors
-      - channel_mixer tests (4 calls at lines ~3612-3693)
-      - smart_sharpen tests (2 calls at lines ~13322-13345)
-      - salt_pepper_noise tests (3 calls at lines ~18284-18309)
-      - ripple test: duplicate #[test] attribute at line ~21687
-    - crates/rasmcore-image/tests/filter_reference_parity.rs: 32 errors
-      - 19 calls passing old (pixels, info, config) pattern
-      - 6 calls passing too many positional args (should use config struct)
-      - 3 calls missing Rect for no-config filters
-      - Other misc signature mismatches
-    - Possible errors in reference_audit.rs, opencv_parity.rs, photo_enhance_parity.rs
 
-    PATTERN FOR FIX:
-    Old: filter_name(&pixels, &info, &Params { ... })
-    New: filter_name(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &Params { ... })
-
-    For filters with _impl (blur, sharpen, guided_filter, emboss):
-    Test code can call {name}_impl(&pixels, &info, ...) directly.
+    '
+  codebase_analysis: "ERRORS BY FILE:\n- crates/rasmcore-image/src/domain/filters.rs: 10 errors\n  - channel_mixer tests (4\
+    \ calls at lines ~3612-3693)\n  - smart_sharpen tests (2 calls at lines ~13322-13345)\n  - salt_pepper_noise tests (3\
+    \ calls at lines ~18284-18309)\n  - ripple test: duplicate #[test] attribute at line ~21687\n- crates/rasmcore-image/tests/filter_reference_parity.rs:\
+    \ 32 errors\n  - 19 calls passing old (pixels, info, config) pattern\n  - 6 calls passing too many positional args (should\
+    \ use config struct)\n  - 3 calls missing Rect for no-config filters\n  - Other misc signature mismatches\n- Possible\
+    \ errors in reference_audit.rs, opencv_parity.rs, photo_enhance_parity.rs\n\nPATTERN FOR FIX:\nOld: filter_name(&pixels,\
+    \ &info, &Params { ... })\nNew: filter_name(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info,\
+    \ &Params { ... })\n\nFor filters with _impl (blur, sharpen, guided_filter, emboss):\nTest code can call {name}_impl(&pixels,\
+    \ &info, ...) directly.\n"
   acceptance_criteria:
-    - cargo test -p rasmcore-image --lib compiles with 0 errors
-    - cargo test -p rasmcore-image --test filter_reference_parity compiles with 0 errors
-    - cargo test -p rasmcore-image --test reference_audit compiles with 0 errors
-    - cargo test -p rasmcore-image --test opencv_parity compiles with 0 errors
-    - All tests that passed before the migration still pass
-  out_of_scope: |
-    Fixing the 6 pre-existing test failures (adaptive_gaussian_basic, otsu_bimodal,
+  - cargo test -p rasmcore-image --lib compiles with 0 errors
+  - cargo test -p rasmcore-image --test filter_reference_parity compiles with 0 errors
+  - cargo test -p rasmcore-image --test reference_audit compiles with 0 errors
+  - cargo test -p rasmcore-image --test opencv_parity compiles with 0 errors
+  - All tests that passed before the migration still pass
+  out_of_scope: 'Fixing the 6 pre-existing test failures (adaptive_gaussian_basic, otsu_bimodal,
+
     4x tiled_parity). These are unrelated to the rect-request migration.
+
     Fixing rasmcore-sdk compile errors (pre-existing Point2D scope issue).
-  technical_notes: |
-    Mechanical fix. For each broken call site:
-    1. If the filter has an _impl variant (blur, sharpen, guided_filter, emboss),
-       change the test to call _impl directly with old signature
-    2. Otherwise, wrap with Rect::new + upstream closure
-    3. For filter_reference_parity.rs calls that pass too many positional args,
-       switch to using the ConfigParams struct
-    4. Remove duplicate #[test] attribute on ripple test
+
+    '
+  technical_notes: "Mechanical fix. For each broken call site:\n1. If the filter has an _impl variant (blur, sharpen, guided_filter,\
+    \ emboss),\n   change the test to call _impl directly with old signature\n2. Otherwise, wrap with Rect::new + upstream\
+    \ closure\n3. For filter_reference_parity.rs calls that pass too many positional args,\n   switch to using the ConfigParams\
+    \ struct\n4. Remove duplicate #[test] attribute on ripple test\n"
 plan:
-  - phase: Fix inline test calls (filters.rs)
-    tasks:
-      - text: Fix 4 channel_mixer test calls
-        done: false
-      - text: Fix 2 smart_sharpen test calls
-        done: false
-      - text: Fix 3 salt_pepper_noise test calls
-        done: false
-      - text: Remove duplicate #[test] on ripple test
-        done: false
-  - phase: Fix integration test calls
-    tasks:
-      - text: Fix filter_reference_parity.rs (~32 errors)
-        done: false
-      - text: Fix reference_audit.rs, opencv_parity.rs, photo_enhance_parity.rs errors if any
-        done: false
+- phase: Fix inline test calls (filters.rs)
+  tasks:
+  - text: Fix 4 channel_mixer test calls
+    done: true
+  - text: Fix 2 smart_sharpen test calls
+    done: true
+  - text: Fix 3 salt_pepper_noise test calls
+    done: true
+  - text: Remove duplicate
+    done: true
+- phase: Fix integration test calls
+  tasks:
+  - text: Fix filter_reference_parity.rs (~32 errors)
+    done: true
+  - text: Fix reference_audit.rs, opencv_parity.rs, photo_enhance_parity.rs errors if any
+    done: true
 extra: {}
