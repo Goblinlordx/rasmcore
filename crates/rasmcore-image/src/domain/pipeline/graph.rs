@@ -476,7 +476,14 @@ impl NodeGraph {
         if self.cache_hit_nodes.contains(&node_id)
             && let Some(pixels) = self.cache_hit_pixels.get(&node_id)
         {
-            return Ok(pixels.clone());
+            let info = self.node_info(node_id)?;
+            let full_rect = Rect::new(0, 0, info.width, info.height);
+            if request == full_rect {
+                return Ok(pixels.clone());
+            }
+            // Extract sub-region from cached full-image pixels
+            let bpp = bytes_per_pixel(info.format);
+            return Ok(crop_region(pixels, full_rect, request, bpp));
         }
 
         let info = self.node_info(node_id)?;
