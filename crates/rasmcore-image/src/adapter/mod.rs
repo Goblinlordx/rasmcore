@@ -208,6 +208,7 @@ bindings::export!(Component with_types_in bindings);
 
 impl pipeline::Guest for Component {
     type ImagePipeline = pipeline_adapter::PipelineResource;
+    type LayerCache = pipeline_adapter::LayerCacheResource;
 
     fn detect_format(header: Vec<u8>) -> Option<String> {
         domain::decoder::detect_format(&header)

@@ -21,6 +21,27 @@ interface pipeline {
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
 
+    // ─── Layer Cache ───
+
+    /// Cache statistics.
+    record cache-stats {
+        entries: u32,
+        hits: u64,
+        misses: u64,
+        size-bytes: u64,
+    }
+
+    /// Content-addressed layer cache — persists across pipeline lifetimes.
+    /// Create once, pass to pipelines. Unchanged upstream nodes serve from cache.
+    resource layer-cache {
+        /// Create with memory budget in megabytes (default: 64 MB).
+        constructor(memory-budget-mb: u32);
+        /// Get cache statistics (entries, hits, misses, memory usage).
+        stats: func() -> cache-stats;
+        /// Clear all cached entries.
+        clear: func();
+    }
+
     /// Resize filter algorithms.
     enum resize-filter { nearest, bilinear, bicubic, lanczos3 }
 
@@ -75,6 +96,10 @@ interface pipeline {
 
     resource image-pipeline {
         constructor();
+
+        /// Attach a layer cache for cross-pipeline result reuse.
+        /// Call before adding nodes. Pass null/omit to disable caching.
+        set-layer-cache: func(cache: borrow<layer-cache>);
 
         // ─── Source ───
         read: func(data: buffer) -> result<node-id, rasmcore-error>;

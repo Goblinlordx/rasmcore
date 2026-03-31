@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 
 use crate::bindings::exports::rasmcore::image::pipeline::{
-    self, BlendMode as WitBlendMode, ExifOrientation, FlipDirection, GuestImagePipeline, NodeId,
-    ResizeFilter, Rotation,
+    self, BlendMode as WitBlendMode, CacheStats, ExifOrientation, FlipDirection,
+    GuestImagePipeline, GuestLayerCache, LayerCacheBorrow, NodeId, ResizeFilter, Rotation,
 };
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
@@ -237,12 +237,52 @@ impl MetadataOps {
     }
 }
 
+// ─── Layer Cache Resource ────────────────────────────────────────────────
+
+pub struct LayerCacheResource {
+    inner: std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>,
+}
+
+impl GuestLayerCache for LayerCacheResource {
+    fn new(memory_budget_mb: u32) -> Self {
+        let budget = memory_budget_mb as usize * 1024 * 1024;
+        Self {
+            inner: std::rc::Rc::new(RefCell::new(rasmcore_pipeline::LayerCache::new(budget))),
+        }
+    }
+
+    fn stats(&self) -> CacheStats {
+        let s = self.inner.borrow().stats();
+        CacheStats {
+            entries: s.entries,
+            hits: s.hits,
+            misses: s.misses,
+            size_bytes: s.size_bytes,
+        }
+    }
+
+    fn clear(&self) {
+        self.inner.borrow_mut().clear();
+    }
+}
+
+// ─── Pipeline Resource ──────────────────────────────────────────────────
+
 pub struct PipelineResource {
     graph: RefCell<NodeGraph>,
     /// Metadata operations, keyed by source node ID.
     metadata_ops: RefCell<MetadataOps>,
     /// Rc handle to frame source for sequence execution.
     frame_source: RefCell<Option<std::rc::Rc<frame_source::FrameSourceNode>>>,
+    /// Optional layer cache for cross-pipeline result reuse.
+    layer_cache: RefCell<Option<std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>>>,
+}
+
+impl PipelineResource {
+    /// Finalize layer cache after any write operation.
+    fn finalize_cache(&self) {
+        self.graph.borrow_mut().finalize_layer_cache();
+    }
 }
 
 impl GuestImagePipeline for PipelineResource {
@@ -251,7 +291,18 @@ impl GuestImagePipeline for PipelineResource {
             graph: RefCell::new(NodeGraph::new(16 * 1024 * 1024)), // 16MB cache budget
             metadata_ops: RefCell::new(MetadataOps::default()),
             frame_source: RefCell::new(None),
+            layer_cache: RefCell::new(None),
         }
+    }
+
+    fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {
+        let cache_resource = cache.get::<LayerCacheResource>();
+        let lc = cache_resource.inner.clone();
+        *self.layer_cache.borrow_mut() = Some(lc.clone());
+        // Recreate graph with layer cache attached
+        let mut graph = self.graph.borrow_mut();
+        let new_graph = NodeGraph::with_layer_cache(16 * 1024 * 1024, lc);
+        *graph = new_graph;
     }
 
     fn read(&self, data: Vec<u8>) -> Result<NodeId, RasmcoreError> {
@@ -445,13 +496,16 @@ impl GuestImagePipeline for PipelineResource {
             turbo: false,
         };
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        sink::write_jpeg(
+        let result = sink::write_jpeg(
             &mut self.graph.borrow_mut(),
             source,
             &cfg,
             domain_meta.as_ref(),
         )
-        .map_err(to_wit_error)
+        .map_err(to_wit_error);
+        // Finalize layer cache after write (push new results, clean unreferenced)
+        self.graph.borrow_mut().finalize_layer_cache();
+        result
     }
 
     fn write_png(
@@ -465,13 +519,15 @@ impl GuestImagePipeline for PipelineResource {
             filter_type: to_domain_png_filter_pipeline(config.filter_type),
         };
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        sink::write_png(
+        let result = sink::write_png(
             &mut self.graph.borrow_mut(),
             source,
             &cfg,
             domain_meta.as_ref(),
         )
-        .map_err(to_wit_error)
+        .map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_webp(
@@ -485,13 +541,15 @@ impl GuestImagePipeline for PipelineResource {
             lossless: config.lossless.unwrap_or(false),
         };
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        sink::write_webp(
+        let result = sink::write_webp(
             &mut self.graph.borrow_mut(),
             source,
             &cfg,
             domain_meta.as_ref(),
         )
-        .map_err(to_wit_error)
+        .map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_bmp(
@@ -499,7 +557,9 @@ impl GuestImagePipeline for PipelineResource {
         source: NodeId,
         _config: pipeline::BmpWriteConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
-        sink::write_bmp(&mut self.graph.borrow_mut(), source).map_err(to_wit_error)
+        let result = sink::write_bmp(&mut self.graph.borrow_mut(), source).map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_ico(
@@ -507,7 +567,9 @@ impl GuestImagePipeline for PipelineResource {
         source: NodeId,
         _config: pipeline::IcoWriteConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
-        sink::write_ico(&mut self.graph.borrow_mut(), source).map_err(to_wit_error)
+        let result = sink::write_ico(&mut self.graph.borrow_mut(), source).map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_qoi(
@@ -515,7 +577,9 @@ impl GuestImagePipeline for PipelineResource {
         source: NodeId,
         _config: pipeline::QoiWriteConfig,
     ) -> Result<Vec<u8>, RasmcoreError> {
-        sink::write_qoi(&mut self.graph.borrow_mut(), source).map_err(to_wit_error)
+        let result = sink::write_qoi(&mut self.graph.borrow_mut(), source).map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_gif(
@@ -528,13 +592,15 @@ impl GuestImagePipeline for PipelineResource {
             repeat: config.repeat.unwrap_or(0),
         };
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        sink::write_gif(
+        let result = sink::write_gif(
             &mut self.graph.borrow_mut(),
             source,
             &cfg,
             domain_meta.as_ref(),
         )
-        .map_err(to_wit_error)
+        .map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_avif(
@@ -548,13 +614,15 @@ impl GuestImagePipeline for PipelineResource {
             speed: config.speed.unwrap_or(6),
         };
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        sink::write_avif(
+        let result = sink::write_avif(
             &mut self.graph.borrow_mut(),
             source,
             &cfg,
             domain_meta.as_ref(),
         )
-        .map_err(to_wit_error)
+        .map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write_tiff(
@@ -565,7 +633,9 @@ impl GuestImagePipeline for PipelineResource {
         let cfg = domain::encoder::tiff::TiffEncodeConfig {
             compression: to_domain_tiff_compression_pipeline(config.compression),
         };
-        sink::write_tiff(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error)
+        let result = sink::write_tiff(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     fn write(
@@ -576,14 +646,16 @@ impl GuestImagePipeline for PipelineResource {
         metadata: Option<pipeline::MetadataSet>,
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        sink::write(
+        let result = sink::write(
             &mut self.graph.borrow_mut(),
             source,
             &format,
             quality,
             domain_meta.as_ref(),
         )
-        .map_err(to_wit_error)
+        .map_err(to_wit_error);
+        self.finalize_cache();
+        result
     }
 
     // ─── Multi-Frame ───
