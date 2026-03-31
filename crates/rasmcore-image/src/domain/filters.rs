@@ -15663,10 +15663,14 @@ impl LutPointOp for SolarizeParams {
     point_op = "true"
 )]
 pub fn solarize(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SolarizeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let threshold = config.threshold;
 
     super::point_ops::solarize(pixels, info, threshold)
@@ -15872,7 +15876,9 @@ mod artistic_filter_tests {
         // All pixels at 100, threshold 128 → below threshold → unchanged
         let pixels = vec![100u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = solarize(&pixels, &info, &SolarizeParams { threshold: 128 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = solarize(r, &mut u, &info, &SolarizeParams { threshold: 128 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -15881,7 +15887,9 @@ mod artistic_filter_tests {
         // Pixel at 200, threshold 128 → above → 255-200=55
         let pixels = vec![200u8; 3];
         let info = rgb_info(1, 1);
-        let result = solarize(&pixels, &info, &SolarizeParams { threshold: 128 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = solarize(r, &mut u, &info, &SolarizeParams { threshold: 128 }).unwrap();
         assert_eq!(result, vec![55, 55, 55]);
     }
 
@@ -15890,7 +15898,9 @@ mod artistic_filter_tests {
         // threshold=0 means all non-zero pixels get inverted
         let pixels = vec![128u8; 3];
         let info = rgb_info(1, 1);
-        let result = solarize(&pixels, &info, &SolarizeParams { threshold: 0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = solarize(r, &mut u, &info, &SolarizeParams { threshold: 0 }).unwrap();
         assert_eq!(result, vec![127, 127, 127]);
     }
 
