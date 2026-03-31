@@ -6435,11 +6435,15 @@ pub struct PerspectiveWarpParams {
     reference = "3x3 homography transformation"
 )]
 pub fn perspective_warp(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     matrix: &[f64],
     config: &PerspectiveWarpParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let out_width = config.out_width;
     let out_height = config.out_height;
 
@@ -6453,7 +6457,9 @@ pub fn perspective_warp(
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
-            perspective_warp(p8, i8, matrix, config)
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            perspective_warp(r, &mut u, i8, matrix, config)
         });
     }
 
@@ -6699,7 +6705,11 @@ pub fn perspective_correct(
         None => return Ok(pixels.to_vec()),
     };
 
-    perspective_warp(pixels, info, &h_mat, &PerspectiveWarpParams { out_width: info.width, out_height: info.height })
+    {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        perspective_warp(r, &mut u, info, &h_mat, &PerspectiveWarpParams { out_width: info.width, out_height: info.height })
+    }
 }
 
 /// Estimate vanishing point from line segments using weighted median of
@@ -17113,7 +17123,9 @@ mod perspective_tests {
     fn warp_identity_preserves_all_pixels() {
         let (px, info) = make_rgb_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
         // With fixed-point, identity warp at integer coords should be exact
         assert_eq!(
             result, px,
@@ -17125,7 +17137,9 @@ mod perspective_tests {
     fn warp_preserves_output_dimensions() {
         let (px, info) = make_rgb_image(32, 24);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 64, out_height: 48 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 64, out_height: 48 }).unwrap();
         assert_eq!(result.len(), 64 * 48 * 3);
     }
 
@@ -17133,7 +17147,9 @@ mod perspective_tests {
     fn warp_rgba_preserves_channels() {
         let (px, info) = make_rgba_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
     }
 
@@ -17141,7 +17157,9 @@ mod perspective_tests {
     fn warp_gray_works() {
         let (px, info) = make_gray_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = perspective_warp(r, &mut u, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
         assert_eq!(result.len(), 16 * 16);
     }
 
@@ -17163,7 +17181,9 @@ mod perspective_tests {
 
         // Inverse map: output (ox,oy) → input (ox+2, oy+1)
         let mat = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&pixels, &info, &mat, &PerspectiveWarpParams { out_width: w, out_height: h }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = perspective_warp(r, &mut u, &info, &mat, &PerspectiveWarpParams { out_width: w, out_height: h }).unwrap();
 
         // White pixel at input (5,5) → output (3,4)
         let expected_idx = (4 * w as usize + 3) * 3;
