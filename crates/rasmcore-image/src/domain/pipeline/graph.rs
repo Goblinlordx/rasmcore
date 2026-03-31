@@ -566,12 +566,33 @@ impl NodeGraph {
                 let bpp = bytes_per_pixel(info.format);
                 let full_rect = Rect::new(0, 0, info.width, info.height);
 
-                // Try to get from spatial cache
+                // Try to assemble full image from spatial cache tiles
                 let query = self.cache.query(node_id as u32, full_rect);
                 if query.fully_cached {
-                    let handle = query.hits[0];
-                    let pixels = self.cache.read(handle).to_vec();
-                    lc.store(*hash, pixels, info.width, info.height, bpp);
+                    if query.hits.len() == 1 {
+                        // Single entry covers the full image
+                        let pixels = self.cache.read(query.hits[0]).to_vec();
+                        lc.store(*hash, pixels, info.width, info.height, bpp);
+                    } else {
+                        // Multiple tiles — stitch into full-image buffer
+                        let stride = info.width as usize * bpp as usize;
+                        let mut full = vec![0u8; info.height as usize * stride];
+                        for handle in &query.hits {
+                            let tile_rect = self.cache.rect(*handle);
+                            let tile_pixels = self.cache.read(*handle);
+                            let tile_stride = tile_rect.width as usize * bpp as usize;
+                            for row in 0..tile_rect.height as usize {
+                                let dst_y = tile_rect.y as usize + row;
+                                let dst_x = tile_rect.x as usize * bpp as usize;
+                                let dst = dst_y * stride + dst_x;
+                                let src = row * tile_stride;
+                                if dst + tile_stride <= full.len() && src + tile_stride <= tile_pixels.len() {
+                                    full[dst..dst + tile_stride].copy_from_slice(&tile_pixels[src..src + tile_stride]);
+                                }
+                            }
+                        }
+                        lc.store(*hash, full, info.width, info.height, bpp);
+                    }
                 }
             }
         }
