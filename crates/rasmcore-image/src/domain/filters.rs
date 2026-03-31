@@ -4011,10 +4011,14 @@ fn reflect(v: i32, size: usize) -> usize {
     reference = "median rank filter"
 )]
 pub fn median(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MedianParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
 
     if radius == 0 {
@@ -4024,7 +4028,11 @@ pub fn median(
 
     // 16-bit: delegate to 8-bit path (histogram-based median would need 65536 bins)
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| median(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            median(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -12274,7 +12282,7 @@ mod tests {
         // Add salt-and-pepper noise
         pixels[27] = 0; // pepper
         pixels[35] = 255; // salt
-        let result = median(&pixels, &info, &MedianParams { radius: 1 }).unwrap();
+        let result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 1 }).unwrap();
         // Noise pixels should be replaced by median of neighbors (~128)
         assert!(
             (result[27] as i32 - 128).unsigned_abs() < 10,
@@ -12671,9 +12679,9 @@ mod optimization_tests {
         }
 
         // radius=2: uses sort path
-        let sort_result = median(&pixels, &info, &MedianParams { radius: 2 }).unwrap();
+        let sort_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 2 }).unwrap();
         // radius=3: uses histogram path
-        let hist_result = median(&pixels, &info, &MedianParams { radius: 3 }).unwrap();
+        let hist_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
 
         // Both should produce valid output (different radii = different results, but both correct)
         assert!(!sort_result.is_empty());
@@ -12714,7 +12722,7 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(512 * 512)).map(|i| (i % 256) as u8).collect();
 
         let start = std::time::Instant::now();
-        let _ = median(&pixels, &info, &MedianParams { radius: 3 }).unwrap();
+        let _ = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
         let elapsed = start.elapsed();
 
         // Histogram median should handle 512x512 radius=3 in under 500ms
@@ -12963,7 +12971,7 @@ mod tests_16bit {
     #[test]
     fn median_16bit_produces_output() {
         let (px, info) = make_gray16(8, 8, 32768);
-        let result = median(&px, &info, &MedianParams { radius: 1 }).unwrap();
+        let result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(px.to_vec()), &info, &MedianParams { radius: 1 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -19643,7 +19651,7 @@ mod kuwahara_rank_tests {
             .map(|i| ((i * 7 + 13) % 256) as u8)
             .collect();
         let info = rgb_info(32, 32);
-        let median_result = median(&pixels, &info, &MedianParams { radius: 3 }).unwrap();
+        let median_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
         let rank_result = rank_filter(&pixels, &info, &RankFilterParams { radius: 3, rank: 0.5 }).unwrap();
         assert_eq!(rank_result, median_result, "rank 0.5 should match median");
     }

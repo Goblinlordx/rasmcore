@@ -505,7 +505,10 @@ builtin_filter!(MedianFilter, "median", FilterCategory::Denoise,
     params: [ParamDescriptor::uint("radius", 1, 50, 3).with_description("Median filter radius")],
     apply: |input| {
         let radius = input.params.get_uint("radius").unwrap_or(3);
-        filters::median(input.pixels, input.info, &filters::MedianParams { radius })
+        let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+        let p = input.pixels;
+        let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+        filters::median(r, &mut u, input.info, &filters::MedianParams { radius })
     }
 );
 
