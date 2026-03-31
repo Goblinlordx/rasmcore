@@ -102,6 +102,8 @@ interface pipeline {
         sharpen: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         brightness: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         contrast: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        exposure: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        color-balance: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         hue-rotate: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         saturate: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         sepia: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
@@ -114,10 +116,6 @@ interface pipeline {
         modulate: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         convolve: func(source: node-id, kernel: list<f32>, config: f32) -> result<node-id, rasmcore-error>;
         median: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
-        sobel: func(source: node-id) -> result<node-id, rasmcore-error>;
-        scharr: func(source: node-id) -> result<node-id, rasmcore-error>;
-        laplacian: func(source: node-id) -> result<node-id, rasmcore-error>;
-        canny: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         vignette: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         vignette-powerlaw: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         premultiply: func(source: node-id) -> result<node-id, rasmcore-error>;
@@ -160,13 +158,15 @@ interface pipeline {
         auto-level: func(source: node-id) -> result<node-id, rasmcore-error>;
         otsu-threshold: func(source: node-id) -> result<node-id, rasmcore-error>;
         triangle-threshold: func(source: node-id) -> result<node-id, rasmcore-error>;
-        grayscale: func(source: node-id) -> result<node-id, rasmcore-error>;
-        flatten: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         quantize: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         dither-floyd-steinberg: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         dither-ordered: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         white-balance-gray-world: func(source: node-id) -> result<node-id, rasmcore-error>;
         white-balance-temperature: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        gaussian-noise: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        salt-pepper-noise: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        poisson-noise: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
+        uniform-noise: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         draw-line: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         draw-rect: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         draw-circle: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
@@ -180,6 +180,10 @@ interface pipeline {
         curves-red: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
         curves-green: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
         curves-blue: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        hue-vs-sat: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        hue-vs-lum: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        lum-vs-sat: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        sat-vs-sat: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
         film-grain: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         tonemap-reinhard: func(source: node-id) -> result<node-id, rasmcore-error>;
         tonemap-drago: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
@@ -191,7 +195,6 @@ interface pipeline {
         solarize: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         emboss: func(source: node-id) -> result<node-id, rasmcore-error>;
         oil-paint: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
-        charcoal: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         pixelate: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         halftone: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;
         swirl: func(source: node-id, config: f32) -> result<node-id, rasmcore-error>;

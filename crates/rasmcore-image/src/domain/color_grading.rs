@@ -747,6 +747,263 @@ fn apply_rgb_transform(
     Ok(out)
 }
 
+// ─── HSL Conversion Helpers ──────────────────────────────────────────────
+
+/// Convert normalized [0,1] RGB to HSL. H in [0,360), S and L in [0,1].
+#[inline]
+pub fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    let delta = max - min;
+    if delta == 0.0 {
+        return (0.0, 0.0, l);
+    }
+    let s = if l < 0.5 {
+        delta / (max + min)
+    } else {
+        delta / (2.0 - max - min)
+    };
+    let h = if max == r {
+        60.0 * (((g - b) / delta) % 6.0)
+    } else if max == g {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    let h = if h < 0.0 { h + 360.0 } else { h };
+    (h, s, l)
+}
+
+/// Convert HSL to normalized [0,1] RGB. H in [0,360), S and L in [0,1].
+#[inline]
+pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    if s == 0.0 {
+        return (l, l, l);
+    }
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h / 60.0;
+    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
+    let (r1, g1, b1) = if hp < 1.0 {
+        (c, x, 0.0)
+    } else if hp < 2.0 {
+        (x, c, 0.0)
+    } else if hp < 3.0 {
+        (0.0, c, x)
+    } else if hp < 4.0 {
+        (0.0, x, c)
+    } else if hp < 5.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    let m = l - c / 2.0;
+    (r1 + m, g1 + m, b1 + m)
+}
+
+// ─── Hue-vs-X Curve Grading ─────────────────────────────────────────────
+//
+// DaVinci Resolve-style cross-curve grading: adjust one HSL component
+// based on another. The curve maps an input domain to a multiplier/offset.
+
+/// Build a 360-entry f32 LUT for hue-indexed curves.
+///
+/// Input control points: x in [0, 1] maps to [0°, 360°], y in [0, 1].
+/// The output LUT has one f32 per hue degree.
+pub fn build_hue_curve_lut(points: &[(f32, f32)]) -> [f32; 360] {
+    let mut lut = [0.0f32; 360];
+
+    if points.len() < 2 {
+        // Identity: y=0.5 → multiplier 1.0
+        lut.fill(0.5);
+        return lut;
+    }
+
+    let mut pts: Vec<(f32, f32)> = points.to_vec();
+    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let n = pts.len();
+    let m = monotone_tangents(&pts);
+
+    for i in 0..360 {
+        let x = i as f32 / 359.0;
+        lut[i] = eval_hermite(&pts, &m, n, x);
+    }
+
+    lut
+}
+
+/// Build a 256-entry f32 LUT for normalized-value-indexed curves (lum/sat).
+///
+/// Input control points: x and y both in [0, 1].
+pub fn build_norm_curve_lut(points: &[(f32, f32)]) -> [f32; 256] {
+    let mut lut = [0.0f32; 256];
+
+    if points.len() < 2 {
+        lut.fill(0.5);
+        return lut;
+    }
+
+    let mut pts: Vec<(f32, f32)> = points.to_vec();
+    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let n = pts.len();
+    let m = monotone_tangents(&pts);
+
+    for i in 0..256 {
+        let x = i as f32 / 255.0;
+        lut[i] = eval_hermite(&pts, &m, n, x);
+    }
+
+    lut
+}
+
+/// Compute monotone cubic Hermite tangents (Fritsch-Carlson).
+fn monotone_tangents(pts: &[(f32, f32)]) -> Vec<f32> {
+    let n = pts.len();
+    let mut m = vec![0.0f32; n];
+
+    if n == 2 {
+        let slope = (pts[1].1 - pts[0].1) / (pts[1].0 - pts[0].0).max(1e-6);
+        m[0] = slope;
+        m[1] = slope;
+        return m;
+    }
+
+    let mut deltas = vec![0.0f32; n - 1];
+    for i in 0..n - 1 {
+        let dx = (pts[i + 1].0 - pts[i].0).max(1e-6);
+        deltas[i] = (pts[i + 1].1 - pts[i].1) / dx;
+    }
+
+    m[0] = deltas[0];
+    m[n - 1] = deltas[n - 2];
+    for i in 1..n - 1 {
+        m[i] = (deltas[i - 1] + deltas[i]) * 0.5;
+    }
+
+    for i in 0..n - 1 {
+        if deltas[i].abs() < 1e-6 {
+            m[i] = 0.0;
+            m[i + 1] = 0.0;
+        } else {
+            let alpha = m[i] / deltas[i];
+            let beta = m[i + 1] / deltas[i];
+            let tau = alpha * alpha + beta * beta;
+            if tau > 9.0 {
+                let t = 3.0 / tau.sqrt();
+                m[i] = t * alpha * deltas[i];
+                m[i + 1] = t * beta * deltas[i];
+            }
+        }
+    }
+
+    m
+}
+
+/// Evaluate a monotone Hermite spline at position x.
+fn eval_hermite(pts: &[(f32, f32)], m: &[f32], n: usize, x: f32) -> f32 {
+    // Find segment
+    let seg = match pts
+        .binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal))
+    {
+        Ok(idx) => return pts[idx].1.clamp(0.0, 1.0),
+        Err(idx) => {
+            if idx == 0 {
+                return pts[0].1.clamp(0.0, 1.0);
+            }
+            if idx >= n {
+                return pts[n - 1].1.clamp(0.0, 1.0);
+            }
+            idx - 1
+        }
+    };
+
+    let x0 = pts[seg].0;
+    let x1 = pts[seg + 1].0;
+    let y0 = pts[seg].1;
+    let y1 = pts[seg + 1].1;
+    let h = (x1 - x0).max(1e-6);
+    let t = (x - x0) / h;
+    let t2 = t * t;
+    let t3 = t2 * t;
+
+    let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
+    let h10 = t3 - 2.0 * t2 + t;
+    let h01 = -2.0 * t3 + 3.0 * t2;
+    let h11 = t3 - t2;
+
+    (h00 * y0 + h10 * h * m[seg] + h01 * y1 + h11 * h * m[seg + 1]).clamp(0.0, 1.0)
+}
+
+/// Hue vs Saturation: adjust saturation based on hue.
+///
+/// The curve maps hue (0°-360°) to a saturation multiplier.
+/// y=0.5 → no change, y=0 → zero saturation, y=1 → 2x saturation.
+pub fn hue_vs_sat(
+    pixels: &[u8],
+    info: &ImageInfo,
+    curve: &[f32; 360],
+) -> Result<Vec<u8>, ImageError> {
+    apply_rgb_transform(pixels, info, |r, g, b| {
+        let (h, s, l) = rgb_to_hsl(r, g, b);
+        let idx = (h.round() as usize).min(359);
+        let mult = curve[idx] * 2.0; // y=0.5 → mult=1.0
+        hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l)
+    })
+}
+
+/// Hue vs Luminance: adjust luminance based on hue.
+///
+/// The curve maps hue (0°-360°) to a luminance offset.
+/// y=0.5 → no change, y=0 → darken fully, y=1 → brighten fully.
+pub fn hue_vs_lum(
+    pixels: &[u8],
+    info: &ImageInfo,
+    curve: &[f32; 360],
+) -> Result<Vec<u8>, ImageError> {
+    apply_rgb_transform(pixels, info, |r, g, b| {
+        let (h, s, l) = rgb_to_hsl(r, g, b);
+        let idx = (h.round() as usize).min(359);
+        let offset = (curve[idx] - 0.5) * 2.0; // y=0.5 → offset=0
+        hsl_to_rgb(h, s, (l + offset).clamp(0.0, 1.0))
+    })
+}
+
+/// Luminance vs Saturation: adjust saturation based on luminance.
+///
+/// The curve maps luminance (0-1) to a saturation multiplier.
+/// y=0.5 → no change, y=0 → zero saturation, y=1 → 2x saturation.
+pub fn lum_vs_sat(
+    pixels: &[u8],
+    info: &ImageInfo,
+    curve: &[f32; 256],
+) -> Result<Vec<u8>, ImageError> {
+    apply_rgb_transform(pixels, info, |r, g, b| {
+        let (h, s, l) = rgb_to_hsl(r, g, b);
+        let idx = (l * 255.0).round().clamp(0.0, 255.0) as usize;
+        let mult = curve[idx] * 2.0;
+        hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l)
+    })
+}
+
+/// Saturation vs Saturation: remap saturation based on current saturation.
+///
+/// The curve maps saturation (0-1) to a new saturation multiplier.
+/// y=0.5 → no change, y=0 → zero saturation, y=1 → 2x saturation.
+pub fn sat_vs_sat(
+    pixels: &[u8],
+    info: &ImageInfo,
+    curve: &[f32; 256],
+) -> Result<Vec<u8>, ImageError> {
+    apply_rgb_transform(pixels, info, |r, g, b| {
+        let (h, s, l) = rgb_to_hsl(r, g, b);
+        let idx = (s * 255.0).round().clamp(0.0, 255.0) as usize;
+        let mult = curve[idx] * 2.0;
+        hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1272,5 +1529,112 @@ mod tests {
         let cb = ColorBalance::default();
         let result = color_balance(&px, &info, &cb).unwrap();
         assert_eq!(result, px, "identity should not change pixels");
+    }
+
+    // ─── HSL roundtrip tests ──────────────────────────────────────────────
+
+    #[test]
+    fn hsl_roundtrip() {
+        for &(r, g, b) in &[
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (0.5, 0.3, 0.8),
+        ] {
+            let (h, s, l) = rgb_to_hsl(r, g, b);
+            let (r2, g2, b2) = hsl_to_rgb(h, s, l);
+            assert!(
+                (r - r2).abs() < 0.01 && (g - g2).abs() < 0.01 && (b - b2).abs() < 0.01,
+                "HSL roundtrip failed for ({r},{g},{b}): got ({r2},{g2},{b2})"
+            );
+        }
+    }
+
+    // ─── Hue-vs-X curve grading tests ─────────────────────────────────
+
+    #[test]
+    fn hue_vs_sat_identity_curve() {
+        // Flat curve at y=0.5 → multiplier = 1.0 → no change
+        let identity = build_hue_curve_lut(&[(0.0, 0.5), (1.0, 0.5)]);
+        let px = vec![200u8, 100, 50]; // saturated orange
+        let info = test_info();
+        let result = hue_vs_sat(&px, &info, &identity).unwrap();
+        assert_eq!(result, px, "identity hue_vs_sat should not change pixels");
+    }
+
+    #[test]
+    fn hue_vs_sat_zero_desaturates() {
+        // Flat curve at y=0 → multiplier = 0 → full desaturation
+        let zero = build_hue_curve_lut(&[(0.0, 0.0), (1.0, 0.0)]);
+        let px = vec![200u8, 100, 50];
+        let info = test_info();
+        let result = hue_vs_sat(&px, &info, &zero).unwrap();
+        // All channels should be equal (gray)
+        assert_eq!(result[0], result[1], "desaturated R should equal G");
+        assert_eq!(result[1], result[2], "desaturated G should equal B");
+    }
+
+    #[test]
+    fn hue_vs_lum_identity_curve() {
+        let identity = build_hue_curve_lut(&[(0.0, 0.5), (1.0, 0.5)]);
+        let px = vec![200u8, 100, 50];
+        let info = test_info();
+        let result = hue_vs_lum(&px, &info, &identity).unwrap();
+        assert_eq!(result, px, "identity hue_vs_lum should not change pixels");
+    }
+
+    #[test]
+    fn lum_vs_sat_identity_curve() {
+        let identity = build_norm_curve_lut(&[(0.0, 0.5), (1.0, 0.5)]);
+        let px = vec![200u8, 100, 50];
+        let info = test_info();
+        let result = lum_vs_sat(&px, &info, &identity).unwrap();
+        assert_eq!(result, px, "identity lum_vs_sat should not change pixels");
+    }
+
+    #[test]
+    fn sat_vs_sat_identity_curve() {
+        let identity = build_norm_curve_lut(&[(0.0, 0.5), (1.0, 0.5)]);
+        let px = vec![200u8, 100, 50];
+        let info = test_info();
+        let result = sat_vs_sat(&px, &info, &identity).unwrap();
+        assert_eq!(result, px, "identity sat_vs_sat should not change pixels");
+    }
+
+    #[test]
+    fn hue_vs_sat_selective_desaturation() {
+        // Create a curve that desaturates blues (hue ~240° = x=0.667) but keeps reds
+        let pts = [
+            (0.0, 0.5),   // 0° (red) — keep
+            (0.5, 0.5),   // 180° (cyan) — keep
+            (0.667, 0.0), // 240° (blue) — desaturate
+            (0.833, 0.5), // 300° — keep
+            (1.0, 0.5),   // 360° — keep
+        ];
+        let curve = build_hue_curve_lut(&pts);
+
+        // Pure blue pixel should be desaturated
+        let blue = vec![0u8, 0, 255];
+        let info = test_info();
+        let result = hue_vs_sat(&blue, &info, &curve).unwrap();
+        // Should become grayish
+        let max_ch = result[0].max(result[1]).max(result[2]);
+        let min_ch = result[0].min(result[1]).min(result[2]);
+        assert!(
+            max_ch - min_ch < 30,
+            "blue should be desaturated: got {:?}",
+            &result[..3]
+        );
+
+        // Pure red pixel should be preserved
+        let red = vec![255u8, 0, 0];
+        let result_red = hue_vs_sat(&red, &info, &curve).unwrap();
+        assert_eq!(
+            result_red, red,
+            "red should be preserved: got {:?}",
+            &result_red[..3]
+        );
     }
 }

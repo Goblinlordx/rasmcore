@@ -28,6 +28,10 @@ interface filters {
     brightness: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// multiplicative contrast
     contrast: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// Photoshop exposure (EV stops + offset + gamma)
+    exposure: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// Photoshop color balance (shadow/midtone/highlight CMY-RGB)
+    color-balance: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// HSV hue rotation
     hue-rotate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// HSV saturation scaling
@@ -52,14 +56,6 @@ interface filters {
     convolve: func(pixels: buffer, info: image-info, kernel: list<f32>, config: f32) -> result<buffer, rasmcore-error>;
     /// median rank filter
     median: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
-    /// Sobel 1968 gradient operator
-    sobel: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    /// Scharr 2000 rotationally symmetric gradient
-    scharr: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    /// second-order derivative operator
-    laplacian: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    /// Canny 1986 multi-stage edge detector
-    canny: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Gaussian radial darkening
     vignette: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// power-law radial falloff
@@ -144,10 +140,6 @@ interface filters {
     otsu-threshold: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Zack et al. 1977 triangle method
     triangle-threshold: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    /// luminance-weighted desaturation
-    grayscale: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    /// composite onto background color
-    flatten: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// median cut palette quantization
     quantize: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Floyd & Steinberg 1976 error diffusion
@@ -158,6 +150,14 @@ interface filters {
     white-balance-gray-world: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Planckian locus color temperature
     white-balance-temperature: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// additive Gaussian noise
+    gaussian-noise: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// impulse noise (salt and pepper)
+    salt-pepper-noise: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// signal-dependent Poisson noise
+    poisson-noise: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
+    /// additive uniform noise
+    uniform-noise: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Bresenham/anti-aliased line
     draw-line: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// filled/outlined rectangle
@@ -184,6 +184,14 @@ interface filters {
     curves-green: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
     /// spline-interpolated tone curve (blue channel)
     curves-blue: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    /// DaVinci Resolve Hue vs Sat curve
+    hue-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    /// DaVinci Resolve Hue vs Lum curve
+    hue-vs-lum: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    /// DaVinci Resolve Lum vs Sat curve
+    lum-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    /// DaVinci Resolve Sat vs Sat curve
+    sat-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
     /// photographic film grain overlay
     film-grain: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// Reinhard et al. 2002 photographic tone reproduction
@@ -206,8 +214,6 @@ interface filters {
     emboss: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     /// Kuwahara-variant oil painting simulation
     oil-paint: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
-    /// charcoal drawing edge effect
-    charcoal: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// block mosaic pixelation
     pixelate: func(pixels: buffer, info: image-info, config: f32) -> result<buffer, rasmcore-error>;
     /// CMYK-style halftone dot pattern
