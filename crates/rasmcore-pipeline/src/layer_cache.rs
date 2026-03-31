@@ -59,20 +59,41 @@ pub struct CacheStats {
     pub size_bytes: u64,
 }
 
+/// Default maximum cap: 1 GB. Leaves headroom in 4 GB WASM address space.
+const DEFAULT_MAX_BUDGET: usize = 1024 * 1024 * 1024;
+
 /// Content-addressed layer cache that persists across pipeline lifetimes.
+///
+/// Starts at the initial budget and auto-grows (doubling) up to `max_budget`
+/// when a store would require evicting referenced entries. This avoids
+/// thrashing on large images or long chains while keeping a safe cap.
 pub struct LayerCache {
     entries: HashMap<ContentHash, CachedLayer>,
     memory_budget: usize,
+    max_budget: usize,
     memory_used: usize,
     stats: CacheStats,
 }
 
 impl LayerCache {
-    /// Create a new layer cache with the given memory budget in bytes.
+    /// Create a new layer cache with the given initial memory budget in bytes.
+    /// Auto-grows up to 1 GB when needed.
     pub fn new(memory_budget: usize) -> Self {
         Self {
             entries: HashMap::new(),
             memory_budget,
+            max_budget: DEFAULT_MAX_BUDGET,
+            memory_used: 0,
+            stats: CacheStats::default(),
+        }
+    }
+
+    /// Create with explicit initial and maximum budgets.
+    pub fn with_max_budget(initial_budget: usize, max_budget: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            memory_budget: initial_budget,
+            max_budget,
             memory_used: 0,
             stats: CacheStats::default(),
         }
@@ -101,9 +122,8 @@ impl LayerCache {
     ) {
         let size = pixels.len();
 
-        // Evict unreferenced entries if over budget
+        // Evict unreferenced entries first
         while self.memory_used + size > self.memory_budget && !self.entries.is_empty() {
-            // Find an unreferenced entry to evict
             let evict_key = self
                 .entries
                 .iter()
@@ -114,11 +134,24 @@ impl LayerCache {
                     self.memory_used -= removed.pixels.len();
                 }
             } else {
-                break; // All entries referenced — can't evict
+                // All entries referenced — try to grow instead of dropping
+                if self.memory_budget < self.max_budget {
+                    let new_budget = (self.memory_budget * 2).min(self.max_budget);
+                    // Ensure growth is at least enough for this store
+                    let needed = self.memory_used + size;
+                    self.memory_budget = new_budget.max(needed).min(self.max_budget);
+                }
+                break;
             }
         }
 
-        // Only store if fits in budget (or budget allows growth)
+        // If still doesn't fit after eviction, grow if under cap
+        if self.memory_used + size > self.memory_budget && self.memory_budget < self.max_budget {
+            let needed = self.memory_used + size;
+            self.memory_budget = needed.min(self.max_budget);
+        }
+
+        // Store if fits (after possible growth)
         if self.memory_used + size <= self.memory_budget || self.entries.is_empty() {
             self.memory_used += size;
             self.entries.insert(
