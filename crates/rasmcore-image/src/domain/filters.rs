@@ -1677,80 +1677,108 @@ pub fn box_blur(
     let h = info.height as usize;
     let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
     let r = radius as usize;
+    let diam = (2 * r + 1) as u32;
 
-    // Horizontal pass
-    let mut hpass = vec![0u8; pixels.len()];
-    for y in 0..h {
-        for c in 0..ch {
-            // Skip alpha channel for RGBA
-            if ch == 4 && c == 3 {
-                for x in 0..w {
-                    hpass[(y * w + x) * ch + c] = pixels[(y * w + x) * ch + c];
-                }
-                continue;
-            }
-            let mut sum: u32 = 0;
-            let diam = 2 * r + 1;
-            // Initialize sum for first pixel (clamped boundary)
-            for k in 0..=r {
-                let sx = k.min(w - 1);
-                sum += pixels[(y * w + sx) * ch + c] as u32;
-            }
-            // Add clamped left boundary pixels
-            for _ in 0..r {
-                sum += pixels[(y * w) * ch + c] as u32;
-            }
-            hpass[(y * w) * ch + c] = (sum / diam as u32) as u8;
+    // Helper: load pixel channels into [u32; 4] (zero-padded for ch < 4)
+    #[inline(always)]
+    fn load_pixel(src: &[u8], offset: usize, ch: usize) -> [u32; 4] {
+        let mut p = [0u32; 4];
+        for c in 0..ch.min(4) {
+            p[c] = src[offset + c] as u32;
+        }
+        p
+    }
 
-            for x in 1..w {
-                // Add entering pixel (right edge)
-                let add_x = (x + r).min(w - 1);
-                sum += pixels[(y * w + add_x) * ch + c] as u32;
-                // Subtract leaving pixel (left edge)
-                let sub_x = if x > r { x - r - 1 } else { 0 };
-                // For clamped boundary, we added pixel[0] for positions < 0
-                if x <= r {
-                    sum -= pixels[(y * w) * ch + c] as u32;
-                } else {
-                    sum -= pixels[(y * w + sub_x) * ch + c] as u32;
-                }
-                hpass[(y * w + x) * ch + c] = (sum / diam as u32) as u8;
-            }
+    // Helper: store [u32; 4] as pixel channels, preserving alpha if RGBA
+    #[inline(always)]
+    fn store_pixel(dst: &mut [u8], offset: usize, vals: [u32; 4], ch: usize, alpha_src: &[u8]) {
+        let color_ch = if ch == 4 { 3 } else { ch }; // skip alpha for RGBA
+        for c in 0..color_ch {
+            dst[offset + c] = vals[c] as u8;
+        }
+        if ch == 4 {
+            dst[offset + 3] = alpha_src[offset + 3]; // preserve alpha
         }
     }
 
-    // Vertical pass
-    let mut out = vec![0u8; pixels.len()];
-    for x in 0..w {
-        for c in 0..ch {
-            if ch == 4 && c == 3 {
-                for y in 0..h {
-                    out[(y * w + x) * ch + c] = hpass[(y * w + x) * ch + c];
-                }
-                continue;
-            }
-            let mut sum: u32 = 0;
-            let diam = 2 * r + 1;
-            for k in 0..=r {
-                let sy = k.min(h - 1);
-                sum += hpass[(sy * w + x) * ch + c] as u32;
-            }
-            for _ in 0..r {
-                sum += hpass[x * ch + c] as u32;
-            }
-            out[x * ch + c] = (sum / diam as u32) as u8;
+    // Horizontal pass — running sum across all channels simultaneously
+    let mut hpass = vec![0u8; pixels.len()];
+    let color_ch = if ch == 4 { 3 } else { ch };
 
-            for y in 1..h {
-                let add_y = (y + r).min(h - 1);
-                sum += hpass[(add_y * w + x) * ch + c] as u32;
-                if y <= r {
-                    sum -= hpass[x * ch + c] as u32;
-                } else {
-                    let sub_y = y - r - 1;
-                    sum -= hpass[(sub_y * w + x) * ch + c] as u32;
-                }
-                out[(y * w + x) * ch + c] = (sum / diam as u32) as u8;
+    for y in 0..h {
+        let row = y * w * ch;
+        let mut sums = [0u32; 4];
+
+        // Initialize sums for first pixel (clamped boundary)
+        for k in 0..=r {
+            let sx = k.min(w - 1);
+            let p = load_pixel(pixels, row + sx * ch, color_ch);
+            for c in 0..color_ch { sums[c] += p[c]; }
+        }
+        for _ in 0..r {
+            let p = load_pixel(pixels, row, color_ch);
+            for c in 0..color_ch { sums[c] += p[c]; }
+        }
+        // Store first pixel
+        let mut mean = [0u32; 4];
+        for c in 0..color_ch { mean[c] = sums[c] / diam; }
+        store_pixel(&mut hpass, row, mean, ch, pixels);
+
+        // Slide across row
+        for x in 1..w {
+            let add_x = (x + r).min(w - 1);
+            let add = load_pixel(pixels, row + add_x * ch, color_ch);
+            for c in 0..color_ch { sums[c] += add[c]; }
+
+            if x <= r {
+                let sub = load_pixel(pixels, row, color_ch);
+                for c in 0..color_ch { sums[c] -= sub[c]; }
+            } else {
+                let sub_x = x - r - 1;
+                let sub = load_pixel(pixels, row + sub_x * ch, color_ch);
+                for c in 0..color_ch { sums[c] -= sub[c]; }
             }
+
+            for c in 0..color_ch { mean[c] = sums[c] / diam; }
+            store_pixel(&mut hpass, row + x * ch, mean, ch, pixels);
+        }
+    }
+
+    // Vertical pass — running sum down columns, all channels simultaneously
+    let mut out = vec![0u8; pixels.len()];
+
+    for x in 0..w {
+        let mut sums = [0u32; 4];
+
+        for k in 0..=r {
+            let sy = k.min(h - 1);
+            let p = load_pixel(&hpass, (sy * w + x) * ch, color_ch);
+            for c in 0..color_ch { sums[c] += p[c]; }
+        }
+        for _ in 0..r {
+            let p = load_pixel(&hpass, x * ch, color_ch);
+            for c in 0..color_ch { sums[c] += p[c]; }
+        }
+        let mut mean = [0u32; 4];
+        for c in 0..color_ch { mean[c] = sums[c] / diam; }
+        store_pixel(&mut out, x * ch, mean, ch, &hpass);
+
+        for y in 1..h {
+            let add_y = (y + r).min(h - 1);
+            let add = load_pixel(&hpass, (add_y * w + x) * ch, color_ch);
+            for c in 0..color_ch { sums[c] += add[c]; }
+
+            if y <= r {
+                let sub = load_pixel(&hpass, x * ch, color_ch);
+                for c in 0..color_ch { sums[c] -= sub[c]; }
+            } else {
+                let sub_y = y - r - 1;
+                let sub = load_pixel(&hpass, (sub_y * w + x) * ch, color_ch);
+                for c in 0..color_ch { sums[c] -= sub[c]; }
+            }
+
+            for c in 0..color_ch { mean[c] = sums[c] / diam; }
+            store_pixel(&mut out, (y * w + x) * ch, mean, ch, &hpass);
         }
     }
 
@@ -1883,11 +1911,55 @@ pub fn smart_sharpen(
 
     // Unsharp mask: output = original + amount * (original - blurred)
     let mut result = vec![0u8; work_pixels.len()];
-    for i in 0..work_pixels.len() {
-        let orig = work_pixels[i] as f32;
-        let blur = blurred[i] as f32;
-        let sharpened = orig + amount * (orig - blur);
-        result[i] = sharpened.clamp(0.0, 255.0) as u8;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::arch::wasm32::*;
+        let amount_vec = f32x4_splat(amount);
+        let zero = f32x4_splat(0.0);
+        let max_val = f32x4_splat(255.0);
+        let len = work_pixels.len();
+        let chunks = len / 4;
+
+        for i in 0..chunks {
+            let base = i * 4;
+            let orig = f32x4(
+                work_pixels[base] as f32,
+                work_pixels[base + 1] as f32,
+                work_pixels[base + 2] as f32,
+                work_pixels[base + 3] as f32,
+            );
+            let blur_v = f32x4(
+                blurred[base] as f32,
+                blurred[base + 1] as f32,
+                blurred[base + 2] as f32,
+                blurred[base + 3] as f32,
+            );
+            let diff = f32x4_sub(orig, blur_v);
+            let scaled = f32x4_mul(diff, amount_vec);
+            let sharp = f32x4_add(orig, scaled);
+            let clamped = f32x4_max(zero, f32x4_min(max_val, sharp));
+
+            result[base] = f32x4_extract_lane::<0>(clamped) as u8;
+            result[base + 1] = f32x4_extract_lane::<1>(clamped) as u8;
+            result[base + 2] = f32x4_extract_lane::<2>(clamped) as u8;
+            result[base + 3] = f32x4_extract_lane::<3>(clamped) as u8;
+        }
+        for i in (chunks * 4)..len {
+            let orig = work_pixels[i] as f32;
+            let blur_val = blurred[i] as f32;
+            result[i] = (orig + amount * (orig - blur_val)).clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for i in 0..work_pixels.len() {
+            let orig = work_pixels[i] as f32;
+            let blur_val = blurred[i] as f32;
+            let sharpened = orig + amount * (orig - blur_val);
+            result[i] = sharpened.clamp(0.0, 255.0) as u8;
+        }
     }
 
     // Restore alpha if stripped
