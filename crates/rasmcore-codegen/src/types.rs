@@ -19,6 +19,10 @@ pub struct FilterReg {
     /// Set via `point_op = "true"` in register_filter attributes.
     pub point_op: bool,
     pub color_op: bool,
+    /// True if this filter uses the new rect-request signature:
+    /// `fn(request: Rect, upstream: &mut UpstreamFn, info, ...)`
+    /// False for legacy signature: `fn(pixels: &[u8], info, ...)`
+    pub rect_request: bool,
     pub fn_name: String,
     /// (param_name, rust_type) pairs, excluding pixels/info.
     pub params: Vec<(String, String)>,

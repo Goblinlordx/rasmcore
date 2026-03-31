@@ -69,10 +69,7 @@ pub fn generate_nodes(
         code.push_str("    }\n");
         code.push_str("}\n\n");
 
-        // ImageNode impl — compute input_rect expression
-        // Determine expansion from overlap attribute (legacy) or config struct heuristic
-        let input_rect_body = input_rect_body(f, param_structs);
-
+        // Build call args (extra params beyond pixels/info or request/upstream/info)
         let call_args: Vec<String> = f
             .params
             .iter()
@@ -81,7 +78,6 @@ pub fn generate_nodes(
                 if t.starts_with("&[") || t == "&str" {
                     format!("&self.{clean_n}")
                 } else if t.starts_with('&') {
-                    // Reference to a struct (e.g., &SpinBlurParams) — pass as reference
                     format!("&self.{clean_n}")
                 } else if t == "String" {
                     format!("self.{clean_n}.clone()")
@@ -90,14 +86,6 @@ pub fn generate_nodes(
                 }
             })
             .collect();
-        let full_domain_call = if call_args.is_empty() {
-            format!("filters::{domain_fn}(&src_pixels, &region_info)")
-        } else {
-            format!(
-                "filters::{domain_fn}(&src_pixels, &region_info, {})",
-                call_args.join(", ")
-            )
-        };
 
         code.push_str("#[allow(clippy::unnecessary_cast, unused_variables)]\n");
         code.push_str(&format!("impl ImageNode for {node_name} {{\n"));
@@ -109,29 +97,59 @@ pub fn generate_nodes(
             "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
         );
         code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
-        code.push_str("        let upstream_rect = self.input_rect(request, self.source_info.width, self.source_info.height);\n");
-        code.push_str("        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;\n");
-        code.push_str("        let region_info = ImageInfo {\n");
-        code.push_str("            width: upstream_rect.width,\n");
-        code.push_str("            height: upstream_rect.height,\n");
-        code.push_str("            ..self.source_info\n");
-        code.push_str("        };\n");
-        code.push_str(&format!("        let filtered = {full_domain_call}?;\n"));
-        code.push_str("        if upstream_rect == request {\n");
-        code.push_str("            Ok(filtered)\n");
-        code.push_str("        } else {\n");
-        code.push_str("            let bpp = bytes_per_pixel(self.source_info.format);\n");
-        code.push_str("            let sub = Rect::new(\n");
-        code.push_str("                request.x - upstream_rect.x,\n");
-        code.push_str("                request.y - upstream_rect.y,\n");
-        code.push_str("                request.width,\n");
-        code.push_str("                request.height,\n");
-        code.push_str("            );\n");
-        code.push_str("            let out_rect = Rect::new(0, 0, upstream_rect.width, upstream_rect.height);\n");
-        code.push_str("            Ok(crop_region(&filtered, out_rect, sub, bpp))\n");
-        code.push_str("        }\n");
-        code.push_str("    }\n\n");
-        code.push_str(&input_rect_body);
+
+        if f.rect_request {
+            // New style: delegate directly to filter function
+            let extra_args = if call_args.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", call_args.join(", "))
+            };
+            code.push_str("        let upstream_id = self.upstream;\n");
+            code.push_str("        let mut upstream = |rect: Rect| upstream_fn(upstream_id, rect);\n");
+            code.push_str(&format!(
+                "        filters::{domain_fn}(request, &mut upstream, &self.source_info{extra_args})\n"
+            ));
+        } else {
+            // Legacy style: expand via input_rect, call with (pixels, info, ...)
+            let input_rect_body = input_rect_body(f, param_structs);
+            let full_domain_call = if call_args.is_empty() {
+                format!("filters::{domain_fn}(&src_pixels, &region_info)")
+            } else {
+                format!(
+                    "filters::{domain_fn}(&src_pixels, &region_info, {})",
+                    call_args.join(", ")
+                )
+            };
+            code.push_str("        let upstream_rect = self.input_rect(request, self.source_info.width, self.source_info.height);\n");
+            code.push_str("        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;\n");
+            code.push_str("        let region_info = ImageInfo {\n");
+            code.push_str("            width: upstream_rect.width,\n");
+            code.push_str("            height: upstream_rect.height,\n");
+            code.push_str("            ..self.source_info\n");
+            code.push_str("        };\n");
+            code.push_str(&format!("        let filtered = {full_domain_call}?;\n"));
+            code.push_str("        if upstream_rect == request {\n");
+            code.push_str("            Ok(filtered)\n");
+            code.push_str("        } else {\n");
+            code.push_str("            let bpp = bytes_per_pixel(self.source_info.format);\n");
+            code.push_str("            let sub = Rect::new(\n");
+            code.push_str("                request.x - upstream_rect.x,\n");
+            code.push_str("                request.y - upstream_rect.y,\n");
+            code.push_str("                request.width,\n");
+            code.push_str("                request.height,\n");
+            code.push_str("            );\n");
+            code.push_str("            let out_rect = Rect::new(0, 0, upstream_rect.width, upstream_rect.height);\n");
+            code.push_str("            Ok(crop_region(&filtered, out_rect, sub, bpp))\n");
+            code.push_str("        }\n");
+            // input_rect override for legacy filters
+            code.push_str("    }\n\n");
+            code.push_str(&input_rect_body);
+        }
+
+        if f.rect_request {
+            code.push_str("    }\n\n");
+        }
 
         // upstream_id() for graph traversal
         code.push_str(

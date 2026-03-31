@@ -6,6 +6,11 @@
 
 use super::error::ImageError;
 use super::types::{DecodedImage, ImageInfo, PixelFormat};
+use rasmcore_pipeline::Rect;
+
+/// Upstream pixel request function. Filters with the rect-request signature
+/// call this to get pixels for any region they need.
+pub type UpstreamFn<'a> = dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + 'a;
 
 fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
     match format {

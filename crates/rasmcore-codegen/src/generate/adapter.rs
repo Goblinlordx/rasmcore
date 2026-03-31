@@ -107,8 +107,6 @@ fn generate_config_method(
         sig_parts.push(format!("wit_config: {wit_config_type}"));
     }
 
-    let full_call = format!("&pixels, &di, {}", call_params.join(", "));
-
     code.push_str(&format!(
         "    fn {trait_method}({}) -> Result<Vec<u8>, RasmcoreError> {{\n",
         sig_parts.join(", ")
@@ -118,9 +116,24 @@ fn generate_config_method(
         code.push_str(line);
         code.push('\n');
     }
-    code.push_str(&format!(
-        "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
-    ));
+
+    if f.rect_request {
+        let extra_call = if call_params.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", call_params.join(", "))
+        };
+        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
+        ));
+    } else {
+        let full_call = format!("&pixels, &di, {}", call_params.join(", "));
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
+        ));
+    }
     code.push_str("    }\n\n");
 }
 
@@ -167,9 +180,23 @@ fn generate_individual_method(
         "    fn {trait_method}({full_sig}) -> Result<Vec<u8>, RasmcoreError> {{\n"
     ));
     code.push_str("        let di = to_domain_image_info(&info);\n");
-    code.push_str(&format!(
-        "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
-    ));
+
+    if f.rect_request {
+        let extra_call = if call_params.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", call_params.join(", "))
+        };
+        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}(full_rect, &mut upstream, &di{extra_call}).map_err(to_wit_error)\n"
+        ));
+    } else {
+        code.push_str(&format!(
+            "        domain::filters::{domain_fn}({full_call}).map_err(to_wit_error)\n"
+        ));
+    }
     code.push_str("    }\n\n");
 }
 

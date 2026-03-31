@@ -48,6 +48,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             .unwrap_or(false);
 
         let fn_name = func.sig.ident.to_string();
+        let rect_request = detect_rect_request_sig(&func.sig);
         let params = extract_fn_params(&func.sig);
 
         return Some(FilterReg {
@@ -59,6 +60,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             overlap,
             point_op,
             color_op,
+            rect_request,
             fn_name,
             params,
             config_struct: None, // populated later by parse_source_files
@@ -67,7 +69,20 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
     None
 }
 
-/// Extract named parameters from function signature, skipping pixels/info.
+/// Detect if a function uses the new rect-request signature.
+/// Checks if the first parameter is `request: Rect`.
+fn detect_rect_request_sig(sig: &syn::Signature) -> bool {
+    for input in &sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = input {
+            let full = quote::quote!(#pat_type).to_string();
+            return full.contains("request") && full.contains("Rect");
+        }
+    }
+    false
+}
+
+/// Extract named parameters from function signature, skipping pixels/info
+/// (legacy) or request/upstream/info (new rect-request style).
 fn extract_fn_params(sig: &syn::Signature) -> Vec<(String, String)> {
     let mut params = Vec::new();
     for input in &sig.inputs {
@@ -77,6 +92,10 @@ fn extract_fn_params(sig: &syn::Signature) -> Vec<(String, String)> {
                 || full.contains("info")
                 || full.contains("ImageInfo")
                 || full.contains("self")
+                || full.contains("request : Rect")
+                || full.contains("request: Rect")
+                || full.contains("upstream")
+                || full.contains("UpstreamFn")
             {
                 continue;
             }
