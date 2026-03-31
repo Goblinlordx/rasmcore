@@ -9978,10 +9978,14 @@ pub fn dilate_registered(
     reference = "erosion then dilation"
 )]
 pub fn morph_open_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MorphOpenParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
@@ -9997,10 +10001,14 @@ pub fn morph_open_registered(
     reference = "dilation then erosion"
 )]
 pub fn morph_close_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MorphCloseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
@@ -10016,10 +10024,14 @@ pub fn morph_close_registered(
     reference = "dilation minus erosion"
 )]
 pub fn morph_gradient_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MorphGradientParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
@@ -10035,10 +10047,14 @@ pub fn morph_gradient_registered(
     reference = "input minus opening"
 )]
 pub fn morph_tophat_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MorphTophatParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
@@ -10054,10 +10070,14 @@ pub fn morph_tophat_registered(
     reference = "closing minus input"
 )]
 pub fn morph_blackhat_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MorphBlackhatParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
