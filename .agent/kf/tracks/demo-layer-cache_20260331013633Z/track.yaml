@@ -1,0 +1,111 @@
+id: demo-layer-cache_20260331013633Z
+title: Demo UI — Layer Cache Integration for Interactive Editing
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Update the demo web UI to create a LayerCache on startup and reuse it
+    across pipeline invocations. When the user adjusts a single filter
+    parameter, only the changed node and downstream recompute — upstream
+    nodes serve from cache. Show cache stats in the UI.
+  context: |
+    The demo UI (demo/src/) builds a new pipeline for every parameter
+    change. Currently each change recomputes the entire chain from source
+    through all filters. With the LayerCache, the pipeline can skip
+    recomputing unchanged upstream nodes.
+
+    User experience improvement: adjusting brightness on the last filter
+    of a 5-filter chain should feel near-instant instead of reprocessing
+    decode + resize + blur + sharpen + brightness from scratch.
+  codebase_analysis: |
+    DEMO ARCHITECTURE:
+    - demo/src/main.js — UI controls, dispatches to pipeline worker
+    - demo/src/pipeline.js — builds pipeline from param state, calls WASM
+    - demo/src/pipeline-worker.js — web worker running WASM component
+    - demo/pipeline.html — pipeline builder UI
+
+    CURRENT FLOW (no caching):
+    1. User changes a slider
+    2. JS rebuilds pipeline params object
+    3. Worker receives params, creates new ImagePipeline
+    4. Adds source, filters, writes output
+    5. Returns encoded image to UI
+    6. Pipeline dropped, all state lost
+
+    WITH LAYER CACHE:
+    1. Worker creates LayerCache on init (once, persists across messages)
+    2. User changes a slider
+    3. Worker creates pipeline WITH cache reference
+    4. Unchanged upstream nodes hit cache — skip computation
+    5. Only changed node + downstream recompute
+    6. Pipeline dropped, cache persists for next change
+
+    SDK INTEGRATION:
+    - jco-generated JS bindings expose layer-cache resource
+    - Worker holds cache instance as module-level variable
+    - Pipeline constructor passes cache handle
+  acceptance_criteria:
+    - LayerCache created once in web worker on initialization
+    - Pipeline constructor receives cache reference on every invocation
+    - Adjusting the last filter in a chain is measurably faster (2nd+ run)
+    - Cache stats displayed in demo UI (entries, hits, misses, size)
+    - Cache clear button in UI
+    - Existing demo functionality unchanged (just faster)
+  out_of_scope: |
+    Cache persistence across page reloads. Cache size configuration UI.
+    Visual diff showing which nodes were cached vs recomputed.
+  technical_notes: |
+    WORKER CHANGES (pipeline-worker.js):
+
+    ```js
+    // Module-level cache (persists across messages)
+    let layerCache = null;
+
+    // On init:
+    layerCache = new LayerCache(64); // 64 MB budget
+
+    // On pipeline execution:
+    const pipeline = new ImagePipeline(layerCache);
+    // ... add nodes, write output
+    // Pipeline dropped, cache persists
+
+    // On cache clear message:
+    layerCache.clear();
+    ```
+
+    UI CHANGES (pipeline.html or main.js):
+    - Add cache stats display (small panel showing hits/misses/size)
+    - Add "Clear Cache" button
+    - Stats updated after each pipeline execution
+
+    PERFORMANCE MEASUREMENT:
+    - Log pipeline execution time (performance.now())
+    - Show in UI: "Pipeline: 45ms (3 cache hits, 1 miss)"
+plan:
+  - phase: Worker Integration
+    tasks:
+      - text: Create LayerCache in web worker on initialization
+        done: false
+      - text: Pass cache reference to ImagePipeline constructor
+        done: false
+      - text: Return cache stats with pipeline results
+        done: false
+  - phase: UI Updates
+    tasks:
+      - text: Add cache stats display panel (hits, misses, entries, size)
+        done: false
+      - text: Add Clear Cache button
+        done: false
+      - text: Show pipeline execution time
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify second pipeline run with same prefix is faster
+        done: false
+      - text: Verify cache stats update correctly in UI
+        done: false
+      - text: Existing demo smoke tests pass
+        done: false
+extra: {}
