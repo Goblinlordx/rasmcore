@@ -177,3 +177,11 @@ codegen-encoder-adapters_20260331015558Z:
   - codegen-crate-extract_20260331000001Z
 
 pipeline-read-api-redesign_20260331023844Z: []
+
+# Config struct migration chain
+config-struct-codegen_20260331041856Z:
+  - codegen-wit-sdk-unify_20260331040430Z
+config-struct-migrate-multi_20260331041857Z:
+  - config-struct-codegen_20260331041856Z
+config-struct-migrate-simple_20260331041858Z:
+  - config-struct-migrate-multi_20260331041857Z
