@@ -7893,10 +7893,14 @@ pub struct DodgeParams {
 /// Validated: pixel-exact match against reference formula (max_diff=0).
 #[rasmcore_macros::register_filter(name = "dodge", category = "enhancement")]
 pub fn dodge(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &DodgeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let exposure = config.exposure;
     let range = config.range;
 
@@ -20052,7 +20056,9 @@ mod dodge_burn_tests {
     fn dodge_identity_at_zero() {
         let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(8, 8);
-        let result = dodge(&pixels, &info, &DodgeParams { exposure: 0.0, range: 1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 0.0, range: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20082,7 +20088,9 @@ mod dodge_burn_tests {
             pixels[pi + 2] = 230;
         }
         let info = rgb_info(8, 8);
-        let result = dodge(&pixels, &info, &DodgeParams { exposure: 100.0, range: 0 }).unwrap(); // shadows only
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 100.0, range: 0 }).unwrap(); // shadows only
 
         // Dark pixels should be brighter
         assert!(result[0] > 30, "dark pixel should be dodged: {}", result[0]);
@@ -20142,7 +20150,9 @@ mod dodge_burn_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = dodge(&pixels, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
         for i in 0..16 {
             assert_eq!(result[i * 4 + 3], pixels[i * 4 + 3]);
         }
@@ -20167,7 +20177,9 @@ mod dodge_burn_tests {
         let info = rgb_info(w, h);
 
         // Dodge midtones at 50%
-        let result = dodge(&pixels, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = dodge(r, &mut u, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
         let exposure = 0.5f32;
 
         let mut max_diff = 0u8;
