@@ -10675,7 +10675,7 @@ pub fn draw_circle_filter(
     Ok(result)
 }
 
-/// Draw a polygon on the image from vertex coordinates.
+/// Draw a polygon on the image. Points are flat `[x1,y1,x2,y2,...]` coordinates.
 #[rasmcore_macros::register_filter(
     name = "draw_polygon",
     category = "draw",
@@ -10686,10 +10686,9 @@ pub fn draw_circle_filter(
 pub fn draw_polygon_filter(
     pixels: &[u8],
     info: &ImageInfo,
-    vertices: &str,
+    points: &[f32],
     config: &DrawPolygonParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let vertices = parse_vertices(vertices)?;
     let fill_color = [
         config.fill_color.r,
         config.fill_color.g,
@@ -10705,43 +10704,13 @@ pub fn draw_polygon_filter(
     let (result, _) = super::draw::draw_polygon(
         pixels,
         info,
-        &vertices,
+        points,
         fill_color,
         stroke_color,
         config.stroke_width,
         config.filled,
     )?;
     Ok(result)
-}
-
-/// Parse a "x1,y1;x2,y2;x3,y3" vertex string into coordinate pairs.
-fn parse_vertices(s: &str) -> Result<Vec<(f32, f32)>, ImageError> {
-    let mut vertices = Vec::new();
-    for pair in s.split(';') {
-        let pair = pair.trim();
-        if pair.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = pair.split(',').collect();
-        if parts.len() != 2 {
-            return Err(ImageError::InvalidParameters(format!(
-                "draw_polygon: invalid vertex '{pair}', expected 'x,y'"
-            )));
-        }
-        let x: f32 = parts[0].trim().parse().map_err(|_| {
-            ImageError::InvalidParameters(format!("draw_polygon: invalid x in '{pair}'"))
-        })?;
-        let y: f32 = parts[1].trim().parse().map_err(|_| {
-            ImageError::InvalidParameters(format!("draw_polygon: invalid y in '{pair}'"))
-        })?;
-        vertices.push((x, y));
-    }
-    if vertices.len() < 3 {
-        return Err(ImageError::InvalidParameters(
-            "draw_polygon: need at least 3 vertices".into(),
-        ));
-    }
-    Ok(vertices)
 }
 
 /// Draw an ellipse on the image.

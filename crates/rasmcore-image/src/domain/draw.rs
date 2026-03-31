@@ -264,25 +264,28 @@ pub fn draw_circle(
     Ok((pixmap_to_pixels(&pixmap), out_info))
 }
 
-/// Draw a polygon on the image from a list of vertices.
+/// Draw a polygon on the image from a flat coordinate array.
 ///
-/// Vertices are (x, y) pairs. The path is closed automatically.
+/// `points` is `[x1, y1, x2, y2, x3, y3, ...]` — must have even length
+/// and at least 3 pairs (6 values). The path is closed automatically.
 /// If `filled` is true, the polygon is filled. Otherwise only the outline
 /// is drawn with the given `stroke_width`.
 pub fn draw_polygon(
     pixels: &[u8],
     info: &ImageInfo,
-    vertices: &[(f32, f32)],
+    points: &[f32],
     fill_color: [u8; 4],
     stroke_color: [u8; 4],
     stroke_width: f32,
     filled: bool,
 ) -> Result<(Vec<u8>, ImageInfo), ImageError> {
-    if vertices.len() < 3 {
-        return Err(ImageError::InvalidParameters(
-            "draw_polygon: need at least 3 vertices".into(),
-        ));
+    if points.len() < 6 || points.len() % 2 != 0 {
+        return Err(ImageError::InvalidParameters(format!(
+            "draw_polygon: need at least 3 coordinate pairs (6 values), got {}",
+            points.len()
+        )));
     }
+    let vertices: Vec<(f32, f32)> = points.chunks_exact(2).map(|c| (c[0], c[1])).collect();
     let (rgba, out_info) = ensure_rgba8(pixels, info)?;
     let mut pixmap = pixels_to_pixmap(&rgba, out_info.width, out_info.height)?;
 
@@ -1072,11 +1075,11 @@ mod tests {
     #[test]
     fn draw_polygon_triangle_filled() {
         let (px, info) = white_rgba(100, 100);
-        let verts = vec![(50.0, 10.0), (10.0, 90.0), (90.0, 90.0)];
+        let points = [50.0, 10.0, 10.0, 90.0, 90.0, 90.0]; // x1,y1,x2,y2,x3,y3
         let (result, _) = draw_polygon(
             &px,
             &info,
-            &verts,
+            &points,
             [255, 0, 0, 255],
             [0, 0, 0, 255],
             0.0,
@@ -1092,11 +1095,11 @@ mod tests {
     #[test]
     fn draw_polygon_square_stroked() {
         let (px, info) = white_rgba(100, 100);
-        let verts = vec![(20.0, 20.0), (80.0, 20.0), (80.0, 80.0), (20.0, 80.0)];
+        let points = [20.0, 20.0, 80.0, 20.0, 80.0, 80.0, 20.0, 80.0];
         let (result, _) = draw_polygon(
             &px,
             &info,
-            &verts,
+            &points,
             [0, 0, 0, 0],
             [0, 0, 255, 255],
             3.0,
@@ -1113,12 +1116,28 @@ mod tests {
     }
 
     #[test]
-    fn draw_polygon_too_few_vertices_errors() {
+    fn draw_polygon_too_few_points_errors() {
+        let (px, info) = white_rgba(100, 100);
+        // Only 2 pairs (4 values) — need at least 3 pairs (6 values)
+        let result = draw_polygon(
+            &px,
+            &info,
+            &[10.0, 10.0, 20.0, 20.0],
+            [0, 0, 0, 255],
+            [0, 0, 0, 255],
+            1.0,
+            true,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn draw_polygon_odd_length_errors() {
         let (px, info) = white_rgba(100, 100);
         let result = draw_polygon(
             &px,
             &info,
-            &[(10.0, 10.0), (20.0, 20.0)],
+            &[10.0, 10.0, 20.0, 20.0, 30.0], // odd — invalid
             [0, 0, 0, 255],
             [0, 0, 0, 255],
             1.0,
