@@ -99,14 +99,39 @@ try {
         if (p.hint === 'rc.percentage') {
           return { name: p.name, type: 'number', hint: p.hint, min: 0, max: 100, step: 1, default: 50, label: p.label || p.name };
         }
+        if (p.hint === 'rc.toggle') {
+          return { name: p.name, type: 'toggle', hint: p.hint, default: p.default === 'true' || p.default === '1', label: p.label || p.name };
+        }
+        if (p.hint === 'rc.text') {
+          return { name: p.name, type: 'text', hint: p.hint, default: p.default || '', label: p.label || p.name };
+        }
+        // Parse numeric defaults for all remaining hints
+        const numMin = p.min != null ? parseFloat(p.min) : undefined;
+        const numMax = p.max != null ? parseFloat(p.max) : undefined;
+        const numStep = p.step != null ? parseFloat(p.step) : undefined;
+        const numDefault = p.default != null && p.default !== '' ? (isNaN(Number(p.default)) ? p.default : Number(p.default)) : 0;
+        // Map remaining rc.* hints to specialized number types
+        if (p.hint === 'rc.pixels' || p.hint === 'rc.spinner' || p.hint === 'rc.seed') {
+          return { name: p.name, type: 'spinner', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+        }
+        if (p.hint === 'rc.log_slider') {
+          return { name: p.name, type: 'log_slider', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+        }
+        if (p.hint === 'rc.signed_slider') {
+          return { name: p.name, type: 'signed_slider', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+        }
+        if (p.hint === 'rc.opacity') {
+          return { name: p.name, type: 'opacity', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+        }
+        if (p.hint === 'rc.temperature_k') {
+          return { name: p.name, type: 'temperature', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+        }
         return {
           name: p.name,
           type: 'number',
           hint: p.hint || '',
-          min: p.min != null ? parseFloat(p.min) : undefined,
-          max: p.max != null ? parseFloat(p.max) : undefined,
-          step: p.step != null ? parseFloat(p.step) : undefined,
-          default: p.default != null && p.default !== '' ? (isNaN(Number(p.default)) ? p.default : Number(p.default)) : 0,
+          min: numMin, max: numMax, step: numStep,
+          default: numDefault,
           label: p.label || p.name,
         };
       });
@@ -781,7 +806,159 @@ function renderChain() {
             schedulePreview();
           });
           paramDiv.appendChild(input);
+        } else if (p.type === 'toggle') {
+          // Toggle switch for boolean params
+          const label = document.createElement('label');
+          label.className = 'toggle-label';
+          label.textContent = p.label || p.name;
+          paramDiv.appendChild(label);
+          const toggle = document.createElement('input');
+          toggle.type = 'checkbox';
+          toggle.className = 'toggle-switch';
+          toggle.checked = !!node.paramValues[p.name];
+          toggle.addEventListener('change', () => {
+            node.paramValues[p.name] = toggle.checked;
+            schedulePreview();
+          });
+          paramDiv.appendChild(toggle);
+        } else if (p.type === 'text') {
+          // Text input for string params
+          const label = document.createElement('label');
+          label.textContent = p.label || p.name;
+          paramDiv.appendChild(label);
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'text-input';
+          input.value = node.paramValues[p.name] || '';
+          input.addEventListener('change', () => {
+            node.paramValues[p.name] = input.value;
+            schedulePreview();
+          });
+          paramDiv.appendChild(input);
+        } else if (p.type === 'spinner') {
+          // Number input with spinner arrows (no slider) for pixel coords, seeds
+          const label = document.createElement('label');
+          const valSpan = document.createElement('span');
+          valSpan.textContent = node.paramValues[p.name];
+          label.textContent = (p.label || p.name) + ' ';
+          label.appendChild(valSpan);
+          paramDiv.appendChild(label);
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.className = 'spinner-input';
+          if (p.min != null) input.min = p.min;
+          if (p.max != null) input.max = p.max;
+          if (p.step != null) input.step = p.step;
+          input.value = node.paramValues[p.name];
+          input.addEventListener('input', () => {
+            node.paramValues[p.name] = parseFloat(input.value);
+            valSpan.textContent = input.value;
+            schedulePreview();
+          });
+          paramDiv.appendChild(input);
+        } else if (p.type === 'log_slider') {
+          // Logarithmic slider — more precision at low values
+          const label = document.createElement('label');
+          const valSpan = document.createElement('span');
+          valSpan.textContent = node.paramValues[p.name];
+          label.textContent = (p.label || p.name) + ' ';
+          label.appendChild(valSpan);
+          paramDiv.appendChild(label);
+          const input = document.createElement('input');
+          input.type = 'range';
+          input.className = 'log-slider';
+          // Map to 0-1000 internal range for smooth dragging
+          input.min = 0; input.max = 1000; input.step = 1;
+          const pMin = p.min || 0, pMax = p.max || 100;
+          const toSlider = (v) => Math.round(Math.log(v - pMin + 1) / Math.log(pMax - pMin + 1) * 1000);
+          const fromSlider = (s) => Math.pow(pMax - pMin + 1, s / 1000) + pMin - 1;
+          input.value = toSlider(node.paramValues[p.name]);
+          input.addEventListener('input', () => {
+            const realVal = Math.round(fromSlider(parseFloat(input.value)) * 100) / 100;
+            node.paramValues[p.name] = realVal;
+            valSpan.textContent = realVal;
+            schedulePreview();
+          });
+          paramDiv.appendChild(input);
+        } else if (p.type === 'signed_slider') {
+          // Bipolar slider centered at 0
+          const label = document.createElement('label');
+          const valSpan = document.createElement('span');
+          const v = node.paramValues[p.name];
+          valSpan.textContent = (v >= 0 ? '+' : '') + v;
+          label.textContent = (p.label || p.name) + ' ';
+          label.appendChild(valSpan);
+          paramDiv.appendChild(label);
+          const input = document.createElement('input');
+          input.type = 'range';
+          input.className = 'signed-slider';
+          input.min = p.min; input.max = p.max; input.step = p.step;
+          input.value = node.paramValues[p.name];
+          input.addEventListener('input', () => {
+            const val = parseFloat(input.value);
+            node.paramValues[p.name] = val;
+            valSpan.textContent = (val >= 0 ? '+' : '') + val;
+            schedulePreview();
+          });
+          paramDiv.appendChild(input);
+        } else if (p.type === 'opacity') {
+          // Thin slider + text for 0-1 amounts
+          const label = document.createElement('label');
+          const valSpan = document.createElement('span');
+          valSpan.textContent = node.paramValues[p.name];
+          label.textContent = (p.label || p.name) + ' ';
+          label.appendChild(valSpan);
+          paramDiv.appendChild(label);
+          const wrap = document.createElement('div');
+          wrap.className = 'opacity-wrap';
+          const input = document.createElement('input');
+          input.type = 'range';
+          input.className = 'opacity-slider';
+          input.min = p.min || 0; input.max = p.max || 1; input.step = p.step || 0.01;
+          input.value = node.paramValues[p.name];
+          const numInput = document.createElement('input');
+          numInput.type = 'number';
+          numInput.className = 'opacity-number';
+          numInput.min = p.min || 0; numInput.max = p.max || 1; numInput.step = p.step || 0.01;
+          numInput.value = node.paramValues[p.name];
+          input.addEventListener('input', () => {
+            const val = parseFloat(input.value);
+            node.paramValues[p.name] = val;
+            numInput.value = val;
+            valSpan.textContent = val;
+            schedulePreview();
+          });
+          numInput.addEventListener('input', () => {
+            const val = parseFloat(numInput.value);
+            node.paramValues[p.name] = val;
+            input.value = val;
+            valSpan.textContent = val;
+            schedulePreview();
+          });
+          wrap.appendChild(input);
+          wrap.appendChild(numInput);
+          paramDiv.appendChild(wrap);
+        } else if (p.type === 'temperature') {
+          // Slider with blue-to-warm gradient track
+          const label = document.createElement('label');
+          const valSpan = document.createElement('span');
+          valSpan.textContent = node.paramValues[p.name] + 'K';
+          label.textContent = (p.label || p.name) + ' ';
+          label.appendChild(valSpan);
+          paramDiv.appendChild(label);
+          const input = document.createElement('input');
+          input.type = 'range';
+          input.className = 'temperature-slider';
+          input.min = p.min; input.max = p.max; input.step = p.step;
+          input.value = node.paramValues[p.name];
+          input.addEventListener('input', () => {
+            node.paramValues[p.name] = parseFloat(input.value);
+            valSpan.textContent = input.value + 'K';
+            schedulePreview();
+          });
+          paramDiv.appendChild(input);
         } else if (p.type === 'number') {
+          // Default: linear range slider
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
           valSpan.textContent = node.paramValues[p.name];
