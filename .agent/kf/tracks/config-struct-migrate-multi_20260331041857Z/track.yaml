@@ -1,79 +1,102 @@
 id: config-struct-migrate-multi_20260331041857Z
-title: "Migrate Multi-Param Filters to Config Struct Signatures"
+title: Migrate Multi-Param Filters to Config Struct Signatures
 type: refactor
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Change function signatures for all filters with 3+ params to take a
-    config struct instead of individual arguments. Update all call sites,
-    tests, and adapter destructuring.
-  context: |
-    With codegen infrastructure supporting config structs, this track does
+  summary: 'Change function signatures for all filters with 3+ params to take a config struct instead of individual arguments.
+    Update all call sites, tests, and adapter destructuring.
+
+    '
+  context: 'With codegen infrastructure supporting config structs, this track does
+
     the actual migration for the highest-value filters — those with 3+
+
     parameters where a config struct eliminates long argument lists.
-  codebase_analysis: |
-    Filters with 3+ params (estimated ~40):
+
+    '
+  codebase_analysis: 'Filters with 3+ params (estimated ~40):
+
     - Drawing: draw_line (6 params), draw_rect (7), draw_circle (5), draw_text (5)
+
     - Grading: asc_cdl (9), lift_gamma_gain (9), split_toning (3)
+
     - Spatial: bilateral (3), bokeh_blur (3), motion_blur (3), tilt_shift (4), lens_blur (3)
+
     - Color: colorize (4), channel_mixer (9), sparse_color (varies)
+
     - Enhancement: clahe (3), retinex_msr (3), vignette (3), shadow_highlight (5+)
+
     - Threshold: adaptive_threshold (4), canny (3)
+
     - Distortion: barrel (3), polar/depolar (3+), wave (4+), swirl (3+)
+
     - Etc.
 
+
     Each migration: change fn signature, update all callers (tests, adapters,
+
     pipeline nodes), verify tests pass.
+
+    '
   acceptance_criteria:
-    - All filters with 3+ params use config struct signature
-    - All test call sites updated
-    - Codegen adapter destructures config to call domain function
-    - Pipeline nodes store config struct for these filters
-    - Full cargo test pass
-    - No regression in param-manifest.json
-  out_of_scope: |
-    Filters with 0-2 params (next track).
+  - All filters with 3+ params use config struct signature
+  - All test call sites updated
+  - Codegen adapter destructures config to call domain function
+  - Pipeline nodes store config struct for these filters
+  - Full cargo test pass
+  - No regression in param-manifest.json
+  out_of_scope: 'Filters with 0-2 params (next track).
+
     New filter implementations.
-  technical_notes: |
-    Migration per filter:
+
+    '
+  technical_notes: 'Migration per filter:
+
     1. Change fn signature from blur(pixels, info, r, s, t) to blur(pixels, info, config)
+
     2. Destructure config at top of function body
+
     3. Update all test call sites to construct config struct
+
     4. Verify tests pass for that filter
+
     5. Commit batch
 
+
     Batch by category to keep commits logical.
+
+    '
 plan:
-  - phase: Drawing + Grading (highest param count)
-    tasks:
-      - text: Migrate draw_line, draw_rect, draw_circle, draw_text (5-7 params each)
-        done: false
-      - text: Migrate asc_cdl, lift_gamma_gain, split_toning (3-9 params each)
-        done: false
-      - text: Migrate channel_mixer, gradient_map, sparse_color
-        done: false
-      - text: Update all test call sites for migrated filters
-        done: false
-  - phase: Spatial + Enhancement
-    tasks:
-      - text: Migrate bilateral, bokeh_blur, motion_blur, tilt_shift, lens_blur
-        done: false
-      - text: Migrate clahe, retinex_msr, retinex_msrcr, shadow_highlight, vignette
-        done: false
-      - text: Migrate canny, adaptive_threshold
-        done: false
-      - text: Update all test call sites for migrated filters
-        done: false
-  - phase: Distortion + Remaining
-    tasks:
-      - text: Migrate barrel, polar, depolar, wave, ripple, swirl, spherize
-        done: false
-      - text: Migrate remaining 3+ param filters not yet covered
-        done: false
-      - text: Full cargo test pass
-        done: false
-      - text: Verify codegen generates config-based adapter for all migrated filters
-        done: false
+- phase: Drawing + Grading (highest param count)
+  tasks:
+  - text: Migrate draw_line, draw_rect, draw_circle, draw_text (5-7 params each)
+    done: true
+  - text: Migrate asc_cdl, lift_gamma_gain, split_toning (3-9 params each)
+    done: true
+  - text: Migrate channel_mixer, gradient_map, sparse_color
+    done: true
+  - text: Update all test call sites for migrated filters
+    done: true
+- phase: Spatial + Enhancement
+  tasks:
+  - text: Migrate bilateral, bokeh_blur, motion_blur, tilt_shift, lens_blur
+    done: true
+  - text: Migrate clahe, retinex_msr, retinex_msrcr, shadow_highlight, vignette
+    done: true
+  - text: Migrate canny, adaptive_threshold
+    done: true
+  - text: Update all test call sites for migrated filters
+    done: true
+- phase: Distortion + Remaining
+  tasks:
+  - text: Migrate barrel, polar, depolar, wave, ripple, swirl, spherize
+    done: true
+  - text: Migrate remaining 3+ param filters not yet covered
+    done: true
+  - text: Full cargo test pass
+    done: true
+  - text: Verify codegen generates config-based adapter for all migrated filters
+    done: true
 extra: {}
