@@ -3,6 +3,7 @@
 //! Each module takes structured `CodegenData` and produces a specific output format.
 
 pub mod adapter;
+pub mod cli_dispatch;
 pub mod helpers;
 pub mod manifest;
 pub mod pipeline;
@@ -47,6 +48,10 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     // Rust native SDK
     let sdk_rs = sdk_rust::generate(&data.filters);
     fs::write(out_dir.join("generated_sdk_rust.rs"), &sdk_rs).unwrap();
+
+    // CLI dispatch table
+    let cli_dispatch = cli_dispatch::generate(&data.filters);
+    fs::write(out_dir.join("generated_cli_dispatch.rs"), &cli_dispatch).unwrap();
 
     // WIT declarations (to stderr for review)
     let wit_decls = wit::generate(&data.filters);

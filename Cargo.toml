@@ -49,6 +49,7 @@ members = [
     "tests/wasm-integration",
     "tests/codec-parity",
     "examples/custom-filter",
+    "crates/rasmcore-cli",
 ]
 
 [workspace.package]
