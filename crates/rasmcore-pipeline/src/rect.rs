@@ -74,6 +74,42 @@ impl Rect {
         Rect::new(x, y, right - x, bottom - y)
     }
 
+    /// Clamp this rect to image bounds (no expansion).
+    pub fn clamp(&self, bounds_width: u32, bounds_height: u32) -> Rect {
+        let x = self.x.min(bounds_width);
+        let y = self.y.min(bounds_height);
+        let right = self.right().min(bounds_width);
+        let bottom = self.bottom().min(bounds_height);
+        Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
+    }
+
+    /// Expand this rect uniformly on all sides, clamped to bounds.
+    pub fn expand_uniform(&self, amount: u32, bounds_width: u32, bounds_height: u32) -> Rect {
+        self.expand(&Overlap::uniform(amount), bounds_width, bounds_height)
+    }
+
+    /// Expand this rect asymmetrically, clamped to bounds.
+    pub fn expand_asymmetric(
+        &self,
+        left: u32,
+        top: u32,
+        right: u32,
+        bottom: u32,
+        bounds_width: u32,
+        bounds_height: u32,
+    ) -> Rect {
+        self.expand(
+            &Overlap {
+                left,
+                top,
+                right,
+                bottom,
+            },
+            bounds_width,
+            bounds_height,
+        )
+    }
+
     /// Expand this rect by the given overlap on each side, clamped to bounds.
     pub fn expand(&self, overlap: &Overlap, bounds_width: u32, bounds_height: u32) -> Rect {
         let x = self.x.saturating_sub(overlap.left);

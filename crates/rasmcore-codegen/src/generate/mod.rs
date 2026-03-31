@@ -38,7 +38,7 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     fs::write(out_dir.join("generated_filter_adapter.rs"), &adapter_code).unwrap();
 
     // Pipeline node structs
-    let nodes_code = pipeline::generate_nodes(&data.filters);
+    let nodes_code = pipeline::generate_nodes(&data.filters, &data.param_structs);
     fs::write(out_dir.join("generated_pipeline_nodes.rs"), &nodes_code).unwrap();
 
     // Pipeline adapter macro

@@ -33,8 +33,25 @@ pub trait ImageNode {
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError>;
 
+    /// Compute the input rect needed to produce the given output rect.
+    ///
+    /// Operations expand the output rect by their kernel/neighborhood size.
+    /// Point operations return the output rect unchanged. Spatial operations
+    /// expand by their radius/kernel size. Distortion operations compute
+    /// the bounding box of their inverse transform.
+    ///
+    /// `bounds_w`/`bounds_h` are the full image dimensions for clamping.
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        // Default: no expansion (point operation)
+        output.clamp(bounds_w, bounds_h)
+    }
+
     /// Overlap this node needs from upstream for each output region.
-    fn overlap(&self) -> Overlap;
+    /// DEPRECATED: Use input_rect() instead. Kept for backward compatibility
+    /// during migration — will be removed once all nodes use input_rect().
+    fn overlap(&self) -> Overlap {
+        Overlap::zero()
+    }
 
     /// Access pattern hint.
     fn access_pattern(&self) -> AccessPattern;
