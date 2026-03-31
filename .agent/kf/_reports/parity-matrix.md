@@ -156,6 +156,8 @@ All previously unregistered filters have been registered via config-struct migra
 | Gamma | done | yes (gamma) | yes (gamma) | adjustment | LUT-collapsible |
 | Levels | done | yes (linear) | yes (level) | adjustment | 5-param (black/white in/out + gamma) |
 | Sigmoidal contrast | done | - | yes (sigmoidal-contrast) | adjustment | |
+| Exposure | done | numpy f64 | - | adjustment | LUT-collapsible, PS-style EV+offset+gamma |
+| Color balance | done | numpy f64 | - | adjustment | Shadow/mid/highlight CMY-RGB, preserve lum |
 | Dodge | done | - | yes (dodge) | enhancement | Lighten shadows |
 | Burn | done | - | yes (burn) | enhancement | Darken highlights |
 | Shadow/highlight | done | - | - | enhancement | Frequency-separated recovery |

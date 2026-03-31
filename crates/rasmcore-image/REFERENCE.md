@@ -1079,6 +1079,103 @@ minimum, `rank=0.5` → median (matches existing `median` filter exactly),
 
 ---
 
+### Exposure — Pixel-Exact (Pure EV) / Deterministic (With Gamma)
+
+**Reference:** numpy 2.4.3 f64 formula
+
+**Formula:**
+```text
+out = clamp01((in/255 + offset) * 2^ev) ^ (1/gamma_correction) * 255
+```
+
+| Test | Reference | MAE | Max Error | Status |
+|------|-----------|-----|-----------|--------|
+| 0EV, no offset, gamma=1.0 | Identity | 0.0000 | 0 | Exact |
+| +1EV | numpy `clamp(px*2.0)` | 0.0000 | 0 | Exact |
+| -1EV | numpy `clamp(px*0.5)` | 0.0000 | 0 | Exact |
+| offset=0.1 | numpy `clamp(px+0.1)` | 0.0000 | 0 | Exact |
+| gamma=2.2 | numpy `powf(1/2.2)` | ≤1.0 | 1 | f32 rounding |
+| combined (+0.5EV, offset=-0.05, gamma=1.5) | numpy full formula | ≤1.0 | 1 | f32 rounding |
+
+**Implementation:** LUT-based point operation (256-entry u8 or 65536-entry u16).
+Fully composable with other LUT ops (brightness, contrast, gamma, levels, etc.)
+via `compose_luts()`. The LUT is built once at plan time, applied with a single
+memory pass at runtime.
+
+**Where it differs:** Operations involving `powf()` (gamma correction) may produce
+±1 at u8 rounding boundaries because Rust's f32 `powf()` and numpy's f64 `**`
+operator accumulate differently. Pure EV-based operations (integer or fractional
+stops without gamma) are pixel-exact because they reduce to multiply+clamp with
+no transcendental function.
+
+**Alignment details:**
+- EV scaling: `2.0f32.powf(ev)` — matches camera exposure behavior (1 stop = 2x)
+- Offset applied pre-scale: `(input + offset) * scale` — matches PS Exposure dialog
+- Gamma applied post-clamp: `clamped.powf(1.0 / gamma)` — matches PS gamma slider
+- LUT build uses f32 throughout, rounding via `(v * 255.0 + 0.5) as u8`
+- 16-bit path uses separate 65536-entry LUT with f32 precision
+
+**Tests:** `filter_reference_parity::exact_exposure_*`, `point_ops::tests::exposure_*`
+
+---
+
+### Color Balance — Deterministic (Max ±1)
+
+**Reference:** numpy 2.4.3 f64 formula (same tonal weight model)
+
+**Formula:**
+```text
+luma = 0.2126*R + 0.7152*G + 0.0722*B        (Rec. 709)
+shadow_w = min((1 - luma)^2 * 1.5, 1.0)
+highlight_w = min(luma^2 * 1.5, 1.0)
+midtone_w = max(1 - shadow_w - highlight_w, 0)
+
+dR = shadow[0]*sw + midtone[0]*mw + highlight[0]*hw
+dG = shadow[1]*sw + midtone[1]*mw + highlight[1]*hw
+dB = shadow[2]*sw + midtone[2]*mw + highlight[2]*hw
+
+out = clamp01(in + [dR, dG, dB])
+
+if preserve_luminosity:
+    new_luma = 0.2126*out_R + 0.7152*out_G + 0.0722*out_B
+    out *= luma / new_luma
+```
+
+| Test | Reference | MAE | Max Error | Status |
+|------|-----------|-----|-----------|--------|
+| Identity (all zeros) | Self identity | 0.0000 | 0 | Exact |
+| Shadow red=50, no lum | numpy f64 tonal weights | ≤1.0 | 1 | f32 rounding |
+| Midtone green=75, no lum | numpy f64 tonal weights | ≤1.0 | 1 | f32 rounding |
+| Mixed + preserve_lum | numpy f64 luma rescale | ≤1.0 | 1 | f32 rounding |
+
+**Implementation:** Per-pixel RGB transform via `apply_rgb_transform()` (same
+infrastructure as lift/gamma/gain and split toning). Not LUT-collapsible because
+the transform depends on per-pixel luminance.
+
+**Where it differs:** f32 vs f64 in luminance computation and tonal weight
+calculation causes ±1 at u8 boundaries. The `preserve_luminosity` rescale
+amplifies this slightly because the luma ratio `old_luma / new_luma` is computed
+in f32.
+
+**Photoshop alignment note:** Photoshop uses proprietary tonal range curves
+that are not publicly documented. Our quadratic weight model approximates the
+PS visual behavior but is NOT calibrated against PS pixel output. The numpy
+reference validates internal consistency (our Rust f32 matches our documented
+formula in f64), not PS bit-for-bit reproduction. A future calibration track
+could adjust the weight curves using PS output samples.
+
+**CMY-RGB axis mapping:**
+- `cyan_red > 0` → adds to R channel (toward red)
+- `cyan_red < 0` → subtracts from R channel (toward cyan)
+- `magenta_green > 0` → adds to G channel (toward green)
+- `yellow_blue > 0` → adds to B channel (toward blue)
+- Params range [-100, 100], internally normalized to [-1, 1]
+
+**Tests:** `filter_reference_parity::exact_color_balance_identity`,
+`filter_reference_parity::close_color_balance_*`, `color_grading::tests::color_balance_*`
+
+---
+
 ## Adding New Filters
 
 When adding a new filter to `rasmcore-image`:

@@ -1245,3 +1245,310 @@ finally:
         "GIF decode divergence too high: MAE={mae:.4} (expected < 5.0 for palette-quantized)"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPOSURE — Photoshop-style logarithmic brightness (LUT-based)
+// Reference: numpy f64 formula (gold standard for point operations)
+//
+// Formula: out = clamp01((in/255 + offset) * 2^ev) ^ (1/gamma) * 255
+// Should be pixel-exact or max_err=1 due to f32 LUT quantization.
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_exposure_identity() {
+    // 0 EV, 0 offset, gamma 1.0 = identity
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+    let config = filters::ExposureParams {
+        ev: 0.0,
+        offset: 0.0,
+        gamma_correction: 1.0,
+    };
+    let result = filters::exposure(&pixels, &info, &config).unwrap();
+    assert_exact("exposure(0EV)", &result, &pixels);
+}
+
+#[test]
+fn exact_exposure_plus1ev_against_numpy() {
+    // +1 EV doubles brightness: out = clamp(in * 2.0)
+    let w = 256u32;
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(w, 1);
+    let config = filters::ExposureParams {
+        ev: 1.0,
+        offset: 0.0,
+        gamma_correction: 1.0,
+    };
+    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.arange(256,dtype=np.float64)/255.0\n\
+         out=np.clip(px*2.0,0,1)\n\
+         result=np.floor(out*255.0+0.5).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    assert_exact("exposure(+1EV)", &ours, &run_python_ref(&script));
+}
+
+#[test]
+fn exact_exposure_minus1ev_against_numpy() {
+    // -1 EV halves brightness: out = clamp(in * 0.5)
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+    let config = filters::ExposureParams {
+        ev: -1.0,
+        offset: 0.0,
+        gamma_correction: 1.0,
+    };
+    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.arange(256,dtype=np.float64)/255.0\n\
+         out=np.clip(px*0.5,0,1)\n\
+         result=np.floor(out*255.0+0.5).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    assert_exact("exposure(-1EV)", &ours, &run_python_ref(&script));
+}
+
+#[test]
+fn exact_exposure_offset_against_numpy() {
+    // Offset shifts input before scaling
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+    let config = filters::ExposureParams {
+        ev: 0.0,
+        offset: 0.1,
+        gamma_correction: 1.0,
+    };
+    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.arange(256,dtype=np.float64)/255.0\n\
+         out=np.clip(px+0.1,0,1)\n\
+         result=np.floor(out*255.0+0.5).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    assert_exact("exposure(offset=0.1)", &ours, &run_python_ref(&script));
+}
+
+#[test]
+fn exact_exposure_gamma_against_numpy() {
+    // Gamma correction: out = clamp(in) ^ (1/gamma)
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+    let config = filters::ExposureParams {
+        ev: 0.0,
+        offset: 0.0,
+        gamma_correction: 2.2,
+    };
+    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.arange(256,dtype=np.float64)/255.0\n\
+         inv_gamma=1.0/2.2\n\
+         out=np.where(px>0, np.power(px, inv_gamma), 0.0)\n\
+         result=np.floor(out*255.0+0.5).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    // f32 powf vs f64 ** may differ by ±1 at rounding boundaries
+    assert_close("exposure(gamma=2.2)", &ours, &run_python_ref(&script), 1.0);
+}
+
+#[test]
+fn exact_exposure_combined_against_numpy() {
+    // Combined: +0.5 EV, offset=-0.05, gamma=1.5
+    let pixels = make_gradient_rgb(16, 16);
+    let info = info_rgb8(16, 16);
+    let config = filters::ExposureParams {
+        ev: 0.5,
+        offset: -0.05,
+        gamma_correction: 1.5,
+    };
+    let ours = filters::exposure(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.array({pixels:?},dtype=np.float64)/255.0\n\
+         ev=0.5; offset=-0.05; gamma=1.5\n\
+         scaled=np.clip((px+offset)*np.power(2.0,ev),0,1)\n\
+         inv_gamma=1.0/gamma\n\
+         out=np.where(scaled>0, np.power(scaled, inv_gamma), 0.0)\n\
+         result=np.floor(out*255.0+0.5).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    assert_close("exposure(combined)", &ours, &run_python_ref(&script), 1.0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COLOR BALANCE — Photoshop-style per-tonal-range CMY-RGB shifts
+// Reference: numpy f64 formula (reproducing our tonal weight curves)
+//
+// Tonal weights: shadow = min((1-luma)^2 * 1.5, 1), highlight = min(luma^2 * 1.5, 1)
+// midtone = max(1 - shadow - highlight, 0)
+// Channel shift: dR = shadow[0]*sw + midtone[0]*mw + highlight[0]*hw
+// Preserve luminosity: rescale to maintain original Rec.709 luma.
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_color_balance_identity() {
+    let pixels = make_gradient_rgb(16, 16);
+    let info = info_rgb8(16, 16);
+    let config = filters::ColorBalanceParams {
+        shadow_cyan_red: 0.0,
+        shadow_magenta_green: 0.0,
+        shadow_yellow_blue: 0.0,
+        midtone_cyan_red: 0.0,
+        midtone_magenta_green: 0.0,
+        midtone_yellow_blue: 0.0,
+        highlight_cyan_red: 0.0,
+        highlight_magenta_green: 0.0,
+        highlight_yellow_blue: 0.0,
+        preserve_luminosity: true,
+    };
+    let result = filters::color_balance(&pixels, &info, &config).unwrap();
+    assert_exact("color_balance(identity)", &result, &pixels);
+}
+
+#[test]
+fn close_color_balance_shadow_red_against_numpy() {
+    let w = 16u32;
+    let h = 16;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let config = filters::ColorBalanceParams {
+        shadow_cyan_red: 50.0,
+        shadow_magenta_green: 0.0,
+        shadow_yellow_blue: 0.0,
+        midtone_cyan_red: 0.0,
+        midtone_magenta_green: 0.0,
+        midtone_yellow_blue: 0.0,
+        highlight_cyan_red: 0.0,
+        highlight_magenta_green: 0.0,
+        highlight_yellow_blue: 0.0,
+        preserve_luminosity: false,
+    };
+    let ours = filters::color_balance(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.array({pixels:?},dtype=np.float64).reshape(-1,3)/255.0\n\
+         shadow=np.array([0.5,0.0,0.0])\n\
+         midtone=np.array([0.0,0.0,0.0])\n\
+         highlight=np.array([0.0,0.0,0.0])\n\
+         luma=0.2126*px[:,0]+0.7152*px[:,1]+0.0722*px[:,2]\n\
+         sw=np.minimum((1.0-luma)**2*1.5,1.0)\n\
+         hw=np.minimum(luma**2*1.5,1.0)\n\
+         mw=np.maximum(1.0-sw-hw,0.0)\n\
+         dr=shadow[0]*sw+midtone[0]*mw+highlight[0]*hw\n\
+         dg=shadow[1]*sw+midtone[1]*mw+highlight[1]*hw\n\
+         db=shadow[2]*sw+midtone[2]*mw+highlight[2]*hw\n\
+         out=np.clip(px+np.stack([dr,dg,db],axis=1),0,1)\n\
+         result=np.clip(np.round(out*255.0),0,255).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    assert_close(
+        "color_balance(shadow_red=50, no_lum)",
+        &ours,
+        &run_python_ref(&script),
+        1.0,
+    );
+}
+
+#[test]
+fn close_color_balance_midtone_green_against_numpy() {
+    let w = 16u32;
+    let h = 16;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let config = filters::ColorBalanceParams {
+        shadow_cyan_red: 0.0,
+        shadow_magenta_green: 0.0,
+        shadow_yellow_blue: 0.0,
+        midtone_cyan_red: 0.0,
+        midtone_magenta_green: 75.0,
+        midtone_yellow_blue: 0.0,
+        highlight_cyan_red: 0.0,
+        highlight_magenta_green: 0.0,
+        highlight_yellow_blue: 0.0,
+        preserve_luminosity: false,
+    };
+    let ours = filters::color_balance(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.array({pixels:?},dtype=np.float64).reshape(-1,3)/255.0\n\
+         shadow=np.array([0.0,0.0,0.0])\n\
+         midtone=np.array([0.0,0.75,0.0])\n\
+         highlight=np.array([0.0,0.0,0.0])\n\
+         luma=0.2126*px[:,0]+0.7152*px[:,1]+0.0722*px[:,2]\n\
+         sw=np.minimum((1.0-luma)**2*1.5,1.0)\n\
+         hw=np.minimum(luma**2*1.5,1.0)\n\
+         mw=np.maximum(1.0-sw-hw,0.0)\n\
+         dr=shadow[0]*sw+midtone[0]*mw+highlight[0]*hw\n\
+         dg=shadow[1]*sw+midtone[1]*mw+highlight[1]*hw\n\
+         db=shadow[2]*sw+midtone[2]*mw+highlight[2]*hw\n\
+         out=np.clip(px+np.stack([dr,dg,db],axis=1),0,1)\n\
+         result=np.clip(np.round(out*255.0),0,255).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    assert_close(
+        "color_balance(midtone_green=75, no_lum)",
+        &ours,
+        &run_python_ref(&script),
+        1.0,
+    );
+}
+
+#[test]
+fn close_color_balance_preserve_luminosity_against_numpy() {
+    let w = 16u32;
+    let h = 16;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let config = filters::ColorBalanceParams {
+        shadow_cyan_red: 40.0,
+        shadow_magenta_green: 0.0,
+        shadow_yellow_blue: -30.0,
+        midtone_cyan_red: 0.0,
+        midtone_magenta_green: 50.0,
+        midtone_yellow_blue: 0.0,
+        highlight_cyan_red: -20.0,
+        highlight_magenta_green: 0.0,
+        highlight_yellow_blue: 60.0,
+        preserve_luminosity: true,
+    };
+    let ours = filters::color_balance(&pixels, &info, &config).unwrap();
+
+    let script = format!(
+        "import sys\nimport numpy as np\n\
+         px=np.array({pixels:?},dtype=np.float64).reshape(-1,3)/255.0\n\
+         shadow=np.array([0.4,0.0,-0.3])\n\
+         midtone=np.array([0.0,0.5,0.0])\n\
+         highlight=np.array([-0.2,0.0,0.6])\n\
+         luma=0.2126*px[:,0]+0.7152*px[:,1]+0.0722*px[:,2]\n\
+         sw=np.minimum((1.0-luma)**2*1.5,1.0)\n\
+         hw=np.minimum(luma**2*1.5,1.0)\n\
+         mw=np.maximum(1.0-sw-hw,0.0)\n\
+         dr=shadow[0]*sw+midtone[0]*mw+highlight[0]*hw\n\
+         dg=shadow[1]*sw+midtone[1]*mw+highlight[1]*hw\n\
+         db=shadow[2]*sw+midtone[2]*mw+highlight[2]*hw\n\
+         out=np.clip(px+np.stack([dr,dg,db],axis=1),0,1)\n\
+         new_luma=0.2126*out[:,0]+0.7152*out[:,1]+0.0722*out[:,2]\n\
+         scale=np.where(new_luma>1e-6, luma/new_luma, 1.0)\n\
+         out_lum=np.clip(out*scale[:,np.newaxis],0,1)\n\
+         result=np.clip(np.round(out_lum*255.0),0,255).astype(np.uint8)\n\
+         sys.stdout.buffer.write(result.tobytes())"
+    );
+    // f32 vs f64 luminance preservation may cause ±1 rounding differences
+    assert_close(
+        "color_balance(mixed, preserve_lum)",
+        &ours,
+        &run_python_ref(&script),
+        1.0,
+    );
+}

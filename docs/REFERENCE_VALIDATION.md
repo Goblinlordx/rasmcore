@@ -109,9 +109,48 @@ for per-filter details including alignment notes.
 | motion_blur (30°) | OpenCV `filter2D` | 4.13.0 |
 | bilateral filter | OpenCV `bilateralFilter` | 4.13.0 |
 | brightness(0) | Self identity | N/A |
+| exposure(0EV) | Self identity | N/A |
+| exposure(+1EV) | numpy f64 formula | 2.4.3 |
+| exposure(-1EV) | numpy f64 formula | 2.4.3 |
+| exposure(offset=0.1) | numpy f64 formula | 2.4.3 |
+| color_balance(identity) | Self identity | N/A |
 | histogram match (gray) | scikit-image `match_histograms` | 0.26.0 |
 | histogram match (RGB) | scikit-image `match_histograms` | 0.26.0 |
 | histogram match (64x64) | scikit-image `match_histograms` | 0.26.0 |
+
+### Exposure and Color Balance — Photoshop Parity
+
+| Operation | Reference | MAE | Max Error | Status |
+|-----------|-----------|-----|-----------|--------|
+| exposure(0EV, 0 offset, gamma 1.0) | Self identity | 0.0000 | 0 | Exact |
+| exposure(+1EV) | numpy f64 `clamp(px*2.0)` | 0.0000 | 0 | Exact |
+| exposure(-1EV) | numpy f64 `clamp(px*0.5)` | 0.0000 | 0 | Exact |
+| exposure(offset=0.1) | numpy f64 `clamp(px+0.1)` | 0.0000 | 0 | Exact |
+| exposure(gamma=2.2) | numpy f64 `powf(1/2.2)` | ≤1.0 | 1 | f32 rounding |
+| exposure(combined) | numpy f64 full formula | ≤1.0 | 1 | f32 rounding |
+| color_balance(identity) | Self identity | 0.0000 | 0 | Exact |
+| color_balance(shadow_red) | numpy f64 tonal weights | ≤1.0 | 1 | f32 rounding |
+| color_balance(midtone_green) | numpy f64 tonal weights | ≤1.0 | 1 | f32 rounding |
+| color_balance(preserve_lum) | numpy f64 luma rescale | ≤1.0 | 1 | f32 rounding |
+
+**Exposure formula:** `out = clamp01((in + offset) * 2^ev) ^ (1/gamma_correction)`.
+Implemented as a single 256-entry LUT (fully LUT-collapsible). Pure EV-based
+operations (integer stops, no gamma) are pixel-exact vs numpy f64. Operations
+involving `powf()` (gamma correction) may differ by ±1 at rounding boundaries
+due to f32 vs f64 precision in the LUT build.
+
+**Color balance formula:** Per-pixel luminance-weighted tonal range shifts.
+Tonal weights: `shadow = min((1-luma)^2 * 1.5, 1)`, `highlight = min(luma^2 * 1.5, 1)`,
+`midtone = max(1 - shadow - highlight, 0)`. Channel shift is additive.
+Preserve-luminosity mode rescales output to maintain original Rec. 709 luma.
+Max ±1 difference from f32 vs f64 in the luminance computation and rescale.
+
+**Note on Photoshop alignment:** PS uses proprietary tonal range curves that
+are not publicly documented. Our quadratic weight model (`(1-luma)^2 * 1.5`)
+approximates the PS visual behavior. The numpy reference validates our math is
+internally consistent (our Rust f32 matches the documented formula in f64),
+not that it reproduces PS output bit-for-bit. A future track could calibrate
+the weight curves against PS output samples.
 
 ### Inpainting — Telea + Navier-Stokes
 
@@ -160,6 +199,11 @@ Data: `tests/fixtures/generated/histogram_match_reference.json`.
 
 | Operation | Reference | Tool Version | Why Not Exact |
 |-----------|-----------|-------------|---------------|
+| exposure(gamma=2.2) | numpy f64 formula | 2.4.3 | f32 `powf` vs f64 `**` at rounding boundary |
+| exposure(combined) | numpy f64 formula | 2.4.3 | f32 `powf` vs f64 `**` at rounding boundary |
+| color_balance(shadow_red) | numpy f64 formula | 2.4.3 | f32 vs f64 luminance/weight computation |
+| color_balance(midtone_green) | numpy f64 formula | 2.4.3 | f32 vs f64 luminance/weight computation |
+| color_balance(preserve_lum) | numpy f64 formula | 2.4.3 | f32 vs f64 luminance rescale |
 | blend Multiply | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
 | blend Screen | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
 | blend Overlay | libvips `composite` | 8.18.1 | f32 vs f64 rounding at u8 boundary |
