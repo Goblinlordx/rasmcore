@@ -5,7 +5,7 @@ Image processing SDK powered by WebAssembly.
 ## Install
 
 ```bash
-go get github.com/ArtProcessors/rasmcore-image-go
+go get github.com/ArtProcessors/rasmcore-image
 ```
 
 ## Usage (Dynamic)
@@ -18,7 +18,7 @@ jpeg, err := img.Apply("blur", map[string]any{"radius": 3.0}).Encode("jpeg", nil
 ## Usage (Typed)
 
 ```bash
-go run github.com/ArtProcessors/rasmcore-image-go/cmd/typegen manifest.json -o rasmcore_typed.go
+go run github.com/ArtProcessors/rasmcore-image/cmd/typegen manifest.json -o rasmcore_typed.go
 ```
 
 ```go
