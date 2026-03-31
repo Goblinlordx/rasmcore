@@ -825,9 +825,9 @@ pub fn build_hue_curve_lut(points: &[(f32, f32)]) -> [f32; 360] {
     let n = pts.len();
     let m = monotone_tangents(&pts);
 
-    for i in 0..360 {
+    for (i, entry) in lut.iter_mut().enumerate() {
         let x = i as f32 / 359.0;
-        lut[i] = eval_hermite(&pts, &m, n, x);
+        *entry = eval_hermite(&pts, &m, n, x);
     }
 
     lut
@@ -850,9 +850,9 @@ pub fn build_norm_curve_lut(points: &[(f32, f32)]) -> [f32; 256] {
     let n = pts.len();
     let m = monotone_tangents(&pts);
 
-    for i in 0..256 {
+    for (i, entry) in lut.iter_mut().enumerate() {
         let x = i as f32 / 255.0;
-        lut[i] = eval_hermite(&pts, &m, n, x);
+        *entry = eval_hermite(&pts, &m, n, x);
     }
 
     lut
