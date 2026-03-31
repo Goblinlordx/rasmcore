@@ -1,84 +1,92 @@
 id: spatial-filter-gaps_20260331085206Z
-title: "Spatial filter gaps — box blur, average, smart sharpen"
+title: Spatial filter gaps — box blur, average, smart sharpen
 type: feature
 status: pending
 created: 2026-03-31
-updated: 2026-03-31
+updated: '2026-03-31'
 spec:
-  summary: >
-    Add box blur (separable average kernel), average blur (whole-image
-    mean), and smart sharpen (edge-preserving unsharp mask via bilateral).
-    Closes 3 PS blur gaps and 1 sharpen gap.
-  context: |
-    Photoshop has 16 blur types and 5 sharpen types. rasmcore has 8 blur
+  summary: 'Add box blur (separable average kernel), average blur (whole-image mean), and smart sharpen (edge-preserving unsharp
+    mask via bilateral). Closes 3 PS blur gaps and 1 sharpen gap.
+
+    '
+  context: 'Photoshop has 16 blur types and 5 sharpen types. rasmcore has 8 blur
+
     types and 1 sharpen type. The 3 simplest PS gaps to close are:
 
+
     Box blur: uniform-weight kernel, cheaper than Gaussian. Useful as a
+
     building block (iterated box blur approximates Gaussian).
 
+
     Average: compute whole-image mean color. PS uses this for solid color
+
     generation from an image.
 
-    Smart Sharpen: edge-aware sharpening that reduces halos. PS's most
+
+    Smart Sharpen: edge-aware sharpening that reduces halos. PS''s most
+
     used sharpening tool. Can be built by replacing Gaussian blur in
+
     unsharp mask with bilateral filter (which we already have).
-  codebase_analysis: |
-    EXISTING:
-    - blur() (filters.rs:812): Gaussian via libblur, SIMD
-    - sharpen() (filters.rs:1303): unsharp mask = original + amount*(original - blur)
-    - bilateral() (filters.rs:5551): edge-preserving blur, OpenCV parity
-    - convolve() (filters.rs:2546): custom kernel convolution
 
-    BOX BLUR:
-    - Could use convolve() with uniform kernel, but separable version
-      is O(n) instead of O(n*k) — needs dedicated implementation
-    - libblur may have box blur support (check crate features)
-
-    SMART SHARPEN:
-    - sharpen() uses blur() internally (Gaussian)
-    - Replace with bilateral() for edge-preserving variant
-    - Add mode param or create separate smart_sharpen filter
+    '
+  codebase_analysis: "EXISTING:\n- blur() (filters.rs:812): Gaussian via libblur, SIMD\n- sharpen() (filters.rs:1303): unsharp\
+    \ mask = original + amount*(original - blur)\n- bilateral() (filters.rs:5551): edge-preserving blur, OpenCV parity\n-\
+    \ convolve() (filters.rs:2546): custom kernel convolution\n\nBOX BLUR:\n- Could use convolve() with uniform kernel, but\
+    \ separable version\n  is O(n) instead of O(n*k) — needs dedicated implementation\n- libblur may have box blur support\
+    \ (check crate features)\n\nSMART SHARPEN:\n- sharpen() uses blur() internally (Gaussian)\n- Replace with bilateral()\
+    \ for edge-preserving variant\n- Add mode param or create separate smart_sharpen filter\n"
   acceptance_criteria:
-    - box_blur filter with radius param, separable O(n) implementation
-    - average_blur filter that replaces entire image with mean color
-    - smart_sharpen filter with amount, radius, sigma_spatial, sigma_range params
-    - Box blur matches PS Box Blur output
-    - Smart sharpen produces less halo artifacts than standard sharpen
-    - All registered with ConfigParams
-  out_of_scope: |
-    Surface blur (bilateral is close). Shape blur (arbitrary kernel shape).
+  - box_blur filter with radius param, separable O(n) implementation
+  - average_blur filter that replaces entire image with mean color
+  - smart_sharpen filter with amount, radius, sigma_spatial, sigma_range params
+  - Box blur matches PS Box Blur output
+  - Smart sharpen produces less halo artifacts than standard sharpen
+  - All registered with ConfigParams
+  out_of_scope: 'Surface blur (bilateral is close). Shape blur (arbitrary kernel shape).
+
     Adaptive sharpen (spatially varying).
-  technical_notes: |
-    Box blur: separable — horizontal pass then vertical pass. Each pass
+
+    '
+  technical_notes: 'Box blur: separable — horizontal pass then vertical pass. Each pass
+
     uses running sum: add right pixel, subtract left pixel. O(1) per pixel
+
     regardless of radius.
+
 
     Average: sum all pixels, divide by count. Return solid-color image.
 
+
     Smart sharpen: same as sharpen() but replace blur() with bilateral().
+
     Parameters: amount (strength), radius (bilateral sigma_spatial),
+
     threshold (bilateral sigma_range for edge preservation).
+
+    '
 plan:
-  - phase: "Box blur"
-    tasks:
-      - text: "Implement separable box blur with running-sum O(1) per pixel"
-        done: false
-      - text: "Register box_blur with ConfigParams (radius param)"
-        done: false
-  - phase: "Average blur"
-    tasks:
-      - text: "Implement average_blur — compute mean color, fill image"
-        done: false
-      - text: "Register average_blur with ConfigParams"
-        done: false
-  - phase: "Smart sharpen"
-    tasks:
-      - text: "Implement smart_sharpen using bilateral blur instead of Gaussian in unsharp mask"
-        done: false
-      - text: "Register smart_sharpen with ConfigParams (amount, radius, edge_threshold)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Unit tests: box blur identity at radius=0, uniform output convergence at large radius"
-        done: false
+- phase: Box blur
+  tasks:
+  - text: Implement separable box blur with running-sum O(1) per pixel
+    done: true
+  - text: Register box_blur with ConfigParams (radius param)
+    done: true
+- phase: Average blur
+  tasks:
+  - text: Implement average_blur — compute mean color, fill image
+    done: true
+  - text: Register average_blur with ConfigParams
+    done: true
+- phase: Smart sharpen
+  tasks:
+  - text: Implement smart_sharpen using bilateral blur instead of Gaussian in unsharp mask
+    done: true
+  - text: Register smart_sharpen with ConfigParams (amount, radius, edge_threshold)
+    done: true
+- phase: Verification
+  tasks:
+  - text: 'Unit tests: box blur identity at radius=0, uniform output convergence at large radius'
+    done: true
 extra: {}
