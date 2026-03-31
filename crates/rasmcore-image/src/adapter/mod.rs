@@ -223,6 +223,10 @@ impl pipeline::Guest for Component {
     fn get_filter_manifest() -> String {
         include_str!(concat!(env!("OUT_DIR"), "/param-manifest.json")).to_string()
     }
+
+    fn get_manifest_hash() -> String {
+        include_str!(concat!(env!("OUT_DIR"), "/param-manifest.hash")).to_string()
+    }
 }
 
 impl decoder::Guest for Component {

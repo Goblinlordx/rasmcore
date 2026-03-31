@@ -13,11 +13,23 @@ use crate::types::CodegenData;
 use std::fs;
 use std::path::Path;
 
+/// FNV-1a 64-bit hash — fast, deterministic, no dependencies.
+fn fnv1a_64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in data {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
 /// Generate all output files from codegen data.
 pub fn generate_all(data: &CodegenData, out_dir: &Path) {
-    // param-manifest.json
+    // param-manifest.json + content hash for SDK version validation
     let manifest_json = manifest::generate(data);
     fs::write(out_dir.join("param-manifest.json"), &manifest_json).unwrap();
+    let hash = fnv1a_64(manifest_json.as_bytes());
+    fs::write(out_dir.join("param-manifest.hash"), format!("{hash:016x}")).unwrap();
 
     // Filter adapter dispatch code
     let adapter_code = adapter::generate(&data.filters);

@@ -37,11 +37,9 @@ fn main() {
             "macro_rules! generated_pipeline_filter_methods { () => {} }\n",
         )
         .unwrap();
-        std::fs::write(
-            out_dir.join("param-manifest.json"),
-            r#"{"filters":[],"generators":[],"compositors":[],"mappers":[]}"#,
-        )
-        .unwrap();
+        let empty = r#"{"filters":[],"generators":[],"compositors":[],"mappers":[]}"#;
+        std::fs::write(out_dir.join("param-manifest.json"), empty).unwrap();
+        std::fs::write(out_dir.join("param-manifest.hash"), "0000000000000000").unwrap();
         return;
     }
 

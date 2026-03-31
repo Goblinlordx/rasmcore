@@ -130,4 +130,9 @@ interface pipeline {
     /// with parameter names, types, ranges, defaults, and UI hints.
     /// Enables runtime introspection — no external manifest file needed.
     get-filter-manifest: func() -> string;
+
+    /// Return a hash of the manifest for version validation.
+    /// Generated typed SDKs embed this hash and warn when the loaded
+    /// module differs from the version the SDK was generated against.
+    get-manifest-hash: func() -> string;
 }
