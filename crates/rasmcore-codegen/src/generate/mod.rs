@@ -7,6 +7,7 @@ pub mod helpers;
 pub mod manifest;
 pub mod pipeline;
 pub mod pipeline_write;
+pub mod sdk_rust;
 pub mod wit;
 
 use crate::types::CodegenData;
@@ -42,6 +43,10 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     // Pipeline adapter macro
     let pipe_adapter = pipeline::generate_adapter_macro(&data.filters);
     fs::write(out_dir.join("generated_pipeline_adapter.rs"), &pipe_adapter).unwrap();
+
+    // Rust native SDK
+    let sdk_rs = sdk_rust::generate(&data.filters);
+    fs::write(out_dir.join("generated_sdk_rust.rs"), &sdk_rs).unwrap();
 
     // WIT declarations (to stderr for review)
     let wit_decls = wit::generate(&data.filters);

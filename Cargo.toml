@@ -19,6 +19,7 @@ members = [
     "crates/rasmcore-isobmff",
     "crates/rasmcore-dct",
     "crates/rasmcore-codegen",
+    "crates/rasmcore-sdk",
     "crates/rasmcore-hevc",
     "crates/rasmcore-trellis",
     "crates/rasmcore-macros",

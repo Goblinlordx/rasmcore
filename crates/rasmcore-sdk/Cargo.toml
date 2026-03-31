@@ -1,0 +1,11 @@
+[package]
+name = "rasmcore-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Rust native SDK — fluent builder API for rasmcore image processing"
+
+[dependencies]
+rasmcore-image = { path = "../rasmcore-image" }
+
+[build-dependencies]
+rasmcore-codegen = { path = "../rasmcore-codegen" }
