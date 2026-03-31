@@ -319,11 +319,9 @@ trivial cost. The savings come from eliminating memory passes: on a
 100MP RGBA8 image, each pass touches 400MB. Fusing 5 ops saves 1.6GB
 of memory bandwidth.
 
-**SIMD note:** SIMD can accelerate LUT *construction* (computing the
-256 mapping values in batches), but the LUT *application* (table lookup)
-is inherently scalar since each lookup is a random memory access. The
-primary optimization is fusion (fewer passes over pixel data), not
-vectorizing individual lookups.
+LUT fusion is a plan-time optimization — all LUTs are composed before
+any pixels are processed. At runtime, each fused chain is a single
+`apply_lut` pass: one table lookup per channel per pixel, no math.
 
 #### When NOT to use PointOp
 

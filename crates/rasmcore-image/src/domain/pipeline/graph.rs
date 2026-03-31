@@ -1170,18 +1170,18 @@ mod lut_fusion_tests {
 
         // Unfused: build graph, don't fuse, request full image
         let mut g1 = NodeGraph::new(1024 * 1024);
-        let src1 = g1.add_node(Box::new(RawSource::new(pixels.clone(), info)));
-        let b1 = g1.add_node(Box::new(BrightnessNode::new(src1, info, BrightnessParams { amount: 0.2 })));
-        let c1 = g1.add_node(Box::new(ContrastNode::new(b1, info, ContrastParams { amount: 0.3 })));
-        let g_node1 = g1.add_node(Box::new(GammaNode::new(c1, info, GammaParams { gamma_value: 1.5 })));
+        let src1 = g1.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+        let b1 = g1.add_node(Box::new(BrightnessNode::new(src1, info.clone(), BrightnessParams { amount: 0.2 })));
+        let c1 = g1.add_node(Box::new(ContrastNode::new(b1, info.clone(), ContrastParams { amount: 0.3 })));
+        let g_node1 = g1.add_node(Box::new(GammaNode::new(c1, info.clone(), GammaParams { gamma_value: 1.5 })));
         let unfused = g1.request_region(g_node1, Rect::new(0, 0, w, h)).unwrap();
 
         // Fused: build same graph, fuse, request full image
         let mut g2 = NodeGraph::new(1024 * 1024);
-        let src2 = g2.add_node(Box::new(RawSource::new(pixels, info)));
-        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info, BrightnessParams { amount: 0.2 })));
-        let c2 = g2.add_node(Box::new(ContrastNode::new(b2, info, ContrastParams { amount: 0.3 })));
-        let g_node2 = g2.add_node(Box::new(GammaNode::new(c2, info, GammaParams { gamma_value: 1.5 })));
+        let src2 = g2.add_node(Box::new(RawSource::new(pixels, info.clone())));
+        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info.clone(), BrightnessParams { amount: 0.2 })));
+        let c2 = g2.add_node(Box::new(ContrastNode::new(b2, info.clone(), ContrastParams { amount: 0.3 })));
+        let g_node2 = g2.add_node(Box::new(GammaNode::new(c2, info.clone(), GammaParams { gamma_value: 1.5 })));
         g2.fuse_point_ops();
         let fused = g2.request_region(g_node2, Rect::new(0, 0, w, h)).unwrap();
 
@@ -1198,12 +1198,12 @@ mod lut_fusion_tests {
         // Chain: brightness → contrast → gamma → brightness → contrast
         let build_graph = |fuse: bool| {
             let mut g = NodeGraph::new(1024 * 1024);
-            let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info)));
-            let n1 = g.add_node(Box::new(BrightnessNode::new(src, info, BrightnessParams { amount: 0.1 })));
-            let n2 = g.add_node(Box::new(ContrastNode::new(n1, info, ContrastParams { amount: 0.2 })));
-            let n3 = g.add_node(Box::new(GammaNode::new(n2, info, GammaParams { gamma_value: 0.8 })));
-            let n4 = g.add_node(Box::new(BrightnessNode::new(n3, info, BrightnessParams { amount: -0.1 })));
-            let n5 = g.add_node(Box::new(ContrastNode::new(n4, info, ContrastParams { amount: -0.15 })));
+            let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+            let n1 = g.add_node(Box::new(BrightnessNode::new(src, info.clone(), BrightnessParams { amount: 0.1 })));
+            let n2 = g.add_node(Box::new(ContrastNode::new(n1, info.clone(), ContrastParams { amount: 0.2 })));
+            let n3 = g.add_node(Box::new(GammaNode::new(n2, info.clone(), GammaParams { gamma_value: 0.8 })));
+            let n4 = g.add_node(Box::new(BrightnessNode::new(n3, info.clone(), BrightnessParams { amount: -0.1 })));
+            let n5 = g.add_node(Box::new(ContrastNode::new(n4, info.clone(), ContrastParams { amount: -0.15 })));
             if fuse {
                 g.fuse_point_ops();
             }
@@ -1224,19 +1224,19 @@ mod lut_fusion_tests {
         // blur is a spatial op (not a point op), so brightness and contrast
         // should NOT be fused together
         let mut g = NodeGraph::new(1024 * 1024);
-        let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info)));
-        let b = g.add_node(Box::new(BrightnessNode::new(src, info, BrightnessParams { amount: 0.2 })));
-        let blur = g.add_node(Box::new(BlurNode::new(b, info, BlurParams { radius: 2.0 })));
-        let c = g.add_node(Box::new(ContrastNode::new(blur, info, ContrastParams { amount: 0.3 })));
+        let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+        let b = g.add_node(Box::new(BrightnessNode::new(src, info.clone(), BrightnessParams { amount: 0.2 })));
+        let blur = g.add_node(Box::new(BlurNode::new(b, info.clone(), BlurParams { radius: 2.0 })));
+        let c = g.add_node(Box::new(ContrastNode::new(blur, info.clone(), ContrastParams { amount: 0.3 })));
 
         // After fusion, blur should still be in the chain (barrier)
         g.fuse_point_ops();
 
         let mut g2 = NodeGraph::new(1024 * 1024);
-        let src2 = g2.add_node(Box::new(RawSource::new(pixels, info)));
-        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info, BrightnessParams { amount: 0.2 })));
-        let blur2 = g2.add_node(Box::new(BlurNode::new(b2, info, BlurParams { radius: 2.0 })));
-        let c2 = g2.add_node(Box::new(ContrastNode::new(blur2, info, ContrastParams { amount: 0.3 })));
+        let src2 = g2.add_node(Box::new(RawSource::new(pixels, info.clone())));
+        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info.clone(), BrightnessParams { amount: 0.2 })));
+        let blur2 = g2.add_node(Box::new(BlurNode::new(b2, info.clone(), BlurParams { radius: 2.0 })));
+        let c2 = g2.add_node(Box::new(ContrastNode::new(blur2, info.clone(), ContrastParams { amount: 0.3 })));
 
         let fused = g.request_region(c, Rect::new(0, 0, w, h)).unwrap();
         let unfused = g2.request_region(c2, Rect::new(0, 0, w, h)).unwrap();
@@ -1253,9 +1253,9 @@ mod lut_fusion_tests {
 
         let build_graph = |fuse: bool| {
             let mut g = NodeGraph::new(1024 * 1024);
-            let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info)));
-            let b = g.add_node(Box::new(BrightnessNode::new(src, info, BrightnessParams { amount: 0.2 })));
-            let inv = g.add_node(Box::new(InvertNode::new(b, info)));
+            let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+            let b = g.add_node(Box::new(BrightnessNode::new(src, info.clone(), BrightnessParams { amount: 0.2 })));
+            let inv = g.add_node(Box::new(InvertNode::new(b, info.clone())));
             if fuse {
                 g.fuse_point_ops();
             }

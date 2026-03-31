@@ -108,9 +108,6 @@ posterize, solarize, invert, exposure, sigmoidal contrast), it MUST:
 This enables automatic LUT fusion in the pipeline: consecutive point ops
 compose into a single 256-entry table and execute in one memory pass.
 
-SIMD can be used to accelerate LUT construction (computing the 256 values
-in batches), but the LUT application (table lookup) is scalar.
-
 Do NOT implement PointOp for multi-channel ops (hue rotation, channel
 mixing, saturation) or position-dependent ops (vignette, gradient).
 
@@ -144,7 +141,7 @@ When implementing a new filter:
 - [ ] `PointOp` trait impl if filter is a per-channel mapping (enables LUT fusion)
 - [ ] Basic unit tests
 - [ ] Parity test against reference implementation
-- [ ] SIMD for spatial/color ops; SIMD optional for LUT construction in point ops
+- [ ] SIMD implementation for spatial and color ops (not needed for LUT-based point ops)
 - [ ] `cargo clippy -- -D warnings` passes
 - [ ] `cargo test` passes
 

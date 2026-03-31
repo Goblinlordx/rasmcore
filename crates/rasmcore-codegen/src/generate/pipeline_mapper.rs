@@ -60,7 +60,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
         // If output_format is declared, compute output_info at construction time
         if let Some(ref fmt) = m.output_format {
-            code.push_str(&format!("        let output_info = ImageInfo {{\n"));
+            code.push_str("        let output_info = ImageInfo {\n");
             code.push_str(&format!("            format: PixelFormat::{fmt},\n"));
             code.push_str("            ..source_info\n");
             code.push_str("        };\n");
@@ -88,9 +88,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
             .iter()
             .map(|(n, t)| {
                 let clean_n = n.trim_start_matches('_');
-                if t.starts_with("&[") || t == "&str" {
-                    format!("&self.{clean_n}")
-                } else if t.starts_with('&') {
+                if t.starts_with('&') || t == "&str" {
                     format!("&self.{clean_n}")
                 } else if t == "String" {
                     format!("self.{clean_n}.clone()")

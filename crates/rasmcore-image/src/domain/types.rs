@@ -33,7 +33,7 @@ pub enum ColorSpace {
 }
 
 /// Image metadata
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ImageInfo {
     pub width: u32,
     pub height: u32,
