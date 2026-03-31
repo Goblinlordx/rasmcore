@@ -172,7 +172,7 @@ pub struct NodeGraph {
     node_hashes: Vec<rasmcore_pipeline::ContentHash>,
     touched_hashes: std::collections::HashSet<rasmcore_pipeline::ContentHash>,
     cache_hit_nodes: std::collections::HashSet<u32>,
-    cache_hit_pixels: std::collections::HashMap<u32, Vec<u8>>,
+    cache_hit_pixels: std::collections::HashMap<u32, (Vec<u8>, u32, u32)>, // (pixels, width, height)
     // Per-node metadata — set at creation, immutable during tile execution
     node_metadata: Vec<rasmcore_pipeline::Metadata>,
 }
@@ -251,8 +251,8 @@ impl NodeGraph {
         // Check layer cache for this hash
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
-            if let Some((pixels, _w, _h, _bpp)) = lc.get(&hash) {
-                self.cache_hit_pixels.insert(id, pixels.to_vec());
+            if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
+                self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
                 self.cache_hit_nodes.insert(id);
             }
         }
@@ -274,8 +274,8 @@ impl NodeGraph {
 
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
-            if let Some((pixels, _w, _h, _bpp)) = lc.get(&hash) {
-                self.cache_hit_pixels.insert(id, pixels.to_vec());
+            if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
+                self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
                 self.cache_hit_nodes.insert(id);
             }
         }
@@ -474,16 +474,18 @@ impl NodeGraph {
 
         // Check layer cache hit first (pre-populated during add_node_with_hash)
         if self.cache_hit_nodes.contains(&node_id)
-            && let Some(pixels) = self.cache_hit_pixels.get(&node_id)
+            && let Some((pixels, cached_w, cached_h)) = self.cache_hit_pixels.get(&node_id)
         {
-            let info = self.node_info(node_id)?;
-            let full_rect = Rect::new(0, 0, info.width, info.height);
-            if request == full_rect {
+            let cached_rect = Rect::new(0, 0, *cached_w, *cached_h);
+            if request == cached_rect {
                 return Ok(pixels.clone());
             }
-            // Extract sub-region from cached full-image pixels
-            let bpp = bytes_per_pixel(info.format);
-            return Ok(crop_region(pixels, full_rect, request, bpp));
+            if cached_rect.contains(&request) {
+                let info = self.node_info(node_id)?;
+                let bpp = bytes_per_pixel(info.format);
+                return Ok(crop_region(pixels, cached_rect, request, bpp));
+            }
+            // Cached data doesn't cover the request — fall through to compute
         }
 
         let info = self.node_info(node_id)?;
