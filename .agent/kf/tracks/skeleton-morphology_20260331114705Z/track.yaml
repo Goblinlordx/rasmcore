@@ -1,0 +1,78 @@
+id: skeleton-morphology_20260331114705Z
+title: Morphological skeletonize and distance-based thinning
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Zhang-Suen thinning algorithm for skeleton extraction from binary
+    images. Completes the morphology suite alongside existing erode/dilate/
+    open/close/gradient/tophat/blackhat.
+  context: |
+    Skeletonization reduces binary shapes to 1-pixel-wide center lines
+    while preserving topology. Used for shape analysis, character
+    recognition, path planning, and medial axis computation.
+
+    ImageMagick has -morphology Thinning and Skeleton operations.
+    OpenCV has cv::ximgproc::thinning (Zhang-Suen and Guo-Hall).
+
+    rasmcore has a full morphology suite (erode, dilate, open, close,
+    gradient, tophat, blackhat) but no thinning/skeletonization.
+  codebase_analysis: |
+    EXISTING (filters.rs):
+    - erode / dilate: basic morphological ops with configurable radius
+    - morph_open / morph_close: compound ops
+    - morph_gradient / morph_tophat / morph_blackhat: derivative ops
+    - distance_transform: Euclidean distance from background
+    - All operate on grayscale, use box structuring element
+
+    APPROACH:
+    - Zhang-Suen is iterative: two sub-iterations per pass
+    - Each sub-iteration checks 8-neighborhood conditions
+    - Converges when no pixels are removed in a full pass
+    - Input must be binary (threshold first)
+    - Output is binary skeleton
+  acceptance_criteria:
+    - skeletonize filter on binary (grayscale) images
+    - Zhang-Suen algorithm with convergence detection
+    - Skeleton preserves topology (connected components unchanged)
+    - Registered with ConfigParams
+    - Validated against OpenCV ximgproc::thinning
+  out_of_scope: |
+    Guo-Hall thinning variant. Pruning (removing spurs).
+    Medial axis with distance values. 3D skeletonization.
+    Custom structuring elements for thinning.
+  technical_notes: |
+    Zhang-Suen algorithm (1984):
+    - Two sub-iterations per pass, checking 8-connected neighborhood
+    - Sub-iteration 1: mark pixels for deletion if conditions A-D met
+    - Sub-iteration 2: same but with rotated conditions
+    - Repeat until no pixels deleted
+
+    Conditions check: number of 0-1 transitions in neighborhood,
+    number of non-zero neighbors, and specific directional checks.
+
+    Reference: T.Y. Zhang, C.Y. Suen, "A fast parallel algorithm for
+    thinning digital patterns", CACM 1984.
+    OpenCV: ximgproc/thinning.cpp
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Implement Zhang-Suen thinning iteration (two sub-passes)
+        done: false
+      - text: Add convergence loop (repeat until stable)
+        done: false
+      - text: Register skeletonize as filter with ConfigParams
+        done: false
+      - text: Regenerate WIT
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit test — single-pixel-wide line is unchanged by skeletonize
+        done: false
+      - text: Unit test — thick rectangle produces cross-shaped skeleton
+        done: false
+      - text: Parity test against OpenCV thinning on test patterns
+        done: false
+extra: {}

@@ -1,0 +1,80 @@
+id: lab-channel-ops_20260331114703Z
+title: LAB channel operations — L/a/b split, edit, merge
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Split image to CIE LAB channels, apply per-channel operations
+    (curves, levels on L only), merge back. Key for luminosity masking
+    and perceptually uniform color editing.
+  context: |
+    Photoshop's LAB mode is used for luminosity-based retouching:
+    sharpen only the L channel, adjust color via a/b channels without
+    affecting brightness. ImageMagick supports -colorspace Lab for
+    channel-level operations.
+
+    rasmcore has Lab conversion (color_spaces.rs: rgb_to_lab, lab_to_rgb)
+    but no filters that operate in Lab space. Users can't split to L/a/b,
+    edit channels independently, and merge back.
+  codebase_analysis: |
+    EXISTING (color_spaces.rs):
+    - rgb_to_lab(r, g, b) -> (L, a, b): CIE Lab D65
+    - lab_to_rgb(L, a, b) -> (r, g, b): inverse
+    - rgb_to_xyz / xyz_to_rgb: intermediate conversion
+    - Oklab conversions also available
+
+    EXISTING (filters.rs):
+    - channel_mixer: operates in RGB space
+    - curves_master/red/green/blue: per-RGB-channel curves
+
+    APPROACH:
+    - lab_extract_l / lab_extract_a / lab_extract_b: extract single channel as grayscale
+    - lab_curves_l: apply tone curve to L channel only (sharpen luminosity)
+    - lab_adjust: shift a/b channels for color manipulation
+    - All convert RGB->Lab, operate, convert Lab->RGB per pixel
+  acceptance_criteria:
+    - lab_extract_l filter — outputs L channel as grayscale RGB8
+    - lab_sharpen filter — applies unsharp mask to L channel only
+    - lab_adjust filter — shift a and b channels by offset values
+    - Roundtrip test — extract L, reconstruct with original a/b matches original
+    - Registered with ConfigParams
+  out_of_scope: |
+    Full Lab color space working mode (all operations in Lab).
+    Oklab variants (separate track if needed). ICC profile-aware Lab.
+    Luminosity masking workflows (compositing concern, not filter).
+  technical_notes: |
+    CIE Lab ranges: L in [0,100], a in [-128,127], b in [-128,127].
+    When extracting L as grayscale: map L/100 -> [0,255].
+    When extracting a or b: map (val+128)/255 -> [0,255].
+
+    Lab sharpen: convert to Lab, apply unsharp mask to L only,
+    convert back. Preserves color information exactly.
+
+    Per-pixel: RGB -> XYZ (D65) -> Lab -> modify -> Lab -> XYZ -> RGB.
+    Use existing color_spaces.rs functions.
+plan:
+  - phase: Channel extraction
+    tasks:
+      - text: Implement lab_extract_l — L channel as grayscale
+        done: false
+      - text: Implement lab_extract_a / lab_extract_b — a/b channels as grayscale
+        done: false
+  - phase: Lab-space operations
+    tasks:
+      - text: Implement lab_sharpen — unsharp mask on L channel only
+        done: false
+      - text: Implement lab_adjust — a/b channel offset for color shifting
+        done: false
+      - text: Register all filters with ConfigParams
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit test — L extraction of pure gray produces uniform output
+        done: false
+      - text: Unit test — lab_sharpen preserves color (a/b channels unchanged)
+        done: false
+      - text: Roundtrip test — Lab convert and back is identity within tolerance
+        done: false
+extra: {}

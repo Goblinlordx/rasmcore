@@ -1,0 +1,76 @@
+id: contour-tracing_20260331114704Z
+title: Contour tracing and polygon approximation
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Suzuki-Abe contour tracing on binary/threshold images, Douglas-Peucker
+    polygon simplification, bounding rect/circle, area/perimeter computation.
+    Bridges the gap between edge detection and shape analysis.
+  context: |
+    OpenCV findContours + approxPolyDP is the standard pipeline for
+    shape analysis: threshold -> find contours -> approximate polygons
+    -> measure properties. ImageMagick has -connected-components.
+
+    rasmcore has edge detection (Sobel, Canny), threshold, and
+    connected_components, but no contour tracing that produces ordered
+    point sequences suitable for shape analysis.
+  codebase_analysis: |
+    EXISTING:
+    - canny(): binary edge image
+    - threshold_binary / otsu_threshold / adaptive_threshold
+    - connected_components(): labels connected regions (flood fill based)
+    - hough_lines(): detects lines from edge images
+
+    MISSING:
+    - Contour tracing: extract ordered boundary point sequences
+    - Polygon approximation: simplify contours to fewer vertices
+    - Shape descriptors: area, perimeter, bounding rect, moments
+
+    APPROACH:
+    - Suzuki-Abe border following algorithm (same as OpenCV findContours)
+    - Returns Vec<Contour> where Contour = Vec<(i32,i32)>
+    - Douglas-Peucker for polygon simplification
+    - Shape properties computed from contour point lists
+  acceptance_criteria:
+    - find_contours(binary_pixels, info) returns Vec<Vec<(i32,i32)>>
+    - approx_poly(contour, epsilon) returns simplified contour
+    - contour_area(contour) and contour_perimeter(contour) functions
+    - bounding_rect(contour) returns (x, y, w, h)
+    - Validated against OpenCV findContours on simple shapes
+  out_of_scope: |
+    Contour hierarchy (parent/child). Convex hull. Moments beyond area.
+    Contour matching/comparison. Shape recognition.
+  technical_notes: |
+    Suzuki-Abe algorithm traces borders by following the boundary pixels
+    in a binary image. It's the standard algorithm used by OpenCV.
+
+    Douglas-Peucker recursively simplifies a polyline by removing points
+    that are within epsilon distance of the line between endpoints.
+
+    Reference: OpenCV imgproc/contours.cpp (findContours),
+    imgproc/approx.cpp (approxPolyDP)
+plan:
+  - phase: Contour tracing
+    tasks:
+      - text: Implement Suzuki-Abe border following for external contours
+        done: false
+      - text: Return contours as Vec<Vec<(i32,i32)>> ordered point sequences
+        done: false
+  - phase: Shape analysis
+    tasks:
+      - text: Implement Douglas-Peucker polygon approximation
+        done: false
+      - text: Implement contour_area (shoelace formula) and contour_perimeter
+        done: false
+      - text: Implement bounding_rect for contours
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit test — square image produces 4-point contour (after approx)
+        done: false
+      - text: Parity test against OpenCV findContours on synthetic shapes
+        done: false
+extra: {}

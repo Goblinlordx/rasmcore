@@ -1,0 +1,75 @@
+id: mesh-warp-distortion_20260331114702Z
+title: Grid mesh warp distortion
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: |
+    Arbitrary grid-based mesh warp with bilinear interpolation between
+    control points. Enables puppet-warp and free-transform distortion.
+  context: |
+    Photoshop has Puppet Warp and Free Transform mesh warping.
+    ImageMagick has -distort Shepards and -distort BilinearForward.
+    libvips has mapim() for arbitrary coordinate mapping.
+
+    rasmcore has perspective_warp (4-point homography), barrel distortion,
+    swirl, wave, ripple — but no arbitrary mesh-based warping where the
+    user defines a grid of control points and displaces them.
+  codebase_analysis: |
+    EXISTING (ewa.rs + filters.rs):
+    - perspective_warp: 4-point homography via 3x3 matrix
+    - barrel: radial distortion with k1/k2/k3
+    - displacement_map: per-pixel displacement from a map image
+    - swirl, wave, ripple: parametric distortions
+    - All use backward mapping (for each output pixel, find source coord)
+
+    APPROACH:
+    - Define grid as MxN control points with source and destination coords
+    - For each output pixel, find containing quad in destination grid
+    - Bilinear interpolation within the quad to find source coordinate
+    - Sample source image with bilinear interpolation
+    - Follow backward-mapping pattern consistent with existing distortions
+  acceptance_criteria:
+    - mesh_warp(pixels, info, grid_src, grid_dst, grid_cols, grid_rows) function
+    - Bilinear interpolation within each quad cell
+    - Identity grid (src==dst) produces unchanged output
+    - Registered as filter with serialized grid control points
+    - Works on RGB8 and RGBA8
+  out_of_scope: |
+    Thin-plate spline warp. Puppet warp with bone/pin system.
+    Forward mapping. Adaptive mesh refinement. GPU acceleration.
+  technical_notes: |
+    Backward mapping approach:
+    1. Build destination grid from control points
+    2. For each output pixel (x,y), find which destination quad contains it
+    3. Compute barycentric/bilinear coords within that quad
+    4. Use same coords to interpolate source position from source grid
+    5. Sample source image at that position (bilinear)
+
+    Grid serialization: JSON array of {src_x, src_y, dst_x, dst_y} per point,
+    row-major order. Grid dimensions passed as grid_cols, grid_rows params.
+plan:
+  - phase: Core algorithm
+    tasks:
+      - text: Implement quad-finding for output pixel in destination grid
+        done: false
+      - text: Implement bilinear interpolation within quad for source coordinate lookup
+        done: false
+      - text: Implement backward-mapped mesh warp with bilinear source sampling
+        done: false
+  - phase: Registration
+    tasks:
+      - text: Define MeshWarpParams with grid points, cols, rows
+        done: false
+      - text: Register as filter, parse grid from JSON string
+        done: false
+      - text: Regenerate WIT
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit test — identity grid produces unchanged output
+        done: false
+      - text: Unit test — uniform translation grid shifts image correctly
+        done: false
+extra: {}
