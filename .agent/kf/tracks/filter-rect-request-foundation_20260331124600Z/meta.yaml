@@ -1,5 +1,5 @@
 title: Filter rect-request model -- codegen + signature change
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-31'
