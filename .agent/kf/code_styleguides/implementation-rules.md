@@ -139,6 +139,7 @@ When implementing a new filter:
 - [ ] `reference` attribute citing the reference implementation
 - [ ] `overlap` attribute or appropriate config field for spatial filters
 - [ ] `PointOp` trait impl if filter is a per-channel mapping (enables LUT fusion)
+- [ ] `AffineOp` trait impl if node is a spatial transform (enables single-resample fusion)
 - [ ] Basic unit tests
 - [ ] Parity test against reference implementation
 - [ ] SIMD implementation for spatial and color ops (not needed for LUT-based point ops)

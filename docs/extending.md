@@ -387,6 +387,70 @@ Blur with radius=3:    input_rect → (7, 7, 38, 38)  // expanded by 3 on each s
 Pipeline fetches the larger region, runs the filter, crops to (10, 10, 32, 32)
 ```
 
+### Affine Transform Composition
+
+Transform nodes (resize, crop, rotate, flip) implement `AffineOp` to enable
+single-resample optimization. When the pipeline chains multiple transforms,
+the optimizer composes their affine matrices into one and resamples once —
+eliminating multi-pass interpolation artifacts.
+
+#### The `AffineOp` trait
+
+```rust
+pub trait AffineOp {
+    /// Return the 2x3 affine matrix and output dimensions for this transform.
+    fn to_affine(&self) -> ([f64; 6], u32, u32);
+}
+```
+
+The matrix format is `[a, b, tx, c, d, ty]` representing:
+- `x' = a*x + b*y + tx`
+- `y' = c*x + d*y + ty`
+
+#### Implementing AffineOp for a new transform
+
+If your transform node is expressible as a 2x3 affine matrix, implement
+`AffineOp` and override `as_affine_op()` in `ImageNode`:
+
+```rust
+impl AffineOp for MyTransformNode {
+    fn to_affine(&self) -> ([f64; 6], u32, u32) {
+        // Return (matrix, output_width, output_height)
+        ([1.0, 0.0, -self.x as f64, 0.0, 1.0, -self.y as f64],
+         self.width, self.height)
+    }
+}
+
+impl ImageNode for MyTransformNode {
+    // ... other methods ...
+    fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
+        Some(self.to_affine())
+    }
+    fn upstream_id(&self) -> Option<u32> {
+        Some(self.upstream)
+    }
+}
+```
+
+Both `as_affine_op()` and `upstream_id()` must be implemented for the
+optimizer to walk the chain. Non-affine nodes (blur, filters) act as
+composition barriers — the optimizer stops at them.
+
+#### Matrix composition
+
+Use `compose_affine(outer, inner)` to multiply two 2x3 matrices. The
+result applies `inner` first, then `outer`. The optimizer calls this
+automatically when fusing consecutive affine nodes.
+
+#### When NOT to implement AffineOp
+
+- **Nonlinear transforms** (barrel distortion, swirl, perspective warp)
+  — these are not affine and cannot be composed with a 2x3 matrix
+- **Format-changing operations** (grayscale, flatten) — these change the
+  pixel format, not spatial layout
+- **Content-dependent transforms** (seam carving, smart crop) — output
+  depends on image content, not just geometry
+
 ---
 
 ## Adding a Decoder

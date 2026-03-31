@@ -1466,3 +1466,198 @@ mod frame_sequence_tests {
         assert_eq!(pixels.len(), 4 * 4 * 4); // 4x4 RGBA8
     }
 }
+
+#[cfg(test)]
+mod affine_composition_tests {
+    use super::*;
+    use crate::domain::pipeline::nodes::transform::*;
+    use crate::domain::types::{ColorSpace, FlipDirection, ImageInfo, PixelFormat, ResizeFilter, Rotation};
+
+    struct RawSource { pixels: Vec<u8>, info: ImageInfo }
+    impl RawSource { fn new(pixels: Vec<u8>, info: ImageInfo) -> Self { Self { pixels, info } } }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo { self.info.clone() }
+        fn compute_region(&self, request: Rect, _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>) -> Result<Vec<u8>, ImageError> {
+            let bpp = crate::domain::pipeline::graph::bytes_per_pixel(self.info.format);
+            Ok(crop_region(&self.pixels, Rect::new(0, 0, self.info.width, self.info.height), request, bpp))
+        }
+        fn access_pattern(&self) -> AccessPattern { AccessPattern::Sequential }
+    }
+
+    fn make_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn compose_identity() {
+        let id = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let result = compose_affine(&id, &id);
+        for (a, b) in result.iter().zip(id.iter()) {
+            assert!((a - b).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn compose_scale_then_rotate90() {
+        // Scale 2x then rotate 90°
+        let scale = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let rot90 = [0.0, -1.0, 100.0, 1.0, 0.0, 0.0]; // h=100
+        let composed = compose_affine(&rot90, &scale);
+        // Point (10, 5): scale → (20, 10), rotate90 → (100-10, 20) = (90, 20)
+        let x = composed[0] * 10.0 + composed[1] * 5.0 + composed[2];
+        let y = composed[3] * 10.0 + composed[4] * 5.0 + composed[5];
+        assert!((x - 90.0).abs() < 1e-10);
+        assert!((y - 20.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn affine_dims_scale() {
+        let scale2x = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let (w, h) = affine_output_dims(&scale2x, 100, 50);
+        assert_eq!(w, 200);
+        assert_eq!(h, 100);
+    }
+
+    #[test]
+    fn affine_dims_rotate90() {
+        // Rotate 90° for a 100x50 image: output is 50x100
+        let rot90 = [0.0, -1.0, 50.0, 1.0, 0.0, 0.0]; // tx = h = 50
+        let (w, h) = affine_output_dims(&rot90, 100, 50);
+        assert_eq!(w, 50);
+        assert_eq!(h, 100);
+    }
+
+    #[test]
+    fn resize_node_affine_op() {
+        let info = make_info(100, 50);
+        let node = ResizeNode::new(0, info, 200, 100, ResizeFilter::Lanczos3);
+        let (mat, w, h) = node.to_affine();
+        assert_eq!(w, 200);
+        assert_eq!(h, 100);
+        assert!((mat[0] - 2.0).abs() < 1e-10); // sx = 200/100
+        assert!((mat[4] - 2.0).abs() < 1e-10); // sy = 100/50
+    }
+
+    #[test]
+    fn crop_node_affine_op() {
+        let info = make_info(100, 100);
+        let node = CropNode::new(0, info, 10, 20, 50, 60);
+        let (mat, w, h) = node.to_affine();
+        assert_eq!(w, 50);
+        assert_eq!(h, 60);
+        assert!((mat[2] - (-10.0)).abs() < 1e-10); // tx = -x
+        assert!((mat[5] - (-20.0)).abs() < 1e-10); // ty = -y
+    }
+
+    #[test]
+    fn flip_node_affine_op() {
+        let info = make_info(100, 50);
+        let node = FlipNode::new(0, info, FlipDirection::Horizontal);
+        let (mat, w, h) = node.to_affine();
+        assert_eq!(w, 100);
+        assert_eq!(h, 50);
+        assert!((mat[0] - (-1.0)).abs() < 1e-10); // -1 for flip
+        assert!((mat[2] - 100.0).abs() < 1e-10); // tx = width
+    }
+
+    #[test]
+    fn fuse_resize_rotate_flip() {
+        // Build a chain: source → resize → rotate → flip
+        let src_info = make_info(64, 64);
+        let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
+
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let src = graph.add_node(Box::new(RawSource::new(pixels.clone(), src_info.clone())));
+
+        let resize = graph.add_node(Box::new(ResizeNode::new(
+            src, src_info.clone(), 32, 32, ResizeFilter::Bilinear,
+        )));
+        let resize_info = graph.node_info(resize).unwrap();
+
+        let rotate = graph.add_node(Box::new(RotateNode::new(
+            resize, resize_info.clone(), Rotation::R90,
+        )));
+        let rotate_info = graph.node_info(rotate).unwrap();
+
+        let flip = graph.add_node(Box::new(FlipNode::new(
+            rotate, rotate_info, FlipDirection::Horizontal,
+        )));
+
+        // Before fusion: 3 separate transform nodes
+        let info_before = graph.node_info(flip).unwrap();
+
+        // Fuse
+        graph.fuse_affine_transforms();
+
+        // After fusion: info should be the same
+        let info_after = graph.node_info(flip).unwrap();
+        assert_eq!(info_before.width, info_after.width);
+        assert_eq!(info_before.height, info_after.height);
+
+        // Verify execution works
+        let full = Rect::new(0, 0, info_after.width, info_after.height);
+        let result = graph.request_region(flip, full).unwrap();
+        assert_eq!(result.len(), (info_after.width * info_after.height * 3) as usize);
+    }
+
+    #[test]
+    fn non_affine_blocks_fusion() {
+        // Build: source → resize → blur → rotate
+        // Blur should block fusion — resize and rotate should NOT compose
+        use crate::domain::pipeline::nodes::filters::BlurNode;
+        use crate::domain::filters::BlurParams;
+
+        let src_info = make_info(64, 64);
+        let pixels: Vec<u8> = vec![128u8; 64 * 64 * 3];
+
+        let mut graph = NodeGraph::new(1024 * 1024);
+        let src = graph.add_node(Box::new(RawSource::new(pixels, src_info.clone())));
+
+        let resize = graph.add_node(Box::new(ResizeNode::new(
+            src, src_info.clone(), 32, 32, ResizeFilter::Bilinear,
+        )));
+        let resize_info = graph.node_info(resize).unwrap();
+
+        let blur = graph.add_node(Box::new(BlurNode::new(
+            resize, resize_info.clone(), BlurParams { radius: 2.0 },
+        )));
+        let blur_info = graph.node_info(blur).unwrap();
+
+        let rotate = graph.add_node(Box::new(RotateNode::new(
+            blur, blur_info, Rotation::R90,
+        )));
+
+        // Fuse — blur should prevent resize+rotate composition
+        graph.fuse_affine_transforms();
+
+        // The rotate node should NOT have been composed with resize
+        // (it should still be a RotateNode, not ComposedAffineNode)
+        // Verify by checking execution still works
+        let out_info = graph.node_info(rotate).unwrap();
+        let full = Rect::new(0, 0, out_info.width, out_info.height);
+        let result = graph.request_region(rotate, full).unwrap();
+        assert_eq!(result.len(), (out_info.width * out_info.height * 3) as usize);
+    }
+
+    #[test]
+    fn composed_output_dimensions_correct() {
+        // Resize 100x100 → 50x50, then rotate 90° → 50x50
+        let info = make_info(100, 100);
+        let resize = ResizeNode::new(0, info.clone(), 50, 50, ResizeFilter::Bilinear);
+        let (resize_mat, _, _) = resize.to_affine();
+
+        let resized_info = make_info(50, 50);
+        let rotate = RotateNode::new(0, resized_info, Rotation::R90);
+        let (rotate_mat, _, _) = rotate.to_affine();
+
+        let composed = compose_affine(&rotate_mat, &resize_mat);
+        let (w, h) = affine_output_dims(&composed, 100, 100);
+        assert_eq!(w, 50);
+        assert_eq!(h, 50);
+    }
+}
