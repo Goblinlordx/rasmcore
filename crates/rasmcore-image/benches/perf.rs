@@ -16,7 +16,7 @@ use std::path::Path;
 
 use rasmcore_pipeline::Rect;
 use rasmcore_image::domain::filters::{
-    AdaptiveMethod, BlendMode, BokehShape, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
+    AdaptiveMethod, BlendMode, BokehBlurParams, MertensParams, MorphShape, NlmAlgorithm, NlmParams,
 };
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::{color_grading, content_aware, decoder, encoder, filters, transform};
@@ -619,13 +619,23 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
         // Bokeh blur — disc (radius=5)
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("bokeh_disc/rasmcore", size), |b| {
-            b.iter(|| filters::bokeh_blur(&px, &inf, 5, BokehShape::Disc).unwrap());
+            let r = rasmcore_pipeline::Rect::new(0, 0, inf.width, inf.height);
+            b.iter(|| {
+                let px2 = px.clone();
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(px2.clone());
+                filters::bokeh_blur(r, &mut u, &inf, &filters::BokehBlurParams { radius: 5, shape: 0 }).unwrap()
+            });
         });
 
         // Bokeh blur — hexagon (radius=5)
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("bokeh_hex/rasmcore", size), |b| {
-            b.iter(|| filters::bokeh_blur(&px, &inf, 5, BokehShape::Hexagon).unwrap());
+            let r = rasmcore_pipeline::Rect::new(0, 0, inf.width, inf.height);
+            b.iter(|| {
+                let px2 = px.clone();
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(px2.clone());
+                filters::bokeh_blur(r, &mut u, &inf, &filters::BokehBlurParams { radius: 5, shape: 1 }).unwrap()
+            });
         });
 
         // Convolve (5x5 sharpen kernel)

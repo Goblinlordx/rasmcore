@@ -1094,7 +1094,9 @@ fn bokeh_disc_r3_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bokeh_disc_3.raw"));
-        let ours = filters::bokeh_blur(&input, &info, 3, filters::BokehShape::Disc).unwrap();
+        let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
+        let ours = filters::bokeh_blur(r, &mut u, &info, &filters::BokehBlurParams { radius: 3, shape: 0 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1111,7 +1113,9 @@ fn bokeh_disc_r7_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bokeh_disc_7.raw"));
-        let ours = filters::bokeh_blur(&input, &info, 7, filters::BokehShape::Disc).unwrap();
+        let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
+        let ours = filters::bokeh_blur(r, &mut u, &info, &filters::BokehBlurParams { radius: 7, shape: 0 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1128,7 +1132,9 @@ fn bokeh_hex_r3_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bokeh_hex_3.raw"));
-        let ours = filters::bokeh_blur(&input, &info, 3, filters::BokehShape::Hexagon).unwrap();
+        let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
+        let ours = filters::bokeh_blur(r, &mut u, &info, &filters::BokehBlurParams { radius: 3, shape: 1 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1145,7 +1151,9 @@ fn bokeh_hex_r7_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bokeh_hex_7.raw"));
-        let ours = filters::bokeh_blur(&input, &info, 7, filters::BokehShape::Hexagon).unwrap();
+        let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
+        let ours = filters::bokeh_blur(r, &mut u, &info, &filters::BokehBlurParams { radius: 7, shape: 1 }).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);

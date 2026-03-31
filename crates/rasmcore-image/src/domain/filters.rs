@@ -1281,10 +1281,14 @@ fn make_hex_kernel(radius: u32) -> (Vec<f32>, usize) {
     reference = "physical optic disc/polygon aperture model"
 )]
 pub fn bokeh_blur(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &BokehBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
     let shape = config.shape;
 
@@ -1304,9 +1308,8 @@ pub fn bokeh_blur(
         return Ok(pixels.to_vec());
     }
     {
-        let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        convolve(r, &mut u, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
+        convolve(request, &mut u, info, &kernel, &ConvolveParams { kw: side as u32, kh: side as u32, divisor })
     }
 }
 
@@ -12669,7 +12672,9 @@ mod tests {
     #[test]
     fn bokeh_disc_zero_radius_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = bokeh_blur(&px, &info, &BokehBlurParams { radius: 0, shape: 0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(px.clone());
+        let result = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 0, shape: 0 }).unwrap();
         assert_eq!(result, px);
     }
 
@@ -12716,7 +12721,10 @@ mod tests {
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
-        let result = bokeh_blur(&pixels, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px2 = pixels.clone();
+        let mut u = |_: Rect| Ok(px2.clone());
+        let result = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
         for (i, &v) in result.iter().enumerate() {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -12734,7 +12742,10 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = bokeh_blur(&pixels, &info, &BokehBlurParams { radius: 1, shape: 1 });
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px2 = pixels.clone();
+        let mut u = |_: Rect| Ok(px2.clone());
+        let result = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 1, shape: 1 });
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 64);
     }
@@ -20630,7 +20641,10 @@ mod tilt_shift_lens_blur_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         let disc = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
-        let bokeh = bokeh_blur(&pixels, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let px2 = pixels.clone();
+        let mut u = |_: Rect| Ok(px2.clone());
+        let bokeh = bokeh_blur(r, &mut u, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
         // Both use same make_disc_kernel + convolve — should be identical
         assert_eq!(disc, bokeh, "lens_blur disc should match bokeh_blur disc");
     }
