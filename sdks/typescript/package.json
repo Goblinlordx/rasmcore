@@ -1,0 +1,30 @@
+{
+  "name": "@rasmcore/sdk",
+  "version": "0.1.0",
+  "description": "Image processing SDK powered by WebAssembly — dynamic runtime with optional typed wrappers",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "rasmcore-typegen": "./dist/bin/typegen.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typegen": "tsx bin/typegen.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0"
+  }
+}
