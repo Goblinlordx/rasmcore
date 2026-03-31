@@ -1,5 +1,5 @@
 title: Extract Pipeline Builder to web-ui/ TypeScript Package
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-03-31'
