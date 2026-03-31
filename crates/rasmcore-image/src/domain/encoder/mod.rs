@@ -1,4 +1,5 @@
 pub mod avif;
+pub mod streaming;
 pub mod bmp;
 pub mod dds;
 pub mod exr;

@@ -1,21 +1,23 @@
 //! Sink nodes — drive execution by pulling regions and encoding output.
 //!
 //! By default, the output image is requested as tiles (default 512×512) to
-//! reduce peak memory for large images. Tiles are stitched into the full
-//! output buffer before encoding, since all current encoders require
-//! complete pixel buffers.
+//! reduce peak memory for large images. For formats with streaming encoders
+//! (BMP, HDR, FITS, QOI, TIFF), tiles are passed directly to the encoder
+//! without assembling the full pixel buffer. For other formats, tiles are
+//! stitched into a contiguous buffer before encoding.
 //!
 //! Tile execution is pixel-identical to full-image execution — the pipeline
 //! graph's `request_region` produces the same bytes regardless of request
 //! size. The spatial cache automatically reuses overlapping tile edges.
 //!
-//! Encoder streaming capabilities (future work):
-//!   - TIFF: supports strip-based writing — could accept tiles directly
-//!   - PNG: scanline-based encoding possible via libpng
-//!   - JPEG: scanline-based encoding possible via libjpeg
-//!   - WebP, AVIF, GIF, BMP, ICO, QOI: require complete pixel buffers
+//! Streaming encoder memory benefit:
+//!   - BMP, HDR, FITS: true streaming — no full pixel buffer in memory
+//!   - QOI, TIFF: buffered internally — API consistency, no memory win
+//!   - PNG, JPEG: scanline-based streaming possible (future work)
+//!   - WebP, AVIF, GIF: require complete pixel buffers (no streaming)
 
 use crate::domain::encoder;
+use crate::domain::encoder::streaming::StreamingEncoder;
 use crate::domain::error::ImageError;
 use crate::domain::metadata_set::MetadataSet;
 use crate::domain::pipeline::graph::{bytes_per_pixel, NodeGraph};
@@ -98,6 +100,43 @@ fn request_tiled(
     Ok(out)
 }
 
+/// Feed tiles from the pipeline graph to a streaming encoder.
+///
+/// Like `request_tiled` but passes tiles directly to the encoder instead
+/// of stitching into an intermediate buffer. The encoder handles format-
+/// specific assembly.
+fn feed_tiles_to_encoder(
+    graph: &mut NodeGraph,
+    node_id: u32,
+    width: u32,
+    height: u32,
+    _bpp: u32,
+    tile_size: u32,
+    enc: &mut dyn StreamingEncoder,
+) -> Result<(), ImageError> {
+    if tile_size == 0 || (width <= tile_size && height <= tile_size) {
+        let full = Rect::new(0, 0, width, height);
+        let pixels = graph.request_region(node_id, full)?;
+        enc.write_tile(&pixels, 0, 0, width, height)?;
+        return Ok(());
+    }
+
+    let mut y = 0u32;
+    while y < height {
+        let th = tile_size.min(height - y);
+        let mut x = 0u32;
+        while x < width {
+            let tw = tile_size.min(width - x);
+            let tile_rect = Rect::new(x, y, tw, th);
+            let tile_pixels = graph.request_region(node_id, tile_rect)?;
+            enc.write_tile(&tile_pixels, x, y, tw, th)?;
+            x += tile_size;
+        }
+        y += tile_size;
+    }
+    Ok(())
+}
+
 /// Embed metadata into encoded output bytes.
 ///
 /// Applies metadata embedding in order: EXIF, XMP, IPTC, ICC.
@@ -155,6 +194,10 @@ pub fn write(
 }
 
 /// Write with explicit tile configuration.
+///
+/// Uses a streaming encoder when available for the format, avoiding the
+/// intermediate full pixel buffer. Falls back to stitch-then-encode for
+/// formats without streaming support.
 pub fn write_tiled(
     graph: &mut NodeGraph,
     node_id: u32,
@@ -165,6 +208,30 @@ pub fn write_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
+
+    // Try streaming path for supported formats (no metadata embedding needed
+    // for BMP/HDR/FITS/QOI/TIFF — they don't support metadata embedding)
+    let no_metadata = metadata.is_none()
+        || matches!(
+            format,
+            "bmp" | "hdr" | "fits" | "fit" | "qoi" | "tiff" | "tif"
+        );
+    if no_metadata
+        && let Some(mut enc) = encoder::streaming::create_streaming_encoder(format, &info)
+    {
+        feed_tiles_to_encoder(
+            graph,
+            node_id,
+            info.width,
+            info.height,
+            bpp,
+            tile_config.tile_size,
+            enc.as_mut(),
+        )?;
+        return enc.finish();
+    }
+
+    // Fallback: stitch tiles into full buffer, then encode
     let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
     // Re-query info after compute — mapper nodes update their output format
     // during compute_region (e.g., RGB8 → Gray8 for grayscale/sobel/charcoal).
@@ -302,7 +369,7 @@ pub fn write_tiff(
     write_tiff_tiled(graph, node_id, config, &TileConfig::default())
 }
 
-/// Write TIFF with explicit tile configuration.
+/// Write TIFF with explicit tile configuration (streaming — internally buffered).
 pub fn write_tiff_tiled(
     graph: &mut NodeGraph,
     node_id: u32,
@@ -311,8 +378,9 @@ pub fn write_tiff_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
-    encoder::tiff::encode(&pixels, &info, config)
+    let mut enc = encoder::streaming::TiffStreamingEncoder::new(&info, config)?;
+    feed_tiles_to_encoder(graph, node_id, info.width, info.height, bpp, tile_config.tile_size, &mut enc)?;
+    enc.finish()
 }
 
 /// Write a node's output as BMP.
@@ -320,7 +388,7 @@ pub fn write_bmp(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageEr
     write_bmp_tiled(graph, node_id, &TileConfig::default())
 }
 
-/// Write BMP with explicit tile configuration.
+/// Write BMP with explicit tile configuration (streaming).
 pub fn write_bmp_tiled(
     graph: &mut NodeGraph,
     node_id: u32,
@@ -328,8 +396,9 @@ pub fn write_bmp_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
-    let pixels = request_tiled(graph, node_id, info.width, info.height, bpp, tile_config.tile_size)?;
-    encoder::bmp::encode_pixels(&pixels, &info, &encoder::bmp::BmpEncodeConfig)
+    let mut enc = encoder::streaming::BmpStreamingEncoder::new(&info)?;
+    feed_tiles_to_encoder(graph, node_id, info.width, info.height, bpp, tile_config.tile_size, &mut enc)?;
+    enc.finish()
 }
 
 /// Write a node's output as ICO.
@@ -354,7 +423,22 @@ pub fn write_qoi(graph: &mut NodeGraph, node_id: u32) -> Result<Vec<u8>, ImageEr
     write_qoi_tiled(graph, node_id, &TileConfig::default())
 }
 
-/// Write QOI with explicit tile configuration.
+/// Write QOI with explicit tile configuration (streaming — internally buffered).
+#[cfg(feature = "native-qoi")]
+pub fn write_qoi_tiled(
+    graph: &mut NodeGraph,
+    node_id: u32,
+    tile_config: &TileConfig,
+) -> Result<Vec<u8>, ImageError> {
+    let info = graph.node_info(node_id)?;
+    let bpp = bytes_per_pixel(info.format);
+    let mut enc = encoder::streaming::QoiStreamingEncoder::new(&info)?;
+    feed_tiles_to_encoder(graph, node_id, info.width, info.height, bpp, tile_config.tile_size, &mut enc)?;
+    enc.finish()
+}
+
+/// Write QOI with explicit tile configuration (fallback when native-qoi disabled).
+#[cfg(not(feature = "native-qoi"))]
 pub fn write_qoi_tiled(
     graph: &mut NodeGraph,
     node_id: u32,
