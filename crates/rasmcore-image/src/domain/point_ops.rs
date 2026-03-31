@@ -1080,4 +1080,98 @@ mod tests {
             assert_eq!(fused[i], sig_lut[levels_lut[i] as usize]);
         }
     }
+
+    // ── Exposure tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn exposure_zero_ev_is_identity() {
+        let lut = build_lut(&PointOp::Exposure {
+            ev: 0.0,
+            offset: 0.0,
+            gamma_correction: 1.0,
+        });
+        for i in 0..=255u8 {
+            assert_eq!(lut[i as usize], i, "0EV exposure should be identity at {i}");
+        }
+    }
+
+    #[test]
+    fn exposure_plus_one_ev_doubles() {
+        // +1 EV = 2x brightness. 128 * 2 = 256, clamped to 255.
+        let lut = build_lut(&PointOp::Exposure {
+            ev: 1.0,
+            offset: 0.0,
+            gamma_correction: 1.0,
+        });
+        assert_eq!(lut[0], 0, "+1EV black stays black");
+        assert_eq!(lut[255], 255, "+1EV white stays white");
+        // 64/255 * 2 = 128/255 → 128
+        assert_eq!(lut[64], 128, "+1EV should double: got {}", lut[64]);
+        // 128/255 * 2 > 1.0, clamped to 255
+        assert_eq!(lut[128], 255, "+1EV 128 saturates to 255");
+    }
+
+    #[test]
+    fn exposure_minus_one_ev_halves() {
+        // -1 EV = 0.5x brightness
+        let lut = build_lut(&PointOp::Exposure {
+            ev: -1.0,
+            offset: 0.0,
+            gamma_correction: 1.0,
+        });
+        assert_eq!(lut[0], 0, "-1EV black stays black");
+        // 255/255 * 0.5 = 0.5 → 128
+        assert_eq!(lut[255], 128, "-1EV white halves to 128");
+        // 128/255 * 0.5 ≈ 0.251 → 64
+        assert_eq!(lut[128], 64, "-1EV midtone halves: got {}", lut[128]);
+    }
+
+    #[test]
+    fn exposure_offset_shifts() {
+        let lut = build_lut(&PointOp::Exposure {
+            ev: 0.0,
+            offset: 0.1,
+            gamma_correction: 1.0,
+        });
+        // Input 0 + offset 0.1 = 0.1 → 26
+        assert_eq!(lut[0], 26, "offset should shift black up: got {}", lut[0]);
+    }
+
+    #[test]
+    fn exposure_gamma_correction() {
+        let lut = build_lut(&PointOp::Exposure {
+            ev: 0.0,
+            offset: 0.0,
+            gamma_correction: 2.0,
+        });
+        // gamma_correction=2.0 → inv_gamma=0.5 → sqrt
+        // 128/255 ≈ 0.502 → sqrt(0.502) ≈ 0.708 → 181
+        assert!(
+            lut[128] > 160 && lut[128] < 195,
+            "gamma 2.0 should brighten midtones: got {}",
+            lut[128]
+        );
+    }
+
+    #[test]
+    fn exposure_invalid_gamma_errors() {
+        let info = test_info(1, 1, PixelFormat::Rgb8);
+        assert!(exposure(&[128, 128, 128], &info, 0.0, 0.0, 0.0).is_err());
+        assert!(exposure(&[128, 128, 128], &info, 0.0, 0.0, -1.0).is_err());
+    }
+
+    #[test]
+    fn exposure_lut_composable() {
+        // Exposure + Invert should compose correctly
+        let exp = build_lut(&PointOp::Exposure {
+            ev: 1.0,
+            offset: 0.0,
+            gamma_correction: 1.0,
+        });
+        let inv = build_lut(&PointOp::Invert);
+        let fused = compose_luts(&exp, &inv);
+        for v in 0..=255u8 {
+            assert_eq!(fused[v as usize], inv[exp[v as usize] as usize]);
+        }
+    }
 }

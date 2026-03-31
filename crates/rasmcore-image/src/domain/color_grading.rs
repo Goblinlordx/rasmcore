@@ -1192,4 +1192,85 @@ mod tests {
         }
         assert!(color_varied, "color grain should vary between channels");
     }
+
+    // ─── Color Balance tests ──────────────────────────────────────────
+
+    #[test]
+    fn color_balance_identity() {
+        let cb = ColorBalance::default();
+        let (r, g, b) = color_balance_pixel(0.5, 0.3, 0.8, &cb);
+        assert!((r - 0.5).abs() < 1e-4, "identity r: {r}");
+        assert!((g - 0.3).abs() < 1e-4, "identity g: {g}");
+        assert!((b - 0.8).abs() < 1e-4, "identity b: {b}");
+    }
+
+    #[test]
+    fn color_balance_shadow_shift() {
+        // Push shadows toward red (cyan_red = +1.0)
+        let cb = ColorBalance {
+            shadow: [1.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        // Dark pixel (luma ~0.1) should shift red significantly
+        let (r, _, _) = color_balance_pixel(0.1, 0.1, 0.1, &cb);
+        assert!(r > 0.15, "shadow red shift on dark pixel: r={r}");
+
+        // Bright pixel (luma ~0.9) should barely shift
+        let (r_bright, _, _) = color_balance_pixel(0.9, 0.9, 0.9, &cb);
+        // With preserve_luminosity, the shift + rescale can reduce the net change.
+        // The key test: dark pixel shifts more than bright pixel.
+        let dark_shift = {
+            let cb_no_lum = ColorBalance {
+                shadow: [1.0, 0.0, 0.0],
+                preserve_luminosity: false,
+                ..Default::default()
+            };
+            let (r_d, _, _) = color_balance_pixel(0.1, 0.1, 0.1, &cb_no_lum);
+            let (r_b, _, _) = color_balance_pixel(0.9, 0.9, 0.9, &cb_no_lum);
+            (r_d - 0.1, r_b - 0.9)
+        };
+        assert!(
+            dark_shift.0.abs() > dark_shift.1.abs(),
+            "shadows should affect dark more than bright: dark={}, bright={}",
+            dark_shift.0,
+            dark_shift.1
+        );
+    }
+
+    #[test]
+    fn color_balance_midtone_shift() {
+        let cb = ColorBalance {
+            midtone: [0.0, 0.5, 0.0],
+            preserve_luminosity: false,
+            ..Default::default()
+        };
+        // Midtone pixel should shift green
+        let (_, g, _) = color_balance_pixel(0.5, 0.5, 0.5, &cb);
+        assert!(g > 0.55, "midtone green shift: g={g}");
+    }
+
+    #[test]
+    fn color_balance_preserve_luminosity() {
+        let cb = ColorBalance {
+            midtone: [0.5, 0.0, 0.0],
+            preserve_luminosity: true,
+            ..Default::default()
+        };
+        let (r, g, b) = color_balance_pixel(0.5, 0.5, 0.5, &cb);
+        let luma_before = 0.2126 * 0.5 + 0.7152 * 0.5 + 0.0722 * 0.5;
+        let luma_after = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        assert!(
+            (luma_before - luma_after).abs() < 0.01,
+            "luminosity should be preserved: before={luma_before}, after={luma_after}"
+        );
+    }
+
+    #[test]
+    fn color_balance_buffer_apply() {
+        let px = vec![128u8, 128, 128];
+        let info = test_info();
+        let cb = ColorBalance::default();
+        let result = color_balance(&px, &info, &cb).unwrap();
+        assert_eq!(result, px, "identity should not change pixels");
+    }
 }
