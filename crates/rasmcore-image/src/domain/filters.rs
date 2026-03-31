@@ -1337,10 +1337,14 @@ pub struct MotionBlurParams {
     reference = "linear kernel simulating camera motion"
 )]
 pub fn motion_blur(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &MotionBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let length = config.length;
     let angle_degrees = config.angle_degrees;
 
@@ -17729,7 +17733,9 @@ mod motion_blur_tests {
     #[test]
     fn zero_length_is_identity() {
         let (pixels, info) = make_gray(8, 8, 128);
-        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 0, angle_degrees: 45.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 0, angle_degrees: 45.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17737,7 +17743,9 @@ mod motion_blur_tests {
     fn uniform_image_unchanged() {
         // Motion blur of a uniform image should produce the same uniform image
         let (pixels, info) = make_gray(16, 16, 100);
-        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
         // Interior pixels should be exactly 100 (uniform input)
         // Border pixels may differ due to reflect101 padding
         let w = info.width as usize;
@@ -17763,7 +17771,9 @@ mod motion_blur_tests {
         let mut pixels = vec![0u8; (w * h) as usize];
         pixels[8 * 16 + 8] = 255; // center pixel
 
-        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
 
         // The bright pixel should spread along the horizontal line (row 8)
         // but not vertically (rows 7 and 9 at x=8 should be 0 or near-0)
@@ -17784,7 +17794,9 @@ mod motion_blur_tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 8 * 8 * 3];
-        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 2, angle_degrees: 45.0 }).unwrap();
+        let r = Rect::new(0, 0, 8, 8);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        let result = motion_blur(r, &mut u, &info, &MotionBlurParams { length: 2, angle_degrees: 45.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 }

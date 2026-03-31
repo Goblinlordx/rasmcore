@@ -1595,7 +1595,9 @@ fn parity_motion_blur_multi() {
             64,
             64,
             |px, info| {
-                rasmcore_image::domain::filters::motion_blur(px, info, *len, *angle).unwrap()
+                let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+                rasmcore_image::domain::filters::motion_blur(r, &mut u, info, *len, *angle).unwrap()
             },
             &["-motion-blur", &format!("{angle}x{len}+0")],
             &format!("motion_blur_l{len}_a{angle}"),
@@ -2118,7 +2120,11 @@ fn algorithm_motion_blur() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::motion_blur(px, info, 5, 0.0).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::motion_blur(r, &mut u, info, 5, 0.0).unwrap()
+        },
         &["-motion-blur", "0x5+0"],
         "motion_blur_5_0deg",
     ) {
