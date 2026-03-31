@@ -7,15 +7,14 @@ updated: '2026-03-31'
 spec:
   summary: |
     Change all filter function signatures to receive (request: Rect,
-    upstream_fn, ...) so each filter explicitly requests its own upstream
-    pixels. Remove the overlap heuristic, overlap attribute parsing, and
-    input_rect codegen entirely.
+    upstream: &mut UpstreamFn, info: &ImageInfo, ...) so each filter
+    explicitly requests its own upstream pixels. Remove the overlap
+    heuristic and attribute system entirely.
   context: |
     Currently filter authors write plain functions (pixels in, pixels out)
     and the codegen system guesses what upstream rect to request based on
     field name heuristics (radius, ksize, sigma, etc.) or explicit overlap
-    attributes. This is fragile -- convolve was broken because its params
-    were named kw/kh instead of ksize.
+    attributes. This is fragile and invisible.
 
     The new model: every filter function receives (request, upstream_fn)
     and calls upstream_fn(rect) with whatever rect it needs. Point ops
@@ -23,87 +22,272 @@ spec:
     right in the filter code -- no hidden codegen layer.
   codebase_analysis: |
     CURRENT SYSTEM:
-    - 134 registered filters in filters.rs
-    - 9 explicit overlap attributes (uniform(1), uniform(2), uniform(10), param(...), full)
-    - Heuristic in codegen/generate/pipeline.rs detects radius/ksize/sigma/diameter/kw/kh
+    - 134 registered filters in filters.rs (one 20K-line file)
+    - 9 explicit overlap attributes
+    - Heuristic in codegen detects radius/ksize/sigma/diameter/kw/kh
     - Generated compute_region() calls input_rect() then upstream_fn()
     - Filter function never sees Rect or upstream_fn
 
-    CODEGEN FILES:
-    - crates/rasmcore-codegen/src/generate/pipeline.rs -- input_rect_body(),
-      input_rect_expand_expr(), detect_expansion_field()
-    - crates/rasmcore-macros/src/lib.rs -- register_filter proc macro
-    - crates/rasmcore-codegen/src/parse/filters.rs -- overlap attribute parsing
+    KEY FILES:
+    - crates/rasmcore-image/src/domain/filters.rs -- all filter implementations
+    - crates/rasmcore-codegen/src/generate/pipeline.rs -- node codegen
+    - crates/rasmcore-codegen/src/generate/pipeline_mapper.rs -- mapper node codegen
+    - crates/rasmcore-codegen/src/generate/adapter.rs -- WIT adapter codegen
+    - crates/rasmcore-codegen/src/parse/filters.rs -- filter signature parser
+    - crates/rasmcore-codegen/src/parse/mappers.rs -- mapper signature parser
+    - crates/rasmcore-codegen/src/types.rs -- FilterReg struct
+    - crates/rasmcore-image/src/domain/filter_registry.rs -- runtime registry (hand-wired)
+
+    CALL SITES FOR EACH FILTER (all must be updated per filter):
+    1. The filter function itself in filters.rs
+    2. Generated pipeline node (auto-handled by codegen dual-path)
+    3. Generated WIT adapter (auto-handled by codegen dual-path)
+    4. filter_registry.rs builtin_filter! calls (hand-wired, ~22 entries)
+    5. Internal cross-calls (one filter calling another, e.g. sharpen calls blur)
+    6. process_via_8bit closures (16-bit delegation that re-calls the filter)
+    7. Test code calling the filter directly
+    8. Any external callers (transform.rs, etc.)
 
     NEW SIGNATURE:
-    fn filter(request: Rect, upstream: &mut dyn FnMut(Rect) -> Result<RegionPixels>,
-              config: &Params) -> Result<Vec<u8>>
+      fn filter_name(
+          request: Rect,
+          upstream: &mut UpstreamFn,
+          info: &ImageInfo,
+          config: &FilterParams,  // UNCHANGED -- keep config structs exactly as-is
+      ) -> Result<Vec<u8>, ImageError>
 
-    HELPERS ALREADY EXIST:
-    - Rect::expand_uniform(amount, bounds_w, bounds_h)
-    - Rect::expand_asymmetric(left, top, right, bottom, bounds)
-    - Rect::expand(&self, &Overlap, bounds_w, bounds_h)
+    TYPES ALREADY ADDED TO filters.rs:
+      use rasmcore_pipeline::Rect;
+      pub type UpstreamFn<'a> = dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + 'a;
   acceptance_criteria:
-    - All filter functions receive (request, upstream_fn) as first two params
-    - Codegen passes request and upstream_fn through to filter functions
-    - input_rect_body(), input_rect_expand_expr(), detect_expansion_field() removed from codegen
-    - overlap attribute parsing removed from register_filter macro
-    - All 9 explicit overlap attributes removed from filters.rs
-    - grep for 'overlap = "' in filters.rs returns 0 matches
-    - All existing tests pass (behavior unchanged)
+    - All filter functions receive (request, upstream) as first two params
+    - Config structs (BlurParams, etc.) are UNCHANGED -- same fields, same types
+    - Codegen handles both old and new signatures simultaneously
+    - Build (native + WASM via cargo component build) passes after EACH filter migration
+    - Tests pass after EACH filter migration
+    - After all filters migrated, overlap heuristic code removed from codegen
+    - grep for overlap = in filters.rs returns 0 matches
   out_of_scope: |
-    Changing filter logic itself -- this track only changes the plumbing.
-    Each filter initially just does upstream(request) for point ops or
-    upstream(request.expand_uniform(N)) matching the old hardcoded overlap.
-    Subsequent tracks can refine individual filter expansion logic.
+    Changing filter logic. Changing config structs. Splitting filters.rs
+    into multiple files. Changing how mappers work (separate track).
+    Making spatial filters actually request expanded rects (future -- for
+    now they just do upstream(request) same as point ops).
   technical_notes: |
-    APPROACH -- two phases:
-    1. Update codegen to generate the new compute_region that passes
-       (request, upstream_fn) directly to the filter function. Remove
-       all overlap/heuristic code. The filter function signature changes
-       from fn(pixels, info, config) to fn(request, upstream_fn, config).
-    2. Update every filter function to accept the new signature. For the
-       initial migration, spatial filters use upstream(request.expand_uniform(N))
-       matching their old overlap value, and point ops use upstream(request).
-
-    PARALLELIZATION: Phase 2 is mechanical -- each filter is independent.
-    The developer track should spawn isolated worktree agents per category
-    batch. Each agent: verify tests pass, update batch, verify again, commit,
-    merge back.
-
-    REGRESSION SAFETY: The tiled parity tests in graph.rs already verify
-    that tiled output matches full-image output for blur, sharpen, contrast,
-    median, erode, bilateral, guided_filter, canny, motion_blur. These tests
-    validate correctness after the refactor.
+    SEE APPENDIX BELOW FOR PRECISE STEP-BY-STEP PLAN.
 plan:
-  - phase: Codegen changes
+  - phase: Dual-path codegen (DONE on branch)
     tasks:
-      - text: Update register_filter macro to accept new filter signature (request, upstream_fn, ...)
-        done: false
-      - text: Update pipeline.rs codegen to pass (request, upstream_fn) through to filter function
-        done: false
-      - text: Remove input_rect_body(), input_rect_expand_expr(), detect_expansion_field() from codegen
-        done: false
-      - text: Remove overlap attribute parsing from register_filter macro and filter parser
-        done: false
-  - phase: Filter migration
+      - text: Add rect_request field to FilterReg in types.rs
+        done: true
+      - text: Add detect_rect_request_sig() to parse/filters.rs
+        done: true
+      - text: Update extract_fn_params to skip request/upstream params (careful -- do NOT match substring Rect in DrawRectParams etc.)
+        done: true
+      - text: Update pipeline.rs generate_nodes to branch on f.rect_request
+        done: true
+      - text: Update adapter.rs to branch on f.rect_request for WIT calls
+        done: true
+      - text: Add Rect import and UpstreamFn type alias to filters.rs
+        done: true
+      - text: Verify build passes with zero filters migrated (all legacy path)
+        done: true
+  - phase: Migrate brightness (DONE on branch -- proof of concept)
     tasks:
-      - text: Migrate spatial filters (19) -- blur, sharpen, median, convolve, bilateral, etc.
-        done: false
-      - text: Migrate morphology + edge filters (11) -- erode, dilate, sobel, canny, etc.
-        done: false
-      - text: Migrate enhancement filters with spatial behavior (10) -- clarity, dehaze, shadow_highlight, etc.
-        done: false
-      - text: Migrate global filters (19) -- equalize, auto_level, histogram, average_blur, etc.
-        done: false
-      - text: Migrate effect + distortion filters (18) -- emboss, solarize, barrel, ripple, etc.
-        done: false
-      - text: Migrate point operation filters (57) -- brightness, contrast, color ops, grading, etc.
-        done: false
-  - phase: Cleanup and verification
+      - text: Migrate brightness filter signature
+        done: true
+      - text: Fix brightness process_via_8bit closure
+        done: true
+      - text: Fix brightness call in filter_registry.rs
+        done: true
+      - text: Fix brightness call in transform.rs tests
+        done: true
+      - text: Fix brightness unit tests
+        done: true
+      - text: Verify native build + WASM build + 10 brightness tests pass
+        done: true
+  - phase: Migrate remaining 133 filters via subagents
     tasks:
-      - text: Verify 0 overlap attributes remain -- grep count before/after
+      - text: Spawn subagents, one filter per agent, following the appendix protocol
         done: false
-      - text: Run full tiled parity test suite to verify no regressions
+  - phase: Cleanup
+    tasks:
+      - text: Remove overlap heuristic code from pipeline.rs (input_rect_body, detect_expansion_field, etc.)
         done: false
-extra: {}
+      - text: Remove all overlap attributes from register_filter annotations
+        done: false
+      - text: Remove legacy codegen path (only keep rect_request path)
+        done: false
+      - text: Verify grep overlap = in filters.rs returns 0
+        done: false
+      - text: Run full test suite
+        done: false
+extra:
+  appendix: |
+    ================================================================
+    APPENDIX: PRECISE MIGRATION PROTOCOL FOR EACH FILTER
+    ================================================================
+
+    STARTING POINT:
+    Branch kf/refactor/filter-rect-request-foundation_20260331124600Z
+    has the dual-path codegen and brightness already migrated.
+    Build is green (native + WASM). All tests pass.
+
+    ----------------------------------------------------------------
+    FOR EACH FILTER, A SUBAGENT DOES THIS:
+    ----------------------------------------------------------------
+
+    The subagent works in an isolated worktree branched from the
+    implementation branch (NOT main).
+
+    STEP 1: VALIDATE CURRENT STATE
+      cargo build -p rasmcore-image
+      cargo component build -p rasmcore-image
+      cargo test -p rasmcore-image --lib <filter_name>
+      All must pass before touching anything.
+
+    STEP 2: CHANGE THE FILTER SIGNATURE
+      In crates/rasmcore-image/src/domain/filters.rs, find the function.
+      Example -- before:
+
+        pub fn contrast(
+            pixels: &[u8],
+            info: &ImageInfo,
+            config: &ContrastParams,
+        ) -> Result<Vec<u8>, ImageError> {
+            let amount = config.amount;
+            ...
+
+      After:
+
+        pub fn contrast(
+            request: Rect,
+            upstream: &mut UpstreamFn,
+            info: &ImageInfo,
+            config: &ContrastParams,
+        ) -> Result<Vec<u8>, ImageError> {
+            let pixels = upstream(request)?;
+            let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+            let pixels = pixels.as_slice();
+            let amount = config.amount;
+            ...
+
+      RULES:
+      - Replace ONLY "pixels: &[u8], info: &ImageInfo" with
+        "request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo"
+      - Add exactly 3 lines after the opening brace:
+          let pixels = upstream(request)?;
+          let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+          let pixels = pixels.as_slice();
+      - DO NOT change config struct params. &BlurParams stays &BlurParams.
+      - DO NOT change return type.
+      - DO NOT change any other code in the function body.
+
+    STEP 3: FIX INTERNAL CROSS-CALLS
+      Search for any place THIS filter is called from WITHIN filters.rs:
+        grep -n "filter_name(" crates/rasmcore-image/src/domain/filters.rs
+
+      Common patterns:
+
+      a) process_via_8bit closure:
+         BEFORE: process_via_8bit(pixels, info, |p8, i8| contrast(p8, i8, config))
+         AFTER:  process_via_8bit(pixels, info, |p8, i8| {
+                     let r = Rect::new(0, 0, i8.width, i8.height);
+                     let mut u = |_: Rect| Ok(p8.to_vec());
+                     contrast(r, &mut u, i8, config)
+                 })
+
+      b) Direct cross-call from another filter:
+         BEFORE: let result = blur(pixels, info, 1.0)?;
+         AFTER:  let result = {
+                     let r = Rect::new(0, 0, info.width, info.height);
+                     let mut u = |_: Rect| Ok(pixels.to_vec());
+                     blur(r, &mut u, info, 1.0)?
+                 };
+
+      c) process_via_8bit passing the function directly:
+         BEFORE: process_via_8bit(pixels, info, sobel)
+         AFTER:  process_via_8bit(pixels, info, |p8, i8| {
+                     let r = Rect::new(0, 0, i8.width, i8.height);
+                     let mut u = |_: Rect| Ok(p8.to_vec());
+                     sobel(r, &mut u, i8)
+                 })
+
+    STEP 4: FIX FILTER_REGISTRY.RS (if applicable)
+      Search: grep "filters::filter_name(" crates/rasmcore-image/src/domain/filter_registry.rs
+
+      If found, change:
+        BEFORE: filters::contrast(input.pixels, input.info, &filters::ContrastParams { amount })
+        AFTER:  {
+                    let r = rasmcore_pipeline::Rect::new(0, 0, input.info.width, input.info.height);
+                    let p = input.pixels;
+                    let mut u = |_: rasmcore_pipeline::Rect| -> Result<Vec<u8>, ImageError> { Ok(p.to_vec()) };
+                    filters::contrast(r, &mut u, input.info, &filters::ContrastParams { amount })
+                }
+
+    STEP 5: FIX TEST CODE
+      Search: grep -rn "filter_name(" crates/rasmcore-image/src/ | grep -v "^.*:.*pub fn"
+
+      For each test call:
+        BEFORE: contrast(&px, &info, &ContrastParams { amount: 0.5 })
+        AFTER:  contrast(
+                    Rect::new(0, 0, info.width, info.height),
+                    &mut |_| Ok(px.to_vec()),
+                    &info,
+                    &ContrastParams { amount: 0.5 },
+                )
+
+    STEP 6: FIX OTHER CALLERS
+      Search: grep -rn "filters::filter_name(" crates/rasmcore-image/src/
+
+      Any file (transform.rs, color_grading.rs, etc.) that calls the filter
+      needs the same wrapping pattern as step 4.
+
+    STEP 7: VALIDATE
+      cargo build -p rasmcore-image           # native build
+      cargo component build -p rasmcore-image  # WASM build
+      cargo test -p rasmcore-image --lib <filter_name>  # filter-specific tests
+
+      ALL THREE must pass. If any fail, fix before proceeding.
+
+    STEP 8: COMMIT
+      git add -A
+      git commit -m "refactor: migrate <filter_name> to rect-request signature"
+
+    STEP 9: MERGE BACK
+      Merge the worktree branch back to the implementation branch.
+
+    ----------------------------------------------------------------
+    IMPORTANT WARNINGS (from failed attempts):
+    ----------------------------------------------------------------
+
+    1. DO NOT flatten config structs. &BlurParams stays &BlurParams.
+       The WIT system uses ConfigParams = WIT record. Flattening breaks WASM.
+
+    2. DO NOT change any code inside the filter body beyond the 3 added lines.
+
+    3. DO NOT use a script to bulk-migrate. Each filter has unique call sites
+       (process_via_8bit patterns, cross-calls, tests). Do them one at a time.
+
+    4. The parser skip list uses full.contains("request : Rect") (with space)
+       to avoid matching "DrawRectParams". Do NOT use full.contains("Rect").
+
+    5. ALWAYS check WASM build (cargo component build), not just native build.
+
+    6. ALWAYS diff the changes before committing. Verify only the intended
+       lines changed.
+
+    ----------------------------------------------------------------
+    FILTER LIST (134 total, brightness already done):
+    ----------------------------------------------------------------
+
+    Get the full list with:
+      grep -n "register_filter\|register_mapper" crates/rasmcore-image/src/domain/filters.rs
+
+    Each registered pub fn is one migration unit. Generators (register_generator)
+    are NOT included -- they don't take pixels/info.
+
+    Order does not matter since both codegen paths coexist. However, if filter A
+    calls filter B internally, migrating B first avoids having to wrap B's call
+    twice (once during A's migration, then again when B migrates). Suggested
+    order: leaf filters first (no internal cross-calls), then filters that
+    call others.
