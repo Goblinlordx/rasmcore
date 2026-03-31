@@ -1067,6 +1067,129 @@ mod tests {
         assert_ne!(result, px, "TTF auto should render text");
     }
 
+    // ── Polygon tests ──
+
+    #[test]
+    fn draw_polygon_triangle_filled() {
+        let (px, info) = white_rgba(100, 100);
+        let verts = vec![(50.0, 10.0), (10.0, 90.0), (90.0, 90.0)];
+        let (result, _) = draw_polygon(
+            &px,
+            &info,
+            &verts,
+            [255, 0, 0, 255],
+            [0, 0, 0, 255],
+            0.0,
+            true,
+        )
+        .unwrap();
+        // Center of triangle (~50, 60) should be red
+        let idx = (60 * 100 + 50) * 4;
+        assert_eq!(result[idx], 255, "red fill at center");
+        assert_eq!(result[idx + 1], 0);
+    }
+
+    #[test]
+    fn draw_polygon_square_stroked() {
+        let (px, info) = white_rgba(100, 100);
+        let verts = vec![(20.0, 20.0), (80.0, 20.0), (80.0, 80.0), (20.0, 80.0)];
+        let (result, _) = draw_polygon(
+            &px,
+            &info,
+            &verts,
+            [0, 0, 0, 0],
+            [0, 0, 255, 255],
+            3.0,
+            false,
+        )
+        .unwrap();
+        // Center (50, 50) should still be white (stroke only, no fill)
+        let center = (50 * 100 + 50) * 4;
+        assert_eq!(result[center], 255, "center white");
+        assert_eq!(result[center + 1], 255);
+        // Edge (20, 20) should have blue stroke
+        let edge = (20 * 100 + 20) * 4;
+        assert_ne!(result[edge..edge + 3], [255, 255, 255], "edge should be stroked");
+    }
+
+    #[test]
+    fn draw_polygon_too_few_vertices_errors() {
+        let (px, info) = white_rgba(100, 100);
+        let result = draw_polygon(
+            &px,
+            &info,
+            &[(10.0, 10.0), (20.0, 20.0)],
+            [0, 0, 0, 255],
+            [0, 0, 0, 255],
+            1.0,
+            true,
+        );
+        assert!(result.is_err());
+    }
+
+    // ── Ellipse tests ──
+
+    #[test]
+    fn draw_ellipse_filled() {
+        let (px, info) = white_rgba(100, 100);
+        let (result, _) =
+            draw_ellipse(&px, &info, 50.0, 50.0, 30.0, 15.0, [0, 255, 0, 255], 1.0, true)
+                .unwrap();
+        // Center (50, 50) should be green
+        let idx = (50 * 100 + 50) * 4;
+        assert_eq!(result[idx + 1], 255, "green at center");
+    }
+
+    #[test]
+    fn draw_ellipse_outline() {
+        let (px, info) = white_rgba(100, 100);
+        let (result, _) = draw_ellipse(
+            &px,
+            &info,
+            50.0,
+            50.0,
+            30.0,
+            15.0,
+            [255, 0, 0, 255],
+            2.0,
+            false,
+        )
+        .unwrap();
+        // Center should remain white
+        let center = (50 * 100 + 50) * 4;
+        assert_eq!(result[center], 255, "center white for outline");
+        // A point on the ellipse edge (50+30, 50) = (80, 50) should be red
+        let edge = (50 * 100 + 80) * 4;
+        assert_ne!(result[edge..edge + 3], [255, 255, 255], "edge stroked");
+    }
+
+    // ── Arc tests ──
+
+    #[test]
+    fn draw_arc_semicircle() {
+        let (px, info) = white_rgba(100, 100);
+        let (result, _) = draw_arc(
+            &px,
+            &info,
+            50.0,
+            50.0,
+            30.0,
+            30.0,
+            0.0,
+            180.0,
+            [255, 0, 0, 255],
+            2.0,
+        )
+        .unwrap();
+        assert_ne!(result, px, "arc should modify pixels");
+    }
+
+    #[test]
+    fn draw_arc_invalid_radius_errors() {
+        let (px, info) = white_rgba(100, 100);
+        assert!(draw_arc(&px, &info, 50.0, 50.0, 0.0, 30.0, 0.0, 90.0, [0, 0, 0, 255], 1.0).is_err());
+    }
+
     #[test]
     fn draw_text_ttf_invalid_font_returns_error() {
         let (px, info) = white_rgba(100, 50);
