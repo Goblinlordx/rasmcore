@@ -9936,10 +9936,14 @@ fn morph_shape_from_u32(v: u32) -> MorphShape {
     reference = "binary erosion"
 )]
 pub fn erode_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &ErodeParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let ksize = config.ksize;
     let shape = config.shape;
 
