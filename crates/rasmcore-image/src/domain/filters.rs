@@ -16440,7 +16440,7 @@ mod artistic_filter_tests {
     fn oil_paint_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = oil_paint(&pixels, &info, &OilPaintParams { radius: 2 }).unwrap();
+        let result = oil_paint(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &OilPaintParams { radius: 2 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16449,7 +16449,7 @@ mod artistic_filter_tests {
         // Uniform image → all pixels in same bin → output = input
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = oil_paint(&pixels, &info, &OilPaintParams { radius: 3 }).unwrap();
+        let result = oil_paint(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &OilPaintParams { radius: 3 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19048,7 +19048,7 @@ mod distortion_effect_tests {
     fn pixelate_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 4 }).unwrap();
+        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 4 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19056,7 +19056,7 @@ mod distortion_effect_tests {
     fn pixelate_block_1_is_identity() {
         let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(64, 64);
-        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 1 }).unwrap();
+        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19065,7 +19065,7 @@ mod distortion_effect_tests {
         // 4x4 image, block_size=4 → entire image is one block
         let pixels = vec![100u8; 4 * 4 * 3];
         let info = rgb_info(4, 4);
-        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 4 }).unwrap();
+        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 4 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19074,7 +19074,7 @@ mod distortion_effect_tests {
         // 7x5 with block_size=3 → handles edge blocks correctly
         let pixels = vec![128u8; 7 * 5 * 3];
         let info = rgb_info(7, 5);
-        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 3 }).unwrap();
+        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 3 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19082,7 +19082,7 @@ mod distortion_effect_tests {
     fn pixelate_gray() {
         let pixels = vec![128u8; 16 * 16];
         let info = gray_info(16, 16);
-        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 4 }).unwrap();
+        let result = pixelate(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &PixelateParams { block_size: 4 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19092,7 +19092,7 @@ mod distortion_effect_tests {
     fn halftone_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19102,7 +19102,7 @@ mod distortion_effect_tests {
         // should be limited to values from {0, 255} combinations
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         for &v in &result {
             // Each RGB value is product of (1-C/M/Y)(1-K) where each is 0 or 1
             assert!(
@@ -19117,7 +19117,7 @@ mod distortion_effect_tests {
         // Pure white → C=0, M=0, Y=0, K=0 → all screens below threshold → white
         let pixels = vec![255u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         assert!(result.iter().all(|&v| v == 255));
     }
 
@@ -19126,7 +19126,7 @@ mod distortion_effect_tests {
         // Pure black → K=1 → all K screens fire → black
         let pixels = vec![0u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
+        let result = halftone(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         assert!(result.iter().all(|&v| v == 0));
     }
 
@@ -19136,7 +19136,7 @@ mod distortion_effect_tests {
     fn swirl_zero_angle_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = swirl(&pixels, &info, &SwirlParams { angle: 0.0, radius: 0.0 }).unwrap();
+        let result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 0.0, radius: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19144,7 +19144,7 @@ mod distortion_effect_tests {
     fn swirl_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = swirl(&pixels, &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
+        let result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19170,7 +19170,7 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small angle so center is barely affected
-        let result = swirl(&pixels, &info, &SwirlParams { angle: 10.0, radius: 0.0 }).unwrap();
+        let result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 10.0, radius: 0.0 }).unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center pixel should be close to the original value (not zero/black)
         assert!(
@@ -19186,7 +19186,7 @@ mod distortion_effect_tests {
     fn spherize_zero_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = spherize(&pixels, &info, &SpherizeParams { amount: 0.0 }).unwrap();
+        let result = spherize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpherizeParams { amount: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19194,7 +19194,7 @@ mod distortion_effect_tests {
     fn spherize_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = spherize(&pixels, &info, &SpherizeParams { amount: 0.5 }).unwrap();
+        let result = spherize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpherizeParams { amount: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19217,7 +19217,7 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = spherize(&pixels, &info, &SpherizeParams { amount: 0.5 }).unwrap();
+        let result = spherize(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SpherizeParams { amount: 0.5 }).unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center should be close to original (spherize barely moves center pixels)
         assert!(
@@ -19235,7 +19235,7 @@ mod distortion_effect_tests {
         // through the filter. Result should be very close to input.
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.0, k2: 0.0 }).unwrap();
+        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.0, k2: 0.0 }).unwrap();
         // Uniform image → still uniform after resampling
         for &v in &result {
             assert!(
@@ -19249,7 +19249,7 @@ mod distortion_effect_tests {
     fn barrel_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
+        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19272,7 +19272,7 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
+        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
         let off = (cy * w as usize + cx) * 3;
         assert!(
             result[off] > 100,
@@ -19287,7 +19287,7 @@ mod distortion_effect_tests {
     fn barrel_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
+        let result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19297,7 +19297,7 @@ mod distortion_effect_tests {
     fn polar_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = polar(&pixels, &info).unwrap();
+        let result = polar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19310,7 +19310,7 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = polar(&pixels, &info).unwrap();
+        let result = polar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19318,7 +19318,7 @@ mod distortion_effect_tests {
     fn depolar_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = depolar(&pixels, &info).unwrap();
+        let result = depolar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19345,8 +19345,8 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let polar_result = polar(&pixels, &info).unwrap();
-        let roundtrip = depolar(&polar_result, &info).unwrap();
+        let polar_result = polar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+        let roundtrip = depolar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(polar_result.to_vec()), &info).unwrap();
 
         // Interior pixels near center should be similar after roundtrip.
         // Bilinear interpolation causes some loss, so use a tolerance.
@@ -19375,7 +19375,7 @@ mod distortion_effect_tests {
     fn wave_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = wave(&pixels, &info, &WaveParams { amplitude: 0.0, wavelength: 10.0, vertical: 0.0 }).unwrap();
+        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 0.0, wavelength: 10.0, vertical: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19383,7 +19383,7 @@ mod distortion_effect_tests {
     fn wave_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(&pixels, &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 0.0 }).unwrap();
+        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19391,7 +19391,7 @@ mod distortion_effect_tests {
     fn wave_vertical_works() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(&pixels, &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 1.0 }).unwrap();
+        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 1.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19404,7 +19404,7 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = wave(&pixels, &info, &WaveParams { amplitude: 3.0, wavelength: 15.0, vertical: 0.0 }).unwrap();
+        let result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude: 3.0, wavelength: 15.0, vertical: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19414,7 +19414,7 @@ mod distortion_effect_tests {
     fn ripple_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = ripple(&pixels, &info, &RippleParams { amplitude: 0.0, wavelength: 10.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 0.0, wavelength: 10.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -19422,7 +19422,7 @@ mod distortion_effect_tests {
     fn ripple_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = ripple(&pixels, &info, &RippleParams { amplitude: 5.0, wavelength: 20.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 5.0, wavelength: 20.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19447,7 +19447,7 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small amplitude, long wavelength — near-center pixels barely move
-        let result = ripple(&pixels, &info, &RippleParams { amplitude: 1.0, wavelength: 100.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 1.0, wavelength: 100.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center pixel should be close to original (displacement at r≈0 is ≈0)
         assert!(
@@ -19466,7 +19466,7 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = ripple(&pixels, &info, &RippleParams { amplitude: 3.0, wavelength: 15.0, center_x: 0.5, center_y: 0.5 }).unwrap();
+        let result = ripple(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RippleParams { amplitude: 3.0, wavelength: 15.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -19520,7 +19520,7 @@ mod distortion_effect_tests {
         let wavelength = 20.0f32;
 
         let info = rgb_info(w, h);
-        let our_result = wave(&pixels, &info, &WaveParams { amplitude, wavelength, vertical: 0.0 }).unwrap();
+        let our_result = wave(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &WaveParams { amplitude, wavelength, vertical: 0.0 }).unwrap();
 
         // IM -wave extends canvas by 2*amplitude. Crop at offset=amplitude
         // to get the centered portion matching our source mapping.
@@ -19587,7 +19587,7 @@ mod distortion_effect_tests {
         let info = rgb_info(w, h);
         // IM's -distort Polar produces Cartesian output from polar-mapped source
         // — this matches our `depolar` function, not `polar`.
-        let our_result = depolar(&pixels, &info).unwrap();
+        let our_result = depolar(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
         let im_raw = std::env::temp_dir().join("polar_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -19649,7 +19649,7 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = swirl(&pixels, &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
+        let our_result = swirl(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
 
         let im_raw = std::env::temp_dir().join("swirl_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -19709,7 +19709,7 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = barrel(&pixels, &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
+        let our_result = barrel(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
 
         let im_raw = std::env::temp_dir().join("barrel_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -20123,7 +20123,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_radius_0_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 0 }).unwrap();
+        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20131,7 +20131,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 3 }).unwrap();
+        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 3 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -20139,7 +20139,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_uniform_is_identity() {
         let pixels = vec![100u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 3 }).unwrap();
+        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 3 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20158,7 +20158,7 @@ mod kuwahara_rank_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 2 }).unwrap();
+        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 2 }).unwrap();
         // Interior pixels far from edge should be unchanged
         // Left side interior (x=4, y=16) should still be dark
         let left_off = (16 * w as usize + 4) * 3;
@@ -20180,7 +20180,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 2 }).unwrap();
+        let result = kuwahara(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &KuwaharaParams { radius: 2 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -20190,7 +20190,7 @@ mod kuwahara_rank_tests {
     fn rank_filter_radius_0_is_identity() {
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
-        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 0, rank: 0.5 }).unwrap();
+        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 0, rank: 0.5 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20198,7 +20198,7 @@ mod kuwahara_rank_tests {
     fn rank_filter_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 2, rank: 0.5 }).unwrap();
+        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 2, rank: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -20210,7 +20210,7 @@ mod kuwahara_rank_tests {
             .collect();
         let info = rgb_info(32, 32);
         let median_result = median(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &MedianParams { radius: 3 }).unwrap();
-        let rank_result = rank_filter(&pixels, &info, &RankFilterParams { radius: 3, rank: 0.5 }).unwrap();
+        let rank_result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 3, rank: 0.5 }).unwrap();
         assert_eq!(rank_result, median_result, "rank 0.5 should match median");
     }
 
@@ -20219,7 +20219,7 @@ mod kuwahara_rank_tests {
         // rank=0.0 is local minimum — result should be <= input for each pixel
         let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
         let info = gray_info(16, 16);
-        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 1, rank: 0.0 }).unwrap();
+        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 1, rank: 0.0 }).unwrap();
         // Local min should be <= each pixel's own value (approximately — due to edge reflect)
         let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -20234,7 +20234,7 @@ mod kuwahara_rank_tests {
         // rank=1.0 is local maximum — result should be >= input on average
         let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
         let info = gray_info(16, 16);
-        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 1, rank: 1.0 }).unwrap();
+        let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 1, rank: 1.0 }).unwrap();
         let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -20248,7 +20248,7 @@ mod kuwahara_rank_tests {
         let pixels = vec![100u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
         for rank in [0.0f32, 0.5, 1.0] {
-            let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 2, rank: rank }).unwrap();
+            let result = rank_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &RankFilterParams { radius: 2, rank: rank }).unwrap();
             assert_eq!(
                 result, pixels,
                 "uniform image should be identity at rank={rank}"
@@ -20458,7 +20458,7 @@ mod cube_lut_tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let result = apply_cube_lut(&pixels, &info, cube).unwrap();
+        let result = apply_cube_lut(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, cube).unwrap();
         // Identity LUT: output should be close to input
         for i in 0..pixels.len() {
             assert!(
@@ -20915,7 +20915,7 @@ mod tilt_shift_lens_blur_tests {
     fn tilt_shift_zero_radius_is_identity() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 0.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 0.0, angle: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20923,7 +20923,7 @@ mod tilt_shift_lens_blur_tests {
     fn tilt_shift_full_band_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 1.0, blur_radius: 10.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 1.0, blur_radius: 10.0, angle: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20942,7 +20942,7 @@ mod tilt_shift_lens_blur_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.3, blur_radius: 10.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.3, blur_radius: 10.0, angle: 0.0 }).unwrap();
 
         // Center row (y=16) should be in the focus band — exactly preserved
         let center_y = 16;
@@ -20968,7 +20968,7 @@ mod tilt_shift_lens_blur_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 8.0, angle: 0.0 }).unwrap();
+        let result = tilt_shift(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 8.0, angle: 0.0 }).unwrap();
 
         // Top edge (y=0) should be heavily blurred — values should be closer to 128
         let top_y = 0;
@@ -20989,7 +20989,7 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_zero_radius_is_identity() {
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = lens_blur(&pixels, &info, &LensBlurParams { radius: 0, blade_count: 0, rotation: 0.0 }).unwrap();
+        let result = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 0, blade_count: 0, rotation: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -20997,7 +20997,7 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_disc_mode() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
+        let result = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
         // Should be different from input (blurred)
         assert_ne!(result, pixels);
@@ -21008,7 +21008,7 @@ mod tilt_shift_lens_blur_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         // 6-blade hexagon
-        let result = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 6, rotation: 0.0 }).unwrap();
+        let result = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 3, blade_count: 6, rotation: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
         assert_ne!(result, pixels);
     }
@@ -21017,7 +21017,7 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_disc_matches_bokeh_blur() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let disc = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
+        let disc = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = pixels.clone();
         let mut u = |_: Rect| Ok(px2.clone());
@@ -21041,8 +21041,8 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_rotation_changes_output() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let r0 = lens_blur(&pixels, &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 0.0 }).unwrap();
-        let r30 = lens_blur(&pixels, &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 30.0 }).unwrap();
+        let r0 = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 0.0 }).unwrap();
+        let r30 = lens_blur(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 30.0 }).unwrap();
         // Different rotation should produce different output
         assert_ne!(r0, r30, "rotated polygon should produce different result");
     }
