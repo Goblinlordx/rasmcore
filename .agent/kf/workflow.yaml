@@ -11,7 +11,9 @@ verification:
   checkpoints: track_completion
   commands:
     - "./scripts/validate.sh"
-  description: "Format check (rustfmt), lint (clippy -D warnings), domain tests, parity tests, WASM build"
+  wasm_build:
+    - "cargo component build -p rasmcore-image"
+  description: "Format check (rustfmt), lint (clippy -D warnings), domain tests, parity tests, WASM component build"
 
 # Pre-completion checklist — every developer MUST verify before marking complete.
 pre_completion:

@@ -38,29 +38,31 @@ spec:
   technical_notes: All three fixes are in rasmcore-codegen generators. After fixing the generators, rebuild to regenerate
     all output. Verify with 'cargo component build -p rasmcore-image' (must produce a valid .wasm component). Add WASM build
     check to the verification command in workflow.yaml so future tracks catch regressions.
-plan: []
-extra: {}
 plan:
 - phase: Fix codegen generators
   tasks:
-  - text: "Fix pipeline.rs generate_adapter_macro() — emit fully-qualified type paths (crate::domain::filters::XParams, crate::domain::param_types::Point2D) so the macro compiles in the WASM adapter context"
-    done: false
-  - text: "Fix adapter.rs generate_config_method() — for filters with mixed params (config struct + extra &str/&[f32]/&[Point2D]), include extra params in the adapter function signature alongside config"
-    done: false
-  - text: "Fix wit.rs generate() — for filters with mixed params, emit extra params as separate WIT parameters alongside the config record (not flattened into the record)"
-    done: false
+  - text: Fix pipeline.rs generate_adapter_macro() — emit fully-qualified type paths (crate::domain::filters::XParams, crate::domain::param_types::Point2D)
+      so the macro compiles in the WASM adapter context
+    done: true
+  - text: Fix adapter.rs generate_config_method() — for filters with mixed params (config struct + extra &str/&[f32]/&[Point2D]),
+      include extra params in the adapter function signature alongside config
+    done: true
+  - text: Fix wit.rs generate() — for filters with mixed params, emit extra params as separate WIT parameters alongside the
+      config record (not flattened into the record)
+    done: true
 - phase: Regenerate and verify
   tasks:
-  - text: "Rebuild with cargo component build -p rasmcore-image — verify zero errors"
-    done: false
-  - text: "Verify generated WIT has correct signatures for all filter categories: pure config, no params, mixed params"
-    done: false
-  - text: "Spot-check generated adapter code for draw_polygon (Point2D), draw_text (str + config), perspective_warp (f64 slice + config)"
-    done: false
+  - text: Rebuild with cargo component build -p rasmcore-image — verify zero errors
+    done: true
+  - text: 'Verify generated WIT has correct signatures for all filter categories: pure config, no params, mixed params'
+    done: true
+  - text: Spot-check generated adapter code for draw_polygon (Point2D), draw_text (str + config), perspective_warp (f64 slice
+      + config)
+    done: true
 - phase: Add WASM build to validation
   tasks:
-  - text: "Update workflow.yaml verification commands to include WASM build check"
-    done: false
-  - text: "Verify the full validation script passes the WASM step"
-    done: false
+  - text: Update workflow.yaml verification commands to include WASM build check
+    done: true
+  - text: Verify the full validation script passes the WASM step
+    done: true
 extra: {}
