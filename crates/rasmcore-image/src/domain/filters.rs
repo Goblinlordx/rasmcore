@@ -15461,10 +15461,14 @@ fn hue_to_rgb_tint(hue_deg: f32) -> [f32; 3] {
     color_op = "true"
 )]
 pub fn split_toning_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SplitToningParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let highlight_hue = config.highlight_hue;
     let shadow_hue = config.shadow_hue;
     let balance = config.balance;
@@ -15821,10 +15825,14 @@ pub struct FilmGrainParams {
     reference = "photographic film grain overlay"
 )]
 pub fn film_grain_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &FilmGrainParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let amount = config.amount;
     let size = config.size;
     let seed = config.seed;
@@ -16045,10 +16053,14 @@ pub struct SelectiveColorParams {
     reference = "hue-range-targeted color adjustment"
 )]
 pub fn selective_color_registered(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &SelectiveColorParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let target_hue = config.target_hue;
     let hue_range = config.hue_range;
     let hue_shift = config.hue_shift;
