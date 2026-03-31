@@ -17,7 +17,13 @@ fn has_tool(name: &str) -> bool {
 }
 
 fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "buffer length mismatch: {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "buffer length mismatch: {} vs {}",
+        a.len(),
+        b.len()
+    );
     if a.is_empty() {
         return 0.0;
     }
@@ -30,11 +36,7 @@ fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
 
 fn make_apng_test_sequence() -> FrameSequence {
     let mut seq = FrameSequence::new(8, 8);
-    let colors: [[u8; 4]; 3] = [
-        [255, 0, 0, 255],
-        [0, 255, 0, 255],
-        [0, 0, 255, 255],
-    ];
+    let colors: [[u8; 4]; 3] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
     for (i, color) in colors.iter().enumerate() {
         let pixels: Vec<u8> = (0..64).flat_map(|_| *color).collect();
         seq.push(
@@ -167,13 +169,18 @@ fn apng_encode_parity_vs_imagemagick_identify() {
             .unwrap();
         let stdout = String::from_utf8_lossy(&fallback.stdout);
         let lines: Vec<&str> = stdout.lines().collect();
-        eprintln!("  ImageMagick identify output ({} lines, no APNG: prefix):", lines.len());
+        eprintln!(
+            "  ImageMagick identify output ({} lines, no APNG: prefix):",
+            lines.len()
+        );
         for l in &lines {
             eprintln!("    {l}");
         }
         // If only 1 line, ImageMagick doesn't support APNG natively — skip
         if lines.len() == 1 {
-            eprintln!("  apng_encode_parity_vs_imagemagick: SKIP (ImageMagick APNG support limited)");
+            eprintln!(
+                "  apng_encode_parity_vs_imagemagick: SKIP (ImageMagick APNG support limited)"
+            );
             let _ = std::fs::remove_file(&tmp);
             return;
         }
@@ -181,7 +188,10 @@ fn apng_encode_parity_vs_imagemagick_identify() {
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout_str.lines().collect();
-    eprintln!("  ImageMagick identify APNG: output ({} lines):", lines.len());
+    eprintln!(
+        "  ImageMagick identify APNG: output ({} lines):",
+        lines.len()
+    );
     for l in &lines {
         eprintln!("    {l}");
     }
@@ -302,11 +312,7 @@ fn apng_decode_ffmpeg_encoded_reference() {
     std::fs::create_dir_all(&tmp_dir).unwrap();
 
     // Create 3 raw RGBA frames: solid red, green, blue (8x8)
-    let colors: [[u8; 4]; 3] = [
-        [255, 0, 0, 255],
-        [0, 255, 0, 255],
-        [0, 0, 255, 255],
-    ];
+    let colors: [[u8; 4]; 3] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
     for (i, color) in colors.iter().enumerate() {
         let pixels: Vec<u8> = (0..64).flat_map(|_| *color).collect();
         let raw_path = tmp_dir.join(format!("frame_{i}.raw"));
@@ -329,12 +335,18 @@ fn apng_decode_ffmpeg_encoded_reference() {
     let output = std::process::Command::new("ffmpeg")
         .args([
             "-y",
-            "-f", "rawvideo",
-            "-pix_fmt", "rgba",
-            "-s", "8x8",
-            "-r", "10",
-            "-i", "pipe:0",
-            "-plays", "0",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-s",
+            "8x8",
+            "-r",
+            "10",
+            "-i",
+            "pipe:0",
+            "-plays",
+            "0",
             apng_path.to_str().unwrap(),
         ])
         .stdin(std::process::Stdio::piped())
@@ -365,7 +377,10 @@ fn apng_decode_ffmpeg_encoded_reference() {
     let apng_data = std::fs::read(&apng_path).unwrap();
     let frame_count = decoder::frame_count(&apng_data).unwrap();
     eprintln!("  ffmpeg-encoded APNG: {frame_count} frames");
-    assert_eq!(frame_count, 3, "our decoder should find 3 frames in ffmpeg APNG");
+    assert_eq!(
+        frame_count, 3,
+        "our decoder should find 3 frames in ffmpeg APNG"
+    );
 
     let frames = decoder::decode_all_frames(&apng_data).unwrap();
     assert_eq!(frames.len(), 3);

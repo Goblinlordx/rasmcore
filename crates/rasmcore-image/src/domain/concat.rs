@@ -72,7 +72,9 @@ pub fn concat_horizontal(
     bg_color: &[u8],
 ) -> Result<DecodedImage, ImageError> {
     if images.is_empty() {
-        return Err(ImageError::InvalidInput("concat: no images provided".into()));
+        return Err(ImageError::InvalidInput(
+            "concat: no images provided".into(),
+        ));
     }
 
     let format = images[0].1.format;
@@ -88,8 +90,15 @@ pub fn concat_horizontal(
         }
     }
 
-    let max_h = images.iter().map(|(_, info)| info.height).max().unwrap_or(0) as usize;
-    let total_w: usize = images.iter().map(|(_, info)| info.width as usize).sum::<usize>()
+    let max_h = images
+        .iter()
+        .map(|(_, info)| info.height)
+        .max()
+        .unwrap_or(0) as usize;
+    let total_w: usize = images
+        .iter()
+        .map(|(_, info)| info.width as usize)
+        .sum::<usize>()
         + gap as usize * images.len().saturating_sub(1);
 
     if total_w == 0 || max_h == 0 {
@@ -107,7 +116,16 @@ pub fn concat_horizontal(
         let h = info.height as usize;
         // Center vertically
         let y_offset = (max_h - h) / 2;
-        blit(&mut output, total_w, pixels, w, h, bytes, x_offset, y_offset);
+        blit(
+            &mut output,
+            total_w,
+            pixels,
+            w,
+            h,
+            bytes,
+            x_offset,
+            y_offset,
+        );
         x_offset += w + gap as usize;
     }
 
@@ -133,7 +151,9 @@ pub fn concat_vertical(
     bg_color: &[u8],
 ) -> Result<DecodedImage, ImageError> {
     if images.is_empty() {
-        return Err(ImageError::InvalidInput("concat: no images provided".into()));
+        return Err(ImageError::InvalidInput(
+            "concat: no images provided".into(),
+        ));
     }
 
     let format = images[0].1.format;
@@ -150,7 +170,10 @@ pub fn concat_vertical(
     }
 
     let max_w = images.iter().map(|(_, info)| info.width).max().unwrap_or(0) as usize;
-    let total_h: usize = images.iter().map(|(_, info)| info.height as usize).sum::<usize>()
+    let total_h: usize = images
+        .iter()
+        .map(|(_, info)| info.height as usize)
+        .sum::<usize>()
         + gap as usize * images.len().saturating_sub(1);
 
     if max_w == 0 || total_h == 0 {
@@ -193,7 +216,9 @@ pub fn concat_grid(
     bg_color: &[u8],
 ) -> Result<DecodedImage, ImageError> {
     if images.is_empty() {
-        return Err(ImageError::InvalidInput("concat_grid: no images provided".into()));
+        return Err(ImageError::InvalidInput(
+            "concat_grid: no images provided".into(),
+        ));
     }
     if columns == 0 {
         return Err(ImageError::InvalidParameters(
@@ -215,20 +240,39 @@ pub fn concat_grid(
     }
 
     let cols = columns as usize;
-    let rows = (images.len() + cols - 1) / cols;
+    let rows = images.len().div_ceil(cols);
 
-    let cell_w = images.iter().map(|(_, info)| info.width as usize).max().unwrap_or(0);
-    let cell_h = images.iter().map(|(_, info)| info.height as usize).max().unwrap_or(0);
+    let cell_w = images
+        .iter()
+        .map(|(_, info)| info.width as usize)
+        .max()
+        .unwrap_or(0);
+    let cell_h = images
+        .iter()
+        .map(|(_, info)| info.height as usize)
+        .max()
+        .unwrap_or(0);
 
     let total_w = cell_w * cols + gap as usize * cols.saturating_sub(1);
     let total_h = cell_h * rows + gap as usize * rows.saturating_sub(1);
 
     if total_w == 0 || total_h == 0 {
-        return Err(ImageError::InvalidInput("concat_grid: zero-size output".into()));
+        return Err(ImageError::InvalidInput(
+            "concat_grid: zero-size output".into(),
+        ));
     }
 
     let mut output = vec![0u8; total_w * total_h * bytes];
-    fill_rect(&mut output, total_w, bytes, 0, 0, total_w, total_h, bg_color);
+    fill_rect(
+        &mut output,
+        total_w,
+        bytes,
+        0,
+        0,
+        total_w,
+        total_h,
+        bg_color,
+    );
 
     for (idx, (pixels, info)) in images.iter().enumerate() {
         let col = idx % cols;
@@ -244,7 +288,16 @@ pub fn concat_grid(
         let x_offset = cell_x + (cell_w - w) / 2;
         let y_offset = cell_y + (cell_h - h) / 2;
 
-        blit(&mut output, total_w, pixels, w, h, bytes, x_offset, y_offset);
+        blit(
+            &mut output,
+            total_w,
+            pixels,
+            w,
+            h,
+            bytes,
+            x_offset,
+            y_offset,
+        );
     }
 
     Ok(DecodedImage {
@@ -348,10 +401,8 @@ mod tests {
         for i in 0..6u8 {
             images_data.push(make_solid(10, 10, i * 40, 0, 0));
         }
-        let images: Vec<(&[u8], &ImageInfo)> = images_data
-            .iter()
-            .map(|(p, i)| (p.as_slice(), i))
-            .collect();
+        let images: Vec<(&[u8], &ImageInfo)> =
+            images_data.iter().map(|(p, i)| (p.as_slice(), i)).collect();
         let result = concat_grid(&images, 3, 0, &[0, 0, 0]).unwrap();
         assert_eq!(result.info.width, 30); // 3 cols × 10
         assert_eq!(result.info.height, 20); // 2 rows × 10

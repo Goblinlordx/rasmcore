@@ -42,11 +42,7 @@ pub enum PointOp {
     /// Levels: remap [black, white] input range to [0, 255] with gamma correction.
     /// `LUT[i] = clamp(((i/255 - black) / (white - black)) ^ (1/gamma) * 255)`
     /// Matches ImageMagick `-level black%,white%,gamma`.
-    Levels {
-        black: f32,
-        white: f32,
-        gamma: f32,
-    },
+    Levels { black: f32, white: f32, gamma: f32 },
     /// Sigmoidal contrast: S-curve contrast adjustment.
     /// `sigmoid(x) = 1 / (1 + exp(-strength * (x - midpoint)))`
     /// `LUT[i] = (sigmoid(i/255) - sigmoid(0)) / (sigmoid(1) - sigmoid(0)) * 255`
@@ -235,7 +231,7 @@ pub fn apply_lut(pixels: &[u8], info: &ImageInfo, lut: &[u8; 256]) -> Result<Vec
                 result[base + 1] = lut[pixels[base + 1] as usize];
                 result[base + 2] = lut[pixels[base + 2] as usize];
                 result[base + 3] = pixels[base + 3]; // alpha
-                                                     // Pixel 1
+                // Pixel 1
                 result[base + 4] = lut[pixels[base + 4] as usize];
                 result[base + 5] = lut[pixels[base + 5] as usize];
                 result[base + 6] = lut[pixels[base + 6] as usize];
@@ -909,7 +905,11 @@ mod tests {
             gamma: 2.0,
         });
         // With gamma=2.0, inv_gamma=0.5, so midpoint 128 → (0.502)^0.5 ≈ 0.709 → 181
-        assert!(lut[128] > 160, "gamma 2.0 should brighten: got {}", lut[128]);
+        assert!(
+            lut[128] > 160,
+            "gamma 2.0 should brighten: got {}",
+            lut[128]
+        );
     }
 
     #[test]
@@ -955,7 +955,11 @@ mod tests {
         assert!((lut[128] as i16 - 128).abs() <= 2, "midpoint: {}", lut[128]);
         // Shadows should be darker, highlights brighter (S-curve)
         assert!(lut[64] < 64, "shadows should be darker: {} vs 64", lut[64]);
-        assert!(lut[192] > 192, "highlights should be brighter: {} vs 192", lut[192]);
+        assert!(
+            lut[192] > 192,
+            "highlights should be brighter: {} vs 192",
+            lut[192]
+        );
     }
 
     #[test]
@@ -966,8 +970,16 @@ mod tests {
             sharpen: false,
         });
         // Inverse: shadows brighter, highlights darker
-        assert!(lut[64] > 64, "softened shadows should be brighter: {} vs 64", lut[64]);
-        assert!(lut[192] < 192, "softened highlights should be darker: {} vs 192", lut[192]);
+        assert!(
+            lut[64] > 64,
+            "softened shadows should be brighter: {} vs 64",
+            lut[64]
+        );
+        assert!(
+            lut[192] < 192,
+            "softened highlights should be darker: {} vs 192",
+            lut[192]
+        );
     }
 
     #[test]

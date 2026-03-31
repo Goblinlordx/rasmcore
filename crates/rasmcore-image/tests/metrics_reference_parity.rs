@@ -48,7 +48,11 @@ fn make_test_pair() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
             let b = 128u8;
             orig.extend_from_slice(&[r, g, b]);
             // Shift by +10 on all channels (clamped)
-            shifted.extend_from_slice(&[r.saturating_add(10), g.saturating_add(10), b.saturating_add(10)]);
+            shifted.extend_from_slice(&[
+                r.saturating_add(10),
+                g.saturating_add(10),
+                b.saturating_add(10),
+            ]);
         }
     }
 
@@ -72,7 +76,8 @@ fn psnr_parity_vs_imagemagick() {
     let info = info_rgb8(32, 32);
 
     // Our PSNR
-    let our_psnr = rasmcore_image::domain::metrics::psnr(&orig_px, &info, &shifted_px, &info).unwrap();
+    let our_psnr =
+        rasmcore_image::domain::metrics::psnr(&orig_px, &info, &shifted_px, &info).unwrap();
 
     // ImageMagick PSNR
     let tmp_a = std::env::temp_dir().join("metrics_psnr_a.png");
@@ -125,7 +130,8 @@ fn mae_parity_vs_imagemagick() {
     let (orig_png, shifted_png, orig_px, shifted_px) = make_test_pair();
     let info = info_rgb8(32, 32);
 
-    let our_mae = rasmcore_image::domain::metrics::mae(&orig_px, &info, &shifted_px, &info).unwrap();
+    let our_mae =
+        rasmcore_image::domain::metrics::mae(&orig_px, &info, &shifted_px, &info).unwrap();
 
     let tmp_a = std::env::temp_dir().join("metrics_mae_a.png");
     let tmp_b = std::env::temp_dir().join("metrics_mae_b.png");
@@ -159,7 +165,10 @@ fn mae_parity_vs_imagemagick() {
         }
     } else {
         // Fallback: try parsing raw value and dividing by 257 (65535/255)
-        stderr.trim().split_whitespace().next()
+        stderr
+            .trim()
+            .split_whitespace()
+            .next()
             .and_then(|s| s.parse::<f64>().ok())
             .map(|v| v / 65535.0)
             .unwrap_or(0.0)
@@ -192,7 +201,8 @@ fn rmse_parity_vs_imagemagick() {
     let (orig_png, shifted_png, orig_px, shifted_px) = make_test_pair();
     let info = info_rgb8(32, 32);
 
-    let our_rmse = rasmcore_image::domain::metrics::rmse(&orig_px, &info, &shifted_px, &info).unwrap();
+    let our_rmse =
+        rasmcore_image::domain::metrics::rmse(&orig_px, &info, &shifted_px, &info).unwrap();
 
     let tmp_a = std::env::temp_dir().join("metrics_rmse_a.png");
     let tmp_b = std::env::temp_dir().join("metrics_rmse_b.png");
@@ -255,7 +265,8 @@ fn ssim_parity_vs_scikit_image() {
     let (_, _, orig_px, shifted_px) = make_test_pair();
     let info = info_rgb8(32, 32);
 
-    let our_ssim = rasmcore_image::domain::metrics::ssim(&orig_px, &info, &shifted_px, &info).unwrap();
+    let our_ssim =
+        rasmcore_image::domain::metrics::ssim(&orig_px, &info, &shifted_px, &info).unwrap();
 
     // Write raw pixel data to temp files for Python
     let tmp_a = std::env::temp_dir().join("metrics_ssim_a.raw");

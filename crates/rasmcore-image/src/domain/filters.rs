@@ -1036,7 +1036,7 @@ pub fn spin_blur(
     // IM algorithm: global sample count = (2 * ceil(angle_rad * diagonal/2) + 2) | 1
     let half_diag = ((w as f64 / 2.0).powi(2) + (h as f64 / 2.0).powi(2)).sqrt();
     let mut n = (2.0 * (angle_rad * half_diag).ceil() + 2.0) as usize;
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         n += 1;
     }
     n = n.max(3);
@@ -1541,6 +1541,7 @@ pub struct ChannelMixerParams {
     category = "color",
     reference = "RGB channel matrix multiplication"
 )]
+#[allow(clippy::too_many_arguments)]
 pub fn channel_mixer(
     pixels: &[u8],
     info: &ImageInfo,
@@ -7232,10 +7233,10 @@ fn blur_1ch_f32_fir(data: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
     for y in 0..h {
         for x in 0..w {
             let mut sum = 0.0f32;
-            for k in 0..ksize {
+            for (k, &kval) in kernel.iter().enumerate().take(ksize) {
                 let sx =
                     (x as isize + k as isize - half as isize).clamp(0, w as isize - 1) as usize;
-                sum += data[y * w + sx] * kernel[k];
+                sum += data[y * w + sx] * kval;
             }
             tmp[y * w + x] = sum;
         }
@@ -7245,10 +7246,10 @@ fn blur_1ch_f32_fir(data: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
     for y in 0..h {
         for x in 0..w {
             let mut sum = 0.0f32;
-            for k in 0..ksize {
+            for (k, &kval) in kernel.iter().enumerate().take(ksize) {
                 let sy =
                     (y as isize + k as isize - half as isize).clamp(0, h as isize - 1) as usize;
-                sum += tmp[sy * w + x] * kernel[k];
+                sum += tmp[sy * w + x] * kval;
             }
             out[y * w + x] = sum;
         }
@@ -7332,23 +7333,23 @@ fn yvv_blur_1d(buf: &mut [f32], b: &[f64; 4], _m: &[[f64; 3]; 3]) {
     // Fill: left pad + data + right pad
     let left_val = buf[0] as f64;
     let right_val = buf[n - 1] as f64;
-    for i in 0..pad {
-        tmp[i] = left_val;
+    for val in tmp.iter_mut().take(pad) {
+        *val = left_val;
     }
-    for i in 0..n {
-        tmp[pad + i] = buf[i] as f64;
+    for (i, val) in tmp.iter_mut().skip(pad).take(n).enumerate() {
+        *val = buf[i] as f64;
     }
-    for i in 0..pad {
-        tmp[pad + n + i] = right_val;
+    for val in tmp.iter_mut().skip(pad + n).take(pad) {
+        *val = right_val;
     }
 
     // Forward (causal) pass
     let mut y1 = tmp[0];
     let mut y2 = tmp[0];
     let mut y3 = tmp[0];
-    for i in 0..total {
-        let y = b[0] * tmp[i] + b[1] * y1 + b[2] * y2 + b[3] * y3;
-        tmp[i] = y;
+    for val in tmp.iter_mut() {
+        let y = b[0] * *val + b[1] * y1 + b[2] * y2 + b[3] * y3;
+        *val = y;
         y3 = y2;
         y2 = y1;
         y1 = y;
@@ -7358,9 +7359,9 @@ fn yvv_blur_1d(buf: &mut [f32], b: &[f64; 4], _m: &[[f64; 3]; 3]) {
     y1 = tmp[total - 1];
     y2 = tmp[total - 1];
     y3 = tmp[total - 1];
-    for i in (0..total).rev() {
-        let y = b[0] * tmp[i] + b[1] * y1 + b[2] * y2 + b[3] * y3;
-        tmp[i] = y;
+    for val in tmp.iter_mut().rev() {
+        let y = b[0] * *val + b[1] * y1 + b[2] * y2 + b[3] * y3;
+        *val = y;
         y3 = y2;
         y2 = y1;
         y1 = y;
@@ -9244,7 +9245,7 @@ pub fn checkerboard(
 
     for y in 0..h {
         for x in 0..w {
-            let color = if ((x / cell) + (y / cell)) % 2 == 0 {
+            let color = if ((x / cell) + (y / cell)).is_multiple_of(2) {
                 &c1
             } else {
                 &c2
@@ -9311,7 +9312,11 @@ pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
 
         // Square step
         for y in (0..size).step_by(half) {
-            let x_start = if (y / half) % 2 == 0 { half } else { 0 };
+            let x_start = if (y / half).is_multiple_of(2) {
+                half
+            } else {
+                0
+            };
             for x in (x_start..size).step_by(step) {
                 let mut sum = 0.0f32;
                 let mut count = 0.0f32;
@@ -9386,6 +9391,7 @@ pub fn plasma(width: u32, height: u32, seed: u64, turbulence: f32) -> Vec<u8> {
     variant = "line",
     reference = "Bresenham/anti-aliased line"
 )]
+#[allow(clippy::too_many_arguments)]
 pub fn draw_line_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -9412,6 +9418,7 @@ pub fn draw_line_filter(
     variant = "rect",
     reference = "filled/outlined rectangle"
 )]
+#[allow(clippy::too_many_arguments)]
 pub fn draw_rect_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -9449,6 +9456,7 @@ pub fn draw_rect_filter(
     variant = "circle",
     reference = "filled/outlined circle"
 )]
+#[allow(clippy::too_many_arguments)]
 pub fn draw_circle_filter(
     pixels: &[u8],
     info: &ImageInfo,
@@ -14891,9 +14899,7 @@ pub fn pixelate(pixels: &[u8], info: &ImageInfo, block_size: u32) -> Result<Vec<
             for row in by..(by + bh) {
                 for col in bx..(bx + bw) {
                     let off = (row * w + col) * ch;
-                    for c in 0..ch {
-                        out[off + c] = avg[c];
-                    }
+                    out[off..off + ch].copy_from_slice(&avg[..ch]);
                 }
             }
 
@@ -16316,9 +16322,9 @@ fn gaussian_blur_f32(
         for x in 0..w {
             for c in 0..ch {
                 let mut sum = 0.0f64;
-                for ki in 0..ksize {
+                for (ki, &kval) in kernel.iter().enumerate().take(ksize) {
                     let sx = (x as i32 + ki as i32 - krad as i32).clamp(0, w as i32 - 1) as usize;
-                    sum += kernel[ki] * input[(y * w + sx) * ch + c] as f64;
+                    sum += kval * input[(y * w + sx) * ch + c] as f64;
                 }
                 tmp[(y * w + x) * ch + c] = sum as f32;
             }
@@ -16331,9 +16337,9 @@ fn gaussian_blur_f32(
         for x in 0..w {
             for c in 0..ch {
                 let mut sum = 0.0f64;
-                for ki in 0..ksize {
+                for (ki, &kval) in kernel.iter().enumerate().take(ksize) {
                     let sy = (y as i32 + ki as i32 - krad as i32).clamp(0, h as i32 - 1) as usize;
-                    sum += kernel[ki] * tmp[(sy * w + x) * ch + c] as f64;
+                    sum += kval * tmp[(sy * w + x) * ch + c] as f64;
                 }
                 out[(y * w + x) * ch + c] = sum as f32;
             }
@@ -16410,8 +16416,8 @@ pub fn kuwahara(pixels: &[u8], info: &ImageInfo, radius: u32) -> Result<Vec<u8>,
                         }
                     }
                 }
-                for c in 0..ch {
-                    mean_ch[c] /= n;
+                for val in mean_ch.iter_mut().take(ch) {
+                    *val /= n;
                 }
                 // IM: GetMeanLuma — luma from channel means
                 let mean_luma = if ch >= 3 {

@@ -2085,8 +2085,14 @@ fn shrink_on_load_benchmarks(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("full_decode_resize", size), |b| {
         b.iter(|| {
             let full = decoder::decode(&jpeg_data).unwrap();
-            transform::resize(&full.pixels, &full.info, target, target, ResizeFilter::Lanczos3)
-                .unwrap()
+            transform::resize(
+                &full.pixels,
+                &full.info,
+                target,
+                target,
+                ResizeFilter::Lanczos3,
+            )
+            .unwrap()
         });
     });
 

@@ -580,7 +580,10 @@ pub fn cmyk_to_rgb_icc(
 ///
 /// R = 255 * (1-C) * (1-K), G = 255 * (1-M) * (1-K), B = 255 * (1-Y) * (1-K).
 /// This matches ImageMagick's non-ICC CMYK conversion within MAE < 1.5.
-pub fn cmyk_to_rgb(cmyk_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub fn cmyk_to_rgb(
+    cmyk_pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let n = (info.width as usize) * (info.height as usize);
     let (src_bpp, has_alpha) = match info.format {
         PixelFormat::Cmyk8 => (4, false),
@@ -593,7 +596,9 @@ pub fn cmyk_to_rgb(cmyk_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, Ima
     };
 
     if cmyk_pixels.len() != n * src_bpp {
-        return Err(ImageError::InvalidInput("pixel buffer size mismatch".into()));
+        return Err(ImageError::InvalidInput(
+            "pixel buffer size mismatch".into(),
+        ));
     }
 
     let dst_bpp = if has_alpha { 4 } else { 3 };
@@ -632,7 +637,10 @@ pub fn cmyk_to_rgb(cmyk_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, Ima
 /// Convert an RGB8 pixel buffer to CMYK.
 ///
 /// Uses the naive formula: K = 1 - max(R,G,B)/255, C = (1-R/255-K)/(1-K), etc.
-pub fn rgb_to_cmyk(rgb_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub fn rgb_to_cmyk(
+    rgb_pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let n = (info.width as usize) * (info.height as usize);
     let (src_bpp, has_alpha) = match info.format {
         PixelFormat::Rgb8 => (3, false),
@@ -645,7 +653,9 @@ pub fn rgb_to_cmyk(rgb_pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, Imag
     };
 
     if rgb_pixels.len() != n * src_bpp {
-        return Err(ImageError::InvalidInput("pixel buffer size mismatch".into()));
+        return Err(ImageError::InvalidInput(
+            "pixel buffer size mismatch".into(),
+        ));
     }
 
     let dst_bpp = if has_alpha { 5 } else { 4 };
@@ -1023,8 +1033,7 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: super::super::types::ColorSpace::Srgb,
         };
-        let png_data =
-            crate::domain::encoder::encode(&rgb, &info, "png", None).unwrap();
+        let png_data = crate::domain::encoder::encode(&rgb, &info, "png", None).unwrap();
         let png_path = std::env::temp_dir().join("cmyk_parity_input.png");
         std::fs::write(&png_path, &png_data).unwrap();
 
@@ -1036,7 +1045,10 @@ mod tests {
         let result = std::process::Command::new("magick")
             .args([
                 png_path.to_str().unwrap(),
-                "-colorspace", "CMYK", "-depth", "8",
+                "-colorspace",
+                "CMYK",
+                "-depth",
+                "8",
                 &format!("cmyk:{}", im_raw.to_str().unwrap()),
             ])
             .output()
@@ -1045,16 +1057,21 @@ mod tests {
 
         let im_cmyk = std::fs::read(&im_raw).unwrap();
         assert_eq!(
-            our_cmyk.len(), im_cmyk.len(),
+            our_cmyk.len(),
+            im_cmyk.len(),
             "CMYK buffer size: ours={} vs IM={}",
-            our_cmyk.len(), im_cmyk.len()
+            our_cmyk.len(),
+            im_cmyk.len()
         );
 
         // Compute MAE
         let n = our_cmyk.len();
-        let mae: f64 = our_cmyk.iter().zip(im_cmyk.iter())
+        let mae: f64 = our_cmyk
+            .iter()
+            .zip(im_cmyk.iter())
             .map(|(&a, &b)| (a as f64 - b as f64).abs())
-            .sum::<f64>() / n as f64;
+            .sum::<f64>()
+            / n as f64;
 
         assert!(
             mae < 1.5,
@@ -1073,8 +1090,12 @@ mod tests {
         let result = std::process::Command::new("magick")
             .args([
                 png_path.to_str().unwrap(),
-                "-colorspace", "CMYK", "-colorspace", "sRGB",
-                "-depth", "8",
+                "-colorspace",
+                "CMYK",
+                "-colorspace",
+                "sRGB",
+                "-depth",
+                "8",
                 &format!("rgb:{}", im_rt_raw.to_str().unwrap()),
             ])
             .output()
@@ -1082,9 +1103,12 @@ mod tests {
         assert!(result.status.success(), "magick round-trip failed");
 
         let im_rt = std::fs::read(&im_rt_raw).unwrap();
-        let rt_mae: f64 = our_rt.iter().zip(im_rt.iter())
+        let rt_mae: f64 = our_rt
+            .iter()
+            .zip(im_rt.iter())
             .map(|(&a, &b)| (a as f64 - b as f64).abs())
-            .sum::<f64>() / our_rt.len() as f64;
+            .sum::<f64>()
+            / our_rt.len() as f64;
 
         assert!(
             rt_mae < 1.5,

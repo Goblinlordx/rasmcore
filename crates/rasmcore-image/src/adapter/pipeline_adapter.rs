@@ -10,7 +10,9 @@ use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
 use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
-use crate::domain::pipeline::nodes::{color, composite, filters, frame_source, sink, source, transform};
+use crate::domain::pipeline::nodes::{
+    color, composite, filters, frame_source, sink, source, transform,
+};
 
 use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
 
@@ -387,8 +389,7 @@ impl GuestImagePipeline for PipelineResource {
         selection: pipeline::FrameSelection,
     ) -> Result<NodeId, RasmcoreError> {
         let domain_sel = to_domain_frame_selection(selection);
-        let node =
-            frame_source::FrameSourceNode::new(data, domain_sel).map_err(to_wit_error)?;
+        let node = frame_source::FrameSourceNode::new(data, domain_sel).map_err(to_wit_error)?;
         let (id, rc) = self.graph.borrow_mut().add_frame_source(node);
         // Store the Rc handle for later use by execute_sequence
         *self.frame_source.borrow_mut() = Some(rc);
@@ -796,11 +797,7 @@ impl GuestImagePipeline for PipelineResource {
 
     // ─── Multi-Frame ───
 
-    fn execute_sequence(
-        &self,
-        _source: NodeId,
-        output: NodeId,
-    ) -> Result<u32, RasmcoreError> {
+    fn execute_sequence(&self, _source: NodeId, output: NodeId) -> Result<u32, RasmcoreError> {
         let frame_src = self.frame_source.borrow();
         let rc = frame_src.as_ref().ok_or_else(|| {
             RasmcoreError::InvalidInput(

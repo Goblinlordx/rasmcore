@@ -280,7 +280,10 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, ImageError> {
             .strip_prefix("DOMAIN_MIN")
             .or_else(|| line.strip_prefix("domain_min"))
         {
-            let vals: Vec<f32> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let vals: Vec<f32> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if vals.len() == 3 {
                 domain_min = [vals[0], vals[1], vals[2]];
             }
@@ -291,7 +294,10 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, ImageError> {
             .strip_prefix("DOMAIN_MAX")
             .or_else(|| line.strip_prefix("domain_max"))
         {
-            let vals: Vec<f32> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let vals: Vec<f32> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if vals.len() == 3 {
                 domain_max = [vals[0], vals[1], vals[2]];
             }
@@ -322,7 +328,10 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, ImageError> {
         }
 
         // Try parsing as RGB triplet
-        let vals: Vec<f32> = line.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+        let vals: Vec<f32> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
         if vals.len() >= 3 && grid_size.is_some() {
             // Normalize from domain range to [0, 1]
             let r = (vals[0] - domain_min[0]) / (domain_max[0] - domain_min[0]);
@@ -332,9 +341,8 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, ImageError> {
         }
     }
 
-    let n = grid_size.ok_or_else(|| {
-        ImageError::InvalidInput("missing LUT_3D_SIZE in .cube file".into())
-    })?;
+    let n = grid_size
+        .ok_or_else(|| ImageError::InvalidInput("missing LUT_3D_SIZE in .cube file".into()))?;
 
     let expected = n * n * n;
     if data.len() != expected {
@@ -344,10 +352,7 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, ImageError> {
         )));
     }
 
-    Ok(ColorLut3D {
-        grid_size: n,
-        data,
-    })
+    Ok(ColorLut3D { grid_size: n, data })
 }
 
 /// Parse a HALD CLUT PNG image into a ColorLut3D.
@@ -384,7 +389,11 @@ pub fn parse_hald_lut(pixels: &[u8], info: &ImageInfo) -> Result<ColorLut3D, Ima
 
     let grid_size = level * level;
     let total = dim * dim; // grid_size^3 = (level^2)^3 = level^6 = (level^3)^2 = dim^2
-    let channels = if info.format == PixelFormat::Rgba8 { 4 } else { 3 };
+    let channels = if info.format == PixelFormat::Rgba8 {
+        4
+    } else {
+        3
+    };
     let mut data = Vec::with_capacity(total);
 
     // HALD pixel order: read left-to-right, top-to-bottom.
@@ -402,10 +411,7 @@ pub fn parse_hald_lut(pixels: &[u8], info: &ImageInfo) -> Result<ColorLut3D, Ima
         data.push([r, g, b]);
     }
 
-    Ok(ColorLut3D {
-        grid_size,
-        data,
-    })
+    Ok(ColorLut3D { grid_size, data })
 }
 
 /// Absorb a 1D LUT into a 3D CLUT as pre-curves (applied to input before CLUT).
@@ -1016,8 +1022,8 @@ mod tests {
         // Create a level-2 HALD identity (dim=2^3=8, grid=2^2=4, total=4^3=64 entries)
         let level = 2usize;
         let dim = level * level * level; // 8
-        let grid_size = level * level;   // 4
-        let total = dim * dim;           // 64
+        let grid_size = level * level; // 4
+        let total = dim * dim; // 64
         let mut pixels = Vec::with_capacity(total * 3);
         let scale = 255.0 / (grid_size - 1) as f32;
         for i in 0..total {

@@ -37,9 +37,9 @@ impl FrameSourceNode {
         let total_frames = decoder::frame_count(&data)?;
         let first_idx = match &selection {
             FrameSelection::Single(i) => *i,
-            FrameSelection::Pick(v) => *v.first().ok_or_else(|| {
-                ImageError::InvalidParameters("Pick selection is empty".into())
-            })?,
+            FrameSelection::Pick(v) => *v
+                .first()
+                .ok_or_else(|| ImageError::InvalidParameters("Pick selection is empty".into()))?,
             FrameSelection::Range(start, _) => *start,
             FrameSelection::All => 0,
         };
@@ -105,9 +105,9 @@ impl ImageNode for FrameSourceNode {
         _upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
         let current = self.current.borrow();
-        let (decoded, _) = current.as_ref().ok_or_else(|| {
-            ImageError::InvalidInput("FrameSourceNode: no frame loaded".into())
-        })?;
+        let (decoded, _) = current
+            .as_ref()
+            .ok_or_else(|| ImageError::InvalidInput("FrameSourceNode: no frame loaded".into()))?;
 
         let bpp = bytes_per_pixel(decoded.info.format) as usize;
         let src_stride = decoded.info.width as usize * bpp;

@@ -383,14 +383,14 @@ pub fn inverse_dct_half(input: &[i32; 64], output: &mut [i16; 16]) {
         }
 
         // Even part: rows 0, 2
-        let tmp0 = input[col];      // row 0 (DC)
+        let tmp0 = input[col]; // row 0 (DC)
         let tmp2 = input[col + 16]; // row 2
 
         let tmp10 = (tmp0 + tmp2) << CONST_BITS;
         let tmp12 = (tmp0 - tmp2) << CONST_BITS;
 
         // Odd part: rows 1, 3 — same rotation as 8-point even part
-        let z2 = input[col + 8];  // row 1
+        let z2 = input[col + 8]; // row 1
         let z3 = input[col + 24]; // row 3
 
         let z1 = (z2 + z3) * FIX_0_541196100; // c6
@@ -441,7 +441,7 @@ pub fn inverse_dct_quarter(input: &[i32; 64], output: &mut [i16; 4]) {
     // Pass 1: columns. Process cols 0..1, using freq rows 0,1 only.
     // No PASS1_BITS scaling (libjpeg 2x2 uses PASS1_BITS=0 effectively).
     for col in 0..2 {
-        let tmp0 = input[col];     // row 0 (DC)
+        let tmp0 = input[col]; // row 0 (DC)
         let tmp1 = input[col + 8]; // row 1
 
         // 2-point butterfly: add/subtract (no scaling)

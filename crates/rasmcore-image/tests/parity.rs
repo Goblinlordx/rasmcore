@@ -530,7 +530,7 @@ fn parity_jpeg_quality_per_byte_butteraugli() {
         let config = encoder::jpeg::JpegEncodeConfig {
             quality: q,
             progressive: false,
-        ..Default::default()
+            ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
@@ -578,7 +578,7 @@ fn parity_jpeg_quality_per_byte_dssim() {
         let config = encoder::jpeg::JpegEncodeConfig {
             quality: q,
             progressive: false,
-        ..Default::default()
+            ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
@@ -622,7 +622,7 @@ fn parity_jpeg_quality_curve_filesize() {
         let config = encoder::jpeg::JpegEncodeConfig {
             quality: q,
             progressive: false,
-        ..Default::default()
+            ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
@@ -651,7 +651,7 @@ fn parity_jpeg_quality_monotonic() {
             let config = encoder::jpeg::JpegEncodeConfig {
                 quality: q,
                 progressive: false,
-            ..Default::default()
+                ..Default::default()
             };
             encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config)
                 .unwrap()
@@ -883,9 +883,14 @@ fn parity_shrink_on_load_psnr() {
         let target_h = full.info.height / scale as u32;
 
         // Reference: full decode + Lanczos3 resize
-        let reference =
-            transform::resize(&full.pixels, &full.info, target_w, target_h, ResizeFilter::Lanczos3)
-                .unwrap();
+        let reference = transform::resize(
+            &full.pixels,
+            &full.info,
+            target_w,
+            target_h,
+            ResizeFilter::Lanczos3,
+        )
+        .unwrap();
 
         // Scaled decode
         let scaled = rasmcore_jpeg::decode_with_scale(&jpeg_data, scale).unwrap();

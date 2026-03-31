@@ -1,7 +1,5 @@
 use crate::domain::error::ImageError;
-use crate::domain::types::{
-    DisposalMethod, FrameSequence, ImageInfo, PixelFormat,
-};
+use crate::domain::types::{DisposalMethod, FrameSequence, ImageInfo, PixelFormat};
 
 /// PNG filter type selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -152,11 +150,7 @@ pub fn encode_sequence(
                     .chunks_exact(3)
                     .flat_map(|c| [c[0], c[1], c[2], 255])
                     .collect(),
-                PixelFormat::Gray8 => image
-                    .pixels
-                    .iter()
-                    .flat_map(|&g| [g, g, g, 255])
-                    .collect(),
+                PixelFormat::Gray8 => image.pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
                 _ => {
                     return Err(ImageError::UnsupportedFormat(
                         "APNG encode requires RGB8, RGBA8, or Gray8 frames".into(),
@@ -545,11 +539,7 @@ mod tests {
     fn make_test_frame_sequence() -> FrameSequence {
         use crate::domain::types::{ColorSpace, DecodedImage, FrameInfo};
         let mut seq = FrameSequence::new(4, 4);
-        let colors: [[u8; 4]; 3] = [
-            [255, 0, 0, 255],
-            [0, 255, 0, 255],
-            [0, 0, 255, 255],
-        ];
+        let colors: [[u8; 4]; 3] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
         for (i, color) in colors.iter().enumerate() {
             let pixels: Vec<u8> = (0..16).flat_map(|_| *color).collect();
             seq.push(
@@ -617,8 +607,8 @@ mod tests {
         let frames = crate::domain::decoder::decode_all_frames(&encoded).unwrap();
         // Frame 0: red
         assert_eq!(frames[0].0.pixels[0], 255); // R
-        assert_eq!(frames[0].0.pixels[1], 0);   // G
-        assert_eq!(frames[0].0.pixels[2], 0);   // B
+        assert_eq!(frames[0].0.pixels[1], 0); // G
+        assert_eq!(frames[0].0.pixels[2], 0); // B
         // Frame 1: green
         assert_eq!(frames[1].0.pixels[0], 0);
         assert_eq!(frames[1].0.pixels[1], 255);
@@ -670,7 +660,7 @@ mod tests {
             enc.set_depth(png::BitDepth::Eight);
             enc.set_animated(3, 0).unwrap();
             let mut w = enc.write_header().unwrap();
-            let colors: [[u8; 4]; 3] = [[255,0,0,255],[0,255,0,255],[0,0,255,255]];
+            let colors: [[u8; 4]; 3] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
             for color in &colors {
                 let px: Vec<u8> = (0..16).flat_map(|_| *color).collect();
                 w.set_frame_delay(10, 100).unwrap();

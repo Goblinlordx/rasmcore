@@ -1387,17 +1387,10 @@ mod tests {
 
             for scale in [2u8, 4, 8] {
                 let dec = decode_with_scale(&jpeg, scale);
-                assert!(
-                    dec.is_ok(),
-                    "sub={sub:?} scale={scale}: {:?}",
-                    dec.err()
-                );
+                assert!(dec.is_ok(), "sub={sub:?} scale={scale}: {:?}", dec.err());
                 let dec = dec.unwrap();
                 let expected = 32 / scale as u32;
-                assert_eq!(
-                    dec.width, expected,
-                    "sub={sub:?} scale={scale} width"
-                );
+                assert_eq!(dec.width, expected, "sub={sub:?} scale={scale} width");
             }
         }
     }

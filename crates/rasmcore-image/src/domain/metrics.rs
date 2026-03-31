@@ -55,12 +55,7 @@ fn validate_pair(
 }
 
 /// Mean Absolute Error — average per-sample absolute difference.
-pub fn mae(
-    a: &[u8],
-    info_a: &ImageInfo,
-    b: &[u8],
-    info_b: &ImageInfo,
-) -> Result<f64, ImageError> {
+pub fn mae(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, _) = validate_pair(a, info_a, b, info_b)?;
     if sa.is_empty() {
         return Ok(0.0);
@@ -74,12 +69,7 @@ pub fn mae(
 }
 
 /// Root Mean Squared Error.
-pub fn rmse(
-    a: &[u8],
-    info_a: &ImageInfo,
-    b: &[u8],
-    info_b: &ImageInfo,
-) -> Result<f64, ImageError> {
+pub fn rmse(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, _) = validate_pair(a, info_a, b, info_b)?;
     if sa.is_empty() {
         return Ok(0.0);
@@ -99,12 +89,7 @@ pub fn rmse(
 /// Peak Signal-to-Noise Ratio in dB (8-bit, MAX=255).
 ///
 /// Returns `f64::INFINITY` for identical images.
-pub fn psnr(
-    a: &[u8],
-    info_a: &ImageInfo,
-    b: &[u8],
-    info_b: &ImageInfo,
-) -> Result<f64, ImageError> {
+pub fn psnr(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, _) = validate_pair(a, info_a, b, info_b)?;
     if sa.is_empty() {
         return Ok(f64::INFINITY);
@@ -131,12 +116,7 @@ pub fn psnr(
 ///
 /// Returns a value in \[−1, 1\]; typically in \[0, 1\] for natural images.
 /// Identical images return exactly 1.0.
-pub fn ssim(
-    a: &[u8],
-    info_a: &ImageInfo,
-    b: &[u8],
-    info_b: &ImageInfo,
-) -> Result<f64, ImageError> {
+pub fn ssim(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, channels) = validate_pair(a, info_a, b, info_b)?;
     let w = info_a.width as usize;
     let h = info_a.height as usize;
@@ -149,8 +129,18 @@ pub fn ssim(
 
     let mut total_ssim = 0.0;
     for ch in 0..channels {
-        let a_ch: Vec<f64> = sa.iter().skip(ch).step_by(channels).map(|&v| v as f64).collect();
-        let b_ch: Vec<f64> = sb.iter().skip(ch).step_by(channels).map(|&v| v as f64).collect();
+        let a_ch: Vec<f64> = sa
+            .iter()
+            .skip(ch)
+            .step_by(channels)
+            .map(|&v| v as f64)
+            .collect();
+        let b_ch: Vec<f64> = sb
+            .iter()
+            .skip(ch)
+            .step_by(channels)
+            .map(|&v| v as f64)
+            .collect();
         total_ssim += ssim_channel(&a_ch, &b_ch, w, h);
     }
     Ok(total_ssim / channels as f64)
@@ -397,7 +387,9 @@ mod tests {
     #[test]
     fn ssim_bounds() {
         let a: Vec<u8> = (0..48 * 48 * 3).map(|i| (i % 256) as u8).collect();
-        let b: Vec<u8> = (0..48 * 48 * 3).map(|i| ((i * 7 + 100) % 256) as u8).collect();
+        let b: Vec<u8> = (0..48 * 48 * 3)
+            .map(|i| ((i * 7 + 100) % 256) as u8)
+            .collect();
         let info = info_rgb8(48, 48);
         let s = ssim(&a, &info, &b, &info).unwrap();
         assert!(s >= -1.0 && s <= 1.0, "SSIM out of bounds: {s}");
@@ -455,7 +447,10 @@ mod tests {
         let b = vec![0u8, 255, 0]; // green
         let info = info_rgb8(1, 1);
         let de = delta_e_cie76(&a, &info, &b, &info).unwrap();
-        assert!(de > 50.0, "red vs green should have large Delta E, got {de}");
+        assert!(
+            de > 50.0,
+            "red vs green should have large Delta E, got {de}"
+        );
     }
 
     #[test]
@@ -464,6 +459,9 @@ mod tests {
         let b = vec![101u8, 100, 100];
         let info = info_rgb8(1, 1);
         let de = delta_e_cie76(&a, &info, &b, &info).unwrap();
-        assert!(de < 2.0, "near-identical colors should have small Delta E, got {de}");
+        assert!(
+            de < 2.0,
+            "near-identical colors should have small Delta E, got {de}"
+        );
     }
 }

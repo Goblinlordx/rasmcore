@@ -118,9 +118,10 @@ fn make_paint(r: u8, g: u8, b: u8, a: u8) -> resvg::tiny_skia::Paint<'static> {
 
 /// Create a tiny_skia Stroke with given width.
 fn make_stroke(width: f32) -> resvg::tiny_skia::Stroke {
-    let mut stroke = resvg::tiny_skia::Stroke::default();
-    stroke.width = width;
-    stroke
+    resvg::tiny_skia::Stroke {
+        width,
+        ..resvg::tiny_skia::Stroke::default()
+    }
 }
 
 // ─── Shape Drawing ───────────────────────────────────────────────────────
@@ -306,7 +307,7 @@ pub fn draw_text(
             // Newlines not supported in this simple impl — skip
             continue;
         }
-        let glyph_index = if ch >= GLYPH_FIRST && ch <= GLYPH_LAST {
+        let glyph_index = if (GLYPH_FIRST..=GLYPH_LAST).contains(&ch) {
             (ch - GLYPH_FIRST) as usize
         } else {
             // Unknown chars render as '?'
@@ -394,6 +395,7 @@ fn shape_run(
 }
 
 /// Blend a single glyph bitmap onto the output buffer.
+#[allow(clippy::too_many_arguments)]
 fn blend_glyph(
     output: &mut [u8],
     w: usize,

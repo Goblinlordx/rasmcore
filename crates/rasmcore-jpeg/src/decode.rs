@@ -174,9 +174,7 @@ pub fn jpeg_dimensions(data: &[u8]) -> Result<(u32, u32), EncodeError> {
             }
         }
     }
-    Err(EncodeError::DecodeFailed(
-        "no SOF marker found".into(),
-    ))
+    Err(EncodeError::DecodeFailed("no SOF marker found".into()))
 }
 
 pub fn jpeg_decode(data: &[u8]) -> Result<(Vec<u8>, u32, u32, bool), EncodeError> {
@@ -814,8 +812,18 @@ fn decode_scan_scaled(
     let (h_max, v_max) = if is_gray {
         (1u8, 1u8)
     } else {
-        let hm = frame.components.iter().map(|c| c.h_sampling).max().unwrap_or(1);
-        let vm = frame.components.iter().map(|c| c.v_sampling).max().unwrap_or(1);
+        let hm = frame
+            .components
+            .iter()
+            .map(|c| c.h_sampling)
+            .max()
+            .unwrap_or(1);
+        let vm = frame
+            .components
+            .iter()
+            .map(|c| c.v_sampling)
+            .max()
+            .unwrap_or(1);
         (hm, vm)
     };
 
@@ -902,8 +910,7 @@ fn decode_scan_scaled(
                                         let py = block_y + row;
                                         let px = block_x + col;
                                         if py < planes[ci].len() / pw && px < pw {
-                                            planes[ci][py * pw + px] =
-                                                spatial[row * 4 + col];
+                                            planes[ci][py * pw + px] = spatial[row * 4 + col];
                                         }
                                     }
                                 }
@@ -916,8 +923,7 @@ fn decode_scan_scaled(
                                         let py = block_y + row;
                                         let px = block_x + col;
                                         if py < planes[ci].len() / pw && px < pw {
-                                            planes[ci][py * pw + px] =
-                                                spatial[row * 2 + col];
+                                            planes[ci][py * pw + px] = spatial[row * 2 + col];
                                         }
                                     }
                                 }

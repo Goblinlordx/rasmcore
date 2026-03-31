@@ -615,11 +615,20 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
 fn is_primitive_param_type(ty: &str) -> bool {
     matches!(
         ty,
-        "f32" | "f64"
-            | "u8" | "u16" | "u32" | "u64"
-            | "i8" | "i16" | "i32" | "i64"
+        "f32"
+            | "f64"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
             | "bool"
-            | "&str" | "String"
-            | "[u8;3]" | "[u8;4]"
+            | "&str"
+            | "String"
+            | "[u8;3]"
+            | "[u8;4]"
     )
 }

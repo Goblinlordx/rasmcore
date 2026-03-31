@@ -124,8 +124,8 @@
 //! produce equivalent polynomials.
 
 /// Exact Robidoux filter B,C values from IM resize.c.
-const ROBIDOUX_B: f64 = 0.37821575509399867;
-const ROBIDOUX_C: f64 = 0.31089212245300067;
+const ROBIDOUX_B: f64 = 0.378_215_755_093_998_7;
+const ROBIDOUX_C: f64 = 0.310_892_122_453_000_7;
 
 /// Support radius for the Robidoux filter.
 const SUPPORT: f64 = 2.0;
@@ -150,7 +150,9 @@ fn robidoux_kernel_f64(r: f64) -> f64 {
     } else {
         let r2 = r * r;
         let r3 = r2 * r;
-        ((-b - 6.0 * c) * r3 + (6.0 * b + 30.0 * c) * r2 + (-12.0 * b - 48.0 * c) * r
+        ((-b - 6.0 * c) * r3
+            + (6.0 * b + 30.0 * c) * r2
+            + (-12.0 * b - 48.0 * c) * r
             + (8.0 * b + 24.0 * c))
             / 6.0
     }
@@ -185,12 +187,7 @@ pub type Jacobian = [[f32; 2]; 2];
 /// 1. Discriminant: `(frobenius² + 2*det)(frobenius² - 2*det)` (IM's form)
 /// 2. Eigenvector: select row with larger |s1s1 - nXX| for numerical stability
 /// 3. Minor axis: 90° rotation of major `(-u21, u11)`, not independent eigenvector
-fn clamp_up_axes(
-    dux: f64,
-    dvx: f64,
-    duy: f64,
-    dvy: f64,
-) -> (f64, f64, f64, f64, f64, f64) {
+fn clamp_up_axes(dux: f64, dvx: f64, duy: f64, dvy: f64) -> (f64, f64, f64, f64, f64, f64) {
     // Verbatim IM variable names for auditability
     let a = dux;
     let b = duy;
@@ -213,8 +210,7 @@ fn clamp_up_axes(
     // IM's discriminant form: (frobenius² + 2det)(frobenius² - 2det)
     // Mathematically = frobenius⁴ - 4det² = (n11-n22)² + 4n12²
     // But IM's form is numerically different for near-degenerate matrices
-    let discriminant =
-        (frobenius_squared + twice_det) * (frobenius_squared - twice_det);
+    let discriminant = (frobenius_squared + twice_det) * (frobenius_squared - twice_det);
 
     let sqrt_discriminant = if discriminant > 0.0 {
         discriminant.sqrt()
@@ -248,12 +244,10 @@ fn clamp_up_axes(
 
     // IM: minor axis = 90° rotation of major, NOT independent eigenvector
     (
-        major_mag,
-        minor_mag,
-        u11,   // major_unit_x
-        u21,   // major_unit_y
-        -u21,  // minor_unit_x = -major_unit_y
-        u11,   // minor_unit_y = major_unit_x
+        major_mag, minor_mag, u11,  // major_unit_x
+        u21,  // major_unit_y
+        -u21, // minor_unit_x = -major_unit_y
+        u11,  // minor_unit_y = major_unit_x
     )
 }
 
@@ -501,11 +495,9 @@ impl<'a> EwaSampler<'a> {
 
     /// Sample all channels at once using IM-exact EWA.
     pub fn sample_all(&self, sx: f32, sy: f32, jacobian: &Jacobian) -> Vec<f32> {
-        let mut result = vec![0.0f32; self.ch];
-        for c in 0..self.ch {
-            result[c] = self.sample(sx, sy, jacobian, c);
-        }
-        result
+        (0..self.ch)
+            .map(|c| self.sample(sx, sy, jacobian, c))
+            .collect()
     }
 
     /// Bilinear interpolation (public for filters that match IM's bilinear path).
@@ -544,13 +536,7 @@ pub const JACOBIAN_IDENTITY: Jacobian = [[1.0, 0.0], [0.0, 1.0]];
 ///   `dsx/dox = (max_r/h) * sin(angle) * 0  +  radius * cos(angle) * (2π/w)`
 ///   ... simplified via chain rule
 #[inline]
-pub fn jacobian_polar(
-    ox: f32,
-    oy: f32,
-    w: f32,
-    h: f32,
-    max_r: f32,
-) -> Jacobian {
+pub fn jacobian_polar(ox: f32, oy: f32, w: f32, h: f32, max_r: f32) -> Jacobian {
     let two_pi = std::f32::consts::TAU;
     let angle = ox / w * two_pi - std::f32::consts::PI;
     let radius = oy / h * max_r;
@@ -581,8 +567,8 @@ pub fn jacobian_depolar(
     oy: f32,
     cx: f32,
     cy: f32,
-    c6: f32,  // w/(2π)
-    c7: f32,  // h/max_r
+    c6: f32, // w/(2π)
+    c7: f32, // h/max_r
 ) -> Jacobian {
     let ii = ox - cx;
     let jj = oy - cy;
@@ -778,19 +764,12 @@ pub fn jacobian_barrel(
 ///
 /// `new_r = r^(1/(1+amt)) for bulge, r^(1+|amt|) for pinch`
 #[inline]
-pub fn jacobian_spherize(
-    ox: f32,
-    oy: f32,
-    cx: f32,
-    cy: f32,
-    amount: f32,
-    radius: f32,
-) -> Jacobian {
+pub fn jacobian_spherize(ox: f32, oy: f32, cx: f32, cy: f32, amount: f32, radius: f32) -> Jacobian {
     let dx = (ox - cx) / radius;
     let dy = (oy - cy) / radius;
     let r = (dx * dx + dy * dy).sqrt();
 
-    if r >= 1.0 || r < 1e-10 {
+    if !(1e-10..1.0).contains(&r) {
         return JACOBIAN_IDENTITY;
     }
 

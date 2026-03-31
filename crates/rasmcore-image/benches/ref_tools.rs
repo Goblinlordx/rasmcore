@@ -95,9 +95,7 @@ pub fn magick_composite(fg_path: &str, bg_path: &str, mode: &str, output_fmt: &s
     let tmp = std::env::temp_dir().join(format!("rasmcore_bench_comp.{output_fmt}"));
     let tmp_str = tmp.to_str().unwrap();
     let _ = Command::new("magick")
-        .args([
-            "composite", fg_path, bg_path, "-compose", mode, tmp_str,
-        ])
+        .args(["composite", fg_path, bg_path, "-compose", mode, tmp_str])
         .output()
         .unwrap();
     std::fs::read(&tmp).unwrap_or_default()

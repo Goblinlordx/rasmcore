@@ -58,7 +58,7 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
         return Some("webp".to_string());
     }
     // DDS — DirectDraw Surface magic "DDS "
-    if header.len() >= 4 && &header[..4] == [0x44, 0x44, 0x53, 0x20] {
+    if header.len() >= 4 && header[..4] == [0x44, 0x44, 0x53, 0x20] {
         return Some("dds".to_string());
     }
     // ICO — little-endian: reserved=0, type=1(icon) or 2(cursor)
@@ -388,7 +388,7 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
     }
 
     // DDS — decode via native implementation (dropped from image features)
-    if data.len() >= 4 && &data[..4] == [0x44, 0x44, 0x53, 0x20] {
+    if data.len() >= 4 && data[..4] == [0x44, 0x44, 0x53, 0x20] {
         // DDS magic: "DDS " (0x44445320)
         return decode_dds_native(data);
     }
@@ -461,12 +461,11 @@ pub fn decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo)
     {
         return tiff_decode_frame(data, index);
     }
-    if is_png(data) {
-        if let Some(count) = apng_animation_frame_count(data)? {
-            if count > 1 {
-                return apng_decode_frame(data, index);
-            }
-        }
+    if is_png(data)
+        && let Some(count) = apng_animation_frame_count(data)?
+        && count > 1
+    {
+        return apng_decode_frame(data, index);
     }
     // Single-frame fallback
     if index != 0 {
@@ -1339,7 +1338,7 @@ fn decode_native_ico(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let image_data = &data[image_offset..image_offset + image_size];
 
     // Check if it's a PNG (modern ICO) or BMP (legacy ICO)
-    if image_data.len() >= 8 && &image_data[..4] == &[0x89, 0x50, 0x4E, 0x47] {
+    if image_data.len() >= 8 && image_data[..4] == [0x89, 0x50, 0x4E, 0x47] {
         // PNG embedded — decode directly
         decode(image_data)
     } else {
@@ -1369,16 +1368,16 @@ fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError> {
             .unwrap_or(data.len() - pos);
         let line = &data[pos..pos + line_end];
 
-        if let Ok(line_str) = std::str::from_utf8(line) {
-            if line_str.starts_with("-Y ") || line_str.starts_with("+Y ") {
-                let parts: Vec<&str> = line_str.split_whitespace().collect();
-                if parts.len() >= 4 {
-                    height = parts[1].parse().unwrap_or(0);
-                    width = parts[3].parse().unwrap_or(0);
-                }
-                data_start = pos + line_end + 1; // skip past \n
-                break;
+        if let Ok(line_str) = std::str::from_utf8(line)
+            && (line_str.starts_with("-Y ") || line_str.starts_with("+Y "))
+        {
+            let parts: Vec<&str> = line_str.split_whitespace().collect();
+            if parts.len() >= 4 {
+                height = parts[1].parse().unwrap_or(0);
+                width = parts[3].parse().unwrap_or(0);
             }
+            data_start = pos + line_end + 1; // skip past \n
+            break;
         }
 
         pos += line_end + 1; // skip past \n
@@ -1590,8 +1589,8 @@ fn decompress_bcn(
 ) -> Result<(Vec<u8>, PixelFormat), ImageError> {
     let w = width as usize;
     let h = height as usize;
-    let bw = (w + 3) / 4; // blocks across
-    let bh = (h + 3) / 4; // blocks down
+    let bw = w.div_ceil(4); // blocks across
+    let bh = h.div_ceil(4); // blocks down
     let block_bytes = bc.block_bytes();
     let expected_size = bw * bh * block_bytes;
 
@@ -2354,7 +2353,11 @@ fn apng_decode_frame(data: &[u8], index: u32) -> Result<(DecodedImage, FrameInfo
 
         if i == index {
             let delay_ms = if let Some(ref fc) = fc {
-                let den = if fc.delay_den == 0 { 100 } else { fc.delay_den as u32 };
+                let den = if fc.delay_den == 0 {
+                    100
+                } else {
+                    fc.delay_den as u32
+                };
                 (fc.delay_num as u32 * 1000) / den
             } else {
                 0
@@ -2932,15 +2935,13 @@ mod tests {
             let mut writer = encoder.write_header().unwrap();
 
             let colors: [[u8; 4]; 3] = [
-                [255, 0, 0, 255],   // red
-                [0, 255, 0, 255],   // green
-                [0, 0, 255, 255],   // blue
+                [255, 0, 0, 255], // red
+                [0, 255, 0, 255], // green
+                [0, 0, 255, 255], // blue
             ];
 
             for color in &colors {
-                let pixels: Vec<u8> = (0..width * height)
-                    .flat_map(|_| *color)
-                    .collect();
+                let pixels: Vec<u8> = (0..width * height).flat_map(|_| *color).collect();
                 writer.set_frame_delay(10, 100).unwrap(); // 100ms
                 writer.write_image_data(&pixels).unwrap();
             }
@@ -3026,8 +3027,8 @@ mod tests {
         assert_eq!(info.delay_ms, 100);
         // First pixel should be red
         assert_eq!(img.pixels[0], 255); // R
-        assert_eq!(img.pixels[1], 0);   // G
-        assert_eq!(img.pixels[2], 0);   // B
+        assert_eq!(img.pixels[1], 0); // G
+        assert_eq!(img.pixels[2], 0); // B
         assert_eq!(img.pixels[3], 255); // A
     }
 
@@ -3116,7 +3117,7 @@ mod tests {
         // Alpha block: endpoints 255, 255, indices all 0 → alpha=255
         block[0] = 255; // alpha endpoint 0
         block[1] = 255; // alpha endpoint 1
-                        // Alpha indices: all 0
+        // Alpha indices: all 0
         block[2..8].copy_from_slice(&[0; 6]);
         // Color block: solid green (G=63 in RGB565 = 0x07E0)
         block[8..10].copy_from_slice(&0x07E0u16.to_le_bytes());
@@ -3193,7 +3194,7 @@ mod tests {
         buf.extend_from_slice(&0u32.to_le_bytes()); // depth
         buf.extend_from_slice(&0u32.to_le_bytes()); // mipmaps
         buf.extend_from_slice(&[0u8; 44]); // reserved
-                                           // Pixel format
+        // Pixel format
         buf.extend_from_slice(&32u32.to_le_bytes()); // size
         let pf_flags: u32 = 0x40 | 0x01; // DDPF_RGB | DDPF_ALPHAPIXELS
         buf.extend_from_slice(&pf_flags.to_le_bytes());
@@ -3203,7 +3204,7 @@ mod tests {
         buf.extend_from_slice(&0x0000FF00u32.to_le_bytes()); // G mask
         buf.extend_from_slice(&0x000000FFu32.to_le_bytes()); // B mask
         buf.extend_from_slice(&0xFF000000u32.to_le_bytes()); // A mask
-                                                             // Caps
+        // Caps
         buf.extend_from_slice(&0x1000u32.to_le_bytes());
         buf.extend_from_slice(&[0u8; 16]);
         assert_eq!(buf.len(), 128);

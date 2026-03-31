@@ -149,8 +149,8 @@ pub fn encode_sequence(
         "webp" => Err(ImageError::UnsupportedFormat(
             "animated WebP encode is not supported (image-webp crate limitation)".into(),
         )),
-        "jpeg" | "jpg" | "avif" | "heic" | "heif" | "bmp" | "ico" | "qoi" | "tga"
-        | "hdr" | "pnm" | "exr" | "dds" | "jp2" => Err(ImageError::UnsupportedFormat(format!(
+        "jpeg" | "jpg" | "avif" | "heic" | "heif" | "bmp" | "ico" | "qoi" | "tga" | "hdr"
+        | "pnm" | "exr" | "dds" | "jp2" => Err(ImageError::UnsupportedFormat(format!(
             "format '{format}' does not support multi-frame encoding"
         ))),
         other => Err(ImageError::UnsupportedFormat(format!(
