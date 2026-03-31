@@ -1687,10 +1687,14 @@ pub struct BoxBlurParams {
     reference = "Photoshop Box Blur / OpenCV cv2.blur"
 )]
 pub fn box_blur(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &BoxBlurParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let radius = config.radius;
     validate_format(info.format)?;
 
@@ -1699,7 +1703,11 @@ pub fn box_blur(
     }
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| box_blur(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            box_blur(r, &mut u, i8, config)
+        });
     }
 
     let w = info.width as usize;
@@ -1829,11 +1837,22 @@ pub fn box_blur(
     reference = "Photoshop Average blur",
     overlap = "full"
 )]
-pub fn average_blur(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn average_blur(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, average_blur);
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            average_blur(r, &mut u, i8)
+        });
     }
 
     let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
@@ -12058,7 +12077,8 @@ mod tests {
     #[test]
     fn box_blur_preserves_dimensions() {
         let (px, info) = make_image(16, 16);
-        let result = box_blur(&px, &info, &BoxBlurParams { radius: 3 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let result = box_blur(r, &mut |_| Ok(px.to_vec()), &info, &BoxBlurParams { radius: 3 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -12066,7 +12086,8 @@ mod tests {
     fn box_blur_reduces_variance() {
         // Box blur should reduce the variance of pixel values
         let (px, info) = make_image(16, 16);
-        let result = box_blur(&px, &info, &BoxBlurParams { radius: 5 }).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let result = box_blur(r, &mut |_| Ok(px.to_vec()), &info, &BoxBlurParams { radius: 5 }).unwrap();
         // Compute variance of R channel before and after
         let ch = 4;
         let n = px.len() / ch;
@@ -12086,7 +12107,8 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = average_blur(&pixels, &info).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let result = average_blur(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
         for i in 0..16 {
             assert_eq!(result[i * 4], 255);
             assert_eq!(result[i * 4 + 1], 255);
@@ -12106,7 +12128,8 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = average_blur(&pixels, &info).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height);
+        let result = average_blur(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
         // Mean should be ~127-128 for each channel
         for i in 0..4 {
             assert!((result[i * 4] as i16 - 127).unsigned_abs() <= 1);
