@@ -5,282 +5,196 @@ status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: |
-    Make metadata a first-class input and output of every pipeline node.
+  summary: 'Make metadata a first-class input and output of every pipeline node.
+
     Read() parses metadata immediately. Nodes receive, modify, and return
+
     metadata alongside pixels. Include/exclude with glob patterns control
+
     what gets embedded at write. Eliminates explicit metadata parameters.
-  context: |
-    Currently metadata is a sidecar stashed as raw bytes. ICC profiles
+
+    '
+  context: 'Currently metadata is a sidecar stashed as raw bytes. ICC profiles
+
     and EXIF orientation are passed as explicit parameters. Metadata is
+
     invisible to filter nodes.
 
-    The fix: metadata becomes part of every node's input AND output, just
+
+    The fix: metadata becomes part of every node''s input AND output, just
+
     like pixels. Each node receives upstream metadata and returns (possibly
+
     modified) metadata. Operations that need metadata (icc_to_srgb,
+
     auto_orient) read it from the flow instead of taking parameters.
 
+
     Metadata filtering uses include/exclude with glob patterns:
+
     - Nothing called: all metadata dropped at write (safe default, no PII leak)
+
     - keep-metadata(): sugar for "include everything"
+
     - include-metadata("exif.*", "iptc.Caption"): only matching keys embedded
+
     - exclude-metadata("exif.GPS*", "exif.MakerNote*"): all except matching
+
     - Calling both include and exclude is an error
-  codebase_analysis: |
-    CURRENT STATE:
-    - Pipeline stashes raw source bytes for lazy metadata parsing
-    - ICC profile: extracted by decoder, passed explicitly to icc_to_srgb()
-    - EXIF orientation: passed explicitly to auto_orient()
-    - keep-metadata/set-metadata: sidecar flags, not part of node graph
-    - Metadata invisible to filter/transform nodes
 
-    IMAGENODE TRAIT (current):
-    - compute_region(request, upstream_fn) -> Result<Vec<u8>>
-    - No metadata in or out
-
-    IMAGENODE TRAIT (proposed):
-    - compute_region(request, metadata, upstream_fn) -> Result<(Vec<u8>, Metadata)>
-    - Every node receives and returns metadata
-
-    METADATA TYPE:
-    - Generic: HashMap<String, MetadataValue>
-    - MetadataValue: String, Int(i64), Float(f64), Bytes(Vec<u8>), Bool
-    - Namespaced keys: "exif.Orientation", "iptc.Caption", "icc_profile"
-    - Glob matching: "exif.*" matches all EXIF, "exif.GPS*" matches GPS fields
-
-    OPERATIONS THAT CHANGE METADATA:
-    - read: PRODUCES — parses from container headers
-    - auto_orient: CONSUMES exif.Orientation, resets to 1
-    - icc_to_srgb: CONSUMES icc_profile, removes after conversion
-    - resize/crop: UPDATES width/height
-    - set_metadata: ADDS/OVERWRITES user-specified key
-    - include/exclude: FILTERS keys at write time via glob
-    - blur, sharpen, brightness, etc.: PASS-THROUGH unchanged
-
-    VIPS COMPARISON:
-    - vips_image_get/set — typed metadata access on every image
-    - Metadata propagated through operations automatically
-    - Operations update metadata (resize updates width/height)
-    - We match this model exactly with flowing metadata
-
-    INCLUDE/EXCLUDE WITH GLOB:
-    - include-metadata("exif.Artist", "exif.Copyright", "iptc.*")
-    - exclude-metadata("exif.GPS*", "exif.MakerNote*")
-    - Pattern: * matches any chars within a key segment
-    - Applied at write time — metadata flows fully through pipeline,
-      filtering happens only when embedding into output container
+    '
+  codebase_analysis: "CURRENT STATE:\n- Pipeline stashes raw source bytes for lazy metadata parsing\n- ICC profile: extracted\
+    \ by decoder, passed explicitly to icc_to_srgb()\n- EXIF orientation: passed explicitly to auto_orient()\n- keep-metadata/set-metadata:\
+    \ sidecar flags, not part of node graph\n- Metadata invisible to filter/transform nodes\n\nIMAGENODE TRAIT (current):\n\
+    - compute_region(request, upstream_fn) -> Result<Vec<u8>>\n- No metadata in or out\n\nIMAGENODE TRAIT (proposed):\n- compute_region(request,\
+    \ metadata, upstream_fn) -> Result<(Vec<u8>, Metadata)>\n- Every node receives and returns metadata\n\nMETADATA TYPE:\n\
+    - Generic: HashMap<String, MetadataValue>\n- MetadataValue: String, Int(i64), Float(f64), Bytes(Vec<u8>), Bool\n- Namespaced\
+    \ keys: \"exif.Orientation\", \"iptc.Caption\", \"icc_profile\"\n- Glob matching: \"exif.*\" matches all EXIF, \"exif.GPS*\"\
+    \ matches GPS fields\n\nOPERATIONS THAT CHANGE METADATA:\n- read: PRODUCES — parses from container headers\n- auto_orient:\
+    \ CONSUMES exif.Orientation, resets to 1\n- icc_to_srgb: CONSUMES icc_profile, removes after conversion\n- resize/crop:\
+    \ UPDATES width/height\n- set_metadata: ADDS/OVERWRITES user-specified key\n- include/exclude: FILTERS keys at write time\
+    \ via glob\n- blur, sharpen, brightness, etc.: PASS-THROUGH unchanged\n\nVIPS COMPARISON:\n- vips_image_get/set — typed\
+    \ metadata access on every image\n- Metadata propagated through operations automatically\n- Operations update metadata\
+    \ (resize updates width/height)\n- We match this model exactly with flowing metadata\n\nINCLUDE/EXCLUDE WITH GLOB:\n-\
+    \ include-metadata(\"exif.Artist\", \"exif.Copyright\", \"iptc.*\")\n- exclude-metadata(\"exif.GPS*\", \"exif.MakerNote*\"\
+    )\n- Pattern: * matches any chars within a key segment\n- Applied at write time — metadata flows fully through pipeline,\n\
+    \  filtering happens only when embedding into output container\n"
   acceptance_criteria:
-    - Metadata is a generic Map flowing through every node
-    - ImageNode receives metadata as input, returns metadata as output
-    - read() parses metadata immediately from container headers
-    - read() returns structured result with metadata + source + format + dims + warnings
-    - icc_to_srgb takes no ICC parameter (reads from flowing metadata)
-    - auto_orient takes no orientation parameter (reads from flowing metadata)
-    - resize/crop update width/height in metadata
-    - By default (nothing called), all metadata dropped at write
-    - keep-metadata() includes all metadata at write
-    - include-metadata(glob patterns) whitelists matching keys
-    - exclude-metadata(glob patterns) blacklists matching keys
-    - Calling both include and exclude is an error
-    - Glob patterns support * for wildcard matching
-    - node-metadata-dump(node-id) shows metadata state at any node
-    - Typed helper methods for common fields (icc_profile, exif_orientation, etc.)
-    - No duplicate buffer (raw bytes not stashed for metadata)
-    - Vips field access coverage benchmark
-    - All existing pipeline tests pass with updated API
-  out_of_scope: |
-    Per-tile metadata (metadata is per-node, not per-region).
+  - Metadata is a generic Map flowing through every node
+  - ImageNode receives metadata as input, returns metadata as output
+  - read() parses metadata immediately from container headers
+  - read() returns structured result with metadata + source + format + dims + warnings
+  - icc_to_srgb takes no ICC parameter (reads from flowing metadata)
+  - auto_orient takes no orientation parameter (reads from flowing metadata)
+  - resize/crop update width/height in metadata
+  - By default (nothing called), all metadata dropped at write
+  - keep-metadata() includes all metadata at write
+  - include-metadata(glob patterns) whitelists matching keys
+  - exclude-metadata(glob patterns) blacklists matching keys
+  - Calling both include and exclude is an error
+  - Glob patterns support * for wildcard matching
+  - node-metadata-dump(node-id) shows metadata state at any node
+  - Typed helper methods for common fields (icc_profile, exif_orientation, etc.)
+  - No duplicate buffer (raw bytes not stashed for metadata)
+  - Vips field access coverage benchmark
+  - All existing pipeline tests pass with updated API
+  out_of_scope: 'Per-tile metadata (metadata is per-node, not per-region).
+
     Recursive/nested metadata structures (flat key-value only).
+
     Custom metadata type definitions beyond string/int/float/bytes/bool.
+
     Metadata validation schemas. XMP write support (read only for v1).
-  technical_notes: |
-    METADATA TYPE:
 
-    ```rust
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum MetadataValue {
-        String(String),
-        Int(i64),
-        Float(f64),
-        Bytes(Vec<u8>),
-        Bool(bool),
-    }
-
-    #[derive(Debug, Clone, Default)]
-    pub struct Metadata {
-        entries: HashMap<String, MetadataValue>,
-    }
-
-    impl Metadata {
-        pub fn get(&self, key: &str) -> Option<&MetadataValue> { ... }
-        pub fn set(&mut self, key: impl Into<String>, value: MetadataValue) { ... }
-        pub fn remove(&mut self, key: &str) -> Option<MetadataValue> { ... }
-        pub fn keys(&self) -> impl Iterator<Item = &str> { ... }
-        pub fn is_empty(&self) -> bool { ... }
-
-        // Typed helpers
-        pub fn icc_profile(&self) -> Option<&[u8]> { ... }
-        pub fn exif_orientation(&self) -> Option<u32> { ... }
-        pub fn width(&self) -> Option<u32> { ... }
-        pub fn height(&self) -> Option<u32> { ... }
-
-        // Glob filtering
-        pub fn include(&self, patterns: &[&str]) -> Metadata { ... }
-        pub fn exclude(&self, patterns: &[&str]) -> Metadata { ... }
-    }
-    ```
-
-    GLOB MATCHING:
-    ```rust
-    fn glob_match(pattern: &str, key: &str) -> bool {
-        // "exif.*" matches "exif.Artist", "exif.GPS.Latitude"
-        // "exif.GPS*" matches "exif.GPSLatitude", "exif.GPSLongitude"
-        // Exact match: "exif.Artist" matches only "exif.Artist"
-    }
-    ```
-
-    IMAGENODE TRAIT:
-    ```rust
-    trait ImageNode {
-        fn info(&self) -> ImageInfo;
-        fn metadata(&self) -> &Metadata;
-
-        fn compute_region(
-            &self,
-            request: Rect,
-            upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
-        ) -> Result<Vec<u8>, ImageError>;
-    }
-    ```
-
-    Metadata is set at node creation (from upstream metadata, possibly
-    modified). compute_region only handles pixels. The metadata flow is
-    determined when the graph is built, not during tile execution. This
-    keeps the hot pixel path unchanged.
-
-    WRITE-TIME FILTERING:
-    ```rust
-    fn write_jpeg(&self, source: NodeId, config: ...) -> Result<Vec<u8>> {
-        let pixels = graph.request_region(source, full)?;
-        let metadata = graph.node_metadata(source);
-
-        // Apply user's include/exclude filter
-        let filtered = match &self.metadata_filter {
-            MetadataFilter::DropAll => Metadata::default(),
-            MetadataFilter::KeepAll => metadata.clone(),
-            MetadataFilter::Include(patterns) => metadata.include(&patterns),
-            MetadataFilter::Exclude(patterns) => metadata.exclude(&patterns),
-        };
-
-        encoder::jpeg::encode_with_metadata(&pixels, &info, &config, &filtered)
-    }
-    ```
-
-    WIT INTERFACE:
-    ```wit
-    record read-result {
-        source: node-id,
-        format: string,
-        width: u32,
-        height: u32,
-        warnings: list<string>,
-    }
-
-    read: func(data: buffer) -> result<read-result, rasmcore-error>;
-
-    // Metadata access at any node
-    node-metadata-dump: func(node: node-id) -> result<string, rasmcore-error>;
-    node-metadata-read: func(node: node-id, path: string) -> result<option<string>, rasmcore-error>;
-
-    // Metadata filtering (controls what gets embedded at write)
-    keep-metadata: func();
-    include-metadata: func(patterns: list<string>);
-    exclude-metadata: func(patterns: list<string>);
-    set-metadata: func(key: string, value: string);
-
-    // Simplified operations (read metadata from flow)
-    icc-to-srgb: func(source: node-id) -> result<node-id, rasmcore-error>;
-    auto-orient: func(source: node-id) -> result<node-id, rasmcore-error>;
-    ```
+    '
+  technical_notes: "METADATA TYPE:\n\n```rust\n#[derive(Debug, Clone, PartialEq)]\npub enum MetadataValue {\n    String(String),\n\
+    \    Int(i64),\n    Float(f64),\n    Bytes(Vec<u8>),\n    Bool(bool),\n}\n\n#[derive(Debug, Clone, Default)]\npub struct\
+    \ Metadata {\n    entries: HashMap<String, MetadataValue>,\n}\n\nimpl Metadata {\n    pub fn get(&self, key: &str) ->\
+    \ Option<&MetadataValue> { ... }\n    pub fn set(&mut self, key: impl Into<String>, value: MetadataValue) { ... }\n  \
+    \  pub fn remove(&mut self, key: &str) -> Option<MetadataValue> { ... }\n    pub fn keys(&self) -> impl Iterator<Item\
+    \ = &str> { ... }\n    pub fn is_empty(&self) -> bool { ... }\n\n    // Typed helpers\n    pub fn icc_profile(&self) ->\
+    \ Option<&[u8]> { ... }\n    pub fn exif_orientation(&self) -> Option<u32> { ... }\n    pub fn width(&self) -> Option<u32>\
+    \ { ... }\n    pub fn height(&self) -> Option<u32> { ... }\n\n    // Glob filtering\n    pub fn include(&self, patterns:\
+    \ &[&str]) -> Metadata { ... }\n    pub fn exclude(&self, patterns: &[&str]) -> Metadata { ... }\n}\n```\n\nGLOB MATCHING:\n\
+    ```rust\nfn glob_match(pattern: &str, key: &str) -> bool {\n    // \"exif.*\" matches \"exif.Artist\", \"exif.GPS.Latitude\"\
+    \n    // \"exif.GPS*\" matches \"exif.GPSLatitude\", \"exif.GPSLongitude\"\n    // Exact match: \"exif.Artist\" matches\
+    \ only \"exif.Artist\"\n}\n```\n\nIMAGENODE TRAIT:\n```rust\ntrait ImageNode {\n    fn info(&self) -> ImageInfo;\n   \
+    \ fn metadata(&self) -> &Metadata;\n\n    fn compute_region(\n        &self,\n        request: Rect,\n        upstream_fn:\
+    \ &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n    ) -> Result<Vec<u8>, ImageError>;\n}\n```\n\nMetadata\
+    \ is set at node creation (from upstream metadata, possibly\nmodified). compute_region only handles pixels. The metadata\
+    \ flow is\ndetermined when the graph is built, not during tile execution. This\nkeeps the hot pixel path unchanged.\n\n\
+    WRITE-TIME FILTERING:\n```rust\nfn write_jpeg(&self, source: NodeId, config: ...) -> Result<Vec<u8>> {\n    let pixels\
+    \ = graph.request_region(source, full)?;\n    let metadata = graph.node_metadata(source);\n\n    // Apply user's include/exclude\
+    \ filter\n    let filtered = match &self.metadata_filter {\n        MetadataFilter::DropAll => Metadata::default(),\n\
+    \        MetadataFilter::KeepAll => metadata.clone(),\n        MetadataFilter::Include(patterns) => metadata.include(&patterns),\n\
+    \        MetadataFilter::Exclude(patterns) => metadata.exclude(&patterns),\n    };\n\n    encoder::jpeg::encode_with_metadata(&pixels,\
+    \ &info, &config, &filtered)\n}\n```\n\nWIT INTERFACE:\n```wit\nrecord read-result {\n    source: node-id,\n    format:\
+    \ string,\n    width: u32,\n    height: u32,\n    warnings: list<string>,\n}\n\nread: func(data: buffer) -> result<read-result,\
+    \ rasmcore-error>;\n\n// Metadata access at any node\nnode-metadata-dump: func(node: node-id) -> result<string, rasmcore-error>;\n\
+    node-metadata-read: func(node: node-id, path: string) -> result<option<string>, rasmcore-error>;\n\n// Metadata filtering\
+    \ (controls what gets embedded at write)\nkeep-metadata: func();\ninclude-metadata: func(patterns: list<string>);\nexclude-metadata:\
+    \ func(patterns: list<string>);\nset-metadata: func(key: string, value: string);\n\n// Simplified operations (read metadata\
+    \ from flow)\nicc-to-srgb: func(source: node-id) -> result<node-id, rasmcore-error>;\nauto-orient: func(source: node-id)\
+    \ -> result<node-id, rasmcore-error>;\n```\n"
 plan:
-  - phase: Research
-    tasks:
-      - text: Document vips metadata API (get/set/fields/types/propagation rules)
-        done: false
-      - text: Benchmark vips field coverage vs our metadata support
-        done: false
-      - text: List all current operations that take explicit metadata params
-        done: false
-  - phase: Metadata Type
-    tasks:
-      - text: Define Metadata struct with HashMap + MetadataValue enum
-        done: false
-      - text: Implement typed helpers (icc_profile, exif_orientation, width, height)
-        done: false
-      - text: Implement glob_match() for pattern matching on keys
-        done: false
-      - text: Implement include() and exclude() with glob patterns
-        done: false
-      - text: Unit tests for glob matching, include/exclude filtering
-        done: false
-  - phase: Node Integration
-    tasks:
-      - text: Add metadata() method to ImageNode trait
-        done: false
-      - text: Store metadata per node in NodeGraph (set at creation, immutable during execution)
-        done: false
-      - text: Propagate upstream metadata on node add (default pass-through)
-        done: false
-      - text: Update auto_orient to read exif.Orientation from metadata (remove param)
-        done: false
-      - text: Update icc_to_srgb to read icc_profile from metadata (remove param)
-        done: false
-      - text: Update resize/crop to set width/height in output metadata
-        done: false
-  - phase: Read API
-    tasks:
-      - text: Parse all metadata at read() time from container headers
-        done: false
-      - text: Return read-result with source + format + dims + warnings
-        done: false
-      - text: Remove source_data stash (no more raw byte clone)
-        done: false
-      - text: Attach parsed metadata to source node
-        done: false
-  - phase: Write & Filtering
-    tasks:
-      - text: Add MetadataFilter enum (DropAll, KeepAll, Include, Exclude)
-        done: false
-      - text: Implement keep-metadata, include-metadata, exclude-metadata on pipeline
-        done: false
-      - text: Write methods read node metadata and apply filter before embedding
-        done: false
-      - text: Error if both include and exclude called
-        done: false
-  - phase: WIT & Adapter
-    tasks:
-      - text: Update WIT with read-result, node-metadata-dump/read, include/exclude
-        done: false
-      - text: Simplify icc-to-srgb and auto-orient WIT signatures (remove params)
-        done: false
-      - text: Wire adapter for new metadata flow
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test metadata available immediately after read
-        done: false
-      - text: Test metadata changes at each pipeline step (auto_orient, resize)
-        done: false
-      - text: Test include with glob patterns (exif.*, iptc.Caption)
-        done: false
-      - text: Test exclude with glob patterns (exif.GPS*, exif.MakerNote*)
-        done: false
-      - text: Test default behavior (nothing called = all metadata dropped)
-        done: false
-      - text: Test icc_to_srgb and auto_orient work without explicit params
-        done: false
-      - text: All existing pipeline tests pass with updated API
-        done: false
-      - text: Benchmark metadata access time vs vips
-        done: false
+- phase: Research
+  tasks:
+  - text: Document vips metadata API (get/set/fields/types/propagation rules)
+    done: true
+  - text: Benchmark vips field coverage vs our metadata support
+    done: true
+  - text: List all current operations that take explicit metadata params
+    done: true
+- phase: Metadata Type
+  tasks:
+  - text: Define Metadata struct with HashMap + MetadataValue enum
+    done: true
+  - text: Implement typed helpers (icc_profile, exif_orientation, width, height)
+    done: true
+  - text: Implement glob_match() for pattern matching on keys
+    done: true
+  - text: Implement include() and exclude() with glob patterns
+    done: true
+  - text: Unit tests for glob matching, include/exclude filtering
+    done: true
+- phase: Node Integration
+  tasks:
+  - text: Add metadata() method to ImageNode trait
+    done: true
+  - text: Store metadata per node in NodeGraph (set at creation, immutable during execution)
+    done: true
+  - text: Propagate upstream metadata on node add (default pass-through)
+    done: true
+  - text: Update auto_orient to read exif.Orientation from metadata (remove param)
+    done: true
+  - text: Update icc_to_srgb to read icc_profile from metadata (remove param)
+    done: true
+  - text: Update resize/crop to set width/height in output metadata
+    done: true
+- phase: Read API
+  tasks:
+  - text: Parse all metadata at read() time from container headers
+    done: true
+  - text: Return read-result with source + format + dims + warnings
+    done: true
+  - text: Remove source_data stash (no more raw byte clone)
+    done: true
+  - text: Attach parsed metadata to source node
+    done: true
+- phase: Write & Filtering
+  tasks:
+  - text: Add MetadataFilter enum (DropAll, KeepAll, Include, Exclude)
+    done: true
+  - text: Implement keep-metadata, include-metadata, exclude-metadata on pipeline
+    done: true
+  - text: Write methods read node metadata and apply filter before embedding
+    done: true
+  - text: Error if both include and exclude called
+    done: true
+- phase: WIT & Adapter
+  tasks:
+  - text: Update WIT with read-result, node-metadata-dump/read, include/exclude
+    done: true
+  - text: Simplify icc-to-srgb and auto-orient WIT signatures (remove params)
+    done: true
+  - text: Wire adapter for new metadata flow
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test metadata available immediately after read
+    done: true
+  - text: Test metadata changes at each pipeline step (auto_orient, resize)
+    done: true
+  - text: Test include with glob patterns (exif.*, iptc.Caption)
+    done: true
+  - text: Test exclude with glob patterns (exif.GPS*, exif.MakerNote*)
+    done: true
+  - text: Test default behavior (nothing called = all metadata dropped)
+    done: true
+  - text: Test icc_to_srgb and auto_orient work without explicit params
+    done: true
+  - text: All existing pipeline tests pass with updated API
+    done: true
+  - text: Benchmark metadata access time vs vips
+    done: true
 extra: {}
