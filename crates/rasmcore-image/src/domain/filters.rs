@@ -9537,6 +9537,279 @@ pub fn simplex_noise(width: u32, height: u32, seed: u64, scale: f64, octaves: u3
     pixels
 }
 
+// ─── Add-Noise Filters ────────────────────────────────────────────────────
+//
+// Per-pixel noise addition to existing images (Gaussian, salt-pepper,
+// Poisson, uniform). All are seeded for reproducibility and use a fast
+// xorshift64 PRNG. LLVM auto-vectorizes the inner loops to SIMD128.
+
+/// xorshift64 PRNG — fast, deterministic, good enough for noise generation.
+#[inline]
+fn xorshift64(state: &mut u64) -> u64 {
+    let mut s = *state;
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    *state = s;
+    s
+}
+
+/// Return a uniform f64 in [0, 1) from the PRNG.
+#[inline]
+fn xorshift64_f64(state: &mut u64) -> f64 {
+    (xorshift64(state) >> 11) as f64 / ((1u64 << 53) as f64)
+}
+
+/// Box-Muller transform: two uniform randoms → two standard-normal values.
+/// Returns one value per call (discards the second for simplicity).
+#[inline]
+fn box_muller(state: &mut u64) -> f64 {
+    let u1 = xorshift64_f64(state).max(1e-300); // avoid log(0)
+    let u2 = xorshift64_f64(state);
+    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+}
+
+// ── Gaussian Noise ─────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Gaussian noise — adds normally-distributed noise to an image
+pub struct GaussianNoiseParams {
+    /// Noise amount (0 = identity, 100 = full strength)
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 10.0)]
+    pub amount: f32,
+    /// Mean of the Gaussian distribution (-128 to 128)
+    #[param(min = -128.0, max = 128.0, step = 0.5, default = 0.0)]
+    pub mean: f32,
+    /// Standard deviation (sigma) of the distribution
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 25.0)]
+    pub sigma: f32,
+    /// Random seed for reproducibility
+    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    pub seed: u64,
+}
+
+#[rasmcore_macros::register_filter(
+    name = "gaussian_noise",
+    category = "effect",
+    group = "noise",
+    variant = "gaussian",
+    reference = "additive Gaussian noise"
+)]
+pub fn gaussian_noise(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &GaussianNoiseParams,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| gaussian_noise(p8, i8, config));
+    }
+
+    let amount = config.amount as f64 / 100.0;
+    if amount == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    let mean = config.mean as f64;
+    let sigma = config.sigma as f64;
+    let ch = channels(info.format);
+    let has_alpha = matches!(info.format, PixelFormat::Rgba8);
+    let mut rng = config.seed.max(1); // avoid zero state
+
+    let mut out = pixels.to_vec();
+    for pixel in out.chunks_exact_mut(ch) {
+        let color_ch = if has_alpha { ch - 1 } else { ch };
+        for c in &mut pixel[..color_ch] {
+            let noise = box_muller(&mut rng) * sigma + mean;
+            let v = *c as f64 + noise * amount;
+            *c = v.clamp(0.0, 255.0) as u8;
+        }
+    }
+    Ok(out)
+}
+
+// ── Salt-and-Pepper Noise ──────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Salt-and-pepper noise — randomly sets pixels to black or white
+pub struct SaltPepperNoiseParams {
+    /// Density of noise pixels (0 = none, 1 = all replaced)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.05)]
+    pub density: f32,
+    /// Random seed for reproducibility
+    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    pub seed: u64,
+}
+
+#[rasmcore_macros::register_filter(
+    name = "salt_pepper_noise",
+    category = "effect",
+    group = "noise",
+    variant = "salt_pepper",
+    reference = "impulse noise (salt and pepper)"
+)]
+pub fn salt_pepper_noise(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &SaltPepperNoiseParams,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| salt_pepper_noise(p8, i8, config));
+    }
+
+    let density = config.density as f64;
+    if density == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    let ch = channels(info.format);
+    let has_alpha = matches!(info.format, PixelFormat::Rgba8);
+    let mut rng = config.seed.max(1);
+
+    let mut out = pixels.to_vec();
+    for pixel in out.chunks_exact_mut(ch) {
+        let r = xorshift64_f64(&mut rng);
+        if r < density {
+            let color_ch = if has_alpha { ch - 1 } else { ch };
+            // First half → salt (white), second half → pepper (black)
+            let val = if xorshift64_f64(&mut rng) < 0.5 { 255u8 } else { 0u8 };
+            for c in &mut pixel[..color_ch] {
+                *c = val;
+            }
+        }
+    }
+    Ok(out)
+}
+
+// ── Poisson Noise ──────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Poisson noise — signal-dependent noise (brighter regions get more noise)
+pub struct PoissonNoiseParams {
+    /// Scale factor for Poisson lambda (higher = more visible noise)
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 10.0)]
+    pub scale: f32,
+    /// Random seed for reproducibility
+    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    pub seed: u64,
+}
+
+/// Knuth's algorithm for Poisson random variates (small lambda ≤ 30).
+/// For larger lambda, use normal approximation.
+#[inline]
+fn poisson_random(lambda: f64, rng: &mut u64) -> f64 {
+    if lambda <= 0.0 {
+        return 0.0;
+    }
+    if lambda > 30.0 {
+        // Normal approximation: Poisson(λ) ≈ N(λ, λ)
+        return (lambda + box_muller(rng) * lambda.sqrt()).max(0.0);
+    }
+    // Knuth's algorithm
+    let l = (-lambda).exp();
+    let mut k = 0.0f64;
+    let mut p = 1.0f64;
+    loop {
+        k += 1.0;
+        p *= xorshift64_f64(rng);
+        if p <= l {
+            return k - 1.0;
+        }
+    }
+}
+
+#[rasmcore_macros::register_filter(
+    name = "poisson_noise",
+    category = "effect",
+    group = "noise",
+    variant = "poisson",
+    reference = "signal-dependent Poisson noise"
+)]
+pub fn poisson_noise(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &PoissonNoiseParams,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| poisson_noise(p8, i8, config));
+    }
+
+    let scale = config.scale as f64;
+    if scale == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    let ch = channels(info.format);
+    let has_alpha = matches!(info.format, PixelFormat::Rgba8);
+    let mut rng = config.seed.max(1);
+
+    let mut out = pixels.to_vec();
+    for pixel in out.chunks_exact_mut(ch) {
+        let color_ch = if has_alpha { ch - 1 } else { ch };
+        for c in &mut pixel[..color_ch] {
+            // Lambda is proportional to pixel value — brighter pixels get more noise
+            let lambda = *c as f64 * scale;
+            let noisy = poisson_random(lambda, &mut rng) / scale;
+            *c = noisy.clamp(0.0, 255.0) as u8;
+        }
+    }
+    Ok(out)
+}
+
+// ── Uniform Noise ──────────────────────────────────────────────────────────
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Uniform noise — adds uniformly distributed random noise
+pub struct UniformNoiseParams {
+    /// Noise range: values are added in [-range, +range]
+    #[param(min = 0.0, max = 128.0, step = 0.5, default = 20.0)]
+    pub range: f32,
+    /// Random seed for reproducibility
+    #[param(min = 0, max = 18446744073709551615, step = 1, default = 42, hint = "rc.seed")]
+    pub seed: u64,
+}
+
+#[rasmcore_macros::register_filter(
+    name = "uniform_noise",
+    category = "effect",
+    group = "noise",
+    variant = "uniform",
+    reference = "additive uniform noise"
+)]
+pub fn uniform_noise(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &UniformNoiseParams,
+) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| uniform_noise(p8, i8, config));
+    }
+
+    let range = config.range as f64;
+    if range == 0.0 {
+        return Ok(pixels.to_vec());
+    }
+
+    let ch = channels(info.format);
+    let has_alpha = matches!(info.format, PixelFormat::Rgba8);
+    let mut rng = config.seed.max(1);
+
+    let mut out = pixels.to_vec();
+    for pixel in out.chunks_exact_mut(ch) {
+        let color_ch = if has_alpha { ch - 1 } else { ch };
+        for c in &mut pixel[..color_ch] {
+            // Uniform in [-range, +range]
+            let noise = (xorshift64_f64(&mut rng) * 2.0 - 1.0) * range;
+            let v = *c as f64 + noise;
+            *c = v.clamp(0.0, 255.0) as u8;
+        }
+    }
+    Ok(out)
+}
+
 // ─── Gradient & Pattern Generators ───────────────────────────────────────
 
 /// Generate a linear gradient image between two colors at a given angle.
@@ -13962,6 +14235,235 @@ mod artistic_filter_tests {
         assert!(
             mean > 240.0,
             "charcoal of flat image should be near-white, got mean={mean:.0}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod add_noise_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    // ── Gaussian noise tests ───────────────────────────────────────────────
+
+    #[test]
+    fn gaussian_noise_identity_at_zero_amount() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let config = GaussianNoiseParams { amount: 0.0, mean: 0.0, sigma: 25.0, seed: 42 };
+        let result = gaussian_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn gaussian_noise_deterministic_with_same_seed() {
+        let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(64, 64);
+        let config = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 123 };
+        let r1 = gaussian_noise(&pixels, &info, &config).unwrap();
+        let r2 = gaussian_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(r1, r2, "same seed must produce identical output");
+    }
+
+    #[test]
+    fn gaussian_noise_different_seeds_differ() {
+        let pixels = vec![128u8; 32 * 32 * 3];
+        let info = rgb_info(32, 32);
+        let c1 = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 1 };
+        let c2 = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 2 };
+        let r1 = gaussian_noise(&pixels, &info, &c1).unwrap();
+        let r2 = gaussian_noise(&pixels, &info, &c2).unwrap();
+        assert_ne!(r1, r2, "different seeds should produce different output");
+    }
+
+    #[test]
+    fn gaussian_noise_statistics() {
+        // On a mid-gray image with mean=0, sigma=25, the output mean should be near 128
+        let pixels = vec![128u8; 64 * 64];
+        let info = gray_info(64, 64);
+        let config = GaussianNoiseParams { amount: 100.0, mean: 0.0, sigma: 25.0, seed: 42 };
+        let result = gaussian_noise(&pixels, &info, &config).unwrap();
+        let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            (mean - 128.0).abs() < 10.0,
+            "gaussian mean should be near 128, got {mean:.1}"
+        );
+        // Variance should be roughly sigma^2 * (amount/100)^2 = 625 at full strength
+        let var: f64 = result.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / result.len() as f64;
+        assert!(
+            var > 100.0 && var < 2000.0,
+            "gaussian variance should be in reasonable range, got {var:.0}"
+        );
+    }
+
+    #[test]
+    fn gaussian_noise_preserves_alpha() {
+        let pixels = vec![128, 64, 200, 255]; // one RGBA pixel, alpha=255
+        let info = ImageInfo {
+            width: 1, height: 1,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let config = GaussianNoiseParams { amount: 100.0, mean: 0.0, sigma: 50.0, seed: 99 };
+        let result = gaussian_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(result[3], 255, "alpha channel must be preserved");
+    }
+
+    // ── Salt-and-pepper noise tests ────────────────────────────────────────
+
+    #[test]
+    fn salt_pepper_identity_at_zero_density() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let config = SaltPepperNoiseParams { density: 0.0, seed: 42 };
+        let result = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn salt_pepper_deterministic_with_same_seed() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let config = SaltPepperNoiseParams { density: 0.1, seed: 77 };
+        let r1 = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        let r2 = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn salt_pepper_only_produces_extremes() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let config = SaltPepperNoiseParams { density: 1.0, seed: 42 };
+        let result = salt_pepper_noise(&pixels, &info, &config).unwrap();
+        // Every pixel should be either 0 or 255 (density=1 means all replaced)
+        for chunk in result.chunks_exact(3) {
+            assert!(
+                chunk.iter().all(|&v| v == 0) || chunk.iter().all(|&v| v == 255),
+                "salt-pepper at density=1 should only produce 0 or 255, got {:?}",
+                chunk,
+            );
+        }
+    }
+
+    // ── Poisson noise tests ────────────────────────────────────────────────
+
+    #[test]
+    fn poisson_noise_identity_at_zero_scale() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let config = PoissonNoiseParams { scale: 0.0, seed: 42 };
+        let result = poisson_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn poisson_noise_deterministic_with_same_seed() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let config = PoissonNoiseParams { scale: 5.0, seed: 55 };
+        let r1 = poisson_noise(&pixels, &info, &config).unwrap();
+        let r2 = poisson_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn poisson_noise_signal_dependent() {
+        // Bright pixels should have more variance than dark pixels
+        let w = 64u32;
+        let h = 64u32;
+        let n = (w * h) as usize;
+        let dark: Vec<u8> = vec![20u8; n];
+        let bright: Vec<u8> = vec![200u8; n];
+        let info = gray_info(w, h);
+        let config = PoissonNoiseParams { scale: 5.0, seed: 42 };
+        let dark_result = poisson_noise(&dark, &info, &config).unwrap();
+        let bright_result = poisson_noise(&bright, &info, &config).unwrap();
+        let dark_var: f64 = {
+            let m: f64 = dark_result.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
+            dark_result.iter().map(|&v| (v as f64 - m).powi(2)).sum::<f64>() / n as f64
+        };
+        let bright_var: f64 = {
+            let m: f64 = bright_result.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
+            bright_result.iter().map(|&v| (v as f64 - m).powi(2)).sum::<f64>() / n as f64
+        };
+        assert!(
+            bright_var > dark_var,
+            "Poisson noise should be signal-dependent: bright_var={bright_var:.0} > dark_var={dark_var:.0}"
+        );
+    }
+
+    // ── Uniform noise tests ────────────────────────────────────────────────
+
+    #[test]
+    fn uniform_noise_identity_at_zero_range() {
+        let pixels = vec![128u8; 64 * 64 * 3];
+        let info = rgb_info(64, 64);
+        let config = UniformNoiseParams { range: 0.0, seed: 42 };
+        let result = uniform_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn uniform_noise_deterministic_with_same_seed() {
+        let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
+        let info = rgb_info(32, 32);
+        let config = UniformNoiseParams { range: 30.0, seed: 33 };
+        let r1 = uniform_noise(&pixels, &info, &config).unwrap();
+        let r2 = uniform_noise(&pixels, &info, &config).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn uniform_noise_bounded() {
+        // On a 128 image with range=50, no pixel should exceed [78, 178]
+        let pixels = vec![128u8; 64 * 64];
+        let info = gray_info(64, 64);
+        let config = UniformNoiseParams { range: 50.0, seed: 42 };
+        let result = uniform_noise(&pixels, &info, &config).unwrap();
+        for &v in &result {
+            assert!(
+                v >= 78 && v <= 178,
+                "uniform noise with range=50 on 128 should stay in [78,178], got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn uniform_noise_statistics() {
+        // Mean should remain near original, variance ≈ range^2/3 for uniform [-r,r]
+        let pixels = vec![128u8; 64 * 64];
+        let info = gray_info(64, 64);
+        let config = UniformNoiseParams { range: 30.0, seed: 42 };
+        let result = uniform_noise(&pixels, &info, &config).unwrap();
+        let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
+        assert!(
+            (mean - 128.0).abs() < 5.0,
+            "uniform noise mean should be near 128, got {mean:.1}"
+        );
+        let var: f64 = result.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / result.len() as f64;
+        // Expected variance for uniform [-30, 30] = 30^2/3 = 300
+        assert!(
+            var > 100.0 && var < 600.0,
+            "uniform noise variance should be near 300, got {var:.0}"
         );
     }
 }
