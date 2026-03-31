@@ -366,13 +366,12 @@ impl NodeGraph {
                 continue;
             }
 
-            let Some((mut matrix, mut out_w, mut out_h)) = self.nodes[i].as_affine_op() else {
+            let Some((mut matrix, _out_w, _out_h)) = self.nodes[i].as_affine_op() else {
                 continue;
             };
 
             // Walk upstream composing affine matrices
             let mut chain_root_upstream = self.nodes[i].upstream_id();
-            let mut chain_root_info = None;
             let mut current = i;
 
             while let Some(up_id) = self.nodes[current].upstream_id() {
@@ -386,8 +385,6 @@ impl NodeGraph {
                 // Compose: current(upstream(x)) = current_matrix * upstream_matrix
                 matrix = compose_affine(&matrix, &up_matrix);
                 chain_root_upstream = self.nodes[up].upstream_id();
-                // Track the source info from the deepest node in the chain
-                chain_root_info = Some(up);
                 fused_into[up] = Some(i as u32);
                 current = up;
             }
@@ -402,7 +399,7 @@ impl NodeGraph {
                     self.nodes[current].info()
                 };
                 // Compute output dimensions from the composed matrix
-                let (final_w, final_h) =
+                let (_final_w, _final_h) =
                     crate::domain::pipeline::nodes::transform::affine_output_dims(
                         &matrix,
                         source_info.width,

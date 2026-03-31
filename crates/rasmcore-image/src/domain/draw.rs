@@ -279,7 +279,7 @@ pub fn draw_polygon(
     stroke_width: f32,
     filled: bool,
 ) -> Result<(Vec<u8>, ImageInfo), ImageError> {
-    if points.len() < 6 || points.len() % 2 != 0 {
+    if points.len() < 6 || !points.len().is_multiple_of(2) {
         return Err(ImageError::InvalidParameters(format!(
             "draw_polygon: need at least 3 coordinate pairs (6 values), got {}",
             points.len()
