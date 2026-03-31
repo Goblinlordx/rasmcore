@@ -541,6 +541,7 @@ mod tiled_parity_tests {
     use crate::domain::pipeline::nodes::filters::{
         BlurNode, BrightnessNode, ContrastNode, SharpenNode,
     };
+    use crate::domain::filters::{BlurParams, BrightnessParams, ContrastParams, SharpenParams};
     use crate::domain::types::*;
 
     /// Raw pixel source node for testing (no decode step).
@@ -686,7 +687,7 @@ mod tiled_parity_tests {
                     format: PixelFormat::Rgba8,
                     color_space: ColorSpace::Srgb,
                 },
-                0.2,
+                BrightnessParams { amount: 0.2 },
             )));
             (g, bright, w, h, 4)
         });
@@ -715,7 +716,7 @@ mod tiled_parity_tests {
                     format: PixelFormat::Rgba8,
                     color_space: ColorSpace::Srgb,
                 },
-                2.0,
+                BlurParams { radius: 2.0 },
             )));
             (g, blur, w, h, 4)
         });
@@ -744,7 +745,7 @@ mod tiled_parity_tests {
                     format: PixelFormat::Rgba8,
                     color_space: ColorSpace::Srgb,
                 },
-                1.5,
+                SharpenParams { amount: 1.5 },
             )));
             (g, sharp, w, h, 4)
         });
@@ -773,7 +774,7 @@ mod tiled_parity_tests {
                     format: PixelFormat::Rgba8,
                     color_space: ColorSpace::Srgb,
                 },
-                0.5,
+                ContrastParams { amount: 0.5 },
             )));
             (g, contrast, w, h, 4)
         });
@@ -784,6 +785,7 @@ mod tiled_parity_tests {
 mod frame_sequence_tests {
     use super::*;
     use crate::domain::pipeline::nodes::filters::BrightnessNode;
+    use crate::domain::filters::BrightnessParams;
     use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
     use crate::domain::types::*;
 
@@ -864,7 +866,7 @@ mod frame_sequence_tests {
         let node = FrameSourceNode::new(gif, FrameSelection::All).unwrap();
         let (src_id, rc) = graph.add_frame_source(node);
         let src_info = graph.node_info(src_id).unwrap();
-        let bright = graph.add_node(Box::new(BrightnessNode::new(src_id, src_info, 0.2)));
+        let bright = graph.add_node(Box::new(BrightnessNode::new(src_id, src_info, BrightnessParams { amount: 0.2 })));
 
         let seq = graph.execute_sequence(&rc, bright).unwrap();
         assert_eq!(seq.len(), 3);

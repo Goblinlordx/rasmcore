@@ -1978,7 +1978,7 @@ mod tests {
         // 3. Apply brightness +0.1 (16-bit auto-dispatch)
         let after_bright = {
             use crate::domain::filters;
-            filters::brightness(&after_gamma, &info, 0.1).unwrap()
+            filters::brightness(&after_gamma, &info, &filters::BrightnessParams { amount: 0.1 }).unwrap()
         };
 
         // 4. Resize to 16x16 (fast_image_resize U16x3)

@@ -5,6 +5,7 @@ mod tests {
     use crate::domain::pipeline::graph::NodeGraph;
     use crate::domain::pipeline::nodes::composite::CompositeNode;
     use crate::domain::pipeline::nodes::filters::{BlurNode, GrayscaleNode};
+    use crate::domain::filters::BlurParams;
     use crate::domain::pipeline::nodes::sink;
     use crate::domain::pipeline::nodes::source::SourceNode;
     use crate::domain::pipeline::nodes::transform::{CropNode, FlipNode, ResizeNode, RotateNode};
@@ -103,7 +104,7 @@ mod tests {
         )));
         let resized_info = graph.node_info(resized).unwrap();
 
-        let blurred = graph.add_node(Box::new(BlurNode::new(resized, resized_info, 2.0)));
+        let blurred = graph.add_node(Box::new(BlurNode::new(resized, resized_info, BlurParams { radius: 2.0 })));
 
         let output = sink::write(&mut graph, blurred, "jpeg", Some(85), None).unwrap();
         // Should produce valid JPEG

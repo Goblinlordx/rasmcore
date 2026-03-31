@@ -670,7 +670,7 @@ pub struct DrawLineParams {
     )]
     pub y2: f32,
     /// Line color
-    pub color: super::param_types::ColorRgba,
+    pub color: crate::domain::param_types::ColorRgba,
     /// Line width in pixels
     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
     pub width: f32,
@@ -716,7 +716,7 @@ pub struct DrawRectParams {
     )]
     pub rect_height: f32,
     /// Shape color
-    pub color: super::param_types::ColorRgba,
+    pub color: crate::domain::param_types::ColorRgba,
     /// Stroke width in pixels (outline mode)
     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
     pub stroke_width: f32,
@@ -756,7 +756,7 @@ pub struct DrawCircleParams {
     )]
     pub radius: f32,
     /// Shape color
-    pub color: super::param_types::ColorRgba,
+    pub color: crate::domain::param_types::ColorRgba,
     /// Stroke width in pixels (outline mode)
     #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
     pub stroke_width: f32,
@@ -778,7 +778,7 @@ pub struct DrawTextParams {
     #[param(min = 1, max = 16, step = 1, default = 1)]
     pub scale: u32,
     /// Text color
-    pub color: super::param_types::ColorRgba,
+    pub color: crate::domain::param_types::ColorRgba,
 }
 
 /// Parameters for white balance temperature adjustment.
@@ -1599,7 +1599,7 @@ pub fn sepia(
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ColorizeParams {
     /// Target color to blend toward
-    pub target: super::param_types::ColorRgb,
+    pub target: crate::domain::param_types::ColorRgb,
     /// Blend amount (0=none, 1=full tint)
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
     pub amount: f32,
@@ -2152,7 +2152,7 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
         let result =
-            channel_mixer(&pixels, &info, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0).unwrap();
+            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 1.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 1.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -2162,7 +2162,7 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         // Output red = 1.0*R + 0*G + 0*B, green = 0, blue = 0
         let result =
-            channel_mixer(&pixels, &info, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0).unwrap();
+            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 1.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 0.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 0.0 }).unwrap();
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 100);
             assert_eq!(chunk[1], 0);
@@ -2176,7 +2176,7 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         // Swap R and B channels
         let result =
-            channel_mixer(&pixels, &info, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0).unwrap();
+            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 0.0, rg: 0.0, rb: 1.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 1.0, bg: 0.0, bb: 0.0 }).unwrap();
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], 200); // was blue
             assert_eq!(chunk[1], 150); // green unchanged
@@ -2190,7 +2190,7 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         // 2.0 * R would overflow — should clamp to 255
         let result =
-            channel_mixer(&pixels, &info, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0).unwrap();
+            channel_mixer(&pixels, &info, &ChannelMixerParams { rr: 2.0, rg: 0.0, rb: 0.0, gr: 0.0, gg: 1.0, gb: 0.0, br: 0.0, bg: 0.0, bb: 1.0 }).unwrap();
         assert_eq!(result[0], 255);
     }
 
@@ -2200,7 +2200,7 @@ mod color_manipulation_tests {
     fn vibrance_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = vibrance(&pixels, &info, 0.0).unwrap();
+        let result = vibrance(&pixels, &info, &VibranceParams { amount: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -2211,7 +2211,7 @@ mod color_manipulation_tests {
         // Pixel 2: high saturation (vivid red)
         let pixels = vec![120, 130, 125, 255, 20, 20];
 
-        let result = vibrance(&pixels, &info, 50.0).unwrap();
+        let result = vibrance(&pixels, &info, &VibranceParams { amount: 50.0 }).unwrap();
 
         // The muted pixel should change more than the vivid one
         let muted_change = (result[0] as i32 - 120).abs()
@@ -2232,7 +2232,7 @@ mod color_manipulation_tests {
         // Use a moderately saturated color (not fully saturated)
         let pixels = solid_rgb(2, 2, 200, 100, 80);
         let info = info_rgb8(2, 2);
-        let result = vibrance(&pixels, &info, -80.0).unwrap();
+        let result = vibrance(&pixels, &info, &VibranceParams { amount: -80.0 }).unwrap();
         // Should become less saturated: channels should converge toward each other
         let orig_range = 200i32 - 80;
         let new_range = (result[0] as i32 - result[2] as i32).abs();
@@ -2310,7 +2310,7 @@ mod color_manipulation_tests {
     fn sparse_color_single_point_fills_uniform() {
         let pixels = solid_rgb(4, 4, 0, 0, 0);
         let info = info_rgb8(4, 4);
-        let result = sparse_color(&pixels, &info, "2,2:FF0000".to_string(), 2.0).unwrap();
+        let result = sparse_color(&pixels, &info, "2,2:FF0000".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
         // All pixels should be red (only one control point)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk, [255, 0, 0]);
@@ -2323,7 +2323,7 @@ mod color_manipulation_tests {
         let info = info_rgb8(8, 1);
         // Red at x=0, blue at x=7
         let result =
-            sparse_color(&pixels, &info, "0,0:FF0000;7,0:0000FF".to_string(), 2.0).unwrap();
+            sparse_color(&pixels, &info, "0,0:FF0000;7,0:0000FF".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).unwrap();
         // First pixel should be close to red
         assert!(
             result[0] > 200,
@@ -2348,7 +2348,7 @@ mod color_manipulation_tests {
     fn sparse_color_invalid_points_error() {
         let pixels = solid_rgb(4, 4, 0, 0, 0);
         let info = info_rgb8(4, 4);
-        assert!(sparse_color(&pixels, &info, "invalid".to_string(), 2.0).is_err());
+        assert!(sparse_color(&pixels, &info, "invalid".to_string(), &SparseColorParams { points: String::new(), power: 2.0 }).is_err());
     }
 
     // ── Modulate ──
@@ -2357,7 +2357,7 @@ mod color_manipulation_tests {
     fn modulate_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = modulate(&pixels, &info, 100.0, 100.0, 0.0).unwrap();
+        let result = modulate(&pixels, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 0.0 }).unwrap();
         // Identity: (100%, 100%, 0 deg) should preserve pixels
         for (a, b) in result.iter().zip(pixels.iter()) {
             assert!(
@@ -2371,7 +2371,7 @@ mod color_manipulation_tests {
     fn modulate_brightness_zero_is_black() {
         let pixels = solid_rgb(2, 2, 100, 150, 200);
         let info = info_rgb8(2, 2);
-        let result = modulate(&pixels, &info, 0.0, 100.0, 0.0).unwrap();
+        let result = modulate(&pixels, &info, &ModulateParams { brightness: 0.0, saturation: 100.0, hue: 0.0 }).unwrap();
         for &v in &result {
             assert_eq!(v, 0, "brightness=0 should produce black");
         }
@@ -2381,7 +2381,7 @@ mod color_manipulation_tests {
     fn modulate_saturation_zero_is_gray() {
         let pixels = solid_rgb(2, 2, 255, 0, 0);
         let info = info_rgb8(2, 2);
-        let result = modulate(&pixels, &info, 100.0, 0.0, 0.0).unwrap();
+        let result = modulate(&pixels, &info, &ModulateParams { brightness: 100.0, saturation: 0.0, hue: 0.0 }).unwrap();
         // Desaturated: all channels should be equal (gray)
         for chunk in result.chunks_exact(3) {
             assert_eq!(chunk[0], chunk[1], "R should equal G when desaturated");
@@ -2394,7 +2394,7 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 255, 0, 0);
         let info = info_rgb8(2, 2);
         // Rotate hue by 120 degrees: red -> green
-        let result = modulate(&pixels, &info, 100.0, 100.0, 120.0).unwrap();
+        let result = modulate(&pixels, &info, &ModulateParams { brightness: 100.0, saturation: 100.0, hue: 120.0 }).unwrap();
         // Should be approximately green
         assert!(
             result[1] > result[0],
@@ -10033,35 +10033,35 @@ mod tests {
     #[test]
     fn blur_preserves_dimensions() {
         let (px, info) = make_image(16, 16);
-        let result = blur(&px, &info, 2.0).unwrap();
+        let result = blur(&px, &info, &BlurParams { radius: 2.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn blur_zero_radius_preserves_pixels() {
         let (px, info) = make_image(8, 8);
-        let result = blur(&px, &info, 0.0).unwrap();
+        let result = blur(&px, &info, &BlurParams { radius: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn blur_negative_radius_returns_error() {
         let (px, info) = make_image(8, 8);
-        let result = blur(&px, &info, -1.0);
+        let result = blur(&px, &info, &BlurParams { radius: -1.0 });
         assert!(result.is_err());
     }
 
     #[test]
     fn sharpen_preserves_dimensions() {
         let (px, info) = make_image(16, 16);
-        let result = sharpen(&px, &info, 1.0).unwrap();
+        let result = sharpen(&px, &info, &SharpenParams { amount: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn brightness_increases() {
         let (px, info) = make_image(8, 8);
-        let result = brightness(&px, &info, 0.5).unwrap();
+        let result = brightness(&px, &info, &BrightnessParams { amount: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
         let avg_orig: f64 = px.iter().map(|&v| v as f64).sum::<f64>() / px.len() as f64;
         let avg_bright: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -10071,21 +10071,21 @@ mod tests {
     #[test]
     fn brightness_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
-        assert!(brightness(&px, &info, 1.5).is_err());
-        assert!(brightness(&px, &info, -1.5).is_err());
+        assert!(brightness(&px, &info, &BrightnessParams { amount: 1.5 }).is_err());
+        assert!(brightness(&px, &info, &BrightnessParams { amount: -1.5 }).is_err());
     }
 
     #[test]
     fn contrast_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = contrast(&px, &info, 0.5).unwrap();
+        let result = contrast(&px, &info, &ContrastParams { amount: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn contrast_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
-        assert!(contrast(&px, &info, 2.0).is_err());
+        assert!(contrast(&px, &info, &ContrastParams { amount: 2.0 }).is_err());
     }
 
     #[test]
@@ -10113,10 +10113,10 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(blur(&pixels, &info, 1.0).is_ok());
-        assert!(sharpen(&pixels, &info, 1.0).is_ok());
-        assert!(brightness(&pixels, &info, 0.2).is_ok());
-        assert!(contrast(&pixels, &info, 0.2).is_ok());
+        assert!(blur(&pixels, &info, &BlurParams { radius: 1.0 }).is_ok());
+        assert!(sharpen(&pixels, &info, &SharpenParams { amount: 1.0 }).is_ok());
+        assert!(brightness(&pixels, &info, &BrightnessParams { amount: 0.2 }).is_ok());
+        assert!(contrast(&pixels, &info, &ContrastParams { amount: 0.2 }).is_ok());
         assert!(grayscale(&pixels, &info).is_ok());
     }
 
@@ -10124,7 +10124,7 @@ mod tests {
     fn contrast_lut_produces_expected_values() {
         // Zero contrast should be near identity
         let (px, info) = make_image(4, 4);
-        let result = contrast(&px, &info, 0.0).unwrap();
+        let result = contrast(&px, &info, &ContrastParams { amount: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
@@ -10132,7 +10132,7 @@ mod tests {
     fn hue_rotate_zero_is_identity() {
         // Hue rotate by 0 degrees should preserve pixels (via ColorOp delegation)
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(&px, &info, 0.0).unwrap();
+        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 0.0 }).unwrap();
         for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
             assert!(
                 (orig as i16 - out as i16).abs() <= 1,
@@ -10145,7 +10145,7 @@ mod tests {
     fn saturate_one_is_identity() {
         // Saturation factor 1.0 should preserve pixels
         let (px, info) = make_image(8, 8);
-        let result = saturate(&px, &info, 1.0).unwrap();
+        let result = saturate(&px, &info, &SaturateParams { factor: 1.0 }).unwrap();
         for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
             assert!(
                 (orig as i16 - out as i16).abs() <= 1,
@@ -10157,14 +10157,14 @@ mod tests {
     #[test]
     fn hue_rotate_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(&px, &info, 90.0).unwrap();
+        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 90.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn hue_rotate_360_identity() {
         let (px, info) = make_image(8, 8);
-        let result = hue_rotate(&px, &info, 360.0).unwrap();
+        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 360.0 }).unwrap();
         // Should be very close to original (within rounding)
         let mae: f64 = px
             .iter()
@@ -10181,7 +10181,7 @@ mod tests {
     #[test]
     fn saturate_zero_is_grayscale() {
         let (px, info) = make_image(8, 8);
-        let result = saturate(&px, &info, 0.0).unwrap();
+        let result = saturate(&px, &info, &SaturateParams { factor: 0.0 }).unwrap();
         // All pixels should have r≈g≈b
         for chunk in result.chunks_exact(3) {
             let spread = chunk.iter().map(|&v| v as i32).max().unwrap()
@@ -10196,7 +10196,7 @@ mod tests {
     #[test]
     fn saturate_one_near_identity() {
         let (px, info) = make_image(8, 8);
-        let result = saturate(&px, &info, 1.0).unwrap();
+        let result = saturate(&px, &info, &SaturateParams { factor: 1.0 }).unwrap();
         let mae: f64 = px
             .iter()
             .zip(result.iter())
@@ -10212,28 +10212,28 @@ mod tests {
     #[test]
     fn sepia_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = sepia(&px, &info, 1.0).unwrap();
+        let result = sepia(&px, &info, &SepiaParams { intensity: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn sepia_zero_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = sepia(&px, &info, 0.0).unwrap();
+        let result = sepia(&px, &info, &SepiaParams { intensity: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn colorize_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(&px, &info, 255, 0, 0, 0.5).unwrap();
+        let result = colorize(&px, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn colorize_zero_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = colorize(&px, &info, 255, 0, 0, 0.0).unwrap();
+        let result = colorize(&px, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 }, amount: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
@@ -10248,7 +10248,7 @@ mod tests {
         let pixels: Vec<u8> = (0..16).collect();
         // Identity kernel: [0,0,0, 0,1,0, 0,0,0]
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
-        let result = convolve(&pixels, &info, &kernel, 3, 3, 1.0).unwrap();
+        let result = convolve(&pixels, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -10263,7 +10263,7 @@ mod tests {
         let pixels = vec![128u8; 16];
         // Sharpen kernel: center=5, neighbors=-1
         let kernel = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
-        let result = convolve(&pixels, &info, &kernel, 3, 3, 1.0).unwrap();
+        let result = convolve(&pixels, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
         // Uniform input → sharpen produces same output (no edges)
         assert!(result.iter().all(|&v| (v as i32 - 128).unsigned_abs() < 2));
     }
@@ -10280,7 +10280,7 @@ mod tests {
         // Add salt-and-pepper noise
         pixels[27] = 0; // pepper
         pixels[35] = 255; // salt
-        let result = median(&pixels, &info, 1).unwrap();
+        let result = median(&pixels, &info, &MedianParams { radius: 1 }).unwrap();
         // Noise pixels should be replaced by median of neighbors (~128)
         assert!(
             (result[27] as i32 - 128).unsigned_abs() < 10,
@@ -10334,7 +10334,7 @@ mod tests {
                 pixels[r * 16 + c] = 200;
             }
         }
-        let result = canny(&pixels, &info, 30.0, 100.0).unwrap();
+        let result = canny(&pixels, &info, &CannyParams { low_threshold: 30.0, high_threshold: 100.0 }).unwrap();
         // Should produce binary output (0 or 255 only)
         assert!(
             result.iter().all(|&v| v == 0 || v == 255),
@@ -10354,10 +10354,10 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(hue_rotate(&pixels, &info, 45.0).is_ok());
-        assert!(saturate(&pixels, &info, 1.5).is_ok());
-        assert!(sepia(&pixels, &info, 0.8).is_ok());
-        assert!(colorize(&pixels, &info, 0, 128, 255, 0.5).is_ok());
+        assert!(hue_rotate(&pixels, &info, &HueRotateParams { degrees: 45.0 }).is_ok());
+        assert!(saturate(&pixels, &info, &SaturateParams { factor: 1.5 }).is_ok());
+        assert!(sepia(&pixels, &info, &SepiaParams { intensity: 0.8 }).is_ok());
+        assert!(colorize(&pixels, &info, &ColorizeParams { target: crate::domain::param_types::ColorRgb { r: 0, g: 128, b: 255 }, amount: 0.5 }).is_ok());
     }
 
     fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -10493,7 +10493,7 @@ mod tests {
     #[test]
     fn bokeh_disc_zero_radius_is_identity() {
         let (px, info) = make_image(8, 8);
-        let result = bokeh_blur(&px, &info, 0, 0).unwrap();
+        let result = bokeh_blur(&px, &info, &BokehBlurParams { radius: 0, shape: 0 }).unwrap();
         assert_eq!(result, px);
     }
 
@@ -10540,7 +10540,7 @@ mod tests {
             format: PixelFormat::Gray8,
             color_space: ColorSpace::Srgb,
         };
-        let result = bokeh_blur(&pixels, &info, 3, 0).unwrap();
+        let result = bokeh_blur(&pixels, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
         for (i, &v) in result.iter().enumerate() {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -10558,7 +10558,7 @@ mod tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = bokeh_blur(&pixels, &info, 1, 1);
+        let result = bokeh_blur(&pixels, &info, &BokehBlurParams { radius: 1, shape: 1 });
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 64);
     }
@@ -10602,9 +10602,9 @@ mod optimization_tests {
         }
 
         // radius=2: uses sort path
-        let sort_result = median(&pixels, &info, 2).unwrap();
+        let sort_result = median(&pixels, &info, &MedianParams { radius: 2 }).unwrap();
         // radius=3: uses histogram path
-        let hist_result = median(&pixels, &info, 3).unwrap();
+        let hist_result = median(&pixels, &info, &MedianParams { radius: 3 }).unwrap();
 
         // Both should produce valid output (different radii = different results, but both correct)
         assert!(!sort_result.is_empty());
@@ -10623,7 +10623,7 @@ mod optimization_tests {
         let pixels = vec![128u8; 1024 * 1024];
 
         let start = std::time::Instant::now();
-        let _ = convolve(&pixels, &info, &kernels::BOX_BLUR_3X3, 3, 3, 9.0).unwrap();
+        let _ = convolve(&pixels, &info,  &kernels::BOX_BLUR_3X3, &ConvolveParams { kw: 3, kh: 3, divisor: 9.0 }).unwrap();
         let elapsed = start.elapsed();
 
         // Separable path should handle 1024x1024 in under 500ms
@@ -10645,7 +10645,7 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(512 * 512)).map(|i| (i % 256) as u8).collect();
 
         let start = std::time::Instant::now();
-        let _ = median(&pixels, &info, 3).unwrap();
+        let _ = median(&pixels, &info, &MedianParams { radius: 3 }).unwrap();
         let elapsed = start.elapsed();
 
         // Histogram median should handle 512x512 radius=3 in under 500ms
@@ -10668,7 +10668,7 @@ mod optimization_tests {
         };
         // Low-contrast input: values 100-155
         let pixels: Vec<u8> = (0..(64 * 64)).map(|i| (100 + (i % 56)) as u8).collect();
-        let result = clahe(&pixels, &info, 2.0, 8).unwrap();
+        let result = clahe(&pixels, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
 
         // CLAHE should expand dynamic range
         let in_range = *pixels.iter().max().unwrap() as i32 - *pixels.iter().min().unwrap() as i32;
@@ -10690,7 +10690,7 @@ mod optimization_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 32 * 32];
-        let result = clahe(&pixels, &info, 2.0, 4).unwrap();
+        let result = clahe(&pixels, &info, &ClaheParams { clip_limit: 2.0, tile_grid: 4 }).unwrap();
         // All output pixels should be the same value (uniform)
         let first = result[0];
         for &v in &result {
@@ -10706,7 +10706,7 @@ mod optimization_tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        assert!(clahe(&vec![0u8; 48], &info, 2.0, 8).is_err());
+        assert!(clahe(&vec![0u8; 48], &info, &ClaheParams { clip_limit: 2.0, tile_grid: 8 }).is_err());
     }
 
     // ─── Bilateral Filter Tests ───────────────────────────────────────────
@@ -10726,7 +10726,7 @@ mod optimization_tests {
                 pixels[y * 32 + x] = 255;
             }
         }
-        let result = bilateral(&pixels, &info, 5, 50.0, 50.0).unwrap();
+        let result = bilateral(&pixels, &info, &BilateralParams { diameter: 5, sigma_color: 50.0, sigma_space: 50.0 }).unwrap();
 
         // Edge should be preserved: pixels at x=14 should still be dark, x=18 still bright
         let mid_y = 16;
@@ -10749,7 +10749,7 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..256)
             .map(|i| (128i32 + ((i * 17 + 5) % 21) as i32 - 10).clamp(0, 255) as u8)
             .collect();
-        let result = bilateral(&pixels, &info, 5, 25.0, 25.0).unwrap();
+        let result = bilateral(&pixels, &info, &BilateralParams { diameter: 5, sigma_color: 25.0, sigma_space: 25.0 }).unwrap();
 
         // Should reduce variance
         let var_in: f64 = pixels
@@ -10783,7 +10783,7 @@ mod optimization_tests {
         let pixels: Vec<u8> = (0..(32 * 32))
             .map(|i| (128i32 + ((i * 17 + 3) % 21) as i32 - 10).clamp(0, 255) as u8)
             .collect();
-        let result = guided_filter(&pixels, &info, 4, 0.01).unwrap();
+        let result = guided_filter(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
 
         // Should reduce variance from mean
         let mean_in = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
@@ -10813,7 +10813,7 @@ mod optimization_tests {
             color_space: ColorSpace::Srgb,
         };
         let pixels = vec![100u8; 16 * 16];
-        let result = guided_filter(&pixels, &info, 4, 0.01).unwrap();
+        let result = guided_filter(&pixels, &info, &GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
         // Flat input should produce flat output
         for &v in &result {
             assert!((v as i32 - 100).abs() <= 1, "flat pixel changed to {v}");
@@ -10855,21 +10855,21 @@ mod tests_16bit {
     #[test]
     fn blur_16bit_identity() {
         let (px, info) = make_rgb16(8, 8, 32768);
-        let result = blur(&px, &info, 0.0).unwrap();
+        let result = blur(&px, &info, &BlurParams { radius: 0.0 }).unwrap();
         assert_eq!(result, px, "zero-radius blur should be identity");
     }
 
     #[test]
     fn blur_16bit_produces_output() {
         let (px, info) = make_rgb16(8, 8, 32768);
-        let result = blur(&px, &info, 1.0).unwrap();
+        let result = blur(&px, &info, &BlurParams { radius: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len(), "output length should match");
     }
 
     #[test]
     fn sharpen_16bit_produces_output() {
         let (px, info) = make_rgb16(8, 8, 32768);
-        let result = sharpen(&px, &info, 1.0).unwrap();
+        let result = sharpen(&px, &info, &SharpenParams { amount: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -10877,7 +10877,7 @@ mod tests_16bit {
     fn convolve_16bit_identity_kernel() {
         let (px, info) = make_gray16(4, 4, 50000);
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
-        let result = convolve(&px, &info, &kernel, 3, 3, 1.0).unwrap();
+        let result = convolve(&px, &info,  &kernel, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 }).unwrap();
         // Should be close to original (some precision loss from 16→8→16)
         let orig = bytes_to_u16(&px);
         let out = bytes_to_u16(&result);
@@ -10894,7 +10894,7 @@ mod tests_16bit {
     #[test]
     fn median_16bit_produces_output() {
         let (px, info) = make_gray16(8, 8, 32768);
-        let result = median(&px, &info, 1).unwrap();
+        let result = median(&px, &info, &MedianParams { radius: 1 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -10908,14 +10908,14 @@ mod tests_16bit {
     #[test]
     fn hue_rotate_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = hue_rotate(&px, &info, 90.0).unwrap();
+        let result = hue_rotate(&px, &info, &HueRotateParams { degrees: 90.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn brightness_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = brightness(&px, &info, 0.5).unwrap();
+        let result = brightness(&px, &info, &BrightnessParams { amount: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
         // Brightened pixels should be higher
         let orig = bytes_to_u16(&px);
@@ -10931,7 +10931,7 @@ mod tests_16bit {
     #[test]
     fn sepia_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = sepia(&px, &info, 1.0).unwrap();
+        let result = sepia(&px, &info, &SepiaParams { intensity: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 }
@@ -10970,7 +10970,7 @@ mod photo_enhance_tests {
             }
         }
         let info = test_info(w, h, PixelFormat::Rgb8);
-        let result = dehaze(&pixels, &info, 7, 0.95, 0.1).unwrap();
+        let result = dehaze(&pixels, &info, &DehazeParams { patch_radius: 7, omega: 0.95, t_min: 0.1 }).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Dehazed image should have more contrast (wider range)
@@ -10992,7 +10992,7 @@ mod photo_enhance_tests {
             pixels[i * 4 + 3] = 128; // set alpha
         }
         let info = test_info(w, h, PixelFormat::Rgba8);
-        let result = dehaze(&pixels, &info, 5, 0.8, 0.1).unwrap();
+        let result = dehaze(&pixels, &info, &DehazeParams { patch_radius: 5, omega: 0.8, t_min: 0.1 }).unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 128, "alpha must be preserved");
         }
@@ -11012,7 +11012,7 @@ mod photo_enhance_tests {
             }
         }
         let info = test_info(w, h, PixelFormat::Rgb8);
-        let result = clarity(&pixels, &info, 1.0, 10.0).unwrap();
+        let result = clarity(&pixels, &info, &ClarityParams { amount: 1.0, sigma: 10.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Clarity should increase local contrast (stddev should increase)
@@ -11027,7 +11027,7 @@ mod photo_enhance_tests {
     #[test]
     fn clarity_zero_amount_is_near_identity() {
         let (px, info) = make_rgb(32, 32);
-        let result = clarity(&px, &info, 0.0, 10.0).unwrap();
+        let result = clarity(&px, &info, &ClarityParams { amount: 0.0, sigma: 10.0 }).unwrap();
         // With amount=0, the detail weighting is 0, so output ≈ input
         let diff: f64 = px
             .iter()
@@ -11044,7 +11044,7 @@ mod photo_enhance_tests {
     #[test]
     fn pyramid_detail_remap_preserves_dimensions() {
         let (px, info) = make_rgb(32, 32);
-        let result = pyramid_detail_remap(&px, &info, 0.5, 0).unwrap();
+        let result = pyramid_detail_remap(&px, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -11053,7 +11053,7 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(32, 32);
         // sigma=1.0 means the remapping d * 1.0 / (1.0 + |d|) ≈ d for small d
         // This is close to identity (slight compression of large gradients)
-        let result = pyramid_detail_remap(&px, &info, 1.0, 4).unwrap();
+        let result = pyramid_detail_remap(&px, &info, &PyramidDetailRemapParams { sigma: 1.0, num_levels: 4 }).unwrap();
         let diff: f64 = px
             .iter()
             .zip(result.iter())
@@ -11069,7 +11069,7 @@ mod photo_enhance_tests {
     #[test]
     fn pyramid_detail_remap_small_sigma_produces_output() {
         let (px, info) = make_rgb(64, 64);
-        let result = pyramid_detail_remap(&px, &info, 0.2, 0).unwrap();
+        let result = pyramid_detail_remap(&px, &info, &PyramidDetailRemapParams { sigma: 0.2, num_levels: 0 }).unwrap();
         assert_eq!(result.len(), px.len());
         // Result should differ from input (enhancement applied)
         let diff: usize = px
@@ -11091,7 +11091,7 @@ mod photo_enhance_tests {
             pixels[i * 4 + 3] = 200;
         }
         let info = test_info(w, h, PixelFormat::Rgba8);
-        let result = pyramid_detail_remap(&pixels, &info, 0.5, 3).unwrap();
+        let result = pyramid_detail_remap(&pixels, &info, &PyramidDetailRemapParams { sigma: 0.5, num_levels: 3 }).unwrap();
         for i in 0..(w * h) as usize {
             assert_eq!(result[i * 4 + 3], 200, "alpha must be preserved");
         }
@@ -11342,7 +11342,7 @@ mod retinex_tests {
     #[test]
     fn ssr_produces_output() {
         let (px, info) = make_rgb(32, 32);
-        let result = retinex_ssr(&px, &info, 80.0).unwrap();
+        let result = retinex_ssr(&px, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -11362,7 +11362,7 @@ mod retinex_tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let result = retinex_ssr(&pixels, &info, 80.0).unwrap();
+        let result = retinex_ssr(&pixels, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
 
         let stats_before = crate::domain::histogram::statistics(&pixels, &info).unwrap();
         let stats_after = crate::domain::histogram::statistics(&result, &info).unwrap();
@@ -11384,7 +11384,7 @@ mod retinex_tests {
     #[test]
     fn msr_single_scale_matches_ssr() {
         let (px, info) = make_rgb(32, 32);
-        let ssr = retinex_ssr(&px, &info, 80.0).unwrap();
+        let ssr = retinex_ssr(&px, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
         let msr = retinex_msr(&px, &info, &[80.0]).unwrap();
         // MSR with one scale should equal SSR
         assert_eq!(ssr, msr, "MSR with single scale should match SSR");
@@ -11460,7 +11460,7 @@ mod retinex_tests {
         };
 
         // Run retinex_ssr which uses the box blur path for sigma=80
-        let result = retinex_ssr(&pixels, &info, 80.0).unwrap();
+        let result = retinex_ssr(&pixels, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Result should use a reasonable dynamic range (normalized output)
@@ -11930,7 +11930,7 @@ mod threshold_tests {
     fn threshold_binary_basic() {
         let px = vec![50, 100, 150, 200];
         let info = gray_info(2, 2);
-        let out = threshold_binary(&px, &info, 120, 255).unwrap();
+        let out = threshold_binary(&px, &info, &ThresholdBinaryParams { thresh: 120, max_value: 255 }).unwrap();
         assert_eq!(out, vec![0, 0, 255, 255]);
     }
 
@@ -13760,7 +13760,7 @@ mod artistic_filter_tests {
         // All pixels at 100, threshold 128 → below threshold → unchanged
         let pixels = vec![100u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = solarize(&pixels, &info, 128).unwrap();
+        let result = solarize(&pixels, &info, &SolarizeParams { threshold: 128 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -13769,7 +13769,7 @@ mod artistic_filter_tests {
         // Pixel at 200, threshold 128 → above → 255-200=55
         let pixels = vec![200u8; 3];
         let info = rgb_info(1, 1);
-        let result = solarize(&pixels, &info, 128).unwrap();
+        let result = solarize(&pixels, &info, &SolarizeParams { threshold: 128 }).unwrap();
         assert_eq!(result, vec![55, 55, 55]);
     }
 
@@ -13778,7 +13778,7 @@ mod artistic_filter_tests {
         // threshold=0 means all non-zero pixels get inverted
         let pixels = vec![128u8; 3];
         let info = rgb_info(1, 1);
-        let result = solarize(&pixels, &info, 0).unwrap();
+        let result = solarize(&pixels, &info, &SolarizeParams { threshold: 0 }).unwrap();
         assert_eq!(result, vec![127, 127, 127]);
     }
 
@@ -13808,7 +13808,7 @@ mod artistic_filter_tests {
     fn oil_paint_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = oil_paint(&pixels, &info, 2).unwrap();
+        let result = oil_paint(&pixels, &info, &OilPaintParams { radius: 2 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -13817,7 +13817,7 @@ mod artistic_filter_tests {
         // Uniform image → all pixels in same bin → output = input
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = oil_paint(&pixels, &info, 3).unwrap();
+        let result = oil_paint(&pixels, &info, &OilPaintParams { radius: 3 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -13826,7 +13826,7 @@ mod artistic_filter_tests {
         // Charcoal outputs Gray8 (from Sobel)
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = charcoal(&pixels, &info, 1.0, 0.5).unwrap();
+        let result = charcoal(&pixels, &info, &CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap();
         // Output is Gray8: 32*32 = 1024 bytes (not 3072)
         assert_eq!(result.len(), 32 * 32);
     }
@@ -13836,7 +13836,7 @@ mod artistic_filter_tests {
         // Flat image → no edges → Sobel = 0 → invert = 255 → white
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = charcoal(&pixels, &info, 0.0, 0.0).unwrap();
+        let result = charcoal(&pixels, &info, &CharcoalParams { radius: 0.0, sigma: 0.0 }).unwrap();
         // Output is Gray8
         assert_eq!(result.len(), 16 * 16);
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -14559,7 +14559,7 @@ mod perspective_tests {
     fn warp_identity_preserves_all_pixels() {
         let (px, info) = make_rgb_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, 16, 16).unwrap();
+        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
         // With fixed-point, identity warp at integer coords should be exact
         assert_eq!(
             result, px,
@@ -14571,7 +14571,7 @@ mod perspective_tests {
     fn warp_preserves_output_dimensions() {
         let (px, info) = make_rgb_image(32, 24);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, 64, 48).unwrap();
+        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 64, out_height: 48 }).unwrap();
         assert_eq!(result.len(), 64 * 48 * 3);
     }
 
@@ -14579,7 +14579,7 @@ mod perspective_tests {
     fn warp_rgba_preserves_channels() {
         let (px, info) = make_rgba_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, 16, 16).unwrap();
+        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
     }
 
@@ -14587,7 +14587,7 @@ mod perspective_tests {
     fn warp_gray_works() {
         let (px, info) = make_gray_image(16, 16);
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&px, &info, &identity, 16, 16).unwrap();
+        let result = perspective_warp(&px, &info, &identity, &PerspectiveWarpParams { out_width: 16, out_height: 16 }).unwrap();
         assert_eq!(result.len(), 16 * 16);
     }
 
@@ -14609,7 +14609,7 @@ mod perspective_tests {
 
         // Inverse map: output (ox,oy) → input (ox+2, oy+1)
         let mat = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
-        let result = perspective_warp(&pixels, &info, &mat, w, h).unwrap();
+        let result = perspective_warp(&pixels, &info, &mat, &PerspectiveWarpParams { out_width: w, out_height: h }).unwrap();
 
         // White pixel at input (5,5) → output (3,4)
         let expected_idx = (4 * w as usize + 3) * 3;
@@ -14623,28 +14623,28 @@ mod perspective_tests {
     #[test]
     fn correct_zero_strength_is_identity() {
         let (px, info) = make_rgb_image(32, 32);
-        let result = perspective_correct(&px, &info, 0.0).unwrap();
+        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn correct_preserves_dimensions() {
         let (px, info) = make_rgb_image(64, 48);
-        let result = perspective_correct(&px, &info, 1.0).unwrap();
+        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 1.0 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn correct_rgba_preserves_length() {
         let (px, info) = make_rgba_image(32, 32);
-        let result = perspective_correct(&px, &info, 0.5).unwrap();
+        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn correct_gray_preserves_length() {
         let (px, info) = make_gray_image(32, 32);
-        let result = perspective_correct(&px, &info, 0.5).unwrap();
+        let result = perspective_correct(&px, &info, &PerspectiveCorrectParams { strength: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -14954,8 +14954,8 @@ mod frequency_separation_tests {
         let (pixels, info) = make_rgb(32, 32);
         let sigma = 4.0;
 
-        let low = frequency_low(&pixels, &info, sigma).unwrap();
-        let high = frequency_high(&pixels, &info, sigma).unwrap();
+        let low = frequency_low(&pixels, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
+        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
 
         assert_eq!(low.len(), pixels.len());
         assert_eq!(high.len(), pixels.len());
@@ -14992,8 +14992,8 @@ mod frequency_separation_tests {
         }
 
         let sigma = 3.0;
-        let low = frequency_low(&pixels, &info, sigma).unwrap();
-        let high = frequency_high(&pixels, &info, sigma).unwrap();
+        let low = frequency_low(&pixels, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
+        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
 
         // Check alpha preserved in high-pass
         for i in 0..pixels.len() / 4 {
@@ -15018,8 +15018,8 @@ mod frequency_separation_tests {
         let (pixels, info) = make_rgb(8, 8);
 
         // sigma=0 → low = original, high = all 128
-        let low = frequency_low(&pixels, &info, 0.0).unwrap();
-        let high = frequency_high(&pixels, &info, 0.0).unwrap();
+        let low = frequency_low(&pixels, &info, &FrequencyLowParams { sigma: 0.0 }).unwrap();
+        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: 0.0 }).unwrap();
 
         assert_eq!(low, pixels, "sigma=0 low-pass should equal original");
         assert!(
@@ -15039,7 +15039,7 @@ mod frequency_separation_tests {
         };
         let pixels = vec![100u8; 16 * 16 * 3];
 
-        let high = frequency_high(&pixels, &info, 5.0).unwrap();
+        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: 5.0 }).unwrap();
 
         // For a flat image, blur = original, so high = orig - blur + 128 = 128
         for (i, &v) in high.iter().enumerate() {
@@ -15060,8 +15060,8 @@ mod frequency_separation_tests {
         };
         let pixels: Vec<u8> = (0..256).map(|i| (i % 256) as u8).collect();
 
-        let low = frequency_low(&pixels, &info, 2.0).unwrap();
-        let high = frequency_high(&pixels, &info, 2.0).unwrap();
+        let low = frequency_low(&pixels, &info, &FrequencyLowParams { sigma: 2.0 }).unwrap();
+        let high = frequency_high(&pixels, &info, &FrequencyHighParams { sigma: 2.0 }).unwrap();
 
         let mut max_err = 0i16;
         for i in 0..pixels.len() {
@@ -15090,7 +15090,7 @@ mod motion_blur_tests {
     #[test]
     fn zero_length_is_identity() {
         let (pixels, info) = make_gray(8, 8, 128);
-        let result = motion_blur(&pixels, &info, 0, 45.0).unwrap();
+        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 0, angle_degrees: 45.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -15098,7 +15098,7 @@ mod motion_blur_tests {
     fn uniform_image_unchanged() {
         // Motion blur of a uniform image should produce the same uniform image
         let (pixels, info) = make_gray(16, 16, 100);
-        let result = motion_blur(&pixels, &info, 3, 0.0).unwrap();
+        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
         // Interior pixels should be exactly 100 (uniform input)
         // Border pixels may differ due to reflect101 padding
         let w = info.width as usize;
@@ -15124,7 +15124,7 @@ mod motion_blur_tests {
         let mut pixels = vec![0u8; (w * h) as usize];
         pixels[8 * 16 + 8] = 255; // center pixel
 
-        let result = motion_blur(&pixels, &info, 3, 0.0).unwrap();
+        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 3, angle_degrees: 0.0 }).unwrap();
 
         // The bright pixel should spread along the horizontal line (row 8)
         // but not vertically (rows 7 and 9 at x=8 should be 0 or near-0)
@@ -15145,7 +15145,7 @@ mod motion_blur_tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 8 * 8 * 3];
-        let result = motion_blur(&pixels, &info, 2, 45.0).unwrap();
+        let result = motion_blur(&pixels, &info, &MotionBlurParams { length: 2, angle_degrees: 45.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 }
@@ -15167,21 +15167,21 @@ mod zoom_blur_tests {
     #[test]
     fn zero_factor_is_identity() {
         let (px, info) = make_gray(32, 32, 128);
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.0).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.0 }).unwrap();
         assert_eq!(result, px);
     }
 
     #[test]
     fn preserves_dimensions() {
         let (px, info) = make_gray(64, 48, 128);
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.3).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
     #[test]
     fn uniform_image_stays_uniform() {
         let (px, info) = make_gray(32, 32, 100);
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.5).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
         for &v in &result {
             assert!(
                 (v as i16 - 100).abs() <= 1,
@@ -15196,7 +15196,7 @@ mod zoom_blur_tests {
         // With a 64x64 image and factor=0.5, corner pixels have a longer ray
         // than pixels near center. This test just verifies it runs without panic.
         let (px, info) = make_gray(64, 64, 128);
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.5).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.5 }).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -15209,7 +15209,7 @@ mod zoom_blur_tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         let px = vec![128u8; 16 * 16 * 3];
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.2).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
         assert_eq!(result.len(), 16 * 16 * 3);
     }
 
@@ -15222,7 +15222,7 @@ mod zoom_blur_tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         let px = vec![128u8; 16 * 16 * 4];
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.2).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.2 }).unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
     }
 
@@ -15239,7 +15239,7 @@ mod zoom_blur_tests {
             format: PixelFormat::Gray8,
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
-        let result = zoom_blur(&px, &info, 0.5, 0.5, 0.3).unwrap();
+        let result = zoom_blur(&px, &info, &ZoomBlurParams { center_x: 0.5, center_y: 0.5, factor: 0.3 }).unwrap();
         let center_val = result[16 * w as usize + 16];
         // Center pixel samples near itself → stays close to original
         assert!(
@@ -16019,7 +16019,7 @@ mod distortion_effect_tests {
     fn pixelate_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = pixelate(&pixels, &info, 4).unwrap();
+        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 4 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16027,7 +16027,7 @@ mod distortion_effect_tests {
     fn pixelate_block_1_is_identity() {
         let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(64, 64);
-        let result = pixelate(&pixels, &info, 1).unwrap();
+        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16036,7 +16036,7 @@ mod distortion_effect_tests {
         // 4x4 image, block_size=4 → entire image is one block
         let pixels = vec![100u8; 4 * 4 * 3];
         let info = rgb_info(4, 4);
-        let result = pixelate(&pixels, &info, 4).unwrap();
+        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 4 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16045,7 +16045,7 @@ mod distortion_effect_tests {
         // 7x5 with block_size=3 → handles edge blocks correctly
         let pixels = vec![128u8; 7 * 5 * 3];
         let info = rgb_info(7, 5);
-        let result = pixelate(&pixels, &info, 3).unwrap();
+        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 3 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16053,7 +16053,7 @@ mod distortion_effect_tests {
     fn pixelate_gray() {
         let pixels = vec![128u8; 16 * 16];
         let info = gray_info(16, 16);
-        let result = pixelate(&pixels, &info, 4).unwrap();
+        let result = pixelate(&pixels, &info, &PixelateParams { block_size: 4 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16063,7 +16063,7 @@ mod distortion_effect_tests {
     fn halftone_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16073,7 +16073,7 @@ mod distortion_effect_tests {
         // should be limited to values from {0, 255} combinations
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         for &v in &result {
             // Each RGB value is product of (1-C/M/Y)(1-K) where each is 0 or 1
             assert!(
@@ -16088,7 +16088,7 @@ mod distortion_effect_tests {
         // Pure white → C=0, M=0, Y=0, K=0 → all screens below threshold → white
         let pixels = vec![255u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         assert!(result.iter().all(|&v| v == 255));
     }
 
@@ -16097,7 +16097,7 @@ mod distortion_effect_tests {
         // Pure black → K=1 → all K screens fire → black
         let pixels = vec![0u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(&pixels, &info, 4.0, 0.0).unwrap();
+        let result = halftone(&pixels, &info, &HalftoneParams { dot_size: 4.0, angle_offset: 0.0 }).unwrap();
         assert!(result.iter().all(|&v| v == 0));
     }
 
@@ -16107,7 +16107,7 @@ mod distortion_effect_tests {
     fn swirl_zero_angle_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = swirl(&pixels, &info, 0.0, 0.0).unwrap();
+        let result = swirl(&pixels, &info, &SwirlParams { angle: 0.0, radius: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16115,7 +16115,7 @@ mod distortion_effect_tests {
     fn swirl_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = swirl(&pixels, &info, 90.0, 0.0).unwrap();
+        let result = swirl(&pixels, &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16141,7 +16141,7 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small angle so center is barely affected
-        let result = swirl(&pixels, &info, 10.0, 0.0).unwrap();
+        let result = swirl(&pixels, &info, &SwirlParams { angle: 10.0, radius: 0.0 }).unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center pixel should be close to the original value (not zero/black)
         assert!(
@@ -16157,7 +16157,7 @@ mod distortion_effect_tests {
     fn spherize_zero_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = spherize(&pixels, &info, 0.0).unwrap();
+        let result = spherize(&pixels, &info, &SpherizeParams { amount: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16165,7 +16165,7 @@ mod distortion_effect_tests {
     fn spherize_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = spherize(&pixels, &info, 0.5).unwrap();
+        let result = spherize(&pixels, &info, &SpherizeParams { amount: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16188,7 +16188,7 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = spherize(&pixels, &info, 0.5).unwrap();
+        let result = spherize(&pixels, &info, &SpherizeParams { amount: 0.5 }).unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center should be close to original (spherize barely moves center pixels)
         assert!(
@@ -16206,7 +16206,7 @@ mod distortion_effect_tests {
         // through the filter. Result should be very close to input.
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = barrel(&pixels, &info, 0.0, 0.0).unwrap();
+        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.0, k2: 0.0 }).unwrap();
         // Uniform image → still uniform after resampling
         for &v in &result {
             assert!(
@@ -16220,7 +16220,7 @@ mod distortion_effect_tests {
     fn barrel_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = barrel(&pixels, &info, 0.3, 0.0).unwrap();
+        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16243,7 +16243,7 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = barrel(&pixels, &info, 0.5, 0.1).unwrap();
+        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
         let off = (cy * w as usize + cx) * 3;
         assert!(
             result[off] > 100,
@@ -16258,7 +16258,7 @@ mod distortion_effect_tests {
     fn barrel_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = barrel(&pixels, &info, 0.3, 0.0).unwrap();
+        let result = barrel(&pixels, &info, &BarrelParams { k1: 0.3, k2: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16346,7 +16346,7 @@ mod distortion_effect_tests {
     fn wave_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = wave(&pixels, &info, 0.0, 10.0, 0.0).unwrap();
+        let result = wave(&pixels, &info, &WaveParams { amplitude: 0.0, wavelength: 10.0, vertical: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16354,7 +16354,7 @@ mod distortion_effect_tests {
     fn wave_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(&pixels, &info, 5.0, 20.0, 0.0).unwrap();
+        let result = wave(&pixels, &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16362,7 +16362,7 @@ mod distortion_effect_tests {
     fn wave_vertical_works() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(&pixels, &info, 5.0, 20.0, 1.0).unwrap();
+        let result = wave(&pixels, &info, &WaveParams { amplitude: 5.0, wavelength: 20.0, vertical: 1.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16375,7 +16375,7 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = wave(&pixels, &info, 3.0, 15.0, 0.0).unwrap();
+        let result = wave(&pixels, &info, &WaveParams { amplitude: 3.0, wavelength: 15.0, vertical: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16385,7 +16385,7 @@ mod distortion_effect_tests {
     fn ripple_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = ripple(&pixels, &info, 0.0, 10.0, 0.5, 0.5).unwrap();
+        let result = ripple(&pixels, &info, &RippleParams { amplitude: 0.0, wavelength: 10.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16393,7 +16393,7 @@ mod distortion_effect_tests {
     fn ripple_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = ripple(&pixels, &info, 5.0, 20.0, 0.5, 0.5).unwrap();
+        let result = ripple(&pixels, &info, &RippleParams { amplitude: 5.0, wavelength: 20.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16418,7 +16418,7 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small amplitude, long wavelength — near-center pixels barely move
-        let result = ripple(&pixels, &info, 1.0, 100.0, 0.5, 0.5).unwrap();
+        let result = ripple(&pixels, &info, &RippleParams { amplitude: 1.0, wavelength: 100.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         let center_off = (cy * w as usize + cx) * 3;
         // Center pixel should be close to original (displacement at r≈0 is ≈0)
         assert!(
@@ -16437,7 +16437,7 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = ripple(&pixels, &info, 3.0, 15.0, 0.5, 0.5).unwrap();
+        let result = ripple(&pixels, &info, &RippleParams { amplitude: 3.0, wavelength: 15.0, center_x: 0.5, center_y: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -16491,7 +16491,7 @@ mod distortion_effect_tests {
         let wavelength = 20.0f32;
 
         let info = rgb_info(w, h);
-        let our_result = wave(&pixels, &info, amplitude, wavelength, 0.0).unwrap();
+        let our_result = wave(&pixels, &info, &WaveParams { amplitude, wavelength, vertical: 0.0 }).unwrap();
 
         // IM -wave extends canvas by 2*amplitude. Crop at offset=amplitude
         // to get the centered portion matching our source mapping.
@@ -16620,7 +16620,7 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = swirl(&pixels, &info, 90.0, 0.0).unwrap();
+        let our_result = swirl(&pixels, &info, &SwirlParams { angle: 90.0, radius: 0.0 }).unwrap();
 
         let im_raw = std::env::temp_dir().join("swirl_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -16680,7 +16680,7 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = barrel(&pixels, &info, 0.5, 0.1).unwrap();
+        let our_result = barrel(&pixels, &info, &BarrelParams { k1: 0.5, k2: 0.1 }).unwrap();
 
         let im_raw = std::env::temp_dir().join("barrel_parity_im.rgb");
         let result = std::process::Command::new("magick")
@@ -17078,7 +17078,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_radius_0_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = kuwahara(&pixels, &info, 0).unwrap();
+        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17086,7 +17086,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = kuwahara(&pixels, &info, 3).unwrap();
+        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 3 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -17094,7 +17094,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_uniform_is_identity() {
         let pixels = vec![100u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = kuwahara(&pixels, &info, 3).unwrap();
+        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 3 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17113,7 +17113,7 @@ mod kuwahara_rank_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = kuwahara(&pixels, &info, 2).unwrap();
+        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 2 }).unwrap();
         // Interior pixels far from edge should be unchanged
         // Left side interior (x=4, y=16) should still be dark
         let left_off = (16 * w as usize + 4) * 3;
@@ -17135,7 +17135,7 @@ mod kuwahara_rank_tests {
     fn kuwahara_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = kuwahara(&pixels, &info, 2).unwrap();
+        let result = kuwahara(&pixels, &info, &KuwaharaParams { radius: 2 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -17145,7 +17145,7 @@ mod kuwahara_rank_tests {
     fn rank_filter_radius_0_is_identity() {
         let pixels: Vec<u8> = (0..16 * 16 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(16, 16);
-        let result = rank_filter(&pixels, &info, 0, 0.5).unwrap();
+        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 0, rank: 0.5 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17153,7 +17153,7 @@ mod kuwahara_rank_tests {
     fn rank_filter_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = rank_filter(&pixels, &info, 2, 0.5).unwrap();
+        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 2, rank: 0.5 }).unwrap();
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -17164,8 +17164,8 @@ mod kuwahara_rank_tests {
             .map(|i| ((i * 7 + 13) % 256) as u8)
             .collect();
         let info = rgb_info(32, 32);
-        let median_result = median(&pixels, &info, 3).unwrap();
-        let rank_result = rank_filter(&pixels, &info, 3, 0.5).unwrap();
+        let median_result = median(&pixels, &info, &MedianParams { radius: 3 }).unwrap();
+        let rank_result = rank_filter(&pixels, &info, &RankFilterParams { radius: 3, rank: 0.5 }).unwrap();
         assert_eq!(rank_result, median_result, "rank 0.5 should match median");
     }
 
@@ -17174,7 +17174,7 @@ mod kuwahara_rank_tests {
         // rank=0.0 is local minimum — result should be <= input for each pixel
         let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
         let info = gray_info(16, 16);
-        let result = rank_filter(&pixels, &info, 1, 0.0).unwrap();
+        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 1, rank: 0.0 }).unwrap();
         // Local min should be <= each pixel's own value (approximately — due to edge reflect)
         let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -17189,7 +17189,7 @@ mod kuwahara_rank_tests {
         // rank=1.0 is local maximum — result should be >= input on average
         let pixels: Vec<u8> = (0..16 * 16).map(|i| ((i * 17 + 5) % 256) as u8).collect();
         let info = gray_info(16, 16);
-        let result = rank_filter(&pixels, &info, 1, 1.0).unwrap();
+        let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 1, rank: 1.0 }).unwrap();
         let mean_input: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
         let mean_output: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
@@ -17203,7 +17203,7 @@ mod kuwahara_rank_tests {
         let pixels = vec![100u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
         for rank in [0.0f32, 0.5, 1.0] {
-            let result = rank_filter(&pixels, &info, 2, rank).unwrap();
+            let result = rank_filter(&pixels, &info, &RankFilterParams { radius: 2, rank: rank }).unwrap();
             assert_eq!(
                 result, pixels,
                 "uniform image should be identity at rank={rank}"
@@ -17433,7 +17433,7 @@ mod dodge_burn_tests {
     fn dodge_identity_at_zero() {
         let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(8, 8);
-        let result = dodge(&pixels, &info, 0.0, 1).unwrap();
+        let result = dodge(&pixels, &info, &DodgeParams { exposure: 0.0, range: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17441,7 +17441,7 @@ mod dodge_burn_tests {
     fn burn_identity_at_zero() {
         let pixels: Vec<u8> = (0..8 * 8 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(8, 8);
-        let result = burn(&pixels, &info, 0.0, 1).unwrap();
+        let result = burn(&pixels, &info, &BurnParams { exposure: 0.0, range: 1 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17463,7 +17463,7 @@ mod dodge_burn_tests {
             pixels[pi + 2] = 230;
         }
         let info = rgb_info(8, 8);
-        let result = dodge(&pixels, &info, 100.0, 0).unwrap(); // shadows only
+        let result = dodge(&pixels, &info, &DodgeParams { exposure: 100.0, range: 0 }).unwrap(); // shadows only
 
         // Dark pixels should be brighter
         assert!(result[0] > 30, "dark pixel should be dodged: {}", result[0]);
@@ -17493,7 +17493,7 @@ mod dodge_burn_tests {
             pixels[pi + 2] = 230;
         }
         let info = rgb_info(8, 8);
-        let result = burn(&pixels, &info, 100.0, 2).unwrap(); // highlights only
+        let result = burn(&pixels, &info, &BurnParams { exposure: 100.0, range: 2 }).unwrap(); // highlights only
 
         // Dark pixels should be unchanged
         let dark_diff = (result[0] as i16 - 30).abs();
@@ -17523,7 +17523,7 @@ mod dodge_burn_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = dodge(&pixels, &info, 50.0, 1).unwrap();
+        let result = dodge(&pixels, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
         for i in 0..16 {
             assert_eq!(result[i * 4 + 3], pixels[i * 4 + 3]);
         }
@@ -17548,7 +17548,7 @@ mod dodge_burn_tests {
         let info = rgb_info(w, h);
 
         // Dodge midtones at 50%
-        let result = dodge(&pixels, &info, 50.0, 1).unwrap();
+        let result = dodge(&pixels, &info, &DodgeParams { exposure: 50.0, range: 1 }).unwrap();
         let exposure = 0.5f32;
 
         let mut max_diff = 0u8;
@@ -17587,7 +17587,7 @@ mod dodge_burn_tests {
         let info = rgb_info(w, h);
 
         // Burn highlights at 75%
-        let result = burn(&pixels, &info, 75.0, 2).unwrap();
+        let result = burn(&pixels, &info, &BurnParams { exposure: 75.0, range: 2 }).unwrap();
         let exposure = 0.75f32;
 
         let mut max_diff = 0u8;
@@ -17832,7 +17832,7 @@ mod tilt_shift_lens_blur_tests {
     fn tilt_shift_zero_radius_is_identity() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = tilt_shift(&pixels, &info, 0.5, 0.2, 0.0, 0.0).unwrap();
+        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 0.0, angle: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17840,7 +17840,7 @@ mod tilt_shift_lens_blur_tests {
     fn tilt_shift_full_band_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = tilt_shift(&pixels, &info, 0.5, 1.0, 10.0, 0.0).unwrap();
+        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 1.0, blur_radius: 10.0, angle: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17859,7 +17859,7 @@ mod tilt_shift_lens_blur_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = tilt_shift(&pixels, &info, 0.5, 0.3, 10.0, 0.0).unwrap();
+        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.3, blur_radius: 10.0, angle: 0.0 }).unwrap();
 
         // Center row (y=16) should be in the focus band — exactly preserved
         let center_y = 16;
@@ -17885,7 +17885,7 @@ mod tilt_shift_lens_blur_tests {
             }
         }
         let info = rgb_info(w, h);
-        let result = tilt_shift(&pixels, &info, 0.5, 0.2, 8.0, 0.0).unwrap();
+        let result = tilt_shift(&pixels, &info, &TiltShiftParams { focus_position: 0.5, band_size: 0.2, blur_radius: 8.0, angle: 0.0 }).unwrap();
 
         // Top edge (y=0) should be heavily blurred — values should be closer to 128
         let top_y = 0;
@@ -17906,7 +17906,7 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_zero_radius_is_identity() {
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = lens_blur(&pixels, &info, 0, 0, 0.0).unwrap();
+        let result = lens_blur(&pixels, &info, &LensBlurParams { radius: 0, blade_count: 0, rotation: 0.0 }).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -17914,7 +17914,7 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_disc_mode() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = lens_blur(&pixels, &info, 3, 0, 0.0).unwrap();
+        let result = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
         // Should be different from input (blurred)
         assert_ne!(result, pixels);
@@ -17925,7 +17925,7 @@ mod tilt_shift_lens_blur_tests {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
         // 6-blade hexagon
-        let result = lens_blur(&pixels, &info, 3, 6, 0.0).unwrap();
+        let result = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 6, rotation: 0.0 }).unwrap();
         assert_eq!(result.len(), pixels.len());
         assert_ne!(result, pixels);
     }
@@ -17934,8 +17934,8 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_disc_matches_bokeh_blur() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let disc = lens_blur(&pixels, &info, 3, 0, 0.0).unwrap();
-        let bokeh = bokeh_blur(&pixels, &info, 3, 0).unwrap();
+        let disc = lens_blur(&pixels, &info, &LensBlurParams { radius: 3, blade_count: 0, rotation: 0.0 }).unwrap();
+        let bokeh = bokeh_blur(&pixels, &info, &BokehBlurParams { radius: 3, shape: 0 }).unwrap();
         // Both use same make_disc_kernel + convolve — should be identical
         assert_eq!(disc, bokeh, "lens_blur disc should match bokeh_blur disc");
     }
@@ -17955,8 +17955,8 @@ mod tilt_shift_lens_blur_tests {
     fn lens_blur_rotation_changes_output() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let r0 = lens_blur(&pixels, &info, 4, 6, 0.0).unwrap();
-        let r30 = lens_blur(&pixels, &info, 4, 6, 30.0).unwrap();
+        let r0 = lens_blur(&pixels, &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 0.0 }).unwrap();
+        let r30 = lens_blur(&pixels, &info, &LensBlurParams { radius: 4, blade_count: 6, rotation: 30.0 }).unwrap();
         // Different rotation should produce different output
         assert_ne!(r0, r30, "rotated polygon should produce different result");
     }
