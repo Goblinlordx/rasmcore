@@ -101,15 +101,15 @@ plan:
 - phase: Pipeline Fusion
   tasks:
   - text: Add as_point_op_lut() optional method to ImageNode trait
-    done: false
+    done: true
   - text: Update codegen to generate as_point_op_lut() for PointOp-implementing nodes
-    done: false
+    done: true
   - text: Implement FusedLutNode that applies a pre-composed LUT
-    done: false
+    done: true
   - text: Implement pipeline optimizer pass that detects and fuses consecutive PointOp nodes
-    done: false
+    done: true
   - text: Handle 16-bit fusion path (compose_luts_u16)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Test that fused brightness→contrast→gamma produces byte-identical output to unfused

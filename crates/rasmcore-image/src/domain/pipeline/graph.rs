@@ -1099,6 +1099,174 @@ mod tiled_parity_tests {
 }
 
 #[cfg(test)]
+mod lut_fusion_tests {
+    use super::*;
+    use crate::domain::pipeline::nodes::filters::{
+        BlurNode, BrightnessNode, ContrastNode, GammaNode, InvertNode,
+    };
+    use crate::domain::filters::{BlurParams, BrightnessParams, ContrastParams, GammaParams};
+    use crate::domain::types::*;
+
+    /// Raw pixel source node for testing.
+    struct RawSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+    }
+    impl RawSource {
+        fn new(pixels: Vec<u8>, info: ImageInfo) -> Self {
+            Self { pixels, info }
+        }
+    }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let bpp = bytes_per_pixel(self.info.format);
+            Ok(crop_region(
+                &self.pixels,
+                Rect::new(0, 0, self.info.width, self.info.height),
+                request,
+                bpp,
+            ))
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
+    }
+
+    fn gradient_pixels(w: u32, h: u32) -> Vec<u8> {
+        let mut px = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(((x * 255) / w) as u8);
+                px.push(((y * 255) / h) as u8);
+                px.push(128);
+                px.push(255);
+            }
+        }
+        px
+    }
+
+    fn make_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn fused_brightness_contrast_gamma_matches_unfused() {
+        let w = 32;
+        let h = 32;
+        let info = make_info(w, h);
+        let pixels = gradient_pixels(w, h);
+
+        // Unfused: build graph, don't fuse, request full image
+        let mut g1 = NodeGraph::new(1024 * 1024);
+        let src1 = g1.add_node(Box::new(RawSource::new(pixels.clone(), info)));
+        let b1 = g1.add_node(Box::new(BrightnessNode::new(src1, info, BrightnessParams { amount: 0.2 })));
+        let c1 = g1.add_node(Box::new(ContrastNode::new(b1, info, ContrastParams { amount: 0.3 })));
+        let g_node1 = g1.add_node(Box::new(GammaNode::new(c1, info, GammaParams { gamma_value: 1.5 })));
+        let unfused = g1.request_region(g_node1, Rect::new(0, 0, w, h)).unwrap();
+
+        // Fused: build same graph, fuse, request full image
+        let mut g2 = NodeGraph::new(1024 * 1024);
+        let src2 = g2.add_node(Box::new(RawSource::new(pixels, info)));
+        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info, BrightnessParams { amount: 0.2 })));
+        let c2 = g2.add_node(Box::new(ContrastNode::new(b2, info, ContrastParams { amount: 0.3 })));
+        let g_node2 = g2.add_node(Box::new(GammaNode::new(c2, info, GammaParams { gamma_value: 1.5 })));
+        g2.fuse_point_ops();
+        let fused = g2.request_region(g_node2, Rect::new(0, 0, w, h)).unwrap();
+
+        assert_eq!(unfused, fused, "Fused output must be byte-identical to unfused");
+    }
+
+    #[test]
+    fn fusion_with_5_ops() {
+        let w = 16;
+        let h = 16;
+        let info = make_info(w, h);
+        let pixels = gradient_pixels(w, h);
+
+        // Chain: brightness → contrast → gamma → brightness → contrast
+        let build_graph = |fuse: bool| {
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info)));
+            let n1 = g.add_node(Box::new(BrightnessNode::new(src, info, BrightnessParams { amount: 0.1 })));
+            let n2 = g.add_node(Box::new(ContrastNode::new(n1, info, ContrastParams { amount: 0.2 })));
+            let n3 = g.add_node(Box::new(GammaNode::new(n2, info, GammaParams { gamma_value: 0.8 })));
+            let n4 = g.add_node(Box::new(BrightnessNode::new(n3, info, BrightnessParams { amount: -0.1 })));
+            let n5 = g.add_node(Box::new(ContrastNode::new(n4, info, ContrastParams { amount: -0.15 })));
+            if fuse {
+                g.fuse_point_ops();
+            }
+            g.request_region(n5, Rect::new(0, 0, w, h)).unwrap()
+        };
+
+        assert_eq!(build_graph(false), build_graph(true));
+    }
+
+    #[test]
+    fn non_point_op_acts_as_fusion_barrier() {
+        let w = 16;
+        let h = 16;
+        let info = make_info(w, h);
+        let pixels = gradient_pixels(w, h);
+
+        // Chain: brightness → blur → contrast
+        // blur is a spatial op (not a point op), so brightness and contrast
+        // should NOT be fused together
+        let mut g = NodeGraph::new(1024 * 1024);
+        let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info)));
+        let b = g.add_node(Box::new(BrightnessNode::new(src, info, BrightnessParams { amount: 0.2 })));
+        let blur = g.add_node(Box::new(BlurNode::new(b, info, BlurParams { radius: 2.0 })));
+        let c = g.add_node(Box::new(ContrastNode::new(blur, info, ContrastParams { amount: 0.3 })));
+
+        // After fusion, blur should still be in the chain (barrier)
+        g.fuse_point_ops();
+
+        let mut g2 = NodeGraph::new(1024 * 1024);
+        let src2 = g2.add_node(Box::new(RawSource::new(pixels, info)));
+        let b2 = g2.add_node(Box::new(BrightnessNode::new(src2, info, BrightnessParams { amount: 0.2 })));
+        let blur2 = g2.add_node(Box::new(BlurNode::new(b2, info, BlurParams { radius: 2.0 })));
+        let c2 = g2.add_node(Box::new(ContrastNode::new(blur2, info, ContrastParams { amount: 0.3 })));
+
+        let fused = g.request_region(c, Rect::new(0, 0, w, h)).unwrap();
+        let unfused = g2.request_region(c2, Rect::new(0, 0, w, h)).unwrap();
+
+        assert_eq!(fused, unfused, "Barrier test: fused must match unfused");
+    }
+
+    #[test]
+    fn invert_fuses_with_brightness() {
+        let w = 16;
+        let h = 16;
+        let info = make_info(w, h);
+        let pixels = gradient_pixels(w, h);
+
+        let build_graph = |fuse: bool| {
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(pixels.clone(), info)));
+            let b = g.add_node(Box::new(BrightnessNode::new(src, info, BrightnessParams { amount: 0.2 })));
+            let inv = g.add_node(Box::new(InvertNode::new(b, info)));
+            if fuse {
+                g.fuse_point_ops();
+            }
+            g.request_region(inv, Rect::new(0, 0, w, h)).unwrap()
+        };
+
+        assert_eq!(build_graph(false), build_graph(true));
+    }
+}
+
+#[cfg(test)]
 mod frame_sequence_tests {
     use super::*;
     use crate::domain::pipeline::nodes::filters::BrightnessNode;
