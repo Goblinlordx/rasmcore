@@ -1,94 +1,105 @@
 id: config-struct-codegen_20260331041856Z
-title: "Codegen Config Struct Support — WIT Records, Adapter, Pipeline Nodes"
+title: Codegen Config Struct Support — WIT Records, Adapter, Pipeline Nodes
 type: refactor
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Add config_struct support to rasmcore-codegen. Generate WIT record types,
-    adapter config struct signatures, and pipeline nodes with config fields.
-    Infrastructure only — no domain function signature changes yet.
-  context: |
-    The codegen currently generates individual parameters for all filter
+  summary: 'Add config_struct support to rasmcore-codegen. Generate WIT record types, adapter config struct signatures, and
+    pipeline nodes with config fields. Infrastructure only — no domain function signature changes yet.
+
+    '
+  context: 'The codegen currently generates individual parameters for all filter
+
     functions. ConfigParams structs exist in the domain but are only used for
+
     manifest metadata. This track adds the infrastructure to generate config
+
     struct-based code, so the subsequent migration tracks can change function
+
     signatures incrementally.
 
+
     Must wait for codegen-wit-sdk-unify to merge — that track is actively
+
     restructuring the codegen crate.
-  codebase_analysis: |
-    Current codegen pipeline:
+
+    '
+  codebase_analysis: 'Current codegen pipeline:
+
     - parse/filters.rs extracts FilterReg with params as Vec<(name, type)>
+
     - parse/config_params.rs extracts ConfigParams structs independently
+
     - generate/manifest.rs links them by naming convention (blur -> BlurParams)
+
     - generate/adapter.rs generates individual param signatures
+
     - generate/pipeline.rs generates individual param node fields
+
     - generate/wit.rs generates individual WIT params
 
+
     Changes needed:
+
     - Add config_struct: Option<String> to FilterReg in types.rs
+
     - Auto-detect config struct via naming convention in parse phase
+
     - adapter.rs: when config_struct is Some, generate config-based signature
+
     - pipeline.rs: when config_struct is Some, store config struct in node
+
     - wit.rs: when config_struct is Some, generate record type + use in signature
+
+    '
   acceptance_criteria:
-    - FilterReg has config_struct field populated by naming convention detection
-    - When config_struct is set, adapter generates config-based trait method
-    - When config_struct is set, pipeline node stores config struct
-    - When config_struct is set, WIT generates record type + uses in func signature
-    - When config_struct is None, current individual-param codegen unchanged
-    - All existing filters continue to work (no domain changes in this track)
-    - Unit tests in rasmcore-codegen verify both paths
-  out_of_scope: |
-    Changing any domain function signatures (next tracks).
+  - FilterReg has config_struct field populated by naming convention detection
+  - When config_struct is set, adapter generates config-based trait method
+  - When config_struct is set, pipeline node stores config struct
+  - When config_struct is set, WIT generates record type + uses in func signature
+  - When config_struct is None, current individual-param codegen unchanged
+  - All existing filters continue to work (no domain changes in this track)
+  - Unit tests in rasmcore-codegen verify both paths
+  out_of_scope: 'Changing any domain function signatures (next tracks).
+
     Adding new ConfigParams structs (already done).
+
     Changing the demo/SDK (follows automatically from WIT changes).
-  technical_notes: |
-    Detection strategy: in parse/mod.rs after parsing both filters and
-    config_params, iterate filters and check if param_structs contains
-    a matching struct name (to_pascal_case(name) + "Params").
 
-    Adapter generation (config mode):
-      fn blur(pixels: Vec<u8>, info: types::ImageInfo, config: filters::BlurConfig)
-        -> Result<Vec<u8>, RasmcoreError> {
-          let di = to_domain_image_info(&info);
-          domain::filters::blur(&pixels, &di, config.radius).map_err(to_wit_error)
-      }
-
-    The adapter still destructures the config to call the domain function with
-    individual params — the domain signatures don't change in this track.
-
-    WIT record generation:
-      record blur-config { radius: f32 }
-      blur: func(pixels: buffer, info: image-info, config: blur-config)
-        -> result<buffer, rasmcore-error>;
+    '
+  technical_notes: "Detection strategy: in parse/mod.rs after parsing both filters and\nconfig_params, iterate filters and\
+    \ check if param_structs contains\na matching struct name (to_pascal_case(name) + \"Params\").\n\nAdapter generation (config\
+    \ mode):\n  fn blur(pixels: Vec<u8>, info: types::ImageInfo, config: filters::BlurConfig)\n    -> Result<Vec<u8>, RasmcoreError>\
+    \ {\n      let di = to_domain_image_info(&info);\n      domain::filters::blur(&pixels, &di, config.radius).map_err(to_wit_error)\n\
+    \  }\n\nThe adapter still destructures the config to call the domain function with\nindividual params — the domain signatures\
+    \ don't change in this track.\n\nWIT record generation:\n  record blur-config { radius: f32 }\n  blur: func(pixels: buffer,\
+    \ info: image-info, config: blur-config)\n    -> result<buffer, rasmcore-error>;\n"
 plan:
-  - phase: Types & Parsing
-    tasks:
-      - text: Add config_struct field to FilterReg in types.rs
-        done: false
-      - text: Add config struct detection in parse/mod.rs (match by naming convention)
-        done: false
-      - text: Unit test for config struct detection
-        done: false
-  - phase: Code Generation
-    tasks:
-      - text: Update adapter.rs to generate config-based signature when config_struct is set
-        done: false
-      - text: Update pipeline.rs to store config struct in node when config_struct is set
-        done: false
-      - text: Update wit.rs to generate record type + config-based func signature
-        done: false
-      - text: Unit tests for all 3 generators in both modes (config vs individual)
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Verify existing filters still compile with individual params (backward compat)
-        done: false
-      - text: Verify manifest.json unchanged (config detection does not alter manifest)
-        done: false
-      - text: Full cargo test pass
-        done: false
+- phase: Types & Parsing
+  tasks:
+  - text: Add config_struct field to FilterReg in types.rs
+    done: true
+  - text: Add config struct detection in parse/mod.rs (match by naming convention)
+    done: true
+  - text: Unit test for config struct detection
+    done: true
+- phase: Code Generation
+  tasks:
+  - text: Update adapter.rs to generate config-based signature when config_struct is set
+    done: true
+  - text: Update pipeline.rs to store config struct in node when config_struct is set
+    done: true
+  - text: Update wit.rs to generate record type + config-based func signature
+    done: true
+  - text: Unit tests for all 3 generators in both modes (config vs individual)
+    done: true
+- phase: Integration
+  tasks:
+  - text: Verify existing filters still compile with individual params (backward compat)
+    done: true
+  - text: Verify manifest.json unchanged (config detection does not alter manifest)
+    done: true
+  - text: Full cargo test pass
+    done: true
 extra: {}
