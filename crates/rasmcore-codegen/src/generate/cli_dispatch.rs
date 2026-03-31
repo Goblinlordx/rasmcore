@@ -288,7 +288,7 @@ mod tests {
             group: String::new(),
             variant: String::new(),
             reference: String::new(),
-            overlap: "uniform(5)".to_string(),
+            rect_request: true,
             fn_name: "blur".to_string(),
             params: vec![("radius".to_string(), "f32".to_string())],
             config_struct: None,
