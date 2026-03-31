@@ -6,134 +6,116 @@ created: '2026-03-31'
 updated: '2026-03-31'
 spec:
   summary: |
-    Add an optional layer cache that persists across pipeline lifetimes.
-    Each node's output is keyed by a content hash of its upstream chain
-    plus parameters. New pipelines sharing the same cache skip recomputation
-    for unchanged prefixes. Cache cleaned on pipeline egress.
+    Add an optional LayerCache that persists across pipeline lifetimes.
+    Injected at pipeline start, consulted before execution, populated
+    after completion. SpatialCache internals unchanged. Content hash
+    chain keys each node by its full computation lineage.
   context: |
-    Currently, the SpatialCache lives inside NodeGraph and dies when the
-    pipeline is dropped. If a user builds a pipeline (decode -> resize ->
-    blur -> brightness), writes JPEG, then creates a new pipeline with the
-    same source + resize + blur but different brightness, all 3 prior steps
-    are recomputed from scratch.
+    The SpatialCache lives inside NodeGraph and dies when the pipeline
+    drops. This means repeating a pipeline with one changed parameter
+    recomputes everything from scratch.
 
-    The proposed LayerCache lives outside the pipeline lifecycle. It maps
-    content-addressed hashes to pixel buffers. When a pipeline node's hash
-    matches a cached entry, it returns the cached pixels instead of
-    recomputing. This is analogous to Docker layer caching: each layer is
-    the hash of (parent_hash + this_operation).
+    The LayerCache is an external store consulted at two points only:
+    1. Before execution: check if any node output is already cached
+    2. After execution: push newly computed outputs for future reuse
 
-    Eviction strategy (v1): on pipeline write completion (egress), remove
-    any cache entries not referenced by the current graph. This keeps the
-    cache pruned to the "hot path" without complex LRU.
+    The SpatialCache itself is NOT modified. The LayerCache interaction
+    happens at the NodeGraph/pipeline level, not inside the cache.
+
+    Hash chain (not Merkle): each node hash includes the upstream
+    node hash as input, forming a sequential chain. Changing anything
+    upstream invalidates everything downstream automatically.
   codebase_analysis: |
-    EXISTING INFRASTRUCTURE:
-    - SpatialCache in rasmcore-pipeline/src/cache.rs: per-node region cache
-      with ref counting and memory budget. Scoped to NodeGraph lifetime.
-    - NodeGraph in pipeline/graph.rs: owns nodes + SpatialCache. Pull-based
-      execution via request_region(). Cache is checked before compute.
-    - ImageNode trait: compute_region(request, upstream_fn) -> pixels.
-      Nodes don't know about caching — graph handles it transparently.
-    - PipelineResource in adapter/pipeline_adapter.rs: WIT adapter.
-      Creates NodeGraph with 16MB cache budget. Exposes read/write/filter ops.
+    EXISTING ARCHITECTURE (unchanged):
+    - SpatialCache: per-pipeline tile cache with ref counting + eviction
+    - NodeGraph: owns nodes + SpatialCache, pull-based execution
+    - ImageNode trait: compute_region() with upstream_fn closure
+    - PipelineResource: WIT adapter, creates NodeGraph
 
-    INTEGRATION POINTS:
-    1. NodeGraph::request_region() — INSERT cache lookup before node compute
-    2. PipelineResource::new() — ACCEPT optional cache handle
-    3. Each node's add_* method — COMPUTE content hash from upstream + params
-    4. Pipeline write methods — TRIGGER cache cleanup on completion
+    NEW COMPONENT (LayerCache):
+    - Simple HashMap of content_hash -> (pixels, ImageInfo)
+    - Lives outside pipeline, managed by host via WIT resource
+    - Memory budgeted with size tracking
 
-    HASH COMPUTATION:
-    - Source node: hash = blake3(input_bytes) or hash of (format, dimensions, checksum)
-    - Filter node: hash = blake3(upstream_hash || filter_name || param_bytes)
-    - Transform node: hash = blake3(upstream_hash || "resize" || width || height || filter)
-    - Composite node: hash = blake3(fg_hash || bg_hash || blend_mode || position)
+    INTEGRATION (minimal, non-invasive):
+    - NodeGraph gains: optional layer_cache reference + per-node hash
+    - On node add: compute content hash from upstream_hash + op + params
+    - On pull: cached nodes return immediately, uncached compute normally
+    - All touched nodes (hits AND misses) tracked as "referenced"
+    - On write completion: push new results, clean unreferenced
 
-    The hash captures the FULL computation lineage. Two pipelines that build
-    the same graph with the same parameters produce the same hashes.
-
-    WASM CONSIDERATIONS:
-    - LayerCache must be a WIT resource (opaque handle, host-managed lifetime)
-    - Pipeline accepts optional cache-id parameter
-    - Cache lives as long as the host holds the handle
-    - No filesystem — all in-memory (host can persist if desired)
+    DEMAND-DRIVEN (pull-based):
+    Only the sink triggers execution. During pull:
+    - Cache-hit node returns pixels immediately (upstream never pulled)
+    - Cache-miss node computes normally via SpatialCache
+    - ALL touched hashes marked referenced (hits and misses)
+    After pull, unreferenced entries eligible for eviction.
   acceptance_criteria:
-    - LayerCache WIT resource with create/release lifecycle
+    - LayerCache WIT resource with constructor(budget_mb) and release
     - Pipeline accepts optional layer-cache on initialization
-    - Content hash computed per node from upstream hash + operation + params
-    - Cache hit skips node computation, returns cached pixels
-    - Cache miss computes normally and stores result with hash key
-    - On pipeline write completion, unreferenced cache entries are cleaned
-    - Reusing cache across pipelines skips unchanged prefix nodes
-    - Memory budget configurable (default 64 MB for layer cache)
-    - Cache statistics exposed (hits, misses, size, entry count)
+    - Content hash computed per node as hash(upstream_hash + op + params)
+    - Cache hits inject pre-computed pixels, skip upstream pull entirely
+    - All touched hashes tracked during pull (hits and misses)
+    - After write, newly computed nodes pushed to LayerCache
+    - Unreferenced entries cleaned on pipeline completion
+    - SpatialCache internals completely unchanged
     - Existing pipeline behavior unchanged when no cache provided
-    - Unit test showing cache hit on second pipeline with same prefix
-    - Integration test showing speedup when reusing cache
+    - Cache stats exposed (hits, misses, entries, size)
+    - Test showing second pipeline with same prefix gets cache hit
+    - Test showing parameter change invalidates downstream only
+    - Test showing unreferenced entries cleaned after new pipeline
+    - Test showing pipeline produces identical output with and without cache
   out_of_scope: |
-    Persistent (disk) caching. Distributed caching. LRU eviction (v1 uses
-    egress cleanup only). Tile-level caching within a single node. Cache
-    sharing across WASM component instances. Automatic cache invalidation
-    on source file change (host responsibility).
+    Disk persistence. LRU eviction (v1 uses reference-based cleanup).
+    Tile-level caching within LayerCache (stores full node output only).
+    Automatic source change detection. Merkle DAG optimization.
+    Modifying SpatialCache internals.
   technical_notes: |
-    ARCHITECTURE:
+    DATA STRUCTURES:
 
-    ```
-    LayerCache (lives outside pipeline)
-      entries: HashMap<ContentHash, CachedLayer>
-      memory_budget: usize
-      memory_used: usize
+    type ContentHash = [u8; 32];  // blake3
 
-    CachedLayer
-      pixels: Vec<u8>
-      info: ImageInfo
-      hash: ContentHash
-      last_accessed: Instant (for future LRU)
-
-    ContentHash = [u8; 32] (blake3)
-    ```
-
-    HASH CHAIN:
-    ```
-    let src_hash = blake3::hash(&source_bytes);
-    let blur_hash = blake3::keyed_hash(src_hash, b"blur|radius=2.0");
-    let bright_hash = blake3::keyed_hash(blur_hash, b"brightness|amount=0.1");
-    ```
-
-    Actually, simpler: each node stores its hash. When adding a node:
-    ```rust
-    fn add_blur(&mut self, upstream: NodeId, radius: f32) -> NodeId {
-        let upstream_hash = self.node_hash(upstream);
-        let this_hash = hash_combine(upstream_hash, "blur", &radius.to_le_bytes());
-        // Check layer cache
-        if let Some(cached) = self.layer_cache.get(&this_hash) {
-            return self.add_cached_node(cached, this_hash);
-        }
-        // No cache hit — add normal node, record hash for later caching
-        let node = BlurNode::new(upstream, src_info, radius);
-        let id = self.add_node_with_hash(Box::new(node), this_hash);
-        id
+    struct LayerCache {
+        entries: HashMap<ContentHash, CachedLayer>,
+        memory_budget: usize,
+        memory_used: usize,
+        stats: CacheStats,
     }
-    ```
 
-    ON EXECUTION COMPLETION (write_* methods):
-    ```rust
-    fn write_jpeg(&self, ...) -> Result<Vec<u8>, ...> {
-        let pixels = self.graph.request_region(node_id, full_rect)?;
-        let encoded = encode_jpeg(&pixels, ...)?;
-        // Cache the output of each node in the current graph
-        self.cache_current_graph_outputs();
-        // Clean entries not in current graph
-        self.layer_cache.retain(|hash, _| self.graph_hashes.contains(hash));
-        Ok(encoded)
+    struct CachedLayer {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+        referenced: bool,  // reset each pipeline run
     }
-    ```
 
-    WIT INTERFACE ADDITIONS:
-    ```wit
+    HASH CHAIN (upstream hash is ALWAYS first input):
+
+    source_hash = blake3(input_bytes_checksum)
+    blur_hash   = blake3(source_hash || "blur" || radius_bytes)
+    bright_hash = blake3(blur_hash || "brightness" || amount_bytes)
+
+    PIPELINE FLOW:
+
+    1. Pipeline created with optional LayerCache reference
+    2. Nodes added -> content hash computed per node
+    3. Before first pull: resolve cache hits
+       - For each node, check LayerCache by content hash
+       - If hit: inject cached pixels, mark as cache-hit
+    4. Sink triggers pull (demand-driven)
+       - Cache-hit nodes return immediately (no upstream pull)
+       - Cache-miss nodes compute via SpatialCache as normal
+       - Track all touched hashes
+    5. Write completes (egress)
+       - Push newly computed outputs to LayerCache
+       - Mark all touched hashes as referenced
+       - Clean unreferenced entries from LayerCache
+
+    WIT ADDITIONS:
+
     resource layer-cache {
         constructor(memory-budget-mb: u32);
         stats: func() -> cache-stats;
+        clear: func();
     }
 
     record cache-stats {
@@ -142,63 +124,55 @@ spec:
         misses: u64,
         size-bytes: u64,
     }
-
-    // Extend image-pipeline resource:
-    constructor(cache: option<borrow<layer-cache>>);
-    ```
-
-    HASHING CRATE:
-    Use blake3 (pure Rust, WASM-compatible, fast). Already used widely
-    in the Rust ecosystem. ~50KB binary size.
 plan:
   - phase: Foundation
     tasks:
-      - text: Add blake3 dependency to rasmcore-pipeline
+      - text: Add blake3 dependency to rasmcore-pipeline and rasmcore-image
         done: false
-      - text: Define ContentHash type and hash_combine() function
+      - text: Define ContentHash type and compute_node_hash() function
         done: false
-      - text: Define LayerCache struct with HashMap, budget, stats
+      - text: Define LayerCache struct with get/store/mark_referenced/cleanup
         done: false
-      - text: Define CachedLayer struct (pixels, info, hash)
+      - text: Implement memory budget tracking and stats
         done: false
-  - phase: Hash Computation
+  - phase: Hash Chain
     tasks:
-      - text: Add content_hash field to ImageNode trait or node wrapper
+      - text: Add per-node ContentHash storage to NodeGraph
         done: false
-      - text: Compute hash on node creation (source hash from input, filter hash from upstream+params)
+      - text: Compute hash on each node-add (source, filter, transform, composite)
         done: false
-      - text: Store hash per node in NodeGraph alongside the node
+      - text: Source hash from input data checksum
         done: false
-      - text: Test hash determinism (same graph produces same hashes)
+      - text: Test hash determinism and upstream-propagation correctness
         done: false
   - phase: Cache Integration
     tasks:
       - text: Add optional LayerCache reference to NodeGraph
         done: false
-      - text: On request_region, check LayerCache before node compute
+      - text: Before execution, resolve cache hits and inject cached pixels
         done: false
-      - text: On compute completion, store result in LayerCache with content hash
+      - text: During pull, track all touched hashes (hits and misses)
         done: false
-      - text: On pipeline write completion, clean unreferenced entries
+      - text: On write completion, push new outputs and clean unreferenced
         done: false
   - phase: WIT & Adapter
     tasks:
-      - text: Add layer-cache WIT resource with constructor and stats
+      - text: Add layer-cache WIT resource with constructor, stats, clear
         done: false
       - text: Extend pipeline constructor to accept optional cache
         done: false
-      - text: Wire adapter for cache lifecycle and pipeline integration
+      - text: Wire adapter for cache lifecycle
         done: false
   - phase: Testing
     tasks:
-      - text: Unit test showing cache hit on second pipeline with same prefix
+      - text: Test cache hit on second pipeline with identical prefix
         done: false
-      - text: Unit test showing cache miss when parameter changes
+      - text: Test cache miss when upstream parameter changes
         done: false
-      - text: Unit test showing cleanup removes orphaned entries
+      - text: Test unreferenced cleanup after different pipeline
         done: false
       - text: Test memory budget enforcement
         done: false
-      - text: Test cache stats reporting (hits, misses, size)
+      - text: Test pipeline output identical with and without cache
         done: false
 extra: {}
