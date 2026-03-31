@@ -50,12 +50,15 @@ spec:
     - LayerCache created once in web worker on initialization
     - Pipeline constructor receives cache reference on every invocation
     - Adjusting the last filter in a chain is measurably faster (2nd+ run)
-    - Cache stats displayed in demo UI (entries, hits, misses, size)
-    - Cache clear button in UI
-    - Existing demo functionality unchanged (just faster)
+    - Cache stats displayed in demo UI (entries, hits, misses, memory usage)
+    - Cache enable/disable toggle (enabled by default, subtle placement)
+    - Cache clear button (near toggle, small)
+    - When disabled, pipeline runs without cache (no LayerCache passed)
+    - Toggle state persists in localStorage
+    - Existing demo functionality unchanged (just faster when enabled)
   out_of_scope: |
-    Cache persistence across page reloads. Cache size configuration UI.
-    Visual diff showing which nodes were cached vs recomputed.
+    Cache persistence across page reloads (pixel data, not toggle state).
+    Cache size configuration UI. Visual diff showing cached vs recomputed.
   technical_notes: |
     WORKER CHANGES (pipeline-worker.js):
 
@@ -76,7 +79,14 @@ spec:
     ```
 
     UI CHANGES (pipeline.html or main.js):
-    - Add cache stats display (small panel showing hits/misses/size)
+    - Small cache panel in bottom-right or sidebar footer (not prominent)
+    - Contains: toggle switch (on/off), stats line, clear button
+    - Style: muted colors, small font, collapses to just the toggle when idle
+    - Example layout:
+      [Cache: ON] 3 entries | 12 hits | 4.2 MB  [Clear]
+    - Toggle sends message to worker: { type: 'cache-toggle', enabled: bool }
+    - Worker creates/drops LayerCache based on toggle state
+    - Toggle state saved to localStorage('rasmcore-demo-cache-enabled')
     - Add "Clear Cache" button
     - Stats updated after each pipeline execution
 
@@ -86,17 +96,23 @@ spec:
 plan:
   - phase: Worker Integration
     tasks:
-      - text: Create LayerCache in web worker on initialization
+      - text: Create LayerCache in web worker on initialization (enabled by default)
         done: false
-      - text: Pass cache reference to ImagePipeline constructor
+      - text: Pass cache reference to ImagePipeline constructor (null when disabled)
         done: false
-      - text: Return cache stats with pipeline results
+      - text: Handle cache-toggle message to create/drop LayerCache
+        done: false
+      - text: Return cache stats + execution time with pipeline results
         done: false
   - phase: UI Updates
     tasks:
-      - text: Add cache stats display panel (hits, misses, entries, size)
+      - text: Add subtle cache panel (bottom-right or sidebar footer, muted style)
         done: false
-      - text: Add Clear Cache button
+      - text: Add enable/disable toggle switch (on by default, persists in localStorage)
+        done: false
+      - text: Show cache stats line (entries, hits, misses, memory usage)
+        done: false
+      - text: Add Clear Cache button (small, near toggle)
         done: false
       - text: Show pipeline execution time
         done: false
