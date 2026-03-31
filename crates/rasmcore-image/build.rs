@@ -9,11 +9,13 @@ fn main() {
     let filters_path = Path::new(&manifest_dir).join("src/domain/filters.rs");
     let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
     let composite_path = Path::new(&manifest_dir).join("src/domain/composite.rs");
+    let encoder_dir = Path::new(&manifest_dir).join("src/domain/encoder");
 
     // Tell cargo to rerun if source files or build.rs change
     println!("cargo:rerun-if-changed=src/domain/filters.rs");
     println!("cargo:rerun-if-changed=src/domain/param_types.rs");
     println!("cargo:rerun-if-changed=src/domain/composite.rs");
+    println!("cargo:rerun-if-changed=src/domain/encoder");
     println!("cargo:rerun-if-changed=build.rs");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -82,4 +84,53 @@ fn main() {
 
     // Generate all output files
     rasmcore_codegen::generate::generate_all(&data, &out_dir);
+
+    // ── Parse encoder configs for pipeline write method generation ──
+    let mut encoder_configs = Vec::new();
+    if encoder_dir.exists() {
+        for entry in std::fs::read_dir(&encoder_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().map(|e| e == "rs").unwrap_or(false) {
+                let source = std::fs::read_to_string(&path).unwrap();
+                if let Ok(file) = syn::parse_file(&source) {
+                    let mut configs =
+                        rasmcore_codegen::parse::encoders::extract_encoder_configs(&file);
+                    // Detect sink_takes_metadata by checking if sink::write_xxx has metadata param
+                    for config in &mut configs {
+                        let sink_source = std::fs::read_to_string(
+                            Path::new(&manifest_dir).join("src/domain/pipeline/nodes/sink.rs"),
+                        )
+                        .unwrap_or_default();
+                        let sig_pattern = format!("fn write_{}", config.format);
+                        if let Some(pos) = sink_source.find(&sig_pattern) {
+                            let sig_end = sink_source[pos..].find('{').unwrap_or(200);
+                            let sig = &sink_source[pos..pos + sig_end];
+                            config.sink_takes_metadata = sig.contains("metadata");
+                        }
+                    }
+                    encoder_configs.extend(configs);
+                }
+            }
+        }
+    }
+
+    // Generate pipeline write adapter code
+    if !encoder_configs.is_empty() {
+        let write_adapter =
+            rasmcore_codegen::generate::pipeline_write::generate_adapter_methods(&encoder_configs);
+        std::fs::write(out_dir.join("generated_pipeline_write_adapter.rs"), &write_adapter)
+            .unwrap();
+
+        eprintln!(
+            "rasmcore build.rs: Generated {} pipeline write adapter method(s)",
+            encoder_configs.len()
+        );
+    } else {
+        std::fs::write(
+            out_dir.join("generated_pipeline_write_adapter.rs"),
+            "// No encoder configs found\n",
+        )
+        .unwrap();
+    }
 }

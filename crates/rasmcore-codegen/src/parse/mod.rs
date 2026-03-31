@@ -7,6 +7,7 @@
 //! - `#[param(min, max, ...)]` → `ParamAttr` (fully typed)
 
 pub mod config_params;
+pub mod encoders;
 pub mod filters;
 pub mod param_attr;
 pub mod simple_regs;

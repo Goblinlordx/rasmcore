@@ -6,6 +6,7 @@ pub mod adapter;
 pub mod helpers;
 pub mod manifest;
 pub mod pipeline;
+pub mod pipeline_write;
 pub mod wit;
 
 use crate::types::CodegenData;
