@@ -17440,3 +17440,38 @@ mod tilt_shift_lens_blur_tests {
         assert_ne!(r0, r30, "rotated polygon should produce different result");
     }
 }
+
+// ─── Missing ConfigParams for manifest completeness ──────────────────────
+
+/// Parameters for hue_rotate.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct HueRotateParams {
+    /// Hue rotation in degrees (0-360)
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    pub degrees: f32,
+}
+
+/// Parameters for saturate.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct SaturateParams {
+    /// Saturation factor (0=grayscale, 1=unchanged, 2=double)
+    #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
+    pub factor: f32,
+}
+
+/// Parameters for sepia.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct SepiaParams {
+    /// Sepia intensity (0=none, 1=full)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub intensity: f32,
+}
+
+/// Parameters for perspective_correct.
+#[derive(rasmcore_macros::ConfigParams)]
+pub struct PerspectiveCorrectParams {
+    /// Correction strength (0=none, 1=full)
+    #[param(min = 0.0, max = 2.0, step = 0.1, default = 1.0)]
+    pub strength: f32,
+}
+
