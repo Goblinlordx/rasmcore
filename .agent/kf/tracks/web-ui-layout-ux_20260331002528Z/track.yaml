@@ -1,134 +1,197 @@
 id: web-ui-layout-ux_20260331002528Z
-title: "Pipeline Builder Layout Overhaul & Layer UX"
+title: Pipeline Builder Layout Overhaul & Layer UX
 type: feature
 status: pending
 created: '2026-03-31'
 updated: '2026-03-31'
 spec:
-  summary: >
-    Redesign the pipeline builder layout with large image preview, dropdown
-    operation menus, proper drag handles on layers, params on separate lines,
-    layer delete/reorder, and export via dropdown.
-  context: |
-    Current UI issues (from user feedback):
+  summary: 'Redesign the pipeline builder layout with large image preview, dropdown operation menus, proper drag handles on
+    layers, params on separate lines, layer delete/reorder, and export via dropdown.
+
+    '
+  context: 'Current UI issues (from user feedback):
+
     1. Image preview is too small — should take most of the screen
+
     2. Operations palette takes too much lateral space — should be dropdown menus
+
     3. Dragging a slider inside a layer card drags the layer (no drag handle)
+
     4. Parameters show comma-separated (hard to read) — should be 1 per line
+
     5. No way to delete layers
+
     6. Layer reorder needs explicit drag handle on side
+
     7. Export should be a dropdown (like operations) not a separate panel
+
     8. Canvas rendering should use PNG transfer for now
 
+
     Target layout:
+
     - Large image canvas takes 70-80% of viewport
+
     - Thin toolbar/menu bar at top with dropdown menus for operations
+
     - Layer panel as collapsible sidebar (right side)
+
     - When layer selected, operations list shows below with params per line
+
     - Export in toolbar dropdown
-  codebase_analysis: |
-    Current layout (from pipeline.html CSS):
+
+    '
+  codebase_analysis: 'Current layout (from pipeline.html CSS):
+
     - 4-pane: Palette(220px) | Chain(320px) | Preview(flex)
+
     - Palette sidebar takes ~25% of width
+
     - Chain area takes ~35%
+
     - Preview gets remainder (~40%)
 
+
     Layer cards (pipeline.js):
+
     - .node-card has cursor:grab on entire card
+
     - Drag events on whole card element
+
     - Params rendered inline in card body
 
+
     Export:
+
     - Fixed at bottom of chain area
+
     - Format select + quality slider + download button
 
+
     Changes needed:
+
     - Replace palette sidebar with toolbar dropdown menus
+
     - Move chain/layer panel to collapsible right sidebar
+
     - Give image canvas the main space
+
     - Layer cards: add .drag-handle element, only start drag from handle
+
     - Params: render each on own line with label above value
+
     - Add delete button per layer
+
     - Export: move to toolbar menu
+
+    '
   acceptance_criteria:
-    - Image canvas takes at least 60% of viewport width
-    - Operations accessible via dropdown menus in toolbar (grouped by category)
-    - Layer panel as collapsible right sidebar (max 300px)
-    - Each layer card has explicit drag handle (grip icon on left edge)
-    - Dragging sliders inside layer cards does NOT trigger layer drag
-    - Each parameter rendered on its own line (label on top, control below)
-    - Delete button on each layer card
-    - Layer reorder only via drag handle
-    - Export via dropdown menu in toolbar
-    - PNG used for canvas transfer from worker
-    - All smart control types from param hints still render correctly
-  out_of_scope: |
-    Multi-canvas views (split screen). Zoom/pan on canvas.
+  - Image canvas takes at least 60% of viewport width
+  - Operations accessible via dropdown menus in toolbar (grouped by category)
+  - Layer panel as collapsible right sidebar (max 300px)
+  - Each layer card has explicit drag handle (grip icon on left edge)
+  - Dragging sliders inside layer cards does NOT trigger layer drag
+  - Each parameter rendered on its own line (label on top, control below)
+  - Delete button on each layer card
+  - Layer reorder only via drag handle
+  - Export via dropdown menu in toolbar
+  - PNG used for canvas transfer from worker
+  - All smart control types from param hints still render correctly
+  out_of_scope: 'Multi-canvas views (split screen). Zoom/pan on canvas.
+
     History/undo/redo UI. Keyboard shortcuts.
+
     Mobile/responsive design (desktop-first).
-  technical_notes: |
-    Layout approach:
+
+    '
+  technical_notes: 'Layout approach:
+
     - Toolbar: fixed 40px bar at top, dropdowns open on click
+
     - Canvas: flex-grow main area, <canvas> element sized to container
+
     - Right sidebar: 280px, collapsible via toggle button
+
     - Bottom bar: status info, timing
 
+
     Dropdown menu pattern:
+
     - Category headers as menu items
+
     - Click category -> submenu with group headers + filter items
+
     - Same data as current palette (from MANIFEST_CATEGORIES + MANIFEST_GROUPS)
-    - On select, adds operation to active layer's chain
+
+    - On select, adds operation to active layer''s chain
+
 
     Drag handle:
+
     - Add .drag-handle div at left edge of layer card (6px wide, grip dots icon)
+
     - mousedown on handle initiates drag
+
     - mousedown on anything else in card does NOT initiate drag
+
     - Use pointer-events/event delegation to prevent conflict
 
+
     Param layout:
+
     - Each param in a .param-row div
+
     - Label as block element above control
+
     - Control (slider/spinner/color/etc.) fills width below
+
     - Vertical stack instead of inline
 
+
     PNG transfer:
+
     - Worker encodes result as PNG ArrayBuffer
+
     - Main thread creates Image from blob URL
+
     - Draws to <canvas> via drawImage
+
     - This is already roughly how it works (blob URL from worker)
+
+    '
 plan:
-  - phase: Layout Restructure
-    tasks:
-      - text: Replace 3-pane layout with toolbar + main canvas + collapsible right sidebar
-        done: false
-      - text: Implement toolbar with dropdown menus for operations (grouped by category/variant)
-        done: false
-      - text: Move layer panel to right sidebar with collapse toggle
-        done: false
-      - text: Image canvas takes primary space (flex-grow)
-        done: false
-  - phase: Layer UX
-    tasks:
-      - text: Add drag handle element to layer cards (grip icon on left edge)
-        done: false
-      - text: Restrict drag-to-reorder to handle only (prevent slider drag conflict)
-        done: false
-      - text: Add delete button on each layer card
-        done: false
-      - text: Render each parameter on its own line (label above, control below)
-        done: false
-      - text: Selected layer shows operation list with expanded params
-        done: false
-  - phase: Export & Polish
-    tasks:
-      - text: Move export to toolbar dropdown (format selector + quality + download)
-        done: false
-      - text: Ensure PNG transfer from worker to canvas
-        done: false
-      - text: CSS styling for toolbar, dropdowns, drag handle, param rows
-        done: false
-      - text: Verify all smart control hints render in new param layout
-        done: false
-      - text: Verify no regression in pipeline execution
-        done: false
+- phase: Layout Restructure
+  tasks:
+  - text: Replace 3-pane layout with toolbar + main canvas + collapsible right sidebar
+    done: true
+  - text: Implement toolbar with dropdown menus for operations (grouped by category/variant)
+    done: true
+  - text: Move layer panel to right sidebar with collapse toggle
+    done: true
+  - text: Image canvas takes primary space (flex-grow)
+    done: true
+- phase: Layer UX
+  tasks:
+  - text: Add drag handle element to layer cards (grip icon on left edge)
+    done: true
+  - text: Restrict drag-to-reorder to handle only (prevent slider drag conflict)
+    done: true
+  - text: Add delete button on each layer card
+    done: true
+  - text: Render each parameter on its own line (label above, control below)
+    done: true
+  - text: Selected layer shows operation list with expanded params
+    done: true
+- phase: Export & Polish
+  tasks:
+  - text: Move export to toolbar dropdown (format selector + quality + download)
+    done: true
+  - text: Ensure PNG transfer from worker to canvas
+    done: true
+  - text: CSS styling for toolbar, dropdowns, drag handle, param rows
+    done: true
+  - text: Verify all smart control hints render in new param layout
+    done: true
+  - text: Verify no regression in pipeline execution
+    done: true
 extra: {}
