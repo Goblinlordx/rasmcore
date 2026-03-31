@@ -3223,7 +3223,9 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
 ///
 /// Uses unrolled 3x3 Sobel with padded input — no inner loop or
 /// match-based weight lookup. Direct coefficient access gives ~3x speedup.
-#[rasmcore_macros::register_filter(
+/// Sobel edge detection — registered as mapper (outputs Gray8).
+/// The underlying `sobel_inner` is also used internally by charcoal.
+#[rasmcore_macros::register_mapper(
     name = "sobel",
     category = "edge",
     group = "edge_detect",
@@ -3231,6 +3233,18 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
     reference = "Sobel 1968 gradient operator",
     overlap = "uniform(1)"
 )]
+pub fn sobel_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let gray_pixels = sobel(pixels, info)?;
+    let out_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    Ok((gray_pixels, out_info))
+}
+
+/// Sobel edge detection (internal — returns raw Gray8 bytes).
 pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
@@ -3282,7 +3296,8 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Uses 3x3 Scharr kernels: Gx = [[-3,0,3],[-10,0,10],[-3,0,3]]
 /// Returns gradient magnitude (L2 norm of Gx and Gy).
 /// Reference: cv2.Scharr (OpenCV 4.13).
-#[rasmcore_macros::register_filter(
+/// Scharr edge detection — registered as mapper (outputs Gray8).
+#[rasmcore_macros::register_mapper(
     name = "scharr",
     category = "edge",
     group = "edge_detect",
@@ -3290,6 +3305,18 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     reference = "Scharr 2000 rotationally symmetric gradient",
     overlap = "uniform(1)"
 )]
+pub fn scharr_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let gray_pixels = scharr(pixels, info)?;
+    let out_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    Ok((gray_pixels, out_info))
+}
+
+/// Scharr edge detection (internal — returns raw Gray8 bytes).
 pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -3334,7 +3361,8 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 /// Uses 3x3 kernel: [[0,1,0],[1,-4,1],[0,1,0]].
 /// Returns absolute value of Laplacian, clamped to [0, 255].
 /// Reference: cv2.Laplacian (OpenCV 4.13).
-#[rasmcore_macros::register_filter(
+/// Laplacian edge detection — registered as mapper (outputs Gray8).
+#[rasmcore_macros::register_mapper(
     name = "laplacian",
     category = "edge",
     group = "edge_detect",
@@ -3342,6 +3370,18 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     reference = "second-order derivative operator",
     overlap = "uniform(1)"
 )]
+pub fn laplacian_mapper(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let gray_pixels = laplacian(pixels, info)?;
+    let out_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    Ok((gray_pixels, out_info))
+}
+
+/// Laplacian edge detection (internal — returns raw Gray8 bytes).
 pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if is_16bit(info.format) {
@@ -3452,7 +3492,8 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
 ///
 /// Steps: 1) Gaussian blur, 2) Sobel gradient + direction,
 /// 3) Non-maximum suppression, 4) Hysteresis thresholding.
-#[rasmcore_macros::register_filter(
+/// Canny edge detection — registered as mapper (outputs Gray8).
+#[rasmcore_macros::register_mapper(
     name = "canny",
     category = "edge",
     group = "edge_detect",
@@ -3460,6 +3501,22 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
     reference = "Canny 1986 multi-stage edge detector",
     overlap = "uniform(2)"
 )]
+pub fn canny_mapper(
+    pixels: &[u8],
+    info: &ImageInfo,
+    config: &CannyParams,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    let gray_pixels = canny(pixels, info, config)?;
+    let out_info = ImageInfo {
+        width: info.width,
+        height: info.height,
+        format: PixelFormat::Gray8,
+        color_space: info.color_space,
+    };
+    Ok((gray_pixels, out_info))
+}
+
+/// Canny edge detection (internal — returns raw Gray8 bytes).
 pub fn canny(
     pixels: &[u8],
     info: &ImageInfo,
@@ -8973,18 +9030,20 @@ pub fn triangle_threshold_registered(
 }
 
 /// Convert to grayscale using BT.709 weights.
-#[rasmcore_macros::register_filter(
+/// Registered as mapper because it changes pixel format (RGB8/RGBA8 → Gray8).
+#[rasmcore_macros::register_mapper(
     name = "grayscale",
     category = "color",
     reference = "luminance-weighted desaturation"
 )]
-pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+pub fn grayscale_registered(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let decoded = grayscale(pixels, info)?;
-    Ok(decoded.pixels)
+    Ok((decoded.pixels, decoded.info))
 }
 
 /// Flatten RGBA to RGB by compositing onto a solid background color.
-#[rasmcore_macros::register_filter(
+/// Registered as mapper because it changes pixel format (RGBA8 → RGB8).
+#[rasmcore_macros::register_mapper(
     name = "flatten",
     category = "alpha",
     group = "alpha",
@@ -8995,13 +9054,12 @@ pub fn flatten_registered(
     pixels: &[u8],
     info: &ImageInfo,
     config: &FlattenParams,
-) -> Result<Vec<u8>, ImageError> {
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let bg_r = config.bg_r;
     let bg_g = config.bg_g;
     let bg_b = config.bg_b;
 
-    let (rgb, _info) = flatten(pixels, info, [bg_r, bg_g, bg_b])?;
-    Ok(rgb)
+    flatten(pixels, info, [bg_r, bg_g, bg_b])
 }
 
 /// Color quantization via median-cut palette reduction.
@@ -14134,7 +14192,8 @@ pub struct CharcoalParams {
 /// we use Sobel which produces visually similar but numerically different
 /// edge maps. The normalize step is intentionally omitted because it
 /// amplifies the edge detector difference (MAE 24→239 with normalize).
-#[rasmcore_macros::register_filter(
+/// Registered as mapper because it changes pixel format (RGB8 → Gray8).
+#[rasmcore_macros::register_mapper(
     name = "charcoal",
     category = "effect",
     reference = "charcoal drawing edge effect"
@@ -14143,7 +14202,7 @@ pub fn charcoal(
     pixels: &[u8],
     info: &ImageInfo,
     config: &CharcoalParams,
-) -> Result<Vec<u8>, ImageError> {
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     let radius = config.radius;
     let sigma = config.sigma;
 
@@ -14171,7 +14230,8 @@ pub fn charcoal(
     };
 
     // 4. Invert to get dark lines on white background
-    super::point_ops::invert(&blurred, &gray_info)
+    let result = super::point_ops::invert(&blurred, &gray_info)?;
+    Ok((result, gray_info))
 }
 
 #[cfg(test)]
@@ -14259,9 +14319,10 @@ mod artistic_filter_tests {
         // Charcoal outputs Gray8 (from Sobel)
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = charcoal(&pixels, &info, &CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap();
+        let (result, out_info) = charcoal(&pixels, &info, &CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap();
         // Output is Gray8: 32*32 = 1024 bytes (not 3072)
         assert_eq!(result.len(), 32 * 32);
+        assert_eq!(out_info.format, PixelFormat::Gray8);
     }
 
     #[test]
@@ -14269,9 +14330,10 @@ mod artistic_filter_tests {
         // Flat image → no edges → Sobel = 0 → invert = 255 → white
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = charcoal(&pixels, &info, &CharcoalParams { radius: 0.0, sigma: 0.0 }).unwrap();
+        let (result, out_info) = charcoal(&pixels, &info, &CharcoalParams { radius: 0.0, sigma: 0.0 }).unwrap();
         // Output is Gray8
         assert_eq!(result.len(), 16 * 16);
+        assert_eq!(out_info.format, PixelFormat::Gray8);
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
             mean > 240.0,

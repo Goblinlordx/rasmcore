@@ -16,15 +16,10 @@ use super::helpers::{to_binding_type, to_owned_type, to_pascal_case};
 /// Generate pipeline node structs + ImageNode impls for mappers.
 pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
     let mut code = String::new();
-    code.push_str("// Auto-generated pipeline mapper nodes.\n");
-    code.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
-    code.push_str("use crate::domain::error::ImageError;\n");
-    code.push_str("use crate::domain::filters;\n");
-    code.push_str("use crate::domain::filters::*; // ConfigParams structs\n");
-    code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
-    code.push_str("use crate::domain::types::*;\n");
-    code.push_str("use rasmcore_pipeline::{Overlap, Rect};\n");
-    code.push_str("use std::cell::Cell;\n\n");
+    code.push_str("\n// --- Auto-generated pipeline mapper nodes ---\n");
+    code.push_str("// Mapper nodes handle format-changing operations (e.g., RGB8 → Gray8).\n");
+    code.push_str("// They always use Overlap::full() because format changes can't be tiled.\n\n");
+    code.push_str("use std::cell::RefCell;\n\n");
 
     for m in mappers {
         let node_name = format!("{}MapperNode", to_pascal_case(&m.name));
@@ -35,7 +30,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str("    upstream: u32,\n");
         code.push_str("    source_info: ImageInfo,\n");
         code.push_str("    /// Cached output info from the mapper (set after first compute).\n");
-        code.push_str("    output_info: Cell<Option<ImageInfo>>,\n");
+        code.push_str("    output_info: RefCell<Option<ImageInfo>>,\n");
         for (pname, ptype) in &m.params {
             let clean_n = pname.trim_start_matches('_');
             code.push_str(&format!("    {clean_n}: {},\n", to_owned_type(ptype)));
@@ -66,7 +61,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str("        Self {\n");
         code.push_str("            upstream,\n");
         code.push_str("            source_info,\n");
-        code.push_str("            output_info: Cell::new(None),\n");
+        code.push_str("            output_info: RefCell::new(None),\n");
         for (pname, _) in &m.params {
             let clean_n = pname.trim_start_matches('_');
             code.push_str(&format!("            {clean_n},\n"));
@@ -106,7 +101,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
 
         // info() returns cached output info if available, else source_info
         code.push_str("    fn info(&self) -> ImageInfo {\n");
-        code.push_str("        self.output_info.get().unwrap_or(self.source_info.clone())\n");
+        code.push_str("        self.output_info.borrow().clone().unwrap_or_else(|| self.source_info.clone())\n");
         code.push_str("    }\n\n");
 
         // compute_region — requests full upstream, runs mapper, crops result
@@ -127,7 +122,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
         code.push_str("        };\n\n");
         code.push_str(&format!("        let (mapped_pixels, output_info) = {full_domain_call}?;\n\n"));
         code.push_str("        // Cache the output info for info() calls\n");
-        code.push_str("        self.output_info.set(Some(output_info.clone()));\n\n");
+        code.push_str("        *self.output_info.borrow_mut() = Some(output_info.clone());\n\n");
         code.push_str("        // If requesting the full image, return as-is\n");
         code.push_str("        if request == full_rect {\n");
         code.push_str("            return Ok(mapped_pixels);\n");
@@ -143,7 +138,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
             "    fn overlap(&self) -> Overlap { Overlap::uniform(u32::MAX) }\n",
         );
         code.push_str(
-            "    fn access_pattern(&self) -> AccessPattern { AccessPattern::WholeImage }\n",
+            "    fn access_pattern(&self) -> AccessPattern { AccessPattern::GlobalTwoPass }\n",
         );
         code.push_str("}\n\n");
     }
@@ -238,11 +233,11 @@ mod tests {
         }];
         let code = generate_mapper_nodes(&mappers);
         assert!(code.contains("pub struct GrayscaleMapperNode {"));
-        assert!(code.contains("output_info: Cell<Option<ImageInfo>>"));
+        assert!(code.contains("output_info: RefCell<Option<ImageInfo>>"));
         assert!(code.contains("fn info(&self) -> ImageInfo"));
-        assert!(code.contains("output_info.set(Some(output_info.clone()))"));
+        assert!(code.contains("*self.output_info.borrow_mut() = Some(output_info.clone())"));
         assert!(code.contains("Overlap::uniform(u32::MAX)"));
-        assert!(code.contains("AccessPattern::WholeImage"));
+        assert!(code.contains("AccessPattern::GlobalTwoPass"));
     }
 
     #[test]

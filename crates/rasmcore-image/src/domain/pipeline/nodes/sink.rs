@@ -62,6 +62,9 @@ pub fn write(
     let info = graph.node_info(node_id)?;
     let full = Rect::new(0, 0, info.width, info.height);
     let pixels = graph.request_region(node_id, full)?;
+    // Re-query info after compute — mapper nodes update their output format
+    // during compute_region (e.g., RGB8 → Gray8 for grayscale/sobel/charcoal).
+    let info = graph.node_info(node_id)?;
     let encoded = encoder::encode(&pixels, &info, format, quality)?;
 
     match metadata {
