@@ -1,0 +1,165 @@
+id: pointop-lut-fusion_20260331101914Z
+title: Point Op LUT Fusion — PointOp Trait + Pipeline Optimizer
+type: feature
+status: pending
+created: '2026-03-31'
+updated: '2026-03-31'
+spec:
+  summary: >
+    Add a PointOp trait (build_lut → [u8; 256]) to ConfigParams structs,
+    enabling automatic LUT fusion of consecutive point operations in the
+    pipeline. Reduces N adjustment passes to 1 memory pass.
+  context: |
+    Point operations (brightness, contrast, gamma, levels, etc.) are
+    per-channel u8→u8 mappings. The point_ops module already has LUT
+    infrastructure (build_lut, compose_luts, apply_lut) but:
+
+    1. The PointOp enum is closed — adding new ops requires enum variants
+    2. No pipeline-level fusion — each filter builds+applies its own LUT
+    3. A chain of 5 adjustments does 5 full pixel passes
+
+    On a 100MP RGBA8 image, each pass touches 400MB. Fusing 5 ops into
+    one LUT saves 1.6GB of memory bandwidth. The LUT composition itself
+    is O(256) — trivial.
+
+    SIMD note: LUT lookups are scalar (random memory access into a
+    256-byte table that fits in L1). SIMD does not improve LUT-based
+    point ops. The optimization is fusion (fewer passes), not
+    vectorization within a pass.
+  codebase_analysis: |
+    CURRENT POINT OPS (9 filters using point_ops module):
+    - brightness (BrightnessParams) → PointOp::Brightness(amount)
+    - contrast (ContrastParams) → PointOp::Contrast(amount)
+    - gamma (GammaParams) → PointOp::Gamma(gamma)
+    - invert (no params) → PointOp::Invert
+    - posterize (PosterizeParams) → PointOp::Posterize(levels)
+    - solarize (SolarizeParams) → PointOp::Solarize(threshold)
+    - levels (LevelsParams) → PointOp::Levels { black, white, gamma }
+    - sigmoidal_contrast (SigmoidalContrastParams) → PointOp::SigmoidalContrast { ... }
+    - exposure (ExposureParams) → PointOp::Exposure { ev, offset, gamma_correction }
+
+    EXISTING INFRASTRUCTURE (point_ops.rs):
+    - PointOp enum with build_lut() → [u8; 256]
+    - build_lut_u16() → Vec<u16> (65536 entries, 128KB)
+    - compose_luts(first, second) → [u8; 256] — O(256) composition
+    - apply_lut(pixels, info, lut) — batch-unrolled application
+    - All LUTs preserve alpha (apply to R,G,B only for RGBA)
+
+    OUT OF SCOPE FOR THIS TRACK (future):
+    - Color ops (hue_rotate, saturate, etc.) — multi-channel, need 3D CLUT
+    - Color grading (asc_cdl, lift_gamma_gain, etc.) — same, 3D CLUT
+    - These are per-pixel (r,g,b)→(r,g,b) transforms, not per-channel
+
+    PIPELINE INTEGRATION POINT:
+    - ImageNode trait in graph.rs
+    - Generated nodes call filter functions in compute_region()
+    - Need a way to detect fuseable nodes at plan time
+    - NodeGraph could walk the DAG, detect consecutive PointOp nodes,
+      and replace them with a single FusedLutNode
+
+    CODEGEN INTEGRATION:
+    - If ConfigParams implements PointOp, codegen could detect this
+      and generate a simpler compute_region that uses build_lut+apply_lut
+    - Or: the filter function body is always the same one-liner, no
+      codegen change needed — just pipeline optimizer detects the trait
+  acceptance_criteria:
+    - PointOp trait exists with build_lut() method
+    - All 9 existing point-op filters have PointOp impl on their ConfigParams
+    - invert (zero-param) has a standalone PointOp impl mechanism
+    - Pipeline optimizer detects consecutive PointOp nodes and fuses LUTs
+    - Fused chain produces byte-identical output to unfused chain
+    - Pipeline test confirming brightness→contrast→gamma fuses to 1 LUT
+    - 16-bit path also supports fusion (build_lut_u16 + compose)
+    - Existing point-op tests pass unchanged
+  out_of_scope: |
+    Multi-channel color operations (hue_rotate, saturate, channel_mixer,
+    etc.) — these need 3D CLUT fusion, which is a separate track.
+    Codegen changes — the filter function body stays as-is. Only the
+    pipeline optimizer is new. SIMD — LUT lookups are inherently scalar.
+  technical_notes: |
+    DESIGN:
+
+    1. PointOp Trait
+       ```rust
+       pub trait PointOp {
+           fn build_lut(&self) -> [u8; 256];
+           fn build_lut_u16(&self) -> Vec<u16> {
+               // Default: scale 8-bit LUT to 16-bit
+               scale_lut_8_to_16(&self.build_lut())
+           }
+       }
+       ```
+
+    2. Implement on ConfigParams
+       ```rust
+       impl PointOp for BrightnessParams {
+           fn build_lut(&self) -> [u8; 256] {
+               point_ops::build_lut(&point_ops::PointOp::Brightness(self.amount))
+           }
+       }
+       ```
+       For invert (no ConfigParams): a ZeroParamPointOp wrapper or
+       direct impl on a unit struct.
+
+    3. Pipeline Detection
+       Add an optional method to ImageNode:
+       ```rust
+       fn as_point_op_lut(&self) -> Option<[u8; 256]> { None }
+       ```
+       Generated pipeline nodes override this when config implements PointOp.
+       Codegen detects PointOp impl via a marker (trait bound or attribute).
+
+    4. Pipeline Optimizer (in NodeGraph)
+       Before execution, walk the DAG. For each linear chain of nodes
+       where as_point_op_lut() returns Some:
+       - Compose all LUTs via compose_luts()
+       - Replace the chain with a single FusedLutNode
+       - FusedLutNode::compute_region just calls apply_lut with the fused LUT
+
+    5. Codegen Integration
+       Add a marker to register_filter or detect PointOp trait impl:
+       ```rust
+       #[register_filter(name = "brightness", category = "adjustment", point_op)]
+       ```
+       Codegen generates as_point_op_lut() override on the pipeline node.
+
+    ALTERNATIVE (simpler, no codegen change):
+       Pipeline nodes store a Box<dyn Any> config. At plan time, try
+       downcast to &dyn PointOp. If it works, the node is fuseable.
+       This avoids any codegen changes but requires trait object support.
+plan:
+  - phase: PointOp Trait
+    tasks:
+      - text: Define PointOp trait in point_ops.rs with build_lut() and build_lut_u16()
+        done: false
+      - text: Implement PointOp for all 8 parameterized point-op ConfigParams structs
+        done: false
+      - text: Handle invert (zero-param) — decide on unit struct or special case
+        done: false
+      - text: Verify existing point-op filter functions still work unchanged
+        done: false
+  - phase: Pipeline Fusion
+    tasks:
+      - text: Add as_point_op_lut() optional method to ImageNode trait
+        done: false
+      - text: Update codegen to generate as_point_op_lut() for PointOp-implementing nodes
+        done: false
+      - text: Implement FusedLutNode that applies a pre-composed LUT
+        done: false
+      - text: Implement pipeline optimizer pass that detects and fuses consecutive PointOp nodes
+        done: false
+      - text: Handle 16-bit fusion path (compose_luts_u16)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test that fused brightness→contrast→gamma produces byte-identical output to unfused
+        done: false
+      - text: Test fusion across longer chains (5+ ops)
+        done: false
+      - text: Test that non-point-op nodes act as fusion barriers
+        done: false
+      - text: Test 16-bit fusion path
+        done: false
+      - text: All existing point-op and pipeline tests pass
+        done: false
+extra: {}
