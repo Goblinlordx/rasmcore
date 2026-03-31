@@ -10875,13 +10875,21 @@ pub struct GaussianNoiseParams {
     reference = "additive Gaussian noise"
 )]
 pub fn gaussian_noise(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &GaussianNoiseParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     validate_format(info.format)?;
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| gaussian_noise(p8, i8, config));
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            gaussian_noise(r, &mut u, i8, config)
+        });
     }
 
     let amount = config.amount as f64 / 100.0;
@@ -16028,7 +16036,7 @@ mod add_noise_tests {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
         let config = GaussianNoiseParams { amount: 0.0, mean: 0.0, sigma: 25.0, seed: 42 };
-        let result = gaussian_noise(&pixels, &info, &config).unwrap();
+        let result = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -16037,8 +16045,8 @@ mod add_noise_tests {
         let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(64, 64);
         let config = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 123 };
-        let r1 = gaussian_noise(&pixels, &info, &config).unwrap();
-        let r2 = gaussian_noise(&pixels, &info, &config).unwrap();
+        let r1 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
+        let r2 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
         assert_eq!(r1, r2, "same seed must produce identical output");
     }
 
@@ -16048,8 +16056,8 @@ mod add_noise_tests {
         let info = rgb_info(32, 32);
         let c1 = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 1 };
         let c2 = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 2 };
-        let r1 = gaussian_noise(&pixels, &info, &c1).unwrap();
-        let r2 = gaussian_noise(&pixels, &info, &c2).unwrap();
+        let r1 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &c1).unwrap();
+        let r2 = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &c2).unwrap();
         assert_ne!(r1, r2, "different seeds should produce different output");
     }
 
@@ -16059,7 +16067,7 @@ mod add_noise_tests {
         let pixels = vec![128u8; 64 * 64];
         let info = gray_info(64, 64);
         let config = GaussianNoiseParams { amount: 100.0, mean: 0.0, sigma: 25.0, seed: 42 };
-        let result = gaussian_noise(&pixels, &info, &config).unwrap();
+        let result = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
             (mean - 128.0).abs() < 10.0,
@@ -16082,7 +16090,7 @@ mod add_noise_tests {
             color_space: ColorSpace::Srgb,
         };
         let config = GaussianNoiseParams { amount: 100.0, mean: 0.0, sigma: 50.0, seed: 99 };
-        let result = gaussian_noise(&pixels, &info, &config).unwrap();
+        let result = gaussian_noise(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &config).unwrap();
         assert_eq!(result[3], 255, "alpha channel must be preserved");
     }
 
