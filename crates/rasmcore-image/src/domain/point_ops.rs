@@ -105,6 +105,27 @@ pub enum PointOp {
         offset: f32,
         gamma_correction: f32,
     },
+    // ─── Per-pixel arithmetic (ImageMagick -evaluate equivalents) ─────
+    /// Add constant to each channel. `LUT[i] = clamp(i + v, 0, 255)`
+    /// Matches ImageMagick `-evaluate Add v` (where v is in 0-255 range).
+    EvalAdd(i16),
+    /// Subtract constant from each channel. `LUT[i] = clamp(i - v, 0, 255)`
+    EvalSubtract(i16),
+    /// Multiply each channel by factor. `LUT[i] = clamp(i * f, 0, 255)`
+    EvalMultiply(f32),
+    /// Divide each channel by factor. `LUT[i] = clamp(i / f, 0, 255)`
+    EvalDivide(f32),
+    /// Clamp each channel to minimum value. `LUT[i] = max(i, v)`
+    EvalMin(u8),
+    /// Clamp each channel to maximum value. `LUT[i] = min(i, v)`
+    EvalMax(u8),
+    /// Raise normalized value to power. `LUT[i] = (i/255)^p * 255`
+    EvalPow(f32),
+    /// Logarithmic transform. `LUT[i] = log_b(i/255) * 255` (clamped, 0 maps to 0)
+    EvalLog(f32),
+    /// Absolute value (identity for u8, but useful after signed arithmetic).
+    /// `LUT[i] = i` (no-op for unsigned, included for completeness/pipeline symmetry).
+    EvalAbs,
 }
 
 impl LutPointOp for PointOp {
@@ -242,6 +263,65 @@ pub fn build_lut(op: &PointOp) -> [u8; 256] {
                     scaled.powf(inv_gamma)
                 };
                 *entry = (corrected * 255.0 + 0.5) as u8;
+            }
+        }
+        // ─── Per-pixel arithmetic ─────────────────────────────────────
+        PointOp::EvalAdd(v) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as i16 + v).clamp(0, 255) as u8;
+            }
+        }
+        PointOp::EvalSubtract(v) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as i16 - v).clamp(0, 255) as u8;
+            }
+        }
+        PointOp::EvalMultiply(f) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as f32 * f).clamp(0.0, 255.0) as u8;
+            }
+        }
+        PointOp::EvalDivide(f) => {
+            let inv = if f.abs() > 1e-6 { 1.0 / f } else { 0.0 };
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as f32 * inv).clamp(0.0, 255.0) as u8;
+            }
+        }
+        PointOp::EvalMin(v) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as u8).max(*v);
+            }
+        }
+        PointOp::EvalMax(v) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as u8).min(*v);
+            }
+        }
+        PointOp::EvalPow(p) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let x = i as f32 / 255.0;
+                *entry = (x.powf(*p) * 255.0 + 0.5) as u8;
+            }
+        }
+        PointOp::EvalLog(base) => {
+            // log_b(x) = ln(x) / ln(b), normalized to [0,1] output
+            // Input 0 maps to 0 (avoid ln(0)). Input 1.0 maps to 0 (log_b(1)=0).
+            // We map [0,1] → [0,1] as: log_b(1 + x*(b-1)) to get 0→0, 1→1.
+            let ln_base = base.ln();
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let x = i as f32 / 255.0;
+                let v = if ln_base.abs() < 1e-6 || *base <= 0.0 {
+                    x // degenerate: identity
+                } else {
+                    (1.0 + x * (base - 1.0)).ln() / ln_base
+                };
+                *entry = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            }
+        }
+        PointOp::EvalAbs => {
+            // Identity for u8 (always non-negative)
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = i as u8;
             }
         }
     }
@@ -481,6 +561,64 @@ pub fn build_lut_u16(op: &PointOp) -> Vec<u16> {
                     scaled.powf(inv_gamma)
                 };
                 *entry = (corrected * MAX16 + 0.5) as u16;
+            }
+        }
+        PointOp::EvalAdd(v) => {
+            let v32 = *v as i32 * 257; // scale 8-bit value to 16-bit
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as i32 + v32).clamp(0, 65535) as u16;
+            }
+        }
+        PointOp::EvalSubtract(v) => {
+            let v32 = *v as i32 * 257;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as i32 - v32).clamp(0, 65535) as u16;
+            }
+        }
+        PointOp::EvalMultiply(f) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as f32 * f).clamp(0.0, MAX16) as u16;
+            }
+        }
+        PointOp::EvalDivide(f) => {
+            let inv = if f.abs() > 1e-6 { 1.0 / f } else { 0.0 };
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as f32 * inv).clamp(0.0, MAX16) as u16;
+            }
+        }
+        PointOp::EvalMin(v) => {
+            let v16 = *v as u16 * 257;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as u16).max(v16);
+            }
+        }
+        PointOp::EvalMax(v) => {
+            let v16 = *v as u16 * 257;
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = (i as u16).min(v16);
+            }
+        }
+        PointOp::EvalPow(p) => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let x = i as f32 / MAX16;
+                *entry = (x.powf(*p) * MAX16 + 0.5) as u16;
+            }
+        }
+        PointOp::EvalLog(base) => {
+            let ln_base = base.ln();
+            for (i, entry) in lut.iter_mut().enumerate() {
+                let x = i as f32 / MAX16;
+                let v = if ln_base.abs() < 1e-6 || *base <= 0.0 {
+                    x
+                } else {
+                    (1.0 + x * (base - 1.0)).ln() / ln_base
+                };
+                *entry = (v.clamp(0.0, 1.0) * MAX16 + 0.5) as u16;
+            }
+        }
+        PointOp::EvalAbs => {
+            for (i, entry) in lut.iter_mut().enumerate() {
+                *entry = i as u16;
             }
         }
     }

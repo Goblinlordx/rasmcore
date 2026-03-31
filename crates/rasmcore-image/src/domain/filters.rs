@@ -155,6 +155,72 @@ pub struct ExposureParams {
     pub gamma_correction: f32,
 }
 
+// ─── Per-pixel arithmetic (evaluate) ConfigParams ─────────────────────────
+
+/// Parameters for evaluate_add — add constant to each channel.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateAddParams {
+    /// Value to add (-255 to 255)
+    #[param(min = -255.0, max = 255.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub value: f32,
+}
+
+/// Parameters for evaluate_subtract — subtract constant from each channel.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateSubtractParams {
+    /// Value to subtract (0 to 255)
+    #[param(min = 0.0, max = 255.0, step = 1.0, default = 0.0)]
+    pub value: f32,
+}
+
+/// Parameters for evaluate_multiply — multiply each channel by factor.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateMultiplyParams {
+    /// Multiplication factor (0 to 10)
+    #[param(min = 0.0, max = 10.0, step = 0.01, default = 1.0)]
+    pub factor: f32,
+}
+
+/// Parameters for evaluate_divide — divide each channel by factor.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateDivideParams {
+    /// Division factor (0.01 to 10)
+    #[param(min = 0.01, max = 10.0, step = 0.01, default = 1.0)]
+    pub factor: f32,
+}
+
+/// Parameters for evaluate_min — floor each channel at minimum value.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateMinParams {
+    /// Minimum value (0-255)
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub value: u8,
+}
+
+/// Parameters for evaluate_max — ceiling each channel at maximum value.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateMaxParams {
+    /// Maximum value (0-255)
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub value: u8,
+}
+
+/// Parameters for evaluate_pow — raise normalized channel to power.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluatePowParams {
+    /// Exponent (0.1 to 10)
+    #[param(min = 0.1, max = 10.0, step = 0.01, default = 1.0)]
+    pub exponent: f32,
+}
+
+/// Parameters for evaluate_log — logarithmic transform.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateLogParams {
+    /// Logarithm base (>1)
+    #[param(min = 1.01, max = 100.0, step = 0.1, default = 10.0)]
+    pub base: f32,
+}
+
 // ─── LutPointOp trait impls for fuseable point operations ─────────────────
 
 use super::point_ops::LutPointOp;
@@ -178,6 +244,47 @@ impl LutPointOp for ExposureParams {
             offset: self.offset,
             gamma_correction: self.gamma_correction,
         })
+    }
+}
+
+impl LutPointOp for EvaluateAddParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalAdd(self.value as i16))
+    }
+}
+impl LutPointOp for EvaluateSubtractParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalSubtract(self.value as i16))
+    }
+}
+impl LutPointOp for EvaluateMultiplyParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalMultiply(self.factor))
+    }
+}
+impl LutPointOp for EvaluateDivideParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalDivide(self.factor))
+    }
+}
+impl LutPointOp for EvaluateMinParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalMin(self.value))
+    }
+}
+impl LutPointOp for EvaluateMaxParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalMax(self.value))
+    }
+}
+impl LutPointOp for EvaluatePowParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalPow(self.exponent))
+    }
+}
+impl LutPointOp for EvaluateLogParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::EvalLog(self.base))
     }
 }
 
@@ -1750,6 +1857,139 @@ pub fn color_balance(
         preserve_luminosity: config.preserve_luminosity,
     };
     super::color_grading::color_balance(pixels, info, &cb)
+}
+
+// ─── Per-pixel arithmetic (evaluate) filters ───────────────────────────────
+
+/// Add a constant value to each channel (clamped to 0-255).
+#[rasmcore_macros::register_filter(
+    name = "evaluate_add", category = "evaluate",
+    group = "evaluate", variant = "add",
+    reference = "ImageMagick -evaluate Add", point_op = "true"
+)]
+pub fn evaluate_add(pixels: &[u8], info: &ImageInfo, config: &EvaluateAddParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_add(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalAdd(config.value as i16));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Subtract a constant value from each channel (clamped to 0-255).
+#[rasmcore_macros::register_filter(
+    name = "evaluate_subtract", category = "evaluate",
+    group = "evaluate", variant = "subtract",
+    reference = "ImageMagick -evaluate Subtract", point_op = "true"
+)]
+pub fn evaluate_subtract(pixels: &[u8], info: &ImageInfo, config: &EvaluateSubtractParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_subtract(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalSubtract(config.value as i16));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Multiply each channel by a factor (clamped to 0-255).
+#[rasmcore_macros::register_filter(
+    name = "evaluate_multiply", category = "evaluate",
+    group = "evaluate", variant = "multiply",
+    reference = "ImageMagick -evaluate Multiply", point_op = "true"
+)]
+pub fn evaluate_multiply(pixels: &[u8], info: &ImageInfo, config: &EvaluateMultiplyParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_multiply(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalMultiply(config.factor));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Divide each channel by a factor (clamped to 0-255).
+#[rasmcore_macros::register_filter(
+    name = "evaluate_divide", category = "evaluate",
+    group = "evaluate", variant = "divide",
+    reference = "ImageMagick -evaluate Divide", point_op = "true"
+)]
+pub fn evaluate_divide(pixels: &[u8], info: &ImageInfo, config: &EvaluateDivideParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_divide(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalDivide(config.factor));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Floor each channel at a minimum value.
+#[rasmcore_macros::register_filter(
+    name = "evaluate_min", category = "evaluate",
+    group = "evaluate", variant = "min",
+    reference = "ImageMagick -evaluate Min", point_op = "true"
+)]
+pub fn evaluate_min(pixels: &[u8], info: &ImageInfo, config: &EvaluateMinParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_min(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalMin(config.value));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Ceiling each channel at a maximum value.
+#[rasmcore_macros::register_filter(
+    name = "evaluate_max", category = "evaluate",
+    group = "evaluate", variant = "max",
+    reference = "ImageMagick -evaluate Max", point_op = "true"
+)]
+pub fn evaluate_max(pixels: &[u8], info: &ImageInfo, config: &EvaluateMaxParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_max(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalMax(config.value));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Raise normalized channel values to a power.
+#[rasmcore_macros::register_filter(
+    name = "evaluate_pow", category = "evaluate",
+    group = "evaluate", variant = "pow",
+    reference = "ImageMagick -evaluate Pow", point_op = "true"
+)]
+pub fn evaluate_pow(pixels: &[u8], info: &ImageInfo, config: &EvaluatePowParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_pow(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalPow(config.exponent));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Logarithmic transform of channel values.
+#[rasmcore_macros::register_filter(
+    name = "evaluate_log", category = "evaluate",
+    group = "evaluate", variant = "log",
+    reference = "ImageMagick -evaluate Log", point_op = "true"
+)]
+pub fn evaluate_log(pixels: &[u8], info: &ImageInfo, config: &EvaluateLogParams) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| evaluate_log(p8, i8, config));
+    }
+    let lut = super::point_ops::build_lut(&super::point_ops::PointOp::EvalLog(config.base));
+    super::point_ops::apply_lut(pixels, info, &lut)
+}
+
+/// Absolute value of channel values (identity for u8, included for pipeline symmetry).
+#[rasmcore_macros::register_filter(
+    name = "evaluate_abs", category = "evaluate",
+    group = "evaluate", variant = "abs",
+    reference = "ImageMagick -evaluate Abs"
+)]
+pub fn evaluate_abs(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+    validate_format(info.format)?;
+    Ok(pixels.to_vec()) // identity for unsigned types
 }
 
 /// Convert to grayscale using weighted channel sum.
