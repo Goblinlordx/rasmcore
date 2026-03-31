@@ -17,6 +17,49 @@
 use super::error::ImageError;
 use super::types::{ImageInfo, PixelFormat};
 
+/// Trait for types that can produce a per-channel LUT mapping.
+///
+/// Implement this on ConfigParams structs for filters that are pure
+/// per-channel operations (brightness, contrast, gamma, etc.). This
+/// enables automatic LUT fusion in the pipeline: consecutive PointOp
+/// nodes are composed into a single 256-entry table and applied in
+/// one memory pass.
+///
+/// ```rust,ignore
+/// impl LutPointOp for BrightnessParams {
+///     fn build_lut(&self) -> [u8; 256] {
+///         let mut lut = [0u8; 256];
+///         let offset = (self.amount * 255.0).round() as i16;
+///         for (i, entry) in lut.iter_mut().enumerate() {
+///             *entry = (i as i16 + offset).clamp(0, 255) as u8;
+///         }
+///         lut
+///     }
+/// }
+/// ```
+pub trait LutPointOp {
+    /// Build a 256-entry u8→u8 lookup table for this operation.
+    /// Applied to R, G, B channels; alpha is preserved unchanged.
+    fn build_point_lut(&self) -> [u8; 256];
+
+    /// Build a 65536-entry u16→u16 lookup table for 16-bit depth.
+    /// Default implementation scales from the 8-bit LUT via linear interpolation.
+    fn build_point_lut_u16(&self) -> Vec<u16> {
+        let lut8 = self.build_point_lut();
+        let mut lut16 = vec![0u16; 65536];
+        for (i, entry) in lut16.iter_mut().enumerate() {
+            // Map 16-bit input to 8-bit index + fractional part
+            let idx8 = i as f32 / 257.0; // 65535 / 255 = 257
+            let lo = idx8.floor() as usize;
+            let hi = (lo + 1).min(255);
+            let frac = idx8 - lo as f32;
+            let v = lut8[lo] as f32 * (1.0 - frac) + lut8[hi] as f32 * frac;
+            *entry = (v * 257.0 + 0.5) as u16; // scale back to 16-bit
+        }
+        lut16
+    }
+}
+
 /// A pixel point operation — a pure `u8 → u8` per-channel mapping.
 #[derive(Debug, Clone)]
 pub enum PointOp {
@@ -62,6 +105,16 @@ pub enum PointOp {
         offset: f32,
         gamma_correction: f32,
     },
+}
+
+impl LutPointOp for PointOp {
+    fn build_point_lut(&self) -> [u8; 256] {
+        build_lut(self)
+    }
+
+    fn build_point_lut_u16(&self) -> Vec<u16> {
+        build_lut_u16(self)
+    }
 }
 
 /// Build a 256-entry LUT for a single point operation.

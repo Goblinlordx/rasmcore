@@ -155,6 +155,32 @@ pub struct ExposureParams {
     pub gamma_correction: f32,
 }
 
+// ─── LutPointOp trait impls for fuseable point operations ─────────────────
+
+use super::point_ops::LutPointOp;
+
+impl LutPointOp for BrightnessParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Brightness(self.amount))
+    }
+}
+
+impl LutPointOp for ContrastParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Contrast(self.amount))
+    }
+}
+
+impl LutPointOp for ExposureParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Exposure {
+            ev: self.ev,
+            offset: self.offset,
+            gamma_correction: self.gamma_correction,
+        })
+    }
+}
+
 /// Parameters for Photoshop-style color balance adjustment.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ColorBalanceParams {
@@ -636,6 +662,18 @@ pub struct PosterizeParams {
     /// Number of discrete levels per channel
     #[param(min = 2, max = 255, step = 1, default = 8)]
     pub levels: u8,
+}
+
+impl LutPointOp for GammaParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Gamma(self.gamma_value))
+    }
+}
+
+impl LutPointOp for PosterizeParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Posterize(self.levels))
+    }
 }
 
 /// Parameters for flatten (alpha compositing onto background).
@@ -9250,6 +9288,26 @@ pub struct SigmoidalContrastParams {
     pub sharpen: bool,
 }
 
+impl LutPointOp for LevelsParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Levels {
+            black: self.black_point / 100.0,
+            white: self.white_point / 100.0,
+            gamma: self.gamma,
+        })
+    }
+}
+
+impl LutPointOp for SigmoidalContrastParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::SigmoidalContrast {
+            strength: self.strength,
+            midpoint: self.midpoint / 100.0,
+            sharpen: self.sharpen,
+        })
+    }
+}
+
 /// Sigmoidal contrast: S-curve contrast adjustment.
 /// Matches ImageMagick `-sigmoidal-contrast strengthxmidpoint%`.
 #[rasmcore_macros::register_filter(
@@ -14675,6 +14733,12 @@ pub struct SolarizeParams {
     /// Threshold (0-255): pixels above this are inverted
     #[param(min = 0, max = 255, step = 1, default = 128)]
     pub threshold: u8,
+}
+
+impl LutPointOp for SolarizeParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        super::point_ops::build_lut(&super::point_ops::PointOp::Solarize(self.threshold))
+    }
 }
 
 #[rasmcore_macros::register_filter(
