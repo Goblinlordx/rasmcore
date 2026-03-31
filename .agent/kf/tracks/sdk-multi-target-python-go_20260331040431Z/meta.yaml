@@ -1,0 +1,8 @@
+title: Multi-Target SDK — Add Python and Go Generators
+status: pending
+type: feature
+approved: false
+created: '2026-03-31'
+updated: '2026-03-31'
+deps:
+- codegen-wit-sdk-unify_20260331040430Z

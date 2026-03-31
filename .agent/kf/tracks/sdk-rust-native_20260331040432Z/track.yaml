@@ -1,0 +1,72 @@
+id: sdk-rust-native_20260331040432Z
+title: "Rust Native SDK (No WASM, Direct Linking)"
+type: feature
+status: pending
+created: "2026-03-31"
+updated: "2026-03-31"
+spec:
+  summary: |
+    rasmcore-codegen emits a Rust fluent builder crate that wraps domain
+    functions directly. No WASM — pure Rust linking. Lower priority.
+  context: |
+    For Rust consumers, going through WASM is unnecessary overhead. A native
+    Rust SDK that wraps rasmcore-image domain functions with a fluent builder
+    API gives Rust users zero-overhead access to all filters. This is generated
+    from the same FilterReg/ParamField data as the other SDKs.
+  codebase_analysis: |
+    TARGET API:
+    ```rust
+    use rasmcore_sdk::RcImage;
+
+    let jpeg = RcImage::load(&png_bytes)?
+        .blur(3.0)
+        .resize(800, 600, ResizeFilter::Lanczos3)
+        .brightness(0.1)
+        .to_jpeg(JpegConfig { quality: 85 })?;
+    ```
+
+    GENERATION:
+    - rasmcore-codegen emits src/lib.rs for a rasmcore-sdk crate
+    - Each filter becomes a method on RcImage that calls domain::filters::X
+    - Config structs reused from domain (no WIT translation needed)
+    - Pipeline graph used internally for lazy evaluation
+  acceptance_criteria:
+    - rasmcore-codegen --sdk-rs generates crates/rasmcore-sdk/src/generated.rs
+    - Fluent builder API wrapping all 115 filters
+    - Direct Rust linking (no WASM serialization overhead)
+    - Type-safe config structs (reuse domain ConfigParams)
+    - Basic smoke test (load, filter, encode)
+  out_of_scope: |
+    Publishing to crates.io. Documentation beyond rustdoc.
+    Async API. Streaming API.
+  technical_notes: |
+    Unlike TS/Python/Go SDKs which go through WASM, the Rust SDK links
+    directly to rasmcore-image. The generated code just provides ergonomic
+    wrappers around the domain functions.
+
+    The RcImage struct internally uses the pipeline NodeGraph for lazy
+    evaluation — same as the WASM pipeline but without serialization.
+plan:
+  - phase: Generator Module
+    tasks:
+      - text: Add generate::sdk_rust module to rasmcore-codegen
+        done: false
+      - text: Generate RcImage builder struct with all filter methods
+        done: false
+      - text: Generate config struct re-exports from domain types
+        done: false
+  - phase: Crate Setup
+    tasks:
+      - text: Create crates/rasmcore-sdk/ with Cargo.toml
+        done: false
+      - text: Wire include! for generated code
+        done: false
+      - text: Add to workspace members
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Smoke test (load PNG, blur, encode JPEG)
+        done: false
+      - text: Verify no WASM dependency in the crate graph
+        done: false
+extra: {}

@@ -1,0 +1,115 @@
+id: codegen-wit-sdk-unify_20260331040430Z
+title: "Unify WIT + SDK Generation into rasmcore-codegen (Rust)"
+type: refactor
+status: pending
+created: "2026-03-31"
+updated: "2026-03-31"
+spec:
+  summary: |
+    Move generate-wit.cjs and generate-fluent-sdk.cjs logic into rasmcore-codegen
+    as Rust modules. Build.rs generates WIT files and TypeScript SDK directly.
+    Eliminates Node.js dependency for code generation.
+  context: |
+    Currently WIT generation (generate-wit.cjs) and TS SDK generation
+    (generate-fluent-sdk.cjs) are Node.js scripts that duplicate the Rust
+    source parsing done by rasmcore-codegen. This creates two parallel
+    parsers (Rust syn-based in codegen, regex-based in Node) that must
+    stay in sync. Moving everything to rasmcore-codegen means one parser,
+    one source of truth, and no Node.js dependency for code generation.
+    jco transpile still requires Node but that is a WASM toolchain concern.
+  codebase_analysis: |
+    CURRENT STATE:
+    - rasmcore-codegen: syn-based parser, generates Rust adapters + manifest
+    - generate-wit.cjs: regex parser, generates filters.wit + pipeline.wit from templates
+    - generate-fluent-sdk.cjs: parses jco .d.ts, generates sdk/typescript/src/rcimage.ts
+    - demo/build.sh: orchestrates Node scripts + cargo component build
+
+    TARGET STATE:
+    - rasmcore-codegen: generates ALL outputs (adapters, manifest, WIT, SDK)
+    - build.rs writes WIT files to wit/image/ before cargo component reads them
+    - build.rs writes TypeScript SDK to target/sdk/typescript/
+    - demo/build.sh: cargo component build + jco transpile only (no Node codegen scripts)
+    - generate-wit.cjs and generate-fluent-sdk.cjs removed
+
+    CHALLENGE: build.rs runs DURING compilation, but cargo-component reads
+    WIT files BEFORE compilation. Solution: build.rs writes WIT files to
+    the wit/ directory via cargo:rerun-if-changed, and cargo-component
+    picks them up on the next build (two-pass or pre-build step).
+
+    ALTERNATIVE: Use a Cargo xtask or workspace build script that runs
+    rasmcore-codegen as a standalone binary before cargo component build.
+  acceptance_criteria:
+    - rasmcore-codegen has generate::wit module that emits filters.wit + pipeline.wit
+    - rasmcore-codegen has generate::sdk_typescript module that emits rcimage.ts
+    - WIT templates (.wit.tmpl) consumed by Rust codegen, not Node.js
+    - generate-wit.cjs removed
+    - generate-fluent-sdk.cjs removed
+    - demo/build.sh updated to not depend on Node for codegen (jco transpile still uses Node)
+    - All existing tests pass
+    - WASM component build produces same output
+  out_of_scope: |
+    Python/Go SDK generators (separate track). Removing jco dependency.
+    Changing the WASM component model toolchain.
+  technical_notes: |
+    WIT GENERATION IN RUST:
+    - Port type mapping (Rust -> WIT) from generate-wit.cjs to generate::wit
+    - Read .wit.tmpl templates, substitute generated filter/pipeline methods
+    - Write to wit/image/filters.wit and wit/image/pipeline.wit
+    - build.rs calls this before other code generation
+
+    TS SDK GENERATION IN RUST:
+    - The fluent SDK does NOT need jco .d.ts parsing if we generate from
+      the same FilterReg/ParamField data that codegen already has
+    - Generate RcImage class with chainable methods directly from filter metadata
+    - Emit to target/sdk/typescript/rcimage.ts
+    - demo/build.sh copies to sdk/typescript/src/
+
+    BUILD ORDER:
+    Option A: Two-phase build
+      1. cargo build -p rasmcore-codegen (compiles the generator)
+      2. rasmcore-codegen --generate-wit (writes WIT files)
+      3. cargo component build -p rasmcore-image (uses generated WIT)
+
+    Option B: xtask pattern
+      cargo xtask codegen  (runs rasmcore-codegen binary, writes WIT + SDK)
+      cargo component build -p rasmcore-image
+
+    Option C: Pre-build script in demo/build.sh
+      cargo run -p rasmcore-codegen -- --wit --sdk-ts
+      cargo component build -p rasmcore-image
+plan:
+  - phase: WIT Generation in Rust
+    tasks:
+      - text: Add generate::wit module to rasmcore-codegen
+        done: false
+      - text: Port type mapping (to_wit_type, to_wit_name) from JS to Rust
+        done: false
+      - text: Read .wit.tmpl templates and substitute generated content
+        done: false
+      - text: Write filters.wit and pipeline.wit from Rust
+        done: false
+  - phase: TypeScript SDK Generation in Rust
+    tasks:
+      - text: Add generate::sdk_typescript module to rasmcore-codegen
+        done: false
+      - text: Generate RcImage class with chainable methods from FilterReg data
+        done: false
+      - text: Generate terminal methods (toJpeg, toPng, etc.) from encoder metadata
+        done: false
+      - text: Emit rcimage.ts with runtime validation and type annotations
+        done: false
+  - phase: CLI and Build Integration
+    tasks:
+      - text: Add CLI binary to rasmcore-codegen with --wit and --sdk-ts flags
+        done: false
+      - text: Update demo/build.sh to invoke Rust codegen instead of Node scripts
+        done: false
+      - text: Remove generate-wit.cjs and generate-fluent-sdk.cjs
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Generated WIT matches previous Node output (diff test)
+        done: false
+      - text: WASM component build passes with Rust-generated WIT
+        done: false
+extra: {}

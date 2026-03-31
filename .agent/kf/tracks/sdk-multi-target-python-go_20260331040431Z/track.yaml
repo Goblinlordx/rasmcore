@@ -1,0 +1,113 @@
+id: sdk-multi-target-python-go_20260331040431Z
+title: "Multi-Target SDK — Add Python and Go Generators"
+type: feature
+status: pending
+created: "2026-03-31"
+updated: "2026-03-31"
+spec:
+  summary: |
+    Add Python and Go SDK generator modules to rasmcore-codegen. Each reads
+    the same parsed FilterReg/ParamField data and emits idiomatic SDK source
+    for its target language.
+  context: |
+    After the codegen unification track, rasmcore-codegen generates TypeScript
+    SDK from filter/encoder metadata. This track extends it to emit Python
+    and Go SDKs using the same data. Each SDK wraps the WASM component via
+    the language's WASM runtime (wasmtime-py for Python, wasmtime-go for Go).
+  codebase_analysis: |
+    INFRASTRUCTURE (from codegen-wit-sdk-unify track):
+    - rasmcore-codegen parses all FilterReg, ParamField, encoder metadata
+    - generate::sdk_typescript module emits TypeScript fluent API
+    - CLI: rasmcore-codegen --sdk-ts / --sdk-py / --sdk-go
+
+    PYTHON SDK APPROACH:
+    - wasmtime-py: Python bindings for WASM components
+    - Generate fluent API class (RcImage) with method chaining
+    - Type hints via Python typing module
+    - Output: sdk/python/rasmcore/rcimage.py
+
+    GO SDK APPROACH:
+    - wasmtime-go: Go bindings for WASM components
+    - Generate builder-pattern API with method chaining
+    - Strong typing via Go structs for configs
+    - Output: sdk/go/rasmcore/rcimage.go
+
+    MULTI-TARGET PATTERN:
+    - Each generator is a separate module: generate::sdk_python, generate::sdk_go
+    - All read from the same CodegenData struct
+    - CLI flag selects which targets to generate: --sdk all / --sdk ts,py,go
+  acceptance_criteria:
+    - rasmcore-codegen --sdk-py generates sdk/python/rasmcore/rcimage.py
+    - rasmcore-codegen --sdk-go generates sdk/go/rasmcore/rcimage.go
+    - Python SDK has fluent API with type hints for all 115 filters
+    - Go SDK has builder pattern with typed configs for all 115 filters
+    - Both SDKs include parameter validation matching TypeScript version
+    - CLI --sdk all generates all three SDKs
+    - demo/build.sh can optionally generate Python/Go SDKs
+  out_of_scope: |
+    Rust native SDK (separate track). WASM runtime setup/installation.
+    Package publishing (npm, PyPI, pkg.go.dev). CI/CD for SDK releases.
+  technical_notes: |
+    PYTHON SDK PATTERN:
+    ```python
+    from rasmcore import RcImage
+
+    result = (RcImage.load(png_bytes)
+        .blur(radius=3.0)
+        .resize(800, 600, filter="lanczos3")
+        .brightness(0.1)
+        .to_jpeg(quality=85))
+    ```
+
+    GO SDK PATTERN:
+    ```go
+    result, err := rasmcore.Load(pngBytes).
+        Blur(3.0).
+        Resize(800, 600, rasmcore.Lanczos3).
+        Brightness(0.1).
+        ToJPEG(rasmcore.JPEGConfig{Quality: 85})
+    ```
+
+    GENERATION APPROACH:
+    - Each language module has a template for the class/struct skeleton
+    - Filter methods generated from FilterReg (name, params, types)
+    - Type mapping tables per language (f32 -> float for Python, float32 for Go)
+    - Parameter validation generated from ConfigParams (min/max/step)
+plan:
+  - phase: Python SDK Generator
+    tasks:
+      - text: Add generate::sdk_python module to rasmcore-codegen
+        done: false
+      - text: Implement Python type mapping (f32->float, u32->int, etc.)
+        done: false
+      - text: Generate RcImage class with method chaining and type hints
+        done: false
+      - text: Generate parameter validation from ConfigParams ranges
+        done: false
+      - text: Add wasmtime-py integration boilerplate
+        done: false
+  - phase: Go SDK Generator
+    tasks:
+      - text: Add generate::sdk_go module to rasmcore-codegen
+        done: false
+      - text: Implement Go type mapping (f32->float32, u32->uint32, etc.)
+        done: false
+      - text: Generate builder API with typed config structs
+        done: false
+      - text: Generate parameter validation
+        done: false
+      - text: Add wasmtime-go integration boilerplate
+        done: false
+  - phase: CLI Multi-Target
+    tasks:
+      - text: Add --sdk flag with target selection (all, ts, py, go)
+        done: false
+      - text: Update demo/build.sh to support optional SDK targets
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Python SDK smoke test (load image, apply filter, encode)
+        done: false
+      - text: Go SDK smoke test (same flow)
+        done: false
+extra: {}
