@@ -655,7 +655,11 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
         // Gaussian blur CV (sigma=2.0)
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("gaussian_blur_cv/rasmcore", size), |b| {
-            b.iter(|| filters::gaussian_blur_cv(&px, &inf, 2.0).unwrap());
+            b.iter(|| {
+                let r = rasmcore_pipeline::Rect::new(0, 0, inf.width, inf.height);
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(px.clone());
+                filters::gaussian_blur_cv(r, &mut u, &inf, &filters::GaussianBlurCvParams { sigma: 2.0 }).unwrap()
+            });
         });
 
         if ref_tools::has_tool("magick") {
@@ -732,7 +736,11 @@ fn spatial_filter_benchmarks(c: &mut Criterion) {
         // Gaussian blur CV at 1024
         let px = pixels.clone();
         group.bench_function(BenchmarkId::new("gaussian_blur_cv/rasmcore", size), |b| {
-            b.iter(|| filters::gaussian_blur_cv(&px, &inf, 2.0).unwrap());
+            b.iter(|| {
+                let r = rasmcore_pipeline::Rect::new(0, 0, inf.width, inf.height);
+                let mut u = |_: rasmcore_pipeline::Rect| Ok(px.clone());
+                filters::gaussian_blur_cv(r, &mut u, &inf, &filters::GaussianBlurCvParams { sigma: 2.0 }).unwrap()
+            });
         });
 
         if ref_tools::has_tool("magick") {

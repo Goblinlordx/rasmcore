@@ -2197,7 +2197,11 @@ fn algorithm_gaussian_blur_cv() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| rasmcore_image::domain::filters::gaussian_blur_cv(px, info, 2.0).unwrap(),
+        |px, info| {
+            let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
+            rasmcore_image::domain::filters::gaussian_blur_cv(r, &mut u, info, &rasmcore_image::domain::filters::GaussianBlurCvParams { sigma: 2.0 }).unwrap()
+        },
         &["-gaussian-blur", "0x2"],
         "gaussian_blur_cv_sigma2",
     ) {

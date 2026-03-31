@@ -8849,10 +8849,14 @@ fn gaussian_blur_box_approx(
     reference = "OpenCV-compatible separable Gaussian"
 )]
 pub fn gaussian_blur_cv(
-    pixels: &[u8],
+    request: Rect,
+    upstream: &mut UpstreamFn,
     info: &ImageInfo,
     config: &GaussianBlurCvParams,
 ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+    let pixels = pixels.as_slice();
     let sigma = config.sigma;
 
     if sigma <= 0.0 {
@@ -8882,9 +8886,8 @@ pub fn gaussian_blur_cv(
     }
 
     {
-        let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        convolve(r, &mut u, info, &kernel_2d, &ConvolveParams { kw: ksize as u32, kh: ksize as u32, divisor: 1.0 })
+        convolve(request, &mut u, info, &kernel_2d, &ConvolveParams { kw: ksize as u32, kh: ksize as u32, divisor: 1.0 })
     }
 }
 
@@ -9157,7 +9160,11 @@ pub fn retinex_ssr(
     let n = (info.width as usize) * (info.height as usize);
 
     // Gaussian blur for surround function (OpenCV-compatible for reference alignment)
-    let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma })?;
+    let blurred = {
+        let r = Rect::new(0, 0, info.width, info.height);
+        let mut u = |_: Rect| Ok(pixels.to_vec());
+        gaussian_blur_cv(r, &mut u, info, &GaussianBlurCvParams { sigma })?
+    };
 
     // Compute log(I/blur(I)) per channel using log(a/b) identity, then normalize
     let mut retinex = vec![0.0f32; n * 3];
@@ -9333,7 +9340,11 @@ pub fn retinex_msr(pixels: &[u8], info: &ImageInfo, sigmas: &[f32]) -> Result<Ve
     let mut retinex = vec![0.0f32; n * 3];
 
     for &sigma in sigmas {
-        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma })?;
+        let blurred = {
+            let r = Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: Rect| Ok(pixels.to_vec());
+            gaussian_blur_cv(r, &mut u, info, &GaussianBlurCvParams { sigma })?
+        };
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
@@ -9404,7 +9415,11 @@ pub fn retinex_msrcr(
     // Compute MSR (OpenCV-compatible blur for reference alignment)
     let mut msr = vec![0.0f32; n * 3];
     for &sigma in sigmas {
-        let blurred = gaussian_blur_cv(pixels, info, &GaussianBlurCvParams { sigma })?;
+        let blurred = {
+            let r = Rect::new(0, 0, info.width, info.height);
+            let mut u = |_: Rect| Ok(pixels.to_vec());
+            gaussian_blur_cv(r, &mut u, info, &GaussianBlurCvParams { sigma })?
+        };
         for i in 0..n {
             let pi = i * channels;
             for c in 0..3 {
