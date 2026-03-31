@@ -3114,7 +3114,8 @@ fn find_median_in_hist(hist: &[u32; 256], target: usize) -> u8 {
     category = "edge",
     group = "edge_detect",
     variant = "sobel",
-    reference = "Sobel 1968 gradient operator"
+    reference = "Sobel 1968 gradient operator",
+    overlap = "uniform(1)"
 )]
 pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
@@ -3172,7 +3173,8 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     category = "edge",
     group = "edge_detect",
     variant = "scharr",
-    reference = "Scharr 2000 rotationally symmetric gradient"
+    reference = "Scharr 2000 rotationally symmetric gradient",
+    overlap = "uniform(1)"
 )]
 pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
@@ -3223,7 +3225,8 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     category = "edge",
     group = "edge_detect",
     variant = "laplacian",
-    reference = "second-order derivative operator"
+    reference = "second-order derivative operator",
+    overlap = "uniform(1)"
 )]
 pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
@@ -3340,7 +3343,8 @@ pub fn distance_transform(pixels: &[u8], info: &ImageInfo) -> Result<Vec<f64>, I
     category = "edge",
     group = "edge_detect",
     variant = "canny",
-    reference = "Canny 1986 multi-stage edge detector"
+    reference = "Canny 1986 multi-stage edge detector",
+    overlap = "uniform(2)"
 )]
 pub fn canny(
     pixels: &[u8],
@@ -13567,7 +13571,8 @@ pub fn solarize(
 #[rasmcore_macros::register_filter(
     name = "emboss",
     category = "effect",
-    reference = "3D relief embossing via directional kernel"
+    reference = "3D relief embossing via directional kernel",
+    overlap = "uniform(1)"
 )]
 pub fn emboss(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     // Standard emboss kernel: directional highlight along the diagonal

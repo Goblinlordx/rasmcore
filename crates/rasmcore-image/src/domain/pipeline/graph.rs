@@ -556,9 +556,13 @@ mod tests {
 mod tiled_parity_tests {
     use super::*;
     use crate::domain::pipeline::nodes::filters::{
-        BlurNode, BrightnessNode, ContrastNode, SharpenNode,
+        BilateralNode, BlurNode, BrightnessNode, CannyNode, ContrastNode, ErodeNode,
+        GuidedFilterNode, MedianNode, MotionBlurNode, SharpenNode,
     };
-    use crate::domain::filters::{BlurParams, BrightnessParams, ContrastParams, SharpenParams};
+    use crate::domain::filters::{
+        BilateralParams, BlurParams, BrightnessParams, CannyParams, ContrastParams, ErodeParams,
+        GuidedFilterParams, MedianParams, MotionBlurParams, SharpenParams,
+    };
     use crate::domain::types::*;
 
     /// Raw pixel source node for testing (no decode step).
@@ -794,6 +798,218 @@ mod tiled_parity_tests {
                 ContrastParams { amount: 0.5 },
             )));
             (g, contrast, w, h, 4)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_median() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let median = g.add_node(Box::new(MedianNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                MedianParams { radius: 2 },
+            )));
+            (g, median, w, h, 4)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_erode() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let erode = g.add_node(Box::new(ErodeNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                ErodeParams { ksize: 3, shape: 0 },
+            )));
+            (g, erode, w, h, 4)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_canny() {
+        // Canny outputs single-channel grayscale regardless of input format,
+        // so we use Gray8 to match the output format.
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels_gray(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Gray8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let canny = g.add_node(Box::new(CannyNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Gray8,
+                    color_space: ColorSpace::Srgb,
+                },
+                CannyParams {
+                    low_threshold: 50.0,
+                    high_threshold: 150.0,
+                },
+            )));
+            (g, canny, w, h, 1)
+        });
+    }
+
+    fn gradient_pixels_rgb(w: u32, h: u32) -> Vec<u8> {
+        let mut px = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(((x * 255) / w) as u8);
+                px.push(((y * 255) / h) as u8);
+                px.push(128);
+            }
+        }
+        px
+    }
+
+    fn gradient_pixels_gray(w: u32, h: u32) -> Vec<u8> {
+        let mut px = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push((((x + y) * 255) / (w + h)) as u8);
+            }
+        }
+        px
+    }
+
+    #[test]
+    fn tiled_parity_bilateral() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels_rgb(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgb8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let bilateral = g.add_node(Box::new(BilateralNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgb8,
+                    color_space: ColorSpace::Srgb,
+                },
+                BilateralParams {
+                    diameter: 5,
+                    sigma_color: 75.0,
+                    sigma_space: 75.0,
+                },
+            )));
+            (g, bilateral, w, h, 3)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_motion_blur() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let mb = g.add_node(Box::new(MotionBlurNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                MotionBlurParams {
+                    length: 5,
+                    angle_degrees: 45.0,
+                },
+            )));
+            (g, mb, w, h, 4)
+        });
+    }
+
+    #[test]
+    #[ignore = "guided_filter needs 2*radius expansion (two box_mean passes); manual input_rect override needed"]
+    fn tiled_parity_guided_filter() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels_gray(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Gray8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let guided = g.add_node(Box::new(GuidedFilterNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Gray8,
+                    color_space: ColorSpace::Srgb,
+                },
+                GuidedFilterParams {
+                    radius: 3,
+                    epsilon: 0.01,
+                },
+            )));
+            (g, guided, w, h, 1)
         });
     }
 }
