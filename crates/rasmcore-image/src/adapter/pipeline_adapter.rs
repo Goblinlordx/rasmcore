@@ -281,12 +281,17 @@ pub struct PipelineResource {
     layer_cache: RefCell<Option<std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>>>,
     /// Metadata filter for write operations (default: drop all).
     metadata_filter: RefCell<rasmcore_pipeline::MetadataFilter>,
+    /// Whether to auto-cleanup graph state after write operations.
+    auto_cleanup: std::cell::Cell<bool>,
 }
 
 impl PipelineResource {
     /// Finalize layer cache after any write operation.
     fn finalize_cache(&self) {
         self.graph.borrow_mut().finalize_layer_cache();
+        if self.auto_cleanup.get() {
+            self.graph.borrow_mut().cleanup();
+        }
     }
 }
 
@@ -298,7 +303,12 @@ impl GuestImagePipeline for PipelineResource {
             frame_source: RefCell::new(None),
             layer_cache: RefCell::new(None),
             metadata_filter: RefCell::new(rasmcore_pipeline::MetadataFilter::DropAll),
+            auto_cleanup: std::cell::Cell::new(true),
         }
+    }
+
+    fn set_auto_cleanup(&self, enabled: bool) {
+        self.auto_cleanup.set(enabled);
     }
 
     fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {

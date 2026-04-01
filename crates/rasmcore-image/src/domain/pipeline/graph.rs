@@ -641,6 +641,18 @@ impl NodeGraph {
         self.node_accumulators.clear();
     }
 
+    /// Clear all graph state after execution. Keeps the layer_cache reference.
+    pub fn cleanup(&mut self) {
+        self.nodes.clear();
+        self.node_hashes.clear();
+        self.node_accumulators.clear();
+        self.cache_hit_nodes.clear();
+        self.cache_hit_pixels.clear();
+        self.touched_hashes.clear();
+        self.node_metadata.clear();
+        // layer_cache and cache_budget intentionally kept
+    }
+
     /// Number of nodes in the graph.
     pub fn node_count(&self) -> usize {
         self.nodes.len()

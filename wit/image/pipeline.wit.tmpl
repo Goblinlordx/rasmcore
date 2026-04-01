@@ -37,6 +37,7 @@ interface pipeline {
     record jpeg-write-config {
         quality: option<u8>,
         progressive: option<bool>,
+        turbo: option<bool>,
     }
 
     enum png-filter-type {
@@ -98,6 +99,7 @@ interface pipeline {
         read-frames: func(data: buffer, selection: frame-selection) -> result<node-id, rasmcore-error>;
         node-info: func(node: node-id) -> result<image-info, rasmcore-error>;
         set-layer-cache: func(cache: borrow<layer-cache>);
+        set-auto-cleanup: func(enabled: bool);
 
         // ─── Transforms ───
         resize: func(source: node-id, width: u32, height: u32, filter: resize-filter) -> result<node-id, rasmcore-error>;
