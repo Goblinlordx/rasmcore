@@ -212,6 +212,8 @@ pub fn write_tiled(
     metadata: Option<&MetadataSet>,
     tile_config: &TileConfig,
 ) -> Result<Vec<u8>, ImageError> {
+    // Fuse consecutive point/color operations before execution
+    graph.fuse_point_ops();
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
 
