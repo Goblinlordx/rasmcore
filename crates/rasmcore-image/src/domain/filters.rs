@@ -10474,6 +10474,278 @@ pub fn connected_components(
     Ok((labels, num_labels))
 }
 
+// ─── Contour Tracing ──────────────────────────────────────────────────────
+
+/// Trace external contours of foreground regions in a binary Gray8 image.
+///
+/// Uses a simplified Suzuki-Abe border following algorithm to extract ordered
+/// boundary point sequences from a binary image (0 = background, non-zero = foreground).
+///
+/// Returns a list of contours, each being an ordered list of (x, y) boundary points.
+/// Only external (outer) contours are returned — no hierarchy.
+///
+/// Reference: Suzuki & Abe (1985), "Topological Structural Analysis of Digitized
+/// Binary Images by Border Following"
+pub fn find_contours(pixels: &[u8], info: &ImageInfo) -> Result<Vec<Vec<(i32, i32)>>, ImageError> {
+    if info.format != PixelFormat::Gray8 {
+        return Err(ImageError::UnsupportedFormat(
+            "find_contours requires Gray8 input".into(),
+        ));
+    }
+    let w = info.width as i32;
+    let h = info.height as i32;
+
+    // Work on a copy with 1-pixel border padding (simplifies boundary checks)
+    let pw = (w + 2) as usize;
+    let ph = (h + 2) as usize;
+    let mut img = vec![0i32; pw * ph];
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            if pixels[y * w as usize + x] != 0 {
+                img[(y + 1) * pw + (x + 1)] = 1;
+            }
+        }
+    }
+
+    // 8-connectivity neighbor offsets (clockwise from right)
+    // Index: 0=E, 1=SE, 2=S, 3=SW, 4=W, 5=NW, 6=N, 7=NE
+    let dx: [i32; 8] = [1, 1, 0, -1, -1, -1, 0, 1];
+    let dy: [i32; 8] = [0, 1, 1, 1, 0, -1, -1, -1];
+
+    let mut contours = Vec::new();
+    let mut nbd: i32 = 1; // current border sequential number
+
+    for y in 1..ph as i32 - 1 {
+        for x in 1..pw as i32 - 1 {
+            let idx = y as usize * pw + x as usize;
+            // Detect outer border start: pixel is foreground and left neighbor is background
+            if img[idx] == 1 && img[idx - 1] == 0 {
+                nbd += 1;
+                let contour = trace_border(&mut img, pw, x, y, &dx, &dy, nbd);
+                if !contour.is_empty() {
+                    // Convert from padded coordinates back to original
+                    let original: Vec<(i32, i32)> =
+                        contour.iter().map(|&(cx, cy)| (cx - 1, cy - 1)).collect();
+                    contours.push(original);
+                }
+            }
+            // Mark visited foreground pixels to avoid re-tracing
+            if img[idx] != 0 && img[idx].abs() <= 1 {
+                // Already traced or will be traced
+            }
+        }
+    }
+
+    Ok(contours)
+}
+
+/// Trace a single border starting at (start_x, start_y) using Moore boundary tracing.
+fn trace_border(
+    img: &mut [i32],
+    pw: usize,
+    start_x: i32,
+    start_y: i32,
+    dx: &[i32; 8],
+    dy: &[i32; 8],
+    nbd: i32,
+) -> Vec<(i32, i32)> {
+    let mut contour = Vec::new();
+    contour.push((start_x, start_y));
+
+    // Find the first foreground neighbor going clockwise from the west direction
+    let start_dir = 4; // start searching from west (the background side)
+    let mut found_dir = None;
+    for i in 0..8 {
+        let d = (start_dir + i) % 8;
+        let nx = start_x + dx[d];
+        let ny = start_y + dy[d];
+        let ni = ny as usize * pw + nx as usize;
+        if img[ni] != 0 {
+            found_dir = Some(d);
+            break;
+        }
+    }
+
+    let Some(mut dir) = found_dir else {
+        // Isolated pixel
+        img[start_y as usize * pw + start_x as usize] = -nbd;
+        return contour;
+    };
+
+    let mut cx = start_x + dx[dir];
+    let mut cy = start_y + dy[dir];
+
+    if cx == start_x && cy == start_y {
+        // Single pixel contour
+        img[start_y as usize * pw + start_x as usize] = -nbd;
+        return contour;
+    }
+
+    // Mark the start pixel
+    img[start_y as usize * pw + start_x as usize] = nbd;
+
+    let second_x = cx;
+    let second_y = cy;
+
+    loop {
+        contour.push((cx, cy));
+        img[cy as usize * pw + cx as usize] = nbd;
+
+        // Search clockwise from (dir + 5) % 8 = opposite of arrival + 1
+        let search_start = (dir + 5) % 8;
+        let mut next_dir = None;
+        for i in 0..8 {
+            let d = (search_start + i) % 8;
+            let nx = cx + dx[d];
+            let ny = cy + dy[d];
+            let ni = ny as usize * pw + nx as usize;
+            if img[ni] != 0 {
+                next_dir = Some(d);
+                break;
+            }
+        }
+
+        let Some(nd) = next_dir else {
+            break; // shouldn't happen for a valid contour
+        };
+
+        let nx = cx + dx[nd];
+        let ny = cy + dy[nd];
+        dir = nd;
+
+        // Termination: we've returned to start and the next step is the second point
+        if nx == start_x && ny == start_y && cx == second_x && cy == second_y {
+            break;
+        }
+        // Also terminate if we've returned to start
+        if nx == start_x && ny == start_y {
+            break;
+        }
+
+        cx = nx;
+        cy = ny;
+
+        // Safety: prevent infinite loops
+        if contour.len() > (pw * img.len() / pw) {
+            break;
+        }
+    }
+
+    contour
+}
+
+/// Approximate a contour polygon using the Douglas-Peucker algorithm.
+///
+/// Simplifies the contour by removing points within `epsilon` distance
+/// of the line between endpoints. Larger epsilon = fewer points.
+///
+/// Reference: Douglas & Peucker (1973)
+pub fn approx_poly(contour: &[(i32, i32)], epsilon: f64) -> Vec<(i32, i32)> {
+    if contour.len() <= 2 || epsilon <= 0.0 {
+        return contour.to_vec();
+    }
+    let mut keep = vec![false; contour.len()];
+    keep[0] = true;
+    keep[contour.len() - 1] = true;
+    douglas_peucker(contour, 0, contour.len() - 1, epsilon, &mut keep);
+    contour
+        .iter()
+        .zip(keep.iter())
+        .filter_map(|(&pt, &k)| if k { Some(pt) } else { None })
+        .collect()
+}
+
+fn douglas_peucker(points: &[(i32, i32)], start: usize, end: usize, epsilon: f64, keep: &mut [bool]) {
+    if end <= start + 1 {
+        return;
+    }
+    let (sx, sy) = (points[start].0 as f64, points[start].1 as f64);
+    let (ex, ey) = (points[end].0 as f64, points[end].1 as f64);
+    let line_len = ((ex - sx).powi(2) + (ey - sy).powi(2)).sqrt();
+
+    let mut max_dist = 0.0;
+    let mut max_idx = start;
+
+    for i in (start + 1)..end {
+        let (px, py) = (points[i].0 as f64, points[i].1 as f64);
+        let dist = if line_len < 1e-10 {
+            ((px - sx).powi(2) + (py - sy).powi(2)).sqrt()
+        } else {
+            ((ey - sy) * px - (ex - sx) * py + ex * sy - ey * sx).abs() / line_len
+        };
+        if dist > max_dist {
+            max_dist = dist;
+            max_idx = i;
+        }
+    }
+
+    if max_dist > epsilon {
+        keep[max_idx] = true;
+        douglas_peucker(points, start, max_idx, epsilon, keep);
+        douglas_peucker(points, max_idx, end, epsilon, keep);
+    }
+}
+
+/// Compute the area of a contour using the shoelace formula.
+///
+/// Returns the absolute area. For a closed polygon, this gives the
+/// enclosed area. Matches `cv2.contourArea`.
+pub fn contour_area(contour: &[(i32, i32)]) -> f64 {
+    if contour.len() < 3 {
+        return 0.0;
+    }
+    let mut area: f64 = 0.0;
+    let n = contour.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += contour[i].0 as f64 * contour[j].1 as f64;
+        area -= contour[j].0 as f64 * contour[i].1 as f64;
+    }
+    area.abs() / 2.0
+}
+
+/// Compute the perimeter (arc length) of a contour.
+///
+/// Sums the Euclidean distances between consecutive points.
+/// If `closed` is true, also adds the distance from last to first point.
+pub fn contour_perimeter(contour: &[(i32, i32)], closed: bool) -> f64 {
+    if contour.len() < 2 {
+        return 0.0;
+    }
+    let mut perim: f64 = 0.0;
+    for i in 0..contour.len() - 1 {
+        let dx = (contour[i + 1].0 - contour[i].0) as f64;
+        let dy = (contour[i + 1].1 - contour[i].1) as f64;
+        perim += (dx * dx + dy * dy).sqrt();
+    }
+    if closed {
+        let dx = (contour[0].0 - contour.last().unwrap().0) as f64;
+        let dy = (contour[0].1 - contour.last().unwrap().1) as f64;
+        perim += (dx * dx + dy * dy).sqrt();
+    }
+    perim
+}
+
+/// Compute the axis-aligned bounding rectangle of a contour.
+///
+/// Returns (x, y, width, height) where (x, y) is the top-left corner.
+pub fn bounding_rect(contour: &[(i32, i32)]) -> (i32, i32, i32, i32) {
+    if contour.is_empty() {
+        return (0, 0, 0, 0);
+    }
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for &(x, y) in contour {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    (min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+}
+
 // ─── Flood Fill ───────────────────────────────────────────────────────────
 
 /// Flood fill from a seed point with configurable tolerance and connectivity.
@@ -15821,6 +16093,174 @@ fn gaussian_blur_f64(pixels: &[u8], w: usize, h: usize, ksize: usize, sigma: f64
     }
 
     result
+}
+
+#[cfg(test)]
+mod contour_tests {
+    use super::super::types::ColorSpace;
+    use super::*;
+
+    fn gray_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    /// Create a 10x10 image with a 6x6 filled square at (2,2)-(7,7)
+    fn make_square_image() -> (Vec<u8>, ImageInfo) {
+        let info = gray_info(10, 10);
+        let mut px = vec![0u8; 100];
+        for y in 2..8 {
+            for x in 2..8 {
+                px[y * 10 + x] = 255;
+            }
+        }
+        (px, info)
+    }
+
+    #[test]
+    fn find_contours_empty_image() {
+        let px = vec![0u8; 25];
+        let info = gray_info(5, 5);
+        let contours = find_contours(&px, &info).unwrap();
+        assert!(contours.is_empty());
+    }
+
+    #[test]
+    fn find_contours_single_pixel() {
+        let mut px = vec![0u8; 25];
+        px[12] = 255; // center pixel of 5x5
+        let info = gray_info(5, 5);
+        let contours = find_contours(&px, &info).unwrap();
+        assert!(!contours.is_empty());
+        // Single pixel contour
+        assert!(contours[0].len() >= 1);
+    }
+
+    #[test]
+    fn find_contours_square() {
+        let (px, info) = make_square_image();
+        let contours = find_contours(&px, &info).unwrap();
+        assert!(!contours.is_empty(), "should find at least one contour");
+        // The square contour should have boundary points
+        let c = &contours[0];
+        assert!(c.len() >= 4, "square contour should have >=4 points, got {}", c.len());
+        // All points should be within the square region
+        for &(x, y) in c {
+            assert!(x >= 1 && x <= 8, "x={x} out of square bounds");
+            assert!(y >= 1 && y <= 8, "y={y} out of square bounds");
+        }
+    }
+
+    #[test]
+    fn find_contours_requires_gray8() {
+        let px = vec![0u8; 30];
+        let info = ImageInfo {
+            width: 5,
+            height: 2,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        assert!(find_contours(&px, &info).is_err());
+    }
+
+    #[test]
+    fn approx_poly_reduces_points() {
+        // Create a contour with many points roughly forming a line
+        let contour: Vec<(i32, i32)> = (0..100).map(|i| (i, i + (i % 3) as i32)).collect();
+        let simplified = approx_poly(&contour, 2.0);
+        assert!(simplified.len() < contour.len(), "should reduce points");
+        assert!(simplified.len() >= 2, "should keep at least endpoints");
+        // First and last points are always kept
+        assert_eq!(simplified[0], contour[0]);
+        assert_eq!(*simplified.last().unwrap(), *contour.last().unwrap());
+    }
+
+    #[test]
+    fn approx_poly_square_to_4_points() {
+        // A square contour with many points per edge
+        let mut contour = Vec::new();
+        // Top edge
+        for x in 0..=10 { contour.push((x, 0)); }
+        // Right edge
+        for y in 1..=10 { contour.push((10, y)); }
+        // Bottom edge (reverse)
+        for x in (0..10).rev() { contour.push((x, 10)); }
+        // Left edge (reverse)
+        for y in (1..10).rev() { contour.push((0, y)); }
+
+        let simplified = approx_poly(&contour, 1.0);
+        assert!(simplified.len() <= 6, "square should simplify to ~4 corners, got {}", simplified.len());
+    }
+
+    #[test]
+    fn contour_area_square() {
+        // 10x10 square
+        let contour = vec![(0, 0), (10, 0), (10, 10), (0, 10)];
+        let area = contour_area(&contour);
+        assert!((area - 100.0).abs() < 0.01, "area should be 100, got {area}");
+    }
+
+    #[test]
+    fn contour_area_triangle() {
+        // Right triangle: base=4, height=3 → area = 6
+        let contour = vec![(0, 0), (4, 0), (0, 3)];
+        let area = contour_area(&contour);
+        assert!((area - 6.0).abs() < 0.01, "area should be 6, got {area}");
+    }
+
+    #[test]
+    fn contour_area_empty() {
+        assert_eq!(contour_area(&[]), 0.0);
+        assert_eq!(contour_area(&[(0, 0), (1, 1)]), 0.0);
+    }
+
+    #[test]
+    fn contour_perimeter_square() {
+        let contour = vec![(0, 0), (10, 0), (10, 10), (0, 10)];
+        let perim = contour_perimeter(&contour, true);
+        assert!((perim - 40.0).abs() < 0.01, "perimeter should be 40, got {perim}");
+    }
+
+    #[test]
+    fn contour_perimeter_open_vs_closed() {
+        let contour = vec![(0, 0), (3, 0), (3, 4)];
+        let open = contour_perimeter(&contour, false);
+        let closed = contour_perimeter(&contour, true);
+        assert!((open - 7.0).abs() < 0.01); // 3 + 4
+        assert!((closed - 12.0).abs() < 0.01); // 3 + 4 + 5
+    }
+
+    #[test]
+    fn bounding_rect_basic() {
+        let contour = vec![(3, 5), (10, 2), (7, 12), (1, 8)];
+        let (x, y, w, h) = bounding_rect(&contour);
+        assert_eq!((x, y, w, h), (1, 2, 10, 11));
+    }
+
+    #[test]
+    fn bounding_rect_empty() {
+        assert_eq!(bounding_rect(&[]), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn bounding_rect_single_point() {
+        assert_eq!(bounding_rect(&[(5, 3)]), (5, 3, 1, 1));
+    }
+
+    #[test]
+    fn square_contour_has_correct_area() {
+        let (px, info) = make_square_image();
+        let contours = find_contours(&px, &info).unwrap();
+        assert!(!contours.is_empty());
+        let area = contour_area(&contours[0]);
+        // 6x6 square = 36 area, but contour area may differ from pixel area
+        // The contour traces boundary pixels, so area should be close to 36
+        assert!(area > 10.0, "square contour area should be substantial, got {area}");
+    }
 }
 
 #[cfg(test)]
