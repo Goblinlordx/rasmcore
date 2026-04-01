@@ -1,0 +1,128 @@
+id: encoder-codegen-unify_20260401133000Z
+title: "Codegen-driven encoder registry — eliminate hardcoded format lists, MIME types, extensions"
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Replace hardcoded encoder metadata (format names, MIME types, extensions,
+    dispatch match statements) with codegen-generated registry from encoder
+    config annotations. Adding a new encoder should require only the config
+    struct + encode function — no other files need manual edits.
+  context: |
+    The encoder adapter has format metadata hardcoded in 4+ places:
+    - encoder/mod.rs: SUPPORTED_FORMATS const, encode() dispatch match,
+      encode_sequence() dispatch match
+    - codec.rs: mime_type() match, extensions() match,
+      supported_decode_formats(), supported_encode_formats()
+
+    Adding a new encoder requires editing 6+ locations manually. The codegen
+    already handles config struct parsing and WIT generation (pipeline_write.rs),
+    but format metadata (MIME, extensions) and dispatch logic are still manual.
+
+    The fix: extend the encoder config annotation (or a new register_encoder
+    macro) to declare format name, MIME type, and extensions. The codegen
+    generates a static registry table and dispatch functions. The domain
+    encoder mod.rs and codec.rs become thin wrappers over the generated code.
+  codebase_analysis: |
+    Current hardcoded locations:
+    1. encoder/mod.rs:44 — SUPPORTED_FORMATS const (16 formats)
+    2. encoder/mod.rs:59-125 — encode() match dispatcher
+    3. encoder/mod.rs:156-180 — encode_sequence() match dispatcher
+    4. codec.rs:132-155 — mime_type() match (20+ arms)
+    5. codec.rs:157-181 — extensions() match (20+ arms)
+    6. codec.rs:106-119 — supported_decode/encode_formats()
+
+    Already codegen-driven:
+    - Config struct parsing (parse/encoders.rs)
+    - WIT config records (pipeline_write.rs)
+    - Per-format WIT encode methods (pipeline_write.rs)
+    - Stateless encoder adapter (generated_encoder_adapter.rs)
+    - Pipeline write adapter (generated_pipeline_write_adapter.rs)
+
+    Encoder config struct pattern (e.g., jpeg.rs):
+      pub struct JpegEncodeConfig { quality: u8, progressive: bool }
+      pub fn encode_jpeg(pixels, info, config) -> Result<Vec<u8>, ImageError>
+
+    The parse/encoders.rs already extracts: format name (from struct suffix),
+    config fields, default values. It needs to also extract: MIME type,
+    file extensions, and whether the format supports sequences.
+  acceptance_criteria:
+    - Each encoder declares its metadata (MIME type, extensions) via annotation or doc comment
+    - Codegen generates a static format registry with name, MIME, extensions for all encoders
+    - SUPPORTED_FORMATS derived from codegen, not hardcoded
+    - encode() dispatch generated from codegen, not manual match
+    - mime_type() and extensions() generated from codegen, not manual match
+    - supported_encode_formats() derived from codegen registry
+    - format_info() and all_format_info() use codegen registry
+    - Adding a new encoder requires only the config struct + encode function
+    - WASM component builds successfully
+    - Existing encoder tests pass
+  out_of_scope: |
+    - Decoder registry (separate concern, similar pattern)
+    - Encoder quality/feature parity improvements
+    - New encoder implementations
+  technical_notes: |
+    Approach: extend encoder config annotation with metadata fields.
+
+    Option A: Doc comment metadata (matches existing pattern for defaults):
+      /// (mime: image/jpeg)
+      /// (extensions: jpg, jpeg)
+      pub struct JpegEncodeConfig { ... }
+
+    Option B: Attribute macro:
+      #[register_encoder(name="jpeg", mime="image/jpeg", ext="jpg,jpeg")]
+      pub struct JpegEncodeConfig { ... }
+
+    Option B is cleaner. Add a register_encoder proc macro or parse custom
+    attributes in build.rs. The codegen then emits:
+    1. A static ENCODER_REGISTRY array with FormatInfo entries
+    2. A dispatch function that replaces the encode() match
+    3. Generated supported_formats(), mime_type(), extensions() functions
+
+    Files to modify:
+    - parse/encoders.rs: extract MIME + extensions from annotation
+    - generate/pipeline_write.rs: generate registry table + dispatch
+    - build.rs: pass new metadata through codegen pipeline
+    - encoder/mod.rs: replace hardcoded with generated code
+    - codec.rs: replace hardcoded with generated lookups
+    - Each encoder .rs file: add metadata annotation
+plan:
+  - phase: "Annotation + Parsing"
+    tasks:
+      - text: "Add metadata fields to EncoderConfig struct in codegen types (mime_type, extensions, supports_sequence)"
+        done: false
+      - text: "Update parse/encoders.rs to extract MIME and extensions from doc comments or struct attributes"
+        done: false
+      - text: "Add MIME + extensions annotations to each encoder config struct (jpeg, png, webp, gif, tiff, bmp, ico, qoi, tga, hdr, pnm, exr, dds, jp2, fits, heic)"
+        done: false
+  - phase: "Code Generation"
+    tasks:
+      - text: "Generate static ENCODER_REGISTRY table with FormatInfo entries (name, MIME, extensions)"
+        done: false
+      - text: "Generate supported_encode_formats() from registry"
+        done: false
+      - text: "Generate format_info() and all_format_info() from registry"
+        done: false
+      - text: "Generate encode() dispatch function from registry"
+        done: false
+      - text: "Generate mime_type() and extensions() lookup functions from registry"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Replace encoder/mod.rs SUPPORTED_FORMATS + encode() match with generated code"
+        done: false
+      - text: "Replace codec.rs mime_type() + extensions() matches with generated lookups"
+        done: false
+      - text: "Update build.rs to pass encoder metadata through codegen pipeline"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Verify cargo test passes for all encoder tests"
+        done: false
+      - text: "Verify WASM component build succeeds"
+        done: false
+      - text: "Verify web-ui format discovery still works (supportedWriteFormats, allFormatInfo)"
+        done: false
+extra: {}
