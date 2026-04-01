@@ -1,0 +1,110 @@
+id: pipeline-auto-cleanup_20260401020000Z
+title: "Auto-cleanup pipeline graph after write with opt-out API"
+type: feature
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    After any write method, automatically clear all nodes, accumulators, and
+    hashes from the graph. Only the layer cache reference survives. Add a
+    setAutoCleanup(false) method to the WIT pipeline API for opt-out.
+  context: |
+    After a pipeline write, the NodeGraph holds nodes, accumulators, and
+    hash tables that are no longer needed. The graph is only freed when JS
+    garbage-collects the Pipeline object (non-deterministic via FinalizationRegistry).
+    For rapid param changes in the demo, multiple zombie pipelines can accumulate
+    significant memory before GC runs.
+
+    Auto-cleanup after write frees everything immediately. The layer cache
+    (shared Rc<RefCell<LayerCache>>) survives because it's owned externally.
+    Callers who need to re-execute the same graph can opt out.
+  codebase_analysis: |
+    CLEANUP TARGET (NodeGraph fields to clear):
+    - nodes: Vec<Box<dyn ImageNode>> → clear
+    - node_hashes: Vec<ContentHash> → clear
+    - node_accumulators: Vec<Option<Vec<u8>>> → clear
+    - cache_hit_nodes: HashSet<u32> → clear
+    - cache_hit_pixels: HashMap<u32, (Vec<u8>, u32, u32)> → clear
+    - touched_hashes: HashSet<ContentHash> → clear
+    - node_metadata: Vec<Metadata> → clear
+
+    KEEP:
+    - layer_cache: Option<Rc<RefCell<LayerCache>>> → keep (external ownership)
+    - cache: SpatialCache → already budget=0 (no-op), but reset for safety
+    - cache_budget: usize → keep
+
+    WHERE TO CALL:
+    - PipelineResource::finalize_cache() already runs after every write method
+    - Add cleanup() call right after finalize_layer_cache()
+    - Gate on auto_cleanup flag
+
+    WIT API ADDITION:
+    - Add to pipeline.wit: set-auto-cleanup(enabled: bool)
+    - Add to PipelineResource: auto_cleanup: Cell<bool> (default true)
+    - Codegen: pipeline adapter gets new method
+
+    FILES:
+    - crates/rasmcore-image/src/domain/pipeline/graph.rs — add cleanup() method
+    - crates/rasmcore-image/src/adapter/pipeline_adapter.rs — add flag + call
+    - wit/image/pipeline.wit.tmpl — add set-auto-cleanup method
+    - scripts/generate-wit.cjs — may need manual addition if not auto-generated
+  acceptance_criteria:
+    - After writePng/writeJpeg/etc, graph nodes and accumulators are freed
+    - Layer cache reference survives cleanup
+    - setAutoCleanup(false) prevents cleanup after write
+    - setAutoCleanup(true) re-enables it
+    - Default is auto-cleanup enabled
+    - All existing tests pass
+    - WASM e2e tests pass
+  out_of_scope: |
+    Dead node pruning (removing unreachable nodes before execution).
+    Explicit dispose() / Symbol.dispose support.
+    Memory profiling or benchmarking.
+  technical_notes: |
+    NodeGraph::cleanup() method:
+      pub fn cleanup(&mut self) {
+          self.nodes.clear();
+          self.node_hashes.clear();
+          self.node_accumulators.clear();
+          self.cache_hit_nodes.clear();
+          self.cache_hit_pixels.clear();
+          self.touched_hashes.clear();
+          self.node_metadata.clear();
+          // layer_cache kept — external ownership
+      }
+
+    PipelineResource changes:
+      auto_cleanup: Cell<bool>,  // default true
+
+      fn finalize_cache(&self) {
+          self.graph.borrow_mut().finalize_layer_cache();
+          if self.auto_cleanup.get() {
+              self.graph.borrow_mut().cleanup();
+          }
+      }
+
+    WIT addition in pipeline.wit.tmpl:
+      set-auto-cleanup: func(enabled: bool);
+plan:
+  - phase: Rust implementation
+    tasks:
+      - text: Add cleanup() method to NodeGraph that clears all fields except layer_cache
+        done: false
+      - text: Add auto_cleanup flag to PipelineResource (default true)
+        done: false
+      - text: Call cleanup() after finalize_layer_cache() when flag is true
+        done: false
+  - phase: WIT API
+    tasks:
+      - text: Add set-auto-cleanup method to pipeline.wit.tmpl
+        done: false
+      - text: Implement setAutoCleanup in pipeline adapter
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All Rust tests pass (tiled_parity + layer_cache)
+        done: false
+      - text: WASM e2e tests pass
+        done: false
+extra: {}
