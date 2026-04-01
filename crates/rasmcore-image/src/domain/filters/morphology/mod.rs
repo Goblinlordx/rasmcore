@@ -14,6 +14,8 @@ mod morph_open;
 pub use morph_open::*;
 mod morph_tophat;
 pub use morph_tophat::*;
+mod skeletonize;
+pub use skeletonize::*;
 
 #[cfg(test)]
 mod tests;

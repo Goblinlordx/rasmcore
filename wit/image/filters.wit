@@ -498,6 +498,10 @@ interface filters {
         shape: u32,
     }
 
+    record skeletonize-config {
+        max-iterations: u32,
+    }
+
     record dilate-config {
         ksize: u32,
         shape: u32,
@@ -801,6 +805,7 @@ interface filters {
     erode: func(pixels: buffer, info: image-info, config: erode-config) -> result<buffer, rasmcore-error>;
     morph-blackhat: func(pixels: buffer, info: image-info, config: morph-blackhat-config) -> result<buffer, rasmcore-error>;
     morph-open: func(pixels: buffer, info: image-info, config: morph-open-config) -> result<buffer, rasmcore-error>;
+    skeletonize: func(pixels: buffer, info: image-info, config: skeletonize-config) -> result<buffer, rasmcore-error>;
     dilate: func(pixels: buffer, info: image-info, config: dilate-config) -> result<buffer, rasmcore-error>;
     guided-filter: func(pixels: buffer, info: image-info, config: guided-filter-config) -> result<buffer, rasmcore-error>;
     lens-blur: func(pixels: buffer, info: image-info, config: lens-blur-config) -> result<buffer, rasmcore-error>;
