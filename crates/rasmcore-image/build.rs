@@ -321,13 +321,12 @@ fn main() {
                             {
                                 used.push(ptype.clone());
                             }
-                            if let Some(inner) = ptype.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
-                                if all_enums.contains_key(inner)
-                                    && !used.contains(&inner.to_string())
-                                    && !externally_defined.contains(&inner)
-                                {
-                                    used.push(inner.to_string());
-                                }
+                            if let Some(inner) = ptype.strip_prefix("Option<").and_then(|s| s.strip_suffix('>'))
+                                && all_enums.contains_key(inner)
+                                && !used.contains(&inner.to_string())
+                                && !externally_defined.contains(&inner)
+                            {
+                                used.push(inner.to_string());
                             }
                         }
                     }

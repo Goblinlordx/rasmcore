@@ -10666,8 +10666,8 @@ fn douglas_peucker(points: &[(i32, i32)], start: usize, end: usize, epsilon: f64
     let mut max_dist = 0.0;
     let mut max_idx = start;
 
-    for i in (start + 1)..end {
-        let (px, py) = (points[i].0 as f64, points[i].1 as f64);
+    for (i, &(ptx, pty)) in points.iter().enumerate().skip(start + 1).take(end - start - 1) {
+        let (px, py) = (ptx as f64, pty as f64);
         let dist = if line_len < 1e-10 {
             ((px - sx).powi(2) + (py - sy).powi(2)).sqrt()
         } else {

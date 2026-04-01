@@ -27,8 +27,8 @@ pub fn to_wit_name(rust_name: &str) -> String {
     let bytes = clean.as_bytes();
     for (i, ch) in clean.chars().enumerate() {
         if ch.is_uppercase() && i > 0 {
-            let prev_upper = bytes.get(i - 1).map_or(false, |b| b.is_ascii_uppercase());
-            let next_lower = bytes.get(i + 1).map_or(false, |b| b.is_ascii_lowercase());
+            let prev_upper = bytes.get(i - 1).is_some_and(|b| b.is_ascii_uppercase());
+            let next_lower = bytes.get(i + 1).is_some_and(|b| b.is_ascii_lowercase());
             if !prev_upper || next_lower {
                 result.push('-');
             }
