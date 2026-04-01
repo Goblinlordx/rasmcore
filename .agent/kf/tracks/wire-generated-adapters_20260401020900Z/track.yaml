@@ -83,7 +83,7 @@ plan:
 - phase: Verification
   tasks:
   - text: cargo build (native) succeeds with no hand-written write or mapper adapter code
-    done: false
+    done: true
   - text: cargo component build (wasm32-wasip2) succeeds
-    done: false
+    done: true
 extra: {}
