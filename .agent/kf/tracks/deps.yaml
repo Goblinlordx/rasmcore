@@ -229,3 +229,6 @@ web-ui-react-scaffold_20260401100640Z: []
 
 web-ui-react-migrate_20260401100641Z:
   - web-ui-react-scaffold_20260401100640Z
+
+# Preview worker — no deps (builds on current web-ui React codebase)
+web-ui-preview-worker_20260401114500Z: []

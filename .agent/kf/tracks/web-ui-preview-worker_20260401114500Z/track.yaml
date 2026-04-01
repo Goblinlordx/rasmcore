@@ -1,0 +1,106 @@
+id: web-ui-preview-worker_20260401114500Z
+title: "Web UI — Preview worker with downscaled image for fast feedback"
+type: feature
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Add a second web worker dedicated to preview rendering. On image load it
+    resizes to max 400px (longest side), then applies the chain on that small
+    image. The preview canvas updates live as the user edits params (debounced),
+    while the full-res worker only runs on Apply.
+  context: |
+    Currently the single pipeline-worker processes everything at full resolution.
+    Editing params requires clicking Apply to see any result, which is slow on
+    large images. Users need fast visual feedback while tweaking sliders.
+
+    The solution: a second worker that loads the same image but immediately
+    resizes it to a small preview size (max 400px on longest side). When the
+    user edits params, a debounced preview request goes to this preview worker
+    which processes the downscaled image quickly. The full-res worker only
+    runs when Apply is clicked.
+
+    The existing pipeline-worker.ts already has thumbnail support (THUMB_MAX=256)
+    but it only creates a thumb on load — it doesn't process chains on the thumb.
+    The new preview worker is a separate instance with its own Pipeline that
+    always works on the downscaled copy.
+  codebase_analysis: |
+    Current architecture:
+    - web-ui/src/pipeline-worker.ts: single worker, loads full image, processes
+      chains at full res, has thumbnail creation on load (unused for processing)
+    - web-ui/src/hooks/useWorker.ts: manages single worker instance, sendMessage,
+      processing state, canvas refs
+    - web-ui/src/App.tsx: applyFullChain sends process to worker, no preview path
+    - web-ui/src/components/ChainNode.tsx: param changes call onParamChange only
+      (schedulePreview was removed in recent fix)
+
+    The preview worker will be a copy of pipeline-worker.ts but simplified:
+    - On load: resize image to max 400px, store as previewBytes
+    - On process: always use previewBytes (no full-res path)
+    - On result: draw to a small preview canvas in the ChainNode editing area
+
+    React integration:
+    - New usePreviewWorker hook (similar to useWorker but simpler)
+    - ChainNode gets a small canvas ref for inline preview
+    - App.tsx passes preview worker to EffectStack
+    - Param changes trigger debounced preview (re-add schedulePreview but
+      routed to preview worker, not full-res worker)
+  acceptance_criteria:
+    - A second web worker (preview-worker.ts) loads and processes at reduced size
+    - Preview image is max 400px on longest side, same aspect ratio
+    - Param changes in edit mode trigger debounced preview (600ms) on preview worker
+    - Preview result displays in a small canvas inside the editing ChainNode
+    - Full-res worker only processes on Apply click (unchanged)
+    - Preview worker has its own Pipeline instance (separate cache from full-res)
+    - Loading a new image initializes both workers
+    - Preview worker errors dont block full-res processing
+  out_of_scope: |
+    - Shared cache between preview and full-res workers
+    - Progressive rendering (showing preview then replacing with full-res)
+    - Preview for multi-layer composite (single active layer only)
+  technical_notes: |
+    Implementation:
+    1. Create preview-worker.ts — simplified pipeline-worker that always
+       resizes on load. Message protocol same as pipeline-worker but only
+       supports init/load/process (no export/composite).
+    2. Create usePreviewWorker hook — lightweight version of useWorker.
+       Manages worker lifecycle, sendMessage, previewCanvasRef.
+       No queue needed (latest request wins, cancel previous).
+    3. Update ChainNode — when editing, show a small canvas (max 280px wide)
+       that displays preview worker output.
+    4. Re-add schedulePreview in App.tsx but route to preview worker.
+       Debounce at 600ms. Only fires when editingNodeId is set.
+    5. Update handleAddLayer to send load to both workers.
+
+    Preview worker message protocol:
+      init -> ready
+      load { imageBytes } -> loaded { info }  (resizes internally)
+      process { chain, mode:'preview' } -> result { png }
+      (no export, no composite)
+
+    The preview canvas in ChainNode is a ref passed from usePreviewWorker.
+    When result arrives, it draws to that canvas. The canvas is only visible
+    when isEditing is true.
+plan:
+  - phase: "Preview Worker"
+    tasks:
+      - text: "Create src/preview-worker.ts — copy of pipeline-worker, always resizes to max 400px on load, only supports init/load/process"
+        done: false
+      - text: "Create src/hooks/usePreviewWorker.ts — manages preview worker lifecycle, sendMessage, previewCanvasRef, no queue (latest wins)"
+        done: false
+  - phase: "UI Integration"
+    tasks:
+      - text: "Update ChainNode.tsx — add small preview canvas (max 280px wide) visible during editing"
+        done: false
+      - text: "Update App.tsx — instantiate usePreviewWorker, re-add schedulePreview routed to preview worker, send load to both workers on image add"
+        done: false
+      - text: "Update EffectStack.tsx — pass preview canvas ref and onSchedulePreview to ChainNode"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Add smoke test for preview worker integration"
+        done: false
+      - text: "Run npm run check — verify build + lint + fmt + test all pass"
+        done: false
+extra: {}
