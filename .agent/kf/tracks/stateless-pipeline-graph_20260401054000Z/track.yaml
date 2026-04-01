@@ -165,11 +165,11 @@ plan:
 - phase: Verification
   tasks:
   - text: cargo build (native) + cargo component build (wasm32-wasip2)
-    done: false
+    done: true
   - text: Pipeline tests pass with validation enabled
-    done: false
+    done: true
   - text: Test fan-out (shared upstream, multiple consumers)
-    done: false
+    done: true
   - text: Test graph reuse (execute same description twice)
-    done: false
+    done: true
 extra: {}

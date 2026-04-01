@@ -474,4 +474,65 @@ mod tests {
         assert!(json.contains("\"id\":0"), "JSON should contain node 0");
         assert!(json.contains("\"id\":1"), "JSON should contain node 1");
     }
+
+    #[test]
+    fn fan_out_shared_upstream_with_description() {
+        // source → resize(16x16) AND source → resize(48x48)
+        // Both share the same source node (fan-out / multiple consumers)
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let src_info = graph.node_info(src).unwrap();
+
+        let small = graph.add_node(Box::new(ResizeNode::new(
+            src,
+            src_info.clone(),
+            16,
+            16,
+            ResizeFilter::Nearest,
+        )));
+        let large = graph.add_node(Box::new(ResizeNode::new(
+            src,
+            src_info,
+            48,
+            48,
+            ResizeFilter::Lanczos3,
+        )));
+
+        // Both should reference the same upstream (node 0)
+        let desc = graph.description();
+        assert_eq!(desc.len(), 3);
+        assert_eq!(desc.get(1).unwrap().upstreams, vec![0]); // small refs source
+        assert_eq!(desc.get(2).unwrap().upstreams, vec![0]); // large refs source
+
+        // Both outputs should be correct
+        let small_out = sink::write(&mut graph, small, "png", None, None).unwrap();
+        let small_dec = crate::domain::decoder::decode(&small_out).unwrap();
+        assert_eq!(small_dec.info.width, 16);
+        assert_eq!(small_dec.info.height, 16);
+
+        // Description still intact after first write
+        assert_eq!(graph.description().len(), 3);
+    }
+
+    #[test]
+    fn graph_reuse_execute_twice() {
+        use crate::domain::pipeline::graph::execute_from_description;
+
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data.clone()).unwrap()));
+
+        let desc = graph.description().clone();
+
+        // Execute from description twice
+        let out1 = execute_from_description(&desc, &png_data, src, "png", None).unwrap();
+        let out2 = execute_from_description(&desc, &png_data, src, "png", None).unwrap();
+
+        assert_eq!(out1, out2, "two executions from same description must be identical");
+
+        // Verify the description is unchanged
+        let desc2 = graph.description();
+        assert_eq!(desc.len(), desc2.len());
+    }
 }

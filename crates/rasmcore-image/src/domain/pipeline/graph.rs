@@ -353,15 +353,15 @@ impl GraphDescription {
                 json.push(',');
             }
             json.push_str(&format!(
-                r#"{{"id":{},"kind":"{}","name":"{}","upstreams":{:?},"output":{{"width":{},"height":{},"format":"{}","color_space":"{}"}}}}"#,
+                r#"{{"id":{},"kind":"{}","name":"{}","upstreams":{:?},"output":{{"width":{},"height":{},"format":"{:?}","color_space":"{:?}"}}}}"#,
                 i,
                 desc.kind,
                 desc.name,
                 desc.upstreams,
                 desc.output_info.width,
                 desc.output_info.height,
-                format!("{:?}", desc.output_info.format),
-                format!("{:?}", desc.output_info.color_space),
+                desc.output_info.format,
+                desc.output_info.color_space,
             ));
         }
         json.push(']');
@@ -835,16 +835,16 @@ impl NodeGraph {
 
         for (i, node) in self.nodes.iter().enumerate() {
             let i = i as u32;
-            if let Some(up) = node.upstream_id() {
-                if up >= i {
-                    return Err(ValidationError {
-                        message: format!(
-                            "upstream {up} >= node {i} — invalid forward/self reference"
-                        ),
-                        node_id: Some(i),
-                        upstream_id: Some(up),
-                    });
-                }
+            if let Some(up) = node.upstream_id()
+                && up >= i
+            {
+                return Err(ValidationError {
+                    message: format!(
+                        "upstream {up} >= node {i} — invalid forward/self reference"
+                    ),
+                    node_id: Some(i),
+                    upstream_id: Some(up),
+                });
             }
         }
         Ok(())
@@ -1184,15 +1184,15 @@ impl NodeGraph {
             lc.mark_referenced(hash);
 
             // If this was NOT a cache hit, push the computed output from accumulator
-            if !self.cache_hit_nodes.contains(&(node_id as u32)) {
-                if let Some(Some(pixels)) = self.node_accumulators.get(node_id) {
-                    let info = match self.nodes.get(node_id) {
-                        Some(n) => n.info(),
-                        None => continue,
-                    };
-                    let bpp = bytes_per_pixel(info.format);
-                    lc.store(*hash, pixels.clone(), info.width, info.height, bpp);
-                }
+            if !self.cache_hit_nodes.contains(&(node_id as u32))
+                && let Some(Some(pixels)) = self.node_accumulators.get(node_id)
+            {
+                let info = match self.nodes.get(node_id) {
+                    Some(n) => n.info(),
+                    None => continue,
+                };
+                let bpp = bytes_per_pixel(info.format);
+                lc.store(*hash, pixels.clone(), info.width, info.height, bpp);
             }
         }
 
@@ -1365,7 +1365,7 @@ pub fn execute_from_description(
                     upstream_info,
                     &params,
                 )
-                .map_err(|e| ImageError::InvalidParameters(e))?;
+                .map_err(ImageError::InvalidParameters)?;
                 graph.add_node(node);
             }
             NodeKind::Transform => {
@@ -1427,7 +1427,7 @@ pub fn execute_from_description(
                             upstream_info,
                             &params,
                         )
-                        .map_err(|e| ImageError::InvalidParameters(e))?
+                        .map_err(ImageError::InvalidParameters)?
                     }
                 };
                 graph.add_node(node);

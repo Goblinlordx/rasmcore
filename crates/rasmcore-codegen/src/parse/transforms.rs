@@ -53,7 +53,7 @@ pub fn extract_transforms(
                 if let syn::ImplItem::Fn(method) = item {
                     if method.sig.ident == "new" {
                         let (params, fallible, multi_input) =
-                            extract_constructor_params(&method.sig, &enums);
+                            extract_constructor_params(&method.sig, enums);
                         constructors
                             .insert(struct_name.clone(), (params, fallible, multi_input));
                     }
