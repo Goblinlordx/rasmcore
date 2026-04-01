@@ -81,40 +81,49 @@ pub fn generate_wit_enums(encoders: &[EncoderInfo]) -> String {
     wit
 }
 
-/// Generate WIT write method declarations — uniform (source, config) signature.
+/// Generate WIT write method declarations — metadata parameter when supported.
 pub fn generate_wit_write_methods(encoders: &[EncoderInfo]) -> String {
     let mut wit = String::new();
     for enc in encoders {
         let wit_name = enc.format.replace('_', "-");
         let config_type = format!("{}-write-config", wit_name);
-        wit.push_str(&format!(
-            "        write-{}: func(source: node-id, config: {}) -> result<buffer, rasmcore-error>;\n",
-            wit_name, config_type
-        ));
+        if enc.sink_takes_metadata {
+            wit.push_str(&format!(
+                "        write-{}: func(source: node-id, config: {}, metadata: option<metadata-set>) -> result<buffer, rasmcore-error>;\n",
+                wit_name, config_type
+            ));
+        } else {
+            wit.push_str(&format!(
+                "        write-{}: func(source: node-id, config: {}) -> result<buffer, rasmcore-error>;\n",
+                wit_name, config_type
+            ));
+        }
     }
     wit
 }
 
-/// Generate Rust adapter write methods — metadata from pipeline chain state.
+/// Generate Rust adapter write methods matching the current WIT API.
+///
+/// Formats that support metadata get a `metadata: Option<pipeline::MetadataSet>`
+/// parameter, converted via `super::to_domain_metadata_set`.
 pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
     let mut code = String::new();
     code.push_str("// Auto-generated pipeline write adapter methods.\n");
-    code.push_str(
-        "// All write methods take (source, config). Metadata comes from pipeline chain state.\n\n",
-    );
+    code.push_str("// Do not edit — regenerate by changing encoder configs and rebuilding.\n\n");
 
     for enc in encoders {
         let method_name = format!("write_{}", enc.format);
         let config_pascal = to_pascal_case(&format!("{}_write_config", enc.format));
 
-        // Uniform signature: (source, config)
-        if enc.fields.is_empty() {
+        // Build signature — metadata parameter when sink supports it
+        let config_prefix = if enc.fields.is_empty() { "_" } else { "" };
+        if enc.sink_takes_metadata {
             code.push_str(&format!(
-                "    fn {method_name}(&self, source: NodeId, _config: pipeline::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+                "    fn {method_name}(&self, source: NodeId, {config_prefix}config: pipeline::{config_pascal}, metadata: Option<pipeline::MetadataSet>) -> Result<Vec<u8>, RasmcoreError> {{\n"
             ));
         } else {
             code.push_str(&format!(
-                "    fn {method_name}(&self, source: NodeId, config: pipeline::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+                "    fn {method_name}(&self, source: NodeId, {config_prefix}config: pipeline::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
             ));
         }
 
@@ -153,7 +162,7 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
             code.push_str("        };\n");
 
             if enc.sink_takes_metadata {
-                code.push_str("        let domain_meta = self.resolve_metadata();\n");
+                code.push_str("        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);\n");
                 code.push_str(&format!(
                     "        let result = sink::{method_name}(&mut self.graph.borrow_mut(), source, &cfg, domain_meta.as_ref()).map_err(to_wit_error);\n"
                 ));
@@ -164,7 +173,7 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
             }
         } else {
             if enc.sink_takes_metadata {
-                code.push_str("        let domain_meta = self.resolve_metadata();\n");
+                code.push_str("        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);\n");
                 code.push_str(&format!(
                     "        let result = sink::{method_name}(&mut self.graph.borrow_mut(), source, domain_meta.as_ref()).map_err(to_wit_error);\n"
                 ));
@@ -238,11 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn wit_write_methods_uniform() {
+    fn wit_write_methods_with_metadata() {
         let wit = generate_wit_write_methods(&[jpeg_encoder(), bmp_encoder()]);
-        assert!(wit.contains("write-jpeg: func(source: node-id, config: jpeg-write-config)"));
+        assert!(wit.contains("write-jpeg: func(source: node-id, config: jpeg-write-config, metadata: option<metadata-set>)"));
         assert!(wit.contains("write-bmp: func(source: node-id, config: bmp-write-config)"));
-        assert!(!wit.contains("metadata"));
+        // bmp has no metadata, jpeg does
+        assert!(!wit.contains("write-bmp") || !wit.contains("bmp-write-config, metadata"));
     }
 
     #[test]
@@ -251,13 +261,15 @@ mod tests {
         assert!(code.contains("fn write_bmp("));
         assert!(code.contains("sink::write_bmp("));
         assert!(code.contains("finalize_cache"));
+        assert!(!code.contains("metadata"));
     }
 
     #[test]
-    fn adapter_with_metadata_sink() {
+    fn adapter_with_metadata_param() {
         let code = generate_adapter_methods(&[jpeg_encoder()]);
         assert!(code.contains("config.quality.unwrap_or(85)"));
-        assert!(code.contains("resolve_metadata"));
+        assert!(code.contains("metadata: Option<pipeline::MetadataSet>"));
+        assert!(code.contains("metadata.as_ref().map(super::to_domain_metadata_set)"));
         assert!(code.contains("finalize_cache"));
     }
 }

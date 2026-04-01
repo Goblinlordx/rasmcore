@@ -317,8 +317,6 @@ mod tests {
             fn_name: "grayscale_mapper".to_string(),
             params: vec![],
             config_struct: None,
-            point_op: false,
-            color_op: false,
             output_format: Some("Gray8".to_string()),
         }];
 

@@ -63,12 +63,14 @@ pub fn extract_encoder_configs(file: &syn::File) -> Vec<EncoderInfo> {
                     let ftype = super::type_to_string(&field.ty);
                     let is_enum = enums.contains_key(&ftype);
                     let enum_variants = enums.get(&ftype).cloned().unwrap_or_default();
+                    // Extract default from doc comment pattern: (default: VALUE)
+                    let default_val = extract_default_from_attrs(&field.attrs);
                     fields.push(EncoderField {
                         name: fname,
                         rust_type: ftype,
                         is_enum,
                         enum_variants,
-                        default_val: String::new(),
+                        default_val,
                     });
                 }
             }
@@ -84,6 +86,40 @@ pub fn extract_encoder_configs(file: &syn::File) -> Vec<EncoderInfo> {
         }
     }
     configs
+}
+
+/// Extract a default value from doc comment attributes.
+///
+/// Looks for patterns like `(default: 85)` or `Default: false` in `///` comments.
+fn extract_default_from_attrs(attrs: &[syn::Attribute]) -> String {
+    for attr in attrs {
+        if !attr.path().is_ident("doc") {
+            continue;
+        }
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) = &nv.value
+            {
+                let text = s.value();
+                // Match patterns: (default: VALUE) or Default: VALUE
+                if let Some(pos) = text.to_lowercase().find("default:") {
+                    let after = text[pos + 8..].trim();
+                    // Extract until closing paren, period, comma, or end of string
+                    let val: String = after
+                        .chars()
+                        .take_while(|c| !matches!(c, ')' | '.' | ',' | '\n'))
+                        .collect();
+                    let val = val.trim().to_string();
+                    if !val.is_empty() {
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 #[cfg(test)]
