@@ -106,13 +106,14 @@ function loadImage(bytes) {
     const src = cachedPipe.read(raw);
     info = cachedPipe.nodeInfo(src);
 
+    const origW = info.width,
+      origH = info.height;
     // Downscale if larger than PREVIEW_MAX
     const scale = Math.min(PREVIEW_MAX / info.width, PREVIEW_MAX / info.height, 1);
     if (scale < 1) {
       const tw = Math.max(1, Math.round(info.width * scale));
       const th = Math.max(1, Math.round(info.height * scale));
       const resized = cachedPipe.resize(src, tw, th, 'bilinear');
-      // Write to PNG then re-read so the source node is at preview resolution
       const png = cachedPipe.writePng(resized, {}, undefined);
       previewBytes = png;
       // Re-create pipeline with downscaled source for caching
@@ -120,11 +121,14 @@ function loadImage(bytes) {
       cachedSourceNode = cachedPipe.read(previewBytes);
       const pInfo = cachedPipe.nodeInfo(cachedSourceNode);
       info = { width: pInfo.width, height: pInfo.height };
+      console.log(`[preview-worker] Resized ${origW}x${origH} → ${info.width}x${info.height}`);
     } else {
       previewBytes = raw;
       cachedSourceNode = src;
+      console.log(`[preview-worker] No resize needed: ${origW}x${origH} <= ${PREVIEW_MAX}px`);
     }
   } catch (e) {
+    console.error('[preview-worker] Load failed:', e);
     previewBytes = raw;
     cachedPipe = null;
     cachedSourceNode = null;

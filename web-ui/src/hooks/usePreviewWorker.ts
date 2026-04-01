@@ -6,6 +6,9 @@ export function usePreviewWorker() {
   const processingRef = useRef(false);
   const [ready, setReady] = useState(false);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pendingLoadRef = useRef<ArrayBuffer | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const queuedChainRef = useRef<any[] | null>(null); // single-slot queue
 
   useEffect(() => {
     const w = new Worker(new URL('../preview-worker.ts', import.meta.url), { type: 'module' });
@@ -18,6 +21,13 @@ export function usePreviewWorker() {
       if (type === 'ready') {
         readyRef.current = true;
         setReady(true);
+        // Drain pending load if image was queued before SDK was ready
+        if (pendingLoadRef.current && workerRef.current) {
+          workerRef.current.postMessage({ type: 'load', imageBytes: pendingLoadRef.current }, [
+            pendingLoadRef.current,
+          ]);
+          pendingLoadRef.current = null;
+        }
         return;
       }
 
@@ -41,31 +51,52 @@ export function usePreviewWorker() {
           URL.revokeObjectURL(url);
         };
         img.src = url;
+        // Drain single-slot queue
+        if (queuedChainRef.current && workerRef.current) {
+          const next = queuedChainRef.current;
+          queuedChainRef.current = null;
+          processingRef.current = true;
+          workerRef.current.postMessage({ type: 'process', chain: next });
+        }
         return;
       }
 
       if (type === 'error') {
         processingRef.current = false;
         console.warn('Preview worker error:', e.data.message);
+        // Drain queue even on error
+        if (queuedChainRef.current && workerRef.current) {
+          const next = queuedChainRef.current;
+          queuedChainRef.current = null;
+          processingRef.current = true;
+          workerRef.current.postMessage({ type: 'process', chain: next });
+        }
       }
     };
 
     return () => w.terminate();
   }, []);
 
-  // Send load — fires and forgets (no queue needed for load)
   const loadImage = useCallback((imageBytes: ArrayBuffer) => {
-    if (!workerRef.current || !readyRef.current) return;
+    if (!workerRef.current) return;
+    if (!readyRef.current) {
+      pendingLoadRef.current = imageBytes;
+      return;
+    }
     processingRef.current = true;
     workerRef.current.postMessage({ type: 'load', imageBytes }, [imageBytes]);
   }, []);
 
-  // Send process — latest-wins (no queue, just overwrite)
+  // Single-slot queue: if busy, replace queued chain (latest params win)
   const processChain = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (chain: any[]) => {
       if (!workerRef.current || !readyRef.current) return;
-      // Don't queue — just send. If worker is busy, it'll process the latest when done.
+      if (processingRef.current) {
+        queuedChainRef.current = chain; // replace previous queued
+        return;
+      }
+      processingRef.current = true;
       workerRef.current.postMessage({ type: 'process', chain });
     },
     [],
