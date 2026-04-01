@@ -94,12 +94,12 @@ fn main() {
                 if let Ok(file) = syn::parse_file(&source) {
                     let mut configs =
                         rasmcore_codegen::parse::encoders::extract_encoder_configs(&file);
-                    // Detect sink_takes_metadata by checking if sink::write_xxx has metadata param
+                    // Only include encoders that have a corresponding sink function
+                    let sink_source = std::fs::read_to_string(
+                        Path::new(&manifest_dir).join("src/domain/pipeline/nodes/sink.rs"),
+                    )
+                    .unwrap_or_default();
                     for config in &mut configs {
-                        let sink_source = std::fs::read_to_string(
-                            Path::new(&manifest_dir).join("src/domain/pipeline/nodes/sink.rs"),
-                        )
-                        .unwrap_or_default();
                         let sig_pattern = format!("fn write_{}", config.format);
                         if let Some(pos) = sink_source.find(&sig_pattern) {
                             let sig_end = sink_source[pos..].find('{').unwrap_or(200);
@@ -107,6 +107,14 @@ fn main() {
                             config.sink_takes_metadata = sig.contains("metadata");
                         }
                     }
+                    // Filter: only generate adapter for formats with sink functions
+                    configs.retain(|c| {
+                        let has_sink = sink_source.contains(&format!("fn write_{}", c.format));
+                        if !has_sink {
+                            eprintln!("rasmcore build.rs: skipping {} (no sink function)", c.format);
+                        }
+                        has_sink
+                    });
                     encoder_configs.extend(configs);
                 }
             }
@@ -130,7 +138,7 @@ fn main() {
     } else {
         std::fs::write(
             out_dir.join("generated_pipeline_write_adapter.rs"),
-            "// No encoder configs found\n",
+            "macro_rules! generated_pipeline_write_methods { () => {} }\n",
         )
         .unwrap();
     }

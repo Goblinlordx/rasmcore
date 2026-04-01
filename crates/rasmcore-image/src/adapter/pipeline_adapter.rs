@@ -16,10 +16,11 @@ use crate::domain::pipeline::nodes::{
 
 use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
 
-// Import the generated macro that provides all pipeline filter methods
+// Import generated macros that provide pipeline filter + write methods
 include!(concat!(env!("OUT_DIR"), "/generated_pipeline_adapter.rs"));
+include!(concat!(env!("OUT_DIR"), "/generated_pipeline_write_adapter.rs"));
 
-fn to_domain_png_filter_pipeline(
+fn to_domain_png_filter_type_pipeline(
     f: Option<pipeline::PngFilterType>,
 ) -> crate::domain::encoder::png::PngFilterType {
     match f {
@@ -669,160 +670,8 @@ impl GuestImagePipeline for PipelineResource {
             .add_node_with_hash(Box::new(node), hash))
     }
 
-    fn write_jpeg(
-        &self,
-        source: NodeId,
-        config: pipeline::JpegWriteConfig,
-        metadata: Option<pipeline::MetadataSet>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let cfg = domain::encoder::jpeg::JpegEncodeConfig {
-            quality: config.quality.unwrap_or(85),
-            progressive: config.progressive.unwrap_or(false),
-            turbo: false,
-        };
-        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        let result = sink::write_jpeg(
-            &mut self.graph.borrow_mut(),
-            source,
-            &cfg,
-            domain_meta.as_ref(),
-        )
-        .map_err(to_wit_error);
-        // Finalize layer cache after write (push new results, clean unreferenced)
-        self.graph.borrow_mut().finalize_layer_cache();
-        result
-    }
-
-    fn write_png(
-        &self,
-        source: NodeId,
-        config: pipeline::PngWriteConfig,
-        metadata: Option<pipeline::MetadataSet>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let cfg = domain::encoder::png::PngEncodeConfig {
-            compression_level: config.compression_level.unwrap_or(6),
-            filter_type: to_domain_png_filter_pipeline(config.filter_type),
-        };
-        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        let result = sink::write_png(
-            &mut self.graph.borrow_mut(),
-            source,
-            &cfg,
-            domain_meta.as_ref(),
-        )
-        .map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_webp(
-        &self,
-        source: NodeId,
-        config: pipeline::WebpWriteConfig,
-        metadata: Option<pipeline::MetadataSet>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let cfg = domain::encoder::webp::WebpEncodeConfig {
-            quality: config.quality.unwrap_or(75),
-            lossless: config.lossless.unwrap_or(false),
-        };
-        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        let result = sink::write_webp(
-            &mut self.graph.borrow_mut(),
-            source,
-            &cfg,
-            domain_meta.as_ref(),
-        )
-        .map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_bmp(
-        &self,
-        source: NodeId,
-        _config: pipeline::BmpWriteConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let result = sink::write_bmp(&mut self.graph.borrow_mut(), source).map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_ico(
-        &self,
-        source: NodeId,
-        _config: pipeline::IcoWriteConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let result = sink::write_ico(&mut self.graph.borrow_mut(), source).map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_qoi(
-        &self,
-        source: NodeId,
-        _config: pipeline::QoiWriteConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let result = sink::write_qoi(&mut self.graph.borrow_mut(), source).map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_gif(
-        &self,
-        source: NodeId,
-        config: pipeline::GifWriteConfig,
-        metadata: Option<pipeline::MetadataSet>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let cfg = domain::encoder::gif::GifEncodeConfig {
-            repeat: config.repeat.unwrap_or(0),
-        };
-        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        let result = sink::write_gif(
-            &mut self.graph.borrow_mut(),
-            source,
-            &cfg,
-            domain_meta.as_ref(),
-        )
-        .map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_avif(
-        &self,
-        source: NodeId,
-        config: pipeline::AvifWriteConfig,
-        metadata: Option<pipeline::MetadataSet>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let cfg = domain::encoder::avif::AvifEncodeConfig {
-            quality: config.quality.unwrap_or(75),
-            speed: config.speed.unwrap_or(6),
-        };
-        let domain_meta = metadata.as_ref().map(super::to_domain_metadata_set);
-        let result = sink::write_avif(
-            &mut self.graph.borrow_mut(),
-            source,
-            &cfg,
-            domain_meta.as_ref(),
-        )
-        .map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
-
-    fn write_tiff(
-        &self,
-        source: NodeId,
-        config: pipeline::TiffWriteConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let cfg = domain::encoder::tiff::TiffEncodeConfig {
-            compression: to_domain_tiff_compression_pipeline(config.compression),
-        };
-        let result =
-            sink::write_tiff(&mut self.graph.borrow_mut(), source, &cfg).map_err(to_wit_error);
-        self.finalize_cache();
-        result
-    }
+    // Auto-generated write methods for all registered encoders
+    generated_pipeline_write_methods!();
 
     fn write(
         &self,

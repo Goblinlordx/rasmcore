@@ -37,6 +37,7 @@ interface pipeline {
     record jpeg-write-config {
         quality: option<u8>,
         progressive: option<bool>,
+        turbo: option<bool>,
     }
 
     enum png-filter-type {

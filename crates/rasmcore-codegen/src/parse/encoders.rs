@@ -106,10 +106,11 @@ fn extract_default_from_attrs(attrs: &[syn::Attribute]) -> String {
                 // Match patterns: (default: VALUE) or Default: VALUE
                 if let Some(pos) = text.to_lowercase().find("default:") {
                     let after = text[pos + 8..].trim();
-                    // Extract until closing paren, period, comma, or end of string
+                    // Extract a simple value: number, boolean, or quoted string
+                    // Stop at whitespace, paren, period, comma, or end
                     let val: String = after
                         .chars()
-                        .take_while(|c| !matches!(c, ')' | '.' | ',' | '\n'))
+                        .take_while(|c| !c.is_whitespace() && !matches!(c, ')' | '.' | ',' | '(' | '\n'))
                         .collect();
                     let val = val.trim().to_string();
                     if !val.is_empty() {

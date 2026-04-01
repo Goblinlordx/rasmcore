@@ -1,6 +1,18 @@
 //! Generate pipeline write adapter methods and WIT declarations from encoder configs.
 
 use super::helpers::to_pascal_case;
+
+/// Convert PascalCase to snake_case (e.g., TiffCompression → tiff_compression).
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() && i > 0 {
+            result.push('_');
+        }
+        result.push(ch.to_ascii_lowercase());
+    }
+    result
+}
 use crate::parse::encoders::EncoderInfo;
 
 /// Generate WIT write config records for all encoders.
@@ -106,10 +118,14 @@ pub fn generate_wit_write_methods(encoders: &[EncoderInfo]) -> String {
 ///
 /// Formats that support metadata get a `metadata: Option<pipeline::MetadataSet>`
 /// parameter, converted via `super::to_domain_metadata_set`.
+///
+/// Output is a `macro_rules!` that is included at module level and invoked
+/// inside the `impl GuestImagePipeline` block (same pattern as filter adapter).
 pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
     let mut code = String::new();
     code.push_str("// Auto-generated pipeline write adapter methods.\n");
     code.push_str("// Do not edit — regenerate by changing encoder configs and rebuilding.\n\n");
+    code.push_str("macro_rules! generated_pipeline_write_methods {\n    () => {\n");
 
     for enc in encoders {
         let method_name = format!("write_{}", enc.format);
@@ -136,11 +152,10 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
             ));
             for field in &enc.fields {
                 if field.is_enum {
+                    let snake = to_snake_case(&field.rust_type);
                     code.push_str(&format!(
                         "            {}: to_domain_{}_pipeline(config.{}),\n",
-                        field.name,
-                        field.rust_type.to_lowercase(),
-                        field.name
+                        field.name, snake, field.name
                     ));
                 } else {
                     let default = if field.default_val.is_empty() {
@@ -188,6 +203,7 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
         code.push_str("        result\n");
         code.push_str("    }\n\n");
     }
+    code.push_str("    } // end macro\n}\n");
     code
 }
 
