@@ -1,120 +1,175 @@
 id: web-ui-react-scaffold_20260401100640Z
-title: "Web UI — React + Vite scaffold with Prettier, ESLint, Vitest"
+title: Web UI — React + Vite scaffold with Prettier, ESLint, Vitest
 type: chore
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Add React 19, Prettier, Vitest + React Testing Library to web-ui/.
+  summary: 'Add React 19, Prettier, Vitest + React Testing Library to web-ui/.
+
     Configure build/lint/fmt/test scripts. Create minimal App.tsx that renders
+
     to prove the toolchain works. Pure infrastructure — no UI migration yet.
-  context: |
-    The web-ui/ is currently a vanilla TypeScript app (~1357 lines in pipeline.ts)
+
+    '
+  context: 'The web-ui/ is currently a vanilla TypeScript app (~1357 lines in pipeline.ts)
+
     built with Vite 6. It has ESLint and TypeScript configured but no UI framework,
+
     no formatter, and no test infrastructure. Before migrating the UI to React
+
     components, we need the toolchain in place and validated.
 
+
     The user wants solid CI gates: lint (ESLint), fmt (Prettier), build (tsc + vite),
+
     and test (Vitest with render smoke tests). This track sets all of that up with
+
     a minimal App.tsx that proves everything works end-to-end before the real
+
     migration happens in the next track.
-  codebase_analysis: |
-    Current web-ui/ structure:
+
+    '
+  codebase_analysis: 'Current web-ui/ structure:
+
     - package.json: vite 6, typescript 5.7, eslint 9, no React deps
+
     - tsconfig.json: strict: true, ES2022 target, DOM lib, no JSX config
+
     - vite.config.ts: COOP/COEP headers, WASM asset support, SDK alias
+
     - eslint.config.js: flat config, typescript-eslint, no React rules
+
     - src/pipeline.ts: 1357 lines (all UI logic, vanilla DOM)
+
     - src/pipeline-worker.ts: 229 lines (web worker, WASM interop)
+
     - src/types.ts: 126 lines (TypeScript interfaces)
+
     - index.html: entry point with inline CSS + script module
+
     - No test files, no prettier config, no testing deps
 
+
     Vite 6 has built-in React support via @vitejs/plugin-react.
+
     tsconfig needs jsx: "react-jsx" added.
+
     ESLint needs eslint-plugin-react-hooks and eslint-plugin-react-refresh.
+
+    '
   acceptance_criteria:
-    - React 19 and ReactDOM 19 installed as dependencies
-    - "@vitejs/plugin-react" added to vite.config.ts
-    - tsconfig.json updated with jsx react-jsx and React types
-    - Prettier installed with config file (.prettierrc or similar)
-    - Vitest installed with jsdom environment and React Testing Library
-    - ESLint updated with React hooks and refresh plugins
-    - Minimal App.tsx renders a div with text content
-    - Minimal App.test.tsx passes (renders App without crashing)
-    - npm run build succeeds (tsc --noEmit && vite build)
-    - npm run lint succeeds
-    - npm run fmt:check succeeds (Prettier finds no violations)
-    - npm run test succeeds (Vitest runs and passes)
-    - npm run check runs all of the above in sequence
-    - Existing pipeline.ts and pipeline-worker.ts still compile (not yet migrated)
-    - index.html updated to mount React root alongside existing script
-  out_of_scope: |
-    - Migrating any existing UI code to React (next track)
+  - React 19 and ReactDOM 19 installed as dependencies
+  - Vite React plugin added to vite.config.ts
+  - tsconfig.json updated with jsx react-jsx and React types
+  - Prettier installed with config file (.prettierrc or similar)
+  - Vitest installed with jsdom environment and React Testing Library
+  - ESLint updated with React hooks and refresh plugins
+  - Minimal App.tsx renders a div with text content
+  - Minimal App.test.tsx passes (renders App without crashing)
+  - npm run build succeeds (tsc --noEmit && vite build)
+  - npm run lint succeeds
+  - npm run fmt:check succeeds (Prettier finds no violations)
+  - npm run test succeeds (Vitest runs and passes)
+  - npm run check runs all of the above in sequence
+  - Existing pipeline.ts and pipeline-worker.ts still compile (not yet migrated)
+  - index.html updated to mount React root alongside existing script
+  out_of_scope: '- Migrating any existing UI code to React (next track)
+
     - Deleting pipeline.ts or pipeline-worker.ts
+
     - Component library selection (shadcn, radix, etc.) — vanilla React for now
+
     - CSS-in-JS or CSS modules setup — keep inline styles for now matching existing pattern
+
     - CI pipeline configuration (GitHub Actions etc.) — just the npm scripts
-  technical_notes: |
-    Dependencies to add:
+
+    '
+  technical_notes: 'Dependencies to add:
+
     - react, react-dom (^19)
+
     - @vitejs/plugin-react (^4)
+
     - @types/react, @types/react-dom
+
     - prettier
+
     - vitest, @testing-library/react, @testing-library/jest-dom, jsdom
+
     - eslint-plugin-react-hooks, eslint-plugin-react-refresh
 
+
     Config changes:
+
     - vite.config.ts: add react() plugin
+
     - tsconfig.json: add "jsx": "react-jsx", add "react" and "react-dom" to types
+
     - eslint.config.js: add React hooks/refresh rules
+
     - Add .prettierrc with consistent settings
+
     - Add vitest.config.ts (or inline in vite.config.ts) with jsdom environment
 
+
     Package.json script updates:
+
     - "dev": "vite" (unchanged)
+
     - "build": "tsc --noEmit && vite build"
+
     - "lint": "eslint src/"
+
     - "fmt": "prettier --write src/"
+
     - "fmt:check": "prettier --check src/"
+
     - "test": "vitest run"
+
     - "test:watch": "vitest"
+
     - "check": "tsc --noEmit && eslint src/ && prettier --check src/ && vitest run"
 
+
     The existing pipeline.ts has @ts-nocheck at the top — it will still compile.
+
     The new App.tsx is a minimal component that renders alongside the existing
+
     script tag in index.html. During the migration track, the old script tag
+
     gets removed and App.tsx takes over.
+
+    '
 plan:
-  - phase: "Dependencies & Config"
-    tasks:
-      - text: "Install React 19, ReactDOM 19, @vitejs/plugin-react, and type packages"
-        done: false
-      - text: "Install Prettier and create .prettierrc config"
-        done: false
-      - text: "Install Vitest, @testing-library/react, @testing-library/jest-dom, jsdom"
-        done: false
-      - text: "Install eslint-plugin-react-hooks and eslint-plugin-react-refresh"
-        done: false
-  - phase: "Config Updates"
-    tasks:
-      - text: "Update vite.config.ts — add react() plugin import and usage"
-        done: false
-      - text: "Update tsconfig.json — add jsx react-jsx, include tsx files, add React types"
-        done: false
-      - text: "Update eslint.config.js — add React hooks and refresh rules"
-        done: false
-      - text: "Update package.json scripts — add fmt, fmt:check, test, test:watch, check"
-        done: false
-  - phase: "Minimal App & Tests"
-    tasks:
-      - text: "Create src/App.tsx — minimal React component rendering a placeholder div"
-        done: false
-      - text: "Create src/main.tsx — React root mount into a new div in index.html"
-        done: false
-      - text: "Create src/App.test.tsx — render App and assert it does not crash"
-        done: false
-      - text: "Run npm run check — verify build, lint, fmt, and test all pass"
-        done: false
+- phase: Dependencies & Config
+  tasks:
+  - text: Install React 19, ReactDOM 19, @vitejs/plugin-react, and type packages
+    done: true
+  - text: Install Prettier and create .prettierrc config
+    done: true
+  - text: Install Vitest, @testing-library/react, @testing-library/jest-dom, jsdom
+    done: true
+  - text: Install eslint-plugin-react-hooks and eslint-plugin-react-refresh
+    done: true
+- phase: Config Updates
+  tasks:
+  - text: Update vite.config.ts — add react() plugin import and usage
+    done: true
+  - text: Update tsconfig.json — add jsx react-jsx, include tsx files, add React types
+    done: true
+  - text: Update eslint.config.js — add React hooks and refresh rules
+    done: true
+  - text: Update package.json scripts — add fmt, fmt:check, test, test:watch, check
+    done: true
+- phase: Minimal App & Tests
+  tasks:
+  - text: Create src/App.tsx — minimal React component rendering a placeholder div
+    done: true
+  - text: Create src/main.tsx — React root mount into a new div in index.html
+    done: true
+  - text: Create src/App.test.tsx — render App and assert it does not crash
+    done: true
+  - text: Run npm run check — verify build, lint, fmt, and test all pass
+    done: true
 extra: {}
