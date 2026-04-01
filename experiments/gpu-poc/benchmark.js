@@ -61,15 +61,16 @@ function getOrCreatePipeline(shaderName, entryPoint) {
   return pipelines[key];
 }
 
-// ─── WASM Baseline ──────────────────────────────────────────────────────────
+// ─── WASM Baseline (legacy — replaced by worker) ───────────────────────────
 
 let Pipeline;
 
 async function initWASM() {
+  // Now handled by initWASMWorker() instead of main-thread SDK import
   try {
-    const sdk = await import('/sdk/rasmcore-image.js');
+    const sdk = await import('./sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
-    log('WASM SDK loaded');
+    log('WASM SDK loaded (main thread — fallback)');
   } catch (e) {
     log(`WASM SDK not available: ${e.message}`);
     log('(Run demo/build.sh first to generate SDK)');
@@ -274,34 +275,50 @@ async function benchGPUBilateral(size) {
   });
 }
 
-// ─── WASM Benchmarks ────────────────────────────────────────────────────────
+// ─── WASM Benchmarks (via Web Worker) ───────────────────────────────────────
+
+let wasmWorker = null;
+let wasmWorkerReady = false;
+
+function initWASMWorker() {
+  return new Promise((resolve) => {
+    wasmWorker = new Worker('wasm-worker.js', { type: 'module' });
+    wasmWorker.onmessage = (e) => {
+      if (e.data.type === 'ready') {
+        wasmWorkerReady = true;
+        log('WASM worker ready');
+        resolve(true);
+      } else if (e.data.type === 'error') {
+        log(`WASM worker init error: ${e.data.message}`);
+        resolve(false);
+      }
+    };
+    wasmWorker.postMessage({ type: 'init' });
+  });
+}
+
+function benchWASMViaWorker(op, config, pixels) {
+  return new Promise((resolve) => {
+    if (!wasmWorkerReady) {
+      resolve({ median: -1, p95: -1 });
+      return;
+    }
+    wasmWorker.onmessage = (e) => {
+      if (e.data.type === 'result') {
+        resolve({ median: e.data.median, p95: e.data.p95 });
+      } else if (e.data.type === 'error') {
+        log(`WASM ${op} error: ${e.data.message}`);
+        resolve({ median: -1, p95: -1 });
+      }
+    };
+    const buf = pixels.buffer.slice(0);
+    wasmWorker.postMessage({ type: 'bench', op, config, pixels: buf }, [buf]);
+  });
+}
 
 async function benchWASMOp(opName, size, config) {
-  if (!Pipeline) return { median: -1, p95: -1 };
-
-  // Generate test PNG from random pixels
   const pixels = generateTestImage(size);
-
-  const times = [];
-  for (let i = 0; i < 13; i++) {
-    const pipe = new Pipeline();
-    const src = pipe.read(pixels);
-
-    const t0 = performance.now();
-    let node;
-    try {
-      node = pipe[opName](src, config);
-      pipe.writePng(node, {}, undefined);
-    } catch (e) {
-      log(`WASM ${opName} error: ${e.message}`);
-      return { median: -1, p95: -1 };
-    }
-    const t1 = performance.now();
-
-    if (i >= 3) times.push(t1 - t0);
-  }
-  times.sort((a, b) => a - b);
-  return { median: times[Math.floor(times.length / 2)], p95: times[Math.floor(times.length * 0.95)] };
+  return benchWASMViaWorker(opName, config, pixels);
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -354,7 +371,7 @@ async function runBenchmark() {
   // Bilateral
   status('Benchmarking bilateral filter...');
   const gpuBilateral = await benchGPUBilateral(size);
-  const wasmBilateral = await benchWASMOp('bilateral', size, { spatial_sigma: 10.0, range_sigma: 25.0, radius: 5 });
+  const wasmBilateral = await benchWASMOp('bilateral', size, { spatialSigma: 10.0, rangeSigma: 25.0, radius: 5 });
   log(`Bilateral r=5: GPU=${gpuBilateral.median.toFixed(1)}ms WASM=${wasmBilateral.median.toFixed(1)}ms`);
   results.push({ op: 'Bilateral (r=5)', size: `${size}x${size}`, gpu: gpuBilateral.median, wasm: wasmBilateral.median });
 
@@ -392,7 +409,8 @@ async function runTransferOnly() {
     getOrCreatePipeline('bilateral', 'main');
     log('Pipelines created');
 
-    await initWASM();
+    // Init WASM via dedicated worker (avoids main-thread import issues)
+    await initWASMWorker();
 
     status('Ready — click Run Full Benchmark');
     document.getElementById('btn-run').disabled = false;
