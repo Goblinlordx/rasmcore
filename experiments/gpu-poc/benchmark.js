@@ -113,7 +113,7 @@ async function benchTransferOnly(size) {
     // Upload
     const inputBuf = device.createBuffer({
       size: byteLen,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
     queue.writeBuffer(inputBuf, 0, pixels);
 
