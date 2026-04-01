@@ -1,0 +1,8 @@
+title: Register pipeline transforms — annotation on impl ImageNode
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- wire-generated-adapters_20260401020900Z

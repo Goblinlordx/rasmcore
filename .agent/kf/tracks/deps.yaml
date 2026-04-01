@@ -192,3 +192,12 @@ pipeline-tiled-sink_20260331090602Z:
 
 # Legacy filter registry cleanup — no deps
 remove-legacy-filter-registry_20260401013900Z: []
+
+# Adapter registration chain — sequential dependency
+wire-generated-adapters_20260401020900Z: []
+
+register-transforms_20260401020901Z:
+  - wire-generated-adapters_20260401020900Z
+
+register-stateless-ops_20260401020902Z:
+  - register-transforms_20260401020901Z
