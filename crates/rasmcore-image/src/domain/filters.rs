@@ -1,8 +1,9 @@
 //! Image filters — SIMD-optimized where possible.
 //!
 //! Operations work directly on raw pixel buffers without DynamicImage conversion.
-//! Blur uses libblur (SIMD on x86/ARM/WASM). Point ops are written as simple
-//! loops that LLVM auto-vectorizes to SIMD128 when compiled with +simd128.
+//! Blur uses our own convolve() (auto-separable, WASM SIMD128). Point ops are
+//! written as simple loops that LLVM auto-vectorizes to SIMD128 when compiled
+//! with +simd128.
 
 use super::error::ImageError;
 use super::types::{DecodedImage, ImageInfo, PixelFormat};
@@ -77,7 +78,7 @@ fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
 }
 
 /// Convert 16-bit pixel buffer to 8-bit for processing, then back to 16-bit.
-/// Used when an operation only supports 8-bit internally (e.g., libblur).
+/// Used when an operation only supports 8-bit internally (e.g., convolve).
 fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
 where
     F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
@@ -1270,10 +1271,11 @@ pub struct WhiteBalanceTemperatureParams {
     pub tint: f32,
 }
 
-/// Apply gaussian blur using libblur (SIMD-optimized).
+/// Apply gaussian blur using our own convolve() function.
 ///
-/// Uses separable gaussian convolution with SIMD acceleration on
-/// x86 (SSE/AVX), ARM (NEON), and WASM (SIMD128).
+/// Uses separable gaussian convolution (auto-detected by convolve) with
+/// WASM SIMD128 acceleration. Large sigma (>= 20) uses box blur
+/// approximation for O(1) per-pixel performance.
 #[rasmcore_macros::register_filter(
     name = "blur",
     category = "spatial",
@@ -1313,37 +1315,49 @@ pub fn blur_impl(
         return Ok(pixels.to_vec());
     }
 
-    let kernel_size = (radius * 3.0).ceil() as u32 * 2 + 1;
-    let kernel_size = kernel_size.max(3);
-
-    let mut result = vec![0u8; pixels.len()];
-
-    // 16-bit: delegate to 8-bit path via process_via_8bit (libblur only supports u8)
+    // 16-bit: delegate to 8-bit path via process_via_8bit (convolve only supports u8)
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| blur_impl(p8, i8, config));
     }
 
-    let channels = match info.format {
-        PixelFormat::Rgb8 => libblur::FastBlurChannels::Channels3,
-        PixelFormat::Rgba8 => libblur::FastBlurChannels::Channels4,
-        PixelFormat::Gray8 => libblur::FastBlurChannels::Plane,
-        _ => unreachable!(),
+    // In the old libblur API, radius was effectively sigma
+    let sigma = radius;
+
+    // Large sigma: use box blur approximation (O(1) per pixel, 3 passes)
+    if sigma >= 20.0 {
+        return gaussian_blur_box_approx(pixels, info, sigma);
+    }
+
+    // Build separable Gaussian kernel
+    let ksize = {
+        let k = (sigma * 6.0 + 1.0).round() as usize;
+        if k % 2 == 0 { k + 1 } else { k }
     };
+    let ksize = ksize.max(3);
+    let k1d = gaussian_kernel_1d(ksize, sigma);
 
-    libblur::gaussian_blur(
-        pixels,
-        &mut result,
-        info.width,
-        info.height,
-        kernel_size,
-        radius,
-        channels,
-        libblur::EdgeMode::Clamp,
-        libblur::ThreadingPolicy::Single,
-        libblur::GaussianPreciseLevel::EXACT,
-    );
+    // Build 2D kernel as outer product (convolve auto-detects separable)
+    let mut kernel_2d = vec![0.0f32; ksize * ksize];
+    for y in 0..ksize {
+        for x in 0..ksize {
+            kernel_2d[y * ksize + x] = k1d[y] * k1d[x];
+        }
+    }
 
-    Ok(result)
+    // Use our own convolve with auto-separable detection + WASM SIMD
+    let full_rect = Rect::new(0, 0, info.width, info.height);
+    let mut u = |_: Rect| Ok(pixels.to_vec());
+    convolve(
+        full_rect,
+        &mut u,
+        info,
+        &kernel_2d,
+        &ConvolveParams {
+            kw: ksize as u32,
+            kh: ksize as u32,
+            divisor: 1.0,
+        },
+    )
 }
 
 /// Kernel shape for bokeh (lens) blur.
@@ -9675,14 +9689,12 @@ fn gaussian_blur_box_approx(
 /// via our `convolve()` function (which uses `BORDER_REFLECT_101` and is already
 /// pixel-exact against OpenCV `filter2D`).
 ///
-/// This is a separate implementation from `blur()` (which uses libblur with
-/// `BORDER_REPLICATE`). Use this when pixel-exact OpenCV parity is required.
+/// This is a separate entry point from `blur()` with an explicit `sigma` parameter
+/// (vs `blur()`'s `radius` which maps to sigma). Both now use the same `convolve()`
+/// backend with `BORDER_REFLECT_101`. Use this when pixel-exact OpenCV parity is
+/// required.
 ///
 /// - `sigma`: Gaussian standard deviation
-///
-/// Future path: this could replace `blur()` as the primary Gaussian implementation
-/// if full OpenCV alignment is desired across all filters. SIMD optimization can
-/// be added later and validated against this reference-aligned output.
 #[rasmcore_macros::register_filter(
     name = "gaussian_blur_cv",
     category = "spatial",

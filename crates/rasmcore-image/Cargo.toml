@@ -10,7 +10,6 @@ rasmcore-macros = { path = "../rasmcore-macros" }
 inventory = "0.3"
 rasmcore-webp = { path = "../rasmcore-webp" }
 fast_image_resize = "5"
-libblur = "0.15"
 moxcms = "0.8"
 wit-bindgen-rt = "0.41.0"
 png = "0.17"

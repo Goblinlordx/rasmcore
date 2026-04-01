@@ -2564,7 +2564,6 @@ dependencies = [
  "justjp2",
  "jxl-oxide",
  "kamadak-exif",
- "libblur",
  "moxcms",
  "png 0.17.16",
  "quick-xml",
