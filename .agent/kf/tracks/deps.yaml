@@ -243,3 +243,6 @@ codegen-extra-params-in-config_20260401130000Z: []
 
 # Encoder codegen — eliminate hardcoded format metadata
 encoder-codegen-unify_20260401133000Z: []
+
+# GPU offload PoC — standalone benchmark, no pipeline deps
+gpu-offload-poc_20260401140500Z: []

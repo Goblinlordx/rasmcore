@@ -1,0 +1,121 @@
+id: gpu-offload-poc_20260401140500Z
+title: "Research + PoC: GPU offload via host-injected WebGPU handler"
+type: research
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Build a minimal proof-of-concept to test whether GPU offload via WebGPU
+    compute shaders is faster than the current WASM SIMD pipeline for image
+    operations. Measures transfer overhead, shader execution time, and
+    end-to-end latency for representative ops.
+  context: |
+    The current pipeline processes everything in WASM with SIMD128 intrinsics.
+    The hypothesis is that for spatial ops (blur, sharpen, bilateral) and
+    chains of many ops, WebGPU compute shaders could be significantly faster
+    by avoiding per-pixel CPU iteration and leveraging GPU parallelism.
+
+    However, GPU acceleration has transfer overhead: CPU→GPU upload, shader
+    dispatch, GPU→CPU readback. For small images or trivial ops, this
+    overhead may exceed the compute savings. For the CLUT-fused color ops,
+    the CPU path is already O(1) per pixel with a single table lookup.
+
+    This PoC will answer:
+    1. What is the baseline transfer overhead for a 1024x1024 RGBA image?
+    2. How fast are compute shaders for blur (spatial), sepia (point op),
+       and a 5-op chain vs the WASM SIMD path?
+    3. At what image size does GPU become faster than WASM SIMD?
+    4. Is the host callback pattern (WASM imports a GPU handler) viable
+       in practice with SharedArrayBuffer for zero-copy transfer?
+  codebase_analysis: |
+    The PoC is standalone — it does NOT modify the rasmcore pipeline.
+    It lives in a separate directory (e.g., experiments/gpu-poc/) with
+    its own HTML + JS + WGSL files. It benchmarks:
+
+    A) Pure WebGPU: upload buffer → run compute shader → readback
+    B) Pure WASM: the existing rasmcore filter via pipeline worker
+    C) Transfer overhead: just upload + readback, no compute
+
+    The PoC uses the web-ui Vite dev server for CORS/SharedArrayBuffer
+    headers. It imports the rasmcore WASM SDK for the WASM baseline.
+
+    Key files to create:
+    - experiments/gpu-poc/index.html
+    - experiments/gpu-poc/benchmark.js (orchestrates tests)
+    - experiments/gpu-poc/shaders/blur.wgsl
+    - experiments/gpu-poc/shaders/sepia.wgsl
+    - experiments/gpu-poc/shaders/chain.wgsl (fused 5-op chain)
+  acceptance_criteria:
+    - Benchmark page loads and runs in Chrome/Edge (WebGPU required)
+    - Measures GPU transfer overhead (upload + readback) in ms
+    - Measures GPU compute time for blur, sepia, and 5-op chain in ms
+    - Measures equivalent WASM SIMD time for the same ops
+    - Compares at multiple resolutions (256, 512, 1024, 2048, 4096)
+    - Outputs results as a table with speedup ratios
+    - Documents findings in a report (feasibility assessment)
+  out_of_scope: |
+    - Modifying the rasmcore pipeline or WIT interfaces
+    - Implementing the full GPU handler callback protocol
+    - Shader implementations for all 150+ filters
+    - Native/non-browser GPU paths
+  technical_notes: |
+    WebGPU compute shader approach:
+    - Storage buffers for input (RGBA8 pixels) and output
+    - Workgroup size 16x16 (256 threads) — standard for image processing
+    - Blur: shared memory tile with halo for neighborhood access
+    - Point ops (sepia, contrast): trivially parallel, no shared memory
+    - Chain: single shader with all ops fused (avoids intermediate buffers)
+
+    Transfer patterns to test:
+    1. mappedAtCreation: create buffer pre-mapped, memcpy, unmap
+    2. writeBuffer: queue.writeBuffer() for upload
+    3. mapAsync: for readback (the expensive part)
+
+    SharedArrayBuffer consideration:
+    - If WASM linear memory is a SharedArrayBuffer, the GPU could
+      potentially read from it directly via a mapped buffer
+    - This avoids the copy but requires COOP/COEP headers (already set)
+    - Test if this is actually faster than explicit writeBuffer
+
+    Benchmark methodology:
+    - Warm up: 3 runs discarded
+    - Measure: 10 runs, report median + p95
+    - Separate GPU timing (timestamp queries) from CPU timing
+    - Compare: GPU total (upload + compute + readback) vs WASM total
+plan:
+  - phase: "Setup"
+    tasks:
+      - text: "Create experiments/gpu-poc/ directory with index.html and benchmark.js scaffold"
+        done: false
+      - text: "Add WebGPU device initialization with error handling and capability detection"
+        done: false
+      - text: "Add WASM SDK import for baseline comparison"
+        done: false
+  - phase: "Shaders"
+    tasks:
+      - text: "Write blur.wgsl compute shader (gaussian blur with shared memory tile)"
+        done: false
+      - text: "Write sepia.wgsl compute shader (point op, trivially parallel)"
+        done: false
+      - text: "Write chain.wgsl fused shader (blur + sepia + contrast + hue_rotate + sharpen)"
+        done: false
+  - phase: "Benchmarks"
+    tasks:
+      - text: "Implement transfer overhead benchmark (upload + readback, no compute)"
+        done: false
+      - text: "Implement single-op benchmarks (blur GPU vs WASM, sepia GPU vs WASM)"
+        done: false
+      - text: "Implement chain benchmark (5-op chain GPU vs WASM)"
+        done: false
+      - text: "Run at 256/512/1024/2048/4096 resolutions, output comparison table"
+        done: false
+  - phase: "Analysis"
+    tasks:
+      - text: "Write feasibility report with speedup ratios and break-even analysis"
+        done: false
+      - text: "Identify which op categories benefit most from GPU offload"
+        done: false
+      - text: "Recommend go/no-go for full GPU handler implementation"
+        done: false
+extra: {}
