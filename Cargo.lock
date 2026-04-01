@@ -2834,6 +2834,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-ffi"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-image",
+ "rasmcore-pipeline",
+ "serde_json",
+]
+
+[[package]]
 name = "rasmcore-filter-advanced"
 version = "0.1.0"
 dependencies = [

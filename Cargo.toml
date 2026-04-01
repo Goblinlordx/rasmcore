@@ -51,6 +51,7 @@ members = [
     "tests/codec-parity",
     "examples/custom-filter",
     "crates/rasmcore-cli",
+    "crates/rasmcore-ffi",
 ]
 
 [workspace.package]
