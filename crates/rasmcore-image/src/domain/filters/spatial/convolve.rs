@@ -57,7 +57,7 @@ pub fn convolve(
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
 
     // Try separable path first (O(2K) vs O(K^2))
     if let Some((row_k, col_k)) = is_separable(kernel, kw, kh) {

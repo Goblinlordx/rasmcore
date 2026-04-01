@@ -58,7 +58,7 @@ pub fn median(
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
 
     let result = if radius <= 2 {
         median_sort(pixels, w, h, channels, radius)?

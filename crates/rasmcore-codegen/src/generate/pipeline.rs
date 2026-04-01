@@ -17,7 +17,8 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
     code.push_str("#[allow(unused_imports)] use crate::domain::param_types::Point2D;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::point_ops::LutPointOp;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::color_lut::ColorLutOp;\n");
-    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::graph::{AccessPattern, ImageNode, crop_region};\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::types::bytes_per_pixel;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::types::*;\n");
     code.push_str("#[allow(unused_imports)] use rasmcore_pipeline::Rect;\n\n");
 

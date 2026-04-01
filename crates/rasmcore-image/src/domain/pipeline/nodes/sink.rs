@@ -20,7 +20,8 @@ use crate::domain::encoder;
 use crate::domain::encoder::streaming::StreamingEncoder;
 use crate::domain::error::ImageError;
 use crate::domain::metadata_set::MetadataSet;
-use crate::domain::pipeline::graph::{NodeGraph, bytes_per_pixel};
+use crate::domain::pipeline::graph::NodeGraph;
+use crate::domain::types::bytes_per_pixel;
 use rasmcore_pipeline::Rect;
 
 /// Default tile size (pixels per side). 512×512 at RGB8 = 768 KB per tile.

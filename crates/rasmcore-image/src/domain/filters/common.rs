@@ -119,7 +119,7 @@ pub fn crop_to_request(
     if expanded == request {
         return filtered.to_vec();
     }
-    let bpp = crate::domain::pipeline::graph::bytes_per_pixel(format) as usize;
+    let bpp = crate::domain::types::bytes_per_pixel(format) as usize;
     let src_stride = expanded.width as usize * bpp;
     let dst_stride = request.width as usize * bpp;
     let x_off = (request.x - expanded.x) as usize * bpp;
@@ -1488,7 +1488,7 @@ pub fn canny(pixels: &[u8], info: &ImageInfo, config: &CannyParams) -> Result<Ve
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
 
     // Step 1: Convert to grayscale
     let gray = to_grayscale(pixels, channels);
@@ -2748,7 +2748,7 @@ pub fn gaussian_blur_box_approx(
 ) -> Result<Vec<u8>, ImageError> {
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
 
     // Process each channel independently in f32 domain
     let mut result = pixels.to_vec();
@@ -3522,7 +3522,7 @@ pub fn laplacian(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError>
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
     let gray = to_grayscale(pixels, channels);
     let padded = pad_reflect(&gray, w, h, 1, 1);
     let pw = w + 2;
@@ -5330,7 +5330,7 @@ pub fn scharr(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
     let gray = to_grayscale(pixels, channels);
     let padded = pad_reflect(&gray, w, h, 1, 1);
     let pw = w + 2;
@@ -5637,7 +5637,7 @@ pub fn sobel(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
 
     let gray = to_grayscale(pixels, channels);
 

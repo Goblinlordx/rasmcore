@@ -151,7 +151,7 @@ mod tests {
             request: Rect,
             _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
         ) -> Result<Vec<u8>, ImageError> {
-            let bpp = super::super::graph::bytes_per_pixel(self.info.format);
+            let bpp = crate::domain::types::bytes_per_pixel(self.info.format);
             Ok(vec![
                 128;
                 request.width as usize * request.height as usize * bpp as usize

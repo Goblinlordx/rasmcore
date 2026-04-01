@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
-use crate::domain::types::{DecodedImage, FrameSequence, ImageInfo};
+use crate::domain::types::{DecodedImage, FrameSequence, ImageInfo, bytes_per_pixel};
 use rasmcore_pipeline::{Rect, SpatialCache};
 
 /// Access pattern hint for cache optimization.
@@ -1473,20 +1473,7 @@ pub fn crop_region(src_pixels: &[u8], src_rect: Rect, sub_rect: Rect, bpp: u32) 
     out
 }
 
-pub fn bytes_per_pixel(format: crate::domain::types::PixelFormat) -> u32 {
-    use crate::domain::types::PixelFormat;
-    match format {
-        PixelFormat::Rgb8 | PixelFormat::Bgr8 => 3,
-        PixelFormat::Rgba8 | PixelFormat::Bgra8 => 4,
-        PixelFormat::Gray8 => 1,
-        PixelFormat::Gray16 => 2,
-        PixelFormat::Rgb16 => 6,
-        PixelFormat::Rgba16 => 8,
-        PixelFormat::Cmyk8 => 4,
-        PixelFormat::Cmyka8 => 5,
-        PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p | PixelFormat::Nv12 => 4,
-    }
-}
+// bytes_per_pixel moved to crate::domain::types::bytes_per_pixel
 
 /// Serialize PixelFormat to u8 for graph description binary format.
 pub fn pixel_format_to_u8(f: crate::domain::types::PixelFormat) -> u8 {
@@ -2951,7 +2938,7 @@ mod affine_composition_tests {
             request: Rect,
             _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
         ) -> Result<Vec<u8>, ImageError> {
-            let bpp = crate::domain::pipeline::graph::bytes_per_pixel(self.info.format);
+            let bpp = crate::domain::types::bytes_per_pixel(self.info.format);
             Ok(crop_region(
                 &self.pixels,
                 Rect::new(0, 0, self.info.width, self.info.height),

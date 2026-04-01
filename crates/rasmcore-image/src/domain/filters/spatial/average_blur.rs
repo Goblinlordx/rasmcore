@@ -37,7 +37,7 @@ pub fn average_blur(
         });
     }
 
-    let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let ch = crate::domain::types::bytes_per_pixel(info.format) as usize;
     let pixel_count = pixels.len() / ch;
     if pixel_count == 0 {
         return Ok(pixels.to_vec());

@@ -8,7 +8,8 @@ use std::cell::RefCell;
 
 use crate::domain::decoder;
 use crate::domain::error::ImageError;
-use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel};
+use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
+use crate::domain::types::bytes_per_pixel;
 use crate::domain::types::{DecodedImage, FrameInfo, FrameSelection, ImageInfo};
 use rasmcore_pipeline::Rect;
 

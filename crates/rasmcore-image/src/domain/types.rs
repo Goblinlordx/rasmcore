@@ -20,6 +20,28 @@ pub enum PixelFormat {
     Nv12,
 }
 
+impl PixelFormat {
+    /// Bytes per pixel for this format.
+    pub fn bytes_per_pixel(self) -> u32 {
+        match self {
+            PixelFormat::Rgb8 | PixelFormat::Bgr8 => 3,
+            PixelFormat::Rgba8 | PixelFormat::Bgra8 => 4,
+            PixelFormat::Gray8 => 1,
+            PixelFormat::Gray16 => 2,
+            PixelFormat::Rgb16 => 6,
+            PixelFormat::Rgba16 => 8,
+            PixelFormat::Cmyk8 => 4,
+            PixelFormat::Cmyka8 => 5,
+            PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p | PixelFormat::Nv12 => 4,
+        }
+    }
+}
+
+/// Bytes per pixel for a given format (free function for backward compat).
+pub fn bytes_per_pixel(format: PixelFormat) -> u32 {
+    format.bytes_per_pixel()
+}
+
 /// Color space of image data
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSpace {

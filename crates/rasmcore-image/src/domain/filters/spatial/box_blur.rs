@@ -60,7 +60,7 @@ pub fn box_blur(
 
     let w = info.width as usize;
     let h = info.height as usize;
-    let ch = crate::domain::pipeline::graph::bytes_per_pixel(info.format) as usize;
+    let ch = crate::domain::types::bytes_per_pixel(info.format) as usize;
     let r = radius as usize;
     let diam = (2 * r + 1) as u32;
 
