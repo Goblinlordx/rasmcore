@@ -1,132 +1,105 @@
 id: simplify-pipeline-cache_20260401011300Z
-title: "Replace spatial tile cache with layer-cache-only model"
+title: Replace spatial tile cache with layer-cache-only model
 type: refactor
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Remove the SpatialCache tile store from request_region. The layer cache
+  summary: 'Remove the SpatialCache tile store from request_region. The layer cache
+
     becomes the sole caching mechanism — serving full-image hits and extracting
+
     sub-regions for tile requests. No intermediate tile storage.
-  context: |
-    The current spatial cache stores every computed tile for every node during
+
+    '
+  context: 'The current spatial cache stores every computed tile for every node during
+
     pipeline execution. For a 4K image with 5 nodes, this is ~125MB+ of tile
+
     data that is never re-requested (except thin overlap strips for spatial
+
     filters). The only real value is in finalize_layer_cache which stitches
+
     tiles back into full images — but this is a roundabout way to store what
+
     the sink already has.
 
+
     The layer cache already handles cross-pipeline reuse via content hashes.
+
     Making it the sole cache simplifies the architecture and reduces memory.
-  codebase_analysis: |
-    CURRENT FLOW:
-    1. request_region() checks layer cache (pre-populated hits)
-    2. request_region() checks spatial cache (tile hits)
-    3. On miss: compute_region() → store in spatial cache → return clone
-    4. finalize_layer_cache() stitches spatial cache tiles into full images
 
-    NEW FLOW:
-    1. request_region() checks layer cache hits
-       - Full-image match → return clone or extract sub-region
-    2. On miss: compute_region() → return directly (no storing)
-    3. finalize: sink already has the final stitched output → store in layer cache
-       For intermediate nodes: need a mechanism to capture their full output
-
-    KEY CHALLENGE — INTERMEDIATE NODE CACHING:
-    Currently finalize reads intermediate node tiles from spatial cache.
-    Without spatial cache, intermediate node outputs are lost after execution.
-
-    Options:
-    A) Only cache the final output node (simplest, loses intermediate reuse)
-    B) During execution, when a hashed node completes a full-image request,
-       store directly in layer cache (works for non-tiled; for tiled, need
-       to accumulate)
-    C) Keep a lightweight per-node accumulator for hashed nodes only — just
-       a Vec<u8> buffer that tiles fill into, then push to layer cache on finalize
-
-    Option C is the cleanest: for each hashed node, allocate a full-image
-    buffer at graph construction time. As tiles are computed, copy into the
-    buffer. On finalize, push completed buffers to layer cache. This replaces
-    the spatial cache's tile storage with targeted per-node accumulators.
-
-    FILES TO MODIFY:
-    - crates/rasmcore-pipeline/src/cache.rs — can be simplified or removed
-    - crates/rasmcore-image/src/domain/pipeline/graph.rs — request_region,
-      finalize_layer_cache, new accumulator logic
-    - Tests: update layer_cache_tests and tiled_parity_tests
+    '
+  codebase_analysis: "CURRENT FLOW:\n1. request_region() checks layer cache (pre-populated hits)\n2. request_region() checks\
+    \ spatial cache (tile hits)\n3. On miss: compute_region() → store in spatial cache → return clone\n4. finalize_layer_cache()\
+    \ stitches spatial cache tiles into full images\n\nNEW FLOW:\n1. request_region() checks layer cache hits\n   - Full-image\
+    \ match → return clone or extract sub-region\n2. On miss: compute_region() → return directly (no storing)\n3. finalize:\
+    \ sink already has the final stitched output → store in layer cache\n   For intermediate nodes: need a mechanism to capture\
+    \ their full output\n\nKEY CHALLENGE — INTERMEDIATE NODE CACHING:\nCurrently finalize reads intermediate node tiles from\
+    \ spatial cache.\nWithout spatial cache, intermediate node outputs are lost after execution.\n\nOptions:\nA) Only cache\
+    \ the final output node (simplest, loses intermediate reuse)\nB) During execution, when a hashed node completes a full-image\
+    \ request,\n   store directly in layer cache (works for non-tiled; for tiled, need\n   to accumulate)\nC) Keep a lightweight\
+    \ per-node accumulator for hashed nodes only — just\n   a Vec<u8> buffer that tiles fill into, then push to layer cache\
+    \ on finalize\n\nOption C is the cleanest: for each hashed node, allocate a full-image\nbuffer at graph construction time.\
+    \ As tiles are computed, copy into the\nbuffer. On finalize, push completed buffers to layer cache. This replaces\nthe\
+    \ spatial cache's tile storage with targeted per-node accumulators.\n\nFILES TO MODIFY:\n- crates/rasmcore-pipeline/src/cache.rs\
+    \ — can be simplified or removed\n- crates/rasmcore-image/src/domain/pipeline/graph.rs — request_region,\n  finalize_layer_cache,\
+    \ new accumulator logic\n- Tests: update layer_cache_tests and tiled_parity_tests\n"
   acceptance_criteria:
-    - SpatialCache no longer stores tiles during request_region
-    - Layer cache serves full-image hits with sub-region extraction for tiles
-    - Hashed intermediate nodes accumulate output for layer cache storage
-    - finalize_layer_cache pushes accumulated buffers (not spatial cache reads)
-    - All 11 layer_cache_tests pass
-    - All 10 tiled_parity_tests pass
-    - Memory usage during pipeline execution is reduced (no duplicate tile storage)
-    - Overlap recomputation for spatial filters is acceptable (verified by parity tests)
-  out_of_scope: |
-    Removing the SpatialCache struct entirely (it may be useful for future
+  - SpatialCache no longer stores tiles during request_region
+  - Layer cache serves full-image hits with sub-region extraction for tiles
+  - Hashed intermediate nodes accumulate output for layer cache storage
+  - finalize_layer_cache pushes accumulated buffers (not spatial cache reads)
+  - All 11 layer_cache_tests pass
+  - All 10 tiled_parity_tests pass
+  - Memory usage during pipeline execution is reduced (no duplicate tile storage)
+  - Overlap recomputation for spatial filters is acceptable (verified by parity tests)
+  out_of_scope: 'Removing the SpatialCache struct entirely (it may be useful for future
+
     streaming/progressive rendering). Just stop using it in request_region.
+
     Changing the layer cache API or eviction policy.
+
     GPU/parallel tile processing.
-  technical_notes: |
-    IMPLEMENTATION PLAN:
 
-    1. Add per-node accumulator buffers to NodeGraph:
-       node_accumulators: Vec<Option<Vec<u8>>>
-       Allocated for hashed nodes at add_node_with_hash time:
-         let size = info.width * info.height * bpp;
-         self.node_accumulators.push(Some(vec![0u8; size]));
-       Non-hashed nodes get None.
-
-    2. In request_region, after compute_region returns:
-       - If node has an accumulator, copy tile pixels into the correct
-         position in the accumulator buffer (same stitch logic as current
-         finalize, but inline)
-       - Do NOT store in spatial cache
-       - Return the computed pixels directly
-
-    3. In request_region, layer cache hit path:
-       - Already works: serves full image or extracts sub-region
-       - When a layer cache hit exists, skip the accumulator (already cached)
-
-    4. In finalize_layer_cache:
-       - Instead of reading from spatial cache, read from node_accumulators
-       - For each hashed node with a completed accumulator, push to layer cache
-       - Drop accumulators after finalize (free memory)
-
-    5. Remove spatial cache store/query calls from request_region.
-       Keep the SpatialCache struct available but unused in the hot path.
-
-    MEMORY IMPACT:
-    Before: spatial cache holds ALL tiles for ALL nodes (~N * image_size)
-    After: accumulators hold ONE full image per HASHED node (~M * image_size, M <= N)
-    Plus: no tile cloning (request_region returns compute result directly)
+    '
+  technical_notes: "IMPLEMENTATION PLAN:\n\n1. Add per-node accumulator buffers to NodeGraph:\n   node_accumulators: Vec<Option<Vec<u8>>>\n\
+    \   Allocated for hashed nodes at add_node_with_hash time:\n     let size = info.width * info.height * bpp;\n     self.node_accumulators.push(Some(vec![0u8;\
+    \ size]));\n   Non-hashed nodes get None.\n\n2. In request_region, after compute_region returns:\n   - If node has an\
+    \ accumulator, copy tile pixels into the correct\n     position in the accumulator buffer (same stitch logic as current\n\
+    \     finalize, but inline)\n   - Do NOT store in spatial cache\n   - Return the computed pixels directly\n\n3. In request_region,\
+    \ layer cache hit path:\n   - Already works: serves full image or extracts sub-region\n   - When a layer cache hit exists,\
+    \ skip the accumulator (already cached)\n\n4. In finalize_layer_cache:\n   - Instead of reading from spatial cache, read\
+    \ from node_accumulators\n   - For each hashed node with a completed accumulator, push to layer cache\n   - Drop accumulators\
+    \ after finalize (free memory)\n\n5. Remove spatial cache store/query calls from request_region.\n   Keep the SpatialCache\
+    \ struct available but unused in the hot path.\n\nMEMORY IMPACT:\nBefore: spatial cache holds ALL tiles for ALL nodes\
+    \ (~N * image_size)\nAfter: accumulators hold ONE full image per HASHED node (~M * image_size, M <= N)\nPlus: no tile\
+    \ cloning (request_region returns compute result directly)\n"
 plan:
-  - phase: Add node accumulators
-    tasks:
-      - text: Add node_accumulators field to NodeGraph (Vec of Option buffers)
-        done: false
-      - text: Allocate accumulator in add_node_with_hash for hashed nodes
-        done: false
-      - text: Add helper to copy tile pixels into accumulator at correct position
-        done: false
-  - phase: Rewire request_region
-    tasks:
-      - text: Remove spatial cache store call from request_region
-        done: false
-      - text: Remove spatial cache query from request_region
-        done: false
-      - text: After compute_region, copy into accumulator if node is hashed
-        done: false
-      - text: Return computed pixels directly (no clone from cache)
-        done: false
-  - phase: Rewire finalize and verify
-    tasks:
-      - text: finalize_layer_cache reads from accumulators instead of spatial cache
-        done: false
-      - text: All 11 layer_cache_tests pass
-        done: false
-      - text: All 10 tiled_parity_tests pass
-        done: false
+- phase: Add node accumulators
+  tasks:
+  - text: Add node_accumulators field to NodeGraph (Vec of Option buffers)
+    done: true
+  - text: Allocate accumulator in add_node_with_hash for hashed nodes
+    done: true
+  - text: Add helper to copy tile pixels into accumulator at correct position
+    done: true
+- phase: Rewire request_region
+  tasks:
+  - text: Remove spatial cache store call from request_region
+    done: true
+  - text: Remove spatial cache query from request_region
+    done: true
+  - text: After compute_region, copy into accumulator if node is hashed
+    done: true
+  - text: Return computed pixels directly (no clone from cache)
+    done: true
+- phase: Rewire finalize and verify
+  tasks:
+  - text: finalize_layer_cache reads from accumulators instead of spatial cache
+    done: true
+  - text: All 11 layer_cache_tests pass
+    done: true
+  - text: All 10 tiled_parity_tests pass
+    done: true
 extra: {}

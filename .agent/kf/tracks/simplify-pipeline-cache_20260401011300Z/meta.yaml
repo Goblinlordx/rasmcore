@@ -1,5 +1,5 @@
 title: Replace spatial tile cache with layer-cache-only model
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'
