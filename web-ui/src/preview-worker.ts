@@ -45,9 +45,7 @@ function expandArgs(params, paramValues) {
   return args;
 }
 
-const POSITIONAL_ARG_OPS = new Set([
-  'grayscale',
-  'convertFormat',
+const EXTRA_POSITIONAL_OPS = new Set([
   'convolve',
   'displacementMap',
   'curvesRed',
@@ -59,7 +57,6 @@ const POSITIONAL_ARG_OPS = new Set([
   'lumVsSat',
   'satVsSat',
   'applyCubeLut',
-  'applyHaldLut',
   'gradientMap',
 ]);
 
@@ -80,7 +77,7 @@ function buildConfig(params, paramValues) {
 
 function applyStep(pipe, node, step) {
   const name = step.name;
-  if (POSITIONAL_ARG_OPS.has(name)) {
+  if (EXTRA_POSITIONAL_OPS.has(name)) {
     const args = expandArgs(step.params, step.paramValues);
     return pipe[name](node, ...args);
   }

@@ -62,11 +62,11 @@ function expandArgs(params, paramValues) {
   return args;
 }
 
-// Pipeline methods that take positional args (not a config record).
-// Everything else uses a config record: pipe.blur(node, { radius: 5.0 })
-const POSITIONAL_ARG_OPS = new Set([
-  'grayscale',
-  'convertFormat',
+// Ops with extra positional params (string/list) that aren't in the config record.
+// These are a codegen limitation: the filter function takes the string/list as a
+// separate arg, and the WIT mirrors that. Will be eliminated when the codegen is
+// updated to wrap all params in config records.
+const EXTRA_POSITIONAL_OPS = new Set([
   'convolve',
   'displacementMap',
   'curvesRed',
@@ -78,7 +78,6 @@ const POSITIONAL_ARG_OPS = new Set([
   'lumVsSat',
   'satVsSat',
   'applyCubeLut',
-  'applyHaldLut',
   'gradientMap',
 ]);
 
@@ -127,8 +126,8 @@ function applyStep(pipe, node, step, mode) {
     });
   }
 
-  // Positional-arg ops: spread flat args
-  if (POSITIONAL_ARG_OPS.has(name)) {
+  // Ops with extra positional params (string/list) — spread flat args
+  if (EXTRA_POSITIONAL_OPS.has(name)) {
     const args = expandArgs(step.params, step.paramValues);
     return pipe[name](node, ...args);
   }

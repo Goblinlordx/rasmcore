@@ -235,19 +235,6 @@ const PIPELINE_EXTRAS: Record<string, { category: string; params: UiParam[] }> =
     ],
   },
   grayscale: { category: 'color', params: [] },
-  convertFormat: {
-    category: 'color',
-    params: [
-      {
-        name: 'target',
-        type: 'enum',
-        hint: '',
-        options: ['rgb8', 'rgba8', 'gray8'],
-        default: 'rgb8',
-        label: 'Target pixel format',
-      },
-    ],
-  },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
