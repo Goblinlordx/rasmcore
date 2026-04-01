@@ -1,144 +1,150 @@
 id: web-ui-ps-layout_20260401094012Z
-title: "Web UI — Photoshop-style layout overhaul + interaction fixes"
+title: Web UI — Photoshop-style layout overhaul + interaction fixes
 type: feature
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Restructure web-ui/ HTML/CSS/TS to a Photoshop/GIMP-style layout with maximized
+  summary: 'Restructure web-ui/ HTML/CSS/TS to a Photoshop/GIMP-style layout with maximized
+
     canvas area, right panel (layers + effect stack for selected layer), bottom status
+
     bar. Fix draggable node cards eating slider/input events. Fix addNode triggering
+
     immediate processing that gets stuck at "Processing...".
-  context: |
-    The web-ui/ (TypeScript pipeline builder, web-ui/src/pipeline.ts ~1283 lines) is
-    the advanced v2 UI for rasmcore image processing. Current layout is functional but
-    doesn't match the UX of professional photo editors. Users expect:
-    - Large image canvas taking most of the screen
-    - Right panel with layers (images) showing thumbnails, blend modes, visibility
-    - Effect stack showing the chain of operations for the selected layer
-    - Bottom status bar with dimensions, processing time, cache stats
-    - Menus in the toolbar for adding filters/effects (already partially done)
 
-    Two critical interaction bugs exist:
-    1. addNode() at line 771 calls previewEditing() immediately, sending a worker
-       message. If the worker is busy or the chain is empty/broken, it stays stuck
-       at "Processing..." with no recovery.
-    2. Node cards have draggable=true on the entire card (line 802), so clicking and
-       dragging a range slider also initiates a card drag — making sliders unusable.
-  codebase_analysis: |
-    Target files (all in web-ui/):
-    - index.html: 224 lines, inline CSS + HTML structure
-    - src/pipeline.ts: 1283 lines, all UI logic (vanilla TS, no framework)
-    - src/types.ts: 126 lines, TypeScript interfaces
-    - src/pipeline-worker.ts: web worker for WASM processing
-
-    Current layout structure (index.html):
-    - .toolbar (40px): brand, badge, dropdown menus (Filters/Transform/Effects/Grading),
-      spacer, Before/After btn, Code btn
-    - .main-layout (flex):
-      - .canvas-area (flex:1): drop zone, preview canvas, original canvas, canvas-info
-      - .sidebar (300px): layers section, operations section, export section (pinned bottom)
-
-    Key code patterns:
-    - addNode() (line 758): pushes op to chain, sets editingNodeId, calls previewEditing()
-    - renderChain() (line 793): rebuilds all node cards, sets card.draggable=true on line 802
-    - Drag handlers (lines 805-823): dragstart/dragend/dragover/dragleave/drop on entire card
-    - Parameter controls (lines 869-1074): generated inside node card, no stopPropagation for drag
-    - schedulePreview() (line 1118): 1000ms debounce, calls previewEditing()
-    - previewEditing() (line 1123): sends 'process' with mode 'thumb' to worker
-    - requestWorker() (line 394): single-slot queue, sets isProcessing=true
-
-    Existing layer model:
-    - layers[] array with {id, name, imageBytes, chain[], blendMode, x, y, visible, thumbUrl}
-    - activeLayerId tracks which layer's chain is shown
-    - renderLayers() builds layer cards with thumb, name, visibility toggle, blend select
-    - BLEND_MODES: over, multiply, screen, overlay, darken, lighten, soft-light, hard-light,
-      difference, exclusion
-
-    No existing tracks target web-ui/ — the 3 pending demo-ui tracks target demo/ (v1 JS UI).
+    '
+  context: "The web-ui/ (TypeScript pipeline builder, web-ui/src/pipeline.ts ~1283 lines) is\nthe advanced v2 UI for rasmcore\
+    \ image processing. Current layout is functional but\ndoesn't match the UX of professional photo editors. Users expect:\n\
+    - Large image canvas taking most of the screen\n- Right panel with layers (images) showing thumbnails, blend modes, visibility\n\
+    - Effect stack showing the chain of operations for the selected layer\n- Bottom status bar with dimensions, processing\
+    \ time, cache stats\n- Menus in the toolbar for adding filters/effects (already partially done)\n\nTwo critical interaction\
+    \ bugs exist:\n1. addNode() at line 771 calls previewEditing() immediately, sending a worker\n   message. If the worker\
+    \ is busy or the chain is empty/broken, it stays stuck\n   at \"Processing...\" with no recovery.\n2. Node cards have\
+    \ draggable=true on the entire card (line 802), so clicking and\n   dragging a range slider also initiates a card drag\
+    \ — making sliders unusable.\n"
+  codebase_analysis: "Target files (all in web-ui/):\n- index.html: 224 lines, inline CSS + HTML structure\n- src/pipeline.ts:\
+    \ 1283 lines, all UI logic (vanilla TS, no framework)\n- src/types.ts: 126 lines, TypeScript interfaces\n- src/pipeline-worker.ts:\
+    \ web worker for WASM processing\n\nCurrent layout structure (index.html):\n- .toolbar (40px): brand, badge, dropdown\
+    \ menus (Filters/Transform/Effects/Grading),\n  spacer, Before/After btn, Code btn\n- .main-layout (flex):\n  - .canvas-area\
+    \ (flex:1): drop zone, preview canvas, original canvas, canvas-info\n  - .sidebar (300px): layers section, operations\
+    \ section, export section (pinned bottom)\n\nKey code patterns:\n- addNode() (line 758): pushes op to chain, sets editingNodeId,\
+    \ calls previewEditing()\n- renderChain() (line 793): rebuilds all node cards, sets card.draggable=true on line 802\n\
+    - Drag handlers (lines 805-823): dragstart/dragend/dragover/dragleave/drop on entire card\n- Parameter controls (lines\
+    \ 869-1074): generated inside node card, no stopPropagation for drag\n- schedulePreview() (line 1118): 1000ms debounce,\
+    \ calls previewEditing()\n- previewEditing() (line 1123): sends 'process' with mode 'thumb' to worker\n- requestWorker()\
+    \ (line 394): single-slot queue, sets isProcessing=true\n\nExisting layer model:\n- layers[] array with {id, name, imageBytes,\
+    \ chain[], blendMode, x, y, visible, thumbUrl}\n- activeLayerId tracks which layer's chain is shown\n- renderLayers()\
+    \ builds layer cards with thumb, name, visibility toggle, blend select\n- BLEND_MODES: over, multiply, screen, overlay,\
+    \ darken, lighten, soft-light, hard-light,\n  difference, exclusion\n\nNo existing tracks target web-ui/ — the 3 pending\
+    \ demo-ui tracks target demo/ (v1 JS UI).\n"
   acceptance_criteria:
-    - Canvas area takes at least 70% of viewport width when sidebar is open
-    - Right panel has two distinct scrollable sections — Layers and Effect Stack
-    - Layers section shows thumbnail, name, visibility toggle, blend mode for each layer
-    - Effect Stack section shows operations for the selected layer only
-    - Bottom status bar shows image dimensions, total processing time, and per-op timings
-    - Node cards are draggable ONLY from a grip handle element, not the entire card
-    - Range sliders, number inputs, selects, and color pickers work without triggering card drag
-    - Adding a new operation does NOT trigger immediate processing — enters edit mode only
-    - User must click Apply or adjust a param (triggering debounced preview) to process
-    - The UI never gets permanently stuck at "Processing..." — errors surface and clear the state
-    - Sidebar is collapsible via toggle button
-    - Dark theme consistent with existing color scheme
-  out_of_scope: |
-    - Before/After split view (separate track: web-ui-split-view)
+  - Canvas area takes at least 70% of viewport width when sidebar is open
+  - Right panel has two distinct scrollable sections — Layers and Effect Stack
+  - Layers section shows thumbnail, name, visibility toggle, blend mode for each layer
+  - Effect Stack section shows operations for the selected layer only
+  - Bottom status bar shows image dimensions, total processing time, and per-op timings
+  - Node cards are draggable ONLY from a grip handle element, not the entire card
+  - Range sliders, number inputs, selects, and color pickers work without triggering card drag
+  - Adding a new operation does NOT trigger immediate processing — enters edit mode only
+  - User must click Apply or adjust a param (triggering debounced preview) to process
+  - The UI never gets permanently stuck at "Processing..." — errors surface and clear the state
+  - Sidebar is collapsible via toggle button
+  - Dark theme consistent with existing color scheme
+  out_of_scope: '- Before/After split view (separate track: web-ui-split-view)
+
     - Enhanced export menu with per-format params (separate track: web-ui-export-menu)
+
     - Layer cache integration (separate track: demo-layer-cache targets demo/ not web-ui/)
+
     - Framework migration (stays vanilla TS)
+
     - Mobile responsive layout
-  technical_notes: |
-    Implementation approach:
+
+    '
+  technical_notes: 'Implementation approach:
+
     1. Restructure index.html: new CSS grid/flex layout with canvas area, right panel, bottom bar
+
     2. Right panel has two sidebar-section divs: Layers and Effect Stack
-    3. Effect Stack renders the active layer's chain (same renderChain logic, relocated)
+
+    3. Effect Stack renders the active layer''s chain (same renderChain logic, relocated)
+
     4. Add .drag-handle element to node cards — only this element gets draggable=true
+
     5. Add pointer-events and stopPropagation guards on all input elements inside node cards
+
     6. Remove the previewEditing() call from addNode() — just set editingNodeId and renderChain()
-    7. Add error timeout: if worker doesn't respond within 10s, clear isProcessing and show error
+
+    7. Add error timeout: if worker doesn''t respond within 10s, clear isProcessing and show error
+
     8. Bottom bar replaces .canvas-info div — shows dimensions + timing in a proper status bar
 
+
     Drag fix detail:
+
     - Add a <span class="drag-handle">⠿</span> to each node card header
+
     - Set draggable=true only on the handle, not the card
+
     - On dragstart from handle, use e.dataTransfer.setDragImage(card, ...) to show full card ghost
+
     - All <input>, <select>, <textarea> inside cards get e.stopPropagation() on mousedown/pointerdown
 
+
     Processing fix detail:
+
     - addNode() should: push op, set editingNodeId, renderChain(), but NOT call previewEditing()
+
     - The first preview happens when user adjusts a param (which calls schedulePreview)
+
     - Or when user clicks Apply (which calls applyFullChain)
+
     - Add a safety timeout in requestWorker: if no response in 15s, force isProcessing=false
+
+    '
 plan:
-  - phase: "Layout Restructure"
-    tasks:
-      - text: "Redesign index.html CSS — new grid layout with canvas-area (flex:1), right-panel (320px collapsible), bottom-bar (32px)"
-        done: false
-      - text: "Update HTML structure — split sidebar into layers-panel and effects-panel sections within right-panel"
-        done: false
-      - text: "Add bottom status bar HTML/CSS — dimensions, total time, per-op timing badges"
-        done: false
-      - text: "Style layers-panel — layer cards with thumbnails, drag handles, blend mode selects, visibility toggles"
-        done: false
-      - text: "Style effects-panel — node cards with drag handles, param rows, apply/cancel buttons"
-        done: false
-      - text: "Add sidebar collapse/expand toggle button with smooth transition"
-        done: false
-  - phase: "Drag Handle Fix"
-    tasks:
-      - text: "Add drag-handle span element to renderChain() node card header — only handle is draggable"
-        done: false
-      - text: "Update dragstart handler to use setDragImage for full card ghost when dragging from handle"
-        done: false
-      - text: "Add mousedown/pointerdown stopPropagation on all input/select/textarea inside node cards"
-        done: false
-      - text: "Verify sliders, spinners, color pickers, and dropdowns work without triggering drag"
-        done: false
-  - phase: "Processing Bug Fix"
-    tasks:
-      - text: "Remove previewEditing() call from addNode() — new ops enter edit mode without processing"
-        done: false
-      - text: "Add safety timeout in requestWorker — clear isProcessing after 15s with error message"
-        done: false
-      - text: "Ensure worker error handler always clears isProcessing and drains queue"
-        done: false
-      - text: "Add visual indicator distinguishing edit-mode (not yet processed) from applied state"
-        done: false
-  - phase: "Integration & Verification"
-    tasks:
-      - text: "Update renderLayers() to work with new layers-panel container"
-        done: false
-      - text: "Update renderChain() to work with new effects-panel container and show active layer label"
-        done: false
-      - text: "Manual test — add image, add 3 ops, drag-reorder ops, adjust sliders, apply, verify no stuck state"
-        done: false
+- phase: Layout Restructure
+  tasks:
+  - text: Redesign index.html CSS — new grid layout with canvas-area (flex:1), right-panel (320px collapsible), bottom-bar
+      (32px)
+    done: true
+  - text: Update HTML structure — split sidebar into layers-panel and effects-panel sections within right-panel
+    done: true
+  - text: Add bottom status bar HTML/CSS — dimensions, total time, per-op timing badges
+    done: true
+  - text: Style layers-panel — layer cards with thumbnails, drag handles, blend mode selects, visibility toggles
+    done: true
+  - text: Style effects-panel — node cards with drag handles, param rows, apply/cancel buttons
+    done: true
+  - text: Add sidebar collapse/expand toggle button with smooth transition
+    done: true
+- phase: Drag Handle Fix
+  tasks:
+  - text: Add drag-handle span element to renderChain() node card header — only handle is draggable
+    done: true
+  - text: Update dragstart handler to use setDragImage for full card ghost when dragging from handle
+    done: true
+  - text: Add mousedown/pointerdown stopPropagation on all input/select/textarea inside node cards
+    done: true
+  - text: Verify sliders, spinners, color pickers, and dropdowns work without triggering drag
+    done: true
+- phase: Processing Bug Fix
+  tasks:
+  - text: Remove previewEditing() call from addNode() — new ops enter edit mode without processing
+    done: true
+  - text: Add safety timeout in requestWorker — clear isProcessing after 15s with error message
+    done: true
+  - text: Ensure worker error handler always clears isProcessing and drains queue
+    done: true
+  - text: Add visual indicator distinguishing edit-mode (not yet processed) from applied state
+    done: true
+- phase: Integration & Verification
+  tasks:
+  - text: Update renderLayers() to work with new layers-panel container
+    done: true
+  - text: Update renderChain() to work with new effects-panel container and show active layer label
+    done: true
+  - text: Manual test — add image, add 3 ops, drag-reorder ops, adjust sliders, apply, verify no stuck state
+    done: true
 extra: {}
