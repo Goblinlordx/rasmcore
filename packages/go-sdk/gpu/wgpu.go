@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nicholasgasior/rasmcore-go/rasmcore"
+	"github.com/nicholasgasior/rcimg-go/rcimg"
 )
 
-// WgpuExecutor implements rasmcore.GpuExecutor using wgpu-native.
+// WgpuExecutor implements rcimg.GpuExecutor using wgpu-native.
 type WgpuExecutor struct {
 	mu            sync.Mutex
 	maxBufferSize int
@@ -63,7 +63,7 @@ func WithMaxBufferSize(size int) Option {
 }
 
 // Execute runs a batch of GPU compute operations.
-func (e *WgpuExecutor) Execute(ops []rasmcore.GpuOp, input []byte, width, height uint32) ([]byte, error) {
+func (e *WgpuExecutor) Execute(ops []rcimg.GpuOp, input []byte, width, height uint32) ([]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

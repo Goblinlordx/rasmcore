@@ -1,4 +1,4 @@
-module github.com/nicholasgasior/rasmcore-go
+module github.com/nicholasgasior/rcimg-go
 
 go 1.22
 

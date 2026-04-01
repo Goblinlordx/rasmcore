@@ -6,7 +6,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/nicholasgasior/rasmcore-go/rasmcore"
+	"github.com/nicholasgasior/rcimg-go/rcimg"
 )
 
 // WgpuExecutor stub — returns error when GPU build tag not set.
@@ -27,7 +27,7 @@ func WithMaxBufferSize(size int) Option {
 }
 
 // Execute always returns an error.
-func (e *WgpuExecutor) Execute(ops []rasmcore.GpuOp, input []byte, width, height uint32) ([]byte, error) {
+func (e *WgpuExecutor) Execute(ops []rcimg.GpuOp, input []byte, width, height uint32) ([]byte, error) {
 	return nil, fmt.Errorf("GPU not available")
 }
 

@@ -1,4 +1,4 @@
-// Package rasmcore provides a Go SDK for the rasmcore WASM image processing pipeline.
+// Package rcimg provides a Go SDK for the rasmcore WASM image processing pipeline.
 //
 // The SDK loads the rasmcore-image WASM component via wazero (pure Go, no CGO)
 // and exposes a Pipeline type for image operations. Optional GPU acceleration
@@ -6,19 +6,19 @@
 //
 // Usage:
 //
-//	pipe, err := rasmcore.NewPipeline(rasmcore.Options{})
+//	pipe, err := rcimg.NewPipeline(rcimg.Options{})
 //	if err != nil { log.Fatal(err) }
 //	defer pipe.Close()
 //
 //	img, err := pipe.Read(imageBytes)
 //	if err != nil { log.Fatal(err) }
 //
-//	blurred, err := pipe.Blur(img, rasmcore.BlurConfig{Radius: 10.0})
+//	blurred, err := pipe.Blur(img, rcimg.BlurConfig{Radius: 10.0})
 //	if err != nil { log.Fatal(err) }
 //
-//	result, err := pipe.WriteJPEG(blurred, rasmcore.JPEGConfig{Quality: 90})
+//	result, err := pipe.WriteJPEG(blurred, rcimg.JPEGConfig{Quality: 90})
 //	if err != nil { log.Fatal(err) }
-package rasmcore
+package rcimg
 
 import (
 	"context"

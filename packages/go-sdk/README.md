@@ -1,16 +1,16 @@
-# rasmcore — Go SDK
+# rcimg — Go SDK
 
 Pure-Rust WASM image processing pipeline for Go with optional GPU acceleration.
 
 ## Installation
 
 ```bash
-go get github.com/nicholasgasior/rasmcore-go/rasmcore
+go get github.com/nicholasgasior/rcimg-go/rcimg
 ```
 
 For GPU support (requires wgpu-native):
 ```bash
-go get github.com/nicholasgasior/rasmcore-go/gpu
+go get github.com/nicholasgasior/rcimg-go/gpu
 ```
 
 ## Usage
@@ -22,11 +22,11 @@ import (
     "log"
     "os"
 
-    "github.com/nicholasgasior/rasmcore-go/rasmcore"
+    "github.com/nicholasgasior/rcimg-go/rcimg"
 )
 
 func main() {
-    pipe, err := rasmcore.NewPipeline(rasmcore.Options{})
+    pipe, err := rcimg.NewPipeline(rcimg.Options{})
     if err != nil {
         log.Fatal(err)
     }
@@ -39,12 +39,12 @@ func main() {
         log.Fatal(err)
     }
 
-    blurred, err := pipe.Blur(img, rasmcore.BlurConfig{Radius: 10.0})
+    blurred, err := pipe.Blur(img, rcimg.BlurConfig{Radius: 10.0})
     if err != nil {
         log.Fatal(err)
     }
 
-    result, err := pipe.WriteJPEG(blurred, rasmcore.JPEGConfig{Quality: 90})
+    result, err := pipe.WriteJPEG(blurred, rcimg.JPEGConfig{Quality: 90})
     if err != nil {
         log.Fatal(err)
     }
@@ -62,14 +62,14 @@ go build -tags gpu .
 ```
 
 ```go
-import "github.com/nicholasgasior/rasmcore-go/gpu"
+import "github.com/nicholasgasior/rcimg-go/gpu"
 
 executor, err := gpu.New()
 if err != nil {
     log.Println("No GPU, falling back to CPU:", err)
 }
 
-pipe, _ := rasmcore.NewPipeline(rasmcore.Options{
+pipe, _ := rcimg.NewPipeline(rcimg.Options{
     UseGPU:      true,
     GpuExecutor: executor,
 })
