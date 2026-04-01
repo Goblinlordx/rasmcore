@@ -1,7 +1,7 @@
 import type { Operation, UiParam } from '../types';
 
 declare const __SDK_PATH__: string;
-const SDK_PATH = typeof __SDK_PATH__ !== 'undefined' ? __SDK_PATH__ : './sdk';
+const SDK_PATH = typeof __SDK_PATH__ !== 'undefined' ? __SDK_PATH__ : '/sdk';
 
 function snakeToCamel(s: string) {
   return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());

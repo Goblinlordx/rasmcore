@@ -16,7 +16,7 @@ export default defineConfig({
   },
   assetsInclude: ['**/*.wasm'],
   define: {
-    __SDK_PATH__: JSON.stringify(process.env.VITE_SDK_PATH || './sdk'),
+    __SDK_PATH__: JSON.stringify(process.env.VITE_SDK_PATH || '/sdk'),
   },
   test: {
     environment: 'jsdom',

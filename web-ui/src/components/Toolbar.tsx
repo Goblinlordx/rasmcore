@@ -254,8 +254,10 @@ export default function Toolbar({
         </div>
       </div>
 
-      {/* Operation menus */}
-      {MENUS.map((menu) => (
+      {/* Operation menus — only show if they have items */}
+      {MENUS.filter((menu) =>
+        Object.values(menuOps[menu.id] || {}).some((ops) => ops.length > 0),
+      ).map((menu) => (
         <div
           key={menu.id}
           className={'menu-btn' + (openMenu === menu.id ? ' active' : '')}
