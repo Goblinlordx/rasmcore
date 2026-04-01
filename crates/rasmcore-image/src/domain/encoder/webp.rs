@@ -52,6 +52,19 @@ fn encode_lossy(pixels: &[u8], info: &ImageInfo, quality: u8) -> Result<Vec<u8>,
         .map_err(|e| ImageError::ProcessingFailed(format!("WebP lossy encode failed: {e}")))
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "webp",
+        format: "webp",
+        mime: "image/webp",
+        extensions: &["webp"],
+        fn_name: "encode_webp",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

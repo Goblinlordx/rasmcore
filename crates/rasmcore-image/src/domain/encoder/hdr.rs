@@ -85,6 +85,19 @@ fn to_rgbe(r: f32, g: f32, b: f32) -> [u8; 4] {
     ]
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "hdr",
+        format: "hdr",
+        mime: "image/vnd.radiance",
+        extensions: &["hdr"],
+        fn_name: "encode_hdr",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

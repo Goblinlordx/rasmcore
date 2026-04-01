@@ -192,6 +192,19 @@ pub fn encode_sequence(
     Ok(buf)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "gif",
+        format: "gif",
+        mime: "image/gif",
+        extensions: &["gif"],
+        fn_name: "encode_gif",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

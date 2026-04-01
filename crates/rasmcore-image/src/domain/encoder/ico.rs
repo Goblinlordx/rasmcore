@@ -65,6 +65,19 @@ pub fn encode_pixels(
     Ok(buf)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "ico",
+        format: "ico",
+        mime: "image/x-icon",
+        extensions: &["ico"],
+        fn_name: "encode_ico",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

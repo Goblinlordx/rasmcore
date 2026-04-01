@@ -53,6 +53,28 @@ pub fn encode_bmp(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError
     }
 }
 
+// ─── Encoder Registrations for TGA and PNM ─────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "tga",
+        format: "tga",
+        mime: "image/x-tga",
+        extensions: &["tga"],
+        fn_name: "encode_tga",
+    }
+}
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "pnm",
+        format: "pnm",
+        mime: "image/x-portable-anymap",
+        extensions: &["pnm", "ppm", "pgm", "pbm"],
+        fn_name: "encode_pnm",
+    }
+}
+
 #[cfg(feature = "native-tga")]
 pub fn encode_tga(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     let w = info.width as u16;

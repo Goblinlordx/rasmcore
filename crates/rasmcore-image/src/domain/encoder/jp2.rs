@@ -176,6 +176,19 @@ pub fn encode(
         .map_err(|e| ImageError::ProcessingFailed(format!("JP2 encode: {e}")))
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "jp2",
+        format: "jp2",
+        mime: "image/jp2",
+        extensions: &["jp2", "j2k"],
+        fn_name: "encode_jp2",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

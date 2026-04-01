@@ -23,3 +23,15 @@ pub fn encode_pixels(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageEr
         ))),
     }
 }
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "fits",
+        format: "fits",
+        mime: "image/fits",
+        extensions: &["fits", "fit"],
+        fn_name: "encode_fits",
+    }
+}

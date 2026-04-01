@@ -192,6 +192,19 @@ fn extract_slice_data(bitstream: &[u8]) -> Result<Vec<u8>, ImageError> {
     }
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "heic",
+        format: "heic",
+        mime: "image/heic",
+        extensions: &["heic", "heif"],
+        fn_name: "encode_heic",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

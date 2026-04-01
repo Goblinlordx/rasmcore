@@ -77,6 +77,19 @@ pub fn encode_pixels(
     Ok(buf)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "exr",
+        format: "exr",
+        mime: "image/x-exr",
+        extensions: &["exr"],
+        fn_name: "encode_exr",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

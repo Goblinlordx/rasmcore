@@ -110,12 +110,9 @@ impl CodecRegistry {
         ]
     }
 
-    /// List all supported encode format names.
-    pub fn supported_encode_formats() -> &'static [&'static str] {
-        &[
-            "png", "jpeg", "webp", "gif", "tiff", "avif", "bmp", "ico", "qoi", "tga", "hdr", "pnm",
-            "exr", "dds", "jp2", "fits",
-        ]
+    /// List all supported encode format names (derived from encoder registry).
+    pub fn supported_encode_formats() -> Vec<&'static str> {
+        super::encoder::registered_encoders().iter().map(|r| r.format).collect()
     }
 
     /// Check if a format name is supported for decoding.
@@ -125,57 +122,39 @@ impl CodecRegistry {
 
     /// Check if a format name is supported for encoding.
     pub fn can_encode_format(format: &str) -> bool {
-        Self::supported_encode_formats().contains(&format)
+        super::encoder::registered_encoders().iter().any(|r| r.format == format || r.extensions.contains(&format))
     }
 
     /// Get MIME type for a format name.
+    /// First checks the encoder registry, then falls back to decode-only formats.
     pub fn mime_type(format: &str) -> Option<&'static str> {
+        // Check encoder registry first
+        if let Some(reg) = super::encoder::registered_encoders().iter()
+            .find(|r| r.format == format || r.extensions.contains(&format))
+        {
+            return Some(reg.mime);
+        }
+        // Decode-only formats (no encoder registered)
         match format {
-            "jpeg" | "jpg" => Some("image/jpeg"),
-            "png" => Some("image/png"),
-            "gif" => Some("image/gif"),
-            "webp" => Some("image/webp"),
-            "bmp" => Some("image/bmp"),
-            "tiff" | "tif" => Some("image/tiff"),
-            "avif" => Some("image/avif"),
-            "ico" => Some("image/x-icon"),
             "svg" => Some("image/svg+xml"),
-            "heic" | "heif" => Some("image/heic"),
             "jxl" => Some("image/jxl"),
-            "jp2" => Some("image/jp2"),
-            "qoi" => Some("image/qoi"),
-            "fits" | "fit" => Some("image/fits"),
-            "tga" => Some("image/x-tga"),
-            "hdr" => Some("image/vnd.radiance"),
-            "pnm" | "ppm" | "pgm" | "pbm" => Some("image/x-portable-anymap"),
-            "exr" => Some("image/x-exr"),
-            "dds" => Some("image/vnd-ms.dds"),
             _ => None,
         }
     }
 
     /// Get file extensions for a format name.
+    /// First checks the encoder registry, then falls back to decode-only formats.
     pub fn extensions(format: &str) -> &'static [&'static str] {
+        // Check encoder registry first
+        if let Some(reg) = super::encoder::registered_encoders().iter()
+            .find(|r| r.format == format)
+        {
+            return reg.extensions;
+        }
+        // Decode-only formats
         match format {
-            "jpeg" => &["jpg", "jpeg"],
-            "png" => &["png"],
-            "gif" => &["gif"],
-            "webp" => &["webp"],
-            "bmp" => &["bmp"],
-            "tiff" => &["tiff", "tif"],
-            "avif" => &["avif"],
-            "ico" => &["ico"],
             "svg" => &["svg", "svgz"],
-            "heic" => &["heic", "heif"],
             "jxl" => &["jxl"],
-            "jp2" => &["jp2", "j2k"],
-            "qoi" => &["qoi"],
-            "fits" => &["fits", "fit"],
-            "pnm" => &["pnm", "ppm", "pgm", "pbm"],
-            "tga" => &["tga"],
-            "hdr" => &["hdr"],
-            "exr" => &["exr"],
-            "dds" => &["dds"],
             _ => &[],
         }
     }

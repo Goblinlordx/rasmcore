@@ -109,6 +109,19 @@ pub fn encode_dds(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError
     Ok(out)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "dds",
+        format: "dds",
+        mime: "image/vnd-ms.dds",
+        extensions: &["dds"],
+        fn_name: "encode_dds",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

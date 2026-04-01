@@ -359,6 +359,19 @@ pub fn embed_exif(png_data: &[u8], exif_data: &[u8]) -> Result<Vec<u8>, ImageErr
     Ok(result)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "png",
+        format: "png",
+        mime: "image/png",
+        extensions: &["png"],
+        fn_name: "encode_png",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,6 +14,19 @@ pub fn encode_pixels(
     super::native_trivial::encode_bmp(pixels, info)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "bmp",
+        format: "bmp",
+        mime: "image/bmp",
+        extensions: &["bmp"],
+        fn_name: "encode_bmp",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

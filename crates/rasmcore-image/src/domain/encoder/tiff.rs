@@ -220,6 +220,19 @@ pub fn encode_pages(seq: &FrameSequence, config: &TiffEncodeConfig) -> Result<Ve
     Ok(buf)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "tiff",
+        format: "tiff",
+        mime: "image/tiff",
+        extensions: &["tiff", "tif"],
+        fn_name: "encode_tiff",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

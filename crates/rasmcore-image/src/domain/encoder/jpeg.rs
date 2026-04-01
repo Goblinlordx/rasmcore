@@ -153,6 +153,19 @@ pub fn embed_iptc(jpeg_data: &[u8], iptc_data: &[u8]) -> Result<Vec<u8>, ImageEr
     Ok(result)
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "jpeg",
+        format: "jpeg",
+        mime: "image/jpeg",
+        extensions: &["jpg", "jpeg"],
+        fn_name: "encode_jpeg",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

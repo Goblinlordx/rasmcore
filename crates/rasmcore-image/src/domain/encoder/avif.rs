@@ -35,6 +35,19 @@ pub fn encode(
     ))
 }
 
+
+// ─── Encoder Registration ──────────────────────────────────────────────────
+
+inventory::submit! {
+    &crate::domain::encoder::StaticEncoderRegistration {
+        name: "avif",
+        format: "avif",
+        mime: "image/avif",
+        extensions: &["avif"],
+        fn_name: "encode_avif",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

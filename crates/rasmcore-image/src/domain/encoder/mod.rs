@@ -41,10 +41,6 @@ pub fn registered_encoders() -> Vec<&'static StaticEncoderRegistration> {
         .collect()
 }
 
-const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "webp", "gif", "tiff", "heic", "bmp", "ico", "qoi", "tga", "hdr", "pnm", "exr",
-    "dds", "jp2", "fits",
-];
 
 /// Encode pixel data to a specific image format (convenience wrapper).
 ///
@@ -179,9 +175,9 @@ pub fn encode_sequence(
     }
 }
 
-/// List supported encode formats.
+/// List supported encode formats (derived from encoder registry).
 pub fn supported_formats() -> Vec<String> {
-    SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
+    registered_encoders().iter().map(|r| r.format.to_string()).collect()
 }
 
 /// Format metadata: name, MIME type, and file extensions.
@@ -192,28 +188,25 @@ pub struct FormatInfo {
     pub extensions: Vec<String>,
 }
 
-/// Get format metadata for a specific format.
+/// Get format metadata for a specific format (from encoder registry).
 pub fn format_info(format: &str) -> Option<FormatInfo> {
-    if !SUPPORTED_FORMATS.contains(&format) {
-        return None;
-    }
-    Some(FormatInfo {
-        name: format.to_string(),
-        mime_type: super::codec::CodecRegistry::mime_type(format)
-            .unwrap_or("application/octet-stream")
-            .to_string(),
-        extensions: super::codec::CodecRegistry::extensions(format)
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-    })
+    registered_encoders().iter()
+        .find(|r| r.format == format || r.extensions.contains(&format))
+        .map(|r| FormatInfo {
+            name: r.format.to_string(),
+            mime_type: r.mime.to_string(),
+            extensions: r.extensions.iter().map(|s| s.to_string()).collect(),
+        })
 }
 
-/// Get format metadata for all supported encode formats.
+/// Get format metadata for all supported encode formats (from encoder registry).
 pub fn all_format_info() -> Vec<FormatInfo> {
-    SUPPORTED_FORMATS
-        .iter()
-        .filter_map(|&fmt| format_info(fmt))
+    registered_encoders().iter()
+        .map(|r| FormatInfo {
+            name: r.format.to_string(),
+            mime_type: r.mime.to_string(),
+            extensions: r.extensions.iter().map(|s| s.to_string()).collect(),
+        })
         .collect()
 }
 
@@ -576,7 +569,7 @@ mod tests {
         assert!(names.contains(&"bmp"));
         assert!(names.contains(&"qoi"));
         assert!(names.contains(&"gif"));
-        assert_eq!(infos.len(), SUPPORTED_FORMATS.len());
+        assert_eq!(infos.len(), registered_encoders().len());
     }
 
     #[test]
