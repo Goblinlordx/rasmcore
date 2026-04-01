@@ -140,6 +140,22 @@ describe('Component smoke tests', () => {
     expect(screen.getByText(/Drop an image/)).toBeInTheDocument();
   });
 
+  it('Canvas renders tabs when image is loaded', () => {
+    const ref1 = { current: null };
+    const ref2 = { current: null };
+    render(
+      <Canvas
+        previewCanvasRef={ref1}
+        originalCanvasRef={ref2}
+        hasImage={true}
+        onAddLayer={() => {}}
+      />,
+    );
+    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(screen.getByText('Before')).toBeInTheDocument();
+    expect(screen.getByText('After')).toBeInTheDocument();
+  });
+
   it('LayerPanel renders add layer button', () => {
     render(
       <LayerPanel

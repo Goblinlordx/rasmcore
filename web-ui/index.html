@@ -44,6 +44,22 @@
     .drop-prompt { border: 2px dashed #333; border-radius: 12px; padding: 3rem 4rem; text-align: center; color: #555; font-size: 0.9rem; }
     .drop-prompt:hover { border-color: #3b82f6; color: #888; cursor: pointer; }
 
+    /* ─── Canvas Tabs ─── */
+    .canvas-tabs { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; gap: 2px; background: #12122a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 2px; }
+    .canvas-tab { padding: 3px 12px; background: transparent; color: #888; border: none; border-radius: 4px; cursor: pointer; font-size: 0.65rem; transition: all 0.15s; }
+    .canvas-tab:hover { color: #e0e0e0; background: #1a1a3a; }
+    .canvas-tab.active { background: #3b82f6; color: white; }
+    .canvas-tab.split-toggle { font-size: 0.55rem; letter-spacing: -1px; padding: 3px 8px; }
+
+    /* ─── Split View ─── */
+    .split-container { position: relative; display: inline-block; max-width: 100%; max-height: calc(100vh - 140px); }
+    .split-canvas { display: block; max-width: 100%; max-height: calc(100vh - 140px); border: 1px solid #222; border-radius: 4px; }
+    .split-before { position: absolute; top: 0; left: 0; pointer-events: none; }
+    .split-divider { position: absolute; top: 0; bottom: 0; width: 4px; background: #3b82f6; cursor: col-resize; z-index: 3; transform: translateX(-50%); }
+    .split-divider-handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; background: #3b82f6; border-radius: 50%; border: 2px solid #e0e0e0; }
+    .split-labels { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 12px; pointer-events: none; }
+    .split-label-before, .split-label-after { font-size: 0.6rem; color: rgba(255,255,255,0.5); background: rgba(0,0,0,0.5); padding: 1px 6px; border-radius: 3px; }
+
     /* ─── Right Panel ─── */
     .right-panel { width: 320px; background: #0c0c1e; border-left: 1px solid #2a2a4a; display: flex; flex-direction: column; overflow: hidden; transition: width 0.2s; flex-shrink: 0; }
     .right-panel.collapsed { width: 0; border-left: none; }
