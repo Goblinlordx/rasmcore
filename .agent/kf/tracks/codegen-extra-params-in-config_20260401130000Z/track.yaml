@@ -1,130 +1,93 @@
 id: codegen-extra-params-in-config_20260401130000Z
-title: "Codegen: include string/list extra params in filter config records"
+title: 'Codegen: include string/list extra params in filter config records'
 type: refactor
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Update the filter WIT/adapter codegen to include string and list extra
+  summary: 'Update the filter WIT/adapter codegen to include string and list extra
+
     params inside the config record instead of as separate positional args.
+
     This eliminates EXTRA_POSITIONAL_OPS from the web workers entirely.
-  context: |
-    12 filter pipeline methods still use positional args for string/list
-    params because the codegen separates them from the ConfigParams struct.
-    The WIT has signatures like:
-      curves-red(source, points: string)
-      convolve(source, kernel: list<f32>, config: convolve-config)
-      displacement-map(source, map-x: list<f32>, map-y: list<f32>)
 
-    The domain filter functions take these as separate args:
-      fn curves_red(request, upstream, info, points: String)
-      fn convolve(request, upstream, info, kernel: &[f32], config: &ConvolveParams)
-
-    The fix: change the codegen so that extra params are INCLUDED in the
-    config record. The WIT becomes:
-      curves-red(source, config: curves-red-config)  where config has points: string
-      convolve(source, config: convolve-config)  where config includes kernel: list<f32>
-
-    The adapter extracts all fields from the config and passes them to the
-    domain function as before. The domain functions stay unchanged.
-  codebase_analysis: |
-    Codegen separation happens in three places:
-
-    1. generate/wit.rs line 67-79: filters extra params by checking
-       type.starts_with('&') && type.ends_with("Params"). Non-matching
-       params become positional WIT args. Fix: include them in the config record.
-
-    2. generate/pipeline.rs line 171-214: pipeline adapter separates extra
-       params from config params for the method signature. Fix: put all in
-       config, extract in method body.
-
-    3. generate/adapter.rs line 40-112: stateless filter adapter has same
-       separation. Fix: same approach.
-
-    Affected filters (12 total in EXTRA_POSITIONAL_OPS):
-      String params: curvesRed, curvesGreen, curvesBlue, curvesMaster,
-        hueVsSat, hueVsLum, lumVsSat, satVsSat, applyCubeLut, gradientMap
-      List params: convolve (kernel: list<f32>), displacementMap (map-x, map-y)
-
-    Web worker changes: delete EXTRA_POSITIONAL_OPS entirely, remove the
-    positional-arg branch from applyStep.
+    '
+  context: "12 filter pipeline methods still use positional args for string/list\nparams because the codegen separates them\
+    \ from the ConfigParams struct.\nThe WIT has signatures like:\n  curves-red(source, points: string)\n  convolve(source,\
+    \ kernel: list<f32>, config: convolve-config)\n  displacement-map(source, map-x: list<f32>, map-y: list<f32>)\n\nThe domain\
+    \ filter functions take these as separate args:\n  fn curves_red(request, upstream, info, points: String)\n  fn convolve(request,\
+    \ upstream, info, kernel: &[f32], config: &ConvolveParams)\n\nThe fix: change the codegen so that extra params are INCLUDED\
+    \ in the\nconfig record. The WIT becomes:\n  curves-red(source, config: curves-red-config)  where config has points: string\n\
+    \  convolve(source, config: convolve-config)  where config includes kernel: list<f32>\n\nThe adapter extracts all fields\
+    \ from the config and passes them to the\ndomain function as before. The domain functions stay unchanged.\n"
+  codebase_analysis: "Codegen separation happens in three places:\n\n1. generate/wit.rs line 67-79: filters extra params by\
+    \ checking\n   type.starts_with('&') && type.ends_with(\"Params\"). Non-matching\n   params become positional WIT args.\
+    \ Fix: include them in the config record.\n\n2. generate/pipeline.rs line 171-214: pipeline adapter separates extra\n\
+    \   params from config params for the method signature. Fix: put all in\n   config, extract in method body.\n\n3. generate/adapter.rs\
+    \ line 40-112: stateless filter adapter has same\n   separation. Fix: same approach.\n\nAffected filters (12 total in\
+    \ EXTRA_POSITIONAL_OPS):\n  String params: curvesRed, curvesGreen, curvesBlue, curvesMaster,\n    hueVsSat, hueVsLum,\
+    \ lumVsSat, satVsSat, applyCubeLut, gradientMap\n  List params: convolve (kernel: list<f32>), displacementMap (map-x,\
+    \ map-y)\n\nWeb worker changes: delete EXTRA_POSITIONAL_OPS entirely, remove the\npositional-arg branch from applyStep.\n"
   acceptance_criteria:
-    - All 12 remaining positional-arg filters use config records in WIT
-    - String params (points, cube-data, stops) are fields in the config record
-    - List params (kernel, map-x, map-y) are fields in the config record
-    - Pipeline adapter extracts all params from config, passes to domain function
-    - Domain filter functions are UNCHANGED (same signatures)
-    - EXTRA_POSITIONAL_OPS deleted from both workers
-    - expandArgs function removed (no longer needed)
-    - WASM component builds successfully
-    - npm run check passes
-  out_of_scope: |
-    - Changing Rust domain filter function signatures
+  - All 12 remaining positional-arg filters use config records in WIT
+  - String params (points, cube-data, stops) are fields in the config record
+  - List params (kernel, map-x, map-y) are fields in the config record
+  - Pipeline adapter extracts all params from config, passes to domain function
+  - Domain filter functions are UNCHANGED (same signatures)
+  - EXTRA_POSITIONAL_OPS deleted from both workers
+  - expandArgs function removed (no longer needed)
+  - WASM component builds successfully
+  - npm run check passes
+  out_of_scope: '- Changing Rust domain filter function signatures
+
     - Stateless filter API changes (only pipeline resource methods)
+
     - convertFormat (manual stub, separate issue)
-  technical_notes: |
-    The approach: codegen-only changes, no domain code touched.
 
-    In generate/wit.rs - generate_filter_wit():
-    - Stop filtering extra params out of the config record
-    - For filters with ONLY extra params (no ConfigParams struct like curves),
-      generate a synthetic config record with just the extra param fields
-    - For filters with BOTH extra params and ConfigParams (like convolve),
-      merge the extra fields into the existing config record
-
-    In generate/pipeline.rs - generate_adapter_macro():
-    - Method signature takes only (source, config) — no extra positional args
-    - Method body extracts extra param fields from config record
-    - Passes extracted values to node constructor as before
-
-    In generate/adapter.rs - generate_config_method():
-    - Same changes for the stateless filter adapter
-
-    WIT type mapping for extra params:
-    - String → string
-    - &[f32] → list<f32>
-    - &[f64] → list<f64>
-    - &[Point2D] → list<point2d>
-
-    Worker cleanup:
-    - Delete EXTRA_POSITIONAL_OPS set
-    - Delete expandArgs function (was only used by positional path)
-    - Delete positional-arg branch from applyStep
-    - All ops go through buildConfig or no-param path
+    '
+  technical_notes: "The approach: codegen-only changes, no domain code touched.\n\nIn generate/wit.rs - generate_filter_wit():\n\
+    - Stop filtering extra params out of the config record\n- For filters with ONLY extra params (no ConfigParams struct like\
+    \ curves),\n  generate a synthetic config record with just the extra param fields\n- For filters with BOTH extra params\
+    \ and ConfigParams (like convolve),\n  merge the extra fields into the existing config record\n\nIn generate/pipeline.rs\
+    \ - generate_adapter_macro():\n- Method signature takes only (source, config) — no extra positional args\n- Method body\
+    \ extracts extra param fields from config record\n- Passes extracted values to node constructor as before\n\nIn generate/adapter.rs\
+    \ - generate_config_method():\n- Same changes for the stateless filter adapter\n\nWIT type mapping for extra params:\n\
+    - String → string\n- &[f32] → list<f32>\n- &[f64] → list<f64>\n- &[Point2D] → list<point2d>\n\nWorker cleanup:\n- Delete\
+    \ EXTRA_POSITIONAL_OPS set\n- Delete expandArgs function (was only used by positional path)\n- Delete positional-arg branch\
+    \ from applyStep\n- All ops go through buildConfig or no-param path\n"
 plan:
-  - phase: "WIT Codegen"
-    tasks:
-      - text: "Update generate/wit.rs to include extra params (string, list) in filter config records"
-        done: false
-      - text: "For filters with no ConfigParams struct, generate synthetic config record from extra params only"
-        done: false
-      - text: "For filters with both extra params AND ConfigParams, merge extra fields into existing record"
-        done: false
-      - text: "Verify generated WIT has no positional args for any filter"
-        done: false
-  - phase: "Adapter Codegen"
-    tasks:
-      - text: "Update generate/pipeline.rs to extract all params (including extra) from config record"
-        done: false
-      - text: "Update generate/adapter.rs (stateless filter adapter) similarly"
-        done: false
-      - text: "Verify cargo component build succeeds"
-        done: false
-  - phase: "Worker Cleanup"
-    tasks:
-      - text: "Delete EXTRA_POSITIONAL_OPS and expandArgs from pipeline-worker.ts"
-        done: false
-      - text: "Delete EXTRA_POSITIONAL_OPS and expandArgs from preview-worker.ts"
-        done: false
-      - text: "Remove positional-arg branch from applyStep — all ops use buildConfig or no-param"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Run cargo test"
-        done: false
-      - text: "Run npm run check"
-        done: false
-      - text: "Manual test convolve, curves, displacement-map in browser"
-        done: false
+- phase: WIT Codegen
+  tasks:
+  - text: Update generate/wit.rs to include extra params (string, list) in filter config records
+    done: true
+  - text: For filters with no ConfigParams struct, generate synthetic config record from extra params only
+    done: true
+  - text: For filters with both extra params AND ConfigParams, merge extra fields into existing record
+    done: true
+  - text: Verify generated WIT has no positional args for any filter
+    done: true
+- phase: Adapter Codegen
+  tasks:
+  - text: Update generate/pipeline.rs to extract all params (including extra) from config record
+    done: true
+  - text: Update generate/adapter.rs (stateless filter adapter) similarly
+    done: true
+  - text: Verify cargo component build succeeds
+    done: true
+- phase: Worker Cleanup
+  tasks:
+  - text: Delete EXTRA_POSITIONAL_OPS and expandArgs from pipeline-worker.ts
+    done: true
+  - text: Delete EXTRA_POSITIONAL_OPS and expandArgs from preview-worker.ts
+    done: true
+  - text: Remove positional-arg branch from applyStep — all ops use buildConfig or no-param
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run cargo test
+    done: true
+  - text: Run npm run check
+    done: true
+  - text: Manual test convolve, curves, displacement-map in browser
+    done: true
 extra: {}
