@@ -592,6 +592,22 @@ impl GuestImagePipeline for PipelineResource {
     fn graph_node_count(&self) -> u32 {
         self.graph.borrow().description().len() as u32
     }
+
+    fn write_from_description(
+        &self,
+        description: Vec<u8>,
+        source_data: Vec<u8>,
+        terminal_node: NodeId,
+        format: String,
+        quality: Option<u8>,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        use crate::domain::pipeline::graph::{execute_from_description, GraphDescription};
+
+        let desc =
+            GraphDescription::deserialize(&description).map_err(to_wit_error)?;
+        execute_from_description(&desc, &source_data, terminal_node, &format, quality)
+            .map_err(to_wit_error)
+    }
 }
 
 /// Parse a simple JSON object of the form `{"container": {"field": "value", ...}, ...}`

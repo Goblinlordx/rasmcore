@@ -294,6 +294,9 @@ interface pipeline {
         graph-serialize: func() -> buffer;
         /// Return the number of nodes in the graph.
         graph-node-count: func() -> u32;
+        /// Execute a pipeline from a serialized graph description + source data.
+        /// The description is not consumed — it can be re-executed.
+        write-from-description: func(description: buffer, source-data: buffer, terminal-node: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
     }
 
     detect-format: func(header: buffer) -> option<string>;

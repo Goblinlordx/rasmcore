@@ -1208,7 +1208,8 @@ impl NodeGraph {
         self.node_accumulators.clear();
     }
 
-    /// Clear all graph state after execution. Keeps the layer_cache reference.
+    /// Clear all graph state after execution. Keeps the layer_cache reference
+    /// and the graph description (for introspection and re-execution).
     pub fn cleanup(&mut self) {
         self.nodes.clear();
         self.node_hashes.clear();
@@ -1217,8 +1218,14 @@ impl NodeGraph {
         self.cache_hit_pixels.clear();
         self.touched_hashes.clear();
         self.node_metadata.clear();
-        self.description = GraphDescription::new();
+        // description intentionally kept — it's the serialized graph specification
         // layer_cache and cache_budget intentionally kept
+    }
+
+    /// Clear everything including the graph description. Used when starting fresh.
+    pub fn reset(&mut self) {
+        self.cleanup();
+        self.description = GraphDescription::new();
     }
 
     /// Number of nodes in the graph.
@@ -1290,6 +1297,152 @@ impl NodeGraph {
 
         Ok(sequence)
     }
+}
+
+/// Execute a pipeline from a serialized graph description + source data.
+///
+/// This is the stateless execution path: the graph description captures the
+/// full pipeline specification (node kinds, names, upstreams, output info).
+/// Given source image data, it reconstructs a live NodeGraph using the filter
+/// dispatch, runs execution, and returns the encoded output.
+///
+/// The description is not consumed — it can be re-executed with different data.
+///
+/// Currently, filter/transform config is reconstructed from the node names
+/// using default parameters. Full config serialization into descriptors is
+/// planned for a future track.
+pub fn execute_from_description(
+    description: &GraphDescription,
+    source_data: &[u8],
+    terminal_node: u32,
+    format: &str,
+    quality: Option<u8>,
+) -> Result<Vec<u8>, ImageError> {
+    use crate::domain::pipeline::nodes::{sink, source};
+
+    // Validate the description
+    description
+        .validate()
+        .map_err(|e| ImageError::InvalidParameters(e.to_string()))?;
+
+    if terminal_node as usize >= description.len() {
+        return Err(ImageError::InvalidParameters(format!(
+            "terminal node {terminal_node} out of range (graph has {} nodes)",
+            description.len()
+        )));
+    }
+
+    // Build a live NodeGraph from the description
+    let mut graph = NodeGraph::new(16 * 1024 * 1024);
+
+    for (i, desc) in description.iter().enumerate() {
+        // Source detection: explicit Source kind OR first node with no upstreams
+        let is_source = desc.kind == NodeKind::Source || desc.upstreams.is_empty();
+
+        if is_source {
+            let node = source::SourceNode::new(source_data.to_vec())?;
+            graph.add_node(Box::new(node));
+            continue;
+        }
+
+        match desc.kind {
+            NodeKind::Source => unreachable!(), // handled above
+            NodeKind::Filter | NodeKind::Mapper => {
+                if desc.upstreams.is_empty() {
+                    return Err(ImageError::InvalidParameters(format!(
+                        "node {i} ({}) has no upstream",
+                        desc.name
+                    )));
+                }
+                let upstream = desc.upstreams[0];
+                let upstream_info = graph.node_info(upstream)?;
+
+                // Dispatch to filter factory using node name
+                let params = std::collections::HashMap::new();
+                let node = crate::domain::pipeline::dispatch::dispatch_filter(
+                    &desc.name,
+                    upstream,
+                    upstream_info,
+                    &params,
+                )
+                .map_err(|e| ImageError::InvalidParameters(e))?;
+                graph.add_node(node);
+            }
+            NodeKind::Transform => {
+                if desc.upstreams.is_empty() {
+                    return Err(ImageError::InvalidParameters(format!(
+                        "node {i} ({}) has no upstream",
+                        desc.name
+                    )));
+                }
+                let upstream = desc.upstreams[0];
+                let upstream_info = graph.node_info(upstream)?;
+
+                // Reconstruct transforms from name + output_info
+                let node: Box<dyn ImageNode> = match desc.name.as_str() {
+                    "resize" => {
+                        use crate::domain::pipeline::nodes::transform::ResizeNode;
+                        use crate::domain::types::ResizeFilter;
+                        Box::new(ResizeNode::new(
+                            upstream,
+                            upstream_info,
+                            desc.output_info.width,
+                            desc.output_info.height,
+                            ResizeFilter::Lanczos3, // default — config not yet serialized
+                        ))
+                    }
+                    "crop" => {
+                        use crate::domain::pipeline::nodes::transform::CropNode;
+                        // Reconstruct crop bounds from output dimensions
+                        // (x,y are 0 by default since config not yet serialized)
+                        Box::new(CropNode::new(
+                            upstream,
+                            upstream_info,
+                            0,
+                            0,
+                            desc.output_info.width,
+                            desc.output_info.height,
+                        ))
+                    }
+                    "rotate" => {
+                        use crate::domain::pipeline::nodes::transform::RotateNode;
+                        use crate::domain::types::Rotation;
+                        Box::new(RotateNode::new(upstream, upstream_info, Rotation::R90))
+                    }
+                    "flip" => {
+                        use crate::domain::pipeline::nodes::transform::FlipNode;
+                        use crate::domain::types::FlipDirection;
+                        Box::new(FlipNode::new(
+                            upstream,
+                            upstream_info,
+                            FlipDirection::Horizontal,
+                        ))
+                    }
+                    name => {
+                        // Try filter dispatch as fallback
+                        let params = std::collections::HashMap::new();
+                        crate::domain::pipeline::dispatch::dispatch_filter(
+                            name,
+                            upstream,
+                            upstream_info,
+                            &params,
+                        )
+                        .map_err(|e| ImageError::InvalidParameters(e))?
+                    }
+                };
+                graph.add_node(node);
+            }
+            NodeKind::Composite => {
+                // Composite requires two upstreams — not yet supported in description execution
+                return Err(ImageError::InvalidParameters(format!(
+                    "node {i}: composite reconstruction not yet supported"
+                )));
+            }
+        }
+    }
+
+    // Execute
+    sink::write(&mut graph, terminal_node, format, quality, None)
 }
 
 /// Calculate bytes per pixel for a given format.
@@ -1630,11 +1783,21 @@ mod tests {
     }
 
     #[test]
-    fn description_cleared_on_cleanup() {
+    fn description_survives_cleanup() {
         let mut g = NodeGraph::new(1024 * 1024);
         g.add_node(make_solid(100, 100, 0));
         assert_eq!(g.description().len(), 1);
         g.cleanup();
+        // Description persists across cleanup for re-execution
+        assert_eq!(g.description().len(), 1);
+    }
+
+    #[test]
+    fn description_cleared_on_reset() {
+        let mut g = NodeGraph::new(1024 * 1024);
+        g.add_node(make_solid(100, 100, 0));
+        assert_eq!(g.description().len(), 1);
+        g.reset();
         assert!(g.description().is_empty());
     }
 

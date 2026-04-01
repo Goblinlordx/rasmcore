@@ -157,11 +157,11 @@ plan:
 - phase: Stateless Execution
   tasks:
   - text: Implement execute_from_description(desc, source_data) that reconstructs NodeGraph and runs
-    done: false
+    done: true
   - text: Update WIT API to expose graph description output and description-based execution
-    done: false
+    done: true
   - text: Ensure graph description is not consumed by execution (reusable)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: cargo build (native) + cargo component build (wasm32-wasip2)

@@ -392,4 +392,86 @@ mod tests {
         let output = sink::write(&mut graph, src, "png", None, None).unwrap();
         assert_eq!(&output[..4], &[0x89, b'P', b'N', b'G']);
     }
+
+    #[test]
+    fn graph_description_survives_write() {
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let src_info = graph.node_info(src).unwrap();
+
+        let resized = graph.add_node(Box::new(ResizeNode::new(
+            src,
+            src_info,
+            32,
+            16,
+            ResizeFilter::Lanczos3,
+        )));
+
+        // Write (triggers auto_cleanup internally via finalize_layer_cache)
+        let _ = sink::write(&mut graph, resized, "png", None, None).unwrap();
+
+        // Description should still be available after write
+        let desc = graph.description();
+        assert_eq!(desc.len(), 2, "description should have 2 nodes after write");
+        assert_eq!(desc.get(0).unwrap().output_info.width, 64); // original test PNG is 64x64
+        assert_eq!(desc.get(1).unwrap().output_info.width, 32);
+    }
+
+    #[test]
+    fn execute_from_description_basic() {
+        use crate::domain::pipeline::graph::execute_from_description;
+
+        let png_data = make_test_png();
+
+        // Build pipeline to get a description
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data.clone()).unwrap()));
+
+        // Serialize the description
+        let desc = graph.description().clone();
+        let desc_bytes = desc.serialize();
+
+        // Execute from the serialized description
+        let output =
+            execute_from_description(&desc, &png_data, src, "png", None).unwrap();
+        assert_eq!(&output[..4], &[0x89, b'P', b'N', b'G']);
+
+        // Verify the description is reusable — execute again
+        let output2 =
+            execute_from_description(&desc, &png_data, src, "png", None).unwrap();
+        assert_eq!(output, output2, "repeated execution must produce identical output");
+
+        // Also verify deserialized description works
+        let desc_from_bytes =
+            crate::domain::pipeline::graph::GraphDescription::deserialize(&desc_bytes).unwrap();
+        let output3 =
+            execute_from_description(&desc_from_bytes, &png_data, 0, "png", None).unwrap();
+        assert_eq!(output, output3, "deserialized description must produce identical output");
+    }
+
+    #[test]
+    fn description_serialization_roundtrip_via_pipeline() {
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let src_info = graph.node_info(src).unwrap();
+
+        let _blurred = graph.add_node(Box::new(BlurNode::new(
+            src,
+            src_info,
+            crate::domain::filters::BlurParams { radius: 2.0 },
+        )));
+
+        let desc = graph.description();
+        let bytes = desc.serialize();
+        let desc2 =
+            crate::domain::pipeline::graph::GraphDescription::deserialize(&bytes).unwrap();
+        assert_eq!(desc2.len(), 2);
+
+        // Verify JSON introspection works
+        let json = desc.to_json();
+        assert!(json.contains("\"id\":0"), "JSON should contain node 0");
+        assert!(json.contains("\"id\":1"), "JSON should contain node 1");
+    }
 }
