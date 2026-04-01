@@ -1,5 +1,5 @@
 title: Unify remaining positional-arg pipeline ops to use config records
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'

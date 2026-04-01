@@ -1,125 +1,92 @@
 id: remaining-config-unify_20260401124500Z
-title: "Unify remaining positional-arg pipeline ops to use config records"
+title: Unify remaining positional-arg pipeline ops to use config records
 type: refactor
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Convert remaining POSITIONAL_ARG_OPS to config records. Zero-param ops
+  summary: 'Convert remaining POSITIONAL_ARG_OPS to config records. Zero-param ops
+
     get empty config records. convertFormat gets a config with target field.
+
     String/list-param ops (curves, convolve, displacement-map) get config
+
     records wrapping their args. Goal: eliminate POSITIONAL_ARG_OPS entirely.
-  context: |
-    After the transform-config-records track, POSITIONAL_ARG_OPS still has
-    15 entries: grayscale, convertFormat, convolve, displacementMap, 6 curve
-    ops, 4 vs-curve ops, applyCubeLut, applyHaldLut, gradientMap.
 
-    These fall into categories:
-    - Zero-param ops used from UI (grayscale) — need empty config records
-    - Enum-param ops (convertFormat with pixel-format) — need config record
-    - String-param filter ops (curves*, hue-vs-*, gradient-map, applyCubeLut)
-      — these have string args in the WIT, need config records wrapping the string
-    - List-param ops (convolve with kernel, displacement-map with map-x/map-y)
-      — need config records wrapping the lists
-    - applyHaldLut already has a config record but is still in the set (bug)
-
-    The approach: update the filter and pipeline codegen to wrap all remaining
-    non-config methods with config records. For zero-param ops, generate empty
-    records. For string/list params, wrap them in a config record.
-  codebase_analysis: |
-    Current WIT signatures for remaining positional ops:
-      convert-format(source, target: pixel-format)
-      curves-red(source, points: string)
-      convolve(source, kernel: list<f32>, config: convolve-config)
-      displacement-map(source, map-x: list<f32>, map-y: list<f32>)
-      apply-cube-lut(source, cube-data: string)
-      gradient-map(source, stops: string)
-
-    Zero-param ops in WIT (no config needed currently):
-      equalize, normalize, auto-level, invert, depolar, polar,
-      tonemap-reinhard, white-balance-gray-world, emboss, evaluate-abs,
-      triangle-threshold, otsu-threshold, average-blur, unpremultiply,
-      premultiply
-
-    The filter codegen (generate/pipeline.rs) handles extra params (strings,
-    lists) via EXTRA_PARAMS lists. The pipeline WIT template has placeholders
-    for filter methods. The codegen decides whether a filter uses a config
-    record based on whether it has ConfigParams.
-
-    Worker files affected:
-      web-ui/src/pipeline-worker.ts — POSITIONAL_ARG_OPS
-      web-ui/src/preview-worker.ts — POSITIONAL_ARG_OPS
+    '
+  context: "After the transform-config-records track, POSITIONAL_ARG_OPS still has\n15 entries: grayscale, convertFormat,\
+    \ convolve, displacementMap, 6 curve\nops, 4 vs-curve ops, applyCubeLut, applyHaldLut, gradientMap.\n\nThese fall into\
+    \ categories:\n- Zero-param ops used from UI (grayscale) — need empty config records\n- Enum-param ops (convertFormat\
+    \ with pixel-format) — need config record\n- String-param filter ops (curves*, hue-vs-*, gradient-map, applyCubeLut)\n\
+    \  — these have string args in the WIT, need config records wrapping the string\n- List-param ops (convolve with kernel,\
+    \ displacement-map with map-x/map-y)\n  — need config records wrapping the lists\n- applyHaldLut already has a config\
+    \ record but is still in the set (bug)\n\nThe approach: update the filter and pipeline codegen to wrap all remaining\n\
+    non-config methods with config records. For zero-param ops, generate empty\nrecords. For string/list params, wrap them\
+    \ in a config record.\n"
+  codebase_analysis: "Current WIT signatures for remaining positional ops:\n  convert-format(source, target: pixel-format)\n\
+    \  curves-red(source, points: string)\n  convolve(source, kernel: list<f32>, config: convolve-config)\n  displacement-map(source,\
+    \ map-x: list<f32>, map-y: list<f32>)\n  apply-cube-lut(source, cube-data: string)\n  gradient-map(source, stops: string)\n\
+    \nZero-param ops in WIT (no config needed currently):\n  equalize, normalize, auto-level, invert, depolar, polar,\n  tonemap-reinhard,\
+    \ white-balance-gray-world, emboss, evaluate-abs,\n  triangle-threshold, otsu-threshold, average-blur, unpremultiply,\n\
+    \  premultiply\n\nThe filter codegen (generate/pipeline.rs) handles extra params (strings,\nlists) via EXTRA_PARAMS lists.\
+    \ The pipeline WIT template has placeholders\nfor filter methods. The codegen decides whether a filter uses a config\n\
+    record based on whether it has ConfigParams.\n\nWorker files affected:\n  web-ui/src/pipeline-worker.ts — POSITIONAL_ARG_OPS\n\
+    \  web-ui/src/preview-worker.ts — POSITIONAL_ARG_OPS\n"
   acceptance_criteria:
-    - convertFormat uses a config record with target pixel-format field
-    - Zero-param pipeline ops accept empty config records (or no change needed if already handled)
-    - String-param ops (curves, gradient-map, applyCubeLut) use config records wrapping the string
-    - List-param ops (convolve kernel, displacement-map) use config records
-    - POSITIONAL_ARG_OPS set is empty or removed from both workers
-    - All ops go through buildConfig uniformly
-    - WASM component builds successfully
-    - npm run check passes
-  out_of_scope: |
-    - Changing the stateless filter API (only pipeline resource methods)
+  - convertFormat uses a config record with target pixel-format field
+  - Zero-param pipeline ops accept empty config records (or no change needed if already handled)
+  - String-param ops (curves, gradient-map, applyCubeLut) use config records wrapping the string
+  - List-param ops (convolve kernel, displacement-map) use config records
+  - POSITIONAL_ARG_OPS set is empty or removed from both workers
+  - All ops go through buildConfig uniformly
+  - WASM component builds successfully
+  - npm run check passes
+  out_of_scope: '- Changing the stateless filter API (only pipeline resource methods)
+
     - Adding new filters or transforms
-  technical_notes: |
-    For each category:
 
-    1. Zero-param ops: The worker already handles these via the
-       no-param check. No WIT change needed — they stay as func(source).
-       Just remove from POSITIONAL_ARG_OPS (they arent in it).
-
-    2. convertFormat: Add convert-format-config record with target field.
-       Update pipeline WIT and adapter. Remove from POSITIONAL_ARG_OPS.
-       Add to PIPELINE_EXTRAS in manifest.ts.
-
-    3. String-param ops: The filter codegen puts extra string params
-       outside the config record. Options:
-       a) Wrap string in config: curves-red-config { points: string }
-       b) Keep as positional but handle in worker specially
-       Option (a) is cleaner. Update filter codegen to include string
-       params in the config record.
-
-    4. List-param ops: Same as strings — wrap in config record.
-       convolve-config already exists but kernel is separate.
-       displacement-map needs a config with map-x and map-y lists.
-
-    5. applyHaldLut: Already has config record — just remove from
-       POSITIONAL_ARG_OPS (it was incorrectly listed).
-
-    After all changes, POSITIONAL_ARG_OPS should be empty and can
-    be deleted. The worker dispatches everything through buildConfig.
+    '
+  technical_notes: "For each category:\n\n1. Zero-param ops: The worker already handles these via the\n   no-param check.\
+    \ No WIT change needed — they stay as func(source).\n   Just remove from POSITIONAL_ARG_OPS (they arent in it).\n\n2.\
+    \ convertFormat: Add convert-format-config record with target field.\n   Update pipeline WIT and adapter. Remove from\
+    \ POSITIONAL_ARG_OPS.\n   Add to PIPELINE_EXTRAS in manifest.ts.\n\n3. String-param ops: The filter codegen puts extra\
+    \ string params\n   outside the config record. Options:\n   a) Wrap string in config: curves-red-config { points: string\
+    \ }\n   b) Keep as positional but handle in worker specially\n   Option (a) is cleaner. Update filter codegen to include\
+    \ string\n   params in the config record.\n\n4. List-param ops: Same as strings — wrap in config record.\n   convolve-config\
+    \ already exists but kernel is separate.\n   displacement-map needs a config with map-x and map-y lists.\n\n5. applyHaldLut:\
+    \ Already has config record — just remove from\n   POSITIONAL_ARG_OPS (it was incorrectly listed).\n\nAfter all changes,\
+    \ POSITIONAL_ARG_OPS should be empty and can\nbe deleted. The worker dispatches everything through buildConfig.\n"
 plan:
-  - phase: "Quick Wins"
-    tasks:
-      - text: "Remove applyHaldLut from POSITIONAL_ARG_OPS (already has config record)"
-        done: false
-      - text: "Verify zero-param ops are handled by the no-param branch (not in POSITIONAL_ARG_OPS)"
-        done: false
-  - phase: "convertFormat Config"
-    tasks:
-      - text: "Add convert-format-config record to pipeline WIT with target pixel-format field"
-        done: false
-      - text: "Update pipeline adapter for convertFormat to accept config record"
-        done: false
-      - text: "Remove convertFormat from POSITIONAL_ARG_OPS, add to PIPELINE_EXTRAS in manifest.ts"
-        done: false
-  - phase: "String/List Param Ops"
-    tasks:
-      - text: "Update filter codegen to include string params (points, cube-data, stops) in config records"
-        done: false
-      - text: "Update filter codegen to include list params (kernel, map-x, map-y) in config records"
-        done: false
-      - text: "Regenerate WIT and adapters, verify WASM build"
-        done: false
-      - text: "Remove remaining ops from POSITIONAL_ARG_OPS in both workers"
-        done: false
-  - phase: "Cleanup + Verification"
-    tasks:
-      - text: "Delete POSITIONAL_ARG_OPS set entirely from pipeline-worker.ts and preview-worker.ts"
-        done: false
-      - text: "Remove positional-arg branch from applyStep (all ops go through buildConfig or no-param)"
-        done: false
-      - text: "Run cargo component build + npm run check"
-        done: false
+- phase: Quick Wins
+  tasks:
+  - text: Remove applyHaldLut from POSITIONAL_ARG_OPS (already has config record)
+    done: true
+  - text: Verify zero-param ops are handled by the no-param branch (not in POSITIONAL_ARG_OPS)
+    done: true
+- phase: convertFormat Config
+  tasks:
+  - text: Add convert-format-config record to pipeline WIT with target pixel-format field
+    done: true
+  - text: Update pipeline adapter for convertFormat to accept config record
+    done: true
+  - text: Remove convertFormat from POSITIONAL_ARG_OPS, add to PIPELINE_EXTRAS in manifest.ts
+    done: true
+- phase: String/List Param Ops
+  tasks:
+  - text: Update filter codegen to include string params (points, cube-data, stops) in config records
+    done: true
+  - text: Update filter codegen to include list params (kernel, map-x, map-y) in config records
+    done: true
+  - text: Regenerate WIT and adapters, verify WASM build
+    done: true
+  - text: Remove remaining ops from POSITIONAL_ARG_OPS in both workers
+    done: true
+- phase: Cleanup + Verification
+  tasks:
+  - text: Delete POSITIONAL_ARG_OPS set entirely from pipeline-worker.ts and preview-worker.ts
+    done: true
+  - text: Remove positional-arg branch from applyStep (all ops go through buildConfig or no-param)
+    done: true
+  - text: Run cargo component build + npm run check
+    done: true
 extra: {}
