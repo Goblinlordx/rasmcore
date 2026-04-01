@@ -251,6 +251,12 @@ interface filters {
         k2: f32,
     }
 
+    record mesh-warp-config {
+        grid-cols: u32,
+        grid-rows: u32,
+        grid-json: string,
+    }
+
     record ripple-config {
         amplitude: f32,
         wavelength: f32,
@@ -742,6 +748,7 @@ interface filters {
     wave: func(pixels: buffer, info: image-info, config: wave-config) -> result<buffer, rasmcore-error>;
     polar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     barrel: func(pixels: buffer, info: image-info, config: barrel-config) -> result<buffer, rasmcore-error>;
+    mesh-warp: func(pixels: buffer, info: image-info, config: mesh-warp-config) -> result<buffer, rasmcore-error>;
     ripple: func(pixels: buffer, info: image-info, config: ripple-config) -> result<buffer, rasmcore-error>;
     swirl: func(pixels: buffer, info: image-info, config: swirl-config) -> result<buffer, rasmcore-error>;
     spherize: func(pixels: buffer, info: image-info, config: spherize-config) -> result<buffer, rasmcore-error>;
