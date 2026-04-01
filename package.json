@@ -11,6 +11,7 @@
     "demo": "cd demo && npm install --silent && npx vite"
   },
   "devDependencies": {
-    "@bytecodealliance/jco": "^1.17.5"
+    "@bytecodealliance/jco": "^1.17.5",
+    "@bytecodealliance/preview2-shim": "^0.17.8"
   }
 }
