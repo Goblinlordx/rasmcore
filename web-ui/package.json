@@ -8,8 +8,12 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/ --ext .ts,.tsx",
-    "check": "tsc --noEmit && eslint src/ --ext .ts,.tsx"
+    "lint": "eslint src/",
+    "fmt": "prettier --write 'src/**/*.{ts,tsx}'",
+    "fmt:check": "prettier --check 'src/**/*.{ts,tsx}'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc --noEmit && eslint src/ && prettier --check 'src/**/*.{ts,tsx}' && vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
