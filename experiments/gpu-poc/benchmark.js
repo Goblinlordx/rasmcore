@@ -61,16 +61,15 @@ function getOrCreatePipeline(shaderName, entryPoint) {
   return pipelines[key];
 }
 
-// ─── WASM Baseline (legacy — replaced by worker) ───────────────────────────
+// ─── WASM Baseline (main thread — importmap resolves bare specifiers) ───────
 
 let Pipeline;
 
 async function initWASM() {
-  // Now handled by initWASMWorker() instead of main-thread SDK import
   try {
     const sdk = await import('./sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
-    log('WASM SDK loaded (main thread — fallback)');
+    log('WASM SDK loaded');
   } catch (e) {
     log(`WASM SDK not available: ${e.message}`);
     log('(Run demo/build.sh first to generate SDK)');
@@ -275,50 +274,42 @@ async function benchGPUBilateral(size) {
   });
 }
 
-// ─── WASM Benchmarks (via Web Worker) ───────────────────────────────────────
-
-let wasmWorker = null;
-let wasmWorkerReady = false;
-
-function initWASMWorker() {
-  return new Promise((resolve) => {
-    wasmWorker = new Worker('wasm-worker.js', { type: 'module' });
-    wasmWorker.onmessage = (e) => {
-      if (e.data.type === 'ready') {
-        wasmWorkerReady = true;
-        log('WASM worker ready');
-        resolve(true);
-      } else if (e.data.type === 'error') {
-        log(`WASM worker init error: ${e.data.message}`);
-        resolve(false);
-      }
-    };
-    wasmWorker.postMessage({ type: 'init' });
-  });
-}
-
-function benchWASMViaWorker(op, config, pixels) {
-  return new Promise((resolve) => {
-    if (!wasmWorkerReady) {
-      resolve({ median: -1, p95: -1 });
-      return;
-    }
-    wasmWorker.onmessage = (e) => {
-      if (e.data.type === 'result') {
-        resolve({ median: e.data.median, p95: e.data.p95 });
-      } else if (e.data.type === 'error') {
-        log(`WASM ${op} error: ${e.data.message}`);
-        resolve({ median: -1, p95: -1 });
-      }
-    };
-    const buf = pixels.buffer.slice(0);
-    wasmWorker.postMessage({ type: 'bench', op, config, pixels: buf }, [buf]);
-  });
-}
+// ─── WASM Benchmarks (main thread — importmap provides bare specifier resolution) ──
 
 async function benchWASMOp(opName, size, config) {
+  if (!Pipeline) return { median: -1, p95: -1 };
+
   const pixels = generateTestImage(size);
-  return benchWASMViaWorker(opName, config, pixels);
+
+  // Warm up
+  for (let i = 0; i < 3; i++) {
+    try {
+      const pipe = new Pipeline();
+      const src = pipe.read(pixels);
+      pipe[opName](src, config);
+    } catch (e) {
+      log(`WASM ${opName} warmup error: ${e.message}`);
+      return { median: -1, p95: -1 };
+    }
+  }
+
+  // Measure
+  const times = [];
+  for (let i = 0; i < 10; i++) {
+    const pipe = new Pipeline();
+    const src = pipe.read(pixels);
+    const t0 = performance.now();
+    try {
+      const node = pipe[opName](src, config);
+      pipe.writePng(node, {}, undefined);
+    } catch (e) {
+      log(`WASM ${opName} error: ${e.message}`);
+      return { median: -1, p95: -1 };
+    }
+    times.push(performance.now() - t0);
+  }
+  times.sort((a, b) => a - b);
+  return { median: times[Math.floor(times.length / 2)], p95: times[Math.floor(times.length * 0.95)] };
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -409,8 +400,7 @@ async function runTransferOnly() {
     getOrCreatePipeline('bilateral', 'main');
     log('Pipelines created');
 
-    // Init WASM via dedicated worker (avoids main-thread import issues)
-    await initWASMWorker();
+    await initWASM();
 
     status('Ready — click Run Full Benchmark');
     document.getElementById('btn-run').disabled = false;

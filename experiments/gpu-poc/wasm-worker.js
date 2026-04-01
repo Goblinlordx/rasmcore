@@ -13,7 +13,8 @@ self.onmessage = async (e) => {
 
   if (type === 'init') {
     try {
-      const sdk = await import('./sdk/rasmcore-image.js');
+      const sdkPath = e.data.sdkPath || '/sdk/rasmcore-image.js';
+      const sdk = await import(/* @vite-ignore */ sdkPath);
       Pipeline = sdk.pipeline.ImagePipeline;
       self.postMessage({ type: 'ready' });
     } catch (err) {
