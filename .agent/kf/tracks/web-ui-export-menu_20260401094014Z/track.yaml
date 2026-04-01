@@ -50,13 +50,13 @@ spec:
     - Typically: jpeg, png, webp (from supportedWriteFormats())
     - Quality param is universal, but per-format params differ
   acceptance_criteria:
-    - Toolbar has a "File" or "Export" dropdown menu replacing the Code button
+    - Toolbar has a File or Export dropdown menu replacing the Code button
     - Menu contains format selection with per-format encoder parameters
     - JPEG params — quality slider (1-100), progressive toggle
     - PNG params — compression level (0-9)
     - WebP params — quality slider (1-100), lossless toggle
     - Download button within the menu triggers WASM-based export
-    - "Get the Code" option in the menu opens code output (reuses existing generation)
+    - Get the Code option in the menu opens code output (reuses existing generation)
     - Sidebar export section is removed (moved to toolbar menu)
     - Format list is still auto-discovered from supportedWriteFormats()
     - Code output includes the selected format and encoder params

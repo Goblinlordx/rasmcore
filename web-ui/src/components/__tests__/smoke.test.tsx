@@ -19,7 +19,6 @@ vi.stubGlobal(
 import ParamControl from '../ParamControl';
 import StatusBar from '../StatusBar';
 import CodeModal from '../CodeModal';
-import ExportSection from '../ExportSection';
 import RightPanel from '../RightPanel';
 import Canvas from '../Canvas';
 import LayerPanel from '../LayerPanel';
@@ -110,11 +109,6 @@ describe('Component smoke tests', () => {
   it('CodeModal does not render when closed', () => {
     const { container } = render(<CodeModal open={false} code="" onClose={() => {}} />);
     expect(container.innerHTML).toBe('');
-  });
-
-  it('ExportSection renders format and download', () => {
-    render(<ExportSection formats={['jpeg', 'png']} onDownload={() => {}} />);
-    expect(screen.getByText('Download')).toBeInTheDocument();
   });
 
   it('RightPanel renders children and toggle', () => {
@@ -218,9 +212,23 @@ describe('Component smoke tests', () => {
     expect(screen.getByText(/blur/)).toBeInTheDocument();
   });
 
-  it('Toolbar renders brand and menus', () => {
-    render(<Toolbar operations={[]} groups={{}} onAddNode={() => {}} onShowCode={() => {}} />);
+  it('Toolbar renders brand, menus, and File menu', () => {
+    render(
+      <Toolbar
+        operations={[]}
+        groups={{}}
+        writeFormats={['jpeg', 'png']}
+        onAddNode={() => {}}
+        onDownload={() => {}}
+        onShowCode={() => {}}
+        exportFormat="jpeg"
+        onExportFormatChange={() => {}}
+        exportQuality={85}
+        onExportQualityChange={() => {}}
+      />,
+    );
     expect(screen.getByText('rasmcore')).toBeInTheDocument();
     expect(screen.getByText('Pipeline Builder')).toBeInTheDocument();
+    expect(screen.getByText(/File/)).toBeInTheDocument();
   });
 });

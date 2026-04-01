@@ -9,7 +9,6 @@ import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
 import LayerPanel from './components/LayerPanel';
 import EffectStack from './components/EffectStack';
-import ExportSection from './components/ExportSection';
 import StatusBar from './components/StatusBar';
 import CodeModal from './components/CodeModal';
 
@@ -146,8 +145,14 @@ export default function App() {
       <Toolbar
         operations={operations}
         groups={groups}
+        writeFormats={writeFormats}
         onAddNode={addNode}
+        onDownload={handleDownload}
         onShowCode={() => setCodeModalOpen(true)}
+        exportFormat={exportFormat}
+        onExportFormatChange={setExportFormat}
+        exportQuality={exportQuality}
+        onExportQualityChange={setExportQuality}
       />
       <div className="main-layout">
         <Canvas
@@ -182,7 +187,6 @@ export default function App() {
             onSchedulePreview={schedulePreview}
             onApplyFullChain={applyFullChain}
           />
-          <ExportSection formats={writeFormats} onDownload={handleDownload} />
         </RightPanel>
       </div>
       <StatusBar
