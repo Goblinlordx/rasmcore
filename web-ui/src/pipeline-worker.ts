@@ -175,7 +175,7 @@ function loadImage(bytes) {
 // ─── Pipeline Processing ────────────────────────────────────────────────────
 
 function processChain(chain, mode) {
-  if (!cachedPipe || !cachedSourceNode) {
+  if (!imageBytes) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
   }
@@ -184,16 +184,18 @@ function processChain(chain, mode) {
   const timings = [];
 
   try {
-    const pipe = cachedPipe;
-    let node = cachedSourceNode;
+    // Reuse cached pipeline for graph caching, or create fresh one
+    const pipe = cachedPipe || new Pipeline();
+    const node = cachedSourceNode || pipe.read(imageBytes);
+    let current = node;
 
     for (const step of chain) {
       const t = performance.now();
-      node = applyStep(pipe, node, step, mode);
+      current = applyStep(pipe, current, step, mode);
       timings.push({ name: step.name, ms: Math.round(performance.now() - t) });
     }
 
-    const output = pipe.writePng(node, {}, undefined);
+    const output = pipe.writePng(current, {}, undefined);
     const totalMs = Math.round(performance.now() - t0);
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
 
@@ -206,14 +208,14 @@ function processChain(chain, mode) {
 // ─── Export ─────────────────────────────────────────────────────────────────
 
 function exportImage(chain, format, quality) {
-  if (!cachedPipe || !cachedSourceNode) {
+  if (!imageBytes) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
   }
 
   try {
-    const pipe = cachedPipe;
-    let node = cachedSourceNode;
+    const pipe = cachedPipe || new Pipeline();
+    let node = cachedSourceNode || pipe.read(imageBytes);
 
     for (const step of chain) {
       node = applyStep(pipe, node, step, 'full');
