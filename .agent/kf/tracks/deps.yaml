@@ -213,9 +213,7 @@ dynamic-codec-dispatch_20260401045100Z: []
 stateless-pipeline-graph_20260401054000Z: []
 
 refactor-codegen-file-per-filter_20260401090222Z:
-  - refactor-split-filters_20260401091500Z
-
-# Web UI overhaul — PS-style layout, split view, export menu
+  - refactor-move-helpers-to-common_20260401124902Z
 web-ui-ps-layout_20260401094012Z: []
 
 web-ui-split-view_20260401094013Z:

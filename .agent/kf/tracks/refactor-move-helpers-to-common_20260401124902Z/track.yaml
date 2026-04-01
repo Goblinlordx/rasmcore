@@ -1,0 +1,65 @@
+id: refactor-move-helpers-to-common_20260401124902Z
+title: Move remaining shared helpers, enums, constants, structs to common.rs
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Move the remaining 6000 lines of shared code (138 helper functions,
+    5 enums, 5 structs, constants) from filters/mod.rs to filters/common.rs.
+    After this, mod.rs should be under 100 lines (just imports + re-exports).
+  context: |
+    filters/mod.rs was 24,260 lines. ConfigParams and tests are extracted.
+    The file is now reorganized with clean sections. The remaining shared
+    helpers, enums, constants, and structs need to move to common.rs.
+    common.rs currently has 9 leaf helpers + a pub use super::* bridge.
+  codebase_analysis: |
+    Sections to move (all cleanly grouped in mod.rs):
+    - Shared Enums (L74-195): BlendMode, MorphShape, DistortionSampling, etc.
+    - Shared Constants (L196-300): INTER_BITS, SIMPLEX_*, PYR_KERNEL
+    - Shared Structs (L301-407): CvRng, LineSegment, etc.
+    - Shared Helper Functions (L408-6265): 138 functions including convolve,
+      blur_impl, pad_reflect, apply_color_op, morph_op, apply_distortion, etc.
+    After: mod.rs = imports + pub mod + pub use + 3 remaining ConfigParams.
+  acceptance_criteria:
+  - All shared helpers, enums, constants, structs in common.rs
+  - mod.rs under 200 lines
+  - common.rs has pub use super::* bridge removed (no longer needed)
+  - All filter files still access helpers via common::*
+  - cargo build + cargo component build succeed
+  - 985 tests pass
+  out_of_scope: |
+    Moving the 3 remaining ConfigParams (ResizeParams, CropParams). Those are
+    transform types, not filter types.
+  technical_notes: |
+    The file is already reorganized with clean section markers. Cut each
+    section from mod.rs, paste to common.rs, fix super:: to crate::domain::.
+    mod.rs keeps pub use common::* so all downstream code still works.
+    
+    CRITICAL: common.rs imports must be pub (not just use) so filter files
+    can access types via common::*.
+plan:
+- phase: Move sections
+  tasks:
+  - text: Move enums section to common.rs
+    done: false
+  - text: Move constants section to common.rs
+    done: false
+  - text: Move structs section to common.rs
+    done: false
+  - text: Move helper functions section to common.rs
+    done: false
+  - text: Fix super:: references in moved code
+    done: false
+  - text: Clean mod.rs to just imports and re-exports
+    done: false
+- phase: Verification
+  tasks:
+  - text: mod.rs under 200 lines
+    done: false
+  - text: cargo build + cargo component build succeed
+    done: false
+  - text: 985 tests pass
+    done: false
+extra: {}
