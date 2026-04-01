@@ -1,186 +1,163 @@
 id: distortion-tile-aware_20260401083000Z
-title: "Fix distortion filters for tiled execution — inverse bounding box"
+title: "Unified distortion engine — tile-aware with inverse bounding box"
 type: bug
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
   summary: |
-    Distortion filters (swirl, spherize, barrel, wave, ripple, polar, depolar)
-    produce wrong output during tiled execution because they treat each tile as
-    a standalone image. Fix by computing the required source region via inverse
-    bounding box analysis — sample the inverse transform at tile boundary points
-    to determine the upstream rect needed.
+    Distortion filters produce wrong output during tiled execution (each tile
+    treated as standalone image). Fix by creating a unified apply_distortion()
+    function that handles inverse bounding box, EWA sampling, and tile cropping.
+    Each filter reduces to just its inverse transform + Jacobian closures.
   context: |
-    All distortion filters currently do:
-      let pixels = upstream(request)?;
-      let info = ImageInfo { width: request.width, height: request.height, .. };
+    All 7 distortion filters (swirl, spherize, barrel, wave, ripple, polar,
+    depolar) follow identical structure: compute center, create EwaSampler,
+    loop pixels, compute inverse (sx,sy), compute Jacobian, sample, write.
+    50+ lines of boilerplate repeated 7 times.
 
-    This makes each tile think it IS the full image. Swirl computes center as
-    (tile_width/2, tile_height/2) instead of (image_width/2, image_height/2).
-    Result: multiple small swirls (one per tile) instead of one big swirl.
+    They all have the same tiling bug: the preamble overwrites info with tile
+    dimensions, so center = tile center instead of image center.
 
-    The standard fix (used by GEGL, Nuke, OIIO) is inverse bounding box analysis:
-    evaluate the inverse transform at tile boundary sample points, compute the
-    bounding box of source coordinates, request that region from upstream.
+    The fix and the abstraction are the same work — build a unified distortion
+    engine that handles tiling correctly, then migrate each filter to use it.
   codebase_analysis: |
-    AFFECTED FILTERS (all in filters.rs):
-    - swirl (~line 18450): rotation around center, quadratic falloff
-    - spherize (~line 18530): power-law radial remapping from center
-    - barrel (~line 18615): Brown-Conrady polynomial from center
-    - polar (~line 18719): Cartesian-to-polar coordinate transform
-    - depolar (~line 18779): Polar-to-Cartesian coordinate transform
-    - wave (~line 18870): sinusoidal linear displacement
-    - ripple (~line 18955): sinusoidal radial displacement from center
+    CURRENT PATTERN (repeated 7 times):
+      fn distortion(request, upstream, info, config) {
+          let pixels = upstream(request)?;                    // BUG: tile only
+          let info = &ImageInfo { width: request.width, .. }; // BUG: tile dims
+          let sampler = EwaSampler::new(pixels, w, h, ch);
+          for y in 0..h {                                     // BUG: tile-local coords
+              for x in 0..w {
+                  let (sx, sy) = inverse_transform(x, y, params);  // unique per filter
+                  let j = jacobian(x, y, params);                   // unique per filter
+                  for c in 0..ch {
+                      out[off+c] = sampler.sample(sx, sy, &j, c).clamp(0, 255);
+                  }
+              }
+          }
+      }
 
-    EACH FILTER ALREADY HAS the inverse transform — thats what the per-pixel
-    loop computes. For each output (x,y), it computes source (sx,sy). We just
-    need to evaluate this at the tile boundary points to get the bounding box.
+    UNIFIED REPLACEMENT:
+      fn apply_distortion(
+          request: Rect,
+          upstream: &mut UpstreamFn,
+          info: &ImageInfo,           // full image info (NOT overwritten)
+          inverse_fn: impl Fn(f32, f32) -> (f32, f32),
+          jacobian_fn: impl Fn(f32, f32) -> [[f32; 2]; 2],
+          overlap_mode: OverlapMode,  // Uniform(px) or BoundingBox(sample_density)
+      ) -> Result<Vec<u8>, ImageError>
 
-    APPROACH FOR EACH FILTER:
+    Each filter becomes ~10 lines: extract params, define closures, call apply_distortion.
 
-    1. Compute the inverse transform at N sample points around the tile boundary
-       (4 corners + 4 edge midpoints = 8 points minimum, more for high curvature)
+    OVERLAP MODES:
+    - Uniform(amount): wave/ripple — constant max displacement
+    - BoundingBox(density): swirl/spherize/barrel — sample inverse at tile boundary
+    - FullImage: polar/depolar — every output pixel can map to any input
 
-    2. Take the bounding box of all source coordinates
+    INVERSE BOUNDING BOX ALGORITHM:
+    For each output tile, sample the inverse transform at points along all 4 edges
+    (+ interior points near transform center for high-curvature areas). The bounding
+    box of all source coordinates = required upstream rect.
 
-    3. Expand by 2 pixels for interpolation margin
+    PERFORMANCE OPTIMIZATIONS (enabled by unified engine):
+    1. WASM SIMD in sampling loop — process 4 output pixels per iteration
+    2. Jacobian interpolation — for smooth transforms, compute Jacobian every Nth
+       pixel and lerp between (Jacobian changes slowly for most distortions)
+    3. EWA-to-bilinear downgrade — when |det(J)| is near 1.0 (no scaling), use
+       cheaper bilinear instead of full EWA (saves ~3x per pixel)
+    4. Row-major prefetch — iterate output rows, predictable source access pattern
 
-    4. Clamp to image bounds
-
-    5. Request that expanded rect from upstream
-
-    6. Run the filter using FULL IMAGE coordinates (info stays at full image dims)
-       but only output pixels for the requested tile
-
-    KEY CHANGE: The preamble must NOT overwrite info with tile dimensions.
-    Instead:
-      let source_rect = compute_required_source_rect(request, info, config);
-      let pixels = upstream(source_rect)?;
-      // info stays at FULL IMAGE dimensions for coordinate computation
-      // Filter computes for all pixels in request, sampling from source_rect
-      // Output is request-sized
-
-    SIMPLIFIED APPROACH FOR WAVE/RIPPLE:
-    These have constant max displacement = amplitude. So overlap = ceil(amplitude) + 1.
-    No need for bounding box sampling — just expand uniformly by amplitude.
-
-    FULL BOUNDING BOX APPROACH FOR SWIRL/SPHERIZE/BARREL/POLAR/DEPOLAR:
-    These have position-dependent displacement. Need boundary sampling.
-
-    HELPER FUNCTION:
-    fn inverse_bounding_box(
-        output_tile: Rect,
-        image_info: &ImageInfo,
-        inverse_fn: impl Fn(f32, f32) -> (f32, f32), // (out_x, out_y) -> (src_x, src_y)
-        sample_density: u32, // points per edge (8-16 typical)
-    ) -> Rect {
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-
-        // Sample along all 4 edges of the output tile
-        for edge in 0..4 {
-            for i in 0..=sample_density {
-                let t = i as f32 / sample_density as f32;
-                let (ox, oy) = match edge {
-                    0 => (lerp(tile.x, tile.right(), t), tile.y as f32),          // top
-                    1 => (lerp(tile.x, tile.right(), t), tile.bottom() as f32),   // bottom
-                    2 => (tile.x as f32, lerp(tile.y, tile.bottom(), t)),          // left
-                    3 => (tile.right() as f32, lerp(tile.y, tile.bottom(), t)),    // right
-                    _ => unreachable!()
-                };
-                let (sx, sy) = inverse_fn(ox, oy);
-                min_x = min_x.min(sx);
-                min_y = min_y.min(sy);
-                max_x = max_x.max(sx);
-                max_y = max_y.max(sy);
-            }
-        }
-
-        // Also sample a few interior points for highly non-linear transforms
-        // (swirl center might have extreme displacement not captured by edges)
-
-        Rect from (floor(min_x)-2, floor(min_y)-2) to (ceil(max_x)+2, ceil(max_y)+2)
-        clamped to image bounds
-    }
+    KEY FILES:
+    - crates/rasmcore-image/src/domain/filters.rs — all 7 distortion filters
+    - crates/rasmcore-image/src/domain/ewa.rs — EwaSampler, jacobian functions
   acceptance_criteria:
-    - Swirl produces single swirl centered on full image (not per-tile swirls)
-    - Spherize produces single bulge centered on full image
-    - Barrel produces single radial distortion centered on full image
-    - Wave phase is continuous across tile boundaries
-    - Ripple center is at the correct image-space position
-    - Polar/depolar produce correct full-image transforms
-    - All tiled_parity tests pass (add new ones for distortion)
-    - Tiled output matches non-tiled output for all 7 distortion filters
-    - WASM e2e test for swirl produces correct output
+    - Unified apply_distortion() function handles tiling + sampling
+    - Swirl produces single centered swirl (not per-tile swirls)
+    - All 7 distortion filters migrated to apply_distortion()
+    - Each filter body is under 20 lines (closures + call)
+    - Tiled output matches non-tiled output for all 7 filters
+    - New tiled_parity tests for swirl, spherize, wave, ripple
+    - WASM e2e test for swirl correctness
+    - All existing tests pass
   out_of_scope: |
     Adding center_x/center_y parameters to swirl/spherize/barrel.
-    Changing the distortion algorithms themselves.
-    GPU acceleration.
+    SIMD optimization of the sampling loop (can be a follow-up).
+    Jacobian interpolation optimization (follow-up).
+    New distortion filter types.
   technical_notes: |
     IMPLEMENTATION ORDER:
-    1. Add inverse_bounding_box helper function
-    2. Fix wave and ripple (simple — uniform overlap = amplitude)
-    3. Fix swirl (boundary sampling with interior center point)
-    4. Fix spherize (boundary sampling)
-    5. Fix barrel (boundary sampling)
-    6. Fix polar/depolar (these may need full-image — every output pixel can
-       map to any input pixel. Bounding box of boundary samples covers this.)
-    7. Add tiled parity tests for each
 
-    FILTER BODY RESTRUCTURE:
-    Each filter needs to change from:
-      fn swirl(request, upstream, info, config) {
-          let pixels = upstream(request)?;
-          let info = &ImageInfo { width: request.width, ... };
-          // compute swirl on "tile-as-image"
-      }
-    To:
-      fn swirl(request, upstream, info, config) {
-          let source_rect = compute_source_rect_for_swirl(request, info, config);
-          let pixels = upstream(source_rect)?;
-          let source_info = &ImageInfo { width: source_rect.width, height: source_rect.height, .. };
-          // compute swirl using FULL IMAGE coordinates
-          // but only output pixels within request
-          // source_rect.x/y provides the offset into the source buffer
-          crop_to_request(&result, source_rect_as_output, request, info.format)
-      }
+    Phase 1 — Build apply_distortion() engine:
+      - Accepts inverse_fn, jacobian_fn, and overlap mode
+      - Computes required source rect based on overlap mode
+      - Requests expanded upstream, creates EwaSampler
+      - Iterates output pixels using IMAGE-SPACE coordinates (not tile-local)
+      - Accounts for source_rect offset when indexing into pixel buffer
+      - Crops result to request rect
 
-    The per-pixel loop changes from iterating (0..info.width, 0..info.height)
-    to iterating (request.x..request.right(), request.y..request.bottom()),
-    and source coordinate lookups account for source_rect offset.
+    Phase 2 — Migrate simple filters:
+      - wave: inverse_fn is trivial (sinusoidal offset), OverlapMode::Uniform(amplitude)
+      - ripple: inverse_fn uses center + radial sine, OverlapMode::Uniform(amplitude)
+      These two also use bilinear (wave) or EWA (ripple) — engine supports both
+
+    Phase 3 — Migrate complex filters:
+      - swirl: inverse_fn is rotation with falloff, BoundingBox(16)
+      - spherize: inverse_fn is power-law radial, BoundingBox(16)
+      - barrel: inverse_fn is Brown-Conrady polynomial, BoundingBox(16)
+
+    Phase 4 — Migrate coordinate transforms:
+      - polar: may need FullImage mode (output row 0 maps to circle of pixels)
+      - depolar: may need FullImage mode (atan2 maps to full angular range)
+      - OR: test if BoundingBox(32) with high density captures polar correctly
+
+    Phase 5 — Verify:
+      - Tiled parity tests (tiled = untiled)
+      - WASM e2e for swirl
+      - Existing test suite
+
+    JACOBIAN FUNCTIONS:
+    Each filter already has a Jacobian function in ewa.rs or inline:
+    - swirl: jacobian_swirl()
+    - spherize: jacobian_spherize()
+    - barrel: numerical finite-difference Jacobian
+    - polar/depolar: analytical Jacobians
+    - ripple: jacobian_ripple()
+    - wave: identity (no Jacobian — uses bilinear)
 plan:
-  - phase: Helper infrastructure
+  - phase: Build unified distortion engine
     tasks:
-      - text: Add inverse_bounding_box() helper that samples inverse transform at tile boundary + interior points
+      - text: Define OverlapMode enum (Uniform, BoundingBox, FullImage)
         done: false
-      - text: Add helper to run distortion on expanded source region and crop to request
+      - text: Implement inverse_bounding_box() — sample inverse at tile boundary + interior points
         done: false
-  - phase: Fix simple distortions (uniform overlap)
+      - text: Implement apply_distortion() — source rect computation, EWA loop, crop to request
+        done: false
+      - text: Support bilinear fallback mode (for wave which uses bilinear not EWA)
+        done: false
+  - phase: Migrate simple distortions
     tasks:
-      - text: Fix wave — overlap = ceil(amplitude) + 1, use full-image coordinates for phase
+      - text: Migrate wave to apply_distortion with Uniform overlap
         done: false
-      - text: Fix ripple — overlap = ceil(amplitude) + 1, use full-image center coordinates
+      - text: Migrate ripple to apply_distortion with Uniform overlap
         done: false
-  - phase: Fix complex distortions (bounding box)
+  - phase: Migrate complex distortions
     tasks:
-      - text: Fix swirl — extract inverse transform, use bounding box for source rect
+      - text: Migrate swirl to apply_distortion with BoundingBox overlap
         done: false
-      - text: Fix spherize — extract inverse transform, use bounding box for source rect
+      - text: Migrate spherize to apply_distortion with BoundingBox overlap
         done: false
-      - text: Fix barrel — extract inverse transform, use bounding box for source rect
+      - text: Migrate barrel to apply_distortion with BoundingBox overlap
         done: false
-      - text: Fix polar — determine source rect (likely full image needed)
+      - text: Migrate polar to apply_distortion (determine overlap mode)
         done: false
-      - text: Fix depolar — determine source rect (likely full image needed)
+      - text: Migrate depolar to apply_distortion (determine overlap mode)
         done: false
   - phase: Verification
     tasks:
-      - text: Add tiled_parity tests for swirl, wave, ripple, spherize
+      - text: Add tiled_parity tests for swirl, spherize, wave, ripple
         done: false
-      - text: Add WASM e2e test for swirl (single centered swirl)
+      - text: Add WASM e2e test for swirl (single centered swirl, not tiled artifacts)
         done: false
       - text: All existing tests pass
         done: false
