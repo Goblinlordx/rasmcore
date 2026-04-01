@@ -201,3 +201,7 @@ register-transforms_20260401020901Z:
 
 register-stateless-ops_20260401020902Z:
   - register-transforms_20260401020901Z
+
+# Transform codegen — depends on registration being in place
+transform-codegen_20260401030200Z:
+  - register-transforms_20260401020901Z

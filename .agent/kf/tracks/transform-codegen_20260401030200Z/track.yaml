@@ -1,0 +1,180 @@
+id: transform-codegen_20260401030200Z
+title: Transform codegen — config structs, derive_metadata, generated adapters
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Complete the transform registration system: add ConfigParams structs for
+    each transform, add derive_metadata to ImageNode trait, extend codegen
+    to generate pipeline adapter methods and WIT declarations from transform
+    registrations. Remove hand-written transform adapter code.
+  context: |
+    The register-transforms track added #[register_transform] annotations and
+    inventory-based discovery, but left the adapter code hand-written. This
+    track completes the codegen pipeline so transforms are fully generated
+    like filters.
+
+    The key design decisions agreed with the user:
+
+    1. CONFIG STRUCTS: Each transform gets a ConfigParams struct (like filters).
+       The codegen already handles ConfigParams for filters — same pattern.
+       Example: ResizeParams { width: u32, height: u32, filter: ResizeFilter }
+
+    2. DERIVE_METADATA on ImageNode: Optional method for nodes that alter
+       pipeline metadata (dimensions, color space, etc.).
+       Signature: fn derive_metadata(&self, upstream: &Metadata) -> Option<Metadata>
+       Default returns None (inherit upstream unchanged, zero-cost).
+       Only nodes that modify metadata (resize, rotate, icc_to_srgb) clone
+       and modify. The graph calls this after node insertion.
+
+    3. ENUM HANDLING: The codegen already generates WIT enum declarations and
+       match-arm conversions for encoder enums (TiffCompression, PngFilterType).
+       Same pattern applies to ResizeFilter, Rotation, FlipDirection,
+       ExifOrientation.
+
+    4. FROM_CONFIG CONSTRUCTORS: Each node gets a from_config(source, src_info,
+       &Config) constructor. Codegen calls this uniformly.
+
+    5. COMPOSITE (multi-input): Handled via annotation flag
+       #[register_transform(name = "composite", multi_input = true)] — codegen
+       generates adapter with two source params.
+
+    6. FALLIBLE CONSTRUCTION: IccToSrgbNode::new returns Result. Annotation
+       flag or codegen detection handles .map_err(to_wit_error)?.
+  codebase_analysis: |
+    EXISTING TRANSFORM NODES (already annotated with #[register_transform]):
+    - ResizeNode: new(upstream, src_info, width, height, filter)
+    - CropNode: new(upstream, src_info, x, y, width, height)
+    - RotateNode: new(upstream, src_info, rotation)
+    - FlipNode: new(upstream, src_info, direction)
+    - AutoOrientNode: new(upstream, src_info, orientation)
+    - IccToSrgbNode: new(upstream, src_info, icc_profile) -> Result
+    - CompositeNode: new(fg, bg, fg_info, bg_info, x, y, blend_mode)
+
+    EXISTING CODEGEN PATTERNS TO REUSE:
+    - ConfigParams derive: generates param_descriptors(), Default impl
+    - Encoder enum codegen: generates WIT enum + match-arm conversion
+    - Pipeline filter adapter macro: generates pipeline methods
+    - Pipeline write adapter macro: generates write methods
+
+    HAND-WRITTEN CODE TO REPLACE:
+    - pipeline_adapter.rs: resize, crop, rotate, flip, auto_orient,
+      icc_to_srgb, composite (~200 lines)
+    - adapter/mod.rs: impl transform::Guest (~100 lines)
+  acceptance_criteria:
+    - ConfigParams structs exist for all 7 transforms with proper field types and defaults
+    - ImageNode trait has derive_metadata method (default returns None)
+    - Transform nodes implement derive_metadata where needed (resize, rotate, icc_to_srgb)
+    - Codegen generates pipeline transform adapter methods from registrations
+    - Codegen generates WIT config records and enum declarations for transforms
+    - Hand-written transform adapter methods removed from pipeline_adapter.rs
+    - Hand-written impl transform::Guest removed from adapter/mod.rs
+    - cargo build (native) succeeds
+    - cargo component build (wasm32-wasip2) succeeds
+    - All transform tests pass
+  out_of_scope: |
+    Changing the ImageNode compute_region or info methods.
+    Adding new transform operations.
+    Metadata operations (keep/set/strip) — those remain pipeline infrastructure.
+  technical_notes: |
+    DERIVE_METADATA DESIGN:
+
+      trait ImageNode {
+          fn info(&self) -> ImageInfo;
+          fn compute_region(&self, ...) -> Result<Vec<u8>, ImageError>;
+          fn input_rect(&self, ...) -> Rect { ... }
+
+          /// Derive this nodes metadata from upstream.
+          /// Return None to inherit unchanged (zero-cost default).
+          /// Return Some(meta) only when this node modifies metadata.
+          /// Clone upstream only when modification is needed.
+          fn derive_metadata(&self, upstream: &Metadata) -> Option<Metadata> {
+              None
+          }
+      }
+
+    The graph add_node implementation:
+      - Calls node.derive_metadata(&upstream_meta)
+      - If Some(meta), stores the new metadata for this node
+      - If None, reuses upstream metadata reference
+
+    CONFIG STRUCT PATTERN (same as filters):
+
+      #[derive(rasmcore_macros::ConfigParams, Clone)]
+      pub struct ResizeParams {
+          #[param(min = 1, max = 65535, default = 0)]
+          pub width: u32,
+          #[param(min = 1, max = 65535, default = 0)]
+          pub height: u32,
+          pub filter: ResizeFilter,
+      }
+
+    NODE FROM_CONFIG PATTERN:
+
+      impl ResizeNode {
+          pub fn from_config(source: u32, src_info: ImageInfo, config: &ResizeParams) -> Self {
+              Self::new(source, src_info, config.width, config.height, config.filter)
+          }
+      }
+
+    CODEGEN PIPELINE ADAPTER OUTPUT:
+
+      fn resize(&self, source: NodeId, config: pipeline::ResizeConfig) -> Result<NodeId, RasmcoreError> {
+          let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+          let domain_cfg = ResizeParams {
+              width: config.width,
+              height: config.height,
+              filter: to_domain_resize_filter(config.filter),
+          };
+          let node = ResizeNode::from_config(source, src_info, &domain_cfg);
+          let hash = compute_hash(&upstream_hash, "resize", format!("{config:?}").as_bytes());
+          Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))
+      }
+plan:
+  - phase: ImageNode trait extension
+    tasks:
+      - text: Add derive_metadata method to ImageNode trait with default None return
+        done: false
+      - text: Update graph add_node to call derive_metadata and store result
+        done: false
+      - text: Implement derive_metadata on ResizeNode (width/height), RotateNode (swap dims), AutoOrientNode (swap dims for 90/270), IccToSrgbNode (color_space)
+        done: false
+      - text: Remove manual metadata updates from pipeline_adapter.rs transform methods (they will come from derive_metadata)
+        done: false
+  - phase: Config structs
+    tasks:
+      - text: Create ConfigParams structs for all 7 transforms (ResizeParams, CropParams, RotateParams, FlipParams, AutoOrientParams, IccToSrgbParams, CompositeParams)
+        done: false
+      - text: Add from_config constructors to all 7 transform nodes
+        done: false
+      - text: Verify ConfigParams derive produces correct param_descriptors for each
+        done: false
+  - phase: Codegen
+    tasks:
+      - text: Extend rasmcore-codegen to parse #[register_transform] annotations from transform node source files
+        done: false
+      - text: Generate pipeline transform adapter methods (macro pattern matching filters)
+        done: false
+      - text: Generate WIT config records and enum declarations for transforms
+        done: false
+      - text: Generate stateless transform::Guest adapter methods
+        done: false
+      - text: Wire generated transform adapters via include!() and macro invocation
+        done: false
+  - phase: Remove hand-written code
+    tasks:
+      - text: Remove hand-written transform methods from pipeline_adapter.rs
+        done: false
+      - text: Remove hand-written impl transform::Guest from adapter/mod.rs
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo build (native) succeeds
+        done: false
+      - text: cargo component build (wasm32-wasip2) succeeds
+        done: false
+      - text: All transform tests pass — pipeline and stateless
+        done: false
+extra: {}

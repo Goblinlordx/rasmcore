@@ -1,0 +1,8 @@
+title: Transform codegen — config structs, derive_metadata, generated adapters
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- register-transforms_20260401020901Z
