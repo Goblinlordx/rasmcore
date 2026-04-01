@@ -1210,6 +1210,12 @@ impl NodeGraph {
         frame_source: &Rc<FrameSourceNode>,
         output_node_id: u32,
     ) -> Result<FrameSequence, ImageError> {
+        // Pre-execution validation
+        self.validate()
+            .map_err(|e| ImageError::InvalidParameters(e.to_string()))?;
+        self.validate_node(output_node_id)
+            .map_err(|e| ImageError::InvalidParameters(e.to_string()))?;
+
         let indices = frame_source.selected_indices();
         let (canvas_w, canvas_h) = frame_source.canvas_size();
         let mut sequence = FrameSequence::new(canvas_w, canvas_h);

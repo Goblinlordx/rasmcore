@@ -212,6 +212,14 @@ pub fn write_tiled(
     metadata: Option<&MetadataSet>,
     tile_config: &TileConfig,
 ) -> Result<Vec<u8>, ImageError> {
+    // Pre-execution validation: check graph structure and output node
+    graph
+        .validate()
+        .map_err(|e| ImageError::InvalidParameters(e.to_string()))?;
+    graph
+        .validate_node(node_id)
+        .map_err(|e| ImageError::InvalidParameters(e.to_string()))?;
+
     // Fuse consecutive point/color operations before execution
     graph.fuse_point_ops();
     graph.fuse_color_ops();

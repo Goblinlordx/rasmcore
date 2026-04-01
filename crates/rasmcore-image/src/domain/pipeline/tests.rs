@@ -370,4 +370,26 @@ mod tests {
         assert_eq!(decoded.info.width, 64);
         assert_eq!(decoded.info.height, 64);
     }
+
+    #[test]
+    fn pre_execution_validation_catches_empty_graph() {
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let result = sink::write(&mut graph, 0, "png", None, None);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(
+            err.contains("empty graph"),
+            "expected empty graph error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn pre_execution_validation_passes_for_valid_pipeline() {
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        // Should succeed — graph is valid
+        let output = sink::write(&mut graph, src, "png", None, None).unwrap();
+        assert_eq!(&output[..4], &[0x89, b'P', b'N', b'G']);
+    }
 }

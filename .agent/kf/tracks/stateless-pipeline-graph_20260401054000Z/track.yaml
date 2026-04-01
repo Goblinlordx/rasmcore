@@ -139,9 +139,9 @@ plan:
 - phase: Pre-Execution Validation
   tasks:
   - text: Add validate() method to NodeGraph that checks all upstream references and verifies terminal node exists
-    done: false
+    done: true
   - text: Call validate() automatically before execute/write operations
-    done: false
+    done: true
 - phase: Graph Description
   tasks:
   - text: Define NodeDescriptor struct (kind, name, config bytes, upstreams, output_info)
