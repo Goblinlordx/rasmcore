@@ -18,6 +18,8 @@ mod gaussian_blur_cv;
 pub use gaussian_blur_cv::*;
 mod guided_filter;
 pub use guided_filter::*;
+mod high_pass;
+pub use high_pass::*;
 mod kuwahara;
 pub use kuwahara::*;
 mod lens_blur;
