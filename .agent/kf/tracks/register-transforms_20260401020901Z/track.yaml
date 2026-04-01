@@ -5,181 +5,169 @@ status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Create #[register_transform] annotation for impl ImageNode blocks with
+  summary: 'Create #[register_transform] annotation for impl ImageNode blocks with
+
     codegen support. Move resize/crop/rotate/flip/auto_orient/composite/
+
     icc_to_srgb from hand-wired adapter code to registered + generated
+
     adapter code. Pipeline infrastructure (new, read, execute, metadata)
+
     stays hand-written.
-  context: |
-    Transform operations (resize, crop, rotate, flip, auto_orient, composite,
-    icc_to_srgb, convert_format) are currently hand-wired in two places:
 
-    1. adapter/pipeline_adapter.rs — hand-written methods that construct
-       node structs and add them to the graph (lines 410-671)
-    2. adapter/mod.rs — hand-written stateless transform.wit impl (lines 515-613)
+    '
+  context: "Transform operations (resize, crop, rotate, flip, auto_orient, composite,\nicc_to_srgb, convert_format) are currently\
+    \ hand-wired in two places:\n\n1. adapter/pipeline_adapter.rs — hand-written methods that construct\n   node structs and\
+    \ add them to the graph (lines 410-671)\n2. adapter/mod.rs — hand-written stateless transform.wit impl (lines 515-613)\n\
+    \nThese should use the same annotation-driven pattern as filters. The\nagreed design: annotate the impl ImageNode block\
+    \ on the struct:\n\n  #[register_transform(name = \"crop\", config = \"CropParams\")]\n  impl ImageNode for CropNode {\n\
+    \      fn info(&self) -> ImageInfo { ... }\n      fn compute_region(&self, ...) { ... }\n  }\n\nThe proc macro:\n- Emits\
+    \ the impl block unchanged\n- Emits inventory::submit!() with a StaticTransformRegistration\n- Codegen generates pipeline\
+    \ adapter method (construct node, add to graph)\n- Codegen generates stateless adapter method (for transform.wit)\n\n\
+    The developer keeps full control of the ImageNode impl (custom dimension\nlogic, coordinate mapping). The annotation only\
+    \ drives adapter wiring.\nConstructor convention: Type::new(source, source_info, &Config).\n\nWHAT STAYS HAND-WRITTEN\
+    \ (pipeline infrastructure):\n- new(), set_layer_cache() — lifecycle\n- read(), read_frames() — source creation\n- execute(),\
+    \ execute_region(), execute_sequence() — execution\n- All metadata_* methods — pipeline state management\n- node_info()\
+    \ — introspection\n- write() generic method — format dispatch\n"
+  codebase_analysis: 'EXISTING TRANSFORM NODES (nodes/transform.rs):
 
-    These should use the same annotation-driven pattern as filters. The
-    agreed design: annotate the impl ImageNode block on the struct:
-
-      #[register_transform(name = "crop", config = "CropParams")]
-      impl ImageNode for CropNode {
-          fn info(&self) -> ImageInfo { ... }
-          fn compute_region(&self, ...) { ... }
-      }
-
-    The proc macro:
-    - Emits the impl block unchanged
-    - Emits inventory::submit!() with a StaticTransformRegistration
-    - Codegen generates pipeline adapter method (construct node, add to graph)
-    - Codegen generates stateless adapter method (for transform.wit)
-
-    The developer keeps full control of the ImageNode impl (custom dimension
-    logic, coordinate mapping). The annotation only drives adapter wiring.
-    Constructor convention: Type::new(source, source_info, &Config).
-
-    WHAT STAYS HAND-WRITTEN (pipeline infrastructure):
-    - new(), set_layer_cache() — lifecycle
-    - read(), read_frames() — source creation
-    - execute(), execute_region(), execute_sequence() — execution
-    - All metadata_* methods — pipeline state management
-    - node_info() — introspection
-    - write() generic method — format dispatch
-  codebase_analysis: |
-    EXISTING TRANSFORM NODES (nodes/transform.rs):
     - ComposedAffineNode — matrix-based affine transform
+
     - ResizeNode — lanczos/bilinear/nearest resize
+
     - CropNode — coordinate-shift crop
+
     - RotateNode — 90/180/270 rotation
+
     - FlipNode — horizontal/vertical flip
+
     - AutoOrientNode — EXIF orientation correction
 
+
     OTHER HAND-WIRED NODES:
+
     - IccToSrgbNode (nodes/color.rs) — ICC profile conversion
+
     - CompositeNode (nodes/composite.rs or inline in adapter)
 
+
     ADAPTER METHODS TO REPLACE (pipeline_adapter.rs):
+
     - resize (lines 410-443) — constructs ResizeNode
+
     - crop (lines 445-473) — constructs CropNode
+
     - rotate (lines 475-497) — constructs RotateNode
+
     - flip (lines 499-520) — constructs FlipNode
+
     - convert_format (lines 522-528) — returns NotImplemented
+
     - icc_to_srgb (lines 530-561) — constructs IccToSrgbNode
+
     - auto_orient (lines 563-615) — constructs AutoOrientNode
+
     - composite (lines 617-671) — constructs composite node
 
+
     STATELESS ADAPTER TO REPLACE (adapter/mod.rs lines 515-613):
+
     - impl transform::Guest for Component — 7 methods
 
+
     PROC MACRO PATTERN (existing in rasmcore-macros/src/lib.rs):
+
     - register_filter already creates StaticFilterRegistration + inventory
+
     - Same pattern applies: register_transform creates StaticTransformRegistration
 
+
     CODEGEN PATTERN (existing in rasmcore-codegen):
+
     - adapter.rs generates filters::Guest impl methods
+
     - pipeline.rs generates pipeline filter adapter methods
+
     - Same pattern: generate transform::Guest + pipeline transform methods
+
+    '
   acceptance_criteria:
-    - register_transform proc macro attribute defined in rasmcore-macros
-    - StaticTransformRegistration struct + inventory collection in filter_registry.rs
-    - All transform nodes annotated with #[register_transform(...)] on their impl ImageNode block
-    - Codegen generates pipeline adapter methods for all transforms
-    - Codegen generates stateless transform.wit adapter methods
-    - Hand-written transform adapter code removed from pipeline_adapter.rs
-    - Hand-written transform::Guest impl removed from adapter/mod.rs
-    - Pipeline infrastructure methods (new, read, execute, metadata) remain hand-written
-    - convert_format either properly implemented or explicitly excluded
-    - cargo build succeeds for native target
-    - cargo component build succeeds for wasm32-wasip2 target
-    - All existing transform tests pass
-  out_of_scope: |
-    Changing the ImageNode trait or node implementations.
+  - register_transform proc macro attribute defined in rasmcore-macros
+  - StaticTransformRegistration struct + inventory collection in filter_registry.rs
+  - All transform nodes annotated with
+  - Codegen generates pipeline adapter methods for all transforms
+  - Codegen generates stateless transform.wit adapter methods
+  - Hand-written transform adapter code removed from pipeline_adapter.rs
+  - Hand-written transform::Guest impl removed from adapter/mod.rs
+  - Pipeline infrastructure methods (new, read, execute, metadata) remain hand-written
+  - convert_format either properly implemented or explicitly excluded
+  - cargo build succeeds for native target
+  - cargo component build succeeds for wasm32-wasip2 target
+  - All existing transform tests pass
+  out_of_scope: 'Changing the ImageNode trait or node implementations.
+
     Registering codec or compare operations — separate track.
+
     Converting filters to struct-annotation style (future consideration).
+
     Adding new transform operations.
-  technical_notes: |
-    DESIGN:
 
-    Annotation on impl ImageNode block:
-
-      #[register_transform(name = "crop", config = "CropParams")]
-      impl ImageNode for CropNode {
-          fn info(&self) -> ImageInfo { ... }
-          fn compute_region(&self, ...) -> Result<Vec<u8>, ImageError> { ... }
-      }
-
-    Proc macro expands to:
-      - Original impl block (unchanged)
-      - Static registration:
-        static REG: StaticTransformRegistration = StaticTransformRegistration {
-            name: "crop",
-            config_type: "CropParams",
-            node_type: "CropNode",
-            ...
-        };
-        inventory::submit!(&REG);
-
-    Constructor convention: CropNode::new(source: u32, source_info: ImageInfo, config: &CropParams)
-    Codegen looks for this signature by convention. The config struct must
-    derive ConfigParams (same as filters) for WIT type generation.
-
-    CODEGEN OUTPUT:
-    - generated_transform_adapter.rs — impl transform::Guest methods
-    - Appended to generated_pipeline_adapter.rs — pipeline transform methods
-      (or separate generated_pipeline_transform_adapter.rs)
-
-    PIPELINE METHOD GENERATION PATTERN:
-      fn crop(&self, source: NodeId, config: pipeline::CropConfig) -> Result<NodeId, RasmcoreError> {
-          let src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
-          let domain_cfg = CropParams { x: config.x, y: config.y, ... };
-          let node = CropNode::new(source, src_info, &domain_cfg);
-          let hash = compute_hash(&upstream_hash, "crop", &config_bytes);
-          Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))
-      }
-
-    STATELESS METHOD GENERATION PATTERN:
-      fn crop(pixels: Vec<u8>, info: types::ImageInfo, ...) -> Result<...> {
-          // Full-image execution: construct node, execute full rect
-      }
+    '
+  technical_notes: "DESIGN:\n\nAnnotation on impl ImageNode block:\n\n  #[register_transform(name = \"crop\", config = \"\
+    CropParams\")]\n  impl ImageNode for CropNode {\n      fn info(&self) -> ImageInfo { ... }\n      fn compute_region(&self,\
+    \ ...) -> Result<Vec<u8>, ImageError> { ... }\n  }\n\nProc macro expands to:\n  - Original impl block (unchanged)\n  -\
+    \ Static registration:\n    static REG: StaticTransformRegistration = StaticTransformRegistration {\n        name: \"\
+    crop\",\n        config_type: \"CropParams\",\n        node_type: \"CropNode\",\n        ...\n    };\n    inventory::submit!(&REG);\n\
+    \nConstructor convention: CropNode::new(source: u32, source_info: ImageInfo, config: &CropParams)\nCodegen looks for this\
+    \ signature by convention. The config struct must\nderive ConfigParams (same as filters) for WIT type generation.\n\n\
+    CODEGEN OUTPUT:\n- generated_transform_adapter.rs — impl transform::Guest methods\n- Appended to generated_pipeline_adapter.rs\
+    \ — pipeline transform methods\n  (or separate generated_pipeline_transform_adapter.rs)\n\nPIPELINE METHOD GENERATION\
+    \ PATTERN:\n  fn crop(&self, source: NodeId, config: pipeline::CropConfig) -> Result<NodeId, RasmcoreError> {\n      let\
+    \ src_info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;\n      let domain_cfg = CropParams { x: config.x,\
+    \ y: config.y, ... };\n      let node = CropNode::new(source, src_info, &domain_cfg);\n      let hash = compute_hash(&upstream_hash,\
+    \ \"crop\", &config_bytes);\n      Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))\n  }\n\nSTATELESS\
+    \ METHOD GENERATION PATTERN:\n  fn crop(pixels: Vec<u8>, info: types::ImageInfo, ...) -> Result<...> {\n      // Full-image\
+    \ execution: construct node, execute full rect\n  }\n"
 plan:
-  - phase: Registration Infrastructure
-    tasks:
-      - text: Add StaticTransformRegistration struct + inventory::collect!() to filter_registry.rs
-        done: false
-      - text: Implement #[register_transform] proc macro in rasmcore-macros (attribute on impl blocks, emits inventory::submit)
-        done: false
-      - text: Verify proc macro compiles and produces correct expansion on a test impl block
-        done: false
-  - phase: Annotate Existing Transforms
-    tasks:
-      - text: Add #[register_transform] to impl ImageNode for CropNode, ResizeNode, RotateNode, FlipNode, AutoOrientNode
-        done: false
-      - text: Add #[register_transform] to IccToSrgbNode and composite node
-        done: false
-      - text: Ensure all transform config structs derive ConfigParams with #[param(...)] attributes
-        done: false
-  - phase: Codegen
-    tasks:
-      - text: Add transform adapter generation to rasmcore-codegen (parse register_transform annotations via syn)
-        done: false
-      - text: Generate pipeline transform adapter methods (construct node + add to graph)
-        done: false
-      - text: Generate stateless transform::Guest adapter methods
-        done: false
-      - text: Include generated transform adapter code via include!() in both adapter files
-        done: false
-  - phase: Remove Hand-Written Code
-    tasks:
-      - text: Remove hand-written transform methods from pipeline_adapter.rs (resize, crop, rotate, flip, auto_orient, icc_to_srgb, composite)
-        done: false
-      - text: Remove hand-written impl transform::Guest from adapter/mod.rs
-        done: false
-  - phase: Verification
-    tasks:
-      - text: cargo build (native) succeeds
-        done: false
-      - text: cargo component build (wasm32-wasip2) succeeds
-        done: false
-      - text: All transform pipeline tests pass
-        done: false
+- phase: Registration Infrastructure
+  tasks:
+  - text: Add StaticTransformRegistration struct + inventory::collect!() to filter_registry.rs
+    done: true
+  - text: Implement
+    done: true
+  - text: Verify proc macro compiles and produces correct expansion on a test impl block
+    done: true
+- phase: Annotate Existing Transforms
+  tasks:
+  - text: Add
+    done: true
+  - text: Add
+    done: true
+  - text: Ensure all transform config structs derive ConfigParams with
+    done: true
+- phase: Codegen
+  tasks:
+  - text: Add transform adapter generation to rasmcore-codegen (parse register_transform annotations via syn)
+    done: true
+  - text: Generate pipeline transform adapter methods (construct node + add to graph)
+    done: true
+  - text: Generate stateless transform::Guest adapter methods
+    done: true
+  - text: Include generated transform adapter code via include!() in both adapter files
+    done: true
+- phase: Remove Hand-Written Code
+  tasks:
+  - text: Remove hand-written transform methods from pipeline_adapter.rs (resize, crop, rotate, flip, auto_orient, icc_to_srgb,
+      composite)
+    done: true
+  - text: Remove hand-written impl transform::Guest from adapter/mod.rs
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo build (native) succeeds
+    done: false
+  - text: cargo component build (wasm32-wasip2) succeeds
+    done: false
+  - text: All transform pipeline tests pass
+    done: false
 extra: {}
