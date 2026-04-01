@@ -382,13 +382,18 @@ let imageInfo = null;     // { width, height } from loaded image
 
 worker.postMessage({ type: 'init' });
 
+let processingTimeout = null;
+
 function setProcessing(active) {
   isProcessing = active;
   const canvas = document.getElementById('preview-canvas');
   canvas.style.opacity = active ? '0.5' : '1';
-  document.getElementById('total-time').textContent = active
-    ? (queuedRequest ? 'Processing... (queued)' : 'Processing...')
-    : document.getElementById('total-time').textContent;
+  const statusTime = document.getElementById('status-time');
+  const statusError = document.getElementById('status-error');
+  if (active) {
+    statusTime.textContent = queuedRequest ? 'Processing... (queued)' : 'Processing...';
+    statusError.textContent = '';
+  }
 }
 
 function requestWorker(msg) {
@@ -401,6 +406,22 @@ function requestWorker(msg) {
   isProcessing = true;
   queuedRequest = null;
   setProcessing(true);
+  // Safety timeout — clear stuck processing state after 15s
+  clearTimeout(processingTimeout);
+  processingTimeout = setTimeout(() => {
+    if (isProcessing) {
+      isProcessing = false;
+      setProcessing(false);
+      const statusError = document.getElementById('status-error');
+      statusError.textContent = 'Processing timed out';
+      // Drain queue
+      if (queuedRequest) {
+        const next = queuedRequest;
+        queuedRequest = null;
+        requestWorker(next);
+      }
+    }
+  }, 15000);
   worker.postMessage(msg, msg.imageBytes ? [msg.imageBytes] : []);
 }
 
@@ -461,13 +482,14 @@ worker.onmessage = (e) => {
   }
 
   if (type === 'loaded') {
+    clearTimeout(processingTimeout);
     isProcessing = false;
     setProcessing(false);
     imageInfo = e.data.info;
     compareBtn.style.display = 'inline-block';
     dropHint.style.display = 'block';
     if (imageInfo) {
-      previewInfo.textContent = `${imageInfo.width}×${imageInfo.height}`;
+      document.getElementById('status-dims').textContent = `${imageInfo.width}×${imageInfo.height}`;
     }
     // Trigger initial render with loaded image
     applyFullChain();
@@ -475,6 +497,7 @@ worker.onmessage = (e) => {
   }
 
   if (type === 'result') {
+    clearTimeout(processingTimeout);
     isProcessing = false;
     const blob = new Blob([e.data.png], { type: 'image/png' });
     const url = URL.createObjectURL(blob);
@@ -492,10 +515,13 @@ worker.onmessage = (e) => {
     };
     img.src = url;
 
-    // Update timings
+    // Update status bar timings
+    const statusTime = document.getElementById('status-time');
+    const statusOps = document.getElementById('status-ops');
     if (e.data.mode === 'full' && e.data.timings) {
-      totalTimeEl.textContent = `Total: ${e.data.totalMs}ms (${e.data.timings.length} ops)`;
-      totalTimeEl.style.color = '#4ade80';
+      statusTime.textContent = `${e.data.totalMs}ms`;
+      statusOps.textContent = `${e.data.timings.length} ops`;
+      const chain = getChain();
       for (const t of e.data.timings) {
         for (const cn of chain) {
           if (cn.op.name === t.name) {
@@ -531,6 +557,7 @@ worker.onmessage = (e) => {
   }
 
   if (type === 'exported') {
+    clearTimeout(processingTimeout);
     isProcessing = false;
     setProcessing(false);
     const blob = new Blob([e.data.data], { type: e.data.mime });
@@ -542,10 +569,11 @@ worker.onmessage = (e) => {
   }
 
   if (type === 'error') {
+    clearTimeout(processingTimeout);
     isProcessing = false;
     setProcessing(false);
-    totalTimeEl.textContent = `Error: ${e.data.message}`;
-    totalTimeEl.style.color = '#f87171';
+    document.getElementById('status-error').textContent = `Error: ${e.data.message}`;
+    document.getElementById('status-time').textContent = '';
     // Drain queue even on error
     if (queuedRequest) {
       const next = queuedRequest;
@@ -576,20 +604,20 @@ const chainEl = document.getElementById('chain');
 const dropHint = document.getElementById('drop-hint');
 const previewCanvas = document.getElementById('preview-canvas');
 const originalCanvas = document.getElementById('original-canvas');
-const previewInfo = document.getElementById('preview-info');
-const totalTimeEl = document.getElementById('total-time');
 const fileInput = document.getElementById('file-input');
 const compareBtn = document.getElementById('compare-btn');
 const layersEl = document.getElementById('layers');
 const addLayerBtn = document.getElementById('add-layer-btn');
 const layerFileInput = document.getElementById('layer-file-input');
 const activeLayerLabel = document.getElementById('active-layer-label');
+const rightPanel = document.getElementById('right-panel');
+const panelToggle = document.getElementById('panel-toggle');
 
 // ─── Image Loading (Layer-Aware) ────────────────────────────────────────────
 
-document.querySelector('.preview').addEventListener('click', () => { if (layers.length === 0) fileInput.click(); });
-document.querySelector('.preview').addEventListener('dragover', (e) => e.preventDefault());
-document.querySelector('.preview').addEventListener('drop', (e) => {
+document.getElementById('canvas-area').addEventListener('click', () => { if (layers.length === 0) fileInput.click(); });
+document.getElementById('canvas-area').addEventListener('dragover', (e) => e.preventDefault());
+document.getElementById('canvas-area').addEventListener('drop', (e) => {
   e.preventDefault();
   if (e.dataTransfer.files[0]) addLayer(e.dataTransfer.files[0]);
 });
@@ -762,13 +790,13 @@ function addNode(op) {
     id: nextId++,
     op,
     paramValues: Object.fromEntries(op.params.map(p => [p.name, p.default])),
-    applied: true,
+    applied: false,
     timingMs: 0,
   };
   layer.chain.push(node);
   editingNodeId = node.id;
   renderChain();
-  previewEditing();
+  // Do NOT auto-trigger processing — user adjusts params first, then Apply
 }
 
 function removeNode(id) {
@@ -790,24 +818,24 @@ function moveNode(fromIdx, toIdx) {
 
 // ─── Render Chain ───────────────────────────────────────────────────────────
 
+// Prevent drag initiation from interactive controls inside node cards
+function guardDrag(el) {
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.addEventListener('mousedown', (e) => e.stopPropagation());
+}
+
 function renderChain() {
   chainEl.innerHTML = '';
   const chain = getChain();
 
   chain.forEach((node, idx) => {
     const card = document.createElement('div');
-    card.className = 'node-card' + (editingNodeId === node.id ? ' editing' : '');
+    const isEditing = editingNodeId === node.id;
+    card.className = 'node-card' + (isEditing ? ' editing' : '') + (!node.applied ? ' pending' : '');
     card.dataset.id = node.id;
     card.dataset.idx = idx;
-    card.draggable = true;
 
-    // Drag handlers
-    card.addEventListener('dragstart', (e) => {
-      dragSrcIdx = idx;
-      card.style.opacity = '0.4';
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    card.addEventListener('dragend', () => { card.style.opacity = '1'; dragSrcIdx = null; });
+    // Card is a drop target but NOT draggable itself — only the handle is
     card.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
@@ -822,51 +850,68 @@ function renderChain() {
       }
     });
 
-    // Header
+    // Header with drag handle
     const header = document.createElement('div');
     header.className = 'node-header';
 
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.textContent = '\u2807'; // ⠇ braille dots
+    handle.draggable = true;
+    handle.addEventListener('dragstart', (e) => {
+      dragSrcIdx = idx;
+      card.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setDragImage(card, 0, 0);
+    });
+    handle.addEventListener('dragend', () => { card.style.opacity = '1'; dragSrcIdx = null; });
+
     const nameSpan = document.createElement('span');
     nameSpan.className = 'node-name';
-    nameSpan.textContent = `${idx + 1}. ${node.op.name}`;
+    const pendingTag = !node.applied ? ' *' : '';
+    nameSpan.textContent = `${idx + 1}. ${node.op.name}${pendingTag}`;
 
     const actions = document.createElement('span');
-    actions.style.cssText = 'display:flex;gap:6px;align-items:center';
+    actions.className = 'node-actions';
 
     const timingSpan = document.createElement('span');
     timingSpan.className = 'node-timing';
     timingSpan.textContent = node.timingMs > 0 ? `${node.timingMs}ms` : '';
 
-    if (editingNodeId !== node.id && node.op.params.length > 0) {
+    if (!isEditing && node.op.params.length > 0) {
       const editBtn = document.createElement('span');
-      editBtn.textContent = '✎';
+      editBtn.textContent = '\u270E'; // ✎
       editBtn.style.cssText = 'cursor:pointer;color:#60a5fa;font-size:0.85rem';
       editBtn.title = 'Edit parameters';
-      editBtn.addEventListener('click', () => { editingNodeId = node.id; renderChain(); previewEditing(); });
+      editBtn.addEventListener('click', () => { editingNodeId = node.id; renderChain(); });
       actions.appendChild(editBtn);
     }
 
     const removeBtn = document.createElement('span');
     removeBtn.className = 'node-remove';
-    removeBtn.textContent = '✕';
+    removeBtn.textContent = '\u2715'; // ✕
     removeBtn.addEventListener('click', () => removeNode(node.id));
 
     actions.appendChild(timingSpan);
     actions.appendChild(removeBtn);
+    header.appendChild(handle);
     header.appendChild(nameSpan);
     header.appendChild(actions);
     card.appendChild(header);
 
     // Param summary (when not editing)
-    if (editingNodeId !== node.id && node.op.params.length > 0) {
+    if (!isEditing && node.op.params.length > 0) {
       const summary = document.createElement('div');
-      summary.style.cssText = 'font-size:0.65rem;color:#666;margin-top:2px';
+      summary.style.cssText = 'font-size:0.65rem;color:#666;padding:0 8px 4px';
       summary.textContent = node.op.params.map(p => `${p.name}=${node.paramValues[p.name]}`).join(', ');
       card.appendChild(summary);
     }
 
     // Edit mode: param controls + preview + apply
-    if (editingNodeId === node.id) {
+    if (isEditing) {
+      const body = document.createElement('div');
+      body.className = 'node-body';
+
       for (const p of node.op.params) {
         const paramDiv = document.createElement('div');
         paramDiv.className = 'param-row';
@@ -879,13 +924,13 @@ function renderChain() {
           input.type = 'color';
           input.value = node.paramValues[p.name] || '#808080';
           input.style.cssText = 'width:100%;height:28px;border:none;cursor:pointer';
+          guardDrag(input);
           input.addEventListener('input', () => {
             node.paramValues[p.name] = input.value;
             schedulePreview();
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'toggle') {
-          // Toggle switch for boolean params
           const label = document.createElement('label');
           label.className = 'toggle-label';
           label.textContent = p.label || p.name;
@@ -894,13 +939,13 @@ function renderChain() {
           toggle.type = 'checkbox';
           toggle.className = 'toggle-switch';
           toggle.checked = !!node.paramValues[p.name];
+          guardDrag(toggle);
           toggle.addEventListener('change', () => {
             node.paramValues[p.name] = toggle.checked;
             schedulePreview();
           });
           paramDiv.appendChild(toggle);
         } else if (p.type === 'text') {
-          // Text input for string params
           const label = document.createElement('label');
           label.textContent = p.label || p.name;
           paramDiv.appendChild(label);
@@ -908,15 +953,16 @@ function renderChain() {
           input.type = 'text';
           input.className = 'text-input';
           input.value = node.paramValues[p.name] || '';
+          guardDrag(input);
           input.addEventListener('change', () => {
             node.paramValues[p.name] = input.value;
             schedulePreview();
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'spinner') {
-          // Number input with spinner arrows (no slider) for pixel coords, seeds
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
+          valSpan.className = 'param-value';
           valSpan.textContent = node.paramValues[p.name];
           label.textContent = (p.label || p.name) + ' ';
           label.appendChild(valSpan);
@@ -928,6 +974,7 @@ function renderChain() {
           if (p.max != null) input.max = p.max;
           if (p.step != null) input.step = p.step;
           input.value = node.paramValues[p.name];
+          guardDrag(input);
           input.addEventListener('input', () => {
             node.paramValues[p.name] = parseFloat(input.value);
             valSpan.textContent = input.value;
@@ -935,9 +982,9 @@ function renderChain() {
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'log_slider') {
-          // Logarithmic slider — more precision at low values
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
+          valSpan.className = 'param-value';
           valSpan.textContent = node.paramValues[p.name];
           label.textContent = (p.label || p.name) + ' ';
           label.appendChild(valSpan);
@@ -945,12 +992,12 @@ function renderChain() {
           const input = document.createElement('input');
           input.type = 'range';
           input.className = 'log-slider';
-          // Map to 0-1000 internal range for smooth dragging
           input.min = 0; input.max = 1000; input.step = 1;
           const pMin = p.min || 0, pMax = p.max || 100;
           const toSlider = (v) => Math.round(Math.log(v - pMin + 1) / Math.log(pMax - pMin + 1) * 1000);
           const fromSlider = (s) => Math.pow(pMax - pMin + 1, s / 1000) + pMin - 1;
           input.value = toSlider(node.paramValues[p.name]);
+          guardDrag(input);
           input.addEventListener('input', () => {
             const realVal = Math.round(fromSlider(parseFloat(input.value)) * 100) / 100;
             node.paramValues[p.name] = realVal;
@@ -959,9 +1006,9 @@ function renderChain() {
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'signed_slider') {
-          // Bipolar slider centered at 0
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
+          valSpan.className = 'param-value';
           const v = node.paramValues[p.name];
           valSpan.textContent = (v >= 0 ? '+' : '') + v;
           label.textContent = (p.label || p.name) + ' ';
@@ -972,6 +1019,7 @@ function renderChain() {
           input.className = 'signed-slider';
           input.min = p.min; input.max = p.max; input.step = p.step;
           input.value = node.paramValues[p.name];
+          guardDrag(input);
           input.addEventListener('input', () => {
             const val = parseFloat(input.value);
             node.paramValues[p.name] = val;
@@ -980,9 +1028,9 @@ function renderChain() {
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'opacity') {
-          // Thin slider + text for 0-1 amounts
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
+          valSpan.className = 'param-value';
           valSpan.textContent = node.paramValues[p.name];
           label.textContent = (p.label || p.name) + ' ';
           label.appendChild(valSpan);
@@ -999,6 +1047,8 @@ function renderChain() {
           numInput.className = 'opacity-number';
           numInput.min = p.min || 0; numInput.max = p.max || 1; numInput.step = p.step || 0.01;
           numInput.value = node.paramValues[p.name];
+          guardDrag(input);
+          guardDrag(numInput);
           input.addEventListener('input', () => {
             const val = parseFloat(input.value);
             node.paramValues[p.name] = val;
@@ -1017,9 +1067,9 @@ function renderChain() {
           wrap.appendChild(numInput);
           paramDiv.appendChild(wrap);
         } else if (p.type === 'temperature') {
-          // Slider with blue-to-warm gradient track
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
+          valSpan.className = 'param-value';
           valSpan.textContent = node.paramValues[p.name] + 'K';
           label.textContent = (p.label || p.name) + ' ';
           label.appendChild(valSpan);
@@ -1029,6 +1079,7 @@ function renderChain() {
           input.className = 'temperature-slider';
           input.min = p.min; input.max = p.max; input.step = p.step;
           input.value = node.paramValues[p.name];
+          guardDrag(input);
           input.addEventListener('input', () => {
             node.paramValues[p.name] = parseFloat(input.value);
             valSpan.textContent = input.value + 'K';
@@ -1036,22 +1087,22 @@ function renderChain() {
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'number') {
-          // Default: linear range slider
           const label = document.createElement('label');
           const valSpan = document.createElement('span');
+          valSpan.className = 'param-value';
           valSpan.textContent = node.paramValues[p.name];
           label.textContent = (p.label || p.name) + ' ';
           label.appendChild(valSpan);
           paramDiv.appendChild(label);
-
           const input = document.createElement('input');
           input.type = 'range';
           input.min = p.min; input.max = p.max; input.step = p.step;
           input.value = node.paramValues[p.name];
+          guardDrag(input);
           input.addEventListener('input', () => {
             node.paramValues[p.name] = parseFloat(input.value);
             valSpan.textContent = input.value;
-            schedulePreview(); // debounced small preview
+            schedulePreview();
           });
           paramDiv.appendChild(input);
         } else if (p.type === 'enum') {
@@ -1065,13 +1116,14 @@ function renderChain() {
             if (opt === node.paramValues[p.name]) option.selected = true;
             select.appendChild(option);
           }
+          guardDrag(select);
           select.addEventListener('change', () => {
             node.paramValues[p.name] = select.value;
             schedulePreview();
           });
           paramDiv.appendChild(select);
         }
-        card.appendChild(paramDiv);
+        body.appendChild(paramDiv);
       }
 
       // Small preview canvas
@@ -1081,14 +1133,15 @@ function renderChain() {
       thumbCanvas.id = 'thumb-preview';
       thumbCanvas.style.cssText = 'max-width:100%;border:1px solid #333;border-radius:3px';
       previewWrap.appendChild(thumbCanvas);
-      card.appendChild(previewWrap);
+      body.appendChild(previewWrap);
 
-      // Apply button
+      // Apply / Cancel buttons
       const btnRow = document.createElement('div');
       btnRow.style.cssText = 'margin-top:6px;display:flex;gap:6px';
       const applyBtn = document.createElement('button');
       applyBtn.textContent = 'Apply';
       applyBtn.addEventListener('click', () => {
+        node.applied = true;
         editingNodeId = null;
         renderChain();
         applyFullChain();
@@ -1103,7 +1156,9 @@ function renderChain() {
       });
       btnRow.appendChild(applyBtn);
       btnRow.appendChild(cancelBtn);
-      card.appendChild(btnRow);
+      body.appendChild(btnRow);
+
+      card.appendChild(body);
     }
 
     chainEl.appendChild(card);
@@ -1278,5 +1333,25 @@ document.getElementById('copy-code-btn').addEventListener('click', () => {
     const btn = document.getElementById('copy-code-btn');
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 1500);
+  });
+});
+
+// ─── Right Panel Toggle ────────────────────────────────────────────────────
+
+panelToggle.addEventListener('click', () => {
+  const collapsed = rightPanel.classList.toggle('collapsed');
+  panelToggle.innerHTML = collapsed ? '&#9654;' : '&#9664;';
+  panelToggle.style.right = collapsed ? '0' : '320px';
+});
+
+// ─── Section Collapse ──────────────────────────────────────────────────────
+
+document.querySelectorAll('.panel-section-header').forEach(header => {
+  header.addEventListener('click', () => {
+    const section = header.closest('.panel-section');
+    const body = section.querySelector('.panel-section-body');
+    const toggle = header.querySelector('.section-toggle');
+    body.classList.toggle('collapsed');
+    toggle.classList.toggle('collapsed');
   });
 });
