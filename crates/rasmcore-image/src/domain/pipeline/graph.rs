@@ -111,6 +111,9 @@ impl ImageNode for FrameSourceRcWrapper {
     }
 }
 
+const LUT1D_SHADER: &str = include_str!("shaders/lut1d.wgsl");
+const LUT3D_SHADER: &str = include_str!("shaders/lut3d.wgsl");
+
 /// A pipeline node that applies a pre-composed LUT, replacing a chain of
 /// consecutive point operations with a single fused lookup table pass.
 struct FusedLutNode {
@@ -146,6 +149,28 @@ impl ImageNode for FusedLutNode {
     }
 }
 
+impl rasmcore_pipeline::gpu::GpuCapable for FusedLutNode {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        let mut params = Vec::with_capacity(8);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+
+        // Pack 256-entry u8 LUT as u32 array for storage buffer
+        let mut lut_buf = Vec::with_capacity(256 * 4);
+        for &v in self.lut.iter() {
+            lut_buf.extend_from_slice(&(v as u32).to_le_bytes());
+        }
+
+        Some(vec![rasmcore_pipeline::gpu::GpuOp {
+            shader: LUT1D_SHADER,
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params,
+            extra_buffers: vec![lut_buf],
+        }])
+    }
+}
+
 /// A pipeline node that applies a pre-composed 3D CLUT, replacing a chain
 /// of consecutive multi-channel color operations with a single lookup.
 struct FusedClutNode {
@@ -174,6 +199,36 @@ impl ImageNode for FusedClutNode {
     }
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::Sequential
+    }
+}
+
+impl rasmcore_pipeline::gpu::GpuCapable for FusedClutNode {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        let grid = self.clut.grid_size as u32;
+
+        // Serialize params: width, height, grid_size, padding
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&grid.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // padding
+
+        // Serialize LUT data: grid^3 x vec4<f32> (rgb + 0.0 padding)
+        let mut lut_buf = Vec::with_capacity(self.clut.data.len() * 16);
+        for entry in &self.clut.data {
+            lut_buf.extend_from_slice(&entry[0].to_le_bytes()); // r
+            lut_buf.extend_from_slice(&entry[1].to_le_bytes()); // g
+            lut_buf.extend_from_slice(&entry[2].to_le_bytes()); // b
+            lut_buf.extend_from_slice(&0.0f32.to_le_bytes());   // padding (vec4 alignment)
+        }
+
+        Some(vec![rasmcore_pipeline::gpu::GpuOp {
+            shader: LUT3D_SHADER,
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params,
+            extra_buffers: vec![lut_buf],
+        }])
     }
 }
 
@@ -3688,5 +3743,48 @@ mod layer_cache_tests {
 
         assert_eq!(output3, fresh, "cached tiled must match fresh uncached tiled");
         eprintln!("cache_tiled_reuse_across_pipelines: PASS");
+    }
+}
+
+#[cfg(test)]
+mod gpu_lut_tests {
+    use super::*;
+    use crate::domain::types::{ColorSpace, PixelFormat};
+
+    #[test]
+    fn fused_clut_gpu_ops_serialize() {
+        // Verify FusedClutNode produces valid GpuOp with correct LUT size
+        use rasmcore_pipeline::gpu::GpuCapable;
+        let clut = crate::domain::color_lut::ColorLut3D::identity(33);
+        let node = FusedClutNode {
+            upstream: 0,
+            source_info: ImageInfo { width: 64, height: 64, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb },
+            clut,
+        };
+        let ops = node.gpu_ops(64, 64).expect("should produce GPU ops");
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].extra_buffers.len(), 1);
+        // 33^3 = 35937 entries x 16 bytes (vec4<f32>) = 574,992 bytes
+        assert_eq!(ops[0].extra_buffers[0].len(), 33 * 33 * 33 * 16);
+        eprintln!("fused_clut_gpu_ops: shader={} bytes, lut={} bytes",
+            ops[0].shader.len(), ops[0].extra_buffers[0].len());
+    }
+
+    #[test]
+    fn fused_lut_gpu_ops_serialize() {
+        use rasmcore_pipeline::gpu::GpuCapable;
+        // Create an invert LUT
+        let mut lut = [0u8; 256];
+        for i in 0..256 { lut[i] = (255 - i) as u8; }
+        let node = FusedLutNode {
+            upstream: 0,
+            source_info: ImageInfo { width: 64, height: 64, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb },
+            lut,
+        };
+        let ops = node.gpu_ops(64, 64).expect("should produce GPU ops");
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].extra_buffers.len(), 1);
+        // 256 entries x 4 bytes (u32) = 1024 bytes
+        assert_eq!(ops[0].extra_buffers[0].len(), 256 * 4);
     }
 }
