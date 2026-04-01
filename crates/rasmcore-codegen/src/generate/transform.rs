@@ -182,15 +182,35 @@ fn generate_single_transform_method(
                 "        let {pname} = {converter_fn}(config.{pname});\n"
             ));
             constructor_args.push(pname.clone());
-            hash_parts.push(format!("{{config.{pname}:?}}"));
+            hash_parts.push(pname.clone());
         } else if ptype == "Vec<u8>" || ptype == "Vec < u8 >" {
+            // Binary blobs: don't include in hash (too large), move into constructor
             code.push_str(&format!("        let {pname} = config.{pname};\n"));
             constructor_args.push(pname.clone());
         } else {
-            constructor_args.push(format!("config.{pname}"));
-            hash_parts.push(format!("{{config.{pname}}}"));
+            code.push_str(&format!("        let {pname} = config.{pname};\n"));
+            constructor_args.push(pname.clone());
+            hash_parts.push(pname.clone());
         }
     }
+
+    // Compute hash before node construction (avoids move issues with Vec<u8> params)
+    let hash_format = if hash_parts.is_empty() {
+        "b\"\"".to_string()
+    } else {
+        let placeholders: Vec<String> = hash_parts.iter().map(|_| "{:?}".to_string()).collect();
+        let args = hash_parts.join(", ");
+        format!(
+            "format!(\"{}\", {}).as_bytes()",
+            placeholders.join(","),
+            args
+        )
+    };
+    code.push_str("        let mut graph = self.graph.borrow_mut();\n");
+    code.push_str("        let upstream_hash = graph.node_hash(source);\n");
+    code.push_str(&format!(
+        "        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, \"{method_name}\", {hash_format});\n"
+    ));
 
     // Construct node
     let args_str = constructor_args.join(", ");
@@ -203,18 +223,6 @@ fn generate_single_transform_method(
             "        let node = {node_module}::{node_type}::new({args_str});\n"
         ));
     }
-
-    // Compute hash
-    let hash_format = if hash_parts.is_empty() {
-        "b\"\"".to_string()
-    } else {
-        format!("format!(\"{}\").as_bytes()", hash_parts.join(","))
-    };
-    code.push_str("        let mut graph = self.graph.borrow_mut();\n");
-    code.push_str("        let upstream_hash = graph.node_hash(source);\n");
-    code.push_str(&format!(
-        "        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, \"{method_name}\", {hash_format});\n"
-    ));
 
     // Add node with derived metadata
     code.push_str(

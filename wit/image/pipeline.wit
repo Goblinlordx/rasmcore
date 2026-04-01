@@ -70,6 +70,14 @@ interface pipeline {
     record qoi-write-config { reserved: option<bool> }
     record gif-write-config { repeat: option<u16> }
 
+    // ─── Transform config records ───
+    record resize-config { width: u32, height: u32, filter: resize-filter }
+    record crop-config { x: u32, y: u32, width: u32, height: u32 }
+    record rotate-config { rotation: rotation }
+    record flip-config { direction: flip-direction }
+    record auto-orient-config { orientation: exif-orientation }
+    record icc-to-srgb-config { icc-profile: buffer }
+
     variant frame-selection {
         single(u32),
         pick(list<u32>),
@@ -101,14 +109,14 @@ interface pipeline {
         set-layer-cache: func(cache: borrow<layer-cache>);
         set-auto-cleanup: func(enabled: bool);
 
-        // ─── Transforms ───
-        resize: func(source: node-id, width: u32, height: u32, filter: resize-filter) -> result<node-id, rasmcore-error>;
-        crop: func(source: node-id, x: u32, y: u32, width: u32, height: u32) -> result<node-id, rasmcore-error>;
-        rotate: func(source: node-id, angle: rotation) -> result<node-id, rasmcore-error>;
-        flip: func(source: node-id, direction: flip-direction) -> result<node-id, rasmcore-error>;
+        // ─── Transforms (auto-generated from #[register_transform]) ───
+        resize: func(source: node-id, config: resize-config) -> result<node-id, rasmcore-error>;
+        crop: func(source: node-id, config: crop-config) -> result<node-id, rasmcore-error>;
+        rotate: func(source: node-id, config: rotate-config) -> result<node-id, rasmcore-error>;
+        flip: func(source: node-id, config: flip-config) -> result<node-id, rasmcore-error>;
         convert-format: func(source: node-id, target: pixel-format) -> result<node-id, rasmcore-error>;
-        icc-to-srgb: func(source: node-id, icc-profile: buffer) -> result<node-id, rasmcore-error>;
-        auto-orient: func(source: node-id, orientation: exif-orientation) -> result<node-id, rasmcore-error>;
+        icc-to-srgb: func(source: node-id, config: icc-to-srgb-config) -> result<node-id, rasmcore-error>;
+        auto-orient: func(source: node-id, config: auto-orient-config) -> result<node-id, rasmcore-error>;
 
         // ─── Filters (auto-generated from #[register_filter]) ───
 

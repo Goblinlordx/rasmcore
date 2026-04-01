@@ -41,7 +41,7 @@ pub fn extract_transforms(
     module_name: &str,
 ) -> Vec<TransformReg> {
     // Collect struct constructors: struct_name -> params from impl block's new() method
-    let mut constructors: HashMap<String, (Vec<(String, String)>, bool)> = HashMap::new();
+    let mut constructors: HashMap<String, (Vec<(String, String)>, bool, bool)> = HashMap::new();
     for item in &file.items {
         if let syn::Item::Impl(impl_block) = item {
             // Only plain impl blocks (not trait impls)
@@ -52,8 +52,10 @@ pub fn extract_transforms(
             for item in &impl_block.items {
                 if let syn::ImplItem::Fn(method) = item {
                     if method.sig.ident == "new" {
-                        let (params, fallible) = extract_constructor_params(&method.sig, &enums);
-                        constructors.insert(struct_name.clone(), (params, fallible));
+                        let (params, fallible, multi_input) =
+                            extract_constructor_params(&method.sig, &enums);
+                        constructors
+                            .insert(struct_name.clone(), (params, fallible, multi_input));
                     }
                 }
             }
@@ -97,7 +99,7 @@ pub fn extract_enums(file: &syn::File, domain_module: &str) -> HashMap<String, E
 
 fn extract_transform_reg(
     impl_block: &syn::ItemImpl,
-    constructors: &HashMap<String, (Vec<(String, String)>, bool)>,
+    constructors: &HashMap<String, (Vec<(String, String)>, bool, bool)>,
 ) -> Option<TransformReg> {
     // Must be a trait impl (impl ImageNode for ...)
     impl_block.trait_.as_ref()?;
@@ -124,21 +126,10 @@ fn extract_transform_reg(
         let node_type = type_name(&impl_block.self_ty);
 
         // Look up the constructor params
-        let (params, fallible) = constructors
+        let (params, fallible, multi_input) = constructors
             .get(&node_type)
             .cloned()
             .unwrap_or_default();
-
-        // Detect multi-input: more than one u32 param named like "fg", "bg", etc.
-        let upstream_count = params
-            .iter()
-            .filter(|(_, t)| t == "u32")
-            .count();
-        // Actually check the constructor — if there are multiple u32 params at the start
-        // that look like upstream IDs, it's multi-input. But simpler: use the annotation.
-        let multi_input = extract_kv(&tokens, "multi_input")
-            .map(|v| v == "true")
-            .unwrap_or(false);
 
         return Some(TransformReg {
             name,
@@ -152,14 +143,15 @@ fn extract_transform_reg(
     None
 }
 
-/// Extract constructor parameters, skipping infrastructure params
-/// (upstream: u32, source_info: ImageInfo, and similar).
+/// Extract constructor parameters, skipping infrastructure params.
+/// Returns (params, fallible, multi_input).
 fn extract_constructor_params(
     sig: &syn::Signature,
-    enums: &HashMap<String, EnumDef>,
-) -> (Vec<(String, String)>, bool) {
+    _enums: &HashMap<String, EnumDef>,
+) -> (Vec<(String, String)>, bool, bool) {
     let mut params = Vec::new();
     let mut fallible = false;
+    let mut upstream_count = 0u32;
 
     // Check return type for Result
     if let syn::ReturnType::Type(_, ty) = &sig.output {
@@ -172,13 +164,14 @@ fn extract_constructor_params(
     for input in &sig.inputs {
         if let syn::FnArg::Typed(pat_type) = input {
             let name = quote::quote!(#pat_type).to_string();
-            // Skip infrastructure params
-            if name.contains("upstream")
-                || name.contains("source_info")
+            // Skip infrastructure params — count upstream occurrences
+            if name.contains("upstream") || name.contains("fg_upstream") || name.contains("bg_upstream") {
+                upstream_count += 1;
+                continue;
+            }
+            if name.contains("source_info")
                 || name.contains("ImageInfo")
                 || name.contains("self")
-                || name.contains("fg_upstream")
-                || name.contains("bg_upstream")
                 || name.contains("fg_info")
                 || name.contains("bg_info")
             {
@@ -199,7 +192,8 @@ fn extract_constructor_params(
         }
     }
 
-    (params, fallible)
+    let multi_input = upstream_count > 1;
+    (params, fallible, multi_input)
 }
 
 fn extract_kv(tokens: &str, key: &str) -> Option<String> {

@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 
 use crate::bindings::exports::rasmcore::image::pipeline::{
-    self, BlendMode as WitBlendMode, CacheStats, ExifOrientation, FlipDirection,
-    GuestImagePipeline, GuestLayerCache, LayerCacheBorrow, NodeId, ResizeFilter, Rotation,
+    self, BlendMode as WitBlendMode, CacheStats, GuestImagePipeline, GuestLayerCache,
+    LayerCacheBorrow, NodeId,
 };
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
@@ -419,101 +419,8 @@ impl GuestImagePipeline for PipelineResource {
         Ok(to_wit_image_info(&info))
     }
 
-    fn resize(
-        &self,
-        source: NodeId,
-        width: u32,
-        height: u32,
-        filter: ResizeFilter,
-    ) -> Result<NodeId, RasmcoreError> {
-        let src_info = self
-            .graph
-            .borrow()
-            .node_info(source)
-            .map_err(to_wit_error)?;
-        let domain_filter = match filter {
-            ResizeFilter::Nearest => domain::types::ResizeFilter::Nearest,
-            ResizeFilter::Bilinear => domain::types::ResizeFilter::Bilinear,
-            ResizeFilter::Bicubic => domain::types::ResizeFilter::Bicubic,
-            ResizeFilter::Lanczos3 => domain::types::ResizeFilter::Lanczos3,
-        };
-        let node = transform::ResizeNode::new(source, src_info, width, height, domain_filter);
-        let mut graph = self.graph.borrow_mut();
-        let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(
-            &upstream_hash,
-            "resize",
-            format!("{width},{height},{filter:?}").as_bytes(),
-        );
-        Ok(graph.add_node_derived(Box::new(node), hash, source))
-    }
-
-    fn crop(
-        &self,
-        source: NodeId,
-        x: u32,
-        y: u32,
-        width: u32,
-        height: u32,
-    ) -> Result<NodeId, RasmcoreError> {
-        let src_info = self
-            .graph
-            .borrow()
-            .node_info(source)
-            .map_err(to_wit_error)?;
-        let node = transform::CropNode::new(source, src_info, x, y, width, height);
-        let mut graph = self.graph.borrow_mut();
-        let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(
-            &upstream_hash,
-            "crop",
-            format!("{x},{y},{width},{height}").as_bytes(),
-        );
-        Ok(graph.add_node_derived(Box::new(node), hash, source))
-    }
-
-    fn rotate(&self, source: NodeId, angle: Rotation) -> Result<NodeId, RasmcoreError> {
-        let src_info = self
-            .graph
-            .borrow()
-            .node_info(source)
-            .map_err(to_wit_error)?;
-        let domain_rot = match angle {
-            Rotation::R90 => domain::types::Rotation::R90,
-            Rotation::R180 => domain::types::Rotation::R180,
-            Rotation::R270 => domain::types::Rotation::R270,
-        };
-        let node = transform::RotateNode::new(source, src_info, domain_rot);
-        let mut graph = self.graph.borrow_mut();
-        let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(
-            &upstream_hash,
-            "rotate",
-            format!("{angle:?}").as_bytes(),
-        );
-        Ok(graph.add_node_derived(Box::new(node), hash, source))
-    }
-
-    fn flip(&self, source: NodeId, direction: FlipDirection) -> Result<NodeId, RasmcoreError> {
-        let src_info = self
-            .graph
-            .borrow()
-            .node_info(source)
-            .map_err(to_wit_error)?;
-        let domain_dir = match direction {
-            FlipDirection::Horizontal => domain::types::FlipDirection::Horizontal,
-            FlipDirection::Vertical => domain::types::FlipDirection::Vertical,
-        };
-        let node = transform::FlipNode::new(source, src_info, domain_dir);
-        let mut graph = self.graph.borrow_mut();
-        let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(
-            &upstream_hash,
-            "flip",
-            format!("{direction:?}").as_bytes(),
-        );
-        Ok(graph.add_node_derived(Box::new(node), hash, source))
-    }
+    // Auto-generated transform methods (resize, crop, rotate, flip, auto_orient, icc_to_srgb)
+    generated_pipeline_transform_methods!();
 
     fn convert_format(
         &self,
@@ -521,81 +428,6 @@ impl GuestImagePipeline for PipelineResource {
         _target: types::PixelFormat,
     ) -> Result<NodeId, RasmcoreError> {
         Err(RasmcoreError::NotImplemented)
-    }
-
-    fn icc_to_srgb(&self, source: NodeId, icc_profile: Vec<u8>) -> Result<NodeId, RasmcoreError> {
-        let graph = self.graph.borrow();
-        let src_info = graph.node_info(source).map_err(to_wit_error)?;
-
-        // Use explicit profile if provided, otherwise try metadata
-        let profile = if !icc_profile.is_empty() {
-            icc_profile
-        } else {
-            graph
-                .node_metadata(source)
-                .icc_profile()
-                .map(|b| b.to_vec())
-                .unwrap_or_default()
-        };
-        drop(graph);
-
-        if profile.is_empty() {
-            return Ok(source);
-        }
-
-        let node = color::IccToSrgbNode::new(source, src_info, profile).map_err(to_wit_error)?;
-        let mut graph = self.graph.borrow_mut();
-        let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "icc_to_srgb", &[]);
-        Ok(graph.add_node_derived(Box::new(node), hash, source))
-    }
-
-    fn auto_orient(
-        &self,
-        source: NodeId,
-        orientation: ExifOrientation,
-    ) -> Result<NodeId, RasmcoreError> {
-        let graph = self.graph.borrow();
-        let src_info = graph.node_info(source).map_err(to_wit_error)?;
-
-        // Use explicit orientation if not Normal, otherwise try metadata
-        let domain_orient = match orientation {
-            ExifOrientation::Normal => {
-                // Check metadata for orientation
-                let meta_orient = graph.node_metadata(source).exif_orientation().unwrap_or(1);
-                match meta_orient {
-                    2 => domain::metadata::ExifOrientation::FlipHorizontal,
-                    3 => domain::metadata::ExifOrientation::Rotate180,
-                    4 => domain::metadata::ExifOrientation::FlipVertical,
-                    5 => domain::metadata::ExifOrientation::Transpose,
-                    6 => domain::metadata::ExifOrientation::Rotate90,
-                    7 => domain::metadata::ExifOrientation::Transverse,
-                    8 => domain::metadata::ExifOrientation::Rotate270,
-                    _ => {
-                        drop(graph);
-                        return Ok(source); // Already normal — pass through
-                    }
-                }
-            }
-            ExifOrientation::FlipHorizontal => domain::metadata::ExifOrientation::FlipHorizontal,
-            ExifOrientation::Rotate180 => domain::metadata::ExifOrientation::Rotate180,
-            ExifOrientation::FlipVertical => domain::metadata::ExifOrientation::FlipVertical,
-            ExifOrientation::Transpose => domain::metadata::ExifOrientation::Transpose,
-            ExifOrientation::Rotate90 => domain::metadata::ExifOrientation::Rotate90,
-            ExifOrientation::Transverse => domain::metadata::ExifOrientation::Transverse,
-            ExifOrientation::Rotate270 => domain::metadata::ExifOrientation::Rotate270,
-        };
-        drop(graph);
-
-        let node = transform::AutoOrientNode::new(source, src_info, domain_orient);
-        let mut graph = self.graph.borrow_mut();
-        let upstream_hash = graph.node_hash(source);
-        let hash = rasmcore_pipeline::compute_hash(
-            &upstream_hash,
-            "auto_orient",
-            format!("{orientation:?}").as_bytes(),
-        );
-        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     // Auto-generated pipeline filter methods (all registered filters)
