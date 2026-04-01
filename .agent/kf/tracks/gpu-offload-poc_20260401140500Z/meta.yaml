@@ -1,5 +1,5 @@
 title: 'Research + PoC: GPU offload via host-injected WebGPU handler'
-status: pending
+status: completed
 type: research
 approved: false
 created: '2026-04-01'
