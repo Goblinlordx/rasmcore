@@ -51,38 +51,7 @@ interface pipeline {
     record gif-write-config { repeat: option<u16> }
 
     // ─── Transform types (auto-generated from #[register_transform]) ───
-    enum resize-filter { nearest, bilinear, bicubic, lanczos3 }
-
-    enum rotation { r90, r180, r270 }
-
-    enum flip-direction { horizontal, vertical }
-
     enum blend-mode { multiply, screen, overlay, darken, lighten, soft-light, hard-light, difference, exclusion, color-dodge, color-burn, vivid-light, linear-dodge, linear-burn, linear-light, pin-light, hard-mix, subtract, divide, dissolve, darker-color, lighter-color, hue, saturation, color, luminosity }
-
-    record resize-config {
-        width: u32,
-        height: u32,
-        filter: resize-filter,
-    }
-
-    record crop-config {
-        x: u32,
-        y: u32,
-        width: u32,
-        height: u32,
-    }
-
-    record rotate-config {
-        rotation: rotation,
-    }
-
-    record flip-config {
-        direction: flip-direction,
-    }
-
-    record auto-orient-config {
-        orientation: exif-orientation,
-    }
 
     record icc-to-srgb-config {
         icc-profile: buffer,
@@ -128,11 +97,6 @@ interface pipeline {
         set-auto-cleanup: func(enabled: bool);
 
         // ─── Transforms (auto-generated from #[register_transform]) ───
-        resize: func(source: node-id, config: resize-config) -> result<node-id, rasmcore-error>;
-        crop: func(source: node-id, config: crop-config) -> result<node-id, rasmcore-error>;
-        rotate: func(source: node-id, config: rotate-config) -> result<node-id, rasmcore-error>;
-        flip: func(source: node-id, config: flip-config) -> result<node-id, rasmcore-error>;
-        auto-orient: func(source: node-id, config: auto-orient-config) -> result<node-id, rasmcore-error>;
         icc-to-srgb: func(source: node-id, config: icc-to-srgb-config) -> result<node-id, rasmcore-error>;
         composite: func(fg: node-id, bg: node-id, config: composite-config) -> result<node-id, rasmcore-error>;
 
