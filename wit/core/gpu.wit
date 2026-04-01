@@ -1,0 +1,51 @@
+/// GPU compute offload interface.
+///
+/// Optional import — when provided by the host, the pipeline can offload
+/// expensive operations to GPU compute shaders. When absent, the pipeline
+/// runs entirely on CPU (current behavior).
+///
+/// The WASM component emits WGSL shader source + parameters. The host
+/// decides how to execute them (WebGPU in browser, wgpu native, etc.).
+
+interface gpu {
+    /// A single GPU compute operation (one shader dispatch).
+    record gpu-op {
+        /// WGSL compute shader source code.
+        shader: string,
+        /// Entry point function name (e.g., "main", "blur-h").
+        entry-point: string,
+        /// Workgroup size (x, y, z) used in the shader.
+        workgroup-x: u32,
+        workgroup-y: u32,
+        workgroup-z: u32,
+        /// Serialized uniform parameters (filter-specific).
+        params: list<u8>,
+        /// Extra storage buffers (e.g., blur kernel, 3D LUT data).
+        /// Each entry is bound as a separate read-only storage buffer.
+        extra-buffers: list<list<u8>>,
+    }
+
+    /// Error from GPU execution.
+    variant gpu-error {
+        /// GPU not available or initialization failed.
+        not-available(string),
+        /// Shader compilation error.
+        shader-error(string),
+        /// Execution error (dispatch, buffer, readback).
+        execution-error(string),
+    }
+
+    /// Execute a batch of GPU compute operations on pixel data.
+    ///
+    /// Operations are chained: output of op[i] = input of op[i+1].
+    /// All intermediate buffers stay in GPU memory (no round-trips).
+    /// Only the final output is read back to CPU.
+    ///
+    /// Input/output: RGBA8 pixel data (width * height * 4 bytes).
+    gpu-execute: func(
+        ops: list<gpu-op>,
+        input: list<u8>,
+        width: u32,
+        height: u32,
+    ) -> result<list<u8>, gpu-error>;
+}
