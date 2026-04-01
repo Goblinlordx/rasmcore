@@ -12,8 +12,6 @@ import EffectStack from './components/EffectStack';
 import StatusBar from './components/StatusBar';
 import CodeModal from './components/CodeModal';
 
-const PREVIEW_DEBOUNCE_MS = 600;
-
 export default function App() {
   const { operations, groups, writeFormats, loading } = useAppContext();
   const worker = useWorker();
@@ -42,7 +40,6 @@ export default function App() {
   const [codeModalOpen, setCodeModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('jpeg');
   const [exportQuality, setExportQuality] = useState(85);
-  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stable ref to current serializeChain so onLoaded always has the latest
   const serializeChainRef = useRef(serializeChain);
@@ -145,14 +142,6 @@ export default function App() {
     [moveNode, applyFullChain],
   );
 
-  const schedulePreview = useCallback(() => {
-    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    previewTimerRef.current = setTimeout(() => {
-      if (!activeLayer?.imageBytes || editingNodeId === null) return;
-      worker.sendMessage({ type: 'process', chain: serializeChainRef.current(), mode: 'thumb' });
-    }, PREVIEW_DEBOUNCE_MS);
-  }, [activeLayer, editingNodeId, worker]);
-
   const handleDownload = useCallback(
     (format: string, quality: number) => {
       if (layers.length === 0) return;
@@ -211,7 +200,6 @@ export default function App() {
             onMoveNode={handleMoveNode}
             onApplyNode={applyNode}
             onParamChange={updateParam}
-            onSchedulePreview={schedulePreview}
             onApplyFullChain={applyFullChain}
           />
         </RightPanel>

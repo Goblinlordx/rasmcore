@@ -14,6 +14,8 @@
 let Pipeline = null;
 let imageBytes = null;
 let thumbBytes = null;
+let cachedPipe = null; // Reused pipeline instance for graph caching
+let cachedSourceNode = null; // Source node from last load
 const THUMB_MAX = 256;
 let formatMimeMap = {}; // Populated from SDK: { jpeg: "image/jpeg", ... }
 
@@ -145,9 +147,13 @@ function loadImage(bytes) {
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = new Pipeline();
-    const src = pipe.read(imageBytes);
-    info = pipe.nodeInfo(src);
+    // Create a persistent pipeline for caching across process calls
+    cachedPipe = new Pipeline();
+    cachedSourceNode = cachedPipe.read(imageBytes);
+    info = cachedPipe.nodeInfo(cachedSourceNode);
+
+    const pipe = cachedPipe;
+    const src = cachedSourceNode;
 
     // Create thumbnail
     const scale = Math.min(THUMB_MAX / info.width, THUMB_MAX / info.height, 1);
@@ -169,8 +175,7 @@ function loadImage(bytes) {
 // ─── Pipeline Processing ────────────────────────────────────────────────────
 
 function processChain(chain, mode) {
-  const source = mode === 'thumb' ? thumbBytes : imageBytes;
-  if (!source) {
+  if (!cachedPipe || !cachedSourceNode) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
   }
@@ -179,8 +184,8 @@ function processChain(chain, mode) {
   const timings = [];
 
   try {
-    const pipe = new Pipeline();
-    let node = pipe.read(source);
+    const pipe = cachedPipe;
+    let node = cachedSourceNode;
 
     for (const step of chain) {
       const t = performance.now();
@@ -201,14 +206,14 @@ function processChain(chain, mode) {
 // ─── Export ─────────────────────────────────────────────────────────────────
 
 function exportImage(chain, format, quality) {
-  if (!imageBytes) {
+  if (!cachedPipe || !cachedSourceNode) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
   }
 
   try {
-    const pipe = new Pipeline();
-    let node = pipe.read(imageBytes);
+    const pipe = cachedPipe;
+    let node = cachedSourceNode;
 
     for (const step of chain) {
       node = applyStep(pipe, node, step, 'full');

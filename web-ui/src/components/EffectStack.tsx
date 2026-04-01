@@ -11,7 +11,6 @@ interface Props {
   onMoveNode: (from: number, to: number) => void;
   onApplyNode: (id: number) => void;
   onParamChange: (nodeId: number, paramName: string, value: number | string | boolean) => void;
-  onSchedulePreview: () => void;
   onApplyFullChain: () => void;
 }
 
@@ -24,7 +23,6 @@ export default function EffectStack({
   onMoveNode,
   onApplyNode,
   onParamChange,
-  onSchedulePreview,
   onApplyFullChain,
 }: Props) {
   const dragSrcIdx = useRef<number | null>(null);
@@ -77,7 +75,6 @@ export default function EffectStack({
               onDragEnd={handleDragEnd}
               onDragOver={() => {}}
               onDrop={handleDrop}
-              onSchedulePreview={onSchedulePreview}
             />
           ))}
         </div>

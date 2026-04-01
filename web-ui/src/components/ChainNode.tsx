@@ -15,7 +15,6 @@ interface Props {
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (targetIdx: number) => void;
-  onSchedulePreview: () => void;
 }
 
 export default function ChainNode({
@@ -31,7 +30,6 @@ export default function ChainNode({
   onDragEnd,
   onDragOver,
   onDrop,
-  onSchedulePreview,
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -111,10 +109,7 @@ export default function ChainNode({
               key={p.name}
               param={p}
               value={node.paramValues[p.name]}
-              onChange={(v) => {
-                onParamChange(p.name, v);
-                onSchedulePreview();
-              }}
+              onChange={(v) => onParamChange(p.name, v)}
             />
           ))}
           <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>

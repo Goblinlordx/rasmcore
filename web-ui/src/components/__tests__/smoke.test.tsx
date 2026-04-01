@@ -177,7 +177,6 @@ describe('Component smoke tests', () => {
         onMoveNode={() => {}}
         onApplyNode={() => {}}
         onParamChange={() => {}}
-        onSchedulePreview={() => {}}
         onApplyFullChain={() => {}}
       />,
     );
@@ -206,7 +205,6 @@ describe('Component smoke tests', () => {
         onDragEnd={() => {}}
         onDragOver={() => {}}
         onDrop={() => {}}
-        onSchedulePreview={() => {}}
       />,
     );
     expect(screen.getByText(/blur/)).toBeInTheDocument();
