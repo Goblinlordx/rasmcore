@@ -126,19 +126,19 @@ plan:
 - phase: Remove Legacy System
   tasks:
   - text: Delete builtin_filter! macro definition (lines 462-479)
-    done: false
+    done: true
   - text: Delete all builtin_filter!() invocations (~22 entries, lines 486-907)
-    done: false
+    done: true
   - text: Delete all manual impl ImageFilter blocks (6 point ops, lines 533-696)
-    done: false
+    done: true
   - text: Delete register_builtin_filters() function (lines 910-939)
-    done: false
+    done: true
   - text: Delete FilterRegistry struct, ImageFilter trait, and all supporting types (FilterCategory, FilterParams, ParamValue,
       ParamDescriptor, ParamType, FilterInput)
-    done: false
+    done: true
   - text: Delete legacy tests (registry_has_all_builtins, filter_by_category, apply_filter_via_registry, custom_filter_registration,
       param_descriptors_populated, all_filter_names_unique)
-    done: false
+    done: true
 - phase: Update Documentation
   tasks:
   - text: Update docs/extending.md to remove references to ImageFilter trait, FilterRegistry, and builtin_filter! — point
