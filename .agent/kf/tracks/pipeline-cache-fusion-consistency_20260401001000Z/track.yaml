@@ -1,0 +1,122 @@
+id: pipeline-cache-fusion-consistency_20260401001000Z
+title: "Fix layer cache + fusion interaction — hash consistency and cache invalidation"
+type: bug
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    When fuse_point_ops() replaces a chain of nodes with a FusedLutNode, the content
+    hash is not updated and cache_hit_nodes is not cleared. This causes the layer cache
+    to serve stale pre-fused pixel output on subsequent pipeline runs.
+  context: |
+    The pipeline has two optimization layers that interact badly:
+    1. Layer cache: persists pixel output across pipeline runs, keyed by content hash
+    2. LUT fusion: replaces chains of point-op nodes with a single FusedLutNode
+
+    When fusion runs, the FusedLutNode inherits the hash of the LAST node in the
+    chain. But the fused output differs from the original single-node output. On the
+    next pipeline run, if the layer cache has the old hash, it serves unfused pixels.
+  codebase_analysis: |
+    BUGS IDENTIFIED:
+
+    1. fuse_point_ops() (graph.rs ~line 348): replaces self.nodes[i] with FusedLutNode
+       but does NOT update self.node_hashes[i]. The fused node has a different computation
+       than the original, but the same hash.
+
+    2. cache_hit_nodes not invalidated: add_node_with_hash() populates cache_hit_nodes at
+       construction time. Fusion runs later but doesn't clear entries for replaced nodes.
+       request_region() returns stale cached pixels for fused nodes.
+
+    3. Hash semantics violation: fused output = compose(brightness, contrast, sepia) but
+       hash = hash(sepia_only). The hash doesn't represent the full computation lineage.
+
+    4. Same bugs exist in fuse_color_ops() (~line 459).
+
+    FIX APPROACH:
+
+    After fusion, recompute the hash for each fused node to reflect the actual
+    computation. The fused node's hash should be:
+      hash = compute_hash(upstream_hash, "fused_lut", &lut_bytes)
+    where lut_bytes is the composed LUT table (256 bytes for 1D, or CLUT data).
+
+    Also clear cache_hit_nodes and cache_hit_pixels for any node that was replaced
+    by fusion, since the cached data is for the unfused computation.
+
+    ALSO: nodes consumed INTO a fused chain (the intermediate ones marked in
+    fused_into[]) should have their hashes zeroed out so finalize_layer_cache
+    doesn't try to store their output (they have no output — they were absorbed).
+
+    KEY FILES:
+    - crates/rasmcore-image/src/domain/pipeline/graph.rs (fuse_point_ops, fuse_color_ops,
+      request_region, finalize_layer_cache)
+    - crates/rasmcore-pipeline/src/lib.rs (compute_hash)
+  acceptance_criteria:
+    - fuse_point_ops() updates node_hashes for fused nodes with correct composed hash
+    - fuse_point_ops() clears cache_hit_nodes/cache_hit_pixels for fused node IDs
+    - fuse_point_ops() zeroes hashes for consumed (absorbed) intermediate nodes
+    - Same fixes for fuse_color_ops()
+    - Pipeline run 1 (A->B->C) then run 2 (A->B) produces correct output (not stale fused)
+    - Pipeline run 1 (A->B) then run 2 (A->B->C) produces correct output
+    - Pipeline run 1 (A->B->C) then run 2 (A->B'->C) with changed B produces correct output
+    - Layer cache hits are served for unchanged upstream nodes
+    - All tiled_parity tests pass
+    - All existing tests pass
+  out_of_scope: |
+    Redesigning the spatial cache (single-buffer-per-node architecture).
+    Adding new fusion types beyond existing point-op and color-op.
+    Performance benchmarking.
+  technical_notes: |
+    The fix is in fuse_point_ops() and fuse_color_ops(). After replacing a node:
+
+    1. Compute new hash for fused node:
+       let lut_hash = compute_hash(&upstream_hash, "fused_point_lut", &lut);
+       self.node_hashes[i] = lut_hash;
+
+    2. Clear stale cache entries:
+       self.cache_hit_nodes.remove(&(i as u32));
+       self.cache_hit_pixels.remove(&(i as u32));
+
+    3. Zero consumed node hashes:
+       for (j, target) in fused_into.iter().enumerate() {
+           if target.is_some() {
+               self.node_hashes[j] = ZERO_HASH;
+               self.cache_hit_nodes.remove(&(j as u32));
+               self.cache_hit_pixels.remove(&(j as u32));
+           }
+       }
+
+    The upstream_hash for the fused node is the hash of the node that feeds
+    INTO the fused chain (the first non-point-op upstream). This is available
+    from chain_root_upstream.
+
+    For fuse_color_ops(): same pattern but hash the CLUT data instead of the
+    1D LUT table.
+plan:
+  - phase: Fix hash consistency
+    tasks:
+      - text: In fuse_point_ops(), after replacing node with FusedLutNode, compute and store correct hash from upstream_hash + fused LUT bytes
+        done: false
+      - text: In fuse_point_ops(), zero out node_hashes for all consumed (absorbed) intermediate nodes
+        done: false
+      - text: In fuse_point_ops(), clear cache_hit_nodes and cache_hit_pixels for fused and consumed node IDs
+        done: false
+      - text: Apply same three fixes to fuse_color_ops()
+        done: false
+  - phase: Integration tests
+    tasks:
+      - text: Test that pipeline A->B->C then A->B produces correct output (no stale fused data)
+        done: false
+      - text: Test that pipeline A->B then A->B->C produces correct output (cache reuse for A->B prefix)
+        done: false
+      - text: Test that changing middle node params invalidates downstream cache correctly
+        done: false
+      - text: Test that layer cache actually provides speedup (second identical run faster)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All tiled_parity tests pass
+        done: false
+      - text: Demo UI hue_rotate->sepia chain works correctly with cache on/off
+        done: false
+extra: {}

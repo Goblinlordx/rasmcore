@@ -1,0 +1,6 @@
+title: Fix layer cache + fusion interaction — hash consistency and cache invalidation
+status: pending
+type: bug
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
