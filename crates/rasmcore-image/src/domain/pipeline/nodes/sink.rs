@@ -214,6 +214,7 @@ pub fn write_tiled(
 ) -> Result<Vec<u8>, ImageError> {
     // Fuse consecutive point/color operations before execution
     graph.fuse_point_ops();
+    graph.fuse_color_ops();
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
 
