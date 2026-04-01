@@ -9,11 +9,13 @@ use super::error::ImageError;
 use super::types::{DecodedImage, ImageInfo, PixelFormat};
 use rasmcore_pipeline::Rect;
 
+pub mod common;
+
 /// Upstream pixel request function. Filters with the rect-request signature
 /// call this to get pixels for any region they need.
 pub type UpstreamFn<'a> = dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + 'a;
 
-fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
+pub fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
     match format {
         PixelFormat::Rgb8
         | PixelFormat::Rgba8
@@ -28,7 +30,7 @@ fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
 }
 
 /// Check if a pixel format is 16-bit.
-fn is_16bit(format: PixelFormat) -> bool {
+pub fn is_16bit(format: PixelFormat) -> bool {
     matches!(
         format,
         PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16
@@ -36,7 +38,7 @@ fn is_16bit(format: PixelFormat) -> bool {
 }
 
 /// Number of channels for a pixel format (not bytes — channels).
-fn channels(format: PixelFormat) -> usize {
+pub fn channels(format: PixelFormat) -> usize {
     match format {
         PixelFormat::Gray8 | PixelFormat::Gray16 => 1,
         PixelFormat::Rgb8 | PixelFormat::Rgb16 => 3,
@@ -48,7 +50,7 @@ fn channels(format: PixelFormat) -> usize {
 // ── 16-bit I/O helpers ─────────────────────────────────────────────────────
 
 /// Read u16 samples from a byte buffer (little-endian).
-fn bytes_to_u16(bytes: &[u8]) -> Vec<u16> {
+pub fn bytes_to_u16(bytes: &[u8]) -> Vec<u16> {
     bytes
         .chunks_exact(2)
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
@@ -56,12 +58,12 @@ fn bytes_to_u16(bytes: &[u8]) -> Vec<u16> {
 }
 
 /// Write u16 samples to a byte buffer (little-endian).
-fn u16_to_bytes(values: &[u16]) -> Vec<u8> {
+pub fn u16_to_bytes(values: &[u16]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 /// Convert 16-bit pixel buffer to f32 normalized [0.0, 1.0] per sample.
-fn u16_pixels_to_f32(bytes: &[u8]) -> Vec<f32> {
+pub fn u16_pixels_to_f32(bytes: &[u8]) -> Vec<f32> {
     bytes_to_u16(bytes)
         .into_iter()
         .map(|v| v as f32 / 65535.0)
@@ -69,7 +71,7 @@ fn u16_pixels_to_f32(bytes: &[u8]) -> Vec<f32> {
 }
 
 /// Convert f32 normalized [0.0, 1.0] samples back to 16-bit pixel buffer.
-fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
+pub fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
     let u16s: Vec<u16> = values
         .iter()
         .map(|&v| (v * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16)
@@ -79,7 +81,7 @@ fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
 
 /// Convert 16-bit pixel buffer to 8-bit for processing, then back to 16-bit.
 /// Used when an operation only supports 8-bit internally (e.g., convolve).
-fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
+pub fn process_via_8bit<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
 where
     F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
 {
@@ -111,7 +113,7 @@ where
 
 /// Crop a pixel buffer from an expanded region back to the original request.
 /// Used by spatial filters that expand their upstream request for overlap.
-fn crop_to_request(
+pub fn crop_to_request(
     filtered: &[u8],
     expanded: Rect,
     request: Rect,
@@ -1373,7 +1375,7 @@ pub enum BokehShape {
 ///
 /// All pixels whose center falls within the circle of `radius` get weight 1.0.
 /// Returns `(kernel, side_length)` where `side_length = 2 * radius + 1`.
-fn make_disc_kernel(radius: u32) -> (Vec<f32>, usize) {
+pub fn make_disc_kernel(radius: u32) -> (Vec<f32>, usize) {
     let side = (radius * 2 + 1) as usize;
     let center = radius as f32;
     let r2 = (radius as f32 + 0.5) * (radius as f32 + 0.5);
@@ -1396,7 +1398,7 @@ fn make_disc_kernel(radius: u32) -> (Vec<f32>, usize) {
 /// Uses the pointy-top hexagon inscribed in a circle of `radius`. A pixel
 /// is inside the hexagon if it satisfies all 6 half-plane constraints of the
 /// regular hexagon with circumradius `radius + 0.5`.
-fn make_hex_kernel(radius: u32) -> (Vec<f32>, usize) {
+pub fn make_hex_kernel(radius: u32) -> (Vec<f32>, usize) {
     let side = (radius * 2 + 1) as usize;
     let center = radius as f32;
     let cr = radius as f32 + 0.5; // circumradius
@@ -2925,7 +2927,7 @@ pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<DecodedImage, ImageE
 ///
 /// No CLUT allocation — evaluates ColorOp::apply() on each pixel's
 /// normalized (R,G,B). For pipeline use, ColorOpNode builds a CLUT instead.
-fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u8>, ImageError> {
+pub fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
     if info.format == PixelFormat::Gray8 || info.format == PixelFormat::Gray16 {
         return Ok(pixels.to_vec());
@@ -3311,7 +3313,7 @@ pub struct GradientMapParams {
 }
 
 /// Parse gradient stops from string format "pos:RRGGBB,pos:RRGGBB,...".
-fn parse_gradient_stops(stops: &str) -> Result<Vec<(f32, [u8; 3])>, ImageError> {
+pub fn parse_gradient_stops(stops: &str) -> Result<Vec<(f32, [u8; 3])>, ImageError> {
     let mut result = Vec::new();
     for entry in stops.split(',') {
         let entry = entry.trim();
@@ -3351,7 +3353,7 @@ fn parse_gradient_stops(stops: &str) -> Result<Vec<(f32, [u8; 3])>, ImageError> 
 }
 
 /// Interpolate a color from sorted gradient stops at the given position.
-fn interpolate_gradient(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
+pub fn interpolate_gradient(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
     if stops.len() == 1 || t <= stops[0].0 {
         return stops[0].1;
     }
@@ -3450,7 +3452,7 @@ pub struct SparseColorParams {
 }
 
 /// Parse sparse color control points from "x,y:RRGGBB;x,y:RRGGBB;..." format.
-fn parse_sparse_points(points: &str) -> Result<Vec<(f32, f32, [u8; 3])>, ImageError> {
+pub fn parse_sparse_points(points: &str) -> Result<Vec<(f32, f32, [u8; 3])>, ImageError> {
     let mut result = Vec::new();
     for entry in points.split(';') {
         let entry = entry.trim();

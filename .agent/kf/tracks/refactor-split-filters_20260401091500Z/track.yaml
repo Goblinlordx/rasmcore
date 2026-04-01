@@ -61,9 +61,9 @@ plan:
 - phase: Filter migration (parallel via subagents)
   tasks:
   - text: Move spatial category (19 filters) to filters/spatial/
-    done: false
+    done: true
   - text: Move enhancement category (18 filters) to filters/enhancement/
-    done: false
+    done: true
   - text: Move color category (18 filters) to filters/color/
     done: false
   - text: Move grading category (13 filters) to filters/grading/
