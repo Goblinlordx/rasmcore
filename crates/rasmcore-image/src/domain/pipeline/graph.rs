@@ -2441,4 +2441,79 @@ mod layer_cache_tests {
         assert_eq!(output2, single_invert, "3 inverts should equal single invert");
         eprintln!("cache_add_to_fused_chain: PASS");
     }
+
+    /// Helper: run pipeline with explicit small tile size to force tiled execution
+    fn run_tiled_and_finalize(graph: &mut NodeGraph, node: u32) -> Vec<u8> {
+        let tile_cfg = sink::TileConfig { tile_size: 16 }; // 16x16 tiles on 32x32 image = 4 tiles
+        let out = sink::write_tiled(graph, node, "png", None, None, &tile_cfg).unwrap();
+        graph.finalize_layer_cache();
+        out
+    }
+
+    #[test]
+    fn cache_tiled_execution_matches_untiled() {
+        // Verify: tiled execution with layer cache produces same output as untiled
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Run 1: untiled (full-image request)
+        let untiled = {
+            let (mut g, node) = build_brightness_pipeline(&png, &lc, 0.2);
+            run_and_finalize(&mut g, node)
+        };
+
+        // Run 2: tiled (16x16 tiles on 32x32 image), fresh cache
+        let lc2 = make_layer_cache();
+        let tiled = {
+            let (mut g, node) = build_brightness_pipeline(&png, &lc2, 0.2);
+            run_tiled_and_finalize(&mut g, node)
+        };
+
+        assert_eq!(untiled, tiled, "tiled and untiled must produce identical output");
+        eprintln!("cache_tiled_execution_matches_untiled: PASS");
+    }
+
+    #[test]
+    fn cache_tiled_reuse_across_pipelines() {
+        // Run 1: source → brightness (tiled, populates layer cache)
+        // Run 2: source → brightness → contrast (tiled, brightness should be cache hit)
+        // Run 3: source → brightness (tiled again, should be fast from cache)
+        // Verify all outputs are correct
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Run 1: source → brightness(0.2), tiled
+        let output1 = {
+            let (mut g, node) = build_brightness_pipeline(&png, &lc, 0.2);
+            run_tiled_and_finalize(&mut g, node)
+        };
+
+        // Run 2: source → brightness(0.2) → contrast(0.3), tiled
+        let output2 = {
+            let (mut g, node) = build_brightness_contrast_pipeline(&png, &lc, 0.2, 0.3);
+            run_tiled_and_finalize(&mut g, node)
+        };
+
+        // Run 3: back to source → brightness(0.2), tiled (should reuse from cache)
+        let output3 = {
+            let (mut g, node) = build_brightness_pipeline(&png, &lc, 0.2);
+            run_tiled_and_finalize(&mut g, node)
+        };
+
+        assert_ne!(output1, output2, "adding contrast should change output");
+        assert_eq!(output1, output3, "same pipeline should produce same output from cache");
+
+        // Fresh uncached reference
+        let fresh = {
+            let mut g = NodeGraph::new(4 * 1024 * 1024);
+            let src = g.add_node(Box::new(SourceNode::new(png.clone()).unwrap()));
+            let si = g.node_info(src).unwrap();
+            let b = g.add_node(Box::new(BrightnessNode::new(src, si, BrightnessParams { amount: 0.2 })));
+            let tile_cfg = sink::TileConfig { tile_size: 16 };
+            sink::write_tiled(&mut g, b, "png", None, None, &tile_cfg).unwrap()
+        };
+
+        assert_eq!(output3, fresh, "cached tiled must match fresh uncached tiled");
+        eprintln!("cache_tiled_reuse_across_pipelines: PASS");
+    }
 }
