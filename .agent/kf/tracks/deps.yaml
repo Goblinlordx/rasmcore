@@ -237,3 +237,6 @@ transform-config-records_20260401120200Z: []
 
 # Remaining positional-arg ops → config records (completes the unification)
 remaining-config-unify_20260401124500Z: []
+
+# Codegen: extra params in config records (eliminates EXTRA_POSITIONAL_OPS)
+codegen-extra-params-in-config_20260401130000Z: []
