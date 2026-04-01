@@ -1,12 +1,5 @@
-//! ICC color profile operations.
-//!
-//! Uses moxcms (pure Rust, WASM-compatible) for ICC profile parsing and
-//! color space transforms. This module provides:
-//! - ICC profile extraction from JPEG/PNG raw bytes
-//! - ICC-to-sRGB pixel conversion via moxcms transform
-
-use super::error::ImageError;
-use super::types::{ImageInfo, PixelFormat};
+use super::super::error::ImageError;
+use super::super::types::{ImageInfo, PixelFormat};
 
 /// Extract ICC profile from JPEG data (APP2 marker with "ICC_PROFILE\0" signature).
 ///
@@ -14,15 +7,13 @@ use super::types::{ImageInfo, PixelFormat};
 /// signature "ICC_PROFILE\0" followed by a sequence number and count.
 /// Large profiles are split across multiple APP2 chunks.
 pub fn extract_icc_from_jpeg(data: &[u8]) -> Option<Vec<u8>> {
-    // ICC_PROFILE marker signature: "ICC_PROFILE\0" (12 bytes) + seq_no (1) + num_markers (1)
     const ICC_SIG: &[u8] = b"ICC_PROFILE\0";
-    const ICC_HEADER_LEN: usize = 14; // signature (12) + seq (1) + count (1)
+    const ICC_HEADER_LEN: usize = 14;
 
     let mut chunks: Vec<(u8, Vec<u8>)> = Vec::new();
 
     let mut pos = 0;
     while pos + 4 < data.len() {
-        // Find JPEG marker
         if data[pos] != 0xFF {
             pos += 1;
             continue;
@@ -30,24 +21,20 @@ pub fn extract_icc_from_jpeg(data: &[u8]) -> Option<Vec<u8>> {
 
         let marker = data[pos + 1];
 
-        // Skip padding bytes (0xFF 0xFF)
         if marker == 0xFF {
             pos += 1;
             continue;
         }
 
-        // SOS marker — stop scanning (pixel data follows)
         if marker == 0xDA {
             break;
         }
 
-        // Markers without length: SOI, EOI, RST0-RST7
         if marker == 0xD8 || marker == 0xD9 || (0xD0..=0xD7).contains(&marker) {
             pos += 2;
             continue;
         }
 
-        // Read marker length
         if pos + 4 > data.len() {
             break;
         }
@@ -59,7 +46,6 @@ pub fn extract_icc_from_jpeg(data: &[u8]) -> Option<Vec<u8>> {
         let segment_start = pos + 4;
         let segment_len = length - 2;
 
-        // Check for APP2 marker (0xE2) with ICC_PROFILE signature
         if marker == 0xE2 && segment_len > ICC_HEADER_LEN {
             let segment_data =
                 &data[segment_start..segment_start + segment_len.min(data.len() - segment_start)];
@@ -77,7 +63,6 @@ pub fn extract_icc_from_jpeg(data: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
 
-    // Sort by sequence number and concatenate
     chunks.sort_by_key(|(seq, _)| *seq);
     let mut profile = Vec::new();
     for (_, chunk) in chunks {
@@ -88,13 +73,7 @@ pub fn extract_icc_from_jpeg(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract ICC profile from PNG data (iCCP chunk).
-///
-/// PNG stores ICC profiles in the iCCP chunk, which contains:
-/// - Null-terminated profile name (1-79 bytes + null)
-/// - Compression method (1 byte, always 0 = zlib deflate)
-/// - Compressed profile data (zlib/deflate)
 pub fn extract_icc_from_png(data: &[u8]) -> Option<Vec<u8>> {
-    // PNG signature: 8 bytes
     const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     const ICCP_TYPE: &[u8] = b"iCCP";
 
@@ -102,7 +81,7 @@ pub fn extract_icc_from_png(data: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
 
-    let mut pos = 8; // Skip PNG signature
+    let mut pos = 8;
 
     while pos + 12 <= data.len() {
         let chunk_len =
@@ -113,25 +92,19 @@ pub fn extract_icc_from_png(data: &[u8]) -> Option<Vec<u8>> {
         if chunk_type == ICCP_TYPE && chunk_data_start + chunk_len <= data.len() {
             let chunk_data = &data[chunk_data_start..chunk_data_start + chunk_len];
 
-            // Find null terminator of profile name
             let name_end = chunk_data.iter().position(|&b| b == 0)?;
             if name_end + 2 > chunk_data.len() {
                 return None;
             }
 
-            // Skip profile name + null + compression method byte
             let compressed = &chunk_data[name_end + 2..];
-
-            // Decompress with zlib (deflate)
             return decompress_zlib(compressed);
         }
 
-        // IDAT means we've passed all metadata chunks
         if chunk_type == b"IDAT" {
             break;
         }
 
-        // Skip to next chunk: length(4) + type(4) + data(chunk_len) + crc(4)
         pos = chunk_data_start + chunk_len + 4;
     }
 
@@ -140,8 +113,6 @@ pub fn extract_icc_from_png(data: &[u8]) -> Option<Vec<u8>> {
 
 /// Decompress zlib data (for PNG iCCP chunks).
 fn decompress_zlib(compressed: &[u8]) -> Option<Vec<u8>> {
-    // Minimal zlib decompressor using raw deflate
-    // zlib format: CMF(1) + FLG(1) + compressed_data + ADLER32(4)
     if compressed.len() < 6 {
         return None;
     }
@@ -149,25 +120,14 @@ fn decompress_zlib(compressed: &[u8]) -> Option<Vec<u8>> {
     let cmf = compressed[0];
     let cm = cmf & 0x0F;
     if cm != 8 {
-        // Only deflate (CM=8) is valid
         return None;
     }
 
-    // Use miniz_oxide (available via image crate's transitive dependency)
-    // which provides inflate
     let deflate_data = &compressed[2..compressed.len().saturating_sub(4)];
-    miniz_oxide_decompress(deflate_data)
-}
-
-/// Decompress deflate data using a simple inflate implementation.
-fn miniz_oxide_decompress(deflate_data: &[u8]) -> Option<Vec<u8>> {
     inflate_deflate(deflate_data)
 }
 
 /// Minimal RFC 1951 DEFLATE decompressor.
-///
-/// Supports: uncompressed blocks, fixed Huffman, dynamic Huffman.
-/// Sufficient for ICC profile decompression in PNG iCCP chunks.
 fn inflate_deflate(input: &[u8]) -> Option<Vec<u8>> {
     let mut reader = DeflateReader::new(input);
     reader.decompress()
@@ -228,7 +188,6 @@ impl<'a> DeflateReader<'a> {
     }
 
     fn decompress_uncompressed(&mut self, output: &mut Vec<u8>) -> Option<()> {
-        // Align to byte boundary
         self.bit_buf = 0;
         self.bit_pos = 0;
 
@@ -236,7 +195,7 @@ impl<'a> DeflateReader<'a> {
             return None;
         }
         let len = u16::from_le_bytes([self.data[self.pos], self.data[self.pos + 1]]) as usize;
-        self.pos += 4; // skip LEN and NLEN
+        self.pos += 4;
 
         if self.pos + len > self.data.len() {
             return None;
@@ -269,7 +228,6 @@ impl<'a> DeflateReader<'a> {
         let hdist = self.read_bits(5)? as usize + 1;
         let hclen = self.read_bits(4)? as usize + 4;
 
-        // Code length alphabet order
         const CL_ORDER: [usize; 19] = [
             16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
         ];
@@ -281,7 +239,6 @@ impl<'a> DeflateReader<'a> {
 
         let cl_table = build_huffman_table(&cl_lens)?;
 
-        // Decode literal/length and distance code lengths
         let mut all_lens = vec![0u8; hlit + hdist];
         let mut i = 0;
         while i < all_lens.len() {
@@ -338,31 +295,26 @@ impl<'a> DeflateReader<'a> {
     }
 
     fn decode_fixed_lit_len(&mut self) -> Option<u32> {
-        // Fixed Huffman codes: RFC 1951 section 3.2.6
         let mut code = 0u32;
         for _ in 0..7 {
             let bit = self.read_bits(1)?;
             code = (code << 1) | bit;
         }
-        // 7-bit codes: 256-279 map to codes 0000000-0010111
         if code <= 0x17 {
             return Some(code + 256);
         }
 
         let bit = self.read_bits(1)?;
         code = (code << 1) | bit;
-        // 8-bit codes: 0-143 map to 00110000-10111111
         if (0x30..=0xBF).contains(&code) {
             return Some(code - 0x30);
         }
-        // 8-bit codes: 280-287 map to 11000000-11000111
         if (0xC0..=0xC7).contains(&code) {
             return Some(code - 0xC0 + 280);
         }
 
         let bit = self.read_bits(1)?;
         code = (code << 1) | bit;
-        // 9-bit codes: 144-255 map to 110010000-111111111
         if (0x190..=0x1FF).contains(&code) {
             return Some(code - 0x190 + 144);
         }
@@ -453,7 +405,6 @@ fn build_huffman_table(lengths: &[u8]) -> Option<HuffmanTable> {
         });
     }
 
-    // Count codes per length
     let mut bl_count = vec![0u32; max_len + 1];
     for &l in lengths {
         if l > 0 {
@@ -461,7 +412,6 @@ fn build_huffman_table(lengths: &[u8]) -> Option<HuffmanTable> {
         }
     }
 
-    // Compute starting codes
     let mut next_code = vec![0u32; max_len + 1];
     let mut code = 0u32;
     for bits in 1..=max_len {
@@ -469,7 +419,6 @@ fn build_huffman_table(lengths: &[u8]) -> Option<HuffmanTable> {
         next_code[bits] = code;
     }
 
-    // Assign codes
     let mut lookup = std::collections::HashMap::new();
     for (sym, &len) in lengths.iter().enumerate() {
         if len > 0 {
@@ -517,9 +466,6 @@ pub fn icc_to_srgb(
             ImageError::ProcessingFailed(format!("ICC transform creation failed: {e:?}"))
         })?;
 
-    // Output buffer: for CMYK→RGBA the output is 4 bytes/pixel (RGBA)
-    // even though input is also 4 bytes/pixel (CMYK). For RGB→RGB and RGBA→RGBA
-    // the sizes match. Use dst_layout to compute output size.
     let dst_bpp = match dst_layout {
         Layout::Rgb => 3,
         Layout::Rgba => 4,
@@ -534,183 +480,12 @@ pub fn icc_to_srgb(
     Ok(result)
 }
 
-// ─── CMYK <-> RGB Conversion ──────────────────────────────────────────────────
-
-/// Convert a CMYK pixel buffer to RGB8 using ICC profile if available,
-/// falling back to the naive formula.
-///
-/// When an ICC profile is provided, uses moxcms for device-accurate conversion
-/// (CMYK → PCS → sRGB). Without a profile, uses the standard naive formula:
-/// R = 255 * (1-C) * (1-K), etc.
-pub fn cmyk_to_rgb_icc(
-    cmyk_pixels: &[u8],
-    info: &ImageInfo,
-    icc_profile: Option<&[u8]>,
-) -> Result<(Vec<u8>, ImageInfo), ImageError> {
-    if let Some(profile) = icc_profile {
-        // moxcms uses Layout::Cmyka (5 channels: CMYK + alpha).
-        // If input is Cmyk8 (4 channels), pad to Cmyka8 (5 channels) with alpha=255.
-        let (icc_pixels, icc_info) = if info.format == PixelFormat::Cmyk8 {
-            let padded: Vec<u8> = cmyk_pixels
-                .chunks_exact(4)
-                .flat_map(|c| [c[0], c[1], c[2], c[3], 255])
-                .collect();
-            let padded_info = ImageInfo {
-                format: PixelFormat::Cmyka8,
-                ..*info
-            };
-            (padded, padded_info)
-        } else {
-            (cmyk_pixels.to_vec(), info.clone())
-        };
-
-        // ICC-based conversion: CMYKA → RGBA via moxcms
-        let rgba = icc_to_srgb(&icc_pixels, &icc_info, profile)?;
-        let out_info = ImageInfo {
-            format: PixelFormat::Rgba8,
-            ..*info
-        };
-        return Ok((rgba, out_info));
-    }
-    // Fallback to naive conversion
-    cmyk_to_rgb(cmyk_pixels, info)
-}
-
-/// Convert a CMYK pixel buffer to RGB8 using the naive formula.
-///
-/// R = 255 * (1-C) * (1-K), G = 255 * (1-M) * (1-K), B = 255 * (1-Y) * (1-K).
-/// This matches ImageMagick's non-ICC CMYK conversion within MAE < 1.5.
-pub fn cmyk_to_rgb(
-    cmyk_pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<(Vec<u8>, ImageInfo), ImageError> {
-    let n = (info.width as usize) * (info.height as usize);
-    let (src_bpp, has_alpha) = match info.format {
-        PixelFormat::Cmyk8 => (4, false),
-        PixelFormat::Cmyka8 => (5, true),
-        other => {
-            return Err(ImageError::UnsupportedFormat(format!(
-                "cmyk_to_rgb requires Cmyk8 or Cmyka8, got {other:?}"
-            )));
-        }
-    };
-
-    if cmyk_pixels.len() != n * src_bpp {
-        return Err(ImageError::InvalidInput(
-            "pixel buffer size mismatch".into(),
-        ));
-    }
-
-    let dst_bpp = if has_alpha { 4 } else { 3 };
-    let mut rgb = vec![0u8; n * dst_bpp];
-
-    for i in 0..n {
-        let si = i * src_bpp;
-        let di = i * dst_bpp;
-        let c = cmyk_pixels[si] as f32 / 255.0;
-        let m = cmyk_pixels[si + 1] as f32 / 255.0;
-        let y = cmyk_pixels[si + 2] as f32 / 255.0;
-        let k = cmyk_pixels[si + 3] as f32 / 255.0;
-
-        rgb[di] = (255.0 * (1.0 - c) * (1.0 - k)).round().clamp(0.0, 255.0) as u8;
-        rgb[di + 1] = (255.0 * (1.0 - m) * (1.0 - k)).round().clamp(0.0, 255.0) as u8;
-        rgb[di + 2] = (255.0 * (1.0 - y) * (1.0 - k)).round().clamp(0.0, 255.0) as u8;
-        if has_alpha {
-            rgb[di + 3] = cmyk_pixels[si + 4];
-        }
-    }
-
-    let out_format = if has_alpha {
-        PixelFormat::Rgba8
-    } else {
-        PixelFormat::Rgb8
-    };
-    Ok((
-        rgb,
-        ImageInfo {
-            format: out_format,
-            ..*info
-        },
-    ))
-}
-
-/// Convert an RGB8 pixel buffer to CMYK.
-///
-/// Uses the naive formula: K = 1 - max(R,G,B)/255, C = (1-R/255-K)/(1-K), etc.
-pub fn rgb_to_cmyk(
-    rgb_pixels: &[u8],
-    info: &ImageInfo,
-) -> Result<(Vec<u8>, ImageInfo), ImageError> {
-    let n = (info.width as usize) * (info.height as usize);
-    let (src_bpp, has_alpha) = match info.format {
-        PixelFormat::Rgb8 => (3, false),
-        PixelFormat::Rgba8 => (4, true),
-        other => {
-            return Err(ImageError::UnsupportedFormat(format!(
-                "rgb_to_cmyk requires Rgb8 or Rgba8, got {other:?}"
-            )));
-        }
-    };
-
-    if rgb_pixels.len() != n * src_bpp {
-        return Err(ImageError::InvalidInput(
-            "pixel buffer size mismatch".into(),
-        ));
-    }
-
-    let dst_bpp = if has_alpha { 5 } else { 4 };
-    let mut cmyk = vec![0u8; n * dst_bpp];
-
-    for i in 0..n {
-        let si = i * src_bpp;
-        let di = i * dst_bpp;
-        let r = rgb_pixels[si] as f32 / 255.0;
-        let g = rgb_pixels[si + 1] as f32 / 255.0;
-        let b = rgb_pixels[si + 2] as f32 / 255.0;
-
-        let k = 1.0 - r.max(g).max(b);
-        if k >= 1.0 {
-            // Pure black
-            cmyk[di] = 0;
-            cmyk[di + 1] = 0;
-            cmyk[di + 2] = 0;
-            cmyk[di + 3] = 255;
-        } else {
-            let inv_k = 1.0 / (1.0 - k);
-            cmyk[di] = ((1.0 - r - k) * inv_k * 255.0).round().clamp(0.0, 255.0) as u8;
-            cmyk[di + 1] = ((1.0 - g - k) * inv_k * 255.0).round().clamp(0.0, 255.0) as u8;
-            cmyk[di + 2] = ((1.0 - b - k) * inv_k * 255.0).round().clamp(0.0, 255.0) as u8;
-            cmyk[di + 3] = (k * 255.0).round() as u8;
-        }
-        if has_alpha {
-            cmyk[di + 4] = rgb_pixels[si + 3];
-        }
-    }
-
-    let out_format = if has_alpha {
-        PixelFormat::Cmyka8
-    } else {
-        PixelFormat::Cmyk8
-    };
-    Ok((
-        cmyk,
-        ImageInfo {
-            format: out_format,
-            ..*info
-        },
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::ColorSpace;
 
-    // Minimal valid sRGB ICC v2 profile.
-    // The macOS system profile is large; this generates a minimal one from
-    // moxcms by creating an sRGB transform and using the system profile
-    // if available.
     fn load_test_icc_profile() -> Option<Vec<u8>> {
-        // Try macOS system sRGB profile first
         let path = "/System/Library/ColorSync/Profiles/sRGB Profile.icc";
         std::fs::read(path).ok()
     }
@@ -724,23 +499,21 @@ mod tests {
     fn icc_to_srgb_identity_with_srgb_profile() {
         let profile = match load_test_icc_profile() {
             Some(p) => p,
-            None => return, // skip on non-macOS
+            None => return,
         };
 
         let info = ImageInfo {
             width: 4,
             height: 4,
             format: PixelFormat::Rgb8,
-            color_space: super::super::types::ColorSpace::Srgb,
+            color_space: ColorSpace::Srgb,
         };
 
-        // Generate test pixels: known RGB values
         let pixels: Vec<u8> = (0..4 * 4 * 3).map(|i| (i * 16 % 256) as u8).collect();
 
         let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
         assert_eq!(result.len(), pixels.len());
 
-        // sRGB→sRGB should be near-identity (allow small rounding)
         for (a, b) in pixels.iter().zip(result.iter()) {
             assert!(
                 (*a as i16 - *b as i16).unsigned_abs() <= 2,
@@ -760,19 +533,12 @@ mod tests {
             width: 2,
             height: 2,
             format: PixelFormat::Rgb8,
-            color_space: super::super::types::ColorSpace::DisplayP3,
+            color_space: ColorSpace::DisplayP3,
         };
 
-        // Bright saturated red in Display P3 (wider gamut than sRGB)
         let pixels = vec![255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0];
 
         let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
-        assert_eq!(result.len(), pixels.len());
-
-        // Display P3 red (255,0,0) mapped to sRGB should change —
-        // the transform should produce different values since P3 has a wider gamut.
-        // The result should still be valid RGB values.
-        // Verify output is valid (non-empty, correct length)
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -787,10 +553,9 @@ mod tests {
             width: 2,
             height: 2,
             format: PixelFormat::Rgba8,
-            color_space: super::super::types::ColorSpace::Srgb,
+            color_space: ColorSpace::Srgb,
         };
 
-        // RGBA pixels with alpha
         let pixels = vec![
             128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200, 128, 64, 32, 200,
         ];
@@ -798,7 +563,6 @@ mod tests {
         let result = icc_to_srgb(&pixels, &info, &profile).unwrap();
         assert_eq!(result.len(), pixels.len());
 
-        // Alpha channel should be preserved (check every 4th byte)
         for i in (3..result.len()).step_by(4) {
             assert_eq!(
                 result[i], pixels[i],
@@ -813,10 +577,10 @@ mod tests {
             width: 2,
             height: 2,
             format: PixelFormat::Rgb8,
-            color_space: super::super::types::ColorSpace::Srgb,
+            color_space: ColorSpace::Srgb,
         };
         let pixels = vec![0u8; 2 * 2 * 3];
-        let bad_profile = vec![0u8; 64]; // not a valid ICC profile
+        let bad_profile = vec![0u8; 64];
 
         let result = icc_to_srgb(&pixels, &info, &bad_profile);
         assert!(result.is_err());
@@ -833,7 +597,7 @@ mod tests {
             width: 2,
             height: 2,
             format: PixelFormat::Gray8,
-            color_space: super::super::types::ColorSpace::Srgb,
+            color_space: ColorSpace::Srgb,
         };
         let pixels = vec![128u8; 2 * 2];
 
@@ -843,42 +607,36 @@ mod tests {
 
     #[test]
     fn extract_icc_from_jpeg_no_profile() {
-        // Minimal JPEG with no ICC: SOI + EOI
         let jpeg = [0xFF, 0xD8, 0xFF, 0xD9];
         assert!(extract_icc_from_jpeg(&jpeg).is_none());
     }
 
     #[test]
     fn extract_icc_from_png_no_profile() {
-        // Minimal valid PNG header (signature + IHDR + IDAT)
         let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        // IDAT chunk (empty) to stop scanning
-        png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // length
+        png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
         png.extend_from_slice(b"IDAT");
-        png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // CRC
+        png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
         assert!(extract_icc_from_png(&png).is_none());
     }
 
     #[test]
     fn extract_icc_from_jpeg_with_app2() {
-        // Construct a JPEG with an APP2 ICC_PROFILE marker
-        let icc_data = vec![42u8; 100]; // Fake ICC profile data
-        let mut jpeg = vec![0xFF, 0xD8]; // SOI
+        let icc_data = vec![42u8; 100];
+        let mut jpeg = vec![0xFF, 0xD8];
 
-        // APP2 marker
         jpeg.push(0xFF);
         jpeg.push(0xE2);
         let seg_len = (2 + 14 + icc_data.len()) as u16;
         jpeg.extend_from_slice(&seg_len.to_be_bytes());
         jpeg.extend_from_slice(b"ICC_PROFILE\0");
-        jpeg.push(1); // sequence number
-        jpeg.push(1); // total count
+        jpeg.push(1);
+        jpeg.push(1);
         jpeg.extend_from_slice(&icc_data);
 
-        // SOS marker (stops scanning)
         jpeg.push(0xFF);
         jpeg.push(0xDA);
-        jpeg.extend_from_slice(&[0x00, 0x02]); // length
+        jpeg.extend_from_slice(&[0x00, 0x02]);
 
         let extracted = extract_icc_from_jpeg(&jpeg);
         assert_eq!(extracted, Some(icc_data));
@@ -888,26 +646,24 @@ mod tests {
     fn extract_icc_from_jpeg_multi_chunk() {
         let chunk1 = vec![1u8; 50];
         let chunk2 = vec![2u8; 50];
-        let mut jpeg = vec![0xFF, 0xD8]; // SOI
+        let mut jpeg = vec![0xFF, 0xD8];
 
-        // First APP2 chunk (seq 1)
         jpeg.push(0xFF);
         jpeg.push(0xE2);
         let seg_len = (2 + 14 + chunk1.len()) as u16;
         jpeg.extend_from_slice(&seg_len.to_be_bytes());
         jpeg.extend_from_slice(b"ICC_PROFILE\0");
-        jpeg.push(1); // seq 1
-        jpeg.push(2); // total 2
+        jpeg.push(1);
+        jpeg.push(2);
         jpeg.extend_from_slice(&chunk1);
 
-        // Second APP2 chunk (seq 2)
         jpeg.push(0xFF);
         jpeg.push(0xE2);
         let seg_len = (2 + 14 + chunk2.len()) as u16;
         jpeg.extend_from_slice(&seg_len.to_be_bytes());
         jpeg.extend_from_slice(b"ICC_PROFILE\0");
-        jpeg.push(2); // seq 2
-        jpeg.push(2); // total 2
+        jpeg.push(2);
+        jpeg.push(2);
         jpeg.extend_from_slice(&chunk2);
 
         jpeg.push(0xFF);
@@ -922,229 +678,37 @@ mod tests {
 
     #[test]
     fn extract_icc_from_png_with_iccp() {
-        // Create a PNG with an iCCP chunk containing a zlib-compressed profile
-        let icc_data = vec![99u8; 50]; // Fake ICC data
+        let icc_data = vec![99u8; 50];
 
-        // Compress with zlib (CMF + FLG + uncompressed deflate block + ADLER32)
         let mut compressed = Vec::new();
-        compressed.push(0x78); // CMF: CM=8, CINFO=7
-        compressed.push(0x01); // FLG: FCHECK=1
-        // Uncompressed deflate block: BFINAL=1, BTYPE=00
-        compressed.push(0x01); // BFINAL=1, BTYPE=0
+        compressed.push(0x78);
+        compressed.push(0x01);
+        compressed.push(0x01);
         let len = icc_data.len() as u16;
         compressed.extend_from_slice(&len.to_le_bytes());
         let nlen = !len;
         compressed.extend_from_slice(&nlen.to_le_bytes());
         compressed.extend_from_slice(&icc_data);
-        // ADLER32 placeholder (not checked by our decompressor)
         compressed.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
 
-        // Build iCCP chunk data: name + null + compression_method + compressed
         let mut chunk_data = Vec::new();
-        chunk_data.extend_from_slice(b"sRGB"); // profile name
-        chunk_data.push(0); // null terminator
-        chunk_data.push(0); // compression method (deflate)
+        chunk_data.extend_from_slice(b"sRGB");
+        chunk_data.push(0);
+        chunk_data.push(0);
         chunk_data.extend_from_slice(&compressed);
 
-        // Build PNG
         let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        // iCCP chunk
         let chunk_len = chunk_data.len() as u32;
         png.extend_from_slice(&chunk_len.to_be_bytes());
         png.extend_from_slice(b"iCCP");
         png.extend_from_slice(&chunk_data);
-        png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // CRC (not validated)
+        png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
 
-        // IDAT chunk to stop scanning
         png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
         png.extend_from_slice(b"IDAT");
         png.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
 
         let extracted = extract_icc_from_png(&png);
         assert_eq!(extracted, Some(icc_data));
-    }
-
-    #[test]
-    fn cmyk_rgb_round_trip() {
-        // Test RGB -> CMYK -> RGB round-trip within tolerance
-        let info = ImageInfo {
-            width: 4,
-            height: 1,
-            format: PixelFormat::Rgb8,
-            color_space: super::super::types::ColorSpace::Srgb,
-        };
-        // Test colors: red, green, blue, mid-gray
-        let rgb = vec![
-            255, 0, 0, // red
-            0, 255, 0, // green
-            0, 0, 255, // blue
-            128, 128, 128, // gray
-        ];
-
-        let (cmyk, cmyk_info) = rgb_to_cmyk(&rgb, &info).unwrap();
-        assert_eq!(cmyk_info.format, PixelFormat::Cmyk8);
-        assert_eq!(cmyk.len(), 16); // 4 pixels × 4 channels
-
-        let (rgb2, rgb2_info) = cmyk_to_rgb(&cmyk, &cmyk_info).unwrap();
-        assert_eq!(rgb2_info.format, PixelFormat::Rgb8);
-        assert_eq!(rgb2.len(), 12);
-
-        // Round-trip should be within 1 per channel (rounding)
-        for i in 0..12 {
-            let diff = (rgb[i] as i32 - rgb2[i] as i32).abs();
-            assert!(
-                diff <= 1,
-                "Round-trip error at byte {i}: {orig} -> {rt} (diff {diff})",
-                orig = rgb[i],
-                rt = rgb2[i]
-            );
-        }
-    }
-
-    #[test]
-    fn cmyk_rgb_to_cmyk_parity_vs_imagemagick() {
-        // Skip if ImageMagick is not available
-        let has_magick = std::process::Command::new("magick")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if !has_magick {
-            eprintln!("SKIP: ImageMagick not available for CMYK parity test");
-            return;
-        }
-
-        // Generate a test PNG with known pixels
-        let (w, h) = (32u32, 32u32);
-        let mut rgb = vec![0u8; (w * h * 3) as usize];
-        for y in 0..h {
-            for x in 0..w {
-                let i = (y * w + x) as usize * 3;
-                rgb[i] = (x * 255 / w) as u8;
-                rgb[i + 1] = (y * 255 / h) as u8;
-                rgb[i + 2] = 128;
-            }
-        }
-
-        // Write test PNG via our encoder
-        let info = ImageInfo {
-            width: w,
-            height: h,
-            format: PixelFormat::Rgb8,
-            color_space: super::super::types::ColorSpace::Srgb,
-        };
-        let png_data = crate::domain::encoder::encode(&rgb, &info, "png", None).unwrap();
-        let png_path = std::env::temp_dir().join("cmyk_parity_input.png");
-        std::fs::write(&png_path, &png_data).unwrap();
-
-        // rasmcore: RGB -> CMYK
-        let (our_cmyk, _) = rgb_to_cmyk(&rgb, &info).unwrap();
-
-        // ImageMagick: RGB -> CMYK (raw bytes)
-        let im_raw = std::env::temp_dir().join("cmyk_parity_im.raw");
-        let result = std::process::Command::new("magick")
-            .args([
-                png_path.to_str().unwrap(),
-                "-colorspace",
-                "CMYK",
-                "-depth",
-                "8",
-                &format!("cmyk:{}", im_raw.to_str().unwrap()),
-            ])
-            .output()
-            .unwrap();
-        assert!(result.status.success(), "magick RGB->CMYK failed");
-
-        let im_cmyk = std::fs::read(&im_raw).unwrap();
-        assert_eq!(
-            our_cmyk.len(),
-            im_cmyk.len(),
-            "CMYK buffer size: ours={} vs IM={}",
-            our_cmyk.len(),
-            im_cmyk.len()
-        );
-
-        // Compute MAE
-        let n = our_cmyk.len();
-        let mae: f64 = our_cmyk
-            .iter()
-            .zip(im_cmyk.iter())
-            .map(|(&a, &b)| (a as f64 - b as f64).abs())
-            .sum::<f64>()
-            / n as f64;
-
-        assert!(
-            mae < 1.5,
-            "CMYK rgb_to_cmyk vs ImageMagick MAE = {mae:.3} (must be < 1.5)"
-        );
-        eprintln!("CMYK rgb_to_cmyk vs ImageMagick: MAE = {mae:.3}");
-
-        // Also test round-trip: RGB -> CMYK -> RGB vs IM's round-trip
-        let cmyk_info = ImageInfo {
-            format: PixelFormat::Cmyk8,
-            ..info
-        };
-        let (our_rt, _) = cmyk_to_rgb(&our_cmyk, &cmyk_info).unwrap();
-
-        let im_rt_raw = std::env::temp_dir().join("cmyk_parity_rt.raw");
-        let result = std::process::Command::new("magick")
-            .args([
-                png_path.to_str().unwrap(),
-                "-colorspace",
-                "CMYK",
-                "-colorspace",
-                "sRGB",
-                "-depth",
-                "8",
-                &format!("rgb:{}", im_rt_raw.to_str().unwrap()),
-            ])
-            .output()
-            .unwrap();
-        assert!(result.status.success(), "magick round-trip failed");
-
-        let im_rt = std::fs::read(&im_rt_raw).unwrap();
-        let rt_mae: f64 = our_rt
-            .iter()
-            .zip(im_rt.iter())
-            .map(|(&a, &b)| (a as f64 - b as f64).abs())
-            .sum::<f64>()
-            / our_rt.len() as f64;
-
-        assert!(
-            rt_mae < 1.5,
-            "CMYK round-trip vs ImageMagick MAE = {rt_mae:.3} (must be < 1.5)"
-        );
-        eprintln!("CMYK round-trip vs ImageMagick: MAE = {rt_mae:.3}");
-
-        // Cleanup
-        let _ = std::fs::remove_file(&png_path);
-        let _ = std::fs::remove_file(&im_raw);
-        let _ = std::fs::remove_file(&im_rt_raw);
-    }
-
-    #[test]
-    fn cmyk_to_rgb_pure_black() {
-        let info = ImageInfo {
-            width: 1,
-            height: 1,
-            format: PixelFormat::Cmyk8,
-            color_space: super::super::types::ColorSpace::Srgb,
-        };
-        let cmyk = vec![0, 0, 0, 255]; // K=100%
-        let (rgb, _) = cmyk_to_rgb(&cmyk, &info).unwrap();
-        assert_eq!(rgb, vec![0, 0, 0]); // should be black
-    }
-
-    #[test]
-    fn cmyk_to_rgb_pure_white() {
-        let info = ImageInfo {
-            width: 1,
-            height: 1,
-            format: PixelFormat::Cmyk8,
-            color_space: super::super::types::ColorSpace::Srgb,
-        };
-        let cmyk = vec![0, 0, 0, 0]; // all zeros = white
-        let (rgb, _) = cmyk_to_rgb(&cmyk, &info).unwrap();
-        assert_eq!(rgb, vec![255, 255, 255]);
     }
 }
