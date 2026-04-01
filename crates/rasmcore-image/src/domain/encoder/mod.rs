@@ -124,6 +124,25 @@ pub fn encode(
     }
 }
 
+/// Embed an ICC color profile into encoded image data.
+///
+/// Currently supports JPEG and PNG. For other formats, returns the
+/// encoded data unchanged.
+pub fn embed_icc_profile(
+    encoded_data: &[u8],
+    format: &str,
+    icc_profile: &[u8],
+) -> Result<Vec<u8>, ImageError> {
+    if icc_profile.is_empty() {
+        return Ok(encoded_data.to_vec());
+    }
+    match format {
+        "jpeg" | "jpg" => jpeg::embed_icc_profile(encoded_data, icc_profile),
+        "png" => png::embed_icc_profile(encoded_data, icc_profile),
+        _ => Ok(encoded_data.to_vec()),
+    }
+}
+
 /// Encode a FrameSequence to a multi-frame format (convenience wrapper).
 ///
 /// Dispatches to format-specific multi-frame encoders. Supports GIF, TIFF,

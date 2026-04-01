@@ -1,139 +1,33 @@
 package rasmcore:image@0.1.0;
 
-/// Image encoding to various formats
+/// Image encoding — dynamic dispatch via format string.
+///
+/// All encoding goes through the generic `encode()` function which
+/// dispatches to registered encoders by format name. Per-format config
+/// is passed as a JSON string; SDKs generate typed wrappers from the
+/// param manifest.
 interface encoder {
     use rasmcore:core/types.{buffer, image-info, format-info};
     use rasmcore:core/errors.{rasmcore-error};
-    use decoder.{frame-info, decoded-image};
+    use decoder.{frame-info};
 
-    /// JPEG encode configuration
-    record jpeg-encode-config {
-        /// Quality level 1-100 (default: 85)
-        quality: option<u8>,
-        /// Emit progressive JPEG (default: false)
-        progressive: option<bool>,
-    }
-
-    /// PNG filter type for pre-compression filtering (ISO/IEC 15948 Section 9).
-    enum png-filter-type {
-        /// No filtering.
-        no-filter,
-        /// Byte difference from left neighbor.
-        sub,
-        /// Byte difference from above neighbor.
-        up,
-        /// Average of left and above neighbors.
-        avg,
-        /// Paeth predictor.
-        paeth,
-        /// Encoder selects optimal filter per row (best compression, default).
-        adaptive,
-    }
-
-    /// PNG encode configuration
-    record png-encode-config {
-        /// Compression level 0-9 where 0=none, 9=max (default: 6)
-        compression-level: option<u8>,
-        /// Filter type selection (default: adaptive)
-        filter-type: option<png-filter-type>,
-    }
-
-    /// WebP encode configuration
-    record webp-encode-config {
-        /// Quality level 1-100 for lossy mode (default: 75)
-        quality: option<u8>,
-        /// Use lossless encoding (default: false)
-        lossless: option<bool>,
-    }
-
-    /// TIFF compression algorithm.
-    enum tiff-compression {
-        /// No compression.
-        none,
-        /// LZW compression (default, good general-purpose lossless).
-        lzw,
-        /// Deflate/zlib compression (better ratio, slower).
-        deflate,
-        /// PackBits run-length encoding (fast, moderate compression).
-        packbits,
-    }
-
-    /// TIFF encode configuration
-    record tiff-encode-config {
-        /// Compression algorithm (default: lzw)
-        compression: option<tiff-compression>,
-    }
-
-    /// AVIF encode configuration
-    record avif-encode-config {
-        /// Quality level 1-100 (default: 75)
-        quality: option<u8>,
-        /// Speed preset 1-10, higher = faster/lower quality (default: 6)
-        speed: option<u8>,
-    }
-
-    /// GIF encode configuration
-    record gif-encode-config {
-        /// Repeat count: 0 = infinite loop, n = repeat n times (default: 0)
-        repeat: option<u16>,
-    }
-
-    /// Encode pixel data to JPEG with typed configuration
-    encode-jpeg: func(pixels: buffer, info: image-info, config: jpeg-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to JPEG with an embedded ICC profile
-    encode-jpeg-with-icc: func(pixels: buffer, info: image-info, config: jpeg-encode-config, icc-profile: buffer) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to PNG with typed configuration
-    encode-png: func(pixels: buffer, info: image-info, config: png-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to PNG with an embedded ICC profile
-    encode-png-with-icc: func(pixels: buffer, info: image-info, config: png-encode-config, icc-profile: buffer) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to WebP with typed configuration
-    encode-webp: func(pixels: buffer, info: image-info, config: webp-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to TIFF with typed configuration
-    encode-tiff: func(pixels: buffer, info: image-info, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to AVIF with typed configuration
-    encode-avif: func(pixels: buffer, info: image-info, config: avif-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// BMP encode configuration. BMP has no meaningful encode parameters.
-    record bmp-encode-config {
-        reserved: option<bool>,
-    }
-
-    /// ICO encode configuration. ICO embeds PNG entries.
-    record ico-encode-config {
-        reserved: option<bool>,
-    }
-
-    /// QOI encode configuration. QOI is a fixed lossless format.
-    record qoi-encode-config {
-        reserved: option<bool>,
-    }
-
-    /// Encode pixel data to BMP
-    encode-bmp: func(pixels: buffer, info: image-info, config: bmp-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to ICO
-    encode-ico: func(pixels: buffer, info: image-info, config: ico-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to QOI
-    encode-qoi: func(pixels: buffer, info: image-info, config: qoi-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to GIF with typed configuration
-    encode-gif: func(pixels: buffer, info: image-info, config: gif-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode pixel data to a specific format (convenience wrapper)
+    /// Encode pixel data to the specified format.
+    ///
+    /// The format string selects the encoder (e.g., "jpeg", "png", "webp").
+    /// Quality is an optional 1-100 hint used by lossy formats.
+    /// For fine-grained control, pass a config JSON string.
     encode: func(pixels: buffer, info: image-info, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 
-    /// List supported encode formats
+    /// Encode with an embedded ICC color profile.
+    ///
+    /// The ICC profile is embedded in the output container if the format
+    /// supports it (JPEG, PNG). For unsupported formats, the profile is ignored.
+    encode-with-icc: func(pixels: buffer, info: image-info, format: string, quality: option<u8>, icc-profile: buffer) -> result<buffer, rasmcore-error>;
+
+    /// List supported encode formats (e.g., ["jpeg", "png", "webp", ...]).
     supported-formats: func() -> list<string>;
 
     /// Get format metadata (MIME type, extensions) for a specific format.
-    /// Returns none if the format is not supported.
     get-format-info: func(format: string) -> option<format-info>;
 
     /// Get format metadata for all supported encode formats.
@@ -148,20 +42,9 @@ interface encoder {
         frame-info: frame-info,
     }
 
-    /// Encode an animated GIF from a sequence of frames.
-    /// Each frame is independently quantized to a 256-color palette.
-    /// Per-frame delays and disposal methods are preserved.
-    encode-gif-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32, config: gif-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode a multi-page TIFF from a sequence of frames.
-    /// Each frame becomes a separate IFD (page) in the output.
-    encode-tiff-pages: func(frames: list<encode-frame>, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
-
-    /// Encode an animated PNG (APNG) from a sequence of frames.
-    /// All frames are encoded as RGBA8 with per-frame delay and disposal metadata.
-    encode-apng-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32) -> result<buffer, rasmcore-error>;
-
-    /// Encode a frame sequence to a multi-frame format (convenience wrapper).
-    /// Supports GIF, TIFF, and APNG (animated PNG).
+    /// Encode a frame sequence to a multi-frame format.
+    ///
+    /// Format string selects the encoder (e.g., "gif", "tiff", "apng").
+    /// Quality is an optional 1-100 hint.
     encode-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 }

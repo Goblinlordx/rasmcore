@@ -95,32 +95,6 @@ fn to_domain_image_info(info: &types::ImageInfo) -> domain::types::ImageInfo {
     }
 }
 
-fn to_domain_tiff_compression(
-    c: Option<encoder::TiffCompression>,
-) -> domain::encoder::tiff::TiffCompression {
-    match c {
-        None => domain::encoder::tiff::TiffCompression::Lzw,
-        Some(encoder::TiffCompression::None) => domain::encoder::tiff::TiffCompression::None,
-        Some(encoder::TiffCompression::Lzw) => domain::encoder::tiff::TiffCompression::Lzw,
-        Some(encoder::TiffCompression::Deflate) => domain::encoder::tiff::TiffCompression::Deflate,
-        Some(encoder::TiffCompression::Packbits) => {
-            domain::encoder::tiff::TiffCompression::PackBits
-        }
-    }
-}
-
-fn to_domain_png_filter(f: Option<encoder::PngFilterType>) -> domain::encoder::png::PngFilterType {
-    match f {
-        None => domain::encoder::png::PngFilterType::Adaptive,
-        Some(encoder::PngFilterType::NoFilter) => domain::encoder::png::PngFilterType::NoFilter,
-        Some(encoder::PngFilterType::Sub) => domain::encoder::png::PngFilterType::Sub,
-        Some(encoder::PngFilterType::Up) => domain::encoder::png::PngFilterType::Up,
-        Some(encoder::PngFilterType::Avg) => domain::encoder::png::PngFilterType::Avg,
-        Some(encoder::PngFilterType::Paeth) => domain::encoder::png::PngFilterType::Paeth,
-        Some(encoder::PngFilterType::Adaptive) => domain::encoder::png::PngFilterType::Adaptive,
-    }
-}
-
 fn to_wit_disposal_method(d: domain::types::DisposalMethod) -> decoder::DisposalMethod {
     match d {
         domain::types::DisposalMethod::None => decoder::DisposalMethod::None,
@@ -279,156 +253,6 @@ impl decoder::Guest for Component {
 }
 
 impl encoder::Guest for Component {
-    fn encode_jpeg(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::JpegEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
-            quality: config.quality.unwrap_or(85),
-            progressive: config.progressive.unwrap_or(false),
-            turbo: false,
-        };
-        domain::encoder::jpeg::encode_pixels(&pixels, &domain_info, &domain_config)
-            .map_err(to_wit_error)
-    }
-
-    fn encode_jpeg_with_icc(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::JpegEncodeConfig,
-        icc_profile: Vec<u8>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::jpeg::JpegEncodeConfig {
-            quality: config.quality.unwrap_or(85),
-            progressive: config.progressive.unwrap_or(false),
-            turbo: false,
-        };
-        let encoded = domain::encoder::jpeg::encode_pixels(&pixels, &domain_info, &domain_config)
-            .map_err(to_wit_error)?;
-        domain::encoder::jpeg::embed_icc_profile(&encoded, &icc_profile).map_err(to_wit_error)
-    }
-
-    fn encode_png(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::PngEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::png::PngEncodeConfig {
-            compression_level: config.compression_level.unwrap_or(6),
-            filter_type: to_domain_png_filter(config.filter_type),
-        };
-        domain::encoder::png::encode(&pixels, &domain_info, &domain_config).map_err(to_wit_error)
-    }
-
-    fn encode_png_with_icc(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::PngEncodeConfig,
-        icc_profile: Vec<u8>,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::png::PngEncodeConfig {
-            compression_level: config.compression_level.unwrap_or(6),
-            filter_type: to_domain_png_filter(config.filter_type),
-        };
-        let encoded = domain::encoder::png::encode(&pixels, &domain_info, &domain_config)
-            .map_err(to_wit_error)?;
-        domain::encoder::png::embed_icc_profile(&encoded, &icc_profile).map_err(to_wit_error)
-    }
-
-    fn encode_webp(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::WebpEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::webp::WebpEncodeConfig {
-            quality: config.quality.unwrap_or(75),
-            lossless: config.lossless.unwrap_or(false),
-        };
-        domain::encoder::webp::encode_pixels(&pixels, &domain_info, &domain_config)
-            .map_err(to_wit_error)
-    }
-
-    fn encode_avif(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::AvifEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::avif::AvifEncodeConfig {
-            quality: config.quality.unwrap_or(75),
-            speed: config.speed.unwrap_or(6),
-        };
-        domain::encoder::avif::encode(&pixels, &domain_info, &domain_config).map_err(to_wit_error)
-    }
-
-    fn encode_tiff(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::TiffEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::tiff::TiffEncodeConfig {
-            compression: to_domain_tiff_compression(config.compression),
-        };
-        domain::encoder::tiff::encode(&pixels, &domain_info, &domain_config).map_err(to_wit_error)
-    }
-
-    fn encode_bmp(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        _config: encoder::BmpEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        domain::encoder::bmp::encode_pixels(
-            &pixels,
-            &domain_info,
-            &domain::encoder::bmp::BmpEncodeConfig,
-        )
-        .map_err(to_wit_error)
-    }
-
-    fn encode_ico(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        _config: encoder::IcoEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        domain::encoder::ico::encode_pixels(
-            &pixels,
-            &domain_info,
-            &domain::encoder::ico::IcoEncodeConfig,
-        )
-        .map_err(to_wit_error)
-    }
-
-    fn encode_qoi(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        _config: encoder::QoiEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        domain::encoder::encode(&pixels, &domain_info, "qoi", None).map_err(to_wit_error)
-    }
-
-    fn encode_gif(
-        pixels: Vec<u8>,
-        info: types::ImageInfo,
-        config: encoder::GifEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let domain_info = to_domain_image_info(&info);
-        let domain_config = domain::encoder::gif::GifEncodeConfig {
-            repeat: config.repeat.unwrap_or(0),
-        };
-        domain::encoder::gif::encode_pixels(&pixels, &domain_info, &domain_config)
-            .map_err(to_wit_error)
-    }
-
     fn encode(
         pixels: Vec<u8>,
         info: types::ImageInfo,
@@ -437,6 +261,19 @@ impl encoder::Guest for Component {
     ) -> Result<Vec<u8>, RasmcoreError> {
         let domain_info = to_domain_image_info(&info);
         domain::encoder::encode(&pixels, &domain_info, &format, quality).map_err(to_wit_error)
+    }
+
+    fn encode_with_icc(
+        pixels: Vec<u8>,
+        info: types::ImageInfo,
+        format: String,
+        quality: Option<u8>,
+        icc_profile: Vec<u8>,
+    ) -> Result<Vec<u8>, RasmcoreError> {
+        let domain_info = to_domain_image_info(&info);
+        let encoded =
+            domain::encoder::encode(&pixels, &domain_info, &format, quality).map_err(to_wit_error)?;
+        domain::encoder::embed_icc_profile(&encoded, &format, &icc_profile).map_err(to_wit_error)
     }
 
     fn supported_formats() -> Vec<String> {
@@ -460,44 +297,6 @@ impl encoder::Guest for Component {
                 extensions: fi.extensions,
             })
             .collect()
-    }
-
-    fn encode_gif_sequence(
-        frames: Vec<encoder::EncodeFrame>,
-        canvas_width: u32,
-        canvas_height: u32,
-        config: encoder::GifEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let seq = wit_frames_to_sequence(frames, canvas_width, canvas_height);
-        let domain_config = domain::encoder::gif::GifEncodeConfig {
-            repeat: config.repeat.unwrap_or(0),
-        };
-        domain::encoder::gif::encode_sequence(&seq, &domain_config).map_err(to_wit_error)
-    }
-
-    fn encode_tiff_pages(
-        frames: Vec<encoder::EncodeFrame>,
-        config: encoder::TiffEncodeConfig,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let canvas = frames
-            .first()
-            .map(|f| (f.info.width, f.info.height))
-            .unwrap_or((0, 0));
-        let seq = wit_frames_to_sequence(frames, canvas.0, canvas.1);
-        let domain_config = domain::encoder::tiff::TiffEncodeConfig {
-            compression: to_domain_tiff_compression(config.compression),
-        };
-        domain::encoder::tiff::encode_pages(&seq, &domain_config).map_err(to_wit_error)
-    }
-
-    fn encode_apng_sequence(
-        frames: Vec<encoder::EncodeFrame>,
-        canvas_width: u32,
-        canvas_height: u32,
-    ) -> Result<Vec<u8>, RasmcoreError> {
-        let seq = wit_frames_to_sequence(frames, canvas_width, canvas_height);
-        let config = domain::encoder::png::PngEncodeConfig::default();
-        domain::encoder::png::encode_sequence(&seq, &config).map_err(to_wit_error)
     }
 
     fn encode_sequence(
