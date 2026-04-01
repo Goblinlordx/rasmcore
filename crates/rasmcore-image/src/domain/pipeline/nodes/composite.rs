@@ -45,6 +45,7 @@ impl CompositeNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "composite")]
 impl ImageNode for CompositeNode {
     fn info(&self) -> ImageInfo {
         self.bg_info.clone()

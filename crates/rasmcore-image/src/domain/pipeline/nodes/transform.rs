@@ -185,6 +185,7 @@ impl AffineOp for ResizeNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "resize")]
 impl ImageNode for ResizeNode {
     fn info(&self) -> ImageInfo {
         ImageInfo {
@@ -265,6 +266,7 @@ impl AffineOp for CropNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "crop")]
 impl ImageNode for CropNode {
     fn info(&self) -> ImageInfo {
         ImageInfo {
@@ -347,6 +349,7 @@ impl AffineOp for RotateNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "rotate")]
 impl ImageNode for RotateNode {
     fn info(&self) -> ImageInfo {
         let (w, h) = match self.rotation {
@@ -413,6 +416,7 @@ impl AffineOp for FlipNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "flip")]
 impl ImageNode for FlipNode {
     fn info(&self) -> ImageInfo {
         self.source_info.clone()
@@ -459,6 +463,7 @@ impl AutoOrientNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "auto_orient")]
 impl ImageNode for AutoOrientNode {
     fn info(&self) -> ImageInfo {
         let (w, h) = match self.orientation {

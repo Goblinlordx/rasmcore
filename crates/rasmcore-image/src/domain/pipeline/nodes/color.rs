@@ -31,6 +31,7 @@ impl IccToSrgbNode {
     }
 }
 
+#[rasmcore_macros::register_transform(name = "icc_to_srgb")]
 impl ImageNode for IccToSrgbNode {
     fn info(&self) -> ImageInfo {
         ImageInfo {

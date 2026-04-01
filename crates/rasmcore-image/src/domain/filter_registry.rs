@@ -194,6 +194,26 @@ mod tests {
     }
 
     #[test]
+    fn transform_registration_via_proc_macro() {
+        let regs = registered_transforms();
+        let names: Vec<&str> = regs.iter().map(|r| r.name).collect();
+        for expected in [
+            "resize",
+            "crop",
+            "rotate",
+            "flip",
+            "auto_orient",
+            "icc_to_srgb",
+            "composite",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "missing transform registration: {expected}. Found: {names:?}"
+            );
+        }
+    }
+
+    #[test]
     fn config_params_derive_generates_descriptors() {
         let descriptors = crate::domain::filters::BlurParams::param_descriptors();
         assert_eq!(descriptors.len(), 1);
