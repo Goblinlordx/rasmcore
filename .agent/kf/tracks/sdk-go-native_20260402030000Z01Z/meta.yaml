@@ -1,0 +1,8 @@
+title: Go native SDK via cgo with GPU support
+status: pending
+type: feature
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- native-shared-lib_20260331055225Z

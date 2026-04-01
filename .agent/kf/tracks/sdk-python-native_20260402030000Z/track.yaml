@@ -1,0 +1,56 @@
+id: sdk-python-native_20260402030000Z
+title: Python native SDK via C FFI with GPU support
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Python package wrapping the rasmcore native shared library via ctypes.
+    GPU acceleration works automatically through the Rust wgpu executor.
+  context: |
+    The native-shared-lib track provides a C FFI surface for rasmcore.
+    This track wraps that C API with a typed Python interface. GPU works
+    because the Rust shared library includes the wgpu executor internally.
+    Python never touches GPU directly — just passes pixels and gets results.
+  codebase_analysis: |
+    Existing: sdks/python/ has a WASM-based runtime (wasmtime-py, partial).
+    This track adds a NATIVE path via ctypes that bypasses WASM entirely.
+    The native path is faster (no serialization overhead) and includes GPU.
+    Structure: sdks/python/rasmcore/native.py wraps librasmcore C API.
+  acceptance_criteria:
+  - Python ctypes wrapper loads librasmcore shared library
+  - Pipeline API works (load, apply filter, encode)
+  - GPU auto-detected when available
+  - Fallback to CPU transparent to Python user
+  - pip installable package
+  - Integration test with blur + encode roundtrip
+  out_of_scope: |
+    Building the C FFI itself (native-shared-lib track).
+    WebGPU/browser GPU. Multi-GPU. Async execution.
+  technical_notes: |
+    Use ctypes (stdlib) not cffi or pyo3 to avoid compiled dependencies.
+    The shared library is distributed as a platform wheel (.whl).
+    GPU is enabled by default — the Rust library auto-detects and uses it.
+plan:
+- phase: FFI wrapper
+  tasks:
+  - text: Create sdks/python/rasmcore/native.py with ctypes bindings
+    done: false
+  - text: Implement Pipeline class (load, filter, encode)
+    done: false
+  - text: Add GPU mode flag (auto/force/disable)
+    done: false
+- phase: Packaging
+  tasks:
+  - text: Create setup.py/pyproject.toml for pip install
+    done: false
+  - text: Include platform detection for .so/.dylib/.dll
+    done: false
+- phase: Tests
+  tasks:
+  - text: Integration test with blur + encode roundtrip
+    done: false
+  - text: GPU detection test (verify adapter name reported)
+    done: false
+extra: {}
