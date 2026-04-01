@@ -387,7 +387,7 @@ pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
             enc.encode_fn.clone()
         } else {
             // Convention: try encode_pixels, encode, or encode_<format>
-            format!("encode_pixels")
+            "encode_pixels".to_string()
         };
 
         // Check if config has a quality field

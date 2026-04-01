@@ -75,8 +75,7 @@ pub fn generate(
         // Extra params that are NOT already fields in the ConfigParams struct
         let extra_params: Vec<&(String, String)> = f.params.iter()
             .filter(|(n, t)| {
-                !(t.starts_with('&') && t.ends_with("Params"))
-                && !config_field_names.contains(n.trim_start_matches('_'))
+                !(config_field_names.contains(n.trim_start_matches('_')) || t.starts_with('&') && t.ends_with("Params"))
             })
             .collect();
         let record_name = format!("{}-config", to_wit_name(&f.name));

@@ -18,8 +18,8 @@ fn main() {
                     let p = entry.path();
                     if p.is_dir() {
                         collect_rs(&p, out);
-                    } else if p.extension().map_or(false, |e| e == "rs")
-                        && p.file_name().map_or(false, |n| n != "common.rs")
+                    } else if p.extension().is_some_and(|e| e == "rs")
+                        && p.file_name().is_some_and(|n| n != "common.rs")
                     {
                         out.push(p);
                     }
