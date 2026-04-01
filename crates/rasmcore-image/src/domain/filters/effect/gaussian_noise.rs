@@ -3,6 +3,30 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Gaussian noise — adds normally-distributed noise to an image
+pub struct GaussianNoiseParams {
+    /// Noise amount (0 = identity, 100 = full strength)
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 10.0)]
+    pub amount: f32,
+    /// Mean of the Gaussian distribution (-128 to 128)
+    #[param(min = -128.0, max = 128.0, step = 0.5, default = 0.0)]
+    pub mean: f32,
+    /// Standard deviation (sigma) of the distribution
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 25.0)]
+    pub sigma: f32,
+    /// Random seed for reproducibility
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
+    pub seed: u64,
+}
+
 #[rasmcore_macros::register_filter(
     name = "gaussian_noise",
     category = "effect",

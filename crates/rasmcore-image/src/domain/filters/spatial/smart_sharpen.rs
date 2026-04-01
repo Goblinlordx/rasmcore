@@ -13,6 +13,21 @@ use crate::domain::filters::common::*;
 /// along strong edges.
 ///
 /// Reference: similar to Photoshop's Smart Sharpen (Remove: Lens Blur mode).
+
+/// Parameters for smart sharpen (edge-preserving unsharp mask).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct SmartSharpenParams {
+    /// Sharpening amount (0-5, 1.0 = standard)
+    #[param(min = 0.0, max = 5.0, step = 0.1, default = 1.0)]
+    pub amount: f32,
+    /// Bilateral filter radius for edge-preserving blur
+    #[param(min = 1, max = 20, step = 1, default = 3)]
+    pub radius: u32,
+    /// Edge threshold — higher values preserve more edges (bilateral sigma_range)
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)]
+    pub threshold: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "smart_sharpen",
     category = "spatial",

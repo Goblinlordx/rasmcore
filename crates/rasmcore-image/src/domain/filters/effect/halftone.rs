@@ -3,6 +3,13 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct HalftoneParams {
+    pub dot_size: f32,
+    pub angle_offset: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "halftone",
     category = "effect",

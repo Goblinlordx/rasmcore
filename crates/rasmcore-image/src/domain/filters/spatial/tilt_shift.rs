@@ -7,6 +7,36 @@ use crate::domain::filters::common::*;
 ///
 /// Keeps a band of the image sharp while progressively blurring toward the edges.
 /// Creates a miniature/diorama effect. The focus band can be rotated via the angle param.
+
+/// Tilt-shift blur config.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct TiltShiftParams {
+    /// Focus band center position (0.0=top, 0.5=middle, 1.0=bottom)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub focus_position: f32,
+    /// Focus band size as fraction of image height (0.0=none, 1.0=full)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
+    pub band_size: f32,
+    /// Maximum blur radius in pixels
+    #[param(
+        min = 0.0,
+        max = 100.0,
+        step = 0.5,
+        default = 8.0,
+        hint = "rc.log_slider"
+    )]
+    pub blur_radius: f32,
+    /// Focus band angle in degrees (0=horizontal, 90=vertical)
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
+    pub angle: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "tilt_shift",
     category = "spatial",

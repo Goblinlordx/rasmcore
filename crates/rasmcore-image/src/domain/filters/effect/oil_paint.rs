@@ -5,6 +5,15 @@ use crate::domain::filters::common::*;
 
 /// Oil painting effect: for each pixel, find the most frequent intensity
 /// in the neighborhood and output that pixel's color.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Oil paint effect — neighborhood mode filter
+pub struct OilPaintParams {
+    /// Radius of the neighborhood (1-10)
+    #[param(min = 1, max = 10, step = 1, default = 3)]
+    pub radius: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "oil_paint",
     category = "effect",

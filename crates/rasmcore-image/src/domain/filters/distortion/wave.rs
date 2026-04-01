@@ -9,6 +9,20 @@ use crate::domain::filters::common::*;
 /// vertical wave shifts columns left/right.
 ///
 /// Equivalent to ImageMagick `-wave {amplitude}x{wavelength}`.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct WaveParams {
+    /// Displacement amplitude in pixels
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 10.0)]
+    pub amplitude: f32,
+    /// Wavelength in pixels
+    #[param(min = 1.0, max = 500.0, step = 5.0, default = 50.0)]
+    pub wavelength: f32,
+    /// Vertical wave (1.0) vs horizontal (0.0)
+    #[param(min = 0.0, max = 1.0, step = 1.0, default = 0.0)]
+    pub vertical: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "wave",
     category = "distortion",

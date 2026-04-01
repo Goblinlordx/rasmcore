@@ -3,6 +3,12 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ConnectedComponentsParams {
+    pub connectivity: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "connected_components",
     category = "analysis",

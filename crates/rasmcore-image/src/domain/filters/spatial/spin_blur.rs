@@ -12,6 +12,21 @@ use crate::domain::filters::common::*;
 /// - Bilinear interpolation with edge clamp
 ///
 /// center_x/center_y are normalized (0.5 = image center, matching IM default).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Spin Blur — rotational motion blur around a center point.
+pub struct SpinBlurParams {
+    /// Center X as fraction of width (0.0 = left, 0.5 = center, 1.0 = right)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub center_x: f32,
+    /// Center Y as fraction of height (0.0 = top, 0.5 = center, 1.0 = bottom)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub center_y: f32,
+    /// Rotation angle in degrees (max blur at edges)
+    #[param(min = 0.0, max = 360.0, step = 0.5, default = 10.0)]
+    pub angle: f32,
+}
+
 #[rasmcore_macros::register_filter(name = "spin_blur", category = "spatial")]
 pub fn spin_blur(
     request: Rect,

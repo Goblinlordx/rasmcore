@@ -3,6 +3,13 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct PerspectiveWarpParams {
+    pub out_width: u32,
+    pub out_height: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "perspective_warp",
     category = "advanced",

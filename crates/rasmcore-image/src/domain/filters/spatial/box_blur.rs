@@ -11,6 +11,15 @@ use crate::domain::filters::common::*;
 /// Cost is O(1) per pixel regardless of radius.
 ///
 /// Reference: matches Photoshop's Box Blur and OpenCV's cv2.blur().
+
+/// Parameters for box blur (uniform-weight kernel).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BoxBlurParams {
+    /// Blur radius in pixels (kernel width = 2*radius + 1)
+    #[param(min = 1, max = 100, step = 1, default = 3)]
+    pub radius: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "box_blur",
     category = "spatial",

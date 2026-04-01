@@ -4,6 +4,20 @@
 use crate::domain::filters::common::*;
 
 /// Gamma correction (user-facing, LUT-collapsible).
+
+/// Parameters for gamma correction.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct GammaParams {
+    /// Gamma value (>1 brightens, <1 darkens)
+    #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
+    pub gamma_value: f32,
+}
+impl LutPointOp for GammaParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Gamma(self.gamma_value))
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "gamma",
     category = "adjustment",

@@ -3,6 +3,15 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Content-aware height resize via seam carving (output height changes)
+pub struct SeamCarveHeightParams {
+    /// Target height in pixels (must be less than current height)
+    #[param(min = 1, max = 65535, step = 1, default = 256, hint = "rc.pixels")]
+    pub target_height: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "seam_carve_height",
     category = "transform",

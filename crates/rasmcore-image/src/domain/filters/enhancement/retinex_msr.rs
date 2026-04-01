@@ -4,6 +4,21 @@
 use crate::domain::filters::common::*;
 
 /// Multi-scale Retinex (user-facing wrapper with 3 fixed sigma scales).
+
+/// Parameters for multi-scale Retinex.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct RetinexMsrParams {
+    /// Small-scale Gaussian sigma
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 15.0)]
+    pub sigma_small: f32,
+    /// Medium-scale Gaussian sigma
+    #[param(min = 10.0, max = 200.0, step = 5.0, default = 80.0)]
+    pub sigma_medium: f32,
+    /// Large-scale Gaussian sigma
+    #[param(min = 50.0, max = 500.0, step = 10.0, default = 250.0)]
+    pub sigma_large: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "retinex_msr",
     category = "enhancement",

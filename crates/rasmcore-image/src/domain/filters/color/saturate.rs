@@ -4,6 +4,20 @@
 use crate::domain::filters::common::*;
 
 /// Adjust saturation by `factor` (0=grayscale, 1=unchanged, 2=double).
+
+/// Parameters for saturate.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct SaturateParams {
+    /// Saturation factor (0=grayscale, 1=unchanged, 2=double)
+    #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
+    pub factor: f32,
+}
+impl ColorLutOp for SaturateParams {
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Saturate(self.factor).to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "saturate",
     category = "color",

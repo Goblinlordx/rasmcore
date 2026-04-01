@@ -11,6 +11,18 @@ use crate::domain::filters::common::*;
 ///
 /// `radius` is the kernel half-size in pixels (kernel side = 2*radius+1).
 /// Minimum radius is 1.
+
+/// Parameters for bokeh (lens) blur.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BokehBlurParams {
+    /// Kernel half-size in pixels (kernel side = 2*radius+1)
+    #[param(min = 1, max = 50, step = 1, default = 5, hint = "rc.log_slider")]
+    pub radius: u32,
+    /// Kernel shape: 0=disc, 1=hexagon
+    #[param(min = 0, max = 1, step = 1, default = 0)]
+    pub shape: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "bokeh_blur",
     category = "spatial",

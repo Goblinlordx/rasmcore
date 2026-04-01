@@ -8,6 +8,15 @@ use crate::domain::filters::common::*;
 /// Uses histogram sliding-window (Huang algorithm) for radius > 2 giving
 /// O(1) amortized per pixel. Falls back to sorting for radius <= 2 where
 /// the small window makes sorting faster than histogram maintenance.
+
+/// Parameters for median filter.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct MedianParams {
+    /// Filter radius in pixels
+    #[param(min = 1, max = 20, step = 1, default = 3, hint = "rc.log_slider")]
+    pub radius: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "median",
     category = "spatial",

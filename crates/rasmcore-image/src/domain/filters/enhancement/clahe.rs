@@ -11,6 +11,18 @@ use crate::domain::filters::common::*;
 ///
 /// - `clip_limit`: contrast amplification limit (2.0-4.0 typical, higher = more contrast)
 /// - `tile_grid`: number of tiles per dimension (8 = 8x8 grid, OpenCV default)
+
+/// Parameters for CLAHE contrast enhancement.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ClaheParams {
+    /// Contrast amplification clip limit (2.0-4.0 typical)
+    #[param(min = 1.0, max = 40.0, step = 0.5, default = 2.0)]
+    pub clip_limit: f32,
+    /// Number of tiles per dimension (8 = 8x8 grid)
+    #[param(min = 2, max = 32, step = 1, default = 8)]
+    pub tile_grid: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "clahe",
     category = "enhancement",

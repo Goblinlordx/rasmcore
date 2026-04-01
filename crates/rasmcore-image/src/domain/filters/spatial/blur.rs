@@ -8,6 +8,21 @@ use crate::domain::filters::common::*;
 /// Uses separable gaussian convolution (auto-detected by convolve) with
 /// WASM SIMD128 acceleration. Large sigma (>= 20) uses box blur
 /// approximation for O(1) per-pixel performance.
+
+/// Parameters for Gaussian blur.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BlurParams {
+    /// Blur radius in pixels
+    #[param(
+        min = 0.0,
+        max = 100.0,
+        step = 0.5,
+        default = 3.0,
+        hint = "rc.log_slider"
+    )]
+    pub radius: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "blur",
     category = "spatial",

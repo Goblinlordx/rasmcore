@@ -4,6 +4,22 @@
 use crate::domain::filters::common::*;
 
 /// Draw a polygon on the image. Points are `[{x, y}, ...]` coordinates.
+
+/// Parameters for draw_polygon.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawPolygonParams {
+    /// Fill color
+    pub fill_color: crate::domain::param_types::ColorRgba,
+    /// Stroke color
+    pub stroke_color: crate::domain::param_types::ColorRgba,
+    /// Stroke width (0 = no stroke)
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 0.0)]
+    pub stroke_width: f32,
+    /// Fill the polygon
+    #[param(default = true, hint = "rc.toggle")]
+    pub filled: bool,
+}
+
 #[rasmcore_macros::register_filter(
     name = "draw_polygon",
     category = "draw",

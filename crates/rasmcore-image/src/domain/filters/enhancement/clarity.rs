@@ -11,6 +11,24 @@ use crate::domain::filters::common::*;
 ///
 /// - `amount`: enhancement strength (0.0-2.0 typical, 1.0 = full effect)
 /// - `sigma`: blur radius for local contrast (30-50 typical)
+
+/// Parameters for clarity (midtone local contrast).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ClarityParams {
+    /// Enhancement strength (0.0-2.0 typical)
+    #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
+    pub amount: f32,
+    /// Blur radius for local contrast (30-50 typical)
+    #[param(
+        min = 5.0,
+        max = 100.0,
+        step = 1.0,
+        default = 40.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "clarity",
     category = "enhancement",

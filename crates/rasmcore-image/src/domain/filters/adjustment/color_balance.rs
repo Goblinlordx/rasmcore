@@ -8,6 +8,67 @@ use crate::domain::filters::common::*;
 /// Shifts colors along Cyan-Red, Magenta-Green, and Yellow-Blue axes
 /// independently for shadows, midtones, and highlights. Tonal ranges use
 /// smooth luminance-based weighting with Rec. 709 luma coefficients.
+
+/// Parameters for Photoshop-style color balance adjustment.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ColorBalanceParams {
+    /// Shadow Cyan-Red (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadow_cyan_red: f32,
+    /// Shadow Magenta-Green (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadow_magenta_green: f32,
+    /// Shadow Yellow-Blue (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadow_yellow_blue: f32,
+    /// Midtone Cyan-Red (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub midtone_cyan_red: f32,
+    /// Midtone Magenta-Green (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub midtone_magenta_green: f32,
+    /// Midtone Yellow-Blue (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub midtone_yellow_blue: f32,
+    /// Highlight Cyan-Red (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlight_cyan_red: f32,
+    /// Highlight Magenta-Green (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlight_magenta_green: f32,
+    /// Highlight Yellow-Blue (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlight_yellow_blue: f32,
+    /// Preserve luminosity after color shifts
+    #[param(default = true)]
+    pub preserve_luminosity: bool,
+}
+impl ColorLutOp for ColorBalanceParams {
+    fn build_clut(&self) -> ColorLut3D {
+        let cb = crate::domain::color_grading::ColorBalance {
+            shadow: [
+                self.shadow_cyan_red / 100.0,
+                self.shadow_magenta_green / 100.0,
+                self.shadow_yellow_blue / 100.0,
+            ],
+            midtone: [
+                self.midtone_cyan_red / 100.0,
+                self.midtone_magenta_green / 100.0,
+                self.midtone_yellow_blue / 100.0,
+            ],
+            highlight: [
+                self.highlight_cyan_red / 100.0,
+                self.highlight_magenta_green / 100.0,
+                self.highlight_yellow_blue / 100.0,
+            ],
+            preserve_luminosity: self.preserve_luminosity,
+        };
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| {
+            crate::domain::color_grading::color_balance_pixel(r, g, b, &cb)
+        })
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "color_balance",
     category = "adjustment",

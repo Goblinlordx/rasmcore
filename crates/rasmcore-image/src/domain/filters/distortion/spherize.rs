@@ -3,6 +3,17 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+/// Spherize: apply spherical projection for bulge/pinch effect.
+/// `amount > 0` = bulge (fisheye), `amount < 0` = pinch.
+/// `amount = 0` is identity.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct SpherizeParams {
+    /// Bulge/pinch amount (-1 to 1, positive = bulge)
+    #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.5, hint = "rc.signed_slider")]
+    pub amount: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "spherize",
     category = "distortion",

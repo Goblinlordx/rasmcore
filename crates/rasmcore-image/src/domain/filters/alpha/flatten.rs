@@ -5,6 +5,21 @@ use crate::domain::filters::common::*;
 
 /// Flatten RGBA to RGB by compositing onto a solid background color.
 /// Registered as mapper because it changes pixel format (RGBA8 → RGB8).
+
+/// Parameters for flatten (alpha compositing onto background).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct FlattenParams {
+    /// Background red component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub bg_r: u8,
+    /// Background green component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub bg_g: u8,
+    /// Background blue component
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub bg_b: u8,
+}
+
 #[rasmcore_macros::register_mapper(
     name = "flatten",
     category = "alpha",

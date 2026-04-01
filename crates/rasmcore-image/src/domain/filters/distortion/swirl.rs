@@ -3,6 +3,28 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+/// Swirl: rotate pixels around center with angle decreasing by distance.
+/// Matches ImageMagick `-swirl {degrees}`:
+/// - Default radius = max(width/2, height/2)
+/// - Factor = 1 - sqrt(distance²) / radius, then angle = degrees * factor²
+/// - Aspect ratio scaling for non-square images
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct SwirlParams {
+    /// Rotation angle in degrees
+    #[param(min = -720.0, max = 720.0, step = 5.0, default = 90.0, hint = "rc.signed_slider")]
+    pub angle: f32,
+    /// Radius of effect (0 = auto from image size)
+    #[param(
+        min = 0.0,
+        max = 2000.0,
+        step = 10.0,
+        default = 0.0,
+        hint = "rc.log_slider"
+    )]
+    pub radius: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "swirl",
     category = "distortion",

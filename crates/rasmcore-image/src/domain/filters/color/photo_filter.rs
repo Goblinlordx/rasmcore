@@ -8,6 +8,27 @@ use crate::domain::filters::common::*;
 /// Blends a solid color over the image at the given density. When
 /// preserve_luminosity is enabled, the original pixel's luminance is
 /// maintained (only hue/saturation shifts). PS Photo Filter equivalent.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Photo Filter — warming/cooling color overlay like a camera lens filter.
+pub struct PhotoFilterParams {
+    /// Filter color red
+    #[param(min = 0, max = 255, step = 1, default = 236)]
+    pub color_r: u32,
+    /// Filter color green
+    #[param(min = 0, max = 255, step = 1, default = 138)]
+    pub color_g: u32,
+    /// Filter color blue
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub color_b: u32,
+    /// Filter density (0 = no effect, 100 = full color replacement)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 25.0)]
+    pub density: f32,
+    /// Preserve luminosity (keep original brightness)
+    #[param(min = 0, max = 1, step = 1, default = 1)]
+    pub preserve_luminosity: u32,
+}
+
 #[rasmcore_macros::register_filter(name = "photo_filter", category = "color")]
 pub fn photo_filter(
     request: Rect,

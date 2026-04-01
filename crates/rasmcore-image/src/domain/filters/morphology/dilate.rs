@@ -4,6 +4,18 @@
 use crate::domain::filters::common::*;
 
 /// Morphological dilation (user-facing wrapper).
+
+/// Parameters for morphological dilation.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DilateParams {
+    /// Kernel size (must be odd)
+    #[param(min = 3, max = 31, step = 2, default = 3)]
+    pub ksize: u32,
+    /// Structuring element shape: 0=rect, 1=ellipse, 2=cross
+    #[param(min = 0, max = 2, step = 1, default = 0)]
+    pub shape: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "dilate",
     category = "morphology",

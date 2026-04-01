@@ -9,6 +9,30 @@ use crate::domain::filters::common::*;
 /// This is a computationally cheap alternative to the Gaussian vignette
 /// with a different aesthetic (smooth polynomial falloff vs. Gaussian).
 #[allow(clippy::too_many_arguments)]
+
+/// Parameters for the power-law vignette mode.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct VignettePowerlawParams {
+    /// Darkening strength (0=none, 1=fully black at corners)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub strength: f32,
+    /// Radial falloff exponent (higher = sharper transition)
+    #[param(min = 0.5, max = 5.0, step = 0.1, default = 2.0)]
+    pub falloff: f32,
+    /// Full canvas width
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_width: u32,
+    /// Full canvas height
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_height: u32,
+    /// X offset
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub offset_x: u32,
+    /// Y offset
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub offset_y: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "vignette_powerlaw",
     category = "enhancement",

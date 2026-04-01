@@ -4,6 +4,56 @@
 use crate::domain::filters::common::*;
 
 /// Draw a rectangle on the image. Set filled=true for solid fill.
+
+/// Parameters for draw_rect.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawRectParams {
+    /// Rectangle X position
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 10.0,
+        hint = "rc.pixels"
+    )]
+    pub x: f32,
+    /// Rectangle Y position
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 10.0,
+        hint = "rc.pixels"
+    )]
+    pub y: f32,
+    /// Rectangle width
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
+    pub rect_width: f32,
+    /// Rectangle height
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
+    pub rect_height: f32,
+    /// Shape color
+    pub color: crate::domain::param_types::ColorRgba,
+    /// Stroke width in pixels (outline mode)
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub stroke_width: f32,
+    /// Fill the rectangle (true) or draw outline only (false)
+    #[param(default = true, hint = "rc.toggle")]
+    pub filled: bool,
+}
+
 #[rasmcore_macros::register_filter(
     name = "draw_rect",
     category = "draw",

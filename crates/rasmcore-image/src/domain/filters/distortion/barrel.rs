@@ -3,6 +3,22 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+/// Barrel distortion: apply radial polynomial distortion.
+/// `r_distorted = r * (1 + k1*r² + k2*r⁴)`.
+/// `k1 > 0` = barrel, `k1 < 0` = pincushion.
+/// This is the inverse of the `undistort` correction filter.
+/// Matches ImageMagick `-distort Barrel` normalization: `rscale = 2/min(w,h)`.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BarrelParams {
+    /// Radial distortion coefficient (positive = barrel, negative = pincushion)
+    #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.3, hint = "rc.signed_slider")]
+    pub k1: f32,
+    /// Higher-order radial coefficient
+    #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.0, hint = "rc.signed_slider")]
+    pub k2: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "barrel",
     category = "distortion",

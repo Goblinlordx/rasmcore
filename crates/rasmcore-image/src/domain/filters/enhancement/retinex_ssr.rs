@@ -14,6 +14,21 @@ use crate::domain::filters::common::*;
 ///
 /// Reference: Jobson, Rahman, Woodell — "Properties and Performance of a
 /// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
+
+/// Parameters for single-scale Retinex.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct RetinexSsrParams {
+    /// Gaussian scale for surround function
+    #[param(
+        min = 10.0,
+        max = 300.0,
+        step = 10.0,
+        default = 80.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "retinex_ssr",
     category = "enhancement",

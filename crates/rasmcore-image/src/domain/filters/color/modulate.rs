@@ -8,6 +8,31 @@ use crate::domain::filters::common::*;
 /// IM equivalent: -modulate brightness,saturation,hue
 /// Uses HSB (same as HSV where B=V=max(R,G,B)), not HSL.
 /// Identity at (100, 100, 0).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// HSB modulate — combined brightness, saturation, hue adjustment.
+pub struct ModulateParams {
+    /// Brightness percentage (100 = unchanged, 0 = black, 200 = 2x bright)
+    #[param(min = 0.0, max = 200.0, step = 1.0, default = 100.0)]
+    pub brightness: f32,
+    /// Saturation percentage (100 = unchanged, 0 = grayscale, 200 = 2x saturated)
+    #[param(min = 0.0, max = 200.0, step = 1.0, default = 100.0)]
+    pub saturation: f32,
+    /// Hue rotation in degrees (0 = unchanged)
+    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0)]
+    pub hue: f32,
+}
+impl ColorLutOp for ModulateParams {
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Modulate {
+            brightness: self.brightness,
+            saturation: self.saturation,
+            hue: self.hue,
+        }
+        .to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "modulate",
     category = "color",

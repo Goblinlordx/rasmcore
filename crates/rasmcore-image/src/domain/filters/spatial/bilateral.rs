@@ -11,6 +11,33 @@ use crate::domain::filters::common::*;
 /// - `diameter`: filter size (use 0 for auto from sigma_space; typical 5-9)
 /// - `sigma_color`: filter sigma in the color/intensity space (10-150 typical)
 /// - `sigma_space`: filter sigma in coordinate space (10-150 typical)
+
+/// Parameters for bilateral filter.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BilateralParams {
+    /// Filter size (0 for auto from sigma_space; typical 5-9)
+    #[param(min = 0, max = 31, step = 2, default = 5, hint = "rc.log_slider")]
+    pub diameter: u32,
+    /// Filter sigma in color/intensity space (10-150 typical)
+    #[param(
+        min = 1.0,
+        max = 300.0,
+        step = 1.0,
+        default = 75.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma_color: f32,
+    /// Filter sigma in coordinate space (10-150 typical)
+    #[param(
+        min = 1.0,
+        max = 300.0,
+        step = 1.0,
+        default = 75.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma_space: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "bilateral",
     category = "spatial",

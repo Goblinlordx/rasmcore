@@ -3,6 +3,14 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ZoomBlurParams {
+    pub center_x: f32,
+    pub center_y: f32,
+    pub factor: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "zoom_blur",
     category = "spatial",

@@ -12,6 +12,21 @@ use crate::domain::filters::common::*;
 /// - `patch_radius`: local patch size for dark channel (typical: 7-15)
 /// - `omega`: haze removal strength 0.0-1.0 (typical: 0.95)
 /// - `t_min`: minimum transmission to avoid noise amplification (typical: 0.1)
+
+/// Parameters for dehaze (dark channel prior).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DehazeParams {
+    /// Local patch size for dark channel (typical: 7-15)
+    #[param(min = 1, max = 30, step = 1, default = 7)]
+    pub patch_radius: u32,
+    /// Haze removal strength 0.0-1.0
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.95)]
+    pub omega: f32,
+    /// Minimum transmission to avoid noise amplification
+    #[param(min = 0.01, max = 0.5, step = 0.01, default = 0.1)]
+    pub t_min: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "dehaze",
     category = "enhancement",

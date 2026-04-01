@@ -3,6 +3,24 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Salt-and-pepper noise — randomly sets pixels to black or white
+pub struct SaltPepperNoiseParams {
+    /// Density of noise pixels (0 = none, 1 = all replaced)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.05)]
+    pub density: f32,
+    /// Random seed for reproducibility
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
+    pub seed: u64,
+}
+
 #[rasmcore_macros::register_filter(
     name = "salt_pepper_noise",
     category = "effect",

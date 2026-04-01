@@ -15,6 +15,21 @@ use crate::domain::filters::common::*;
 /// - `sigma`: Gaussian blur radius controlling the separation frequency.
 ///   Higher sigma captures finer detail in the high-pass.
 ///   Typical values: 2-10 for skin retouching, 10-30 for artistic effects.
+
+/// Parameters for frequency separation — high-pass (detail) layer.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct FrequencyHighParams {
+    /// Gaussian sigma controlling separation frequency (higher = finer detail in high-pass)
+    #[param(
+        min = 0.5,
+        max = 50.0,
+        step = 0.5,
+        default = 4.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "frequency_high",
     category = "enhancement",

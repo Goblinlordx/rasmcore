@@ -3,6 +3,88 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// ASC CDL color grading (slope/offset/power per RGB channel)
+pub struct AscCdlParams {
+    /// Red slope
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
+    pub slope_r: f32,
+    /// Green slope
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
+    pub slope_g: f32,
+    /// Blue slope
+    #[param(
+        min = 0.0,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
+    pub slope_b: f32,
+    /// Red offset
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
+    pub offset_r: f32,
+    /// Green offset
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
+    pub offset_g: f32,
+    /// Blue offset
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
+    pub offset_b: f32,
+    /// Red power
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
+    pub power_r: f32,
+    /// Green power
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
+    pub power_g: f32,
+    /// Blue power
+    #[param(
+        min = 0.1,
+        max = 4.0,
+        step = 0.01,
+        default = 1.0,
+        hint = "rc.color_rgb"
+    )]
+    pub power_b: f32,
+}
+impl ColorLutOp for AscCdlParams {
+    fn build_clut(&self) -> ColorLut3D {
+        let cdl = crate::domain::color_grading::AscCdl {
+            slope: [self.slope_r, self.slope_g, self.slope_b],
+            offset: [self.offset_r, self.offset_g, self.offset_b],
+            power: [self.power_r, self.power_g, self.power_b],
+            saturation: 1.0,
+        };
+        ColorLut3D::from_fn(DEFAULT_CLUT_GRID, move |r, g, b| {
+            crate::domain::color_grading::asc_cdl_pixel(r, g, b, &cdl)
+        })
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "asc_cdl",
     category = "grading",

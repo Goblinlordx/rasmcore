@@ -5,6 +5,30 @@ use crate::domain::filters::common::*;
 
 /// Sigmoidal contrast: S-curve contrast adjustment.
 /// Matches ImageMagick `-sigmoidal-contrast strengthxmidpoint%`.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Sigmoidal contrast — S-curve contrast adjustment
+pub struct SigmoidalContrastParams {
+    /// Contrast strength (0-20, 0 = identity)
+    #[param(min = 0.0, max = 20.0, step = 0.1, default = 3.0)]
+    pub strength: f32,
+    /// Midpoint percentage (0-100%)
+    #[param(min = 0.0, max = 100.0, step = 0.1, default = 50.0)]
+    pub midpoint: f32,
+    /// true = increase contrast (sharpen), false = decrease contrast (soften)
+    #[param(default = true)]
+    pub sharpen: bool,
+}
+impl LutPointOp for SigmoidalContrastParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::SigmoidalContrast {
+            strength: self.strength,
+            midpoint: self.midpoint / 100.0,
+            sharpen: self.sharpen,
+        })
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "sigmoidal_contrast",
     category = "adjustment",

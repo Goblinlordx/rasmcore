@@ -3,6 +3,18 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Content-aware smart crop
+pub struct SmartCropParams {
+    /// Target crop width in pixels
+    #[param(min = 1, max = 65535, step = 1, default = 256, hint = "rc.pixels")]
+    pub target_width: u32,
+    /// Target crop height in pixels
+    #[param(min = 1, max = 65535, step = 1, default = 256, hint = "rc.pixels")]
+    pub target_height: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "smart_crop",
     category = "transform",

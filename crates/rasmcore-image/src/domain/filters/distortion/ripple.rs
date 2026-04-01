@@ -9,6 +9,23 @@ use crate::domain::filters::common::*;
 /// each pixel moves along its radial direction by `amplitude * sin(2π * r / wavelength)`.
 ///
 /// Equivalent to ImageMagick concentric wave effect.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct RippleParams {
+    /// Displacement amplitude in pixels
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 8.0)]
+    pub amplitude: f32,
+    /// Wavelength in pixels
+    #[param(min = 1.0, max = 500.0, step = 5.0, default = 40.0)]
+    pub wavelength: f32,
+    /// Center X (0.0-1.0 normalized, 0.5 = center)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub center_x: f32,
+    /// Center Y (0.0-1.0 normalized, 0.5 = center)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
+    pub center_y: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "ripple",
     category = "distortion",

@@ -16,11 +16,11 @@ plan:
 - phase: Extract ConfigParams
   tasks:
   - text: Move ConfigParams for each category into their filter files
-    done: false
+    done: true
   - text: Keep shared field types in common.rs
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All tests pass, builds succeed
-    done: false
+    done: true
 extra: {}

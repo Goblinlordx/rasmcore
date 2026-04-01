@@ -15,6 +15,21 @@ use crate::domain::filters::common::*;
 /// required.
 ///
 /// - `sigma`: Gaussian standard deviation
+
+/// Parameters for OpenCV-compatible Gaussian blur.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct GaussianBlurCvParams {
+    /// Gaussian standard deviation
+    #[param(
+        min = 0.1,
+        max = 50.0,
+        step = 0.1,
+        default = 1.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "gaussian_blur_cv",
     category = "spatial",

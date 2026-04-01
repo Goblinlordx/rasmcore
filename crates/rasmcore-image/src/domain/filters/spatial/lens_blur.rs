@@ -8,6 +8,27 @@ use crate::domain::filters::common::*;
 /// With blade_count=0, uses a circular disc (same as bokeh_blur).
 /// With blade_count=5-12, uses a regular polygon simulating a camera aperture
 /// with that many blades, rotated by the rotation parameter.
+
+/// Lens blur config.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct LensBlurParams {
+    /// Blur radius in pixels
+    #[param(min = 0, max = 50, step = 1, default = 5, hint = "rc.log_slider")]
+    pub radius: u32,
+    /// Aperture blade count (0=disc, 5-8=polygon)
+    #[param(min = 0, max = 12, step = 1, default = 0)]
+    pub blade_count: u32,
+    /// Blade rotation angle in degrees
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
+    pub rotation: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "lens_blur",
     category = "spatial",

@@ -6,6 +6,18 @@ use crate::domain::filters::common::*;
 /// Apply binary threshold to a grayscale image.
 ///
 /// Pixels >= threshold become max_value, pixels < threshold become 0.
+
+/// Parameters for binary threshold.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ThresholdBinaryParams {
+    /// Threshold value
+    #[param(min = 0, max = 255, step = 1, default = 128)]
+    pub thresh: u8,
+    /// Maximum output value
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub max_value: u8,
+}
+
 #[rasmcore_macros::register_filter(
     name = "threshold_binary",
     category = "threshold",

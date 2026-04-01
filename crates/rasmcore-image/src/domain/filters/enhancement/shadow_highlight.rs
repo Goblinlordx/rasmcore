@@ -14,6 +14,40 @@ use crate::domain::filters::common::*;
 ///
 /// Reference: GEGL gegl:shadows-highlights (GPL3+).
 /// Validated against GEGL (EXACT tier target).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Shadow/Highlight adjustment — local tone mapping for shadows and highlights.
+/// Port of GEGL gegl:shadows-highlights (darktable algorithm by Ulrich Pegelow).
+pub struct ShadowHighlightParams {
+    /// Adjust exposure of shadows (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub shadows: f32,
+    /// Adjust exposure of highlights (-100 to 100)
+    #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub highlights: f32,
+    /// Shift white point (-10 to 10)
+    #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0, hint = "rc.signed_slider")]
+    pub whitepoint: f32,
+    /// Spatial extent for local luminance blur
+    #[param(
+        min = 0.1,
+        max = 1500.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.log_slider"
+    )]
+    pub radius: f32,
+    /// Compress effect on shadows/highlights, preserve midtones (0-100)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
+    pub compress: f32,
+    /// Adjust saturation of shadows (0-100)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 100.0)]
+    pub shadows_ccorrect: f32,
+    /// Adjust saturation of highlights (0-100)
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
+    pub highlights_ccorrect: f32,
+}
+
 #[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
 pub fn shadow_highlight(
     request: Rect,

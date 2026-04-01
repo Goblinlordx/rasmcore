@@ -3,6 +3,21 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+/// Parameters for Floyd-Steinberg dithering.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DitherFSParams {
+    /// Maximum number of palette colors
+    #[param(min = 2, max = 256, step = 1, default = 256)]
+    pub max_colors: u32,
+}
+
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DitherFloydSteinbergParams {
+    pub max_colors: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "dither_floyd_steinberg",
     category = "color",

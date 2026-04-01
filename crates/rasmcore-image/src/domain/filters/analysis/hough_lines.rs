@@ -3,6 +3,14 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct HoughLinesParams {
+    pub threshold: u32,
+    pub min_length: u32,
+    pub max_gap: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "hough_lines",
     category = "analysis",

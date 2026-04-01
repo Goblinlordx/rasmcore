@@ -8,6 +8,18 @@ use crate::domain::filters::common::*;
 /// Steps: 1) Gaussian blur, 2) Sobel gradient + direction,
 /// 3) Non-maximum suppression, 4) Hysteresis thresholding.
 /// Canny edge detection — registered as mapper (outputs Gray8).
+
+/// Parameters for Canny edge detection.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct CannyParams {
+    /// Low hysteresis threshold
+    #[param(min = 0.0, max = 255.0, step = 1.0, default = 50.0)]
+    pub low_threshold: f32,
+    /// High hysteresis threshold
+    #[param(min = 0.0, max = 255.0, step = 1.0, default = 150.0)]
+    pub high_threshold: f32,
+}
+
 #[rasmcore_macros::register_mapper(
     name = "canny",
     category = "edge",

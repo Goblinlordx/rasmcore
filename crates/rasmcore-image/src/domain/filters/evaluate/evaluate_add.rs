@@ -4,6 +4,20 @@
 use crate::domain::filters::common::*;
 
 /// Add a constant value to each channel (clamped to 0-255).
+
+/// Parameters for evaluate_add — add constant to each channel.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateAddParams {
+    /// Value to add (-255 to 255)
+    #[param(min = -255.0, max = 255.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub value: f32,
+}
+impl LutPointOp for EvaluateAddParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::EvalAdd(self.value as i16))
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "evaluate_add",
     category = "evaluate",

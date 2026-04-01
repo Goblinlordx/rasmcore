@@ -3,6 +3,24 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Poisson noise — signal-dependent noise (brighter regions get more noise)
+pub struct PoissonNoiseParams {
+    /// Scale factor for Poisson lambda (higher = more visible noise)
+    #[param(min = 0.0, max = 100.0, step = 0.5, default = 10.0)]
+    pub scale: f32,
+    /// Random seed for reproducibility
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
+    pub seed: u64,
+}
+
 #[rasmcore_macros::register_filter(
     name = "poisson_noise",
     category = "effect",

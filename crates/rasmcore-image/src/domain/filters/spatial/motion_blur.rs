@@ -3,6 +3,13 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct MotionBlurParams {
+    pub length: u32,
+    pub angle_degrees: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "motion_blur",
     category = "spatial",

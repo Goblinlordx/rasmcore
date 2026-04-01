@@ -13,6 +13,18 @@ use crate::domain::filters::common::*;
 /// - `epsilon`: regularization parameter (0.01-0.1 typical; smaller = more edge-preserving)
 ///
 /// For self-guided filtering, the input is used as both source and guide.
+
+/// Parameters for guided filter.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct GuidedFilterParams {
+    /// Window radius (4-8 typical)
+    #[param(min = 1, max = 30, step = 1, default = 4, hint = "rc.log_slider")]
+    pub radius: u32,
+    /// Regularization parameter (smaller = more edge-preserving)
+    #[param(min = 0.001, max = 1.0, step = 0.001, default = 0.01)]
+    pub epsilon: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "guided_filter",
     category = "spatial",

@@ -4,6 +4,47 @@
 use crate::domain::filters::common::*;
 
 /// Draw a circle on the image. Set filled=true for solid fill.
+
+/// Parameters for draw_circle.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawCircleParams {
+    /// Center X coordinate
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
+    pub cx: f32,
+    /// Center Y coordinate
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 50.0,
+        hint = "rc.pixels"
+    )]
+    pub cy: f32,
+    /// Circle radius
+    #[param(
+        min = 1.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 25.0,
+        hint = "rc.log_slider"
+    )]
+    pub radius: f32,
+    /// Shape color
+    pub color: crate::domain::param_types::ColorRgba,
+    /// Stroke width in pixels (outline mode)
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub stroke_width: f32,
+    /// Fill the circle (true) or draw outline only (false)
+    #[param(default = true, hint = "rc.toggle")]
+    pub filled: bool,
+}
+
 #[rasmcore_macros::register_filter(
     name = "draw_circle",
     category = "draw",

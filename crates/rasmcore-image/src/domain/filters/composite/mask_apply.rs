@@ -10,6 +10,15 @@ use crate::domain::filters::common::*;
 /// Mask is resized to match image dimensions if they differ.
 ///
 /// IM equivalent: `magick image mask -compose CopyOpacity -composite`
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Mask apply parameters.
+pub struct MaskApplyParams {
+    /// Invert mask (0 = normal, 1 = inverted)
+    #[param(min = 0, max = 1, step = 1, default = 0, hint = "rc.toggle")]
+    pub invert: u32,
+}
+
 #[rasmcore_macros::register_compositor(
     name = "mask_apply",
     category = "composite",

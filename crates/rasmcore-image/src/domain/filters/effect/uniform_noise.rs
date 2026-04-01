@@ -3,6 +3,24 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Uniform noise — adds uniformly distributed random noise
+pub struct UniformNoiseParams {
+    /// Noise range: values are added in [-range, +range]
+    #[param(min = 0.0, max = 128.0, step = 0.5, default = 20.0)]
+    pub range: f32,
+    /// Random seed for reproducibility
+    #[param(
+        min = 0,
+        max = 18446744073709551615,
+        step = 1,
+        default = 42,
+        hint = "rc.seed"
+    )]
+    pub seed: u64,
+}
+
 #[rasmcore_macros::register_filter(
     name = "uniform_noise",
     category = "effect",

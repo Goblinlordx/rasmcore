@@ -4,6 +4,29 @@
 use crate::domain::filters::common::*;
 
 /// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct ColorizeParams {
+    /// Target color to blend toward
+    pub target: crate::domain::param_types::ColorRgb,
+    /// Blend amount (0=none, 1=full tint)
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub amount: f32,
+}
+impl ColorLutOp for ColorizeParams {
+    fn build_clut(&self) -> ColorLut3D {
+        ColorOp::Colorize(
+            [
+                self.target.r as f32 / 255.0,
+                self.target.g as f32 / 255.0,
+                self.target.b as f32 / 255.0,
+            ],
+            self.amount,
+        )
+        .to_clut(DEFAULT_CLUT_GRID)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "colorize",
     category = "color",

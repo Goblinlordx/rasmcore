@@ -7,6 +7,15 @@ use crate::domain::filters::common::*;
 ///
 /// Computes: output = original + amount * (original - blurred)
 /// Uses the SIMD-optimized blur internally.
+
+/// Parameters for unsharp mask sharpening.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct SharpenParams {
+    /// Sharpening amount
+    #[param(min = 0.0, max = 10.0, step = 0.1, default = 1.0)]
+    pub amount: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "sharpen",
     category = "spatial",

@@ -4,6 +4,20 @@
 use crate::domain::filters::common::*;
 
 /// Subtract a constant value from each channel (clamped to 0-255).
+
+/// Parameters for evaluate_subtract — subtract constant from each channel.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct EvaluateSubtractParams {
+    /// Value to subtract (0 to 255)
+    #[param(min = 0.0, max = 255.0, step = 1.0, default = 0.0)]
+    pub value: f32,
+}
+impl LutPointOp for EvaluateSubtractParams {
+    fn build_point_lut(&self) -> [u8; 256] {
+        crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::EvalSubtract(self.value as i16))
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "evaluate_subtract",
     category = "evaluate",

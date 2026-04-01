@@ -19,6 +19,18 @@ use crate::domain::filters::common::*;
 ///
 /// - `sigma`: detail remapping strength (0.2 = strong enhancement, 1.0 = neutral, 3.0 = smooth)
 /// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
+
+/// Parameters for pyramid detail remapping.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct PyramidDetailRemapParams {
+    /// Detail remapping strength (0.2=enhance, 1.0=neutral, 3.0=smooth)
+    #[param(min = 0.1, max = 5.0, step = 0.1, default = 1.0)]
+    pub sigma: f32,
+    /// Pyramid depth (0=auto)
+    #[param(min = 0, max = 10, step = 1, default = 0)]
+    pub num_levels: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "pyramid_detail_remap",
     category = "enhancement",

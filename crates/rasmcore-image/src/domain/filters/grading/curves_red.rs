@@ -3,6 +3,21 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Tone curve applied to red channel only
+pub struct CurvesRedParams {
+    /// Control points as JSON array [[x,y],...] in [0,1]
+    #[param(
+        min = "null",
+        max = "null",
+        step = "null",
+        default = "[[0,0],[1,1]]",
+        hint = "rc.text"
+    )]
+    pub points: String,
+}
+
 #[rasmcore_macros::register_filter(
     name = "curves_red",
     category = "grading",

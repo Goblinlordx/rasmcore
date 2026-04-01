@@ -4,6 +4,15 @@
 use crate::domain::filters::common::*;
 
 /// Color quantization via median-cut palette reduction.
+
+/// Parameters for color quantization.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct QuantizeParams {
+    /// Maximum number of palette colors
+    #[param(min = 2, max = 256, step = 1, default = 256)]
+    pub max_colors: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "quantize",
     category = "color",

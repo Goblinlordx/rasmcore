@@ -9,6 +9,27 @@ use crate::domain::filters::common::*;
 /// luminosity. The "this layer" range controls where the top layer is
 /// visible; the "underlying" range controls where the bottom layer
 /// shows through. Feather creates smooth transitions at range boundaries.
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+/// Blend-If — Photoshop-style conditional compositing by luminosity.
+pub struct BlendIfParams {
+    /// This layer: black point (shadows become transparent below this)
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub this_black: u32,
+    /// This layer: white point (highlights become transparent above this)
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub this_white: u32,
+    /// Underlying layer: black point (underlying shows through below this)
+    #[param(min = 0, max = 255, step = 1, default = 0)]
+    pub under_black: u32,
+    /// Underlying layer: white point (underlying shows through above this)
+    #[param(min = 0, max = 255, step = 1, default = 255)]
+    pub under_white: u32,
+    /// Feather width in luminosity levels for smooth transitions
+    #[param(min = 0, max = 50, step = 1, default = 10)]
+    pub feather: u32,
+}
+
 #[rasmcore_macros::register_compositor(
     name = "blend_if",
     category = "composite",

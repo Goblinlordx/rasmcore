@@ -17,6 +17,39 @@ use crate::domain::filters::common::*;
 /// tiled execution. For non-tiled usage, set tile offsets to 0 and full dims
 /// to the image dimensions.
 #[allow(clippy::too_many_arguments)]
+
+/// Parameters for the default (Gaussian) vignette effect.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct VignetteParams {
+    /// Gaussian blur sigma controlling the softness of the transition
+    #[param(
+        min = 1.0,
+        max = 100.0,
+        step = 1.0,
+        default = 20.0,
+        hint = "rc.log_slider"
+    )]
+    pub sigma: f32,
+    /// Horizontal inset from edges (pixels) where darkening begins
+    #[param(min = 0, max = 4000, step = 1, default = 10, hint = "rc.pixels")]
+    pub x_inset: u32,
+    /// Vertical inset from edges (pixels) where darkening begins
+    #[param(min = 0, max = 4000, step = 1, default = 10, hint = "rc.pixels")]
+    pub y_inset: u32,
+    /// Full canvas width (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_width: u32,
+    /// Full canvas height (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub full_height: u32,
+    /// Tile X offset (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub tile_offset_x: u32,
+    /// Tile Y offset (for tile pipeline)
+    #[param(min = 0, max = 65535, step = 1, default = 0, hint = "rc.pixels")]
+    pub tile_offset_y: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "vignette",
     category = "enhancement",

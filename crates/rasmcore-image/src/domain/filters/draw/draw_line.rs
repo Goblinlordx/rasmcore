@@ -4,6 +4,53 @@
 use crate::domain::filters::common::*;
 
 /// Draw a line on the image. Color components are 0-255.
+
+/// Parameters for draw_line.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawLineParams {
+    /// Start X coordinate
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.pixels"
+    )]
+    pub x1: f32,
+    /// Start Y coordinate
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.pixels"
+    )]
+    pub y1: f32,
+    /// End X coordinate
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
+    pub x2: f32,
+    /// End Y coordinate
+    #[param(
+        min = 0.0,
+        max = 65535.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
+    pub y2: f32,
+    /// Line color
+    pub color: crate::domain::param_types::ColorRgba,
+    /// Line width in pixels
+    #[param(min = 0.5, max = 100.0, step = 0.5, default = 2.0)]
+    pub width: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "draw_line",
     category = "draw",

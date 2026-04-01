@@ -4,6 +4,23 @@
 use crate::domain::filters::common::*;
 
 /// Draw text on the image using the embedded 8x16 bitmap font.
+
+/// Parameters for draw_text.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct DrawTextParams {
+    /// Text X position
+    #[param(min = 0, max = 65535, step = 1, default = 10, hint = "rc.pixels")]
+    pub x: u32,
+    /// Text Y position
+    #[param(min = 0, max = 65535, step = 1, default = 10, hint = "rc.pixels")]
+    pub y: u32,
+    /// Scale multiplier (1 = 8x16 native, 2 = 16x32, etc.)
+    #[param(min = 1, max = 16, step = 1, default = 1)]
+    pub scale: u32,
+    /// Text color
+    pub color: crate::domain::param_types::ColorRgba,
+}
+
 #[rasmcore_macros::register_filter(
     name = "draw_text",
     category = "draw",

@@ -11,6 +11,15 @@ use crate::domain::filters::common::*;
 /// - `strength`: correction strength 0.0 (none) to 1.0 (full correction)
 ///
 /// The output has the same dimensions and format as the input.
+
+/// Parameters for perspective_correct.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct PerspectiveCorrectParams {
+    /// Correction strength (0=none, 1=full)
+    #[param(min = 0.0, max = 2.0, step = 0.1, default = 1.0)]
+    pub strength: f32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "perspective_correct",
     category = "advanced",

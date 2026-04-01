@@ -3,6 +3,12 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct PixelateParams {
+    pub block_size: u32,
+}
+
 #[rasmcore_macros::register_filter(
     name = "pixelate",
     category = "effect",
