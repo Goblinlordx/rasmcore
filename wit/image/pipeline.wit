@@ -57,8 +57,6 @@ interface pipeline {
 
     enum resize-filter { nearest, bilinear, bicubic, lanczos3 }
 
-    enum blend-mode { multiply, screen, overlay, darken, lighten, soft-light, hard-light, difference, exclusion, color-dodge, color-burn, vivid-light, linear-dodge, linear-burn, linear-light, pin-light, hard-mix, subtract, divide, dissolve, darker-color, lighter-color, hue, saturation, color, luminosity }
-
     record auto-orient-config {
         orientation: exif-orientation,
     }
@@ -91,7 +89,7 @@ interface pipeline {
     record composite-config {
         offset-x: s32,
         offset-y: s32,
-        blend-mode: option<blend-mode>,
+        blend-mode: u32,
     }
 
 
