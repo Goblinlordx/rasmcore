@@ -1,8 +1,8 @@
 use std::io::Cursor;
 
-use super::color;
-use super::error::ImageError;
-use super::metadata_set::MetadataSet;
+use crate::domain::color;
+use crate::domain::error::ImageError;
+use super::set::MetadataSet;
 
 /// EXIF orientation tag values (1-8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,7 +357,7 @@ fn read_metadata_jpeg(data: &[u8]) -> Result<MetadataSet, ImageError> {
 
 /// Scan PNG chunks to extract eXIf, iCCP, tEXt, zTXt, iTXt.
 fn read_metadata_png(data: &[u8]) -> Result<MetadataSet, ImageError> {
-    use super::metadata_set::MetadataChunk;
+    use super::set::MetadataChunk;
 
     let mut metadata = MetadataSet::new();
     let mut pos = 8; // skip PNG signature

@@ -1,8 +1,8 @@
 //! Integration tests for the metadata query API.
 
 use rasmcore_image::domain::metadata;
-use rasmcore_image::domain::metadata_query;
-use rasmcore_image::domain::metadata_set::MetadataSet;
+use rasmcore_image::domain::metadata::query as metadata_query;
+use rasmcore_image::domain::metadata::set::MetadataSet;
 use std::collections::BTreeMap;
 
 /// Build a minimal JPEG with EXIF containing Make, Model, Software fields.

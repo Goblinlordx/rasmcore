@@ -3,7 +3,7 @@
 //! XMP is XML-based metadata using RDF structure. Read via quick-xml,
 //! write/serialize via xmp-writer.
 
-use super::error::ImageError;
+use crate::domain::error::ImageError;
 
 /// Parsed XMP metadata — common Dublin Core and XMP fields.
 #[derive(Debug, Clone, Default)]

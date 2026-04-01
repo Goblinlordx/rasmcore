@@ -81,9 +81,9 @@ impl MetadataOps {
     /// 2. Apply load entries (bulk set)
     /// 3. Apply individual set entries (override)
     /// 4. Apply strip entries (remove)
-    fn resolve(&self) -> crate::domain::metadata_set::MetadataSet {
+    fn resolve(&self) -> crate::domain::metadata::set::MetadataSet {
         use crate::domain::metadata;
-        use crate::domain::metadata_set::MetadataSet;
+        use crate::domain::metadata::set::MetadataSet;
 
         let mut ms = if self.keep {
             // Parse source metadata
@@ -152,7 +152,7 @@ impl MetadataOps {
 
         // Apply XMP operations
         if !xmp_ops.is_empty() {
-            use crate::domain::metadata_xmp;
+            use crate::domain::metadata::xmp as metadata_xmp;
             let mut xmp = ms
                 .xmp
                 .as_ref()
@@ -179,7 +179,7 @@ impl MetadataOps {
 
         // Apply IPTC operations
         if !iptc_ops.is_empty() {
-            use crate::domain::metadata_iptc;
+            use crate::domain::metadata::iptc as metadata_iptc;
             let mut iptc = ms
                 .iptc
                 .as_ref()
@@ -483,10 +483,10 @@ impl GuestImagePipeline for PipelineResource {
         let ops = self.metadata_ops.borrow();
         let ms = ops.resolve();
         match ops.source_data.as_ref() {
-            Some(data) => Ok(domain::metadata_query::metadata_dump_json_from_bytes(
+            Some(data) => Ok(domain::metadata::query::metadata_dump_json_from_bytes(
                 data, &ms,
             )),
-            None => Ok(domain::metadata_query::metadata_dump_json(&ms)),
+            None => Ok(domain::metadata::query::metadata_dump_json(&ms)),
         }
     }
 
@@ -494,9 +494,9 @@ impl GuestImagePipeline for PipelineResource {
         let ops = self.metadata_ops.borrow();
         let ms = ops.resolve();
         match ops.source_data.as_ref() {
-            Some(data) => domain::metadata_query::metadata_read_from_bytes(data, &ms, &path)
+            Some(data) => domain::metadata::query::metadata_read_from_bytes(data, &ms, &path)
                 .map_err(to_wit_error),
-            None => domain::metadata_query::metadata_read(&ms, &path).map_err(to_wit_error),
+            None => domain::metadata::query::metadata_read(&ms, &path).map_err(to_wit_error),
         }
     }
 

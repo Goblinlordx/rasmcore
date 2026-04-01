@@ -246,11 +246,11 @@ fn main() {
     // ── Parse transform nodes for pipeline transform adapter generation ──
     let transform_dir = Path::new(&manifest_dir).join("src/domain/pipeline/nodes");
     let types_path = Path::new(&manifest_dir).join("src/domain/types.rs");
-    let metadata_path = Path::new(&manifest_dir).join("src/domain/metadata.rs");
+    let metadata_path = Path::new(&manifest_dir).join("src/domain/metadata/exif.rs");
 
     println!("cargo:rerun-if-changed=src/domain/pipeline/nodes");
     println!("cargo:rerun-if-changed=src/domain/types.rs");
-    println!("cargo:rerun-if-changed=src/domain/metadata.rs");
+    println!("cargo:rerun-if-changed=src/domain/metadata/exif.rs");
 
     // Collect all enum definitions from types.rs, metadata.rs, filters/*.rs
     let filters_common_path = Path::new(&manifest_dir).join("src/domain/filters/common.rs");

@@ -479,7 +479,7 @@ impl metadata::Guest for Component {
     }
 }
 
-fn to_wit_metadata_set(ms: &domain::metadata_set::MetadataSet) -> metadata::MetadataSet {
+fn to_wit_metadata_set(ms: &domain::metadata::set::MetadataSet) -> metadata::MetadataSet {
     metadata::MetadataSet {
         exif: ms.exif.clone(),
         xmp: ms.xmp.clone(),
@@ -496,8 +496,8 @@ fn to_wit_metadata_set(ms: &domain::metadata_set::MetadataSet) -> metadata::Meta
     }
 }
 
-fn to_domain_metadata_set(ms: &metadata::MetadataSet) -> domain::metadata_set::MetadataSet {
-    domain::metadata_set::MetadataSet {
+fn to_domain_metadata_set(ms: &metadata::MetadataSet) -> domain::metadata::set::MetadataSet {
+    domain::metadata::set::MetadataSet {
         exif: ms.exif.clone(),
         xmp: ms.xmp.clone(),
         iptc: ms.iptc.clone(),
@@ -505,7 +505,7 @@ fn to_domain_metadata_set(ms: &metadata::MetadataSet) -> domain::metadata_set::M
         format_specific: ms
             .format_specific
             .iter()
-            .map(|c| domain::metadata_set::MetadataChunk {
+            .map(|c| domain::metadata::set::MetadataChunk {
                 key: c.key.clone(),
                 value: c.value.clone(),
             })

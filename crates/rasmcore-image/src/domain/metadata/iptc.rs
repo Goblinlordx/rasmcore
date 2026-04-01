@@ -4,7 +4,7 @@
 //! stored in JPEG APP13 markers. Each record is: 0x1C + record_number +
 //! dataset_number + 2-byte length + data.
 
-use super::error::ImageError;
+use crate::domain::error::ImageError;
 
 /// Parsed IPTC metadata — common fields.
 #[derive(Debug, Clone, Default)]

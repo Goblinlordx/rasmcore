@@ -19,7 +19,7 @@
 use crate::domain::encoder;
 use crate::domain::encoder::streaming::StreamingEncoder;
 use crate::domain::error::ImageError;
-use crate::domain::metadata_set::MetadataSet;
+use crate::domain::metadata::set::MetadataSet;
 use crate::domain::pipeline::graph::NodeGraph;
 use crate::domain::types::bytes_per_pixel;
 use rasmcore_pipeline::Rect;
