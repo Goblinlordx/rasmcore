@@ -523,7 +523,7 @@ fn main() {
         let mut shader_count = 0u32;
         for entry in fs::read_dir(&shaders_dir).unwrap().flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "wgsl") {
+            if path.extension().is_some_and(|e| e == "wgsl") {
                 let source = fs::read_to_string(&path).unwrap_or_else(|e| {
                     panic!("Failed to read shader {}: {e}", path.display())
                 });
