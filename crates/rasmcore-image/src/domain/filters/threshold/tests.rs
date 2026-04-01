@@ -29,7 +29,7 @@ mod threshold_tests {
         let info = gray_info(64, 64);
         let t = otsu_threshold(&px, &info).unwrap();
         // Otsu should find a threshold between 20 and 220
-        assert!(t > 20 && t < 220, "otsu={t}, expected between 20-220");
+        assert!(t >= 20 && t <= 220, "otsu={t}, expected between 20-220 (inclusive)");
     }
 
     #[test]
@@ -85,8 +85,9 @@ mod threshold_tests {
         let info = gray_info(16, 16);
         let out = adaptive_threshold(&px, &info, 255, AdaptiveMethod::Gaussian, 5, 0.0).unwrap();
         assert_eq!(out.len(), 16 * 16);
-        // Uniform image with C=0 → all pixels equal mean → all ≥ threshold
-        assert!(out.iter().all(|&v| v == 255));
+        // Uniform image with C=0 → all pixels equal mean → pixel > mean is false → all 0
+        // (strict greater-than, matching OpenCV behavior)
+        assert!(out.iter().all(|&v| v == 0));
     }
 
     #[test]

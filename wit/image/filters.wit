@@ -560,6 +560,10 @@ interface filters {
         threshold: f32,
     }
 
+    record high-pass-config {
+        radius: f32,
+    }
+
     record rank-filter-config {
         radius: u32,
         rank: f32,
@@ -827,6 +831,7 @@ interface filters {
     zoom-blur: func(pixels: buffer, info: image-info, config: zoom-blur-config) -> result<buffer, rasmcore-error>;
     convolve: func(pixels: buffer, info: image-info, config: convolve-config) -> result<buffer, rasmcore-error>;
     smart-sharpen: func(pixels: buffer, info: image-info, config: smart-sharpen-config) -> result<buffer, rasmcore-error>;
+    high-pass: func(pixels: buffer, info: image-info, config: high-pass-config) -> result<buffer, rasmcore-error>;
     rank-filter: func(pixels: buffer, info: image-info, config: rank-filter-config) -> result<buffer, rasmcore-error>;
     box-blur: func(pixels: buffer, info: image-info, config: box-blur-config) -> result<buffer, rasmcore-error>;
     bokeh-blur: func(pixels: buffer, info: image-info, config: bokeh-blur-config) -> result<buffer, rasmcore-error>;
