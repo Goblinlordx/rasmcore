@@ -6,9 +6,11 @@ created: '2026-04-01'
 updated: '2026-04-01'
 spec:
   summary: |
-    When fuse_point_ops() replaces a chain of nodes with a FusedLutNode, the content
-    hash is not updated and cache_hit_nodes is not cleared. This causes the layer cache
-    to serve stale pre-fused pixel output on subsequent pipeline runs.
+    Layer cache and fusion need end-to-end validation. The hash chain is actually
+    correct (upstream hashing encodes the full computation lineage), but we need to
+    verify that: (1) fused node outputs are stored in layer cache during finalize,
+    (2) layer cache hits are served correctly on subsequent pipeline runs,
+    (3) cache invalidation works when nodes are added/removed/changed.
   context: |
     The pipeline has two optimization layers that interact badly:
     1. Layer cache: persists pixel output across pipeline runs, keyed by content hash
