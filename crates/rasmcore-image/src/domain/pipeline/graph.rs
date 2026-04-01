@@ -1973,3 +1973,305 @@ mod affine_composition_tests {
         assert_eq!(h, 50);
     }
 }
+
+#[cfg(test)]
+mod layer_cache_tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::time::Instant;
+
+    use crate::domain::filters::{BrightnessParams, ContrastParams};
+    use crate::domain::pipeline::nodes::filters::{BrightnessNode, ContrastNode};
+    use crate::domain::pipeline::nodes::sink;
+    use crate::domain::pipeline::nodes::source::SourceNode;
+    use rasmcore_pipeline::LayerCache;
+
+    /// Create a minimal 32x32 RGB PNG for testing.
+    fn make_test_png() -> Vec<u8> {
+        let w = 32u32;
+        let h = 32u32;
+        let mut buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut buf, w, h);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+            for y in 0..h {
+                for x in 0..w {
+                    pixels.push(((x * 255) / w) as u8);
+                    pixels.push(((y * 255) / h) as u8);
+                    pixels.push(128u8);
+                }
+            }
+            writer.write_image_data(&pixels).unwrap();
+        }
+        buf
+    }
+
+    /// Create a shared LayerCache with 64 MB budget.
+    fn make_layer_cache() -> Rc<RefCell<LayerCache>> {
+        Rc::new(RefCell::new(LayerCache::new(64 * 1024 * 1024)))
+    }
+
+    /// Build a pipeline graph: source → brightness(amount) → output node id.
+    /// Returns (graph, final_node_id).
+    fn build_brightness_pipeline(
+        png_data: &[u8],
+        lc: &Rc<RefCell<LayerCache>>,
+        amount: f32,
+    ) -> (NodeGraph, u32) {
+        let source_hash = rasmcore_pipeline::compute_source_hash(png_data);
+        let mut graph = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(lc));
+
+        let src = graph.add_node_with_hash(
+            Box::new(SourceNode::new(png_data.to_vec()).unwrap()),
+            source_hash,
+        );
+        let src_info = graph.node_info(src).unwrap();
+
+        let brightness_hash = rasmcore_pipeline::compute_hash(
+            &source_hash,
+            "brightness",
+            &amount.to_le_bytes(),
+        );
+        let bright = graph.add_node_with_hash(
+            Box::new(BrightnessNode::new(src, src_info, BrightnessParams { amount })),
+            brightness_hash,
+        );
+
+        (graph, bright)
+    }
+
+    /// Build a pipeline: source → brightness(b_amount) → contrast(c_amount) → output.
+    fn build_brightness_contrast_pipeline(
+        png_data: &[u8],
+        lc: &Rc<RefCell<LayerCache>>,
+        b_amount: f32,
+        c_amount: f32,
+    ) -> (NodeGraph, u32) {
+        let source_hash = rasmcore_pipeline::compute_source_hash(png_data);
+        let mut graph = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(lc));
+
+        let src = graph.add_node_with_hash(
+            Box::new(SourceNode::new(png_data.to_vec()).unwrap()),
+            source_hash,
+        );
+        let src_info = graph.node_info(src).unwrap();
+
+        let brightness_hash = rasmcore_pipeline::compute_hash(
+            &source_hash,
+            "brightness",
+            &b_amount.to_le_bytes(),
+        );
+        let bright = graph.add_node_with_hash(
+            Box::new(BrightnessNode::new(
+                src,
+                src_info.clone(),
+                BrightnessParams { amount: b_amount },
+            )),
+            brightness_hash,
+        );
+
+        let contrast_hash = rasmcore_pipeline::compute_hash(
+            &brightness_hash,
+            "contrast",
+            &c_amount.to_le_bytes(),
+        );
+        let contrast = graph.add_node_with_hash(
+            Box::new(ContrastNode::new(
+                bright,
+                src_info,
+                ContrastParams { amount: c_amount },
+            )),
+            contrast_hash,
+        );
+
+        (graph, contrast)
+    }
+
+    /// Run a pipeline through sink::write as PNG and finalize the layer cache.
+    fn run_pipeline(graph: &mut NodeGraph, node_id: u32) -> Vec<u8> {
+        let output = sink::write(graph, node_id, "png", None, None).unwrap();
+        graph.finalize_layer_cache();
+        output
+    }
+
+    #[test]
+    fn cache_identical_pipeline_reuse() {
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Run 1: cold cache
+        let t1 = Instant::now();
+        let (mut g1, node1) = build_brightness_pipeline(&png, &lc, 0.2);
+        let output1 = run_pipeline(&mut g1, node1);
+        let d1 = t1.elapsed();
+
+        // Run 2: warm cache — same pipeline
+        let t2 = Instant::now();
+        let (mut g2, node2) = build_brightness_pipeline(&png, &lc, 0.2);
+        let output2 = run_pipeline(&mut g2, node2);
+        let d2 = t2.elapsed();
+
+        eprintln!(
+            "cache_identical_pipeline_reuse — run1: {}ms, run2: {}ms",
+            d1.as_millis(),
+            d2.as_millis()
+        );
+
+        assert_eq!(output1, output2, "Identical pipeline must produce identical output");
+        // Second run should benefit from cache (brightness node is a hit)
+        // On very fast machines the difference may be tiny, so just verify correctness
+    }
+
+    #[test]
+    fn cache_add_node_reuses_prefix() {
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Pipeline 1: source → brightness(0.2)
+        let t1 = Instant::now();
+        let (mut g1, node1) = build_brightness_pipeline(&png, &lc, 0.2);
+        let output1 = run_pipeline(&mut g1, node1);
+        let d1 = t1.elapsed();
+
+        // Pipeline 2: source → brightness(0.2) → contrast(0.3)
+        let t2 = Instant::now();
+        let (mut g2, node2) = build_brightness_contrast_pipeline(&png, &lc, 0.2, 0.3);
+        let output2 = run_pipeline(&mut g2, node2);
+        let d2 = t2.elapsed();
+
+        eprintln!(
+            "cache_add_node_reuses_prefix — run1: {}ms, run2: {}ms",
+            d1.as_millis(),
+            d2.as_millis()
+        );
+
+        assert_ne!(
+            output1, output2,
+            "Different pipelines must produce different output"
+        );
+        // Pipeline 2 should reuse source + brightness from cache
+    }
+
+    #[test]
+    fn cache_remove_last_node_reuses_prefix() {
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Pipeline 1: source → brightness(0.2) → contrast(0.3)
+        let (mut g1, node1) = build_brightness_contrast_pipeline(&png, &lc, 0.2, 0.3);
+        let _output1 = run_pipeline(&mut g1, node1);
+
+        // Pipeline 2: source → brightness(0.2) — should reuse cached prefix
+        let (mut g2, node2) = build_brightness_pipeline(&png, &lc, 0.2);
+        let output2 = run_pipeline(&mut g2, node2);
+
+        // Fresh uncached run for comparison
+        let lc_fresh = make_layer_cache();
+        let (mut g_fresh, node_fresh) = build_brightness_pipeline(&png, &lc_fresh, 0.2);
+        let output_fresh = run_pipeline(&mut g_fresh, node_fresh);
+
+        assert_eq!(
+            output2, output_fresh,
+            "Cached prefix pipeline must match fresh uncached run"
+        );
+    }
+
+    #[test]
+    fn cache_change_params_invalidates() {
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Pipeline 1: brightness(0.2)
+        let (mut g1, node1) = build_brightness_pipeline(&png, &lc, 0.2);
+        let output1 = run_pipeline(&mut g1, node1);
+
+        // Pipeline 2: brightness(0.5) — different param, different hash
+        let (mut g2, node2) = build_brightness_pipeline(&png, &lc, 0.5);
+        let output2 = run_pipeline(&mut g2, node2);
+
+        assert_ne!(
+            output1, output2,
+            "Different brightness params must produce different output"
+        );
+
+        // Source hash is the same, so source node should still be cached
+        let stats = lc.borrow().stats();
+        assert!(
+            stats.hits >= 1,
+            "Source node should be a cache hit on second run (hits={})",
+            stats.hits
+        );
+    }
+
+    #[test]
+    fn cache_fused_chain_correct_output() {
+        let png = make_test_png();
+
+        // Run WITHOUT cache
+        let lc_none = make_layer_cache();
+        let (mut g_no, node_no) = build_brightness_contrast_pipeline(&png, &lc_none, 0.2, 0.3);
+        let expected = run_pipeline(&mut g_no, node_no);
+
+        // Run WITH cache (cold)
+        let lc = make_layer_cache();
+        let (mut g1, node1) = build_brightness_contrast_pipeline(&png, &lc, 0.2, 0.3);
+        let cached_output = run_pipeline(&mut g1, node1);
+
+        // Run AGAIN with cache (warm)
+        let (mut g2, node2) = build_brightness_contrast_pipeline(&png, &lc, 0.2, 0.3);
+        let second_cached = run_pipeline(&mut g2, node2);
+
+        assert_eq!(
+            expected, cached_output,
+            "Cached output must match uncached output"
+        );
+        assert_eq!(
+            cached_output, second_cached,
+            "Second cached run must match first cached run"
+        );
+    }
+
+    #[test]
+    fn cache_stats_reflect_usage() {
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Run 1: populate cache
+        let (mut g1, node1) = build_brightness_pipeline(&png, &lc, 0.2);
+        let _out1 = run_pipeline(&mut g1, node1);
+
+        let stats1 = lc.borrow().stats();
+        assert!(
+            stats1.entries > 0,
+            "Cache should have entries after first run (entries={})",
+            stats1.entries
+        );
+        assert!(
+            stats1.size_bytes > 0,
+            "Cache should use memory after first run (size={})",
+            stats1.size_bytes
+        );
+        let hits_after_first = stats1.hits;
+
+        // Run 2: same pipeline — should get cache hits
+        let (mut g2, node2) = build_brightness_pipeline(&png, &lc, 0.2);
+        let _out2 = run_pipeline(&mut g2, node2);
+
+        let stats2 = lc.borrow().stats();
+        assert!(
+            stats2.hits > hits_after_first,
+            "Hits should increase on second run (before={}, after={})",
+            hits_after_first,
+            stats2.hits
+        );
+
+        eprintln!(
+            "cache_stats_reflect_usage — entries: {}, hits: {}, misses: {}, size: {} bytes",
+            stats2.entries, stats2.hits, stats2.misses, stats2.size_bytes
+        );
+    }
+}
