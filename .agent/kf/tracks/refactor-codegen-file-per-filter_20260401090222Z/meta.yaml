@@ -1,0 +1,27 @@
+title: Update codegen and agent policies for file-per-filter structure
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- refactor-split-filters-adjustment_2026040109020107Z
+- refactor-split-filters-advanced_2026040109020119Z
+- refactor-split-filters-alpha_2026040109020112Z
+- refactor-split-filters-analysis_2026040109020118Z
+- refactor-split-filters-color_2026040109020103Z
+- refactor-split-filters-composite_2026040109020117Z
+- refactor-split-filters-distortion_2026040109020110Z
+- refactor-split-filters-draw_2026040109020108Z
+- refactor-split-filters-edge_2026040109020114Z
+- refactor-split-filters-effect_2026040109020105Z
+- refactor-split-filters-enhancement_2026040109020102Z
+- refactor-split-filters-evaluate_2026040109020106Z
+- refactor-split-filters-generator_2026040109020111Z
+- refactor-split-filters-grading_2026040109020104Z
+- refactor-split-filters-morphology_2026040109020109Z
+- refactor-split-filters-spatial_2026040109020101Z
+- refactor-split-filters-threshold_2026040109020113Z
+- refactor-split-filters-tonemapping_2026040109020116Z
+- refactor-split-filters-tool_2026040109020120Z
+- refactor-split-filters-transform_2026040109020115Z

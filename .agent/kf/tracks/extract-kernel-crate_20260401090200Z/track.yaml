@@ -1,0 +1,65 @@
+id: extract-kernel-crate_20260401090200Z
+title: Extract rasmcore-kernel shared computation crate
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: Extract convolve, interpolation, color_spaces, color_lut, and math helpers into a new rasmcore-kernel crate. Pure
+    computation — no pipeline dependencies.
+  context: filters.rs is 24K lines. Many filters share convolve(), color space conversions, LUT infrastructure, and interpolation
+    math. These are pure computation with no pipeline coupling — ideal for a shared crate that rasmcore-image and future crates
+    depend on.
+  codebase_analysis: 'EXTRACT TARGETS:
+
+    - convolve() from filters.rs (~200 lines) — N×N convolution with separability detection, WASM SIMD128
+
+    - color_spaces.rs (1109 lines) — RGB↔LAB, RGB↔OKLab, Bradford adaptation, delta-E, white balance
+
+    - color_lut.rs (1099 lines) — 3D CLUT infrastructure, compose, apply, ColorLut3D
+
+    - point_ops.rs (1477 lines) — LUT composition, build_lut, compose_luts, apply_lut
+
+    - ewa.rs (960 lines) — interpolation kernels, bilinear/bicubic/Lanczos
+
+    - Shared math helpers scattered across files'
+  acceptance_criteria:
+  - New crate crates/rasmcore-kernel/ with Cargo.toml
+  - convolve module with WASM SIMD128 support
+  - color_spaces module (all conversions preserved)
+  - color_lut module (3D CLUT infrastructure)
+  - interpolation module (EWA kernels)
+  - rasmcore-image depends on rasmcore-kernel, all existing tests pass
+  - cargo build + cargo component build succeed
+  - WASM component validates: all operations still registered in WIT and param-manifest.json
+  out_of_scope: Splitting filters.rs into per-file modules (separate tracks). Native-only SIMD (SSE/NEON) — WASM SIMD128 only
+    for now.
+  technical_notes: ''
+plan:
+- phase: Crate scaffold
+  tasks:
+  - text: Create crates/rasmcore-kernel with Cargo.toml and lib.rs
+    done: false
+  - text: Add rasmcore-kernel dependency to rasmcore-image Cargo.toml
+    done: false
+- phase: Extract modules
+  tasks:
+  - text: Move convolve() and kernel helpers to rasmcore-kernel::convolve
+    done: false
+  - text: Move color_spaces.rs to rasmcore-kernel::color_spaces
+    done: false
+  - text: Move color_lut.rs to rasmcore-kernel::color_lut
+    done: false
+  - text: Move point_ops.rs LUT infrastructure to rasmcore-kernel::lut
+    done: false
+  - text: Move EWA interpolation to rasmcore-kernel::interpolation
+    done: false
+  - text: Update all imports in rasmcore-image to use rasmcore-kernel
+    done: false
+- phase: Verification
+  tasks:
+  - text: All existing tests pass
+    done: false
+  - text: cargo build + cargo component build succeed
+    done: false
+extra: {}

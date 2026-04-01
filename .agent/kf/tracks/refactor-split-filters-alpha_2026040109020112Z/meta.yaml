@@ -1,0 +1,8 @@
+title: Split filters/alpha — 5 filters to individual files
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- extract-kernel-crate_20260401090200Z

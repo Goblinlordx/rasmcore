@@ -1,0 +1,66 @@
+id: refactor-codegen-file-per-filter_20260401090222Z
+title: Update codegen and agent policies for file-per-filter structure
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Update build.rs, rasmcore-codegen, and agent style guides to work
+    with the new file-per-filter directory structure. Ensure new filters
+    are always created as individual files, never added to a monolith.
+  context: |
+    After the filter split refactor, the codegen needs to scan the new
+    directory structure instead of a single filters.rs. Agent policies
+    must enforce 1-filter-per-file for all future development.
+  codebase_analysis: |
+    build.rs currently reads src/domain/filters.rs as a single file.
+    After the split, it needs to scan src/domain/filters/**/*.rs.
+    The #[register_filter] macro doesn't change — codegen just needs
+    to find them in multiple files. Style guides in .agent/kf/code_styleguides/
+    need a new file-organization.md policy.
+  acceptance_criteria:
+  - build.rs scans filters directory tree (not single file)
+  - WIT generation works with the new structure
+  - param-manifest.json includes all filters from all files
+  - New style guide enforces 1-filter-per-file rule
+  - Style guide directs agents to use subagents with worktree isolation for bulk refactors
+  - cargo build + cargo component build succeed
+  out_of_scope: |
+    Actually moving filters (already done by category tracks).
+  technical_notes: |
+    build.rs change: replace single filters_path with glob over filters/**/*.rs.
+    Parse each file independently, merge results.
+    Style guide: add .agent/kf/code_styleguides/file-organization.md.
+
+    AGENT CONCURRENCY POLICY:
+    The file-organization style guide must include a directive for how agents
+    handle bulk file operations. When a track involves moving/splitting many
+    files (e.g., splitting a category of filters), the developer agent should:
+    1. Spawn subagents with isolation: "worktree" to move files in parallel
+    2. Each subagent handles a subset (e.g., 3-5 filters each)
+    3. Parent agent reviews each subagent's diff before merging
+    4. Parent agent runs full build verification after all merges
+    This pattern applies to any bulk mechanical refactor, not just filter splits.
+plan:
+- phase: Codegen updates
+  tasks:
+  - text: Update build.rs to scan filters directory tree
+    done: false
+  - text: Update WIT generation for multi-file filter source
+    done: false
+  - text: Verify param-manifest.json completeness
+    done: false
+- phase: Policy updates
+  tasks:
+  - text: Add file-organization.md style guide
+    done: false
+  - text: Update implementation-rules.md for new structure
+    done: false
+- phase: Verification
+  tasks:
+  - text: Full build succeeds with new directory structure
+    done: false
+  - text: cargo component build produces valid WASM
+    done: false
+extra: {}

@@ -1,0 +1,52 @@
+id: refactor-split-transforms_20260401090221Z
+title: Split transform and pipeline node files
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Split domain/transform.rs (2180 lines, 12 functions) and
+    pipeline/nodes/transform.rs (571 lines, 6 node types) into
+    individual files per transform.
+  context: |
+    Part of the monolith-to-modules refactor. Transforms (resize, crop,
+    rotate, flip, affine, auto-orient) are independent operations that
+    should each have their own file.
+  codebase_analysis: |
+    domain/transform.rs: resize, crop, rotate, flip, affine, auto_orient,
+    perspective, seam_carve — each ~100-300 lines.
+    pipeline/nodes/transform.rs: ResizeNode, CropNode, RotateNode,
+    FlipNode, AutoOrientNode, ComposedAffineNode.
+    Both become transform/<name>.rs directories.
+  acceptance_criteria:
+  - Each domain transform in its own file under domain/transform/<name>.rs
+  - Each pipeline node in its own file under pipeline/nodes/transform/<name>.rs
+  - All tests preserved and passing
+  - cargo build + cargo component build succeed
+  - WASM component validates: transforms registered in WIT with config records
+  out_of_scope: |
+    Filter file splitting (separate tracks). Encoder splitting.
+  technical_notes: |
+    Mechanical refactor. Move functions + node structs to individual files.
+    Update mod.rs re-exports. Keep trait impls with their structs.
+plan:
+- phase: Domain transforms
+  tasks:
+  - text: Create domain/transform/ directory with mod.rs
+    done: false
+  - text: Split each transform function to its own file
+    done: false
+- phase: Pipeline nodes
+  tasks:
+  - text: Create pipeline/nodes/transform/ directory with mod.rs
+    done: false
+  - text: Split each node type to its own file
+    done: false
+- phase: Verification
+  tasks:
+  - text: All tests pass
+    done: false
+  - text: cargo build + cargo component build succeed
+    done: false
+extra: {}

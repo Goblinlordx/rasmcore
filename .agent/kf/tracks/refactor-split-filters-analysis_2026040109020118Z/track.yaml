@@ -1,0 +1,61 @@
+id: refactor-split-filters-analysis_2026040109020118Z
+title: "Split filters/analysis — 2 filters to individual files"
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Move all 2 analysis-category filters from the monolithic filters.rs
+    to individual files under src/domain/filters/analysis/<name>.rs.
+  context: |
+    filters.rs is 24K lines with 152 registered filters. This track moves
+    the analysis category (2 filters) to a per-file structure.
+    Each file contains one pub fn, one ConfigParams, one registration macro.
+    Tests move alongside their functions.
+  codebase_analysis: |
+    Filters to move: all functions in filters.rs with category="analysis".
+    Each filter becomes src/domain/filters/analysis/<snake_name>.rs.
+    Category mod.rs re-exports all public items.
+    Shared imports come from rasmcore-kernel (convolve, color_spaces, etc.).
+  acceptance_criteria:
+  - All 2 analysis filters exist as individual files in filters/analysis/
+  - Each file has one registered filter function + ConfigParams
+  - Tests preserved and passing
+  - No remaining analysis filters in the monolithic filters.rs
+  - cargo build + cargo component build succeed
+  - WASM component validates: all moved filters appear in param-manifest.json and WIT interface
+  out_of_scope: |
+    Other filter categories (handled by their own tracks).
+    Changing filter behavior or signatures — pure file reorganization.
+  technical_notes: |
+    Mechanical refactor: move function + ConfigParams + tests to new file.
+    AGENT STRATEGY: Use subagents with worktree isolation to move filters
+    in parallel. Each subagent moves 3-5 filters, parent reviews diffs
+    and runs full verification after merging all.
+    Update mod.rs re-exports. Update any cross-filter imports.
+    Shared computation (convolve, color spaces) comes from rasmcore-kernel.
+plan:
+- phase: Setup
+  tasks:
+  - text: Create src/domain/filters/analysis/mod.rs with re-exports
+    done: false
+- phase: Migration
+  tasks:
+  - text: Move all 2 analysis filters to individual files
+    done: false
+  - text: Move associated tests
+    done: false
+  - text: Update imports and re-exports
+    done: false
+- phase: Verification
+  tasks:
+  - text: All tests pass
+    done: false
+  - text: cargo build + cargo component build succeed
+    done: false
+  - text: Verify moved filters appear in param-manifest.json (count matches)
+    done: false
+  - text: Verify WASM component build — filters registered in WIT interface
+    done: false
+extra: {}
