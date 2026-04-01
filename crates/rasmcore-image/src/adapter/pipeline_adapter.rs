@@ -16,9 +16,10 @@ use crate::domain::pipeline::nodes::{
 
 use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
 
-// Import generated macros that provide pipeline filter + write methods
+// Import generated macros that provide pipeline filter + write + transform methods
 include!(concat!(env!("OUT_DIR"), "/generated_pipeline_adapter.rs"));
 include!(concat!(env!("OUT_DIR"), "/generated_pipeline_write_adapter.rs"));
+include!(concat!(env!("OUT_DIR"), "/generated_pipeline_transform_adapter.rs"));
 
 fn to_domain_png_filter_type_pipeline(
     f: Option<pipeline::PngFilterType>,
