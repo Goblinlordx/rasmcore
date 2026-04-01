@@ -1,0 +1,117 @@
+id: gpu-pipeline-dispatch_20260402000003Z
+title: GPU pipeline dispatch — graph walker integration with input snapshot support
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Wire GpuExecutor into NodeGraph.request_region(), add GPU-capable node
+    detection, implement input-snapshot mechanism for multi-op chains, and
+    add CPU fallback. Enables GPU acceleration for all filters with GpuCapable impls.
+  context: |
+    The GPU infrastructure is 95% built but 0% integrated:
+    - GpuOp, GpuCapable, GpuExecutor traits are complete (rasmcore-pipeline/src/gpu.rs)
+    - WgpuExecutor with ping-pong buffering is complete (rasmcore-cli/src/gpu_executor.rs)
+    - 19 WGSL shaders and 15+ GpuCapable filter impls exist
+    - BUT the graph walker (NodeGraph.request_region) always calls compute_region (CPU)
+    - The executor is initialized in main.rs but never passed to the graph (TODO at line 313)
+    - Filters like high-pass need "input snapshot" — the original image must survive
+      through blur passes so the subtraction shader can reference it
+  codebase_analysis: |
+    GRAPH WALKER (graph.rs:1160-1212):
+      request_region() only calls node.compute_region() — no GPU path.
+      Needs: check GpuCapable, batch consecutive GPU nodes, dispatch via executor.
+
+    GPU EXECUTOR (gpu_executor.rs:95-348):
+      Ping-pong buffer strategy: buf_a/buf_b swap after each op.
+      Original input is uploaded to buf_a, then overwritten by op[1].
+      No mechanism to preserve original for later ops.
+
+    IMAGE NODE TRAIT (graph.rs:23-91):
+      Has as_point_op_lut(), as_color_lut_op(), as_affine_op() — but no as_gpu_capable().
+      Need to add gpu_ops() dispatch method with default None.
+
+    HIGH-PASS SHADER (shaders/high_pass.wgsl):
+      Already designed with binding(3) = original image buffer.
+      Shader is ready — just needs node-level integration via input snapshot.
+
+    CLI INIT (main.rs:304-327):
+      WgpuExecutor::try_new() is called but result is dropped (let _ = exec).
+      Need to pass it to the graph walker.
+  acceptance_criteria:
+    - GpuExecutor passed from CLI to NodeGraph via new field
+    - request_region checks GpuCapable before compute_region
+    - GPU dispatch with automatic CPU fallback on failure
+    - Input snapshot mechanism in GpuOp (snapshot_input flag)
+    - WgpuExecutor preserves input buffer when snapshot requested
+    - HighPassNode GpuCapable impl using input snapshot
+    - as_gpu_capable() default method on ImageNode trait
+    - Existing tests still pass (CPU path unchanged)
+  out_of_scope: |
+    Cross-node GPU batching (batching consecutive GPU-capable nodes into one dispatch).
+    GPU-aware tiling for images exceeding max_buffer_size.
+    Browser WebGPU executor (separate track).
+    New WGSL shaders (existing shaders are sufficient).
+  technical_notes: |
+    INPUT SNAPSHOT MECHANISM:
+    Add snapshot_input: bool field to GpuOp. When true, the executor
+    creates a read-only copy of the current input buffer BEFORE this op
+    executes. The snapshot is available as an additional storage buffer
+    at the next binding index after extra_buffers.
+
+    In WgpuExecutor: when snapshot_input is true on op[i], copy the
+    current read buffer to a new snapshot_buf. For op[i+1..], include
+    snapshot_buf in the bind group at binding(3 + extra_buffers.len()).
+
+    HIGH-PASS GPU CHAIN:
+    HighPassNode.gpu_ops() returns:
+      op[0]: blur_h { snapshot_input: true }  — snapshots original before blur
+      op[1]: blur_v { snapshot_input: false }
+      op[2]: high_pass_subtract { extra_buffers: [], uses snapshot from op[0] }
+
+    The executor automatically provides the snapshot buffer to op[2]
+    bind group at the appropriate binding index.
+
+    GRAPH INTEGRATION:
+    In request_region(), before compute_region():
+      if let Some(gpu) = self.gpu_executor.as_ref() {
+          if let Some(ops) = node.gpu_ops(info.width, info.height) {
+              let input = upstream_fn(node.upstream_id()?, full_rect)?;
+              match gpu.execute(&ops, &input, info.width, info.height) {
+                  Ok(result) => return Ok(result),
+                  Err(_) => { /* fall through to CPU */ }
+              }
+          }
+      }
+      node.compute_region(request, &mut upstream_fn)
+plan:
+  - phase: Core infrastructure
+    tasks:
+      - text: Add snapshot_input field to GpuOp struct in rasmcore-pipeline/src/gpu.rs
+        done: false
+      - text: Implement snapshot buffer logic in WgpuExecutor — copy input buffer when snapshot_input is true, include in subsequent op bind groups
+        done: false
+      - text: Add as_gpu_capable() default method to ImageNode trait returning None
+        done: false
+  - phase: Graph integration
+    tasks:
+      - text: Add gpu_executor field to NodeGraph
+        done: false
+      - text: Implement GPU dispatch in request_region — check gpu_ops before compute_region with CPU fallback
+        done: false
+      - text: Wire GpuExecutor from CLI main.rs into NodeGraph construction
+        done: false
+  - phase: High-pass GPU support
+    tasks:
+      - text: Implement GpuCapable for HighPassNode using snapshot_input for original buffer
+        done: false
+      - text: Override as_gpu_capable() for HighPassNode in gpu_impls.rs
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test GPU dispatch path — verify GpuCapable node uses GPU when executor is available
+        done: false
+      - text: Test CPU fallback — verify graceful fallback when GPU fails or is unavailable
+        done: false
+extra: {}
