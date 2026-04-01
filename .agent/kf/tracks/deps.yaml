@@ -250,3 +250,19 @@ gpu-offload-poc_20260401140500Z: []
 # GPU offload design — research, depends on PoC results
 gpu-offload-design_20260402010000Z:
   - gpu-offload-poc_20260401140500Z
+
+# GPU implementation tracks — all depend on foundation
+gpu-trait-batch_20260402020000Z:
+  - gpu-offload-design_20260402010000Z
+
+gpu-browser-host_20260402020001Z:
+  - gpu-trait-batch_20260402020000Z
+
+gpu-cli-host_20260402020002Z:
+  - gpu-trait-batch_20260402020000Z
+
+gpu-shaders-spatial_20260402020003Z:
+  - gpu-trait-batch_20260402020000Z
+
+gpu-shaders-lut-point_20260402020004Z:
+  - gpu-trait-batch_20260402020000Z

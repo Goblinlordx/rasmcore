@@ -1,0 +1,66 @@
+id: gpu-browser-host_20260402020001Z
+title: "GPU browser host — WebGPU handler for pipeline gpu-execute"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Implement the browser-side WebGPU handler that receives gpu-execute
+    calls from the WASM pipeline and runs compute shaders via WebGPU.
+    Manages shader compilation caching, ping-pong buffers, and readback.
+  context: |
+    The pipeline emits GpuOps (WGSL source + params). The browser host
+    receives these via the WIT gpu-execute import and runs them using
+    the WebGPU API. Multiple ops in a batch stay in GPU memory via
+    ping-pong storage buffers.
+  acceptance_criteria:
+    - JS gpu-execute handler initializes WebGPU device on first call
+    - Shader compilation cached by source hash (compile once, reuse)
+    - Ping-pong storage buffers for multi-op batches (no intermediate readback)
+    - Input uploaded via queue.writeBuffer, output read via mapAsync
+    - Handler integrated into web-ui pipeline worker
+    - Handler gracefully degrades if WebGPU unavailable
+    - 3D LUT shader for fused color ops works correctly
+  out_of_scope: |
+    - CLI/native GPU host (Track 3)
+    - Writing WGSL shaders for filters (Tracks 4-5)
+    - GPU timestamp profiling
+  technical_notes: |
+    Integration point: the web-ui pipeline-worker.ts creates the WASM
+    component with a gpu-execute import function. When the pipeline
+    calls gpu_execute(), the JS handler:
+    1. Checks shader cache, compiles new shaders if needed
+    2. Uploads input pixels to GPU storage buffer
+    3. For each op: bind params as uniform buffer, dispatch compute
+    4. Ping-pong between two storage buffers (output of N = input of N+1)
+    5. Read back final output via staging buffer + mapAsync
+    6. Return output bytes to WASM
+plan:
+  - phase: "WebGPU Handler"
+    tasks:
+      - text: "Create gpu-handler.js — WebGPU device init, shader cache, buffer management"
+        done: false
+      - text: "Implement shader compilation with source-hash caching"
+        done: false
+      - text: "Implement ping-pong buffer strategy for multi-op batches"
+        done: false
+      - text: "Implement upload (writeBuffer) and readback (mapAsync) with staging buffers"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Wire gpu-handler into pipeline-worker.ts as WIT import provider"
+        done: false
+      - text: "Add WebGPU capability detection and graceful fallback"
+        done: false
+      - text: "Implement 3D LUT shader for fused color op application"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Test with blur shader — verify GPU output matches CPU output"
+        done: false
+      - text: "Test multi-op batch — verify ping-pong works correctly"
+        done: false
+      - text: "Test fallback when WebGPU unavailable"
+        done: false
+extra: {}

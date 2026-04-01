@@ -1,0 +1,94 @@
+id: gpu-shaders-spatial_20260402020003Z
+title: "GPU shaders — spatial ops, distortions, and fused affine transforms"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Write WGSL compute shaders for expensive spatial ops (blur, bilateral,
+    spin blur, etc.), distortion ops (spherize, swirl, barrel, etc.), and
+    fused affine transforms (resize+rotate+flip as single matrix resample).
+    Implement GpuCapable for each filter node.
+  context: |
+    These are the highest-impact GPU ops based on PoC results:
+    - Blur: 36x speedup
+    - Spin blur: 58x speedup
+    - Spherize: 145x speedup
+    - Bilateral: expensive on CPU, should be massive GPU win
+
+    Affine fusion: the pipeline already has AffineOp trait for composing
+    consecutive resize/rotate/flip into a single transform matrix. On GPU,
+    this becomes a single shader that applies the fused matrix + bilinear
+    resample in one pass — no intermediate buffers between transforms.
+  acceptance_criteria:
+    - WGSL shaders for blur (separable H+V), box_blur, sharpen, median
+    - WGSL shaders for spin_blur, motion_blur, zoom_blur, tilt_shift
+    - WGSL shaders for bilateral, guided_filter
+    - WGSL shaders for spherize, swirl, barrel, ripple, wave, polar, depolar
+    - WGSL shader for fused affine transform (single matrix + bilinear resample)
+    - GpuCapable impl for each filter node
+    - Param pack functions for each shader uniform layout
+    - Fused affine node provides single GpuOp with composed matrix
+    - GPU output matches CPU output within acceptable tolerance
+    - All shaders validate with naga (compile-time check in build.rs)
+  out_of_scope: |
+    - Point op shaders (Track 5 handles those via fused 3D LUT)
+    - Edge detection, morphology, threshold shaders
+    - Non-browser GPU hosts
+  technical_notes: |
+    Shader patterns:
+
+    1. Separable blur: two passes (H, V), shared memory tile with halo
+    2. Multi-tap sampling (spin, motion, zoom): per-pixel N samples
+    3. Distortion: per-pixel inverse coord transform + bilinear sample
+    4. Bilateral/guided: neighborhood with per-sample weighting
+    5. Fused affine: mat3x3 transform + bilinear resample, one dispatch
+
+    Affine fusion on GPU:
+    - Pipeline's fuse_affine_ops() composes resize+rotate+flip matrices
+    - The fused AffineNode provides a single GpuOp with the 3x3 matrix
+    - WGSL shader: for each output pixel, multiply by inverse matrix,
+      bilinear sample from input. One pass, one dispatch.
+    - This replaces separate resize+rotate+flip GPU dispatches
+
+    Shader embedding: include_str!("shaders/blur_h.wgsl") per filter.
+    Files live alongside the Rust implementation in filters/spatial/shaders/.
+plan:
+  - phase: "Spatial Shaders"
+    tasks:
+      - text: "Write gaussian_blur.wgsl (separable H+V with kernel buffer)"
+        done: false
+      - text: "Write sharpen.wgsl (unsharp mask via blur subtract)"
+        done: false
+      - text: "Write bilateral.wgsl (spatial + range weighted neighborhood)"
+        done: false
+      - text: "Write spin_blur.wgsl, motion_blur.wgsl, zoom_blur.wgsl"
+        done: false
+      - text: "Write median.wgsl, box_blur.wgsl"
+        done: false
+  - phase: "Distortion Shaders"
+    tasks:
+      - text: "Write spherize.wgsl, swirl.wgsl, barrel.wgsl"
+        done: false
+      - text: "Write ripple.wgsl, wave.wgsl"
+        done: false
+      - text: "Write polar.wgsl, depolar.wgsl"
+        done: false
+  - phase: "Affine Fusion Shader"
+    tasks:
+      - text: "Write affine_resample.wgsl — fused matrix transform + bilinear interpolation"
+        done: false
+      - text: "Implement GpuCapable for FusedAffineNode — compose matrix, emit single GpuOp"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Implement GpuCapable + param pack for all spatial filter nodes"
+        done: false
+      - text: "Implement GpuCapable + param pack for all distortion filter nodes"
+        done: false
+      - text: "Add naga WGSL validation in build.rs for all shader files"
+        done: false
+      - text: "Verify GPU output matches CPU output for each shader (tolerance test)"
+        done: false
+extra: {}

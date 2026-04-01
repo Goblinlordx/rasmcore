@@ -1,0 +1,95 @@
+id: gpu-trait-batch_20260402020000Z
+title: "GPU foundation — GpuCapable trait, WIT import, batch detection in graph walker"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Define the GpuCapable trait and GpuOp struct in rasmcore-pipeline.
+    Add the WIT gpu interface with gpu-execute import. Implement batch
+    detection in the graph walker that groups consecutive GPU-capable
+    nodes and dispatches them via the WIT import. CPU fallback when
+    GPU is unavailable.
+  context: |
+    Foundation track for GPU acceleration. The design doc at
+    .agent/kf/_reports/gpu-offload-design.md specifies the full
+    architecture. This track implements the WASM-side infrastructure
+    without any shaders or host implementations.
+
+    PoC proved 36-145x speedups. The pipeline needs to detect GPU-capable
+    nodes, batch them, and call out to the host via WIT import.
+  acceptance_criteria:
+    - GpuCapable trait defined in rasmcore-pipeline crate
+    - GpuOp struct with shader source, entry point, workgroup size, params
+    - WIT gpu interface defined with gpu-execute function
+    - Graph walker detects consecutive GpuCapable nodes and batches them
+    - Batch dispatched via gpu-execute WIT import (single call per batch)
+    - Full-image dispatch for GPU batches (no tiling)
+    - Graceful CPU fallback when gpu-execute import is absent
+    - Per-node fallback when gpu_ops() returns None
+    - FusedClutNode provides gpu_ops() for LUT application on GPU
+    - WASM component builds with optional gpu feature
+    - Existing tests pass (no GPU changes affect CPU path)
+  out_of_scope: |
+    - Browser WebGPU host implementation (Track 2)
+    - CLI wgpu host implementation (Track 3)
+    - WGSL shader implementations (Tracks 4-5)
+  technical_notes: |
+    Key implementation points:
+
+    1. GpuCapable trait in rasmcore-pipeline (shared crate):
+       pub trait GpuCapable {
+           fn gpu_ops(&self) -> Option<Vec<GpuOp>>;
+       }
+       Filters implement this optionally via downcast or separate trait.
+
+    2. WIT gpu interface (new file wit/gpu.wit):
+       gpu-execute: func(ops, input, width, height) -> result<buffer, gpu-error>
+       Optional import — absent means CPU-only.
+
+    3. Graph walker modification (graph.rs execute path):
+       - After fuse_color_ops(), scan for GPU batches
+       - Collect GpuOps from consecutive GpuCapable nodes
+       - Call gpu_execute with full-image input
+       - Skip tiling for GPU batches
+
+    4. FusedClutNode GPU support:
+       - CPU: fuse N color ops into single 3D LUT, apply per-pixel
+       - GPU: same fused 3D LUT, but upload as storage buffer,
+         apply via a single 3D LUT shader (one texture lookup per pixel)
+       - FusedClutNode implements GpuCapable, returns LUT shader + LUT data
+plan:
+  - phase: "Trait + Types"
+    tasks:
+      - text: "Define GpuOp struct in rasmcore-pipeline crate"
+        done: false
+      - text: "Define GpuCapable trait in rasmcore-pipeline crate"
+        done: false
+      - text: "Add gpu feature flag to rasmcore-image Cargo.toml"
+        done: false
+  - phase: "WIT Interface"
+    tasks:
+      - text: "Create wit/gpu.wit with gpu-execute function, gpu-op record, gpu-error variant"
+        done: false
+      - text: "Add gpu interface as optional import in rasmcore-image world"
+        done: false
+      - text: "Generate bindings and verify WASM build with gpu feature"
+        done: false
+  - phase: "Batch Detection"
+    tasks:
+      - text: "Implement batch detection in graph walker — scan consecutive GpuCapable nodes"
+        done: false
+      - text: "Implement full-image dispatch for GPU batches (bypass tile walker)"
+        done: false
+      - text: "Implement CPU fallback when gpu-execute returns error or is absent"
+        done: false
+      - text: "Implement FusedClutNode GpuCapable — fuse LUT on CPU, emit LUT shader + data for GPU"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Verify CPU-only path unchanged (no regressions)"
+        done: false
+      - text: "Verify WASM component build succeeds with and without gpu feature"
+        done: false
+extra: {}

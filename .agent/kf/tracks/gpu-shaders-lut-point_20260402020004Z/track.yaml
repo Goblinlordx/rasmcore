@@ -1,0 +1,99 @@
+id: gpu-shaders-lut-point_20260402020004Z
+title: "GPU shaders — fused 3D LUT for point ops, keeps data on GPU between spatial ops"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Implement GPU shader for applying pre-fused 3D color LUTs. The CPU
+    fuses N consecutive color ops (sepia, contrast, hue_rotate, etc.)
+    into a single 3D LUT at plan time, then the GPU applies it in one
+    pass. This keeps pixel data on GPU between expensive spatial ops,
+    avoiding round-trip transfers for cheap point operations.
+  context: |
+    The pipeline has 3 fusion optimizations:
+    1. CLUT fusion: N color ops → single 3D LUT (O(grid^3) plan time)
+    2. Affine fusion: N transforms → single 3x3 matrix (Track 4)
+    3. (Future) Chain fusion: LUT + affine in single shader
+
+    For GPU execution, the fused 3D LUT is the perfect strategy for
+    point ops:
+    - CPU computes the fused LUT at plan time (O(33^3) = 35K entries)
+    - GPU receives the LUT as a storage buffer (36K entries x 3 floats)
+    - GPU shader does trilinear interpolation lookup per pixel
+    - One dispatch, one texture read per pixel — trivially fast on GPU
+
+    This avoids running N separate point op shaders on GPU (which works
+    but is wasteful — each would be a separate dispatch with its own
+    buffer binding, vs one LUT lookup that encapsulates all of them).
+
+    The critical benefit: when the pipeline is
+      source → blur → sepia → contrast → hue_rotate → sharpen → write
+    The GPU batch is:
+      [blur_shader, lut_shader (fused sepia+contrast+hue), sharpen_shader]
+    Three dispatches total, all in GPU memory. No CPU round-trips between
+    the spatial ops and the point ops.
+  acceptance_criteria:
+    - WGSL 3D LUT shader with trilinear interpolation
+    - FusedClutNode implements GpuCapable — provides LUT data + shader
+    - LUT data serialized as storage buffer (grid^3 x RGB float entries)
+    - GPU LUT output matches CPU LUT output within 1/255 tolerance
+    - Fused LUT nodes are included in GPU batches (not batch boundaries)
+    - End-to-end test with mixed chain (spatial + point + spatial)
+  out_of_scope: |
+    - Individual point op shaders (not needed — LUT fusion handles them)
+    - LUT + affine combined shader (future optimization)
+    - HDR/float pixel format LUT support
+  technical_notes: |
+    3D LUT shader design:
+
+    struct LutParams {
+      width: u32,
+      height: u32,
+      grid_size: u32,
+      _pad: u32,
+    }
+
+    The LUT is a storage buffer of grid^3 x vec3<f32> entries.
+    For a 33x33x33 grid: 35,937 entries x 12 bytes = 431KB.
+
+    Trilinear interpolation:
+    1. Normalize input RGB to [0, grid-1] float coordinates
+    2. Get 8 corner grid points (floor/ceil of r, g, b)
+    3. Interpolate between corners using fractional parts
+    4. Output interpolated RGB, preserve alpha
+
+    This is equivalent to a 3D texture lookup but using storage buffers
+    (WebGPU compute shaders can't sample textures in storage mode, so
+    we implement the interpolation manually — still very fast).
+
+    Integration with batch detection:
+    - fuse_color_ops() runs first, creating FusedClutNode
+    - FusedClutNode.gpu_ops() returns the LUT shader + serialized LUT data
+    - Batch detection includes FusedClutNode in GPU batches
+    - The LUT data goes in GpuOp.params (or a separate extra_buffers field)
+plan:
+  - phase: "3D LUT Shader"
+    tasks:
+      - text: "Write lut3d.wgsl — trilinear interpolation from storage buffer"
+        done: false
+      - text: "Implement LUT data serialization (grid^3 x RGB f32, packed for GPU)"
+        done: false
+      - text: "Implement FusedClutNode GpuCapable — serialize LUT + return shader GpuOp"
+        done: false
+  - phase: "Integration"
+    tasks:
+      - text: "Verify FusedClutNode included in GPU batches (not a batch boundary)"
+        done: false
+      - text: "Test mixed chain on GPU — blur + fused_lut + sharpen as single batch"
+        done: false
+      - text: "Verify GPU LUT matches CPU LUT output within 1/255 per channel"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Benchmark fused LUT on GPU vs CPU for chain of 5 color ops"
+        done: false
+      - text: "Verify no visual artifacts from trilinear interpolation at grid=33"
+        done: false
+extra: {}
