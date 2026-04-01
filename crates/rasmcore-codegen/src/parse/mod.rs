@@ -10,6 +10,7 @@ pub mod config_params;
 pub mod encoders;
 pub mod filters;
 pub mod mappers;
+pub mod metrics;
 pub mod param_attr;
 pub mod simple_regs;
 pub mod transforms;

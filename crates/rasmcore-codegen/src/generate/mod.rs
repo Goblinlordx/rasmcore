@@ -6,6 +6,7 @@ pub mod adapter;
 pub mod cli_dispatch;
 pub mod helpers;
 pub mod manifest;
+pub mod metrics;
 pub mod pipeline;
 pub mod pipeline_mapper;
 pub mod pipeline_write;

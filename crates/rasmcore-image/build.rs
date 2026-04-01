@@ -231,4 +231,41 @@ fn main() {
         )
         .unwrap();
     }
+
+    // ── Parse metrics for compare adapter generation ──
+    let metrics_path = Path::new(&manifest_dir).join("src/domain/metrics.rs");
+    println!("cargo:rerun-if-changed=src/domain/metrics.rs");
+
+    if metrics_path.exists() {
+        let source = std::fs::read_to_string(&metrics_path).unwrap_or_default();
+        if let Ok(file) = syn::parse_file(&source) {
+            let metrics = rasmcore_codegen::parse::metrics::extract_metrics(&file);
+            if !metrics.is_empty() {
+                eprintln!(
+                    "rasmcore build.rs: Found {} metric(s): {}",
+                    metrics.len(),
+                    metrics.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", ")
+                );
+                let compare_adapter =
+                    rasmcore_codegen::generate::metrics::generate_compare_adapter(&metrics);
+                std::fs::write(
+                    out_dir.join("generated_compare_adapter.rs"),
+                    &compare_adapter,
+                )
+                .unwrap();
+            } else {
+                std::fs::write(
+                    out_dir.join("generated_compare_adapter.rs"),
+                    "// No registered metrics found\n",
+                )
+                .unwrap();
+            }
+        }
+    } else {
+        std::fs::write(
+            out_dir.join("generated_compare_adapter.rs"),
+            "// No metrics source file\n",
+        )
+        .unwrap();
+    }
 }

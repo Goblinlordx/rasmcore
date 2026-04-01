@@ -173,6 +173,28 @@ pub fn registered_transforms() -> Vec<&'static StaticTransformRegistration> {
         .collect()
 }
 
+// ─── Metric Registration ─────────────────────────────────────────────────
+
+/// Static metric registration — compare operations (psnr, ssim, etc.).
+///
+/// All metrics have uniform signature: `(a, info_a, b, info_b) -> Result<f64>`.
+/// Registered via `#[register_metric]` on metric functions.
+#[derive(Debug)]
+pub struct StaticMetricRegistration {
+    pub name: &'static str,
+    pub fn_name: &'static str,
+    pub module_path: &'static str,
+}
+
+inventory::collect!(&'static StaticMetricRegistration);
+
+pub fn registered_metrics() -> Vec<&'static StaticMetricRegistration> {
+    inventory::iter::<&'static StaticMetricRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

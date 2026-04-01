@@ -615,6 +615,9 @@ impl transform::Guest for Component {
 // Auto-generated filter adapter (all registered filters)
 include!(concat!(env!("OUT_DIR"), "/generated_filter_adapter.rs"));
 
+// Auto-generated compare adapter (all registered metrics)
+include!(concat!(env!("OUT_DIR"), "/generated_compare_adapter.rs"));
+
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {
     match o {
         metadata::ExifOrientation::Normal => domain::metadata::ExifOrientation::Normal,
@@ -703,61 +706,5 @@ fn to_domain_metadata_set(ms: &metadata::MetadataSet) -> domain::metadata_set::M
     }
 }
 
-// ─── Compare Interface ──────────────────────────────────────────────────
-
-impl compare::Guest for Component {
-    fn psnr(
-        a: Vec<u8>,
-        info_a: types::ImageInfo,
-        b: Vec<u8>,
-        info_b: types::ImageInfo,
-    ) -> Result<f64, RasmcoreError> {
-        let ia = to_domain_image_info(&info_a);
-        let ib = to_domain_image_info(&info_b);
-        domain::metrics::psnr(&a, &ia, &b, &ib).map_err(to_wit_error)
-    }
-
-    fn ssim(
-        a: Vec<u8>,
-        info_a: types::ImageInfo,
-        b: Vec<u8>,
-        info_b: types::ImageInfo,
-    ) -> Result<f64, RasmcoreError> {
-        let ia = to_domain_image_info(&info_a);
-        let ib = to_domain_image_info(&info_b);
-        domain::metrics::ssim(&a, &ia, &b, &ib).map_err(to_wit_error)
-    }
-
-    fn rmse(
-        a: Vec<u8>,
-        info_a: types::ImageInfo,
-        b: Vec<u8>,
-        info_b: types::ImageInfo,
-    ) -> Result<f64, RasmcoreError> {
-        let ia = to_domain_image_info(&info_a);
-        let ib = to_domain_image_info(&info_b);
-        domain::metrics::rmse(&a, &ia, &b, &ib).map_err(to_wit_error)
-    }
-
-    fn mae(
-        a: Vec<u8>,
-        info_a: types::ImageInfo,
-        b: Vec<u8>,
-        info_b: types::ImageInfo,
-    ) -> Result<f64, RasmcoreError> {
-        let ia = to_domain_image_info(&info_a);
-        let ib = to_domain_image_info(&info_b);
-        domain::metrics::mae(&a, &ia, &b, &ib).map_err(to_wit_error)
-    }
-
-    fn delta_e_cie76(
-        a: Vec<u8>,
-        info_a: types::ImageInfo,
-        b: Vec<u8>,
-        info_b: types::ImageInfo,
-    ) -> Result<f64, RasmcoreError> {
-        let ia = to_domain_image_info(&info_a);
-        let ib = to_domain_image_info(&info_b);
-        domain::metrics::delta_e_cie76(&a, &ia, &b, &ib).map_err(to_wit_error)
-    }
-}
+// Compare interface — auto-generated from #[register_metric] annotations
+// (included via generated_compare_adapter.rs above)

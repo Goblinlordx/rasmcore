@@ -747,3 +747,35 @@ pub fn register_transform(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+// ─── Metric Registration ───────────────────────────────────────────────────
+
+/// Register a compare metric function.
+///
+/// All metrics have the uniform signature:
+/// `fn(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError>`
+#[proc_macro_attribute]
+pub fn register_metric(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterTransformArgs); // reuse parser (just name)
+    let input_fn = parse_macro_input!(item as ItemFn);
+
+    let fn_name = &input_fn.sig.ident;
+    let metric_name = &args.name;
+    let reg_ident = format_ident!("__RASMCORE_METRIC_{}", fn_name.to_string().to_uppercase());
+
+    let expanded = quote! {
+        #input_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticMetricRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticMetricRegistration {
+                name: #metric_name,
+                fn_name: stringify!(#fn_name),
+                module_path: module_path!(),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
