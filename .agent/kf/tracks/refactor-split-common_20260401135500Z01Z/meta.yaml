@@ -1,0 +1,8 @@
+title: Split filters/common.rs into submodules
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- fix-bytes-per-pixel-layer_20260401135500Z

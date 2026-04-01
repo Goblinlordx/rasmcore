@@ -1,0 +1,6 @@
+title: Move bytes_per_pixel to types.rs (fix layer leakage)
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'

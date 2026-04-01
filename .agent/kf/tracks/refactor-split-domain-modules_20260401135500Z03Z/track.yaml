@@ -1,0 +1,50 @@
+id: refactor-split-domain-modules_20260401135500Z03Z
+title: Split large domain root files into submodules
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Split large monolithic domain files (color_grading 1640, quantize 1284,
+    draw 1247, inpainting 997, color 1150, color_spaces 1109) into focused
+    submodules following the same pattern as the filters split.
+  context: |
+    After the filters refactor, these domain root files are the next largest
+    monoliths. Each mixes multiple algorithms that should be in their own files.
+  codebase_analysis: |
+    color_grading.rs (1640) - ASC-CDL, lift/gamma/gain, curves, split toning, tonemapping
+    quantize.rs (1284) - k-means, palette, dithering
+    draw.rs (1247) - line, rect, circle, polygon, text primitives
+    color.rs (1150) - RGB/HSV/YUV conversions, ICC profile handling
+    color_spaces.rs (1109) - sRGB/Lab/OKLab/ProPhoto conversions, Bradford
+    inpainting.rs (997) - PDE-based, exemplar-based fill algorithms
+  acceptance_criteria:
+  - Each large file split into directory with submodules
+  - No file over 500 lines (except tests)
+  - All imports updated
+  - cargo build + tests pass
+  out_of_scope: Changing algorithm behavior.
+  technical_notes: |
+    Same pattern as filters split - create directory, move functions to
+    individual files, mod.rs re-exports. Use subagents for parallel moves.
+plan:
+- phase: Split files
+  tasks:
+  - text: Split color_grading.rs into color_grading/ submodules
+    done: false
+  - text: Split quantize.rs into quantize/ submodules
+    done: false
+  - text: Split draw.rs into draw/ submodules
+    done: false
+  - text: Split color.rs into color/ submodules
+    done: false
+  - text: Split inpainting.rs into inpainting/ submodules
+    done: false
+- phase: Verification
+  tasks:
+  - text: No domain file over 500 lines
+    done: false
+  - text: cargo build + tests pass
+    done: false
+extra: {}

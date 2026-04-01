@@ -1,0 +1,33 @@
+id: refactor-metadata-submodule_20260401135500Z02Z
+title: Organize metadata files as domain/metadata/ submodule
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Move 5 scattered metadata files (metadata.rs, metadata_iptc.rs,
+    metadata_xmp.rs, metadata_set.rs, metadata_query.rs) into a
+    domain/metadata/ submodule.
+  context: |
+    Five metadata-related files sit loose in domain/ root. Grouping them
+    improves discoverability and matches the hexagonal pattern.
+  acceptance_criteria:
+  - domain/metadata/ directory with mod.rs + submodules
+  - All imports updated
+  - cargo build + tests pass
+  out_of_scope: Changing metadata functionality.
+plan:
+- phase: Implementation
+  tasks:
+  - text: Create domain/metadata/ directory
+    done: false
+  - text: Move metadata files and update mod.rs
+    done: false
+  - text: Update all imports across codebase
+    done: false
+- phase: Verification
+  tasks:
+  - text: cargo build + tests pass
+    done: false
+extra: {}

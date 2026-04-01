@@ -1,0 +1,30 @@
+id: fix-bytes-per-pixel-layer_20260401135500Z
+title: Move bytes_per_pixel from pipeline to types (fix layer leakage)
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: Move bytes_per_pixel() from pipeline/graph.rs to types.rs to fix layer violation.
+  context: |
+    Filters import bytes_per_pixel from pipeline::graph which is wrong — domain
+    operations should not depend on pipeline infrastructure. This is a pure utility
+    that belongs with PixelFormat in types.rs.
+  acceptance_criteria:
+  - bytes_per_pixel defined in domain/types.rs
+  - All imports updated (filters, pipeline, adapters)
+  - No domain code imports from pipeline::graph for utilities
+  - cargo build + tests pass
+  out_of_scope: Other pipeline/domain boundary fixes.
+plan:
+- phase: Implementation
+  tasks:
+  - text: Move bytes_per_pixel() from pipeline/graph.rs to types.rs
+    done: false
+  - text: Update all imports across the codebase
+    done: false
+- phase: Verification
+  tasks:
+  - text: cargo build + cargo component build + tests pass
+    done: false
+extra: {}

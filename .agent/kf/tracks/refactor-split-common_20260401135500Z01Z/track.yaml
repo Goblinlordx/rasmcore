@@ -1,0 +1,47 @@
+id: refactor-split-common_20260401135500Z01Z
+title: Split filters/common.rs into submodules
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Split the 6,342-line common.rs god module into common/ directory with
+    focused submodules (validation, pixel_format, geometry, blending, etc).
+  context: |
+    common.rs replaced the monolithic filters.rs as the shared helper dumping
+    ground. It mixes validation, pixel format conversion, geometry, LUT ops,
+    color ops, blending, noise, perspective, contour, pyramid, and more.
+  acceptance_criteria:
+  - common.rs replaced with common/ directory
+  - Each submodule under 500 lines with clear responsibility
+  - common/mod.rs re-exports everything for backward compat
+  - All filter files still use common::* unchanged
+  - cargo build + tests pass
+  out_of_scope: Splitting domain root files (separate tracks).
+plan:
+- phase: Create directory structure
+  tasks:
+  - text: Create common/ directory with mod.rs
+    done: false
+  - text: Move validation helpers to common/validation.rs
+    done: false
+  - text: Move pixel format helpers to common/pixel_format.rs
+    done: false
+  - text: Move blending helpers to common/blending.rs
+    done: false
+  - text: Move distortion helpers to common/distortion.rs
+    done: false
+  - text: Move noise helpers to common/noise.rs
+    done: false
+  - text: Move perspective/geometry helpers to common/geometry.rs
+    done: false
+  - text: Move remaining helpers to appropriate submodules
+    done: false
+- phase: Verification
+  tasks:
+  - text: Each submodule under 500 lines
+    done: false
+  - text: cargo build + tests pass
+    done: false
+extra: {}
