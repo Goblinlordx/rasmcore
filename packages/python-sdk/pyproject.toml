@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rasmcore"
+version = "0.1.0"
+description = "Pure-Rust WASM image processing pipeline with optional GPU acceleration"
+readme = "README.md"
+license = {text = "MIT OR Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "wasmtime>=43.0",
+]
+
+[project.optional-dependencies]
+gpu = ["wgpu>=0.20"]
+
+[tool.setuptools.packages.find]
+include = ["rasmcore*"]
+
+[tool.setuptools.package-data]
+rasmcore = ["*.wasm"]
