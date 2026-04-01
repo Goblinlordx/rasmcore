@@ -205,3 +205,6 @@ register-stateless-ops_20260401020902Z:
 # Transform codegen — depends on registration being in place
 transform-codegen_20260401030200Z:
   - register-transforms_20260401020901Z
+
+# Dynamic codec dispatch — no deps (independent of transform codegen chain)
+dynamic-codec-dispatch_20260401045100Z: []
