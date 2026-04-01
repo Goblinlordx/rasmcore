@@ -1,5 +1,5 @@
 title: Transform codegen — config structs, derive_metadata, generated adapters
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'

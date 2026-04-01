@@ -88,35 +88,35 @@ plan:
   tasks:
   - text: Create ConfigParams structs for all 7 transforms (ResizeParams, CropParams, RotateParams, FlipParams, AutoOrientParams,
       IccToSrgbParams, CompositeParams)
-    done: false
+    done: true
   - text: Add from_config constructors to all 7 transform nodes
-    done: false
+    done: true
   - text: Verify ConfigParams derive produces correct param_descriptors for each
-    done: false
+    done: true
 - phase: Codegen
   tasks:
   - text: Extend rasmcore-codegen to parse
-    done: false
+    done: true
   - text: Generate pipeline transform adapter methods (macro pattern matching filters)
-    done: false
+    done: true
   - text: Generate WIT config records and enum declarations for transforms
-    done: false
+    done: true
   - text: Generate stateless transform::Guest adapter methods
-    done: false
+    done: true
   - text: Wire generated transform adapters via include!() and macro invocation
-    done: false
+    done: true
 - phase: Remove hand-written code
   tasks:
   - text: Remove hand-written transform methods from pipeline_adapter.rs
-    done: false
+    done: true
   - text: Remove hand-written impl transform::Guest from adapter/mod.rs
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: cargo build (native) succeeds
-    done: false
+    done: true
   - text: cargo component build (wasm32-wasip2) succeeds
-    done: false
+    done: true
   - text: All transform tests pass — pipeline and stateless
-    done: false
+    done: true
 extra: {}
