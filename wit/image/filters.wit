@@ -531,18 +531,6 @@ interface filters {
         seed: u32,
     }
 
-    record tonemap-drago-config {
-        bias: f32,
-    }
-
-    record tonemap-filmic-config {
-        shoulder-strength: f32,
-        linear-strength: f32,
-        linear-angle: f32,
-        toe-strength: f32,
-        toe-numerator: f32,
-    }
-
     record smart-crop-config {
         target-width: u32,
         target-height: u32,
@@ -751,9 +739,6 @@ interface filters {
     lum-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
     sat-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
     film-grain: func(pixels: buffer, info: image-info, config: film-grain-config) -> result<buffer, rasmcore-error>;
-    tonemap-reinhard: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    tonemap-drago: func(pixels: buffer, info: image-info, config: tonemap-drago-config) -> result<buffer, rasmcore-error>;
-    tonemap-filmic: func(pixels: buffer, info: image-info, config: tonemap-filmic-config) -> result<buffer, rasmcore-error>;
     smart-crop: func(pixels: buffer, info: image-info, config: smart-crop-config) -> result<buffer, rasmcore-error>;
     seam-carve-width: func(pixels: buffer, info: image-info, config: seam-carve-width-config) -> result<buffer, rasmcore-error>;
     seam-carve-height: func(pixels: buffer, info: image-info, config: seam-carve-height-config) -> result<buffer, rasmcore-error>;
