@@ -230,12 +230,14 @@ fn main() {
     println!("cargo:rerun-if-changed=src/domain/types.rs");
     println!("cargo:rerun-if-changed=src/domain/metadata.rs");
 
-    // Collect all enum definitions from types.rs, metadata.rs, and filters.rs
+    // Collect all enum definitions from types.rs, metadata.rs, filters/*.rs
+    let filters_common_path = Path::new(&manifest_dir).join("src/domain/filters/common.rs");
     let mut all_enums = std::collections::HashMap::new();
     for (enum_src_path, domain_mod) in [
         (&types_path, "types"),
         (&metadata_path, "metadata"),
         (&filters_path, "filters"),
+        (&filters_common_path, "filters"),
     ] {
         if enum_src_path.exists() {
             let source = std::fs::read_to_string(enum_src_path).unwrap_or_default();
@@ -265,11 +267,15 @@ fn main() {
             if !dir_path.is_dir() {
                 continue;
             }
-            // Concatenate all .rs files in the directory
+            // Concatenate all .rs files in the directory (skip mod.rs — it has
+            // module declarations that break syn::parse_file when concatenated)
             let mut combined = String::new();
             if let Ok(entries) = std::fs::read_dir(&dir_path) {
                 for entry in entries.flatten() {
-                    if entry.path().extension().is_some_and(|e| e == "rs") {
+                    let fname = entry.file_name();
+                    if entry.path().extension().is_some_and(|e| e == "rs")
+                        && fname != "mod.rs"
+                    {
                         combined.push_str(&std::fs::read_to_string(entry.path()).unwrap_or_default());
                         combined.push('\n');
                     }
