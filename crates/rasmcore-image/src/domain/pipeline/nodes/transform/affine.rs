@@ -4,7 +4,7 @@ use crate::domain::error::ImageError;
 use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
 use crate::domain::transform;
 use crate::domain::types::*;
-use rasmcore_pipeline::Rect;
+use rasmcore_pipeline::{GpuCapable, GpuOp, Rect};
 
 /// Trait for transform nodes that can be expressed as a 2x3 affine matrix.
 ///
@@ -136,5 +136,52 @@ impl ImageNode for ComposedAffineNode {
 
     fn upstream_id(&self) -> Option<u32> {
         Some(self.upstream)
+    }
+}
+
+impl GpuCapable for ComposedAffineNode {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<GpuOp>> {
+        // Only support RGBA8 on GPU
+        if self.source_info.format != PixelFormat::Rgba8 {
+            return None;
+        }
+
+        // Compute inverse of the 2x3 affine matrix
+        // Forward: [a, b, tx, c, d, ty] -> x' = a*x + b*y + tx
+        // Inverse: solve for (x, y) given (x', y')
+        let [a, b, tx, c, d, ty] = self.matrix;
+        let det = a * d - b * c;
+        if det.abs() < 1e-10 {
+            return None; // Degenerate matrix
+        }
+        let inv_det = 1.0 / det;
+        let inv_a = (d * inv_det) as f32;
+        let inv_b = (-b * inv_det) as f32;
+        let inv_tx = ((b * ty - d * tx) * inv_det) as f32;
+        let inv_c = (-c * inv_det) as f32;
+        let inv_d = (a * inv_det) as f32;
+        let inv_ty = ((c * tx - a * ty) * inv_det) as f32;
+
+        let mut params = Vec::with_capacity(48);
+        params.extend_from_slice(&self.source_info.width.to_le_bytes());
+        params.extend_from_slice(&self.source_info.height.to_le_bytes());
+        params.extend_from_slice(&self.out_width.to_le_bytes());
+        params.extend_from_slice(&self.out_height.to_le_bytes());
+        params.extend_from_slice(&inv_a.to_le_bytes());
+        params.extend_from_slice(&inv_b.to_le_bytes());
+        params.extend_from_slice(&inv_tx.to_le_bytes());
+        params.extend_from_slice(&inv_c.to_le_bytes());
+        params.extend_from_slice(&inv_d.to_le_bytes());
+        params.extend_from_slice(&inv_ty.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
+
+        Some(vec![GpuOp {
+            shader: include_str!("../../../../shaders/affine_resample.wgsl"),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+        }])
     }
 }
