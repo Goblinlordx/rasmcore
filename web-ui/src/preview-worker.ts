@@ -32,34 +32,6 @@ function hexToRgb(hex) {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-function expandArgs(params, paramValues) {
-  const args = [];
-  for (const p of params) {
-    if (p.type === 'color') {
-      const [r, g, b] = hexToRgb(paramValues[p.name] || '#808080');
-      args.push(r, g, b);
-    } else {
-      args.push(paramValues[p.name]);
-    }
-  }
-  return args;
-}
-
-const EXTRA_POSITIONAL_OPS = new Set([
-  'convolve',
-  'displacementMap',
-  'curvesRed',
-  'curvesGreen',
-  'curvesBlue',
-  'curvesMaster',
-  'hueVsSat',
-  'hueVsLum',
-  'lumVsSat',
-  'satVsSat',
-  'applyCubeLut',
-  'gradientMap',
-]);
-
 function buildConfig(params, paramValues) {
   const config = {};
   for (const p of params) {
@@ -77,10 +49,6 @@ function buildConfig(params, paramValues) {
 
 function applyStep(pipe, node, step) {
   const name = step.name;
-  if (EXTRA_POSITIONAL_OPS.has(name)) {
-    const args = expandArgs(step.params, step.paramValues);
-    return pipe[name](node, ...args);
-  }
   if (!step.params || step.params.length === 0) {
     return pipe[name](node);
   }

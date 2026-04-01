@@ -49,38 +49,6 @@ function hexToRgb(hex) {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-function expandArgs(params, paramValues) {
-  const args = [];
-  for (const p of params) {
-    if (p.type === 'color') {
-      const [r, g, b] = hexToRgb(paramValues[p.name] || '#808080');
-      args.push(r, g, b);
-    } else {
-      args.push(paramValues[p.name]);
-    }
-  }
-  return args;
-}
-
-// Ops with extra positional params (string/list) that aren't in the config record.
-// These are a codegen limitation: the filter function takes the string/list as a
-// separate arg, and the WIT mirrors that. Will be eliminated when the codegen is
-// updated to wrap all params in config records.
-const EXTRA_POSITIONAL_OPS = new Set([
-  'convolve',
-  'displacementMap',
-  'curvesRed',
-  'curvesGreen',
-  'curvesBlue',
-  'curvesMaster',
-  'hueVsSat',
-  'hueVsLum',
-  'lumVsSat',
-  'satVsSat',
-  'applyCubeLut',
-  'gradientMap',
-]);
-
 // Build a WIT config record from param metadata + values.
 // Color params expand to { r, g, b } fields in the config.
 // u64/i64 params must be converted to BigInt for jco.
@@ -126,18 +94,12 @@ function applyStep(pipe, node, step, mode) {
     });
   }
 
-  // Ops with extra positional params (string/list) — spread flat args
-  if (EXTRA_POSITIONAL_OPS.has(name)) {
-    const args = expandArgs(step.params, step.paramValues);
-    return pipe[name](node, ...args);
-  }
-
   // No-param ops (equalize, invert, etc.)
   if (!step.params || step.params.length === 0) {
     return pipe[name](node);
   }
 
-  // All other ops: build config record
+  // All ops: build config record
   const config = buildConfig(step.params, step.paramValues);
   return pipe[name](node, config);
 }
