@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-type ViewMode = 'current' | 'before' | 'after' | 'split';
+type ViewMode = 'current' | 'original' | 'split';
 
 interface Props {
   previewCanvasRef: React.MutableRefObject<HTMLCanvasElement | null>;
@@ -64,8 +64,8 @@ export default function Canvas({
     };
   }, []);
 
-  const showPreview = viewMode === 'current' || viewMode === 'after';
-  const showOriginal = viewMode === 'before';
+  const showPreview = viewMode === 'current';
+  const showOriginal = viewMode === 'original';
   const showSplit = viewMode === 'split';
 
   return (
@@ -79,7 +79,7 @@ export default function Canvas({
       {/* Tab bar */}
       {hasImage && (
         <div className="canvas-tabs">
-          {(['current', 'before', 'after'] as const).map((mode) => (
+          {(['current', 'original', 'split'] as const).map((mode) => (
             <button
               key={mode}
               className={'canvas-tab' + (viewMode === mode ? ' active' : '')}
@@ -91,16 +91,6 @@ export default function Canvas({
               {mode.charAt(0).toUpperCase() + mode.slice(1)}
             </button>
           ))}
-          <button
-            className={'canvas-tab split-toggle' + (viewMode === 'split' ? ' active' : '')}
-            onClick={(e) => {
-              e.stopPropagation();
-              setViewMode(viewMode === 'split' ? 'current' : 'split');
-            }}
-            title="Split view"
-          >
-            &#9646;&#9646;
-          </button>
         </div>
       )}
 

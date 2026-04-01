@@ -152,8 +152,8 @@ describe('Component smoke tests', () => {
       />,
     );
     expect(screen.getByText('Current')).toBeInTheDocument();
-    expect(screen.getByText('Before')).toBeInTheDocument();
-    expect(screen.getByText('After')).toBeInTheDocument();
+    expect(screen.getByText('Original')).toBeInTheDocument();
+    expect(screen.getByText('Split')).toBeInTheDocument();
   });
 
   it('LayerPanel renders add layer button', () => {
