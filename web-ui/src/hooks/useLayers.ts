@@ -71,6 +71,14 @@ export function useLayers() {
     setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)));
   }, []);
 
+  // Functional updater — reads current layer state to avoid stale closures
+  const updateLayerChain = useCallback(
+    (id: number, updater: (currentChain: ChainNode[]) => ChainNode[]) => {
+      setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, chain: updater(l.chain) } : l)));
+    },
+    [],
+  );
+
   const activeLayer = layers.find((l) => l.id === activeLayerId) ?? null;
 
   return {
@@ -82,5 +90,6 @@ export function useLayers() {
     addLayer,
     removeLayer,
     updateLayer,
+    updateLayerChain,
   };
 }

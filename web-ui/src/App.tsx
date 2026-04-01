@@ -24,6 +24,7 @@ export default function App() {
     addLayer,
     removeLayer,
     updateLayer,
+    updateLayerChain,
     setActiveLayerId,
   } = useLayers();
   const {
@@ -36,7 +37,7 @@ export default function App() {
     updateParam,
     applyNode,
     serializeChain,
-  } = useChain(activeLayer, updateLayer);
+  } = useChain(activeLayer, updateLayerChain);
 
   const [codeModalOpen, setCodeModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('jpeg');

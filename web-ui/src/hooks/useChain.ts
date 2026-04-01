@@ -6,22 +6,16 @@ let nextNodeId = 0;
 
 export function useChain(
   activeLayer: LayerState | null,
-  updateLayer: (id: number, updates: Partial<LayerState>) => void,
+  updateLayerChain: (id: number, updater: (chain: ChainNode[]) => ChainNode[]) => void,
 ) {
   const [editingNodeId, setEditingNodeId] = useState<number | null>(null);
 
   const chain = useMemo(() => activeLayer?.chain ?? [], [activeLayer?.chain]);
-
-  const setChain = useCallback(
-    (newChain: ChainNode[]) => {
-      if (activeLayer) updateLayer(activeLayer.id, { chain: newChain });
-    },
-    [activeLayer, updateLayer],
-  );
+  const layerId = activeLayer?.id ?? null;
 
   const addNode = useCallback(
     (op: Operation) => {
-      if (!activeLayer) return;
+      if (layerId === null) return;
       const node: ChainNode = {
         id: nextNodeId++,
         op,
@@ -29,48 +23,55 @@ export function useChain(
         applied: false,
         timingMs: 0,
       };
-      updateLayer(activeLayer.id, { chain: [...chain, node] });
+      updateLayerChain(layerId, (prev) => [...prev, node]);
       setEditingNodeId(node.id);
     },
-    [activeLayer, chain, updateLayer],
+    [layerId, updateLayerChain],
   );
 
   const removeNode = useCallback(
     (id: number) => {
-      setChain(chain.filter((n) => n.id !== id));
+      if (layerId === null) return;
+      updateLayerChain(layerId, (prev) => prev.filter((n) => n.id !== id));
       if (editingNodeId === id) setEditingNodeId(null);
     },
-    [chain, editingNodeId, setChain],
+    [layerId, editingNodeId, updateLayerChain],
   );
 
   const moveNode = useCallback(
     (fromIdx: number, toIdx: number) => {
-      if (fromIdx === toIdx) return;
-      const next = [...chain];
-      const [node] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, node);
-      setChain(next);
+      if (layerId === null || fromIdx === toIdx) return;
+      updateLayerChain(layerId, (prev) => {
+        const next = [...prev];
+        const [node] = next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, node);
+        return next;
+      });
     },
-    [chain, setChain],
+    [layerId, updateLayerChain],
   );
 
   const updateParam = useCallback(
     (nodeId: number, paramName: string, value: number | string | boolean) => {
-      setChain(
-        chain.map((n) =>
+      if (layerId === null) return;
+      updateLayerChain(layerId, (prev) =>
+        prev.map((n) =>
           n.id === nodeId ? { ...n, paramValues: { ...n.paramValues, [paramName]: value } } : n,
         ),
       );
     },
-    [chain, setChain],
+    [layerId, updateLayerChain],
   );
 
   const applyNode = useCallback(
     (nodeId: number) => {
-      setChain(chain.map((n) => (n.id === nodeId ? { ...n, applied: true } : n)));
+      if (layerId === null) return;
+      updateLayerChain(layerId, (prev) =>
+        prev.map((n) => (n.id === nodeId ? { ...n, applied: true } : n)),
+      );
       setEditingNodeId(null);
     },
-    [chain, setChain],
+    [layerId, updateLayerChain],
   );
 
   const serializeChain = useCallback(() => {
