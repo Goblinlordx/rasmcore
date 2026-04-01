@@ -78,38 +78,6 @@ interface filters {
         preserve-luminosity: bool,
     }
 
-    record evaluate-add-config {
-        value: f32,
-    }
-
-    record evaluate-subtract-config {
-        value: f32,
-    }
-
-    record evaluate-multiply-config {
-        factor: f32,
-    }
-
-    record evaluate-divide-config {
-        factor: f32,
-    }
-
-    record evaluate-min-config {
-        value: u8,
-    }
-
-    record evaluate-max-config {
-        value: u8,
-    }
-
-    record evaluate-pow-config {
-        exponent: f32,
-    }
-
-    record evaluate-log-config {
-        base: f32,
-    }
-
     record hue-rotate-config {
         degrees: f32,
     }
@@ -645,15 +613,6 @@ interface filters {
     contrast: func(pixels: buffer, info: image-info, config: contrast-config) -> result<buffer, rasmcore-error>;
     exposure: func(pixels: buffer, info: image-info, config: exposure-config) -> result<buffer, rasmcore-error>;
     color-balance: func(pixels: buffer, info: image-info, config: color-balance-config) -> result<buffer, rasmcore-error>;
-    evaluate-add: func(pixels: buffer, info: image-info, config: evaluate-add-config) -> result<buffer, rasmcore-error>;
-    evaluate-subtract: func(pixels: buffer, info: image-info, config: evaluate-subtract-config) -> result<buffer, rasmcore-error>;
-    evaluate-multiply: func(pixels: buffer, info: image-info, config: evaluate-multiply-config) -> result<buffer, rasmcore-error>;
-    evaluate-divide: func(pixels: buffer, info: image-info, config: evaluate-divide-config) -> result<buffer, rasmcore-error>;
-    evaluate-min: func(pixels: buffer, info: image-info, config: evaluate-min-config) -> result<buffer, rasmcore-error>;
-    evaluate-max: func(pixels: buffer, info: image-info, config: evaluate-max-config) -> result<buffer, rasmcore-error>;
-    evaluate-pow: func(pixels: buffer, info: image-info, config: evaluate-pow-config) -> result<buffer, rasmcore-error>;
-    evaluate-log: func(pixels: buffer, info: image-info, config: evaluate-log-config) -> result<buffer, rasmcore-error>;
-    evaluate-abs: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     hue-rotate: func(pixels: buffer, info: image-info, config: hue-rotate-config) -> result<buffer, rasmcore-error>;
     saturate: func(pixels: buffer, info: image-info, config: saturate-config) -> result<buffer, rasmcore-error>;
     sepia: func(pixels: buffer, info: image-info, config: sepia-config) -> result<buffer, rasmcore-error>;
