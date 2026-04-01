@@ -1,5 +1,6 @@
 //! Filter: evaluate_divide
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Divide each channel by a factor (clamped to 0-255).

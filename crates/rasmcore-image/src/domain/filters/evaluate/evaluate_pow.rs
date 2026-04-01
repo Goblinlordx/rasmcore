@@ -1,5 +1,6 @@
 //! Filter: evaluate_pow
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Raise normalized channel values to a power.

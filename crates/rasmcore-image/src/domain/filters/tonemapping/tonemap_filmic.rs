@@ -1,5 +1,6 @@
 //! Filmic/ACES tone mapping (Narkowicz 2015 / Hable 2010).
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]

@@ -1,5 +1,6 @@
 //! Reinhard photographic tone reproduction (Reinhard et al. 2002).
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 #[rasmcore_macros::register_filter(

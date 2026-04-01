@@ -1,5 +1,6 @@
 //! Filter: evaluate_multiply
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Multiply each channel by a factor (clamped to 0-255).

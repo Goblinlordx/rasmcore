@@ -1,5 +1,6 @@
 //! Filter: evaluate_abs
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Absolute value of channel values (identity for u8, included for pipeline symmetry).

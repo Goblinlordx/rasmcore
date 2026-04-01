@@ -1,5 +1,6 @@
 //! Filter: evaluate_max
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Ceiling each channel at a maximum value.

@@ -1,5 +1,6 @@
 //! Filter: evaluate_min
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Floor each channel at a minimum value.

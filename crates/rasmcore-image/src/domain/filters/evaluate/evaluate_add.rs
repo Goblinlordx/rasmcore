@@ -1,5 +1,6 @@
 //! Filter: evaluate_add
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Add a constant value to each channel (clamped to 0-255).

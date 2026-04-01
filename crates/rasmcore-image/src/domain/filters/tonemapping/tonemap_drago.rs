@@ -1,5 +1,6 @@
 //! Drago logarithmic HDR tone mapping (Drago et al. 2003).
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]

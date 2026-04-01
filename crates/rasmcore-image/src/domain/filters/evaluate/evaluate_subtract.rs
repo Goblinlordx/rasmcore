@@ -1,5 +1,6 @@
 //! Filter: evaluate_subtract
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Subtract a constant value from each channel (clamped to 0-255).

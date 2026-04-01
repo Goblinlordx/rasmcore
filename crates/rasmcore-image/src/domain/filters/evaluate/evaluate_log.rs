@@ -1,5 +1,6 @@
 //! Filter: evaluate_log
 
+#[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
 /// Logarithmic transform of channel values.

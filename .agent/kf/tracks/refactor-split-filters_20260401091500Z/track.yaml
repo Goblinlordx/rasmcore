@@ -65,9 +65,9 @@ plan:
   - text: Move enhancement category (18 filters) to filters/enhancement/
     done: true
   - text: Move color category (18 filters) to filters/color/
-    done: false
+    done: true
   - text: Move grading category (13 filters) to filters/grading/
-    done: false
+    done: true
   - text: Move effect category (11 filters) to filters/effect/
     done: false
   - text: Move remaining 15 small categories (evaluate, adjustment, draw, morphology, distortion, generator, alpha, threshold,
@@ -76,7 +76,7 @@ plan:
 - phase: Cleanup
   tasks:
   - text: Remove monolithic filters.rs (or reduce to re-exports)
-    done: false
+    done: true
   - text: Update all internal imports across rasmcore-image
     done: false
 - phase: Verification
