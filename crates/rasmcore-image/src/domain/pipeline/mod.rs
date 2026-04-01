@@ -7,6 +7,7 @@
 pub use rasmcore_pipeline::{Rect, SpatialCache};
 pub use rasmcore_pipeline::{cache, rect};
 
+pub mod builder;
 pub mod dispatch;
 pub mod graph;
 pub mod nodes;

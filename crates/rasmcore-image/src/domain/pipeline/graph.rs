@@ -177,6 +177,318 @@ impl ImageNode for FusedClutNode {
     }
 }
 
+/// Structured validation error with node context.
+#[derive(Debug, Clone)]
+pub struct ValidationError {
+    /// Human-readable message describing the validation failure.
+    pub message: String,
+    /// Node index that triggered the error (if applicable).
+    pub node_id: Option<u32>,
+    /// Upstream node index involved (if applicable).
+    pub upstream_id: Option<u32>,
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.node_id, self.upstream_id) {
+            (Some(nid), Some(uid)) => write!(f, "node {nid} (upstream {uid}): {}", self.message),
+            (Some(nid), None) => write!(f, "node {nid}: {}", self.message),
+            _ => write!(f, "{}", self.message),
+        }
+    }
+}
+
+impl From<ValidationError> for ImageError {
+    fn from(e: ValidationError) -> Self {
+        ImageError::InvalidParameters(e.to_string())
+    }
+}
+
+/// A descriptor capturing a node's identity and configuration for graph introspection.
+///
+/// Built alongside the live `NodeGraph` during pipeline construction. Contains
+/// everything needed to reconstruct the node or serialize the graph description.
+#[derive(Debug, Clone)]
+pub struct NodeDescriptor {
+    /// Node category.
+    pub kind: NodeKind,
+    /// Operation name (e.g., "blur", "resize", "source").
+    pub name: String,
+    /// Serialized configuration bytes (operation-specific).
+    pub config: Vec<u8>,
+    /// Upstream node indices (1 for most operations, 2 for composite, 0 for source).
+    pub upstreams: Vec<u32>,
+    /// Output ImageInfo computed at build time from upstream + operation.
+    pub output_info: ImageInfo,
+}
+
+/// Category of a pipeline node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeKind {
+    /// Image source (decode from data).
+    Source,
+    /// Pixel filter (blur, sharpen, color adjustment, etc.).
+    Filter,
+    /// Geometric transform (resize, crop, rotate, flip).
+    Transform,
+    /// Pixel mapper (threshold, quantize, gradient map, etc.).
+    Mapper,
+    /// Composite (blend two images).
+    Composite,
+}
+
+impl std::fmt::Display for NodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeKind::Source => write!(f, "source"),
+            NodeKind::Filter => write!(f, "filter"),
+            NodeKind::Transform => write!(f, "transform"),
+            NodeKind::Mapper => write!(f, "mapper"),
+            NodeKind::Composite => write!(f, "composite"),
+        }
+    }
+}
+
+/// A serializable description of a pipeline graph.
+///
+/// Self-contained — no mutable internal state. Each pipeline method appends a
+/// `NodeDescriptor` during construction. The graph can be inspected, serialized,
+/// and used to reconstruct a live `NodeGraph` for execution.
+#[derive(Debug, Clone)]
+pub struct GraphDescription {
+    descriptors: Vec<NodeDescriptor>,
+}
+
+impl GraphDescription {
+    /// Create an empty graph description.
+    pub fn new() -> Self {
+        Self {
+            descriptors: Vec::new(),
+        }
+    }
+
+    /// Append a node descriptor, validating upstream references.
+    ///
+    /// Returns the new node's index. Enforces DAG invariant: all upstream
+    /// indices must be < current length (no forward or self references).
+    pub fn add(&mut self, descriptor: NodeDescriptor) -> Result<u32, ValidationError> {
+        let current_id = self.descriptors.len() as u32;
+        for &up in &descriptor.upstreams {
+            if up >= current_id {
+                return Err(ValidationError {
+                    message: format!(
+                        "upstream {up} >= current node {current_id} — forward/self reference"
+                    ),
+                    node_id: Some(current_id),
+                    upstream_id: Some(up),
+                });
+            }
+        }
+        self.descriptors.push(descriptor);
+        Ok(current_id)
+    }
+
+    /// Number of nodes in the description.
+    pub fn len(&self) -> usize {
+        self.descriptors.len()
+    }
+
+    /// Whether the description is empty.
+    pub fn is_empty(&self) -> bool {
+        self.descriptors.is_empty()
+    }
+
+    /// Get a node descriptor by index.
+    pub fn get(&self, index: u32) -> Option<&NodeDescriptor> {
+        self.descriptors.get(index as usize)
+    }
+
+    /// Iterate over all node descriptors.
+    pub fn iter(&self) -> impl Iterator<Item = &NodeDescriptor> {
+        self.descriptors.iter()
+    }
+
+    /// Get the output ImageInfo at a given node index.
+    pub fn node_info(&self, index: u32) -> Option<&ImageInfo> {
+        self.descriptors.get(index as usize).map(|d| &d.output_info)
+    }
+
+    /// Validate the full graph description.
+    ///
+    /// Checks:
+    /// 1. All upstream references are valid (< len, not self)
+    /// 2. At least one node exists
+    /// 3. Graph has a clear terminal node (last node)
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.descriptors.is_empty() {
+            return Err(ValidationError {
+                message: "empty graph — no nodes".to_string(),
+                node_id: None,
+                upstream_id: None,
+            });
+        }
+
+        for (i, desc) in self.descriptors.iter().enumerate() {
+            let i = i as u32;
+            for &up in &desc.upstreams {
+                if up >= i {
+                    return Err(ValidationError {
+                        message: format!(
+                            "upstream {up} >= node {i} — invalid reference"
+                        ),
+                        node_id: Some(i),
+                        upstream_id: Some(up),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Compact binary serialization.
+    ///
+    /// Format: [node_count: u32] then for each node:
+    ///   [kind: u8] [name_len: u16] [name: bytes]
+    ///   [config_len: u32] [config: bytes]
+    ///   [upstream_count: u8] [upstreams: u32×N]
+    ///   [width: u32] [height: u32] [format: u8] [color_space: u8]
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(self.descriptors.len() as u32).to_le_bytes());
+
+        for desc in &self.descriptors {
+            // kind
+            buf.push(match desc.kind {
+                NodeKind::Source => 0,
+                NodeKind::Filter => 1,
+                NodeKind::Transform => 2,
+                NodeKind::Mapper => 3,
+                NodeKind::Composite => 4,
+            });
+            // name
+            let name_bytes = desc.name.as_bytes();
+            buf.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+            buf.extend_from_slice(name_bytes);
+            // config
+            buf.extend_from_slice(&(desc.config.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&desc.config);
+            // upstreams
+            buf.push(desc.upstreams.len() as u8);
+            for &up in &desc.upstreams {
+                buf.extend_from_slice(&up.to_le_bytes());
+            }
+            // output_info
+            buf.extend_from_slice(&desc.output_info.width.to_le_bytes());
+            buf.extend_from_slice(&desc.output_info.height.to_le_bytes());
+            buf.push(pixel_format_to_u8(desc.output_info.format));
+            buf.push(color_space_to_u8(desc.output_info.color_space));
+        }
+        buf
+    }
+
+    /// Deserialize a graph description from compact binary format.
+    pub fn deserialize(data: &[u8]) -> Result<Self, ImageError> {
+        let mut pos = 0;
+
+        let read_u8 = |pos: &mut usize| -> Result<u8, ImageError> {
+            if *pos >= data.len() {
+                return Err(ImageError::InvalidInput("truncated graph data".into()));
+            }
+            let v = data[*pos];
+            *pos += 1;
+            Ok(v)
+        };
+        let read_u16 = |pos: &mut usize| -> Result<u16, ImageError> {
+            if *pos + 2 > data.len() {
+                return Err(ImageError::InvalidInput("truncated graph data".into()));
+            }
+            let v = u16::from_le_bytes([data[*pos], data[*pos + 1]]);
+            *pos += 2;
+            Ok(v)
+        };
+        let read_u32 = |pos: &mut usize| -> Result<u32, ImageError> {
+            if *pos + 4 > data.len() {
+                return Err(ImageError::InvalidInput("truncated graph data".into()));
+            }
+            let v = u32::from_le_bytes([
+                data[*pos],
+                data[*pos + 1],
+                data[*pos + 2],
+                data[*pos + 3],
+            ]);
+            *pos += 4;
+            Ok(v)
+        };
+
+        let node_count = read_u32(&mut pos)? as usize;
+        let mut descriptors = Vec::with_capacity(node_count);
+
+        for _ in 0..node_count {
+            let kind = match read_u8(&mut pos)? {
+                0 => NodeKind::Source,
+                1 => NodeKind::Filter,
+                2 => NodeKind::Transform,
+                3 => NodeKind::Mapper,
+                4 => NodeKind::Composite,
+                v => {
+                    return Err(ImageError::InvalidInput(format!(
+                        "unknown node kind: {v}"
+                    )))
+                }
+            };
+
+            let name_len = read_u16(&mut pos)? as usize;
+            if pos + name_len > data.len() {
+                return Err(ImageError::InvalidInput("truncated name".into()));
+            }
+            let name =
+                String::from_utf8(data[pos..pos + name_len].to_vec()).map_err(|_| {
+                    ImageError::InvalidInput("invalid UTF-8 in node name".into())
+                })?;
+            pos += name_len;
+
+            let config_len = read_u32(&mut pos)? as usize;
+            if pos + config_len > data.len() {
+                return Err(ImageError::InvalidInput("truncated config".into()));
+            }
+            let config = data[pos..pos + config_len].to_vec();
+            pos += config_len;
+
+            let upstream_count = read_u8(&mut pos)? as usize;
+            let mut upstreams = Vec::with_capacity(upstream_count);
+            for _ in 0..upstream_count {
+                upstreams.push(read_u32(&mut pos)?);
+            }
+
+            let width = read_u32(&mut pos)?;
+            let height = read_u32(&mut pos)?;
+            let format = u8_to_pixel_format(read_u8(&mut pos)?)?;
+            let color_space = u8_to_color_space(read_u8(&mut pos)?)?;
+
+            descriptors.push(NodeDescriptor {
+                kind,
+                name,
+                config,
+                upstreams,
+                output_info: ImageInfo {
+                    width,
+                    height,
+                    format,
+                    color_space,
+                },
+            });
+        }
+
+        Ok(Self { descriptors })
+    }
+}
+
+impl Default for GraphDescription {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Pipeline-owned node graph.
 pub struct NodeGraph {
     nodes: Vec<Box<dyn ImageNode>>,
@@ -192,6 +504,8 @@ pub struct NodeGraph {
     node_metadata: Vec<rasmcore_pipeline::Metadata>,
     // Per-node accumulator buffers for assembling full images from tiles
     node_accumulators: Vec<Option<Vec<u8>>>,
+    // Graph description — built alongside the live graph
+    description: GraphDescription,
 }
 
 impl NodeGraph {
@@ -208,6 +522,7 @@ impl NodeGraph {
             cache_hit_pixels: std::collections::HashMap::new(),
             node_metadata: Vec::new(),
             node_accumulators: Vec::new(),
+            description: GraphDescription::new(),
         }
     }
 
@@ -224,10 +539,20 @@ impl NodeGraph {
     /// Add a node to the graph. Returns its node-id.
     pub fn add_node(&mut self, node: Box<dyn ImageNode>) -> u32 {
         let id = self.nodes.len() as u32;
+        let info = node.info();
+        let upstreams = self.collect_upstreams(&*node);
         self.nodes.push(node);
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
         self.node_accumulators.push(None);
+        // Track descriptor (best-effort — no name/kind available for untyped adds)
+        let _ = self.description.add(NodeDescriptor {
+            kind: NodeKind::Filter, // default for untyped
+            name: String::new(),
+            config: Vec::new(),
+            upstreams,
+            output_info: info,
+        });
         id
     }
 
@@ -238,10 +563,19 @@ impl NodeGraph {
         metadata: rasmcore_pipeline::Metadata,
     ) -> u32 {
         let id = self.nodes.len() as u32;
+        let info = node.info();
+        let upstreams = self.collect_upstreams(&*node);
         self.nodes.push(node);
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(metadata);
         self.node_accumulators.push(None);
+        let _ = self.description.add(NodeDescriptor {
+            kind: NodeKind::Filter,
+            name: String::new(),
+            config: Vec::new(),
+            upstreams,
+            output_info: info,
+        });
         id
     }
 
@@ -265,6 +599,7 @@ impl NodeGraph {
     ) -> u32 {
         let id = self.nodes.len() as u32;
         let info = node.info();
+        let upstreams = self.collect_upstreams(&*node);
         self.nodes.push(node);
         self.node_hashes.push(hash);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
@@ -288,6 +623,14 @@ impl NodeGraph {
             self.node_accumulators.push(Some(vec![0u8; buf_size]));
         }
 
+        let _ = self.description.add(NodeDescriptor {
+            kind: NodeKind::Filter,
+            name: String::new(),
+            config: Vec::new(),
+            upstreams,
+            output_info: info,
+        });
+
         id
     }
 
@@ -300,6 +643,7 @@ impl NodeGraph {
     ) -> u32 {
         let id = self.nodes.len() as u32;
         let info = node.info();
+        let upstreams = self.collect_upstreams(&*node);
         self.nodes.push(node);
         self.node_hashes.push(hash);
         self.node_metadata.push(metadata);
@@ -322,6 +666,14 @@ impl NodeGraph {
             self.node_accumulators.push(Some(vec![0u8; buf_size]));
         }
 
+        let _ = self.description.add(NodeDescriptor {
+            kind: NodeKind::Filter,
+            name: String::new(),
+            config: Vec::new(),
+            upstreams,
+            output_info: info,
+        });
+
         id
     }
 
@@ -340,6 +692,143 @@ impl NodeGraph {
             .derive_metadata(&upstream_meta)
             .unwrap_or(upstream_meta);
         self.add_node_with_hash_and_metadata(node, hash, meta)
+    }
+
+    /// Add a node with a descriptor specifying its kind and name.
+    ///
+    /// This is the preferred method for adding nodes with full graph description
+    /// tracking. The descriptor provides kind and name for introspection.
+    pub fn add_node_described(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        hash: rasmcore_pipeline::ContentHash,
+        upstream_id: u32,
+        kind: NodeKind,
+        name: &str,
+    ) -> u32 {
+        let upstream_meta = self.node_metadata(upstream_id).clone();
+        let info = node.info();
+        let upstreams = self.collect_upstreams(&*node);
+        let meta = node
+            .derive_metadata(&upstream_meta)
+            .unwrap_or(upstream_meta);
+
+        let id = self.nodes.len() as u32;
+        self.nodes.push(node);
+        self.node_hashes.push(hash);
+        self.node_metadata.push(meta);
+
+        let mut hit = false;
+        if let Some(lc) = &self.layer_cache {
+            let mut lc = lc.borrow_mut();
+            if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
+                self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
+                self.cache_hit_nodes.insert(id);
+                hit = true;
+            }
+        }
+        if hit {
+            self.node_accumulators.push(None);
+        } else {
+            let bpp = bytes_per_pixel(info.format) as usize;
+            let buf_size = info.width as usize * info.height as usize * bpp;
+            self.node_accumulators.push(Some(vec![0u8; buf_size]));
+        }
+
+        let _ = self.description.add(NodeDescriptor {
+            kind,
+            name: name.to_string(),
+            config: Vec::new(),
+            upstreams,
+            output_info: info,
+        });
+
+        id
+    }
+
+    /// Collect upstream node IDs from a node's trait methods.
+    fn collect_upstreams(&self, node: &dyn ImageNode) -> Vec<u32> {
+        match node.upstream_id() {
+            Some(id) => vec![id],
+            None => Vec::new(),
+        }
+    }
+
+    /// Validate the upstream reference of a node before adding it.
+    ///
+    /// Returns `Ok(())` if all upstream references are < current node count,
+    /// or `Err` with a structured validation error.
+    pub fn validate_upstream(&self, upstream_id: u32) -> Result<(), ValidationError> {
+        let current = self.nodes.len() as u32;
+        if upstream_id >= current {
+            return Err(ValidationError {
+                message: format!(
+                    "upstream {upstream_id} does not exist (graph has {current} nodes)"
+                ),
+                node_id: Some(current),
+                upstream_id: Some(upstream_id),
+            });
+        }
+        Ok(())
+    }
+
+    /// Validate the full graph before execution.
+    ///
+    /// Checks:
+    /// 1. Graph is non-empty
+    /// 2. All upstream references within nodes are valid
+    /// 3. Terminal node exists (last node in the graph)
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.nodes.is_empty() {
+            return Err(ValidationError {
+                message: "empty graph — no nodes to execute".into(),
+                node_id: None,
+                upstream_id: None,
+            });
+        }
+
+        for (i, node) in self.nodes.iter().enumerate() {
+            let i = i as u32;
+            if let Some(up) = node.upstream_id() {
+                if up >= i {
+                    return Err(ValidationError {
+                        message: format!(
+                            "upstream {up} >= node {i} — invalid forward/self reference"
+                        ),
+                        node_id: Some(i),
+                        upstream_id: Some(up),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate a specific node for execution.
+    ///
+    /// Checks that the node exists and its output info has valid dimensions.
+    pub fn validate_node(&self, node_id: u32) -> Result<(), ValidationError> {
+        let info = self.node_info(node_id).map_err(|_| ValidationError {
+            message: format!("node {node_id} does not exist"),
+            node_id: Some(node_id),
+            upstream_id: None,
+        })?;
+        if info.width == 0 || info.height == 0 {
+            return Err(ValidationError {
+                message: format!(
+                    "node {node_id} has zero dimensions: {}x{}",
+                    info.width, info.height
+                ),
+                node_id: Some(node_id),
+                upstream_id: None,
+            });
+        }
+        Ok(())
+    }
+
+    /// Get the graph description built alongside the live graph.
+    pub fn description(&self) -> &GraphDescription {
+        &self.description
     }
 
     /// Get the content hash for a node.
@@ -682,6 +1171,7 @@ impl NodeGraph {
         self.cache_hit_pixels.clear();
         self.touched_hashes.clear();
         self.node_metadata.clear();
+        self.description = GraphDescription::new();
         // layer_cache and cache_budget intentionally kept
     }
 
@@ -695,10 +1185,18 @@ impl NodeGraph {
     pub fn add_frame_source(&mut self, node: FrameSourceNode) -> (u32, Rc<FrameSourceNode>) {
         let rc = Rc::new(node);
         let id = self.nodes.len() as u32;
+        let info = rc.info();
         self.nodes.push(Box::new(FrameSourceRcWrapper(rc.clone())));
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
         self.node_accumulators.push(None);
+        let _ = self.description.add(NodeDescriptor {
+            kind: NodeKind::Source,
+            name: "frame_source".to_string(),
+            config: Vec::new(),
+            upstreams: Vec::new(),
+            output_info: info,
+        });
         (id, rc)
     }
 
@@ -783,6 +1281,118 @@ pub fn bytes_per_pixel(format: crate::domain::types::PixelFormat) -> u32 {
         PixelFormat::Cmyka8 => 5,
         PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p | PixelFormat::Nv12 => 4,
     }
+}
+
+/// Serialize PixelFormat to u8 for graph description binary format.
+pub fn pixel_format_to_u8(f: crate::domain::types::PixelFormat) -> u8 {
+    use crate::domain::types::PixelFormat;
+    match f {
+        PixelFormat::Rgb8 => 0,
+        PixelFormat::Rgba8 => 1,
+        PixelFormat::Bgr8 => 2,
+        PixelFormat::Bgra8 => 3,
+        PixelFormat::Gray8 => 4,
+        PixelFormat::Gray16 => 5,
+        PixelFormat::Rgb16 => 6,
+        PixelFormat::Rgba16 => 7,
+        PixelFormat::Cmyk8 => 8,
+        PixelFormat::Cmyka8 => 9,
+        PixelFormat::Yuv420p => 10,
+        PixelFormat::Yuv422p => 11,
+        PixelFormat::Yuv444p => 12,
+        PixelFormat::Nv12 => 13,
+    }
+}
+
+/// Deserialize u8 to PixelFormat.
+pub fn u8_to_pixel_format(v: u8) -> Result<crate::domain::types::PixelFormat, ImageError> {
+    use crate::domain::types::PixelFormat;
+    match v {
+        0 => Ok(PixelFormat::Rgb8),
+        1 => Ok(PixelFormat::Rgba8),
+        2 => Ok(PixelFormat::Bgr8),
+        3 => Ok(PixelFormat::Bgra8),
+        4 => Ok(PixelFormat::Gray8),
+        5 => Ok(PixelFormat::Gray16),
+        6 => Ok(PixelFormat::Rgb16),
+        7 => Ok(PixelFormat::Rgba16),
+        8 => Ok(PixelFormat::Cmyk8),
+        9 => Ok(PixelFormat::Cmyka8),
+        10 => Ok(PixelFormat::Yuv420p),
+        11 => Ok(PixelFormat::Yuv422p),
+        12 => Ok(PixelFormat::Yuv444p),
+        13 => Ok(PixelFormat::Nv12),
+        _ => Err(ImageError::InvalidInput(format!("unknown pixel format: {v}"))),
+    }
+}
+
+/// Serialize ColorSpace to u8 for graph description binary format.
+pub fn color_space_to_u8(cs: crate::domain::types::ColorSpace) -> u8 {
+    use crate::domain::types::ColorSpace;
+    match cs {
+        ColorSpace::Srgb => 0,
+        ColorSpace::LinearSrgb => 1,
+        ColorSpace::DisplayP3 => 2,
+        ColorSpace::Bt709 => 3,
+        ColorSpace::Bt2020 => 4,
+        ColorSpace::ProPhotoRgb => 5,
+        ColorSpace::AdobeRgb => 6,
+    }
+}
+
+/// Deserialize u8 to ColorSpace.
+pub fn u8_to_color_space(v: u8) -> Result<crate::domain::types::ColorSpace, ImageError> {
+    use crate::domain::types::ColorSpace;
+    match v {
+        0 => Ok(ColorSpace::Srgb),
+        1 => Ok(ColorSpace::LinearSrgb),
+        2 => Ok(ColorSpace::DisplayP3),
+        3 => Ok(ColorSpace::Bt709),
+        4 => Ok(ColorSpace::Bt2020),
+        5 => Ok(ColorSpace::ProPhotoRgb),
+        6 => Ok(ColorSpace::AdobeRgb),
+        _ => Err(ImageError::InvalidInput(format!("unknown color space: {v}"))),
+    }
+}
+
+/// Validate crop parameters against source dimensions.
+pub fn validate_crop(
+    src_width: u32,
+    src_height: u32,
+    x: u32,
+    y: u32,
+    crop_width: u32,
+    crop_height: u32,
+) -> Result<(), ValidationError> {
+    if crop_width == 0 || crop_height == 0 {
+        return Err(ValidationError {
+            message: format!("crop dimensions must be > 0, got {crop_width}x{crop_height}"),
+            node_id: None,
+            upstream_id: None,
+        });
+    }
+    if x.saturating_add(crop_width) > src_width || y.saturating_add(crop_height) > src_height {
+        return Err(ValidationError {
+            message: format!(
+                "crop region ({x},{y})+({crop_width}x{crop_height}) exceeds source {src_width}x{src_height}"
+            ),
+            node_id: None,
+            upstream_id: None,
+        });
+    }
+    Ok(())
+}
+
+/// Validate resize parameters.
+pub fn validate_resize(width: u32, height: u32) -> Result<(), ValidationError> {
+    if width == 0 || height == 0 {
+        return Err(ValidationError {
+            message: format!("resize dimensions must be > 0, got {width}x{height}"),
+            node_id: None,
+            upstream_id: None,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -902,6 +1512,255 @@ mod tests {
 
         let p = g.request_region(dbl, Rect::new(0, 0, 5, 5)).unwrap();
         assert!(p.iter().all(|&v| v == 20));
+    }
+
+    #[test]
+    fn validate_empty_graph() {
+        let g = NodeGraph::new(1024 * 1024);
+        let err = g.validate().unwrap_err();
+        assert!(err.message.contains("empty graph"), "got: {}", err.message);
+    }
+
+    #[test]
+    fn validate_valid_graph() {
+        let mut g = NodeGraph::new(1024 * 1024);
+        g.add_node(make_solid(100, 100, 0));
+        assert!(g.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_upstream_check() {
+        let g = NodeGraph::new(1024 * 1024);
+        let err = g.validate_upstream(0).unwrap_err();
+        assert!(
+            err.message.contains("does not exist"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn validate_upstream_ok() {
+        let mut g = NodeGraph::new(1024 * 1024);
+        g.add_node(make_solid(100, 100, 0));
+        assert!(g.validate_upstream(0).is_ok());
+    }
+
+    #[test]
+    fn validate_node_zero_dims() {
+        let mut g = NodeGraph::new(1024 * 1024);
+        g.add_node(Box::new(SolidColorNode {
+            info: ImageInfo {
+                width: 0,
+                height: 100,
+                format: PixelFormat::Rgba8,
+                color_space: ColorSpace::Srgb,
+            },
+            value: 0,
+        }));
+        let err = g.validate_node(0).unwrap_err();
+        assert!(
+            err.message.contains("zero dimensions"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn description_tracks_nodes() {
+        let mut g = NodeGraph::new(1024 * 1024);
+        g.add_node(make_solid(100, 100, 0));
+        g.add_node(make_solid(50, 50, 128));
+        let desc = g.description();
+        assert_eq!(desc.len(), 2);
+        assert_eq!(desc.get(0).unwrap().output_info.width, 100);
+        assert_eq!(desc.get(1).unwrap().output_info.width, 50);
+    }
+
+    #[test]
+    fn description_cleared_on_cleanup() {
+        let mut g = NodeGraph::new(1024 * 1024);
+        g.add_node(make_solid(100, 100, 0));
+        assert_eq!(g.description().len(), 1);
+        g.cleanup();
+        assert!(g.description().is_empty());
+    }
+
+    #[test]
+    fn graph_description_dag_validation() {
+        let mut desc = GraphDescription::new();
+        // Valid: source with no upstreams
+        desc.add(NodeDescriptor {
+            kind: NodeKind::Source,
+            name: "source".into(),
+            config: Vec::new(),
+            upstreams: Vec::new(),
+            output_info: ImageInfo {
+                width: 100,
+                height: 100,
+                format: PixelFormat::Rgba8,
+                color_space: ColorSpace::Srgb,
+            },
+        })
+        .unwrap();
+
+        // Valid: filter referencing node 0
+        desc.add(NodeDescriptor {
+            kind: NodeKind::Filter,
+            name: "blur".into(),
+            config: Vec::new(),
+            upstreams: vec![0],
+            output_info: ImageInfo {
+                width: 100,
+                height: 100,
+                format: PixelFormat::Rgba8,
+                color_space: ColorSpace::Srgb,
+            },
+        })
+        .unwrap();
+
+        // Invalid: forward reference (node 2 references node 2)
+        let err = desc
+            .add(NodeDescriptor {
+                kind: NodeKind::Filter,
+                name: "bad".into(),
+                config: Vec::new(),
+                upstreams: vec![2], // self-reference
+                output_info: ImageInfo {
+                    width: 100,
+                    height: 100,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            })
+            .unwrap_err();
+        assert!(
+            err.message.contains("forward/self reference"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn graph_description_serialize_roundtrip() {
+        let mut desc = GraphDescription::new();
+        desc.add(NodeDescriptor {
+            kind: NodeKind::Source,
+            name: "source".into(),
+            config: vec![1, 2, 3],
+            upstreams: Vec::new(),
+            output_info: ImageInfo {
+                width: 640,
+                height: 480,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+        })
+        .unwrap();
+        desc.add(NodeDescriptor {
+            kind: NodeKind::Transform,
+            name: "resize".into(),
+            config: vec![4, 5],
+            upstreams: vec![0],
+            output_info: ImageInfo {
+                width: 320,
+                height: 240,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+        })
+        .unwrap();
+
+        let bytes = desc.serialize();
+        let desc2 = GraphDescription::deserialize(&bytes).unwrap();
+        assert_eq!(desc2.len(), 2);
+
+        let n0 = desc2.get(0).unwrap();
+        assert_eq!(n0.kind, NodeKind::Source);
+        assert_eq!(n0.name, "source");
+        assert_eq!(n0.config, vec![1, 2, 3]);
+        assert!(n0.upstreams.is_empty());
+        assert_eq!(n0.output_info.width, 640);
+        assert_eq!(n0.output_info.height, 480);
+        assert_eq!(n0.output_info.format, PixelFormat::Rgb8);
+
+        let n1 = desc2.get(1).unwrap();
+        assert_eq!(n1.kind, NodeKind::Transform);
+        assert_eq!(n1.name, "resize");
+        assert_eq!(n1.upstreams, vec![0]);
+        assert_eq!(n1.output_info.width, 320);
+        assert_eq!(n1.output_info.height, 240);
+    }
+
+    #[test]
+    fn graph_description_validate() {
+        let desc = GraphDescription::new();
+        assert!(desc.validate().is_err()); // empty
+
+        let mut desc = GraphDescription::new();
+        desc.add(NodeDescriptor {
+            kind: NodeKind::Source,
+            name: "source".into(),
+            config: Vec::new(),
+            upstreams: Vec::new(),
+            output_info: ImageInfo {
+                width: 100,
+                height: 100,
+                format: PixelFormat::Rgba8,
+                color_space: ColorSpace::Srgb,
+            },
+        })
+        .unwrap();
+        assert!(desc.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_crop_bounds() {
+        // Valid crop
+        assert!(validate_crop(100, 100, 10, 10, 50, 50).is_ok());
+        // Crop exceeds bounds
+        let err = validate_crop(100, 100, 60, 60, 50, 50).unwrap_err();
+        assert!(err.message.contains("exceeds source"), "got: {}", err.message);
+        // Zero dimensions
+        let err = validate_crop(100, 100, 0, 0, 0, 50).unwrap_err();
+        assert!(err.message.contains("must be > 0"), "got: {}", err.message);
+    }
+
+    #[test]
+    fn validate_resize_dims() {
+        assert!(validate_resize(100, 100).is_ok());
+        let err = validate_resize(0, 100).unwrap_err();
+        assert!(err.message.contains("must be > 0"), "got: {}", err.message);
+    }
+
+    #[test]
+    fn graph_description_introspection() {
+        let mut desc = GraphDescription::new();
+        desc.add(NodeDescriptor {
+            kind: NodeKind::Source,
+            name: "source".into(),
+            config: Vec::new(),
+            upstreams: Vec::new(),
+            output_info: ImageInfo {
+                width: 640,
+                height: 480,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+        })
+        .unwrap();
+
+        // Query info at node 0
+        let info = desc.node_info(0).unwrap();
+        assert_eq!(info.width, 640);
+        assert_eq!(info.height, 480);
+
+        // Invalid query
+        assert!(desc.node_info(99).is_none());
+
+        // Iterate
+        let names: Vec<&str> = desc.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, vec!["source"]);
     }
 }
 
