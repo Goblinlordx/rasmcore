@@ -60,6 +60,82 @@ function expandArgs(params, paramValues) {
   return args;
 }
 
+// Pipeline methods that take positional args (not a config record).
+// Everything else uses a config record: pipe.blur(node, { radius: 5.0 })
+const POSITIONAL_ARG_OPS = new Set([
+  'resize',
+  'crop',
+  'rotate',
+  'flip',
+  'grayscale',
+  'convertFormat',
+  'convolve',
+  'displacementMap',
+  'curvesRed',
+  'curvesGreen',
+  'curvesBlue',
+  'curvesMaster',
+  'hueVsSat',
+  'hueVsLum',
+  'lumVsSat',
+  'satVsSat',
+  'applyCubeLut',
+  'applyHaldLut',
+  'gradientMap',
+]);
+
+// Build a WIT config record from param metadata + values.
+// Color params expand to { r, g, b } fields in the config.
+function buildConfig(params, paramValues) {
+  const config = {};
+  for (const p of params) {
+    if (p.type === 'color') {
+      const [r, g, b] = hexToRgb(paramValues[p.name] || '#808080');
+      // WIT color records use {r, g, b} fields
+      config[p.name] = { r, g, b };
+    } else {
+      config[p.name] = paramValues[p.name];
+    }
+  }
+  return config;
+}
+
+function applyStep(pipe, node, step, mode) {
+  const name = step.name;
+
+  // Special thumbnail handling for resize/crop
+  if (name === 'resize' && mode === 'thumb') {
+    const args = expandArgs(step.params, step.paramValues);
+    const scale = Math.min(THUMB_MAX / args[0], THUMB_MAX / args[1], 1);
+    return pipe.resize(
+      node,
+      Math.max(1, Math.round(args[0] * scale)),
+      Math.max(1, Math.round(args[1] * scale)),
+      args[2],
+    );
+  }
+  if (name === 'crop' && mode === 'thumb') {
+    const args = expandArgs(step.params, step.paramValues);
+    const info = pipe.nodeInfo(node);
+    return pipe.crop(node, 0, 0, Math.min(args[2], info.width), Math.min(args[3], info.height));
+  }
+
+  // Positional-arg ops: spread flat args
+  if (POSITIONAL_ARG_OPS.has(name)) {
+    const args = expandArgs(step.params, step.paramValues);
+    return pipe[name](node, ...args);
+  }
+
+  // No-param ops (equalize, invert, etc.)
+  if (!step.params || step.params.length === 0) {
+    return pipe[name](node);
+  }
+
+  // All other ops: build config record
+  const config = buildConfig(step.params, step.paramValues);
+  return pipe[name](node, config);
+}
+
 // ─── Image Loading ──────────────────────────────────────────────────────────
 
 function loadImage(bytes) {
@@ -106,24 +182,7 @@ function processChain(chain, mode) {
 
     for (const step of chain) {
       const t = performance.now();
-      const args = expandArgs(step.params, step.paramValues);
-
-      if (step.name === 'resize' && mode === 'thumb') {
-        const info = pipe.nodeInfo(node);
-        const scale = Math.min(THUMB_MAX / args[0], THUMB_MAX / args[1], 1);
-        node = pipe.resize(
-          node,
-          Math.max(1, Math.round(args[0] * scale)),
-          Math.max(1, Math.round(args[1] * scale)),
-          args[2],
-        );
-      } else if (step.name === 'crop' && mode === 'thumb') {
-        const info = pipe.nodeInfo(node);
-        node = pipe.crop(node, 0, 0, Math.min(args[2], info.width), Math.min(args[3], info.height));
-      } else {
-        node = pipe[step.name](node, ...args);
-      }
-
+      node = applyStep(pipe, node, step, mode);
       timings.push({ name: step.name, ms: Math.round(performance.now() - t) });
     }
 
@@ -150,8 +209,7 @@ function exportImage(chain, format, quality) {
     let node = pipe.read(imageBytes);
 
     for (const step of chain) {
-      const args = expandArgs(step.params, step.paramValues);
-      node = pipe[step.name](node, ...args);
+      node = applyStep(pipe, node, step, 'full');
     }
 
     // Use generic write() — MIME resolved from backend metadata (no hardcoded map)
@@ -186,8 +244,7 @@ function compositeLayers(layerDefs) {
 
       // Apply per-layer chain
       for (const step of layer.chain) {
-        const args = expandArgs(step.params, step.paramValues);
-        node = pipe[step.name](node, ...args);
+        node = applyStep(pipe, node, step, 'full');
       }
 
       if (i === 0) {
