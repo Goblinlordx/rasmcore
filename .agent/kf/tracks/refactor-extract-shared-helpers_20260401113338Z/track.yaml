@@ -5,42 +5,62 @@ status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Move 147 shared helper functions, 7 shared enums, and 8 shared constants
+  summary: 'Move 147 shared helper functions, 7 shared enums, and 8 shared constants
+
     from filters/mod.rs into filters/common.rs as actual code (not re-exports).
-  context: |
-    filters/mod.rs is 16K lines. All 152 filter registrations are extracted
+
+    '
+  context: 'filters/mod.rs is 16K lines. All 152 filter registrations are extracted
+
     to individual files, but the shared helpers they depend on (validate_format,
+
     channels, convolve, pad_reflect, blur_impl, etc.) still live in mod.rs.
+
     filters/common.rs currently just does pub use super::* — it needs the
+
     actual function definitions moved there.
-  codebase_analysis: |
-    75 helpers used by 2+ filters (documented in prior analysis).
+
+    '
+  codebase_analysis: '75 helpers used by 2+ filters (documented in prior analysis).
+
     Key groups: format validation (5), pixel conversion (4), convolution (3),
+
     reflection/padding (4), blur/sharpen impl (2), color ops (2),
+
     distortion (2), morphology (2), blending (5), noise (6), curves (1),
+
     perspective (4), pyramid (4), contour (5).
+
     Plus enums: BlendMode, MorphShape, DistortionSampling, DistortionOverlap,
+
     AdaptiveMethod, NlmAlgorithm, BokehShape.
+
     Plus constants: INTER_BITS, INTER_TAB_SIZE, SIMPLEX_*, PYR_KERNEL.
+
+    '
   acceptance_criteria:
   - All shared helpers defined in filters/common.rs (not just re-exported)
   - filters/mod.rs reduced by the moved code
   - Individual filter files use crate::domain::filters::common::* to access helpers
   - cargo build + cargo component build succeed
   - All 985 tests pass
-  out_of_scope: |
-    Moving ConfigParams or tests (separate tracks).
-  technical_notes: |
-    Use subagents to move function groups in parallel. Each subagent handles
+  out_of_scope: 'Moving ConfigParams or tests (separate tracks).
+
+    '
+  technical_notes: 'Use subagents to move function groups in parallel. Each subagent handles
+
     one logical group (format utils, convolution, blending, etc.).
+
     Verify build after each group. mod.rs keeps pub use common::* for
+
     backward compatibility.
+
+    '
 plan:
 - phase: Extract helper groups
   tasks:
   - text: Move format validation helpers (validate_format, is_16bit, channels, bytes_to_u16, etc.)
-    done: false
+    done: true
   - text: Move convolution helpers (convolve, convolve_separable, is_separable, pad_reflect, reflect)
     done: false
   - text: Move blur/sharpen impl helpers
@@ -50,11 +70,11 @@ plan:
   - text: Move noise/curve/perspective/pyramid helpers
     done: false
   - text: Move shared enums and constants
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: cargo build + cargo component build succeed
-    done: false
+    done: true
   - text: All tests pass
-    done: false
+    done: true
 extra: {}
