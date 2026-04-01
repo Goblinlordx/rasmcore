@@ -196,10 +196,26 @@ fn main() {
     ];
     for (filename, module_name) in &transform_files {
         let path = transform_dir.join(filename);
-        if !path.exists() {
-            continue;
-        }
-        let source = std::fs::read_to_string(&path).unwrap_or_default();
+        // Collect source from single file or all files in directory module
+        let source = if path.exists() {
+            std::fs::read_to_string(&path).unwrap_or_default()
+        } else {
+            let dir_path = transform_dir.join(filename.trim_end_matches(".rs"));
+            if !dir_path.is_dir() {
+                continue;
+            }
+            // Concatenate all .rs files in the directory
+            let mut combined = String::new();
+            if let Ok(entries) = std::fs::read_dir(&dir_path) {
+                for entry in entries.flatten() {
+                    if entry.path().extension().is_some_and(|e| e == "rs") {
+                        combined.push_str(&std::fs::read_to_string(entry.path()).unwrap_or_default());
+                        combined.push('\n');
+                    }
+                }
+            }
+            combined
+        };
         if let Ok(file) = syn::parse_file(&source) {
             let transforms = rasmcore_codegen::parse::transforms::extract_transforms(
                 &file,
