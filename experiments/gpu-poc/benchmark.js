@@ -84,12 +84,45 @@ async function initWASM() {
 // ─── Test Data ──────────────────────────────────────────────────────────────
 
 function generateTestImage(size) {
-  // Random RGBA pixels
+  // Random RGBA pixels (for GPU — raw buffer)
   const data = new Uint8Array(size * size * 4);
   for (let i = 0; i < data.length; i++) {
     data[i] = Math.random() * 255;
   }
   return data;
+}
+
+// Generate a PNG-encoded test image for WASM pipeline (which needs encoded input)
+let _wasmTestImageCache = {};
+function generateWASMTestImage(size) {
+  if (_wasmTestImageCache[size]) return _wasmTestImageCache[size];
+  // Create a canvas, fill with gradient, export as PNG
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, size, size);
+  grad.addColorStop(0, '#ff6600');
+  grad.addColorStop(0.5, '#0066ff');
+  grad.addColorStop(1, '#00ff66');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  // Add some noise for realism
+  const imgData = ctx.getImageData(0, 0, size, size);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    imgData.data[i] += (Math.random() - 0.5) * 20;
+    imgData.data[i+1] += (Math.random() - 0.5) * 20;
+    imgData.data[i+2] += (Math.random() - 0.5) * 20;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  // Convert to PNG bytes
+  const dataUrl = canvas.toDataURL('image/png');
+  const binary = atob(dataUrl.split(',')[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  _wasmTestImageCache[size] = bytes;
+  log(`Generated ${size}x${size} test PNG: ${(bytes.length/1024).toFixed(0)}KB`);
+  return bytes;
 }
 
 function gaussianKernel(radius, sigma) {
@@ -304,15 +337,26 @@ function callWASMOp(pipe, src, opName, config) {
 
 function errMsg(e) {
   if (typeof e === 'string') return e;
+  // jco ComponentError: .payload has the actual error
+  if (e && e.payload !== undefined) {
+    const p = e.payload;
+    if (typeof p === 'string') return p;
+    if (p && p.message) return p.message;
+    if (p && typeof p === 'object') {
+      // WIT rasmcore-error variant
+      const keys = Object.keys(p);
+      return keys.map(k => `${k}: ${p[k]}`).join(', ') || String(p);
+    }
+    return String(p);
+  }
   if (e && e.message) return e.message;
-  if (e && e.payload) return JSON.stringify(e.payload);
-  try { return JSON.stringify(e); } catch { return String(e); }
+  try { return JSON.stringify(e, null, 2); } catch { return String(e); }
 }
 
 async function benchWASMOp(opName, size, config) {
   if (!Pipeline) return { median: -1, p95: -1 };
 
-  const pixels = generateTestImage(size);
+  const pixels = generateWASMTestImage(size);
 
   // Warm up
   for (let i = 0; i < 3; i++) {
