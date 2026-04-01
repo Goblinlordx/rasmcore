@@ -1,0 +1,46 @@
+id: fix-failing-tests_20260402000001Z
+title: Fix 7 failing tests — threshold bugs + Python test deps
+type: bug
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: Fix 2 threshold algorithm bugs (adaptive >= comparison, otsu max-variance) and install Python venv deps (opencv-python,
+    Pillow) for 5 parity tests.
+  context: '7 tests fail on main: 2 threshold algorithm bugs and 5 Python parity tests missing venv dependencies.'
+  codebase_analysis: adaptive_threshold uses strict > comparison instead of >= causing uniform-image test to fail (pixel ==
+    local_mean - C=0 yields false). otsu_threshold returns first threshold with variance > 0 instead of maximum variance (best_var
+    starts at 0.0 so first non-zero wins at bin 20 instead of optimal ~120). Inpainting parity tests (4) require cv2 and quantize
+    parity test (1) requires Pillow — both missing from tests/fixtures/.venv/.
+  acceptance_criteria:
+  - adaptive_gaussian_basic passes (uniform image with C=0 returns all 255)
+  - otsu_bimodal passes (threshold between 20-220 for bimodal image)
+  - All 4 inpainting parity tests pass (telea/ns basic + gradient)
+  - dither_fs_quality_vs_pillow passes (PSNR within 3dB of Pillow)
+  - cargo test -p rasmcore-image --lib has zero failures
+  out_of_scope: Changing inpainting or dithering algorithms. Adding new tests beyond fixing the existing 7.
+  technical_notes: 'Threshold fixes: (1) In adaptive_threshold, change pixel > threshold to pixel >= threshold. (2) In otsu_threshold,
+    initialize best_var to -1.0 or use >= comparison so the maximum between-class variance is selected. Python deps: ensure
+    tests/fixtures/.venv exists with pip install opencv-python Pillow. Add a setup script if missing.'
+plan:
+- phase: Threshold Bug Fixes
+  tasks:
+  - text: "Fix adaptive_threshold: change > to >= in pixel comparison"
+    done: false
+  - text: "Fix otsu_threshold: ensure maximum between-class variance is found"
+    done: false
+  - text: Run threshold tests and verify both pass
+    done: false
+- phase: Python Test Infrastructure
+  tasks:
+  - text: Ensure tests/fixtures/.venv has opencv-python and Pillow installed
+    done: false
+  - text: Add requirements.txt for test dependencies if missing
+    done: false
+  - text: Run all 5 Python parity tests and verify they pass
+    done: false
+- phase: Verification
+  tasks:
+  - text: Full cargo test -p rasmcore-image --lib passes with zero failures
+    done: false
+extra: {}

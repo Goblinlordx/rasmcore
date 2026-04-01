@@ -1,0 +1,53 @@
+id: gpu-cpu-parity-tests_20260402000002Z
+title: GPU vs CPU parity tests for accelerated filters
+type: chore
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: Add automated tests comparing GPU shader output vs CPU output for key accelerated filters (blur, bilateral, spherize,
+    spin blur, 3D LUT) with tolerance-based comparison.
+  context: GPU infrastructure is complete (traits, browser/CLI/Python hosts, WGSL shaders for 25+ filters) but no automated
+    tests verify GPU output matches CPU output. This gap means GPU acceleration cannot be trusted for correctness.
+  codebase_analysis: GPU executor trait is in crates/rasmcore-pipeline/src/gpu.rs. CLI wgpu executor in crates/rasmcore-cli/src/gpu_executor.rs.
+    GpuCapable impls for 25+ filters in domain/pipeline/nodes/gpu_impls.rs. Existing CPU parity tests in crates/rasmcore-image/tests/
+    compare against ImageMagick/OpenCV but none compare GPU vs CPU. The perf.rs benchmark suite (2210 lines) has CPU-only
+    benchmarks for spatial, geometric, and color filters.
+  acceptance_criteria:
+  - GPU vs CPU parity test for Gaussian blur (tolerance <= 1 per channel)
+  - GPU vs CPU parity test for bilateral filter
+  - GPU vs CPU parity test for spherize distortion
+  - GPU vs CPU parity test for 3D LUT color op
+  - All parity tests pass on machines with GPU, skip gracefully without GPU
+  - GPU benchmark group added to perf.rs for key filters
+  out_of_scope: Browser WebGPU parity tests (requires browser automation). Changing GPU shader implementations. Performance
+    optimization.
+  technical_notes: 'Use the wgpu CLI executor for native parity tests. For each filter: run CPU path, run GPU path via GpuExecutor::execute(),
+    compare output pixels with per-channel tolerance of 1 (f32 rounding). Tests should be gated with #[cfg(feature = "gpu-tests")]
+    or runtime GPU detection with skip. Benchmark additions go in a new gpu_benchmarks group in perf.rs.'
+plan:
+- phase: Test Infrastructure
+  tasks:
+  - text: Add gpu-tests feature flag to rasmcore-image Cargo.toml with wgpu dep
+    done: false
+  - text: Create test helper for GPU executor init with skip-on-no-GPU
+    done: false
+- phase: GPU Parity Tests
+  tasks:
+  - text: GPU vs CPU parity test for Gaussian blur
+    done: false
+  - text: GPU vs CPU parity test for bilateral filter
+    done: false
+  - text: GPU vs CPU parity test for spherize distortion
+    done: false
+  - text: GPU vs CPU parity test for 3D LUT color op
+    done: false
+- phase: Benchmarks
+  tasks:
+  - text: Add GPU benchmark group to perf.rs for blur, bilateral, spherize
+    done: false
+- phase: Verification
+  tasks:
+  - text: All GPU parity tests pass (or skip gracefully on no-GPU machines)
+    done: false
+extra: {}
