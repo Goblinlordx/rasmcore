@@ -7,13 +7,19 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let filters_path = Path::new(&manifest_dir).join("src/domain/filters.rs");
+    // Support both filters.rs (legacy) and filters/mod.rs (new directory structure)
+    let filters_path = {
+        let dir_mod = Path::new(&manifest_dir).join("src/domain/filters/mod.rs");
+        let flat_file = Path::new(&manifest_dir).join("src/domain/filters.rs");
+        if dir_mod.exists() { dir_mod } else { flat_file }
+    };
     let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
     let composite_path = Path::new(&manifest_dir).join("src/domain/composite.rs");
     let encoder_dir = Path::new(&manifest_dir).join("src/domain/encoder");
 
     // Tell cargo to rerun if source files or build.rs change
     println!("cargo:rerun-if-changed=src/domain/filters.rs");
+    println!("cargo:rerun-if-changed=src/domain/filters/mod.rs");
     println!("cargo:rerun-if-changed=src/domain/param_types.rs");
     println!("cargo:rerun-if-changed=src/domain/composite.rs");
     println!("cargo:rerun-if-changed=src/domain/encoder");

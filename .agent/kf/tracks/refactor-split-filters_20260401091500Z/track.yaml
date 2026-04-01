@@ -5,45 +5,29 @@ status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Move all 152 registered filters from the 24K-line monolithic filters.rs
+  summary: 'Move all 152 registered filters from the 24K-line monolithic filters.rs
+
     into individual files organized as filters/<category>/<name>.rs.
-  context: |
-    filters.rs is 24,258 lines — 42% of all domain code. It contains 152
+
+    '
+  context: 'filters.rs is 24,258 lines — 42% of all domain code. It contains 152
+
     registered filters across 20 categories, plus ConfigParams structs,
+
     helper functions, and tests. Every edit recompiles the entire file.
+
     This track splits it into ~152 individual files grouped by category.
-  codebase_analysis: |
-    20 categories: spatial(19), enhancement(18), color(18), grading(13),
-    effect(11), evaluate(9), adjustment(9), draw(8), morphology(7),
-    distortion(7), generator(6), alpha(5), threshold(4), edge(4),
-    transform(3), tonemapping(3), composite(3), analysis(2), advanced(2),
-    tool(1).
 
-    Each filter consists of:
-    - One pub fn with #[register_filter] or #[register_mapper] annotation
-    - One #[derive(ConfigParams)] struct (if the filter takes config)
-    - Associated tests in #[cfg(test)] blocks
-    - Shared helpers: convolve(), to_grayscale(), color space conversions
-      (these move to rasmcore-kernel in a prerequisite track)
-
-    Target structure:
-      src/domain/filters/
-        mod.rs              # re-exports, shared types (UpstreamFn etc.)
-        blur/
-          mod.rs
-          gaussian.rs       # one filter
-          box_blur.rs
-          motion.rs
-        edge/
-          mod.rs
-          canny.rs
-          sobel.rs
-        color/
-          mod.rs
-          brightness.rs
-          ...
-        ...20 categories
+    '
+  codebase_analysis: "20 categories: spatial(19), enhancement(18), color(18), grading(13),\neffect(11), evaluate(9), adjustment(9),\
+    \ draw(8), morphology(7),\ndistortion(7), generator(6), alpha(5), threshold(4), edge(4),\ntransform(3), tonemapping(3),\
+    \ composite(3), analysis(2), advanced(2),\ntool(1).\n\nEach filter consists of:\n- One pub fn with #[register_filter]\
+    \ or #[register_mapper] annotation\n- One #[derive(ConfigParams)] struct (if the filter takes config)\n- Associated tests\
+    \ in #[cfg(test)] blocks\n- Shared helpers: convolve(), to_grayscale(), color space conversions\n  (these move to rasmcore-kernel\
+    \ in a prerequisite track)\n\nTarget structure:\n  src/domain/filters/\n    mod.rs              # re-exports, shared types\
+    \ (UpstreamFn etc.)\n    blur/\n      mod.rs\n      gaussian.rs       # one filter\n      box_blur.rs\n      motion.rs\n\
+    \    edge/\n      mod.rs\n      canny.rs\n      sobel.rs\n    color/\n      mod.rs\n      brightness.rs\n      ...\n \
+    \   ...20 categories\n"
   acceptance_criteria:
   - All 152 filters exist as individual files in filters/<category>/
   - Each file contains one registered filter + its ConfigParams
@@ -52,34 +36,28 @@ spec:
   - All existing tests pass
   - cargo build + cargo component build succeed
   - WASM component validates — all filters in param-manifest.json and WIT
-  out_of_scope: |
-    Extracting shared computation to rasmcore-kernel (prerequisite track).
+  out_of_scope: 'Extracting shared computation to rasmcore-kernel (prerequisite track).
+
     Changing filter behavior or signatures — pure file reorganization.
+
     Updating build.rs to scan directory tree (follow-up codegen track).
-  technical_notes: |
-    IMPLEMENTATION STRATEGY — SUBAGENT PARALLELISM:
-    This is a large mechanical refactor (152 files to create). The developer
-    agent should NOT do this sequentially. Instead:
 
-    1. Create the filters/ directory structure (mod.rs for each category)
-    2. Spawn subagents with isolation: "worktree" — one per category
-       (or batch small categories together: ~5-6 subagents total)
-    3. Each subagent: moves that category's filters to individual files,
-       updates imports, runs cargo check
-    4. Parent agent: reviews each subagent's diff, merges results,
-       runs full build + WASM validation
-    5. Delete the monolithic filters.rs
-
-    This allows ~5 parallel workers splitting categories simultaneously.
-    Each subagent handles a self-contained set of files with no cross-category
-    dependencies (shared code is in rasmcore-kernel by this point).
+    '
+  technical_notes: "IMPLEMENTATION STRATEGY — SUBAGENT PARALLELISM:\nThis is a large mechanical refactor (152 files to create).\
+    \ The developer\nagent should NOT do this sequentially. Instead:\n\n1. Create the filters/ directory structure (mod.rs\
+    \ for each category)\n2. Spawn subagents with isolation: \"worktree\" — one per category\n   (or batch small categories\
+    \ together: ~5-6 subagents total)\n3. Each subagent: moves that category's filters to individual files,\n   updates imports,\
+    \ runs cargo check\n4. Parent agent: reviews each subagent's diff, merges results,\n   runs full build + WASM validation\n\
+    5. Delete the monolithic filters.rs\n\nThis allows ~5 parallel workers splitting categories simultaneously.\nEach subagent\
+    \ handles a self-contained set of files with no cross-category\ndependencies (shared code is in rasmcore-kernel by this\
+    \ point).\n"
 plan:
 - phase: Directory scaffold
   tasks:
   - text: Create src/domain/filters/ directory with mod.rs and category subdirectories
-    done: false
+    done: true
   - text: Set up re-exports and shared types (UpstreamFn, common imports) in mod.rs
-    done: false
+    done: true
 - phase: Filter migration (parallel via subagents)
   tasks:
   - text: Move spatial category (19 filters) to filters/spatial/
@@ -92,7 +70,8 @@ plan:
     done: false
   - text: Move effect category (11 filters) to filters/effect/
     done: false
-  - text: Move remaining 15 small categories (evaluate, adjustment, draw, morphology, distortion, generator, alpha, threshold, edge, transform, tonemapping, composite, analysis, advanced, tool)
+  - text: Move remaining 15 small categories (evaluate, adjustment, draw, morphology, distortion, generator, alpha, threshold,
+      edge, transform, tonemapping, composite, analysis, advanced, tool)
     done: false
 - phase: Cleanup
   tasks:
