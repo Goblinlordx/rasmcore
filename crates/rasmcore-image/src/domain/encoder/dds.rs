@@ -6,6 +6,15 @@
 use crate::domain::error::ImageError;
 use crate::domain::types::{ImageInfo, PixelFormat};
 
+/// DDS encode configuration (no parameters — uncompressed only).
+#[derive(Debug, Clone, Default)]
+pub struct DdsEncodeConfig;
+
+/// Encode pixels to DDS format.
+pub fn encode_pixels(pixels: &[u8], info: &ImageInfo, _config: &DdsEncodeConfig) -> Result<Vec<u8>, ImageError> {
+    encode_dds(pixels, info)
+}
+
 // DDS magic number
 const DDS_MAGIC: u32 = 0x20534444; // "DDS "
 

@@ -1,6 +1,15 @@
 use super::super::error::ImageError;
 use super::super::types::{ImageInfo, PixelFormat};
 
+/// FITS encode configuration (no parameters).
+#[derive(Debug, Clone, Default)]
+pub struct FitsEncodeConfig;
+
+/// Encode pixel data to FITS format (with config for uniform API).
+pub fn encode(pixels: &[u8], info: &ImageInfo, _config: &FitsEncodeConfig) -> Result<Vec<u8>, ImageError> {
+    encode_pixels(pixels, info)
+}
+
 /// Encode pixel data to FITS format.
 pub fn encode_pixels(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
     match info.format {

@@ -364,3 +364,80 @@ mod tests {
         assert!(code.contains("finalize_cache"));
     }
 }
+
+/// Generate the encode() dispatch macro — replaces the hardcoded match in encoder/mod.rs.
+///
+/// Each encoder gets a match arm: "format" => { let config = Config::default(); module::encode_fn(pixels, info, &config) }
+/// For encoders with a quality field, the quality param is applied.
+pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
+    let mut code = String::new();
+    code.push_str("// Auto-generated encode dispatch — replaces hardcoded match in encoder/mod.rs.\n");
+    code.push_str("// Do not edit — regenerate by changing encoder configs and rebuilding.\n\n");
+    code.push_str("macro_rules! generated_encode_dispatch {\n");
+    code.push_str("    ($pixels:expr, $info:expr, $format:expr, $quality:expr) => {\n");
+    code.push_str("        match $format {\n");
+
+    for enc in encoders {
+        let module = &enc.module;
+        let config_struct = &enc.config_struct;
+        let format = &enc.format;
+
+        // Determine encode function: use parsed name, or derive from module
+        let encode_fn = if !enc.encode_fn.is_empty() {
+            enc.encode_fn.clone()
+        } else {
+            // Convention: try encode_pixels, encode, or encode_<format>
+            format!("encode_pixels")
+        };
+
+        // Check if config has a quality field
+        let has_quality = enc.fields.iter().any(|f| f.name == "quality");
+        let has_real_config = !enc.fields.is_empty();
+
+        // Generate aliases (e.g., "jpeg" | "jpg")
+        let aliases: Vec<&str> = match format.as_str() {
+            "jpeg" => vec!["jpeg", "jpg"],
+            "heic" => vec!["heic", "heif"],
+            "tiff" => vec!["tiff", "tif"],
+            "pnm" => vec!["pnm", "ppm", "pgm", "pbm"],
+            "exr" => vec!["exr", "openexr"],
+            "jp2" => vec!["jp2", "j2k", "jpeg2000"],
+            "fits" => vec!["fits", "fit"],
+            _ => vec![format.as_str()],
+        };
+        let pattern = aliases.iter().map(|a| format!("\"{}\"", a)).collect::<Vec<_>>().join(" | ");
+
+        if has_real_config {
+            code.push_str(&format!("            {pattern} => {{\n"));
+            if has_quality {
+                code.push_str(&format!(
+                    "                let config = {module}::{config_struct} {{ quality: $quality.unwrap_or({module}::{config_struct}::default().quality), ..Default::default() }};\n"
+                ));
+            } else {
+                code.push_str(&format!(
+                    "                let config = {module}::{config_struct}::default();\n"
+                ));
+            }
+            code.push_str(&format!(
+                "                {module}::{encode_fn}($pixels, $info, &config)\n"
+            ));
+            code.push_str("            }\n");
+        } else {
+            // Zero-field config (unit struct like IcoEncodeConfig) — pass as &Config
+            code.push_str(&format!("            {pattern} => {{\n"));
+            code.push_str(&format!(
+                "                {module}::{encode_fn}($pixels, $info, &{module}::{config_struct})\n"
+            ));
+            code.push_str("            }\n");
+        }
+    }
+
+    code.push_str("            other => Err(crate::domain::error::ImageError::UnsupportedFormat(\n");
+    code.push_str("                [\"encode format '\", other, \"' not supported\"].concat()\n");
+    code.push_str("            ))\n");
+    code.push_str("        }\n");
+    code.push_str("    };\n");
+    code.push_str("}\n");
+    code
+}
+

@@ -146,8 +146,14 @@ fn main() {
     rasmcore_codegen::generate::generate_all(&data, &out_dir);
 
     // ── Parse encoder configs for pipeline write method generation ──
-    let mut encoder_configs = Vec::new();
+    let mut all_encoder_configs = Vec::new(); // ALL encoders (for dispatch generation)
+    let mut encoder_configs = Vec::new(); // Only those with sink functions (for pipeline adapter)
     if encoder_dir.exists() {
+        let sink_source = std::fs::read_to_string(
+            Path::new(&manifest_dir).join("src/domain/pipeline/nodes/sink.rs"),
+        )
+        .unwrap_or_default();
+
         for entry in std::fs::read_dir(&encoder_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
@@ -156,27 +162,29 @@ fn main() {
                 if let Ok(file) = syn::parse_file(&source) {
                     let mut configs =
                         rasmcore_codegen::parse::encoders::extract_encoder_configs(&file);
-                    // Only include encoders that have a corresponding sink function
-                    let sink_source = std::fs::read_to_string(
-                        Path::new(&manifest_dir).join("src/domain/pipeline/nodes/sink.rs"),
-                    )
-                    .unwrap_or_default();
                     for config in &mut configs {
+                        // Check if this format has a sink function
                         let sig_pattern = format!("fn write_{}", config.format);
                         if let Some(pos) = sink_source.find(&sig_pattern) {
                             let sig_end = sink_source[pos..].find('{').unwrap_or(200);
                             let sig = &sink_source[pos..pos + sig_end];
                             config.sink_takes_metadata = sig.contains("metadata");
                         }
-                    }
-                    // Filter: only generate adapter for formats with sink functions
-                    configs.retain(|c| {
-                        let has_sink = sink_source.contains(&format!("fn write_{}", c.format));
-                        if !has_sink {
-                            eprintln!("rasmcore build.rs: skipping {} (no sink function)", c.format);
+                        // Extract encode function name from source
+                        for item in &file.items {
+                            if let syn::Item::Fn(f) = item {
+                                let name = f.sig.ident.to_string();
+                                if name.starts_with("encode") && f.vis == syn::Visibility::Public(syn::token::Pub::default()) {
+                                    config.encode_fn = name;
+                                    break;
+                                }
+                            }
                         }
-                        has_sink
-                    });
+                    }
+                    // All configs go to dispatch generation
+                    all_encoder_configs.extend(configs.clone());
+                    // Only sink-having configs go to pipeline adapter
+                    configs.retain(|c| sink_source.contains(&format!("fn write_{}", c.format)));
                     encoder_configs.extend(configs);
                 }
             }
@@ -204,6 +212,15 @@ fn main() {
         )
         .unwrap();
 
+        // Generate encode dispatch macro from ALL encoders (not just sink-having ones)
+        let encode_dispatch =
+            rasmcore_codegen::generate::pipeline_write::generate_encode_dispatch(&all_encoder_configs);
+        std::fs::write(
+            out_dir.join("generated_encode_dispatch.rs"),
+            &encode_dispatch,
+        )
+        .unwrap();
+
         eprintln!(
             "rasmcore build.rs: Generated {} pipeline write + stateless encoder adapter method(s)",
             encoder_configs.len()
@@ -217,6 +234,11 @@ fn main() {
         std::fs::write(
             out_dir.join("generated_encoder_adapter.rs"),
             "macro_rules! generated_encoder_methods { () => {} }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            out_dir.join("generated_encode_dispatch.rs"),
+            "macro_rules! generated_encode_dispatch { ($p:expr, $i:expr, $f:expr, $q:expr) => { Err(crate::domain::error::ImageError::UnsupportedFormat(\"no encoders\".into())) }; }\n",
         )
         .unwrap();
     }

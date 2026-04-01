@@ -11,13 +11,18 @@ pub mod jp2;
 pub mod jpeg;
 pub mod native_trivial;
 pub mod png;
+pub mod pnm;
 pub mod qoi;
 pub mod streaming;
+pub mod tga;
 pub mod tiff;
 pub mod webp;
 
 use super::error::ImageError;
 use super::types::{FrameSequence, ImageInfo};
+
+// ─── Generated encode dispatch ──────────────────────────────────────────────
+include!(concat!(env!("OUT_DIR"), "/generated_encode_dispatch.rs"));
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────
 
@@ -44,80 +49,16 @@ pub fn registered_encoders() -> Vec<&'static StaticEncoderRegistration> {
 
 /// Encode pixel data to a specific image format (convenience wrapper).
 ///
-/// Dispatches to per-format encoders with default configs. For fine-grained
-/// control, use the per-format encode functions directly (e.g., `jpeg::encode`).
+/// Dispatches to per-format encoders with default configs. The match is
+/// auto-generated from encoder config structs at build time.
+/// For fine-grained control, use per-format encode functions directly.
 pub fn encode(
     pixels: &[u8],
     info: &ImageInfo,
     format: &str,
     quality: Option<u8>,
 ) -> Result<Vec<u8>, ImageError> {
-    match format {
-        "jpeg" | "jpg" => {
-            let config = jpeg::JpegEncodeConfig {
-                quality: quality.unwrap_or(85),
-                progressive: false,
-                turbo: false,
-            };
-            jpeg::encode_pixels(pixels, info, &config)
-        }
-        "jpeg-turbo" => {
-            let config = jpeg::JpegEncodeConfig {
-                quality: quality.unwrap_or(85),
-                progressive: false,
-                turbo: true,
-            };
-            jpeg::encode_pixels(pixels, info, &config)
-        }
-        "png" => {
-            let config = png::PngEncodeConfig::default();
-            png::encode(pixels, info, &config)
-        }
-        "webp" => {
-            let config = webp::WebpEncodeConfig {
-                quality: quality.unwrap_or(75),
-                lossless: false,
-            };
-            webp::encode_pixels(pixels, info, &config)
-        }
-        "gif" => {
-            let config = gif::GifEncodeConfig::default();
-            gif::encode_pixels(pixels, info, &config)
-        }
-        "avif" => {
-            let config = avif::AvifEncodeConfig {
-                quality: quality.unwrap_or(75),
-                ..Default::default()
-            };
-            avif::encode(pixels, info, &config)
-        }
-        "heic" | "heif" => {
-            let config = heic::HeicEncodeConfig {
-                quality: quality.unwrap_or(75),
-            };
-            heic::encode(pixels, info, &config)
-        }
-        "tiff" | "tif" => {
-            let config = tiff::TiffEncodeConfig::default();
-            tiff::encode(pixels, info, &config)
-        }
-        "bmp" => native_trivial::encode_bmp(pixels, info),
-        "ico" => ico::encode_pixels(pixels, info, &ico::IcoEncodeConfig),
-        "qoi" => native_trivial::encode_qoi(pixels, info),
-        "tga" => native_trivial::encode_tga(pixels, info),
-        "hdr" => hdr::encode_pixels(pixels, info, &hdr::HdrEncodeConfig),
-        "pnm" | "ppm" | "pgm" | "pbm" => native_trivial::encode_pnm(pixels, info),
-        "exr" | "openexr" => exr::encode_pixels(pixels, info, &exr::ExrEncodeConfig),
-        "dds" => dds::encode_dds(pixels, info),
-        "jp2" | "j2k" | "jpeg2000" => {
-            let config = jp2::Jp2EncodeConfig::default();
-            jp2::encode(pixels, info, &config)
-        }
-        "fits" | "fit" => fits::encode_pixels(pixels, info),
-        other => Err(ImageError::UnsupportedFormat(format!(
-            "encode format '{other}' not supported"
-        ))),
-    }
+    generated_encode_dispatch!(pixels, info, format, quality)
 }
 
 /// Embed an ICC color profile into encoded image data.

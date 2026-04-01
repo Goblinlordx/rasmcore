@@ -2,6 +2,15 @@
 #[derive(Debug, Clone, Default)]
 pub struct QoiEncodeConfig;
 
+/// Encode pixels to QOI format.
+pub fn encode_pixels(
+    pixels: &[u8],
+    info: &crate::domain::types::ImageInfo,
+    _config: &QoiEncodeConfig,
+) -> Result<Vec<u8>, crate::domain::error::ImageError> {
+    super::native_trivial::encode_qoi(pixels, info)
+}
+
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {
