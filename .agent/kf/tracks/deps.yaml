@@ -214,3 +214,12 @@ stateless-pipeline-graph_20260401054000Z: []
 
 refactor-codegen-file-per-filter_20260401090222Z:
   - refactor-split-filters_20260401091500Z
+
+# Web UI overhaul — PS-style layout, split view, export menu
+web-ui-ps-layout_20260401094012Z: []
+
+web-ui-split-view_20260401094013Z:
+  - web-ui-ps-layout_20260401094012Z
+
+web-ui-export-menu_20260401094014Z:
+  - web-ui-ps-layout_20260401094012Z

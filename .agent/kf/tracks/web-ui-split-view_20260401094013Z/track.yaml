@@ -1,0 +1,96 @@
+id: web-ui-split-view_20260401094013Z
+title: "Web UI — Before/After tabbed comparison with split display"
+type: feature
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Replace the current toggle-based Before/After button with a tabbed view
+    (Current/Before/After) plus a split-display mode with a draggable vertical
+    divider showing before on left and after on right.
+  context: |
+    The web-ui currently has a simple Before/After toggle button (compareBtn) that
+    swaps between previewCanvas and originalCanvas. This is the minimum viable
+    comparison. Photo editors like Photoshop and Lightroom offer richer comparison:
+    - Side-by-side (split view with draggable divider)
+    - Toggle between current result and original
+    - The default view should just show the current processed result
+
+    The user wants tabs above the canvas area: "Current" (default, shows processed
+    result), "Before" (original image), "After" (processed result), and a split
+    display mode. The split display has a vertical divider the user can drag left/right
+    to reveal more of the before or after image.
+  codebase_analysis: |
+    Current implementation (web-ui/src/pipeline.ts lines 1137-1145):
+    - compareBtn toggles showingOriginal boolean
+    - Swaps display:none between previewCanvas and originalCanvas
+    - Button text changes between "Before/After" and "Show Result"
+    - originalCanvas is populated in addLayer() when first image is loaded (lines 629-645)
+    - previewCanvas is updated by worker 'result' handler (lines 477-515)
+
+    Canvas area HTML (index.html lines 162-172):
+    - .canvas-area contains drop-zone, preview-canvas, original-canvas, canvas-info
+    - Both canvases have max-width:100% and max-height constraints
+
+    After the layout track (web-ui-ps-layout), the canvas area will be the dominant
+    screen element with a bottom status bar. The tab bar should sit between the
+    toolbar and the canvas area.
+  acceptance_criteria:
+    - Tab bar above canvas with Current (default), Before, After tabs
+    - Current tab shows the processed result (previewCanvas)
+    - Before tab shows the original unprocessed image (originalCanvas)
+    - After tab shows the same as Current (alias for clarity)
+    - Split mode accessible via a split icon/button in the tab bar
+    - Split mode shows before on left, after on right with a vertical divider
+    - Divider is draggable horizontally with mouse/touch
+    - Divider position persists during the session (not reset on each render)
+    - Default view is Current tab with no split
+    - Split mode works correctly when image is re-processed (canvases update in place)
+  out_of_scope: |
+    - Onion-skin overlay mode
+    - Horizontal split (top/bottom)
+    - Animated transition between before/after
+    - Keyboard shortcuts for tab switching
+  technical_notes: |
+    Implementation approach:
+    1. Add a tab-bar div between toolbar and canvas-area in the layout
+    2. Three tab buttons: Current, Before, After — styled as pill/tab buttons
+    3. A split-mode toggle button (icon: vertical split bars) in the tab bar
+    4. Current/After tabs show previewCanvas, Before tab shows originalCanvas
+    5. Split mode: render both canvases side-by-side in a container with
+       position:relative. A draggable divider element (4px wide, full height)
+       controls clip-path or width of the before image overlay.
+    6. Use CSS clip-path on the originalCanvas to show only the left portion
+       up to the divider position. previewCanvas shows full width behind it.
+    7. Mouse/touch event handlers on divider: mousedown starts drag, mousemove
+       updates divider position and clip-path, mouseup ends drag.
+    8. Store divider position as percentage (default 50%) so it scales with resize.
+plan:
+  - phase: "Tab Bar UI"
+    tasks:
+      - text: "Add tab-bar HTML/CSS between toolbar and canvas-area — Current, Before, After tabs + split toggle"
+        done: false
+      - text: "Style tabs as pill buttons with active state highlighting"
+        done: false
+      - text: "Wire tab click handlers to switch between Current/Before/After views"
+        done: false
+  - phase: "Split View Implementation"
+    tasks:
+      - text: "Create split-container div wrapping both canvases with position:relative"
+        done: false
+      - text: "Add draggable divider element (vertical bar) with cursor:col-resize"
+        done: false
+      - text: "Implement clip-path approach — originalCanvas clipped to left of divider, previewCanvas full width"
+        done: false
+      - text: "Add mousedown/mousemove/mouseup handlers for divider dragging"
+        done: false
+      - text: "Add touch event support (touchstart/touchmove/touchend) for mobile"
+        done: false
+  - phase: "Integration & Polish"
+    tasks:
+      - text: "Update worker result handler to refresh both canvases when in split mode"
+        done: false
+      - text: "Manual test — load image, add filters, switch tabs, drag divider, verify both sides update on re-process"
+        done: false
+extra: {}
