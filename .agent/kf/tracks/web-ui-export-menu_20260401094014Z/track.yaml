@@ -1,113 +1,142 @@
 id: web-ui-export-menu_20260401094014Z
-title: "Web UI — Download menu + code generation integration"
+title: Web UI — Download menu + code generation integration
 type: feature
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Replace the inline export section (format/quality/download pinned to sidebar
+  summary: 'Replace the inline export section (format/quality/download pinned to sidebar
+
     bottom) with a toolbar menu containing format selection, per-format encoder
+
     parameters, download action, and "Get the Code" with syntax-highlighted output.
-  context: |
-    The current export UI is a small row pinned to the sidebar bottom with a format
-    dropdown, quality slider, and download button. This is minimal and doesn't expose
+
+    '
+  context: 'The current export UI is a small row pinned to the sidebar bottom with a format
+
+    dropdown, quality slider, and download button. This is minimal and doesn''t expose
+
     per-format encoder params (PNG compression level, WebP method, JPEG progressive
+
     mode, etc.). The "Code" button is separate in the toolbar.
 
-    The user wants a unified menu experience like Photoshop's File > Export:
+
+    The user wants a unified menu experience like Photoshop''s File > Export:
+
     - A toolbar dropdown menu for export/download
+
     - Format-specific encoder parameters shown when format is selected
+
     - Download button within the menu
+
     - "Get the Code" option in the same menu (generates SDK code)
+
     - This replaces both the sidebar export section and the separate Code button
 
+
     The WASM backend already supports auto-discovered write formats via
+
     sdk.pipeline.supportedWriteFormats(). Per-format params can be derived
+
     from the WIT encoder config types or hardcoded initially.
-  codebase_analysis: |
-    Current export (web-ui/index.html lines 192-204):
+
+    '
+  codebase_analysis: 'Current export (web-ui/index.html lines 192-204):
+
     - .export-section pinned to sidebar bottom
+
     - Format <select> auto-populated from supportedWriteFormats() (lines 30-43)
+
     - Quality <input type="range"> 1-100
-    - Download button triggers requestWorker({type:'export', chain, format, quality})
+
+    - Download button triggers requestWorker({type:''export'', chain, format, quality})
+
 
     Current code generation (pipeline.ts lines 1176-1282):
+
     - generateCode() builds SDK method chain as string
+
     - highlightCode() adds syntax highlighting spans
+
     - Code modal (index.html lines 210-219) with copy-to-clipboard
+
     - Code button in toolbar (line 157)
 
+
     Worker export handler (pipeline.ts lines 533-542):
-    - Receives {type:'exported', data, mime, format} from worker
+
+    - Receives {type:''exported'', data, mime, format} from worker
+
     - Creates blob download link
 
+
     Multi-layer export (lines 1157-1171):
+
     - Falls back to canvas.toBlob() for multi-layer (not using WASM encoder)
+
     - TODO noted in code
 
-    Available write formats (auto-discovered):
-    - Typically: jpeg, png, webp (from supportedWriteFormats())
-    - Quality param is universal, but per-format params differ
-  acceptance_criteria:
-    - Toolbar has a File or Export dropdown menu replacing the Code button
-    - Menu contains format selection with per-format encoder parameters
-    - JPEG params — quality slider (1-100), progressive toggle
-    - PNG params — compression level (0-9)
-    - WebP params — quality slider (1-100), lossless toggle
-    - Download button within the menu triggers WASM-based export
-    - Get the Code option in the menu opens code output (reuses existing generation)
-    - Sidebar export section is removed (moved to toolbar menu)
-    - Format list is still auto-discovered from supportedWriteFormats()
-    - Code output includes the selected format and encoder params
-  out_of_scope: |
-    - Batch export (multiple formats at once)
-    - Export presets (save/load param configurations)
-    - Custom file naming dialog
-    - EXIF metadata editing in export
-  technical_notes: |
-    Implementation approach:
-    1. Add "File" menu button to toolbar (after Grading menu)
-    2. Dropdown contains two sections: "Export" and "Code"
-    3. Export section: format select, format-specific params, Download button
-    4. Code section: "Get the Code" item that opens the existing code modal
-    5. Per-format params rendered dynamically when format changes:
-       - JPEG: quality (range 1-100), progressive (checkbox)
-       - PNG: compression (range 0-9)
-       - WebP: quality (range 1-100), lossless (checkbox)
-       - Other formats: just quality slider as fallback
-    6. Remove .export-section from sidebar HTML
-    7. Remove standalone Code button from toolbar
-    8. Update generateCode() to include format-specific params in output
-    9. Update download handler to pass per-format params to worker
 
-    The menu should stay open while user adjusts params, closing only on
-    Download click, Get the Code click, or outside click.
+    Available write formats (auto-discovered):
+
+    - Typically: jpeg, png, webp (from supportedWriteFormats())
+
+    - Quality param is universal, but per-format params differ
+
+    '
+  acceptance_criteria:
+  - Toolbar has a File or Export dropdown menu replacing the Code button
+  - Menu contains format selection with per-format encoder parameters
+  - JPEG params — quality slider (1-100), progressive toggle
+  - PNG params — compression level (0-9)
+  - WebP params — quality slider (1-100), lossless toggle
+  - Download button within the menu triggers WASM-based export
+  - Get the Code option in the menu opens code output (reuses existing generation)
+  - Sidebar export section is removed (moved to toolbar menu)
+  - Format list is still auto-discovered from supportedWriteFormats()
+  - Code output includes the selected format and encoder params
+  out_of_scope: '- Batch export (multiple formats at once)
+
+    - Export presets (save/load param configurations)
+
+    - Custom file naming dialog
+
+    - EXIF metadata editing in export
+
+    '
+  technical_notes: "Implementation approach:\n1. Add \"File\" menu button to toolbar (after Grading menu)\n2. Dropdown contains\
+    \ two sections: \"Export\" and \"Code\"\n3. Export section: format select, format-specific params, Download button\n4.\
+    \ Code section: \"Get the Code\" item that opens the existing code modal\n5. Per-format params rendered dynamically when\
+    \ format changes:\n   - JPEG: quality (range 1-100), progressive (checkbox)\n   - PNG: compression (range 0-9)\n   - WebP:\
+    \ quality (range 1-100), lossless (checkbox)\n   - Other formats: just quality slider as fallback\n6. Remove .export-section\
+    \ from sidebar HTML\n7. Remove standalone Code button from toolbar\n8. Update generateCode() to include format-specific\
+    \ params in output\n9. Update download handler to pass per-format params to worker\n\nThe menu should stay open while\
+    \ user adjusts params, closing only on\nDownload click, Get the Code click, or outside click.\n"
 plan:
-  - phase: "Menu Structure"
-    tasks:
-      - text: "Add File menu button to toolbar with dropdown container"
-        done: false
-      - text: "Create Export section in dropdown — format select, param area, Download button"
-        done: false
-      - text: "Create Code section in dropdown — Get the Code item"
-        done: false
-      - text: "Remove .export-section from sidebar and standalone Code button from toolbar"
-        done: false
-  - phase: "Per-Format Encoder Params"
-    tasks:
-      - text: "Define per-format param schemas — JPEG (quality, progressive), PNG (compression), WebP (quality, lossless)"
-        done: false
-      - text: "Render format-specific params dynamically when format select changes"
-        done: false
-      - text: "Pass per-format params through to worker export message"
-        done: false
-  - phase: "Code Generation Update"
-    tasks:
-      - text: "Update generateCode() to include format-specific encoder params in output code"
-        done: false
-      - text: "Wire Get the Code menu item to open existing code modal"
-        done: false
-      - text: "Manual test — select each format, adjust params, download, verify code output matches"
-        done: false
+- phase: Menu Structure
+  tasks:
+  - text: Add File menu button to toolbar with dropdown container
+    done: true
+  - text: Create Export section in dropdown — format select, param area, Download button
+    done: true
+  - text: Create Code section in dropdown — Get the Code item
+    done: true
+  - text: Remove .export-section from sidebar and standalone Code button from toolbar
+    done: true
+- phase: Per-Format Encoder Params
+  tasks:
+  - text: Define per-format param schemas — JPEG (quality, progressive), PNG (compression), WebP (quality, lossless)
+    done: true
+  - text: Render format-specific params dynamically when format select changes
+    done: true
+  - text: Pass per-format params through to worker export message
+    done: true
+- phase: Code Generation Update
+  tasks:
+  - text: Update generateCode() to include format-specific encoder params in output code
+    done: true
+  - text: Wire Get the Code menu item to open existing code modal
+    done: true
+  - text: Manual test — select each format, adjust params, download, verify code output matches
+    done: true
 extra: {}
