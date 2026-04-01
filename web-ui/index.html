@@ -34,36 +34,36 @@
     .toolbar button.secondary:hover { background: #444; }
 
     /* ─── Main Layout ─── */
-    .main-layout { display: flex; height: calc(100vh - 40px); }
+    .main-layout { display: flex; height: calc(100vh - 40px - 28px); }
 
-    /* Canvas area */
-    .canvas-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; position: relative; background: #080818; }
-    .canvas-area canvas { max-width: 100%; max-height: calc(100vh - 100px); border: 1px solid #222; border-radius: 4px; }
-    .canvas-info { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #666; display: flex; gap: 16px; }
-    .canvas-info .timing { color: #4ade80; }
+    /* ─── Canvas Area ─── */
+    .canvas-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; position: relative; background: #080818; min-width: 0; }
+    .canvas-area canvas { max-width: 100%; max-height: calc(100vh - 140px); border: 1px solid #222; border-radius: 4px; }
     #drop-zone { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
     #drop-zone.has-image { pointer-events: none; }
     .drop-prompt { border: 2px dashed #333; border-radius: 12px; padding: 3rem 4rem; text-align: center; color: #555; font-size: 0.9rem; }
     .drop-prompt:hover { border-color: #3b82f6; color: #888; cursor: pointer; }
 
-    /* ─── Right Sidebar ─── */
-    .sidebar { width: 300px; background: #0c0c1e; border-left: 1px solid #2a2a4a; display: flex; flex-direction: column; overflow: hidden; transition: width 0.2s; }
-    .sidebar.collapsed { width: 0; }
-    .sidebar-toggle { position: absolute; right: 300px; top: 50%; transform: translateY(-50%); z-index: 10; background: #1a1a3a; border: 1px solid #2a2a4a; border-right: none; border-radius: 6px 0 0 6px; color: #888; cursor: pointer; padding: 8px 4px; font-size: 0.7rem; }
-    .sidebar.collapsed + .sidebar-toggle { right: 0; }
+    /* ─── Right Panel ─── */
+    .right-panel { width: 320px; background: #0c0c1e; border-left: 1px solid #2a2a4a; display: flex; flex-direction: column; overflow: hidden; transition: width 0.2s; flex-shrink: 0; }
+    .right-panel.collapsed { width: 0; border-left: none; }
+    .panel-toggle { position: absolute; right: 320px; top: 50%; transform: translateY(-50%); z-index: 10; background: #1a1a3a; border: 1px solid #2a2a4a; border-right: none; border-radius: 6px 0 0 6px; color: #888; cursor: pointer; padding: 8px 4px; font-size: 0.7rem; transition: right 0.2s; }
+    .right-panel.collapsed ~ .panel-toggle { right: 0; }
 
-    .sidebar-section { padding: 8px 10px; border-bottom: 1px solid #1a1a2e; }
-    .sidebar-section h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 6px; }
-    .sidebar-scroll { flex: 1; overflow-y: auto; padding: 0; }
+    .panel-section { border-bottom: 1px solid #1a1a2e; }
+    .panel-section-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 4px; cursor: pointer; user-select: none; }
+    .panel-section-header h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin: 0; }
+    .panel-section-header .section-toggle { font-size: 0.55rem; color: #555; transition: transform 0.2s; }
+    .panel-section-header .section-toggle.collapsed { transform: rotate(-90deg); }
+    .panel-section-body { padding: 0 0 4px; }
+    .panel-section-body.collapsed { display: none; }
+    .panel-scroll { flex: 1; overflow-y: auto; }
 
     /* ─── Layer Cards ─── */
     .layer-card { background: #12122a; border: 1px solid #2a2a4a; border-radius: 6px; margin: 4px 8px; transition: border-color 0.2s; }
     .layer-card.active { border-color: #8b5cf6; }
     .layer-card-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; }
-    .drag-handle { width: 16px; cursor: grab; color: #444; font-size: 0.8rem; text-align: center; user-select: none; flex-shrink: 0; }
-    .drag-handle:hover { color: #888; }
-    .drag-handle:active { cursor: grabbing; }
-    .layer-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 3px; border: 1px solid #333; flex-shrink: 0; }
+    .layer-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 3px; border: 1px solid #333; flex-shrink: 0; }
     .layer-name { flex: 1; font-weight: 600; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layer-vis { cursor: pointer; font-size: 0.75rem; opacity: 0.6; flex-shrink: 0; }
     .layer-vis:hover { opacity: 1; }
@@ -76,23 +76,29 @@
     #add-layer-btn { width: calc(100% - 16px); margin: 4px 8px; background: #1a1a3a; border: 1px dashed #333; font-size: 0.65rem; color: #888; padding: 6px; border-radius: 4px; cursor: pointer; }
     #add-layer-btn:hover { border-color: #3b82f6; color: #e0e0e0; }
 
-    /* ─── Chain/Operations ─── */
-    .node-card { background: #16162e; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 10px; margin: 4px 8px; position: relative; transition: border-color 0.2s; }
+    /* ─── Effect Stack (Chain/Operations) ─── */
+    .node-card { background: #16162e; border: 1px solid #2a2a4a; border-radius: 6px; padding: 0; margin: 4px 8px; position: relative; transition: border-color 0.2s; }
     .node-card.editing { border-color: #3b82f6; background: #1a1a3a; }
-    .node-card .node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
-    .node-card .node-name { font-size: 0.75rem; font-weight: 600; }
+    .node-card.pending { border-color: #f59e0b; border-style: dashed; }
+    .node-card .node-header { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
+    .node-card .drag-handle { width: 16px; cursor: grab; color: #444; font-size: 0.75rem; text-align: center; user-select: none; flex-shrink: 0; }
+    .node-card .drag-handle:hover { color: #888; }
+    .node-card .drag-handle:active { cursor: grabbing; }
+    .node-card .node-name { font-size: 0.75rem; font-weight: 600; flex: 1; }
+    .node-card .node-actions { display: flex; gap: 6px; align-items: center; }
     .node-card .node-remove { cursor: pointer; color: #666; font-size: 0.8rem; }
     .node-card .node-remove:hover { color: #f87171; }
     .node-card .node-timing { font-size: 0.6rem; color: #4ade80; }
+    .node-card .node-body { padding: 4px 8px 8px; }
 
-    /* Param rows — one per line */
+    /* Param rows */
     .param-row { margin-top: 6px; }
     .param-row label { display: block; font-size: 0.65rem; color: #888; margin-bottom: 2px; }
     .param-row label .param-value { float: right; color: #3b82f6; font-family: monospace; font-size: 0.65rem; }
     .param-row input[type="range"] { width: 100%; accent-color: #3b82f6; }
     .param-row select { width: 100%; padding: 3px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; font-size: 0.7rem; }
 
-    /* Smart controls (same as before but using .param-row container) */
+    /* Smart controls */
     .param-row .spinner-input { width: 100%; padding: 3px 6px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; font-size: 0.7rem; font-family: monospace; }
     .param-row .text-input { width: 100%; padding: 3px 6px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; font-size: 0.65rem; font-family: monospace; }
     .param-row .toggle-switch { width: 32px; height: 16px; accent-color: #3b82f6; cursor: pointer; }
@@ -103,12 +109,20 @@
     .param-row .opacity-slider { flex: 1; accent-color: #8b5cf6; }
     .param-row .opacity-number { width: 48px; padding: 2px 4px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; font-size: 0.65rem; font-family: monospace; text-align: right; }
 
-    /* Export dropdown */
+    /* Export section (sidebar bottom) */
     .export-section { padding: 6px 8px; border-top: 1px solid #2a2a4a; background: #0e0e20; }
     .export-section .export-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .export-section select { font-size: 0.7rem; padding: 3px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 3px; }
     .export-section input[type="range"] { width: 60px; accent-color: #3b82f6; }
     .export-section button { padding: 3px 8px; font-size: 0.65rem; }
+
+    /* ─── Bottom Status Bar ─── */
+    .status-bar { height: 28px; background: #0e0e20; border-top: 1px solid #2a2a4a; display: flex; align-items: center; padding: 0 12px; gap: 16px; font-size: 0.65rem; color: #666; flex-shrink: 0; }
+    .status-bar .status-dims { color: #888; }
+    .status-bar .status-time { color: #4ade80; }
+    .status-bar .status-ops { color: #60a5fa; }
+    .status-bar .status-error { color: #f87171; }
+    .status-bar .status-spacer { flex: 1; }
 
     /* Buttons */
     button { padding: 5px 14px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; }
@@ -157,7 +171,7 @@
     <button id="code-btn" class="secondary">{ } Code</button>
   </div>
 
-  <!-- Main layout: canvas + sidebar -->
+  <!-- Main layout: canvas + right panel -->
   <div class="main-layout">
     <div class="canvas-area" id="canvas-area">
       <div id="drop-zone">
@@ -165,27 +179,33 @@
       </div>
       <canvas id="preview-canvas" style="display:none"></canvas>
       <canvas id="original-canvas" style="display:none"></canvas>
-      <div class="canvas-info">
-        <span id="preview-info"></span>
-        <span class="timing" id="total-time"></span>
-      </div>
     </div>
 
-    <div class="sidebar" id="sidebar">
-      <div class="sidebar-scroll">
-        <!-- Layers -->
-        <div class="sidebar-section">
-          <h3>Layers</h3>
-          <div id="layers"></div>
-          <button id="add-layer-btn">+ Add Layer</button>
-          <input type="file" id="layer-file-input" accept="image/*" style="display:none">
+    <div class="right-panel" id="right-panel">
+      <div class="panel-scroll">
+        <!-- Layers Panel -->
+        <div class="panel-section" id="layers-section">
+          <div class="panel-section-header" data-section="layers">
+            <h3>Layers</h3>
+            <span class="section-toggle">&#9660;</span>
+          </div>
+          <div class="panel-section-body" id="layers-body">
+            <div id="layers"></div>
+            <button id="add-layer-btn">+ Add Layer</button>
+            <input type="file" id="layer-file-input" accept="image/*" style="display:none">
+          </div>
         </div>
 
-        <!-- Chain for active layer -->
-        <div class="sidebar-section">
-          <h3>Operations <span id="active-layer-label" style="color:#8b5cf6;font-size:0.55rem"></span></h3>
-          <div id="chain"></div>
-          <div id="drop-hint" style="display:none;padding:12px;text-align:center;color:#555;font-size:0.7rem">Select an operation from the toolbar</div>
+        <!-- Effect Stack Panel -->
+        <div class="panel-section" id="effects-section">
+          <div class="panel-section-header" data-section="effects">
+            <h3>Effect Stack <span id="active-layer-label" style="color:#8b5cf6;font-size:0.55rem"></span></h3>
+            <span class="section-toggle">&#9660;</span>
+          </div>
+          <div class="panel-section-body" id="effects-body">
+            <div id="chain"></div>
+            <div id="drop-hint" style="display:none;padding:12px;text-align:center;color:#555;font-size:0.7rem">Select an operation from the toolbar</div>
+          </div>
         </div>
       </div>
 
@@ -203,6 +223,16 @@
         </div>
       </div>
     </div>
+    <button class="panel-toggle" id="panel-toggle">&#9664;</button>
+  </div>
+
+  <!-- Bottom Status Bar -->
+  <div class="status-bar" id="status-bar">
+    <span class="status-dims" id="status-dims"></span>
+    <span class="status-time" id="status-time"></span>
+    <span class="status-ops" id="status-ops"></span>
+    <span class="status-spacer"></span>
+    <span class="status-error" id="status-error"></span>
   </div>
 
   <input type="file" id="file-input" accept="image/*" style="display:none">
