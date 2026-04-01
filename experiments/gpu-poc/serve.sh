@@ -32,10 +32,11 @@ node -e "
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const MIME = { '.html':'text/html', '.js':'application/javascript', '.wgsl':'text/plain', '.wasm':'application/wasm', '.json':'application/json' };
+const MIME = { '.html':'text/html', '.js':'application/javascript', '.mjs':'application/javascript', '.wgsl':'text/plain', '.wasm':'application/wasm', '.json':'application/json' };
 http.createServer((req, res) => {
-  const file = path.join('.', req.url === '/' ? 'index.html' : decodeURIComponent(req.url));
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end('Not found'); return; }
+  const urlPath = new URL(req.url, 'http://localhost').pathname;
+  const file = path.join('.', urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath));
+  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) { console.log('404:', file); res.writeHead(404); res.end('Not found: ' + file); return; }
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Content-Type', MIME[path.extname(file)] || 'application/octet-stream');
