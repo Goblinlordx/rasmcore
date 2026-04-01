@@ -1,5 +1,5 @@
 title: Unify transform WIT to use config records like filters
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'
