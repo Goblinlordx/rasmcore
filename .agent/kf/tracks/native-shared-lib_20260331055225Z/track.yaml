@@ -1,140 +1,178 @@
 id: native-shared-lib_20260331055225Z
-title: "Native Shared Library — C FFI Surface for rasmcore"
+title: Native Shared Library — C FFI Surface for rasmcore
 type: feature
 status: pending
 created: 2026-03-31
-updated: 2026-03-31
+updated: '2026-04-01'
 spec:
-  summary: >
-    Thin C FFI layer over the codegen dispatch table. Produces
-    .so/.dylib/.dll with a C header. Enables C, C++, Swift, Zig,
-    and any FFI-capable language to use rasmcore natively.
-  context: |
-    rasmcore currently exposes its API via WASM (component model) and
+  summary: 'Thin C FFI layer over the codegen dispatch table. Produces .so/.dylib/.dll with a C header. Enables C, C++, Swift,
+    Zig, and any FFI-capable language to use rasmcore natively.
+
+    '
+  context: 'rasmcore currently exposes its API via WASM (component model) and
+
     will have a native Rust SDK and CLI. Some consumers need a native
+
     shared library with C ABI — game engines, native mobile apps,
+
     desktop tools in C/C++/Swift/Zig, or languages without WASM support.
 
+
     The codegen dispatch table from the CLI track provides the
+
     foundation: dispatch_filter(name, params) and dispatch_generator().
+
     The FFI layer wraps these with extern "C" functions and opaque
+
     handle types.
 
+
     This is not the primary target but is low-effort given the existing
+
     infrastructure — roughly 100 lines of FFI glue.
-  codebase_analysis: |
-    EXISTING:
-    - rasmcore-image Cargo.toml already has crate-type = ["cdylib", "rlib"]
-      (cdylib for WASM, but produces native .so/.dylib on non-WASM targets)
-    - Domain layer is pure Rust, no WASM dependencies
-    - Codegen dispatch table (from CLI track) handles name -> node construction
-    - NodeGraph, SourceNode, sink::write() are the core pipeline API
-    - LayerCache for cross-call persistence
 
-    NEEDS:
-    - New crate crates/rasmcore-ffi (or add to rasmcore-image with feature gate)
-    - extern "C" fn with #[no_mangle] for each API entry point
-    - Opaque handle types (Pipeline*, LayerCache*) using Box + raw pointers
-    - C header generation (cbindgen or hand-written)
-    - Memory ownership protocol (who frees what)
-
-    PATTERN:
-    - Similar to how libvips exposes its C API
-    - Similar to how wgpu-native wraps wgpu-core
+    '
+  codebase_analysis: "EXISTING:\n- rasmcore-image Cargo.toml already has crate-type = [\"cdylib\", \"rlib\"]\n  (cdylib for\
+    \ WASM, but produces native .so/.dylib on non-WASM targets)\n- Domain layer is pure Rust, no WASM dependencies\n- Codegen\
+    \ dispatch table (from CLI track) handles name -> node construction\n- NodeGraph, SourceNode, sink::write() are the core\
+    \ pipeline API\n- LayerCache for cross-call persistence\n\nNEEDS:\n- New crate crates/rasmcore-ffi (or add to rasmcore-image\
+    \ with feature gate)\n- extern \"C\" fn with #[no_mangle] for each API entry point\n- Opaque handle types (Pipeline*,\
+    \ LayerCache*) using Box + raw pointers\n- C header generation (cbindgen or hand-written)\n- Memory ownership protocol\
+    \ (who frees what)\n\nPATTERN:\n- Similar to how libvips exposes its C API\n- Similar to how wgpu-native wraps wgpu-core\n"
   acceptance_criteria:
-    - New crate (or feature) producing .so/.dylib/.dll with C ABI
-    - C header file (rasmcore.h) with all public functions
-    - Opaque handle API for Pipeline, LayerCache, ImageBuffer
-    - rasmcore_pipeline_new() / rasmcore_pipeline_read() / rasmcore_pipeline_filter() / rasmcore_pipeline_write()
-    - rasmcore_layer_cache_new() / stats() / clear()
-    - Filter dispatch via rasmcore_pipeline_filter(pipe, source, name, params_json)
-    - Generator dispatch via rasmcore_pipeline_generate(pipe, name, params_json)
-    - rasmcore_free() for all allocated handles and buffers
-    - Error reporting via rasmcore_last_error() (thread-local string)
-    - Builds on Linux (.so), macOS (.dylib), Windows (.dll)
-    - Simple C example that loads image, applies filter, saves output
-  out_of_scope: |
-    Async/callback API. Streaming. Plugin loading.
+  - New crate (or feature) producing .so/.dylib/.dll with C ABI
+  - C header file (rasmcore.h) with all public functions
+  - Opaque handle API for Pipeline, LayerCache, ImageBuffer
+  - rasmcore_pipeline_new() / rasmcore_pipeline_read() / rasmcore_pipeline_filter() / rasmcore_pipeline_write()
+  - rasmcore_layer_cache_new() / stats() / clear()
+  - Filter dispatch via rasmcore_pipeline_filter(pipe, source, name, params_json)
+  - Generator dispatch via rasmcore_pipeline_generate(pipe, name, params_json)
+  - rasmcore_free() for all allocated handles and buffers
+  - Error reporting via rasmcore_last_error() (thread-local string)
+  - Builds on Linux (.so), macOS (.dylib), Windows (.dll)
+  - Simple C example that loads image, applies filter, saves output
+  out_of_scope: 'Async/callback API. Streaming. Plugin loading.
+
     Language-specific bindings (Python ctypes, Swift bridging, etc. — separate tracks).
+
     WASM component model interop (already exists separately).
-  technical_notes: |
-    C API DESIGN:
+
+    '
+  technical_notes: 'C API DESIGN:
+
 
     // Opaque handles
+
     typedef struct RasmPipeline RasmPipeline;
+
     typedef struct RasmLayerCache RasmLayerCache;
 
+
     // Lifecycle
+
     RasmPipeline* rasmcore_pipeline_new(uint32_t cache_mb);
+
     void rasmcore_pipeline_free(RasmPipeline* pipe);
 
+
     // Layer cache (optional, cross-pipeline persistence)
+
     RasmLayerCache* rasmcore_layer_cache_new(uint32_t budget_mb);
+
     void rasmcore_layer_cache_free(RasmLayerCache* cache);
+
     void rasmcore_pipeline_set_cache(RasmPipeline* pipe, RasmLayerCache* cache);
 
+
     // Source
+
     uint32_t rasmcore_read(RasmPipeline* pipe, const uint8_t* data, size_t len);
+
     uint32_t rasmcore_read_file(RasmPipeline* pipe, const char* path);
 
+
     // Filter/generator dispatch (params as JSON string for simplicity)
+
     uint32_t rasmcore_filter(RasmPipeline* pipe, uint32_t source, const char* name, const char* params_json);
+
     uint32_t rasmcore_generate(RasmPipeline* pipe, const char* name, const char* params_json);
 
+
     // Output
+
     uint8_t* rasmcore_write(RasmPipeline* pipe, uint32_t node, const char* format, uint32_t quality, size_t* out_len);
+
     int rasmcore_write_file(RasmPipeline* pipe, uint32_t node, const char* path, uint32_t quality);
+
     void rasmcore_buffer_free(uint8_t* buf);
 
+
     // Error handling (thread-local)
+
     const char* rasmcore_last_error(void);
 
+
     // Info
+
     const char* rasmcore_node_info_json(RasmPipeline* pipe, uint32_t node);
+
     const char* rasmcore_list_filters_json(void);
 
+
     IMPLEMENTATION:
+
     Each extern "C" fn unwraps the opaque pointer, calls the Rust API,
+
     catches panics via catch_unwind, stores errors in thread-local string.
 
+
     HEADER GENERATION:
+
     Use cbindgen crate to auto-generate rasmcore.h from the Rust source.
+
     Or hand-write the header (small enough) and test with a C compile check.
 
+
     JSON FOR PARAMS:
+
     Using JSON strings for filter params keeps the C API stable —
-    new filters don't change the ABI. The dispatch function parses
+
+    new filters don''t change the ABI. The dispatch function parses
+
     JSON into the typed params internally. Alternative: varargs or
+
     key-value array, but JSON is simpler and self-documenting.
+
+    '
 plan:
-  - phase: "FFI Crate Setup"
-    tasks:
-      - text: "Create crates/rasmcore-ffi with Cargo.toml (cdylib, depends on rasmcore-image)"
-        done: false
-      - text: "Define opaque handle types (Pipeline, LayerCache) with Box<T> + raw pointer conversion"
-        done: false
-      - text: "Implement thread-local error storage and rasmcore_last_error()"
-        done: false
-  - phase: "Core API Functions"
-    tasks:
-      - text: "Implement rasmcore_pipeline_new/free, rasmcore_layer_cache_new/free"
-        done: false
-      - text: "Implement rasmcore_read (from bytes) and rasmcore_read_file (from path)"
-        done: false
-      - text: "Implement rasmcore_filter (name + JSON params dispatch)"
-        done: false
-      - text: "Implement rasmcore_generate (generator dispatch, no upstream)"
-        done: false
-      - text: "Implement rasmcore_write (to buffer) and rasmcore_write_file (to path)"
-        done: false
-      - text: "Implement rasmcore_node_info_json and rasmcore_list_filters_json"
-        done: false
-  - phase: "Header & Verification"
-    tasks:
-      - text: "Generate or write rasmcore.h C header"
-        done: false
-      - text: "Write C example program that loads, filters, and saves an image"
-        done: false
-      - text: "Verify builds on macOS (.dylib) and Linux (.so via cross-compile or CI)"
-        done: false
+- phase: FFI Crate Setup
+  tasks:
+  - text: Create crates/rasmcore-ffi with Cargo.toml (cdylib, depends on rasmcore-image)
+    done: true
+  - text: Define opaque handle types (Pipeline, LayerCache) with Box<T> + raw pointer conversion
+    done: true
+  - text: Implement thread-local error storage and rasmcore_last_error()
+    done: true
+- phase: Core API Functions
+  tasks:
+  - text: Implement rasmcore_pipeline_new/free, rasmcore_layer_cache_new/free
+    done: true
+  - text: Implement rasmcore_read (from bytes) and rasmcore_read_file (from path)
+    done: true
+  - text: Implement rasmcore_filter (name + JSON params dispatch)
+    done: true
+  - text: Implement rasmcore_generate (generator dispatch, no upstream)
+    done: true
+  - text: Implement rasmcore_write (to buffer) and rasmcore_write_file (to path)
+    done: true
+  - text: Implement rasmcore_node_info_json and rasmcore_list_filters_json
+    done: true
+- phase: Header & Verification
+  tasks:
+  - text: Generate or write rasmcore.h C header
+    done: true
+  - text: Write C example program that loads, filters, and saves an image
+    done: true
+  - text: Verify builds on macOS (.dylib) and Linux (.so via cross-compile or CI)
+    done: true
 extra: {}

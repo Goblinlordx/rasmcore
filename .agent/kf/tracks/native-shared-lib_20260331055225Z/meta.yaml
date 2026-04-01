@@ -1,8 +1,8 @@
 title: Native Shared Library — C FFI Surface for rasmcore
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-01'
 deps:
 - cli-graph-builder_20260331053718Z
