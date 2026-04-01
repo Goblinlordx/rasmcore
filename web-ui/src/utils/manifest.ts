@@ -39,6 +39,8 @@ function mapParam(p: ManifestRawParam): UiParam | null {
       t === 'u16' ||
       t === 'u8' ||
       t === 'i32' ||
+      t === 'u64' ||
+      t === 'i64' ||
       t === 'bool' ||
       hasHint
     )
@@ -112,10 +114,13 @@ function mapParam(p: ManifestRawParam): UiParam | null {
     'rc.temperature_k': 'temperature',
   };
   const mapped = p.hint ? hintMap[p.hint] : undefined;
+  // u64/i64 types default to spinner (large integer fields like seeds)
+  const typeDefault = t === 'u64' || t === 'i64' ? 'spinner' : 'number';
   return {
     name: p.name,
-    type: mapped || 'number',
+    type: mapped || typeDefault,
     hint: p.hint || '',
+    witType: t,
     min: numMin,
     max: numMax,
     step: numStep,

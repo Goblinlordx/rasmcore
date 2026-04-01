@@ -58,6 +58,7 @@ export interface UiParam {
   name: string;
   type: ControlType;
   hint: string;
+  witType?: string;
   min?: number;
   max?: number;
   step?: number;
