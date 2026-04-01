@@ -28,11 +28,11 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
 
         // Struct
         code.push_str(&format!("pub struct {node_name} {{\n"));
-        code.push_str("    upstream: u32,\n");
-        code.push_str("    source_info: ImageInfo,\n");
+        code.push_str("    pub(crate) upstream: u32,\n");
+        code.push_str("    pub(crate) source_info: ImageInfo,\n");
         for (pname, ptype) in &f.params {
             let clean_n = pname.trim_start_matches('_');
-            code.push_str(&format!("    {clean_n}: {},\n", to_owned_type(ptype)));
+            code.push_str(&format!("    pub(crate) {clean_n}: {},\n", to_owned_type(ptype)));
         }
         code.push_str("}\n\n");
 
