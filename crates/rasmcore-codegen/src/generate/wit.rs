@@ -4,35 +4,78 @@ use crate::types::FilterReg;
 
 use super::helpers::{to_wit_name, to_wit_type};
 
-/// Generate WIT declarations for all filters.
+/// Generate WIT declarations for all filters (records + stateless functions).
 ///
-/// When a filter has `config_struct`, generates a WIT record type and
-/// uses it in the function signature. Otherwise, uses individual params.
-pub fn generate(filters: &[FilterReg]) -> String {
+/// When a filter has `config_struct`, generates a WIT record type from the
+/// struct's fields (looked up in `param_structs`) and uses it in the function
+/// signature. Also generates records for nested ConfigParams types.
+pub fn generate(
+    filters: &[FilterReg],
+    param_structs: &std::collections::HashMap<String, Vec<crate::types::ParamField>>,
+) -> String {
     let mut records = String::new();
     let mut funcs = String::new();
+    let mut emitted_records = std::collections::HashSet::new();
 
-    for f in filters {
-        if f.config_struct.is_some() {
-            // Generate record type
-            let record_name = format!("{}-config", to_wit_name(&f.name));
-            records.push_str(&format!("    record {record_name} {{\n"));
-            for (n, t) in &f.params {
+    // Helper: emit a record and any nested ConfigParams records it references
+    fn emit_record(
+        struct_name: &str,
+        wit_record_name: &str,
+        param_structs: &std::collections::HashMap<String, Vec<crate::types::ParamField>>,
+        records: &mut String,
+        emitted: &mut std::collections::HashSet<String>,
+    ) {
+        if emitted.contains(wit_record_name) {
+            return;
+        }
+        emitted.insert(wit_record_name.to_string());
+
+        if let Some(fields) = param_structs.get(struct_name) {
+            // Emit nested records first
+            for field in fields {
+                if param_structs.contains_key(&field.param_type) {
+                    let nested_wit = to_wit_name(&field.param_type);
+                    emit_record(&field.param_type, &nested_wit, param_structs, records, emitted);
+                }
+            }
+
+            records.push_str(&format!("    record {wit_record_name} {{\n"));
+            for field in fields {
+                let wit_type = if param_structs.contains_key(&field.param_type) {
+                    to_wit_name(&field.param_type)
+                } else {
+                    to_wit_type(&field.param_type)
+                };
                 records.push_str(&format!(
                     "        {}: {},\n",
-                    to_wit_name(n),
-                    to_wit_type(t)
+                    to_wit_name(&field.name),
+                    wit_type
                 ));
             }
             records.push_str("    }\n\n");
+        }
+    }
 
-            // Generate func with config param
+    for f in filters {
+        if let Some(config_name) = &f.config_struct {
+            let record_name = format!("{}-config", to_wit_name(&f.name));
+            emit_record(config_name, &record_name, param_structs, &mut records, &mut emitted_records);
+
+            // Generate func — extra params first, then config
+            let extra_params: Vec<String> = f.params.iter()
+                .filter(|(_n, t)| !(t.starts_with('&') && t.ends_with("Params")))
+                .map(|(n, t)| format!("{}: {}", to_wit_name(n), to_wit_type(t)))
+                .collect();
+            let mut parts = vec!["pixels: buffer".to_string(), "info: image-info".to_string()];
+            parts.extend(extra_params);
+            parts.push(format!("config: {record_name}"));
+
             funcs.push_str(&format!(
-                "    {}: func(pixels: buffer, info: image-info, config: {record_name}) -> result<buffer, rasmcore-error>;\n",
-                to_wit_name(&f.name)
+                "    {}: func({}) -> result<buffer, rasmcore-error>;\n",
+                to_wit_name(&f.name),
+                parts.join(", ")
             ));
         } else {
-            // Individual params (current behavior)
             let wit_params = f
                 .params
                 .iter()
@@ -57,13 +100,17 @@ pub fn generate(filters: &[FilterReg]) -> String {
         }
     }
 
-    // Records first, then functions
     let mut output = String::new();
     if !records.is_empty() {
         output.push_str(&records);
     }
     output.push_str(&funcs);
     output
+}
+
+/// Generate WIT for filters only (backward-compatible wrapper).
+pub fn generate_filters_only(filters: &[FilterReg]) -> String {
+    generate(filters, &std::collections::HashMap::new())
 }
 
 #[cfg(test)]

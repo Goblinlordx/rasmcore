@@ -14,9 +14,28 @@ pub fn to_pascal_case(snake: &str) -> String {
         .collect()
 }
 
-/// Convert Rust snake_case name to WIT kebab-case.
+/// Convert Rust name to WIT kebab-case.
+/// Handles both snake_case (foo_bar → foo-bar) and PascalCase (ColorRgb → color-rgb).
 pub fn to_wit_name(rust_name: &str) -> String {
-    rust_name.trim_start_matches('_').replace('_', "-")
+    let clean = rust_name.trim_start_matches('_');
+    // If already snake_case, convert underscores to hyphens
+    if clean.contains('_') {
+        return clean.replace('_', "-");
+    }
+    // PascalCase → kebab-case (e.g., ColorRgb → color-rgb)
+    let mut result = String::new();
+    let bytes = clean.as_bytes();
+    for (i, ch) in clean.chars().enumerate() {
+        if ch.is_uppercase() && i > 0 {
+            let prev_upper = bytes.get(i - 1).map_or(false, |b| b.is_ascii_uppercase());
+            let next_lower = bytes.get(i + 1).map_or(false, |b| b.is_ascii_lowercase());
+            if !prev_upper || next_lower {
+                result.push('-');
+            }
+        }
+        result.push(ch.to_ascii_lowercase());
+    }
+    result
 }
 
 /// Map Rust type to WIT type.

@@ -66,7 +66,7 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     fs::write(out_dir.join("generated_cli_dispatch.rs"), &cli_dispatch).unwrap();
 
     // WIT declarations (to stderr for review)
-    let wit_decls = wit::generate(&data.filters);
+    let wit_decls = wit::generate(&data.filters, &data.param_structs);
     if !wit_decls.is_empty() {
         eprintln!("\n--- Generated WIT (copy to filters.wit if new filters added) ---");
         eprint!("{wit_decls}");

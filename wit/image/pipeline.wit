@@ -10,28 +10,8 @@ interface pipeline {
     use metadata.{exif-orientation, metadata-set};
     use filters.{adaptive-threshold-config, apply-hald-lut-config, asc-cdl-config, barrel-config, bilateral-config, blur-config, bokeh-blur-config, box-blur-config, brightness-config, burn-config, channel-mixer-config, clahe-config, clarity-config, color-balance-config, color-rgb-config, color-rgba-config, colorize-config, connected-components-config, contrast-config, convolve-config, dehaze-config, dilate-config, dither-floyd-steinberg-config, dither-ordered-config, dodge-config, draw-arc-config, draw-circle-config, draw-ellipse-config, draw-line-config, draw-polygon-config, draw-rect-config, draw-text-config, draw-text-ttf-config, erode-config, evaluate-add-config, evaluate-divide-config, evaluate-log-config, evaluate-max-config, evaluate-min-config, evaluate-multiply-config, evaluate-pow-config, evaluate-subtract-config, exposure-config, film-grain-config, flood-fill-config, frequency-high-config, frequency-low-config, gamma-config, gaussian-blur-cv-config, gaussian-noise-config, guided-filter-config, halftone-config, hough-lines-config, hue-rotate-config, kmeans-quantize-config, kuwahara-config, lens-blur-config, levels-config, lift-gamma-gain-config, median-config, modulate-config, morph-blackhat-config, morph-close-config, morph-gradient-config, morph-open-config, morph-tophat-config, motion-blur-config, nlm-denoise-config, oil-paint-config, perspective-correct-config, perspective-warp-config, photo-filter-config, pixelate-config, poisson-noise-config, posterize-config, pyramid-detail-remap-config, quantize-config, rank-filter-config, retinex-msr-config, retinex-msrcr-config, retinex-ssr-config, ripple-config, salt-pepper-noise-config, saturate-config, seam-carve-height-config, seam-carve-width-config, selective-color-config, sepia-config, shadow-highlight-config, sharpen-config, sigmoidal-contrast-config, smart-crop-config, smart-sharpen-config, solarize-config, sparse-color-config, spherize-config, spin-blur-config, split-toning-config, swirl-config, threshold-binary-config, tilt-shift-config, tonemap-drago-config, tonemap-filmic-config, uniform-noise-config, vibrance-config, vignette-config, vignette-powerlaw-config, wave-config, white-balance-temperature-config, zoom-blur-config};
 
-    /// Blend modes for compositing operations
-    enum blend-mode {
-        multiply, screen, overlay, darken, lighten,
-        soft-light, hard-light, difference, exclusion,
-        color-dodge, color-burn, vivid-light,
-        linear-dodge, linear-burn, linear-light, pin-light,
-        hard-mix, subtract, divide,
-        dissolve, darker-color, lighter-color,
-        hue, saturation, color, luminosity,
-    }
-
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
-
-    /// Resize filter algorithms.
-    enum resize-filter { nearest, bilinear, bicubic, lanczos3 }
-
-    /// Rotation amounts.
-    enum rotation { r90, r180, r270 }
-
-    /// Flip direction.
-    enum flip-direction { horizontal, vertical }
 
     /// JPEG write configuration.
     record jpeg-write-config {
@@ -70,14 +50,51 @@ interface pipeline {
     record qoi-write-config { reserved: option<bool> }
     record gif-write-config { repeat: option<u16> }
 
-    // ─── Transform config records ───
-    record resize-config { width: u32, height: u32, filter: resize-filter }
-    record crop-config { x: u32, y: u32, width: u32, height: u32 }
-    record rotate-config { rotation: rotation }
-    record flip-config { direction: flip-direction }
-    record auto-orient-config { orientation: exif-orientation }
-    record icc-to-srgb-config { icc-profile: buffer }
-    record composite-config { offset-x: s32, offset-y: s32, blend-mode: option<blend-mode> }
+    // ─── Transform types (auto-generated from #[register_transform]) ───
+    enum resize-filter { nearest, bilinear, bicubic, lanczos3 }
+
+    enum rotation { r90, r180, r270 }
+
+    enum flip-direction { horizontal, vertical }
+
+    enum blend-mode { multiply, screen, overlay, darken, lighten, soft-light, hard-light, difference, exclusion, color-dodge, color-burn, vivid-light, linear-dodge, linear-burn, linear-light, pin-light, hard-mix, subtract, divide, dissolve, darker-color, lighter-color, hue, saturation, color, luminosity }
+
+    record resize-config {
+        width: u32,
+        height: u32,
+        filter: resize-filter,
+    }
+
+    record crop-config {
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    }
+
+    record rotate-config {
+        rotation: rotation,
+    }
+
+    record flip-config {
+        direction: flip-direction,
+    }
+
+    record auto-orient-config {
+        orientation: exif-orientation,
+    }
+
+    record icc-to-srgb-config {
+        icc-profile: buffer,
+    }
+
+    record composite-config {
+        offset-x: s32,
+        offset-y: s32,
+        blend-mode: option<blend-mode>,
+    }
+
+
 
     variant frame-selection {
         single(u32),
@@ -115,9 +132,11 @@ interface pipeline {
         crop: func(source: node-id, config: crop-config) -> result<node-id, rasmcore-error>;
         rotate: func(source: node-id, config: rotate-config) -> result<node-id, rasmcore-error>;
         flip: func(source: node-id, config: flip-config) -> result<node-id, rasmcore-error>;
-        convert-format: func(source: node-id, target: pixel-format) -> result<node-id, rasmcore-error>;
-        icc-to-srgb: func(source: node-id, config: icc-to-srgb-config) -> result<node-id, rasmcore-error>;
         auto-orient: func(source: node-id, config: auto-orient-config) -> result<node-id, rasmcore-error>;
+        icc-to-srgb: func(source: node-id, config: icc-to-srgb-config) -> result<node-id, rasmcore-error>;
+        composite: func(fg: node-id, bg: node-id, config: composite-config) -> result<node-id, rasmcore-error>;
+
+        convert-format: func(source: node-id, target: pixel-format) -> result<node-id, rasmcore-error>;
 
         // ─── Filters (auto-generated from #[register_filter]) ───
 
@@ -256,8 +275,6 @@ interface pipeline {
         tilt-shift: func(source: node-id, config: tilt-shift-config) -> result<node-id, rasmcore-error>;
         lens-blur: func(source: node-id, config: lens-blur-config) -> result<node-id, rasmcore-error>;
 
-        // ─── Compositing ───
-        composite: func(fg: node-id, bg: node-id, config: composite-config) -> result<node-id, rasmcore-error>;
 
         // ─── Metadata ───
         metadata-dump: func() -> result<string, rasmcore-error>;
