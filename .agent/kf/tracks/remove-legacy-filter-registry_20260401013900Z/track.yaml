@@ -1,0 +1,165 @@
+id: remove-legacy-filter-registry_20260401013900Z
+title: Remove legacy FilterRegistry — single-source annotation registration
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Delete the parallel ImageFilter/FilterRegistry/builtin_filter! system from
+    filter_registry.rs. All 27 hand-wired filters already have #[register_filter]
+    annotations — the legacy runtime registry is unused outside its own tests.
+  context: |
+    Two parallel filter registration systems exist:
+
+    1. #[register_filter] + inventory + codegen (THE SYSTEM TO KEEP):
+       - Proc macro creates StaticFilterRegistration via inventory::submit!()
+       - build.rs parses annotations via syn, generates WIT adapter, pipeline
+         nodes, CLI dispatch, param manifest
+       - Detection is link-time via inventory crate — just being a cargo
+         dependency is enough, no explicit import needed
+       - This drives ALL runtime behavior: WIT dispatch, pipeline graph, SDK
+
+    2. ImageFilter trait + FilterRegistry + builtin_filter! (THE SYSTEM TO REMOVE):
+       - builtin_filter! macro (filter_registry.rs:462-479) generates struct + impl
+       - 6 manual impl ImageFilter blocks for point ops (Gamma, Brightness,
+         Contrast, Invert, Threshold, Posterize) with LUT support
+       - register_builtin_filters() (line 910-939) hand-wires 27 filters
+       - FilterRegistry is HashMap<String, Box<dyn ImageFilter>>
+       - UNUSED outside its own tests — nothing in adapter, pipeline, or
+         application code references FilterRegistry
+
+    Supporting types to remove with the legacy system:
+    - ImageFilter trait (line 196-262)
+    - FilterCategory enum (line 177-190)
+    - FilterParams struct + ParamValue enum (lines 47-118)
+    - ParamDescriptor struct + ParamType enum (lines 120-161)
+    - FilterInput struct (lines 167-171)
+    - builtin_filter! macro (lines 462-479)
+    - All builtin_filter!() invocations (~22 entries, lines 486-907)
+    - All manual impl ImageFilter blocks (6 point ops, lines 533-696)
+    - register_builtin_filters() (lines 910-939)
+    - All tests using FilterRegistry (lines 941-1068)
+
+    Types to KEEP (used by proc macros and codegen):
+    - StaticFilterRegistration (line 287)
+    - StaticGeneratorRegistration (line 318)
+    - StaticCompositorRegistration (line 343)
+    - StaticMapperRegistration (line 368)
+    - ParamDescriptorJson (line 268)
+    - inventory::collect!() calls (lines 306, 331, 355, 379)
+    - registered_filters/generators/compositors/mappers() functions
+  codebase_analysis: |
+    EXTERNAL REFERENCES TO LEGACY SYSTEM:
+    - FilterRegistry: only filter_registry.rs itself (+ its #[cfg(test)] block)
+    - ImageFilter trait: only filter_registry.rs
+    - builtin_filter!: only filter_registry.rs
+    - FilterCategory: only filter_registry.rs
+    - FilterParams/ParamValue: only filter_registry.rs
+    - No adapter, pipeline, CLI, or application code uses these types
+
+    EXTERNAL REFERENCES TO ANNOTATION SYSTEM (must survive):
+    - rasmcore-macros/src/lib.rs: references StaticFilterRegistration,
+      StaticGeneratorRegistration, StaticCompositorRegistration,
+      StaticMapperRegistration, ParamDescriptorJson
+    - rasmcore-filter-spatial/src/lib.rs: calls registered_filters()
+    - examples/custom-filter/src/lib.rs: calls registered_filters()
+    - adapter/mod.rs:616: includes generated_filter_adapter.rs
+
+    CROSS-TRACK IMPACT (all 7 pending tracks assessed):
+    - contour-tracing, harris-corner, high-pass, lab-channel-ops,
+      mesh-warp, skeleton-morphology: LOW — none reference legacy system,
+      all will use #[register_filter] annotation
+    - native-shared-lib: MEDIUM — uses codegen dispatch table, not
+      FilterRegistry. Dispatch API (dispatch_filter) is annotation-driven
+      and unaffected by this removal.
+
+    TESTS TO KEEP (annotation system validation):
+    - static_registration_via_proc_macro (line 1070) — tests inventory
+    - config_params_derive_generates_descriptors (line 1086)
+    - config_params_derive_generates_default (line 1099)
+
+    TESTS TO REMOVE (legacy system only):
+    - registry_has_all_builtins (line 947)
+    - filter_by_category (line 978)
+    - apply_filter_via_registry (line 986)
+    - custom_filter_registration (line 1009)
+    - param_descriptors_populated (line 1050)
+    - all_filter_names_unique (line 1060)
+  acceptance_criteria:
+    - All legacy types removed from filter_registry.rs (ImageFilter, FilterRegistry, FilterCategory, FilterParams, ParamDescriptor, ParamType, ParamValue, FilterInput, builtin_filter!)
+    - All 27 builtin_filter!/manual-impl entries removed
+    - register_builtin_filters() removed
+    - Annotation-based types preserved (StaticFilterRegistration, ParamDescriptorJson, registered_filters(), inventory::collect!)
+    - cargo build succeeds for native target
+    - cargo component build succeeds for wasm32-wasip2 target
+    - All annotation-system tests pass (static_registration_via_proc_macro, config_params_derive_*)
+    - examples/custom-filter still compiles and its test passes
+    - docs/extending.md updated to remove references to ImageFilter trait and FilterRegistry
+  out_of_scope: |
+    - Changing the #[register_filter] proc macro or codegen system
+    - Adding new compile-time validation beyond what removal already provides
+    - Modifying any filter implementation functions in filters.rs
+    - Changing the inventory crate or StaticFilterRegistration struct
+  technical_notes: |
+    APPROACH:
+    This is a pure deletion refactor. No new code needed — just remove the
+    legacy parallel system and its tests.
+
+    The key insight: compilation itself becomes the validation. If a filter
+    is missing its #[register_filter] annotation, it won't appear in:
+    - generated_filter_adapter.rs (WIT dispatch fails)
+    - generated_pipeline_nodes.rs (pipeline can't use it)
+    - generated_cli_dispatch.rs (CLI can't invoke it)
+    - param-manifest.json (SDK doesn't see it)
+
+    No filter can silently exist only in the legacy registry — removing the
+    legacy system makes the annotation system the single source of truth,
+    and any gap is immediately visible as a missing WIT function or pipeline
+    node.
+
+    INVENTORY DETECTION (answering user question):
+    The inventory crate uses linker sections. When #[register_filter] expands,
+    it emits inventory::submit!(&STATIC) which places the static in a special
+    linker section. At runtime, inventory::iter collects all submissions from
+    all linked crates. No explicit import or use statement needed — just being
+    a cargo dependency (linked into the binary) is sufficient. This is the
+    same mechanism used by frameworks like tracing-subscriber and linkme.
+
+    RISK: Very low. The legacy system is self-contained with no external
+    consumers. The annotation system is already the one driving all runtime
+    behavior (WIT adapter, pipeline, CLI).
+plan:
+  - phase: Audit and Verify
+    tasks:
+      - text: Grep for all uses of ImageFilter, FilterRegistry, FilterCategory, FilterParams, builtin_filter outside filter_registry.rs to confirm zero external consumers
+        done: false
+      - text: Verify all 27 builtin_filter/manual-impl filters have corresponding #[register_filter] annotations in filters.rs
+        done: false
+  - phase: Remove Legacy System
+    tasks:
+      - text: Delete builtin_filter! macro definition (lines 462-479)
+        done: false
+      - text: Delete all builtin_filter!() invocations (~22 entries, lines 486-907)
+        done: false
+      - text: Delete all manual impl ImageFilter blocks (6 point ops, lines 533-696)
+        done: false
+      - text: Delete register_builtin_filters() function (lines 910-939)
+        done: false
+      - text: Delete FilterRegistry struct, ImageFilter trait, and all supporting types (FilterCategory, FilterParams, ParamValue, ParamDescriptor, ParamType, FilterInput)
+        done: false
+      - text: Delete legacy tests (registry_has_all_builtins, filter_by_category, apply_filter_via_registry, custom_filter_registration, param_descriptors_populated, all_filter_names_unique)
+        done: false
+  - phase: Update Documentation
+    tasks:
+      - text: Update docs/extending.md to remove references to ImageFilter trait, FilterRegistry, and builtin_filter! — point to #[register_filter] as the sole mechanism
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo build (native) succeeds with no references to removed types
+        done: false
+      - text: cargo component build (wasm32-wasip2) succeeds
+        done: false
+      - text: Run annotation-system tests (static_registration_via_proc_macro, config_params_derive_*) plus examples/custom-filter test
+        done: false
+extra: {}
