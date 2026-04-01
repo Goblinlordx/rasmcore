@@ -9,8 +9,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== 0. Installing demo dependencies ==="
-cd "$SCRIPT_DIR"
+WEB_UI_DIR="$PROJECT_ROOT/web-ui"
+
+echo "=== 0. Installing web-ui dependencies ==="
+cd "$WEB_UI_DIR"
 npm install --silent 2>/dev/null || true
 cd "$PROJECT_ROOT"
 
@@ -46,19 +48,17 @@ else
     echo "  WARNING: param-manifest.json not found"
 fi
 
-echo "=== 3b. Copying SDK to demo ==="
-mkdir -p "$SCRIPT_DIR/sdk"
-cp -r "$SDK_BUILD_DIR/"* "$SCRIPT_DIR/sdk/"
-echo "  Copied: target/sdk/ → demo/sdk/"
+echo "=== 3b. Copying SDK to web-ui ==="
+mkdir -p "$WEB_UI_DIR/sdk"
+cp -r "$SDK_BUILD_DIR/"* "$WEB_UI_DIR/sdk/"
+echo "  Copied: target/sdk/ → web-ui/sdk/"
 
 echo "=== 4. Generating fluent SDK (rcimage) ==="
 node "$PROJECT_ROOT/scripts/generate-fluent-sdk.cjs"
 
 echo "=== 5. SDK ready ==="
-echo "  Output: demo/sdk/"
-echo "  Import: import { pipeline, decoder, encoder, filters } from './sdk/rasmcore-image.js'"
+echo "  Output: web-ui/sdk/"
+echo "  Run:    cd web-ui && npm run dev"
 echo ""
+echo "  Import: import { pipeline, decoder, encoder, filters } from './sdk/rasmcore-image.js'"
 echo "  Pipeline class: pipeline.ImagePipeline"
-echo "  Operations: read, resize, crop, rotate, flip, blur, sharpen,"
-echo "              brightness, contrast, grayscale, convolve, median,"
-echo "              sobel, canny, composite, writeJpeg/Png/WebP/..."
