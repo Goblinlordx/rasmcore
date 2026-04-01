@@ -92,23 +92,27 @@ plan:
         done: false
       - text: "Add WASM SDK import for baseline comparison"
         done: false
-  - phase: "Shaders"
+  - phase: "Shaders — Expensive Ops"
     tasks:
-      - text: "Write blur.wgsl compute shader (gaussian blur with shared memory tile)"
+      - text: "Write gaussian_blur.wgsl (large radius, shared memory tile with halo)"
         done: false
-      - text: "Write sepia.wgsl compute shader (point op, trivially parallel)"
+      - text: "Write spin_blur.wgsl (radial sampling with many taps along arc per pixel)"
         done: false
-      - text: "Write chain.wgsl fused shader (blur + sepia + contrast + hue_rotate + sharpen)"
+      - text: "Write spherize.wgsl (per-pixel inverse coordinate transform + bilinear sample)"
+        done: false
+      - text: "Write bilateral.wgsl (range + spatial weighted neighborhood filter)"
         done: false
   - phase: "Benchmarks"
     tasks:
       - text: "Implement transfer overhead benchmark (upload + readback, no compute)"
         done: false
-      - text: "Implement single-op benchmarks (blur GPU vs WASM, sepia GPU vs WASM)"
+      - text: "Implement single-op benchmarks — blur(radius=20) GPU vs WASM SIMD"
         done: false
-      - text: "Implement chain benchmark (5-op chain GPU vs WASM)"
+      - text: "Implement single-op benchmarks — spin_blur GPU vs WASM, spherize GPU vs WASM, bilateral GPU vs WASM"
         done: false
-      - text: "Run at 256/512/1024/2048/4096 resolutions, output comparison table"
+      - text: "Implement chain benchmark — blur + spherize + bilateral as one GPU batch vs 3 sequential WASM ops"
+        done: false
+      - text: "Run at 512/1024/2048/4096 resolutions, output comparison table with speedup ratios"
         done: false
   - phase: "Analysis"
     tasks:
