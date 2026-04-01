@@ -57,7 +57,9 @@ pub fn generate(
     }
 
     for f in filters {
-        if let Some(config_name) = &f.config_struct {
+        // Only use config_struct if the function actually takes a &*Params reference
+        let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
+        if let Some(config_name) = &f.config_struct.as_ref().filter(|_| has_config_param) {
             let record_name = format!("{}-config", to_wit_name(&f.name));
             emit_record(config_name, &record_name, param_structs, &mut records, &mut emitted_records);
 
@@ -108,11 +110,6 @@ pub fn generate(
     output
 }
 
-/// Generate WIT for filters only (backward-compatible wrapper).
-pub fn generate_filters_only(filters: &[FilterReg]) -> String {
-    generate(filters, &std::collections::HashMap::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,7 +132,8 @@ mod tests {
             point_op: false,
             color_op: false,
         }];
-        let wit = generate(&filters);
+        let empty = std::collections::HashMap::new();
+        let wit = generate(&filters, &empty);
         assert!(wit.contains(
             "zoom-blur: func(pixels: buffer, info: image-info, center-x: f32, factor: f32)"
         ));
@@ -156,13 +154,15 @@ mod tests {
             point_op: false,
             color_op: false,
         }];
-        let wit = generate(&filters);
+        let empty = std::collections::HashMap::new();
+        let wit = generate(&filters, &empty);
         assert!(wit.contains("grayscale: func(pixels: buffer, info: image-info)"));
         assert!(!wit.contains(", )"));
     }
 
     #[test]
     fn generate_wit_config_struct() {
+        use crate::types::ParamField;
         let filters = vec![FilterReg {
             name: "blur".to_string(),
             category: "spatial".to_string(),
@@ -171,12 +171,16 @@ mod tests {
             reference: String::new(),
             rect_request: true,
             fn_name: "blur".to_string(),
-            params: vec![("radius".to_string(), "f32".to_string())],
+            params: vec![("_config".to_string(), "&BlurParams".to_string())],
             config_struct: Some("BlurParams".to_string()),
             point_op: false,
             color_op: false,
         }];
-        let wit = generate(&filters);
+        let mut param_structs = std::collections::HashMap::new();
+        param_structs.insert("BlurParams".to_string(), vec![
+            ParamField { name: "radius".to_string(), param_type: "f32".to_string(), default: None, min: None, max: None, step: None, label: None, hint: None },
+        ]);
+        let wit = generate(&filters, &param_structs);
         assert!(
             wit.contains("record blur-config {"),
             "should generate record: {wit}"

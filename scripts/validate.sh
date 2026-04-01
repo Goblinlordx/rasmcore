@@ -73,11 +73,8 @@ else
 fi
 
 echo "=== 5. WASM build ==="
-# Generate filters.wit from filter registrations
-node scripts/generate-wit.cjs 2>&1 || true
-# Force build.rs to re-run so pipeline.wit is regenerated from template
-# (generate-wit.cjs no longer touches pipeline.wit — build.rs owns it)
-touch wit/image/pipeline.wit.tmpl 2>/dev/null || true
+# Force build.rs to regenerate both filters.wit and pipeline.wit from templates
+touch wit/image/filters.wit.tmpl wit/image/pipeline.wit.tmpl 2>/dev/null || true
 cargo build -p rasmcore-image 2>&1 || true
 if cargo component build -p rasmcore-image 2>&1; then
   echo "  PASS"
