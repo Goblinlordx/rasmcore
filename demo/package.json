@@ -1,0 +1,10 @@
+{
+  "name": "rasmcore-demo",
+  "private": true,
+  "description": "Demo UI has moved to web-ui/. Run: cd ../web-ui && npm install && npm run dev",
+  "scripts": {
+    "preinstall": "echo 'Demo UI has moved to ../web-ui/. Run: cd ../web-ui && npm install' && exit 1",
+    "dev": "echo 'Demo UI has moved. Run: cd ../web-ui && npm run dev' && exit 1",
+    "build": "./build.sh"
+  }
+}
