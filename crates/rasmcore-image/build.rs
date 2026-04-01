@@ -515,4 +515,31 @@ fn main() {
         )
         .unwrap();
     }
+
+    // ─── WGSL shader validation via naga ─────────────────────────────────────
+    let shaders_dir = Path::new(&manifest_dir).join("src/shaders");
+    if shaders_dir.is_dir() {
+        println!("cargo:rerun-if-changed=src/shaders");
+        let mut shader_count = 0u32;
+        for entry in fs::read_dir(&shaders_dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "wgsl") {
+                let source = fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("Failed to read shader {}: {e}", path.display())
+                });
+                if let Err(e) = naga::front::wgsl::parse_str(&source) {
+                    panic!(
+                        "WGSL validation failed for {}:\n{e}",
+                        path.display()
+                    );
+                }
+                shader_count += 1;
+            }
+        }
+        if shader_count > 0 {
+            println!(
+                "cargo:warning=Validated {shader_count} WGSL shader(s) in src/shaders/"
+            );
+        }
+    }
 }

@@ -2944,6 +2944,7 @@ dependencies = [
  "jxl-oxide",
  "kamadak-exif",
  "moxcms",
+ "naga",
  "png 0.17.16",
  "quick-xml",
  "rasmcore-bmp",

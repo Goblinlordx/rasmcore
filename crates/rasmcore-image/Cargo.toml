@@ -76,6 +76,7 @@ harness = false
 [build-dependencies]
 rasmcore-codegen = { path = "../rasmcore-codegen" }
 syn = { version = "2", features = ["full", "parsing"] }
+naga = { version = "24", features = ["wgsl-in"] }
 
 [package.metadata.component]
 package = "rasmcore:image"
