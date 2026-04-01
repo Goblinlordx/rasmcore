@@ -249,10 +249,10 @@ fn generate_single_transform_method(
         ));
     }
 
-    // Add node with derived metadata
-    code.push_str(
-        "        Ok(graph.add_node_derived(Box::new(node), hash, source))\n",
-    );
+    // Add node with descriptor tracking (kind + name for graph introspection)
+    code.push_str(&format!(
+        "        Ok(graph.add_node_described(Box::new(node), hash, source, crate::domain::pipeline::graph::NodeKind::Transform, \"{method_name}\"))\n",
+    ));
 
     code.push_str("    }\n\n");
     code

@@ -218,7 +218,9 @@ pub fn generate_mapper_adapter_macro(mappers: &[MapperReg]) -> String {
         code.push_str(&format!(
             "        let content_hash = rasmcore_pipeline::compute_hash(&upstream_hash, \"{trait_method}\", {hash_param_bytes});\n"
         ));
-        code.push_str("        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), content_hash))\n");
+        code.push_str(&format!(
+            "        Ok(self.graph.borrow_mut().add_node_described(Box::new(node), content_hash, source, crate::domain::pipeline::graph::NodeKind::Mapper, \"{trait_method}\"))\n"
+        ));
         code.push_str("    }\n\n");
     }
 

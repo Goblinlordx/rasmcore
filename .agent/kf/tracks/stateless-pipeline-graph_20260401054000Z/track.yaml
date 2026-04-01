@@ -145,15 +145,15 @@ plan:
 - phase: Graph Description
   tasks:
   - text: Define NodeDescriptor struct (kind, name, config bytes, upstreams, output_info)
-    done: false
+    done: true
   - text: Define GraphDescription struct (Vec<NodeDescriptor>)
-    done: false
+    done: true
   - text: Build GraphDescription alongside NodeGraph during pipeline construction
-    done: false
+    done: true
   - text: Implement compact binary serialization for GraphDescription
-    done: false
+    done: true
   - text: Add introspection API (list nodes, query info at any node)
-    done: false
+    done: true
 - phase: Stateless Execution
   tasks:
   - text: Implement execute_from_description(desc, source_data) that reconstructs NodeGraph and runs

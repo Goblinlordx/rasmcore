@@ -345,6 +345,29 @@ impl GraphDescription {
         Ok(())
     }
 
+    /// Serialize to a human-readable JSON string.
+    pub fn to_json(&self) -> String {
+        let mut json = String::from("[");
+        for (i, desc) in self.descriptors.iter().enumerate() {
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str(&format!(
+                r#"{{"id":{},"kind":"{}","name":"{}","upstreams":{:?},"output":{{"width":{},"height":{},"format":"{}","color_space":"{}"}}}}"#,
+                i,
+                desc.kind,
+                desc.name,
+                desc.upstreams,
+                desc.output_info.width,
+                desc.output_info.height,
+                format!("{:?}", desc.output_info.format),
+                format!("{:?}", desc.output_info.color_space),
+            ));
+        }
+        json.push(']');
+        json
+    }
+
     /// Compact binary serialization.
     ///
     /// Format: [node_count: u32] then for each node:
@@ -641,6 +664,29 @@ impl NodeGraph {
         hash: rasmcore_pipeline::ContentHash,
         metadata: rasmcore_pipeline::Metadata,
     ) -> u32 {
+        self.add_node_with_hash_metadata_desc(node, hash, metadata, NodeKind::Filter, "")
+    }
+
+    /// Add a source node with content hash, metadata, and proper Source descriptor.
+    pub fn add_source_node(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        hash: rasmcore_pipeline::ContentHash,
+        metadata: rasmcore_pipeline::Metadata,
+        name: &str,
+    ) -> u32 {
+        self.add_node_with_hash_metadata_desc(node, hash, metadata, NodeKind::Source, name)
+    }
+
+    /// Internal: add node with hash, metadata, and explicit descriptor kind/name.
+    fn add_node_with_hash_metadata_desc(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        hash: rasmcore_pipeline::ContentHash,
+        metadata: rasmcore_pipeline::Metadata,
+        kind: NodeKind,
+        name: &str,
+    ) -> u32 {
         let id = self.nodes.len() as u32;
         let info = node.info();
         let upstreams = self.collect_upstreams(&*node);
@@ -667,8 +713,8 @@ impl NodeGraph {
         }
 
         let _ = self.description.add(NodeDescriptor {
-            kind: NodeKind::Filter,
-            name: String::new(),
+            kind,
+            name: name.to_string(),
             config: Vec::new(),
             upstreams,
             output_info: info,

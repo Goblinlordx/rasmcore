@@ -285,6 +285,15 @@ interface pipeline {
 
         // ─── Multi-Frame ───
         execute-sequence: func(source: node-id, output: node-id) -> result<u32, rasmcore-error>;
+
+        // ─── Graph Description ───
+        /// Return the graph description as a JSON string.
+        /// Lists all nodes with their kind, name, upstreams, and output info.
+        graph-describe: func() -> string;
+        /// Return the graph description as compact binary bytes.
+        graph-serialize: func() -> buffer;
+        /// Return the number of nodes in the graph.
+        graph-node-count: func() -> u32;
     }
 
     detect-format: func(header: buffer) -> option<string>;

@@ -392,10 +392,11 @@ impl GuestImagePipeline for PipelineResource {
         // Create source node with content hash and metadata
         let source_hash = rasmcore_pipeline::compute_source_hash(&data);
         let node = source::SourceNode::new(data).map_err(to_wit_error)?;
-        let id = self.graph.borrow_mut().add_node_with_hash_and_metadata(
+        let id = self.graph.borrow_mut().add_source_node(
             Box::new(node),
             source_hash,
             meta,
+            "source",
         );
         Ok(id)
     }
@@ -576,6 +577,20 @@ impl GuestImagePipeline for PipelineResource {
             .strips
             .push((parts[0].to_string(), parts[1].to_string()));
         Ok(0)
+    }
+
+    // ─── Graph Description ───
+
+    fn graph_describe(&self) -> String {
+        self.graph.borrow().description().to_json()
+    }
+
+    fn graph_serialize(&self) -> Vec<u8> {
+        self.graph.borrow().description().serialize()
+    }
+
+    fn graph_node_count(&self) -> u32 {
+        self.graph.borrow().description().len() as u32
     }
 }
 

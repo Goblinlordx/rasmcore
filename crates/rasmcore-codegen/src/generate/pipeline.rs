@@ -275,7 +275,9 @@ pub fn generate_adapter_macro(
             code.push('\n');
         }
         code.push_str(&format!("        let node = {ctor_call};\n"));
-        code.push_str("        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), content_hash))\n");
+        code.push_str(&format!(
+            "        Ok(self.graph.borrow_mut().add_node_described(Box::new(node), content_hash, source, crate::domain::pipeline::graph::NodeKind::Filter, \"{trait_method}\"))\n"
+        ));
         code.push_str("    }\n\n");
     }
 
