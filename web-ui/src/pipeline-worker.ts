@@ -11,6 +11,9 @@
  * Uses Transferable ArrayBuffer for zero-copy image data transfer.
  */
 
+import { GpuHandler, createGpuExecuteImport } from './gpu-handler';
+import type { GpuOp, GpuResult } from './gpu-handler';
+
 let Pipeline = null;
 let imageBytes = null;
 let thumbBytes = null;
@@ -18,6 +21,10 @@ let cachedPipe = null; // Reused pipeline instance for graph caching
 let cachedSourceNode = null; // Source node from last load
 const THUMB_MAX = 256;
 let formatMimeMap = {}; // Populated from SDK: { jpeg: "image/jpeg", ... }
+
+// GPU handler — initialized during SDK init, null if WebGPU unavailable
+let gpuExecute: ((ops: GpuOp[], input: Uint8Array, width: number, height: number) => Promise<GpuResult>) | null = null;
+let gpuAvailable = false;
 
 // ─── SDK Loading ────────────────────────────────────────────────────────────
 
@@ -36,7 +43,13 @@ async function initSDK() {
       // Fallback: SDK may not have allFormatInfo yet
     }
 
-    self.postMessage({ type: 'ready' });
+    // Initialize GPU handler if WebGPU is available
+    gpuAvailable = GpuHandler.isAvailable();
+    if (gpuAvailable) {
+      gpuExecute = createGpuExecuteImport();
+    }
+
+    self.postMessage({ type: 'ready', gpu: gpuAvailable });
   } catch (e) {
     self.postMessage({ type: 'error', message: `SDK init failed: ${e.message}` });
   }
