@@ -78,6 +78,8 @@ export interface ChainNode {
   id: number;
   op: Operation;
   paramValues: Record<string, number | string | boolean>;
+  applied: boolean;
+  timingMs: number;
 }
 
 /** Layer state. */
