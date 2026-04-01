@@ -21,7 +21,7 @@ export default tseslint.config(
   },
   // Worker file — relaxed rules (runs in worker context, uses @ts-nocheck)
   {
-    files: ['src/pipeline-worker.ts'],
+    files: ['src/pipeline-worker.ts', 'src/preview-worker.ts'],
     rules: {
       '@typescript-eslint/ban-ts-comment': 'off',
       '@typescript-eslint/no-unused-vars': 'off',

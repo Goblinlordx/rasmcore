@@ -178,6 +178,8 @@ describe('Component smoke tests', () => {
         onApplyNode={() => {}}
         onParamChange={() => {}}
         onApplyFullChain={() => {}}
+        onSchedulePreview={() => {}}
+        previewCanvasRef={{ current: null }}
       />,
     );
     expect(screen.getByText('Select an operation from the toolbar')).toBeInTheDocument();

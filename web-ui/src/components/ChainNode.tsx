@@ -15,6 +15,7 @@ interface Props {
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (targetIdx: number) => void;
+  previewCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
 }
 
 export default function ChainNode({
@@ -30,6 +31,7 @@ export default function ChainNode({
   onDragEnd,
   onDragOver,
   onDrop,
+  previewCanvasRef,
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -112,6 +114,20 @@ export default function ChainNode({
               onChange={(v) => onParamChange(p.name, v)}
             />
           ))}
+          {previewCanvasRef && (
+            <div style={{ marginTop: 6, textAlign: 'center' }}>
+              <canvas
+                ref={previewCanvasRef}
+                style={{
+                  maxWidth: '100%',
+                  border: '1px solid #333',
+                  borderRadius: 3,
+                  display: 'block',
+                  margin: '0 auto',
+                }}
+              />
+            </div>
+          )}
           <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
             <button onClick={onApply}>Apply</button>
             <button className="secondary" style={{ background: '#333' }} onClick={onCancelEdit}>

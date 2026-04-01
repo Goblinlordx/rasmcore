@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppContext } from './context/AppContext';
 import { useWorker } from './hooks/useWorker';
+import { usePreviewWorker } from './hooks/usePreviewWorker';
 import { useLayers } from './hooks/useLayers';
 import { useChain } from './hooks/useChain';
 import { generateCode } from './utils/codeGeneration';
@@ -12,9 +13,12 @@ import EffectStack from './components/EffectStack';
 import StatusBar from './components/StatusBar';
 import CodeModal from './components/CodeModal';
 
+const PREVIEW_DEBOUNCE_MS = 600;
+
 export default function App() {
   const { operations, groups, writeFormats, loading } = useAppContext();
   const worker = useWorker();
+  const preview = usePreviewWorker();
   const {
     layers,
     activeLayerId,
@@ -40,8 +44,9 @@ export default function App() {
   const [codeModalOpen, setCodeModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('jpeg');
   const [exportQuality, setExportQuality] = useState(85);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Stable ref to current serializeChain so onLoaded always has the latest
+  // Stable ref to current serializeChain so callbacks always have the latest
   const serializeChainRef = useRef(serializeChain);
   serializeChainRef.current = serializeChain;
 
@@ -87,10 +92,13 @@ export default function App() {
           /* ignore */
         }
       }
-      const copy = layer.imageBytes.buffer.slice(0);
-      worker.sendMessage({ type: 'load', imageBytes: copy });
+      // Send to both workers
+      const copy1 = layer.imageBytes.buffer.slice(0);
+      const copy2 = layer.imageBytes.buffer.slice(0) as ArrayBuffer;
+      worker.sendMessage({ type: 'load', imageBytes: copy1 });
+      preview.loadImage(copy2);
     },
-    [addLayer, worker],
+    [addLayer, worker, preview],
   );
 
   const applyFullChain = useCallback(() => {
@@ -101,7 +109,6 @@ export default function App() {
   const requestCompositeProcess = useCallback(() => {
     if (layers.length === 0) return;
     if (layers.length === 1) {
-      // Re-load then process — ensures worker has the image
       const copy = layers[0].imageBytes.buffer.slice(0);
       worker.sendMessage({ type: 'load', imageBytes: copy });
       return;
@@ -127,7 +134,6 @@ export default function App() {
   const handleRemoveNode = useCallback(
     (id: number) => {
       removeNode(id);
-      // Schedule re-process after state update
       setTimeout(() => applyFullChain(), 0);
     },
     [removeNode, applyFullChain],
@@ -141,6 +147,14 @@ export default function App() {
     },
     [moveNode, applyFullChain],
   );
+
+  // Debounced preview — sends chain to preview worker (fast, downscaled)
+  const schedulePreview = useCallback(() => {
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = setTimeout(() => {
+      preview.processChain(serializeChainRef.current());
+    }, PREVIEW_DEBOUNCE_MS);
+  }, [preview]);
 
   const handleDownload = useCallback(
     (format: string, quality: number) => {
@@ -201,6 +215,8 @@ export default function App() {
             onApplyNode={applyNode}
             onParamChange={updateParam}
             onApplyFullChain={applyFullChain}
+            onSchedulePreview={schedulePreview}
+            previewCanvasRef={preview.previewCanvasRef}
           />
         </RightPanel>
       </div>

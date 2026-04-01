@@ -12,6 +12,8 @@ interface Props {
   onApplyNode: (id: number) => void;
   onParamChange: (nodeId: number, paramName: string, value: number | string | boolean) => void;
   onApplyFullChain: () => void;
+  onSchedulePreview: () => void;
+  previewCanvasRef: React.RefObject<HTMLCanvasElement | null>;
 }
 
 export default function EffectStack({
@@ -24,6 +26,8 @@ export default function EffectStack({
   onApplyNode,
   onParamChange,
   onApplyFullChain,
+  onSchedulePreview,
+  previewCanvasRef,
 }: Props) {
   const dragSrcIdx = useRef<number | null>(null);
 
@@ -70,11 +74,15 @@ export default function EffectStack({
                 onApplyFullChain();
               }}
               onCancelEdit={() => onSetEditing(null)}
-              onParamChange={(name, val) => onParamChange(node.id, name, val)}
+              onParamChange={(name, val) => {
+                onParamChange(node.id, name, val);
+                onSchedulePreview();
+              }}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onDragOver={() => {}}
               onDrop={handleDrop}
+              previewCanvasRef={editingNodeId === node.id ? previewCanvasRef : undefined}
             />
           ))}
         </div>

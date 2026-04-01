@@ -46,10 +46,25 @@ function expandArgs(params, paramValues) {
 }
 
 const POSITIONAL_ARG_OPS = new Set([
-  'resize', 'crop', 'rotate', 'flip', 'grayscale', 'convertFormat',
-  'convolve', 'displacementMap', 'curvesRed', 'curvesGreen', 'curvesBlue',
-  'curvesMaster', 'hueVsSat', 'hueVsLum', 'lumVsSat', 'satVsSat',
-  'applyCubeLut', 'applyHaldLut', 'gradientMap',
+  'resize',
+  'crop',
+  'rotate',
+  'flip',
+  'grayscale',
+  'convertFormat',
+  'convolve',
+  'displacementMap',
+  'curvesRed',
+  'curvesGreen',
+  'curvesBlue',
+  'curvesMaster',
+  'hueVsSat',
+  'hueVsLum',
+  'lumVsSat',
+  'satVsSat',
+  'applyCubeLut',
+  'applyHaldLut',
+  'gradientMap',
 ]);
 
 function buildConfig(params, paramValues) {
