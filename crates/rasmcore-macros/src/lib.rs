@@ -653,3 +653,97 @@ fn is_primitive_param_type(ty: &str) -> bool {
             | "[u8;4]"
     )
 }
+
+// ─── Transform Registration ────────────────────────────────────────────────
+
+/// Arguments parsed from `#[register_transform(name = "...")]`.
+struct RegisterTransformArgs {
+    name: String,
+}
+
+impl syn::parse::Parse for RegisterTransformArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut name = String::new();
+
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            let _: Token![=] = input.parse()?;
+            let value: syn::LitStr = input.parse()?;
+
+            match ident.to_string().as_str() {
+                "name" => name = value.value(),
+                other => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("unknown attribute `{other}`, expected `name`"),
+                    ))
+                }
+            }
+
+            if !input.is_empty() {
+                let _: Token![,] = input.parse()?;
+            }
+        }
+
+        if name.is_empty() {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "missing required `name` attribute",
+            ));
+        }
+
+        Ok(RegisterTransformArgs { name })
+    }
+}
+
+/// Register a transform node via annotation on `impl ImageNode for ...`.
+///
+/// ```ignore
+/// #[register_transform(name = "crop")]
+/// impl ImageNode for CropNode {
+///     fn info(&self) -> ImageInfo { ... }
+///     fn compute_region(&self, ...) { ... }
+/// }
+/// ```
+///
+/// Emits the impl block unchanged plus a `StaticTransformRegistration`
+/// submitted to `inventory`.
+#[proc_macro_attribute]
+pub fn register_transform(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as RegisterTransformArgs);
+    let input_impl = parse_macro_input!(item as syn::ItemImpl);
+
+    let transform_name = &args.name;
+
+    // Extract the node type name from `impl ImageNode for CropNode`
+    let node_type_str = if let syn::Type::Path(tp) = &*input_impl.self_ty {
+        tp.path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let reg_ident = format_ident!(
+        "__RASMCORE_TRANSFORM_{}",
+        node_type_str.to_uppercase()
+    );
+
+    let expanded = quote! {
+        #input_impl
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticTransformRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticTransformRegistration {
+                name: #transform_name,
+                node_type: stringify!(#node_type_str),
+                module_path: module_path!(),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}

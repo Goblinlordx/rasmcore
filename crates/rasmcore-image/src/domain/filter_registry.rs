@@ -148,6 +148,31 @@ pub fn registered_mappers() -> Vec<&'static StaticMapperRegistration> {
         .collect()
 }
 
+// ─── Transform Registration ──────────────────────────────────────────────
+
+/// Static transform registration — dimension-changing operations (crop, resize, rotate, etc.).
+///
+/// Unlike filters (which preserve dimensions), transforms alter output dimensions
+/// and require custom `ImageNode::info()` implementations. Registered via
+/// `#[register_transform]` on `impl ImageNode` blocks.
+#[derive(Debug)]
+pub struct StaticTransformRegistration {
+    pub name: &'static str,
+    /// Node struct name (e.g., "CropNode")
+    pub node_type: &'static str,
+    /// Module path for dispatch
+    pub module_path: &'static str,
+}
+
+inventory::collect!(&'static StaticTransformRegistration);
+
+pub fn registered_transforms() -> Vec<&'static StaticTransformRegistration> {
+    inventory::iter::<&'static StaticTransformRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
