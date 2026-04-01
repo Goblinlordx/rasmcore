@@ -83,6 +83,30 @@ Return `None` from `gpu_ops()` if:
 
 The pipeline falls back to CPU automatically when `gpu_ops()` returns `None`.
 
+## Numeric precision — f32 vs f64
+
+**Default: f32.** All pixel processing, filter kernels, and GPU shaders use f32.
+WGSL does not support f64, so any GPU-capable code path must be f32.
+
+**Use f64 ONLY for:**
+- **Color science math** — sRGB↔linear transfer functions, CIE Lab/Luv/OKLab
+  conversions, Bradford chromatic adaptation, delta-E calculations. These involve
+  chained operations on small differences between large numbers where f32
+  accumulates visible error (~1e-7 per op vs ~1e-16 for f64).
+- **Geometric matrix operations** — homography solve (8×8 inversion), perspective
+  warp matrix computation. Small determinants lose significance in f32.
+- **Statistical accumulation over large images** — variance, covariance, histogram
+  moments. Naive sum-of-squares in f32 hits catastrophic cancellation at >1M pixels.
+
+**Never f64 for:**
+- Per-pixel filter operations (blur, sharpen, color adjust) — f32 is exact for 8/16-bit pixels
+- GPU shader code — WGSL has no f64 support
+- Kernel weights, interpolation coefficients — f32 precision (24-bit mantissa) far
+  exceeds 8-bit (256 values) or 16-bit (65536 values) pixel depth
+
+**Pattern:** Color science helpers in `rasmcore-kernel::color_spaces` use f64 internally
+and convert to/from f32 at the pixel boundary. Filter code stays f32 throughout.
+
 ## Agent concurrency for bulk operations
 
 When a track involves moving/splitting many files, use subagents with
