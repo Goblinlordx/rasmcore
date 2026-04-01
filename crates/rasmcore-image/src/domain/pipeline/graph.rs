@@ -175,6 +175,8 @@ pub struct NodeGraph {
     cache_hit_pixels: std::collections::HashMap<u32, (Vec<u8>, u32, u32)>, // (pixels, width, height)
     // Per-node metadata — set at creation, immutable during tile execution
     node_metadata: Vec<rasmcore_pipeline::Metadata>,
+    // Per-node accumulator buffers for assembling full images from tiles
+    node_accumulators: Vec<Option<Vec<u8>>>,
 }
 
 impl NodeGraph {
@@ -182,7 +184,7 @@ impl NodeGraph {
     pub fn new(cache_budget: usize) -> Self {
         Self {
             nodes: Vec::new(),
-            cache: SpatialCache::new(cache_budget),
+            cache: SpatialCache::new(0),
             cache_budget,
             layer_cache: None,
             node_hashes: Vec::new(),
@@ -190,6 +192,7 @@ impl NodeGraph {
             cache_hit_nodes: std::collections::HashSet::new(),
             cache_hit_pixels: std::collections::HashMap::new(),
             node_metadata: Vec::new(),
+            node_accumulators: Vec::new(),
         }
     }
 
@@ -209,6 +212,7 @@ impl NodeGraph {
         self.nodes.push(node);
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
+        self.node_accumulators.push(None);
         id
     }
 
@@ -222,6 +226,7 @@ impl NodeGraph {
         self.nodes.push(node);
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(metadata);
+        self.node_accumulators.push(None);
         id
     }
 
@@ -244,17 +249,28 @@ impl NodeGraph {
         hash: rasmcore_pipeline::ContentHash,
     ) -> u32 {
         let id = self.nodes.len() as u32;
+        let info = node.info();
         self.nodes.push(node);
         self.node_hashes.push(hash);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
 
         // Check layer cache for this hash
+        let mut hit = false;
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
             if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
                 self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
                 self.cache_hit_nodes.insert(id);
+                hit = true;
             }
+        }
+
+        if hit {
+            self.node_accumulators.push(None);
+        } else {
+            let bpp = bytes_per_pixel(info.format) as usize;
+            let buf_size = info.width as usize * info.height as usize * bpp;
+            self.node_accumulators.push(Some(vec![0u8; buf_size]));
         }
 
         id
@@ -268,16 +284,27 @@ impl NodeGraph {
         metadata: rasmcore_pipeline::Metadata,
     ) -> u32 {
         let id = self.nodes.len() as u32;
+        let info = node.info();
         self.nodes.push(node);
         self.node_hashes.push(hash);
         self.node_metadata.push(metadata);
 
+        let mut hit = false;
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
             if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
                 self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
                 self.cache_hit_nodes.insert(id);
+                hit = true;
             }
+        }
+
+        if hit {
+            self.node_accumulators.push(None);
+        } else {
+            let bpp = bytes_per_pixel(info.format) as usize;
+            let buf_size = info.width as usize * info.height as usize * bpp;
+            self.node_accumulators.push(Some(vec![0u8; buf_size]));
         }
 
         id
@@ -338,6 +365,10 @@ impl NodeGraph {
                 lut = crate::domain::point_ops::compose_luts(&up_lut, &lut);
                 chain_root_upstream = self.nodes[up].upstream_id();
                 fused_into[up] = Some(i as u32);
+                // Clear consumed node's accumulator
+                if up < self.node_accumulators.len() {
+                    self.node_accumulators[up] = None;
+                }
                 current = up;
             }
 
@@ -350,6 +381,13 @@ impl NodeGraph {
                     source_info: info,
                     lut,
                 });
+                // Reallocate accumulator for the fused node
+                let fused_info = self.nodes[i].info();
+                let bpp = bytes_per_pixel(fused_info.format) as usize;
+                let buf_size = fused_info.width as usize * fused_info.height as usize * bpp;
+                if self.node_accumulators.len() > i {
+                    self.node_accumulators[i] = Some(vec![0u8; buf_size]);
+                }
             }
         }
     }
@@ -451,6 +489,10 @@ impl NodeGraph {
                 clut = crate::domain::color_lut::compose_cluts(&up_clut, &clut);
                 chain_root_upstream = self.nodes[up].upstream_id();
                 fused_into[up] = Some(i as u32);
+                // Clear consumed node's accumulator
+                if up < self.node_accumulators.len() {
+                    self.node_accumulators[up] = None;
+                }
                 current = up;
             }
             if current != i {
@@ -461,11 +503,38 @@ impl NodeGraph {
                     source_info: info,
                     clut,
                 });
+                // Reallocate accumulator for the fused node
+                let fused_info = self.nodes[i].info();
+                let bpp = bytes_per_pixel(fused_info.format) as usize;
+                let buf_size = fused_info.width as usize * fused_info.height as usize * bpp;
+                if self.node_accumulators.len() > i {
+                    self.node_accumulators[i] = Some(vec![0u8; buf_size]);
+                }
             }
         }
     }
 
-    /// Request a region from a node. Uses the spatial cache for reuse.
+    /// Copy a computed tile into the node's accumulator buffer.
+    fn accumulate_tile(&mut self, node_id: u32, tile_rect: Rect, tile_pixels: &[u8], bpp: u32) {
+        let acc = match self.node_accumulators.get_mut(node_id as usize) {
+            Some(Some(buf)) => buf,
+            _ => return, // No accumulator for this node
+        };
+        let info = self.nodes[node_id as usize].info();
+        let full_stride = info.width as usize * bpp as usize;
+        let tile_stride = tile_rect.width as usize * bpp as usize;
+        for row in 0..tile_rect.height as usize {
+            let dst_y = tile_rect.y as usize + row;
+            let dst_x = tile_rect.x as usize * bpp as usize;
+            let dst = dst_y * full_stride + dst_x;
+            let src = row * tile_stride;
+            if dst + tile_stride <= acc.len() && src + tile_stride <= tile_pixels.len() {
+                acc[dst..dst + tile_stride].copy_from_slice(&tile_pixels[src..src + tile_stride]);
+            }
+        }
+    }
+
+    /// Request a region from a node. Accumulates tiles into per-node buffers.
     pub fn request_region(&mut self, node_id: u32, request: Rect) -> Result<Vec<u8>, ImageError> {
         // Track this node's hash as "touched" for layer cache reference tracking
         if let Some(hash) = self.node_hashes.get(node_id as usize) {
@@ -493,17 +562,6 @@ impl NodeGraph {
         let info = self.node_info(node_id)?;
         let bpp = bytes_per_pixel(info.format);
 
-        // Check spatial cache
-        let query = self.cache.query(node_id, request);
-        if query.fully_cached {
-            let handle = query.hits[0];
-            let cached_rect = self.cache.rect(handle);
-            if cached_rect == request {
-                return Ok(self.cache.read(handle).to_vec());
-            }
-            return Ok(self.cache.extract_subregion(handle, request, bpp));
-        }
-
         // Compute the full requested region.
         // We use raw pointer to split the borrow: nodes[node_id] is read,
         // while the rest of self (cache, other nodes) can be mutated.
@@ -525,9 +583,10 @@ impl NodeGraph {
             node.compute_region(request, &mut upstream_fn)?
         };
 
-        // Store in cache
-        let handle = self.cache.store(node_id, request, pixels, bpp);
-        Ok(self.cache.read(handle).to_vec())
+        // Accumulate tile into per-node buffer (for layer cache finalization)
+        self.accumulate_tile(node_id, request, &pixels, bpp);
+
+        Ok(pixels)
     }
 
     /// Access the spatial cache directly.
@@ -557,42 +616,15 @@ impl NodeGraph {
             // Mark as referenced regardless of hit/miss
             lc.mark_referenced(hash);
 
-            // If this was NOT a cache hit, push the computed output
+            // If this was NOT a cache hit, push the computed output from accumulator
             if !self.cache_hit_nodes.contains(&(node_id as u32)) {
-                let info = match self.nodes.get(node_id) {
-                    Some(n) => n.info(),
-                    None => continue,
-                };
-                let bpp = bytes_per_pixel(info.format);
-                let full_rect = Rect::new(0, 0, info.width, info.height);
-
-                // Try to assemble full image from spatial cache tiles
-                let query = self.cache.query(node_id as u32, full_rect);
-                if query.fully_cached {
-                    if query.hits.len() == 1 {
-                        // Single entry covers the full image
-                        let pixels = self.cache.read(query.hits[0]).to_vec();
-                        lc.store(*hash, pixels, info.width, info.height, bpp);
-                    } else {
-                        // Multiple tiles — stitch into full-image buffer
-                        let stride = info.width as usize * bpp as usize;
-                        let mut full = vec![0u8; info.height as usize * stride];
-                        for handle in &query.hits {
-                            let tile_rect = self.cache.rect(*handle);
-                            let tile_pixels = self.cache.read(*handle);
-                            let tile_stride = tile_rect.width as usize * bpp as usize;
-                            for row in 0..tile_rect.height as usize {
-                                let dst_y = tile_rect.y as usize + row;
-                                let dst_x = tile_rect.x as usize * bpp as usize;
-                                let dst = dst_y * stride + dst_x;
-                                let src = row * tile_stride;
-                                if dst + tile_stride <= full.len() && src + tile_stride <= tile_pixels.len() {
-                                    full[dst..dst + tile_stride].copy_from_slice(&tile_pixels[src..src + tile_stride]);
-                                }
-                            }
-                        }
-                        lc.store(*hash, full, info.width, info.height, bpp);
-                    }
+                if let Some(Some(pixels)) = self.node_accumulators.get(node_id) {
+                    let info = match self.nodes.get(node_id) {
+                        Some(n) => n.info(),
+                        None => continue,
+                    };
+                    let bpp = bytes_per_pixel(info.format);
+                    lc.store(*hash, pixels.clone(), info.width, info.height, bpp);
                 }
             }
         }
@@ -604,6 +636,9 @@ impl NodeGraph {
 
         // Clean entries not referenced by this pipeline run
         lc.cleanup_unreferenced();
+
+        // Free accumulator memory
+        self.node_accumulators.clear();
     }
 
     /// Number of nodes in the graph.
@@ -619,6 +654,7 @@ impl NodeGraph {
         self.nodes.push(Box::new(FrameSourceRcWrapper(rc.clone())));
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
+        self.node_accumulators.push(None);
         (id, rc)
     }
 
