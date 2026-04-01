@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ChainNode, Operation } from '../types';
 import type { LayerState } from './useLayers';
 
@@ -10,7 +10,7 @@ export function useChain(
 ) {
   const [editingNodeId, setEditingNodeId] = useState<number | null>(null);
 
-  const chain = activeLayer?.chain ?? [];
+  const chain = useMemo(() => activeLayer?.chain ?? [], [activeLayer?.chain]);
 
   const setChain = useCallback(
     (newChain: ChainNode[]) => {

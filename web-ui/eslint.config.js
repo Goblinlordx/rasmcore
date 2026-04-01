@@ -19,9 +19,9 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
-  // Legacy files — relaxed rules until React migration
+  // Worker file — relaxed rules (runs in worker context, uses @ts-nocheck)
   {
-    files: ['src/pipeline.ts', 'src/pipeline-worker.ts'],
+    files: ['src/pipeline-worker.ts'],
     rules: {
       '@typescript-eslint/ban-ts-comment': 'off',
       '@typescript-eslint/no-unused-vars': 'off',

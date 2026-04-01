@@ -46,67 +46,224 @@ function mapParam(p: ManifestRawParam): UiParam | null {
     return null;
 
   if (p.hint === 'rc.color_rgb' || p.hint === 'rc.color_rgba')
-    return { name: p.name, type: 'color', hint: p.hint, default: '#808080', label: p.label || p.name };
+    return {
+      name: p.name,
+      type: 'color',
+      hint: p.hint,
+      default: '#808080',
+      label: p.label || p.name,
+    };
   if (p.hint === 'rc.angle_deg')
-    return { name: p.name, type: 'number', hint: p.hint, min: 0, max: 360, step: 1, default: 0, label: p.label || p.name };
+    return {
+      name: p.name,
+      type: 'number',
+      hint: p.hint,
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 0,
+      label: p.label || p.name,
+    };
   if (p.hint === 'rc.percentage')
-    return { name: p.name, type: 'number', hint: p.hint, min: 0, max: 100, step: 1, default: 50, label: p.label || p.name };
+    return {
+      name: p.name,
+      type: 'number',
+      hint: p.hint,
+      min: 0,
+      max: 100,
+      step: 1,
+      default: 50,
+      label: p.label || p.name,
+    };
   if (p.hint === 'rc.toggle')
-    return { name: p.name, type: 'toggle', hint: p.hint, default: p.default === 'true' || p.default === '1', label: p.label || p.name };
+    return {
+      name: p.name,
+      type: 'toggle',
+      hint: p.hint,
+      default: p.default === 'true' || p.default === '1',
+      label: p.label || p.name,
+    };
   if (p.hint === 'rc.text')
-    return { name: p.name, type: 'text', hint: p.hint, default: p.default || '', label: p.label || p.name };
+    return {
+      name: p.name,
+      type: 'text',
+      hint: p.hint,
+      default: p.default || '',
+      label: p.label || p.name,
+    };
 
   const numMin = p.min != null ? parseFloat(String(p.min)) : undefined;
   const numMax = p.max != null ? parseFloat(String(p.max)) : undefined;
   const numStep = p.step != null ? parseFloat(String(p.step)) : undefined;
-  const numDefault = p.default != null && p.default !== '' ? (isNaN(Number(p.default)) ? p.default : Number(p.default)) : 0;
+  const numDefault =
+    p.default != null && p.default !== ''
+      ? isNaN(Number(p.default))
+        ? p.default
+        : Number(p.default)
+      : 0;
 
   const hintMap: Record<string, UiParam['type']> = {
-    'rc.pixels': 'spinner', 'rc.spinner': 'spinner', 'rc.seed': 'spinner',
-    'rc.log_slider': 'log_slider', 'rc.signed_slider': 'signed_slider',
-    'rc.opacity': 'opacity', 'rc.temperature_k': 'temperature',
+    'rc.pixels': 'spinner',
+    'rc.spinner': 'spinner',
+    'rc.seed': 'spinner',
+    'rc.log_slider': 'log_slider',
+    'rc.signed_slider': 'signed_slider',
+    'rc.opacity': 'opacity',
+    'rc.temperature_k': 'temperature',
   };
   const mapped = p.hint ? hintMap[p.hint] : undefined;
   return {
     name: p.name,
     type: mapped || 'number',
     hint: p.hint || '',
-    min: numMin, max: numMax, step: numStep,
+    min: numMin,
+    max: numMax,
+    step: numStep,
     default: numDefault as number | string | boolean,
     label: p.label || p.name,
   };
 }
 
 const PIPELINE_EXTRAS: Record<string, { category: string; params: UiParam[] }> = {
-  resize: { category: 'transform', params: [
-    { name: 'width', type: 'number', hint: '', min: 1, max: 8192, step: 1, default: 256, label: 'Width in pixels' },
-    { name: 'height', type: 'number', hint: '', min: 1, max: 8192, step: 1, default: 256, label: 'Height in pixels' },
-    { name: 'filter', type: 'enum', hint: '', options: ['nearest', 'bilinear', 'bicubic', 'lanczos3'], default: 'lanczos3', label: 'Resize filter' },
-  ]},
-  crop: { category: 'transform', params: [
-    { name: 'x', type: 'number', hint: '', min: 0, max: 8192, step: 1, default: 0, label: 'X offset' },
-    { name: 'y', type: 'number', hint: '', min: 0, max: 8192, step: 1, default: 0, label: 'Y offset' },
-    { name: 'width', type: 'number', hint: '', min: 1, max: 8192, step: 1, default: 256, label: 'Crop width' },
-    { name: 'height', type: 'number', hint: '', min: 1, max: 8192, step: 1, default: 256, label: 'Crop height' },
-  ]},
-  rotate: { category: 'transform', params: [
-    { name: 'angle', type: 'enum', hint: '', options: ['r90', 'r180', 'r270'], default: 'r90', label: 'Rotation angle' },
-  ]},
-  flip: { category: 'transform', params: [
-    { name: 'direction', type: 'enum', hint: '', options: ['horizontal', 'vertical'], default: 'horizontal', label: 'Flip direction' },
-  ]},
+  resize: {
+    category: 'transform',
+    params: [
+      {
+        name: 'width',
+        type: 'number',
+        hint: '',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Width in pixels',
+      },
+      {
+        name: 'height',
+        type: 'number',
+        hint: '',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Height in pixels',
+      },
+      {
+        name: 'filter',
+        type: 'enum',
+        hint: '',
+        options: ['nearest', 'bilinear', 'bicubic', 'lanczos3'],
+        default: 'lanczos3',
+        label: 'Resize filter',
+      },
+    ],
+  },
+  crop: {
+    category: 'transform',
+    params: [
+      {
+        name: 'x',
+        type: 'number',
+        hint: '',
+        min: 0,
+        max: 8192,
+        step: 1,
+        default: 0,
+        label: 'X offset',
+      },
+      {
+        name: 'y',
+        type: 'number',
+        hint: '',
+        min: 0,
+        max: 8192,
+        step: 1,
+        default: 0,
+        label: 'Y offset',
+      },
+      {
+        name: 'width',
+        type: 'number',
+        hint: '',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Crop width',
+      },
+      {
+        name: 'height',
+        type: 'number',
+        hint: '',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Crop height',
+      },
+    ],
+  },
+  rotate: {
+    category: 'transform',
+    params: [
+      {
+        name: 'angle',
+        type: 'enum',
+        hint: '',
+        options: ['r90', 'r180', 'r270'],
+        default: 'r90',
+        label: 'Rotation angle',
+      },
+    ],
+  },
+  flip: {
+    category: 'transform',
+    params: [
+      {
+        name: 'direction',
+        type: 'enum',
+        hint: '',
+        options: ['horizontal', 'vertical'],
+        default: 'horizontal',
+        label: 'Flip direction',
+      },
+    ],
+  },
   grayscale: { category: 'color', params: [] },
-  convertFormat: { category: 'color', params: [
-    { name: 'target', type: 'enum', hint: '', options: ['rgb8', 'rgba8', 'gray8'], default: 'rgb8', label: 'Target pixel format' },
-  ]},
+  convertFormat: {
+    category: 'color',
+    params: [
+      {
+        name: 'target',
+        type: 'enum',
+        hint: '',
+        options: ['rgb8', 'rgba8', 'gray8'],
+        default: 'rgb8',
+        label: 'Target pixel format',
+      },
+    ],
+  },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  spatial: 'Filters', adjustment: 'Adjustment', color: 'Color', edge: 'Edge',
-  transform: 'Transform', alpha: 'Alpha', other: 'Other', enhancement: 'Enhancement',
-  morphology: 'Morphology', threshold: 'Threshold', grading: 'Grading',
-  tonemapping: 'Tonemapping', effect: 'Effects', distortion: 'Distortion',
-  draw: 'Draw', generator: 'Generator', tool: 'Tool', advanced: 'Advanced',
+  spatial: 'Filters',
+  adjustment: 'Adjustment',
+  color: 'Color',
+  edge: 'Edge',
+  transform: 'Transform',
+  alpha: 'Alpha',
+  other: 'Other',
+  enhancement: 'Enhancement',
+  morphology: 'Morphology',
+  threshold: 'Threshold',
+  grading: 'Grading',
+  tonemapping: 'Tonemapping',
+  effect: 'Effects',
+  distortion: 'Distortion',
+  draw: 'Draw',
+  generator: 'Generator',
+  tool: 'Tool',
+  advanced: 'Advanced',
 };
 
 const SKIP = new Set(['constructor', 'read', 'nodeInfo', 'composite', 'iccToSrgb', 'autoOrient']);
@@ -186,8 +343,18 @@ export async function loadManifest(): Promise<LoadedManifest> {
 }
 
 export const MENU_MAP: Record<string, string> = {
-  Filters: 'filters', Enhancement: 'filters', Edge: 'filters', Morphology: 'filters',
-  Transform: 'transforms', Distortion: 'transforms',
-  Effects: 'effects', Effect: 'effects', Draw: 'effects', Generator: 'effects',
-  Grading: 'grading', Tonemapping: 'grading', Color: 'grading', Adjustment: 'grading',
+  Filters: 'filters',
+  Enhancement: 'filters',
+  Edge: 'filters',
+  Morphology: 'filters',
+  Transform: 'transforms',
+  Distortion: 'transforms',
+  Effects: 'effects',
+  Effect: 'effects',
+  Draw: 'effects',
+  Generator: 'effects',
+  Grading: 'grading',
+  Tonemapping: 'grading',
+  Color: 'grading',
+  Adjustment: 'grading',
 };

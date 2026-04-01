@@ -88,7 +88,7 @@ export function generateCode(
 export function highlightCode(code: string): string {
   return code
     .replace(/\b(import|from|const)\b/g, '<span class="kw">$1</span>')
-    .replace(/'([^']+)'/g, "'<span class=\"str\">$1</span>'")
+    .replace(/'([^']+)'/g, '\'<span class="str">$1</span>\'')
     .replace(/\b(\d+\.?\d*)\b/g, '<span class="num">$1</span>')
     .replace(/\.(\w+)\(/g, '.<span class="fn">$1</span>(');
 }
