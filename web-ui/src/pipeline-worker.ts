@@ -86,13 +86,16 @@ const POSITIONAL_ARG_OPS = new Set([
 
 // Build a WIT config record from param metadata + values.
 // Color params expand to { r, g, b } fields in the config.
+// Seed params (rc.seed hint, u64 in WIT) must be converted to BigInt for jco.
 function buildConfig(params, paramValues) {
   const config = {};
   for (const p of params) {
     if (p.type === 'color') {
       const [r, g, b] = hexToRgb(paramValues[p.name] || '#808080');
-      // WIT color records use {r, g, b} fields
       config[p.name] = { r, g, b };
+    } else if (p.hint === 'rc.seed') {
+      // u64 in WIT → BigInt in JS (jco requirement)
+      config[p.name] = BigInt(Math.floor(paramValues[p.name] || 0));
     } else {
       config[p.name] = paramValues[p.name];
     }
