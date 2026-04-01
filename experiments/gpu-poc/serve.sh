@@ -23,6 +23,10 @@ else
   echo "WASM baseline will be unavailable (GPU benchmarks still work)."
 fi
 
+# Install dependencies (preview2-shim for bare specifier resolution)
+cd "$SCRIPT_DIR"
+npm install --silent 2>/dev/null || true
+
 echo "Serving GPU PoC at http://localhost:3000"
 echo "Press Ctrl+C to stop."
 echo ""
