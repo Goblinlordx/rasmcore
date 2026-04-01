@@ -53,4 +53,13 @@ impl ImageNode for IccToSrgbNode {
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::Sequential
     }
+
+    fn derive_metadata(
+        &self,
+        upstream: &rasmcore_pipeline::Metadata,
+    ) -> Option<rasmcore_pipeline::Metadata> {
+        let mut meta = upstream.clone();
+        meta.remove("icc_profile");
+        Some(meta)
+    }
 }

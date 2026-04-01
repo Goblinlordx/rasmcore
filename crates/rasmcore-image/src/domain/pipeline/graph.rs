@@ -73,6 +73,21 @@ pub trait ImageNode {
     fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> {
         None
     }
+
+    /// Derive this node's metadata from upstream metadata.
+    ///
+    /// Return `None` to inherit upstream metadata unchanged (zero-cost default).
+    /// Return `Some(meta)` only when this node modifies metadata — clone
+    /// the upstream only when modification is needed.
+    ///
+    /// Examples: resize sets width/height, auto_orient resets exif.Orientation,
+    /// icc_to_srgb removes the ICC profile.
+    fn derive_metadata(
+        &self,
+        _upstream: &rasmcore_pipeline::Metadata,
+    ) -> Option<rasmcore_pipeline::Metadata> {
+        None
+    }
 }
 
 /// Rc wrapper around FrameSourceNode that implements ImageNode by delegation.
@@ -308,6 +323,23 @@ impl NodeGraph {
         }
 
         id
+    }
+
+    /// Add a node that derives its metadata from an upstream node.
+    ///
+    /// Calls `node.derive_metadata(&upstream_meta)` — if `Some(meta)` is returned,
+    /// uses the new metadata; otherwise inherits upstream metadata via clone.
+    pub fn add_node_derived(
+        &mut self,
+        node: Box<dyn ImageNode>,
+        hash: rasmcore_pipeline::ContentHash,
+        upstream_id: u32,
+    ) -> u32 {
+        let upstream_meta = self.node_metadata(upstream_id).clone();
+        let meta = node
+            .derive_metadata(&upstream_meta)
+            .unwrap_or(upstream_meta);
+        self.add_node_with_hash_and_metadata(node, hash, meta)
     }
 
     /// Get the content hash for a node.

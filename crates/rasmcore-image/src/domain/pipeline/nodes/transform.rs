@@ -223,6 +223,22 @@ impl ImageNode for ResizeNode {
     fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
         Some(self.to_affine())
     }
+
+    fn derive_metadata(
+        &self,
+        upstream: &rasmcore_pipeline::Metadata,
+    ) -> Option<rasmcore_pipeline::Metadata> {
+        let mut meta = upstream.clone();
+        meta.set(
+            "width",
+            rasmcore_pipeline::MetadataValue::Int(self.target_width as i64),
+        );
+        meta.set(
+            "height",
+            rasmcore_pipeline::MetadataValue::Int(self.target_height as i64),
+        );
+        Some(meta)
+    }
 }
 
 /// Crop node.
@@ -305,6 +321,22 @@ impl ImageNode for CropNode {
     fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
         Some(self.to_affine())
     }
+
+    fn derive_metadata(
+        &self,
+        upstream: &rasmcore_pipeline::Metadata,
+    ) -> Option<rasmcore_pipeline::Metadata> {
+        let mut meta = upstream.clone();
+        meta.set(
+            "width",
+            rasmcore_pipeline::MetadataValue::Int(self.width as i64),
+        );
+        meta.set(
+            "height",
+            rasmcore_pipeline::MetadataValue::Int(self.height as i64),
+        );
+        Some(meta)
+    }
 }
 
 /// Rotate node.
@@ -384,6 +416,21 @@ impl ImageNode for RotateNode {
 
     fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
         Some(self.to_affine())
+    }
+
+    fn derive_metadata(
+        &self,
+        upstream: &rasmcore_pipeline::Metadata,
+    ) -> Option<rasmcore_pipeline::Metadata> {
+        let info = self.info();
+        if info.width != self.source_info.width || info.height != self.source_info.height {
+            let mut meta = upstream.clone();
+            meta.set("width", rasmcore_pipeline::MetadataValue::Int(info.width as i64));
+            meta.set("height", rasmcore_pipeline::MetadataValue::Int(info.height as i64));
+            Some(meta)
+        } else {
+            None
+        }
     }
 }
 
@@ -496,5 +543,29 @@ impl ImageNode for AutoOrientNode {
 
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::RandomAccess
+    }
+
+    fn derive_metadata(
+        &self,
+        upstream: &rasmcore_pipeline::Metadata,
+    ) -> Option<rasmcore_pipeline::Metadata> {
+        let info = self.info();
+        let had_orientation = upstream.exif_orientation().is_some();
+        let dims_changed =
+            info.width != self.source_info.width || info.height != self.source_info.height;
+
+        if !had_orientation && !dims_changed {
+            return None;
+        }
+
+        let mut meta = upstream.clone();
+        if had_orientation {
+            meta.set("exif.Orientation", rasmcore_pipeline::MetadataValue::Int(1));
+        }
+        if dims_changed {
+            meta.set("width", rasmcore_pipeline::MetadataValue::Int(info.width as i64));
+            meta.set("height", rasmcore_pipeline::MetadataValue::Int(info.height as i64));
+        }
+        Some(meta)
     }
 }

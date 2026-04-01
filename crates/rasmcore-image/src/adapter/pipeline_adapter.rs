@@ -444,13 +444,7 @@ impl GuestImagePipeline for PipelineResource {
             "resize",
             format!("{width},{height},{filter:?}").as_bytes(),
         );
-        let mut meta = graph.node_metadata(source).clone();
-        meta.set("width", rasmcore_pipeline::MetadataValue::Int(width as i64));
-        meta.set(
-            "height",
-            rasmcore_pipeline::MetadataValue::Int(height as i64),
-        );
-        Ok(graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta))
+        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     fn crop(
@@ -474,13 +468,7 @@ impl GuestImagePipeline for PipelineResource {
             "crop",
             format!("{x},{y},{width},{height}").as_bytes(),
         );
-        let mut meta = graph.node_metadata(source).clone();
-        meta.set("width", rasmcore_pipeline::MetadataValue::Int(width as i64));
-        meta.set(
-            "height",
-            rasmcore_pipeline::MetadataValue::Int(height as i64),
-        );
-        Ok(graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta))
+        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     fn rotate(&self, source: NodeId, angle: Rotation) -> Result<NodeId, RasmcoreError> {
@@ -495,16 +483,14 @@ impl GuestImagePipeline for PipelineResource {
             Rotation::R270 => domain::types::Rotation::R270,
         };
         let node = transform::RotateNode::new(source, src_info, domain_rot);
-        let upstream_hash = self.graph.borrow().node_hash(source);
+        let mut graph = self.graph.borrow_mut();
+        let upstream_hash = graph.node_hash(source);
         let hash = rasmcore_pipeline::compute_hash(
             &upstream_hash,
             "rotate",
             format!("{angle:?}").as_bytes(),
         );
-        Ok(self
-            .graph
-            .borrow_mut()
-            .add_node_with_hash(Box::new(node), hash))
+        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     fn flip(&self, source: NodeId, direction: FlipDirection) -> Result<NodeId, RasmcoreError> {
@@ -518,16 +504,14 @@ impl GuestImagePipeline for PipelineResource {
             FlipDirection::Vertical => domain::types::FlipDirection::Vertical,
         };
         let node = transform::FlipNode::new(source, src_info, domain_dir);
-        let upstream_hash = self.graph.borrow().node_hash(source);
+        let mut graph = self.graph.borrow_mut();
+        let upstream_hash = graph.node_hash(source);
         let hash = rasmcore_pipeline::compute_hash(
             &upstream_hash,
             "flip",
             format!("{direction:?}").as_bytes(),
         );
-        Ok(self
-            .graph
-            .borrow_mut()
-            .add_node_with_hash(Box::new(node), hash))
+        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     fn convert_format(
@@ -555,20 +539,14 @@ impl GuestImagePipeline for PipelineResource {
         drop(graph);
 
         if profile.is_empty() {
-            // No ICC profile — pass through unchanged
             return Ok(source);
         }
 
         let node = color::IccToSrgbNode::new(source, src_info, profile).map_err(to_wit_error)?;
         let mut graph = self.graph.borrow_mut();
-
-        // Propagate metadata with ICC profile removed (consumed)
         let upstream_hash = graph.node_hash(source);
         let hash = rasmcore_pipeline::compute_hash(&upstream_hash, "icc_to_srgb", &[]);
-        let mut meta = graph.node_metadata(source).clone();
-        meta.remove("icc_profile");
-        let id = graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta);
-        Ok(id)
+        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     fn auto_orient(
@@ -616,10 +594,7 @@ impl GuestImagePipeline for PipelineResource {
             "auto_orient",
             format!("{orientation:?}").as_bytes(),
         );
-        let mut meta = graph.node_metadata(source).clone();
-        meta.set("exif.Orientation", rasmcore_pipeline::MetadataValue::Int(1));
-        let id = graph.add_node_with_hash_and_metadata(Box::new(node), hash, meta);
-        Ok(id)
+        Ok(graph.add_node_derived(Box::new(node), hash, source))
     }
 
     // Auto-generated pipeline filter methods (all registered filters)
