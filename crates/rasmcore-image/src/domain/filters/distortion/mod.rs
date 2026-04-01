@@ -4,6 +4,8 @@ mod barrel;
 pub use barrel::*;
 mod depolar;
 pub use depolar::*;
+mod mesh_warp;
+pub use mesh_warp::*;
 mod polar;
 pub use polar::*;
 mod ripple;
