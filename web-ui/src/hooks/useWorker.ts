@@ -22,24 +22,23 @@ export function useWorker() {
     timings: null,
     error: null,
   });
+  // Use refs for mutable flags so sendMessage doesn't need to re-create on every state change
+  const readyRef = useRef(false);
+  const processingRef = useRef(false);
   const queueRef = useRef<unknown>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const originalCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const thumbCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onLoadedRef = useRef<(() => void) | null>(null);
 
-  const clearProcessing = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setState((s) => ({ ...s, processing: false }));
+  const setProcessing = useCallback((active: boolean) => {
+    processingRef.current = active;
+    setState((s) => ({ ...s, processing: active }));
   }, []);
 
-  const drainQueue = useCallback(() => {
-    if (queueRef.current && workerRef.current) {
-      const next = queueRef.current as { imageBytes?: ArrayBuffer };
-      queueRef.current = null;
-      workerRef.current.postMessage(next, next.imageBytes ? [next.imageBytes] : []);
-    }
+  const setReady = useCallback((ready: boolean) => {
+    readyRef.current = ready;
+    setState((s) => ({ ...s, ready }));
   }, []);
 
   useEffect(() => {
@@ -51,12 +50,13 @@ export function useWorker() {
       const { type } = e.data;
 
       if (type === 'ready') {
-        setState((s) => ({ ...s, ready: true }));
+        setReady(true);
         return;
       }
 
       if (type === 'loaded') {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        processingRef.current = false;
         setState((s) => ({
           ...s,
           processing: false,
@@ -73,8 +73,7 @@ export function useWorker() {
         const url = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
-          const canvas =
-            e.data.mode === 'thumb' ? thumbCanvasRef.current : previewCanvasRef.current;
+          const canvas = previewCanvasRef.current;
           if (canvas) {
             canvas.width = img.width;
             canvas.height = img.height;
@@ -84,6 +83,7 @@ export function useWorker() {
         };
         img.src = url;
 
+        processingRef.current = false;
         if (e.data.mode === 'full' && e.data.timings) {
           setState((s) => ({
             ...s,
@@ -98,6 +98,7 @@ export function useWorker() {
         if (queueRef.current) {
           const next = queueRef.current as { imageBytes?: ArrayBuffer };
           queueRef.current = null;
+          processingRef.current = true;
           setState((s) => ({ ...s, processing: true }));
           w.postMessage(next, next.imageBytes ? [next.imageBytes] : []);
         }
@@ -106,6 +107,7 @@ export function useWorker() {
 
       if (type === 'exported') {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        processingRef.current = false;
         setState((s) => ({ ...s, processing: false }));
         const blob = new Blob([e.data.data], { type: e.data.mime });
         const a = document.createElement('a');
@@ -117,15 +119,16 @@ export function useWorker() {
 
       if (type === 'error') {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        processingRef.current = false;
         setState((s) => ({
           ...s,
           processing: false,
           error: e.data.message,
         }));
-        // Drain queue even on error
         if (queueRef.current) {
           const next = queueRef.current as { imageBytes?: ArrayBuffer };
           queueRef.current = null;
+          processingRef.current = true;
           setState((s) => ({ ...s, processing: true }));
           w.postMessage(next, next.imageBytes ? [next.imageBytes] : []);
         }
@@ -136,40 +139,36 @@ export function useWorker() {
       w.terminate();
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, []);
+  }, [setProcessing, setReady]);
 
+  // Stable sendMessage — uses refs, never stale
   const sendMessage = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (msg: any) => {
-      if (!workerRef.current || !state.ready) return;
-      if (state.processing) {
+      if (!workerRef.current || !readyRef.current) return;
+      if (processingRef.current) {
         queueRef.current = msg;
         return;
       }
+      processingRef.current = true;
       setState((s) => ({ ...s, processing: true, error: null }));
-      // Safety timeout
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        setState((s) => {
-          if (s.processing) {
-            return { ...s, processing: false, error: 'Processing timed out' };
-          }
-          return s;
-        });
+        if (processingRef.current) {
+          processingRef.current = false;
+          setState((s) => ({ ...s, processing: false, error: 'Processing timed out' }));
+        }
       }, 15000);
       workerRef.current.postMessage(msg, msg.imageBytes ? [msg.imageBytes] : []);
     },
-    [state.ready, state.processing],
+    [], // stable — no deps, uses refs only
   );
 
   return {
     ...state,
     sendMessage,
-    clearProcessing,
-    drainQueue,
     previewCanvasRef,
     originalCanvasRef,
-    thumbCanvasRef,
     onLoadedRef,
   };
 }
