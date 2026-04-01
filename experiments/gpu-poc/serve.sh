@@ -28,7 +28,17 @@ echo "Press Ctrl+C to stop."
 echo ""
 
 cd "$SCRIPT_DIR"
-npx serve -l 3000 \
-  --cors \
-  -H "Cross-Origin-Opener-Policy: same-origin" \
-  -H "Cross-Origin-Embedder-Policy: require-corp"
+node -e "
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const MIME = { '.html':'text/html', '.js':'application/javascript', '.wgsl':'text/plain', '.wasm':'application/wasm', '.json':'application/json' };
+http.createServer((req, res) => {
+  const file = path.join('.', req.url === '/' ? 'index.html' : decodeURIComponent(req.url));
+  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end('Not found'); return; }
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  res.setHeader('Content-Type', MIME[path.extname(file)] || 'application/octet-stream');
+  fs.createReadStream(file).pipe(res);
+}).listen(3000, () => console.log('http://localhost:3000'));
+"
