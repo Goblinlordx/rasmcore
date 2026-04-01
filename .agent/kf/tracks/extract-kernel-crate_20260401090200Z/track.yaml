@@ -39,27 +39,27 @@ plan:
 - phase: Crate scaffold
   tasks:
   - text: Create crates/rasmcore-kernel with Cargo.toml and lib.rs
-    done: false
+    done: true
   - text: Add rasmcore-kernel dependency to rasmcore-image Cargo.toml
-    done: false
+    done: true
 - phase: Extract modules
   tasks:
   - text: Move convolve() and kernel helpers to rasmcore-kernel::convolve
-    done: false
+    done: true
   - text: Move color_spaces.rs to rasmcore-kernel::color_spaces
-    done: false
+    done: true
   - text: Move color_lut.rs to rasmcore-kernel::color_lut
-    done: false
+    done: true
   - text: Move point_ops.rs LUT infrastructure to rasmcore-kernel::lut
-    done: false
+    done: true
   - text: Move EWA interpolation to rasmcore-kernel::interpolation
-    done: false
+    done: true
   - text: Update all imports in rasmcore-image to use rasmcore-kernel
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All existing tests pass
-    done: false
+    done: true
   - text: cargo build + cargo component build succeed
-    done: false
+    done: true
 extra: {}

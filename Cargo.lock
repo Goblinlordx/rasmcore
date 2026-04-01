@@ -2574,6 +2574,7 @@ dependencies = [
  "rasmcore-hevc",
  "rasmcore-isobmff",
  "rasmcore-jpeg",
+ "rasmcore-kernel",
  "rasmcore-macros",
  "rasmcore-pipeline",
  "rasmcore-pnm",
@@ -2611,6 +2612,10 @@ dependencies = [
 
 [[package]]
 name = "rasmcore-jxl"
+version = "0.1.0"
+
+[[package]]
+name = "rasmcore-kernel"
 version = "0.1.0"
 
 [[package]]

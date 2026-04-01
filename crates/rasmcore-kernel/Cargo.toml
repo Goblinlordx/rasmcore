@@ -1,0 +1,11 @@
+[package]
+name = "rasmcore-kernel"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Shared computation kernels for rasmcore — convolve, color math, LUT, interpolation"
+
+[dependencies]
+
+[lints]
+workspace = true

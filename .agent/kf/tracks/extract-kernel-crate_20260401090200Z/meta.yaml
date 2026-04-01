@@ -1,5 +1,5 @@
 title: Extract rasmcore-kernel shared computation crate
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'
