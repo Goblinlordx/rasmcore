@@ -20957,6 +20957,125 @@ pub fn halftone(
     Ok(out)
 }
 
+// ── Unified Distortion Engine ──────────────────────────────────────────────
+//
+// All distortion filters share this common engine which handles:
+// - Computing the required source rect (bounding box or uniform overlap)
+// - Requesting expanded upstream pixels
+// - Running the EWA/bilinear sampling loop in image-space coordinates
+// - Producing output for the requested tile only
+//
+// Each filter provides its inverse transform + Jacobian as closures.
+// Center computations use full-image dimensions (info), never tile dimensions.
+
+/// Overlap mode for distortion source rect computation.
+enum DistortionOverlap {
+    /// Constant overlap in pixels (wave, ripple -- max displacement is known).
+    Uniform(u32),
+    /// Full image needed (polar/depolar/swirl/spherize/barrel -- any pixel can
+    /// map far from its source position).
+    FullImage,
+}
+
+/// Sampling mode for the distortion engine.
+enum DistortionSampling {
+    /// EWA resampling with Robidoux filter (most distortions).
+    Ewa,
+    /// EWA with edge-clamped border (barrel distortion).
+    EwaClamp,
+    /// Bilinear interpolation (wave -- matches IM's effect.c).
+    Bilinear,
+}
+
+/// Unified distortion engine. Each filter provides its inverse transform
+/// and Jacobian as closures. This function handles:
+/// - Computing required source rect (bounding box or uniform overlap)
+/// - Requesting expanded upstream pixels
+/// - Running the sampling loop in image-space coordinates (not tile-local)
+/// - Producing output for the requested tile
+fn apply_distortion(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo, // FULL image dimensions -- never overwrite with tile dims
+    overlap: DistortionOverlap,
+    sampling: DistortionSampling,
+    // inverse_fn: (output_x, output_y) -> (source_x, source_y) in image space
+    inverse_fn: &dyn Fn(f32, f32) -> (f32, f32),
+    // jacobian_fn: (output_x, output_y) -> 2x2 Jacobian matrix
+    // Ignored for Bilinear sampling mode.
+    jacobian_fn: &dyn Fn(f32, f32) -> super::ewa::Jacobian,
+) -> Result<Vec<u8>, ImageError> {
+    let w = info.width;
+    let h = info.height;
+
+    // Compute required source rect
+    let source_rect = match overlap {
+        DistortionOverlap::Uniform(px) => request.expand_uniform(px, w, h),
+        DistortionOverlap::FullImage => Rect::new(0, 0, w, h),
+    };
+
+    let pixels = upstream(source_rect)?;
+    let ch = channels(info.format);
+    let src_w = source_rect.width as usize;
+    let src_h = source_rect.height as usize;
+
+    let sampler = super::ewa::EwaSampler::new(&pixels, src_w, src_h, ch);
+
+    // Output buffer for the requested tile only
+    let out_w = request.width as usize;
+    let out_h = request.height as usize;
+    let mut out = vec![0u8; out_w * out_h * ch];
+
+    // Iterate in IMAGE-SPACE coordinates (not tile-local)
+    for oy in 0..out_h {
+        let img_y = (request.y as usize + oy) as f32;
+        for ox in 0..out_w {
+            let img_x = (request.x as usize + ox) as f32;
+
+            // Inverse transform in image space
+            let (sx, sy) = inverse_fn(img_x, img_y);
+
+            // Adjust source coords to be relative to source_rect
+            let local_sx = sx - source_rect.x as f32;
+            let local_sy = sy - source_rect.y as f32;
+
+            let off = (oy * out_w + ox) * ch;
+            match sampling {
+                DistortionSampling::Bilinear => {
+                    for c in 0..ch {
+                        out[off + c] = sampler
+                            .bilinear_pub(local_sx, local_sy, c)
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
+                    }
+                }
+                DistortionSampling::Ewa => {
+                    let j = jacobian_fn(img_x, img_y);
+                    for c in 0..ch {
+                        out[off + c] = sampler
+                            .sample(local_sx, local_sy, &j, c)
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
+                    }
+                }
+                DistortionSampling::EwaClamp => {
+                    let j = jacobian_fn(img_x, img_y);
+                    for c in 0..ch {
+                        out[off + c] = sampler
+                            .sample_clamp(local_sx, local_sy, &j, c)
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+// ── Distortion Filters ────────────────────────────────────────────────────
+
 /// Swirl: rotate pixels around center with angle decreasing by distance.
 /// Matches ImageMagick `-swirl {degrees}`:
 /// - Default radius = max(width/2, height/2)
@@ -20989,69 +21108,51 @@ pub fn swirl(
     info: &ImageInfo,
     config: &SwirlParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let angle = config.angle;
-    let radius = config.radius;
-
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |px, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(px.to_vec());
             swirl(r, &mut u, i8, config)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let wf = w as f32;
-    let hf = h as f32;
-    let cx = wf * 0.5;
-    let cy = hf * 0.5;
-    let rad = if radius <= 0.0 { cx.max(cy) } else { radius };
-    let angle_rad = angle.to_radians();
-
-    let (scale_x, scale_y) = if w > h {
-        (1.0f32, wf / hf)
-    } else if h > w {
-        (hf / wf, 1.0f32)
+    let w = info.width as f32;
+    let h = info.height as f32;
+    let cx = w * 0.5;
+    let cy = h * 0.5;
+    let rad = if config.radius <= 0.0 { cx.max(cy) } else { config.radius };
+    let angle_rad = config.angle.to_radians();
+    let (scale_x, scale_y) = if info.width > info.height {
+        (1.0f32, w / h)
+    } else if info.height > info.width {
+        (h / w, 1.0f32)
     } else {
         (1.0, 1.0)
     };
 
-    let mut out = vec![0u8; pixels.len()];
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
-
-    for y in 0..h {
-        let yf = y as f32;
-        let dy = scale_y * (yf - cy);
-        for x in 0..w {
-            let xf = x as f32;
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::FullImage,
+        DistortionSampling::Ewa,
+        &|xf, yf| {
             let dx = scale_x * (xf - cx);
+            let dy = scale_y * (yf - cy);
             let dist = (dx * dx + dy * dy).sqrt();
             let t = (1.0 - dist / rad).max(0.0);
-            let rot_angle = angle_rad * t * t;
-            let cos_r = rot_angle.cos();
-            let sin_r = rot_angle.sin();
-            let sx = (cos_r * dx - sin_r * dy) / scale_x + cx;
-            let sy = (sin_r * dx + cos_r * dy) / scale_y + cy;
-            let j = super::ewa::jacobian_swirl(xf, yf, cx, cy, angle_rad, rad, scale_x, scale_y);
-            let off = (y * w + x) * ch;
-            for c in 0..ch {
-                out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
-            }
-        }
-    }
-
-    Ok(out)
+            let rot = angle_rad * t * t;
+            let (cos_r, sin_r) = (rot.cos(), rot.sin());
+            ((cos_r * dx - sin_r * dy) / scale_x + cx,
+             (sin_r * dx + cos_r * dy) / scale_y + cy)
+        },
+        &|xf, yf| {
+            super::ewa::jacobian_swirl(xf, yf, cx, cy, angle_rad, rad, scale_x, scale_y)
+        },
+    )
 }
 
 /// Spherize: apply spherical projection for bulge/pinch effect.
@@ -21075,47 +21176,37 @@ pub fn spherize(
     info: &ImageInfo,
     config: &SpherizeParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let amount = config.amount;
-
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |px, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(px.to_vec());
             spherize(r, &mut u, i8, config)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let cx = w as f32 * 0.5;
-    let cy = h as f32 * 0.5;
+    let w = info.width as f32;
+    let h = info.height as f32;
+    let cx = w * 0.5;
+    let cy = h * 0.5;
     let radius = cx.min(cy);
-    let amt = amount.clamp(-1.0, 1.0);
+    let amt = config.amount.clamp(-1.0, 1.0);
 
-    let mut out = vec![0u8; pixels.len()];
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
-
-    for y in 0..h {
-        for x in 0..w {
-            let xf = x as f32;
-            let yf = y as f32;
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::FullImage,
+        DistortionSampling::Ewa,
+        &|xf, yf| {
             let dx = (xf - cx) / radius;
             let dy = (yf - cy) / radius;
             let r = (dx * dx + dy * dy).sqrt();
-            let off = (y * w + x) * ch;
-
             if r >= 1.0 || r == 0.0 {
-                out[off..off + ch].copy_from_slice(&pixels[off..off + ch]);
+                // Outside effect radius or at center: identity mapping
+                (xf, yf)
             } else {
                 let new_r = if amt >= 0.0 {
                     r.powf(1.0 / (1.0 + amt))
@@ -21123,17 +21214,13 @@ pub fn spherize(
                     r.powf(1.0 + amt.abs())
                 };
                 let scale = new_r / r;
-                let sx = dx * scale * radius + cx;
-                let sy = dy * scale * radius + cy;
-                let j = super::ewa::jacobian_spherize(xf, yf, cx, cy, amt, radius);
-                for c in 0..ch {
-                    out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
-                }
+                (dx * scale * radius + cx, dy * scale * radius + cy)
             }
-        }
-    }
-
-    Ok(out)
+        },
+        &|xf, yf| {
+            super::ewa::jacobian_spherize(xf, yf, cx, cy, amt, radius)
+        },
+    )
 }
 
 /// Barrel distortion: apply radial polynomial distortion.
@@ -21162,72 +21249,60 @@ pub fn barrel(
     info: &ImageInfo,
     config: &BarrelParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let k1 = config.k1;
-    let k2 = config.k2;
-
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |px, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(px.to_vec());
             barrel(r, &mut u, i8, config)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
+    let k1 = config.k1;
+    let k2 = config.k2;
     // IM: center = w/2, rscale = 2/min(w,h), pixel-center convention (i+0.5)
-    let wf = w as f64;
-    let hf = h as f64;
+    let wf = info.width as f64;
+    let hf = info.height as f64;
     let cx = wf * 0.5;
     let cy = hf * 0.5;
     let rscale = 2.0 / wf.min(hf);
     // IM denormalizes coefficients: A *= rscale³, B *= rscale²
-    // Our k1 maps to IM's A (cubic term), k2 maps to B (quadratic term), D=1
     let a_coeff = k1 as f64 * rscale * rscale * rscale;
     let b_coeff = k2 as f64 * rscale * rscale;
-    // IM barrel: factor = A*r³ + B*r² + C*r + D  (C=0, D=1)
 
-    let mut out = vec![0u8; pixels.len()];
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
+    let distort_f64 = move |ox: f64, oy: f64| -> (f64, f64) {
+        let di = ox - cx;
+        let dj = oy - cy;
+        let dr = (di * di + dj * dj).sqrt();
+        let df = a_coeff * dr * dr * dr + b_coeff * dr * dr + 1.0;
+        (di * df + cx, dj * df + cy)
+    };
 
-    for y in 0..h {
-        for x in 0..w {
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::FullImage,
+        DistortionSampling::EwaClamp,
+        &|xf, yf| {
             // IM pixel-center: d.x = i + 0.5
-            let xf = x as f64 + 0.5;
-            let yf = y as f64 + 0.5;
-            let ii = xf - cx;
-            let jj = yf - cy;
-            let rr = (ii * ii + jj * jj).sqrt();
-            // IM polynomial: factor = A*r³ + B*r² + C*r + D
-            let factor = a_coeff * rr * rr * rr + b_coeff * rr * rr + 1.0;
-
-            let sx = (ii * factor + cx) as f32;
-            let sy = (jj * factor + cy) as f32;
-            // Jacobian via finite differences (barrel polynomial is complex)
-            let distort = |ox: f64, oy: f64| -> (f64, f64) {
-                let di = ox - cx;
-                let dj = oy - cy;
-                let dr = (di * di + dj * dj).sqrt();
-                let df = a_coeff * dr * dr * dr + b_coeff * dr * dr + 1.0;
-                (di * df + cx, dj * df + cy)
-            };
+            let xf64 = xf as f64 + 0.5;
+            let yf64 = yf as f64 + 0.5;
+            let (sx, sy) = distort_f64(xf64, yf64);
+            (sx as f32, sy as f32)
+        },
+        &|xf, yf| {
+            let xf64 = xf as f64 + 0.5;
+            let yf64 = yf as f64 + 0.5;
             let h_step = 0.5;
-            let (sx_px, sy_px) = distort(xf + h_step, yf);
-            let (sx_mx, sy_mx) = distort(xf - h_step, yf);
-            let (sx_py, sy_py) = distort(xf, yf + h_step);
-            let (sx_my, sy_my) = distort(xf, yf - h_step);
+            let (sx_px, sy_px) = distort_f64(xf64 + h_step, yf64);
+            let (sx_mx, sy_mx) = distort_f64(xf64 - h_step, yf64);
+            let (sx_py, sy_py) = distort_f64(xf64, yf64 + h_step);
+            let (sx_my, sy_my) = distort_f64(xf64, yf64 - h_step);
             let inv_2h = 1.0 / (2.0 * h_step);
-            let j: super::ewa::Jacobian = [
+            [
                 [
                     ((sx_px - sx_mx) * inv_2h) as f32,
                     ((sx_py - sx_my) * inv_2h) as f32,
@@ -21236,18 +21311,9 @@ pub fn barrel(
                     ((sy_px - sy_mx) * inv_2h) as f32,
                     ((sy_py - sy_my) * inv_2h) as f32,
                 ],
-            ];
-            let off = (y * w + x) * ch;
-            for c in 0..ch {
-                out[off + c] = sampler
-                    .sample_clamp(sx, sy, &j, c)
-                    .round()
-                    .clamp(0.0, 255.0) as u8;
-            }
-        }
-    }
-
-    Ok(out)
+            ]
+        },
+    )
 }
 
 /// Polar: convert Cartesian image to polar-coordinate projection.
@@ -21269,53 +21335,39 @@ pub fn polar(
     upstream: &mut UpstreamFn,
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
             polar(r, &mut u, i8)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let wf = w as f32;
-    let hf = h as f32;
+    let wf = info.width as f32;
+    let hf = info.height as f32;
     let cx = wf * 0.5;
     let cy = hf * 0.5;
     let max_radius = cx.min(cy);
-    let two_pi = std::f32::consts::TAU;
 
-    let mut out = vec![0u8; pixels.len()];
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
-
-    for y in 0..h {
-        let yf = y as f32;
-        let radius = yf / hf * max_radius;
-        for x in 0..w {
-            let xf = x as f32;
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::FullImage,
+        DistortionSampling::Ewa,
+        &|xf, yf| {
+            let two_pi = std::f32::consts::TAU;
+            let radius = yf / hf * max_radius;
             let angle = xf / wf * two_pi - std::f32::consts::PI;
-            let sx = cx + radius * angle.sin();
-            let sy = cy - radius * angle.cos();
-            let j = super::ewa::jacobian_polar(xf, yf, wf, hf, max_radius);
-            let off = (y * w + x) * ch;
-            for c in 0..ch {
-                out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
-            }
-        }
-    }
-
-    Ok(out)
+            (cx + radius * angle.sin(), cy - radius * angle.cos())
+        },
+        &|xf, yf| {
+            super::ewa::jacobian_polar(xf, yf, wf, hf, max_radius)
+        },
+    )
 }
 
 /// DePolar: convert polar-coordinate image back to Cartesian projection.
@@ -21337,29 +21389,22 @@ pub fn depolar(
     upstream: &mut UpstreamFn,
     info: &ImageInfo,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
             depolar(r, &mut u, i8)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
     // Use f64 throughout to match IM's double-precision pipeline
-    let wf = w as f64;
-    let hf = h as f64;
+    let wf = info.width as f64;
+    let hf = info.height as f64;
     // IM uses pixel-center convention: d.x = i + 0.5, center = w/2
     let cx = wf * 0.5;
     let cy = hf * 0.5;
@@ -21369,42 +21414,41 @@ pub fn depolar(
     let c7 = hf / max_radius;
     let half_w = wf * 0.5;
 
-    let mut out = vec![0u8; pixels.len()];
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
-
-    for y in 0..h {
-        // IM pixel-center: d.y = j + 0.5
-        let yf = y as f64 + 0.5;
-        let jj = yf - cy;
-        for x in 0..w {
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::FullImage,
+        DistortionSampling::Ewa,
+        &|xf, yf| {
             // IM pixel-center: d.x = i + 0.5
-            let xf = x as f64 + 0.5;
-            let ii = xf - cx;
+            let xf64 = xf as f64 + 0.5;
+            let yf64 = yf as f64 + 0.5;
+            let ii = xf64 - cx;
+            let jj = yf64 - cy;
             let radius = (ii * ii + jj * jj).sqrt();
             let angle = ii.atan2(jj);
             let mut xx = angle / two_pi;
             xx -= xx.round();
             let sx = (xx * two_pi * c6 + half_w - 0.5) as f32;
             let sy = (radius * c7 - 0.5) as f32;
-            // Analytical Jacobian in f64 precision
+            (sx, sy)
+        },
+        &|xf, yf| {
+            let xf64 = xf as f64 + 0.5;
+            let yf64 = yf as f64 + 0.5;
+            let ii = xf64 - cx;
+            let jj = yf64 - cy;
             let r2 = ii * ii + jj * jj;
-            let j: super::ewa::Jacobian = if r2 < 1e-10 {
+            if r2 < 1e-10 {
                 super::ewa::JACOBIAN_IDENTITY
             } else {
-                let r = radius;
+                let r = r2.sqrt();
                 [
                     [(jj / r2 * c6) as f32, (-ii / r2 * c6) as f32],
                     [(ii / r * c7) as f32, (jj / r * c7) as f32],
                 ]
-            };
-            let off = (y * w + x) * ch;
-            for c in 0..ch {
-                out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
             }
-        }
-    }
-
-    Ok(out)
+        },
+    )
 }
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
@@ -21437,60 +21481,39 @@ pub fn wave(
     info: &ImageInfo,
     config: &WaveParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let amplitude = config.amplitude;
-    let wavelength = config.wavelength;
-    let vertical = config.vertical;
-
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |px, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(px.to_vec());
             wave(r, &mut u, i8, config)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let is_vert = vertical >= 0.5;
-    let two_pi = std::f32::consts::TAU;
-    let wl = if wavelength.abs() < 1e-6 {
-        1.0
-    } else {
-        wavelength
-    };
+    let amplitude = config.amplitude;
+    let wl = if config.wavelength.abs() < 1e-6 { 1.0 } else { config.wavelength };
+    let is_vert = config.vertical >= 0.5;
+    let overlap = amplitude.ceil() as u32 + 1;
+    let dummy_j = super::ewa::JACOBIAN_IDENTITY;
 
-    let mut out = vec![0u8; pixels.len()];
-    // IM's -wave uses bilinear interpolation (effect.c WaveImage),
-    // not EWA resampling. Match IM exactly by using bilinear here.
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
-
-    for y in 0..h {
-        let yf = y as f32;
-        for x in 0..w {
-            let xf = x as f32;
-            let (sx, sy) = if is_vert {
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::Uniform(overlap),
+        DistortionSampling::Bilinear,
+        &|xf, yf| {
+            let two_pi = std::f32::consts::TAU;
+            if is_vert {
                 (xf - amplitude * (two_pi * yf / wl).sin(), yf)
             } else {
                 (xf, yf - amplitude * (two_pi * xf / wl).sin())
-            };
-            let off = (y * w + x) * ch;
-            for c in 0..ch {
-                out[off + c] = sampler.bilinear_pub(sx, sy, c).round().clamp(0.0, 255.0) as u8;
             }
-        }
-    }
-
-    Ok(out)
+        },
+        &|_xf, _yf| dummy_j,
+    )
 }
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
@@ -21526,69 +21549,47 @@ pub fn ripple(
     info: &ImageInfo,
     config: &RippleParams,
 ) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let amplitude = config.amplitude;
-    let wavelength = config.wavelength;
-    let center_x = config.center_x;
-    let center_y = config.center_y;
-
     validate_format(info.format)?;
 
     if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |px, i8| {
+        let full = Rect::new(0, 0, info.width, info.height);
+        let pixels = upstream(full)?;
+        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+        return process_via_8bit(&pixels, info16, |px, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(px.to_vec());
             ripple(r, &mut u, i8, config)
         });
     }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let cx = center_x * w as f32;
-    let cy = center_y * h as f32;
-    let two_pi = std::f32::consts::TAU;
-    let wl = if wavelength.abs() < 1e-6 {
-        1.0
-    } else {
-        wavelength
-    };
+    let amplitude = config.amplitude;
+    let wl = if config.wavelength.abs() < 1e-6 { 1.0 } else { config.wavelength };
+    let cx = config.center_x * info.width as f32;
+    let cy = config.center_y * info.height as f32;
+    let overlap = amplitude.ceil() as u32 + 1;
 
-    let mut out = vec![0u8; pixels.len()];
-    let sampler = super::ewa::EwaSampler::new(pixels, w, h, ch);
-
-    for y in 0..h {
-        let yf = y as f32;
-        let dy = yf - cy;
-        for x in 0..w {
-            let xf = x as f32;
+    apply_distortion(
+        request, upstream, info,
+        DistortionOverlap::Uniform(overlap),
+        DistortionSampling::Ewa,
+        &|xf, yf| {
             let dx = xf - cx;
+            let dy = yf - cy;
             let r = (dx * dx + dy * dy).sqrt();
             if r < 1e-6 {
-                let off = (y * w + x) * ch;
-                out[off..off + ch].copy_from_slice(&pixels[off..off + ch]);
+                (xf, yf)
             } else {
+                let two_pi = std::f32::consts::TAU;
                 let disp = amplitude * (two_pi * r / wl).sin();
                 let cos_a = dx / r;
                 let sin_a = dy / r;
-                let sx = xf + disp * cos_a;
-                let sy = yf + disp * sin_a;
-                let j = super::ewa::jacobian_ripple(xf, yf, cx, cy, amplitude, wl);
-                let off = (y * w + x) * ch;
-                for c in 0..ch {
-                    out[off + c] = sampler.sample(sx, sy, &j, c).round().clamp(0.0, 255.0) as u8;
-                }
+                (xf + disp * cos_a, yf + disp * sin_a)
             }
-        }
-    }
-
-    Ok(out)
+        },
+        &|xf, yf| {
+            super::ewa::jacobian_ripple(xf, yf, cx, cy, amplitude, wl)
+        },
+    )
 }
 
 #[cfg(test)]

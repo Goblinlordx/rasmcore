@@ -1984,11 +1984,11 @@ mod tiled_parity_tests {
     use super::*;
     use crate::domain::filters::{
         BilateralParams, BlurParams, BrightnessParams, CannyParams, ContrastParams, ErodeParams,
-        GuidedFilterParams, MedianParams, MotionBlurParams, SharpenParams,
+        GuidedFilterParams, MedianParams, MotionBlurParams, SharpenParams, SwirlParams,
     };
     use crate::domain::pipeline::nodes::filters::{
         BilateralNode, BlurNode, BrightnessNode, CannyMapperNode, ContrastNode, ErodeNode,
-        GuidedFilterNode, MedianNode, MotionBlurNode, SharpenNode,
+        GuidedFilterNode, MedianNode, MotionBlurNode, SharpenNode, SwirlNode,
     };
     use crate::domain::types::*;
 
@@ -2433,6 +2433,38 @@ mod tiled_parity_tests {
                 },
             )));
             (g, guided, w, h, 1)
+        });
+    }
+
+    #[test]
+    fn tiled_parity_swirl() {
+        assert_tiled_matches_full(|| {
+            let w = 64;
+            let h = 64;
+            let mut g = NodeGraph::new(1024 * 1024);
+            let src = g.add_node(Box::new(RawSource::new(
+                gradient_pixels(w, h),
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+            )));
+            let swirl = g.add_node(Box::new(SwirlNode::new(
+                src,
+                ImageInfo {
+                    width: w,
+                    height: h,
+                    format: PixelFormat::Rgba8,
+                    color_space: ColorSpace::Srgb,
+                },
+                SwirlParams {
+                    angle: 45.0,
+                    radius: 0.0,
+                },
+            )));
+            (g, swirl, w, h, 4)
         });
     }
 }
