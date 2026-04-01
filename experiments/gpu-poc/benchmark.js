@@ -276,6 +276,30 @@ async function benchGPUBilateral(size) {
 
 // ─── WASM Benchmarks (main thread — importmap provides bare specifier resolution) ──
 
+// Call pipeline op — handles both old positional-arg SDK and new config-record SDK
+function callWASMOp(pipe, src, opName, config) {
+  try {
+    // Try config record first (new SDK)
+    return pipe[opName](src, config);
+  } catch (_e1) {
+    // Fall back to positional args (old SDK)
+    switch (opName) {
+      case 'blur': return pipe.blur(src, config.radius);
+      case 'spinBlur': return pipe.spinBlur(src, config.centerX || 0.5, config.centerY || 0.5, config.angle);
+      case 'spherize': return pipe.spherize(src, config.strength);
+      case 'bilateral': return pipe.bilateral(src, config.spatialSigma, config.rangeSigma, config.radius);
+      default: throw _e1;
+    }
+  }
+}
+
+function errMsg(e) {
+  if (typeof e === 'string') return e;
+  if (e && e.message) return e.message;
+  if (e && e.payload) return JSON.stringify(e.payload);
+  return JSON.stringify(e);
+}
+
 async function benchWASMOp(opName, size, config) {
   if (!Pipeline) return { median: -1, p95: -1 };
 
@@ -286,9 +310,9 @@ async function benchWASMOp(opName, size, config) {
     try {
       const pipe = new Pipeline();
       const src = pipe.read(pixels);
-      pipe[opName](src, config);
+      callWASMOp(pipe, src, opName, config);
     } catch (e) {
-      log(`WASM ${opName} warmup error: ${e.message}`);
+      log(`WASM ${opName} warmup error: ${errMsg(e)}`);
       return { median: -1, p95: -1 };
     }
   }
@@ -300,10 +324,10 @@ async function benchWASMOp(opName, size, config) {
     const src = pipe.read(pixels);
     const t0 = performance.now();
     try {
-      const node = pipe[opName](src, config);
+      const node = callWASMOp(pipe, src, opName, config);
       pipe.writePng(node, {}, undefined);
     } catch (e) {
-      log(`WASM ${opName} error: ${e.message}`);
+      log(`WASM ${opName} error: ${errMsg(e)}`);
       return { median: -1, p95: -1 };
     }
     times.push(performance.now() - t0);
