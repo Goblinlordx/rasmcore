@@ -1,5 +1,5 @@
 title: Dynamic codec dispatch — generic encode/decode via registry
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'

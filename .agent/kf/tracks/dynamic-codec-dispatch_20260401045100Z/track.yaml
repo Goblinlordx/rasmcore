@@ -5,149 +5,118 @@ status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Replace per-format encoder/decoder WIT methods with generic dispatch
+  summary: 'Replace per-format encoder/decoder WIT methods with generic dispatch
+
     through the codec registry. Codecs register via #[register_encoder]/
+
     #[register_decoder] and are discovered at link time. The WIT interface
+
     exposes a single encode/decode ingress that dispatches by format string.
-  context: |
-    The current stateless encoder/decoder WIT interfaces have per-format
+
+    '
+  context: 'The current stateless encoder/decoder WIT interfaces have per-format
+
     methods: encode_jpeg, encode_png, encode_webp, encode_avif, etc. (18
+
     encoder methods, 7 decoder methods). These are hand-written in
+
     adapter/mod.rs and hard-code every supported format.
 
+
     This breaks the registration model: adding a new codec crate requires
+
     hand-editing the adapter. The pipeline already has a generic write()
+
     method that dispatches by format string — the stateless interface
+
     should work the same way.
 
+
     The #[register_encoder] and #[register_decoder] annotations already
+
     exist on domain functions. They register codec metadata (format name,
+
     mime type, extensions, config struct) via inventory. The adapter just
+
     needs to dispatch through this registry instead of hard-coding formats.
-  codebase_analysis: |
-    CURRENT STATE:
 
-    Stateless encoder adapter (adapter/mod.rs):
-    - impl encoder::Guest with 18 per-format methods (~230 lines)
-    - Each method: convert WIT config → domain config, call encoder, map error
-    - encode_jpeg, encode_jpeg_with_icc, encode_png, encode_png_with_icc,
-      encode_webp, encode_tiff, encode_tiff_pages, encode_avif, encode_bmp,
-      encode_ico, encode_qoi, encode_gif, encode_gif_sequence, encode,
-      encode_sequence, supported_formats, get_format_info, all_format_info
-
-    Stateless decoder adapter (adapter/mod.rs):
-    - impl decoder::Guest with 7 methods (~47 lines)
-    - detect_format, decode, decode_as, supported_formats,
-      frame_count, decode_frame, decode_all_frames
-
-    Pipeline write adapter (already generated):
-    - Pipeline write methods are already generated via codegen
-    - Generic write() method already dispatches by format string via sink
-
-    Registry (already exists):
-    - #[register_encoder] creates StaticEncoderRegistration
-    - #[register_decoder] creates StaticDecoderRegistration
-    - Both use inventory for link-time collection
-    - registered_encoders() / registered_decoders() iterate all
-
-    KEY INSIGHT: The pipeline write() already works generically. The
-    stateless encoder interface should follow the same pattern. The
-    per-format methods should be replaced with:
-    - encode(format, pixels, info, config_json) — single entry point
-    - supported_formats() — query registry
-    - get_format_info(format) — query registry for format metadata
-
-    Similarly for decoder:
-    - decode(data) — already generic (auto-detects format)
-    - decode_as(data, format) — hint format
-    - supported_formats() — query registry
-
-    The per-format config structs (JpegEncodeConfig, etc.) are serialized
-    to/from JSON for the generic interface. SDKs generate typed wrappers
-    from the param manifest.
+    '
+  codebase_analysis: "CURRENT STATE:\n\nStateless encoder adapter (adapter/mod.rs):\n- impl encoder::Guest with 18 per-format\
+    \ methods (~230 lines)\n- Each method: convert WIT config → domain config, call encoder, map error\n- encode_jpeg, encode_jpeg_with_icc,\
+    \ encode_png, encode_png_with_icc,\n  encode_webp, encode_tiff, encode_tiff_pages, encode_avif, encode_bmp,\n  encode_ico,\
+    \ encode_qoi, encode_gif, encode_gif_sequence, encode,\n  encode_sequence, supported_formats, get_format_info, all_format_info\n\
+    \nStateless decoder adapter (adapter/mod.rs):\n- impl decoder::Guest with 7 methods (~47 lines)\n- detect_format, decode,\
+    \ decode_as, supported_formats,\n  frame_count, decode_frame, decode_all_frames\n\nPipeline write adapter (already generated):\n\
+    - Pipeline write methods are already generated via codegen\n- Generic write() method already dispatches by format string\
+    \ via sink\n\nRegistry (already exists):\n- #[register_encoder] creates StaticEncoderRegistration\n- #[register_decoder]\
+    \ creates StaticDecoderRegistration\n- Both use inventory for link-time collection\n- registered_encoders() / registered_decoders()\
+    \ iterate all\n\nKEY INSIGHT: The pipeline write() already works generically. The\nstateless encoder interface should\
+    \ follow the same pattern. The\nper-format methods should be replaced with:\n- encode(format, pixels, info, config_json)\
+    \ — single entry point\n- supported_formats() — query registry\n- get_format_info(format) — query registry for format\
+    \ metadata\n\nSimilarly for decoder:\n- decode(data) — already generic (auto-detects format)\n- decode_as(data, format)\
+    \ — hint format\n- supported_formats() — query registry\n\nThe per-format config structs (JpegEncodeConfig, etc.) are\
+    \ serialized\nto/from JSON for the generic interface. SDKs generate typed wrappers\nfrom the param manifest.\n"
   acceptance_criteria:
-    - Stateless encoder WIT interface uses generic encode() dispatch, not per-format methods
-    - Stateless decoder WIT interface uses generic decode() dispatch
-    - Codec dispatch looks up registered encoders/decoders by format name
-    - Adding a new codec crate requires zero changes to adapter code
-    - supported_formats() queries the registry dynamically
-    - Config passed as JSON string (or structured WIT record with format + fields)
-    - All existing encode/decode functionality preserved
-    - cargo build + cargo component build succeed
-    - Encode/decode integration tests pass
-  out_of_scope: |
-    Pipeline write methods (already generated via codegen).
+  - Stateless encoder WIT interface uses generic encode() dispatch, not per-format methods
+  - Stateless decoder WIT interface uses generic decode() dispatch
+  - Codec dispatch looks up registered encoders/decoders by format name
+  - Adding a new codec crate requires zero changes to adapter code
+  - supported_formats() queries the registry dynamically
+  - Config passed as JSON string (or structured WIT record with format + fields)
+  - All existing encode/decode functionality preserved
+  - cargo build + cargo component build succeed
+  - Encode/decode integration tests pass
+  out_of_scope: 'Pipeline write methods (already generated via codegen).
+
     Adding new codec formats.
+
     Changing codec implementations.
+
     Typed per-format SDK wrappers (generated from param manifest, separate concern).
-  technical_notes: |
-    WIT INTERFACE DESIGN:
 
-    interface encoder {
-        supported-write-formats: func() -> list<string>;
-        format-info: func(format: string) -> result<format-info-record, rasmcore-error>;
-        encode: func(format: string, pixels: buffer, info: image-info, config-json: string) -> result<buffer, rasmcore-error>;
-    }
-
-    interface decoder {
-        supported-read-formats: func() -> list<string>;
-        detect-format: func(header: buffer) -> option<string>;
-        decode: func(data: buffer) -> result<decode-result, rasmcore-error>;
-        decode-as: func(data: buffer, format: string) -> result<decode-result, rasmcore-error>;
-    }
-
-    ADAPTER DISPATCH:
-
-    fn encode(format: String, pixels: Vec<u8>, info: ImageInfo, config_json: String) -> Result<Vec<u8>> {
-        // Look up encoder by format name from registry
-        let encoder = find_encoder(&format)?;
-        // Parse config JSON into format-specific config struct
-        let config = (encoder.parse_config)(&config_json)?;
-        // Call encoder
-        (encoder.encode_fn)(&pixels, &info, &config)
-    }
-
-    Each registered encoder provides:
-    - format name, mime type, extensions
-    - parse_config(json) -> Box<dyn Any>
-    - encode(pixels, info, config) -> Result<Vec<u8>>
-
-    MIGRATION:
-    - Remove per-format WIT methods from encoder.wit and decoder.wit
-    - Replace with generic methods
-    - Update adapter/mod.rs to dispatch through registry
-    - Existing pipeline write() already works this way (via sink)
-    - SDK typed wrappers are generated client-side from param manifest
+    '
+  technical_notes: "WIT INTERFACE DESIGN:\n\ninterface encoder {\n    supported-write-formats: func() -> list<string>;\n \
+    \   format-info: func(format: string) -> result<format-info-record, rasmcore-error>;\n    encode: func(format: string,\
+    \ pixels: buffer, info: image-info, config-json: string) -> result<buffer, rasmcore-error>;\n}\n\ninterface decoder {\n\
+    \    supported-read-formats: func() -> list<string>;\n    detect-format: func(header: buffer) -> option<string>;\n   \
+    \ decode: func(data: buffer) -> result<decode-result, rasmcore-error>;\n    decode-as: func(data: buffer, format: string)\
+    \ -> result<decode-result, rasmcore-error>;\n}\n\nADAPTER DISPATCH:\n\nfn encode(format: String, pixels: Vec<u8>, info:\
+    \ ImageInfo, config_json: String) -> Result<Vec<u8>> {\n    // Look up encoder by format name from registry\n    let encoder\
+    \ = find_encoder(&format)?;\n    // Parse config JSON into format-specific config struct\n    let config = (encoder.parse_config)(&config_json)?;\n\
+    \    // Call encoder\n    (encoder.encode_fn)(&pixels, &info, &config)\n}\n\nEach registered encoder provides:\n- format\
+    \ name, mime type, extensions\n- parse_config(json) -> Box<dyn Any>\n- encode(pixels, info, config) -> Result<Vec<u8>>\n\
+    \nMIGRATION:\n- Remove per-format WIT methods from encoder.wit and decoder.wit\n- Replace with generic methods\n- Update\
+    \ adapter/mod.rs to dispatch through registry\n- Existing pipeline write() already works this way (via sink)\n- SDK typed\
+    \ wrappers are generated client-side from param manifest\n"
 plan:
-  - phase: Design Registry Dispatch
-    tasks:
-      - text: Define encoder registry dispatch trait or function pointer struct (format, parse_config, encode)
-        done: false
-      - text: Define decoder registry dispatch trait or function pointer struct (format, detect, decode)
-        done: false
-      - text: Implement registry lookup functions (find_encoder_by_format, find_decoder_by_format)
-        done: false
-  - phase: Update WIT Interfaces
-    tasks:
-      - text: Replace per-format encoder.wit methods with generic encode() + supported_formats() + format_info()
-        done: false
-      - text: Simplify decoder.wit to generic decode() + decode_as() + supported_formats() + detect_format()
-        done: false
-  - phase: Implement Generic Adapter
-    tasks:
-      - text: Implement generic encoder::Guest adapter that dispatches through registry
-        done: false
-      - text: Implement generic decoder::Guest adapter that dispatches through registry
-        done: false
-      - text: Remove all per-format encode_xxx methods from adapter/mod.rs
-        done: false
-  - phase: Verification
-    tasks:
-      - text: cargo build (native) succeeds
-        done: false
-      - text: cargo component build (wasm32-wasip2) succeeds
-        done: false
-      - text: All encode/decode integration tests pass
-        done: false
+- phase: Design Registry Dispatch
+  tasks:
+  - text: Define encoder registry dispatch trait or function pointer struct (format, parse_config, encode)
+    done: true
+  - text: Define decoder registry dispatch trait or function pointer struct (format, detect, decode)
+    done: true
+  - text: Implement registry lookup functions (find_encoder_by_format, find_decoder_by_format)
+    done: true
+- phase: Update WIT Interfaces
+  tasks:
+  - text: Replace per-format encoder.wit methods with generic encode() + supported_formats() + format_info()
+    done: true
+  - text: Simplify decoder.wit to generic decode() + decode_as() + supported_formats() + detect_format()
+    done: true
+- phase: Implement Generic Adapter
+  tasks:
+  - text: Implement generic encoder::Guest adapter that dispatches through registry
+    done: true
+  - text: Implement generic decoder::Guest adapter that dispatches through registry
+    done: true
+  - text: Remove all per-format encode_xxx methods from adapter/mod.rs
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo build (native) succeeds
+    done: true
+  - text: cargo component build (wasm32-wasip2) succeeds
+    done: true
+  - text: All encode/decode integration tests pass
+    done: true
 extra: {}
