@@ -231,3 +231,6 @@ web-ui-react-migrate_20260401100641Z:
 
 # Preview worker — no deps (builds on current web-ui React codebase)
 web-ui-preview-worker_20260401114500Z: []
+
+# Transform config records — unify WIT calling convention
+transform-config-records_20260401120200Z: []
