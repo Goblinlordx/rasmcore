@@ -1,9 +1,8 @@
-title: Split filters/threshold — 4 filters to individual files
-status: archived
+title: Split filters.rs into per-file modules by category
+status: pending
 type: refactor
 approved: false
 created: '2026-04-01'
 updated: '2026-04-01'
 deps:
 - extract-kernel-crate_20260401090200Z
-archived_at: '2026-04-01'
