@@ -5,124 +5,90 @@ status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Extend the annotation + codegen system to generate stateless WIT adapter
+  summary: 'Extend the annotation + codegen system to generate stateless WIT adapter
+
     code for compare.wit, encoder.wit, and decoder.wit interfaces. Currently
+
     these are entirely hand-wired in adapter/mod.rs.
-  context: |
-    After the transforms track, the remaining hand-wired WIT adapter code is:
 
-    1. compare.wit (5 methods) — psnr, ssim, rmse, mae, delta_e_cie76
-       All hand-written in adapter/mod.rs lines 708-763.
-
-    2. encoder.wit (18 methods) — encode_jpeg, encode_png, etc.
-       All hand-written in adapter/mod.rs lines 281-512.
-       Encoder functions already have #[register_encoder] annotations but
-       these do not drive adapter codegen yet.
-
-    3. decoder.wit (7 methods) — detect_format, decode, decode_as, etc.
-       All hand-written in adapter/mod.rs lines 232-279.
-       Decoder functions already have #[register_decoder] annotations but
-       these do not drive adapter codegen yet.
-
-    4. metadata.wit (3 methods) — read_exif, has_exif, read_metadata
-       Hand-written in adapter/mod.rs lines 648-704.
-
-    The goal: extend codegen so these annotations generate the stateless
-    WIT adapter impl blocks, eliminating hand-wired adapter code. After
-    this track, adapter/mod.rs should contain only type conversion helpers
-    and the Component struct — all dispatch is generated.
-  codebase_analysis: |
-    EXISTING ANNOTATIONS (not yet driving adapter codegen):
-    - #[register_encoder] in encoder/*.rs files — used by build.rs for
-      pipeline write adapter generation, but NOT for stateless encoder.wit
-    - #[register_decoder] in decoder/*.rs files — not used for codegen at all
-
-    NO EXISTING ANNOTATIONS:
-    - Compare metrics (psnr, ssim, etc.) have no registration annotations
-    - Metadata operations have no registration annotations
-
-    ADAPTER CODE TO REPLACE:
-    - impl compare::Guest (5 methods, ~55 lines)
-    - impl encoder::Guest (18 methods, ~230 lines)
-    - impl decoder::Guest (7 methods, ~47 lines)
-    - impl metadata::Guest (3 methods, ~56 lines)
-
-    CODEGEN EXTENSION NEEDED:
-    - Parse #[register_encoder/#[register_decoder] for stateless adapter
-    - New #[register_metric] or #[register_compare] for compare ops
-    - New #[register_metadata_op] for metadata ops (or keep hand-written
-      given there are only 3 and they are stable)
+    '
+  context: "After the transforms track, the remaining hand-wired WIT adapter code is:\n\n1. compare.wit (5 methods) — psnr,\
+    \ ssim, rmse, mae, delta_e_cie76\n   All hand-written in adapter/mod.rs lines 708-763.\n\n2. encoder.wit (18 methods)\
+    \ — encode_jpeg, encode_png, etc.\n   All hand-written in adapter/mod.rs lines 281-512.\n   Encoder functions already\
+    \ have #[register_encoder] annotations but\n   these do not drive adapter codegen yet.\n\n3. decoder.wit (7 methods) —\
+    \ detect_format, decode, decode_as, etc.\n   All hand-written in adapter/mod.rs lines 232-279.\n   Decoder functions already\
+    \ have #[register_decoder] annotations but\n   these do not drive adapter codegen yet.\n\n4. metadata.wit (3 methods)\
+    \ — read_exif, has_exif, read_metadata\n   Hand-written in adapter/mod.rs lines 648-704.\n\nThe goal: extend codegen so\
+    \ these annotations generate the stateless\nWIT adapter impl blocks, eliminating hand-wired adapter code. After\nthis\
+    \ track, adapter/mod.rs should contain only type conversion helpers\nand the Component struct — all dispatch is generated.\n"
+  codebase_analysis: "EXISTING ANNOTATIONS (not yet driving adapter codegen):\n- #[register_encoder] in encoder/*.rs files\
+    \ — used by build.rs for\n  pipeline write adapter generation, but NOT for stateless encoder.wit\n- #[register_decoder]\
+    \ in decoder/*.rs files — not used for codegen at all\n\nNO EXISTING ANNOTATIONS:\n- Compare metrics (psnr, ssim, etc.)\
+    \ have no registration annotations\n- Metadata operations have no registration annotations\n\nADAPTER CODE TO REPLACE:\n\
+    - impl compare::Guest (5 methods, ~55 lines)\n- impl encoder::Guest (18 methods, ~230 lines)\n- impl decoder::Guest (7\
+    \ methods, ~47 lines)\n- impl metadata::Guest (3 methods, ~56 lines)\n\nCODEGEN EXTENSION NEEDED:\n- Parse #[register_encoder/#[register_decoder]\
+    \ for stateless adapter\n- New #[register_metric] or #[register_compare] for compare ops\n- New #[register_metadata_op]\
+    \ for metadata ops (or keep hand-written\n  given there are only 3 and they are stable)\n"
   acceptance_criteria:
-    - Stateless encoder.wit adapter methods generated from #[register_encoder] annotations
-    - Stateless decoder.wit adapter methods generated from #[register_decoder] annotations
-    - Compare metrics registered via annotation and adapter generated
-    - Hand-written impl encoder::Guest removed from adapter/mod.rs
-    - Hand-written impl decoder::Guest removed from adapter/mod.rs
-    - Hand-written impl compare::Guest removed from adapter/mod.rs
-    - Metadata ops either registered or explicitly documented as hand-written infrastructure
-    - cargo build succeeds for native target
-    - cargo component build succeeds for wasm32-wasip2 target
-    - All codec and compare tests pass
-  out_of_scope: |
-    Adding new codecs, metrics, or metadata operations.
+  - Stateless encoder.wit adapter methods generated from
+  - Stateless decoder.wit adapter methods generated from
+  - Compare metrics registered via annotation and adapter generated
+  - Hand-written impl encoder::Guest removed from adapter/mod.rs
+  - Hand-written impl decoder::Guest removed from adapter/mod.rs
+  - Hand-written impl compare::Guest removed from adapter/mod.rs
+  - Metadata ops either registered or explicitly documented as hand-written infrastructure
+  - cargo build succeeds for native target
+  - cargo component build succeeds for wasm32-wasip2 target
+  - All codec and compare tests pass
+  out_of_scope: 'Adding new codecs, metrics, or metadata operations.
+
     Changing codec implementations.
+
     Pipeline write methods (handled by wire-generated-adapters track).
-  technical_notes: |
-    APPROACH:
 
-    Compare metrics are simple pure functions with uniform signature:
-      fn metric(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64>
-    A single #[register_metric(name = "psnr")] annotation + codegen is
-    straightforward.
-
-    Encoder/decoder annotations already exist but need codegen extension:
-    - Build.rs already parses encoder configs for pipeline write generation
-    - Extend to also generate stateless encoder::Guest methods
-    - Add similar parsing for decoder annotations
-
-    Metadata ops (read_exif, has_exif, read_metadata) are only 3 methods
-    and unlikely to change. Consider keeping hand-written and documenting
-    as infrastructure, similar to pipeline lifecycle methods. Decision can
-    be made during implementation.
-
-    ORDERING: This track depends on wire-generated-adapters and
-    register-transforms completing first. By the time this runs,
-    adapter/mod.rs should only contain codec, compare, and metadata
-    hand-wired code.
+    '
+  technical_notes: "APPROACH:\n\nCompare metrics are simple pure functions with uniform signature:\n  fn metric(a: &[u8],\
+    \ info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64>\nA single #[register_metric(name = \"psnr\")] annotation\
+    \ + codegen is\nstraightforward.\n\nEncoder/decoder annotations already exist but need codegen extension:\n- Build.rs\
+    \ already parses encoder configs for pipeline write generation\n- Extend to also generate stateless encoder::Guest methods\n\
+    - Add similar parsing for decoder annotations\n\nMetadata ops (read_exif, has_exif, read_metadata) are only 3 methods\n\
+    and unlikely to change. Consider keeping hand-written and documenting\nas infrastructure, similar to pipeline lifecycle\
+    \ methods. Decision can\nbe made during implementation.\n\nORDERING: This track depends on wire-generated-adapters and\n\
+    register-transforms completing first. By the time this runs,\nadapter/mod.rs should only contain codec, compare, and metadata\n\
+    hand-wired code.\n"
 plan:
-  - phase: Compare Metrics Registration
-    tasks:
-      - text: Add StaticMetricRegistration struct + inventory collection
-        done: false
-      - text: Implement #[register_metric] proc macro in rasmcore-macros
-        done: false
-      - text: Annotate psnr, ssim, rmse, mae, delta_e_cie76 with #[register_metric]
-        done: false
-      - text: Generate compare::Guest adapter methods via codegen
-        done: false
-      - text: Remove hand-written impl compare::Guest from adapter/mod.rs
-        done: false
-  - phase: Codec Adapter Codegen
-    tasks:
-      - text: Extend codegen to generate stateless encoder::Guest methods from #[register_encoder] annotations
-        done: false
-      - text: Extend codegen to generate stateless decoder::Guest methods from #[register_decoder] annotations
-        done: false
-      - text: Remove hand-written impl encoder::Guest from adapter/mod.rs
-        done: false
-      - text: Remove hand-written impl decoder::Guest from adapter/mod.rs
-        done: false
-  - phase: Metadata Decision
-    tasks:
-      - text: Evaluate whether metadata ops (3 methods) warrant registration or stay as documented infrastructure
-        done: false
-  - phase: Verification
-    tasks:
-      - text: cargo build (native) succeeds
-        done: false
-      - text: cargo component build (wasm32-wasip2) succeeds
-        done: false
-      - text: All codec, compare, and metadata tests pass
-        done: false
+- phase: Compare Metrics Registration
+  tasks:
+  - text: Add StaticMetricRegistration struct + inventory collection
+    done: true
+  - text: Implement
+    done: true
+  - text: Annotate psnr, ssim, rmse, mae, delta_e_cie76 with
+    done: true
+  - text: Generate compare::Guest adapter methods via codegen
+    done: true
+  - text: Remove hand-written impl compare::Guest from adapter/mod.rs
+    done: true
+- phase: Codec Adapter Codegen
+  tasks:
+  - text: Extend codegen to generate stateless encoder::Guest methods from
+    done: true
+  - text: Extend codegen to generate stateless decoder::Guest methods from
+    done: true
+  - text: Remove hand-written impl encoder::Guest from adapter/mod.rs
+    done: true
+  - text: Remove hand-written impl decoder::Guest from adapter/mod.rs
+    done: true
+- phase: Metadata Decision
+  tasks:
+  - text: Evaluate whether metadata ops (3 methods) warrant registration or stay as documented infrastructure
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo build (native) succeeds
+    done: true
+  - text: cargo component build (wasm32-wasip2) succeeds
+    done: true
+  - text: All codec, compare, and metadata tests pass
+    done: true
 extra: {}
