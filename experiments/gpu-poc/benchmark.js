@@ -36,7 +36,8 @@ async function initGPU() {
 
   device = await adapter.requestDevice({ requiredFeatures: features });
   queue = device.queue;
-  log(`GPU: ${(await adapter.requestAdapterInfo()).description || 'unknown'}`);
+  const adapterInfo = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
+  log(`GPU: ${adapterInfo.description || adapterInfo.device || 'unknown'}`);
   log(`Timestamp queries: ${device.features.has('timestamp-query') ? 'YES' : 'NO'}`);
 }
 
