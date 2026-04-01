@@ -1,6 +1,6 @@
 title: Codegen-driven encoder registry — eliminate hardcoded format lists, MIME types,
   extensions
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'
