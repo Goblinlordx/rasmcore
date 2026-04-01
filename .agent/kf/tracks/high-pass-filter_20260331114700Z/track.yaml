@@ -3,69 +3,97 @@ title: High-pass filter — frequency separation for retouching
 type: feature
 status: pending
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-01'
 spec:
-  summary: |
-    Spatial high-pass filter for frequency separation retouching.
+  summary: 'Spatial high-pass filter for frequency separation retouching.
+
     Subtracts a Gaussian-blurred version from the original, producing
+
     detail/texture layer. Essential for portrait retouching workflows.
-  context: |
-    Photoshop's frequency separation technique uses a high-pass filter
+
+    '
+  context: 'Photoshop''s frequency separation technique uses a high-pass filter
+
     to split an image into a detail layer (high frequencies) and a
+
     color/tone layer (low frequencies). This enables retouching skin
+
     texture without affecting color, or color grading without affecting
+
     texture.
 
+
     ImageMagick achieves this via: convert in.png \( +clone -blur 0x{radius} \)
+
     -compose subtract -composite -level 50%,50% out.png
 
+
     rasmcore has Gaussian blur and frequency_low/frequency_high filters
+
     but no dedicated high-pass that produces the correct 50%-gray-offset
+
     result needed for frequency separation.
-  codebase_analysis: |
-    EXISTING:
+
+    '
+  codebase_analysis: 'EXISTING:
+
     - blur() in filters.rs: Gaussian blur via libblur SIMD
+
     - frequency_low / frequency_high: Laplacian-based, not true high-pass
+
     - convolve(): arbitrary kernel convolution
 
+
     APPROACH:
+
     - high_pass(pixels, info, radius) = (original - blur(original, radius)) / 2 + 0.5
+
     - The /2 + 0.5 offset maps the result to [0,1] centered at mid-gray
+
     - This matches PS and IM behavior for frequency separation
+
+    '
   acceptance_criteria:
-    - high_pass filter registered with radius parameter
-    - Output centered at 128 gray (no detail = mid-gray)
-    - Validated against ImageMagick subtract+level approach (+/-1)
-    - Identity check — zero radius produces mid-gray
-    - Large radius produces near-original (inverted around gray)
-  out_of_scope: |
-    Bandpass filter. Fourier transform. Frequency domain filtering.
+  - high_pass filter registered with radius parameter
+  - Output centered at 128 gray (no detail = mid-gray)
+  - Validated against ImageMagick subtract+level approach (+/-1)
+  - Identity check — zero radius produces mid-gray
+  - Large radius produces near-original (inverted around gray)
+  out_of_scope: 'Bandpass filter. Fourier transform. Frequency domain filtering.
+
     Automatic frequency separation into separate layers.
-  technical_notes: |
-    Formula: high_pass[c] = clamp((original[c] - blurred[c]) / 2 + 0.5, 0, 1)
+
+    '
+  technical_notes: 'Formula: high_pass[c] = clamp((original[c] - blurred[c]) / 2 + 0.5, 0, 1)
+
 
     The division by 2 compresses the range so it fits in [0,1] without
+
     clipping. In Photoshop, this is applied as Linear Light blend mode
+
     to recombine.
 
+
     Register as filter with ConfigParams: radius (f32, 1.0-100.0, default 10.0).
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Implement high_pass() domain function in filters.rs
-        done: false
-      - text: Register as filter with ConfigParams (radius param)
-        done: false
-      - text: Regenerate WIT
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Unit test — zero-detail image (solid color) produces mid-gray output
-        done: false
-      - text: Unit test — high_pass + blur reconstructs original (within tolerance)
-        done: false
-      - text: Parity test against ImageMagick subtract+level approach
-        done: false
-      - text: Edge case tests — radius=0, very large radius
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement high_pass() domain function in filters.rs
+    done: true
+  - text: Register as filter with ConfigParams (radius param)
+    done: true
+  - text: Regenerate WIT
+    done: true
+- phase: Validation
+  tasks:
+  - text: Unit test — zero-detail image (solid color) produces mid-gray output
+    done: true
+  - text: Unit test — high_pass + blur reconstructs original (within tolerance)
+    done: true
+  - text: Parity test against ImageMagick subtract+level approach
+    done: true
+  - text: Edge case tests — radius=0, very large radius
+    done: true
 extra: {}
