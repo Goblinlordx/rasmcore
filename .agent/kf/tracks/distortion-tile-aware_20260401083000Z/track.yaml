@@ -1,164 +1,125 @@
 id: distortion-tile-aware_20260401083000Z
-title: "Unified distortion engine — tile-aware with inverse bounding box"
+title: Unified distortion engine — tile-aware with inverse bounding box
 type: bug
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Distortion filters produce wrong output during tiled execution (each tile
+  summary: 'Distortion filters produce wrong output during tiled execution (each tile
+
     treated as standalone image). Fix by creating a unified apply_distortion()
+
     function that handles inverse bounding box, EWA sampling, and tile cropping.
+
     Each filter reduces to just its inverse transform + Jacobian closures.
-  context: |
-    All 7 distortion filters (swirl, spherize, barrel, wave, ripple, polar,
+
+    '
+  context: 'All 7 distortion filters (swirl, spherize, barrel, wave, ripple, polar,
+
     depolar) follow identical structure: compute center, create EwaSampler,
+
     loop pixels, compute inverse (sx,sy), compute Jacobian, sample, write.
+
     50+ lines of boilerplate repeated 7 times.
 
+
     They all have the same tiling bug: the preamble overwrites info with tile
+
     dimensions, so center = tile center instead of image center.
 
+
     The fix and the abstraction are the same work — build a unified distortion
+
     engine that handles tiling correctly, then migrate each filter to use it.
-  codebase_analysis: |
-    CURRENT PATTERN (repeated 7 times):
-      fn distortion(request, upstream, info, config) {
-          let pixels = upstream(request)?;                    // BUG: tile only
-          let info = &ImageInfo { width: request.width, .. }; // BUG: tile dims
-          let sampler = EwaSampler::new(pixels, w, h, ch);
-          for y in 0..h {                                     // BUG: tile-local coords
-              for x in 0..w {
-                  let (sx, sy) = inverse_transform(x, y, params);  // unique per filter
-                  let j = jacobian(x, y, params);                   // unique per filter
-                  for c in 0..ch {
-                      out[off+c] = sampler.sample(sx, sy, &j, c).clamp(0, 255);
-                  }
-              }
-          }
-      }
 
-    UNIFIED REPLACEMENT:
-      fn apply_distortion(
-          request: Rect,
-          upstream: &mut UpstreamFn,
-          info: &ImageInfo,           // full image info (NOT overwritten)
-          inverse_fn: impl Fn(f32, f32) -> (f32, f32),
-          jacobian_fn: impl Fn(f32, f32) -> [[f32; 2]; 2],
-          overlap_mode: OverlapMode,  // Uniform(px) or BoundingBox(sample_density)
-      ) -> Result<Vec<u8>, ImageError>
-
-    Each filter becomes ~10 lines: extract params, define closures, call apply_distortion.
-
-    OVERLAP MODES:
-    - Uniform(amount): wave/ripple — constant max displacement
-    - BoundingBox(density): swirl/spherize/barrel — sample inverse at tile boundary
-    - FullImage: polar/depolar — every output pixel can map to any input
-
-    INVERSE BOUNDING BOX ALGORITHM:
-    For each output tile, sample the inverse transform at points along all 4 edges
-    (+ interior points near transform center for high-curvature areas). The bounding
-    box of all source coordinates = required upstream rect.
-
-    PERFORMANCE OPTIMIZATIONS (enabled by unified engine):
-    1. WASM SIMD in sampling loop — process 4 output pixels per iteration
-    2. Jacobian interpolation — for smooth transforms, compute Jacobian every Nth
-       pixel and lerp between (Jacobian changes slowly for most distortions)
-    3. EWA-to-bilinear downgrade — when |det(J)| is near 1.0 (no scaling), use
-       cheaper bilinear instead of full EWA (saves ~3x per pixel)
-    4. Row-major prefetch — iterate output rows, predictable source access pattern
-
-    KEY FILES:
-    - crates/rasmcore-image/src/domain/filters.rs — all 7 distortion filters
-    - crates/rasmcore-image/src/domain/ewa.rs — EwaSampler, jacobian functions
+    '
+  codebase_analysis: "CURRENT PATTERN (repeated 7 times):\n  fn distortion(request, upstream, info, config) {\n      let pixels\
+    \ = upstream(request)?;                    // BUG: tile only\n      let info = &ImageInfo { width: request.width, .. };\
+    \ // BUG: tile dims\n      let sampler = EwaSampler::new(pixels, w, h, ch);\n      for y in 0..h {                   \
+    \                  // BUG: tile-local coords\n          for x in 0..w {\n              let (sx, sy) = inverse_transform(x,\
+    \ y, params);  // unique per filter\n              let j = jacobian(x, y, params);                   // unique per filter\n\
+    \              for c in 0..ch {\n                  out[off+c] = sampler.sample(sx, sy, &j, c).clamp(0, 255);\n       \
+    \       }\n          }\n      }\n  }\n\nUNIFIED REPLACEMENT:\n  fn apply_distortion(\n      request: Rect,\n      upstream:\
+    \ &mut UpstreamFn,\n      info: &ImageInfo,           // full image info (NOT overwritten)\n      inverse_fn: impl Fn(f32,\
+    \ f32) -> (f32, f32),\n      jacobian_fn: impl Fn(f32, f32) -> [[f32; 2]; 2],\n      overlap_mode: OverlapMode,  // Uniform(px)\
+    \ or BoundingBox(sample_density)\n  ) -> Result<Vec<u8>, ImageError>\n\nEach filter becomes ~10 lines: extract params,\
+    \ define closures, call apply_distortion.\n\nOVERLAP MODES:\n- Uniform(amount): wave/ripple — constant max displacement\n\
+    - BoundingBox(density): swirl/spherize/barrel — sample inverse at tile boundary\n- FullImage: polar/depolar — every output\
+    \ pixel can map to any input\n\nINVERSE BOUNDING BOX ALGORITHM:\nFor each output tile, sample the inverse transform at\
+    \ points along all 4 edges\n(+ interior points near transform center for high-curvature areas). The bounding\nbox of all\
+    \ source coordinates = required upstream rect.\n\nPERFORMANCE OPTIMIZATIONS (enabled by unified engine):\n1. WASM SIMD\
+    \ in sampling loop — process 4 output pixels per iteration\n2. Jacobian interpolation — for smooth transforms, compute\
+    \ Jacobian every Nth\n   pixel and lerp between (Jacobian changes slowly for most distortions)\n3. EWA-to-bilinear downgrade\
+    \ — when |det(J)| is near 1.0 (no scaling), use\n   cheaper bilinear instead of full EWA (saves ~3x per pixel)\n4. Row-major\
+    \ prefetch — iterate output rows, predictable source access pattern\n\nKEY FILES:\n- crates/rasmcore-image/src/domain/filters.rs\
+    \ — all 7 distortion filters\n- crates/rasmcore-image/src/domain/ewa.rs — EwaSampler, jacobian functions\n"
   acceptance_criteria:
-    - Unified apply_distortion() function handles tiling + sampling
-    - Swirl produces single centered swirl (not per-tile swirls)
-    - All 7 distortion filters migrated to apply_distortion()
-    - Each filter body is under 20 lines (closures + call)
-    - Tiled output matches non-tiled output for all 7 filters
-    - New tiled_parity tests for swirl, spherize, wave, ripple
-    - WASM e2e test for swirl correctness
-    - All existing tests pass
-  out_of_scope: |
-    Adding center_x/center_y parameters to swirl/spherize/barrel.
+  - Unified apply_distortion() function handles tiling + sampling
+  - Swirl produces single centered swirl (not per-tile swirls)
+  - All 7 distortion filters migrated to apply_distortion()
+  - Each filter body is under 20 lines (closures + call)
+  - Tiled output matches non-tiled output for all 7 filters
+  - New tiled_parity tests for swirl, spherize, wave, ripple
+  - WASM e2e test for swirl correctness
+  - All existing tests pass
+  out_of_scope: 'Adding center_x/center_y parameters to swirl/spherize/barrel.
+
     SIMD optimization of the sampling loop (can be a follow-up).
+
     Jacobian interpolation optimization (follow-up).
+
     New distortion filter types.
-  technical_notes: |
-    IMPLEMENTATION ORDER:
 
-    Phase 1 — Build apply_distortion() engine:
-      - Accepts inverse_fn, jacobian_fn, and overlap mode
-      - Computes required source rect based on overlap mode
-      - Requests expanded upstream, creates EwaSampler
-      - Iterates output pixels using IMAGE-SPACE coordinates (not tile-local)
-      - Accounts for source_rect offset when indexing into pixel buffer
-      - Crops result to request rect
-
-    Phase 2 — Migrate simple filters:
-      - wave: inverse_fn is trivial (sinusoidal offset), OverlapMode::Uniform(amplitude)
-      - ripple: inverse_fn uses center + radial sine, OverlapMode::Uniform(amplitude)
-      These two also use bilinear (wave) or EWA (ripple) — engine supports both
-
-    Phase 3 — Migrate complex filters:
-      - swirl: inverse_fn is rotation with falloff, BoundingBox(16)
-      - spherize: inverse_fn is power-law radial, BoundingBox(16)
-      - barrel: inverse_fn is Brown-Conrady polynomial, BoundingBox(16)
-
-    Phase 4 — Migrate coordinate transforms:
-      - polar: may need FullImage mode (output row 0 maps to circle of pixels)
-      - depolar: may need FullImage mode (atan2 maps to full angular range)
-      - OR: test if BoundingBox(32) with high density captures polar correctly
-
-    Phase 5 — Verify:
-      - Tiled parity tests (tiled = untiled)
-      - WASM e2e for swirl
-      - Existing test suite
-
-    JACOBIAN FUNCTIONS:
-    Each filter already has a Jacobian function in ewa.rs or inline:
-    - swirl: jacobian_swirl()
-    - spherize: jacobian_spherize()
-    - barrel: numerical finite-difference Jacobian
-    - polar/depolar: analytical Jacobians
-    - ripple: jacobian_ripple()
-    - wave: identity (no Jacobian — uses bilinear)
+    '
+  technical_notes: "IMPLEMENTATION ORDER:\n\nPhase 1 — Build apply_distortion() engine:\n  - Accepts inverse_fn, jacobian_fn,\
+    \ and overlap mode\n  - Computes required source rect based on overlap mode\n  - Requests expanded upstream, creates EwaSampler\n\
+    \  - Iterates output pixels using IMAGE-SPACE coordinates (not tile-local)\n  - Accounts for source_rect offset when indexing\
+    \ into pixel buffer\n  - Crops result to request rect\n\nPhase 2 — Migrate simple filters:\n  - wave: inverse_fn is trivial\
+    \ (sinusoidal offset), OverlapMode::Uniform(amplitude)\n  - ripple: inverse_fn uses center + radial sine, OverlapMode::Uniform(amplitude)\n\
+    \  These two also use bilinear (wave) or EWA (ripple) — engine supports both\n\nPhase 3 — Migrate complex filters:\n \
+    \ - swirl: inverse_fn is rotation with falloff, BoundingBox(16)\n  - spherize: inverse_fn is power-law radial, BoundingBox(16)\n\
+    \  - barrel: inverse_fn is Brown-Conrady polynomial, BoundingBox(16)\n\nPhase 4 — Migrate coordinate transforms:\n  -\
+    \ polar: may need FullImage mode (output row 0 maps to circle of pixels)\n  - depolar: may need FullImage mode (atan2\
+    \ maps to full angular range)\n  - OR: test if BoundingBox(32) with high density captures polar correctly\n\nPhase 5 —\
+    \ Verify:\n  - Tiled parity tests (tiled = untiled)\n  - WASM e2e for swirl\n  - Existing test suite\n\nJACOBIAN FUNCTIONS:\n\
+    Each filter already has a Jacobian function in ewa.rs or inline:\n- swirl: jacobian_swirl()\n- spherize: jacobian_spherize()\n\
+    - barrel: numerical finite-difference Jacobian\n- polar/depolar: analytical Jacobians\n- ripple: jacobian_ripple()\n-\
+    \ wave: identity (no Jacobian — uses bilinear)\n"
 plan:
-  - phase: Build unified distortion engine
-    tasks:
-      - text: Define OverlapMode enum (Uniform, BoundingBox, FullImage)
-        done: false
-      - text: Implement inverse_bounding_box() — sample inverse at tile boundary + interior points
-        done: false
-      - text: Implement apply_distortion() — source rect computation, EWA loop, crop to request
-        done: false
-      - text: Support bilinear fallback mode (for wave which uses bilinear not EWA)
-        done: false
-  - phase: Migrate simple distortions
-    tasks:
-      - text: Migrate wave to apply_distortion with Uniform overlap
-        done: false
-      - text: Migrate ripple to apply_distortion with Uniform overlap
-        done: false
-  - phase: Migrate complex distortions
-    tasks:
-      - text: Migrate swirl to apply_distortion with BoundingBox overlap
-        done: false
-      - text: Migrate spherize to apply_distortion with BoundingBox overlap
-        done: false
-      - text: Migrate barrel to apply_distortion with BoundingBox overlap
-        done: false
-      - text: Migrate polar to apply_distortion (determine overlap mode)
-        done: false
-      - text: Migrate depolar to apply_distortion (determine overlap mode)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Add tiled_parity tests for swirl, spherize, wave, ripple
-        done: false
-      - text: Add WASM e2e test for swirl (single centered swirl, not tiled artifacts)
-        done: false
-      - text: All existing tests pass
-        done: false
+- phase: Build unified distortion engine
+  tasks:
+  - text: Define OverlapMode enum (Uniform, BoundingBox, FullImage)
+    done: true
+  - text: Implement inverse_bounding_box() — sample inverse at tile boundary + interior points
+    done: true
+  - text: Implement apply_distortion() — source rect computation, EWA loop, crop to request
+    done: true
+  - text: Support bilinear fallback mode (for wave which uses bilinear not EWA)
+    done: true
+- phase: Migrate simple distortions
+  tasks:
+  - text: Migrate wave to apply_distortion with Uniform overlap
+    done: true
+  - text: Migrate ripple to apply_distortion with Uniform overlap
+    done: true
+- phase: Migrate complex distortions
+  tasks:
+  - text: Migrate swirl to apply_distortion with BoundingBox overlap
+    done: true
+  - text: Migrate spherize to apply_distortion with BoundingBox overlap
+    done: true
+  - text: Migrate barrel to apply_distortion with BoundingBox overlap
+    done: true
+  - text: Migrate polar to apply_distortion (determine overlap mode)
+    done: true
+  - text: Migrate depolar to apply_distortion (determine overlap mode)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Add tiled_parity tests for swirl, spherize, wave, ripple
+    done: true
+  - text: Add WASM e2e test for swirl (single centered swirl, not tiled artifacts)
+    done: true
+  - text: All existing tests pass
+    done: true
 extra: {}
