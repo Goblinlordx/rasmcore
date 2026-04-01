@@ -26,3 +26,6 @@ mod sat_vs_sat;
 pub use sat_vs_sat::*;
 mod split_toning;
 pub use split_toning::*;
+
+#[cfg(test)]
+mod tests;

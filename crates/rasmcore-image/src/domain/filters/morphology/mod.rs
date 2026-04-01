@@ -14,3 +14,6 @@ mod morph_open;
 pub use morph_open::*;
 mod morph_tophat;
 pub use morph_tophat::*;
+
+#[cfg(test)]
+mod tests;

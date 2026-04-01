@@ -38,3 +38,6 @@ mod tilt_shift;
 pub use tilt_shift::*;
 mod zoom_blur;
 pub use zoom_blur::*;
+
+#[cfg(test)]
+mod tests;

@@ -16,11 +16,11 @@ plan:
 - phase: Move tests
   tasks:
   - text: Move test modules to category directories
-    done: false
+    done: true
   - text: Remove tests from filters/mod.rs
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Same test count, builds succeed
-    done: false
+    done: true
 extra: {}

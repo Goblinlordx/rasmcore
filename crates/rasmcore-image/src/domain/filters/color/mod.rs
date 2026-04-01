@@ -36,3 +36,6 @@ mod white_balance_gray_world;
 pub use white_balance_gray_world::*;
 mod white_balance_temperature;
 pub use white_balance_temperature::*;
+
+#[cfg(test)]
+mod tests;

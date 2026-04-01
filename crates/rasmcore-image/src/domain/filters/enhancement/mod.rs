@@ -36,3 +36,6 @@ mod vignette;
 pub use vignette::*;
 mod vignette_powerlaw;
 pub use vignette_powerlaw::*;
+
+#[cfg(test)]
+mod tests;

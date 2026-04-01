@@ -22,3 +22,6 @@ mod solarize;
 pub use solarize::*;
 mod uniform_noise;
 pub use uniform_noise::*;
+
+#[cfg(test)]
+mod tests;

@@ -14,3 +14,6 @@ mod swirl;
 pub use swirl::*;
 mod wave;
 pub use wave::*;
+
+#[cfg(test)]
+mod tests;
