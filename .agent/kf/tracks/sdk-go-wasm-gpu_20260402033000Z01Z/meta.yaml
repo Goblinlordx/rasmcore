@@ -1,5 +1,5 @@
 title: Go WASM SDK with GPU host via wgpu-native
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-01'
