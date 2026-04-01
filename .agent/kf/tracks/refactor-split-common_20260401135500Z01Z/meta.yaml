@@ -1,5 +1,5 @@
 title: Split filters/common.rs into submodules
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-01'

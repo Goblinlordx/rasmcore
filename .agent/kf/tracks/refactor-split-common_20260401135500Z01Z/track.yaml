@@ -5,13 +5,18 @@ status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Split the 6,342-line common.rs god module into common/ directory with
+  summary: 'Split the 6,342-line common.rs god module into common/ directory with
+
     focused submodules (validation, pixel_format, geometry, blending, etc).
-  context: |
-    common.rs replaced the monolithic filters.rs as the shared helper dumping
+
+    '
+  context: 'common.rs replaced the monolithic filters.rs as the shared helper dumping
+
     ground. It mixes validation, pixel format conversion, geometry, LUT ops,
+
     color ops, blending, noise, perspective, contour, pyramid, and more.
+
+    '
   acceptance_criteria:
   - common.rs replaced with common/ directory
   - Each submodule under 500 lines with clear responsibility
@@ -23,25 +28,25 @@ plan:
 - phase: Create directory structure
   tasks:
   - text: Create common/ directory with mod.rs
-    done: false
+    done: true
   - text: Move validation helpers to common/validation.rs
-    done: false
+    done: true
   - text: Move pixel format helpers to common/pixel_format.rs
-    done: false
+    done: true
   - text: Move blending helpers to common/blending.rs
-    done: false
+    done: true
   - text: Move distortion helpers to common/distortion.rs
-    done: false
+    done: true
   - text: Move noise helpers to common/noise.rs
-    done: false
+    done: true
   - text: Move perspective/geometry helpers to common/geometry.rs
-    done: false
+    done: true
   - text: Move remaining helpers to appropriate submodules
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Each submodule under 500 lines
-    done: false
+    done: true
   - text: cargo build + tests pass
-    done: false
+    done: true
 extra: {}
