@@ -46,10 +46,6 @@ function expandArgs(params, paramValues) {
 }
 
 const POSITIONAL_ARG_OPS = new Set([
-  'resize',
-  'crop',
-  'rotate',
-  'flip',
   'grayscale',
   'convertFormat',
   'convolve',
@@ -113,7 +109,7 @@ function loadImage(bytes) {
     if (scale < 1) {
       const tw = Math.max(1, Math.round(info.width * scale));
       const th = Math.max(1, Math.round(info.height * scale));
-      const resized = cachedPipe.resize(src, tw, th, 'bilinear');
+      const resized = cachedPipe.resize(src, { width: tw, height: th, filter: 'bilinear' });
       const png = cachedPipe.writePng(resized, {}, undefined);
       previewBytes = png;
       // Re-create pipeline with downscaled source for caching

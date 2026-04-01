@@ -65,10 +65,6 @@ function expandArgs(params, paramValues) {
 // Pipeline methods that take positional args (not a config record).
 // Everything else uses a config record: pipe.blur(node, { radius: 5.0 })
 const POSITIONAL_ARG_OPS = new Set([
-  'resize',
-  'crop',
-  'rotate',
-  'flip',
   'grayscale',
   'convertFormat',
   'convolve',
@@ -107,21 +103,28 @@ function buildConfig(params, paramValues) {
 function applyStep(pipe, node, step, mode) {
   const name = step.name;
 
-  // Special thumbnail handling for resize/crop
+  // Special thumbnail handling for resize/crop — scale down for preview
   if (name === 'resize' && mode === 'thumb') {
-    const args = expandArgs(step.params, step.paramValues);
-    const scale = Math.min(THUMB_MAX / args[0], THUMB_MAX / args[1], 1);
-    return pipe.resize(
-      node,
-      Math.max(1, Math.round(args[0] * scale)),
-      Math.max(1, Math.round(args[1] * scale)),
-      args[2],
-    );
+    const pv = step.paramValues;
+    const w = pv.width || 256,
+      h = pv.height || 256;
+    const filter = pv.filter || 'lanczos3';
+    const scale = Math.min(THUMB_MAX / w, THUMB_MAX / h, 1);
+    return pipe.resize(node, {
+      width: Math.max(1, Math.round(w * scale)),
+      height: Math.max(1, Math.round(h * scale)),
+      filter,
+    });
   }
   if (name === 'crop' && mode === 'thumb') {
-    const args = expandArgs(step.params, step.paramValues);
+    const pv = step.paramValues;
     const info = pipe.nodeInfo(node);
-    return pipe.crop(node, 0, 0, Math.min(args[2], info.width), Math.min(args[3], info.height));
+    return pipe.crop(node, {
+      x: 0,
+      y: 0,
+      width: Math.min(pv.width || 256, info.width),
+      height: Math.min(pv.height || 256, info.height),
+    });
   }
 
   // Positional-arg ops: spread flat args
@@ -160,7 +163,7 @@ function loadImage(bytes) {
     if (scale < 1) {
       const tw = Math.round(info.width * scale);
       const th = Math.round(info.height * scale);
-      const resized = pipe.resize(src, tw, th, 'bilinear');
+      const resized = pipe.resize(src, { width: tw, height: th, filter: 'bilinear' });
       thumbBytes = pipe.writePng(resized, {}, undefined);
     } else {
       thumbBytes = imageBytes;
