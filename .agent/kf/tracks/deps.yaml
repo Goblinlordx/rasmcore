@@ -208,3 +208,6 @@ transform-codegen_20260401030200Z:
 
 # Dynamic codec dispatch — no deps (independent of transform codegen chain)
 dynamic-codec-dispatch_20260401045100Z: []
+
+# Stateless pipeline graph — no deps
+stateless-pipeline-graph_20260401054000Z: []

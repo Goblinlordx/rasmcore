@@ -1,0 +1,172 @@
+id: stateless-pipeline-graph_20260401054000Z
+title: Stateless pipeline graph — serialized description with validation
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Replace the stateful pipeline resource with a serialized graph description
+    model. The pipeline builder outputs a compact binary description of the
+    graph (nodes, edges, configs). Execution takes the description as input
+    and produces output — no mutable internal state between build and execute.
+    Each node is validated at creation time, and the full graph is validated
+    again before execution.
+  context: |
+    Currently, the pipeline is a stateful resource (PipelineResource) that
+    holds a NodeGraph internally. Node-ids are indexes into internal state.
+    Problems with this model:
+
+    1. STATEFULNESS: Building two chains then executing one destroys the
+       other (auto_cleanup invalidates node-ids). Behavior is unexpected.
+    2. OPACITY: The caller has no visibility into what the graph looks like.
+       Node-ids are opaque u32 handles with no introspection.
+    3. NON-PORTABLE: The graph description cant be serialized, cached,
+       replayed, or sent across process boundaries.
+    4. VALIDATION GAP: Nodes are added without full graph validation.
+       Invalid configurations (e.g., crop larger than source) are only
+       caught at execution time.
+
+    The new model: the pipeline builder produces a serialized graph
+    description. Each node addition validates the node configuration
+    against its inputs (dimensions, format compatibility). Before
+    execution, the full graph is validated again (all edges valid, no
+    cycles, all required inputs present). Execution is a pure function:
+    description + source data in, encoded output out.
+  codebase_analysis: |
+    CURRENT ARCHITECTURE:
+
+    PipelineResource (adapter/pipeline_adapter.rs):
+    - graph: RefCell<NodeGraph> — mutable internal state
+    - metadata_ops: RefCell<MetadataOps> — mutable
+    - Node-ids are u32 indexes into graph.nodes Vec
+    - auto_cleanup destroys graph state after write
+
+    NodeGraph (domain/pipeline/graph.rs):
+    - nodes: Vec<Box<dyn ImageNode>>
+    - cache: SpatialCache — pixel cache for reuse
+    - node_metadata: Vec<Metadata>
+    - add_node() returns u32 index
+
+    ImageNode trait:
+    - info() -> ImageInfo — dimensions/format (available without pixels)
+    - compute_region(request, upstream_fn) — demand-driven pixel computation
+    - derive_metadata(upstream) -> Option<Metadata>
+
+    PROPOSED ARCHITECTURE:
+
+    GraphDescription (new):
+    - nodes: Vec<NodeDescriptor> — type + config + upstream refs
+    - source_data: referenced by index, not embedded
+    - Serializable to compact binary format
+    - Validated at each node addition (info propagation)
+    - Re-validated before execution
+
+    NodeDescriptor:
+    - kind: NodeKind (Source, Filter, Transform, Write)
+    - config: serialized config bytes
+    - upstream: Vec<u32> — references to other nodes by index
+    - expected_info: ImageInfo — computed at build time from upstream info
+
+    Execution:
+    - Takes GraphDescription + source data
+    - Reconstructs NodeGraph from description
+    - Executes demand-driven as before
+    - Returns output bytes
+    - No persistent state
+
+    VALIDATION:
+
+    At node creation:
+    - Verify upstream node exists in the description
+    - Compute output ImageInfo from upstream info + operation
+    - Validate operation is valid for the input (e.g., crop bounds)
+    - Store expected_info in the descriptor
+
+    Before execution:
+    - Re-validate all nodes (source data may differ from build time)
+    - Check for cycles
+    - Verify all upstream references are valid
+    - Verify terminal node exists (write target)
+  acceptance_criteria:
+    - Pipeline builder outputs a serialized graph description (not mutable internal state)
+    - Each node addition validates against upstream info (dimensions, format)
+    - Full graph validated before execution (edges, cycles, completeness)
+    - Graph description is serializable to compact binary format
+    - Execution is a pure function (description + data in, output out)
+    - Multiple graphs can coexist without interference
+    - Graph description can be introspected (list nodes, edges, configs)
+    - Existing pipeline tests pass (API may change but behavior preserved)
+    - cargo build + cargo component build succeed
+  out_of_scope: |
+    Distributed execution across processes (future work).
+    Graph optimization passes (LUT fusion, affine composition — keep existing).
+    Streaming execution (tile-by-tile output — keep existing demand-driven model).
+    GPU acceleration path.
+  technical_notes: |
+    SERIALIZATION FORMAT:
+
+    Compact binary, not JSON. The graph description is potentially hot-path
+    (created per request in server scenarios). Format should be:
+    - Fixed header: magic bytes + version + node count
+    - Node table: [kind: u8, upstream_count: u8, config_len: u16, upstreams: [u32], config: [u8]]
+    - Source data referenced by index (not embedded — data is passed separately to execute)
+
+    Alternatively, a simpler first step: keep the WIT resource API but
+    make the internal state immutable after build. The resource's build
+    methods return a frozen GraphDescription, and execute() takes it.
+
+    PHASED APPROACH:
+    Phase 1: Add validation at node creation (check upstream info, bounds)
+    Phase 2: Add pre-execution validation (full graph check)
+    Phase 3: Extract graph description as serializable value type
+    Phase 4: Make execute() a pure function on the description
+
+    Phase 1-2 can be done without changing the WIT API. Phase 3-4 require
+    WIT changes (resource → value type or new execute method).
+plan:
+  - phase: Node Creation Validation
+    tasks:
+      - text: Add validation to each transform node constructor (verify upstream dimensions, bounds checking for crop, etc.)
+        done: false
+      - text: Add validation to pipeline adapter methods that propagate ImageInfo through the graph at build time
+        done: false
+      - text: Return meaningful errors for invalid configurations (crop out of bounds, resize to zero, etc.)
+        done: false
+  - phase: Pre-Execution Validation
+    tasks:
+      - text: Add graph validation method that checks all edges, detects cycles, verifies terminal node
+        done: false
+      - text: Call graph validation automatically before execute/write operations
+        done: false
+      - text: Return structured validation errors with node-id and reason
+        done: false
+  - phase: Graph Description Extraction
+    tasks:
+      - text: Define NodeDescriptor struct with kind, config, upstreams, expected_info
+        done: false
+      - text: Define GraphDescription struct with serializable node table
+        done: false
+      - text: Implement graph description extraction from current NodeGraph
+        done: false
+      - text: Implement compact binary serialization for GraphDescription
+        done: false
+  - phase: Stateless Execution
+    tasks:
+      - text: Implement execute_from_description(desc, source_data) that reconstructs and runs the graph
+        done: false
+      - text: Update WIT API to support description-based execution
+        done: false
+      - text: Ensure multiple graph descriptions can coexist without interference
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo build (native) succeeds
+        done: false
+      - text: cargo component build (wasm32-wasip2) succeeds
+        done: false
+      - text: All pipeline tests pass with validation enabled
+        done: false
+      - text: Test concurrent graph descriptions dont interfere
+        done: false
+extra: {}
