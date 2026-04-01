@@ -79,8 +79,7 @@ flood fill, iterative content-aware seam carving).
 
 Return `None` from `gpu_ops()` if:
 - The pixel format is unsupported (non-RGBA8)
-- Parameters are extreme (would exceed GPU buffer limits)
-- The algorithm requires CPU-only features (random file I/O, etc.)
+- The algorithm has true sequential dependencies that can't be parallelized
 
 The pipeline falls back to CPU automatically when `gpu_ops()` returns `None`.
 
