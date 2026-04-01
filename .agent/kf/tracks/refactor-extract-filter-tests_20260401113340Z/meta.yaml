@@ -1,0 +1,8 @@
+title: Move filter tests into filter files
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- refactor-extract-config-params_20260401113339Z

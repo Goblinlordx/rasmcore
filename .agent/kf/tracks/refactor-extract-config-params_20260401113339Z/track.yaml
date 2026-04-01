@@ -1,0 +1,26 @@
+id: refactor-extract-config-params_20260401113339Z
+title: Move ConfigParams structs into their filter files
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: Move 126 ConfigParams from filters/mod.rs into individual filter files.
+  context: Each ConfigParams maps 1-to-1 to a filter. Moving makes files self-contained.
+  acceptance_criteria:
+  - All 126 ConfigParams in their respective filter files
+  - build.rs codegen finds ConfigParams via multi-file scanning
+  - All tests pass, WASM builds
+  out_of_scope: Moving tests or shared helpers (separate tracks).
+plan:
+- phase: Extract ConfigParams
+  tasks:
+  - text: Move ConfigParams for each category into their filter files
+    done: false
+  - text: Keep shared field types in common.rs
+    done: false
+- phase: Verification
+  tasks:
+  - text: All tests pass, builds succeed
+    done: false
+extra: {}

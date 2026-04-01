@@ -1,0 +1,6 @@
+title: Extract shared filter helpers to filters/common.rs
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'

@@ -1,0 +1,26 @@
+id: refactor-extract-filter-tests_20260401113340Z
+title: Move filter tests into their respective files
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: Move ~7700 lines of tests from filters/mod.rs into individual filter/category files.
+  context: 26 test modules remain in mod.rs. Goal is mod.rs under 1000 lines.
+  acceptance_criteria:
+  - All tests moved to filter files or category test modules
+  - filters/mod.rs under 1000 lines
+  - Same test count passes
+  out_of_scope: Writing new tests.
+plan:
+- phase: Move tests
+  tasks:
+  - text: Move test modules to category directories
+    done: false
+  - text: Remove tests from filters/mod.rs
+    done: false
+- phase: Verification
+  tasks:
+  - text: Same test count, builds succeed
+    done: false
+extra: {}
