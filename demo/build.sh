@@ -14,11 +14,13 @@ cd "$SCRIPT_DIR"
 npm install --silent 2>/dev/null || true
 cd "$PROJECT_ROOT"
 
-echo "=== 1a. Generating WIT from filter registrations ==="
+echo "=== 1a. Generating WIT from build.rs ==="
 cd "$PROJECT_ROOT"
-node scripts/generate-wit.cjs
+# Touch templates to force build.rs to regenerate WIT files
+touch wit/image/filters.wit.tmpl wit/image/pipeline.wit.tmpl 2>/dev/null || true
 
 echo "=== 1b. Building WASM component (release) ==="
+# build.rs generates filters.wit + pipeline.wit from templates before compilation
 cargo component build -p rasmcore-image --release
 
 WASM="$PROJECT_ROOT/target/wasm32-wasip1/release/rasmcore_image.wasm"
