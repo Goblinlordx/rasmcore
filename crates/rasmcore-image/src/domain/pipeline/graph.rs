@@ -1982,7 +1982,7 @@ mod layer_cache_tests {
     use std::time::Instant;
 
     use crate::domain::filters::{BrightnessParams, ContrastParams};
-    use crate::domain::pipeline::nodes::filters::{BrightnessNode, ContrastNode};
+    use crate::domain::pipeline::nodes::filters::{self, BrightnessNode, ContrastNode};
     use crate::domain::pipeline::nodes::sink;
     use crate::domain::pipeline::nodes::source::SourceNode;
     use rasmcore_pipeline::LayerCache;
@@ -2273,5 +2273,172 @@ mod layer_cache_tests {
             "cache_stats_reflect_usage — entries: {}, hits: {}, misses: {}, size: {} bytes",
             stats2.entries, stats2.hits, stats2.misses, stats2.size_bytes
         );
+    }
+
+    /// Helper: build source → N inverts chain with content hashes
+    fn build_invert_chain(
+        png_data: &[u8],
+        lc: &Rc<RefCell<LayerCache>>,
+        count: usize,
+    ) -> (NodeGraph, u32) {
+        let source_hash = rasmcore_pipeline::compute_source_hash(png_data);
+        let mut graph = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(lc));
+        let src = graph.add_node_with_hash(
+            Box::new(SourceNode::new(png_data.to_vec()).unwrap()),
+            source_hash,
+        );
+        let src_info = graph.node_info(src).unwrap();
+        let mut prev = src;
+        let mut prev_hash = source_hash;
+        for i in 0..count {
+            let h = rasmcore_pipeline::compute_hash(&prev_hash, "invert", &(i as u32).to_le_bytes());
+            prev = graph.add_node_with_hash(
+                Box::new(filters::InvertNode::new(prev, src_info.clone())),
+                h,
+            );
+            prev_hash = h;
+        }
+        (graph, prev)
+    }
+
+    /// Helper: run pipeline and finalize cache
+    fn run_and_finalize(graph: &mut NodeGraph, node: u32) -> Vec<u8> {
+        let out = sink::write(graph, node, "png", None, None).unwrap();
+        graph.finalize_layer_cache();
+        out
+    }
+
+    #[test]
+    fn cache_fused_invert_chain_identity() {
+        // invert→invert = identity (fused into single LUT that's [0,1,2,...,255])
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Pipeline: source only (reference)
+        let source_only = {
+            let mut g = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(&lc));
+            let src_hash = rasmcore_pipeline::compute_source_hash(&png);
+            let src = g.add_node_with_hash(Box::new(SourceNode::new(png.clone()).unwrap()), src_hash);
+            run_and_finalize(&mut g, src)
+        };
+
+        // Pipeline: source → invert → invert (should fuse to identity)
+        let double_invert = {
+            let (mut g, node) = build_invert_chain(&png, &lc, 2);
+            run_and_finalize(&mut g, node)
+        };
+
+        assert_eq!(source_only, double_invert, "invert→invert should equal source (identity via fusion)");
+        eprintln!("cache_fused_invert_chain_identity: PASS — double invert = source");
+    }
+
+    #[test]
+    fn cache_remove_middle_of_fused_chain() {
+        // Pipeline 1: source → invert → brightness(0.2) → invert (3 point ops, fused)
+        // Pipeline 2: source → invert → invert (removed brightness from middle)
+        // Pipeline 2 should match source (invert→invert = identity)
+        // Pipeline 1 should NOT match source (brightness changes values before second invert)
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Reference: source only
+        let source_only = {
+            let mut g = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(&lc));
+            let src_hash = rasmcore_pipeline::compute_source_hash(&png);
+            let src = g.add_node_with_hash(Box::new(SourceNode::new(png.clone()).unwrap()), src_hash);
+            run_and_finalize(&mut g, src)
+        };
+
+        // Pipeline 1: source → invert → brightness(0.2) → invert
+        let output1 = {
+            let src_hash = rasmcore_pipeline::compute_source_hash(&png);
+            let mut g = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(&lc));
+            let src = g.add_node_with_hash(Box::new(SourceNode::new(png.clone()).unwrap()), src_hash);
+            let si = g.node_info(src).unwrap();
+
+            let h1 = rasmcore_pipeline::compute_hash(&src_hash, "invert", &0u32.to_le_bytes());
+            let n1 = g.add_node_with_hash(Box::new(filters::InvertNode::new(src, si.clone())), h1);
+
+            let h2 = rasmcore_pipeline::compute_hash(&h1, "brightness", &0.2f32.to_le_bytes());
+            let n2 = g.add_node_with_hash(Box::new(BrightnessNode::new(n1, si.clone(), BrightnessParams { amount: 0.2 })), h2);
+
+            let h3 = rasmcore_pipeline::compute_hash(&h2, "invert", &1u32.to_le_bytes());
+            let n3 = g.add_node_with_hash(Box::new(filters::InvertNode::new(n2, si.clone())), h3);
+
+            run_and_finalize(&mut g, n3)
+        };
+
+        // Pipeline 2: source → invert → invert (brightness removed, same cache)
+        let output2 = {
+            let src_hash = rasmcore_pipeline::compute_source_hash(&png);
+            let mut g = NodeGraph::with_layer_cache(4 * 1024 * 1024, Rc::clone(&lc));
+            let src = g.add_node_with_hash(Box::new(SourceNode::new(png.clone()).unwrap()), src_hash);
+            let si = g.node_info(src).unwrap();
+
+            let h1 = rasmcore_pipeline::compute_hash(&src_hash, "invert", &0u32.to_le_bytes());
+            let n1 = g.add_node_with_hash(Box::new(filters::InvertNode::new(src, si.clone())), h1);
+
+            // Skip brightness — second invert's upstream hash is h1 (not h2)
+            let h_inv2 = rasmcore_pipeline::compute_hash(&h1, "invert", &1u32.to_le_bytes());
+            let n_inv2 = g.add_node_with_hash(Box::new(filters::InvertNode::new(n1, si.clone())), h_inv2);
+
+            run_and_finalize(&mut g, n_inv2)
+        };
+
+        // Fresh uncached run of pipeline 2 for reference
+        let output2_fresh = {
+            let mut g = NodeGraph::new(4 * 1024 * 1024);
+            let src = g.add_node(Box::new(SourceNode::new(png.clone()).unwrap()));
+            let si = g.node_info(src).unwrap();
+            let n1 = g.add_node(Box::new(filters::InvertNode::new(src, si.clone())));
+            let n2 = g.add_node(Box::new(filters::InvertNode::new(n1, si.clone())));
+            sink::write(&mut g, n2, "png", None, None).unwrap()
+        };
+
+        assert_ne!(output1, source_only, "invert→brightness→invert should differ from source");
+        assert_eq!(output2, source_only, "invert→invert should equal source (identity)");
+        assert_eq!(output2, output2_fresh, "cached run must match fresh uncached run");
+        eprintln!("cache_remove_middle_of_fused_chain: PASS");
+    }
+
+    #[test]
+    fn cache_add_to_fused_chain() {
+        // Pipeline 1: source → invert → invert (identity, fused)
+        // Pipeline 2: source → invert → invert → invert (= single invert)
+        // Verify pipeline 2 output differs from source and matches single invert
+        let png = make_test_png();
+        let lc = make_layer_cache();
+
+        // Pipeline 1: source → 2 inverts (identity)
+        let _output1 = {
+            let (mut g, node) = build_invert_chain(&png, &lc, 2);
+            run_and_finalize(&mut g, node)
+        };
+
+        // Pipeline 2: source → 3 inverts (= single invert)
+        let output2 = {
+            let (mut g, node) = build_invert_chain(&png, &lc, 3);
+            run_and_finalize(&mut g, node)
+        };
+
+        // Reference: single invert, no cache
+        let single_invert = {
+            let mut g = NodeGraph::new(4 * 1024 * 1024);
+            let src = g.add_node(Box::new(SourceNode::new(png.clone()).unwrap()));
+            let si = g.node_info(src).unwrap();
+            let n = g.add_node(Box::new(filters::InvertNode::new(src, si)));
+            sink::write(&mut g, n, "png", None, None).unwrap()
+        };
+
+        // Source only for comparison
+        let source_only = {
+            let mut g = NodeGraph::new(4 * 1024 * 1024);
+            let src = g.add_node(Box::new(SourceNode::new(png.clone()).unwrap()));
+            sink::write(&mut g, src, "png", None, None).unwrap()
+        };
+
+        assert_ne!(output2, source_only, "3 inverts should not equal source");
+        assert_eq!(output2, single_invert, "3 inverts should equal single invert");
+        eprintln!("cache_add_to_fused_chain: PASS");
     }
 }
