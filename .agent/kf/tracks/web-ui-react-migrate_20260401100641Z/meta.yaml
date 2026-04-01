@@ -1,0 +1,8 @@
+title: Web UI — Migrate pipeline builder from vanilla TS to React components
+status: pending
+type: refactor
+approved: false
+created: '2026-04-01'
+updated: '2026-04-01'
+deps:
+- web-ui-react-scaffold_20260401100640Z

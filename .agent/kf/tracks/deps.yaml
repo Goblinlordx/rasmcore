@@ -220,6 +220,14 @@ web-ui-ps-layout_20260401094012Z: []
 
 web-ui-split-view_20260401094013Z:
   - web-ui-ps-layout_20260401094012Z
+  - web-ui-react-migrate_20260401100641Z
 
 web-ui-export-menu_20260401094014Z:
   - web-ui-ps-layout_20260401094012Z
+  - web-ui-react-migrate_20260401100641Z
+
+# React migration — scaffold first, then migrate, then feature tracks
+web-ui-react-scaffold_20260401100640Z: []
+
+web-ui-react-migrate_20260401100641Z:
+  - web-ui-react-scaffold_20260401100640Z

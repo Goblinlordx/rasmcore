@@ -39,3 +39,14 @@ encoder-webp_20260327101003Z/p0-gif-exif-orient_20260328024500Z:
   risk: low
   note: "GIF adds new entries to encoder.wit — different sections"
   added: "2026-03-28"
+
+# React migration rewrites all web-ui/ files — feature tracks must wait
+web-ui-react-migrate_20260401100641Z/web-ui-split-view_20260401094013Z:
+  risk: high
+  note: "Both modify web-ui/ — split-view must be implemented as React component after migration"
+  added: "2026-04-01"
+
+web-ui-export-menu_20260401094014Z/web-ui-react-migrate_20260401100641Z:
+  risk: high
+  note: "Both modify web-ui/ — export-menu must be implemented as React component after migration"
+  added: "2026-04-01"

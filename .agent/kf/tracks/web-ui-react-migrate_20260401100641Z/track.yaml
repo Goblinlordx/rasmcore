@@ -1,0 +1,181 @@
+id: web-ui-react-migrate_20260401100641Z
+title: "Web UI — Migrate pipeline builder from vanilla TS to React components"
+type: refactor
+status: pending
+created: '2026-04-01'
+updated: '2026-04-01'
+spec:
+  summary: |
+    Port all UI from the 1357-line pipeline.ts into React components and hooks.
+    Create App, Toolbar, Canvas, RightPanel, LayerPanel, EffectStack, ChainNode,
+    ParamControl, StatusBar, ExportSection, CodeModal. Extract hooks for worker
+    communication, layer state, and chain management. Add render smoke tests for
+    every component. Delete old pipeline.ts when complete.
+  context: |
+    After the scaffold track sets up React + Vitest + Prettier, this track does
+    the actual migration. The current pipeline.ts is a monolithic file with ~40
+    DOM element IDs and ~50 event listeners, all wired up imperatively. The React
+    migration will decompose this into focused components with React state management.
+
+    The user notes that "most is data driven and small components/layout" — the
+    pipeline operations, parameters, and categories are all driven by the param
+    manifest JSON loaded at startup. Components are mostly presentational with
+    state lifted to hooks.
+
+    Test strategy: every component gets a render smoke test (mount and assert no
+    crash). No deep behavioral tests for now — the primary gate is "renders without
+    blowing up" plus lint/fmt/build passing.
+  codebase_analysis: |
+    Source to migrate: web-ui/src/pipeline.ts (1357 lines after PS-layout track)
+
+    Logical sections to extract:
+    1. SDK init + manifest loading (lines 1-210) -> App.tsx + context
+    2. Toolbar dropdown menus (lines 302-373) -> Toolbar.tsx
+    3. Worker communication (lines 375-585) -> useWorker.ts hook
+    4. State management (lines 586-615) -> useLayers.ts + useChain.ts hooks
+    5. Image loading + layer management (lines 616-755) -> useLayers.ts + LayerPanel.tsx
+    6. Chain rendering + drag (lines 756-1140) -> EffectStack.tsx + ChainNode.tsx + ParamControl.tsx
+    7. Preview/processing (lines 1141-1165) -> useWorker.ts
+    8. Before/After comparison (lines 1166-1175) -> Canvas.tsx
+    9. Export (lines 1177-1200) -> ExportSection.tsx
+    10. Code generation (lines 1204-1357) -> CodeModal.tsx + utils/codeGeneration.ts
+    11. Panel toggle + section collapse (lines 1340-1357) -> RightPanel.tsx
+
+    Files that stay unchanged:
+    - pipeline-worker.ts: already cleanly separated via postMessage protocol
+    - types.ts: reused as-is (may add React-specific types)
+
+    Key state to manage via React:
+    - layers[] array (images + per-layer chains)
+    - activeLayerId
+    - editingNodeId
+    - isProcessing + queuedRequest
+    - imageInfo (dimensions)
+    - showingOriginal (before/after)
+
+    The worker integration pattern: a useWorker hook that wraps postMessage/onmessage
+    and exposes processChain, exportImage, compositeLayers as async-like functions.
+    The hook manages isProcessing, the single-slot queue, and the safety timeout.
+  acceptance_criteria:
+    - All UI renders via React components (no imperative DOM manipulation in main thread)
+    - App.tsx is the root component wrapping Toolbar, Canvas, RightPanel, StatusBar
+    - Toolbar.tsx renders brand, badge, operation dropdown menus (Filters/Transform/Effects/Grading)
+    - Canvas.tsx renders preview and original canvases with drop zone
+    - RightPanel.tsx is collapsible and contains LayerPanel and EffectStack sections
+    - LayerPanel.tsx renders layer cards with thumbnails, visibility, blend mode, delete
+    - EffectStack.tsx renders chain nodes with drag-reorder via handles (not whole card)
+    - ChainNode.tsx renders a single node with edit/remove and inline param controls
+    - ParamControl.tsx dispatches to correct input type based on param hint
+    - StatusBar.tsx shows dimensions, processing time, op count, errors
+    - ExportSection.tsx has format select, quality slider, download button
+    - CodeModal.tsx shows generated code with syntax highlighting
+    - useWorker hook manages worker lifecycle, postMessage, safety timeout, queue
+    - useLayers hook manages layer array, activeLayerId, add/remove/reorder
+    - useChain hook manages chain for active layer, addNode/removeNode/moveNode
+    - Every component has a .test.tsx that mounts it and asserts no crash
+    - npm run check passes (build + lint + fmt + test)
+    - pipeline.ts is deleted (all logic migrated)
+    - pipeline-worker.ts is unchanged (still works via postMessage)
+    - Visual appearance matches the PS-style layout from previous track
+  out_of_scope: |
+    - Before/After split view (separate track, will be implemented as React component)
+    - Enhanced export menu (separate track, will be implemented as React component)
+    - Deep behavioral/integration tests (render smoke tests only for now)
+    - CSS modules or styled-components migration (keep inline styles)
+    - State management library (React Context + hooks is sufficient)
+    - Drag-and-drop library (keep native HTML5 drag API with handle pattern)
+  technical_notes: |
+    Component tree:
+      App
+      +-- Toolbar (menus for adding operations)
+      +-- main-layout (flex container)
+      |   +-- Canvas (preview, original, drop zone)
+      |   +-- RightPanel (collapsible)
+      |       +-- LayerPanel (layer cards, add button)
+      |       +-- EffectStack (chain nodes for active layer)
+      |           +-- ChainNode (per node: header + params)
+      |               +-- ParamControl (dispatches by type)
+      |       +-- ExportSection (format, quality, download)
+      +-- StatusBar (dims, timing, errors)
+      +-- CodeModal (overlay)
+
+    State architecture:
+    - AppContext provides: operations[], layers, activeLayerId, isProcessing, imageInfo
+    - useLayers: manages layers state, provides addLayer/removeLayer/setActiveLayer
+    - useChain: derives active chain from layers + activeLayerId, provides add/remove/move/update
+    - useWorker: wraps Worker creation, postMessage, onmessage, safety timeout, queue
+
+    Worker hook pattern:
+      const { processChain, exportImage, isProcessing } = useWorker();
+      // processChain sends to worker and updates isProcessing state
+      // onmessage callback updates canvases via refs
+
+    Canvas interaction: use refs for canvas elements (preview, original).
+    Worker results write directly to canvas via ref.current.getContext('2d').
+
+    Drag-and-drop: ChainNode renders a .drag-handle span with draggable=true.
+    EffectStack handles dragover/drop on the container. guardDrag (pointerdown
+    stopPropagation) stays on all interactive controls inside ChainNode.
+
+    ParamControl is a single component that switches on param.type:
+    color, toggle, text, spinner, log_slider, signed_slider, opacity,
+    temperature, number (default slider), enum. Each renders the appropriate
+    input with guardDrag already applied.
+
+    Migration order:
+    1. Create hooks first (useWorker, useLayers, useChain) — these hold the logic
+    2. Create leaf components (ParamControl, StatusBar, CodeModal, ExportSection)
+    3. Create container components (ChainNode, EffectStack, LayerPanel, Canvas)
+    4. Create top-level (Toolbar, RightPanel, App)
+    5. Wire up index.html to mount React, remove old script tag
+    6. Delete pipeline.ts
+    7. Add render smoke tests for all components
+    8. Run npm run check
+plan:
+  - phase: "Hooks"
+    tasks:
+      - text: "Create src/hooks/useWorker.ts — worker lifecycle, postMessage, onmessage, safety timeout, single-slot queue, isProcessing state"
+        done: false
+      - text: "Create src/hooks/useLayers.ts — layers array state, activeLayerId, addLayer, removeLayer, setActiveLayer, reorderLayers"
+        done: false
+      - text: "Create src/hooks/useChain.ts — derives chain from active layer, addNode, removeNode, moveNode, updateParam, editingNodeId"
+        done: false
+      - text: "Create src/context/AppContext.tsx — operations list, manifest loading, SDK init, provides context to component tree"
+        done: false
+  - phase: "Components — Leaf"
+    tasks:
+      - text: "Create src/components/ParamControl.tsx — switch on param.type, renders correct input, guardDrag on all interactive elements"
+        done: false
+      - text: "Create src/components/StatusBar.tsx — dims, processing time, op count, error display"
+        done: false
+      - text: "Create src/components/CodeModal.tsx — code generation, syntax highlighting, copy to clipboard"
+        done: false
+      - text: "Create src/components/ExportSection.tsx — format select, quality slider, download button"
+        done: false
+  - phase: "Components — Containers & Top-Level"
+    tasks:
+      - text: "Create src/components/ChainNode.tsx — node header with drag handle, param controls (editing mode), summary (collapsed mode), apply/cancel"
+        done: false
+      - text: "Create src/components/EffectStack.tsx — renders chain nodes, drag-reorder, drop hint when empty"
+        done: false
+      - text: "Create src/components/LayerPanel.tsx — layer cards with thumb, name, visibility, blend, delete, add-layer button"
+        done: false
+      - text: "Create src/components/Canvas.tsx — preview canvas, original canvas, drop zone, image loading"
+        done: false
+      - text: "Create src/components/Toolbar.tsx — brand, badge, operation dropdown menus grouped by category"
+        done: false
+      - text: "Create src/components/RightPanel.tsx — collapsible container with LayerPanel + EffectStack + ExportSection"
+        done: false
+      - text: "Create src/App.tsx — root component wiring context, layout, all children"
+        done: false
+      - text: "Update index.html — React root div, remove old pipeline.ts script tag, keep CSS"
+        done: false
+      - text: "Delete src/pipeline.ts — all logic migrated to components and hooks"
+        done: false
+  - phase: "Tests & Verification"
+    tasks:
+      - text: "Create render smoke tests for all components — App, Toolbar, Canvas, RightPanel, LayerPanel, EffectStack, ChainNode, ParamControl, StatusBar, ExportSection, CodeModal"
+        done: false
+      - text: "Run npm run check — verify build + lint + fmt + test all pass"
+        done: false
+extra: {}
