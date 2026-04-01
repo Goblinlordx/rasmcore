@@ -1,0 +1,59 @@
+id: sdk-go-wasm-gpu_20260402033000Z01Z
+title: Go WASM SDK — component instantiation + GPU host via wgpu-native
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Complete the Go SDK WASM instantiation and add GPU host support.
+    Ships the .wasm component — uses wazero or wasmtime-go for loading.
+    GPU provided by host via wgpu-native cgo bindings.
+  context: |
+    sdks/go/ has a runtime stub but WASM dispatch is not implemented.
+    Go lacks native Component Model support. Options are wazero (pure Go,
+    no CM support yet) or wasmtime-go (cgo, CM support WIP).
+    GPU host uses wgpu-native (C library) via cgo to implement gpu-execute.
+  codebase_analysis: |
+    Existing: sdks/go/rasmcore/runtime.go has RcImage struct, manifest types.
+    Missing: WASM loading and method dispatch.
+    Go WASM options: wazero (pure Go) has no Component Model support.
+    wasmtime-go has partial CM support. Both are evolving.
+    For GPU: wgpu-native provides a C API for WebGPU that Go can call via cgo.
+  acceptance_criteria:
+  - Go SDK loads .wasm component via available runtime
+  - Pipeline operations dispatch to WASM component methods
+  - GPU host executor via wgpu-native cgo implements gpu-execute
+  - Auto-detect GPU, fallback to CPU-only
+  - go get installable (ships .wasm component)
+  out_of_scope: |
+    Native C FFI path. Pure Go GPU implementation.
+  technical_notes: |
+    Approach depends on Go WASM runtime maturity at implementation time.
+    If wasmtime-go has CM support, use it.
+    If not, use wazero with a shim layer for the WIT interface.
+    GPU via wgpu-native: go-wgpu or raw cgo bindings.
+    NOTE: cgo is acceptable for the GPU host — the SDK itself is
+    pure Go + WASM, only GPU acceleration requires cgo.
+plan:
+- phase: WASM instantiation
+  tasks:
+  - text: Evaluate wasmtime-go vs wazero for component loading
+    done: false
+  - text: Wire WASM component loading in runtime.go
+    done: false
+  - text: Map WIT pipeline methods to Go dispatch
+    done: false
+- phase: GPU host
+  tasks:
+  - text: Implement gpu-execute host function via wgpu-native cgo
+    done: false
+  - text: Auto-detect GPU, graceful fallback
+    done: false
+- phase: Tests
+  tasks:
+  - text: Pipeline roundtrip test (load, blur, encode)
+    done: false
+  - text: GPU detection and fallback test
+    done: false
+extra: {}

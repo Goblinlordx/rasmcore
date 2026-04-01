@@ -1,0 +1,73 @@
+id: sdk-python-wasm-gpu_20260402033000Z
+title: Python WASM SDK — component instantiation + GPU host via wgpu-py
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Complete the Python SDK WASM instantiation and add GPU host support.
+    Ships the .wasm component — no compiled native code required to use.
+    GPU provided by host via wgpu-py implementing the WIT gpu-execute import.
+  context: |
+    sdks/python/ has a runtime (RcImage) with manifest-based dispatch but
+    WASM instantiation is not wired. This track completes it using
+    wasmtime-py component bindings and adds a GPU host executor.
+    The WASM component calls gpu-execute when GPU ops are available.
+    The Python host implements gpu-execute using wgpu-py (pure Python
+    WebGPU bindings backed by wgpu-native).
+  codebase_analysis: |
+    Existing: sdks/python/rasmcore/runtime.py has RcImage class, manifest
+    parsing, param validation. Missing: actual WASM component instantiation.
+    WIT gpu interface: wit/core/gpu.wit defines gpu-execute import.
+    wgpu-py: pip install wgpu — Python WebGPU bindings (wgpu-native backend).
+  acceptance_criteria:
+  - Python SDK loads .wasm component via wasmtime-py
+  - Pipeline operations dispatch to WASM component methods
+  - GPU host executor using wgpu-py implements gpu-execute WIT import
+  - Auto-detect GPU, fallback to CPU-only WASM execution
+  - pip install rasmcore works (ships .wasm + Python code)
+  - No compiled native code needed by the end user (pure Python + WASM)
+  out_of_scope: |
+    Native C FFI path. Browser WebGPU. Async GPU execution.
+  technical_notes: |
+    Architecture:
+    1. wasmtime-py loads the .wasm component
+    2. Python provides host imports including gpu-execute
+    3. gpu-execute implementation uses wgpu-py for GPU dispatch
+    4. wgpu-py handles shader compilation, buffer management
+    5. If no GPU, gpu-execute returns NotAvailable error
+    6. WASM component falls back to CPU path automatically
+
+    wgpu-py installation: pip install wgpu (optional dep)
+    If wgpu not installed, GPU host returns NotAvailable for all calls.
+plan:
+- phase: WASM instantiation
+  tasks:
+  - text: Wire wasmtime-py component loading in runtime.py
+    done: false
+  - text: Map WIT pipeline methods to Python dispatch
+    done: false
+  - text: Test basic pipeline (load, blur, encode) via WASM
+    done: false
+- phase: GPU host
+  tasks:
+  - text: Implement gpu-execute host function using wgpu-py
+    done: false
+  - text: Shader compilation and buffer management in Python
+    done: false
+  - text: Auto-detect GPU, graceful fallback
+    done: false
+- phase: Packaging
+  tasks:
+  - text: Ship .wasm component in pip package
+    done: false
+  - text: wgpu as optional dependency
+    done: false
+- phase: Tests
+  tasks:
+  - text: GPU roundtrip test (blur via GPU matches CPU)
+    done: false
+  - text: No-GPU fallback test
+    done: false
+extra: {}

@@ -1,8 +1,9 @@
 title: Python native SDK via C FFI with GPU support
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-01'
 updated: '2026-04-01'
 deps:
 - native-shared-lib_20260331055225Z
+archived_at: '2026-04-01'
