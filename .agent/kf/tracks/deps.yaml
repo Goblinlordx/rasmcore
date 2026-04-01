@@ -234,3 +234,6 @@ web-ui-preview-worker_20260401114500Z: []
 
 # Transform config records — unify WIT calling convention
 transform-config-records_20260401120200Z: []
+
+# Remaining positional-arg ops → config records (completes the unification)
+remaining-config-unify_20260401124500Z: []
