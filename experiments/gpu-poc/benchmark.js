@@ -69,7 +69,12 @@ async function initWASM() {
   try {
     const sdk = await import('./sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
-    log('WASM SDK loaded');
+    // Log available methods for debugging
+    const pipe = new Pipeline();
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(pipe))
+      .filter(n => typeof pipe[n] === 'function' && !n.startsWith('_'))
+      .filter(n => ['blur','spinBlur','spherize','bilateral','read','writePng'].includes(n));
+    log(`WASM SDK loaded — benchmark methods: ${methods.join(', ') || 'NONE FOUND'}`);
   } catch (e) {
     log(`WASM SDK not available: ${e.message}`);
     log('(Run demo/build.sh first to generate SDK)');
@@ -276,28 +281,32 @@ async function benchGPUBilateral(size) {
 
 // ─── WASM Benchmarks (main thread — importmap provides bare specifier resolution) ──
 
-// Call pipeline op — handles both old positional-arg SDK and new config-record SDK
+// Call pipeline op — tries multiple calling conventions
 function callWASMOp(pipe, src, opName, config) {
+  const errors = [];
+
+  // Try 1: config record (new SDK after codegen unification)
+  try { return pipe[opName](src, config); }
+  catch (e) { errors.push(`config-record: ${errMsg(e)}`); }
+
+  // Try 2: positional args (old SDK)
   try {
-    // Try config record first (new SDK)
-    return pipe[opName](src, config);
-  } catch (_e1) {
-    // Fall back to positional args (old SDK)
     switch (opName) {
       case 'blur': return pipe.blur(src, config.radius);
       case 'spinBlur': return pipe.spinBlur(src, config.centerX || 0.5, config.centerY || 0.5, config.angle);
       case 'spherize': return pipe.spherize(src, config.strength);
       case 'bilateral': return pipe.bilateral(src, config.spatialSigma, config.rangeSigma, config.radius);
-      default: throw _e1;
     }
-  }
+  } catch (e) { errors.push(`positional: ${errMsg(e)}`); }
+
+  throw new Error(`All calling conventions failed for ${opName}:\n  ${errors.join('\n  ')}`);
 }
 
 function errMsg(e) {
   if (typeof e === 'string') return e;
   if (e && e.message) return e.message;
   if (e && e.payload) return JSON.stringify(e.payload);
-  return JSON.stringify(e);
+  try { return JSON.stringify(e); } catch { return String(e); }
 }
 
 async function benchWASMOp(opName, size, config) {
