@@ -189,3 +189,6 @@ config-struct-migrate-simple_20260331041858Z:
 pipeline-dynamic-overlap_20260331090601Z: []
 pipeline-tiled-sink_20260331090602Z:
   - pipeline-dynamic-overlap_20260331090601Z
+
+# Legacy filter registry cleanup — no deps
+remove-legacy-filter-registry_20260401013900Z: []
