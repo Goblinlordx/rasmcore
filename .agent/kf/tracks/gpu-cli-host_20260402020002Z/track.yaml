@@ -1,76 +1,76 @@
 id: gpu-cli-host_20260402020002Z
-title: "GPU CLI host — wgpu executor with auto-detect for native pipeline"
+title: GPU CLI host — wgpu executor with auto-detect for native pipeline
 type: feature
 status: pending
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-01'
 spec:
-  summary: |
-    Implement the native GPU host for the CLI using wgpu. Auto-detects
+  summary: 'Implement the native GPU host for the CLI using wgpu. Auto-detects
+
     GPU availability, compiles WGSL shaders, executes compute dispatches.
+
     The CLI automatically uses GPU when available, falls back to CPU.
-  context: |
-    The CLI runs native Rust (not WASM). It can use wgpu directly without
+
+    '
+  context: 'The CLI runs native Rust (not WASM). It can use wgpu directly without
+
     the WIT boundary. The GpuCapable trait returns GpuOps with WGSL source
+
     and params — the CLI executor compiles and runs them via wgpu.
 
+
     wgpu auto-selects the best backend: Vulkan (Linux), Metal (macOS),
+
     DX12 (Windows). No user configuration needed.
+
+    '
   acceptance_criteria:
-    - wgpu added as optional dependency (gpu feature flag)
-    - GpuExecutor struct wraps wgpu device, shader cache, buffer pool
-    - Auto-detects GPU on startup (adapter request, device creation)
-    - Shader compilation cached by source hash
-    - Ping-pong buffer management for multi-op batches
-    - CLI --gpu flag to force GPU, --no-gpu to force CPU
-    - Default behavior auto-detects GPU availability
-    - 3D LUT shader for fused color ops supported
-    - Graceful fallback to CPU if GPU init fails
-  out_of_scope: |
-    - Browser WebGPU host (Track 2)
+  - wgpu added as optional dependency (gpu feature flag)
+  - GpuExecutor struct wraps wgpu device, shader cache, buffer pool
+  - Auto-detects GPU on startup (adapter request, device creation)
+  - Shader compilation cached by source hash
+  - Ping-pong buffer management for multi-op batches
+  - CLI --gpu flag to force GPU, --no-gpu to force CPU
+  - Default behavior auto-detects GPU availability
+  - 3D LUT shader for fused color ops supported
+  - Graceful fallback to CPU if GPU init fails
+  out_of_scope: '- Browser WebGPU host (Track 2)
+
     - Multi-GPU support
+
     - Async/streaming GPU execution
-  technical_notes: |
-    The CLI executor is a Rust struct that directly calls wgpu APIs:
 
-    pub struct GpuExecutor {
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        shader_cache: HashMap<u64, wgpu::ComputePipeline>,
-    }
-
-    impl GpuExecutor {
-        pub fn new() -> Result<Self, GpuError> { ... }
-        pub fn execute(&self, ops: &[GpuOp], input: &[u8], w: u32, h: u32) -> Result<Vec<u8>, GpuError> { ... }
-    }
-
-    The graph walker calls executor.execute() instead of the WIT import.
-    Same batch detection logic, different dispatch path.
+    '
+  technical_notes: "The CLI executor is a Rust struct that directly calls wgpu APIs:\n\npub struct GpuExecutor {\n    device:\
+    \ wgpu::Device,\n    queue: wgpu::Queue,\n    shader_cache: HashMap<u64, wgpu::ComputePipeline>,\n}\n\nimpl GpuExecutor\
+    \ {\n    pub fn new() -> Result<Self, GpuError> { ... }\n    pub fn execute(&self, ops: &[GpuOp], input: &[u8], w: u32,\
+    \ h: u32) -> Result<Vec<u8>, GpuError> { ... }\n}\n\nThe graph walker calls executor.execute() instead of the WIT import.\n\
+    Same batch detection logic, different dispatch path.\n"
 plan:
-  - phase: "wgpu Executor"
-    tasks:
-      - text: "Add wgpu as optional dependency behind gpu feature flag"
-        done: false
-      - text: "Implement GpuExecutor — device init, adapter auto-select"
-        done: false
-      - text: "Implement shader compilation with hash-based caching"
-        done: false
-      - text: "Implement execute() — buffer management, ping-pong, dispatch, readback"
-        done: false
-  - phase: "CLI Integration"
-    tasks:
-      - text: "Add --gpu/--no-gpu CLI flags"
-        done: false
-      - text: "Wire GpuExecutor into pipeline graph walker for native execution"
-        done: false
-      - text: "Auto-detect GPU on startup, log capability info"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test GPU execution matches CPU output for blur"
-        done: false
-      - text: "Test fallback when no GPU available"
-        done: false
-      - text: "Benchmark CLI GPU vs CPU for blur, spherize at various sizes"
-        done: false
+- phase: wgpu Executor
+  tasks:
+  - text: Add wgpu as optional dependency behind gpu feature flag
+    done: true
+  - text: Implement GpuExecutor — device init, adapter auto-select
+    done: true
+  - text: Implement shader compilation with hash-based caching
+    done: true
+  - text: Implement execute() — buffer management, ping-pong, dispatch, readback
+    done: true
+- phase: CLI Integration
+  tasks:
+  - text: Add --gpu/--no-gpu CLI flags
+    done: true
+  - text: Wire GpuExecutor into pipeline graph walker for native execution
+    done: false
+  - text: Auto-detect GPU on startup, log capability info
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test GPU execution matches CPU output for blur
+    done: false
+  - text: Test fallback when no GPU available
+    done: true
+  - text: Benchmark CLI GPU vs CPU for blur, spherize at various sizes
+    done: false
 extra: {}

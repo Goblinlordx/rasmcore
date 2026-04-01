@@ -15,6 +15,9 @@ use rasmcore_image::domain::pipeline::dispatch;
 use rasmcore_image::domain::pipeline::graph::NodeGraph;
 use rasmcore_image::domain::pipeline::nodes::{sink, source};
 
+#[cfg(feature = "gpu")]
+mod gpu_executor;
+
 // ─── CLI Command Types ─────────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -55,6 +58,11 @@ fn parse_args(args: &[String]) -> Result<Vec<CliCommand>, String> {
         if arg == "--list-filters" {
             print_filters();
             process::exit(0);
+        }
+        // GPU flags (consumed here, applied in main)
+        if arg == "--gpu" || arg == "--no-gpu" {
+            i += 1;
+            continue;
         }
 
         // Input
@@ -230,6 +238,8 @@ FLAGS:
   -ref, --as <name>      Bookmark active node as a reference
   -o, --output <path>    Write active node to file (format from extension)
   --list-filters         Show all available filters and parameters
+  --gpu                  Force GPU acceleration (fail if unavailable)
+  --no-gpu               Force CPU-only execution (disable GPU)
   -h, --help             Show this help
   -V, --version          Show version
 
@@ -288,6 +298,32 @@ fn main() {
     if args.is_empty() {
         print_help();
         process::exit(0);
+    }
+
+    // GPU initialization
+    #[cfg(feature = "gpu")]
+    {
+        let force_gpu = args.iter().any(|a| a == "--gpu");
+        let no_gpu = args.iter().any(|a| a == "--no-gpu");
+
+        if !no_gpu {
+            match gpu_executor::WgpuExecutor::try_new() {
+                Ok(exec) => {
+                    eprintln!("GPU: {} (ready)", exec.adapter_name());
+                    // TODO: pass executor to graph walker when GPU-capable nodes exist
+                    let _ = exec; // suppress unused warning for now
+                }
+                Err(e) => {
+                    if force_gpu {
+                        eprintln!("Error: --gpu requested but GPU unavailable: {e}");
+                        process::exit(1);
+                    }
+                    eprintln!("GPU: not available, using CPU ({e})");
+                }
+            }
+        } else {
+            eprintln!("GPU: disabled (--no-gpu)");
+        }
     }
 
     let commands = match parse_args(&args) {

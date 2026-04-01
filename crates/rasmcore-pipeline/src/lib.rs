@@ -5,6 +5,7 @@
 //! (ImageNode, VideoNode) are defined in their respective crates.
 
 pub mod cache;
+pub mod gpu;
 pub mod layer_cache;
 pub mod metadata;
 pub mod rect;
@@ -15,3 +16,4 @@ pub use layer_cache::{
 };
 pub use metadata::{Metadata, MetadataFilter, MetadataValue, glob_match};
 pub use rect::{Overlap, Rect};
+pub use gpu::{GpuCapable, GpuConfig, GpuError, GpuExecutor, GpuOp};
