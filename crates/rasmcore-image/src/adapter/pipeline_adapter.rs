@@ -3,8 +3,7 @@
 use std::cell::RefCell;
 
 use crate::bindings::exports::rasmcore::image::pipeline::{
-    self, BlendMode as WitBlendMode, CacheStats, GuestImagePipeline, GuestLayerCache,
-    LayerCacheBorrow, NodeId,
+    self, CacheStats, GuestImagePipeline, GuestLayerCache, LayerCacheBorrow, NodeId,
 };
 use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 
@@ -432,61 +431,6 @@ impl GuestImagePipeline for PipelineResource {
 
     // Auto-generated pipeline filter methods (all registered filters)
     generated_pipeline_filter_methods!();
-
-    fn composite(
-        &self,
-        fg: NodeId,
-        bg: NodeId,
-        x: i32,
-        y: i32,
-        mode: Option<WitBlendMode>,
-    ) -> Result<NodeId, RasmcoreError> {
-        let graph = self.graph.borrow();
-        let fg_info = graph.node_info(fg).map_err(to_wit_error)?;
-        let bg_info = graph.node_info(bg).map_err(to_wit_error)?;
-        drop(graph);
-        let domain_mode = mode.map(|m| match m {
-            WitBlendMode::Multiply => domain::filters::BlendMode::Multiply,
-            WitBlendMode::Screen => domain::filters::BlendMode::Screen,
-            WitBlendMode::Overlay => domain::filters::BlendMode::Overlay,
-            WitBlendMode::Darken => domain::filters::BlendMode::Darken,
-            WitBlendMode::Lighten => domain::filters::BlendMode::Lighten,
-            WitBlendMode::SoftLight => domain::filters::BlendMode::SoftLight,
-            WitBlendMode::HardLight => domain::filters::BlendMode::HardLight,
-            WitBlendMode::Difference => domain::filters::BlendMode::Difference,
-            WitBlendMode::Exclusion => domain::filters::BlendMode::Exclusion,
-            WitBlendMode::ColorDodge => domain::filters::BlendMode::ColorDodge,
-            WitBlendMode::ColorBurn => domain::filters::BlendMode::ColorBurn,
-            WitBlendMode::VividLight => domain::filters::BlendMode::VividLight,
-            WitBlendMode::LinearDodge => domain::filters::BlendMode::LinearDodge,
-            WitBlendMode::LinearBurn => domain::filters::BlendMode::LinearBurn,
-            WitBlendMode::LinearLight => domain::filters::BlendMode::LinearLight,
-            WitBlendMode::PinLight => domain::filters::BlendMode::PinLight,
-            WitBlendMode::HardMix => domain::filters::BlendMode::HardMix,
-            WitBlendMode::Subtract => domain::filters::BlendMode::Subtract,
-            WitBlendMode::Divide => domain::filters::BlendMode::Divide,
-            WitBlendMode::Dissolve => domain::filters::BlendMode::Dissolve,
-            WitBlendMode::DarkerColor => domain::filters::BlendMode::DarkerColor,
-            WitBlendMode::LighterColor => domain::filters::BlendMode::LighterColor,
-            WitBlendMode::Hue => domain::filters::BlendMode::Hue,
-            WitBlendMode::Saturation => domain::filters::BlendMode::Saturation,
-            WitBlendMode::Color => domain::filters::BlendMode::Color,
-            WitBlendMode::Luminosity => domain::filters::BlendMode::Luminosity,
-        });
-        let node = composite::CompositeNode::new(fg, bg, fg_info, bg_info, x, y, domain_mode);
-        let fg_hash = self.graph.borrow().node_hash(fg);
-        let bg_hash = self.graph.borrow().node_hash(bg);
-        let combined = rasmcore_pipeline::compute_hash(
-            &fg_hash,
-            "composite_fg",
-            format!("{x},{y},{mode:?}").as_bytes(),
-        );
-        let hash = rasmcore_pipeline::compute_hash(&combined, "composite_bg", &bg_hash);
-        Ok(self
-            .graph
-            .borrow_mut()
-            .add_node_with_hash(Box::new(node), hash))
-    }
 
     // Auto-generated write methods for all registered encoders
     generated_pipeline_write_methods!();

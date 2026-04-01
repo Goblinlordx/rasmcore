@@ -77,6 +77,7 @@ interface pipeline {
     record flip-config { direction: flip-direction }
     record auto-orient-config { orientation: exif-orientation }
     record icc-to-srgb-config { icc-profile: buffer }
+    record composite-config { offset-x: s32, offset-y: s32, blend-mode: option<blend-mode> }
 
     variant frame-selection {
         single(u32),
@@ -256,7 +257,7 @@ interface pipeline {
         lens-blur: func(source: node-id, config: lens-blur-config) -> result<node-id, rasmcore-error>;
 
         // ─── Compositing ───
-        composite: func(fg: node-id, bg: node-id, x: s32, y: s32, mode: option<blend-mode>) -> result<node-id, rasmcore-error>;
+        composite: func(fg: node-id, bg: node-id, config: composite-config) -> result<node-id, rasmcore-error>;
 
         // ─── Metadata ───
         metadata-dump: func() -> result<string, rasmcore-error>;

@@ -152,9 +152,13 @@ fn main() {
     println!("cargo:rerun-if-changed=src/domain/types.rs");
     println!("cargo:rerun-if-changed=src/domain/metadata.rs");
 
-    // Collect all enum definitions from types.rs and metadata.rs
+    // Collect all enum definitions from types.rs, metadata.rs, and filters.rs
     let mut all_enums = std::collections::HashMap::new();
-    for (enum_src_path, domain_mod) in [(&types_path, "types"), (&metadata_path, "metadata")] {
+    for (enum_src_path, domain_mod) in [
+        (&types_path, "types"),
+        (&metadata_path, "metadata"),
+        (&filters_path, "filters"),
+    ] {
         if enum_src_path.exists() {
             let source = std::fs::read_to_string(enum_src_path).unwrap_or_default();
             if let Ok(file) = syn::parse_file(&source) {

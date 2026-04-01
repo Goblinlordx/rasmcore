@@ -68,16 +68,17 @@ pub fn generate_wit_configs(
 ) -> String {
     let mut wit = String::new();
     for t in transforms {
-        if t.multi_input || t.params.is_empty() {
-            continue; // multi-input and no-param transforms use individual WIT params
+        if t.params.is_empty() {
+            continue;
         }
         let wit_name = t.name.replace('_', "-");
         wit.push_str(&format!("    record {}-config {{\n", wit_name));
         for (pname, ptype) in &t.params {
-            let wit_type = if enums.contains_key(ptype) {
-                to_kebab_case(ptype)
-            } else {
-                rust_type_to_wit(ptype).to_string()
+            let wit_type = match classify_param(ptype, enums) {
+                ParamKind::Enum(name) => to_kebab_case(name),
+                ParamKind::OptionalEnum(name) => format!("option<{}>", to_kebab_case(name)),
+                ParamKind::Blob => "buffer".to_string(),
+                ParamKind::Primitive => rust_type_to_wit(ptype).to_string(),
             };
             wit.push_str(&format!(
                 "        {}: {},\n",
@@ -95,7 +96,13 @@ pub fn generate_wit_methods(transforms: &[TransformReg]) -> String {
     let mut wit = String::new();
     for t in transforms {
         let wit_name = t.name.replace('_', "-");
-        if t.params.is_empty() {
+        if t.multi_input {
+            let config_type = format!("{}-config", wit_name);
+            wit.push_str(&format!(
+                "        {}: func(fg: node-id, bg: node-id, config: {}) -> result<node-id, rasmcore-error>;\n",
+                wit_name, config_type
+            ));
+        } else if t.params.is_empty() {
             wit.push_str(&format!(
                 "        {}: func(source: node-id) -> result<node-id, rasmcore-error>;\n",
                 wit_name
@@ -120,13 +127,20 @@ pub fn generate_adapter_macro(
     code.push_str("// Auto-generated pipeline transform adapter methods.\n");
     code.push_str("// Do not edit — regenerate by changing transform nodes and rebuilding.\n\n");
 
-    // Generate enum conversion functions
+    // Generate enum conversion functions for all enum types used (including inside Option<>)
     let mut generated_converters = std::collections::HashSet::new();
     for t in transforms {
         for (_, ptype) in &t.params {
-            if enums.contains_key(ptype) && !generated_converters.contains(ptype) {
-                code.push_str(&generate_enum_converter(ptype, enums));
-                generated_converters.insert(ptype.clone());
+            let enum_name = match classify_param(ptype, enums) {
+                ParamKind::Enum(name) => Some(name),
+                ParamKind::OptionalEnum(name) => Some(name),
+                _ => None,
+            };
+            if let Some(name) = enum_name {
+                if !generated_converters.contains(name) {
+                    code.push_str(&generate_enum_converter(name, enums));
+                    generated_converters.insert(name.to_string());
+                }
             }
         }
     }
@@ -135,10 +149,10 @@ pub fn generate_adapter_macro(
 
     for t in transforms {
         if t.multi_input {
-            // Skip multi-input transforms (composite) — these have unique signatures
-            continue;
+            code.push_str(&generate_multi_input_transform_method(t, enums));
+        } else {
+            code.push_str(&generate_single_transform_method(t, enums));
         }
-        code.push_str(&generate_single_transform_method(t, enums));
     }
 
     code.push_str("    } // end macro\n}\n");
@@ -176,21 +190,32 @@ fn generate_single_transform_method(
     let mut hash_parts = Vec::new();
 
     for (pname, ptype) in &t.params {
-        if enums.contains_key(ptype) {
-            let converter_fn = format!("__convert_{}", to_snake_case(ptype));
-            code.push_str(&format!(
-                "        let {pname} = {converter_fn}(config.{pname});\n"
-            ));
-            constructor_args.push(pname.clone());
-            hash_parts.push(pname.clone());
-        } else if ptype == "Vec<u8>" || ptype == "Vec < u8 >" {
-            // Binary blobs: don't include in hash (too large), move into constructor
-            code.push_str(&format!("        let {pname} = config.{pname};\n"));
-            constructor_args.push(pname.clone());
-        } else {
-            code.push_str(&format!("        let {pname} = config.{pname};\n"));
-            constructor_args.push(pname.clone());
-            hash_parts.push(pname.clone());
+        match classify_param(ptype, enums) {
+            ParamKind::Enum(enum_name) => {
+                let converter_fn = format!("__convert_{}", to_snake_case(enum_name));
+                code.push_str(&format!(
+                    "        let {pname} = {converter_fn}(config.{pname});\n"
+                ));
+                constructor_args.push(pname.clone());
+                hash_parts.push(pname.clone());
+            }
+            ParamKind::OptionalEnum(enum_name) => {
+                let converter_fn = format!("__convert_{}", to_snake_case(enum_name));
+                code.push_str(&format!(
+                    "        let {pname} = config.{pname}.map({converter_fn});\n"
+                ));
+                constructor_args.push(pname.clone());
+                hash_parts.push(pname.clone());
+            }
+            ParamKind::Blob => {
+                code.push_str(&format!("        let {pname} = config.{pname};\n"));
+                constructor_args.push(pname.clone());
+            }
+            ParamKind::Primitive => {
+                code.push_str(&format!("        let {pname} = config.{pname};\n"));
+                constructor_args.push(pname.clone());
+                hash_parts.push(pname.clone());
+            }
         }
     }
 
@@ -233,6 +258,113 @@ fn generate_single_transform_method(
     code
 }
 
+/// Generate a multi-input transform adapter method (e.g., composite with fg + bg).
+fn generate_multi_input_transform_method(
+    t: &TransformReg,
+    enums: &HashMap<String, EnumDef>,
+) -> String {
+    let mut code = String::new();
+    let method_name = &t.name;
+    let node_type = &t.node_type;
+    let node_module = &t.node_module;
+
+    // Multi-input: two source nodes (fg, bg) + config
+    let config_pascal = to_pascal_case(&format!("{}_config", t.name));
+    code.push_str(&format!(
+        "    fn {method_name}(&self, fg: NodeId, bg: NodeId, config: pipeline::{config_pascal}) -> Result<NodeId, RasmcoreError> {{\n"
+    ));
+
+    // Get both source infos
+    code.push_str("        let graph = self.graph.borrow();\n");
+    code.push_str(
+        "        let fg_info = graph.node_info(fg).map_err(to_wit_error)?;\n",
+    );
+    code.push_str(
+        "        let bg_info = graph.node_info(bg).map_err(to_wit_error)?;\n",
+    );
+    code.push_str("        drop(graph);\n");
+
+    // Convert params
+    let mut constructor_args = vec![
+        "fg".to_string(),
+        "bg".to_string(),
+        "fg_info".to_string(),
+        "bg_info".to_string(),
+    ];
+    let mut hash_parts = Vec::new();
+
+    for (pname, ptype) in &t.params {
+        match classify_param(ptype, enums) {
+            ParamKind::Enum(enum_name) => {
+                let converter_fn = format!("__convert_{}", to_snake_case(enum_name));
+                code.push_str(&format!(
+                    "        let {pname} = {converter_fn}(config.{pname});\n"
+                ));
+                constructor_args.push(pname.clone());
+                hash_parts.push(pname.clone());
+            }
+            ParamKind::OptionalEnum(enum_name) => {
+                let converter_fn = format!("__convert_{}", to_snake_case(enum_name));
+                code.push_str(&format!(
+                    "        let {pname} = config.{pname}.map({converter_fn});\n"
+                ));
+                constructor_args.push(pname.clone());
+                hash_parts.push(pname.clone());
+            }
+            ParamKind::Blob => {
+                code.push_str(&format!("        let {pname} = config.{pname};\n"));
+                constructor_args.push(pname.clone());
+            }
+            ParamKind::Primitive => {
+                code.push_str(&format!("        let {pname} = config.{pname};\n"));
+                constructor_args.push(pname.clone());
+                hash_parts.push(pname.clone());
+            }
+        }
+    }
+
+    // Hash from both upstreams
+    let hash_format = if hash_parts.is_empty() {
+        "b\"\"".to_string()
+    } else {
+        let placeholders: Vec<String> = hash_parts.iter().map(|_| "{:?}".to_string()).collect();
+        let args = hash_parts.join(", ");
+        format!(
+            "format!(\"{}\", {}).as_bytes()",
+            placeholders.join(","),
+            args
+        )
+    };
+    code.push_str("        let fg_hash = self.graph.borrow().node_hash(fg);\n");
+    code.push_str("        let bg_hash = self.graph.borrow().node_hash(bg);\n");
+    code.push_str(&format!(
+        "        let combined = rasmcore_pipeline::compute_hash(&fg_hash, \"{method_name}_fg\", {hash_format});\n"
+    ));
+    code.push_str(&format!(
+        "        let hash = rasmcore_pipeline::compute_hash(&combined, \"{method_name}_bg\", &bg_hash);\n"
+    ));
+
+    // Construct node
+    let args_str = constructor_args.join(", ");
+    if t.fallible {
+        code.push_str(&format!(
+            "        let node = {node_module}::{node_type}::new({args_str}).map_err(to_wit_error)?;\n"
+        ));
+    } else {
+        code.push_str(&format!(
+            "        let node = {node_module}::{node_type}::new({args_str});\n"
+        ));
+    }
+
+    // Add node (multi-input doesn't use add_node_derived since there are two upstreams)
+    code.push_str(
+        "        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))\n",
+    );
+
+    code.push_str("    }\n\n");
+    code
+}
+
 /// Generate a WIT enum → domain enum conversion function.
 fn generate_enum_converter(enum_name: &str, enums: &HashMap<String, EnumDef>) -> String {
     let def = match enums.get(enum_name) {
@@ -256,6 +388,35 @@ fn generate_enum_converter(enum_name: &str, enums: &HashMap<String, EnumDef>) ->
     }
     code.push_str("    }\n}\n\n");
     code
+}
+
+/// Check if a type is Option<T> and return the inner type if so.
+fn unwrap_option(ty: &str) -> Option<&str> {
+    ty.strip_prefix("Option<").and_then(|s| s.strip_suffix('>'))
+}
+
+/// Determine how to handle a parameter type for codegen.
+enum ParamKind<'a> {
+    Enum(&'a str),
+    OptionalEnum(&'a str),
+    Blob,
+    Primitive,
+}
+
+fn classify_param<'a>(ptype: &'a str, enums: &HashMap<String, EnumDef>) -> ParamKind<'a> {
+    if enums.contains_key(ptype) {
+        ParamKind::Enum(ptype)
+    } else if let Some(inner) = unwrap_option(ptype) {
+        if enums.contains_key(inner) {
+            ParamKind::OptionalEnum(inner)
+        } else {
+            ParamKind::Primitive
+        }
+    } else if ptype == "Vec<u8>" {
+        ParamKind::Blob
+    } else {
+        ParamKind::Primitive
+    }
 }
 
 fn rust_type_to_wit(ty: &str) -> &str {

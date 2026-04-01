@@ -99,12 +99,36 @@ pub fn type_to_string(ty: &syn::Type) -> String {
             let inner = type_to_string(&s.elem);
             format!("[{inner}]")
         }
-        syn::Type::Path(p) => p
-            .path
-            .segments
-            .last()
-            .map(|s| s.ident.to_string())
-            .unwrap_or_default(),
+        syn::Type::Path(p) => {
+            let seg = p.path.segments.last();
+            match seg {
+                Some(s) => {
+                    let name = s.ident.to_string();
+                    // Handle generic types like Option<BlendMode>, Vec<u8>
+                    if let syn::PathArguments::AngleBracketed(args) = &s.arguments {
+                        let inner: Vec<String> = args
+                            .args
+                            .iter()
+                            .filter_map(|a| {
+                                if let syn::GenericArgument::Type(t) = a {
+                                    Some(type_to_string(t))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        if inner.is_empty() {
+                            name
+                        } else {
+                            format!("{}<{}>", name, inner.join(", "))
+                        }
+                    } else {
+                        name
+                    }
+                }
+                None => String::new(),
+            }
+        }
         _ => quote::quote!(#ty).to_string().replace(' ', ""),
     }
 }
