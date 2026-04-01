@@ -142,4 +142,89 @@ fn main() {
         )
         .unwrap();
     }
+
+    // ── Parse transform nodes for pipeline transform adapter generation ──
+    let transform_dir = Path::new(&manifest_dir).join("src/domain/pipeline/nodes");
+    let types_path = Path::new(&manifest_dir).join("src/domain/types.rs");
+    let metadata_path = Path::new(&manifest_dir).join("src/domain/metadata.rs");
+
+    println!("cargo:rerun-if-changed=src/domain/pipeline/nodes");
+    println!("cargo:rerun-if-changed=src/domain/types.rs");
+    println!("cargo:rerun-if-changed=src/domain/metadata.rs");
+
+    // Collect all enum definitions from types.rs and metadata.rs
+    let mut all_enums = std::collections::HashMap::new();
+    for (enum_src_path, domain_mod) in [(&types_path, "types"), (&metadata_path, "metadata")] {
+        if enum_src_path.exists() {
+            let source = std::fs::read_to_string(enum_src_path).unwrap_or_default();
+            if let Ok(file) = syn::parse_file(&source) {
+                all_enums.extend(
+                    rasmcore_codegen::parse::transforms::extract_enums(&file, domain_mod),
+                );
+            }
+        }
+    }
+
+    // Parse transform registrations from node source files
+    // Each file maps to a node module import (e.g., "transform.rs" → "transform")
+    let mut all_transforms = Vec::new();
+    let transform_files = [
+        ("transform.rs", "transform"),
+        ("color.rs", "color"),
+        ("composite.rs", "composite"),
+    ];
+    for (filename, module_name) in &transform_files {
+        let path = transform_dir.join(filename);
+        if !path.exists() {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).unwrap_or_default();
+        if let Ok(file) = syn::parse_file(&source) {
+            let transforms = rasmcore_codegen::parse::transforms::extract_transforms(
+                &file,
+                &all_enums,
+                module_name,
+            );
+            all_transforms.extend(transforms);
+        }
+    }
+
+    if !all_transforms.is_empty() {
+        eprintln!(
+            "rasmcore build.rs: Found {} transform(s):",
+            all_transforms.len()
+        );
+        for t in &all_transforms {
+            let params: Vec<String> = t.params.iter().map(|(n, ty)| format!("{n}: {ty}")).collect();
+            eprintln!(
+                "  {} ({}) params=[{}] fallible={} multi_input={}",
+                t.name,
+                t.node_type,
+                params.join(", "),
+                t.fallible,
+                t.multi_input,
+            );
+        }
+
+        let transform_adapter = rasmcore_codegen::generate::transform::generate_adapter_macro(
+            &all_transforms,
+            &all_enums,
+        );
+        std::fs::write(
+            out_dir.join("generated_pipeline_transform_adapter.rs"),
+            &transform_adapter,
+        )
+        .unwrap();
+
+        eprintln!(
+            "rasmcore build.rs: Generated {} pipeline transform adapter method(s)",
+            all_transforms.iter().filter(|t| !t.multi_input).count()
+        );
+    } else {
+        std::fs::write(
+            out_dir.join("generated_pipeline_transform_adapter.rs"),
+            "macro_rules! generated_pipeline_transform_methods { () => {} }\n",
+        )
+        .unwrap();
+    }
 }

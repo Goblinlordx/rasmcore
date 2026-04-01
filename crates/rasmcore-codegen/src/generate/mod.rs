@@ -10,6 +10,7 @@ pub mod pipeline;
 pub mod pipeline_mapper;
 pub mod pipeline_write;
 pub mod sdk_rust;
+pub mod transform;
 pub mod wit;
 
 use crate::types::CodegenData;

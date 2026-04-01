@@ -12,6 +12,7 @@ pub mod filters;
 pub mod mappers;
 pub mod param_attr;
 pub mod simple_regs;
+pub mod transforms;
 
 use crate::types::CodegenData;
 use std::path::Path;
