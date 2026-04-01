@@ -252,7 +252,13 @@ impl decoder::Guest for Component {
     }
 }
 
+// Auto-generated stateless encoder methods (per-format encode_xxx)
+include!(concat!(env!("OUT_DIR"), "/generated_encoder_adapter.rs"));
+
 impl encoder::Guest for Component {
+    // Auto-generated per-format encode methods
+    generated_encoder_methods!();
+
     fn encode(
         pixels: Vec<u8>,
         info: types::ImageInfo,
@@ -416,6 +422,8 @@ include!(concat!(env!("OUT_DIR"), "/generated_filter_adapter.rs"));
 
 // Auto-generated compare adapter (all registered metrics)
 include!(concat!(env!("OUT_DIR"), "/generated_compare_adapter.rs"));
+
+// (generated_encoder_adapter.rs included earlier, before impl encoder::Guest)
 
 fn to_domain_exif_orientation(o: metadata::ExifOrientation) -> domain::metadata::ExifOrientation {
     match o {

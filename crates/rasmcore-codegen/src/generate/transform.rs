@@ -8,7 +8,7 @@ use crate::parse::transforms::{EnumDef, TransformReg};
 use std::collections::HashMap;
 
 /// Convert PascalCase to snake_case.
-fn to_snake_case(s: &str) -> String {
+pub fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     for (i, ch) in s.chars().enumerate() {
         if ch.is_uppercase() && i > 0 {

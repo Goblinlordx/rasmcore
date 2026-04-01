@@ -207,6 +207,81 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
     code
 }
 
+/// Generate WIT encode config records for the stateless encoder interface.
+/// Same configs as pipeline write but named `<format>-encode-config` (not write).
+pub fn generate_wit_encode_configs(encoders: &[EncoderInfo]) -> String {
+    // Reuse the write config generation — same records, different naming
+    generate_wit_configs(encoders)
+        .replace("-write-config", "-encode-config")
+}
+
+/// Generate WIT encode method declarations for the stateless encoder interface.
+pub fn generate_wit_encode_methods(encoders: &[EncoderInfo]) -> String {
+    let mut wit = String::new();
+    for enc in encoders {
+        let wit_name = enc.format.replace('_', "-");
+        let config_type = format!("{}-encode-config", wit_name);
+        wit.push_str(&format!(
+            "    encode-{}: func(pixels: buffer, info: image-info, config: {}) -> result<buffer, rasmcore-error>;\n",
+            wit_name, config_type
+        ));
+    }
+    wit
+}
+
+/// Generate the stateless encoder adapter — per-format encode_xxx methods.
+///
+/// Each method converts WIT config → domain config and calls the encoder.
+/// Output is a `macro_rules!` included at module level and invoked inside
+/// `impl encoder::Guest`.
+pub fn generate_stateless_encoder_adapter(encoders: &[EncoderInfo]) -> String {
+    let mut code = String::new();
+    code.push_str("// Auto-generated stateless encoder adapter methods.\n");
+    code.push_str("// Do not edit — regenerate by changing encoder configs and rebuilding.\n\n");
+    code.push_str("macro_rules! generated_encoder_methods {\n    () => {\n");
+
+    for enc in encoders {
+        let method_name = format!("encode_{}", enc.format);
+        let config_pascal = to_pascal_case(&format!("{}_encode_config", enc.format));
+        let format = &enc.format;
+
+        if enc.fields.is_empty() {
+            // No config fields — delegate to generic encode with None quality
+            code.push_str(&format!(
+                "    fn {method_name}(pixels: Vec<u8>, info: types::ImageInfo, _config: encoder::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+            ));
+            code.push_str("        let domain_info = to_domain_image_info(&info);\n");
+            code.push_str(&format!(
+                "        domain::encoder::encode(&pixels, &domain_info, \"{format}\", None).map_err(to_wit_error)\n"
+            ));
+        } else {
+            // Has config fields — extract quality if present, delegate to generic encode
+            let quality_field = enc.fields.iter().find(|f| f.name == "quality");
+            code.push_str(&format!(
+                "    fn {method_name}(pixels: Vec<u8>, info: types::ImageInfo, config: encoder::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+            ));
+            code.push_str("        let domain_info = to_domain_image_info(&info);\n");
+            if let Some(qf) = quality_field {
+                let default = if qf.default_val.is_empty() { "0" } else { &qf.default_val };
+                code.push_str(&format!(
+                    "        let quality = Some(config.quality.unwrap_or({default}));\n"
+                ));
+                code.push_str(&format!(
+                    "        domain::encoder::encode(&pixels, &domain_info, \"{format}\", quality).map_err(to_wit_error)\n"
+                ));
+            } else {
+                code.push_str(&format!(
+                    "        domain::encoder::encode(&pixels, &domain_info, \"{format}\", None).map_err(to_wit_error)\n"
+                ));
+            }
+        }
+
+        code.push_str("    }\n\n");
+    }
+    code.push_str("    } // end macro\n}\n");
+    code
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

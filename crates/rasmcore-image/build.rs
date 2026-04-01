@@ -131,14 +131,30 @@ fn main() {
         )
         .unwrap();
 
+        // Also generate stateless encoder adapter
+        let stateless_adapter =
+            rasmcore_codegen::generate::pipeline_write::generate_stateless_encoder_adapter(
+                &encoder_configs,
+            );
+        std::fs::write(
+            out_dir.join("generated_encoder_adapter.rs"),
+            &stateless_adapter,
+        )
+        .unwrap();
+
         eprintln!(
-            "rasmcore build.rs: Generated {} pipeline write adapter method(s)",
+            "rasmcore build.rs: Generated {} pipeline write + stateless encoder adapter method(s)",
             encoder_configs.len()
         );
     } else {
         std::fs::write(
             out_dir.join("generated_pipeline_write_adapter.rs"),
             "macro_rules! generated_pipeline_write_methods { () => {} }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            out_dir.join("generated_encoder_adapter.rs"),
+            "macro_rules! generated_encoder_methods { () => {} }\n",
         )
         .unwrap();
     }

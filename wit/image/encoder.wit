@@ -1,41 +1,94 @@
 package rasmcore:image@0.1.0;
 
-/// Image encoding — dynamic dispatch via format string.
+/// Image encoding — per-format methods with typed configs.
 ///
-/// All encoding goes through the generic `encode()` function which
-/// dispatches to registered encoders by format name. Per-format config
-/// is passed as a JSON string; SDKs generate typed wrappers from the
-/// param manifest.
+/// Each encoder registers via #[register_encoder] and gets a generated
+/// WIT method + config record. Adding a new codec requires no WIT changes.
 interface encoder {
     use rasmcore:core/types.{buffer, image-info, format-info};
     use rasmcore:core/errors.{rasmcore-error};
     use decoder.{frame-info};
 
-    /// Encode pixel data to the specified format.
-    ///
-    /// The format string selects the encoder (e.g., "jpeg", "png", "webp").
-    /// Quality is an optional 1-100 hint used by lossy formats.
-    /// For fine-grained control, pass a config JSON string.
+    /// JPEG encode configuration
+    record jpeg-encode-config {
+        quality: option<u8>,
+        progressive: option<bool>,
+        turbo: option<bool>,
+    }
+
+    /// PNG filter type
+    enum png-filter-type {
+        no-filter, sub, up, avg, paeth, adaptive,
+    }
+
+    /// PNG encode configuration
+    record png-encode-config {
+        compression-level: option<u8>,
+        filter-type: option<png-filter-type>,
+    }
+
+    /// WebP encode configuration
+    record webp-encode-config {
+        quality: option<u8>,
+        lossless: option<bool>,
+    }
+
+    /// TIFF compression algorithm
+    enum tiff-compression {
+        none, lzw, deflate, packbits,
+    }
+
+    /// TIFF encode configuration
+    record tiff-encode-config {
+        compression: option<tiff-compression>,
+    }
+
+    /// AVIF encode configuration
+    record avif-encode-config {
+        quality: option<u8>,
+        speed: option<u8>,
+    }
+
+    /// GIF encode configuration
+    record gif-encode-config {
+        repeat: option<u16>,
+    }
+
+    record bmp-encode-config { reserved: option<bool> }
+    record ico-encode-config { reserved: option<bool> }
+    record qoi-encode-config { reserved: option<bool> }
+
+    // ─── Per-format encode methods (auto-generated from #[register_encoder]) ───
+
+    encode-jpeg: func(pixels: buffer, info: image-info, config: jpeg-encode-config) -> result<buffer, rasmcore-error>;
+    encode-png: func(pixels: buffer, info: image-info, config: png-encode-config) -> result<buffer, rasmcore-error>;
+    encode-webp: func(pixels: buffer, info: image-info, config: webp-encode-config) -> result<buffer, rasmcore-error>;
+    encode-avif: func(pixels: buffer, info: image-info, config: avif-encode-config) -> result<buffer, rasmcore-error>;
+    encode-tiff: func(pixels: buffer, info: image-info, config: tiff-encode-config) -> result<buffer, rasmcore-error>;
+    encode-gif: func(pixels: buffer, info: image-info, config: gif-encode-config) -> result<buffer, rasmcore-error>;
+    encode-bmp: func(pixels: buffer, info: image-info, config: bmp-encode-config) -> result<buffer, rasmcore-error>;
+    encode-ico: func(pixels: buffer, info: image-info, config: ico-encode-config) -> result<buffer, rasmcore-error>;
+    encode-qoi: func(pixels: buffer, info: image-info, config: qoi-encode-config) -> result<buffer, rasmcore-error>;
+
+    // ─── Generic convenience methods ───
+
+    /// Encode to any format by name with optional quality hint.
     encode: func(pixels: buffer, info: image-info, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 
     /// Encode with an embedded ICC color profile.
-    ///
-    /// The ICC profile is embedded in the output container if the format
-    /// supports it (JPEG, PNG). For unsupported formats, the profile is ignored.
     encode-with-icc: func(pixels: buffer, info: image-info, format: string, quality: option<u8>, icc-profile: buffer) -> result<buffer, rasmcore-error>;
 
-    /// List supported encode formats (e.g., ["jpeg", "png", "webp", ...]).
+    /// List supported encode formats.
     supported-formats: func() -> list<string>;
 
-    /// Get format metadata (MIME type, extensions) for a specific format.
+    /// Get format metadata for a specific format.
     get-format-info: func(format: string) -> option<format-info>;
 
-    /// Get format metadata for all supported encode formats.
+    /// Get format metadata for all supported formats.
     all-format-info: func() -> list<format-info>;
 
-    // ─── Multi-Frame / Multi-Page Encoding ───
+    // ─── Multi-frame encoding ───
 
-    /// A frame in a sequence: image pixels + per-frame metadata.
     record encode-frame {
         pixels: buffer,
         info: image-info,
@@ -43,8 +96,5 @@ interface encoder {
     }
 
     /// Encode a frame sequence to a multi-frame format.
-    ///
-    /// Format string selects the encoder (e.g., "gif", "tiff", "apng").
-    /// Quality is an optional 1-100 hint.
     encode-sequence: func(frames: list<encode-frame>, canvas-width: u32, canvas-height: u32, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
 }
