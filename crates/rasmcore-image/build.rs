@@ -7,19 +7,38 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    // Support both filters.rs (legacy) and filters/mod.rs (new directory structure)
-    let filters_path = {
-        let dir_mod = Path::new(&manifest_dir).join("src/domain/filters/mod.rs");
-        let flat_file = Path::new(&manifest_dir).join("src/domain/filters.rs");
-        if dir_mod.exists() { dir_mod } else { flat_file }
-    };
+    // Collect all filter source files (directory structure or single file)
+    let filters_dir = Path::new(&manifest_dir).join("src/domain/filters");
+    let filters_flat = Path::new(&manifest_dir).join("src/domain/filters.rs");
+    let mut filter_paths: Vec<PathBuf> = Vec::new();
+    if filters_dir.is_dir() {
+        fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        collect_rs(&p, out);
+                    } else if p.extension().map_or(false, |e| e == "rs")
+                        && p.file_name().map_or(false, |n| n != "common.rs")
+                    {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+        collect_rs(&filters_dir, &mut filter_paths);
+        println!("cargo:rerun-if-changed=src/domain/filters");
+    } else if filters_flat.exists() {
+        filter_paths.push(filters_flat);
+        println!("cargo:rerun-if-changed=src/domain/filters.rs");
+    }
+    let filters_path = filter_paths.first().cloned().unwrap_or_else(|| {
+        Path::new(&manifest_dir).join("src/domain/filters.rs")
+    });
+
     let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
     let composite_path = Path::new(&manifest_dir).join("src/domain/composite.rs");
     let encoder_dir = Path::new(&manifest_dir).join("src/domain/encoder");
-
-    // Tell cargo to rerun if source files or build.rs change
-    println!("cargo:rerun-if-changed=src/domain/filters.rs");
-    println!("cargo:rerun-if-changed=src/domain/filters/mod.rs");
     println!("cargo:rerun-if-changed=src/domain/param_types.rs");
     println!("cargo:rerun-if-changed=src/domain/composite.rs");
     println!("cargo:rerun-if-changed=src/domain/encoder");
@@ -61,7 +80,43 @@ fn main() {
     } else {
         None
     };
-    let data = rasmcore_codegen::parse::parse_source_files(&filters_path, pt, cp);
+    let mut data = rasmcore_codegen::parse::parse_source_files(&filters_path, pt, cp);
+    // Parse additional filter files from subdirectories
+    for path in &filter_paths {
+        if *path == filters_path {
+            continue;
+        }
+        let extra = rasmcore_codegen::parse::parse_source_files(path, None, None);
+        data.filters.extend(extra.filters);
+        data.generators.extend(extra.generators);
+        data.compositors.extend(extra.compositors);
+        data.mappers.extend(extra.mappers);
+        data.param_structs.extend(extra.param_structs);
+    }
+    // Re-run auto-linking after merging all files (ConfigParams may be in mod.rs
+    // while registrations are in submodule files)
+    for filter in &mut data.filters {
+        if filter.config_struct.is_none() {
+            let expected = format!(
+                "{}Params",
+                rasmcore_codegen::generate::helpers::to_pascal_case(&filter.name)
+            );
+            if data.param_structs.contains_key(&expected) {
+                filter.config_struct = Some(expected);
+            }
+        }
+    }
+    for mapper in &mut data.mappers {
+        if mapper.config_struct.is_none() {
+            let expected = format!(
+                "{}Params",
+                rasmcore_codegen::generate::helpers::to_pascal_case(&mapper.name)
+            );
+            if data.param_structs.contains_key(&expected) {
+                mapper.config_struct = Some(expected);
+            }
+        }
+    }
 
     // Duplicate filter name detection — fail at compile time
     {

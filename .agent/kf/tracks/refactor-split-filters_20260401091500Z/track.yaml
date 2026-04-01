@@ -69,24 +69,24 @@ plan:
   - text: Move grading category (13 filters) to filters/grading/
     done: true
   - text: Move effect category (11 filters) to filters/effect/
-    done: false
+    done: true
   - text: Move remaining 15 small categories (evaluate, adjustment, draw, morphology, distortion, generator, alpha, threshold,
       edge, transform, tonemapping, composite, analysis, advanced, tool)
-    done: false
+    done: true
 - phase: Cleanup
   tasks:
   - text: Remove monolithic filters.rs (or reduce to re-exports)
     done: true
   - text: Update all internal imports across rasmcore-image
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All existing tests pass
-    done: false
+    done: true
   - text: cargo build + cargo component build succeed
-    done: false
+    done: true
   - text: Verify param-manifest.json has all 152 filters
-    done: false
+    done: true
   - text: Verify WIT interface exports match pre-refactor count
     done: false
 extra: {}

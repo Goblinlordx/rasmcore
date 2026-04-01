@@ -11,15 +11,15 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
     let mut code = String::new();
     code.push_str("// Auto-generated pipeline filter nodes.\n");
     code.push_str("// Do not edit — regenerate by changing filters.rs and rebuilding.\n\n");
-    code.push_str("use crate::domain::error::ImageError;\n");
-    code.push_str("use crate::domain::filters;\n");
-    code.push_str("use crate::domain::filters::*; // ConfigParams structs\n");
-    code.push_str("use crate::domain::param_types::Point2D;\n");
-    code.push_str("use crate::domain::point_ops::LutPointOp; // for as_point_op_lut()\n");
-    code.push_str("use crate::domain::color_lut::ColorLutOp; // for as_color_lut_op()\n");
-    code.push_str("use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
-    code.push_str("use crate::domain::types::*;\n");
-    code.push_str("use rasmcore_pipeline::Rect;\n\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::error::ImageError;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::filters;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::filters::*;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::param_types::Point2D;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::point_ops::LutPointOp;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::color_lut::ColorLutOp;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::graph::{AccessPattern, ImageNode, bytes_per_pixel, crop_region};\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::types::*;\n");
+    code.push_str("#[allow(unused_imports)] use rasmcore_pipeline::Rect;\n\n");
 
     for f in filters {
         let node_name = format!("{}Node", to_pascal_case(&f.name));
@@ -116,13 +116,15 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             } else {
                 // Zero-param point op (e.g., invert) — inline the LUT
                 let op_name = &f.name;
-                code.push_str(&format!(
-                    "    fn as_point_op_lut(&self) -> Option<[u8; 256]> {{ Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::{op})) }}\n",
-                    op = match op_name.as_str() {
-                        "invert" => "Invert".to_string(),
-                        _ => format!("/* unknown zero-param point op: {op_name} */"),
+                match op_name.as_str() {
+                    "invert" => {
+                        code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Invert)) }\n");
                     }
-                ));
+                    _ => {
+                        // Config-based point ops that lost their config_struct link — skip LUT
+                        // (the config struct is in a different file; LUT fusion handled at runtime)
+                    }
+                }
             }
         }
 

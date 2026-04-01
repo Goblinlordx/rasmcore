@@ -1,0 +1,27 @@
+//! Filter: sharpen (category: spatial)
+
+#[allow(unused_imports)]
+use crate::domain::filters::common::*;
+
+/// Apply sharpening (unsharp mask).
+///
+/// Computes: output = original + amount * (original - blurred)
+/// Uses the SIMD-optimized blur internally.
+#[rasmcore_macros::register_filter(
+    name = "sharpen",
+    category = "spatial",
+    reference = "unsharp mask"
+)]
+pub fn sharpen(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &SharpenParams,
+) -> Result<Vec<u8>, ImageError> {
+    let overlap = 4u32; // blur radius 1.0 → kernel ~7, half = 3, +1 safety
+    let expanded = request.expand_uniform(overlap, info.width, info.height);
+    let pixels = upstream(expanded)?;
+    let expanded_info = ImageInfo { width: expanded.width, height: expanded.height, ..*info };
+    let result = sharpen_impl(&pixels, &expanded_info, config)?;
+    Ok(crop_to_request(&result, expanded, request, info.format))
+}

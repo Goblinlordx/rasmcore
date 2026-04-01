@@ -1,0 +1,38 @@
+//! color filters
+
+mod channel_mixer;
+pub use channel_mixer::*;
+mod colorize;
+pub use colorize::*;
+mod dither_floyd_steinberg;
+pub use dither_floyd_steinberg::*;
+mod dither_ordered;
+pub use dither_ordered::*;
+mod gradient_map;
+pub use gradient_map::*;
+mod grayscale;
+pub use grayscale::*;
+mod hue_rotate;
+pub use hue_rotate::*;
+mod kmeans_quantize;
+pub use kmeans_quantize::*;
+mod modulate;
+pub use modulate::*;
+mod photo_filter;
+pub use photo_filter::*;
+mod quantize;
+pub use quantize::*;
+mod saturate;
+pub use saturate::*;
+mod selective_color;
+pub use selective_color::*;
+mod sepia;
+pub use sepia::*;
+mod sparse_color;
+pub use sparse_color::*;
+mod vibrance;
+pub use vibrance::*;
+mod white_balance_gray_world;
+pub use white_balance_gray_world::*;
+mod white_balance_temperature;
+pub use white_balance_temperature::*;

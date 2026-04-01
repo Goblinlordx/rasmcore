@@ -1,0 +1,41 @@
+//! Filter: colorize (category: color)
+
+#[allow(unused_imports)]
+use crate::domain::filters::common::*;
+
+/// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
+#[rasmcore_macros::register_filter(
+    name = "colorize",
+    category = "color",
+    reference = "linear color tint blend",
+    color_op = "true"
+)]
+pub fn colorize(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &ColorizeParams,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
+    let pixels = pixels.as_slice();
+    let target_r = config.target.r;
+    let target_g = config.target.g;
+    let target_b = config.target.b;
+    let amount = config.amount;
+
+    let target_norm = [
+        target_r as f32 / 255.0,
+        target_g as f32 / 255.0,
+        target_b as f32 / 255.0,
+    ];
+    apply_color_op(
+        pixels,
+        info,
+        &ColorOp::Colorize(target_norm, amount.clamp(0.0, 1.0)),
+    )
+}

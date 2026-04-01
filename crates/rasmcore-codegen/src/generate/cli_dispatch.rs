@@ -15,11 +15,11 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
         "// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n",
     );
     code.push_str("// Do not edit — regenerated from #[register_filter] annotations.\n\n");
-    code.push_str("use crate::domain::pipeline::graph::ImageNode;\n");
-    code.push_str("use crate::domain::pipeline::nodes::filters;\n");
-    code.push_str("use crate::domain::filters as domain_filters; // ConfigParams structs\n");
-    code.push_str("use crate::domain::types::ImageInfo;\n");
-    code.push_str("use std::collections::HashMap;\n\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::graph::ImageNode;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::nodes::filters;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::filters as domain_filters;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::types::ImageInfo;\n");
+    code.push_str("#[allow(unused_imports)] use std::collections::HashMap;\n\n");
 
     // Helper to parse typed values from string
     code.push_str("#[allow(dead_code)]\n");

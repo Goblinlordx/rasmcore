@@ -19,7 +19,7 @@ pub fn generate_mapper_nodes(mappers: &[MapperReg]) -> String {
     code.push_str("\n// --- Auto-generated pipeline mapper nodes ---\n");
     code.push_str("// Mapper nodes handle format-changing operations (e.g., RGB8 → Gray8).\n");
     code.push_str("// They always use Overlap::full() because format changes can't be tiled.\n\n");
-    code.push_str("use std::cell::RefCell;\n\n");
+    code.push_str("#[allow(unused_imports)] use std::cell::RefCell;\n\n");
 
     for m in mappers {
         let node_name = format!("{}MapperNode", to_pascal_case(&m.name));
