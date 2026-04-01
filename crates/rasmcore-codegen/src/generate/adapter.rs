@@ -14,11 +14,11 @@ pub fn generate(filters: &[FilterReg], param_structs: &HashMap<String, Vec<Param
         let trait_method = &f.name;
         let domain_fn = &f.fn_name;
 
-        if f.config_struct.is_some() {
-            // Config-struct-based signature
+        if !f.params.is_empty() {
+            // All filters with params use a single config record in WIT
             generate_config_method(&mut code, f, trait_method, domain_fn, param_structs);
         } else {
-            // Individual-parameter signature (current behavior)
+            // Zero-param filters
             generate_individual_method(&mut code, f, trait_method, domain_fn);
         }
     }
@@ -37,20 +37,27 @@ fn generate_config_method(
     let wit_config_type = format!("filters::{}Config", super::helpers::to_pascal_case(&f.name));
     let qualified = super::helpers::to_qualified_binding_type;
 
-    // Separate extra params from config struct
-    let mut extra_sig_params = Vec::new();
+    // All params come from a single WIT config record (if any params exist)
     let mut call_params = Vec::new();
     let mut body_lines = Vec::new();
-    let mut has_config = false;
+    let has_any_params = !f.params.is_empty();
+
+    // Config struct field names — skip extra params already in the struct
+    let config_field_names: std::collections::HashSet<String> = f.params.iter()
+        .filter(|(_n, t)| t.starts_with('&') && t.ends_with("Params"))
+        .flat_map(|(_n, t)| {
+            let struct_name = &t[1..];
+            param_structs.get(struct_name)
+                .map(|fields| fields.iter().map(|f| f.name.trim_start_matches('_').to_string()).collect::<Vec<_>>())
+                .unwrap_or_default()
+        })
+        .collect();
 
     for (n, t) in &f.params {
         let clean_n = n.trim_start_matches('_');
         if t.starts_with('&') && t.ends_with("Params") {
-            has_config = true;
             let struct_name = &t[1..];
             let domain_type = qualified(t);
-
-            // Generate conversion from WIT config → domain config
             if let Some(fields) = param_structs.get(struct_name) {
                 let field_inits: Vec<String> = fields
                     .iter()
@@ -58,7 +65,6 @@ fn generate_config_method(
                         let fname = field.name.trim_start_matches('_');
                         let nested = param_structs.get(&field.param_type);
                         if let Some(nested_fields) = nested {
-                            // Nested ConfigParams (e.g., ColorRgba) — construct from WIT nested fields
                             let nested_type = qualified(&field.param_type);
                             let nested_inits: Vec<String> = nested_fields
                                 .iter()
@@ -83,31 +89,38 @@ fn generate_config_method(
             }
             call_params.push("&domain_config".to_string());
         } else {
-            let (binding_type, call_expr, pre_code) = match t.as_str() {
-                "&[f32]" => ("Vec<f32>", format!("&{clean_n}"), None),
-                "&[f64]" => ("Vec<f64>", format!("&{clean_n}"), None),
-                "&[u8]" => ("Vec<u8>", format!("&{clean_n}"), None),
-                "&[u32]" => ("Vec<u32>", format!("&{clean_n}"), None),
-                "&[Point2D]" => {
-                    // WIT list<point2d> → Vec<WitPoint2d>, convert to Vec<domain::Point2D>
-                    let convert = format!(
-                        "        let {clean_n}_domain: Vec<crate::domain::param_types::Point2D> = {clean_n}.iter().map(|p| crate::domain::param_types::Point2D {{ x: p.x, y: p.y }}).collect();\n"
-                    );
-                    (
-                        "Vec<types::Point2d>",
-                        format!("&{clean_n}_domain"),
-                        Some(convert),
-                    )
-                }
-                "&str" => ("String", format!("&{clean_n}"), None),
-                "String" => ("String", clean_n.to_string(), None),
-                _ => (t.as_str(), clean_n.to_string(), None),
+            // Extra param — extract from config record
+            let needs_clone = config_field_names.contains(clean_n);
+            let accessor = if needs_clone {
+                format!("wit_config.{clean_n}.clone()")
+            } else {
+                format!("wit_config.{clean_n}")
             };
-            extra_sig_params.push(format!("{clean_n}: {binding_type}"));
+            let call_expr = match t.as_str() {
+                "&[f32]" | "&[f64]" | "&[u8]" | "&[u32]" => {
+                    body_lines.push(format!("        let {clean_n} = {accessor};"));
+                    format!("&{clean_n}")
+                }
+                "&[Point2D]" => {
+                    body_lines.push(format!(
+                        "        let {clean_n}_domain: Vec<crate::domain::param_types::Point2D> = {accessor}.iter().map(|p| crate::domain::param_types::Point2D {{ x: p.x, y: p.y }}).collect();"
+                    ));
+                    format!("&{clean_n}_domain")
+                }
+                "&str" => {
+                    body_lines.push(format!("        let {clean_n} = {accessor};"));
+                    format!("&{clean_n}")
+                }
+                "String" => {
+                    body_lines.push(format!("        let {clean_n} = {accessor};"));
+                    clean_n.to_string()
+                }
+                _ => {
+                    body_lines.push(format!("        let {clean_n} = {accessor};"));
+                    clean_n.to_string()
+                }
+            };
             call_params.push(call_expr);
-            if let Some(code_line) = pre_code {
-                body_lines.push(code_line);
-            }
         }
     }
 
@@ -115,8 +128,7 @@ fn generate_config_method(
         "pixels: Vec<u8>".to_string(),
         "info: types::ImageInfo".to_string(),
     ];
-    sig_parts.extend(extra_sig_params);
-    if has_config {
+    if has_any_params {
         sig_parts.push(format!("wit_config: {wit_config_type}"));
     }
 

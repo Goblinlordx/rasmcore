@@ -429,28 +429,19 @@ fn main() {
                 ));
             }
 
-            // Generate pipeline filter methods (source: node-id, config records imported from filters.wit)
+            // Generate pipeline filter methods — all use (source, config) or just (source) for zero-param
             let mut filter_methods = String::new();
             for f in &data.filters {
                 let wit_name = f.name.replace('_', "-");
-                let has_config = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
-                let extra: Vec<String> = f.params.iter()
-                    .filter(|(_n, t)| !(t.starts_with('&') && t.ends_with("Params")))
-                    .map(|(n, t)| {
-                        let wn = n.trim_start_matches('_').replace('_', "-");
-                        let wt = rasmcore_codegen::generate::helpers::to_wit_type(t);
-                        format!("{wn}: {wt}")
-                    })
-                    .collect();
-                let mut parts = vec!["source: node-id".to_string()];
-                parts.extend(extra);
-                if has_config {
-                    parts.push(format!("config: {wit_name}-config"));
+                if f.params.is_empty() {
+                    filter_methods.push_str(&format!(
+                        "        {wit_name}: func(source: node-id) -> result<node-id, rasmcore-error>;\n"
+                    ));
+                } else {
+                    filter_methods.push_str(&format!(
+                        "        {wit_name}: func(source: node-id, config: {wit_name}-config) -> result<node-id, rasmcore-error>;\n"
+                    ));
                 }
-                filter_methods.push_str(&format!(
-                    "        {wit_name}: func({}) -> result<node-id, rasmcore-error>;\n",
-                    parts.join(", ")
-                ));
             }
 
             // Fill template

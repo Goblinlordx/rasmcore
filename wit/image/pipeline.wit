@@ -8,7 +8,7 @@ interface pipeline {
     use rasmcore:core/types.{buffer, image-info, pixel-format, point2d};
     use rasmcore:core/errors.{rasmcore-error};
     use metadata.{exif-orientation, metadata-set};
-    use filters.{perspective-correct-config, perspective-warp-config, dehaze-config, retinex-msr-config, frequency-high-config, vignette-powerlaw-config, retinex-ssr-config, clahe-config, clarity-config, pyramid-detail-remap-config, shadow-highlight-config, frequency-low-config, dodge-config, vignette-config, nlm-denoise-config, retinex-msrcr-config, burn-config, sigmoidal-contrast-config, exposure-config, gamma-config, contrast-config, levels-config, brightness-config, color-balance-config, posterize-config, lift-gamma-gain-config, apply-hald-lut-config, split-toning-config, asc-cdl-config, connected-components-config, hough-lines-config, wave-config, barrel-config, ripple-config, swirl-config, spherize-config, tonemap-drago-config, tonemap-filmic-config, sepia-config, saturate-config, photo-filter-config, hue-rotate-config, quantize-config, modulate-config, selective-color-config, channel-mixer-config, dither-ordered-config, dither-floyd-steinberg-config, color-rgb, colorize-config, kmeans-quantize-config, sparse-color-config, vibrance-config, white-balance-temperature-config, oil-paint-config, poisson-noise-config, solarize-config, salt-pepper-noise-config, film-grain-config, pixelate-config, uniform-noise-config, gaussian-noise-config, halftone-config, evaluate-multiply-config, evaluate-subtract-config, evaluate-min-config, evaluate-log-config, evaluate-add-config, evaluate-pow-config, evaluate-max-config, evaluate-divide-config, threshold-binary-config, adaptive-threshold-config, morph-close-config, morph-tophat-config, morph-gradient-config, erode-config, morph-blackhat-config, morph-open-config, dilate-config, guided-filter-config, lens-blur-config, kuwahara-config, sharpen-config, zoom-blur-config, convolve-config, smart-sharpen-config, rank-filter-config, box-blur-config, bokeh-blur-config, gaussian-blur-cv-config, tilt-shift-config, motion-blur-config, median-config, blur-config, bilateral-config, spin-blur-config, seam-carve-width-config, seam-carve-height-config, smart-crop-config, color-rgba, draw-polygon-config, draw-rect-config, draw-line-config, draw-ellipse-config, draw-text-config, draw-text-ttf-config, draw-arc-config, draw-circle-config, flood-fill-config};
+    use filters.{perspective-correct-config, perspective-warp-config, dehaze-config, retinex-msr-config, frequency-high-config, vignette-powerlaw-config, retinex-ssr-config, clahe-config, clarity-config, pyramid-detail-remap-config, shadow-highlight-config, frequency-low-config, dodge-config, vignette-config, nlm-denoise-config, retinex-msrcr-config, burn-config, sigmoidal-contrast-config, exposure-config, gamma-config, contrast-config, levels-config, brightness-config, color-balance-config, posterize-config, curves-green-config, lift-gamma-gain-config, curves-red-config, apply-hald-lut-config, apply-cube-lut-config, split-toning-config, hue-vs-sat-config, curves-master-config, curves-blue-config, hue-vs-lum-config, asc-cdl-config, lum-vs-sat-config, sat-vs-sat-config, connected-components-config, hough-lines-config, wave-config, barrel-config, ripple-config, swirl-config, spherize-config, tonemap-drago-config, tonemap-filmic-config, sepia-config, saturate-config, photo-filter-config, hue-rotate-config, quantize-config, gradient-map-config, modulate-config, selective-color-config, channel-mixer-config, dither-ordered-config, dither-floyd-steinberg-config, color-rgb, colorize-config, kmeans-quantize-config, sparse-color-config, vibrance-config, white-balance-temperature-config, oil-paint-config, poisson-noise-config, solarize-config, salt-pepper-noise-config, film-grain-config, pixelate-config, uniform-noise-config, gaussian-noise-config, halftone-config, evaluate-multiply-config, evaluate-subtract-config, evaluate-min-config, evaluate-log-config, evaluate-add-config, evaluate-pow-config, evaluate-max-config, evaluate-divide-config, threshold-binary-config, adaptive-threshold-config, morph-close-config, morph-tophat-config, morph-gradient-config, erode-config, morph-blackhat-config, morph-open-config, dilate-config, guided-filter-config, lens-blur-config, kuwahara-config, sharpen-config, displacement-map-config, zoom-blur-config, convolve-config, smart-sharpen-config, rank-filter-config, box-blur-config, bokeh-blur-config, gaussian-blur-cv-config, tilt-shift-config, motion-blur-config, median-config, blur-config, bilateral-config, spin-blur-config, seam-carve-width-config, seam-carve-height-config, smart-crop-config, color-rgba, draw-polygon-config, draw-rect-config, draw-line-config, draw-ellipse-config, draw-text-config, draw-text-ttf-config, draw-arc-config, draw-circle-config, flood-fill-config};
 
     /// Opaque handle to a node in the pipeline's internal graph.
     type node-id = u32;
@@ -141,7 +141,7 @@ interface pipeline {
         // ─── Filters (auto-generated from #[register_filter]) ───
 
         perspective-correct: func(source: node-id, config: perspective-correct-config) -> result<node-id, rasmcore-error>;
-        perspective-warp: func(source: node-id, matrix: list<f64>, config: perspective-warp-config) -> result<node-id, rasmcore-error>;
+        perspective-warp: func(source: node-id, config: perspective-warp-config) -> result<node-id, rasmcore-error>;
         equalize: func(source: node-id) -> result<node-id, rasmcore-error>;
         dehaze: func(source: node-id, config: dehaze-config) -> result<node-id, rasmcore-error>;
         retinex-msr: func(source: node-id, config: retinex-msr-config) -> result<node-id, rasmcore-error>;
@@ -169,19 +169,19 @@ interface pipeline {
         brightness: func(source: node-id, config: brightness-config) -> result<node-id, rasmcore-error>;
         color-balance: func(source: node-id, config: color-balance-config) -> result<node-id, rasmcore-error>;
         posterize: func(source: node-id, config: posterize-config) -> result<node-id, rasmcore-error>;
-        curves-green: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        curves-green: func(source: node-id, config: curves-green-config) -> result<node-id, rasmcore-error>;
         lift-gamma-gain: func(source: node-id, config: lift-gamma-gain-config) -> result<node-id, rasmcore-error>;
-        curves-red: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        curves-red: func(source: node-id, config: curves-red-config) -> result<node-id, rasmcore-error>;
         apply-hald-lut: func(source: node-id, config: apply-hald-lut-config) -> result<node-id, rasmcore-error>;
-        apply-cube-lut: func(source: node-id, cube-data: string) -> result<node-id, rasmcore-error>;
+        apply-cube-lut: func(source: node-id, config: apply-cube-lut-config) -> result<node-id, rasmcore-error>;
         split-toning: func(source: node-id, config: split-toning-config) -> result<node-id, rasmcore-error>;
-        hue-vs-sat: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
-        curves-master: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
-        curves-blue: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
-        hue-vs-lum: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        hue-vs-sat: func(source: node-id, config: hue-vs-sat-config) -> result<node-id, rasmcore-error>;
+        curves-master: func(source: node-id, config: curves-master-config) -> result<node-id, rasmcore-error>;
+        curves-blue: func(source: node-id, config: curves-blue-config) -> result<node-id, rasmcore-error>;
+        hue-vs-lum: func(source: node-id, config: hue-vs-lum-config) -> result<node-id, rasmcore-error>;
         asc-cdl: func(source: node-id, config: asc-cdl-config) -> result<node-id, rasmcore-error>;
-        lum-vs-sat: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
-        sat-vs-sat: func(source: node-id, points: string) -> result<node-id, rasmcore-error>;
+        lum-vs-sat: func(source: node-id, config: lum-vs-sat-config) -> result<node-id, rasmcore-error>;
+        sat-vs-sat: func(source: node-id, config: sat-vs-sat-config) -> result<node-id, rasmcore-error>;
         connected-components: func(source: node-id, config: connected-components-config) -> result<node-id, rasmcore-error>;
         hough-lines: func(source: node-id, config: hough-lines-config) -> result<node-id, rasmcore-error>;
         depolar: func(source: node-id) -> result<node-id, rasmcore-error>;
@@ -199,7 +199,7 @@ interface pipeline {
         photo-filter: func(source: node-id, config: photo-filter-config) -> result<node-id, rasmcore-error>;
         hue-rotate: func(source: node-id, config: hue-rotate-config) -> result<node-id, rasmcore-error>;
         quantize: func(source: node-id, config: quantize-config) -> result<node-id, rasmcore-error>;
-        gradient-map: func(source: node-id, stops: string) -> result<node-id, rasmcore-error>;
+        gradient-map: func(source: node-id, config: gradient-map-config) -> result<node-id, rasmcore-error>;
         modulate: func(source: node-id, config: modulate-config) -> result<node-id, rasmcore-error>;
         selective-color: func(source: node-id, config: selective-color-config) -> result<node-id, rasmcore-error>;
         channel-mixer: func(source: node-id, config: channel-mixer-config) -> result<node-id, rasmcore-error>;
@@ -208,7 +208,7 @@ interface pipeline {
         dither-floyd-steinberg: func(source: node-id, config: dither-floyd-steinberg-config) -> result<node-id, rasmcore-error>;
         colorize: func(source: node-id, config: colorize-config) -> result<node-id, rasmcore-error>;
         kmeans-quantize: func(source: node-id, config: kmeans-quantize-config) -> result<node-id, rasmcore-error>;
-        sparse-color: func(source: node-id, points: string, config: sparse-color-config) -> result<node-id, rasmcore-error>;
+        sparse-color: func(source: node-id, config: sparse-color-config) -> result<node-id, rasmcore-error>;
         vibrance: func(source: node-id, config: vibrance-config) -> result<node-id, rasmcore-error>;
         white-balance-temperature: func(source: node-id, config: white-balance-temperature-config) -> result<node-id, rasmcore-error>;
         oil-paint: func(source: node-id, config: oil-paint-config) -> result<node-id, rasmcore-error>;
@@ -245,9 +245,9 @@ interface pipeline {
         lens-blur: func(source: node-id, config: lens-blur-config) -> result<node-id, rasmcore-error>;
         kuwahara: func(source: node-id, config: kuwahara-config) -> result<node-id, rasmcore-error>;
         sharpen: func(source: node-id, config: sharpen-config) -> result<node-id, rasmcore-error>;
-        displacement-map: func(source: node-id, map-x: list<f32>, map-y: list<f32>) -> result<node-id, rasmcore-error>;
+        displacement-map: func(source: node-id, config: displacement-map-config) -> result<node-id, rasmcore-error>;
         zoom-blur: func(source: node-id, config: zoom-blur-config) -> result<node-id, rasmcore-error>;
-        convolve: func(source: node-id, kernel: list<f32>, config: convolve-config) -> result<node-id, rasmcore-error>;
+        convolve: func(source: node-id, config: convolve-config) -> result<node-id, rasmcore-error>;
         smart-sharpen: func(source: node-id, config: smart-sharpen-config) -> result<node-id, rasmcore-error>;
         rank-filter: func(source: node-id, config: rank-filter-config) -> result<node-id, rasmcore-error>;
         box-blur: func(source: node-id, config: box-blur-config) -> result<node-id, rasmcore-error>;
@@ -265,12 +265,12 @@ interface pipeline {
         seam-carve-width: func(source: node-id, config: seam-carve-width-config) -> result<node-id, rasmcore-error>;
         seam-carve-height: func(source: node-id, config: seam-carve-height-config) -> result<node-id, rasmcore-error>;
         smart-crop: func(source: node-id, config: smart-crop-config) -> result<node-id, rasmcore-error>;
-        draw-polygon: func(source: node-id, points: list<point2d>, config: draw-polygon-config) -> result<node-id, rasmcore-error>;
+        draw-polygon: func(source: node-id, config: draw-polygon-config) -> result<node-id, rasmcore-error>;
         draw-rect: func(source: node-id, config: draw-rect-config) -> result<node-id, rasmcore-error>;
         draw-line: func(source: node-id, config: draw-line-config) -> result<node-id, rasmcore-error>;
         draw-ellipse: func(source: node-id, config: draw-ellipse-config) -> result<node-id, rasmcore-error>;
-        draw-text: func(source: node-id, text: string, config: draw-text-config) -> result<node-id, rasmcore-error>;
-        draw-text-ttf: func(source: node-id, text: string, config: draw-text-ttf-config) -> result<node-id, rasmcore-error>;
+        draw-text: func(source: node-id, config: draw-text-config) -> result<node-id, rasmcore-error>;
+        draw-text-ttf: func(source: node-id, config: draw-text-ttf-config) -> result<node-id, rasmcore-error>;
         draw-arc: func(source: node-id, config: draw-arc-config) -> result<node-id, rasmcore-error>;
         draw-circle: func(source: node-id, config: draw-circle-config) -> result<node-id, rasmcore-error>;
         flood-fill: func(source: node-id, config: flood-fill-config) -> result<node-id, rasmcore-error>;

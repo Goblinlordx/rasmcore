@@ -18,6 +18,7 @@ interface filters {
     record perspective-warp-config {
         out-width: u32,
         out-height: u32,
+        matrix: list<f64>,
     }
 
     record dehaze-config {
@@ -159,6 +160,10 @@ interface filters {
         levels: u8,
     }
 
+    record curves-green-config {
+        points: string,
+    }
+
     record lift-gamma-gain-config {
         lift-r: f32,
         lift-g: f32,
@@ -171,14 +176,38 @@ interface filters {
         gain-b: f32,
     }
 
+    record curves-red-config {
+        points: string,
+    }
+
     record apply-hald-lut-config {
         hald-dim: u32,
+    }
+
+    record apply-cube-lut-config {
+        cube-data: string,
     }
 
     record split-toning-config {
         highlight-hue: f32,
         shadow-hue: f32,
         balance: f32,
+    }
+
+    record hue-vs-sat-config {
+        points: string,
+    }
+
+    record curves-master-config {
+        points: string,
+    }
+
+    record curves-blue-config {
+        points: string,
+    }
+
+    record hue-vs-lum-config {
+        points: string,
     }
 
     record asc-cdl-config {
@@ -191,6 +220,14 @@ interface filters {
         power-r: f32,
         power-g: f32,
         power-b: f32,
+    }
+
+    record lum-vs-sat-config {
+        points: string,
+    }
+
+    record sat-vs-sat-config {
+        points: string,
     }
 
     record connected-components-config {
@@ -264,6 +301,10 @@ interface filters {
 
     record quantize-config {
         max-colors: u32,
+    }
+
+    record gradient-map-config {
+        stops: string,
     }
 
     record modulate-config {
@@ -475,6 +516,11 @@ interface filters {
         amount: f32,
     }
 
+    record displacement-map-config {
+        map-x: list<f32>,
+        map-y: list<f32>,
+    }
+
     record zoom-blur-config {
         center-x: f32,
         center-y: f32,
@@ -485,6 +531,7 @@ interface filters {
         kw: u32,
         kh: u32,
         divisor: f32,
+        kernel: list<f32>,
     }
 
     record smart-sharpen-config {
@@ -568,6 +615,7 @@ interface filters {
         stroke-color: color-rgba,
         stroke-width: f32,
         filled: bool,
+        points: list<point2d>,
     }
 
     record draw-rect-config {
@@ -604,6 +652,7 @@ interface filters {
         y: u32,
         scale: u32,
         color: color-rgba,
+        text: string,
     }
 
     record draw-text-ttf-config {
@@ -614,6 +663,7 @@ interface filters {
         color-g: u32,
         color-b: u32,
         color-a: u32,
+        text: string,
     }
 
     record draw-arc-config {
@@ -645,7 +695,7 @@ interface filters {
     }
 
     perspective-correct: func(pixels: buffer, info: image-info, config: perspective-correct-config) -> result<buffer, rasmcore-error>;
-    perspective-warp: func(pixels: buffer, info: image-info, matrix: list<f64>, config: perspective-warp-config) -> result<buffer, rasmcore-error>;
+    perspective-warp: func(pixels: buffer, info: image-info, config: perspective-warp-config) -> result<buffer, rasmcore-error>;
     equalize: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     dehaze: func(pixels: buffer, info: image-info, config: dehaze-config) -> result<buffer, rasmcore-error>;
     retinex-msr: func(pixels: buffer, info: image-info, config: retinex-msr-config) -> result<buffer, rasmcore-error>;
@@ -673,19 +723,19 @@ interface filters {
     brightness: func(pixels: buffer, info: image-info, config: brightness-config) -> result<buffer, rasmcore-error>;
     color-balance: func(pixels: buffer, info: image-info, config: color-balance-config) -> result<buffer, rasmcore-error>;
     posterize: func(pixels: buffer, info: image-info, config: posterize-config) -> result<buffer, rasmcore-error>;
-    curves-green: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    curves-green: func(pixels: buffer, info: image-info, config: curves-green-config) -> result<buffer, rasmcore-error>;
     lift-gamma-gain: func(pixels: buffer, info: image-info, config: lift-gamma-gain-config) -> result<buffer, rasmcore-error>;
-    curves-red: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    curves-red: func(pixels: buffer, info: image-info, config: curves-red-config) -> result<buffer, rasmcore-error>;
     apply-hald-lut: func(pixels: buffer, info: image-info, config: apply-hald-lut-config) -> result<buffer, rasmcore-error>;
-    apply-cube-lut: func(pixels: buffer, info: image-info, cube-data: string) -> result<buffer, rasmcore-error>;
+    apply-cube-lut: func(pixels: buffer, info: image-info, config: apply-cube-lut-config) -> result<buffer, rasmcore-error>;
     split-toning: func(pixels: buffer, info: image-info, config: split-toning-config) -> result<buffer, rasmcore-error>;
-    hue-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
-    curves-master: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
-    curves-blue: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
-    hue-vs-lum: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    hue-vs-sat: func(pixels: buffer, info: image-info, config: hue-vs-sat-config) -> result<buffer, rasmcore-error>;
+    curves-master: func(pixels: buffer, info: image-info, config: curves-master-config) -> result<buffer, rasmcore-error>;
+    curves-blue: func(pixels: buffer, info: image-info, config: curves-blue-config) -> result<buffer, rasmcore-error>;
+    hue-vs-lum: func(pixels: buffer, info: image-info, config: hue-vs-lum-config) -> result<buffer, rasmcore-error>;
     asc-cdl: func(pixels: buffer, info: image-info, config: asc-cdl-config) -> result<buffer, rasmcore-error>;
-    lum-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
-    sat-vs-sat: func(pixels: buffer, info: image-info, points: string) -> result<buffer, rasmcore-error>;
+    lum-vs-sat: func(pixels: buffer, info: image-info, config: lum-vs-sat-config) -> result<buffer, rasmcore-error>;
+    sat-vs-sat: func(pixels: buffer, info: image-info, config: sat-vs-sat-config) -> result<buffer, rasmcore-error>;
     connected-components: func(pixels: buffer, info: image-info, config: connected-components-config) -> result<buffer, rasmcore-error>;
     hough-lines: func(pixels: buffer, info: image-info, config: hough-lines-config) -> result<buffer, rasmcore-error>;
     depolar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
@@ -703,7 +753,7 @@ interface filters {
     photo-filter: func(pixels: buffer, info: image-info, config: photo-filter-config) -> result<buffer, rasmcore-error>;
     hue-rotate: func(pixels: buffer, info: image-info, config: hue-rotate-config) -> result<buffer, rasmcore-error>;
     quantize: func(pixels: buffer, info: image-info, config: quantize-config) -> result<buffer, rasmcore-error>;
-    gradient-map: func(pixels: buffer, info: image-info, stops: string) -> result<buffer, rasmcore-error>;
+    gradient-map: func(pixels: buffer, info: image-info, config: gradient-map-config) -> result<buffer, rasmcore-error>;
     modulate: func(pixels: buffer, info: image-info, config: modulate-config) -> result<buffer, rasmcore-error>;
     selective-color: func(pixels: buffer, info: image-info, config: selective-color-config) -> result<buffer, rasmcore-error>;
     channel-mixer: func(pixels: buffer, info: image-info, config: channel-mixer-config) -> result<buffer, rasmcore-error>;
@@ -712,7 +762,7 @@ interface filters {
     dither-floyd-steinberg: func(pixels: buffer, info: image-info, config: dither-floyd-steinberg-config) -> result<buffer, rasmcore-error>;
     colorize: func(pixels: buffer, info: image-info, config: colorize-config) -> result<buffer, rasmcore-error>;
     kmeans-quantize: func(pixels: buffer, info: image-info, config: kmeans-quantize-config) -> result<buffer, rasmcore-error>;
-    sparse-color: func(pixels: buffer, info: image-info, points: string, config: sparse-color-config) -> result<buffer, rasmcore-error>;
+    sparse-color: func(pixels: buffer, info: image-info, config: sparse-color-config) -> result<buffer, rasmcore-error>;
     vibrance: func(pixels: buffer, info: image-info, config: vibrance-config) -> result<buffer, rasmcore-error>;
     white-balance-temperature: func(pixels: buffer, info: image-info, config: white-balance-temperature-config) -> result<buffer, rasmcore-error>;
     oil-paint: func(pixels: buffer, info: image-info, config: oil-paint-config) -> result<buffer, rasmcore-error>;
@@ -749,9 +799,9 @@ interface filters {
     lens-blur: func(pixels: buffer, info: image-info, config: lens-blur-config) -> result<buffer, rasmcore-error>;
     kuwahara: func(pixels: buffer, info: image-info, config: kuwahara-config) -> result<buffer, rasmcore-error>;
     sharpen: func(pixels: buffer, info: image-info, config: sharpen-config) -> result<buffer, rasmcore-error>;
-    displacement-map: func(pixels: buffer, info: image-info, map-x: list<f32>, map-y: list<f32>) -> result<buffer, rasmcore-error>;
+    displacement-map: func(pixels: buffer, info: image-info, config: displacement-map-config) -> result<buffer, rasmcore-error>;
     zoom-blur: func(pixels: buffer, info: image-info, config: zoom-blur-config) -> result<buffer, rasmcore-error>;
-    convolve: func(pixels: buffer, info: image-info, kernel: list<f32>, config: convolve-config) -> result<buffer, rasmcore-error>;
+    convolve: func(pixels: buffer, info: image-info, config: convolve-config) -> result<buffer, rasmcore-error>;
     smart-sharpen: func(pixels: buffer, info: image-info, config: smart-sharpen-config) -> result<buffer, rasmcore-error>;
     rank-filter: func(pixels: buffer, info: image-info, config: rank-filter-config) -> result<buffer, rasmcore-error>;
     box-blur: func(pixels: buffer, info: image-info, config: box-blur-config) -> result<buffer, rasmcore-error>;
@@ -769,12 +819,12 @@ interface filters {
     seam-carve-width: func(pixels: buffer, info: image-info, config: seam-carve-width-config) -> result<buffer, rasmcore-error>;
     seam-carve-height: func(pixels: buffer, info: image-info, config: seam-carve-height-config) -> result<buffer, rasmcore-error>;
     smart-crop: func(pixels: buffer, info: image-info, config: smart-crop-config) -> result<buffer, rasmcore-error>;
-    draw-polygon: func(pixels: buffer, info: image-info, points: list<point2d>, config: draw-polygon-config) -> result<buffer, rasmcore-error>;
+    draw-polygon: func(pixels: buffer, info: image-info, config: draw-polygon-config) -> result<buffer, rasmcore-error>;
     draw-rect: func(pixels: buffer, info: image-info, config: draw-rect-config) -> result<buffer, rasmcore-error>;
     draw-line: func(pixels: buffer, info: image-info, config: draw-line-config) -> result<buffer, rasmcore-error>;
     draw-ellipse: func(pixels: buffer, info: image-info, config: draw-ellipse-config) -> result<buffer, rasmcore-error>;
-    draw-text: func(pixels: buffer, info: image-info, text: string, config: draw-text-config) -> result<buffer, rasmcore-error>;
-    draw-text-ttf: func(pixels: buffer, info: image-info, text: string, config: draw-text-ttf-config) -> result<buffer, rasmcore-error>;
+    draw-text: func(pixels: buffer, info: image-info, config: draw-text-config) -> result<buffer, rasmcore-error>;
+    draw-text-ttf: func(pixels: buffer, info: image-info, config: draw-text-ttf-config) -> result<buffer, rasmcore-error>;
     draw-arc: func(pixels: buffer, info: image-info, config: draw-arc-config) -> result<buffer, rasmcore-error>;
     draw-circle: func(pixels: buffer, info: image-info, config: draw-circle-config) -> result<buffer, rasmcore-error>;
     flood-fill: func(pixels: buffer, info: image-info, config: flood-fill-config) -> result<buffer, rasmcore-error>;

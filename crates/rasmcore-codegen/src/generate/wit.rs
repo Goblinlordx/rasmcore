@@ -57,48 +57,81 @@ pub fn generate(
     }
 
     for f in filters {
-        // Only use config_struct if the function actually takes a &*Params reference
         let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
-        if let Some(config_name) = &f.config_struct.as_ref().filter(|_| has_config_param) {
-            let record_name = format!("{}-config", to_wit_name(&f.name));
-            emit_record(config_name, &record_name, param_structs, &mut records, &mut emitted_records);
 
-            // Generate func — extra params first, then config
-            let extra_params: Vec<String> = f.params.iter()
-                .filter(|(_n, t)| !(t.starts_with('&') && t.ends_with("Params")))
-                .map(|(n, t)| format!("{}: {}", to_wit_name(n), to_wit_type(t)))
-                .collect();
-            let mut parts = vec!["pixels: buffer".to_string(), "info: image-info".to_string()];
-            parts.extend(extra_params);
-            parts.push(format!("config: {record_name}"));
+        // Get config struct field names to avoid duplicating fields
+        let config_field_names: std::collections::HashSet<String> = if has_config_param {
+            if let Some(config_name) = &f.config_struct {
+                param_structs.get(config_name.as_str())
+                    .map(|fields| fields.iter().map(|f| f.name.trim_start_matches('_').to_string()).collect())
+                    .unwrap_or_default()
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            std::collections::HashSet::new()
+        };
 
+        // Extra params that are NOT already fields in the ConfigParams struct
+        let extra_params: Vec<&(String, String)> = f.params.iter()
+            .filter(|(n, t)| {
+                !(t.starts_with('&') && t.ends_with("Params"))
+                && !config_field_names.contains(n.trim_start_matches('_'))
+            })
+            .collect();
+        let record_name = format!("{}-config", to_wit_name(&f.name));
+
+        if has_config_param {
+            if let Some(config_name) = &f.config_struct {
+                emit_record(config_name, &record_name, param_structs, &mut records, &mut emitted_records);
+            }
+        }
+
+        // If there are extra params (string/list), add them as fields in the config record.
+        // For filters with no ConfigParams struct, generate a synthetic record from extra params only.
+        if !extra_params.is_empty() {
+            if !has_config_param && !emitted_records.contains(&record_name) {
+                // Synthetic record from extra params only
+                records.push_str(&format!("    record {} {{\n", record_name));
+                for (n, t) in &extra_params {
+                    let wn = to_wit_name(n.trim_start_matches('_'));
+                    records.push_str(&format!("        {}: {},\n", wn, to_wit_type(t)));
+                }
+                records.push_str("    }\n\n");
+                emitted_records.insert(record_name.clone());
+            } else if has_config_param && emitted_records.contains(&record_name) {
+                // Append extra param fields to already-emitted record
+                // Find the closing "    }\n\n" of the record and insert before it
+                let close_marker = format!("    record {} {{", record_name);
+                if let Some(pos) = records.find(&close_marker) {
+                    // Find the closing brace after this record
+                    let after = &records[pos..];
+                    if let Some(close_pos) = after.find("    }\n\n") {
+                        let insert_at = pos + close_pos;
+                        let extra_fields: String = extra_params.iter()
+                            .map(|(n, t)| {
+                                let wn = to_wit_name(n.trim_start_matches('_'));
+                                format!("        {}: {},\n", wn, to_wit_type(t))
+                            })
+                            .collect();
+                        records.insert_str(insert_at, &extra_fields);
+                    }
+                }
+            }
+        }
+
+        // Generate func signature — always (pixels, info, config) or (pixels, info) for zero-param
+        if f.params.is_empty() {
             funcs.push_str(&format!(
-                "    {}: func({}) -> result<buffer, rasmcore-error>;\n",
-                to_wit_name(&f.name),
-                parts.join(", ")
+                "    {}: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;\n",
+                to_wit_name(&f.name)
             ));
         } else {
-            let wit_params = f
-                .params
-                .iter()
-                .map(|(n, t)| format!("{}: {}", to_wit_name(n), to_wit_type(t)))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let sig = if wit_params.is_empty() {
-                format!(
-                    "    {}: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;",
-                    to_wit_name(&f.name)
-                )
-            } else {
-                format!(
-                    "    {}: func(pixels: buffer, info: image-info, {}) -> result<buffer, rasmcore-error>;",
-                    to_wit_name(&f.name),
-                    wit_params
-                )
-            };
-            funcs.push_str(&sig);
-            funcs.push('\n');
+            funcs.push_str(&format!(
+                "    {}: func(pixels: buffer, info: image-info, config: {}) -> result<buffer, rasmcore-error>;\n",
+                to_wit_name(&f.name),
+                record_name
+            ));
         }
     }
 

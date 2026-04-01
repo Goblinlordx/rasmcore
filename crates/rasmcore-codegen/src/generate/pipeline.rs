@@ -168,22 +168,37 @@ pub fn generate_adapter_macro(
         let mut body_lines = Vec::new();
         let mut hash_args = Vec::new();
 
+        // All params come from a single WIT config record.
+        let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
+        let has_any_params = !f.params.is_empty();
+        // Config struct field names — extra params with same name are already in the struct
+        let config_field_names: std::collections::HashSet<String> = if has_config_param {
+            if let Some(config_name) = &f.config_struct {
+                param_structs.get(config_name.as_str())
+                    .map(|fields| fields.iter().map(|f| f.name.trim_start_matches('_').to_string()).collect())
+                    .unwrap_or_default()
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        if has_any_params {
+            let wit_config_type = format!(
+                "crate::bindings::exports::rasmcore::image::pipeline::{}Config",
+                to_pascal_case(&f.name)
+            );
+            sig_params.push(format!("wit_config: {wit_config_type}"));
+            hash_args.push("wit_config".to_string());
+        }
+
         for (n, t) in &f.params {
             let clean_n = n.trim_start_matches('_');
 
             if t.starts_with('&') && t.ends_with("Params") {
-                // Config struct — accept WIT config record, convert to domain type
                 let struct_name = &t[1..];
-                let wit_config_type = format!(
-                    "crate::bindings::exports::rasmcore::image::pipeline::{}Config",
-                    to_pascal_case(&f.name)
-                );
-                // Use the struct name without & for the owned domain type
                 let domain_type = to_qualified_binding_type(struct_name);
-                sig_params.push(format!("wit_config: {wit_config_type}"));
-                hash_args.push("wit_config".to_string());
-
-                // Generate field-by-field conversion
                 if let Some(fields) = param_structs.get(struct_name) {
                     let field_inits: Vec<String> =
                         fields
@@ -213,21 +228,22 @@ pub fn generate_adapter_macro(
                 }
                 node_ctor_args.push("config".to_string());
             } else if t == "&[Point2D]" {
-                // Point2D: WIT list<point2d> binding → domain Vec<Point2D>
-                sig_params.push(format!(
-                    "{clean_n}: Vec<crate::bindings::rasmcore::core::types::Point2d>"
-                ));
-                hash_args.push(clean_n.to_string());
+                // Extract from config, convert to domain type
                 body_lines.push(format!(
                     "        let {clean_n}_domain: Vec<crate::domain::param_types::Point2D> = \
-                     {clean_n}.iter().map(|p| crate::domain::param_types::Point2D {{ x: p.x, y: p.y }}).collect();"
+                     wit_config.{clean_n}.iter().map(|p| crate::domain::param_types::Point2D {{ x: p.x, y: p.y }}).collect();"
                 ));
                 node_ctor_args.push(format!("{clean_n}_domain"));
             } else {
-                // Primitive extra params — same type in WIT and domain
-                sig_params.push(format!("{clean_n}: {}", to_qualified_binding_type(t)));
+                // Extract extra param from config record
+                // Clone if the param is also in the config struct (both read wit_config.field)
+                let needs_clone = config_field_names.contains(clean_n);
+                if needs_clone {
+                    body_lines.push(format!("        let {clean_n} = wit_config.{clean_n}.clone();"));
+                } else {
+                    body_lines.push(format!("        let {clean_n} = wit_config.{clean_n};"));
+                }
                 node_ctor_args.push(clean_n.to_string());
-                hash_args.push(clean_n.to_string());
             }
         }
 
