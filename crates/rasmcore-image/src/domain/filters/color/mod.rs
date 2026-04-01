@@ -16,6 +16,8 @@ mod hue_rotate;
 pub use hue_rotate::*;
 mod kmeans_quantize;
 pub use kmeans_quantize::*;
+mod lab;
+pub use lab::*;
 mod modulate;
 pub use modulate::*;
 mod photo_filter;

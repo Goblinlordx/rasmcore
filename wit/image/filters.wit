@@ -339,6 +339,16 @@ interface filters {
         bb: f32,
     }
 
+    record lab-sharpen-config {
+        amount: f32,
+        radius: f32,
+    }
+
+    record lab-adjust-config {
+        a-offset: f32,
+        b-offset: f32,
+    }
+
     record dither-ordered-config {
         max-colors: u32,
         map-size: u32,
@@ -768,6 +778,8 @@ interface filters {
     modulate: func(pixels: buffer, info: image-info, config: modulate-config) -> result<buffer, rasmcore-error>;
     selective-color: func(pixels: buffer, info: image-info, config: selective-color-config) -> result<buffer, rasmcore-error>;
     channel-mixer: func(pixels: buffer, info: image-info, config: channel-mixer-config) -> result<buffer, rasmcore-error>;
+    lab-sharpen: func(pixels: buffer, info: image-info, config: lab-sharpen-config) -> result<buffer, rasmcore-error>;
+    lab-adjust: func(pixels: buffer, info: image-info, config: lab-adjust-config) -> result<buffer, rasmcore-error>;
     white-balance-gray-world: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     dither-ordered: func(pixels: buffer, info: image-info, config: dither-ordered-config) -> result<buffer, rasmcore-error>;
     dither-floyd-steinberg: func(pixels: buffer, info: image-info, config: dither-floyd-steinberg-config) -> result<buffer, rasmcore-error>;
