@@ -18,4 +18,9 @@ export default defineConfig({
   define: {
     __SDK_PATH__: JSON.stringify(process.env.VITE_SDK_PATH || './sdk'),
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
+  },
 });

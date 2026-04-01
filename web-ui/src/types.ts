@@ -42,16 +42,16 @@ export interface Manifest {
 
 /** UI control type derived from hints. */
 export type ControlType =
-  | 'number'      // default linear slider
-  | 'color'       // color picker
-  | 'toggle'      // boolean switch
-  | 'text'        // text input
-  | 'spinner'     // number input with arrows (no slider)
-  | 'log_slider'  // logarithmic slider
+  | 'number' // default linear slider
+  | 'color' // color picker
+  | 'toggle' // boolean switch
+  | 'text' // text input
+  | 'spinner' // number input with arrows (no slider)
+  | 'log_slider' // logarithmic slider
   | 'signed_slider' // bipolar slider centered at 0
-  | 'opacity'     // thin slider + text input
+  | 'opacity' // thin slider + text input
   | 'temperature' // slider with gradient track
-  | 'enum';       // dropdown select
+  | 'enum'; // dropdown select
 
 /** Resolved parameter for UI rendering. */
 export interface UiParam {
@@ -103,7 +103,13 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { type: 'ready' }
   | { type: 'loaded'; width: number; height: number; thumbnail: string }
-  | { type: 'result'; imageData: ArrayBuffer; width: number; height: number; timings: WorkerTiming[] }
+  | {
+      type: 'result';
+      imageData: ArrayBuffer;
+      width: number;
+      height: number;
+      timings: WorkerTiming[];
+    }
   | { type: 'exported'; blob: ArrayBuffer; mimeType: string }
   | { type: 'error'; message: string };
 

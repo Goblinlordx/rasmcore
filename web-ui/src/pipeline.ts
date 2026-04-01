@@ -34,7 +34,8 @@ try {
     formatSelect.innerHTML = '';
     for (const fmt of writeFormats) {
       const opt = document.createElement('option');
-      opt.value = fmt; opt.textContent = fmt.toUpperCase();
+      opt.value = fmt;
+      opt.textContent = fmt.toUpperCase();
       formatSelect.appendChild(opt);
     }
   }
@@ -45,7 +46,9 @@ try {
 // ─── Operation Metadata (auto-loaded from generated manifest) ───────────────
 
 // Convert manifest snake_case names to Pipeline camelCase method names
-function snakeToCamel(s) { return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); }
+function snakeToCamel(s) {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
 
 // Convert #rrggbb hex color to [r, g, b] array
 function hexToRgb(hex) {
@@ -71,10 +74,10 @@ function expandArgs(params, paramValues) {
 // Falls back to minimal hardcoded metadata if manifest unavailable.
 let PARAM_META = {};
 let MANIFEST_CATEGORIES = {}; // manifest filter name → category
-let MANIFEST_GROUPS = {};     // manifest filter name → { group, variant, reference }
+let MANIFEST_GROUPS = {}; // manifest filter name → { group, variant, reference }
 
 try {
-  const manifest = await fetch(`${SDK_PATH}/param-manifest.json`).then(r => r.json());
+  const manifest = await fetch(`${SDK_PATH}/param-manifest.json`).then((r) => r.json());
   for (const filter of manifest.filters) {
     const camelName = snakeToCamel(filter.name);
     MANIFEST_CATEGORIES[camelName] = filter.category;
@@ -84,57 +87,154 @@ try {
       reference: filter.reference || '',
     };
     PARAM_META[camelName] = filter.params
-      .filter(p => {
+      .filter((p) => {
         // Include simple numeric types
         const t = p.type;
-        if (t === 'f32' || t === 'f64' || t === 'u32' || t === 'u16' || t === 'u8' || t === 'i32' || t === 'bool') return true;
+        if (
+          t === 'f32' ||
+          t === 'f64' ||
+          t === 'u32' ||
+          t === 'u16' ||
+          t === 'u8' ||
+          t === 'i32' ||
+          t === 'bool'
+        )
+          return true;
         // Include complex types if they have a recognized rc. hint
         if (p.hint && p.hint.startsWith('rc.')) return true;
         return false;
       })
-      .map(p => {
+      .map((p) => {
         // Map rc. hints to UI control types
         if (p.hint === 'rc.color_rgb' || p.hint === 'rc.color_rgba') {
-          return { name: p.name, type: 'color', hint: p.hint, default: '#808080', label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'color',
+            hint: p.hint,
+            default: '#808080',
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.angle_deg') {
-          return { name: p.name, type: 'number', hint: p.hint, min: 0, max: 360, step: 1, default: 0, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'number',
+            hint: p.hint,
+            min: 0,
+            max: 360,
+            step: 1,
+            default: 0,
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.percentage') {
-          return { name: p.name, type: 'number', hint: p.hint, min: 0, max: 100, step: 1, default: 50, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'number',
+            hint: p.hint,
+            min: 0,
+            max: 100,
+            step: 1,
+            default: 50,
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.toggle') {
-          return { name: p.name, type: 'toggle', hint: p.hint, default: p.default === 'true' || p.default === '1', label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'toggle',
+            hint: p.hint,
+            default: p.default === 'true' || p.default === '1',
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.text') {
-          return { name: p.name, type: 'text', hint: p.hint, default: p.default || '', label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'text',
+            hint: p.hint,
+            default: p.default || '',
+            label: p.label || p.name,
+          };
         }
         // Parse numeric defaults for all remaining hints
         const numMin = p.min != null ? parseFloat(p.min) : undefined;
         const numMax = p.max != null ? parseFloat(p.max) : undefined;
         const numStep = p.step != null ? parseFloat(p.step) : undefined;
-        const numDefault = p.default != null && p.default !== '' ? (isNaN(Number(p.default)) ? p.default : Number(p.default)) : 0;
+        const numDefault =
+          p.default != null && p.default !== ''
+            ? isNaN(Number(p.default))
+              ? p.default
+              : Number(p.default)
+            : 0;
         // Map remaining rc.* hints to specialized number types
         if (p.hint === 'rc.pixels' || p.hint === 'rc.spinner' || p.hint === 'rc.seed') {
-          return { name: p.name, type: 'spinner', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'spinner',
+            hint: p.hint,
+            min: numMin,
+            max: numMax,
+            step: numStep,
+            default: numDefault,
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.log_slider') {
-          return { name: p.name, type: 'log_slider', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'log_slider',
+            hint: p.hint,
+            min: numMin,
+            max: numMax,
+            step: numStep,
+            default: numDefault,
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.signed_slider') {
-          return { name: p.name, type: 'signed_slider', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'signed_slider',
+            hint: p.hint,
+            min: numMin,
+            max: numMax,
+            step: numStep,
+            default: numDefault,
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.opacity') {
-          return { name: p.name, type: 'opacity', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'opacity',
+            hint: p.hint,
+            min: numMin,
+            max: numMax,
+            step: numStep,
+            default: numDefault,
+            label: p.label || p.name,
+          };
         }
         if (p.hint === 'rc.temperature_k') {
-          return { name: p.name, type: 'temperature', hint: p.hint, min: numMin, max: numMax, step: numStep, default: numDefault, label: p.label || p.name };
+          return {
+            name: p.name,
+            type: 'temperature',
+            hint: p.hint,
+            min: numMin,
+            max: numMax,
+            step: numStep,
+            default: numDefault,
+            label: p.label || p.name,
+          };
         }
         return {
           name: p.name,
           type: 'number',
           hint: p.hint || '',
-          min: numMin, max: numMax, step: numStep,
+          min: numMin,
+          max: numMax,
+          step: numStep,
           default: numDefault,
           label: p.label || p.name,
         };
@@ -147,27 +247,98 @@ try {
 
 // Pipeline-only operations not in the manifest (enum/complex params, no ConfigParams struct)
 const PIPELINE_EXTRAS = {
-  resize:        { category: 'transform', params: [
-    { name: 'width', type: 'number', min: 1, max: 8192, step: 1, default: 256, label: 'Width in pixels' },
-    { name: 'height', type: 'number', min: 1, max: 8192, step: 1, default: 256, label: 'Height in pixels' },
-    { name: 'filter', type: 'enum', options: ['nearest', 'bilinear', 'bicubic', 'lanczos3'], default: 'lanczos3', label: 'Resize filter' },
-  ]},
-  crop:          { category: 'transform', params: [
-    { name: 'x', type: 'number', min: 0, max: 8192, step: 1, default: 0, label: 'X offset' },
-    { name: 'y', type: 'number', min: 0, max: 8192, step: 1, default: 0, label: 'Y offset' },
-    { name: 'width', type: 'number', min: 1, max: 8192, step: 1, default: 256, label: 'Crop width' },
-    { name: 'height', type: 'number', min: 1, max: 8192, step: 1, default: 256, label: 'Crop height' },
-  ]},
-  rotate:        { category: 'transform', params: [
-    { name: 'angle', type: 'enum', options: ['r90', 'r180', 'r270'], default: 'r90', label: 'Rotation angle' },
-  ]},
-  flip:          { category: 'transform', params: [
-    { name: 'direction', type: 'enum', options: ['horizontal', 'vertical'], default: 'horizontal', label: 'Flip direction' },
-  ]},
-  grayscale:     { category: 'color', params: [] },
-  convertFormat: { category: 'color', params: [
-    { name: 'target', type: 'enum', options: ['rgb8', 'rgba8', 'gray8'], default: 'rgb8', label: 'Target pixel format' },
-  ]},
+  resize: {
+    category: 'transform',
+    params: [
+      {
+        name: 'width',
+        type: 'number',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Width in pixels',
+      },
+      {
+        name: 'height',
+        type: 'number',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Height in pixels',
+      },
+      {
+        name: 'filter',
+        type: 'enum',
+        options: ['nearest', 'bilinear', 'bicubic', 'lanczos3'],
+        default: 'lanczos3',
+        label: 'Resize filter',
+      },
+    ],
+  },
+  crop: {
+    category: 'transform',
+    params: [
+      { name: 'x', type: 'number', min: 0, max: 8192, step: 1, default: 0, label: 'X offset' },
+      { name: 'y', type: 'number', min: 0, max: 8192, step: 1, default: 0, label: 'Y offset' },
+      {
+        name: 'width',
+        type: 'number',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Crop width',
+      },
+      {
+        name: 'height',
+        type: 'number',
+        min: 1,
+        max: 8192,
+        step: 1,
+        default: 256,
+        label: 'Crop height',
+      },
+    ],
+  },
+  rotate: {
+    category: 'transform',
+    params: [
+      {
+        name: 'angle',
+        type: 'enum',
+        options: ['r90', 'r180', 'r270'],
+        default: 'r90',
+        label: 'Rotation angle',
+      },
+    ],
+  },
+  flip: {
+    category: 'transform',
+    params: [
+      {
+        name: 'direction',
+        type: 'enum',
+        options: ['horizontal', 'vertical'],
+        default: 'horizontal',
+        label: 'Flip direction',
+      },
+    ],
+  },
+  grayscale: { category: 'color', params: [] },
+  convertFormat: {
+    category: 'color',
+    params: [
+      {
+        name: 'target',
+        type: 'enum',
+        options: ['rgb8', 'rgba8', 'gray8'],
+        default: 'rgb8',
+        label: 'Target pixel format',
+      },
+    ],
+  },
 };
 
 // Merge extras into PARAM_META (extras don't override manifest entries)
@@ -180,11 +351,23 @@ for (const [name, extra] of Object.entries(PIPELINE_EXTRAS)) {
 
 // Category display names (manifest uses lowercase, UI uses title case)
 const CATEGORY_LABELS = {
-  spatial: 'Filters', adjustment: 'Adjustment', color: 'Color',
-  edge: 'Edge', transform: 'Transform', alpha: 'Alpha', other: 'Other',
-  enhancement: 'Enhancement', morphology: 'Morphology', threshold: 'Threshold',
-  grading: 'Grading', tonemapping: 'Tonemapping', effect: 'Effects',
-  distortion: 'Distortion', draw: 'Draw', generator: 'Generator', tool: 'Tool',
+  spatial: 'Filters',
+  adjustment: 'Adjustment',
+  color: 'Color',
+  edge: 'Edge',
+  transform: 'Transform',
+  alpha: 'Alpha',
+  other: 'Other',
+  enhancement: 'Enhancement',
+  morphology: 'Morphology',
+  threshold: 'Threshold',
+  grading: 'Grading',
+  tonemapping: 'Tonemapping',
+  effect: 'Effects',
+  distortion: 'Distortion',
+  draw: 'Draw',
+  generator: 'Generator',
+  tool: 'Tool',
   advanced: 'Advanced',
 };
 
@@ -195,8 +378,9 @@ const SKIP = new Set(['constructor', 'read', 'nodeInfo', 'composite', 'iccToSrgb
 const operations = [];
 const tempPipe = new Pipeline();
 const proto = Object.getPrototypeOf(tempPipe);
-const methodNames = Object.getOwnPropertyNames(proto)
-  .filter(n => typeof proto[n] === 'function' && !SKIP.has(n) && !n.startsWith('write'));
+const methodNames = Object.getOwnPropertyNames(proto).filter(
+  (n) => typeof proto[n] === 'function' && !SKIP.has(n) && !n.startsWith('write'),
+);
 
 for (const name of methodNames) {
   if (!PARAM_META[name]) continue;
@@ -220,7 +404,7 @@ for (const op of operations) {
 
 // Title-case a group name: "edge_detect" → "Edge Detect"
 function groupLabel(g) {
-  return g.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return g.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // Display label for an operation: use variant name if in a group, else full name
@@ -233,11 +417,12 @@ function opLabel(op) {
 for (const [cat, ops] of Object.entries(grouped)) {
   const h3 = document.createElement('h3');
   h3.textContent = cat;
-  h3.style.cssText = 'font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:#666;margin:0.75rem 0 0.3rem';
+  h3.style.cssText =
+    'font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:#666;margin:0.75rem 0 0.3rem';
   paletteEl.appendChild(h3);
 
   // Separate into variant groups and standalone operations
-  const variantGroups = {};  // group name → [op, ...]
+  const variantGroups = {}; // group name → [op, ...]
   const standalone = [];
   for (const op of ops) {
     const meta = MANIFEST_GROUPS[op.name];
@@ -303,20 +488,20 @@ for (const [cat, ops] of Object.entries(grouped)) {
 
 // Map categories to toolbar menus
 const MENU_MAP = {
-  'Filters': 'dropdown-filters',
-  'Enhancement': 'dropdown-filters',
-  'Edge': 'dropdown-filters',
-  'Morphology': 'dropdown-filters',
-  'Transform': 'dropdown-transforms',
-  'Distortion': 'dropdown-transforms',
-  'Effects': 'dropdown-effects',
-  'Effect': 'dropdown-effects',
-  'Draw': 'dropdown-effects',
-  'Generator': 'dropdown-effects',
-  'Grading': 'dropdown-grading',
-  'Tonemapping': 'dropdown-grading',
-  'Color': 'dropdown-grading',
-  'Adjustment': 'dropdown-grading',
+  Filters: 'dropdown-filters',
+  Enhancement: 'dropdown-filters',
+  Edge: 'dropdown-filters',
+  Morphology: 'dropdown-filters',
+  Transform: 'dropdown-transforms',
+  Distortion: 'dropdown-transforms',
+  Effects: 'dropdown-effects',
+  Effect: 'dropdown-effects',
+  Draw: 'dropdown-effects',
+  Generator: 'dropdown-effects',
+  Grading: 'dropdown-grading',
+  Tonemapping: 'dropdown-grading',
+  Color: 'dropdown-grading',
+  Adjustment: 'dropdown-grading',
 };
 
 for (const [cat, ops] of Object.entries(grouped)) {
@@ -351,14 +536,14 @@ for (const [cat, ops] of Object.entries(grouped)) {
 }
 
 // Dropdown toggle behavior
-document.querySelectorAll('.menu-btn').forEach(btn => {
+document.querySelectorAll('.menu-btn').forEach((btn) => {
   btn.addEventListener('click', (e) => {
     const dropdown = btn.querySelector('.dropdown');
     if (!dropdown) return;
     const wasOpen = dropdown.classList.contains('open');
     // Close all dropdowns
-    document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
-    document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.dropdown').forEach((d) => d.classList.remove('open'));
+    document.querySelectorAll('.menu-btn').forEach((b) => b.classList.remove('active'));
     if (!wasOpen) {
       dropdown.classList.add('open');
       btn.classList.add('active');
@@ -368,8 +553,8 @@ document.querySelectorAll('.menu-btn').forEach(btn => {
 });
 // Close dropdowns on outside click
 document.addEventListener('click', () => {
-  document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
-  document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.dropdown').forEach((d) => d.classList.remove('open'));
+  document.querySelectorAll('.menu-btn').forEach((b) => b.classList.remove('active'));
 });
 
 // ─── Web Worker ─────────────────────────────────────────────────────────────
@@ -378,7 +563,7 @@ const worker = new Worker(new URL('./pipeline-worker.js', import.meta.url), { ty
 let workerReady = false;
 let isProcessing = false;
 let queuedRequest = null; // Single-slot queue: latest pending request
-let imageInfo = null;     // { width, height } from loaded image
+let imageInfo = null; // { width, height } from loaded image
 
 worker.postMessage({ type: 'init' });
 
@@ -427,7 +612,7 @@ function requestWorker(msg) {
 
 function serializeChain() {
   const chain = getChain();
-  return chain.map(n => ({
+  return chain.map((n) => ({
     name: n.op.name,
     params: n.op.params,
     paramValues: { ...n.paramValues },
@@ -435,17 +620,19 @@ function serializeChain() {
 }
 
 function serializeLayers() {
-  return layers.filter(l => l.visible).map((l, idx) => ({
-    id: l.id,
-    chain: l.chain.map(n => ({
-      name: n.op.name,
-      params: n.op.params,
-      paramValues: { ...n.paramValues },
-    })),
-    blendMode: idx === 0 ? null : (l.blendMode === 'over' ? null : l.blendMode),
-    x: l.x,
-    y: l.y,
-  }));
+  return layers
+    .filter((l) => l.visible)
+    .map((l, idx) => ({
+      id: l.id,
+      chain: l.chain.map((n) => ({
+        name: n.op.name,
+        params: n.op.params,
+        paramValues: { ...n.paramValues },
+      })),
+      blendMode: idx === 0 ? null : l.blendMode === 'over' ? null : l.blendMode,
+      x: l.x,
+      y: l.y,
+    }));
 }
 
 function requestCompositeProcess() {
@@ -457,19 +644,21 @@ function requestCompositeProcess() {
     return;
   }
   // Multi-layer — send all layer data to worker
-  const layerData = layers.filter(l => l.visible).map(l => ({
-    id: l.id,
-    imageBytes: l.imageBytes.buffer.slice(0),
-    chain: l.chain.map(n => ({
-      name: n.op.name,
-      params: n.op.params,
-      paramValues: { ...n.paramValues },
-    })),
-    blendMode: l === layers[0] ? null : (l.blendMode === 'over' ? null : l.blendMode),
-    x: l.x,
-    y: l.y,
-  }));
-  const transfers = layerData.map(l => l.imageBytes);
+  const layerData = layers
+    .filter((l) => l.visible)
+    .map((l) => ({
+      id: l.id,
+      imageBytes: l.imageBytes.buffer.slice(0),
+      chain: l.chain.map((n) => ({
+        name: n.op.name,
+        params: n.op.params,
+        paramValues: { ...n.paramValues },
+      })),
+      blendMode: l === layers[0] ? null : l.blendMode === 'over' ? null : l.blendMode,
+      x: l.x,
+      y: l.y,
+    }));
+  const transfers = layerData.map((l) => l.imageBytes);
   requestWorker({ type: 'composite', layers: layerData }, transfers);
 }
 
@@ -503,9 +692,8 @@ worker.onmessage = (e) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      const canvas = e.data.mode === 'thumb'
-        ? document.getElementById('thumb-preview')
-        : previewCanvas;
+      const canvas =
+        e.data.mode === 'thumb' ? document.getElementById('thumb-preview') : previewCanvas;
       if (canvas) {
         canvas.width = img.width;
         canvas.height = img.height;
@@ -596,9 +784,14 @@ let dragSrcIdx = null;
 let showingOriginal = false;
 
 // Convenience: get active layer
-function activeLayer() { return layers.find(l => l.id === activeLayerId); }
+function activeLayer() {
+  return layers.find((l) => l.id === activeLayerId);
+}
 // Convenience: get active layer's chain (for backwards compat)
-function getChain() { const l = activeLayer(); return l ? l.chain : []; }
+function getChain() {
+  const l = activeLayer();
+  return l ? l.chain : [];
+}
 
 const chainEl = document.getElementById('chain');
 const dropHint = document.getElementById('drop-hint');
@@ -615,13 +808,17 @@ const panelToggle = document.getElementById('panel-toggle');
 
 // ─── Image Loading (Layer-Aware) ────────────────────────────────────────────
 
-document.getElementById('canvas-area').addEventListener('click', () => { if (layers.length === 0) fileInput.click(); });
+document.getElementById('canvas-area').addEventListener('click', () => {
+  if (layers.length === 0) fileInput.click();
+});
 document.getElementById('canvas-area').addEventListener('dragover', (e) => e.preventDefault());
 document.getElementById('canvas-area').addEventListener('drop', (e) => {
   e.preventDefault();
   if (e.dataTransfer.files[0]) addLayer(e.dataTransfer.files[0]);
 });
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) addLayer(fileInput.files[0]); });
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) addLayer(fileInput.files[0]);
+});
 
 // Add layer button
 addLayerBtn.addEventListener('click', () => layerFileInput.click());
@@ -680,7 +877,7 @@ async function addLayer(file) {
 }
 
 function removeLayer(id) {
-  layers = layers.filter(l => l.id !== id);
+  layers = layers.filter((l) => l.id !== id);
   if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[0].id : null;
   renderLayers();
   renderChain();
@@ -696,7 +893,18 @@ function setActiveLayer(id) {
 
 // ─── Layer Panel Rendering ─────────────────────────────────────────────────
 
-const BLEND_MODES = ['over', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'soft-light', 'hard-light', 'difference', 'exclusion'];
+const BLEND_MODES = [
+  'over',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+  'soft-light',
+  'hard-light',
+  'difference',
+  'exclusion',
+];
 
 function renderLayers() {
   layersEl.innerHTML = '';
@@ -737,7 +945,10 @@ function renderLayers() {
       const removeBtn = document.createElement('span');
       removeBtn.className = 'node-remove';
       removeBtn.textContent = '✕';
-      removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeLayer(layer.id); });
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeLayer(layer.id);
+      });
       header.appendChild(removeBtn);
     }
 
@@ -751,7 +962,8 @@ function renderLayers() {
       const blendSelect = document.createElement('select');
       for (const mode of BLEND_MODES) {
         const opt = document.createElement('option');
-        opt.value = mode; opt.textContent = mode;
+        opt.value = mode;
+        opt.textContent = mode;
         if (mode === layer.blendMode) opt.selected = true;
         blendSelect.appendChild(opt);
       }
@@ -763,14 +975,26 @@ function renderLayers() {
       controls.appendChild(blendSelect);
 
       const xInput = document.createElement('input');
-      xInput.type = 'number'; xInput.value = layer.x; xInput.placeholder = 'X';
-      xInput.addEventListener('change', (e) => { e.stopPropagation(); layer.x = parseInt(xInput.value) || 0; requestCompositeProcess(); });
+      xInput.type = 'number';
+      xInput.value = layer.x;
+      xInput.placeholder = 'X';
+      xInput.addEventListener('change', (e) => {
+        e.stopPropagation();
+        layer.x = parseInt(xInput.value) || 0;
+        requestCompositeProcess();
+      });
       xInput.addEventListener('click', (e) => e.stopPropagation());
       controls.appendChild(xInput);
 
       const yInput = document.createElement('input');
-      yInput.type = 'number'; yInput.value = layer.y; yInput.placeholder = 'Y';
-      yInput.addEventListener('change', (e) => { e.stopPropagation(); layer.y = parseInt(yInput.value) || 0; requestCompositeProcess(); });
+      yInput.type = 'number';
+      yInput.value = layer.y;
+      yInput.placeholder = 'Y';
+      yInput.addEventListener('change', (e) => {
+        e.stopPropagation();
+        layer.y = parseInt(yInput.value) || 0;
+        requestCompositeProcess();
+      });
       yInput.addEventListener('click', (e) => e.stopPropagation());
       controls.appendChild(yInput);
 
@@ -785,11 +1009,14 @@ function renderLayers() {
 
 function addNode(op) {
   const layer = activeLayer();
-  if (!layer) { fileInput.click(); return; }
+  if (!layer) {
+    fileInput.click();
+    return;
+  }
   const node = {
     id: nextId++,
     op,
-    paramValues: Object.fromEntries(op.params.map(p => [p.name, p.default])),
+    paramValues: Object.fromEntries(op.params.map((p) => [p.name, p.default])),
     applied: false,
     timingMs: 0,
   };
@@ -801,7 +1028,7 @@ function addNode(op) {
 
 function removeNode(id) {
   const layer = activeLayer();
-  if (layer) layer.chain = layer.chain.filter(n => n.id !== id);
+  if (layer) layer.chain = layer.chain.filter((n) => n.id !== id);
   if (editingNodeId === id) editingNodeId = null;
   renderChain();
   requestCompositeProcess();
@@ -831,7 +1058,8 @@ function renderChain() {
   chain.forEach((node, idx) => {
     const card = document.createElement('div');
     const isEditing = editingNodeId === node.id;
-    card.className = 'node-card' + (isEditing ? ' editing' : '') + (!node.applied ? ' pending' : '');
+    card.className =
+      'node-card' + (isEditing ? ' editing' : '') + (!node.applied ? ' pending' : '');
     card.dataset.id = node.id;
     card.dataset.idx = idx;
 
@@ -841,7 +1069,9 @@ function renderChain() {
       e.dataTransfer.dropEffect = 'move';
       card.style.borderTop = '2px solid #3b82f6';
     });
-    card.addEventListener('dragleave', () => { card.style.borderTop = ''; });
+    card.addEventListener('dragleave', () => {
+      card.style.borderTop = '';
+    });
     card.addEventListener('drop', (e) => {
       e.preventDefault();
       card.style.borderTop = '';
@@ -864,7 +1094,10 @@ function renderChain() {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setDragImage(card, 0, 0);
     });
-    handle.addEventListener('dragend', () => { card.style.opacity = '1'; dragSrcIdx = null; });
+    handle.addEventListener('dragend', () => {
+      card.style.opacity = '1';
+      dragSrcIdx = null;
+    });
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'node-name';
@@ -883,7 +1116,10 @@ function renderChain() {
       editBtn.textContent = '\u270E'; // ✎
       editBtn.style.cssText = 'cursor:pointer;color:#60a5fa;font-size:0.85rem';
       editBtn.title = 'Edit parameters';
-      editBtn.addEventListener('click', () => { editingNodeId = node.id; renderChain(); });
+      editBtn.addEventListener('click', () => {
+        editingNodeId = node.id;
+        renderChain();
+      });
       actions.appendChild(editBtn);
     }
 
@@ -903,7 +1139,9 @@ function renderChain() {
     if (!isEditing && node.op.params.length > 0) {
       const summary = document.createElement('div');
       summary.style.cssText = 'font-size:0.65rem;color:#666;padding:0 8px 4px';
-      summary.textContent = node.op.params.map(p => `${p.name}=${node.paramValues[p.name]}`).join(', ');
+      summary.textContent = node.op.params
+        .map((p) => `${p.name}=${node.paramValues[p.name]}`)
+        .join(', ');
       card.appendChild(summary);
     }
 
@@ -992,9 +1230,13 @@ function renderChain() {
           const input = document.createElement('input');
           input.type = 'range';
           input.className = 'log-slider';
-          input.min = 0; input.max = 1000; input.step = 1;
-          const pMin = p.min || 0, pMax = p.max || 100;
-          const toSlider = (v) => Math.round(Math.log(v - pMin + 1) / Math.log(pMax - pMin + 1) * 1000);
+          input.min = 0;
+          input.max = 1000;
+          input.step = 1;
+          const pMin = p.min || 0,
+            pMax = p.max || 100;
+          const toSlider = (v) =>
+            Math.round((Math.log(v - pMin + 1) / Math.log(pMax - pMin + 1)) * 1000);
           const fromSlider = (s) => Math.pow(pMax - pMin + 1, s / 1000) + pMin - 1;
           input.value = toSlider(node.paramValues[p.name]);
           guardDrag(input);
@@ -1017,7 +1259,9 @@ function renderChain() {
           const input = document.createElement('input');
           input.type = 'range';
           input.className = 'signed-slider';
-          input.min = p.min; input.max = p.max; input.step = p.step;
+          input.min = p.min;
+          input.max = p.max;
+          input.step = p.step;
           input.value = node.paramValues[p.name];
           guardDrag(input);
           input.addEventListener('input', () => {
@@ -1040,12 +1284,16 @@ function renderChain() {
           const input = document.createElement('input');
           input.type = 'range';
           input.className = 'opacity-slider';
-          input.min = p.min || 0; input.max = p.max || 1; input.step = p.step || 0.01;
+          input.min = p.min || 0;
+          input.max = p.max || 1;
+          input.step = p.step || 0.01;
           input.value = node.paramValues[p.name];
           const numInput = document.createElement('input');
           numInput.type = 'number';
           numInput.className = 'opacity-number';
-          numInput.min = p.min || 0; numInput.max = p.max || 1; numInput.step = p.step || 0.01;
+          numInput.min = p.min || 0;
+          numInput.max = p.max || 1;
+          numInput.step = p.step || 0.01;
           numInput.value = node.paramValues[p.name];
           guardDrag(input);
           guardDrag(numInput);
@@ -1077,7 +1325,9 @@ function renderChain() {
           const input = document.createElement('input');
           input.type = 'range';
           input.className = 'temperature-slider';
-          input.min = p.min; input.max = p.max; input.step = p.step;
+          input.min = p.min;
+          input.max = p.max;
+          input.step = p.step;
           input.value = node.paramValues[p.name];
           guardDrag(input);
           input.addEventListener('input', () => {
@@ -1096,7 +1346,9 @@ function renderChain() {
           paramDiv.appendChild(label);
           const input = document.createElement('input');
           input.type = 'range';
-          input.min = p.min; input.max = p.max; input.step = p.step;
+          input.min = p.min;
+          input.max = p.max;
+          input.step = p.step;
           input.value = node.paramValues[p.name];
           guardDrag(input);
           input.addEventListener('input', () => {
@@ -1112,7 +1364,8 @@ function renderChain() {
           const select = document.createElement('select');
           for (const opt of p.options) {
             const option = document.createElement('option');
-            option.value = opt; option.textContent = opt;
+            option.value = opt;
+            option.textContent = opt;
             if (opt === node.paramValues[p.name]) option.selected = true;
             select.appendChild(option);
           }
@@ -1216,13 +1469,16 @@ document.getElementById('download-btn').addEventListener('click', () => {
     // Multi-layer export — composite then download the result
     // For now, download the preview canvas content
     const canvas = document.getElementById('preview-canvas');
-    canvas.toBlob((blob) => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `rasmcore-composite.${format === 'jpeg' ? 'jpg' : format}`;
-      a.click();
-    }, format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png',
-    format === 'png' ? undefined : parseInt(document.getElementById('quality').value) / 100);
+    canvas.toBlob(
+      (blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `rasmcore-composite.${format === 'jpeg' ? 'jpg' : format}`;
+        a.click();
+      },
+      format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png',
+      format === 'png' ? undefined : parseInt(document.getElementById('quality').value) / 100,
+    );
   }
 });
 
@@ -1236,27 +1492,35 @@ function generateCode() {
   lines.push(`import { rcimage } from '@rasmcore/sdk';`);
   lines.push('');
 
-  const visibleLayers = layers.filter(l => l.visible);
+  const visibleLayers = layers.filter((l) => l.visible);
   if (visibleLayers.length <= 1) {
     lines.push('const result = rcimage.load(imageBytes)');
   } else {
     // Multi-layer: generate loadLayer + composite code
     lines.push(`const bg = rcimage.load(layer0Bytes)`);
-    for (const node of (visibleLayers[0]?.chain || [])) {
-      lines.push(`  .${node.op.name}(${node.op.params.map(p => {
-        const val = node.paramValues[p.name];
-        return typeof val === 'string' ? `'${val}'` : val;
-      }).join(', ')})`);
+    for (const node of visibleLayers[0]?.chain || []) {
+      lines.push(
+        `  .${node.op.name}(${node.op.params
+          .map((p) => {
+            const val = node.paramValues[p.name];
+            return typeof val === 'string' ? `'${val}'` : val;
+          })
+          .join(', ')})`,
+      );
     }
     lines.push('');
     for (let i = 1; i < visibleLayers.length; i++) {
       const l = visibleLayers[i];
       lines.push(`const layer${i} = bg.loadLayer(layer${i}Bytes)`);
       for (const node of l.chain) {
-        lines.push(`  .${node.op.name}(${node.op.params.map(p => {
-          const val = node.paramValues[p.name];
-          return typeof val === 'string' ? `'${val}'` : val;
-        }).join(', ')})`);
+        lines.push(
+          `  .${node.op.name}(${node.op.params
+            .map((p) => {
+              const val = node.paramValues[p.name];
+              return typeof val === 'string' ? `'${val}'` : val;
+            })
+            .join(', ')})`,
+        );
       }
       const opts = [];
       if (l.x) opts.push(`x: ${l.x}`);
@@ -1270,7 +1534,7 @@ function generateCode() {
   }
 
   const chain = getChain();
-  for (const node of (visibleLayers.length <= 1 ? chain : [])) {
+  for (const node of visibleLayers.length <= 1 ? chain : []) {
     if (node.op.params.length === 0) {
       lines.push(`  .${node.op.name}()`);
     } else {
@@ -1293,7 +1557,7 @@ function generateCode() {
   // Terminal method
   const formatMap = {
     jpeg: { method: 'toJpeg', config: `{ quality: ${quality} }` },
-    png:  { method: 'toPng', config: '{}' },
+    png: { method: 'toPng', config: '{}' },
     webp: { method: 'toWebp', config: `{ quality: ${quality} }` },
   };
   const fmt = formatMap[format] || formatMap.jpeg;
@@ -1305,7 +1569,7 @@ function generateCode() {
 function highlightCode(code) {
   return code
     .replace(/\b(import|from|const)\b/g, '<span class="kw">$1</span>')
-    .replace(/'([^']+)'/g, "'<span class=\"str\">$1</span>'")
+    .replace(/'([^']+)'/g, '\'<span class="str">$1</span>\'')
     .replace(/\b(\d+\.?\d*)\b/g, '<span class="num">$1</span>')
     .replace(/\.(\w+)\(/g, '.<span class="fn">$1</span>(');
 }
@@ -1332,7 +1596,9 @@ document.getElementById('copy-code-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(code).then(() => {
     const btn = document.getElementById('copy-code-btn');
     btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 1500);
+    setTimeout(() => {
+      btn.textContent = 'Copy to Clipboard';
+    }, 1500);
   });
 });
 
@@ -1346,7 +1612,7 @@ panelToggle.addEventListener('click', () => {
 
 // ─── Section Collapse ──────────────────────────────────────────────────────
 
-document.querySelectorAll('.panel-section-header').forEach(header => {
+document.querySelectorAll('.panel-section-header').forEach((header) => {
   header.addEventListener('click', () => {
     const section = header.closest('.panel-section');
     const body = section.querySelector('.panel-section-body');

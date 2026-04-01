@@ -111,7 +111,12 @@ function processChain(chain, mode) {
       if (step.name === 'resize' && mode === 'thumb') {
         const info = pipe.nodeInfo(node);
         const scale = Math.min(THUMB_MAX / args[0], THUMB_MAX / args[1], 1);
-        node = pipe.resize(node, Math.max(1, Math.round(args[0] * scale)), Math.max(1, Math.round(args[1] * scale)), args[2]);
+        node = pipe.resize(
+          node,
+          Math.max(1, Math.round(args[0] * scale)),
+          Math.max(1, Math.round(args[1] * scale)),
+          args[2],
+        );
       } else if (step.name === 'crop' && mode === 'thumb') {
         const info = pipe.nodeInfo(node);
         node = pipe.crop(node, 0, 0, Math.min(args[2], info.width), Math.min(args[3], info.height));
