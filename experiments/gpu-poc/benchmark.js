@@ -64,17 +64,21 @@ function getOrCreatePipeline(shaderName, entryPoint) {
 // ─── WASM Baseline (main thread — importmap resolves bare specifiers) ───────
 
 let Pipeline;
+let Filters; // stateless filter API (no tiling, full-image)
 
 async function initWASM() {
   try {
     const sdk = await import('./sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
-    // Log available methods for debugging
+    Filters = sdk.filters;
+    // Log available methods
     const pipe = new Pipeline();
-    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(pipe))
+    const pipeMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(pipe))
       .filter(n => typeof pipe[n] === 'function' && !n.startsWith('_'))
       .filter(n => ['blur','spinBlur','spherize','bilateral','read','writePng'].includes(n));
-    log(`WASM SDK loaded — benchmark methods: ${methods.join(', ') || 'NONE FOUND'}`);
+    const filterMethods = Filters ? Object.keys(Filters).filter(n => ['blur','spinBlur','spherize','bilateral'].includes(n)) : [];
+    log(`WASM SDK loaded — pipeline: ${pipeMethods.join(', ')}`);
+    log(`WASM stateless filters: ${filterMethods.join(', ') || 'none found'}`);
   } catch (e) {
     log(`WASM SDK not available: ${e.message}`);
     log('(Run demo/build.sh first to generate SDK)');
@@ -391,13 +395,53 @@ async function benchWASMOp(opName, size, config) {
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 
+// Stateless filter benchmark — no pipeline, no tiling, full-image processing
+async function benchWASMStateless(opName, size, config) {
+  if (!Filters || !Filters[opName]) return { median: -1, p95: -1 };
+
+  // Decode the test PNG to get raw pixels + info
+  const pngBytes = generateWASMTestImage(size);
+  let rawPixels, info;
+  try {
+    const pipe = new Pipeline();
+    const src = pipe.read(pngBytes);
+    info = pipe.nodeInfo(src);
+    // Get raw pixels by writing as raw (or just use the pipeline to decode)
+    // We'll use the decoded PNG via the pipeline nodeInfo
+  } catch (e) {
+    log(`Stateless ${opName} decode error: ${errMsg(e)}`);
+    return { median: -1, p95: -1 };
+  }
+
+  // Call the stateless filter API directly
+  const times = [];
+  for (let i = 0; i < 13; i++) {
+    const t0 = performance.now();
+    try {
+      Filters[opName](pngBytes, info, config);
+    } catch (e) {
+      if (i === 0) log(`Stateless ${opName} error: ${errMsg(e)}`);
+      return { median: -1, p95: -1 };
+    }
+    if (i >= 3) times.push(performance.now() - t0);
+  }
+  times.sort((a, b) => a - b);
+  return { median: times[Math.floor(times.length / 2)], p95: times[Math.floor(times.length * 0.95)] };
+}
+
 function renderResults(results) {
   const el = document.getElementById('results');
-  let html = '<table><tr><th>Operation</th><th>Size</th><th>GPU (ms)</th><th>WASM (ms)</th><th>Speedup</th></tr>';
+  let html = '<table><tr><th>Operation</th><th>Size</th><th>GPU (ms)</th><th>WASM Tiled (ms)</th><th>WASM Full (ms)</th><th>GPU vs Tiled</th><th>GPU vs Full</th></tr>';
   for (const r of results) {
-    const speedup = r.wasm > 0 && r.gpu > 0 ? (r.wasm / r.gpu).toFixed(1) + 'x' : 'N/A';
-    const cls = r.wasm > 0 && r.gpu > 0 && r.gpu < r.wasm ? 'faster' : 'slower';
-    html += `<tr><td>${r.op}</td><td>${r.size}</td><td>${r.gpu.toFixed(1)}</td><td>${r.wasm >= 0 ? r.wasm.toFixed(1) : 'N/A'}</td><td class="${cls}">${speedup}</td></tr>`;
+    const speedupTiled = r.wasmTiled > 0 && r.gpu > 0 ? (r.wasmTiled / r.gpu).toFixed(1) + 'x' : 'N/A';
+    const speedupFull = r.wasmFull > 0 && r.gpu > 0 ? (r.wasmFull / r.gpu).toFixed(1) + 'x' : 'N/A';
+    const clsTiled = r.wasmTiled > 0 && r.gpu > 0 && r.gpu < r.wasmTiled ? 'faster' : 'slower';
+    const clsFull = r.wasmFull > 0 && r.gpu > 0 && r.gpu < r.wasmFull ? 'faster' : 'slower';
+    html += `<tr><td>${r.op}</td><td>${r.size}</td><td>${r.gpu.toFixed(1)}</td>`;
+    html += `<td>${r.wasmTiled >= 0 ? r.wasmTiled.toFixed(1) : 'N/A'}</td>`;
+    html += `<td>${r.wasmFull >= 0 ? r.wasmFull.toFixed(1) : 'N/A'}</td>`;
+    html += `<td class="${clsTiled}">${speedupTiled}</td>`;
+    html += `<td class="${clsFull}">${speedupFull}</td></tr>`;
   }
   html += '</table>';
   el.innerHTML = html;
@@ -413,35 +457,39 @@ async function runBenchmark() {
   status('Measuring transfer overhead...');
   const transfer = await benchTransferOnly(size);
   log(`Transfer only: ${transfer.median.toFixed(1)}ms (p95: ${transfer.p95.toFixed(1)}ms)`);
-  results.push({ op: 'Transfer (upload+readback)', size: `${size}x${size}`, gpu: transfer.median, wasm: 0 });
+  results.push({ op: 'Transfer (upload+readback)', size: `${size}x${size}`, gpu: transfer.median, wasmTiled: 0, wasmFull: 0 });
 
   // Gaussian blur
   status('Benchmarking gaussian blur...');
   const gpuBlur = await benchGPUBlur(size);
-  const wasmBlur = await benchWASMOp('blur', size, { radius: 20.0 });
-  log(`Blur r=20: GPU=${gpuBlur.median.toFixed(1)}ms WASM=${wasmBlur.median.toFixed(1)}ms`);
-  results.push({ op: 'Gaussian Blur (r=20)', size: `${size}x${size}`, gpu: gpuBlur.median, wasm: wasmBlur.median });
+  const wasmBlurTiled = await benchWASMOp('blur', size, { radius: 20.0 });
+  const wasmBlurFull = await benchWASMStateless('blur', size, { radius: 20.0 });
+  log(`Blur r=20: GPU=${gpuBlur.median.toFixed(1)}ms WASM-tiled=${wasmBlurTiled.median.toFixed(1)}ms WASM-full=${wasmBlurFull.median.toFixed(1)}ms`);
+  results.push({ op: 'Gaussian Blur (r=20)', size: `${size}x${size}`, gpu: gpuBlur.median, wasmTiled: wasmBlurTiled.median, wasmFull: wasmBlurFull.median });
 
   // Spin blur
   status('Benchmarking spin blur...');
   const gpuSpin = await benchGPUSpinBlur(size);
-  const wasmSpin = await benchWASMOp('spinBlur', size, { angle: 0.5, samples: 32 });
-  log(`Spin blur: GPU=${gpuSpin.median.toFixed(1)}ms WASM=${wasmSpin.median.toFixed(1)}ms`);
-  results.push({ op: 'Spin Blur (32 samples)', size: `${size}x${size}`, gpu: gpuSpin.median, wasm: wasmSpin.median });
+  const wasmSpinTiled = await benchWASMOp('spinBlur', size, { angle: 0.5, samples: 32 });
+  const wasmSpinFull = await benchWASMStateless('spinBlur', size, { angle: 0.5, samples: 32 });
+  log(`Spin blur: GPU=${gpuSpin.median.toFixed(1)}ms WASM-tiled=${wasmSpinTiled.median.toFixed(1)}ms WASM-full=${wasmSpinFull.median.toFixed(1)}ms`);
+  results.push({ op: 'Spin Blur (32 samples)', size: `${size}x${size}`, gpu: gpuSpin.median, wasmTiled: wasmSpinTiled.median, wasmFull: wasmSpinFull.median });
 
   // Spherize
   status('Benchmarking spherize...');
   const gpuSphere = await benchGPUSpherize(size);
-  const wasmSphere = await benchWASMOp('spherize', size, { strength: 0.8 });
-  log(`Spherize: GPU=${gpuSphere.median.toFixed(1)}ms WASM=${wasmSphere.median.toFixed(1)}ms`);
-  results.push({ op: 'Spherize (0.8)', size: `${size}x${size}`, gpu: gpuSphere.median, wasm: wasmSphere.median });
+  const wasmSphereTiled = await benchWASMOp('spherize', size, { strength: 0.8 });
+  const wasmSphereFull = await benchWASMStateless('spherize', size, { strength: 0.8 });
+  log(`Spherize: GPU=${gpuSphere.median.toFixed(1)}ms WASM-tiled=${wasmSphereTiled.median.toFixed(1)}ms WASM-full=${wasmSphereFull.median.toFixed(1)}ms`);
+  results.push({ op: 'Spherize (0.8)', size: `${size}x${size}`, gpu: gpuSphere.median, wasmTiled: wasmSphereTiled.median, wasmFull: wasmSphereFull.median });
 
   // Bilateral
   status('Benchmarking bilateral filter...');
   const gpuBilateral = await benchGPUBilateral(size);
-  const wasmBilateral = await benchWASMOp('bilateral', size, { spatialSigma: 10.0, rangeSigma: 25.0, radius: 5 });
-  log(`Bilateral r=5: GPU=${gpuBilateral.median.toFixed(1)}ms WASM=${wasmBilateral.median.toFixed(1)}ms`);
-  results.push({ op: 'Bilateral (r=5)', size: `${size}x${size}`, gpu: gpuBilateral.median, wasm: wasmBilateral.median });
+  const wasmBilateralTiled = await benchWASMOp('bilateral', size, { spatialSigma: 10.0, rangeSigma: 25.0, radius: 5 });
+  const wasmBilateralFull = await benchWASMStateless('bilateral', size, { spatialSigma: 10.0, rangeSigma: 25.0, radius: 5 });
+  log(`Bilateral r=5: GPU=${gpuBilateral.median.toFixed(1)}ms WASM-tiled=${wasmBilateralTiled.median.toFixed(1)}ms WASM-full=${wasmBilateralFull.median.toFixed(1)}ms`);
+  results.push({ op: 'Bilateral (r=5)', size: `${size}x${size}`, gpu: gpuBilateral.median, wasmTiled: wasmBilateralTiled.median, wasmFull: wasmBilateralFull.median });
 
   renderResults(results);
   status(`Benchmark complete @ ${size}x${size}`);
