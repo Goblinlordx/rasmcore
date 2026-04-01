@@ -1,0 +1,157 @@
+id: gpu-offload-design_20260402010000Z
+title: "Research: GPU offload architecture design — trait, WIT protocol, shader catalog"
+type: research
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Design the full GPU offload architecture: GpuCapable trait, WIT import
+    protocol, batch detection algorithm, shader embedding strategy, and
+    platform-agnostic host contract. Produces a design doc with decisions,
+    WIT definitions, and implementation plan for 4+ follow-up tracks.
+  context: |
+    The GPU PoC proved 36-145x speedups at 1024x1024 for expensive ops
+    (blur, spin blur, spherize) using WebGPU compute shaders. Transfer
+    overhead is ~2ms — negligible compared to WASM compute times of
+    140-265ms.
+
+    The architecture must be platform-agnostic: the WASM component emits
+    WGSL shader source + params, and the host runs them however it wants.
+    This works on browser (WebGPU), Python (wgpu-py), Go (wgpu-native),
+    Rust (wgpu), and any future platform.
+
+    Key design decisions to make:
+    1. How filters declare GPU capability and provide shaders
+    2. How the graph walker detects and batches GPU-capable nodes
+    3. The WIT import contract (gpu-execute function signature)
+    4. Buffer management (shared memory vs copy, input/output handoff)
+    5. Which ops get GPU shaders first (priority based on PoC speedups)
+    6. How CLUT-fused ops interact with GPU batches
+    7. How multi-pass ops (separable blur) are expressed
+    8. Error handling when GPU is unavailable (graceful fallback to CPU)
+  codebase_analysis: |
+    Current pipeline architecture (relevant to GPU integration):
+
+    Graph walker: graph.rs execute() walks nodes in topological order,
+    calling compute_region() on each. GPU batching would happen here —
+    detect consecutive GPU-capable nodes and dispatch as a batch instead
+    of calling compute_region individually.
+
+    Node trait: ImageNode has compute_region(), info(), overlap(),
+    access_pattern(). GPU capability would be a new trait method or
+    a separate GpuCapable trait.
+
+    CLUT fusion: fuse_color_ops() in graph.rs already batches consecutive
+    color ops into a single 3D LUT node. GPU batching is analogous but
+    at execution time, not optimization time. The two can coexist: if
+    GPU is available, skip CLUT fusion and run individual ops on GPU.
+    If GPU unavailable, fall back to CLUT fusion on CPU.
+
+    Filter registration: register_filter macro + ConfigParams derive.
+    GPU shaders could be declared alongside: shader source as a const
+    string, workgroup size, number of passes.
+
+    WIT imports: the component already imports from host (e.g., clocks,
+    random). Adding a gpu-execute import follows the same pattern.
+
+    PoC results at 1024x1024:
+    - Gaussian blur r=20: GPU 3.9ms vs WASM 140ms (36x)
+    - Spin blur 32 samples: GPU 3.0ms vs WASM 175ms (58x)
+    - Spherize 0.8: GPU 1.8ms vs WASM 265ms (145x)
+    - Transfer overhead: 1.8ms (upload + readback)
+  acceptance_criteria:
+    - Design doc produced at .agent/kf/_reports/gpu-offload-design.md
+    - GpuCapable trait definition with shader source, params, workgroup hints
+    - WIT import definition for gpu-execute (platform-agnostic)
+    - Batch detection algorithm (graph walker modification)
+    - Buffer management strategy (SharedArrayBuffer, copy, zero-copy options)
+    - GPU/CPU fallback strategy (graceful degradation)
+    - Shader catalog — which ops get GPU shaders, priority order
+    - Multi-pass op design (separable blur = 2 dispatches)
+    - CLUT fusion interaction design
+    - Implementation plan split into 4+ follow-up tracks
+  out_of_scope: |
+    - Implementing any code changes (this is research/design only)
+    - Writing WGSL shaders for all 150+ filters
+    - Platform-specific host implementations (browser, Python, Go)
+    - Performance optimization of individual shaders
+  technical_notes: |
+    Design areas to explore:
+
+    1. GpuCapable trait:
+       trait GpuCapable {
+           fn gpu_ops(&self) -> Vec<GpuOp>;
+       }
+       struct GpuOp {
+           shader: &'static str,      // WGSL source
+           entry_point: &'static str, // compute shader entry
+           workgroup: [u32; 3],       // dispatch hint
+       }
+       Filters implement this optionally. The graph walker checks
+       dyn GpuCapable on each node.
+
+    2. WIT import:
+       gpu-execute: func(
+         ops: list<gpu-op>,
+         input: buffer,
+         width: u32, height: u32, bpp: u32
+       ) -> result<buffer, gpu-error>;
+
+       record gpu-op {
+         shader: string,
+         entry-point: string,
+         params: buffer,      // uniform data, filter-specific
+         workgroup: tuple<u32, u32, u32>,
+       }
+
+    3. Batch detection in graph walker:
+       During execute(), scan ahead for consecutive GPU-capable nodes.
+       Collect their GpuOps into a batch. Call gpu-execute once with
+       the entire batch. The host chains the ops internally (output of
+       op N = input of op N+1, all in GPU memory).
+
+    4. Buffer handoff:
+       - CPU→GPU: last CPU node's output becomes gpu-execute input
+       - GPU→CPU: gpu-execute output becomes next CPU node's input
+       - If entire chain is GPU: only one upload + one readback
+
+    5. Fallback: if gpu-execute import is not provided by host,
+       the pipeline falls back to CPU execution (current behavior).
+       This is a WIT optional import — absent = CPU only.
+
+    6. Shader embedding: WGSL source as const &str in each filter
+       module, alongside the Rust implementation. Build.rs could
+       optionally validate WGSL syntax at compile time via naga.
+plan:
+  - phase: "Architecture Design"
+    tasks:
+      - text: "Design GpuCapable trait — method signatures, GpuOp struct, how filters opt in"
+        done: false
+      - text: "Design WIT gpu-execute import — exact record types, buffer semantics, error handling"
+        done: false
+      - text: "Design batch detection algorithm — graph walker modifications, consecutive node grouping"
+        done: false
+      - text: "Design buffer management — CPU/GPU handoff, SharedArrayBuffer potential, multi-batch chains"
+        done: false
+  - phase: "Interaction Design"
+    tasks:
+      - text: "Design CLUT fusion interaction — when to use GPU vs CLUT, decision logic"
+        done: false
+      - text: "Design multi-pass ops — separable blur (H+V), how passes are expressed in GpuOp list"
+        done: false
+      - text: "Design fallback strategy — optional WIT import, graceful degradation to CPU"
+        done: false
+      - text: "Design shader embedding — const str vs file, compile-time validation, param serialization"
+        done: false
+  - phase: "Catalog + Planning"
+    tasks:
+      - text: "Catalog all filters for GPU capability — classify each as GPU-easy, GPU-possible, CPU-only"
+        done: false
+      - text: "Prioritize shader implementation order based on PoC speedups and user-facing impact"
+        done: false
+      - text: "Split implementation into 4+ follow-up tracks with dependency ordering"
+        done: false
+      - text: "Write design doc at .agent/kf/_reports/gpu-offload-design.md"
+        done: false
+extra: {}

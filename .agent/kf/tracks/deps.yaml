@@ -246,3 +246,7 @@ encoder-codegen-unify_20260401133000Z: []
 
 # GPU offload PoC — standalone benchmark, no pipeline deps
 gpu-offload-poc_20260401140500Z: []
+
+# GPU offload design — research, depends on PoC results
+gpu-offload-design_20260402010000Z:
+  - gpu-offload-poc_20260401140500Z
