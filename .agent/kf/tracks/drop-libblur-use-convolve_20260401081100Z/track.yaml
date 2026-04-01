@@ -1,106 +1,90 @@
 id: drop-libblur-use-convolve_20260401081100Z
-title: "Replace libblur with native convolve for Gaussian blur"
+title: Replace libblur with native convolve for Gaussian blur
 type: refactor
 status: pending
 created: '2026-04-01'
 updated: '2026-04-01'
 spec:
-  summary: |
-    Replace the libblur external dependency in blur_impl with our own
+  summary: 'Replace the libblur external dependency in blur_impl with our own
+
     convolve() function, which already handles separable Gaussian kernels
+
     with WASM SIMD128. Then remove the libblur dependency from Cargo.toml.
-  context: |
-    blur_impl currently delegates to libblur::gaussian_blur(). But gaussian_blur_cv
+
+    '
+  context: 'blur_impl currently delegates to libblur::gaussian_blur(). But gaussian_blur_cv
+
     already implements the same thing using our own convolve() with auto-separable
-    detection + WASM SIMD. libblur's threading is useless (WASM is single-threaded).
+
+    detection + WASM SIMD. libblur''s threading is useless (WASM is single-threaded).
+
     Having two Gaussian blur implementations is redundant.
-  codebase_analysis: |
-    CURRENT:
-    - blur_impl (line 1298): calls libblur::gaussian_blur() with radius → kernel_size
-    - gaussian_blur_cv (line 9693): builds Gaussian kernel, calls convolve(), has
-      box blur approximation for large sigma
 
-    WHAT blur_impl NEEDS:
-    - Convert radius to sigma (sigma = radius / 3.0 or similar)
-    - Build 1D Gaussian kernel via gaussian_kernel_1d()
-    - Build 2D kernel as outer product (k1d[y] * k1d[x])
-    - Call convolve() — auto-detects separable, uses SIMD
-    - For large radius (sigma >= 20): use gaussian_blur_box_approx()
-
-    gaussian_blur_cv already does all of this. blur_impl can simply reuse
-    the same logic with radius-to-sigma conversion.
-
-    DEPENDENCY TO REMOVE:
-    - crates/rasmcore-image/Cargo.toml: libblur = "0.15"
-    - All libblur:: references in filters.rs (lines 1327-1344)
-    - Comments referencing libblur (lines 4, 80, 1273, 1321, 9678)
-
-    ALSO: migrate edge detectors (sobel, scharr, laplacian) from manual 3x3
-    loops to convolve() calls — they get separable optimization + SIMD for free.
+    '
+  codebase_analysis: "CURRENT:\n- blur_impl (line 1298): calls libblur::gaussian_blur() with radius → kernel_size\n- gaussian_blur_cv\
+    \ (line 9693): builds Gaussian kernel, calls convolve(), has\n  box blur approximation for large sigma\n\nWHAT blur_impl\
+    \ NEEDS:\n- Convert radius to sigma (sigma = radius / 3.0 or similar)\n- Build 1D Gaussian kernel via gaussian_kernel_1d()\n\
+    - Build 2D kernel as outer product (k1d[y] * k1d[x])\n- Call convolve() — auto-detects separable, uses SIMD\n- For large\
+    \ radius (sigma >= 20): use gaussian_blur_box_approx()\n\ngaussian_blur_cv already does all of this. blur_impl can simply\
+    \ reuse\nthe same logic with radius-to-sigma conversion.\n\nDEPENDENCY TO REMOVE:\n- crates/rasmcore-image/Cargo.toml:\
+    \ libblur = \"0.15\"\n- All libblur:: references in filters.rs (lines 1327-1344)\n- Comments referencing libblur (lines\
+    \ 4, 80, 1273, 1321, 9678)\n\nALSO: migrate edge detectors (sobel, scharr, laplacian) from manual 3x3\nloops to convolve()\
+    \ calls — they get separable optimization + SIMD for free.\n"
   acceptance_criteria:
-    - libblur dependency removed from Cargo.toml
-    - No libblur:: references remain in codebase
-    - blur_impl uses convolve() with Gaussian kernel
-    - blur parity tests pass (output matches or improves vs libblur)
-    - All tiled_parity tests pass
-    - All layer_cache tests pass
-    - WASM e2e tests pass
-    - cargo component build succeeds (smaller WASM binary without libblur)
-    - Edge detectors (sobel, scharr, laplacian) use convolve() with separable kernels
-  out_of_scope: |
-    Benchmarking native (x86/ARM) performance — libblur may be faster there
+  - libblur dependency removed from Cargo.toml
+  - 'No libblur:': references remain in codebase
+  - blur_impl uses convolve() with Gaussian kernel
+  - blur parity tests pass (output matches or improves vs libblur)
+  - All tiled_parity tests pass
+  - All layer_cache tests pass
+  - WASM e2e tests pass
+  - cargo component build succeeds (smaller WASM binary without libblur)
+  - Edge detectors (sobel, scharr, laplacian) use convolve() with separable kernels
+  out_of_scope: 'Benchmarking native (x86/ARM) performance — libblur may be faster there
+
     but WASM is our primary target.
+
     Changing the blur API or parameters.
+
     Adding new SIMD targets (SSE/NEON) to convolve().
-  technical_notes: |
-    blur_impl replacement:
-      fn blur_impl(pixels, info, config) {
-          let radius = config.radius;
-          let sigma = radius; // libblur uses radius as sigma
-          if sigma >= 20.0 {
-              return gaussian_blur_box_approx(pixels, info, sigma);
-          }
-          let ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1; // odd
-          let k1d = gaussian_kernel_1d(ksize, sigma);
-          let kernel_2d = outer_product(&k1d); // ksize x ksize
-          // convolve auto-detects separable → 2-pass + SIMD
-          convolve_impl(pixels, info, &kernel_2d, &ConvolveParams { kw: ksize, kh: ksize, divisor: 1.0 })
-      }
 
-    Edge detector migration (sobel example):
-      Currently: manual 3x3 loop computing gx = [-1,0,1; -2,0,2; -1,0,1]
-      After: convolve(pixels, info, &SOBEL_GX_KERNEL, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 })
-      Benefit: convolve auto-detects Sobel is separable ([1,2,1] x [1,0,-1]) → 2-pass
-
-    Need to verify gaussian_kernel_1d() and convolve_impl() (the inner function)
-    are accessible from blur_impl, or factor them into shared helpers.
+    '
+  technical_notes: "blur_impl replacement:\n  fn blur_impl(pixels, info, config) {\n      let radius = config.radius;\n  \
+    \    let sigma = radius; // libblur uses radius as sigma\n      if sigma >= 20.0 {\n          return gaussian_blur_box_approx(pixels,\
+    \ info, sigma);\n      }\n      let ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1; // odd\n      let k1d = gaussian_kernel_1d(ksize,\
+    \ sigma);\n      let kernel_2d = outer_product(&k1d); // ksize x ksize\n      // convolve auto-detects separable → 2-pass\
+    \ + SIMD\n      convolve_impl(pixels, info, &kernel_2d, &ConvolveParams { kw: ksize, kh: ksize, divisor: 1.0 })\n  }\n\
+    \nEdge detector migration (sobel example):\n  Currently: manual 3x3 loop computing gx = [-1,0,1; -2,0,2; -1,0,1]\n  After:\
+    \ convolve(pixels, info, &SOBEL_GX_KERNEL, &ConvolveParams { kw: 3, kh: 3, divisor: 1.0 })\n  Benefit: convolve auto-detects\
+    \ Sobel is separable ([1,2,1] x [1,0,-1]) → 2-pass\n\nNeed to verify gaussian_kernel_1d() and convolve_impl() (the inner\
+    \ function)\nare accessible from blur_impl, or factor them into shared helpers.\n"
 plan:
-  - phase: Replace libblur in blur_impl
-    tasks:
-      - text: Rewrite blur_impl to build Gaussian kernel and call convolve (or shared gaussian helper)
-        done: false
-      - text: Handle large radius with box blur approximation (sigma >= 20)
-        done: false
-      - text: Remove libblur dependency from Cargo.toml
-        done: false
-      - text: Remove all libblur references and comments from filters.rs
-        done: false
-      - text: Verify blur parity — compare output before/after for several radii
-        done: false
-  - phase: Migrate edge detectors to convolve
-    tasks:
-      - text: Replace manual sobel with convolve() call using separable kernel
-        done: false
-      - text: Replace manual scharr with convolve() call using separable kernel
-        done: false
-      - text: Replace manual laplacian with convolve() call
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All tiled_parity + layer_cache tests pass
-        done: false
-      - text: WASM e2e tests pass
-        done: false
-      - text: cargo component build succeeds
-        done: false
+- phase: Replace libblur in blur_impl
+  tasks:
+  - text: Rewrite blur_impl to build Gaussian kernel and call convolve (or shared gaussian helper)
+    done: true
+  - text: Handle large radius with box blur approximation (sigma >= 20)
+    done: true
+  - text: Remove libblur dependency from Cargo.toml
+    done: true
+  - text: Remove all libblur references and comments from filters.rs
+    done: true
+  - text: Verify blur parity — compare output before/after for several radii
+    done: true
+- phase: Migrate edge detectors to convolve
+  tasks:
+  - text: Replace manual sobel with convolve() call using separable kernel
+    done: false
+  - text: Replace manual scharr with convolve() call using separable kernel
+    done: false
+  - text: Replace manual laplacian with convolve() call
+    done: false
+- phase: Verification
+  tasks:
+  - text: All tiled_parity + layer_cache tests pass
+    done: true
+  - text: WASM e2e tests pass
+    done: true
+  - text: cargo component build succeeds
+    done: true
 extra: {}
