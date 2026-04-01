@@ -10,7 +10,7 @@ use crate::bindings::rasmcore::core::{errors::RasmcoreError, types};
 use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
 use crate::domain::pipeline::nodes::{
-    color, composite, filters, frame_source, sink, source, transform,
+    color, composite, filters, frame_source, sink, source,
 };
 
 use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
