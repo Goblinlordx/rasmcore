@@ -1,70 +1,84 @@
 id: ops-coverage-web-mobile_20260402054424Z
-title: "Research: Web & mobile app feature coverage benchmark — Canva, Figma, Snapseed, VSCO, Lightroom Mobile, Pixlr, PicsArt"
+title: 'Research: Web & mobile app feature coverage benchmark — Canva, Figma, Snapseed, VSCO, Lightroom Mobile, Pixlr, PicsArt'
 type: research
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Extend the operations coverage matrix to benchmark rasmcore against popular
+  summary: 'Extend the operations coverage matrix to benchmark rasmcore against popular
+
     web and mobile image editing applications. Identify feature gaps that matter
+
     for consumer/prosumer use cases beyond the existing IM/libvips/sharp comparison.
-  context: |
-    The existing ops-coverage-matrix.md compares rasmcore against server-side
+
+    '
+  context: 'The existing ops-coverage-matrix.md compares rasmcore against server-side
+
     libraries (ImageMagick, libvips, sharp, Pillow, photon_rs). These are the
+
     right benchmarks for the processing engine, but they miss what end-user
+
     apps actually expose. Web/mobile apps often have features that libraries
-    don't categorize the same way — preset filters, one-tap enhancements,
+
+    don''t categorize the same way — preset filters, one-tap enhancements,
+
     AI-powered tools, sticker/overlay systems, text effects, templates, etc.
 
-    Understanding this landscape helps prioritize which operations to add next
-    and which to skip (e.g., AI features that need ML models vs composable
-    filter chains that rasmcore can already support).
-  codebase_analysis: |
-    Existing coverage analysis: .agent/kf/_reports/ops-coverage-matrix.md
-    Current rasmcore registered filters: ~140
-    Current comparison targets: IM, libvips, sharp, Pillow, photon_rs
-  acceptance_criteria:
-    - Survey at least 8 web/mobile apps covering both prosumer (Lightroom Mobile, Snapseed, Darkroom) and consumer (Canva, PicsArt, VSCO, Pixlr, Fotor)
-    - For each app, catalog available effects/filters/adjustments/tools
-    - Map each feature to rasmcore status (have it / composable from existing / missing)
-    - Identify features that are composable from existing rasmcore ops (e.g., preset filters = LUT + adjustment chain)
-    - Identify genuinely missing capabilities that would require new implementations
-    - Categorize gaps by type — composable (no new code), implementable (new filter/op), requires ML/AI (out of scope), platform-specific (camera, AR)
-    - Output report to .agent/kf/_reports/ops-coverage-web-mobile.md
-  out_of_scope: |
-    Implementing any new features (separate tracks if gaps are found).
-    AI/ML-powered features (background removal, style transfer, face detection) — note them but mark as requiring ML inference runtime.
-    Platform-specific features (camera integration, AR overlays, cloud storage).
-    UI/UX comparison — focus on processing capabilities only.
-  technical_notes: |
-    Research approach:
-    1. Use public documentation, feature pages, and app store descriptions
-       for each app to catalog their image editing features
-    2. Cross-reference against rasmcore's registered filters and domain ops
-    3. Distinguish between features that are truly new operations vs.
-       features that are marketing names for composable filter chains
-       (e.g., "HDR effect" = tone mapping + contrast + saturation)
-    4. Focus on processing operations, not UI features
 
-    Target apps (minimum):
-    - Prosumer: Adobe Lightroom Mobile, Snapseed (Google), Darkroom, Affinity Photo (iPad)
-    - Consumer: Canva, PicsArt, VSCO, Pixlr, Fotor, PhotoRoom
-    - Web-based: Figma (image editing subset), Photopea, Pixlr X
-    - Design: Canva, Figma (filter/effect capabilities)
+    Understanding this landscape helps prioritize which operations to add next
+
+    and which to skip (e.g., AI features that need ML models vs composable
+
+    filter chains that rasmcore can already support).
+
+    '
+  codebase_analysis: 'Existing coverage analysis: .agent/kf/_reports/ops-coverage-matrix.md
+
+    Current rasmcore registered filters: ~140
+
+    Current comparison targets: IM, libvips, sharp, Pillow, photon_rs
+
+    '
+  acceptance_criteria:
+  - Survey at least 8 web/mobile apps covering both prosumer (Lightroom Mobile, Snapseed, Darkroom) and consumer (Canva, PicsArt,
+    VSCO, Pixlr, Fotor)
+  - For each app, catalog available effects/filters/adjustments/tools
+  - Map each feature to rasmcore status (have it / composable from existing / missing)
+  - Identify features that are composable from existing rasmcore ops (e.g., preset filters = LUT + adjustment chain)
+  - Identify genuinely missing capabilities that would require new implementations
+  - Categorize gaps by type — composable (no new code), implementable (new filter/op), requires ML/AI (out of scope), platform-specific
+    (camera, AR)
+  - Output report to .agent/kf/_reports/ops-coverage-web-mobile.md
+  out_of_scope: 'Implementing any new features (separate tracks if gaps are found).
+
+    AI/ML-powered features (background removal, style transfer, face detection) — note them but mark as requiring ML inference
+    runtime.
+
+    Platform-specific features (camera integration, AR overlays, cloud storage).
+
+    UI/UX comparison — focus on processing capabilities only.
+
+    '
+  technical_notes: "Research approach:\n1. Use public documentation, feature pages, and app store descriptions\n   for each\
+    \ app to catalog their image editing features\n2. Cross-reference against rasmcore's registered filters and domain ops\n\
+    3. Distinguish between features that are truly new operations vs.\n   features that are marketing names for composable\
+    \ filter chains\n   (e.g., \"HDR effect\" = tone mapping + contrast + saturation)\n4. Focus on processing operations,\
+    \ not UI features\n\nTarget apps (minimum):\n- Prosumer: Adobe Lightroom Mobile, Snapseed (Google), Darkroom, Affinity\
+    \ Photo (iPad)\n- Consumer: Canva, PicsArt, VSCO, Pixlr, Fotor, PhotoRoom\n- Web-based: Figma (image editing subset),\
+    \ Photopea, Pixlr X\n- Design: Canva, Figma (filter/effect capabilities)\n"
 plan:
-  - phase: Research and catalog
-    tasks:
-      - text: Catalog prosumer app features (Lightroom Mobile, Snapseed, Darkroom, Affinity Photo iPad)
-        done: false
-      - text: Catalog consumer app features (Canva, PicsArt, VSCO, Pixlr, Fotor, PhotoRoom)
-        done: false
-      - text: Catalog web-based editor features (Photopea, Pixlr X, Figma image editing)
-        done: false
-  - phase: Analysis and report
-    tasks:
-      - text: Map all cataloged features to rasmcore status (have / composable / missing / needs-ML)
-        done: false
-      - text: Write .agent/kf/_reports/ops-coverage-web-mobile.md with full comparison matrix and gap analysis
-        done: false
+- phase: Research and catalog
+  tasks:
+  - text: Catalog prosumer app features (Lightroom Mobile, Snapseed, Darkroom, Affinity Photo iPad)
+    done: true
+  - text: Catalog consumer app features (Canva, PicsArt, VSCO, Pixlr, Fotor, PhotoRoom)
+    done: true
+  - text: Catalog web-based editor features (Photopea, Pixlr X, Figma image editing)
+    done: true
+- phase: Analysis and report
+  tasks:
+  - text: Map all cataloged features to rasmcore status (have / composable / missing / needs-ML)
+    done: true
+  - text: Write .agent/kf/_reports/ops-coverage-web-mobile.md with full comparison matrix and gap analysis
+    done: true
 extra: {}
