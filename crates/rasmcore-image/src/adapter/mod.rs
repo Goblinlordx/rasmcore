@@ -201,6 +201,40 @@ impl pipeline::Guest for Component {
     fn get_manifest_hash() -> String {
         include_str!(concat!(env!("OUT_DIR"), "/param-manifest.hash")).to_string()
     }
+
+    fn process_chain(
+        input_b64: String,
+        ops: Vec<pipeline::ChainOp>,
+        output_format: String,
+        quality: Option<u8>,
+    ) -> Result<String, RasmcoreError> {
+        use base64::Engine;
+        use pipeline::GuestImagePipeline;
+        let engine = base64::engine::general_purpose::STANDARD;
+
+        // Decode input image from base64
+        let input_bytes = engine
+            .decode(&input_b64)
+            .map_err(|e| RasmcoreError::InvalidInput(format!("base64 decode: {e}")))?;
+
+        // Create a pipeline and run the chain
+        let pipe = <pipeline_adapter::PipelineResource as GuestImagePipeline>::new();
+
+        // Read input
+        let mut node = GuestImagePipeline::read(&pipe, input_bytes)?;
+
+        // Apply each operation
+        for op in &ops {
+            node = pipeline_adapter::dispatch_chain_op(&pipe, node, &op.name, &op.params)?;
+        }
+
+        // Write output
+        let output_bytes =
+            GuestImagePipeline::write(&pipe, node, output_format, quality, None)?;
+
+        // Encode output as base64
+        Ok(engine.encode(&output_bytes))
+    }
 }
 
 impl decoder::Guest for Component {

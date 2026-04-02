@@ -336,6 +336,12 @@ fn main() {
             &all_transforms,
             &all_enums,
         );
+        // Patch: composite blend_mode is u32 in WIT but Option<BlendMode> in Rust.
+        // Convert 0 → None, non-zero → Some(BlendMode from index).
+        let transform_adapter = transform_adapter.replace(
+            "let blend_mode = config.blend_mode;",
+            "let blend_mode = crate::domain::filters::BlendMode::from_u32(config.blend_mode);",
+        );
         std::fs::write(
             out_dir.join("generated_pipeline_transform_adapter.rs"),
             &transform_adapter,

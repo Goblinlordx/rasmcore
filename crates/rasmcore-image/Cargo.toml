@@ -9,6 +9,7 @@ rasmcore-pipeline = { path = "../rasmcore-pipeline" }
 rasmcore-kernel = { path = "../rasmcore-kernel" }
 rasmcore-macros = { path = "../rasmcore-macros" }
 inventory = "0.3"
+base64 = "0.22"
 rasmcore-webp = { path = "../rasmcore-webp" }
 fast_image_resize = "5"
 moxcms = "0.8"

@@ -611,6 +611,219 @@ impl GuestImagePipeline for PipelineResource {
     }
 }
 
+/// Dispatch a chain operation by name to the appropriate pipeline method.
+///
+/// Operations with no config use an empty params list.
+/// Operations with config map params positionally to config fields (f32).
+/// The filter manifest documents parameter order for each operation.
+pub fn dispatch_chain_op(
+    pipe: &PipelineResource,
+    source: NodeId,
+    name: &str,
+    params: &[f32],
+) -> Result<NodeId, RasmcoreError> {
+    use crate::bindings::exports::rasmcore::image::pipeline::{
+        self as p, GuestImagePipeline as P,
+    };
+
+    // Helper to get param at index or return default
+    let f = |i: usize, default: f32| -> f32 { params.get(i).copied().unwrap_or(default) };
+
+    match name {
+        // ─── Transforms ───
+        "flip" => {
+            // params[0]: 0.0 = horizontal (default), 1.0 = vertical
+            let dir = if f(0, 0.0) > 0.5 {
+                p::FlipDirection::Vertical
+            } else {
+                p::FlipDirection::Horizontal
+            };
+            P::flip(pipe, source, p::FlipConfig { direction: dir })
+        }
+        "rotate" => P::rotate(
+            pipe,
+            source,
+            p::RotateConfig {
+                rotation: match f(0, 90.0) as u32 {
+                    180 => p::Rotation::R180,
+                    270 => p::Rotation::R270,
+                    _ => p::Rotation::R90,
+                },
+            },
+        ),
+        "resize" => P::resize(
+            pipe,
+            source,
+            p::ResizeConfig {
+                width: f(0, 0.0) as u32,
+                height: f(1, 0.0) as u32,
+                filter: p::ResizeFilter::Lanczos3,
+            },
+        ),
+        "crop" => P::crop(
+            pipe,
+            source,
+            p::CropConfig {
+                x: f(0, 0.0) as u32,
+                y: f(1, 0.0) as u32,
+                width: f(2, 0.0) as u32,
+                height: f(3, 0.0) as u32,
+            },
+        ),
+
+        // ─── No-config filters ───
+        "invert" => P::invert(pipe, source),
+        "equalize" => P::equalize(pipe, source),
+        "normalize" => P::normalize(pipe, source),
+        "auto_level" | "auto-level" => P::auto_level(pipe, source),
+        "emboss" => P::emboss(pipe, source),
+        "tonemap_reinhard" | "tonemap-reinhard" => P::tonemap_reinhard(pipe, source),
+        "white_balance_gray_world" | "white-balance-gray-world" => {
+            P::white_balance_gray_world(pipe, source)
+        }
+        "depolar" => P::depolar(pipe, source),
+        "polar" => P::polar(pipe, source),
+        "premultiply" => P::premultiply(pipe, source),
+        "unpremultiply" => P::unpremultiply(pipe, source),
+        "triangle_threshold" | "triangle-threshold" => P::triangle_threshold(pipe, source),
+        "otsu_threshold" | "otsu-threshold" => P::otsu_threshold(pipe, source),
+        "evaluate_abs" | "evaluate-abs" => P::evaluate_abs(pipe, source),
+        "average_blur" | "average-blur" => P::average_blur(pipe, source),
+
+        // ─── Parameterized filters ───
+        "blur" => P::blur(pipe, source, p::BlurConfig { radius: f(0, 5.0) }),
+        "brightness" => P::brightness(pipe, source, p::BrightnessConfig { amount: f(0, 0.0) }),
+        "contrast" => P::contrast(pipe, source, p::ContrastConfig { amount: f(0, 0.0) }),
+        "gamma" => P::gamma(pipe, source, p::GammaConfig { gamma_value: f(0, 1.0) }),
+        "exposure" => P::exposure(
+            pipe,
+            source,
+            p::ExposureConfig {
+                ev: f(0, 0.0),
+                offset: f(1, 0.0),
+                gamma_correction: f(2, 1.0),
+            },
+        ),
+        "sepia" => P::sepia(pipe, source, p::SepiaConfig { intensity: f(0, 1.0) }),
+        "saturate" => P::saturate(pipe, source, p::SaturateConfig { factor: f(0, 1.0) }),
+        "hue_rotate" | "hue-rotate" => {
+            P::hue_rotate(pipe, source, p::HueRotateConfig { degrees: f(0, 0.0) })
+        }
+        "vibrance" => P::vibrance(pipe, source, p::VibranceConfig { amount: f(0, 0.0) }),
+        "sharpen" => P::sharpen(pipe, source, p::SharpenConfig { amount: f(0, 1.0) }),
+        "solarize" => {
+            P::solarize(pipe, source, p::SolarizeConfig { threshold: f(0, 128.0) as u8 })
+        }
+        "posterize" => {
+            P::posterize(pipe, source, p::PosterizeConfig { levels: f(0, 4.0) as u8 })
+        }
+        "pixelate" => {
+            P::pixelate(pipe, source, p::PixelateConfig { block_size: f(0, 10.0) as u32 })
+        }
+        "oil_paint" | "oil-paint" => {
+            P::oil_paint(pipe, source, p::OilPaintConfig { radius: f(0, 4.0) as u32 })
+        }
+        "median" => P::median(pipe, source, p::MedianConfig { radius: f(0, 1.0) as u32 }),
+        "box_blur" | "box-blur" => {
+            P::box_blur(pipe, source, p::BoxBlurConfig { radius: f(0, 5.0) as u32 })
+        }
+        "motion_blur" | "motion-blur" => P::motion_blur(
+            pipe,
+            source,
+            p::MotionBlurConfig {
+                length: f(0, 10.0) as u32,
+                angle_degrees: f(1, 0.0),
+            },
+        ),
+        "spin_blur" | "spin-blur" => P::spin_blur(
+            pipe,
+            source,
+            p::SpinBlurConfig {
+                center_x: f(0, 0.5),
+                center_y: f(1, 0.5),
+                angle: f(2, 10.0),
+            },
+        ),
+        "spherize" => P::spherize(pipe, source, p::SpherizeConfig { amount: f(0, 1.0) }),
+        "swirl" => P::swirl(
+            pipe,
+            source,
+            p::SwirlConfig {
+                angle: f(0, 1.0),
+                radius: f(1, 0.0),
+            },
+        ),
+        "ripple" => P::ripple(
+            pipe,
+            source,
+            p::RippleConfig {
+                amplitude: f(0, 10.0),
+                wavelength: f(1, 50.0),
+                center_x: f(2, 0.5),
+                center_y: f(3, 0.5),
+            },
+        ),
+        "wave" => P::wave(
+            pipe,
+            source,
+            p::WaveConfig {
+                amplitude: f(0, 10.0),
+                wavelength: f(1, 50.0),
+                vertical: f(2, 0.0),
+            },
+        ),
+        "bilateral" => P::bilateral(
+            pipe,
+            source,
+            p::BilateralConfig {
+                diameter: f(0, 9.0) as u32,
+                sigma_color: f(1, 75.0),
+                sigma_space: f(2, 75.0),
+            },
+        ),
+        "gaussian_noise" | "gaussian-noise" => P::gaussian_noise(
+            pipe,
+            source,
+            p::GaussianNoiseConfig {
+                amount: f(0, 25.0),
+                mean: f(1, 0.0),
+                sigma: f(2, 25.0),
+                seed: params.get(3).map_or(0, |&v| v as u64),
+            },
+        ),
+        "film_grain" | "film-grain" => P::film_grain(
+            pipe,
+            source,
+            p::FilmGrainConfig {
+                amount: f(0, 25.0),
+                size: f(1, 1.0),
+                seed: params.get(2).map_or(0, |&v| v as u32),
+            },
+        ),
+        "threshold_binary" | "threshold-binary" => P::threshold_binary(
+            pipe,
+            source,
+            p::ThresholdBinaryConfig {
+                thresh: f(0, 128.0) as u8,
+                max_value: f(1, 255.0) as u8,
+            },
+        ),
+        "halftone" => P::halftone(
+            pipe,
+            source,
+            p::HalftoneConfig {
+                dot_size: f(0, 4.0),
+                angle_offset: f(1, 45.0),
+            },
+        ),
+
+        // Unknown op — return helpful error
+        _ => Err(RasmcoreError::InvalidInput(format!(
+            "unknown chain operation: \"{name}\". Use get-filter-manifest() for available operations."
+        ))),
+    }
+}
+
 /// Parse a simple JSON object of the form `{"container": {"field": "value", ...}, ...}`
 /// into a flat list of (container, field, value) triples.
 fn parse_metadata_json(json: &str) -> Result<Vec<(String, String, String)>, String> {

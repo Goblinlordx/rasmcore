@@ -2937,6 +2937,7 @@ dependencies = [
 name = "rasmcore-image"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bcdec_rs",
  "butteraugli",
  "color_quant",

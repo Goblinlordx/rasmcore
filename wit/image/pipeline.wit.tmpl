@@ -132,6 +132,23 @@ interface pipeline {
         write-from-description: func(description: buffer, source-data: buffer, terminal-node: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
     }
 
+    /// A single operation in a processing chain.
+    /// Operations with no params use an empty list.
+    record chain-op {
+        name: string,
+        params: list<f32>,
+    }
+
+    /// Execute a full image processing chain in one call.
+    ///
+    /// Input and output images are base64-encoded to enable easy transport
+    /// across any host language (Go, Perl, PHP, Ruby, etc.) via the wasmtime
+    /// CLI's WAVE text format — no binary serialization required.
+    ///
+    /// Example WAVE invocation:
+    ///   process-chain("iVBOR...", [{name: "invert", params: []}, {name: "blur", params: [5.0]}], "png", none)
+    process-chain: func(input-b64: string, ops: list<chain-op>, output-format: string, quality: option<u8>) -> result<string, rasmcore-error>;
+
     detect-format: func(header: buffer) -> option<string>;
     supported-read-formats: func() -> list<string>;
     supported-write-formats: func() -> list<string>;

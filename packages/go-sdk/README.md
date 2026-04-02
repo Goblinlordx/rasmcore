@@ -1,6 +1,9 @@
 # rcimg — Go SDK
 
-Pure-Rust WASM image processing pipeline for Go with optional GPU acceleration.
+Image processing pipeline for Go via the rasmcore WASM component.
+
+Uses the `wasmtime` CLI to execute operations — no Component Model host bindings
+required. Works with any language that can exec a subprocess.
 
 ## Installation
 
@@ -8,10 +11,14 @@ Pure-Rust WASM image processing pipeline for Go with optional GPU acceleration.
 go get github.com/nicholasgasior/rcimg-go/rcimg
 ```
 
-For GPU support (requires wgpu-native):
-```bash
-go get github.com/nicholasgasior/rcimg-go/gpu
-```
+## Prerequisites
+
+- [wasmtime CLI](https://wasmtime.dev) installed and in PATH
+- rasmcore WASM component built:
+  ```bash
+  cargo component build -p rasmcore-image --release
+  export RASMCORE_WASM_PATH=target/wasm32-wasip1/release/rasmcore_image.wasm
+  ```
 
 ## Usage
 
@@ -30,61 +37,58 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    defer pipe.Close()
 
     imageBytes, _ := os.ReadFile("input.jpg")
 
-    img, err := pipe.Read(imageBytes)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    blurred, err := pipe.Blur(img, rcimg.BlurConfig{Radius: 10.0})
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    result, err := pipe.WriteJPEG(blurred, rcimg.JPEGConfig{Quality: 90})
+    result, err := pipe.Process(imageBytes, []rcimg.Op{
+        {Name: "blur", Params: []float32{5.0}},
+        {Name: "sepia", Params: []float32{0.8}},
+    }, rcimg.OutputConfig{Format: "jpeg", Quality: ptr(uint8(90))})
     if err != nil {
         log.Fatal(err)
     }
 
     os.WriteFile("output.jpg", result, 0644)
 }
+
+func ptr[T any](v T) *T { return &v }
 ```
 
-## GPU Acceleration
+## Available Operations
 
-Build with the `gpu` tag and wgpu-native installed:
+Use `wasmtime run --invoke 'get-filter-manifest()' rasmcore_image.wasm` to see
+all available operations with their parameters.
+
+Common operations:
+
+| Operation | Params | Description |
+|-----------|--------|-------------|
+| `invert` | (none) | Invert colors |
+| `flip` | `[direction]` | 0.0=horizontal, 1.0=vertical |
+| `rotate` | `[degrees]` | 90, 180, or 270 |
+| `blur` | `[radius]` | Gaussian blur |
+| `sharpen` | `[amount]` | Sharpen |
+| `sepia` | `[intensity]` | Sepia tone (0.0-1.0) |
+| `brightness` | `[amount]` | Brightness adjustment |
+| `contrast` | `[amount]` | Contrast adjustment |
+| `saturate` | `[factor]` | Saturation (1.0 = no change) |
+| `resize` | `[width, height]` | Resize (Lanczos3) |
+| `crop` | `[x, y, w, h]` | Crop region |
+
+## How It Works
+
+The SDK uses rasmcore's `process-chain` WIT function which:
+1. Accepts a base64-encoded image + list of operations + output format
+2. Creates an internal pipeline, applies all operations, encodes the result
+3. Returns the output as base64
+
+The Go SDK base64-encodes the input, builds a WAVE invocation string, and
+calls `wasmtime run --invoke 'process-chain(...)'` as a subprocess.
+
+## Testing
 
 ```bash
-go build -tags gpu .
-```
-
-```go
-import "github.com/nicholasgasior/rcimg-go/gpu"
-
-executor, err := gpu.New()
-if err != nil {
-    log.Println("No GPU, falling back to CPU:", err)
-}
-
-pipe, _ := rcimg.NewPipeline(rcimg.Options{
-    UseGPU:      true,
-    GpuExecutor: executor,
-})
-```
-
-## Status
-
-**Note:** The WASM Component Model is not yet fully supported by wazero.
-The pipeline methods currently return placeholder errors. Full support
-is expected when wazero adds Component Model support, or via wasmtime-go
-CGO bindings as an alternative.
-
-## Building the WASM component
-
-```bash
-cargo component build -p rasmcore-image --release
-export RASMCORE_WASM_PATH=target/wasm32-wasip1/release/rasmcore_image.wasm
+cargo component build -p rasmcore-image
+RASMCORE_WASM_PATH=target/wasm32-wasip1/debug/rasmcore_image.wasm \
+    go test -v ./rcimg/...
 ```

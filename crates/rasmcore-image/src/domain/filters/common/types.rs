@@ -74,6 +74,43 @@ pub enum BlendMode {
     Luminosity,
 }
 
+impl BlendMode {
+    /// Convert from a u32 index (WIT representation) to Option<BlendMode>.
+    /// 0 = None (Porter-Duff over), 1..=27 = specific blend mode.
+    pub fn from_u32(v: u32) -> Option<BlendMode> {
+        match v {
+            0 => None,
+            1 => Some(BlendMode::Multiply),
+            2 => Some(BlendMode::Screen),
+            3 => Some(BlendMode::Overlay),
+            4 => Some(BlendMode::Darken),
+            5 => Some(BlendMode::Lighten),
+            6 => Some(BlendMode::SoftLight),
+            7 => Some(BlendMode::HardLight),
+            8 => Some(BlendMode::Difference),
+            9 => Some(BlendMode::Exclusion),
+            10 => Some(BlendMode::ColorDodge),
+            11 => Some(BlendMode::ColorBurn),
+            12 => Some(BlendMode::VividLight),
+            13 => Some(BlendMode::LinearDodge),
+            14 => Some(BlendMode::LinearBurn),
+            15 => Some(BlendMode::LinearLight),
+            16 => Some(BlendMode::PinLight),
+            17 => Some(BlendMode::HardMix),
+            18 => Some(BlendMode::Subtract),
+            19 => Some(BlendMode::Divide),
+            20 => Some(BlendMode::Dissolve),
+            21 => Some(BlendMode::DarkerColor),
+            22 => Some(BlendMode::LighterColor),
+            23 => Some(BlendMode::Hue),
+            24 => Some(BlendMode::Saturation),
+            25 => Some(BlendMode::Color),
+            26 => Some(BlendMode::Luminosity),
+            _ => None,
+        }
+    }
+}
+
 /// Structuring element shape for morphological operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MorphShape {

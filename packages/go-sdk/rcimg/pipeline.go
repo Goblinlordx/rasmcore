@@ -1,113 +1,64 @@
 // Package rcimg provides a Go SDK for the rasmcore WASM image processing pipeline.
 //
-// The SDK loads the rasmcore-image WASM component via wazero (pure Go, no CGO)
-// and exposes a Pipeline type for image operations. Optional GPU acceleration
-// is available via the gpu sub-package (requires wgpu-native CGO bindings).
+// The SDK calls the rasmcore-image WASM component via the wasmtime CLI,
+// using the process-chain function which accepts base64-encoded images
+// and a list of operations. This works with any language that can exec
+// a subprocess — no Component Model host bindings required.
 //
 // Usage:
 //
 //	pipe, err := rcimg.NewPipeline(rcimg.Options{})
 //	if err != nil { log.Fatal(err) }
-//	defer pipe.Close()
 //
-//	img, err := pipe.Read(imageBytes)
+//	result, err := pipe.Process(imageBytes, []rcimg.Op{
+//	    {Name: "invert"},
+//	    {Name: "blur", Params: []float32{5.0}},
+//	    {Name: "flip", Params: []float32{0.0}},
+//	}, rcimg.OutputConfig{Format: "png"})
 //	if err != nil { log.Fatal(err) }
 //
-//	blurred, err := pipe.Blur(img, rcimg.BlurConfig{Radius: 10.0})
-//	if err != nil { log.Fatal(err) }
-//
-//	result, err := pipe.WriteJPEG(blurred, rcimg.JPEGConfig{Quality: 90})
-//	if err != nil { log.Fatal(err) }
+//	os.WriteFile("output.png", result, 0644)
 package rcimg
 
 import (
-	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	"strings"
 )
 
 // Options configures the Pipeline.
 type Options struct {
-	// WASMPath overrides the default WASM component location.
+	// WASMPath overrides the default WASM component path.
 	// If empty, searches standard locations and RASMCORE_WASM_PATH env var.
 	WASMPath string
 
-	// UseGPU enables GPU acceleration if available. Default: true.
-	UseGPU bool
-
-	// GpuExecutor provides the GPU execution implementation.
-	// If nil and UseGPU is true, attempts auto-detection.
-	GpuExecutor GpuExecutor
+	// WasmtimePath overrides the wasmtime CLI binary path.
+	// If empty, uses "wasmtime" from PATH.
+	WasmtimePath string
 }
 
-// GpuExecutor is the interface for GPU compute offload.
-// Implement this to provide GPU support (see gpu sub-package for wgpu-native impl).
-type GpuExecutor interface {
-	// Execute runs a batch of GPU compute operations on pixel data.
-	// ops are chained: output of ops[i] = input of ops[i+1].
-	Execute(ops []GpuOp, input []byte, width, height uint32) ([]byte, error)
-
-	// MaxBufferSize returns the maximum buffer size in bytes.
-	MaxBufferSize() int
-
-	// Close releases GPU resources.
-	Close()
+// Op represents a single operation in the processing chain.
+type Op struct {
+	Name   string    // Operation name (e.g., "invert", "blur", "flip")
+	Params []float32 // Positional parameters (empty for no-config ops)
 }
 
-// GpuOp represents a single GPU compute dispatch.
-type GpuOp struct {
-	Shader       string   // WGSL compute shader source
-	EntryPoint   string   // Shader entry point name
-	WorkgroupX   uint32   // Workgroup size X
-	WorkgroupY   uint32   // Workgroup size Y
-	WorkgroupZ   uint32   // Workgroup size Z
-	Params       []byte   // Uniform parameters
-	ExtraBuffers [][]byte // Additional storage buffers
+// OutputConfig controls the output encoding.
+type OutputConfig struct {
+	Format  string // Output format: "png", "jpeg", "webp", etc.
+	Quality *uint8 // Optional quality (0-100) for lossy formats
 }
 
-// BlurConfig configures gaussian blur.
-type BlurConfig struct {
-	Radius float32
-}
-
-// SpherizeConfig configures spherize distortion.
-type SpherizeConfig struct {
-	Strength float32
-}
-
-// SepiaConfig configures sepia tone.
-type SepiaConfig struct {
-	Intensity float32
-}
-
-// JPEGConfig configures JPEG encoding.
-type JPEGConfig struct {
-	Quality uint8
-	GPU     *bool // nil = use default, false = force CPU
-}
-
-// PNGConfig configures PNG encoding.
-type PNGConfig struct {
-	GPU *bool
-}
-
-// NodeID is a handle to a pipeline node.
-type NodeID = uint32
-
-// Pipeline wraps the rasmcore WASM image processing component.
+// Pipeline wraps the rasmcore WASM component via the wasmtime CLI.
 type Pipeline struct {
-	runtime wazero.Runtime
-	module  api.Module
-	ctx     context.Context
-	gpu     GpuExecutor
+	wasmPath     string
+	wasmtimePath string
 }
 
-func findWASM(override string) ([]byte, error) {
+func findWASM(override string) (string, error) {
 	candidates := []string{
 		override,
 		os.Getenv("RASMCORE_WASM_PATH"),
@@ -119,101 +70,112 @@ func findWASM(override string) ([]byte, error) {
 		if p == "" {
 			continue
 		}
-		data, err := os.ReadFile(p)
-		if err == nil {
-			return data, nil
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
 		}
 	}
-	return nil, fmt.Errorf(
+	return "", fmt.Errorf(
 		"rasmcore_image.wasm not found; set RASMCORE_WASM_PATH or build with: " +
 			"cargo component build -p rasmcore-image --release",
 	)
 }
 
+func findWasmtime(override string) (string, error) {
+	if override != "" {
+		if _, err := os.Stat(override); err == nil {
+			return override, nil
+		}
+		return "", fmt.Errorf("wasmtime not found at %q", override)
+	}
+	path, err := exec.LookPath("wasmtime")
+	if err != nil {
+		return "", fmt.Errorf("wasmtime CLI not found in PATH; install from https://wasmtime.dev")
+	}
+	return path, nil
+}
+
 // NewPipeline creates a new image processing pipeline.
 //
-// The WASM component is loaded once and reused for all operations.
-// Call Close() when done to release resources.
+// Requires wasmtime CLI to be installed and the rasmcore_image.wasm component
+// to be built. Each Process call spawns a wasmtime subprocess.
 func NewPipeline(opts Options) (*Pipeline, error) {
-	ctx := context.Background()
-
-	wasmBytes, err := findWASM(opts.WASMPath)
+	wasmPath, err := findWASM(opts.WASMPath)
 	if err != nil {
 		return nil, err
 	}
-
-	rt := wazero.NewRuntime(ctx)
-
-	// Instantiate WASI
-	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
-
-	// TODO: Register gpu-execute host function if GPU available
-	var gpu GpuExecutor
-	if opts.UseGPU && opts.GpuExecutor != nil {
-		gpu = opts.GpuExecutor
-		// Register host function for gpu-execute WIT import
-		// This requires component model support in wazero
-	}
-
-	// Compile and instantiate
-	compiled, err := rt.CompileModule(ctx, wasmBytes)
+	wtPath, err := findWasmtime(opts.WasmtimePath)
 	if err != nil {
-		rt.Close(ctx)
-		return nil, fmt.Errorf("compile WASM: %w", err)
+		return nil, err
 	}
-
-	mod, err := rt.InstantiateModule(ctx, compiled, wazero.NewModuleConfig())
-	if err != nil {
-		rt.Close(ctx)
-		return nil, fmt.Errorf("instantiate WASM: %w", err)
-	}
-
 	return &Pipeline{
-		runtime: rt,
-		module:  mod,
-		ctx:     ctx,
-		gpu:     gpu,
+		wasmPath:     wasmPath,
+		wasmtimePath: wtPath,
 	}, nil
 }
 
-// Close releases all pipeline resources.
-func (p *Pipeline) Close() error {
-	if p.gpu != nil {
-		p.gpu.Close()
+// Process runs a chain of operations on an image and returns the encoded result.
+//
+// Input is raw image bytes (PNG, JPEG, etc.). Operations are applied in order.
+// Output is encoded in the specified format.
+func (p *Pipeline) Process(input []byte, ops []Op, output OutputConfig) ([]byte, error) {
+	if len(ops) == 0 {
+		return nil, fmt.Errorf("at least one operation is required")
 	}
-	return p.runtime.Close(p.ctx)
+	if output.Format == "" {
+		output.Format = "png"
+	}
+
+	// Base64 encode input
+	inputB64 := base64.StdEncoding.EncodeToString(input)
+
+	// Build WAVE ops list
+	opStrs := make([]string, len(ops))
+	for i, op := range ops {
+		paramStrs := make([]string, len(op.Params))
+		for j, v := range op.Params {
+			paramStrs[j] = fmt.Sprintf("%g", v)
+		}
+		opStrs[i] = fmt.Sprintf("{name: \"%s\", params: [%s]}", op.Name, strings.Join(paramStrs, ", "))
+	}
+
+	// Quality in WAVE format
+	qualityWave := "none"
+	if output.Quality != nil {
+		qualityWave = fmt.Sprintf("some(%d)", *output.Quality)
+	}
+
+	// Build the WAVE invocation string
+	invoke := fmt.Sprintf(
+		`process-chain("%s", [%s], "%s", %s)`,
+		inputB64,
+		strings.Join(opStrs, ", "),
+		output.Format,
+		qualityWave,
+	)
+
+	// Execute wasmtime
+	cmd := exec.Command(p.wasmtimePath, "run", "--invoke", invoke, p.wasmPath)
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("wasmtime failed: %s\n%s", ee.Error(), string(ee.Stderr))
+		}
+		return nil, fmt.Errorf("wasmtime failed: %w", err)
+	}
+
+	// Parse WAVE result: ok("...base64...") or err(variant("message"))
+	result := strings.TrimSpace(string(out))
+	if strings.HasPrefix(result, `ok("`) && strings.HasSuffix(result, `")`) {
+		b64 := result[4 : len(result)-2]
+		return base64.StdEncoding.DecodeString(b64)
+	}
+	if strings.HasPrefix(result, "err(") {
+		return nil, fmt.Errorf("pipeline error: %s", result[4:len(result)-1])
+	}
+	return nil, fmt.Errorf("unexpected wasmtime output: %s", result)
 }
 
-// Read decodes image bytes (PNG, JPEG, etc.) into a pipeline node.
-func (p *Pipeline) Read(imageBytes []byte) (NodeID, error) {
-	// TODO: Call WASM pipeline.read() via component model
-	// wazero doesn't support Component Model yet — this is a placeholder
-	// for when wazero adds CM support or we use wasmtime-go instead
-	return 0, fmt.Errorf("WASM Component Model not yet supported in wazero; " +
-		"use wasmtime-go or wait for wazero CM support")
-}
-
-// Blur applies gaussian blur to a node.
-func (p *Pipeline) Blur(source NodeID, config BlurConfig) (NodeID, error) {
-	return 0, fmt.Errorf("not yet implemented — pending CM support")
-}
-
-// Spherize applies spherize distortion.
-func (p *Pipeline) Spherize(source NodeID, config SpherizeConfig) (NodeID, error) {
-	return 0, fmt.Errorf("not yet implemented — pending CM support")
-}
-
-// Sepia applies sepia tone.
-func (p *Pipeline) Sepia(source NodeID, config SepiaConfig) (NodeID, error) {
-	return 0, fmt.Errorf("not yet implemented — pending CM support")
-}
-
-// WriteJPEG encodes a node as JPEG.
-func (p *Pipeline) WriteJPEG(source NodeID, config JPEGConfig) ([]byte, error) {
-	return nil, fmt.Errorf("not yet implemented — pending CM support")
-}
-
-// WritePNG encodes a node as PNG.
-func (p *Pipeline) WritePNG(source NodeID, config PNGConfig) ([]byte, error) {
-	return nil, fmt.Errorf("not yet implemented — pending CM support")
+// Close is a no-op for the CLI-based pipeline (no persistent resources).
+func (p *Pipeline) Close() error {
+	return nil
 }
