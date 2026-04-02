@@ -825,6 +825,11 @@ interface filters {
     harris-corners: func(pixels: buffer, info: image-info, config: harris-corners-config) -> result<buffer, rasmcore-error>;
     depolar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     wave: func(pixels: buffer, info: image-info, config: wave-config) -> result<buffer, rasmcore-error>;
+    liquify-push: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    liquify-pinch: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    liquify-expand: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    liquify-twirl: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    liquify-smooth: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     polar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     barrel: func(pixels: buffer, info: image-info, config: barrel-config) -> result<buffer, rasmcore-error>;
     mesh-warp: func(pixels: buffer, info: image-info, config: mesh-warp-config) -> result<buffer, rasmcore-error>;

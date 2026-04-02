@@ -199,6 +199,11 @@ interface pipeline {
         harris-corners: func(source: node-id, config: harris-corners-config) -> result<node-id, rasmcore-error>;
         depolar: func(source: node-id) -> result<node-id, rasmcore-error>;
         wave: func(source: node-id, config: wave-config) -> result<node-id, rasmcore-error>;
+        liquify-push: func(source: node-id) -> result<node-id, rasmcore-error>;
+        liquify-pinch: func(source: node-id) -> result<node-id, rasmcore-error>;
+        liquify-expand: func(source: node-id) -> result<node-id, rasmcore-error>;
+        liquify-twirl: func(source: node-id) -> result<node-id, rasmcore-error>;
+        liquify-smooth: func(source: node-id) -> result<node-id, rasmcore-error>;
         polar: func(source: node-id) -> result<node-id, rasmcore-error>;
         barrel: func(source: node-id, config: barrel-config) -> result<node-id, rasmcore-error>;
         mesh-warp: func(source: node-id, config: mesh-warp-config) -> result<node-id, rasmcore-error>;
