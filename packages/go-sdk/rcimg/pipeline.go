@@ -55,6 +55,7 @@ type OutputConfig struct {
 // Pipeline wraps the rasmcore WASM component via the wasmtime CLI.
 type Pipeline struct {
 	wasmPath     string
+	cwasmPath    string // precompiled .cwasm path (set by Compile)
 	wasmtimePath string
 }
 
@@ -153,8 +154,15 @@ func (p *Pipeline) Process(input []byte, ops []Op, output OutputConfig) ([]byte,
 		qualityWave,
 	)
 
-	// Execute wasmtime
-	cmd := exec.Command(p.wasmtimePath, "run", "--invoke", invoke, p.wasmPath)
+	// Execute wasmtime (use precompiled .cwasm if available)
+	runPath := p.wasmPath
+	args := []string{"run", "--invoke", invoke}
+	if p.cwasmPath != "" {
+		runPath = p.cwasmPath
+		args = append(args, "--allow-precompiled")
+	}
+	args = append(args, runPath)
+	cmd := exec.Command(p.wasmtimePath, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -173,6 +181,28 @@ func (p *Pipeline) Process(input []byte, ops []Op, output OutputConfig) ([]byte,
 		return nil, fmt.Errorf("pipeline error: %s", result[4:len(result)-1])
 	}
 	return nil, fmt.Errorf("unexpected wasmtime output: %s", result)
+}
+
+// Compile pre-compiles the WASM component to native code via `wasmtime compile`.
+// This eliminates cold-start latency on subsequent Process() calls.
+// The compiled .cwasm file is stored alongside the .wasm file.
+func (p *Pipeline) Compile() error {
+	cwasmPath := p.wasmPath + ".cwasm"
+	// Check if already compiled and newer than source
+	if info, err := os.Stat(cwasmPath); err == nil {
+		if srcInfo, err2 := os.Stat(p.wasmPath); err2 == nil {
+			if info.ModTime().After(srcInfo.ModTime()) {
+				p.cwasmPath = cwasmPath
+				return nil
+			}
+		}
+	}
+	cmd := exec.Command(p.wasmtimePath, "compile", p.wasmPath, "-o", cwasmPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("wasmtime compile failed: %s\n%s", err, string(out))
+	}
+	p.cwasmPath = cwasmPath
+	return nil
 }
 
 // Close is a no-op for the CLI-based pipeline (no persistent resources).
