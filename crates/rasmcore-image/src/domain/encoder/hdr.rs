@@ -16,17 +16,6 @@ pub fn encode_pixels(
 ) -> Result<Vec<u8>, ImageError> {
     let w = info.width as usize;
     let h = info.height as usize;
-    let channels = match info.format {
-        PixelFormat::Rgb8 => 3,
-        PixelFormat::Rgba8 => 4,
-        PixelFormat::Gray8 => 1,
-        _ => {
-            return Err(ImageError::UnsupportedFormat(
-                "HDR encode requires RGB8, RGBA8, or Gray8".into(),
-            ));
-        }
-    };
-
     let mut buf = Vec::new();
 
     // Radiance HDR header
@@ -38,30 +27,52 @@ pub fn encode_pixels(
     let res = format!("-Y {h} +X {w}\n");
     buf.extend_from_slice(res.as_bytes());
 
-    // Convert each scanline to RGBE
-    for y in 0..h {
-        for x in 0..w {
-            let idx = (y * w + x) * channels;
-            let (r, g, b) = match channels {
-                3 => (
-                    pixels[idx] as f32 / 255.0,
-                    pixels[idx + 1] as f32 / 255.0,
-                    pixels[idx + 2] as f32 / 255.0,
-                ),
-                4 => (
-                    pixels[idx] as f32 / 255.0,
-                    pixels[idx + 1] as f32 / 255.0,
-                    pixels[idx + 2] as f32 / 255.0,
-                ),
-                1 => {
-                    let v = pixels[idx] as f32 / 255.0;
-                    (v, v, v)
-                }
-                _ => unreachable!(),
-            };
-
-            let rgbe = to_rgbe(r, g, b);
-            buf.extend_from_slice(&rgbe);
+    // Determine pixel layout and convert each pixel to RGBE
+    match info.format {
+        PixelFormat::Rgb32f => {
+            // Native f32 RGB — use directly, no u8→f32 conversion
+            for chunk in pixels.chunks_exact(12) {
+                let r = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let g = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                let b = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+                buf.extend_from_slice(&to_rgbe(r, g, b));
+            }
+        }
+        PixelFormat::Rgba32f => {
+            // Native f32 RGBA — use RGB, ignore alpha
+            for chunk in pixels.chunks_exact(16) {
+                let r = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let g = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                let b = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+                buf.extend_from_slice(&to_rgbe(r, g, b));
+            }
+        }
+        PixelFormat::Rgb8 => {
+            for chunk in pixels.chunks_exact(3) {
+                let r = chunk[0] as f32 / 255.0;
+                let g = chunk[1] as f32 / 255.0;
+                let b = chunk[2] as f32 / 255.0;
+                buf.extend_from_slice(&to_rgbe(r, g, b));
+            }
+        }
+        PixelFormat::Rgba8 => {
+            for chunk in pixels.chunks_exact(4) {
+                let r = chunk[0] as f32 / 255.0;
+                let g = chunk[1] as f32 / 255.0;
+                let b = chunk[2] as f32 / 255.0;
+                buf.extend_from_slice(&to_rgbe(r, g, b));
+            }
+        }
+        PixelFormat::Gray8 => {
+            for &v in pixels {
+                let f = v as f32 / 255.0;
+                buf.extend_from_slice(&to_rgbe(f, f, f));
+            }
+        }
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "HDR encode requires RGB8, RGBA8, Gray8, Rgb32f, or Rgba32f".into(),
+            ));
         }
     }
 

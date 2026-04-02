@@ -52,9 +52,36 @@ pub fn encode_pixels(
             }
             (r.clone(), r.clone(), r, a)
         }
+        PixelFormat::Rgba32f => {
+            // Native f32 input — extract channels directly, no conversion
+            let mut r = Vec::with_capacity(npixels);
+            let mut g = Vec::with_capacity(npixels);
+            let mut b = Vec::with_capacity(npixels);
+            let mut a = Vec::with_capacity(npixels);
+            for chunk in pixels.chunks_exact(16) {
+                r.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                g.push(f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
+                b.push(f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]));
+                a.push(f32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]));
+            }
+            (r, g, b, a)
+        }
+        PixelFormat::Rgb32f => {
+            // Native f32 RGB input — add alpha=1.0
+            let mut r = Vec::with_capacity(npixels);
+            let mut g = Vec::with_capacity(npixels);
+            let mut b = Vec::with_capacity(npixels);
+            let a = vec![1.0f32; npixels];
+            for chunk in pixels.chunks_exact(12) {
+                r.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                g.push(f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
+                b.push(f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]));
+            }
+            (r, g, b, a)
+        }
         _ => {
             return Err(ImageError::UnsupportedFormat(
-                "EXR encode requires RGB8, RGBA8, or Gray8".into(),
+                "EXR encode requires RGB8, RGBA8, Gray8, Rgb32f, or Rgba32f".into(),
             ));
         }
     };

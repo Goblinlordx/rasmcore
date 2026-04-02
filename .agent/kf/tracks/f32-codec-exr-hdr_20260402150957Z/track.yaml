@@ -1,127 +1,132 @@
 id: f32-codec-exr-hdr_20260402150957Z
-title: "f32 codec entry points — EXR and HDR native f32 decode/encode"
+title: f32 codec entry points — EXR and HDR native f32 decode/encode
 type: feature
 status: pending
 created: 2026-04-02
-updated: 2026-04-02
+updated: '2026-04-02'
 spec:
-  summary: |
-    Make EXR and HDR codecs produce and consume f32 pixel data natively,
+  summary: 'Make EXR and HDR codecs produce and consume f32 pixel data natively,
+
     eliminating the precision-destroying u8 quantization. These are the
+
     first two codecs to exercise the f32 pipeline end-to-end.
-  context: |
-    EXR decoder (decoder/mod.rs:1628-1705) already reads f32/f16/u32 channels
-    via the exr crate but immediately crushes to Rgba8:
-      (r.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
-    EXR encoder (encoder/exr.rs) takes u8 input and converts back to f32
-    for writing: pixel as f32 / 255.0. Full round-trip precision loss.
 
-    HDR decoder (decoder/mod.rs:1505-1627) reads RGBE (shared-exponent float)
-    but converts to Rgb8. Encoder does the inverse.
+    '
+  context: "EXR decoder (decoder/mod.rs:1628-1705) already reads f32/f16/u32 channels\nvia the exr crate but immediately crushes\
+    \ to Rgba8:\n  (r.clamp(0.0, 1.0) * 255.0 + 0.5) as u8\nEXR encoder (encoder/exr.rs) takes u8 input and converts back\
+    \ to f32\nfor writing: pixel as f32 / 255.0. Full round-trip precision loss.\n\nHDR decoder (decoder/mod.rs:1505-1627)\
+    \ reads RGBE (shared-exponent float)\nbut converts to Rgb8. Encoder does the inverse.\n\nBoth codecs are inherently floating-point\
+    \ formats. The u8 quantization\nis an artificial limitation of the current pipeline.\n"
+  codebase_analysis: 'EXR decoder key section (decoder/mod.rs ~line 1670):
 
-    Both codecs are inherently floating-point formats. The u8 quantization
-    is an artificial limitation of the current pipeline.
-  codebase_analysis: |
-    EXR decoder key section (decoder/mod.rs ~line 1670):
     - Reads via exr::prelude::read_first_rgba_layer_from_file
+
     - get_f32_sample() extracts per-channel f32 from FlatSamples enum
+
     - Currently: clamp(0.0, 1.0) * 255.0 + 0.5 → u8
+
     - Change: store f32 directly as bytes in Vec<u8> with Rgba32f format
 
+
     EXR encoder (encoder/exr.rs ~line 20-60):
+
     - Currently: u8 → f32 via / 255.0
+
     - Change: if input is already Rgba32f, skip conversion entirely
 
+
     HDR decoder (decoder/mod.rs ~line 1560):
+
     - Reads RGBE 4-byte tuples, converts mantissa * 2^(exp-128-8)
+
     - Currently: clamp * 255.0 → u8
+
     - Change: store f32 directly with Rgb32f format
 
+
     HDR encoder (encoder/hdr.rs ~line 47-65):
+
     - Currently: u8 → f32 via / 255.0, then pack to RGBE
+
     - Change: if input is Rgb32f, use f32 directly
 
+
     Underlying crates:
+
     - exr v1.74: full f32/f16/u32 support, no changes needed
+
     - HDR codec: custom implementation, already uses f32 internally
+
+    '
   acceptance_criteria:
-    - EXR decoder outputs Rgba32f when pipeline is in HighPrecision mode
-    - EXR decoder outputs Rgba8 in Standard mode (backward compatible)
-    - EXR encoder accepts Rgba32f input directly (no u8→f32 conversion)
-    - EXR encoder still accepts Rgba8 input (backward compatible)
-    - HDR decoder outputs Rgb32f when pipeline is in HighPrecision mode
-    - HDR decoder outputs Rgb8 in Standard mode (backward compatible)
-    - HDR encoder accepts Rgb32f input directly
-    - HDR encoder still accepts Rgb8 input (backward compatible)
-    - Round-trip parity test EXR f32 — decode→encode→decode with zero precision loss
-    - Round-trip parity test HDR f32 — decode→encode→decode with RGBE-limited precision
-    - Cross-format test — EXR f32 decode → pipeline passthrough → HDR f32 encode
-    - Three-way validation for EXR — our decode vs exr crate reference at f32
-    - Standard mode regression — all existing EXR/HDR tests pass unchanged
-  out_of_scope: |
-    - Other codecs (JXL, TIFF f32, FITS) — future tracks
+  - EXR decoder outputs Rgba32f when pipeline is in HighPrecision mode
+  - EXR decoder outputs Rgba8 in Standard mode (backward compatible)
+  - EXR encoder accepts Rgba32f input directly (no u8→f32 conversion)
+  - EXR encoder still accepts Rgba8 input (backward compatible)
+  - HDR decoder outputs Rgb32f when pipeline is in HighPrecision mode
+  - HDR decoder outputs Rgb8 in Standard mode (backward compatible)
+  - HDR encoder accepts Rgb32f input directly
+  - HDR encoder still accepts Rgb8 input (backward compatible)
+  - Round-trip parity test EXR f32 — decode→encode→decode with zero precision loss
+  - Round-trip parity test HDR f32 — decode→encode→decode with RGBE-limited precision
+  - Cross-format test — EXR f32 decode → pipeline passthrough → HDR f32 encode
+  - Three-way validation for EXR — our decode vs exr crate reference at f32
+  - Standard mode regression — all existing EXR/HDR tests pass unchanged
+  out_of_scope: '- Other codecs (JXL, TIFF f32, FITS) — future tracks
+
     - Filter f32 processing — separate track
+
     - GPU f32 — separate track
-  technical_notes: |
-    Precision mode selection: the decoder needs to know whether to output
-    f32 or u8. Two options:
 
-    A) Decoder always outputs native format (f32 for EXR/HDR), pipeline
-       auto-demotes if precision flag is Standard. Simpler decoder logic.
-
-    B) Decoder checks precision flag and outputs accordingly. Avoids
-       unnecessary f32 allocation in standard mode. Better perf default.
-
-    Recommend option B — the decode functions already receive pipeline
-    context or can receive a target_format parameter (decode_as exists).
-
-    HDR RGBE note: RGBE shared exponent gives ~1% relative precision.
-    The f32 round-trip won't be bit-exact (RGBE encoding is lossy in the
-    mantissa) but should be within RGBE precision bounds. Test tolerance
-    should reflect this (~1/256 relative error per channel).
-
-    EXR f32 round-trip should be bit-exact for f32-stored EXR files.
-    For f16-stored EXR files, decode precision is limited to f16 range.
-
-    f16 extension (if f16-pipeline-extension track is completed first):
-    EXR decoder should also support Rgba16f output for f16-stored EXR files
-    in HalfPrecision mode — preserving native f16 without up-converting to f32.
-    EXR encoder should accept Rgba16f input and write f16 channels directly.
+    '
+  technical_notes: "Precision mode selection: the decoder needs to know whether to output\nf32 or u8. Two options:\n\nA) Decoder\
+    \ always outputs native format (f32 for EXR/HDR), pipeline\n   auto-demotes if precision flag is Standard. Simpler decoder\
+    \ logic.\n\nB) Decoder checks precision flag and outputs accordingly. Avoids\n   unnecessary f32 allocation in standard\
+    \ mode. Better perf default.\n\nRecommend option B — the decode functions already receive pipeline\ncontext or can receive\
+    \ a target_format parameter (decode_as exists).\n\nHDR RGBE note: RGBE shared exponent gives ~1% relative precision.\n\
+    The f32 round-trip won't be bit-exact (RGBE encoding is lossy in the\nmantissa) but should be within RGBE precision bounds.\
+    \ Test tolerance\nshould reflect this (~1/256 relative error per channel).\n\nEXR f32 round-trip should be bit-exact for\
+    \ f32-stored EXR files.\nFor f16-stored EXR files, decode precision is limited to f16 range.\n\nf16 extension (if f16-pipeline-extension\
+    \ track is completed first):\nEXR decoder should also support Rgba16f output for f16-stored EXR files\nin HalfPrecision\
+    \ mode — preserving native f16 without up-converting to f32.\nEXR encoder should accept Rgba16f input and write f16 channels\
+    \ directly.\n"
 plan:
-  - phase: "EXR f32 decode"
-    tasks:
-      - text: "Modify EXR decoder to output Rgba32f — store f32 samples as LE bytes in Vec<u8> instead of quantizing to u8"
-        done: false
-      - text: "Add precision-aware path — output Rgba32f in HP/FullPrecision mode, Rgba16f in HalfPrecision (if available), Rgba8 in Standard mode"
-        done: false
-      - text: "Handle f16 and u32 EXR channels — convert to f32 at decode (already done internally), or preserve f16 natively if HalfPrecision"
-        done: false
-      - text: "Unit test — EXR f32 decode produces correct byte count and sample values"
-        done: false
-  - phase: "HDR f32 decode"
-    tasks:
-      - text: "Modify HDR decoder to output Rgb32f — store f32 from RGBE conversion directly"
-        done: false
-      - text: "Add precision-aware path — Rgb32f in HP mode, Rgb8 in Standard mode"
-        done: false
-      - text: "Unit test — HDR f32 decode produces correct values within RGBE precision bounds"
-        done: false
-  - phase: "Encoder f32 input"
-    tasks:
-      - text: "EXR encoder — accept Rgba32f input, skip u8→f32 conversion, write f32 samples directly"
-        done: false
-      - text: "HDR encoder — accept Rgb32f input, skip u8→f32 conversion, pack RGBE from f32 directly"
-        done: false
-      - text: "Preserve backward compat — both encoders still accept u8/u16 formats with existing conversion"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "EXR f32 round-trip parity test — decode→encode→decode bit-exact for f32-stored files"
-        done: false
-      - text: "HDR f32 round-trip parity test — decode→encode→decode within RGBE precision tolerance"
-        done: false
-      - text: "Cross-format test — EXR f32 decode → identity pipeline → HDR f32 encode"
-        done: false
-      - text: "Regression — all existing EXR and HDR tests pass in standard precision mode"
-        done: false
+- phase: EXR f32 decode
+  tasks:
+  - text: Modify EXR decoder to output Rgba32f — store f32 samples as LE bytes in Vec<u8> instead of quantizing to u8
+    done: true
+  - text: Add precision-aware path — output Rgba32f in HP/FullPrecision mode, Rgba16f in HalfPrecision (if available), Rgba8
+      in Standard mode
+    done: true
+  - text: Handle f16 and u32 EXR channels — convert to f32 at decode (already done internally), or preserve f16 natively if
+      HalfPrecision
+    done: true
+  - text: Unit test — EXR f32 decode produces correct byte count and sample values
+    done: false
+- phase: HDR f32 decode
+  tasks:
+  - text: Modify HDR decoder to output Rgb32f — store f32 from RGBE conversion directly
+    done: true
+  - text: Add precision-aware path — Rgb32f in HP mode, Rgb8 in Standard mode
+    done: true
+  - text: Unit test — HDR f32 decode produces correct values within RGBE precision bounds
+    done: false
+- phase: Encoder f32 input
+  tasks:
+  - text: EXR encoder — accept Rgba32f input, skip u8→f32 conversion, write f32 samples directly
+    done: false
+  - text: HDR encoder — accept Rgb32f input, skip u8→f32 conversion, pack RGBE from f32 directly
+    done: false
+  - text: Preserve backward compat — both encoders still accept u8/u16 formats with existing conversion
+    done: false
+- phase: Verification
+  tasks:
+  - text: EXR f32 round-trip parity test — decode→encode→decode bit-exact for f32-stored files
+    done: false
+  - text: HDR f32 round-trip parity test — decode→encode→decode within RGBE precision tolerance
+    done: false
+  - text: Cross-format test — EXR f32 decode → identity pipeline → HDR f32 encode
+    done: false
+  - text: Regression — all existing EXR and HDR tests pass in standard precision mode
+    done: false
 extra: {}
