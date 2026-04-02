@@ -41,25 +41,25 @@ plan:
 - phase: Apply mode changes
   tasks:
   - text: Change swirl.rs DistortionSampling::Ewa to Bilinear
-    done: false
+    done: true
   - text: Change barrel.rs DistortionSampling::EwaClamp to Ewa
-    done: false
+    done: true
   - text: Update im_parity_swirl test threshold and comment (expect MAE ~0.00)
-    done: false
+    done: true
   - text: Update im_parity_barrel test threshold and comment (expect MAE ~1.66)
-    done: false
+    done: true
 - phase: Document sampling rationale
   tasks:
   - text: Add sampling mode doc comments to barrel.rs, swirl.rs, wave.rs, polar.rs, depolar.rs, spherize.rs, ripple.rs, mesh_warp.rs
-    done: false
+    done: true
   - text: Add Sampling Mode Selection guide section to ewa.rs module docs with decision matrix
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All im_parity tests pass with improved thresholds
-    done: false
+    done: true
   - text: All parity.rs distortion tests pass (no regressions)
-    done: false
+    done: true
   - text: All distortion unit tests pass
-    done: false
+    done: true
 extra: {}
