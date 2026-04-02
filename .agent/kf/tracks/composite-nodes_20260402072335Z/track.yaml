@@ -1,0 +1,120 @@
+id: composite-nodes_20260402072335Z
+title: "Composite nodes — pipeline-as-node with input/output refs and analysis sinks"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Implement composite nodes that contain an internal pipeline graph with
+    input/output reference nodes. Enables analysis sinks (consume pixels,
+    output params), pipeline composition (analysis output feeds processing
+    input), presets-as-composites, and plugin-defined multi-step operations.
+  context: |
+    The pipeline architecture doc (sections 3.3b and 3.3c) defines two
+    related concepts that need implementation:
+
+    1. Analysis sinks — sink nodes that consume pixels and output structured
+       params instead of encoded bytes. Used for auto-crop, auto-levels,
+       histogram analysis, etc.
+
+    2. Composite nodes — a node whose implementation is itself a pipeline
+       with input/output refs. The outer pipeline treats it as an opaque node.
+       Composites can contain analysis sinks internally, enabling patterns
+       like auto-crop (analyze edges, extract crop rect, apply crop).
+
+    These unify presets, recipes, auto-* operations, and plugin multi-step
+    filters under one mechanism. The three-phase execution model (forward
+    info, backward request, forward pixels) works recursively through
+    composite boundaries.
+  codebase_analysis: |
+    Existing infrastructure:
+    - NodeGraph already supports DAG topology (multiple consumers of one source)
+    - ImageNode trait has info(), compute_region(), input_rect(), access_pattern()
+    - Sink nodes exist (encoder sinks in pipeline/nodes/sink.rs)
+    - Layer cache operates per-node by content hash
+
+    New components needed:
+    1. InputRefNode — placeholder that receives pixels from outer graph
+    2. OutputRefNode — marks the output of the internal graph
+    3. AnalysisSink — trait/interface for sinks that return params
+    4. CompositeNode — ImageNode impl that wraps an internal NodeGraph
+    5. CompositeBuilder — API for constructing composite node definitions
+    6. Serialization — composite definitions as storable/loadable configs
+  acceptance_criteria:
+    - InputRefNode that acts as pixel source within a composite's internal graph
+    - OutputRefNode that marks the composite's output
+    - CompositeNode implementing ImageNode (info, compute_region, input_rect derived from internal graph)
+    - Analysis sink trait that consumes pixels and returns structured results
+    - Pipeline composition API — analysis result feeds into node config
+    - At least one concrete analysis sink (auto_crop or auto_levels)
+    - Composite node definition serializable to/from config (for presets)
+    - Nested composites work (composite containing composite)
+    - Layer cache works correctly with composite node boundaries
+    - Full test suite passes, WASM build clean
+  out_of_scope: |
+    Plugin-defined composites (depends on plugin node system track).
+    Preset UI/management (SDK/UI concern). ML-based analysis sinks
+    (depends on ML execution track).
+  technical_notes: |
+    CompositeNode implementation:
+
+    fn info(&self) -> ImageInfo:
+      Returns self.internal_graph.node_info(output_ref_id)
+
+    fn input_rect(&self, output: Rect, bw: u32, bh: u32) -> Rect:
+      Traces backward through internal graph from output_ref to input_ref,
+      composing each node's input_rect. Returns what the input_ref needs.
+
+    fn compute_region(&self, request: Rect, upstream_fn: ...) -> Result<Vec<u8>>:
+      1. Fetch upstream pixels via upstream_fn (for the input_ref)
+      2. Inject into internal graph's input_ref node
+      3. Execute internal graph requesting 'request' from output_ref
+      4. Return result
+
+    Analysis sink pattern within composite:
+      1. Internal graph materializes through analysis sink
+      2. Analysis sink returns params (crop rect, levels values, etc.)
+      3. Params are used to configure a processing node in the same graph
+      4. Processing node produces the composite's pixel output
+
+    Preset serialization:
+      A composite definition = list of (node_type, config, connections).
+      Serializable as JSON/YAML. Loading a preset constructs the internal
+      graph. No code execution — just graph construction with known node types.
+plan:
+  - phase: Foundation
+    tasks:
+      - text: Implement InputRefNode and OutputRefNode
+        done: false
+      - text: Implement CompositeNode wrapping an internal NodeGraph
+        done: false
+      - text: Derive info() and input_rect() from internal graph traversal
+        done: false
+  - phase: Analysis sinks
+    tasks:
+      - text: Define AnalysisSink trait (consume pixels, return typed result)
+        done: false
+      - text: Implement auto_levels analysis sink (histogram-based black/white/gamma)
+        done: false
+      - text: Wire analysis sink output into node config within composite
+        done: false
+  - phase: Composition API
+    tasks:
+      - text: Pipeline API for creating composite nodes (builder pattern)
+        done: false
+      - text: Implement at least one auto-* composite (auto_crop or auto_levels)
+        done: false
+      - text: Composite definition serialization (JSON/YAML for presets)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test composite node with simple pipeline (point-ops chain)
+        done: false
+      - text: Test analysis sink composite (auto-levels end-to-end)
+        done: false
+      - text: Test nested composites
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}

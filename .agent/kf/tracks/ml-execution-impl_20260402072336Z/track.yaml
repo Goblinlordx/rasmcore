@@ -1,0 +1,88 @@
+id: ml-execution-impl_20260402072336Z
+title: "ML execution system — WIT ml-execute interface, MlCapable trait, host executors"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Implement the ML execution system designed in the ml-plugin-architecture
+    research track. Add WIT ml-execute interface (parallel to gpu-execute),
+    MlCapable trait for nodes, remote model bundle loading, and host executor
+    for ONNX Runtime. Depends on the research track being completed first.
+  context: |
+    ML execution is a host-provided capability (like GPU). Any node — built-in
+    or plugin — declares MlCapable, emits an MlOp (model reference + input
+    tensor + params), and the host runs inference via ONNX Runtime, CoreML,
+    or WebNN. The node never touches the ML runtime directly.
+
+    Models are distributed as remote bundles (ONNX file + manifest), fetched
+    on demand, cached locally. The host resolves model references to local
+    files.
+
+    This track implements the core system. Individual ML-powered filters
+    (background removal, super resolution, etc.) are separate tracks that
+    build on this infrastructure.
+  codebase_analysis: |
+    GPU pattern to follow:
+    - wit/core/gpu.wit: GpuOp type, gpu-execute function
+    - crates/rasmcore-pipeline/src/gpu.rs: GpuCapable trait, GpuOp enum
+    - crates/rasmcore-cli/src/gpu_executor.rs: WgpuExecutor host implementation
+    - Pipeline graph checks gpu_nodes and dispatches when available
+
+    ML parallel:
+    - wit/core/ml.wit (new): MlOp type, ml-execute function
+    - crates/rasmcore-pipeline/src/ml.rs (new): MlCapable trait, MlOp struct
+    - crates/rasmcore-cli/src/ml_executor.rs (new): OnnxExecutor host implementation
+    - Pipeline graph checks ml_nodes and dispatches when available
+  acceptance_criteria:
+    - WIT ml-execute interface in wit/core/ml.wit
+    - MlOp type with model-ref, input tensor, output format, params
+    - MlCapable trait for nodes (parallel to GpuCapable)
+    - ml-capabilities() discovery function (host reports available models)
+    - Remote model bundle manifest format (name, version, sha256, I/O specs)
+    - Model download and cache manager in host
+    - ONNX Runtime host executor (native CLI)
+    - Pipeline graph ML dispatch (check MlCapable, call ml-execute)
+    - At least one proof-of-concept ML node (e.g., background removal using RMBG)
+    - WebNN executor stub for browser (implementation can be deferred)
+    - Full test suite passes, WASM build clean
+  out_of_scope: |
+    Individual ML filter implementations (separate tracks per filter).
+    Plugin node system (separate track). Training models.
+    Model registry/CDN infrastructure (use direct URLs for V1).
+  technical_notes: |
+    Depends on ml-plugin-architecture research track for detailed design.
+    Implementation follows GPU executor pattern exactly.
+plan:
+  - phase: WIT and traits
+    tasks:
+      - text: Define WIT ml-execute interface in wit/core/ml.wit
+        done: false
+      - text: Implement MlCapable trait and MlOp type in rasmcore-pipeline
+        done: false
+      - text: Add ml-capabilities() discovery interface
+        done: false
+  - phase: Host executor
+    tasks:
+      - text: Implement model bundle manifest parsing and cache manager
+        done: false
+      - text: Implement ONNX Runtime executor for native CLI
+        done: false
+      - text: Wire ML dispatch into pipeline graph execution
+        done: false
+  - phase: Proof of concept
+    tasks:
+      - text: Implement one ML node (background-removal or super-resolution)
+        done: false
+      - text: End-to-end test with real ONNX model
+        done: false
+  - phase: Verification
+    tasks:
+      - text: ML dispatch works alongside GPU dispatch (not conflicting)
+        done: false
+      - text: Graceful fallback when ML runtime unavailable
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}

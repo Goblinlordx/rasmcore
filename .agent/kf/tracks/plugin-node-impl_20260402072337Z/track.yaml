@@ -1,0 +1,123 @@
+id: plugin-node-impl_20260402072337Z
+title: "Plugin node system — load external .wasm components as pipeline nodes"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Implement the plugin node system designed in the plugin-node-system
+    research track. External .wasm components are loaded at runtime as
+    pipeline nodes with the same interface as built-in nodes. Plugins can
+    declare fusable point-ops, GPU shaders, ML capability, and can define
+    composite nodes that reference built-in nodes.
+  context: |
+    Plugins are full pipeline nodes loaded from external .wasm files. They
+    implement the same interface as built-in Rust nodes. The host loads them
+    using its own WASM runtime (wasmtime for CLI, browser native WASM for web)
+    — zero size overhead in the core component.
+
+    Execution strategies (mutually exclusive):
+    - Fusable: export build_point_lut → engine handles fusion/GPU/CPU
+    - GPU: export gpu_ops + compute_region → GPU shader or CPU fallback
+    - ML: export ml_op → host ML runtime
+    - CPU-only: export compute_region
+
+    Plugins can also define composite nodes — internal pipeline graphs that
+    reference both plugin-defined and built-in nodes. A plugin can compose
+    existing built-in operations (blur, curves, blend) into new multi-step
+    filters without reimplementing those operations.
+
+    This depends on:
+    - plugin-node-system research track (design)
+    - composite-nodes track (for plugin composites)
+    - input-rect-refactor (for plugin GPU ops)
+  codebase_analysis: |
+    Host WASM loading infrastructure:
+    - CLI uses wasmtime for WASM component loading
+    - tests/wasm-integration already loads .wasm components via Component::from_file
+    - Browser: WebAssembly.instantiate() for loading plugin .wasm
+
+    Plugin discovery/registration:
+    - Built-in: inventory::submit! at compile time, list_filters() for discovery
+    - Plugin: host registers discovered plugins at runtime into same filter list
+    - param-manifest.json: plugins export their config schema, host merges
+
+    Plugin composite capability:
+    - Plugins can reference built-in nodes by name in their composite definitions
+    - Host resolves node names to built-in implementations
+    - Plugin composites can mix plugin-defined nodes and built-in nodes
+  acceptance_criteria:
+    - Plugin WIT interface defined (what a plugin .wasm must export)
+    - Plugin loader for CLI host (wasmtime-based)
+    - Plugin loader for browser host (WebAssembly.instantiate)
+    - Plugin discovery from configurable directory/URL
+    - Remote plugin bundle format (.wasm + manifest.json)
+    - Bundle download and cache manager
+    - Plugin nodes appear in list_filters() / param-manifest
+    - Fusable plugin point-ops participate in LUT fusion
+    - GPU-capable plugin nodes dispatch to GPU correctly
+    - ML-capable plugin nodes dispatch to ML runtime correctly
+    - Plugin composites can reference built-in nodes by name
+    - Plugin composites can mix built-in and plugin-defined nodes
+    - Security sandboxing (WASM capability model — plugins can't escape sandbox)
+    - At least one example plugin .wasm (simple filter)
+    - Full test suite passes, WASM build clean
+  out_of_scope: |
+    Plugin SDK/toolchain (template project, build tools — separate track).
+    Plugin marketplace/registry. Plugin hot-reload.
+    Scripting language support (plugins are compiled .wasm only).
+  technical_notes: |
+    Depends on research track for detailed interface design.
+
+    Plugin composite nodes:
+    A plugin can export a composite definition — a graph description listing
+    node types (by name), configs, and connections. The host resolves node
+    names against the built-in registry + loaded plugins and constructs the
+    internal graph. This means a plugin can define "vintage film look" as:
+      InputRef → curves("film_curve.json") → color_balance({shadows: warm})
+               → film_grain({amount: 0.3}) → vignette({strength: 0.4})
+               → OutputRef
+    All using built-in nodes. The plugin only defines the composition,
+    not the individual operations.
+
+    Key implementation note: plugins run in separate WASM component instances.
+    Cross-component pixel buffer transfer involves copying (WASM Component
+    Model shared-nothing). The tile pipeline limits this overhead since
+    buffers are tile-sized, not full-image.
+plan:
+  - phase: WIT interface and loader
+    tasks:
+      - text: Define plugin WIT interface (node exports, capability declarations)
+        done: false
+      - text: Implement plugin loader for CLI (wasmtime Component::from_file)
+        done: false
+      - text: Implement plugin discovery (scan directory, load manifests)
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Register loaded plugin nodes in filter registry
+        done: false
+      - text: Wire plugin fusable point-ops into LUT fusion system
+        done: false
+      - text: Wire plugin GPU/ML capability declarations into dispatch
+        done: false
+  - phase: Composite plugins
+    tasks:
+      - text: Define composite definition format (node list + connections + configs)
+        done: false
+      - text: Implement built-in node resolution for plugin composites
+        done: false
+      - text: Plugin composites can mix built-in and plugin nodes
+        done: false
+  - phase: Distribution and verification
+    tasks:
+      - text: Define remote plugin bundle format (.wasm + manifest.json)
+        done: false
+      - text: Implement bundle download and cache manager
+        done: false
+      - text: Build example plugin .wasm (simple filter)
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}

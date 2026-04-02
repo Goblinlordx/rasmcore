@@ -1,0 +1,111 @@
+id: input-rect-refactor_20260402072334Z
+title: "Refactor: extract input_rect expansion from compute_region for all spatial nodes"
+type: refactor
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Extract the request expansion logic from each spatial node's compute_region
+    into the input_rect trait method. Currently spatial ops (blur, bilateral,
+    median, sharpen, etc.) expand the request inline via request.expand_uniform()
+    inside compute_region. This should be declared via input_rect so the pipeline
+    graph can reason about expansion externally — required for future tiled GPU
+    execution and plugin node support.
+  context: |
+    The ImageNode trait has an input_rect method (defaulting to identity/no
+    expansion), but no node overrides it today. All spatial ops embed their
+    expansion in compute_region:
+      let overlap = (sigma * 3.0).ceil() as u32 + 1;
+      let expanded = request.expand_uniform(overlap, info.width, info.height);
+      let pixels = upstream(expanded)?;
+      // ... process ...
+      Ok(crop_to_request(&result, expanded, request, info.format))
+
+    This works for CPU execution but prevents the graph from knowing what a
+    node will request before it runs. For tiled GPU dispatch and plugin nodes,
+    the graph needs to negotiate tile sizes by calling input_rect ahead of
+    execution.
+
+    Pure refactor — no behavior change. Each node's compute_region still works
+    the same way, but the expansion calculation is also available via input_rect.
+  codebase_analysis: |
+    Nodes that need input_rect implementations:
+
+    Spatial filters (expand by kernel radius):
+    - gaussian_blur_cv: (sigma * 3).ceil() + 1
+    - bilateral: radius param
+    - median: radius param
+    - box_blur/average_blur: radius param
+    - sharpen/smart_sharpen: radius param
+    - motion_blur: length param (directional)
+    - spin_blur/zoom_blur: depends on params
+    - guided_filter: radius param
+    - high_pass: radius param
+    - bokeh_blur/lens_blur/tilt_shift: radius param
+    - kuwahara: radius param
+    - nlm_denoise: search_window + patch_size
+    - convolve: kernel_size / 2
+    - displacement_map: max displacement value
+
+    Transform nodes (coordinate remapping):
+    - resize: scale by inverse ratio
+    - rotate: bounding box of inverse rotation
+    - flip: remap coordinates
+    - affine: inverse affine transform bounding box
+    - crop: offset by crop origin
+
+    Distortion filters (inverse transform bounding box):
+    - barrel, spherize, swirl, wave, ripple, polar, depolar: inverse distortion bounds
+    - mesh_warp: inverse mesh lookup bounds
+    - perspective_warp/perspective_correct: inverse perspective bounds
+  acceptance_criteria:
+    - Every spatial filter node overrides input_rect with its expansion logic
+    - Every transform node overrides input_rect with its coordinate remapping
+    - Every distortion node overrides input_rect with its inverse transform bounds
+    - compute_region still works identically (uses same expansion internally)
+    - input_rect and compute_region expansion are consistent (same formula)
+    - All existing tests pass unchanged (pure refactor)
+    - WASM build clean
+  out_of_scope: |
+    Changing the GPU dispatch to use input_rect (separate tiled GPU track).
+    Plugin node system (separate track). Removing expansion from compute_region
+    (it stays as the runtime implementation; input_rect is the declarative version).
+  technical_notes: |
+    For most spatial ops, input_rect is trivial — expand_uniform by radius:
+      fn input_rect(&self, output: Rect, bw: u32, bh: u32) -> Rect {
+          output.expand_uniform(self.radius, bw, bh)
+      }
+
+    For transforms, it's the inverse coordinate mapping:
+      fn input_rect(&self, output: Rect, bw: u32, bh: u32) -> Rect {
+          // Map output corners through inverse transform, compute bounding box
+      }
+
+    The tricky ones are distortions where the inverse isn't a simple formula
+    (mesh_warp, perspective). For these, conservative bounding box estimates
+    are acceptable — slightly larger than needed is fine, smaller is not.
+
+    Point-ops and fusable ops keep the default (identity) — they don't expand.
+plan:
+  - phase: Spatial filters
+    tasks:
+      - text: Add input_rect to all blur variants (gaussian, box, bilateral, median, bokeh, lens, tilt_shift, motion, spin, zoom)
+        done: false
+      - text: Add input_rect to sharpen variants (sharpen, smart_sharpen, high_pass)
+        done: false
+      - text: Add input_rect to remaining spatial ops (guided_filter, kuwahara, nlm_denoise, convolve, displacement_map, rank_filter)
+        done: false
+  - phase: Transforms and distortions
+    tasks:
+      - text: Add input_rect to transform nodes (resize, rotate, flip, affine, crop)
+        done: false
+      - text: Add input_rect to distortion filters (barrel, spherize, swirl, wave, ripple, polar, depolar, mesh_warp, perspective)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify input_rect and compute_region expansion are consistent for all nodes
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}
