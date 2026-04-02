@@ -1,5 +1,5 @@
 title: Fix web-ui build — SDK path, manifest dedup, and derive(Filter) param extraction
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-04-02'

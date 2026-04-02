@@ -29,19 +29,19 @@ plan:
 - phase: Fix SDK path
   tasks:
   - text: Update SDK_PATH default in web-ui-build.sh and web-ui-serve.sh from $ROOT/demo/sdk to $ROOT/sdk/typescript/generated
-    done: false
+    done: true
   - text: Verify web-ui symlinks SDK correctly and vite resolves imports
-    done: false
+    done: true
 - phase: Fix manifest generation
   tasks:
   - text: Update extract_config_params in rasmcore-codegen to detect derive(Filter) structs (match Filter in derive list)
-    done: false
+    done: true
   - text: Deduplicate manifest entries — derive-style filters should produce one entry with full params, not two
-    done: false
+    done: true
   - text: Verify param-manifest.json has correct single entries with full params for blur, sharpen, spherize etc.
-    done: false
+    done: true
 - phase: End-to-end verification
   tasks:
   - text: Run make web-ui-build and make web-ui-serve, confirm filters show params in UI
-    done: false
+    done: true
 extra: {}
