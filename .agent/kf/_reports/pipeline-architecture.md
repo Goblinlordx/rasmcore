@@ -414,7 +414,121 @@ Each output row reuses ~60% of the previous upstream request.
 Zero redundant decoding.
 ```
 
-### 3.3 Node Trait (Revised)
+### 3.3 Three-Phase Execution Model
+
+Pipeline execution has three distinct phases: a forward info pass, a backward
+request pass, and a forward pixel pass. Understanding this flow is essential
+for implementing nodes, plugins, and GPU/ML acceleration.
+
+#### Phase 1: Forward Info Pass (graph build time)
+
+When nodes are added to the graph, each computes its output `info()` — dimensions,
+pixel format, color space. This flows **forward** through the graph:
+
+```
+Source (4000x3000 Rgb8)
+  → Resize (2000x1500 Rgb8)    ← info() changes dimensions
+  → Blur (2000x1500 Rgb8)      ← info() passes through (same dims)
+  → Contrast (2000x1500 Rgb8)  ← info() passes through
+  → Encoder                    ← sees final 2000x1500, determines tile geometry
+```
+
+Info is available **without computing any pixels**. The encoder/sink uses the
+final info to plan its output tile geometry (JPEG: MCU rows, PNG: scanlines,
+TIFF: native tiles).
+
+#### Phase 2: Backward Request Pass (tile request time)
+
+When the encoder requests a tile, the request propagates **backward** through
+the graph. Each node maps the output rect to the input rect it needs via
+`input_rect()`:
+
+```
+Encoder requests tile (0, 0, 2000, 16)
+  ← Contrast: point-op, no expansion → requests (0, 0, 2000, 16)
+  ← Blur: spatial op, needs overlap → requests (0, 0, 2000, 32)
+     (expanded by blur radius, clamped to image bounds)
+  ← Resize: coordinate transform → requests (0, 0, 4000, 64)
+     (maps 2000x32 output coords back to 4000x64 source coords)
+  ← Source: provides (0, 0, 4000, 64)
+```
+
+Each node type has its own `input_rect` mapping:
+- **Point-ops** (brightness, contrast, gamma): identity — output rect = input rect
+- **Spatial ops** (blur, sharpen, median): expand by kernel radius
+- **Resize**: scale coordinates by inverse of resize ratio
+- **Distortion** (barrel, swirl): compute bounding box of inverse transform
+- **Crop**: offset by crop origin
+- **Flip/rotate**: remap coordinates in the opposite direction
+
+#### Phase 3: Forward Pixel Pass (computation)
+
+Pixels flow **forward** from source to sink. Each node receives upstream
+pixels for the region it requested and produces its output:
+
+```
+Source decodes (0, 0, 4000, 64) → 4000x64 pixels
+  → Resize resamples to (0, 0, 2000, 32) → 2000x32 pixels
+  → Blur processes with overlap, outputs (0, 0, 2000, 16) → 2000x16 pixels
+     (crops the overlap it requested back to the encoder's tile)
+  → Contrast applies LUT to (0, 0, 2000, 16) → 2000x16 pixels
+  → Encoder receives the 2000x16 tile
+```
+
+The spatial/layer cache intercepts at each node boundary — if a node's output
+for a given region is already cached, the backward/forward passes stop there.
+
+#### Execution Strategy per Node Type
+
+Nodes declare their execution strategy, which determines how they participate
+in the three-phase flow:
+
+| Strategy | info() | input_rect() | Pixel computation |
+|----------|--------|-------------|-------------------|
+| **Fusable point-op** | Pass-through | Identity (no expansion) | Engine applies fused LUT — node never computes directly |
+| **Spatial (CPU)** | Pass-through | Expand by kernel radius | `compute_region` with upstream pixels |
+| **Spatial (GPU)** | Pass-through | Full image (current) | GPU shader; layer cache serves tiles |
+| **Resize/transform** | New dimensions | Inverse coordinate transform | Resampling from upstream |
+| **Generator** | Declares output dims | N/A (no upstream) | Generates pixels from params |
+| **ML** | Depends on model | Depends on model | Host ML runtime |
+
+#### GPU Execution and Tiling
+
+GPU ops currently expand `input_rect` to the full image. The GPU shader
+processes the entire image in one dispatch. The layer cache stores the
+full result, and subsequent tile requests from the encoder are served by
+cropping from the cached output. This means:
+
+- GPU runs **once** per execution (not per tile)
+- Memory cost: full image cached (not tile-sized)
+- Compute cost: optimal (single dispatch)
+- Future optimization: tiled GPU execution would reduce memory by processing
+  GPU-sized tiles with `input_rect` expansion, negotiating tile size against
+  GPU texture limits and encoder geometry. Deferred — current approach works.
+
+#### LUT Fusion and the Fused Node
+
+When the graph contains consecutive fusable point-ops, the pipeline optimizer
+collapses them into a single `FusedLutNode`:
+
+```
+Before fusion:
+  Source → Brightness → Contrast → Gamma → Encoder
+  (3 separate LUT applications, 3 pixel passes)
+
+After fusion:
+  Source → FusedLutNode(composed_lut) → Encoder
+  (1 LUT application, 1 pixel pass)
+```
+
+The composed LUT is `lut_c[lut_b[lut_a[i]]]` — function composition via table
+lookup. The `FusedLutNode` has both CPU (`apply_lut`) and GPU (LUT shader)
+implementations. Individual point-op nodes are replaced entirely — they don't
+execute.
+
+---
+
+### 3.3b Node Trait (Revised)
 
 ```rust
 /// The core trait every pipeline node implements.
