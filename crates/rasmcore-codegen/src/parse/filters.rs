@@ -16,7 +16,8 @@ pub fn extract_filters(file: &syn::File) -> Vec<FilterReg> {
         if let syn::Item::Impl(imp) = item {
             if let Some((_, path, _)) = &imp.trait_ {
                 let trait_name = path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
-                let self_type = quote::quote!(#imp.self_ty).to_string().replace(' ', "");
+                let self_ty = &imp.self_ty;
+                let self_type = quote::quote!(#self_ty).to_string().replace(' ', "");
                 trait_impls.entry(self_type).or_default().push(trait_name);
             }
         }
