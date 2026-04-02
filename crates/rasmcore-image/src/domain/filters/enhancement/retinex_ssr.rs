@@ -67,7 +67,10 @@ pub fn retinex_ssr(
     let blurred = {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        gaussian_blur_cv(r, &mut u, info, &GaussianBlurCvParams { sigma })?
+        {
+            use crate::domain::filter_traits::CpuFilter;
+            GaussianBlurCvParams { sigma }.compute(r, &mut u, info)?
+        }
     };
 
     // Compute log(I/blur(I)) per channel using log(a/b) identity, then normalize

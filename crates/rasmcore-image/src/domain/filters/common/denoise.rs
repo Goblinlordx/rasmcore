@@ -323,7 +323,10 @@ pub fn retinex_msr(
         let blurred = {
             let r = Rect::new(0, 0, info.width, info.height);
             let mut u = |_: Rect| Ok(pixels.to_vec());
-            gaussian_blur_cv(r, &mut u, info, &GaussianBlurCvParams { sigma })?
+            {
+                use crate::domain::filter_traits::CpuFilter;
+                GaussianBlurCvParams { sigma }.compute(r, &mut u, info)?
+            }
         };
         for i in 0..n {
             let pi = i * channels;
@@ -406,7 +409,10 @@ pub fn retinex_msrcr(
         let blurred = {
             let r = Rect::new(0, 0, info.width, info.height);
             let mut u = |_: Rect| Ok(pixels.to_vec());
-            gaussian_blur_cv(r, &mut u, info, &GaussianBlurCvParams { sigma })?
+            {
+                use crate::domain::filter_traits::CpuFilter;
+                GaussianBlurCvParams { sigma }.compute(r, &mut u, info)?
+            }
         };
         for i in 0..n {
             let pi = i * channels;
