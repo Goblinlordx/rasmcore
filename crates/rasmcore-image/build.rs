@@ -523,17 +523,32 @@ fn main() {
     }
 
     // ─── WGSL shader validation via naga ─────────────────────────────────────
+    // Compose shared fragments from rasmcore-gpu-shaders before validating,
+    // since shader body files no longer contain pack/unpack/sample_bilinear.
+    let gpu_shaders_dir = Path::new(&manifest_dir).join("../rasmcore-gpu-shaders/src/wgsl");
+    let pixel_ops = fs::read_to_string(gpu_shaders_dir.join("pixel_ops.wgsl")).unwrap_or_default();
+    let sample_bilinear_frag = fs::read_to_string(gpu_shaders_dir.join("sample_bilinear.wgsl")).unwrap_or_default();
+
     let shaders_dir = Path::new(&manifest_dir).join("src/shaders");
     if shaders_dir.is_dir() {
         println!("cargo:rerun-if-changed=src/shaders");
+        println!("cargo:rerun-if-changed=../rasmcore-gpu-shaders/src/wgsl");
         let mut shader_count = 0u32;
         for entry in fs::read_dir(&shaders_dir).unwrap().flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "wgsl") {
-                let source = fs::read_to_string(&path).unwrap_or_else(|e| {
+                let body = fs::read_to_string(&path).unwrap_or_else(|e| {
                     panic!("Failed to read shader {}: {e}", path.display())
                 });
-                if let Err(e) = naga::front::wgsl::parse_str(&source) {
+                // Compose fragments needed by this shader body
+                let needs_sample = body.contains("sample_bilinear(")
+                    && !body.contains("fn sample_bilinear");
+                let composed = if needs_sample {
+                    format!("{pixel_ops}\n{sample_bilinear_frag}\n{body}")
+                } else {
+                    format!("{pixel_ops}\n{body}")
+                };
+                if let Err(e) = naga::front::wgsl::parse_str(&composed) {
                     panic!(
                         "WGSL validation failed for {}:\n{e}",
                         path.display()

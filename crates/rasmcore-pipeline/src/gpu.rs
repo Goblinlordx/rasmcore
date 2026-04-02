@@ -8,8 +8,8 @@
 /// A single GPU compute operation (one shader dispatch).
 #[derive(Debug, Clone)]
 pub struct GpuOp {
-    /// WGSL compute shader source code.
-    pub shader: &'static str,
+    /// WGSL compute shader source code (owned, composed from shared fragments + filter body).
+    pub shader: String,
     /// Entry point function name (e.g., "main", "blur_h").
     pub entry_point: &'static str,
     /// Workgroup size used in the shader (x, y, z).

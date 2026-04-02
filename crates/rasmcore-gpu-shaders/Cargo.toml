@@ -1,0 +1,7 @@
+[package]
+name = "rasmcore-gpu-shaders"
+version = "0.1.0"
+edition = "2024"
+description = "Shared WGSL compute shader fragments and composition API for rasmcore GPU pipeline"
+
+[dependencies]

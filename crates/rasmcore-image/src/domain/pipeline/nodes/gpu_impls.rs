@@ -1,17 +1,56 @@
 //! GpuCapable implementations for auto-generated filter pipeline nodes.
 //!
 //! Each filter node that has a corresponding WGSL shader gets a GpuCapable
-//! impl here. The impl packs filter params into the uniform buffer layout
-//! matching the shader's `Params` struct (little-endian, 4-byte aligned).
+//! impl here. Shaders are composed from shared fragments (pixel_ops,
+//! sample_bilinear) plus filter-specific body code via rasmcore_gpu_shaders.
+
+use std::sync::LazyLock;
 
 use super::filters::*;
 use crate::domain::types::PixelFormat;
+use rasmcore_gpu_shaders as shaders;
 use rasmcore_pipeline::{GpuCapable, GpuOp};
 
-/// Helper: only support RGBA8 on GPU (the shader packs/unpacks u32 as RGBA).
 fn is_rgba8(node_info: &crate::domain::types::ImageInfo) -> bool {
     node_info.format == PixelFormat::Rgba8
 }
+
+// ─── Composed shader sources (built once, cached) ────────────────────────────
+
+static GAUSSIAN_BLUR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/gaussian_blur.wgsl")));
+static BOX_BLUR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/box_blur.wgsl")));
+static SHARPEN: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/sharpen.wgsl")));
+static BILATERAL: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/bilateral.wgsl")));
+static GUIDED_FILTER: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/guided_filter.wgsl")));
+static MEDIAN: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/median.wgsl")));
+static HIGH_PASS: LazyLock<String> =
+    LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/high_pass.wgsl")));
+static SPIN_BLUR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/spin_blur.wgsl")));
+static MOTION_BLUR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/motion_blur.wgsl")));
+static ZOOM_BLUR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/zoom_blur.wgsl")));
+static SPHERIZE: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/spherize.wgsl")));
+static SWIRL: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/swirl.wgsl")));
+static BARREL: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/barrel.wgsl")));
+static RIPPLE: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/ripple.wgsl")));
+static WAVE: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/wave.wgsl")));
+static POLAR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/polar.wgsl")));
+static DEPOLAR: LazyLock<String> =
+    LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/depolar.wgsl")));
 
 // ─── Spatial Filters ─────────────────────────────────────────────────────────
 
@@ -23,10 +62,9 @@ impl GpuCapable for BlurNode {
         let sigma = self.config.radius;
         let kernel_radius = (sigma * 3.0).ceil() as u32;
         if kernel_radius > 32 {
-            return None; // Too large for GPU kernel buffer
+            return None;
         }
 
-        // Build 1D Gaussian kernel weights
         let ksize = 2 * kernel_radius + 1;
         let mut weights = Vec::with_capacity(ksize as usize);
         let mut sum = 0.0f32;
@@ -46,13 +84,13 @@ impl GpuCapable for BlurNode {
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&kernel_radius.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad
+        params.extend_from_slice(&0u32.to_le_bytes());
 
-        let shader = include_str!("../../../shaders/gaussian_blur.wgsl");
+        let shader = GAUSSIAN_BLUR.clone();
 
         Some(vec![
             GpuOp {
-                shader,
+                shader: shader.clone(),
                 entry_point: "blur_h",
                 workgroup_size: [256, 1, 1],
                 params: params.clone(),
@@ -79,10 +117,10 @@ impl GpuCapable for SharpenNode {
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.amount.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad
+        params.extend_from_slice(&0u32.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/sharpen.wgsl"),
+            shader: SHARPEN.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -104,12 +142,12 @@ impl GpuCapable for BilateralNode {
         params.extend_from_slice(&radius.to_le_bytes());
         params.extend_from_slice(&self.config.sigma_space.to_le_bytes());
         params.extend_from_slice(&self.config.sigma_color.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad3
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/bilateral.wgsl"),
+            shader: BILATERAL.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -131,7 +169,7 @@ impl GpuCapable for GuidedFilterNode {
         params.extend_from_slice(&self.config.epsilon.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/guided_filter.wgsl"),
+            shader: GUIDED_FILTER.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -143,17 +181,17 @@ impl GpuCapable for GuidedFilterNode {
 impl GpuCapable for MedianNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
         if !is_rgba8(&self.source_info) || self.config.radius > 3 {
-            return None; // GPU median limited to radius <= 3 (7x7)
+            return None;
         }
 
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.radius.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad
+        params.extend_from_slice(&0u32.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/median.wgsl"),
+            shader: MEDIAN.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -177,11 +215,11 @@ impl GpuCapable for SpinBlurNode {
         params.extend_from_slice(&self.config.center_y.to_le_bytes());
         params.extend_from_slice(&self.config.angle.to_le_bytes());
         params.extend_from_slice(&samples.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/spin_blur.wgsl"),
+            shader: SPIN_BLUR.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -204,7 +242,7 @@ impl GpuCapable for MotionBlurNode {
         params.extend_from_slice(&angle_rad.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/motion_blur.wgsl"),
+            shader: MOTION_BLUR.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -227,11 +265,11 @@ impl GpuCapable for ZoomBlurNode {
         params.extend_from_slice(&self.config.center_y.to_le_bytes());
         params.extend_from_slice(&self.config.factor.to_le_bytes());
         params.extend_from_slice(&samples.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/zoom_blur.wgsl"),
+            shader: ZOOM_BLUR.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
@@ -244,76 +282,43 @@ impl GpuCapable for ZoomBlurNode {
 
 impl GpuCapable for SpherizeNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.amount.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/spherize.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        params.extend_from_slice(&0u32.to_le_bytes());
+        Some(vec![GpuOp { shader: SPHERIZE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
 impl GpuCapable for SwirlNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.angle.to_le_bytes());
         params.extend_from_slice(&self.config.radius.to_le_bytes());
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/swirl.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        Some(vec![GpuOp { shader: SWIRL.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
 impl GpuCapable for BarrelNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.k1.to_le_bytes());
         params.extend_from_slice(&self.config.k2.to_le_bytes());
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/barrel.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        Some(vec![GpuOp { shader: BARREL.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
 impl GpuCapable for RippleNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(32);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
@@ -321,85 +326,48 @@ impl GpuCapable for RippleNode {
         params.extend_from_slice(&self.config.wavelength.to_le_bytes());
         params.extend_from_slice(&self.config.center_x.to_le_bytes());
         params.extend_from_slice(&self.config.center_y.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/ripple.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        Some(vec![GpuOp { shader: RIPPLE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
 impl GpuCapable for WaveNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(32);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.amplitude.to_le_bytes());
         params.extend_from_slice(&self.config.wavelength.to_le_bytes());
         params.extend_from_slice(&self.config.vertical.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad3
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/wave.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        Some(vec![GpuOp { shader: WAVE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
 impl GpuCapable for PolarNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/polar.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        Some(vec![GpuOp { shader: POLAR.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
 impl GpuCapable for DepolarNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
-        if !is_rgba8(&self.source_info) {
-            return None;
-        }
-
+        if !is_rgba8(&self.source_info) { return None; }
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
-        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
-
-        Some(vec![GpuOp {
-            shader: include_str!("../../../shaders/depolar.wgsl"),
-            entry_point: "main",
-            workgroup_size: [16, 16, 1],
-            params,
-            extra_buffers: vec![],
-        }])
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        Some(vec![GpuOp { shader: DEPOLAR.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }

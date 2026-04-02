@@ -52,6 +52,7 @@ members = [
     "examples/custom-filter",
     "crates/rasmcore-cli",
     "crates/rasmcore-ffi",
+    "crates/rasmcore-gpu-shaders",
 ]
 
 [workspace.package]

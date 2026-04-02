@@ -24,24 +24,6 @@ struct Params {
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 @group(0) @binding(2) var<uniform> params: Params;
-
-fn unpack(pixel: u32) -> vec4<f32> {
-  return vec4<f32>(
-    f32(pixel & 0xFFu),
-    f32((pixel >> 8u) & 0xFFu),
-    f32((pixel >> 16u) & 0xFFu),
-    f32((pixel >> 24u) & 0xFFu),
-  );
-}
-
-fn pack(color: vec4<f32>) -> u32 {
-  let r = u32(clamp(color.x, 0.0, 255.0));
-  let g = u32(clamp(color.y, 0.0, 255.0));
-  let b = u32(clamp(color.z, 0.0, 255.0));
-  let a = u32(clamp(color.w, 0.0, 255.0));
-  return r | (g << 8u) | (b << 16u) | (a << 24u);
-}
-
 fn sample_bilinear_src(fx: f32, fy: f32) -> vec4<f32> {
   // Out-of-bounds: transparent black
   if (fx < -0.5 || fx >= f32(params.src_width) - 0.5 ||

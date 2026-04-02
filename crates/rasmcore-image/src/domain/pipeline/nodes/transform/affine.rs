@@ -6,6 +6,12 @@ use crate::domain::transform;
 use crate::domain::types::*;
 use rasmcore_pipeline::{GpuCapable, GpuOp, Rect};
 
+use std::sync::LazyLock;
+
+static AFFINE_SHADER: LazyLock<String> = LazyLock::new(|| {
+    rasmcore_gpu_shaders::with_sampling(include_str!("../../../../shaders/affine_resample.wgsl"))
+});
+
 /// Trait for transform nodes that can be expressed as a 2x3 affine matrix.
 ///
 /// Implementors return a forward mapping matrix [a, b, tx, c, d, ty] where:
@@ -177,7 +183,7 @@ impl GpuCapable for ComposedAffineNode {
         params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
 
         Some(vec![GpuOp {
-            shader: include_str!("../../../../shaders/affine_resample.wgsl"),
+            shader: AFFINE_SHADER.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,

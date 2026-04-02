@@ -137,7 +137,7 @@ impl GpuExecutor for WgpuExecutor {
 
         // Execute each op
         for (i, op) in ops.iter().enumerate() {
-            let shader = self.get_shader(op.shader)?;
+            let shader = self.get_shader(&op.shader)?;
 
             // Create uniform buffer for params
             let uniform_buf = if !op.params.is_empty() {

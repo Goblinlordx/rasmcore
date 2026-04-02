@@ -111,8 +111,13 @@ impl ImageNode for FrameSourceRcWrapper {
     }
 }
 
-const LUT1D_SHADER: &str = include_str!("shaders/lut1d.wgsl");
-const LUT3D_SHADER: &str = include_str!("shaders/lut3d.wgsl");
+static LUT1D_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    // lut1d doesn't use pack/unpack (operates on raw u32)
+    include_str!("shaders/lut1d.wgsl").to_string()
+});
+static LUT3D_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    rasmcore_gpu_shaders::with_pixel_ops(include_str!("shaders/lut3d.wgsl"))
+});
 
 /// A pipeline node that applies a pre-composed LUT, replacing a chain of
 /// consecutive point operations with a single fused lookup table pass.
@@ -162,7 +167,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedLutNode {
         }
 
         Some(vec![rasmcore_pipeline::gpu::GpuOp {
-            shader: LUT1D_SHADER,
+            shader: LUT1D_SHADER.clone(),
             entry_point: "main",
             workgroup_size: [256, 1, 1],
             params,
@@ -223,7 +228,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedClutNode {
         }
 
         Some(vec![rasmcore_pipeline::gpu::GpuOp {
-            shader: LUT3D_SHADER,
+            shader: LUT3D_SHADER.clone(),
             entry_point: "main",
             workgroup_size: [256, 1, 1],
             params,

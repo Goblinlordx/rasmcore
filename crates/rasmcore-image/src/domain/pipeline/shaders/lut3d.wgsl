@@ -14,24 +14,6 @@ struct Params {
 @group(0) @binding(2) var<uniform> params: Params;
 // LUT data: grid^3 entries, each entry is vec4<f32> (rgb + padding)
 @group(0) @binding(3) var<storage, read> lut: array<vec4<f32>>;
-
-fn unpack(pixel: u32) -> vec4<f32> {
-  return vec4<f32>(
-    f32(pixel & 0xFFu),
-    f32((pixel >> 8u) & 0xFFu),
-    f32((pixel >> 16u) & 0xFFu),
-    f32((pixel >> 24u) & 0xFFu),
-  );
-}
-
-fn pack(color: vec4<f32>) -> u32 {
-  let r = u32(clamp(color.x, 0.0, 255.0));
-  let g = u32(clamp(color.y, 0.0, 255.0));
-  let b = u32(clamp(color.z, 0.0, 255.0));
-  let a = u32(clamp(color.w, 0.0, 255.0));
-  return r | (g << 8u) | (b << 16u) | (a << 24u);
-}
-
 // Index into 3D LUT: lut[b * grid^2 + g * grid + r]
 fn lut_index(r: u32, g: u32, b: u32, grid: u32) -> u32 {
   return b * grid * grid + g * grid + r;

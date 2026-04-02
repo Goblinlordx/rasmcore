@@ -174,7 +174,10 @@ fn count_transitions(p2: u32, p3: u32, p4: u32, p5: u32, p6: u32, p7: u32, p8: u
 // ─── GPU Support ─────────────────────────────────────────────────────────
 
 /// WGSL shader source for Zhang-Suen thinning.
-const SKELETONIZE_WGSL: &str = include_str!("../../../shaders/skeletonize.wgsl");
+static SKELETONIZE_WGSL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    // Skeletonize operates on binary (0/255) pixels — no pack/unpack needed
+    include_str!("../../../shaders/skeletonize.wgsl").to_string()
+});
 
 impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
@@ -197,7 +200,7 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
             params_0.extend_from_slice(&0u32.to_le_bytes()); // sub_iter = 0
             params_0.extend_from_slice(&0u32.to_le_bytes()); // padding
             ops.push(rasmcore_pipeline::GpuOp {
-                shader: SKELETONIZE_WGSL,
+                shader: SKELETONIZE_WGSL.clone(),
                 entry_point: "main",
                 workgroup_size: [16, 16, 1],
                 params: params_0,
@@ -211,7 +214,7 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
             params_1.extend_from_slice(&1u32.to_le_bytes()); // sub_iter = 1
             params_1.extend_from_slice(&0u32.to_le_bytes()); // padding
             ops.push(rasmcore_pipeline::GpuOp {
-                shader: SKELETONIZE_WGSL,
+                shader: SKELETONIZE_WGSL.clone(),
                 entry_point: "main",
                 workgroup_size: [16, 16, 1],
                 params: params_1,

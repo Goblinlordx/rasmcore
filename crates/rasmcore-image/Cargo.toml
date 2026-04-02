@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 rasmcore-pipeline = { path = "../rasmcore-pipeline" }
+rasmcore-gpu-shaders = { path = "../rasmcore-gpu-shaders" }
 rasmcore-kernel = { path = "../rasmcore-kernel" }
 rasmcore-macros = { path = "../rasmcore-macros" }
 inventory = "0.3"

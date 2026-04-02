@@ -2924,6 +2924,10 @@ name = "rasmcore-fits"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-gpu-shaders"
+version = "0.1.0"
+
+[[package]]
 name = "rasmcore-hevc"
 version = "0.1.0"
 dependencies = [
@@ -2956,11 +2960,13 @@ dependencies = [
  "moxcms",
  "naga",
  "png 0.17.16",
+ "pollster",
  "quick-xml",
  "rasmcore-bmp",
  "rasmcore-codegen",
  "rasmcore-color",
  "rasmcore-fits",
+ "rasmcore-gpu-shaders",
  "rasmcore-hevc",
  "rasmcore-isobmff",
  "rasmcore-jpeg",
@@ -2981,6 +2987,7 @@ dependencies = [
  "tiff",
  "unicode-bidi",
  "unicode-linebreak",
+ "wgpu",
  "wit-bindgen-rt",
  "xmp-writer",
  "zenjpeg",
