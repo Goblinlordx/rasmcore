@@ -1,0 +1,42 @@
+id: registration-docs_20260402042203Z
+title: "Update docs/extending.md with unified registration patterns"
+type: chore
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Rewrite docs/extending.md to document the unified CodecRegistration pattern,
+    GPU filter attribute, and LUT encoder/decoder extension. Subsumes the
+    pending lut-extension-docs track.
+  context: |
+    After the unified codec registry and GPU attribute refactors, the extension
+    guide needs to reflect the new patterns. The pending lut-extension-docs track
+    is subsumed by this broader documentation update.
+  acceptance_criteria:
+    - docs/extending.md updated with CodecRegistration pattern for adding codecs
+    - docs/extending.md updated with gpu_shader attribute for GPU filters
+    - docs/extending.md updated with LUT encoder/decoder extension guide
+    - Architecture diagram showing registration -> codegen -> dispatch flow
+    - Cross-reference from code_styleguides/ pointing to docs/extending.md
+    - lut-extension-docs track can be archived
+  out_of_scope: |
+    Code changes. Only documentation.
+plan:
+  - phase: Documentation
+    tasks:
+      - text: Rewrite Adding a Codec section with CodecRegistration pattern and code examples
+        done: false
+      - text: Add Adding a LUT Format section with encode_lut_fn/decode_lut_fn examples
+        done: false
+      - text: Update Adding a Filter section to include gpu_shader attribute
+        done: false
+      - text: Add architecture overview diagram (registration -> codegen -> dispatch)
+        done: false
+  - phase: Cross-references
+    tasks:
+      - text: Add cross-reference in code_styleguides/ pointing to docs/extending.md
+        done: false
+      - text: Archive lut-extension-docs track (subsumed)
+        done: false
+extra: {}

@@ -1,0 +1,58 @@
+id: gpu-filter-attribute_20260402042202Z
+title: "GPU registration via filter attribute — eliminate gpu_impls.rs scanning"
+type: refactor
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add gpu_shader attribute to #[register_filter] so GPU capability is declared
+    at the filter level. Codegen generates GpuCapable impls from the attribute
+    instead of scanning a separate gpu_impls.rs file at build time.
+  context: |
+    Currently GPU support is registered via manual impl blocks in a separate
+    gpu_impls.rs file, and build.rs scans that file for impl patterns to populate
+    a hashset. This is fragile (regex-based scanning) and requires editing
+    a central file for every new GPU filter.
+
+    The filter macro already has point_op and color_op flags. Adding gpu_shader
+    follows the same pattern — declare capability at the source, let codegen
+    handle the wiring.
+  acceptance_criteria:
+    - '#[register_filter(gpu_shader = "blur.wgsl")]' attribute supported
+    - Codegen generates GpuCapable impl for annotated filters
+    - gpu_impls.rs eliminated (or reduced to non-filter GPU nodes only)
+    - build.rs GPU scanning phase simplified or removed
+    - All existing GPU parity tests pass unchanged
+    - WASM + native builds succeed
+  out_of_scope: |
+    Changing GPU shader implementations. Adding new GPU filters.
+    Codec or transform registration changes.
+plan:
+  - phase: Attribute extension
+    tasks:
+      - text: Extend register_filter proc macro to accept gpu_shader attribute
+        done: false
+      - text: Update codegen parser to extract gpu_shader from filter annotations
+        done: false
+      - text: Generate GpuCapable impl in pipeline node codegen when gpu_shader is set
+        done: false
+  - phase: Migration
+    tasks:
+      - text: Add gpu_shader attribute to all GPU-capable filters (20 filters)
+        done: false
+      - text: Remove corresponding manual impls from gpu_impls.rs
+        done: false
+      - text: Simplify build.rs GPU scanning (remove or reduce)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All GPU parity tests pass
+        done: false
+      - text: cargo build + cargo component build succeed
+        done: false
+      - text: GPU pipeline dispatch still works correctly
+        done: false
+      - text: Verify gpu_impls.rs is eliminated or minimal
+        done: false
+extra: {}

@@ -1,0 +1,7 @@
+title: Unified CodecRegistration — one struct per format for encode + decode + LUT
+  + detect
+status: pending
+type: refactor
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
