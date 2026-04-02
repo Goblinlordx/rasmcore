@@ -1,0 +1,65 @@
+id: apply-sampling-audit_20260402042800Z
+title: Apply sampling mode audit — fix swirl/barrel, document all modes
+type: refactor
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: Change swirl from Ewa to Bilinear (MAE 1.53->0.00 vs IM) and barrel from EwaClamp to Ewa (MAE 44.63->1.66 vs IM).
+    Document sampling mode rationale in each filter file and ewa.rs with measured MAE values and IM reference behavior.
+  context: 'The sampling-mode-audit research track benchmarked all 8 distortion filters with all 3 sampling modes (Bilinear,
+    Ewa, EwaClamp) against ImageMagick 7.x. Two filters are using suboptimal modes: swirl uses Ewa (MAE 1.53) when Bilinear
+    gives exact match (0.00), and barrel uses EwaClamp (MAE 44.63) when Ewa gives 1.66. IM implements -swirl and -wave in
+    effect.c with bilinear, not in distort.c with EWA. EwaClamp is catastrophic for most operations.'
+  codebase_analysis: 'Files to change:
+
+    - crates/rasmcore-image/src/domain/filters/distortion/swirl.rs: line 69, change Ewa to Bilinear
+
+    - crates/rasmcore-image/src/domain/filters/distortion/barrel.rs: line 69, change EwaClamp to Ewa
+
+    - crates/rasmcore-image/src/domain/filters/distortion/tests.rs: update im_parity_swirl and im_parity_barrel thresholds
+    and comments
+
+    - crates/rasmcore-image/src/domain/filters/distortion/{swirl,barrel,wave,polar,depolar,spherize,ripple,mesh_warp}.rs:
+    add doc comments explaining sampling mode choice, IM reference, measured MAE
+
+    - crates/rasmcore-image/src/domain/ewa.rs: add module-level doc section on sampling mode selection guidance
+
+    - crates/rasmcore-image/src/shaders/swirl.wgsl: verify GPU shader uses bilinear (already does)'
+  acceptance_criteria:
+  - swirl im_parity test MAE < 1.0 (expect ~0.00 with Bilinear)
+  - barrel im_parity test MAE < 3.0 (expect ~1.66 with Ewa)
+  - All other distortion parity tests unchanged (no regressions)
+  - Each distortion filter file has doc comment explaining its sampling mode choice
+  - ewa.rs has sampling mode selection guide in module docs
+  out_of_scope: Changing polar, depolar, wave, or mesh_warp modes (already optimal). Writing new resampling kernels. Changing
+    the EWA filter type (Robidoux vs Laguerre). GPU shader changes beyond swirl.
+  technical_notes: 'The mode changes are single-line edits. The documentation is the bulk of the work: each filter file should
+    have a comment block explaining why that sampling mode was chosen, what IM uses, and the measured MAE. ewa.rs should have
+    a Sampling Mode Selection section in module docs summarizing the decision matrix from the audit.'
+plan:
+- phase: Apply mode changes
+  tasks:
+  - text: Change swirl.rs DistortionSampling::Ewa to Bilinear
+    done: false
+  - text: Change barrel.rs DistortionSampling::EwaClamp to Ewa
+    done: false
+  - text: Update im_parity_swirl test threshold and comment (expect MAE ~0.00)
+    done: false
+  - text: Update im_parity_barrel test threshold and comment (expect MAE ~1.66)
+    done: false
+- phase: Document sampling rationale
+  tasks:
+  - text: Add sampling mode doc comments to barrel.rs, swirl.rs, wave.rs, polar.rs, depolar.rs, spherize.rs, ripple.rs, mesh_warp.rs
+    done: false
+  - text: Add Sampling Mode Selection guide section to ewa.rs module docs with decision matrix
+    done: false
+- phase: Verification
+  tasks:
+  - text: All im_parity tests pass with improved thresholds
+    done: false
+  - text: All parity.rs distortion tests pass (no regressions)
+    done: false
+  - text: All distortion unit tests pass
+    done: false
+extra: {}
