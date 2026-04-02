@@ -426,12 +426,14 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
         }];
 
         let code = generate(&filters, &[], &[], &HashSet::new());
-        assert!(code.contains("\"blur\" => Ok(Box::new("));
-        assert!(code.contains("BlurNode::new"));
-        assert!(code.contains("get_f32(params, \"radius\""));
+        assert!(code.contains("\"blur\" => Ok((Box::new("), "should generate blur dispatch arm: {code}");
+        assert!(code.contains("BlurNode::new"), "should reference BlurNode: {code}");
+        assert!(code.contains("get_f32(params, \"radius\""), "should extract radius: {code}");
         assert!(code.contains("pub fn dispatch_filter"));
         assert!(code.contains("pub fn list_filters"));
     }
@@ -451,7 +453,7 @@ mod tests {
         }];
 
         let code = generate(&[], &mappers, &[], &HashSet::new());
-        assert!(code.contains("\"grayscale\" => Ok(Box::new("));
-        assert!(code.contains("GrayscaleMapperNode::new"));
+        assert!(code.contains("\"grayscale\" => Ok((Box::new("), "should generate grayscale dispatch: {code}");
+        assert!(code.contains("GrayscaleMapperNode::new"), "should reference GrayscaleMapperNode: {code}");
     }
 }

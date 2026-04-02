@@ -244,6 +244,8 @@ mod tests {
                 config_struct: None,
                 point_op: false,
                 color_op: false,
+                gpu: false,
+                derive_style: false,
                 rect_request: true,
             }],
             generators: vec![],

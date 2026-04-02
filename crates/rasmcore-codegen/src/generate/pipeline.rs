@@ -247,7 +247,11 @@ pub fn generate_adapter_macro(
 
         // All params come from a single WIT config record.
         let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
-        let has_any_params = !f.params.is_empty();
+        // derive(Filter) filters have config_struct but no entries in params vec
+        let has_derive_config = f.derive_style && f.config_struct.as_ref()
+            .and_then(|name| param_structs.get(name.as_str()))
+            .map_or(false, |fields| !fields.is_empty());
+        let has_any_params = !f.params.is_empty() || has_derive_config;
         // Config struct field names — extra params with same name are already in the struct
         let config_field_names: std::collections::HashSet<String> = if has_config_param {
             if let Some(config_name) = &f.config_struct {
@@ -268,6 +272,26 @@ pub fn generate_adapter_macro(
             );
             sig_params.push(format!("wit_config: {wit_config_type}"));
             hash_args.push("wit_config".to_string());
+        }
+
+        // derive(Filter) with config: convert WIT config → domain config
+        if has_derive_config {
+            if let Some(config_name) = &f.config_struct {
+                let domain_type = to_qualified_binding_type(config_name);
+                if let Some(fields) = param_structs.get(config_name.as_str()) {
+                    let field_inits: Vec<String> = fields.iter()
+                        .map(|field| {
+                            let fname = field.name.trim_start_matches('_');
+                            format!("            {fname}: wit_config.{fname}")
+                        })
+                        .collect();
+                    body_lines.push(format!(
+                        "        let config = {domain_type} {{\n{}\n        }};",
+                        field_inits.join(",\n")
+                    ));
+                }
+                node_ctor_args.push("config".to_string());
+            }
         }
 
         for (n, t) in &f.params {
@@ -332,7 +356,7 @@ pub fn generate_adapter_macro(
 
         let ctor_call = if node_ctor_args.is_empty() {
             if f.derive_style {
-                // Derive-style filters always take a config param (Default::default())
+                // Derive-style filters with no config fields — use Default::default()
                 format!("filters::{node_name}::new(source, src_info, Default::default())")
             } else {
                 format!("filters::{node_name}::new(source, src_info)")
@@ -403,6 +427,8 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
             rect_request: true,
         }];
         let code = generate_nodes(&filters);
@@ -425,6 +451,8 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
             rect_request: true,
         }];
         let code = generate_adapter_macro(&filters, &HashMap::new());

@@ -523,13 +523,27 @@ fn main() {
             let mut filter_methods = String::new();
             for f in &data.filters {
                 let wit_name = f.name.replace('_', "-");
-                if f.params.is_empty() {
-                    filter_methods.push_str(&format!(
-                        "        {wit_name}: func(source: node-id) -> result<node-id, rasmcore-error>;\n"
-                    ));
-                } else {
+                // A filter has params if it has old-style params OR a derive(Filter) config struct with fields
+                let has_config = !f.params.is_empty() || (f.config_struct.is_some() && f.config_struct.as_ref()
+                    .and_then(|name| data.param_structs.get(name.as_str()))
+                    .map_or(false, |fields| !fields.is_empty()));
+                if has_config {
                     filter_methods.push_str(&format!(
                         "        {wit_name}: func(source: node-id, config: {wit_name}-config) -> result<node-id, rasmcore-error>;\n"
+                    ));
+                } else {
+                    // Build-time assertion: catch derive(Filter) filters with config_struct
+                    // but missing param_structs entry — this indicates a registration mismatch.
+                    assert!(
+                        f.config_struct.is_none(),
+                        "Filter '{}' has config_struct '{}' but no matching param fields found in param_structs. \
+                         This means the WIT signature would omit config params. \
+                         Ensure the ConfigParams/Filter derive struct is parsed correctly.",
+                        f.name,
+                        f.config_struct.as_deref().unwrap_or("?")
+                    );
+                    filter_methods.push_str(&format!(
+                        "        {wit_name}: func(source: node-id) -> result<node-id, rasmcore-error>;\n"
                     ));
                 }
             }

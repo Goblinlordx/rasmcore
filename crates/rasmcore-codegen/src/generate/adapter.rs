@@ -15,8 +15,8 @@ pub fn generate(filters: &[FilterReg], param_structs: &HashMap<String, Vec<Param
         let domain_fn = &f.fn_name;
 
         if f.derive_style {
-            // Derive-style filters: delegate to CpuFilter::compute() on a Default config
-            generate_derive_style_method(&mut code, f, trait_method);
+            // Derive-style filters: accept WIT config if filter has params, else use Default
+            generate_derive_style_method(&mut code, f, trait_method, param_structs);
         } else if !f.params.is_empty() {
             // All filters with params use a single config record in WIT
             generate_config_method(&mut code, f, trait_method, domain_fn, param_structs);
@@ -34,21 +34,55 @@ fn generate_derive_style_method(
     code: &mut String,
     f: &FilterReg,
     trait_method: &str,
+    param_structs: &HashMap<String, Vec<ParamField>>,
 ) {
     let config_type = f.config_struct.as_deref().unwrap_or("()");
+    let has_config_fields = f.config_struct.as_ref()
+        .and_then(|name| param_structs.get(name.as_str()))
+        .map_or(false, |fields| !fields.is_empty());
 
-    code.push_str(&format!(
-        "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {{\n"
-    ));
-    code.push_str("        let di = to_domain_image_info(&info);\n");
-    code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
-    code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
-    code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
-    code.push_str(&format!(
-        "        let cfg = crate::domain::filters::{config_type}::default();\n"
-    ));
-    code.push_str("        cfg.compute(full_rect, &mut upstream, &di).map_err(to_wit_error)\n");
-    code.push_str("    }\n\n");
+    if has_config_fields {
+        let wit_config_type = format!("filters::{}Config", super::helpers::to_pascal_case(&f.name));
+        code.push_str(&format!(
+            "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo, wit_config: {wit_config_type}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+        ));
+        code.push_str("        let di = to_domain_image_info(&info);\n");
+        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+        code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
+
+        // Convert WIT config to domain config
+        let qualified = super::helpers::to_qualified_binding_type;
+        let domain_type = qualified(&format!("&{config_type}"));
+        if let Some(fields) = param_structs.get(config_type) {
+            let field_inits: Vec<String> = fields.iter()
+                .map(|field| {
+                    let fname = field.name.trim_start_matches('_');
+                    format!("            {fname}: wit_config.{fname}")
+                })
+                .collect();
+            code.push_str(&format!(
+                "        let cfg = {domain_type} {{\n{}\n        }};\n",
+                field_inits.join(",\n")
+            ));
+        }
+        code.push_str("        cfg.compute(full_rect, &mut upstream, &di).map_err(to_wit_error)\n");
+        code.push_str("    }\n\n");
+    } else {
+        // No config fields — use Default::default()
+        code.push_str(&format!(
+            "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {{\n"
+        ));
+        code.push_str("        let di = to_domain_image_info(&info);\n");
+        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+        code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
+        code.push_str(&format!(
+            "        let cfg = crate::domain::filters::{config_type}::default();\n"
+        ));
+        code.push_str("        cfg.compute(full_rect, &mut upstream, &di).map_err(to_wit_error)\n");
+        code.push_str("    }\n\n");
+    }
 }
 
 fn generate_config_method(
@@ -251,13 +285,15 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
             rect_request: true,
         }];
         let code = generate(&filters, &HashMap::new());
-        assert!(code.contains("fn blur("));
-        assert!(code.contains("radius: f32"));
-        // rect-request style: full_rect + upstream closure
-        assert!(code.contains("domain::filters::blur(full_rect, &mut upstream, &di, radius)"));
+        assert!(code.contains("fn blur("), "should generate blur method: {code}");
+        // All params come via a single config record
+        assert!(code.contains("wit_config"), "should accept wit_config: {code}");
+        assert!(code.contains("let radius = wit_config.radius"), "should extract radius from config: {code}");
     }
 
     #[test]
@@ -273,11 +309,13 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
             rect_request: true,
         }];
         let code = generate(&filters, &HashMap::new());
-        assert!(code.contains("data: Vec<u8>"));
-        assert!(code.contains("&data"));
+        assert!(code.contains("wit_config"), "should accept wit_config: {code}");
+        assert!(code.contains("let data = wit_config.data"), "should extract data from config: {code}");
     }
 
     #[test]
@@ -293,6 +331,8 @@ mod tests {
             config_struct: Some("BlurParams".to_string()),
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
             rect_request: true,
         }];
         let code = generate(&filters, &HashMap::new());

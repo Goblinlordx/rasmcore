@@ -58,6 +58,8 @@ pub fn generate(
 
     for f in filters {
         let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
+        // derive(Filter) filters have config_struct but no entries in params vec
+        let has_derive_config = f.config_struct.is_some() && f.params.is_empty();
 
         // Get config struct field names to avoid duplicating fields
         let config_field_names: std::collections::HashSet<String> = if has_config_param {
@@ -80,7 +82,8 @@ pub fn generate(
             .collect();
         let record_name = format!("{}-config", to_wit_name(&f.name));
 
-        if has_config_param {
+        // Emit config record — old-style (has_config_param) or derive-style (has_derive_config)
+        if has_config_param || has_derive_config {
             if let Some(config_name) = &f.config_struct {
                 emit_record(config_name, &record_name, param_structs, &mut records, &mut emitted_records);
             }
@@ -120,16 +123,17 @@ pub fn generate(
         }
 
         // Generate func signature — always (pixels, info, config) or (pixels, info) for zero-param
-        if f.params.is_empty() {
-            funcs.push_str(&format!(
-                "    {}: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;\n",
-                to_wit_name(&f.name)
-            ));
-        } else {
+        let needs_config = !f.params.is_empty() || has_derive_config;
+        if needs_config {
             funcs.push_str(&format!(
                 "    {}: func(pixels: buffer, info: image-info, config: {}) -> result<buffer, rasmcore-error>;\n",
                 to_wit_name(&f.name),
                 record_name
+            ));
+        } else {
+            funcs.push_str(&format!(
+                "    {}: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;\n",
+                to_wit_name(&f.name)
             ));
         }
     }
@@ -163,12 +167,20 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
         }];
         let empty = std::collections::HashMap::new();
         let wit = generate(&filters, &empty);
-        assert!(wit.contains(
-            "zoom-blur: func(pixels: buffer, info: image-info, center-x: f32, factor: f32)"
-        ));
+        // Extra params without config_struct produce a synthetic config record
+        assert!(
+            wit.contains("record zoom-blur-config {"),
+            "should generate synthetic config record: {wit}"
+        );
+        assert!(
+            wit.contains("config: zoom-blur-config"),
+            "should use config param: {wit}"
+        );
     }
 
     #[test]
@@ -185,6 +197,8 @@ mod tests {
             config_struct: None,
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
         }];
         let empty = std::collections::HashMap::new();
         let wit = generate(&filters, &empty);
@@ -207,6 +221,8 @@ mod tests {
             config_struct: Some("BlurParams".to_string()),
             point_op: false,
             color_op: false,
+            gpu: false,
+            derive_style: false,
         }];
         let mut param_structs = std::collections::HashMap::new();
         param_structs.insert("BlurParams".to_string(), vec![
@@ -224,6 +240,49 @@ mod tests {
         assert!(
             wit.contains("config: blur-config"),
             "should use config param: {wit}"
+        );
+    }
+
+    #[test]
+    fn generate_wit_derive_style_config() {
+        use crate::types::ParamField;
+        // derive(Filter) filters have config_struct but empty params vec
+        let filters = vec![FilterReg {
+            name: "wave".to_string(),
+            category: "distortion".to_string(),
+            group: String::new(),
+            variant: String::new(),
+            reference: String::new(),
+            rect_request: true,
+            fn_name: "wave".to_string(),
+            params: vec![],
+            config_struct: Some("WaveParams".to_string()),
+            point_op: false,
+            color_op: false,
+            gpu: false,
+            derive_style: true,
+        }];
+        let mut param_structs = std::collections::HashMap::new();
+        param_structs.insert("WaveParams".to_string(), vec![
+            ParamField { name: "amplitude".to_string(), param_type: "f32".to_string(), default_val: String::new(), min: String::new(), max: String::new(), step: String::new(), label: String::new(), hint: String::new(), options: Vec::new() },
+            ParamField { name: "wavelength".to_string(), param_type: "f32".to_string(), default_val: String::new(), min: String::new(), max: String::new(), step: String::new(), label: String::new(), hint: String::new(), options: Vec::new() },
+        ]);
+        let wit = generate(&filters, &param_structs);
+        assert!(
+            wit.contains("record wave-config {"),
+            "derive(Filter) should generate config record: {wit}"
+        );
+        assert!(
+            wit.contains("amplitude: f32,"),
+            "should have amplitude field: {wit}"
+        );
+        assert!(
+            wit.contains("config: wave-config"),
+            "derive(Filter) should use config param in func signature: {wit}"
+        );
+        assert!(
+            !wit.contains("func(pixels: buffer, info: image-info) -> result"),
+            "derive(Filter) with config should NOT generate zero-param signature: {wit}"
         );
     }
 }
