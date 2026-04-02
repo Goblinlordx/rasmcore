@@ -496,11 +496,35 @@ impl ColorOp {
                 )
             }
             ColorOp::Colorize(target, amount) => {
-                let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                // Photoshop/W3C Color blend mode: replace hue+chroma, preserve luma.
+                // BT.601 luma (0.299/0.587/0.114) matches PS Luminosity weights.
+                let pixel_luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                let target_luma = 0.299 * target[0] + 0.587 * target[1] + 0.114 * target[2];
+                // W3C SetLum: shift target color channels to match pixel's luma
+                let d = pixel_luma - target_luma;
+                let (mut cr, mut cg, mut cb) = (target[0] + d, target[1] + d, target[2] + d);
+                // W3C ClipColor: clamp to [0,1] while preserving luma
+                let l = pixel_luma; // luma after SetLum == pixel_luma
+                let n = cr.min(cg).min(cb);
+                let x = cr.max(cg).max(cb);
+                if n < 0.0 {
+                    let ln = l - n;
+                    cr = l + (cr - l) * l / ln;
+                    cg = l + (cg - l) * l / ln;
+                    cb = l + (cb - l) * l / ln;
+                }
+                if x > 1.0 {
+                    let xl = x - l;
+                    let one_l = 1.0 - l;
+                    cr = l + (cr - l) * one_l / xl;
+                    cg = l + (cg - l) * one_l / xl;
+                    cb = l + (cb - l) * one_l / xl;
+                }
+                // Amount: lerp between original pixel and fully colorized
                 (
-                    r + (luma * target[0] - r) * amount,
-                    g + (luma * target[1] - g) * amount,
-                    b + (luma * target[2] - b) * amount,
+                    r + (cr - r) * amount,
+                    g + (cg - g) * amount,
+                    b + (cb - b) * amount,
                 )
             }
             ColorOp::ChannelMix(m) => {
