@@ -257,6 +257,11 @@ fn create_engine() -> Engine {
         (v as f32).to_le_bytes().to_vec()
     });
 
+    // Pixel buffer helpers for compute/GPU scripts.
+    // Rhai's Blob type (Vec<u8>) is used directly — scripts index into it.
+    // get_pixel/set_pixel operate on Blob at byte offsets.
+    engine.register_fn("blob_len", |b: rhai::Blob| -> i64 { b.len() as i64 });
+
     engine
 }
 
@@ -433,6 +438,49 @@ impl ScriptNode {
         Some(lut)
     }
 
+    /// For compute/GPU strategy: call the Rhai compute(pixels, info, params) function.
+    ///
+    /// Passes pixel data as a Rhai Blob (Vec<u8>) and image metadata as a Map.
+    /// The script mutates the blob in-place or returns a new one.
+    fn run_compute(&self, pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
+        let engine = create_engine();
+        let params = self.make_params_map();
+
+        // Build info map: { width, height, channels, len }
+        let channels = info.format.bytes_per_pixel() as i64;
+        let mut info_map = Map::new();
+        info_map.insert("width".into(), Dynamic::from(info.width as i64));
+        info_map.insert("height".into(), Dynamic::from(info.height as i64));
+        info_map.insert("channels".into(), Dynamic::from(channels));
+        info_map.insert("len".into(), Dynamic::from(pixels.len() as i64));
+
+        // Pass pixels as Rhai Blob (Vec<u8>) — supports indexing and mutation
+        let blob: rhai::Blob = pixels.to_vec();
+
+        let mut scope = Scope::new();
+        let result = engine
+            .call_fn::<Dynamic>(
+                &mut scope,
+                &self.script.ast,
+                "compute",
+                (blob, info_map, params),
+            )
+            .map_err(|e| {
+                ImageError::ScriptError(format!(
+                    "script '{}': compute() failed: {e}",
+                    self.script.metadata.name
+                ))
+            })?;
+
+        // The script must return a Blob (Vec<u8>)
+        result.into_blob().map_err(|_| {
+            ImageError::ScriptError(format!(
+                "script '{}': compute() must return a Blob (byte array)",
+                self.script.metadata.name
+            ))
+        })
+    }
+
     /// For composite strategy: evaluate graph() and return the node DAG.
     pub fn build_graph(&self, engine: &Engine) -> Result<Vec<NodeRef>, String> {
         let params = self.make_params_map();
@@ -486,19 +534,16 @@ impl ImageNode for ScriptNode {
                 };
                 crate::domain::point_ops::apply_lut(&pixels, &info, &lut)
             }
-            ScriptStrategy::Compute => {
-                // Fetch upstream pixels
+            ScriptStrategy::Compute | ScriptStrategy::Gpu => {
+                // Both compute and GPU (CPU fallback) call the Rhai compute() fn.
+                // Pixels are passed as a Rhai Blob (Vec<u8>) for direct indexing.
                 let pixels = upstream_fn(self.upstream, request)?;
-                // For now, return upstream pixels unchanged
-                // Full Rhai compute() dispatch requires registering pixel buffer
-                // operations and builtin() — complex integration deferred to
-                // incremental follow-up
-                Ok(pixels)
-            }
-            ScriptStrategy::Gpu => {
-                // CPU fallback path — call compute() in script
-                let pixels = upstream_fn(self.upstream, request)?;
-                Ok(pixels)
+                let info = ImageInfo {
+                    width: request.width,
+                    height: request.height,
+                    ..self.source_info
+                };
+                self.run_compute(&pixels, &info)
             }
             ScriptStrategy::Composite => {
                 // Composite nodes should be expanded into sub-graphs by the
@@ -811,6 +856,48 @@ fn graph(input, params) {
             }
             other => panic!("expected NodeRef, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn compute_invert_single_application() {
+        let scripts = vec![
+            r#"
+//! name: invert_compute
+//! category: test
+//! strategy: compute
+
+fn compute(pixels, info, params) {
+    let out = pixels;
+    for i in range(0, out.len()) {
+        out[i] = 255 - out[i];
+    }
+    out
+}
+"#
+            .to_string(),
+        ];
+
+        let registry = ScriptRegistry::new(&scripts).unwrap();
+        let script = registry.get("invert_compute").unwrap().clone();
+
+        let info = ImageInfo {
+            width: 4,
+            height: 1,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let config: HashMap<String, String> = HashMap::new();
+        let node = ScriptNode::new(script, 0, info, &config);
+
+        let input_pixels = vec![0u8, 64, 128, 255];
+        let result = node
+            .compute_region(
+                Rect::new(0, 0, 4, 1),
+                &mut |_, _| Ok(input_pixels.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(result, vec![255, 191, 127, 0]);
     }
 
     #[test]
