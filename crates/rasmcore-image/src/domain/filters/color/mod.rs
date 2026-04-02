@@ -26,6 +26,8 @@ mod quantize;
 pub use quantize::*;
 mod saturate;
 pub use saturate::*;
+mod replace_color;
+pub use replace_color::*;
 mod selective_color;
 pub use selective_color::*;
 mod sepia;
