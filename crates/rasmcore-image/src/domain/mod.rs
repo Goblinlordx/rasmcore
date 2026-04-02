@@ -22,6 +22,7 @@ pub mod metadata;
 pub mod metrics;
 pub mod param_types;
 pub mod pipeline;
+pub mod pixel_sample;
 pub mod point_ops;
 pub mod quantize;
 pub mod script_plugin;
