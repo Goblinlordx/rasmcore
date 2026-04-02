@@ -1,4 +1,4 @@
-title: Plugin node system — load external .wasm as pipeline nodes
+title: Script plugin system — Rhai-based filter scripts as pipeline nodes
 status: pending
 type: feature
 approved: false
@@ -6,5 +6,3 @@ created: '2026-04-02'
 updated: '2026-04-02'
 deps:
 - plugin-node-system_20260402064200Z
-- composite-nodes_20260402072335Z
-- input-rect-refactor_20260402072334Z

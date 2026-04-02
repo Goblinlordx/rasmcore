@@ -1,19 +1,34 @@
-# Plugin Node Architecture — External .wasm Components as Pipeline Nodes
+# Plugin Node Architecture
 
 > Design document for the rasmcore plugin system.
 > Updated: 2026-04-02
 
 ## 1. Overview
 
-Plugins are external `.wasm` components that implement the same interface as
-built-in pipeline nodes. The host loads them at runtime using its own WASM
-runtime (wasmtime for CLI, browser native WASM for web). Zero size overhead
-in the core component.
+The plugin system has two tiers:
 
-A plugin is a full pipeline node. It can be a filter, transform, encoder,
-decoder, or analysis sink. The pipeline graph treats plugin nodes identically
-to built-in nodes — the only difference is where the implementation comes
-from.
+### Tier 1: Script Plugins (Primary — Rhai)
+
+Lightweight filter scripts written in Rhai (pure Rust scripting language).
+Users write `.rhai` files that declare an execution strategy and provide
+implementations. The engine loads, validates, and wraps scripts as standard
+pipeline nodes. No compilation toolchain needed.
+
+Scripts can:
+- Define fusable point-ops (per-pixel LUT expressions)
+- Provide GPU shaders (WGSL strings dispatched through existing GPU system)
+- Compose built-in filters into new operations via `builtin()` calls
+- Declare typed config params with validation ranges
+
+### Tier 2: WASM Component Plugins (Future — Heavy Plugins)
+
+External `.wasm` components that implement the same interface as built-in
+pipeline nodes. The host loads them at runtime using its own WASM runtime
+(wasmtime for CLI, browser native WASM for web). For complex plugins that
+need compiled-code performance or native library access.
+
+This document covers both tiers. Tier 1 (Rhai scripts) is the implementation
+priority. Tier 2 (WASM components) is deferred.
 
 ### Key Design Principles
 
@@ -22,6 +37,100 @@ from.
 3. **Execution strategies are mutually exclusive** — fusable / GPU / ML / CPU-only
 4. **Composites can reference built-in nodes** — plugins define compositions, not reimplementations
 5. **Remote bundles on demand** — plugins fetched from URLs, cached locally
+
+---
+
+## 1b. Rhai Script Plugin System
+
+### Script File Format
+
+Scripts use Rhai syntax with structured metadata in header comments:
+
+```rhai
+//! name: warm_tint
+//! category: color
+//! strategy: fusable
+//! param warmth: f32 = 0.2 [0.0, 1.0]
+
+fn lut(input, channel, params) {
+    if channel == 0 {  // R
+        clamp(input + params.warmth * 20.0, 0, 255)
+    } else if channel == 2 {  // B
+        clamp(input - params.warmth * 10.0, 0, 255)
+    } else {
+        input
+    }
+}
+```
+
+### Three Execution Strategies
+
+**Fusable point-op** — script provides `lut(input, channel, params) -> u8`:
+- Engine evaluates for all 256 input values per channel
+- Produces `[u8; 256]` LUT that participates in LUT fusion
+- No `compute()` needed — engine applies LUT directly
+- Validation: engine checks lut() returns valid u8 for all inputs
+
+**GPU-accelerated** — script provides WGSL shader + params:
+- `gpu_shader()` returns WGSL source string
+- `gpu_params(width, height, params)` returns serialized uniform bytes
+- `gpu_workgroup()` returns `[x, y, z]` dispatch dimensions
+- `compute()` required as CPU fallback
+- Validation: engine validates WGSL via existing shader validator
+
+**CPU compute** — script provides `compute(pixels, info, params)`:
+- Called per-tile during pipeline execution
+- Can call `builtin("filter_name", pixels, info, config)` to invoke
+  existing built-in filters by name
+- For spatial ops: `input_rect(output, bounds_w, bounds_h, params)` declares
+  the expansion needed
+- Validation: engine verifies function signatures match contract
+
+### Host Functions Available to Scripts
+
+| Function | Description |
+|----------|-------------|
+| `builtin(name, pixels, info, config)` | Call a built-in filter by name |
+| `clamp(value, min, max)` | Clamp a value |
+| `expand_uniform(rect, overlap, w, h)` | Expand rect by uniform overlap |
+| `pack_u32(value)` | Serialize u32 to LE bytes (for GPU params) |
+| `pack_f32(value)` | Serialize f32 to LE bytes (for GPU params) |
+| `pixel_at(pixels, x, y, w, bpp)` | Read pixel values at position |
+| `set_pixel(pixels, x, y, w, bpp, values)` | Write pixel values at position |
+
+### Loading and Validation
+
+1. **Discovery**: scan configurable directory for `.rhai` files
+2. **Parse metadata**: extract name, category, strategy, params from header
+3. **Compile AST**: Rhai compiles to AST (fail fast on syntax errors)
+4. **Validate strategy**: verify declared strategy matches provided functions
+5. **Validate LUT** (fusable): evaluate `lut()` for 0-255, verify u8 output
+6. **Validate shader** (GPU): run existing WGSL validator on shader source
+7. **Register**: add to filter list and param manifest
+
+### Sandboxing and Limits
+
+- Rhai is sandboxed by default — no filesystem, network, or system access
+- Max operations limit per `compute()` call (prevents infinite loops)
+- Max call depth limit (prevents stack overflow)
+- Max memory per script evaluation
+- Scripts can only call explicitly registered host functions
+
+### Why Rhai
+
+| Criteria | Rhai | Lua (mlua) | WASM-in-WASM |
+|----------|------|-----------|--------------|
+| Pure Rust | Yes | No (C dep) | Yes (wasmi) |
+| Compiles to WASM | Yes | No | Yes |
+| Overhead | ~200KB | ~200KB | ~500KB-1MB |
+| Syntax | Rust-like | Lua | Any language |
+| Sandboxing | Built-in | Manual | Built-in |
+| Speed | Interpreted | JIT (native) / Interpreted (WASM) | Near-native |
+
+Rhai wins on: zero C dependencies, WASM compatibility, Rust-like syntax,
+and built-in sandboxing. Speed is acceptable — scripts either delegate to
+built-in filters (fast path) or are simple per-pixel expressions (LUT
+evaluation is one-time cost for 256 values).
 
 ---
 

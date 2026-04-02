@@ -1,123 +1,196 @@
 id: plugin-node-impl_20260402072337Z
-title: "Plugin node system — load external .wasm components as pipeline nodes"
+title: "Script plugin system — Rhai-based filter scripts as pipeline nodes"
 type: feature
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
   summary: |
-    Implement the plugin node system designed in the plugin-node-system
-    research track. External .wasm components are loaded at runtime as
-    pipeline nodes with the same interface as built-in nodes. Plugins can
-    declare fusable point-ops, GPU shaders, ML capability, and can define
-    composite nodes that reference built-in nodes.
+    Implement a script-based plugin system using Rhai (pure Rust scripting
+    language). Users write .rhai filter scripts that declare their execution
+    strategy and provide implementations. The engine loads, validates, and
+    wraps scripts as pipeline nodes.
   context: |
-    Plugins are full pipeline nodes loaded from external .wasm files. They
-    implement the same interface as built-in Rust nodes. The host loads them
-    using its own WASM runtime (wasmtime for CLI, browser native WASM for web)
-    — zero size overhead in the core component.
+    Users should be able to define custom filters without a Rust toolchain
+    or WASM compilation. A script file declares its node type (fusable
+    point-op, GPU-accelerated, or CPU compute), provides the implementation,
+    and the engine validates and wraps it as a standard pipeline node.
 
-    Execution strategies (mutually exclusive):
-    - Fusable: export build_point_lut → engine handles fusion/GPU/CPU
-    - GPU: export gpu_ops + compute_region → GPU shader or CPU fallback
-    - ML: export ml_op → host ML runtime
-    - CPU-only: export compute_region
+    Rhai was chosen because:
+    - Pure Rust — no C dependencies, compiles to WASM natively
+    - Rust-like syntax — familiar to the codebase
+    - Sandboxed — no filesystem, network, or system access
+    - Embeddable — designed for hosting in Rust applications
+    - ~200KB compiled overhead — acceptable for the core component
+    - Supports execution limits (max operations, max memory)
 
-    Plugins can also define composite nodes — internal pipeline graphs that
-    reference both plugin-defined and built-in nodes. A plugin can compose
-    existing built-in operations (blur, curves, blend) into new multi-step
-    filters without reimplementing those operations.
-
-    This depends on:
-    - plugin-node-system research track (design)
-    - composite-nodes track (for plugin composites)
-    - input-rect-refactor (for plugin GPU ops)
+    Script plugins are the lightweight path. The WASM component approach
+    (from the architecture doc) remains a future option for heavy/complex
+    plugins that need compiled-code performance.
   codebase_analysis: |
-    Host WASM loading infrastructure:
-    - CLI uses wasmtime for WASM component loading
-    - tests/wasm-integration already loads .wasm components via Component::from_file
-    - Browser: WebAssembly.instantiate() for loading plugin .wasm
+    Plugin scripts declare one of three execution strategies:
 
-    Plugin discovery/registration:
-    - Built-in: inventory::submit! at compile time, list_filters() for discovery
-    - Plugin: host registers discovered plugins at runtime into same filter list
-    - param-manifest.json: plugins export their config schema, host merges
+    1. FUSABLE POINT-OP: script provides a lut(input, params) -> output
+       function. Engine evaluates it for 0-255, produces [u8; 256] LUT.
+       Participates in LUT fusion chain. No compute_region needed.
 
-    Plugin composite capability:
-    - Plugins can reference built-in nodes by name in their composite definitions
-    - Host resolves node names to built-in implementations
-    - Plugin composites can mix plugin-defined nodes and built-in nodes
+    2. GPU-ACCELERATED: script provides a WGSL shader string + params
+       serialization. Engine dispatches to GPU via existing GpuOp system.
+       Script also provides compute(pixels, info, params) as CPU fallback.
+
+    3. CPU COMPUTE: script provides compute(pixels, info, params) function.
+       Can call built-in filters by name via builtin() host function.
+       For spatial ops, also provides input_rect(output, bounds) -> rect.
+
+    Engine validation on load:
+    - Parse script, check it compiles
+    - Verify declared strategy matches provided functions
+    - Fusable: verify lut() returns valid u8 for all inputs 0-255
+    - GPU: verify shader string is valid WGSL (existing shader validator)
+    - Compute: verify function signature matches expected contract
+    - Validate config params schema against declared fields
+
+    Integration with existing systems:
+    - Fusable scripts participate in LUT fusion (same as built-in point-ops)
+    - GPU scripts dispatch through existing GpuOp/GpuExecutor
+    - Scripts call built-in nodes via builtin("filter_name", pixels, info, config)
+    - Script nodes appear in list_filters() and param-manifest.json
   acceptance_criteria:
-    - Plugin WIT interface defined (what a plugin .wasm must export)
-    - Plugin loader for CLI host (wasmtime-based)
-    - Plugin loader for browser host (WebAssembly.instantiate)
-    - Plugin discovery from configurable directory/URL
-    - Remote plugin bundle format (.wasm + manifest.json)
-    - Bundle download and cache manager
-    - Plugin nodes appear in list_filters() / param-manifest
-    - Fusable plugin point-ops participate in LUT fusion
-    - GPU-capable plugin nodes dispatch to GPU correctly
-    - ML-capable plugin nodes dispatch to ML runtime correctly
-    - Plugin composites can reference built-in nodes by name
-    - Plugin composites can mix built-in and plugin-defined nodes
-    - Security sandboxing (WASM capability model — plugins can't escape sandbox)
-    - At least one example plugin .wasm (simple filter)
-    - Full test suite passes, WASM build clean
+    - Rhai engine embedded in rasmcore-image
+    - Script file format with metadata header (name, category, strategy, params)
+    - Script loader that discovers and loads .rhai files from a directory
+    - Fusable point-op scripts produce valid LUTs and participate in fusion
+    - GPU scripts provide WGSL shaders dispatched through existing GPU system
+    - CPU compute scripts execute per-tile with upstream pixel access
+    - builtin() host function allows scripts to call existing filters by name
+    - Config params declared in script metadata, validated on load
+    - Script nodes registered and appear in filter list / param manifest
+    - Execution limits enforced (max operations, max call depth)
+    - Validation on load catches errors before pipeline execution
+    - At least 3 example scripts (one per strategy)
+    - All existing tests pass, WASM build clean
   out_of_scope: |
-    Plugin SDK/toolchain (template project, build tools — separate track).
-    Plugin marketplace/registry. Plugin hot-reload.
-    Scripting language support (plugins are compiled .wasm only).
+    WASM component plugins (separate future track). Script hot-reload.
+    Script marketplace/registry. Script debugging tools.
+    ML capability declarations (separate ML execution track).
   technical_notes: |
-    Depends on research track for detailed interface design.
+    Script file format:
 
-    Plugin composite nodes:
-    A plugin can export a composite definition — a graph description listing
-    node types (by name), configs, and connections. The host resolves node
-    names against the built-in registry + loaded plugins and constructs the
-    internal graph. This means a plugin can define "vintage film look" as:
-      InputRef → curves("film_curve.json") → color_balance({shadows: warm})
-               → film_grain({amount: 0.3}) → vignette({strength: 0.4})
-               → OutputRef
-    All using built-in nodes. The plugin only defines the composition,
-    not the individual operations.
+    ```rhai
+    // metadata (parsed from comments at top of file)
+    //! name: custom_glow
+    //! category: effect
+    //! strategy: compute
+    //! param radius: f32 = 5.0 [0.1, 50.0]
+    //! param intensity: f32 = 0.5 [0.0, 1.0]
 
-    Key implementation note: plugins run in separate WASM component instances.
-    Cross-component pixel buffer transfer involves copying (WASM Component
-    Model shared-nothing). The tile pipeline limits this overhead since
-    buffers are tile-sized, not full-image.
+    // For compute strategy:
+    fn compute(pixels, info, params) {
+        let blurred = builtin("blur", pixels, info, #{ radius: params.radius * 3.0 });
+        builtin("blend", pixels, blurred, info, #{ mode: "screen", opacity: params.intensity })
+    }
+
+    fn input_rect(output, bounds_w, bounds_h, params) {
+        expand_uniform(output, (params.radius * 9.0).ceil(), bounds_w, bounds_h)
+    }
+    ```
+
+    ```rhai
+    // Fusable point-op:
+    //! name: warm_tint
+    //! category: color
+    //! strategy: fusable
+    //! param warmth: f32 = 0.2 [0.0, 1.0]
+
+    fn lut(input, channel, params) {
+        if channel == 0 {  // R
+            clamp(input + params.warmth * 20.0, 0, 255)
+        } else if channel == 2 {  // B
+            clamp(input - params.warmth * 10.0, 0, 255)
+        } else {
+            input
+        }
+    }
+    ```
+
+    ```rhai
+    // GPU-accelerated:
+    //! name: custom_blur
+    //! category: spatial
+    //! strategy: gpu
+    //! param radius: f32 = 3.0 [0.1, 50.0]
+
+    fn gpu_shader() {
+        // Return WGSL source as string
+        SHADER_SOURCE  // defined as const
+    }
+
+    fn gpu_params(width, height, params) {
+        // Return serialized uniform params as byte array
+        pack_u32(width) + pack_u32(height) + pack_f32(params.radius)
+    }
+
+    fn gpu_workgroup() { [16, 16, 1] }
+
+    // CPU fallback
+    fn compute(pixels, info, params) {
+        builtin("blur", pixels, info, #{ radius: params.radius })
+    }
+    ```
+
+    Rhai integration:
+    - Use rhai crate (pure Rust, MIT license)
+    - Create Engine with sandboxed defaults (no filesystem, no network)
+    - Register builtin() as a native function
+    - Register helper functions (clamp, pack_u32, pack_f32, expand_uniform)
+    - Set max_operations limit per compute() call
+    - Compile scripts to AST on load (fail fast on syntax errors)
+    - Cache compiled ASTs for reuse
+
+    ScriptNode wrapper:
+    - Implements ImageNode trait
+    - Holds compiled AST + Rhai engine + config values
+    - compute_region(): sets up scope with params, calls script compute()
+    - as_point_op_lut(): for fusable, evaluates lut() for 0-255
+    - gpu_ops(): for GPU, calls gpu_shader() + gpu_params()
+    - input_rect(): calls script input_rect() if defined
 plan:
-  - phase: WIT interface and loader
+  - phase: Rhai engine integration
     tasks:
-      - text: Define plugin WIT interface (node exports, capability declarations)
+      - text: Add rhai dependency to rasmcore-image
         done: false
-      - text: Implement plugin loader for CLI (wasmtime Component::from_file)
+      - text: Define script metadata format (header comments parsed into ScriptMetadata)
         done: false
-      - text: Implement plugin discovery (scan directory, load manifests)
+      - text: Implement script loader — parse metadata, compile AST, validate strategy
         done: false
-  - phase: Integration
+  - phase: ScriptNode implementation
     tasks:
-      - text: Register loaded plugin nodes in filter registry
+      - text: Implement ScriptNode wrapping compiled Rhai AST as ImageNode
         done: false
-      - text: Wire plugin fusable point-ops into LUT fusion system
+      - text: Implement builtin() host function — call existing filters by name
         done: false
-      - text: Wire plugin GPU/ML capability declarations into dispatch
+      - text: Implement fusable strategy — evaluate lut() for 0-255, produce LUT
         done: false
-  - phase: Composite plugins
+      - text: Implement GPU strategy — extract shader + params from script
+        done: false
+      - text: Implement compute strategy — call script compute() per tile
+        done: false
+  - phase: Registration and validation
     tasks:
-      - text: Define composite definition format (node list + connections + configs)
+      - text: Register script nodes in filter list and param manifest
         done: false
-      - text: Implement built-in node resolution for plugin composites
+      - text: Validate scripts on load (strategy matches functions, LUT range, shader validity)
         done: false
-      - text: Plugin composites can mix built-in and plugin nodes
+      - text: Implement script discovery (scan directory for .rhai files)
         done: false
-  - phase: Distribution and verification
+  - phase: Examples and verification
     tasks:
-      - text: Define remote plugin bundle format (.wasm + manifest.json)
+      - text: Write example fusable script (warm_tint or similar)
         done: false
-      - text: Implement bundle download and cache manager
+      - text: Write example compute script (glow or composite effect)
         done: false
-      - text: Build example plugin .wasm (simple filter)
+      - text: Write example GPU script (simple shader-based filter)
         done: false
-      - text: Full test suite passes, WASM build clean
+      - text: All existing tests pass, WASM build clean
         done: false
 extra: {}
