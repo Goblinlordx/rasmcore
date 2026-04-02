@@ -121,6 +121,25 @@ $IM /out/inputs/solid_red_32x32.png /out/inputs/solid_green_48x24.png -backgroun
 # Vertical with different widths: red 32x32 + green 48x24 (gray bg, centered)
 $IM /out/inputs/solid_red_32x32.png /out/inputs/solid_green_48x24.png -background '#808080' -gravity Center -append /out/reference/concat_v_diff_width.png
 
+# --- 8-bit gradient for distortion tests (avoids 16-bit conversion issues) ---
+$IM -size 64x64 'gradient:red-blue' -depth 8 -type TrueColor /out/inputs/gradient_64x64_8bit.png
+
+# --- Distortion filter references (barrel, swirl, wave) ----------------------
+echo "  Creating distortion filter references..."
+
+# Barrel distortion (k1=0.3, k2=0.0) on 64x64 gradient
+# IM Barrel format: A B C D => r' = A*r³ + B*r² + C*r + D
+# Our code uses k1 (cubic) and k2 (quadratic) with r' = k1*r³ + k2*r² + 0*r + 1
+# So: A=k1=0.3, B=k2=0.0, C=0, D=1
+$IM /out/inputs/gradient_64x64_8bit.png -virtual-pixel Edge \
+  -distort Barrel "0.3 0.0 0.0 1.0" -depth 8 /out/reference/distort_barrel_k03.png
+
+# Swirl 90 degrees on 64x64 gradient
+$IM /out/inputs/gradient_64x64_8bit.png -virtual-pixel Edge \
+  -swirl 90 -depth 8 /out/reference/distort_swirl_90.png
+
+# NOTE: Wave reference generated via Python (IM -wave extends canvas dimensions)
+
 # --- Verify reproducibility (hash all outputs) -------------------------------
 echo "  Verifying output hashes..."
 OUTPUT_HASH=$(cd "$OUT_DIR" && find . \( -name '*.png' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' -o -name '*.bmp' -o -name '*.tiff' -o -name '*.qoi' \) | sort | xargs shasum -a 256 | shasum -a 256 | awk '{print $1}')
