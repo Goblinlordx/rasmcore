@@ -194,12 +194,8 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 if f.config_struct.is_some() {
                     code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(self.config.build_point_lut()) }\n");
                 } else {
-                    let op_name = &f.name;
-                    match op_name.as_str() {
-                        "invert" => {
-                            code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Invert)) }\n");
-                        }
-                        _ => {}
+                    if f.name == "invert" {
+                        code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Invert)) }\n");
                     }
                 }
             }
