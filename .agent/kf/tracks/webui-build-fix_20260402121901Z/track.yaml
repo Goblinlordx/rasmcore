@@ -1,0 +1,47 @@
+id: webui-build-fix_20260402121901Z
+title: Fix web-ui build — SDK path, manifest dedup, and derive(Filter) param extraction
+type: bug
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: 'Three issues break the web-ui after the derive(Filter) migration: (1) build scripts default to stale demo/sdk
+    path, (2) codegen manifest has duplicate entries for derive(Filter) filters, (3) codegen doesn''t extract #[param] attrs
+    from derive(Filter) structs so manifest params are empty.'
+  context: 'The derive(Filter) migration converted ~30 spatial/distortion filters from bare-fn to derive(Filter) pattern.
+    This broke the web-ui in three ways: stale SDK path in build scripts, duplicate manifest entries, and empty params for
+    derive(Filter) filters in the build-time manifest.'
+  codebase_analysis: 'SDK path: scripts/web-ui-build.sh and web-ui-serve.sh default to $ROOT/demo/sdk (stale) instead of $ROOT/sdk/typescript/generated
+    (actual). Manifest: rasmcore-codegen/src/parse/config_params.rs only detects derive(ConfigParams) structs, not derive(Filter).
+    The manifest generator in generate/manifest.rs emits all filters from data.filters, producing duplicates when a derive(Filter)
+    filter also has a param_structs entry. The WASM module embeds param-manifest.json via include_str! in adapter/mod.rs:199.'
+  acceptance_criteria:
+  - web-ui-build.sh and web-ui-serve.sh use correct SDK path (sdk/typescript/generated)
+  - extract_config_params detects both derive(ConfigParams) and derive(Filter) structs
+  - param-manifest.json has exactly one entry per filter with full param metadata
+  - make web-ui-build completes without errors
+  - getFilterManifest() returns correct params for derive(Filter) filters (blur, sharpen, etc.)
+  out_of_scope: ''
+  technical_notes: 'Fix 1: Change SDK_PATH default in both shell scripts. Fix 2: In config_params.rs extract_raw(), also match
+    ''Filter'' in derive list (not just ''ConfigParams''). Fix 3: In manifest.rs generate(), deduplicate by skipping derive-style
+    filters that already appear via param_structs lookup.'
+plan:
+- phase: Fix SDK path
+  tasks:
+  - text: Update SDK_PATH default in web-ui-build.sh and web-ui-serve.sh from $ROOT/demo/sdk to $ROOT/sdk/typescript/generated
+    done: false
+  - text: Verify web-ui symlinks SDK correctly and vite resolves imports
+    done: false
+- phase: Fix manifest generation
+  tasks:
+  - text: Update extract_config_params in rasmcore-codegen to detect derive(Filter) structs (match Filter in derive list)
+    done: false
+  - text: Deduplicate manifest entries — derive-style filters should produce one entry with full params, not two
+    done: false
+  - text: Verify param-manifest.json has correct single entries with full params for blur, sharpen, spherize etc.
+    done: false
+- phase: End-to-end verification
+  tasks:
+  - text: Run make web-ui-build and make web-ui-serve, confirm filters show params in UI
+    done: false
+extra: {}
