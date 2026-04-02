@@ -1,154 +1,139 @@
 id: f32-pipeline-foundation_20260402150956Z
-title: "f32 pipeline foundation — PixelSample trait, format variants, helpers"
+title: f32 pipeline foundation — PixelSample trait, format variants, helpers
 type: feature
 status: pending
 created: 2026-04-02
-updated: 2026-04-02
+updated: '2026-04-02'
 spec:
-  summary: |
-    Add a generic PixelSample<T> trait that abstracts over u8, u16, and f32
+  summary: 'Add a generic PixelSample<T> trait that abstracts over u8, u16, and f32
+
     pixel sample types, enabling progressive f32 high-precision pipeline support
+
     without architectural changes. Includes format variants, WIT extension,
+
     dispatch helpers, precision flag, and auto-promote/demote at boundaries.
-  context: |
-    The pipeline currently stores all pixel data as Vec<u8> with format
+
+    '
+  context: 'The pipeline currently stores all pixel data as Vec<u8> with format
+
     interpretation via ImageInfo.format (PixelFormat enum). 16-bit formats
+
     already work by storing u16 as 2 bytes per sample in the same Vec<u8>.
+
     The same pattern extends naturally to f32 (4 bytes per sample).
 
+
     The existing process_via_8bit() fallback converts 16-bit to 8-bit for
-    filters that don't support it. This pattern generalizes: filters that
-    don't support f32 yet can auto-downconvert, process, and upconvert.
+
+    filters that don''t support it. This pattern generalizes: filters that
+
+    don''t support f32 yet can auto-downconvert, process, and upconvert.
+
 
     GPU pipeline uses array<u32> packed RGBA8 in all 19 shaders. This track
-    does NOT touch GPU — that's a separate track (gpu-f32-buffers).
+
+    does NOT touch GPU — that''s a separate track (gpu-f32-buffers).
+
 
     Product goal: Photoshop-level precision for HDR/EXR workflows. Users
+
     opt into high-precision mode; standard mode is unchanged (zero regression).
-  codebase_analysis: |
-    Key files that need changes:
-    - crates/rasmcore-image/src/domain/types.rs — PixelFormat enum, bytes_per_pixel()
-    - crates/rasmcore-image/src/domain/filters/common/pixel_format.rs — validate_format(),
-      is_16bit(), process_via_8bit(), channels(), bytes_to_u16(), etc.
-    - wit/image/deps/rasmcore_core/types.wit — pixel-format enum
-    - crates/rasmcore-image/src/domain/pipeline/builder.rs — precision flag
-    - crates/rasmcore-image/src/domain/pipeline/graph.rs — auto-promote at source,
-      auto-demote at sink, format propagation through nodes
-    - crates/rasmcore-image/src/domain/decoder/mod.rs — convert_pixels() for f32 paths
-    - crates/rasmcore-image/src/adapter/mod.rs — WIT adapter for new format variants
 
-    Existing patterns to extend:
-    - is_16bit() → add is_f32(), is_hp() helpers
-    - process_via_8bit() → add process_via_standard() for f32→u8 fallback
-    - bytes_to_u16() / u16_to_bytes() → add bytes_to_f32() / f32_to_bytes()
-    - validate_format() — add f32 variants to accepted set
-
-    Pipeline already uses Vec<u8> for all formats — no buffer type changes needed.
-    f32 Rgba32f is 16 bytes/pixel stored as raw bytes in the same Vec<u8>.
+    '
+  codebase_analysis: "Key files that need changes:\n- crates/rasmcore-image/src/domain/types.rs — PixelFormat enum, bytes_per_pixel()\n\
+    - crates/rasmcore-image/src/domain/filters/common/pixel_format.rs — validate_format(),\n  is_16bit(), process_via_8bit(),\
+    \ channels(), bytes_to_u16(), etc.\n- wit/image/deps/rasmcore_core/types.wit — pixel-format enum\n- crates/rasmcore-image/src/domain/pipeline/builder.rs\
+    \ — precision flag\n- crates/rasmcore-image/src/domain/pipeline/graph.rs — auto-promote at source,\n  auto-demote at sink,\
+    \ format propagation through nodes\n- crates/rasmcore-image/src/domain/decoder/mod.rs — convert_pixels() for f32 paths\n\
+    - crates/rasmcore-image/src/adapter/mod.rs — WIT adapter for new format variants\n\nExisting patterns to extend:\n- is_16bit()\
+    \ → add is_f32(), is_hp() helpers\n- process_via_8bit() → add process_via_standard() for f32→u8 fallback\n- bytes_to_u16()\
+    \ / u16_to_bytes() → add bytes_to_f32() / f32_to_bytes()\n- validate_format() — add f32 variants to accepted set\n\nPipeline\
+    \ already uses Vec<u8> for all formats — no buffer type changes needed.\nf32 Rgba32f is 16 bytes/pixel stored as raw bytes\
+    \ in the same Vec<u8>.\n"
   acceptance_criteria:
-    - PixelSample trait with impls for u8, u16, f32 — to_f32()/from_f32() with
-      zero-cost no-op for f32, compile-time monomorphization
-    - PixelFormat variants Rgba32f, Rgb32f, Gray32f added to domain types
-    - WIT pixel-format enum extended with rgba32f, rgb32f, gray32f
-    - bytes_per_pixel() returns correct sizes (16, 12, 4 respectively)
-    - validate_format() accepts f32 variants
-    - is_f32() helper analogous to is_16bit()
-    - channels() returns correct channel count for f32 formats
-    - process_via_standard() fallback converts f32→u8, processes, u8→f32
-    - bytes_to_f32() and f32_to_bytes() conversion utilities
-    - Pipeline precision flag (Standard/HighPrecision) on builder
-    - Auto-promote node inserts u8→f32 conversion when HP mode with u8 source
-    - Auto-demote at encode boundary when format doesn't support f32
-    - convert_pixels() supports f32↔u8 and f32↔u16 conversions
-    - WIT adapter maps new format variants correctly
-    - dispatch_by_precision! or similar helper macro for filter authors
-    - All existing tests pass unchanged (zero regression for standard mode)
-    - New tests exercise f32 format creation, conversion round-trips, and
-      pipeline with HP flag set (using identity/passthrough to verify plumbing)
-  out_of_scope: |
-    - GPU shader changes (separate track: gpu-f32-buffers)
+  - PixelSample trait with impls for u8, u16, f32 — to_f32()/from_f32() with zero-cost no-op for f32, compile-time monomorphization
+  - PixelFormat variants Rgba32f, Rgb32f, Gray32f added to domain types
+  - WIT pixel-format enum extended with rgba32f, rgb32f, gray32f
+  - bytes_per_pixel() returns correct sizes (16, 12, 4 respectively)
+  - validate_format() accepts f32 variants
+  - is_f32() helper analogous to is_16bit()
+  - channels() returns correct channel count for f32 formats
+  - process_via_standard() fallback converts f32→u8, processes, u8→f32
+  - bytes_to_f32() and f32_to_bytes() conversion utilities
+  - Pipeline precision flag (Standard/HighPrecision) on builder
+  - Auto-promote node inserts u8→f32 conversion when HP mode with u8 source
+  - Auto-demote at encode boundary when format doesn't support f32
+  - convert_pixels() supports f32↔u8 and f32↔u16 conversions
+  - WIT adapter maps new format variants correctly
+  - dispatch_by_precision! or similar helper macro for filter authors
+  - All existing tests pass unchanged (zero regression for standard mode)
+  - New tests exercise f32 format creation, conversion round-trips, and pipeline with HP flag set (using identity/passthrough
+    to verify plumbing)
+  out_of_scope: '- GPU shader changes (separate track: gpu-f32-buffers)
+
     - Codec changes (separate track: f32-codec-exr-hdr)
+
     - Individual filter migration to PixelSample generic (separate track: f32-filter-audit-wave1)
+
     - 16-bit to f32 migration of existing filters
-  technical_notes: |
-    The PixelSample trait design:
 
-      trait PixelSample: Copy + Send + Sync + 'static {
-          fn to_f32(self) -> f32;
-          fn from_f32(v: f32) -> Self;
-          fn max_value() -> f32;
-      }
-
-    For f32 impl, to_f32/from_f32 are identity (optimized away by LLVM).
-    For u8 impl, to_f32 divides by 255.0, from_f32 multiplies and clamps.
-    max_value() returns 255.0/65535.0/1.0 respectively — used by filters
-    that need to know the value range (e.g., threshold comparisons).
-
-    The dispatch helper for filter authors:
-
-      // Option A: macro that generates match arms
-      dispatch_by_precision!(info.format, pixels, |samples: &[T]| {
-          // T is u8, u16, or f32 depending on format
-          apply_brightness::<T>(samples, factor)
-      });
-
-      // Option B: just provide the conversion helpers and let filters
-      // do their own match. Simpler, less magic, more explicit.
-
-    Auto-promote in pipeline: when HP mode is set and source node outputs
-    Rgba8, insert an invisible PromoteNode that converts u8→f32 between
-    source and first filter. Similarly, DemoteNode at encode boundary
-    converts f32→u8 when encoding to JPEG/PNG/etc.
-
-    The precision flag is pipeline-level, not per-node. A pipeline is either
-    standard or HP. This keeps the mental model simple for users.
-
-    Vec<u8> storage for f32: f32 values stored as little-endian 4 bytes.
-    Accessed via bytemuck::cast_slice or manual from_le_bytes. The
-    bytes_to_f32() helper handles this safely with alignment checks.
+    '
+  technical_notes: "The PixelSample trait design:\n\n  trait PixelSample: Copy + Send + Sync + 'static {\n      fn to_f32(self)\
+    \ -> f32;\n      fn from_f32(v: f32) -> Self;\n      fn max_value() -> f32;\n  }\n\nFor f32 impl, to_f32/from_f32 are\
+    \ identity (optimized away by LLVM).\nFor u8 impl, to_f32 divides by 255.0, from_f32 multiplies and clamps.\nmax_value()\
+    \ returns 255.0/65535.0/1.0 respectively — used by filters\nthat need to know the value range (e.g., threshold comparisons).\n\
+    \nThe dispatch helper for filter authors:\n\n  // Option A: macro that generates match arms\n  dispatch_by_precision!(info.format,\
+    \ pixels, |samples: &[T]| {\n      // T is u8, u16, or f32 depending on format\n      apply_brightness::<T>(samples, factor)\n\
+    \  });\n\n  // Option B: just provide the conversion helpers and let filters\n  // do their own match. Simpler, less magic,\
+    \ more explicit.\n\nAuto-promote in pipeline: when HP mode is set and source node outputs\nRgba8, insert an invisible\
+    \ PromoteNode that converts u8→f32 between\nsource and first filter. Similarly, DemoteNode at encode boundary\nconverts\
+    \ f32→u8 when encoding to JPEG/PNG/etc.\n\nThe precision flag is pipeline-level, not per-node. A pipeline is either\n\
+    standard or HP. This keeps the mental model simple for users.\n\nVec<u8> storage for f32: f32 values stored as little-endian\
+    \ 4 bytes.\nAccessed via bytemuck::cast_slice or manual from_le_bytes. The\nbytes_to_f32() helper handles this safely\
+    \ with alignment checks.\n"
 plan:
-  - phase: "Foundation — trait and types"
-    tasks:
-      - text: "Define PixelSample trait in domain/types.rs or new domain/pixel_sample.rs with impls for u8, u16, f32"
-        done: false
-      - text: "Add Rgba32f, Rgb32f, Gray32f to PixelFormat enum in domain/types.rs"
-        done: false
-      - text: "Update bytes_per_pixel() for new variants (16, 12, 4)"
-        done: false
-      - text: "Extend WIT pixel-format enum in wit/image/deps/rasmcore_core/types.wit"
-        done: false
-      - text: "Update WIT adapter format mapping in adapter/mod.rs"
-        done: false
-  - phase: "Helpers — conversion and dispatch utilities"
-    tasks:
-      - text: "Add is_f32() helper to filters/common/pixel_format.rs"
-        done: false
-      - text: "Add channels() cases for f32 formats"
-        done: false
-      - text: "Add bytes_to_f32() and f32_to_bytes() conversion utilities"
-        done: false
-      - text: "Add process_via_standard() fallback (f32 to u8, process, back to f32)"
-        done: false
-      - text: "Add dispatch_by_precision macro or helper function for filter authors"
-        done: false
-      - text: "Add convert_pixels() paths for f32 to/from u8 and u16"
-        done: false
-  - phase: "Pipeline integration — precision flag and auto-promote/demote"
-    tasks:
-      - text: "Add PipelinePrecision enum (Standard, HighPrecision) to pipeline builder"
-        done: false
-      - text: "Implement PromoteNode (u8/u16 to f32) auto-inserted after source in HP mode"
-        done: false
-      - text: "Implement DemoteNode (f32 to u8/u16) auto-inserted before encode sink for non-f32 formats"
-        done: false
-      - text: "Wire precision flag through WIT pipeline interface"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Unit tests for PixelSample trait — round-trip u8→f32→u8, u16→f32→u16, f32 identity"
-        done: false
-      - text: "Integration test — HP pipeline with identity passthrough verifies f32 plumbing end-to-end"
-        done: false
-      - text: "Regression test — all existing tests pass unchanged in standard precision mode"
-        done: false
+- phase: Foundation — trait and types
+  tasks:
+  - text: Define PixelSample trait in domain/types.rs or new domain/pixel_sample.rs with impls for u8, u16, f32
+    done: true
+  - text: Add Rgba32f, Rgb32f, Gray32f to PixelFormat enum in domain/types.rs
+    done: true
+  - text: Update bytes_per_pixel() for new variants (16, 12, 4)
+    done: true
+  - text: Extend WIT pixel-format enum in wit/image/deps/rasmcore_core/types.wit
+    done: true
+  - text: Update WIT adapter format mapping in adapter/mod.rs
+    done: true
+- phase: Helpers — conversion and dispatch utilities
+  tasks:
+  - text: Add is_f32() helper to filters/common/pixel_format.rs
+    done: true
+  - text: Add channels() cases for f32 formats
+    done: true
+  - text: Add bytes_to_f32() and f32_to_bytes() conversion utilities
+    done: true
+  - text: Add process_via_standard() fallback (f32 to u8, process, back to f32)
+    done: true
+  - text: Add dispatch_by_precision macro or helper function for filter authors
+    done: true
+  - text: Add convert_pixels() paths for f32 to/from u8 and u16
+    done: true
+- phase: Pipeline integration — precision flag and auto-promote/demote
+  tasks:
+  - text: Add PipelinePrecision enum (Standard, HighPrecision) to pipeline builder
+    done: true
+  - text: Implement PromoteNode (u8/u16 to f32) auto-inserted after source in HP mode
+    done: true
+  - text: Implement DemoteNode (f32 to u8/u16) auto-inserted before encode sink for non-f32 formats
+    done: true
+  - text: Wire precision flag through WIT pipeline interface
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for PixelSample trait — round-trip u8→f32→u8, u16→f32→u16, f32 identity
+    done: true
+  - text: Integration test — HP pipeline with identity passthrough verifies f32 plumbing end-to-end
+    done: true
+  - text: Regression test — all existing tests pass unchanged in standard precision mode
+    done: true
 extra: {}
