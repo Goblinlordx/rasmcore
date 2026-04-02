@@ -14,7 +14,7 @@ pub struct DrawArcParams {
         max = 65535.0,
         step = 1.0,
         default = 50.0,
-        hint = "rc.pixels"
+        hint = "rc.point"
     )]
     pub cx: f32,
     /// Center Y
@@ -23,7 +23,7 @@ pub struct DrawArcParams {
         max = 65535.0,
         step = 1.0,
         default = 50.0,
-        hint = "rc.pixels"
+        hint = "rc.point"
     )]
     pub cy: f32,
     /// Radius X

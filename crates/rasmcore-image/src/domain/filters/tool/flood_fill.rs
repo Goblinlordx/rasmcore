@@ -9,10 +9,10 @@ use crate::domain::filters::common::*;
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct FloodFillParams {
     /// Seed X coordinate
-    #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.pixels")]
+    #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.point")]
     pub seed_x: u32,
     /// Seed Y coordinate
-    #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.pixels")]
+    #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.point")]
     pub seed_y: u32,
     /// Fill value
     #[param(min = 0, max = 255, step = 1, default = 255)]

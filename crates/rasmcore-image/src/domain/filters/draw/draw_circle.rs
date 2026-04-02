@@ -14,7 +14,7 @@ pub struct DrawCircleParams {
         max = 65535.0,
         step = 1.0,
         default = 50.0,
-        hint = "rc.pixels"
+        hint = "rc.point"
     )]
     pub cx: f32,
     /// Center Y coordinate
@@ -23,7 +23,7 @@ pub struct DrawCircleParams {
         max = 65535.0,
         step = 1.0,
         default = 50.0,
-        hint = "rc.pixels"
+        hint = "rc.point"
     )]
     pub cy: f32,
     /// Circle radius
