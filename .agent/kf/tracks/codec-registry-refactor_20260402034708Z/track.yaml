@@ -1,0 +1,127 @@
+id: codec-registry-refactor_20260402034708Z
+title: "Refactor decoder + encoder dispatch to registry pattern — eliminate hardcoded if/else chains"
+type: refactor
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Replace the hardcoded if/else decoder dispatch (3400-line mod.rs) and
+    hardcoded encoder SUPPORTED_FORMATS with extensible registry patterns.
+    Each codec registers its detect function, decode function, and metadata
+    via inventory. Dispatch becomes a registry lookup. Adding a new format
+    requires zero changes to the dispatch code.
+  context: |
+    The decoder (decoder/mod.rs) is a 3400-line file with:
+    - detect_format(): 20+ hardcoded if/else checks for magic bytes
+    - decode(): 15+ hardcoded if/else format dispatch branches
+    - ~35 decode_* functions scattered in one monolithic file
+
+    The encoder (encoder/mod.rs) has:
+    - SUPPORTED_FORMATS: hardcoded &[&str] array
+    - encode_sequence(): hardcoded match for multi-frame formats
+    - generated_encode_dispatch!: codegen macro (already partially extensible)
+
+    The LUT encoder registry (StaticLutEncoderRegistration) is the correct
+    pattern — it was just added and works well. The pixel encoder/decoder
+    need the same treatment.
+
+    This blocks further extensibility. Every new format requires editing
+    the dispatch file. External crate plugins cannot add decoders.
+  codebase_analysis: |
+    DECODER CURRENT STATE:
+    - detect_format() in decoder/mod.rs:34-117 — 20 hardcoded format checks
+    - decode() in decoder/mod.rs:406-540 — 15 if/else branches
+    - Each format has: is_*() detection fn + decode_*() function
+    - Some formats delegate to image crate, some are native
+    - LUT formats (cube, csp, 3dl) return ColorLut3D not DecodedImage
+
+    ENCODER CURRENT STATE:
+    - StaticEncoderRegistration exists but only used for metadata listing
+    - Actual dispatch uses generated_encode_dispatch! macro (codegen)
+    - SUPPORTED_FORMATS is a separate hardcoded array
+    - encode_sequence() is a hardcoded match
+    - StaticLutEncoderRegistration (new) — correct pattern, uses inventory
+
+    TARGET ARCHITECTURE:
+    - StaticDecoderRegistration with:
+      - format: &str
+      - extensions: &[&str]
+      - detect_fn: Option<fn(&[u8]) -> bool>  (optional auto-detection)
+      - decode_fn: fn(&[u8]) -> Result<DecodedImage, ImageError>
+    - detect_format() becomes: iterate registry, call detect_fn
+    - decode() becomes: detect_format() then lookup decode_fn
+    - decode(data, Some("png")) skips detection, direct lookup
+    - If format has detect_fn and it rejects, error for the user
+    - supported_formats() derived from registry, not hardcoded
+  acceptance_criteria:
+    - StaticDecoderRegistration struct with format, extensions, detect_fn (optional), decode_fn
+    - All existing decoders registered via inventory::submit!
+    - detect_format() iterates the registry instead of hardcoded if/else
+    - decode() accepts optional format hint parameter
+    - When format hint provided and decoder has detect_fn that rejects, return clear error
+    - When no format hint, auto-detect via registry
+    - SUPPORTED_FORMATS constant eliminated from encoder/mod.rs
+    - supported_formats() and supported_decode_formats() derived from registries
+    - encode_sequence() dispatch either registered or codegen-generated
+    - All existing tests pass unchanged
+    - No functional behavior change — pure refactor
+    - External crates can register decoders via inventory (no mod.rs edits needed)
+  out_of_scope: |
+    Splitting decoder/mod.rs into per-format files (separate track).
+    Adding new formats. Changing codec behavior. LUT decoder registry
+    (already handled by format detection + decode_cube/decode_3dl/decode_csp).
+  technical_notes: |
+    APPROACH:
+    Phase 1 — Decoder registry:
+    1. Define StaticDecoderRegistration in decoder/mod.rs
+    2. Add inventory::collect! and inventory::submit! for each format
+    3. Rewrite detect_format() as registry iteration
+    4. Add decode_with_hint(data, format: Option<&str>) that:
+       a. If format provided: find decoder by format, optionally validate
+          via detect_fn (error if rejects), call decode_fn
+       b. If no format: detect_format() then call decode_fn
+    5. Keep decode(data) as convenience wrapper calling decode_with_hint(data, None)
+
+    Phase 2 — Encoder cleanup:
+    1. Remove SUPPORTED_FORMATS hardcoded array
+    2. Derive supported_formats() from StaticEncoderRegistration registry
+    3. Consider registering encode_sequence support as a flag on registration
+
+    MIGRATION:
+    - Each existing is_*() + decode_*() pair becomes one inventory::submit! block
+    - Detection order preserved via priority field (lower = check first)
+    - Binary format detectors check magic bytes (fast, unambiguous)
+    - Text format detectors (cube, csp, 3dl, svg) check keywords (slower, last)
+plan:
+  - phase: Decoder registry
+    tasks:
+      - text: Define StaticDecoderRegistration struct with format, extensions, mime, detect_fn (Option), decode_fn, priority
+        done: false
+      - text: Add inventory::collect! and helper functions (registered_decoders, find_decoder_by_format)
+        done: false
+      - text: Register all existing decoders via inventory::submit! (preserve detection order via priority)
+        done: false
+      - text: Rewrite detect_format() to iterate registry by priority, call detect_fn
+        done: false
+      - text: Add decode_with_hint(data, format) — format hint with optional detect_fn validation
+        done: false
+      - text: Verify all existing decoder tests pass unchanged
+        done: false
+  - phase: Encoder cleanup
+    tasks:
+      - text: Remove SUPPORTED_FORMATS hardcoded array
+        done: false
+      - text: Derive supported_formats() from StaticEncoderRegistration + StaticLutEncoderRegistration
+        done: false
+      - text: Verify all existing encoder tests pass unchanged
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo build + cargo component build succeed
+        done: false
+      - text: Full test suite passes (cargo test -p rasmcore-image)
+        done: false
+      - text: Verify external crate can register a decoder via inventory without editing mod.rs
+        done: false
+extra: {}
