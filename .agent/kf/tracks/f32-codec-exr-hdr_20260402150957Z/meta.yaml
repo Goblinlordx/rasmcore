@@ -1,5 +1,5 @@
 title: f32 codec entry points — EXR and HDR native f32 decode/encode
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'

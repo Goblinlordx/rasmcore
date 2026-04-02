@@ -102,7 +102,7 @@ plan:
       HalfPrecision
     done: true
   - text: Unit test — EXR f32 decode produces correct byte count and sample values
-    done: false
+    done: true
 - phase: HDR f32 decode
   tasks:
   - text: Modify HDR decoder to output Rgb32f — store f32 from RGBE conversion directly
@@ -110,7 +110,7 @@ plan:
   - text: Add precision-aware path — Rgb32f in HP mode, Rgb8 in Standard mode
     done: true
   - text: Unit test — HDR f32 decode produces correct values within RGBE precision bounds
-    done: false
+    done: true
 - phase: Encoder f32 input
   tasks:
   - text: EXR encoder — accept Rgba32f input, skip u8→f32 conversion, write f32 samples directly
@@ -122,11 +122,11 @@ plan:
 - phase: Verification
   tasks:
   - text: EXR f32 round-trip parity test — decode→encode→decode bit-exact for f32-stored files
-    done: false
+    done: true
   - text: HDR f32 round-trip parity test — decode→encode→decode within RGBE precision tolerance
-    done: false
+    done: true
   - text: Cross-format test — EXR f32 decode → identity pipeline → HDR f32 encode
-    done: false
+    done: true
   - text: Regression — all existing EXR and HDR tests pass in standard precision mode
-    done: false
+    done: true
 extra: {}
