@@ -184,11 +184,11 @@ func (p *Pipeline) Process(input []byte, ops []Op, output OutputConfig) ([]byte,
 }
 
 // Compile pre-compiles the WASM component to native code via `wasmtime compile`.
-// This eliminates cold-start latency on subsequent Process() calls.
-// The compiled .cwasm file is stored alongside the .wasm file.
+// This is optional — wasmtime automatically caches compiled modules in
+// ~/.cache/wasmtime/ on first run. Use Compile() only if you need to control
+// the compile location or want to guarantee the first Process() call is fast.
 func (p *Pipeline) Compile() error {
 	cwasmPath := p.wasmPath + ".cwasm"
-	// Check if already compiled and newer than source
 	if info, err := os.Stat(cwasmPath); err == nil {
 		if srcInfo, err2 := os.Stat(p.wasmPath); err2 == nil {
 			if info.ModTime().After(srcInfo.ModTime()) {
