@@ -2384,3 +2384,270 @@ sys.stdout.buffer.write(thinned.tobytes())
         "skeletonize vs OpenCV: MAE={mae:.4} too high (expected < 2.0)"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADJUSTMENT PARITY — invert, contrast, gamma, levels, posterize,
+//                      sigmoidal_contrast
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn exact_invert_against_numpy() {
+    // invert: out = 255 - in (pixel-exact, no rounding ambiguity)
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+    let ours = filters::invert_registered(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+    )
+    .unwrap();
+
+    let script = "\
+import sys\nimport numpy as np\n\
+px=np.arange(256,dtype=np.uint8)\n\
+out=np.uint8(255)-px\n\
+sys.stdout.buffer.write(out.tobytes())";
+    assert_exact("invert(gray)", &ours, &run_python_ref(script));
+}
+
+#[test]
+fn exact_invert_rgb_against_numpy() {
+    // invert on RGB gradient — each channel inverted independently
+    let w = 64u32;
+    let h = 64u32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let ours = filters::invert_registered(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(pixels.clone()),
+        &info,
+    )
+    .unwrap();
+
+    let script = format!(
+        "import sys,numpy as np\n\
+         w,h={w},{h}\n\
+         xs=np.tile((np.arange(w,dtype=np.int32)*255//w).astype(np.uint8),(h,1))\n\
+         ys=np.tile((np.arange(h,dtype=np.int32)*255//h).astype(np.uint8).reshape(h,1),(1,w))\n\
+         bs=np.full((h,w),128,dtype=np.uint8)\n\
+         px=np.stack([xs,ys,bs],axis=2).reshape(-1)\n\
+         out=np.uint8(255)-px\n\
+         sys.stdout.buffer.write(out.tobytes())"
+    );
+    assert_exact("invert(rgb)", &ours, &run_python_ref(&script));
+}
+
+#[test]
+fn close_contrast_against_numpy() {
+    // Contrast formula: factor = 1 + amount*2 (for amount >= 0)
+    //   out = clamp(factor * (in - 128) + 128, 0, 255)  (truncate, not round)
+    // Rust uses f32 LUT, Python f64 — MAE < 0.5 for truncation boundary diffs
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+
+    for &amount in &[0.25f32, 0.5, -0.3, -0.5] {
+        let config = filters::ContrastParams { amount };
+        let ours = filters::contrast(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
+
+        let factor = if amount >= 0.0 {
+            1.0 + amount as f64 * 2.0
+        } else {
+            1.0 / (1.0 - amount as f64 * 2.0)
+        };
+        let script = format!(
+            "import sys\nimport numpy as np\n\
+             px=np.arange(256,dtype=np.float64)\n\
+             factor={factor}\n\
+             out=np.clip(factor*(px-128.0)+128.0,0,255)\n\
+             result=out.astype(np.uint8)\n\
+             sys.stdout.buffer.write(result.tobytes())"
+        );
+        assert_close(
+            &format!("contrast({amount})"),
+            &ours,
+            &run_python_ref(&script),
+            0.5,
+        );
+    }
+}
+
+#[test]
+fn exact_gamma_against_numpy() {
+    // Gamma: out = round(255 * (in/255)^(1/gamma))
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+
+    for &gamma in &[0.5f32, 1.0, 2.2, 3.0] {
+        let config = filters::GammaParams {
+            gamma_value: gamma,
+        };
+        let ours = filters::gamma_registered(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
+
+        let inv_gamma = 1.0 / gamma as f64;
+        let script = format!(
+            "import sys\nimport numpy as np\n\
+             px=np.arange(256,dtype=np.float32)/255.0\n\
+             out=np.power(px,{inv_gamma})*255.0+0.5\n\
+             result=out.astype(np.uint8)\n\
+             sys.stdout.buffer.write(result.tobytes())"
+        );
+        assert_exact(
+            &format!("gamma({gamma})"),
+            &ours,
+            &run_python_ref(&script),
+        );
+    }
+}
+
+#[test]
+fn exact_levels_against_numpy() {
+    // Levels: out = clamp(((in/255 - black) / (white - black)) ^ (1/gamma)) * 255
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+
+    // Test several black/white/gamma combos
+    let cases: &[(f32, f32, f32)] = &[
+        (10.0, 90.0, 1.0),   // simple range mapping
+        (0.0, 100.0, 2.2),   // gamma only
+        (20.0, 80.0, 0.5),   // narrow range + gamma
+        (0.0, 50.0, 1.0),    // heavy clip
+    ];
+
+    for &(black_pct, white_pct, gamma) in cases {
+        let config = filters::LevelsParams {
+            black_point: black_pct,
+            white_point: white_pct,
+            gamma,
+        };
+        let ours = filters::levels(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
+
+        let black = black_pct as f64 / 100.0;
+        let white = white_pct as f64 / 100.0;
+        let inv_gamma = 1.0 / gamma as f64;
+        let script = format!(
+            "import sys\nimport numpy as np\n\
+             px=np.arange(256,dtype=np.float32)/255.0\n\
+             black={black}\n\
+             white={white}\n\
+             rng=max(white-black,1e-6)\n\
+             norm=np.clip((px-black)/rng,0,1)\n\
+             out=np.power(norm,{inv_gamma})*255.0+0.5\n\
+             result=out.astype(np.uint8)\n\
+             sys.stdout.buffer.write(result.tobytes())"
+        );
+        assert_exact(
+            &format!("levels(b={black_pct},w={white_pct},g={gamma})"),
+            &ours,
+            &run_python_ref(&script),
+        );
+    }
+}
+
+#[test]
+fn exact_posterize_against_pillow() {
+    // Posterize: quantized = round(in * (n-1) / 255) -> out = round(quantized * 255 / (n-1))
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+
+    for &levels in &[2u8, 4, 8, 16] {
+        let config = filters::PosterizeParams { levels };
+        let ours = filters::posterize_registered(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
+
+        let n = levels as f64;
+        let script = format!(
+            "import sys\nimport numpy as np\n\
+             px=np.arange(256,dtype=np.float64)\n\
+             n={n}\n\
+             quantized=np.floor(px*(n-1.0)/255.0+0.5).astype(np.uint8)\n\
+             out=np.floor(quantized.astype(np.float64)*255.0/(n-1.0)+0.5).astype(np.uint8)\n\
+             sys.stdout.buffer.write(out.tobytes())"
+        );
+        assert_exact(
+            &format!("posterize({levels})"),
+            &ours,
+            &run_python_ref(&script),
+        );
+    }
+}
+
+#[test]
+fn close_sigmoidal_contrast_against_imagemagick() {
+    // Sigmoidal contrast — S-curve:
+    //   sig(x) = 1 / (1 + exp(strength * (midpoint - x)))
+    //   out = (sig(x) - sig(0)) / (sig(1) - sig(0)) * 255
+    // Uses f32 vs f64, so allow MAE < 0.5 for rounding
+    let pixels: Vec<u8> = (0..=255).collect();
+    let info = info_gray8(256, 1);
+
+    let cases: &[(f32, f32, bool)] = &[
+        (3.0, 50.0, true),    // moderate sharpen
+        (10.0, 50.0, true),   // strong sharpen
+        (5.0, 30.0, true),    // off-center midpoint
+        (3.0, 50.0, false),   // soften
+    ];
+
+    for &(strength, midpoint, sharpen) in cases {
+        let config = filters::SigmoidalContrastParams {
+            strength,
+            midpoint,
+            sharpen,
+        };
+        let ours = filters::sigmoidal_contrast(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &config,
+        )
+        .unwrap();
+
+        let mid_frac = midpoint as f64 / 100.0;
+        let s = strength as f64;
+        let sharpen_str = if sharpen { "True" } else { "False" };
+        let script = format!(
+            "import sys,numpy as np\n\
+px=np.arange(256,dtype=np.float64)/255.0\n\
+s={s}\n\
+mid={mid_frac}\n\
+sharpen={sharpen_str}\n\
+def sig(x): return 1.0/(1.0+np.exp(s*(mid-x)))\n\
+sig0=sig(0.0)\n\
+sig1=sig(1.0)\n\
+rng=sig1-sig0\n\
+if sharpen:\n  out=(sig(px)-sig0)/rng\n\
+else:\n  y_scaled=px*rng+sig0\n  y_clamped=np.clip(y_scaled,1e-7,1.0-1e-7)\n  out=mid-np.log((1.0-y_clamped)/y_clamped)/s\n\
+out=np.clip(out,0,1)*255.0+0.5\n\
+result=out.astype(np.uint8)\n\
+sys.stdout.buffer.write(result.tobytes())"
+        );
+        assert_close(
+            &format!("sigmoidal({strength},{midpoint},{sharpen})"),
+            &ours,
+            &run_python_ref(&script),
+            0.5,
+        );
+    }
+}
