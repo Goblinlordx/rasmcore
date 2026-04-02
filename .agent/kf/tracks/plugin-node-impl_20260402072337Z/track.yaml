@@ -74,86 +74,127 @@ spec:
     Script marketplace/registry. Script debugging tools.
     ML capability declarations (separate ML execution track).
   technical_notes: |
-    Script file format:
+    Loading scripts:
 
-    ```rhai
-    // metadata (parsed from comments at top of file)
-    //! name: custom_glow
-    //! category: effect
-    //! strategy: compute
-    //! param radius: f32 = 5.0 [0.1, 50.0]
-    //! param intensity: f32 = 0.5 [0.0, 1.0]
+    Scripts are passed to the pipeline as source strings at construction.
+    WASM components cannot access the host filesystem — the host reads
+    script files and passes the source code in.
 
-    // For compute strategy:
-    fn compute(pixels, info, params) {
-        let blurred = builtin("blur", pixels, info, #{ radius: params.radius * 3.0 });
-        builtin("blend", pixels, blurred, info, #{ mode: "screen", opacity: params.intensity })
+    WIT interface:
+    ```wit
+    record pipeline-config {
+        scripts: option<list<string>>,
     }
-
-    fn input_rect(output, bounds_w, bounds_h, params) {
-        expand_uniform(output, (params.radius * 9.0).ceil(), bounds_w, bounds_h)
+    resource pipeline {
+        constructor(config: pipeline-config);
     }
     ```
 
+    Usage (TypeScript host):
+    ```typescript
+    const p = new Pipeline({
+        scripts: [warmTintScript, vintageScript],
+    });
+    const src = p.read(data);
+    const result = p.apply(src, "warm_tint", { warmth: 0.3 });
+    ```
+
+    Script file format — four strategies:
+
+    1. Fusable point-op:
     ```rhai
-    // Fusable point-op:
     //! name: warm_tint
     //! category: color
     //! strategy: fusable
     //! param warmth: f32 = 0.2 [0.0, 1.0]
 
     fn lut(input, channel, params) {
-        if channel == 0 {  // R
+        if channel == 0 {
             clamp(input + params.warmth * 20.0, 0, 255)
-        } else if channel == 2 {  // B
+        } else if channel == 2 {
             clamp(input - params.warmth * 10.0, 0, 255)
-        } else {
-            input
-        }
+        } else { input }
     }
     ```
 
+    2. GPU-accelerated:
     ```rhai
-    // GPU-accelerated:
     //! name: custom_blur
     //! category: spatial
     //! strategy: gpu
     //! param radius: f32 = 3.0 [0.1, 50.0]
 
-    fn gpu_shader() {
-        // Return WGSL source as string
-        SHADER_SOURCE  // defined as const
-    }
-
+    fn gpu_shader() { SHADER_SOURCE }
     fn gpu_params(width, height, params) {
-        // Return serialized uniform params as byte array
         pack_u32(width) + pack_u32(height) + pack_f32(params.radius)
     }
-
     fn gpu_workgroup() { [16, 16, 1] }
-
-    // CPU fallback
     fn compute(pixels, info, params) {
         builtin("blur", pixels, info, #{ radius: params.radius })
     }
     ```
 
+    3. CPU compute (eager, with builtin calls):
+    ```rhai
+    //! name: custom_glow
+    //! category: effect
+    //! strategy: compute
+    //! param radius: f32 = 5.0 [0.1, 50.0]
+    //! param intensity: f32 = 0.5 [0.0, 1.0]
+
+    fn compute(pixels, info, params) {
+        let blurred = builtin("blur", pixels, info, #{ radius: params.radius * 3.0 });
+        builtin("blend", pixels, blurred, info, #{ mode: "screen", opacity: params.intensity })
+    }
+    fn input_rect(output, bounds_w, bounds_h, params) {
+        expand_uniform(output, (params.radius * 9.0).ceil(), bounds_w, bounds_h)
+    }
+    ```
+
+    4. Composite (lazy graph, fluent API):
+    ```rhai
+    //! name: vintage_film
+    //! category: grading
+    //! strategy: composite
+    //! param grain: f32 = 0.3 [0.0, 1.0]
+    //! param vignette_str: f32 = 0.4 [0.0, 1.0]
+
+    fn graph(input, params) {
+        input
+            .apply("curves_master", #{ points: [[0,10],[64,50],[192,220],[255,245]] })
+            .apply("color_balance", #{ shadow_r: 10, shadow_b: 15 })
+            .apply("film_grain", #{ amount: params.grain, size: 1.5 })
+            .apply("vignette", #{ strength: params.vignette_str })
+    }
+    ```
+
+    Composite strategy details:
+    - graph() returns a NodeRef DAG description, NOT computed pixels
+    - .apply(name, config) is a single registered Rhai method on NodeRef
+    - Filter names are strings resolved at graph build time (not script load)
+    - Can reference built-in filters, other loaded scripts, or any registered filter
+    - Engine inserts the graph as a lazy sub-pipeline with full optimizations
+      (LUT fusion, GPU dispatch, tiling, caching)
+
     Rhai integration:
     - Use rhai crate (pure Rust, MIT license)
     - Create Engine with sandboxed defaults (no filesystem, no network)
-    - Register builtin() as a native function
-    - Register helper functions (clamp, pack_u32, pack_f32, expand_uniform)
+    - Register NodeRef type with .apply(name, config) method
+    - Register builtin() for compute strategy
+    - Register helpers (clamp, pack_u32, pack_f32, expand_uniform, pixel_at)
     - Set max_operations limit per compute() call
-    - Compile scripts to AST on load (fail fast on syntax errors)
-    - Cache compiled ASTs for reuse
+    - Compile scripts to AST on construction (fail fast on syntax errors)
+    - Validation: check strategy matches provided functions, validate LUT
+      range, validate WGSL shaders, resolve composite filter name references
 
     ScriptNode wrapper:
     - Implements ImageNode trait
     - Holds compiled AST + Rhai engine + config values
-    - compute_region(): sets up scope with params, calls script compute()
-    - as_point_op_lut(): for fusable, evaluates lut() for 0-255
-    - gpu_ops(): for GPU, calls gpu_shader() + gpu_params()
-    - input_rect(): calls script input_rect() if defined
+    - Strategy-specific dispatch:
+      fusable: evaluate lut() for 0-255 -> [u8; 256]
+      gpu: call gpu_shader() + gpu_params() -> GpuOp
+      compute: call compute() per tile with pixel data
+      composite: return graph description for engine to build as sub-pipeline
 plan:
   - phase: Rhai engine integration
     tasks:
@@ -163,9 +204,13 @@ plan:
         done: false
       - text: Implement script loader — parse metadata, compile AST, validate strategy
         done: false
+      - text: Add pipeline-config with scripts field to WIT pipeline constructor
+        done: false
   - phase: ScriptNode implementation
     tasks:
       - text: Implement ScriptNode wrapping compiled Rhai AST as ImageNode
+        done: false
+      - text: Register NodeRef type with .apply(name, config) method for composite graphs
         done: false
       - text: Implement builtin() host function — call existing filters by name
         done: false
@@ -175,21 +220,25 @@ plan:
         done: false
       - text: Implement compute strategy — call script compute() per tile
         done: false
-  - phase: Registration and validation
+      - text: Implement composite strategy — graph() returns NodeRef DAG, engine builds lazy sub-pipeline
+        done: false
+  - phase: Pipeline integration and validation
     tasks:
+      - text: Add generic apply(source, filter_name, config) to WIT pipeline interface
+        done: false
       - text: Register script nodes in filter list and param manifest
         done: false
       - text: Validate scripts on load (strategy matches functions, LUT range, shader validity)
         done: false
-      - text: Implement script discovery (scan directory for .rhai files)
+      - text: Composite scripts can reference built-in and other script filters by name
         done: false
   - phase: Examples and verification
     tasks:
       - text: Write example fusable script (warm_tint or similar)
         done: false
-      - text: Write example compute script (glow or composite effect)
+      - text: Write example compute script (glow effect using builtin calls)
         done: false
-      - text: Write example GPU script (simple shader-based filter)
+      - text: Write example composite script (vintage film look using fluent .apply chain)
         done: false
       - text: All existing tests pass, WASM build clean
         done: false
