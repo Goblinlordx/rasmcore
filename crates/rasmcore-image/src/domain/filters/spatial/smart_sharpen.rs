@@ -98,7 +98,10 @@ pub fn smart_sharpen(
 
     let r = Rect::new(0, 0, work_info.width, work_info.height);
     let mut u = |_: Rect| Ok(work_pixels.clone());
-    let blurred = bilateral(r, &mut u, &work_info, &bilateral_config)?;
+    let blurred = {
+        use crate::domain::filter_traits::CpuFilter;
+        bilateral_config.compute(r, &mut u, &work_info)?
+    };
 
     // Unsharp mask: output = original + amount * (original - blurred)
     let mut result = vec![0u8; work_pixels.len()];
