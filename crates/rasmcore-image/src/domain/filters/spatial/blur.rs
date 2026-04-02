@@ -55,12 +55,23 @@ impl GpuFilter for BlurParams {
         width: u32,
         height: u32,
     ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        use rasmcore_pipeline::gpu::GpuOp;
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static GAUSSIAN_BLUR: LazyLock<String> =
+        static GAUSSIAN_BLUR_U32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/gaussian_blur.wgsl")));
+        static GAUSSIAN_BLUR_F32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/gaussian_blur_f32.wgsl")));
 
         if self.radius <= 0.0 {
             return None;
@@ -92,7 +103,10 @@ impl GpuFilter for BlurParams {
         params.extend_from_slice(&kernel_radius.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        let shader = GAUSSIAN_BLUR.clone();
+        let shader = match buffer_format {
+            BufferFormat::F32Vec4 => GAUSSIAN_BLUR_F32.clone(),
+            BufferFormat::U32Packed => GAUSSIAN_BLUR_U32.clone(),
+        };
 
         Some(vec![
             GpuOp::Compute {
@@ -101,7 +115,7 @@ impl GpuFilter for BlurParams {
                 workgroup_size: [256, 1, 1],
                 params: params.clone(),
                 extra_buffers: vec![kernel_buf.clone()],
-                buffer_format: Default::default(),
+                buffer_format,
             },
             GpuOp::Compute {
                 shader,
@@ -109,7 +123,7 @@ impl GpuFilter for BlurParams {
                 workgroup_size: [1, 256, 1],
                 params,
                 extra_buffers: vec![kernel_buf],
-                buffer_format: Default::default(),
+                buffer_format,
             },
         ])
     }

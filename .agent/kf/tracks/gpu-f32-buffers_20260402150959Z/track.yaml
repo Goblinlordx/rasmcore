@@ -136,13 +136,13 @@ plan:
 - phase: Shader fragments — f32 variants
   tasks:
   - text: Add f32 pixel_ops.wgsl fragment (identity pack/unpack for vec4<f32>)
-    done: false
+    done: true
   - text: Add f32 sample_bilinear.wgsl variant (reads vec4<f32> directly)
-    done: false
+    done: true
   - text: 'Add composition helpers: with_pixel_ops_f32(), with_sampling_f32()'
-    done: false
+    done: true
   - text: Validate f32 fragments with naga (build-time shader validation)
-    done: false
+    done: true
 - phase: Proof shaders — gaussian_blur and affine_resample
   tasks:
   - text: Create f32 variant of gaussian_blur.wgsl (H and V passes)

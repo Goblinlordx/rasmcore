@@ -8,8 +8,12 @@ use rasmcore_pipeline::{GpuCapable, GpuOp, Rect};
 
 use std::sync::LazyLock;
 
-static AFFINE_SHADER: LazyLock<String> = LazyLock::new(|| {
+static AFFINE_SHADER_U32: LazyLock<String> = LazyLock::new(|| {
     rasmcore_gpu_shaders::with_sampling(include_str!("../../../../shaders/affine_resample.wgsl"))
+});
+
+static AFFINE_SHADER_F32: LazyLock<String> = LazyLock::new(|| {
+    rasmcore_gpu_shaders::with_pixel_ops_f32(include_str!("../../../../shaders/affine_resample_f32.wgsl"))
 });
 
 /// Trait for transform nodes that can be expressed as a 2x3 affine matrix.
@@ -150,15 +154,21 @@ impl ImageNode for ComposedAffineNode {
 }
 
 impl GpuCapable for ComposedAffineNode {
-    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<GpuOp>> {
-        // Only support RGBA8 on GPU
-        if self.source_info.format != PixelFormat::Rgba8 {
-            return None;
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, _width: u32, _height: u32, buffer_format: rasmcore_pipeline::BufferFormat) -> Option<Vec<GpuOp>> {
+        use rasmcore_pipeline::BufferFormat;
+
+        // Only support RGBA8 (u32) or RGBA32f (f32) on GPU
+        match (self.source_info.format, buffer_format) {
+            (PixelFormat::Rgba8, BufferFormat::U32Packed) => {}
+            (PixelFormat::Rgba32f, BufferFormat::F32Vec4) => {}
+            _ => return None,
         }
 
         // Compute inverse of the 2x3 affine matrix
-        // Forward: [a, b, tx, c, d, ty] -> x' = a*x + b*y + tx
-        // Inverse: solve for (x, y) given (x', y')
         let [a, b, tx, c, d, ty] = self.matrix;
         let det = a * d - b * c;
         if det.abs() < 1e-10 {
@@ -186,13 +196,18 @@ impl GpuCapable for ComposedAffineNode {
         params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
         params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
 
+        let shader = match buffer_format {
+            BufferFormat::F32Vec4 => AFFINE_SHADER_F32.clone(),
+            BufferFormat::U32Packed => AFFINE_SHADER_U32.clone(),
+        };
+
         Some(vec![GpuOp::Compute {
-            shader: AFFINE_SHADER.clone(),
+            shader,
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: Default::default(),
+            buffer_format,
         }])
     }
 }
