@@ -271,7 +271,20 @@ pub fn write_tiled(
     // Re-query info after compute — mapper nodes update their output format
     // during compute_region (e.g., RGB8 → Gray8 for grayscale/sobel/charcoal).
     let info = graph.node_info(node_id)?;
-    let encoded = encoder::encode(&pixels, &info, format, quality)?;
+
+    // f32 pipeline: quantize from Rgba32f to the encoder's expected format
+    let (encode_pixels, encode_info) = if info.format == crate::domain::types::PixelFormat::Rgba32f {
+        let target = crate::domain::quantize_f32::encoder_target_format(format);
+        let (qpx, qfmt) = crate::domain::quantize_f32::quantize_for_encoder(&pixels, info.format, target);
+        let qi = crate::domain::types::ImageInfo {
+            format: qfmt,
+            ..info.clone()
+        };
+        (qpx, qi)
+    } else {
+        (pixels, info.clone())
+    };
+    let encoded = encoder::encode(&encode_pixels, &encode_info, format, quality)?;
 
     match metadata {
         Some(ms) => embed_metadata(encoded, format, ms),

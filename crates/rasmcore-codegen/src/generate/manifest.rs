@@ -246,6 +246,7 @@ mod tests {
                 color_op: false,
                 gpu: false,
                 derive_style: false,
+            f32_native: false,
                 rect_request: true,
             }],
             generators: vec![],

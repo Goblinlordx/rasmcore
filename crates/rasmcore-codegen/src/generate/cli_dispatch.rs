@@ -437,6 +437,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: false,
+            f32_native: false,
         }];
 
         let code = generate(&filters, &[], &[], &HashSet::new());

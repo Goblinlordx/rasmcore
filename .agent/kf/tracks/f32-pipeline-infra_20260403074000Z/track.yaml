@@ -1,112 +1,129 @@
 id: f32-pipeline-infra_20260403074000Z
-title: "f32 pipeline infrastructure — promote at read, quantize at write, auto-wrap legacy filters"
+title: f32 pipeline infrastructure — promote at read, quantize at write, auto-wrap legacy filters
 type: feature
 status: pending
 created: '2026-04-03'
-updated: '2026-04-03'
+updated: '2026-04-02'
 spec:
-  summary: |
-    Add f32 promotion at pipeline read() and quantization at write().
+  summary: 'Add f32 promotion at pipeline read() and quantization at write().
+
     All pixels flowing through the graph become Rgba32f. Legacy u8
+
     filters get auto-wrapped so they keep working during migration.
-  context: |
-    Target architecture (PS/Resolve-level quality):
+
+    '
+  context: 'Target architecture (PS/Resolve-level quality):
+
     - f32 everywhere in the pipeline. No u8 or u16 intermediates.
+
     - GPU is the primary compute path (f32 natively).
+
     - CPU f32 is always the fallback (no GPU required).
+
     - Tiled execution keeps CPU memory bounded.
+
     - Encoder handles quantization to output format (u8/u16/f32).
 
+
     This track builds the foundation. Existing ~140 filters continue to
+
     work via auto-wrapping (f32 to u8 to filter to u8 to f32). Migration
+
     tracks then remove the wrapping one category at a time.
-  codebase_analysis: |
-    Key files:
+
+    '
+  codebase_analysis: 'Key files:
+
     - domain/pipeline/graph.rs:25-34 — ImageNode trait, compute_region returns Vec<u8>
+
     - domain/types.rs:77-82 — ImageInfo with format field
+
     - adapter/pipeline_adapter.rs read() — creates source node from decoded bytes
+
     - domain/pixel_sample.rs — format conversion utilities (standard_to_f32_format, etc.)
+
     - common/pixel_format.rs — process_via_8bit, process_via_standard helpers
 
+
     The pipeline already supports Rgba32f as a format. ImageInfo.format can
+
     be Rgba32f. The Vec<u8> return type holds f32 data as raw bytes (4 bytes
+
     per f32 sample). No trait changes needed.
 
+
     PipelinePrecision::HighPrecision exists but is underused. This track
+
     makes f32 the default, not an opt-in mode.
+
+    '
   acceptance_criteria:
-    - pipeline read() promotes any input format to Rgba32f before entering the graph
-    - All nodes in the graph see info.format == Rgba32f
-    - Legacy filters (u8-only) are auto-wrapped with f32-to-u8 before and u8-to-f32 after
-    - Auto-wrap is transparent — existing filter code unchanged
-    - Reusable quantize module with shared functions (quantize_f32_to_u8, _u16, _f16, etc.)
-    - Encoders use shared quantize functions — no inline bit-depth conversion in encoder code
-    - Write path calls quantize before handing pixels to encoder
-    - Existing tests pass (output may differ by +-1 LSB due to f32 round-trip)
-    - Gray images promoted to Rgba32f (R=G=B=luma, A=1.0)
-    - 16-bit input promoted losslessly to f32 (u16/65535.0)
-    - Pipeline precision mode deprecated (always f32)
-  out_of_scope: |
-    Migrating individual filters to native f32 (separate tracks).
+  - pipeline read() promotes any input format to Rgba32f before entering the graph
+  - All nodes in the graph see info.format == Rgba32f
+  - Legacy filters (u8-only) are auto-wrapped with f32-to-u8 before and u8-to-f32 after
+  - Auto-wrap is transparent — existing filter code unchanged
+  - Reusable quantize module with shared functions (quantize_f32_to_u8, _u16, _f16, etc.)
+  - Encoders use shared quantize functions — no inline bit-depth conversion in encoder code
+  - Write path calls quantize before handing pixels to encoder
+  - Existing tests pass (output may differ by +-1 LSB due to f32 round-trip)
+  - Gray images promoted to Rgba32f (R=G=B=luma, A=1.0)
+  - 16-bit input promoted losslessly to f32 (u16/65535.0)
+  - Pipeline precision mode deprecated (always f32)
+  out_of_scope: 'Migrating individual filters to native f32 (separate tracks).
+
     GPU shader work (separate tracks).
+
     Removing process_via_8bit (happens when filters are migrated).
-  technical_notes: |
-    Implementation approach:
 
-    1. PromoteToF32 node — inserted after read(). Converts any pixel format
-       to Rgba32f. Gray becomes R=G=B=Y, A=1.0. Alpha-less formats get A=1.0.
-       This is a pipeline-internal node, not visible to users.
-
-    2. Auto-wrap for legacy filters — when a filter node's compute() is called,
-       check if the filter is f32-native (new trait method or marker). If not,
-       convert the f32 input to the format the filter expects (Rgba8), call
-       compute, convert output back to Rgba32f. This happens in the generated
-       pipeline node code (codegen change).
-
-    3. Write path — each encoder already receives pixels + format. Add a
-       quantize step that converts Rgba32f to the encoder's native format
-       before encoding. This is a single conversion at the write boundary.
-
-    4. Tiling — the existing demand-driven tile pipeline naturally bounds
-       memory. Each tile is computed and consumed. f32 tiles are 4x larger
-       than u8 tiles but are transient (not all held simultaneously).
+    '
+  technical_notes: "Implementation approach:\n\n1. PromoteToF32 node — inserted after read(). Converts any pixel format\n\
+    \   to Rgba32f. Gray becomes R=G=B=Y, A=1.0. Alpha-less formats get A=1.0.\n   This is a pipeline-internal node, not visible\
+    \ to users.\n\n2. Auto-wrap for legacy filters — when a filter node's compute() is called,\n   check if the filter is\
+    \ f32-native (new trait method or marker). If not,\n   convert the f32 input to the format the filter expects (Rgba8),\
+    \ call\n   compute, convert output back to Rgba32f. This happens in the generated\n   pipeline node code (codegen change).\n\
+    \n3. Write path — each encoder already receives pixels + format. Add a\n   quantize step that converts Rgba32f to the\
+    \ encoder's native format\n   before encoding. This is a single conversion at the write boundary.\n\n4. Tiling — the existing\
+    \ demand-driven tile pipeline naturally bounds\n   memory. Each tile is computed and consumed. f32 tiles are 4x larger\n\
+    \   than u8 tiles but are transient (not all held simultaneously).\n"
 plan:
-  - phase: "PromoteToF32 node"
-    tasks:
-      - text: "Add PromoteToF32Node that converts any PixelFormat to Rgba32f"
-        done: false
-      - text: "Handle all source formats — Rgb8, Rgba8, Gray8, Rgb16, Rgba16, Gray16, Rgb16f, Rgba16f, Gray16f, Rgb32f, Rgba32f, Gray32f"
-        done: false
-      - text: "Insert PromoteToF32Node automatically after read() in pipeline adapter"
-        done: false
-      - text: "Verify info().format is Rgba32f for all downstream nodes"
-        done: false
-  - phase: "Legacy filter auto-wrap"
-    tasks:
-      - text: "Add f32_native marker to FilterReg/CpuFilter trait (default false)"
-        done: false
-      - text: "In generated pipeline node compute_region, if not f32_native, wrap with f32-to-u8 and u8-to-f32 conversion"
-        done: false
-      - text: "Verify existing filters produce same output (within +-1 LSB) with auto-wrap"
-        done: false
-  - phase: "Reusable quantization utilities"
-    tasks:
-      - text: "Add quantize module with shared functions — quantize_f32_to_u8, quantize_f32_to_u16, quantize_f32_to_f16, quantize_f32_to_rgba8, quantize_f32_to_rgb8, etc."
-        done: false
-      - text: "Handle channel mapping — Rgba32f to Rgb8 (drop alpha), Rgba32f to Gray8 (luma), etc."
-        done: false
-      - text: "Proper rounding — (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8, not truncation"
-        done: false
-      - text: "Wire into write/encode path — encoders call shared quantize functions instead of inline conversion"
-        done: false
-      - text: "Support all output formats (u8, u16, f16, f32 passthrough)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All existing domain tests pass (allow +-1 LSB tolerance for u8 round-trip)"
-        done: false
-      - text: "WASM component builds"
-        done: false
-      - text: "Web UI works with f32 pipeline (load, apply filters, export)"
-        done: false
+- phase: PromoteToF32 node
+  tasks:
+  - text: Add PromoteToF32Node that converts any PixelFormat to Rgba32f
+    done: true
+  - text: Handle all source formats — Rgb8, Rgba8, Gray8, Rgb16, Rgba16, Gray16, Rgb16f, Rgba16f, Gray16f, Rgb32f, Rgba32f,
+      Gray32f
+    done: true
+  - text: Insert PromoteToF32Node automatically after read() in pipeline adapter
+    done: true
+  - text: Verify info().format is Rgba32f for all downstream nodes
+    done: true
+- phase: Legacy filter auto-wrap
+  tasks:
+  - text: Add f32_native marker to FilterReg/CpuFilter trait (default false)
+    done: false
+  - text: In generated pipeline node compute_region, if not f32_native, wrap with f32-to-u8 and u8-to-f32 conversion
+    done: false
+  - text: Verify existing filters produce same output (within +-1 LSB) with auto-wrap
+    done: false
+- phase: Reusable quantization utilities
+  tasks:
+  - text: Add quantize module with shared functions — quantize_f32_to_u8, quantize_f32_to_u16, quantize_f32_to_f16, quantize_f32_to_rgba8,
+      quantize_f32_to_rgb8, etc.
+    done: true
+  - text: Handle channel mapping — Rgba32f to Rgb8 (drop alpha), Rgba32f to Gray8 (luma), etc.
+    done: true
+  - text: Proper rounding — (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8, not truncation
+    done: true
+  - text: Wire into write/encode path — encoders call shared quantize functions instead of inline conversion
+    done: true
+  - text: Support all output formats (u8, u16, f16, f32 passthrough)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All existing domain tests pass (allow +-1 LSB tolerance for u8 round-trip)
+    done: false
+  - text: WASM component builds
+    done: false
+  - text: Web UI works with f32 pipeline (load, apply filters, export)
+    done: false
 extra: {}

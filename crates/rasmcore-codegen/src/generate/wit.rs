@@ -200,6 +200,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: false,
+            f32_native: false,
         }];
         let empty = std::collections::HashMap::new();
         let wit = generate(&filters, &empty);
@@ -230,6 +231,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: false,
+            f32_native: false,
         }];
         let empty = std::collections::HashMap::new();
         let wit = generate(&filters, &empty);
@@ -254,6 +256,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: false,
+            f32_native: false,
         }];
         let mut param_structs = std::collections::HashMap::new();
         param_structs.insert(
@@ -303,6 +306,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: true,
+            f32_native: false,
         }];
         let mut param_structs = std::collections::HashMap::new();
         param_structs.insert(

@@ -56,12 +56,31 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
             );
             code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
-            // Direct inline dispatch — same pattern as old-style codegen.
-            // The closure is consumed immediately by compute(), so borrows are valid.
+            // f32 pipeline auto-wrap: if upstream is Rgba32f but filter expects u8,
+            // convert f32→Rgba8 before calling compute, then Rgba8→Rgba32f after.
+            // Filters marked f32_native skip this wrap.
             code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
             code.push_str("        let __uid = self.upstream;\n");
             code.push_str("        let __info = self.source_info.clone();\n");
             code.push_str("        let __cfg = &self.config;\n");
+            if !f.f32_native {
+                code.push_str("        // Auto-wrap: f32 → u8 → compute → u8 → f32\n");
+                code.push_str("        if __info.format == crate::domain::types::PixelFormat::Rgba32f {\n");
+                code.push_str("            let __info_u8 = ImageInfo { format: crate::domain::types::PixelFormat::Rgba8, ..__info.clone() };\n");
+                code.push_str("            let mut __up = |rect: Rect| {\n");
+                code.push_str("                let f32_px = upstream_fn(__uid, rect)?;\n");
+                code.push_str("                Ok(crate::domain::quantize_f32::rgba32f_to_rgba8(&f32_px))\n");
+                code.push_str("            };\n");
+                code.push_str("            let result_u8 = __cfg.compute(request, &mut __up, &__info_u8)?;\n");
+                code.push_str("            // Promote result back to f32\n");
+                code.push_str("            let n = result_u8.len() / 4;\n");
+                code.push_str("            let mut out = Vec::with_capacity(n * 16);\n");
+                code.push_str("            for chunk in result_u8.chunks_exact(4) {\n");
+                code.push_str("                for &v in chunk { out.extend_from_slice(&(v as f32 / 255.0).to_le_bytes()); }\n");
+                code.push_str("            }\n");
+                code.push_str("            return Ok(out);\n");
+                code.push_str("        }\n");
+            }
             code.push_str("        let mut __up = |rect: Rect| upstream_fn(__uid, rect);\n");
             code.push_str("        __cfg.compute(request, &mut __up, &__info)\n");
             code.push_str("    }\n\n");
@@ -448,6 +467,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: false,
+            f32_native: false,
             rect_request: true,
         }];
         let code = generate_nodes(&filters);
@@ -472,6 +492,7 @@ mod tests {
             color_op: false,
             gpu: false,
             derive_style: false,
+            f32_native: false,
             rect_request: true,
         }];
         let code = generate_adapter_macro(&filters, &HashMap::new());

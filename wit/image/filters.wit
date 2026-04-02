@@ -234,6 +234,19 @@ interface filters {
         points: string,
     }
 
+    record ca-remove-config {
+        red-shift: f32,
+        blue-shift: f32,
+    }
+
+    record red-eye-remove-config {
+        center-x: u32,
+        center-y: u32,
+        radius: u32,
+        darken: f32,
+        threshold: f32,
+    }
+
     record connected-components-config {
         connectivity: u32,
     }
@@ -866,6 +879,8 @@ interface filters {
     asc-cdl: func(pixels: buffer, info: image-info, config: asc-cdl-config) -> result<buffer, rasmcore-error>;
     lum-vs-sat: func(pixels: buffer, info: image-info, config: lum-vs-sat-config) -> result<buffer, rasmcore-error>;
     sat-vs-sat: func(pixels: buffer, info: image-info, config: sat-vs-sat-config) -> result<buffer, rasmcore-error>;
+    ca-remove: func(pixels: buffer, info: image-info, config: ca-remove-config) -> result<buffer, rasmcore-error>;
+    red-eye-remove: func(pixels: buffer, info: image-info, config: red-eye-remove-config) -> result<buffer, rasmcore-error>;
     connected-components: func(pixels: buffer, info: image-info, config: connected-components-config) -> result<buffer, rasmcore-error>;
     hough-lines: func(pixels: buffer, info: image-info, config: hough-lines-config) -> result<buffer, rasmcore-error>;
     harris-corners: func(pixels: buffer, info: image-info, config: harris-corners-config) -> result<buffer, rasmcore-error>;

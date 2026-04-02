@@ -36,6 +36,10 @@ pub struct FilterReg {
     /// When Some, generators produce config-struct-based signatures.
     /// When None, generators produce individual-parameter signatures (current behavior).
     pub config_struct: Option<String>,
+    /// True if this filter computes natively in Rgba32f.
+    /// When false, the pipeline auto-wraps with f32↔u8 conversion.
+    /// Set via `f32_native = "true"` in filter attributes (default: false).
+    pub f32_native: bool,
 }
 
 /// A parsed simple registration (generator, compositor).

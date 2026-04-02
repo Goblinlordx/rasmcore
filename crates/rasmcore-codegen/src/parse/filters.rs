@@ -100,6 +100,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             fn_name,
             params,
             config_struct: None, // populated later by parse_source_files
+            f32_native: false,
         });
     }
     None
@@ -164,6 +165,7 @@ fn extract_derive_filter_reg(s: &syn::ItemStruct) -> Option<FilterReg> {
         fn_name: String::new(),  // No bare fn
         params: Vec::new(),      // Params come from ConfigParams, not fn sig
         config_struct: Some(struct_name),
+        f32_native: false,
     })
 }
 
