@@ -1,0 +1,83 @@
+id: bitdepth-audit_20260403070500Z
+title: "Research: audit bit depth handling for every filter operation"
+type: research
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Audit every filter operation to determine whether it actually computes
+    at the input bit depth (u8, u16, f16, f32) or silently downconverts.
+    Produce a structured report classifying each filter.
+  context: |
+    The pipeline supports Rgba8, Rgba16, Rgba16f, Rgba32f (and Gray/Rgb
+    variants). However, many filters either:
+    (a) process_via_8bit — lossy 16-bit to 8-bit downconversion
+    (b) process_via_standard — lossy f32/f16 to 8-bit downconversion
+    (c) have no bit-depth handling — assume u8, silently corrupt higher depths
+    (d) only handle u8 explicitly and reject other formats
+
+    Initial grep shows:
+    - 37 filter files use process_via_8bit (lossy u16 handling)
+    - 4 filter files use process_via_standard (lossy f32 handling)
+    - ~115 filter files have NO bit-depth checks at all
+    - Only point ops and color ops handle all depths natively
+
+    This audit will classify every filter into one of these categories and
+    produce a machine-readable report that subsequent fix tracks can consume.
+  codebase_analysis: |
+    Key infrastructure:
+    - types.rs: PixelFormat enum with 8/16/f16/f32/gray variants
+    - common/pixel_format.rs: is_16bit(), is_f32(), process_via_8bit(), process_via_standard()
+    - point_ops.rs: apply_op() with native u8/u16/f32 LUT paths
+    - common/color.rs: apply_color_op() with native u8/u16/f32 paths
+    - common/distortion.rs: apply_distortion() with EWA sampler supporting SampleFormat::U8/U16/F32
+    - common/morphology.rs: explicitly 8-bit only
+
+    Categories of handling:
+    1. NATIVE_ALL — handles u8, u16, f16, f32 natively (point ops, color ops)
+    2. NATIVE_PARTIAL — handles u8 + f32 natively, but lossy for u16 (vignette, etc.)
+    3. LOSSY_16BIT — uses process_via_8bit for u16 (spatial, distortion, effects)
+    4. LOSSY_FLOAT — uses process_via_standard for f32/f16
+    5. U8_ONLY — no bit depth handling, assumes u8 bytes
+    6. UNSUPPORTED — explicitly rejects non-u8 formats (morphology)
+  acceptance_criteria:
+    - Complete per-filter classification report at .agent/kf/tracks/bitdepth-audit_20260403070500Z/report.yaml
+    - Every filter in param-manifest.json is classified
+    - Each entry shows filter name, category, current handling level, and what needs fixing
+    - Summary counts per handling level
+    - Prioritized list of fix candidates (most impactful first)
+  out_of_scope: |
+    Actually fixing any filter implementations (separate fix tracks).
+    Encoder/decoder bit depth handling.
+    Pipeline-level format conversion.
+  technical_notes: |
+    Methodology:
+    1. Parse all filter .rs files under src/domain/filters/
+    2. For each, check which pattern it uses:
+       - grep for process_via_8bit, process_via_standard
+       - grep for is_16bit, is_f32, is_float checks
+       - grep for apply_op, apply_color_op (native dispatchers)
+       - check if it reads pixels as u8 without format checks
+    3. Classify into NATIVE_ALL / NATIVE_PARTIAL / LOSSY_16BIT / LOSSY_FLOAT / U8_ONLY / UNSUPPORTED
+    4. Produce structured YAML report
+plan:
+  - phase: "Audit"
+    tasks:
+      - text: "Enumerate all filter files and their names from param-manifest or register_filter/derive(Filter) annotations"
+        done: false
+      - text: "Classify each filter by grepping for bit-depth patterns (process_via_8bit, is_16bit, is_f32, apply_op, apply_color_op)"
+        done: false
+      - text: "For ambiguous filters, read the source to determine actual handling"
+        done: false
+      - text: "Produce report.yaml with per-filter classification"
+        done: false
+  - phase: "Analysis"
+    tasks:
+      - text: "Summarize counts per handling level"
+        done: false
+      - text: "Identify filters where the underlying engine already supports higher bit depths but the wrapper downconverts (e.g., distortion filters using process_via_8bit despite EWA sampler supporting f32)"
+        done: false
+      - text: "Prioritize fix candidates by impact (most-used filters first, easiest fixes first)"
+        done: false
+extra: {}
