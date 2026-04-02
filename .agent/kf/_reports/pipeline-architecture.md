@@ -528,7 +528,87 @@ execute.
 
 ---
 
-### 3.3b Node Trait (Revised)
+### 3.3b Pipeline Composition and Analysis Sinks
+
+Some operations need to inspect pixel content before determining parameters
+for downstream nodes. For example, auto-crop needs to scan the image to find
+edges before it knows the crop rect. This creates a chicken-and-egg problem:
+`info()` runs at build time, but the output dimensions depend on pixels.
+
+**Solution: analysis sinks.** An analysis sink is a sink node (like an encoder)
+that consumes pixels and outputs structured parameters instead of encoded bytes.
+The pipeline is composed in two stages — analysis first, then processing with
+the analysis results.
+
+#### Sink Node Types
+
+The pipeline has two kinds of sink nodes:
+
+| Sink type | Pixels in | Output |
+|-----------|-----------|--------|
+| **Encoder sink** | Full image (tiled) | Encoded bytes (JPEG, PNG, etc.) |
+| **Analysis sink** | Full image (or sampled) | Structured params (crop rect, levels, etc.) |
+
+Both drive execution the same way — they pull tiles backward through the
+graph. The only difference is what they produce.
+
+#### Pipeline Composition Pattern
+
+Analysis sinks enable a two-stage pattern where the first stage's output
+parameterizes the second stage:
+
+```
+// Stage 1: analysis — runs immediately, returns params
+src = pipeline.read(data)
+crop_rect = pipeline.analyze_auto_crop(src)     // analysis sink → {x,y,w,h}
+
+// Stage 2: processing — uses params from stage 1
+cropped = pipeline.crop(src, crop_rect)         // concrete params, info() is correct
+resized = pipeline.resize(cropped, 800, 600)
+output = pipeline.write_jpeg(resized, config)   // encoder sink → bytes
+```
+
+`analyze_auto_crop` triggers execution (like `write` does) — it pulls tiles
+through the graph, inspects the pixels, and returns a result. Then `crop` is
+built with known dimensions. No deferred info, no special barriers.
+
+#### Generalizes Beyond Crop
+
+The analysis sink pattern applies to any operation that needs content-aware
+parameterization:
+
+| Analysis sink | Output params | Feeds into |
+|---------------|--------------|-----------|
+| `analyze_auto_crop` | crop rect (x, y, w, h) | `crop` node |
+| `analyze_auto_levels` | black/white/gamma | `levels` node |
+| `analyze_white_balance` | temperature, tint | `white_balance` node |
+| `analyze_histogram` | histogram data | `curves` or `equalize` node |
+| `analyze_dominant_color` | color value(s) | `gradient_map` or palette |
+| `analyze_exposure` | EV adjustment | `exposure` node |
+| ML analysis (via MlOp) | face rects, masks, labels | selective adjustments, masks |
+
+Each analysis sink is a thin wrapper: run the graph, collect statistics or
+detections from the pixel data, return structured output. The processing
+pipeline then uses those outputs as ordinary node configuration.
+
+#### Why Not a Special Node?
+
+An alternative design would be a "deferred info" node that materializes itself
+mid-graph. This was rejected because:
+
+1. It breaks the forward info pass — downstream nodes can't know their
+   dimensions at build time
+2. It requires special pipeline machinery (barriers, re-planning)
+3. It conflates analysis (read pixels, produce params) with transformation
+   (read pixels, produce pixels)
+
+The analysis sink keeps the pipeline model simple: sinks consume pixels and
+produce output. Encoders produce bytes. Analysis sinks produce params. Both
+drive execution identically.
+
+---
+
+### 3.3c Node Trait (Revised)
 
 ```rust
 /// The core trait every pipeline node implements.
