@@ -10,7 +10,7 @@
 /// Operations are executed sequentially with ping-pong buffers. `Compute`
 /// dispatches a shader; `Snapshot` saves the current buffer state so later
 /// ops can reference it (e.g., high-pass needs the original after blur).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum GpuOp {
     /// Save a read-only copy of the current ping-pong read buffer.
     ///
@@ -67,6 +67,8 @@ pub enum GpuError {
     ExecutionError(String),
     /// Buffer too large for GPU (exceeds max_buffer_size).
     BufferTooLarge { requested: usize, max: usize },
+    /// Other error (e.g., FFI callback failure).
+    Other(String),
 }
 
 impl std::fmt::Display for GpuError {
@@ -78,6 +80,7 @@ impl std::fmt::Display for GpuError {
             GpuError::BufferTooLarge { requested, max } => {
                 write!(f, "GPU buffer too large: {requested} bytes (max {max})")
             }
+            GpuError::Other(msg) => write!(f, "GPU error: {msg}"),
         }
     }
 }

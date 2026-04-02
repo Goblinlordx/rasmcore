@@ -1,5 +1,5 @@
 title: Generate C header + pkg-config for librcimg
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'

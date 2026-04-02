@@ -1,64 +1,75 @@
 id: clib-ffi-header_20260402012600Z
-title: "Generate C header + pkg-config for librcimg"
+title: Generate C header + pkg-config for librcimg
 type: feature
 status: pending
 created: 2026-04-02
-updated: 2026-04-02
+updated: '2026-04-02'
 spec:
-  summary: |
-    Generate rcimg.h from rasmcore-ffi via cbindgen, add pkg-config .pc file,
+  summary: 'Generate rcimg.h from rasmcore-ffi via cbindgen, add pkg-config .pc file,
+
     and verify the lib builds and links on the host platform.
-  context: |
-    The rasmcore-ffi crate already exposes a mature C API (13 functions) with
+
+    '
+  context: 'The rasmcore-ffi crate already exposes a mature C API (13 functions) with
+
     opaque handles, JSON param dispatch, GPU registration, layer cache, and
+
     thread-local error handling. But there is no generated C header or
+
     pkg-config file for downstream consumers. SDK codegen needs a stable
+
     header to generate FFI bindings for Go (CGO), Python (ctypes), etc.
-  codebase_analysis: |
-    - rasmcore-ffi crate at crates/rasmcore-ffi/ with crate-type = ["cdylib", "staticlib"]
-    - 13 exported extern "C" functions (rasmcore_pipeline_new, rasmcore_read,
-      rasmcore_filter, rasmcore_write, etc.)
-    - Uses opaque PipelineState pointer, JSON params for filters, thread-local errors
-    - GPU already integrated: dispatch_filter returns (node, Option<gpu_node>)
-    - No cbindgen.toml or generated header exists yet
-    - No GPU executor registration via C API yet (graph.set_gpu_executor not exposed)
+
+    '
+  codebase_analysis: "- rasmcore-ffi crate at crates/rasmcore-ffi/ with crate-type = [\"cdylib\", \"staticlib\"]\n- 13 exported\
+    \ extern \"C\" functions (rasmcore_pipeline_new, rasmcore_read,\n  rasmcore_filter, rasmcore_write, etc.)\n- Uses opaque\
+    \ PipelineState pointer, JSON params for filters, thread-local errors\n- GPU already integrated: dispatch_filter returns\
+    \ (node, Option<gpu_node>)\n- No cbindgen.toml or generated header exists yet\n- No GPU executor registration via C API\
+    \ yet (graph.set_gpu_executor not exposed)\n"
   acceptance_criteria:
-    - cbindgen.toml configured for rasmcore-ffi crate
-    - rcimg.h generated from rasmcore-ffi source with all 13+ exported functions
-    - pkg-config rcimg.pc file generated with correct lib paths
-    - cargo build produces librcimg.dylib/so/dll on host platform
-    - A minimal C test program links and calls rasmcore_pipeline_new + rasmcore_pipeline_free
-    - Add rasmcore_set_gpu_executor C function for host-side GPU registration
-  out_of_scope: |
-    - Cross-compilation to other targets (separate track)
+  - cbindgen.toml configured for rasmcore-ffi crate
+  - rcimg.h generated from rasmcore-ffi source with all 13+ exported functions
+  - pkg-config rcimg.pc file generated with correct lib paths
+  - cargo build produces librcimg.dylib/so/dll on host platform
+  - A minimal C test program links and calls rasmcore_pipeline_new + rasmcore_pipeline_free
+  - Add rasmcore_set_gpu_executor C function for host-side GPU registration
+  out_of_scope: '- Cross-compilation to other targets (separate track)
+
     - SDK wrapper generation (separate track)
+
     - Mobile targets (future phase)
-  technical_notes: |
-    Use cbindgen to auto-generate the header. Add cbindgen.toml with
+
+    '
+  technical_notes: 'Use cbindgen to auto-generate the header. Add cbindgen.toml with
+
     language = "C", include_guard, and appropriate type mappings.
+
     The pkg-config .pc file is a template filled by build script.
+
     GPU executor registration needs a C callback interface matching GpuExecutor trait.
+
+    '
 plan:
-  - phase: "Header generation"
-    tasks:
-      - text: "Add cbindgen.toml to crates/rasmcore-ffi/ with C language config"
-        done: false
-      - text: "Run cbindgen to generate rcimg.h — verify all 13 functions appear"
-        done: false
-      - text: "Add rasmcore_set_gpu_executor() C function with callback struct for GPU"
-        done: false
-  - phase: "Build and packaging"
-    tasks:
-      - text: "Verify cargo build -p rasmcore-ffi produces librcimg on host platform"
-        done: false
-      - text: "Create rcimg.pc.in pkg-config template"
-        done: false
-      - text: "Add build script or Makefile target that builds lib + generates header + .pc"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Write minimal C test that links librcimg and calls pipeline_new/free"
-        done: false
-      - text: "Verify header compiles clean with gcc -Wall -Werror"
-        done: false
+- phase: Header generation
+  tasks:
+  - text: Add cbindgen.toml to crates/rasmcore-ffi/ with C language config
+    done: true
+  - text: Run cbindgen to generate rcimg.h — verify all 13 functions appear
+    done: true
+  - text: Add rasmcore_set_gpu_executor() C function with callback struct for GPU
+    done: true
+- phase: Build and packaging
+  tasks:
+  - text: Verify cargo build -p rasmcore-ffi produces librcimg on host platform
+    done: true
+  - text: Create rcimg.pc.in pkg-config template
+    done: true
+  - text: Add build script or Makefile target that builds lib + generates header + .pc
+    done: true
+- phase: Verification
+  tasks:
+  - text: Write minimal C test that links librcimg and calls pipeline_new/free
+    done: true
+  - text: Verify header compiles clean with gcc -Wall -Werror
+    done: true
 extra: {}

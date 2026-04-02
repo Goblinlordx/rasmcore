@@ -354,6 +354,115 @@ pub extern "C" fn rasmcore_buffer_free(buf: *mut u8, len: usize) {
 }
 
 // ---------------------------------------------------------------------------
+// GPU executor
+// ---------------------------------------------------------------------------
+
+/// Callback signature for GPU compute execution.
+///
+/// The host provides this function to execute GPU compute shaders.
+/// `ops_json` is a JSON array of GpuOp descriptors. `input` is the pixel
+/// buffer (RGBA u8). On success, write output pixels to `*out_ptr` and
+/// length to `*out_len`, return 0. On error, return -1.
+pub type GpuExecuteCallback = extern "C" fn(
+    ops_json: *const c_char,
+    input: *const u8,
+    input_len: usize,
+    width: u32,
+    height: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+    user_data: *mut std::ffi::c_void,
+) -> i32;
+
+struct FfiGpuExecutor {
+    callback: GpuExecuteCallback,
+    user_data: *mut std::ffi::c_void,
+    max_buffer_size: usize,
+}
+
+impl rasmcore_pipeline::GpuExecutor for FfiGpuExecutor {
+    fn execute(
+        &self,
+        ops: &[rasmcore_pipeline::GpuOp],
+        input: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<u8>, rasmcore_pipeline::GpuError> {
+        let ops_json =
+            serde_json::to_string(ops).map_err(|e| rasmcore_pipeline::GpuError::Other(e.to_string()))?;
+        let ops_cstr = CString::new(ops_json).unwrap();
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len: usize = 0;
+
+        let ret = (self.callback)(
+            ops_cstr.as_ptr(),
+            input.as_ptr(),
+            input.len(),
+            width,
+            height,
+            &mut out_ptr,
+            &mut out_len,
+            self.user_data,
+        );
+
+        if ret != 0 {
+            return Err(rasmcore_pipeline::GpuError::Other(
+                "GPU callback returned error".into(),
+            ));
+        }
+        if out_ptr.is_null() || out_len == 0 {
+            return Err(rasmcore_pipeline::GpuError::Other(
+                "GPU callback returned null output".into(),
+            ));
+        }
+        let output = unsafe { Vec::from_raw_parts(out_ptr, out_len, out_len) };
+        Ok(output)
+    }
+
+    fn max_buffer_size(&self) -> usize {
+        self.max_buffer_size
+    }
+}
+
+/// Register a GPU executor callback for hardware-accelerated processing.
+///
+/// `callback` is called when the pipeline encounters GPU-capable operations.
+/// `user_data` is passed through to the callback (can be NULL).
+/// `max_buffer_bytes` is the maximum GPU buffer size (0 = 256MB default).
+///
+/// Call with `callback = NULL` to disable GPU acceleration.
+#[no_mangle]
+pub extern "C" fn rasmcore_set_gpu_executor(
+    pipe: *mut PipelineState,
+    callback: Option<GpuExecuteCallback>,
+    user_data: *mut std::ffi::c_void,
+    max_buffer_bytes: usize,
+) {
+    if pipe.is_null() {
+        return;
+    }
+    let pipe = unsafe { &mut *pipe };
+    match callback {
+        Some(cb) => {
+            let max = if max_buffer_bytes == 0 {
+                256 * 1024 * 1024
+            } else {
+                max_buffer_bytes
+            };
+            let executor = FfiGpuExecutor {
+                callback: cb,
+                user_data,
+                max_buffer_size: max,
+            };
+            pipe.graph.set_gpu_executor(Rc::new(executor));
+        }
+        None => {
+            // Disable GPU — no API to unset, but passing a null callback is the signal
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Info
 // ---------------------------------------------------------------------------
 
