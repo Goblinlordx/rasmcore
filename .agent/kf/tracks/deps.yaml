@@ -295,3 +295,7 @@ cache-quantize-opt_20260403081600Z:
 # Proxy mode with spatial param scaling (depends on f32 pipeline)
 proxy-scale-params_20260403081601Z:
   - f32-pipeline-infra_20260403074000Z
+
+# GPU tiled streaming — depends on GPU f32 default
+gpu-tiled-stream_20260403082000Z:
+  - gpu-f32-default_20260403074001Z

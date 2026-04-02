@@ -1,0 +1,117 @@
+id: gpu-tiled-stream_20260403082000Z
+title: "GPU tiled streaming — process tiles through GPU without full-image VRAM upload"
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Enable tile-by-tile GPU processing instead of full-image upload.
+    Reduces VRAM requirements from full-image to single-tile, enabling
+    GPU acceleration on low-spec devices and for very large images.
+  context: |
+    The CPU pipeline already has tiled execution (512x512 default, configurable).
+    The GPU path currently uploads the entire image to VRAM, computes, reads back.
+    For a 4000x3000 Rgba32f image that is 192MB of VRAM per buffer (input + output
+    = 384MB minimum). Multi-pass filters or long chains multiply this.
+
+    On mobile GPUs (256MB-1GB shared VRAM), integrated GPUs, or with very large
+    images (100MP+), this exceeds available VRAM. Tiled GPU streaming solves this
+    by processing one tile at a time through the GPU.
+
+    Memory comparison for 4000x3000 Rgba32f:
+    - Full image: 192MB input + 192MB output = 384MB VRAM minimum
+    - 512x512 tiles: 4MB input + 4MB output = 8MB VRAM minimum
+
+    The tradeoff is transfer latency — each tile has a CPU→GPU upload and
+    GPU→CPU readback. For compute-heavy ops (blur, bilateral, NLM), GPU
+    compute time dominates and tiling overhead is negligible. For trivial
+    per-pixel ops, the transfer overhead can make tiled GPU slower than
+    CPU — but those ops are fast on CPU anyway.
+
+    This is a memory optimization (less VRAM, potentially slower) that
+    ensures GPU acceleration works everywhere, not just on high-end GPUs.
+  codebase_analysis: |
+    Key files:
+    - rasmcore-pipeline/src/gpu.rs — GpuExecutor trait, BufferFormat, GpuOp
+    - rasmcore-pipeline/src/gpu.rs:150-172 — execute/execute_with_format (full-image)
+    - rasmcore-image/src/domain/pipeline/graph.rs — tile execution in request_region
+    - web-ui/src/gpu-handler.ts — browser WebGPU handler
+    - crates/rasmcore-image/src/domain/pipeline/nodes/sink.rs:61-101 — request_tiled
+
+    The CPU tiling is in the sink (pull-driven). For GPU tiling, we need
+    tiling at the GpuExecutor level — the executor receives a tile instead
+    of the full image, processes it, returns the tile result.
+
+    The pipeline graph already requests tiles via request_region(). When a
+    GPU-capable node receives a tile request, it currently falls back to
+    CPU if the tile is smaller than the full image. Instead, it should
+    dispatch the tile to the GPU.
+
+    The gpu_handler.ts in the web UI already handles buffer creation and
+    dispatch. It needs to accept tile-sized buffers instead of assuming
+    full-image dimensions.
+  acceptance_criteria:
+    - GPU executor accepts tile-sized inputs (not just full image)
+    - Pipeline graph dispatches tiles to GPU when GPU-capable node handles a tile request
+    - Configurable GPU tile size (default matches CPU tile size)
+    - VRAM usage bounded by tile size, not image size
+    - GPU tiled output is pixel-identical to GPU full-image output
+    - Falls back to CPU tiling when WebGPU unavailable
+    - Works on low-VRAM devices (tested with small VRAM budget)
+  out_of_scope: |
+    Multi-tile GPU batching (process N tiles in parallel on GPU).
+    GPU tile overlap for neighborhood ops (handle separately per filter).
+    Async GPU execution (compute next tile while reading back previous).
+  technical_notes: |
+    Implementation approach:
+
+    1. Modify GpuExecutor::execute to accept arbitrary dimensions (not assume
+       full image). It already takes width/height — just ensure the buffer
+       allocation and dispatch use these dimensions correctly for tiles.
+
+    2. In the pipeline graph, when a GPU-capable node receives a tile request
+       via compute_region():
+       a. Extract the tile pixels from upstream (already happens)
+       b. Pass tile dimensions + pixels to GpuExecutor
+       c. GpuExecutor creates tile-sized buffers, dispatches, reads back
+       d. Return tile result
+
+    3. For neighborhood ops (blur, sharpen) that need overlap beyond the tile
+       boundary, the existing input_rect() expansion already handles this —
+       the pipeline requests a larger upstream region and the filter computes
+       only the requested output tile from the expanded input.
+
+    4. GPU tile size should match the pipeline's tile size for simplicity.
+       A separate GPU tile size config is possible but adds complexity.
+
+    5. Web GPU handler: the createBuffer calls already use width*height*bpp.
+       No changes needed if we pass tile dimensions correctly.
+plan:
+  - phase: "GPU executor tile support"
+    tasks:
+      - text: "Verify GpuExecutor::execute handles arbitrary (tile-sized) dimensions correctly"
+        done: false
+      - text: "Ensure buffer allocation in gpu-handler.ts works for tile dimensions"
+        done: false
+      - text: "Add integration test — GPU process a 512x512 tile produces same output as full image crop"
+        done: false
+  - phase: "Pipeline GPU tile dispatch"
+    tasks:
+      - text: "In GPU-capable node compute_region, dispatch tile to GPU instead of falling back to CPU"
+        done: false
+      - text: "Handle tile overlap for neighborhood ops (expanded input rect, cropped output)"
+        done: false
+      - text: "Configurable GPU tile size on pipeline resource"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "GPU tiled output matches GPU full-image output (pixel-identical)"
+        done: false
+      - text: "VRAM usage stays bounded to tile size (verify with WebGPU diagnostics)"
+        done: false
+      - text: "Works on simulated low-VRAM environment"
+        done: false
+      - text: "All existing GPU parity tests pass"
+        done: false
+extra: {}
