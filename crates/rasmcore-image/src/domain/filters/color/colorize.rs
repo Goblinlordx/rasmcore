@@ -34,6 +34,7 @@ impl ColorLutOp for ColorizeParams {
             self.target.b as f32 / 255.0,
         ];
         let amt = self.amount;
+        // Empty method defaults to "w3c" (ConfigParams Default gives "" for String)
         let op = if self.method == "lab" {
             ColorOp::ColorizeLab(target_norm, amt)
         } else {
@@ -70,6 +71,7 @@ pub fn colorize(
     ];
     let amount = config.amount.clamp(0.0, 1.0);
 
+    // Empty method defaults to "w3c" (ConfigParams Default gives "" for String)
     let op = if config.method == "lab" {
         ColorOp::ColorizeLab(target_norm, amount)
     } else {

@@ -3214,6 +3214,7 @@ fn close_colorize_vs_im_colorize_cmd() {
                 &rasmcore_image::domain::filters::ColorizeParams {
                     target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
                     amount: 0.3,
+                    method: String::new(),
                 },
             )
             .unwrap()
@@ -3284,6 +3285,7 @@ fn exact_colorize_vs_w3c_spec() {
             &filters::ColorizeParams {
                 target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
                 amount: 1.0,
+                method: String::new(),
             },
         )
         .unwrap();
@@ -3322,6 +3324,7 @@ fn exact_colorize_identity_and_amount() {
         &filters::ColorizeParams {
             target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
             amount: 0.0,
+            method: String::new(),
         },
     )
     .unwrap();
@@ -3336,6 +3339,7 @@ fn exact_colorize_identity_and_amount() {
         &filters::ColorizeParams {
             target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
             amount: 1.0,
+            method: String::new(),
         },
     )
     .unwrap();
@@ -3347,6 +3351,7 @@ fn exact_colorize_identity_and_amount() {
         &filters::ColorizeParams {
             target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
             amount: 0.5,
+            method: String::new(),
         },
     )
     .unwrap();
@@ -3361,6 +3366,110 @@ fn exact_colorize_identity_and_amount() {
         );
     }
     eprintln!("  amount=0.5 midpoint ✓");
+}
+
+#[test]
+fn colorize_lab_white_gets_tint() {
+    // The key behavioral difference: method=lab should tint pure white
+    // (subtly), while method=w3c collapses to flat white.
+    use rasmcore_image::domain::filters;
+
+    let white = vec![255u8, 255, 255];
+    let info = test_info(1, 1, PixelFormat::Rgb8);
+
+    // W3C: pure white → (255,255,255) — no tint at all
+    let w3c = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(white.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 1.0,
+            method: String::new(),
+        },
+    )
+    .unwrap();
+    assert_eq!(&w3c[..3], &[255, 255, 255], "w3c should collapse white");
+
+    // Lab: pure white → still close to white but the parabolic weight
+    // at L*=100 is 0 (no tint). However, values near white (L*≈95)
+    // should show tint. Test a near-white pixel instead.
+    let near_white = vec![230u8, 230, 230];
+    let lab_result = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(near_white.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 1.0,
+            method: "lab".to_string(),
+        },
+    )
+    .unwrap();
+    let w3c_near = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(near_white.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 1.0,
+            method: String::new(),
+        },
+    )
+    .unwrap();
+
+    // Lab should produce a visible warm shift — R should increase
+    eprintln!("  near-white (230,230,230): w3c -> ({},{},{}), lab -> ({},{},{})",
+        w3c_near[0], w3c_near[1], w3c_near[2],
+        lab_result[0], lab_result[1], lab_result[2]);
+
+    // Lab preserves L* and adds chrominance — channels should differ from neutral
+    let lab_is_neutral = lab_result[0] == lab_result[1] && lab_result[1] == lab_result[2];
+    assert!(!lab_is_neutral, "lab near-white should not be neutral gray");
+    eprintln!("  lab near-white has chrominance ✓");
+}
+
+#[test]
+fn colorize_lab_midtone_reference() {
+    // Validate lab colorize on 50% gray — should produce a visible warm tint
+    // with L* preserved and maximum parabolic weight (weight=1.0 at L*=50).
+    use rasmcore_image::domain::filters;
+
+    let gray = vec![128u8, 128, 128];
+    let info = test_info(1, 1, PixelFormat::Rgb8);
+
+    let result = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(gray.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 1.0,
+            method: "lab".to_string(),
+        },
+    )
+    .unwrap();
+
+    eprintln!("  gray (128,128,128) lab colorize -> ({},{},{})", result[0], result[1], result[2]);
+
+    // R should be boosted (warm tint), B should be reduced
+    assert!(result[0] > 128, "lab colorize: R should increase for warm target");
+    assert!(result[2] < 128, "lab colorize: B should decrease for warm target");
+
+    // amount=0 identity for lab too
+    let identity = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(gray.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 0.0,
+            method: "lab".to_string(),
+        },
+    )
+    .unwrap();
+    assert_eq!(&identity[..3], &gray[..3], "lab amount=0 should be identity");
+    eprintln!("  lab amount=0 identity ✓");
 }
 
 #[test]
