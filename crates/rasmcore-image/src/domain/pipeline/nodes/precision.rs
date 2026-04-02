@@ -1,0 +1,205 @@
+//! Precision conversion nodes for the pipeline.
+//!
+//! PromoteNode converts u8/u16 pixels to f32 (inserted after source in HP mode).
+//! DemoteNode converts f32 pixels back to u8/u16 (inserted before encode sink).
+
+use crate::domain::error::ImageError;
+use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
+use crate::domain::transform::convert_format;
+use crate::domain::types::{ImageInfo, PixelFormat};
+use rasmcore_pipeline::Rect;
+
+/// Promotes pixel data from u8/u16 to f32 format.
+/// Inserted automatically after source nodes when pipeline is in HighPrecision mode.
+pub struct PromoteNode {
+    upstream: u32,
+    source_info: ImageInfo,
+    target_format: PixelFormat,
+}
+
+impl PromoteNode {
+    pub fn new(upstream: u32, source_info: ImageInfo) -> Self {
+        let target_format = match source_info.format {
+            PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb32f,
+            PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray32f,
+            // Default to Rgba32f for everything else (Rgba8, Bgr8, etc.)
+            _ => PixelFormat::Rgba32f,
+        };
+        Self {
+            upstream,
+            source_info,
+            target_format,
+        }
+    }
+}
+
+impl ImageNode for PromoteNode {
+    fn info(&self) -> ImageInfo {
+        ImageInfo {
+            format: self.target_format,
+            ..self.source_info.clone()
+        }
+    }
+
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let src_pixels = upstream_fn(self.upstream, request)?;
+        // Build a temporary ImageInfo with the region dimensions for conversion
+        let region_info = ImageInfo {
+            width: request.width,
+            height: request.height,
+            format: self.source_info.format,
+            color_space: self.source_info.color_space,
+        };
+        let result = convert_format(&src_pixels, &region_info, self.target_format)?;
+        Ok(result.pixels)
+    }
+
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+
+    fn upstream_id(&self) -> Option<u32> {
+        Some(self.upstream)
+    }
+}
+
+/// Demotes pixel data from f32 to u8 format.
+/// Inserted automatically before encode sinks when outputting to 8-bit formats.
+pub struct DemoteNode {
+    upstream: u32,
+    source_info: ImageInfo,
+    target_format: PixelFormat,
+}
+
+impl DemoteNode {
+    pub fn new(upstream: u32, source_info: ImageInfo, target_format: PixelFormat) -> Self {
+        Self {
+            upstream,
+            source_info,
+            target_format,
+        }
+    }
+}
+
+impl ImageNode for DemoteNode {
+    fn info(&self) -> ImageInfo {
+        ImageInfo {
+            format: self.target_format,
+            ..self.source_info.clone()
+        }
+    }
+
+    fn compute_region(
+        &self,
+        request: Rect,
+        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    ) -> Result<Vec<u8>, ImageError> {
+        let src_pixels = upstream_fn(self.upstream, request)?;
+        let region_info = ImageInfo {
+            width: request.width,
+            height: request.height,
+            format: self.source_info.format,
+            color_space: self.source_info.color_space,
+        };
+        let result = convert_format(&src_pixels, &region_info, self.target_format)?;
+        Ok(result.pixels)
+    }
+
+    fn access_pattern(&self) -> AccessPattern {
+        AccessPattern::Sequential
+    }
+
+    fn upstream_id(&self) -> Option<u32> {
+        Some(self.upstream)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn make_info(format: PixelFormat) -> ImageInfo {
+        ImageInfo {
+            width: 2,
+            height: 2,
+            format,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn promote_rgba8_to_rgba32f() {
+        let info = make_info(PixelFormat::Rgba8);
+        let node = PromoteNode::new(0, info);
+        assert_eq!(node.info().format, PixelFormat::Rgba32f);
+    }
+
+    #[test]
+    fn promote_rgb8_to_rgb32f() {
+        let info = make_info(PixelFormat::Rgb8);
+        let node = PromoteNode::new(0, info);
+        assert_eq!(node.info().format, PixelFormat::Rgb32f);
+    }
+
+    #[test]
+    fn promote_gray8_to_gray32f() {
+        let info = make_info(PixelFormat::Gray8);
+        let node = PromoteNode::new(0, info);
+        assert_eq!(node.info().format, PixelFormat::Gray32f);
+    }
+
+    #[test]
+    fn promote_computes_f32_pixels() {
+        let info = make_info(PixelFormat::Rgba8);
+        let node = PromoteNode::new(0, info);
+        // 2x2 RGBA8: all pixels = [128, 64, 255, 200]
+        let input = vec![128u8, 64, 255, 200, 128, 64, 255, 200, 128, 64, 255, 200, 128, 64, 255, 200];
+        let request = Rect::new(0, 0, 2, 2);
+        let mut upstream = |_id: u32, _rect: Rect| -> Result<Vec<u8>, ImageError> {
+            Ok(input.clone())
+        };
+        let result = node.compute_region(request, &mut upstream).unwrap();
+        // 2x2 Rgba32f = 4 pixels * 16 bytes = 64 bytes
+        assert_eq!(result.len(), 64);
+        // Check first pixel R channel
+        let r = f32::from_le_bytes([result[0], result[1], result[2], result[3]]);
+        assert!((r - 128.0 / 255.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn demote_rgba32f_to_rgba8() {
+        let info = make_info(PixelFormat::Rgba32f);
+        let node = DemoteNode::new(0, info, PixelFormat::Rgba8);
+        assert_eq!(node.info().format, PixelFormat::Rgba8);
+    }
+
+    #[test]
+    fn promote_demote_round_trip() {
+        let info_8 = make_info(PixelFormat::Rgba8);
+        let promote = PromoteNode::new(0, info_8.clone());
+
+        let input = vec![100u8, 150, 200, 255, 50, 75, 125, 128, 0, 0, 0, 255, 255, 255, 255, 255];
+        let request = Rect::new(0, 0, 2, 2);
+
+        // Promote
+        let mut upstream_promote = |_id: u32, _rect: Rect| -> Result<Vec<u8>, ImageError> {
+            Ok(input.clone())
+        };
+        let promoted = promote.compute_region(request, &mut upstream_promote).unwrap();
+
+        // Demote
+        let info_f32 = make_info(PixelFormat::Rgba32f);
+        let demote = DemoteNode::new(0, info_f32, PixelFormat::Rgba8);
+        let mut upstream_demote = |_id: u32, _rect: Rect| -> Result<Vec<u8>, ImageError> {
+            Ok(promoted.clone())
+        };
+        let result = demote.compute_region(request, &mut upstream_demote).unwrap();
+
+        assert_eq!(input, result);
+    }
+}

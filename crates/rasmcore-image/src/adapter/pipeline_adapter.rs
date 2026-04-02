@@ -286,6 +286,8 @@ pub struct PipelineResource {
     auto_cleanup: std::cell::Cell<bool>,
     /// Script plugin registry (loaded via load-scripts WIT method).
     script_registry: RefCell<Option<domain::script_plugin::ScriptRegistry>>,
+    /// Pipeline precision mode (Standard or HighPrecision).
+    precision: std::cell::Cell<domain::pixel_sample::PipelinePrecision>,
 }
 
 impl PipelineResource {
@@ -308,7 +310,16 @@ impl GuestImagePipeline for PipelineResource {
             metadata_filter: RefCell::new(rasmcore_pipeline::MetadataFilter::DropAll),
             auto_cleanup: std::cell::Cell::new(true),
             script_registry: RefCell::new(None),
+            precision: std::cell::Cell::new(domain::pixel_sample::PipelinePrecision::Standard),
         }
+    }
+
+    fn set_precision(&self, precision: pipeline::PipelinePrecision) {
+        let domain_precision = match precision {
+            pipeline::PipelinePrecision::Standard => domain::pixel_sample::PipelinePrecision::Standard,
+            pipeline::PipelinePrecision::HighPrecision => domain::pixel_sample::PipelinePrecision::HighPrecision,
+        };
+        self.precision.set(domain_precision);
     }
 
     fn set_auto_cleanup(&self, enabled: bool) {

@@ -6,6 +6,7 @@
 //! 3. Can later support description-only building (no live graph)
 
 use crate::domain::error::ImageError;
+use crate::domain::pixel_sample::PipelinePrecision;
 use crate::domain::pipeline::graph::{GraphDescription, NodeGraph, NodeKind};
 use crate::domain::types::ImageInfo;
 
@@ -16,6 +17,7 @@ use crate::domain::types::ImageInfo;
 /// can be extracted for serialization, introspection, or later execution.
 pub struct PipelineBuilder {
     graph: NodeGraph,
+    precision: PipelinePrecision,
 }
 
 impl PipelineBuilder {
@@ -23,12 +25,29 @@ impl PipelineBuilder {
     pub fn new(cache_budget: usize) -> Self {
         Self {
             graph: NodeGraph::new(cache_budget),
+            precision: PipelinePrecision::Standard,
         }
+    }
+
+    /// Set the pipeline precision mode.
+    ///
+    /// `HighPrecision` enables f32 processing: sources auto-promote to f32
+    /// and sinks auto-demote when encoding to 8-bit formats.
+    pub fn set_precision(&mut self, precision: PipelinePrecision) {
+        self.precision = precision;
+    }
+
+    /// Get the current pipeline precision mode.
+    pub fn precision(&self) -> PipelinePrecision {
+        self.precision
     }
 
     /// Create a builder wrapping an existing `NodeGraph`.
     pub fn from_graph(graph: NodeGraph) -> Self {
-        Self { graph }
+        Self {
+            graph,
+            precision: PipelinePrecision::Standard,
+        }
     }
 
     /// Borrow the underlying `NodeGraph` (read-only).
