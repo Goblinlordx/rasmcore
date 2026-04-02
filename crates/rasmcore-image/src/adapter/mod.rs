@@ -18,6 +18,7 @@ fn to_wit_error(e: domain::error::ImageError) -> RasmcoreError {
         domain::error::ImageError::NotImplemented => RasmcoreError::NotImplemented,
         domain::error::ImageError::ProcessingFailed(msg) => RasmcoreError::CodecError(msg),
         domain::error::ImageError::InvalidParameters(msg) => RasmcoreError::InvalidInput(msg),
+        domain::error::ImageError::ScriptError(msg) => RasmcoreError::InvalidInput(format!("script plugin: {msg}")),
     }
 }
 

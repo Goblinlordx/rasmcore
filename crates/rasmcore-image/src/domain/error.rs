@@ -12,6 +12,8 @@ pub enum ImageError {
     ProcessingFailed(String),
     /// Invalid parameters (e.g., crop out of bounds)
     InvalidParameters(String),
+    /// Script plugin error (Rhai runtime error, validation failure, OOB access)
+    ScriptError(String),
 }
 
 impl std::fmt::Display for ImageError {
@@ -22,6 +24,7 @@ impl std::fmt::Display for ImageError {
             Self::NotImplemented => write!(f, "not implemented"),
             Self::ProcessingFailed(msg) => write!(f, "processing failed: {msg}"),
             Self::InvalidParameters(msg) => write!(f, "invalid parameters: {msg}"),
+            Self::ScriptError(msg) => write!(f, "script error: {msg}"),
         }
     }
 }

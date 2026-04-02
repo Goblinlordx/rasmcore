@@ -473,7 +473,10 @@ impl ImageNode for ScriptNode {
                 // But as fallback for unfused single-node case:
                 let engine = create_engine();
                 let lut = self.build_lut(&engine).ok_or_else(|| {
-                    ImageError::InvalidParameters("failed to build LUT from script".into())
+                    ImageError::ScriptError(format!(
+                        "script '{}': lut() failed to produce valid LUT",
+                        self.script.metadata.name
+                    ))
                 })?;
                 let pixels = upstream_fn(self.upstream, request)?;
                 let info = ImageInfo {
@@ -500,9 +503,10 @@ impl ImageNode for ScriptNode {
             ScriptStrategy::Composite => {
                 // Composite nodes should be expanded into sub-graphs by the
                 // pipeline builder, not executed directly
-                Err(ImageError::InvalidParameters(
-                    "composite script nodes must be expanded by the pipeline builder".into(),
-                ))
+                Err(ImageError::ScriptError(format!(
+                    "script '{}': composite nodes must be expanded by the pipeline builder, not executed directly",
+                    self.script.metadata.name
+                )))
             }
         }
     }
