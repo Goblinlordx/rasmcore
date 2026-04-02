@@ -131,7 +131,7 @@ spec:
           Plugin exports build-point-lut(config) -> list<u8> (256 entries)
           Engine fuses with adjacent point-ops into single LUT.
           Fused LUT runs on GPU (engine provides LUT shader) or CPU.
-          Plugin's compute-region is fallback only (unfused single-node case).
+          compute-region NOT required — engine applies LUT directly.
 
        b) Non-fusable with GPU shader:
           Plugin exports gpu-ops(w, h) -> option<list<gpu-op>>
