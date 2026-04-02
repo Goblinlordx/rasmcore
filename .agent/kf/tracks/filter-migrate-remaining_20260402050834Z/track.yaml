@@ -1,0 +1,67 @@
+id: filter-migrate-remaining_20260402050834Z
+title: "Migrate remaining filter categories to derive(Filter) pattern"
+type: refactor
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Migrate all remaining filter categories (adjustment, color, grading, effects,
+    enhancement, morphology, edge, threshold, tonemapping, tool, draw, analysis)
+    from bare-fn to derive(Filter). After this track, all filters use the new
+    pattern and old registration infrastructure can be removed.
+  context: |
+    After the spatial+distortion migration, approximately 110 filters remain.
+    These are generally simpler (fewer GPU impls, many are point ops or color ops).
+    After this track completes, the old #[register_filter] macro and bare-fn
+    codegen paths can be removed entirely.
+  acceptance_criteria:
+    - All adjustment filters migrated (brightness, contrast, gamma, etc.)
+    - All color filters migrated (hue_rotate, saturate, etc.) with ColorOp trait
+    - All grading filters migrated (asc_cdl, curves, etc.)
+    - All effect/enhancement/morphology/edge/threshold/tonemapping filters migrated
+    - All mappers migrated (if applicable to new pattern)
+    - Point op filters implement PointOp trait
+    - Color op filters implement ColorOp trait
+    - All tests pass for every migrated filter
+    - Old #[register_filter] macro can be deprecated (or removed if no users remain)
+    - gpu_impls.rs eliminated (only non-filter GPU nodes remain, if any)
+  out_of_scope: |
+    Removing old codegen infrastructure (can be a follow-up cleanup track).
+    Transform nodes (separate concern — ComposedAffineNode, CropNode, etc.).
+plan:
+  - phase: Point op filters (adjustment)
+    tasks:
+      - text: Migrate brightness, contrast, gamma, invert, levels, posterize, sigmoidal_contrast with PointOp trait
+        done: false
+      - text: Verify LUT fusion still works for migrated point ops
+        done: false
+  - phase: Color op filters
+    tasks:
+      - text: Migrate hue_rotate, saturate, sepia, colorize, channel_mixer, vibrance, modulate with ColorOp trait
+        done: false
+      - text: Migrate lab_adjust, color_balance, split_toning, asc_cdl, lift_gamma_gain with ColorOp trait
+        done: false
+      - text: Verify CLUT fusion still works for migrated color ops
+        done: false
+  - phase: Remaining categories
+    tasks:
+      - text: Migrate effects (charcoal, emboss, film_grain, halftone, oil_paint, pixelate, solarize)
+        done: false
+      - text: Migrate enhancement (auto_level, clahe, clarity, dehaze, equalize, normalize, retinex, shadow_highlight, vignette, etc.)
+        done: false
+      - text: Migrate morphology (erode, dilate, open, close, gradient, tophat, blackhat, skeletonize)
+        done: false
+      - text: Migrate edge/threshold/tonemapping/tool/draw/analysis filters
+        done: false
+  - phase: Cleanup
+    tasks:
+      - text: Verify all 140+ filters use new pattern
+        done: false
+      - text: Deprecate or remove old #[register_filter] bare-fn support
+        done: false
+      - text: Remove gpu_impls.rs (all GPU impls now on filter structs)
+        done: false
+      - text: Full test suite + WASM build
+        done: false
+extra: {}

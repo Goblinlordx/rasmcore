@@ -1,0 +1,169 @@
+id: filter-derive-foundation_20260402050832Z
+title: "Filter derive foundation — #[derive(Filter)] + CpuFilter/GpuFilter/PointOp/ColorOp traits"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Implement the new unified filter registration architecture: one derive macro
+    (#[derive(Filter)]) that replaces both #[register_filter] and #[derive(ConfigParams)].
+    Define CpuFilter, GpuFilter, PointOp, ColorOp traits. Codegen supports BOTH
+    old (bare fn) and new (struct + trait) patterns during migration. No existing
+    filters are migrated in this track — only the infrastructure.
+  context: |
+    Current architecture per filter (4 separate pieces):
+    1. BlurParams — #[derive(ConfigParams)] config struct
+    2. blur() — bare fn with #[register_filter], CPU logic
+    3. BlurNode — codegen-generated pipeline node, wraps params + fn
+    4. impl GpuCapable for BlurNode — hand-written in gpu_impls.rs
+
+    Target architecture per filter (1 piece):
+    1. Blur — #[derive(Filter)] struct with #[filter(...)] + #[param(...)]
+       impl CpuFilter for Blur — CPU compute logic (required)
+       impl GpuFilter for Blur — GPU shader dispatch (optional)
+       impl PointOp for Blur — 1D LUT fusion (optional)
+       impl ColorOp for Blur — 3D CLUT fusion (optional)
+
+    The derive generates: ConfigParams (param_descriptors, Default), inventory
+    registration, pipeline node wrapper. Codegen detects which optional traits
+    are implemented and generates appropriate dispatch.
+
+    BOTH patterns must coexist during migration. Old bare-fn filters and new
+    derive-based filters must work side by side in the same build.
+  codebase_analysis: |
+    FILES TO CREATE/MODIFY:
+    - rasmcore-macros/src/lib.rs — add #[derive(Filter)] proc macro
+    - rasmcore-pipeline/src/traits.rs (new) — CpuFilter, GpuFilter, PointOp, ColorOp trait definitions
+    - rasmcore-codegen/src/parse/filters.rs — detect new-style struct registrations alongside old bare-fn
+    - rasmcore-codegen/src/generate/pipeline.rs — generate nodes from new-style registrations
+    - rasmcore-codegen/src/generate/cli_dispatch.rs — support both old and new dispatch
+    - rasmcore-image/build.rs — parse both styles
+
+    TRAIT SIGNATURES:
+    CpuFilter:
+      fn compute(&self, request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>>
+    GpuFilter:
+      fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>>
+    PointOp:
+      fn build_lut(&self) -> [u8; 256]
+    ColorOp:
+      fn build_clut(&self) -> ColorLut3D
+
+    COEXISTENCE STRATEGY:
+    - Old filters use #[register_filter] on bare fn + separate ConfigParams
+    - New filters use #[derive(Filter)] on struct + trait impls
+    - Codegen detects both and generates pipeline nodes for both
+    - param-manifest.json includes both
+    - Migration happens filter-by-filter in subsequent tracks
+  acceptance_criteria:
+    - derive(Filter) macro generates ConfigParams + registration + pipeline node
+    - CpuFilter trait defined and used by codegen for compute dispatch
+    - GpuFilter trait defined and detected by codegen for GPU dispatch
+    - PointOp trait defined and detected by codegen for LUT fusion
+    - ColorOp trait defined and detected by codegen for CLUT fusion
+    - At least 1 example filter migrated to prove the pattern works
+    - All existing 140+ bare-fn filters continue to work unchanged
+    - Both old and new styles coexist in the same build
+    - cargo build + cargo component build succeed
+    - Full test suite passes
+  out_of_scope: |
+    Migrating all filters (separate tracks). Changing filter behavior.
+    Removing old registration infrastructure (kept for coexistence).
+  technical_notes: |
+    DERIVE MACRO DESIGN:
+
+    Input:
+    #[derive(Filter)]
+    #[filter(name = "blur", category = "spatial")]
+    struct Blur {
+        #[param(min = 0.0, max = 100.0, default = 3.0)]
+        pub radius: f32,
+    }
+
+    Generated output:
+    - impl Blur { fn param_descriptors() -> Vec<ParamDescriptorJson> { ... } }
+    - impl Default for Blur { ... }
+    - static __RASMCORE_FILTER_BLUR: StaticFilterRegistration = ...;
+    - inventory::submit!(&__RASMCORE_FILTER_BLUR);
+
+    CODEGEN DETECTION:
+    Build.rs parses both:
+    - Old: #[register_filter] on fn → FilterReg with fn_name
+    - New: #[derive(Filter)] on struct → FilterReg with struct_name + trait detection
+
+    For new-style filters, codegen scans for impl blocks:
+    - impl CpuFilter for Blur → generates compute_region delegation
+    - impl GpuFilter for Blur → generates GpuCapable delegation
+    - impl PointOp for Blur → generates as_point_op_lut override
+    - impl ColorOp for Blur → generates as_color_lut_op override
+
+    PIPELINE NODE GENERATION (new style):
+    pub struct BlurNode {
+        config: Blur,
+        upstream: u32,
+        source_info: ImageInfo,
+    }
+    impl ImageNode for BlurNode {
+        fn compute_region(&self, request, upstream_fn) -> Result<Vec<u8>> {
+            self.config.compute(request, &mut |r| upstream_fn(self.upstream, r), &self.source_info)
+        }
+        fn as_point_op_lut(&self) -> Option<[u8; 256]> {
+            Some(self.config.build_lut())  // only if PointOp is impl'd
+        }
+    }
+    impl GpuCapable for BlurNode {  // only if GpuFilter is impl'd
+        fn gpu_ops(&self, w, h) -> Option<Vec<GpuOp>> {
+            self.config.gpu_ops(w, h)
+        }
+    }
+
+    MIGRATION SCRIPT PER FILTER:
+    1. validate (old form tests pass)
+    2. deregister (remove #[register_filter] from bare fn)
+    3. validate removal (build ok, filter absent from manifest)
+    4. implement new form (#[derive(Filter)] + CpuFilter impl)
+    5. validate new (build ok, filter in manifest, all tests pass)
+    Each step is a valid commit.
+plan:
+  - phase: Trait definitions
+    tasks:
+      - text: Define CpuFilter trait in rasmcore-pipeline (or rasmcore-image domain)
+        done: false
+      - text: Define GpuFilter trait (reusing GpuOp from rasmcore-pipeline)
+        done: false
+      - text: Define PointOp trait (replaces LutPointOp)
+        done: false
+      - text: Define ColorOp trait (replaces ColorLutOp)
+        done: false
+  - phase: Derive macro
+    tasks:
+      - text: Implement derive(Filter) proc macro — generates ConfigParams + registration
+        done: false
+      - text: Support #[filter(name, category, group, variant, reference)] helper attribute
+        done: false
+      - text: Support #[param(min, max, step, default, hint)] field attributes (reuse existing)
+        done: false
+      - text: Generate inventory::submit! from derive
+        done: false
+  - phase: Codegen support
+    tasks:
+      - text: Update codegen parser to detect derive(Filter) struct registrations
+        done: false
+      - text: Update pipeline node generator to emit nodes from struct-based filters
+        done: false
+      - text: Detect CpuFilter/GpuFilter/PointOp/ColorOp impls and generate appropriate node methods
+        done: false
+      - text: Update CLI dispatch to handle both old and new filter styles
+        done: false
+  - phase: Proof of concept + verification
+    tasks:
+      - text: Migrate 1 simple filter (e.g., invert or gamma) to prove the pattern
+        done: false
+      - text: Migrate 1 GPU filter (e.g., spherize) to prove GPU trait integration
+        done: false
+      - text: Verify old filters still work alongside new ones
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}

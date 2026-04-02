@@ -1,0 +1,8 @@
+title: Migrate remaining filter categories to derive(Filter) pattern
+status: pending
+type: refactor
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- filter-migrate-spatial_20260402050833Z
