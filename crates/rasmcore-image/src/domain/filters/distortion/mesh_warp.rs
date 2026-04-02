@@ -8,13 +8,15 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for mesh warp distortion.
 ///
 /// The grid is a flat array of control points in row-major order.
 /// Each point has (src_x, src_y, dst_x, dst_y) as fractions of image
 /// dimensions (0.0–1.0). Grid dimensions: grid_cols × grid_rows points.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "mesh_warp", category = "distortion", reference = "grid mesh warp distortion")]
 pub struct MeshWarpParams {
     /// Number of columns in the control point grid
     #[param(min = 2, max = 64, default = 4)]
@@ -218,78 +220,77 @@ fn bilinear_inverse(
     (src_x, src_y)
 }
 
-#[rasmcore_macros::register_filter(
-    name = "mesh_warp",
-    category = "distortion",
-    reference = "grid mesh warp distortion"
-)]
-pub fn mesh_warp(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &MeshWarpParams,
-) -> Result<Vec<u8>, ImageError> {
-    validate_format(info.format)?;
+impl CpuFilter for MeshWarpParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+        validate_format(info.format)?;
 
-    let cols = config.grid_cols;
-    let rows = config.grid_rows;
-    if cols < 2 || rows < 2 {
-        return Err(ImageError::InvalidParameters(
-            "mesh_warp: grid must be at least 2x2".into(),
-        ));
+        let cols = self.grid_cols;
+        let rows = self.grid_rows;
+        if cols < 2 || rows < 2 {
+            return Err(ImageError::InvalidParameters(
+                "mesh_warp: grid must be at least 2x2".into(),
+            ));
+        }
+
+        if is_16bit(info.format) {
+            let full = Rect::new(0, 0, info.width, info.height);
+            let pixels = upstream(full)?;
+            let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
+            let cfg = self.clone();
+            return process_via_8bit(&pixels, info16, |px, i8| {
+                let r = Rect::new(0, 0, i8.width, i8.height);
+                let mut u = |_: Rect| Ok(px.to_vec());
+                cfg.compute(r, &mut u, i8)
+            });
+        }
+
+        let w = info.width as f32;
+        let h = info.height as f32;
+        let expected = (cols * rows) as usize;
+
+        // Parse grid or use identity if empty
+        let grid = if self.grid_json.trim().is_empty() {
+            identity_grid(cols, rows, w, h)
+        } else {
+            parse_grid(&self.grid_json, w, h, expected)?
+        };
+
+        let dummy_j = crate::domain::ewa::JACOBIAN_IDENTITY;
+
+        apply_distortion(
+            request,
+            upstream,
+            info,
+            DistortionOverlap::FullImage,
+            // Sampling: Bilinear — piecewise affine mapping within each quad cell
+            // is well-suited for bilinear interpolation (locally smooth, no anisotropy).
+            DistortionSampling::Bilinear,
+            &|xf, yf| {
+                if let Some((c, r)) = find_quad(&grid, cols, xf, yf, rows) {
+                    let tl = &grid[(r * cols + c) as usize];
+                    let tr = &grid[(r * cols + c + 1) as usize];
+                    let bl = &grid[((r + 1) * cols + c) as usize];
+                    let br = &grid[((r + 1) * cols + c + 1) as usize];
+                    bilinear_inverse(xf, yf, tl, tr, bl, br)
+                } else {
+                    // Outside grid — identity
+                    (xf, yf)
+                }
+            },
+            &|_xf, _yf| dummy_j,
+        )
     }
-
-    if is_16bit(info.format) {
-        let full = Rect::new(0, 0, info.width, info.height);
-        let pixels = upstream(full)?;
-        let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
-        return process_via_8bit(&pixels, info16, |px, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(px.to_vec());
-            mesh_warp(r, &mut u, i8, config)
-        });
-    }
-
-    let w = info.width as f32;
-    let h = info.height as f32;
-    let expected = (cols * rows) as usize;
-
-    // Parse grid or use identity if empty
-    let grid = if config.grid_json.trim().is_empty() {
-        identity_grid(cols, rows, w, h)
-    } else {
-        parse_grid(&config.grid_json, w, h, expected)?
-    };
-
-    let dummy_j = crate::domain::ewa::JACOBIAN_IDENTITY;
-
-    apply_distortion(
-        request,
-        upstream,
-        info,
-        DistortionOverlap::FullImage,
-        // Sampling: Bilinear — piecewise affine mapping within each quad cell
-        // is well-suited for bilinear interpolation (locally smooth, no anisotropy).
-        DistortionSampling::Bilinear,
-        &|xf, yf| {
-            if let Some((c, r)) = find_quad(&grid, cols, xf, yf, rows) {
-                let tl = &grid[(r * cols + c) as usize];
-                let tr = &grid[(r * cols + c + 1) as usize];
-                let bl = &grid[((r + 1) * cols + c) as usize];
-                let br = &grid[((r + 1) * cols + c + 1) as usize];
-                bilinear_inverse(xf, yf, tl, tr, bl, br)
-            } else {
-                // Outside grid — identity
-                (xf, yf)
-            }
-        },
-        &|_xf, _yf| dummy_j,
-    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 
     fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -322,7 +323,7 @@ mod tests {
         };
         let request = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = mesh_warp(request, &mut u, &info, &config).unwrap();
+        let result = config.compute(request, &mut u, &info).unwrap();
         assert_eq!(result.len(), pixels.len());
         // Identity warp should produce pixels very close to input
         // (bilinear sampling may cause sub-pixel differences at boundaries)
@@ -365,7 +366,7 @@ mod tests {
         };
         let request = Rect::new(0, 0, 32, 32);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = mesh_warp(request, &mut u, &info, &config).unwrap();
+        let result = config.compute(request, &mut u, &info).unwrap();
 
         // Pixels at x=4..28 should have R channel close to (x - 2)
         // (shifted left by 2 in source)

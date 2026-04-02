@@ -247,39 +247,6 @@ interface filters {
         nms-radius: u32,
     }
 
-    record wave-config {
-        amplitude: f32,
-        wavelength: f32,
-        vertical: f32,
-    }
-
-    record barrel-config {
-        k1: f32,
-        k2: f32,
-    }
-
-    record mesh-warp-config {
-        grid-cols: u32,
-        grid-rows: u32,
-        grid-json: string,
-    }
-
-    record ripple-config {
-        amplitude: f32,
-        wavelength: f32,
-        center-x: f32,
-        center-y: f32,
-    }
-
-    record swirl-config {
-        angle: f32,
-        radius: f32,
-    }
-
-    record spherize-config {
-        amount: f32,
-    }
-
     record tonemap-drago-config {
         bias: f32,
     }
@@ -688,13 +655,13 @@ interface filters {
     hough-lines: func(pixels: buffer, info: image-info, config: hough-lines-config) -> result<buffer, rasmcore-error>;
     harris-corners: func(pixels: buffer, info: image-info, config: harris-corners-config) -> result<buffer, rasmcore-error>;
     depolar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    wave: func(pixels: buffer, info: image-info, config: wave-config) -> result<buffer, rasmcore-error>;
+    wave: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     polar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    barrel: func(pixels: buffer, info: image-info, config: barrel-config) -> result<buffer, rasmcore-error>;
-    mesh-warp: func(pixels: buffer, info: image-info, config: mesh-warp-config) -> result<buffer, rasmcore-error>;
-    ripple: func(pixels: buffer, info: image-info, config: ripple-config) -> result<buffer, rasmcore-error>;
-    swirl: func(pixels: buffer, info: image-info, config: swirl-config) -> result<buffer, rasmcore-error>;
-    spherize: func(pixels: buffer, info: image-info, config: spherize-config) -> result<buffer, rasmcore-error>;
+    barrel: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    mesh-warp: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    ripple: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    swirl: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    spherize: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     tonemap-drago: func(pixels: buffer, info: image-info, config: tonemap-drago-config) -> result<buffer, rasmcore-error>;
     tonemap-reinhard: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     tonemap-filmic: func(pixels: buffer, info: image-info, config: tonemap-filmic-config) -> result<buffer, rasmcore-error>;

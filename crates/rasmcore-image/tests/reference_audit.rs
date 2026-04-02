@@ -1946,7 +1946,7 @@ fn algorithm_swirl() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::swirl(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::SwirlParams { angle: 90.0, radius: 0.0 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); (rasmcore_image::domain::filters::SwirlParams { angle: 90.0, radius: 0.0 }).compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-swirl", "90"],
         "swirl_90",
     ) {
@@ -1966,7 +1966,7 @@ fn algorithm_barrel() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::barrel(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BarrelParams { k1: 0.3, k2: 0.0 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); (rasmcore_image::domain::filters::BarrelParams { k1: 0.3, k2: 0.0 }).compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-distort", "Barrel", "0.0 0.3 0.0 1.0"],
         "barrel_k1_0.3",
     ) {

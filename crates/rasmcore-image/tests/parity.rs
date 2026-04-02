@@ -11,6 +11,7 @@ use dssim_core::Dssim;
 use imgref::Img;
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::types::{DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::{concat, decoder, encoder, filters, transform};
 use rasmcore_pipeline::Rect;
 use rgb::RGB8;
@@ -1621,7 +1622,7 @@ fn parity_distort_barrel() {
 
     let config = filters::BarrelParams { k1: 0.3, k2: 0.0 };
     let result = apply_distortion_filter(&decoded, |rect, upstream, info| {
-        filters::barrel(rect, upstream, info, &config)
+        config.compute(rect, upstream, info)
     });
 
     let ref_data = load_reference("distort_barrel_k03.png");
@@ -1644,7 +1645,7 @@ fn parity_distort_spherize() {
 
     let config = filters::SpherizeParams { amount: 0.5 };
     let result = apply_distortion_filter(&decoded, |rect, upstream, info| {
-        filters::spherize(rect, upstream, info, &config)
+        config.compute(rect, upstream, info)
     });
 
     let ref_data = load_reference("distort_spherize_05.png");
@@ -1664,7 +1665,7 @@ fn parity_distort_swirl() {
 
     let config = filters::SwirlParams { angle: 90.0, radius: 0.0 };
     let result = apply_distortion_filter(&decoded, |rect, upstream, info| {
-        filters::swirl(rect, upstream, info, &config)
+        config.compute(rect, upstream, info)
     });
 
     let ref_data = load_reference("distort_swirl_90.png");
@@ -1689,7 +1690,7 @@ fn parity_distort_ripple() {
         center_y: 0.5,
     };
     let result = apply_distortion_filter(&decoded, |rect, upstream, info| {
-        filters::ripple(rect, upstream, info, &config)
+        config.compute(rect, upstream, info)
     });
 
     let ref_data = load_reference("distort_ripple_8_40.png");
@@ -1713,7 +1714,7 @@ fn parity_distort_wave() {
         vertical: 0.0,
     };
     let result = apply_distortion_filter(&decoded, |rect, upstream, info| {
-        filters::wave(rect, upstream, info, &config)
+        config.compute(rect, upstream, info)
     });
 
     let ref_data = load_reference("distort_wave_10x50.png");
@@ -1738,11 +1739,11 @@ fn parity_distort_polar_depolar_roundtrip() {
 
     // polar: Cartesian -> polar
     let mut upstream_polar = |_: Rect| Ok(pixels.to_vec());
-    let polar_pixels = filters::polar(full, &mut upstream_polar, info).unwrap();
+    let polar_pixels = filters::PolarParams{}.compute(full, &mut upstream_polar, info).unwrap();
 
     // depolar: polar -> Cartesian (inverse)
     let mut upstream_depolar = |_: Rect| Ok(polar_pixels.to_vec());
-    let roundtrip_pixels = filters::depolar(full, &mut upstream_depolar, info).unwrap();
+    let roundtrip_pixels = filters::DepolarParams{}.compute(full, &mut upstream_depolar, info).unwrap();
 
     // Compare center region only (avoid edge artifacts from polar mapping)
     let ch = info.format.bytes_per_pixel() as usize;

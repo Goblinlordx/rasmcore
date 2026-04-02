@@ -6,6 +6,7 @@ use crate::domain::filters::common::*;
 #[cfg(test)]
 mod distortion_effect_tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::ColorSpace;
 
     fn rgb_info(w: u32, h: u32) -> ImageInfo {
@@ -186,14 +187,13 @@ mod distortion_effect_tests {
     fn swirl_zero_angle_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = swirl(
+        let result = (SwirlParams {
+                angle: 0.0,
+                radius: 0.0,
+            }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SwirlParams {
-                angle: 0.0,
-                radius: 0.0,
-            },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -203,14 +203,13 @@ mod distortion_effect_tests {
     fn swirl_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = swirl(
+        let result = (SwirlParams {
+                angle: 90.0,
+                radius: 0.0,
+            }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SwirlParams {
-                angle: 90.0,
-                radius: 0.0,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -238,14 +237,13 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small angle so center is barely affected
-        let result = swirl(
+        let result = (SwirlParams {
+                angle: 10.0,
+                radius: 0.0,
+            }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SwirlParams {
-                angle: 10.0,
-                radius: 0.0,
-            },
         )
         .unwrap();
         let center_off = (cy * w as usize + cx) * 3;
@@ -263,11 +261,10 @@ mod distortion_effect_tests {
     fn spherize_zero_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = spherize(
+        let result = (SpherizeParams { amount: 0.0 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SpherizeParams { amount: 0.0 },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -277,11 +274,10 @@ mod distortion_effect_tests {
     fn spherize_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = spherize(
+        let result = (SpherizeParams { amount: 0.5 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SpherizeParams { amount: 0.5 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -306,11 +302,10 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = spherize(
+        let result = (SpherizeParams { amount: 0.5 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SpherizeParams { amount: 0.5 },
         )
         .unwrap();
         let center_off = (cy * w as usize + cx) * 3;
@@ -330,11 +325,10 @@ mod distortion_effect_tests {
         // through the filter. Result should be very close to input.
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = barrel(
+        let result = (BarrelParams { k1: 0.0, k2: 0.0 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &BarrelParams { k1: 0.0, k2: 0.0 },
         )
         .unwrap();
         // Uniform image → still uniform after resampling
@@ -350,11 +344,10 @@ mod distortion_effect_tests {
     fn barrel_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = barrel(
+        let result = (BarrelParams { k1: 0.3, k2: 0.0 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &BarrelParams { k1: 0.3, k2: 0.0 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -379,11 +372,10 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let result = barrel(
+        let result = (BarrelParams { k1: 0.5, k2: 0.1 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &BarrelParams { k1: 0.5, k2: 0.1 },
         )
         .unwrap();
         let off = (cy * w as usize + cx) * 3;
@@ -400,11 +392,10 @@ mod distortion_effect_tests {
     fn barrel_gray_works() {
         let pixels = vec![128u8; 32 * 32];
         let info = gray_info(32, 32);
-        let result = barrel(
+        let result = (BarrelParams { k1: 0.3, k2: 0.0 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &BarrelParams { k1: 0.3, k2: 0.0 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -416,7 +407,7 @@ mod distortion_effect_tests {
     fn polar_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = polar(
+        let result = PolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
@@ -434,7 +425,7 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = polar(
+        let result = PolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
@@ -447,7 +438,7 @@ mod distortion_effect_tests {
     fn depolar_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = depolar(
+        let result = DepolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
@@ -479,13 +470,13 @@ mod distortion_effect_tests {
         }
 
         let info = rgb_info(w, h);
-        let polar_result = polar(
+        let polar_result = PolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
         )
         .unwrap();
-        let roundtrip = depolar(
+        let roundtrip = DepolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(polar_result.to_vec()),
             &info,
@@ -524,15 +515,14 @@ mod distortion_effect_tests {
     fn wave_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = wave(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &WaveParams {
+        let result = (WaveParams {
                 amplitude: 0.0,
                 wavelength: 10.0,
                 vertical: 0.0,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -542,15 +532,14 @@ mod distortion_effect_tests {
     fn wave_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &WaveParams {
+        let result = (WaveParams {
                 amplitude: 5.0,
                 wavelength: 20.0,
                 vertical: 0.0,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -560,15 +549,14 @@ mod distortion_effect_tests {
     fn wave_vertical_works() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = wave(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &WaveParams {
+        let result = (WaveParams {
                 amplitude: 5.0,
                 wavelength: 20.0,
                 vertical: 1.0,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -583,15 +571,14 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = wave(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &WaveParams {
+        let result = (WaveParams {
                 amplitude: 3.0,
                 wavelength: 15.0,
                 vertical: 0.0,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -603,16 +590,15 @@ mod distortion_effect_tests {
     fn ripple_zero_amplitude_is_identity() {
         let pixels: Vec<u8> = (0..32 * 32 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(32, 32);
-        let result = ripple(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &RippleParams {
+        let result = (RippleParams {
                 amplitude: 0.0,
                 wavelength: 10.0,
                 center_x: 0.5,
                 center_y: 0.5,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -622,16 +608,15 @@ mod distortion_effect_tests {
     fn ripple_preserves_size() {
         let pixels = vec![128u8; 64 * 64 * 3];
         let info = rgb_info(64, 64);
-        let result = ripple(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &RippleParams {
+        let result = (RippleParams {
                 amplitude: 5.0,
                 wavelength: 20.0,
                 center_x: 0.5,
                 center_y: 0.5,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -657,16 +642,15 @@ mod distortion_effect_tests {
 
         let info = rgb_info(w, h);
         // Small amplitude, long wavelength — near-center pixels barely move
-        let result = ripple(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &RippleParams {
+        let result = (RippleParams {
                 amplitude: 1.0,
                 wavelength: 100.0,
                 center_x: 0.5,
                 center_y: 0.5,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         let center_off = (cy * w as usize + cx) * 3;
@@ -687,16 +671,15 @@ mod distortion_effect_tests {
             format: PixelFormat::Rgba8,
             color_space: ColorSpace::Srgb,
         };
-        let result = ripple(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &RippleParams {
+        let result = (RippleParams {
                 amplitude: 3.0,
                 wavelength: 15.0,
                 center_x: 0.5,
                 center_y: 0.5,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -752,15 +735,14 @@ mod distortion_effect_tests {
         let wavelength = 20.0f32;
 
         let info = rgb_info(w, h);
-        let our_result = wave(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &WaveParams {
+        let our_result = (WaveParams {
                 amplitude,
                 wavelength,
                 vertical: 0.0,
-            },
+            }).compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
 
@@ -829,7 +811,7 @@ mod distortion_effect_tests {
         let info = rgb_info(w, h);
         // IM's -distort Polar produces Cartesian output from polar-mapped source
         // — this matches our `depolar` function, not `polar`.
-        let our_result = depolar(
+        let our_result = DepolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
@@ -899,7 +881,7 @@ mod distortion_effect_tests {
         let info = rgb_info(w, h);
         // IM's -distort DePolar produces polar output from Cartesian source
         // — this matches our `polar` function.
-        let our_result = polar(
+        let our_result = PolarParams{}.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
@@ -963,14 +945,13 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = swirl(
+        let our_result = (SwirlParams {
+                angle: 90.0,
+                radius: 0.0,
+            }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &SwirlParams {
-                angle: 90.0,
-                radius: 0.0,
-            },
         )
         .unwrap();
 
@@ -1032,11 +1013,10 @@ mod distortion_effect_tests {
         let (png_path, pixels) = make_distortion_test_image(w, h);
 
         let info = rgb_info(w, h);
-        let our_result = barrel(
+        let our_result = (BarrelParams { k1: 0.5, k2: 0.1 }).compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &BarrelParams { k1: 0.5, k2: 0.1 },
         )
         .unwrap();
 

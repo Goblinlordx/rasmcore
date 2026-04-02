@@ -456,7 +456,7 @@ fn gpu_cpu_parity_spherize() {
     let config = filters::SpherizeParams { amount: 0.15 };
 
     // CPU path
-    let cpu_output = filters::spherize(rect, &mut |_| Ok(pixels.clone()), &info, &config).unwrap();
+    let cpu_output = config.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
 
     // GPU path
     let node = SpherizeNode::new(0, info.clone(), config.clone());

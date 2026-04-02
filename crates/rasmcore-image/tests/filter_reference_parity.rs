@@ -2060,11 +2060,10 @@ fn mesh_warp_vs_opencv_remap() {
         grid_json: grid_json.clone(),
     };
 
-    let ours = filters::mesh_warp(
+    let ours = config.compute(
         Rect::new(0, 0, w, h),
         &mut |_| Ok(pixels.to_vec()),
         &info,
-        &config,
     )
     .unwrap();
 
@@ -2203,11 +2202,10 @@ fn mesh_warp_analytic_displacement() {
         grid_json,
     };
 
-    let result = filters::mesh_warp(
+    let result = config.compute(
         Rect::new(0, 0, w, h),
         &mut |_| Ok(pixels.to_vec()),
         &info,
-        &config,
     )
     .unwrap();
 
