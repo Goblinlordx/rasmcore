@@ -1,0 +1,98 @@
+id: gpu-buffer-pool_20260402011000Z
+title: GPU buffer pool — pre-allocate max needed buffers and reuse across ops
+type: chore
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Replace per-op buffer allocation in WgpuExecutor with a pool that pre-computes
+    the maximum buffers needed for a given op chain and reuses them across ops and
+    execute() calls. Eliminates redundant GPU allocations for uniform, extra, and
+    staging buffers.
+  context: |
+    The current WgpuExecutor allocates GPU buffers per-op inside the execute() loop.
+    For a 4-op HighPass chain on a 4K image, this creates 9 GPU buffers totaling ~166MB
+    of image-sized data. Uniform and extra buffers (kernel weights) are allocated fresh
+    per-op even when they could be reused. The staging buffer for readback is also
+    created per-execute instead of being cached on the executor.
+  codebase_analysis: |
+    WgpuExecutor (crates/rasmcore-cli/src/gpu_executor.rs):
+    - Ping-pong buf_a/buf_b: allocated per-execute, reused across ops via swap (correct)
+    - Snapshot buffers: allocated per-Snapshot op, stored in HashMap (correct, needed)
+    - Uniform buffers: allocated per-Compute op (~16 bytes each), dropped after op
+    - Extra buffers (kernels, LUTs): allocated per-op, identical data re-uploaded
+      (e.g., HighPass blur_h and blur_v upload the same Gaussian kernel twice)
+    - Staging buffer: allocated at end of execute(), never reused across calls
+    - Shader cache exists (HashMap<u64, ShaderModule>) — same pattern for buffers
+
+    Buffer allocation summary per HighPass (4 ops, 4K):
+      3 image-sized permanent (buf_a, buf_b, staging) = 99.6 MB
+      1 snapshot = 33.2 MB
+      3 uniform buffers (16 bytes each) = 48 bytes
+      2 kernel buffers (identical, ~100 bytes each) = 200 bytes
+      Total: ~133 MB, 9 allocations
+
+    With pooling:
+      3 image-sized (buf_a, buf_b, staging) = cached on executor
+      1 snapshot = per-chain (unavoidable)
+      1 uniform buffer = reused across ops (write new params each time)
+      1 kernel buffer = cached by content hash
+      Total: ~133 MB, 6 allocations (save 3 per chain)
+  acceptance_criteria:
+    - Staging buffer cached on WgpuExecutor, reused across execute() calls
+    - Ping-pong buffers cached and resized only when dimensions change
+    - Uniform buffer allocated once per execute and reused across ops via write_buffer
+    - Extra buffers (kernels, LUTs) cached by content hash, not re-uploaded when identical
+    - No behavioral change — GPU parity tests still pass with identical output
+    - Buffer pool stats logged at debug level (allocations saved, cache hits)
+  out_of_scope: |
+    Cross-node GPU batching (batching consecutive GPU-capable nodes in the graph).
+    GPU-aware tiling for images exceeding max_buffer_size.
+    Snapshot buffer pooling (each snapshot binding needs its own buffer by design).
+    Changing the ping-pong strategy itself.
+  technical_notes: |
+    APPROACH: Cache buffers on WgpuExecutor struct fields, not per-execute locals.
+
+    1. STAGING BUFFER: Add staging_buf cache to WgpuExecutor. On execute(), check if
+       cached staging has buf_size >= needed. If yes, reuse. If no, allocate and cache.
+
+    2. PING-PONG BUFFERS: Same pattern — cache (buf_a, buf_b, cached_buf_size) on
+       the executor. Reallocate only when image dimensions grow.
+
+    3. UNIFORM BUFFER: Pre-scan the op chain to find max params.len(). Allocate one
+       uniform buffer of that size. For each Compute op, write_buffer() with new
+       params (overwriting previous). Uniform buffers are tiny (~16-64 bytes) so
+       one buffer fits all.
+
+    4. EXTRA BUFFER CACHE: Add extra_cache keyed by FNV-1a hash of buffer content
+       (same hash used for shader cache). Before allocating, check cache. HighPass
+       blur_h and blur_v upload identical kernel — cache hit on second upload.
+
+    5. PRE-SCAN: Before the op loop, scan all ops to determine max uniform size,
+       max extra buffers per op, and total snapshot count. This gives the maximum
+       needed at any given time for allocation.
+plan:
+  - phase: Buffer caching on executor
+    tasks:
+      - text: Cache staging buffer on WgpuExecutor — reuse across execute() calls, reallocate only when size grows
+        done: false
+      - text: Cache ping-pong buffers on WgpuExecutor — reallocate only when image dimensions change
+        done: false
+      - text: Pre-scan op chain to determine max uniform size and allocate single reusable uniform buffer
+        done: false
+  - phase: Extra buffer deduplication
+    tasks:
+      - text: Add extra buffer cache (HashMap keyed by content hash) to WgpuExecutor
+        done: false
+      - text: Before allocating extra buffer, check cache by hash — reuse on hit, allocate and cache on miss
+        done: false
+  - phase: Verification
+    tasks:
+      - text: GPU parity tests pass with identical output (no behavioral change)
+        done: false
+      - text: Add unit test verifying buffer reuse — execute same filter twice, verify no new allocations on second call
+        done: false
+      - text: Add debug logging for buffer pool stats (cache hits, allocations saved)
+        done: false
+extra: {}
