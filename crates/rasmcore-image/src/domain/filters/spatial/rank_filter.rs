@@ -38,15 +38,6 @@ impl CpuFilter for RankFilterParams {
         }
         validate_format(info.format)?;
 
-        if is_16bit(info.format) {
-            let cfg = self.clone();
-            return process_via_8bit(pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(px.to_vec());
-                cfg.compute(r, &mut u, i8)
-            });
-        }
-
         let w = info.width as usize;
         let h = info.height as usize;
         let ch = channels(info.format);
@@ -55,49 +46,70 @@ impl CpuFilter for RankFilterParams {
         let window_size = diameter * diameter;
         let rank_clamped = rank.clamp(0.0, 1.0);
 
-        // Target position in sorted order: rank 0.0 → index 0, rank 1.0 → last
+        // Target position in sorted order: rank 0.0 -> index 0, rank 1.0 -> last
         let target = ((window_size - 1) as f32 * rank_clamped).round() as usize;
 
-        let mut out = vec![0u8; pixels.len()];
+        if !is_16bit(info.format) && !is_float(info.format) {
+            // Fast u8 path using histogram sliding window
+            let mut out = vec![0u8; pixels.len()];
+
+            for c in 0..ch {
+                for y in 0..h {
+                    let mut hist = [0u32; 256];
+
+                    for ky in -r..=r {
+                        let sy = reflect(y as i32 + ky, h);
+                        for kx in -r..=r {
+                            let sx = reflect(kx, w);
+                            hist[pixels[(sy * w + sx) * ch + c] as usize] += 1;
+                        }
+                    }
+
+                    out[y * w * ch + c] = find_rank_in_hist(&hist, target);
+
+                    for x in 1..w {
+                        let old_x = x as i32 - r - 1;
+                        for ky in -r..=r {
+                            let sy = reflect(y as i32 + ky, h);
+                            let sx = reflect(old_x, w);
+                            hist[pixels[(sy * w + sx) * ch + c] as usize] -= 1;
+                        }
+
+                        let new_x = x as i32 + r;
+                        for ky in -r..=r {
+                            let sy = reflect(y as i32 + ky, h);
+                            let sx = reflect(new_x, w);
+                            hist[pixels[(sy * w + sx) * ch + c] as usize] += 1;
+                        }
+
+                        out[(y * w + x) * ch + c] = find_rank_in_hist(&hist, target);
+                    }
+                }
+            }
+            return Ok(out);
+        }
+
+        // f32-native path for u16/f16/f32 formats — sorting-based
+        let samples = pixels_to_f32_samples(pixels, info.format);
+        let mut out_samples = vec![0.0f32; samples.len()];
+        let mut window = Vec::with_capacity(window_size);
 
         for c in 0..ch {
             for y in 0..h {
-                let mut hist = [0u32; 256];
-
-                // Initialize histogram for first window in row
-                for ky in -r..=r {
-                    let sy = reflect(y as i32 + ky, h);
-                    for kx in -r..=r {
-                        let sx = reflect(kx, w);
-                        hist[pixels[(sy * w + sx) * ch + c] as usize] += 1;
-                    }
-                }
-
-                // Find rank for first pixel
-                out[y * w * ch + c] = find_rank_in_hist(&hist, target);
-
-                // Slide right
-                for x in 1..w {
-                    // Remove leftmost column
-                    let old_x = x as i32 - r - 1;
+                for x in 0..w {
+                    window.clear();
                     for ky in -r..=r {
                         let sy = reflect(y as i32 + ky, h);
-                        let sx = reflect(old_x, w);
-                        hist[pixels[(sy * w + sx) * ch + c] as usize] -= 1;
+                        for kx in -r..=r {
+                            let sx = reflect(x as i32 + kx, w);
+                            window.push(samples[(sy * w + sx) * ch + c]);
+                        }
                     }
-
-                    // Add rightmost column
-                    let new_x = x as i32 + r;
-                    for ky in -r..=r {
-                        let sy = reflect(y as i32 + ky, h);
-                        let sx = reflect(new_x, w);
-                        hist[pixels[(sy * w + sx) * ch + c] as usize] += 1;
-                    }
-
-                    out[(y * w + x) * ch + c] = find_rank_in_hist(&hist, target);
+                    window.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    out_samples[(y * w + x) * ch + c] = window[target];
                 }
             }
         }
-        Ok(out)
+        Ok(f32_samples_to_pixels(&out_samples, info.format))
     }
 }

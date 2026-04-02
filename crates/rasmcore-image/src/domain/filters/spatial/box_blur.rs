@@ -51,38 +51,32 @@ impl CpuFilter for BoxBlurParams {
             return Ok(pixels.to_vec());
         }
 
-        if is_16bit(info.format) {
-            let cfg = self.clone();
-            let result = process_via_8bit(pixels, info, |p8, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(p8.to_vec());
-                cfg.compute(r, &mut u, i8)
-            })?;
-            return Ok(crop_to_request(&result, expanded, request, info.format));
-        }
-
         let w = info.width as usize;
         let h = info.height as usize;
-        let ch = crate::domain::types::bytes_per_pixel(info.format) as usize;
+        let ch = channels(info.format);
         let r = radius as usize;
-        let diam = (2 * r + 1) as u32;
+        let inv_diam = 1.0 / (2 * r + 1) as f32;
 
-        // Helper: load pixel channels into [u32; 4] (zero-padded for ch < 4)
+        // Convert to f32 samples [0,1] for format-agnostic processing
+        let samples = pixels_to_f32_samples(pixels, info.format);
+        let color_ch = if ch == 4 { 3 } else { ch };
+
+        // Helper: load pixel channels into [f32; 4] (zero-padded for ch < 4)
         #[inline(always)]
-        fn load_pixel(src: &[u8], offset: usize, ch: usize) -> [u32; 4] {
-            let mut p = [0u32; 4];
+        fn load_pixel(src: &[f32], offset: usize, ch: usize) -> [f32; 4] {
+            let mut p = [0.0f32; 4];
             for c in 0..ch.min(4) {
-                p[c] = src[offset + c] as u32;
+                p[c] = src[offset + c];
             }
             p
         }
 
-        // Helper: store [u32; 4] as pixel channels, preserving alpha if RGBA
+        // Helper: store [f32; 4] as pixel channels, preserving alpha if RGBA
         #[inline(always)]
-        fn store_pixel(dst: &mut [u8], offset: usize, vals: [u32; 4], ch: usize, alpha_src: &[u8]) {
-            let color_ch = if ch == 4 { 3 } else { ch }; // skip alpha for RGBA
+        fn store_pixel(dst: &mut [f32], offset: usize, vals: [f32; 4], ch: usize, alpha_src: &[f32]) {
+            let color_ch = if ch == 4 { 3 } else { ch };
             for c in 0..color_ch {
-                dst[offset + c] = vals[c] as u8;
+                dst[offset + c] = vals[c];
             }
             if ch == 4 {
                 dst[offset + 3] = alpha_src[offset + 3]; // preserve alpha
@@ -90,67 +84,66 @@ impl CpuFilter for BoxBlurParams {
         }
 
         // Horizontal pass — running sum across all channels simultaneously
-        let mut hpass = vec![0u8; pixels.len()];
-        let color_ch = if ch == 4 { 3 } else { ch };
+        let mut hpass = vec![0.0f32; samples.len()];
 
         for y in 0..h {
             let row = y * w * ch;
-            let mut sums = [0u32; 4];
+            let mut sums = [0.0f32; 4];
 
             // Initialize sums for first pixel (clamped boundary)
             for k in 0..=r {
                 let sx = k.min(w - 1);
-                let p = load_pixel(pixels, row + sx * ch, color_ch);
+                let p = load_pixel(&samples, row + sx * ch, color_ch);
                 for c in 0..color_ch {
                     sums[c] += p[c];
                 }
             }
             for _ in 0..r {
-                let p = load_pixel(pixels, row, color_ch);
+                let p = load_pixel(&samples, row, color_ch);
                 for c in 0..color_ch {
                     sums[c] += p[c];
                 }
             }
             // Store first pixel
-            let mut mean = [0u32; 4];
+            let mut mean = [0.0f32; 4];
             for c in 0..color_ch {
-                mean[c] = sums[c] / diam;
+                mean[c] = sums[c] * inv_diam;
             }
-            store_pixel(&mut hpass, row, mean, ch, pixels);
+            store_pixel(&mut hpass, row, mean, ch, &samples);
 
             // Slide across row
             for x in 1..w {
                 let add_x = (x + r).min(w - 1);
-                let add = load_pixel(pixels, row + add_x * ch, color_ch);
+                let add = load_pixel(&samples, row + add_x * ch, color_ch);
                 for c in 0..color_ch {
                     sums[c] += add[c];
                 }
 
                 if x <= r {
-                    let sub = load_pixel(pixels, row, color_ch);
+                    let sub = load_pixel(&samples, row, color_ch);
                     for c in 0..color_ch {
                         sums[c] -= sub[c];
                     }
                 } else {
                     let sub_x = x - r - 1;
-                    let sub = load_pixel(pixels, row + sub_x * ch, color_ch);
+                    let sub = load_pixel(&samples, row + sub_x * ch, color_ch);
                     for c in 0..color_ch {
                         sums[c] -= sub[c];
                     }
                 }
 
                 for c in 0..color_ch {
-                    mean[c] = sums[c] / diam;
+                    mean[c] = sums[c] * inv_diam;
                 }
-                store_pixel(&mut hpass, row + x * ch, mean, ch, pixels);
+                store_pixel(&mut hpass, row + x * ch, mean, ch, &samples);
             }
         }
 
         // Vertical pass — running sum down columns, all channels simultaneously
-        let mut out = vec![0u8; pixels.len()];
+        let mut out = vec![0.0f32; samples.len()];
 
         for x in 0..w {
-            let mut sums = [0u32; 4];
+            let mut sums = [0.0f32; 4];
 
             for k in 0..=r {
                 let sy = k.min(h - 1);
@@ -165,9 +158,9 @@ impl CpuFilter for BoxBlurParams {
                     sums[c] += p[c];
                 }
             }
-            let mut mean = [0u32; 4];
+            let mut mean = [0.0f32; 4];
             for c in 0..color_ch {
-                mean[c] = sums[c] / diam;
+                mean[c] = sums[c] * inv_diam;
             }
             store_pixel(&mut out, x * ch, mean, ch, &hpass);
 
@@ -192,13 +185,14 @@ impl CpuFilter for BoxBlurParams {
                 }
 
                 for c in 0..color_ch {
-                    mean[c] = sums[c] / diam;
+                    mean[c] = sums[c] * inv_diam;
                 }
                 store_pixel(&mut out, (y * w + x) * ch, mean, ch, &hpass);
             }
         }
 
-        Ok(crop_to_request(&out, expanded, request, info.format))
+        let result = f32_samples_to_pixels(&out, info.format);
+        Ok(crop_to_request(&result, expanded, request, info.format))
     }
 
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {

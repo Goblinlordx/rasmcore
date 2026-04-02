@@ -62,16 +62,6 @@ impl CpuFilter for SmartSharpenParams {
             return Ok(pixels.to_vec());
         }
 
-        if is_16bit(info.format) {
-            let cfg = self.clone();
-            let result = process_via_8bit(pixels, info, |p8, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(p8.to_vec());
-                cfg.compute(r, &mut u, i8)
-            })?;
-            return Ok(crop_to_request(&result, expanded, request, info.format));
-        }
-
         // Use bilateral filter for edge-preserving blur
         let bilateral_config = BilateralParams {
             diameter: radius * 2 + 1,

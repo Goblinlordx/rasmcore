@@ -105,10 +105,7 @@ pub fn blur_impl(
         return Ok(pixels.to_vec());
     }
 
-    // 16-bit: delegate to 8-bit path via process_via_8bit (convolve only supports u8)
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| blur_impl(p8, i8, config));
-    }
+    // convolve() now handles all formats natively — no downconversion needed
 
     // In the old libblur API, radius was effectively sigma
     let sigma = radius;

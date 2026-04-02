@@ -36,15 +36,6 @@ impl CpuFilter for KuwaharaParams {
         }
         validate_format(info.format)?;
 
-        if is_16bit(info.format) {
-            let cfg = self.clone();
-            return process_via_8bit(pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(px.to_vec());
-                cfg.compute(r, &mut u, i8)
-            });
-        }
-
         let w = info.width as usize;
         let h = info.height as usize;
         let ch = channels(info.format);
@@ -55,13 +46,17 @@ impl CpuFilter for KuwaharaParams {
         let sigma = (radius as f64 - 0.5).max(0.5);
         let blurred_f32 = gaussian_blur_f32(pixels, w, h, ch, radius as usize, sigma);
 
-        let mut out = vec![0u8; pixels.len()];
+        // Convert blurred Q16 data to [0,1] samples for output
+        // gaussian_blur_f32 returns values in Q16 scale (0-65535)
+        let q16_to_unit = 1.0 / 65535.0;
+
+        let mut out_samples = vec![0.0f32; w * h * ch];
         let wi = w as i32;
         let hi = h as i32;
 
         for y in 0..h {
             for x in 0..w {
-                // IM quadrants: 4 non-overlapping regions of size width×width
+                // IM quadrants: 4 non-overlapping regions of size width*width
                 let quadrants: [(i32, i32); 4] = [
                     (x as i32 - width + 1, y as i32 - width + 1), // Q0: top-left
                     (x as i32, y as i32 - width + 1),             // Q1: top-right
@@ -74,11 +69,8 @@ impl CpuFilter for KuwaharaParams {
                 let mut best_cy = y as f64;
 
                 for &(qx, qy) in &quadrants {
-                    // IM computes per-channel mean first, then derives mean_luma from
-                    // the channel means (GetMeanLuma). This differs from computing luma
-                    // per-pixel then averaging, due to floating-point ordering.
                     let n = (width * width) as f64;
-                    let mut mean_ch = [0.0f64; 4]; // max channels
+                    let mut mean_ch = [0.0f64; 4];
                     for ky in 0..width {
                         let sy = (qy + ky).clamp(0, hi - 1) as usize;
                         for kx in 0..width {
@@ -92,14 +84,12 @@ impl CpuFilter for KuwaharaParams {
                     for val in mean_ch.iter_mut().take(ch) {
                         *val /= n;
                     }
-                    // IM: GetMeanLuma — luma from channel means
                     let mean_luma = if ch >= 3 {
                         0.212656 * mean_ch[0] + 0.715158 * mean_ch[1] + 0.072186 * mean_ch[2]
                     } else {
                         mean_ch[0]
                     };
 
-                    // IM: variance = sum((GetPixelLuma(k) - GetMeanLuma(mean))²)
                     let mut variance = 0.0f64;
                     for ky in 0..width {
                         let sy = (qy + ky).clamp(0, hi - 1) as usize;
@@ -120,7 +110,6 @@ impl CpuFilter for KuwaharaParams {
 
                     if variance < min_var {
                         min_var = variance;
-                        // IM: InterpolatePixelChannels at (target.x + width/2.0, target.y + width/2.0)
                         best_cx = qx as f64 + width as f64 / 2.0;
                         best_cy = qy as f64 + width as f64 / 2.0;
                     }
@@ -146,13 +135,12 @@ impl CpuFilter for KuwaharaParams {
                         + p10 * fx * (1.0 - fy)
                         + p01 * (1.0 - fx) * fy
                         + p11 * fx * fy;
-                    // Scale back from Q16 (0-65535) to u8 (0-255)
-                    let v_u8 = v / 257.0;
-                    out[out_off + c] = v_u8.round().clamp(0.0, 255.0) as u8;
+                    // Scale from Q16 (0-65535) to [0,1]
+                    out_samples[out_off + c] = (v * q16_to_unit).clamp(0.0, 1.0);
                 }
             }
         }
 
-        Ok(out)
+        Ok(f32_samples_to_pixels(&out_samples, info.format))
     }
 }

@@ -1,89 +1,103 @@
 id: f32-migrate-filters-wave1_20260403074002Z
-title: "Migrate spatial + distortion filters to native f32 compute"
+title: Migrate spatial + distortion filters to native f32 compute
 type: refactor
 status: pending
 created: '2026-04-03'
-updated: '2026-04-03'
+updated: '2026-04-02'
 spec:
-  summary: |
-    First wave of filter migration to native f32. Remove all process_via_8bit
+  summary: 'First wave of filter migration to native f32. Remove all process_via_8bit
+
     and format branching from spatial and distortion filters. Each filter
+
     becomes a single f32 code path.
-  context: |
-    With the f32 pipeline infra in place, all pixels are Rgba32f. Filters
+
+    '
+  context: 'With the f32 pipeline infra in place, all pixels are Rgba32f. Filters
+
     that still use process_via_8bit get auto-wrapped (f32 to u8 to compute
+
     to u8 to f32) which works but loses precision. This track removes the
+
     wrapper by rewriting each filter to operate on f32 directly.
 
+
     Spatial and distortion filters are the highest-impact category because
+
     they are the most commonly used interactive filters (blur, sharpen,
+
     wave, etc.) and the process_via_8bit wrapper causes visible banding
+
     on gradients.
-  codebase_analysis: |
-    Spatial filters using process_via_8bit (all need migration):
-      blur, sharpen, median, box_blur, average_blur, convolve, high_pass,
-      smart_sharpen, spin_blur, zoom_blur, kuwahara, rank_filter,
-      displacement_map
 
-    Distortion filters using process_via_8bit:
-      wave, swirl, barrel, spherize, ripple, polar, depolar, mesh_warp
-
-    Note: the distortion engine (common/distortion.rs) already supports
-    SampleFormat::F32 via the EWA sampler. The process_via_8bit wrapper
-    in these filters is unnecessary — just removing the 16-bit branch
-    and letting the distortion engine handle f32 natively may be enough.
-
-    Spatial filters need more work — blur, convolve, median all have
-    u8-specific inner loops that need rewriting for f32.
+    '
+  codebase_analysis: "Spatial filters using process_via_8bit (all need migration):\n  blur, sharpen, median, box_blur, average_blur,\
+    \ convolve, high_pass,\n  smart_sharpen, spin_blur, zoom_blur, kuwahara, rank_filter,\n  displacement_map\n\nDistortion\
+    \ filters using process_via_8bit:\n  wave, swirl, barrel, spherize, ripple, polar, depolar, mesh_warp\n\nNote: the distortion\
+    \ engine (common/distortion.rs) already supports\nSampleFormat::F32 via the EWA sampler. The process_via_8bit wrapper\n\
+    in these filters is unnecessary — just removing the 16-bit branch\nand letting the distortion engine handle f32 natively\
+    \ may be enough.\n\nSpatial filters need more work — blur, convolve, median all have\nu8-specific inner loops that need\
+    \ rewriting for f32.\n"
   acceptance_criteria:
-    - All spatial filters compute on f32 samples directly (no u8 conversion)
-    - All distortion filters compute on f32 samples directly
-    - No calls to process_via_8bit in any spatial or distortion filter
-    - Output quality matches or exceeds current output (no banding on gradients)
-    - All existing tests pass
-    - GPU shaders for these filters (where they exist) continue to work
-  out_of_scope: |
-    Effect, enhancement, morphology, and other filter categories (separate wave 2+ tracks).
+  - All spatial filters compute on f32 samples directly (no u8 conversion)
+  - All distortion filters compute on f32 samples directly
+  - No calls to process_via_8bit in any spatial or distortion filter
+  - Output quality matches or exceeds current output (no banding on gradients)
+  - All existing tests pass
+  - GPU shaders for these filters (where they exist) continue to work
+  out_of_scope: 'Effect, enhancement, morphology, and other filter categories (separate wave 2+ tracks).
+
     Writing new GPU shaders (separate tracks).
-  technical_notes: |
-    For distortion filters, the fix may be as simple as removing the
+
+    '
+  technical_notes: 'For distortion filters, the fix may be as simple as removing the
+
     is_16bit/process_via_8bit branch since the underlying apply_distortion
+
     already handles f32 via SampleFormat.
 
+
     For spatial filters, the inner loops need rewriting:
+
     - Instead of pixels[off] as u8, read f32 from bytes
+
     - Accumulate in f32 (already the case for most kernels)
+
     - Write f32 result directly instead of clamping to 0-255
 
+
     The common infrastructure (bytes_to_f32, f32_to_bytes) already exists
+
     in pixel_format.rs for this purpose.
+
+    '
 plan:
-  - phase: "Distortion filters (easy — engine already supports f32)"
-    tasks:
-      - text: "Remove process_via_8bit wrapper from wave, swirl, barrel, spherize, ripple, polar, depolar, mesh_warp"
-        done: false
-      - text: "Verify distortion engine receives f32 input and produces f32 output"
-        done: false
-      - text: "Run existing distortion tests"
-        done: false
-  - phase: "Spatial filters (need inner loop rewrite)"
-    tasks:
-      - text: "Rewrite blur inner loop for f32 samples"
-        done: false
-      - text: "Rewrite convolve/sharpen inner loop for f32 samples"
-        done: false
-      - text: "Rewrite median inner loop for f32 samples"
-        done: false
-      - text: "Migrate remaining spatial filters (box_blur, average_blur, high_pass, smart_sharpen, spin_blur, zoom_blur, kuwahara, rank_filter, displacement_map)"
-        done: false
-      - text: "Run all spatial filter tests"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "No calls to process_via_8bit in spatial/ or distortion/ directories"
-        done: false
-      - text: "All domain tests pass"
-        done: false
-      - text: "WASM component builds"
-        done: false
+- phase: Distortion filters (easy — engine already supports f32)
+  tasks:
+  - text: Remove process_via_8bit wrapper from wave, swirl, barrel, spherize, ripple, polar, depolar, mesh_warp
+    done: true
+  - text: Verify distortion engine receives f32 input and produces f32 output
+    done: true
+  - text: Run existing distortion tests
+    done: true
+- phase: Spatial filters (need inner loop rewrite)
+  tasks:
+  - text: Rewrite blur inner loop for f32 samples
+    done: false
+  - text: Rewrite convolve/sharpen inner loop for f32 samples
+    done: false
+  - text: Rewrite median inner loop for f32 samples
+    done: false
+  - text: Migrate remaining spatial filters (box_blur, average_blur, high_pass, smart_sharpen, spin_blur, zoom_blur, kuwahara,
+      rank_filter, displacement_map)
+    done: false
+  - text: Run all spatial filter tests
+    done: false
+- phase: Verification
+  tasks:
+  - text: No calls to process_via_8bit in spatial/ or distortion/ directories
+    done: false
+  - text: All domain tests pass
+    done: false
+  - text: WASM component builds
+    done: false
 extra: {}

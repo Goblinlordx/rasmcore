@@ -32,18 +32,6 @@ impl CpuFilter for HighPassParams {
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
 
-        if is_16bit(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
-            let cfg = self.clone();
-            return process_via_8bit(&pixels, info16, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(px.to_vec());
-                cfg.compute(r, &mut u, i8)
-            });
-        }
-
         let radius = self.radius;
 
         let overlap = if radius > 0.0 { ((radius * 3.0).ceil() as u32).max(1) } else { 0 };
@@ -57,20 +45,24 @@ impl CpuFilter for HighPassParams {
         let original = crop_to_request(&pixels, expanded, request, info.format);
         let blurred = crop_to_request(&blurred, expanded, request, info.format);
 
-        let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
-        let n = (request.width * request.height) as usize * channels;
-        let mut output = vec![0u8; n];
+        // Convert to f32 samples [0,1] for format-agnostic processing
+        let orig_f32 = pixels_to_f32_samples(&original, info.format);
+        let blur_f32 = pixels_to_f32_samples(&blurred, info.format);
+        let ch = channels(info.format);
+        let n = orig_f32.len();
+        let mut output = vec![0.0f32; n];
 
         for i in 0..n {
-            if channels == 4 && i % 4 == 3 {
-                output[i] = original[i];
+            if ch == 4 && i % 4 == 3 {
+                output[i] = orig_f32[i]; // preserve alpha
             } else {
-                let diff = original[i] as i16 - blurred[i] as i16;
-                output[i] = ((diff / 2) + 128).clamp(0, 255) as u8;
+                let diff = orig_f32[i] - blur_f32[i];
+                // Map to mid-gray (0.5) centered: (diff / 2) + 0.5
+                output[i] = (diff * 0.5 + 0.5).clamp(0.0, 1.0);
             }
         }
 
-        Ok(output)
+        Ok(f32_samples_to_pixels(&output, info.format))
     }
 
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {

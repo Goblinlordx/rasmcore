@@ -122,6 +122,52 @@ pub fn f32_to_bytes(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
+/// Convert any pixel format's byte buffer to f32 channel values.
+///
+/// u8 → [0.0, 1.0], u16 → [0.0, 1.0], f16 → native, f32 → native.
+/// Returns one f32 per channel value. Used by filters that process in f32 natively.
+pub fn pixels_to_f32_samples(pixels: &[u8], format: PixelFormat) -> Vec<f32> {
+    match format {
+        PixelFormat::Rgb8 | PixelFormat::Rgba8 | PixelFormat::Gray8
+        | PixelFormat::Bgr8 | PixelFormat::Bgra8 => {
+            pixels.iter().map(|&v| v as f32 / 255.0).collect()
+        }
+        PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16 => {
+            u16_pixels_to_f32(pixels)
+        }
+        PixelFormat::Rgb16f | PixelFormat::Rgba16f | PixelFormat::Gray16f => {
+            bytes_to_f16(pixels).iter().map(|v| v.to_f32()).collect()
+        }
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f | PixelFormat::Gray32f => {
+            bytes_to_f32(pixels)
+        }
+        _ => pixels.iter().map(|&v| v as f32 / 255.0).collect(),
+    }
+}
+
+/// Convert f32 channel values back to the target pixel format's byte buffer.
+///
+/// Inverse of `pixels_to_f32_samples`. Values are clamped to the valid range.
+pub fn f32_samples_to_pixels(samples: &[f32], format: PixelFormat) -> Vec<u8> {
+    match format {
+        PixelFormat::Rgb8 | PixelFormat::Rgba8 | PixelFormat::Gray8
+        | PixelFormat::Bgr8 | PixelFormat::Bgra8 => {
+            samples.iter().map(|&v| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8).collect()
+        }
+        PixelFormat::Rgb16 | PixelFormat::Rgba16 | PixelFormat::Gray16 => {
+            f32_to_u16_pixels(samples)
+        }
+        PixelFormat::Rgb16f | PixelFormat::Rgba16f | PixelFormat::Gray16f => {
+            let halfs: Vec<half::f16> = samples.iter().map(|&v| half::f16::from_f32(v)).collect();
+            f16_to_bytes(&halfs)
+        }
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f | PixelFormat::Gray32f => {
+            f32_to_bytes(samples)
+        }
+        _ => samples.iter().map(|&v| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8).collect(),
+    }
+}
+
 /// Convert float (f16 or f32) pixel buffer to 8-bit for processing, then back.
 /// Used when an operation only supports 8-bit internally and float input arrives.
 pub fn process_via_standard<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>

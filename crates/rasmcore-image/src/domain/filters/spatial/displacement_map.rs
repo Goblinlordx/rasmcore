@@ -33,14 +33,6 @@ pub fn displacement_map(
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            displacement_map(r, &mut u, i8, map_x, map_y)
-        });
-    }
-
     let w = info.width as usize;
     let h = info.height as usize;
     let ch = channels(info.format);
@@ -57,7 +49,9 @@ pub fn displacement_map(
         )));
     }
 
-    let mut out = vec![0u8; pixels.len()];
+    // Convert to f32 samples [0,1] for format-agnostic processing
+    let samples = pixels_to_f32_samples(pixels, info.format);
+    let mut out = vec![0.0f32; samples.len()];
     let wi = w as i32;
     let hi = h as i32;
 
@@ -68,7 +62,7 @@ pub fn displacement_map(
             let sx = map_x[idx];
             let sy = map_y[idx];
 
-            // Entirely outside the bilinear footprint → 0 (already zeroed)
+            // Entirely outside the bilinear footprint -> 0 (already zeroed)
             if sx < -1.0 || sy < -1.0 || sx >= wi as f32 || sy >= hi as f32 {
                 continue;
             }
@@ -85,10 +79,10 @@ pub fn displacement_map(
             let w01 = (1.0 - fx) * fy;
             let w11 = fx * fy;
 
-            // Inline helper: fetch pixel or 0 if out-of-bounds (BORDER_CONSTANT)
-            let sample = |px: i32, py: i32, c: usize| -> f32 {
+            // Inline helper: fetch sample or 0 if out-of-bounds (BORDER_CONSTANT)
+            let sample_val = |px: i32, py: i32, c: usize| -> f32 {
                 if px >= 0 && px < wi && py >= 0 && py < hi {
-                    pixels[(py as usize * w + px as usize) * ch + c] as f32
+                    samples[(py as usize * w + px as usize) * ch + c]
                 } else {
                     0.0
                 }
@@ -96,14 +90,14 @@ pub fn displacement_map(
 
             let out_off = idx * ch;
             for c in 0..ch {
-                let v = sample(x0, y0, c) * w00
-                    + sample(x1, y0, c) * w10
-                    + sample(x0, y1, c) * w01
-                    + sample(x1, y1, c) * w11;
-                out[out_off + c] = v.round().min(255.0) as u8;
+                let v = sample_val(x0, y0, c) * w00
+                    + sample_val(x1, y0, c) * w10
+                    + sample_val(x0, y1, c) * w01
+                    + sample_val(x1, y1, c) * w11;
+                out[out_off + c] = v;
             }
         }
     }
 
-    Ok(out)
+    Ok(f32_samples_to_pixels(&out, info.format))
 }

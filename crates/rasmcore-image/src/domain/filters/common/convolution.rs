@@ -163,6 +163,70 @@ pub fn convolve_separable(
     Ok(out)
 }
 
+/// Two-pass separable convolution on f32 channel data.
+///
+/// Same algorithm as `convolve_separable` but operates on `&[f32]` channel
+/// values and returns `Vec<f32>`. No u8 conversion — full f32 precision
+/// throughout. Used by the f32 pipeline path.
+pub fn convolve_separable_f32(
+    samples: &[f32],
+    w: usize,
+    h: usize,
+    channels: usize,
+    row_k: &[f32],
+    col_k: &[f32],
+    divisor: f32,
+) -> Result<Vec<f32>, ImageError> {
+    let rw = row_k.len() / 2;
+    let rh = col_k.len() / 2;
+    let pad = rw.max(rh);
+    let inv_div = 1.0 / divisor;
+
+    // Pad input (reflect border)
+    let pw = w + 2 * pad;
+    let ph = h + 2 * pad;
+    let mut padded = vec![0.0f32; pw * ph * channels];
+    for py in 0..ph {
+        let sy = reflect(py as i32 - pad as i32, h);
+        for px in 0..pw {
+            let sx = reflect(px as i32 - pad as i32, w);
+            let src = (sy * w + sx) * channels;
+            let dst = (py * pw + px) * channels;
+            padded[dst..dst + channels].copy_from_slice(&samples[src..src + channels]);
+        }
+    }
+
+    // Pass 1: horizontal convolution → intermediate buffer
+    let mut tmp = vec![0.0f32; ph * w * channels];
+    for y in 0..ph {
+        for x in 0..w {
+            for c in 0..channels {
+                let mut sum = 0.0f32;
+                for kx in 0..row_k.len() {
+                    sum += row_k[kx] * padded[(y * pw + x + pad - rw + kx) * channels + c];
+                }
+                tmp[(y * w + x) * channels + c] = sum;
+            }
+        }
+    }
+
+    // Pass 2: vertical convolution → output
+    let mut out = vec![0.0f32; w * h * channels];
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..channels {
+                let mut sum = 0.0f32;
+                for ky in 0..col_k.len() {
+                    sum += col_k[ky] * tmp[((y + pad - rh + ky) * w + x) * channels + c];
+                }
+                out[(y * w + x) * channels + c] = sum * inv_div;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 /// Generate a 1D Gaussian kernel matching OpenCV's `getGaussianKernel`.
 ///
 /// `k[i] = exp(-0.5 * ((i - center) / sigma)^2)`, normalized to sum=1.

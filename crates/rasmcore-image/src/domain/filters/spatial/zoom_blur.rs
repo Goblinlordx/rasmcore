@@ -36,22 +36,15 @@ impl CpuFilter for ZoomBlurParams {
             return Ok(pixels.to_vec());
         }
 
-        if is_16bit(info.format) {
-            let cfg = self.clone();
-            return process_via_8bit(pixels, info, |p8, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(p8.to_vec());
-                cfg.compute(r, &mut u, i8)
-            });
-        }
-
         let w = info.width as usize;
         let h = info.height as usize;
         let ch = channels(info.format);
         let cx = self.center_x * w as f32;
         let cy = self.center_y * h as f32;
 
-        let mut out = vec![0u8; w * h * ch];
+        // Convert to f32 samples [0,1] for format-agnostic processing
+        let samples = pixels_to_f32_samples(pixels, info.format);
+        let mut out = vec![0.0f32; w * h * ch];
 
         for py in 0..h {
             for px in 0..w {
@@ -86,10 +79,10 @@ impl CpuFilter for ZoomBlurParams {
                     let y1 = ((fy as i32) + 1).clamp(0, h as i32 - 1) as usize;
 
                     for c in 0..ch {
-                        let p00 = pixels[(y0 * w + x0) * ch + c] as f32;
-                        let p10 = pixels[(y0 * w + x1) * ch + c] as f32;
-                        let p01 = pixels[(y1 * w + x0) * ch + c] as f32;
-                        let p11 = pixels[(y1 * w + x1) * ch + c] as f32;
+                        let p00 = samples[(y0 * w + x0) * ch + c];
+                        let p10 = samples[(y0 * w + x1) * ch + c];
+                        let p01 = samples[(y1 * w + x0) * ch + c];
+                        let p11 = samples[(y1 * w + x1) * ch + c];
                         let mix0 = dy * (p01 - p00) + p00;
                         let mix1 = dy * (p11 - p10) + p10;
                         accum[c] += dx * (mix1 - mix0) + mix0;
@@ -101,12 +94,12 @@ impl CpuFilter for ZoomBlurParams {
 
                 let dst = (py * w + px) * ch;
                 for c in 0..ch {
-                    out[dst + c] = (accum[c] * inv_len + 0.5).clamp(0.0, 255.0) as u8;
+                    out[dst + c] = accum[c] * inv_len;
                 }
             }
         }
 
-        Ok(out)
+        Ok(f32_samples_to_pixels(&out, info.format))
     }
 }
 

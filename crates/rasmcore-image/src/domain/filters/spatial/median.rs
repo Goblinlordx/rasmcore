@@ -45,25 +45,46 @@ impl CpuFilter for MedianParams {
         }
         validate_format(info.format)?;
 
-        if is_16bit(info.format) {
-            let cfg = self.clone();
-            let result = process_via_8bit(pixels, info, |p8, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(p8.to_vec());
-                cfg.compute(r, &mut u, i8)
-            })?;
+        let w = info.width as usize;
+        let h = info.height as usize;
+        let ch = channels(info.format);
+
+        if !is_16bit(info.format) && !is_float(info.format) {
+            // Fast u8 path using histogram/sort
+            let result = if radius <= 2 {
+                median_sort(pixels, w, h, ch, radius)?
+            } else {
+                median_histogram(pixels, w, h, ch, radius)?
+            };
             return Ok(crop_to_request(&result, expanded, request, info.format));
         }
 
-        let w = info.width as usize;
-        let h = info.height as usize;
-        let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
+        // f32-native path for u16/f16/f32 formats
+        let samples = pixels_to_f32_samples(pixels, info.format);
+        let r = radius as i32;
+        let window_size = ((2 * r + 1) * (2 * r + 1)) as usize;
+        let median_pos = window_size / 2;
+        let mut out_samples = vec![0.0f32; samples.len()];
+        let mut window = Vec::with_capacity(window_size);
 
-        let result = if radius <= 2 {
-            median_sort(pixels, w, h, channels, radius)?
-        } else {
-            median_histogram(pixels, w, h, channels, radius)?
-        };
+        for y in 0..h {
+            for x in 0..w {
+                for c in 0..ch {
+                    window.clear();
+                    for ky in -r..=r {
+                        let sy = reflect(y as i32 + ky, h);
+                        for kx in -r..=r {
+                            let sx = reflect(x as i32 + kx, w);
+                            window.push(samples[(sy * w + sx) * ch + c]);
+                        }
+                    }
+                    window.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    out_samples[(y * w + x) * ch + c] = window[median_pos];
+                }
+            }
+        }
+
+        let result = f32_samples_to_pixels(&out_samples, info.format);
         Ok(crop_to_request(&result, expanded, request, info.format))
     }
 
