@@ -1,6 +1,6 @@
 title: Refactor decoder + encoder dispatch to registry pattern — eliminate hardcoded
   if/else chains
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-02'
