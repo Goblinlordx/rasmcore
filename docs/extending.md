@@ -14,12 +14,14 @@ and building external plugin crates.
 4. [Point Operations vs Spatial Operations](#point-operations-vs-spatial-operations) (includes PointOp trait for LUT fusion)
 5. [Adding a Decoder](#adding-a-decoder)
 6. [Adding an Encoder](#adding-an-encoder)
-7. [Adding Generators, Compositors, and Mappers](#adding-generators-compositors-and-mappers)
-8. [Pipeline Integration](#pipeline-integration)
-9. [Generated Files — DO NOT EDIT](#generated-files--do-not-edit)
-10. [External Crates / Plugin Model](#external-crates--plugin-model)
-11. [Reference Validation](#reference-validation)
-12. [PRNG Requirement](#prng-requirement)
+7. [Adding a LUT Encoder](#adding-a-lut-encoder)
+8. [Adding a LUT Decoder](#adding-a-lut-decoder)
+9. [Adding Generators, Compositors, and Mappers](#adding-generators-compositors-and-mappers)
+10. [Pipeline Integration](#pipeline-integration)
+11. [Generated Files — DO NOT EDIT](#generated-files--do-not-edit)
+12. [External Crates / Plugin Model](#external-crates--plugin-model)
+13. [Reference Validation](#reference-validation)
+14. [PRNG Requirement](#prng-requirement)
 
 ---
 
@@ -530,6 +532,188 @@ pub struct StaticEncoderRegistration {
 - Output: `Result<Vec<u8>, ImageError>` containing encoded bytes
 - Must validate roundtrip: encode → decode → compare
 - Must validate against reference encoders (see `encoder-params.md`)
+
+---
+
+## Adding a LUT Encoder
+
+LUT encoders convert a `ColorLut3D` to a file format (`.cube`, `.3dl`,
+`.csp`, Hald CLUT). They use a separate registry from image encoders
+because they operate on color lookup tables, not pixel buffers.
+
+### Step 1: Create the encoder module
+
+Create a new file in `crates/rasmcore-image/src/domain/encoder/`:
+
+```rust
+// encoder/lutspi3d.rs
+
+use crate::domain::color_lut::ColorLut3D;
+use crate::domain::error::ImageError;
+
+pub fn encode(lut: &ColorLut3D) -> Result<Vec<u8>, ImageError> {
+    // Convert ColorLut3D to your format's byte representation.
+    // lut.grid_size gives the grid dimension (e.g., 33).
+    // lut.data contains grid_size³ entries of [f32; 3] in [0.0, 1.0].
+    // Storage order: data[b * grid_size² + g * grid_size + r].
+    let mut out = String::new();
+    out.push_str(&format!("SPILUT 1.0\n3 3\n{s} {s} {s}\n", s = lut.grid_size));
+    for entry in &lut.data {
+        out.push_str(&format!("{:.6} {:.6} {:.6}\n", entry[0], entry[1], entry[2]));
+    }
+    Ok(out.into_bytes())
+}
+```
+
+### Step 2: Register with `inventory::submit!`
+
+At the bottom of your encoder module, register the encoder:
+
+```rust
+inventory::submit! {
+    &crate::domain::encoder::StaticLutEncoderRegistration {
+        format: "spi3d",
+        extensions: &["spi3d"],
+        encode_fn: encode,
+    }
+}
+```
+
+The `StaticLutEncoderRegistration` struct has three fields:
+
+| Field       | Type                                                    | Description |
+|-------------|---------------------------------------------------------|-------------|
+| `format`    | `&'static str`                                          | Format identifier (e.g., `"spi3d"`) |
+| `extensions`| `&'static [&'static str]`                               | File extensions (e.g., `&["spi3d"]`) |
+| `encode_fn` | `fn(&ColorLut3D) -> Result<Vec<u8>, ImageError>`        | Encode function |
+
+### Step 3: Add `pub mod` to `encoder/mod.rs`
+
+```rust
+pub mod lutspi3d;
+```
+
+### Step 4: Rebuild
+
+```bash
+cargo build -p rasmcore-image
+```
+
+Pipeline integration is automatic — `encoder::is_lut_format()` checks the
+registry, so the pipeline short-circuit in `sink.rs` will recognize your
+format. When the output format matches a registered LUT encoder, the
+pipeline bypasses pixel execution entirely: it extracts the fused
+`ColorLut3D` from all color operations and encodes directly. This means
+LUT-to-LUT transforms cost O(grid_size³) instead of O(width × height).
+
+### Existing LUT encoders
+
+| Format | Module | Output |
+|--------|--------|--------|
+| `.cube` | `encoder/cube.rs` | Text: `LUT_3D_SIZE` header + float triplets |
+| `.3dl` | `encoder/lut3dl.rs` | Text: 10-bit integer triplets, no header |
+| `.csp` | `encoder/lutcsp.rs` | Text: `CSPLUTV100` header + preLUT + float triplets |
+| Hald CLUT | `encoder/hald.rs` | PNG image: RGB8 square image via `serialize_hald()` |
+
+---
+
+## Adding a LUT Decoder
+
+LUT decoders parse file bytes into a `ColorLut3D`. They do not use the
+`register_decoder` macro — instead they integrate via format detection in
+`decoder/mod.rs` and parse functions in `color_lut.rs`.
+
+### Step 1: Add a parse function to `color_lut.rs`
+
+```rust
+// In crates/rasmcore-image/src/domain/color_lut.rs
+
+pub fn parse_spi3d(text: &str) -> Result<ColorLut3D, ImageError> {
+    // 1. Parse the header to get grid_size
+    // 2. Parse grid_size³ float triplets into Vec<[f32; 3]>
+    // 3. Validate entry count matches grid_size³
+    // 4. Return ColorLut3D { grid_size, data }
+
+    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+    // Parse header...
+    let grid_size = /* parse from header */;
+
+    let expected = grid_size * grid_size * grid_size;
+    let mut data = Vec::with_capacity(expected);
+    for line in lines {
+        let parts: Vec<f32> = line.split_whitespace()
+            .map(|s| s.parse().map_err(|_| ImageError::InvalidData("bad float".into())))
+            .collect::<Result<_, _>>()?;
+        if parts.len() >= 3 {
+            data.push([parts[0], parts[1], parts[2]]);
+        }
+    }
+    if data.len() != expected {
+        return Err(ImageError::InvalidData(
+            format!("expected {} entries, got {}", expected, data.len()),
+        ));
+    }
+    Ok(ColorLut3D { grid_size, data })
+}
+```
+
+### Step 2: Add format detection in `decoder/mod.rs`
+
+Add a detection function and wire it into `detect_format()`:
+
+```rust
+// Detection function — checks magic bytes or header keywords
+fn is_spi3d_lut(data: &[u8]) -> bool {
+    let check_len = data.len().min(256);
+    if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
+        text.trim_start().starts_with("SPILUT")
+    } else {
+        false
+    }
+}
+
+// In detect_format(), add before the final None:
+if is_spi3d_lut(header) {
+    return Some("spi3d".to_string());
+}
+```
+
+### Step 3: Add a decode convenience function
+
+```rust
+// In decoder/mod.rs
+pub fn decode_spi3d(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageError> {
+    let text = std::str::from_utf8(data)
+        .map_err(|_| ImageError::InvalidData("not valid UTF-8".into()))?;
+    super::color_lut::parse_spi3d(text)
+}
+```
+
+### Step 4: Pipeline integration
+
+LUT files enter the pipeline via `NodeGraph::add_clut_source()`:
+
+```rust
+let clut = decoder::decode_spi3d(bytes)?;
+let source_id = graph.add_clut_source(clut);
+```
+
+This creates a `FusedClutNode` — a source node with no upstream pixels.
+The CLUT participates in color operation fusion and can be written to
+any LUT format via the pipeline short-circuit.
+
+### Detection patterns for common LUT formats
+
+| Format | Detection method |
+|--------|-----------------|
+| `.cube` | UTF-8 text contains `LUT_3D_SIZE` in first 1024 bytes |
+| `.csp` | UTF-8 text starts with `CSPLUTV100` in first 64 bytes |
+| `.3dl` | Heuristic: space-separated integer triplets, no alphabetic chars |
+| Hald CLUT | Detected as PNG image; identified by square dimensions where `∛(dimension)` is integer |
+
+Text-based formats with a unique header keyword are straightforward.
+Formats without a magic header (like `.3dl`) require heuristic detection
+— check for structural patterns in the first few lines.
 
 ---
 
