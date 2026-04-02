@@ -1,5 +1,6 @@
 //! Generate CLI dispatch function — maps filter/mapper name + string params to typed node construction.
 
+use crate::parse::transforms::TransformReg;
 use crate::types::{FilterReg, MapperReg};
 use std::collections::HashSet;
 
@@ -13,7 +14,7 @@ use super::helpers::to_pascal_case;
 ///
 /// `gpu_capable_nodes` is the set of node names (e.g., "BlurNode") that have
 /// `GpuCapable` impls. For these, the dispatch creates a second instance for GPU registration.
-pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], gpu_capable_nodes: &HashSet<String>) -> String {
+pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], transforms: &[TransformReg], gpu_capable_nodes: &HashSet<String>) -> String {
     let mut code = String::new();
     code.push_str(
         "// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n",
@@ -21,8 +22,12 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], gpu_capable_nodes:
     code.push_str("// Do not edit — regenerated from #[register_filter] annotations.\n\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::graph::ImageNode;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::nodes::filters;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::nodes::transform;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::nodes::color;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::nodes::composite;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::filters as domain_filters;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::types::ImageInfo;\n");
+    code.push_str("#[allow(unused_imports)] use crate::domain::types::*;\n");
     code.push_str("#[allow(unused_imports)] use rasmcore_pipeline::GpuCapable;\n");
     code.push_str("#[allow(unused_imports)] use std::collections::HashMap;\n\n");
 
@@ -236,6 +241,79 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], gpu_capable_nodes:
         ));
     }
 
+    // Transform dispatch arms — single-input transforms dispatched by name
+    for t in transforms {
+        if t.multi_input {
+            continue; // skip composite — needs separate multi-input API
+        }
+        let node_name = &t.node_type;
+        let module = &t.node_module;
+
+        let mut param_args = Vec::new();
+        for (pname, ptype) in &t.params {
+            let clean_name = pname.trim_start_matches('_');
+            let getter = match ptype.as_str() {
+                "f32" => format!("get_f32(params, \"{clean_name}\", 0.0)"),
+                "u32" => format!("get_u32(params, \"{clean_name}\", 0)"),
+                "i32" => format!("get_i32(params, \"{clean_name}\", 0)"),
+                "bool" => format!("get_bool(params, \"{clean_name}\", false)"),
+                "FlipDirection" => format!(
+                    "match get_string(params, \"{clean_name}\", \"horizontal\").as_str() {{ \
+                        \"vertical\" | \"v\" | \"1\" => FlipDirection::Vertical, \
+                        _ => FlipDirection::Horizontal }}"
+                ),
+                "Rotation" => format!(
+                    "match get_u32(params, \"{clean_name}\", 90) {{ \
+                        180 => Rotation::R180, \
+                        270 => Rotation::R270, \
+                        _ => Rotation::R90 }}"
+                ),
+                "ResizeFilter" => format!(
+                    "match get_string(params, \"{clean_name}\", \"lanczos3\").as_str() {{ \
+                        \"nearest\" => ResizeFilter::Nearest, \
+                        \"bilinear\" => ResizeFilter::Bilinear, \
+                        \"bicubic\" => ResizeFilter::Bicubic, \
+                        _ => ResizeFilter::Lanczos3 }}"
+                ),
+                "ExifOrientation" => format!(
+                    "match get_u32(params, \"{clean_name}\", 1) {{ \
+                        2 => crate::domain::metadata::ExifOrientation::FlipHorizontal, \
+                        3 => crate::domain::metadata::ExifOrientation::Rotate180, \
+                        4 => crate::domain::metadata::ExifOrientation::FlipVertical, \
+                        5 => crate::domain::metadata::ExifOrientation::Transpose, \
+                        6 => crate::domain::metadata::ExifOrientation::Rotate90, \
+                        7 => crate::domain::metadata::ExifOrientation::Transverse, \
+                        8 => crate::domain::metadata::ExifOrientation::Rotate270, \
+                        _ => crate::domain::metadata::ExifOrientation::Normal }}"
+                ),
+                "Vec<u8>" => format!("Vec::new() /* {clean_name}: binary data not supported via string params */"),
+                _ => {
+                    // Unknown enum or complex type — try f32 fallback
+                    format!("get_f32(params, \"{clean_name}\", 0.0)")
+                }
+            };
+            param_args.push(getter);
+        }
+
+        let args_joined = if param_args.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", param_args.join(", "))
+        };
+
+        if t.fallible {
+            code.push_str(&format!(
+                "        \"{}\" => {module}::{node_name}::new(upstream, info{args_joined}).map(|n| (Box::new(n) as Box<dyn ImageNode>, None)).map_err(|e| e.to_string()),\n",
+                t.name
+            ));
+        } else {
+            code.push_str(&format!(
+                "        \"{}\" => Ok((Box::new({module}::{node_name}::new(upstream, info{args_joined})), None)),\n",
+                t.name
+            ));
+        }
+    }
+
     code.push_str("        _ => Err(format!(\"Unknown filter: {name}\")),\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");
@@ -287,6 +365,26 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], gpu_capable_nodes:
         ));
     }
 
+    // Include transforms in the list
+    for t in transforms {
+        if t.multi_input {
+            continue;
+        }
+        let params_array: Vec<String> = t
+            .params
+            .iter()
+            .map(|(n, t)| {
+                let clean = n.trim_start_matches('_');
+                format!("(\"{clean}\", \"{}\")", t)
+            })
+            .collect();
+        code.push_str(&format!(
+            "        FilterMeta {{ name: \"{}\", category: \"transform\", params: &[{}] }},\n",
+            t.name,
+            params_array.join(", ")
+        ));
+    }
+
     code.push_str("    ]\n");
     code.push_str("}\n");
 
@@ -313,7 +411,7 @@ mod tests {
             color_op: false,
         }];
 
-        let code = generate(&filters, &[]);
+        let code = generate(&filters, &[], &[], &HashSet::new());
         assert!(code.contains("\"blur\" => Ok(Box::new("));
         assert!(code.contains("BlurNode::new"));
         assert!(code.contains("get_f32(params, \"radius\""));
@@ -335,7 +433,7 @@ mod tests {
             output_format: Some("Gray8".to_string()),
         }];
 
-        let code = generate(&[], &mappers);
+        let code = generate(&[], &mappers, &[], &HashSet::new());
         assert!(code.contains("\"grayscale\" => Ok(Box::new("));
         assert!(code.contains("GrayscaleMapperNode::new"));
     }

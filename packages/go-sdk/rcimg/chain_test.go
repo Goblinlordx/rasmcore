@@ -12,8 +12,7 @@ func TestFluentIdentity(t *testing.T) {
 		t.Skip("RASMCORE_WASM_PATH not set; skipping integration test")
 	}
 
-	// Force WASM backend — FFI dispatch doesn't yet handle transforms (flip)
-	pipe, err := NewPipeline(Options{WASMPath: wasmPath, ForceWASM: true})
+	pipe, err := NewPipeline(Options{WASMPath: wasmPath})
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}

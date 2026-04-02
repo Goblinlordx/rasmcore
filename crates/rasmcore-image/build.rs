@@ -402,6 +402,16 @@ fn main() {
             data.transforms.len(),
             data.encoders.len(),
         );
+
+        // Regenerate CLI dispatch with transforms included
+        let cli_dispatch = rasmcore_codegen::generate::cli_dispatch::generate(
+            &data.filters, &data.mappers, &data.transforms, &data.gpu_capable_nodes,
+        );
+        std::fs::write(out_dir.join("generated_cli_dispatch.rs"), &cli_dispatch).unwrap();
+        eprintln!(
+            "rasmcore build.rs: Regenerated CLI dispatch with {} transform(s)",
+            data.transforms.len(),
+        );
     }
 
     // ── Generate WIT from template ──
