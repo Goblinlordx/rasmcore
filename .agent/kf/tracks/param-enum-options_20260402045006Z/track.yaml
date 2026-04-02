@@ -5,77 +5,67 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Extend #[param] attribute to support per-option descriptions for enum/choice
+  summary: 'Extend #[param] attribute to support per-option descriptions for enum/choice
+
     parameters, so the manifest and UI can display rich info about each choice.
-  context: |
-    Filters with method/mode parameters (e.g., colorize method: "w3c" vs "lab")
+
+    '
+  context: 'Filters with method/mode parameters (e.g., colorize method: "w3c" vs "lab")
+
     need user-facing descriptions explaining how each option behaves differently.
+
     Currently the manifest emits bare value strings with no descriptions.
 
+
     This is needed before colorize can expose a method parameter with
+
     meaningful documentation about the W3C vs CIELAB approaches.
-  codebase_analysis: |
-    Current param infrastructure:
-    - #[param(min, max, step, default, hint)] on struct fields
-    - Doc comments (///) become "label" in manifest
-    - hint = "rc.enum" tells UI to render dropdown
-    - ParamField struct in codegen/types.rs has: name, type, min, max, step,
-      default_val, label, hint
-    - Manifest generation in codegen/generate/manifest.rs emits field_to_json()
 
-    What needs to change:
-    1. Add options field to ParamField (Vec of {value, description})
-    2. Parse #[param(options = "val1:desc1,val2:desc2")] or a cleaner syntax
-    3. Emit "options" array in manifest JSON
-    4. Update param-hints.md style guide
-
-    Files affected:
-    - crates/rasmcore-codegen/src/types.rs (ParamField struct)
-    - crates/rasmcore-codegen/src/parse/mod.rs (parse #[param] options)
-    - crates/rasmcore-codegen/src/generate/manifest.rs (emit options in JSON)
-    - crates/rasmcore-macros/ (ConfigParams derive macro — parse new attr)
-    - .agent/kf/code_styleguides/param-hints.md (document the new attribute)
+    '
+  codebase_analysis: "Current param infrastructure:\n- #[param(min, max, step, default, hint)] on struct fields\n- Doc comments\
+    \ (///) become \"label\" in manifest\n- hint = \"rc.enum\" tells UI to render dropdown\n- ParamField struct in codegen/types.rs\
+    \ has: name, type, min, max, step,\n  default_val, label, hint\n- Manifest generation in codegen/generate/manifest.rs\
+    \ emits field_to_json()\n\nWhat needs to change:\n1. Add options field to ParamField (Vec of {value, description})\n2.\
+    \ Parse #[param(options = \"val1:desc1,val2:desc2\")] or a cleaner syntax\n3. Emit \"options\" array in manifest JSON\n\
+    4. Update param-hints.md style guide\n\nFiles affected:\n- crates/rasmcore-codegen/src/types.rs (ParamField struct)\n\
+    - crates/rasmcore-codegen/src/parse/mod.rs (parse #[param] options)\n- crates/rasmcore-codegen/src/generate/manifest.rs\
+    \ (emit options in JSON)\n- crates/rasmcore-macros/ (ConfigParams derive macro — parse new attr)\n- .agent/kf/code_styleguides/param-hints.md\
+    \ (document the new attribute)\n"
   acceptance_criteria:
-    - '#[param(options = "...")]' syntax parsed by ConfigParams derive macro
-    - ParamField carries options as Vec<(String, String)>
-    - param-manifest.json emits options array with value + description per entry
-    - Existing filters without options are unaffected (backwards compatible)
-    - At least one filter uses the new options syntax (colorize method is the target consumer)
-    - param-hints.md updated with options documentation
-  out_of_scope: |
-    UI rendering of option descriptions (separate frontend concern).
+  - param(options) syntax parsed by ConfigParams derive macro
+  - ParamField carries options as Vec<(String, String)>
+  - param-manifest.json emits options array with value + description per entry
+  - Existing filters without options are unaffected (backwards compatible)
+  - At least one filter uses the new options syntax (colorize method is the target consumer)
+  - param-hints.md updated with options documentation
+  out_of_scope: 'UI rendering of option descriptions (separate frontend concern).
+
     Validation that param values match declared options at runtime.
-  technical_notes: |
-    Proposed syntax (inline, simple):
-      #[param(default = "w3c", hint = "rc.enum",
-              options = "w3c:PS/W3C standard|lab:CIELAB perceptual")]
-    Using | as separator (not comma) to avoid conflicts with description text.
 
-    Alternative (more verbose but cleaner):
-      #[param_option(value = "w3c", description = "PS/W3C standard...")]
-      #[param_option(value = "lab", description = "CIELAB perceptual...")]
-    This is more Rust-idiomatic but requires parsing multiple attributes.
-
-    Recommend the inline syntax for simplicity — it matches the existing
-    #[param] pattern and doesn't require new attribute registration.
+    '
+  technical_notes: "Proposed syntax (inline, simple):\n  #[param(default = \"w3c\", hint = \"rc.enum\",\n          options\
+    \ = \"w3c:PS/W3C standard|lab:CIELAB perceptual\")]\nUsing | as separator (not comma) to avoid conflicts with description\
+    \ text.\n\nAlternative (more verbose but cleaner):\n  #[param_option(value = \"w3c\", description = \"PS/W3C standard...\"\
+    )]\n  #[param_option(value = \"lab\", description = \"CIELAB perceptual...\")]\nThis is more Rust-idiomatic but requires\
+    \ parsing multiple attributes.\n\nRecommend the inline syntax for simplicity — it matches the existing\n#[param] pattern\
+    \ and doesn't require new attribute registration.\n"
 plan:
-  - phase: Codegen infrastructure
-    tasks:
-      - text: Add options field to ParamField in types.rs
-        done: false
-      - text: Parse options from #[param(options = "...")] in ConfigParams derive macro
-        done: false
-      - text: Emit options array in manifest.rs field_to_json()
-        done: false
-  - phase: Validation
-    tasks:
-      - text: Add test for param with options in codegen test suite
-        done: false
-      - text: Verify existing param-manifest.json is unchanged for filters without options
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Update param-hints.md with options syntax and examples
-        done: false
+- phase: Codegen infrastructure
+  tasks:
+  - text: Add options field to ParamField in types.rs
+    done: true
+  - text: Parse options from
+    done: true
+  - text: Emit options array in manifest.rs field_to_json()
+    done: true
+- phase: Validation
+  tasks:
+  - text: Add test for param with options in codegen test suite
+    done: true
+  - text: Verify existing param-manifest.json is unchanged for filters without options
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Update param-hints.md with options syntax and examples
+    done: true
 extra: {}
