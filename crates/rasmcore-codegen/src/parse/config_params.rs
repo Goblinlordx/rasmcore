@@ -321,4 +321,42 @@ mod tests {
         assert_eq!(fields[0].hint, "rc.color_rgb");
         assert_eq!(fields[3].name, "amount");
     }
+
+    #[test]
+    fn parse_param_with_options() {
+        let source = r#"
+            #[derive(ConfigParams)]
+            pub struct ColorizeParams {
+                /// Colorize method
+                #[param(default = "w3c", hint = "rc.enum", options = "w3c:PS/W3C standard|lab:CIELAB perceptual")]
+                pub method: String,
+            }
+        "#;
+        let file = syn::parse_file(source).unwrap();
+        let structs = extract_config_params(&file);
+        let fields = structs.get("ColorizeParams").unwrap();
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "method");
+        assert_eq!(fields[0].hint, "rc.enum");
+        assert_eq!(fields[0].options.len(), 2);
+        assert_eq!(fields[0].options[0].0, "w3c");
+        assert_eq!(fields[0].options[0].1, "PS/W3C standard");
+        assert_eq!(fields[0].options[1].0, "lab");
+        assert_eq!(fields[0].options[1].1, "CIELAB perceptual");
+    }
+
+    #[test]
+    fn parse_param_without_options_has_empty_vec() {
+        let source = r#"
+            #[derive(ConfigParams)]
+            pub struct BlurParams {
+                #[param(min = 0.0, max = 100.0, default = 3.0)]
+                pub radius: f32,
+            }
+        "#;
+        let file = syn::parse_file(source).unwrap();
+        let structs = extract_config_params(&file);
+        let fields = structs.get("BlurParams").unwrap();
+        assert!(fields[0].options.is_empty());
+    }
 }

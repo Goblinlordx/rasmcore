@@ -181,4 +181,31 @@ mod tests {
         assert_eq!(attr.min, Some(LitValue::Int(0)));
         assert_eq!(attr.max, Some(LitValue::Int(255)));
     }
+
+    #[test]
+    fn parse_options() {
+        let attr = parse_param(
+            r#"default = "w3c", hint = "rc.enum", options = "w3c:PS/W3C standard|lab:CIELAB perceptual""#,
+        );
+        assert_eq!(attr.default, Some(LitValue::Str("w3c".to_string())));
+        assert_eq!(attr.hint.as_deref(), Some("rc.enum"));
+        assert_eq!(
+            attr.options.as_deref(),
+            Some("w3c:PS/W3C standard|lab:CIELAB perceptual")
+        );
+    }
+
+    #[test]
+    fn parse_options_string_helper() {
+        let opts = super::parse_options_string("w3c:PS/W3C standard|lab:CIELAB perceptual");
+        assert_eq!(opts.len(), 2);
+        assert_eq!(opts[0], ("w3c".to_string(), "PS/W3C standard".to_string()));
+        assert_eq!(opts[1], ("lab".to_string(), "CIELAB perceptual".to_string()));
+    }
+
+    #[test]
+    fn parse_options_string_empty() {
+        let opts = super::parse_options_string("");
+        assert!(opts.is_empty());
+    }
 }
