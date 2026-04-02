@@ -1721,3 +1721,612 @@ fn close_color_balance_preserve_luminosity_against_numpy() {
         1.0,
     );
 }
+
+// ─── High-Pass Filter ─────────────────────────────────────────────────────
+//
+// Reference: numpy arithmetic on scipy.ndimage.gaussian_filter output.
+// high_pass = clamp((original - gaussian_filter(original, sigma)) / 2 + 128, 0, 255)
+// Our blur uses sigma = radius directly.
+
+#[test]
+fn high_pass_vs_numpy() {
+    let w = 32u32;
+    let h = 32;
+    let radius = 4.0f32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let ours = filters::high_pass(
+        Rect::new(0, 0, w, h),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::HighPassParams { radius },
+    )
+    .unwrap();
+
+    // Python reference: (original - gaussian_filter(original, sigma)) / 2 + 128
+    let script = format!(
+        r#"
+import sys, numpy as np
+from scipy.ndimage import gaussian_filter
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w},3).astype(np.float64)
+blurred = np.zeros_like(px)
+for c in range(3):
+    blurred[:,:,c] = gaussian_filter(px[:,:,c], sigma={radius}, mode='nearest')
+hp = np.clip(np.floor((px - blurred) / 2.0) + 128.0, 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(hp.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'scipy'") {
+            eprintln!("  high_pass_vs_numpy: SKIP (scipy not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+    let reference = output.stdout;
+
+    // Border mode differences (libblur vs scipy) cause edge-region divergence.
+    // The formula itself is exact, so interior should be very close.
+    let mae = mean_absolute_error(&ours, &reference);
+    let max_err = max_absolute_error(&ours, &reference);
+    eprintln!("  high_pass vs numpy: MAE={mae:.4}, max_err={max_err}");
+    assert!(
+        mae < 2.0,
+        "high_pass: MAE={mae:.4} too high vs numpy (expected < 2.0, border diffs)"
+    );
+}
+
+// ─── LAB Channel Operations ──────────────────────────────────────────────
+//
+// Reference: skimage.color.rgb2lab (D65 illuminant, sRGB gamma).
+// Our rgb_to_lab also uses D65, so results should match closely.
+
+#[test]
+fn lab_extract_l_vs_skimage() {
+    let w = 16u32;
+    let h = 16;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let (ours, _) = filters::lab_extract_l(&pixels, &info).unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np
+from skimage.color import rgb2lab
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w},3)
+lab = rgb2lab(px)
+L = lab[:,:,0]  # L in [0, 100]
+out = np.clip(np.round(L / 100.0 * 255.0), 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'skimage'") {
+            eprintln!("  lab_extract_l_vs_skimage: SKIP (scikit-image not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+
+    assert_close("lab_extract_l vs skimage", &ours, &output.stdout, 1.0);
+}
+
+#[test]
+fn lab_extract_a_b_vs_skimage() {
+    let w = 16u32;
+    let h = 16;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let (ours_a, _) = filters::lab_extract_a(&pixels, &info).unwrap();
+    let (ours_b, _) = filters::lab_extract_b(&pixels, &info).unwrap();
+
+    // Python: a mapped to [0, 255] with 128=neutral, same for b
+    let script = format!(
+        r#"
+import sys, numpy as np
+from skimage.color import rgb2lab
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w},3)
+lab = rgb2lab(px)
+a_out = np.clip(np.round(lab[:,:,1] + 128.0), 0, 255).astype(np.uint8)
+b_out = np.clip(np.round(lab[:,:,2] + 128.0), 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(a_out.tobytes())
+sys.stdout.buffer.write(b_out.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'skimage'") {
+            eprintln!("  lab_extract_a_b_vs_skimage: SKIP (scikit-image not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+
+    let n = (w * h) as usize;
+    let ref_a = &output.stdout[..n];
+    let ref_b = &output.stdout[n..];
+
+    assert_close("lab_extract_a vs skimage", &ours_a, ref_a, 1.0);
+    assert_close("lab_extract_b vs skimage", &ours_b, ref_b, 1.0);
+}
+
+#[test]
+fn lab_adjust_zero_offset_identity() {
+    // Zero offset should produce pixel-exact roundtrip (within ±1 for float precision)
+    let w = 16u32;
+    let h = 16;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let result = filters::lab_adjust(
+        Rect::new(0, 0, w, h),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::LabAdjustParams {
+            a_offset: 0.0,
+            b_offset: 0.0,
+        },
+    )
+    .unwrap();
+
+    // Roundtrip RGB→LAB→RGB with zero offset should be near-identity
+    let mae = mean_absolute_error(&pixels, &result);
+    let max_err = max_absolute_error(&pixels, &result);
+    eprintln!("  lab_adjust(0,0) identity: MAE={mae:.4}, max_err={max_err}");
+    assert!(
+        mae < 1.0,
+        "lab_adjust zero offset should be near-identity, MAE={mae:.4}"
+    );
+    assert!(
+        max_err <= 1,
+        "lab_adjust zero offset max_err={max_err}, expected <= 1"
+    );
+}
+
+#[test]
+fn lab_sharpen_preserves_ab_channels() {
+    // LAB sharpening should only modify L, leaving a/b channels unchanged.
+    // Verify by extracting a/b before and after sharpening.
+    let w = 32u32;
+    let h = 32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    let (a_before, _) = filters::lab_extract_a(&pixels, &info).unwrap();
+    let (b_before, _) = filters::lab_extract_b(&pixels, &info).unwrap();
+
+    let sharpened = filters::lab_sharpen(
+        Rect::new(0, 0, w, h),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &filters::LabSharpenParams {
+            amount: 2.0,
+            radius: 2.0,
+        },
+    )
+    .unwrap();
+
+    let (a_after, _) = filters::lab_extract_a(&sharpened, &info).unwrap();
+    let (b_after, _) = filters::lab_extract_b(&sharpened, &info).unwrap();
+
+    // a/b channels should be preserved through LAB sharpening.
+    // Small differences from roundtrip float precision (RGB→LAB→modify_L→RGB→LAB).
+    let mae_a = mean_absolute_error(&a_before, &a_after);
+    let mae_b = mean_absolute_error(&b_before, &b_after);
+    eprintln!("  lab_sharpen a-channel drift: MAE={mae_a:.4}");
+    eprintln!("  lab_sharpen b-channel drift: MAE={mae_b:.4}");
+    assert!(
+        mae_a < 2.0,
+        "lab_sharpen modified a channel too much: MAE={mae_a:.4}"
+    );
+    assert!(
+        mae_b < 2.0,
+        "lab_sharpen modified b channel too much: MAE={mae_b:.4}"
+    );
+}
+
+// ─── Mesh Warp ───────────────────────────────────────────────────────────
+//
+// Reference: OpenCV cv2.remap with bilinear interpolation.
+// We construct equivalent remap maps from the control point grid.
+
+#[test]
+fn mesh_warp_vs_opencv_remap() {
+    // Use an identity-like grid with a small inward pinch at center.
+    // Both src and dst stay within image bounds to avoid boundary issues.
+    let w = 64u32;
+    let h = 64;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    // 3x3 grid — corners fixed, center pinched inward by 4px
+    let grid_json = format!(
+        "[[0,0,0,0],[0.5,0,0.5,0],[1,0,1,0],\
+         [0,0.5,0,0.5],[0.5,0.5,{},{}],[1,0.5,1,0.5],\
+         [0,1,0,1],[0.5,1,0.5,1],[1,1,1,1]]",
+        0.5 + 4.0 / w as f64,   // center dst shifted right 4px
+        0.5 + 4.0 / h as f64,   // center dst shifted down 4px
+    );
+
+    let config = filters::MeshWarpParams {
+        grid_cols: 3,
+        grid_rows: 3,
+        grid_json: grid_json.clone(),
+    };
+
+    let ours = filters::mesh_warp(
+        Rect::new(0, 0, w, h),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    )
+    .unwrap();
+
+    // Python reference: replicate the exact same inverse-bilinear grid warp
+    // using the same Newton's method, then sample via cv2.remap.
+    let script = format!(
+        r#"
+import sys, json, numpy as np
+import cv2
+
+w, h = {w}, {h}
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape(h, w, 3)
+
+grid = json.loads('{grid_json}')
+grid_cols, grid_rows = 3, 3
+
+src_pts = np.zeros((grid_rows, grid_cols, 2), dtype=np.float64)
+dst_pts = np.zeros((grid_rows, grid_cols, 2), dtype=np.float64)
+for row in range(grid_rows):
+    for col in range(grid_cols):
+        idx = row * grid_cols + col
+        sx, sy, dx, dy = grid[idx]
+        src_pts[row, col] = [sx * w, sy * h]
+        dst_pts[row, col] = [dx * w, dy * h]
+
+map_x = np.full((h, w), -1.0, dtype=np.float32)
+map_y = np.full((h, w), -1.0, dtype=np.float32)
+
+for row in range(grid_rows - 1):
+    for col in range(grid_cols - 1):
+        d_tl = dst_pts[row, col]
+        d_tr = dst_pts[row, col+1]
+        d_bl = dst_pts[row+1, col]
+        d_br = dst_pts[row+1, col+1]
+        s_tl = src_pts[row, col]
+        s_tr = src_pts[row, col+1]
+        s_bl = src_pts[row+1, col]
+        s_br = src_pts[row+1, col+1]
+
+        xs = [d_tl[0], d_tr[0], d_bl[0], d_br[0]]
+        ys = [d_tl[1], d_tr[1], d_bl[1], d_br[1]]
+        x0 = max(0, int(np.floor(min(xs))))
+        x1 = min(w, int(np.ceil(max(xs))) + 1)
+        y0 = max(0, int(np.floor(min(ys))))
+        y1 = min(h, int(np.ceil(max(ys))) + 1)
+
+        for py in range(y0, y1):
+            for px_i in range(x0, x1):
+                u, v = 0.5, 0.5
+                for _ in range(20):
+                    bx = (1-u)*(1-v)*d_tl[0] + u*(1-v)*d_tr[0] + (1-u)*v*d_bl[0] + u*v*d_br[0]
+                    by = (1-u)*(1-v)*d_tl[1] + u*(1-v)*d_tr[1] + (1-u)*v*d_bl[1] + u*v*d_br[1]
+                    ex, ey = px_i - bx, py - by
+                    if abs(ex) < 0.001 and abs(ey) < 0.001:
+                        break
+                    dbx_du = (1-v)*(d_tr[0]-d_tl[0]) + v*(d_br[0]-d_bl[0])
+                    dbx_dv = (1-u)*(d_bl[0]-d_tl[0]) + u*(d_br[0]-d_tr[0])
+                    dby_du = (1-v)*(d_tr[1]-d_tl[1]) + v*(d_br[1]-d_bl[1])
+                    dby_dv = (1-u)*(d_bl[1]-d_tl[1]) + u*(d_br[1]-d_tr[1])
+                    det = dbx_du*dby_dv - dbx_dv*dby_du
+                    if abs(det) < 1e-10:
+                        break
+                    u += (dby_dv*ex - dbx_dv*ey) / det
+                    v += (-dby_du*ex + dbx_du*ey) / det
+                if -0.01 <= u <= 1.01 and -0.01 <= v <= 1.01:
+                    u = max(0, min(1, u))
+                    v = max(0, min(1, v))
+                    sx = (1-u)*(1-v)*s_tl[0] + u*(1-v)*s_tr[0] + (1-u)*v*s_bl[0] + u*v*s_br[0]
+                    sy = (1-u)*(1-v)*s_tl[1] + u*(1-v)*s_tr[1] + (1-u)*v*s_bl[1] + u*v*s_br[1]
+                    map_x[py, px_i] = np.float32(sx)
+                    map_y[py, px_i] = np.float32(sy)
+
+out = cv2.remap(px, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0,0,0))
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'cv2'") {
+            eprintln!("  mesh_warp_vs_opencv_remap: SKIP (opencv not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+
+    // Inverse bilinear convergence, quad-finding, and interpolation can differ
+    // slightly between implementations — especially at quad boundaries.
+    assert_close("mesh_warp vs OpenCV remap", &ours, &output.stdout, 3.0);
+}
+
+#[test]
+fn mesh_warp_analytic_displacement() {
+    // Non-uniform grid: shift center inward, verify displacement is smooth
+    let w = 32u32;
+    let h = 32;
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+
+    // 4x4 grid — pinch center inward by ~4px
+    let mut grid = Vec::new();
+    for row in 0..4u32 {
+        for col in 0..4u32 {
+            let sx = col as f64 / 3.0;
+            let sy = row as f64 / 3.0;
+            let cx = sx - 0.5;
+            let cy = sy - 0.5;
+            let dist = (cx * cx + cy * cy).sqrt();
+            // Pinch: dst moves toward center proportionally
+            let scale = if dist > 0.01 { 1.0 - 0.15 * (1.0 - dist).max(0.0) } else { 1.0 };
+            let dx = 0.5 + cx * scale;
+            let dy = 0.5 + cy * scale;
+            grid.push(format!("[{sx},{sy},{dx},{dy}]"));
+        }
+    }
+    let grid_json = format!("[{}]", grid.join(","));
+
+    let config = filters::MeshWarpParams {
+        grid_cols: 4,
+        grid_rows: 4,
+        grid_json,
+    };
+
+    let result = filters::mesh_warp(
+        Rect::new(0, 0, w, h),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &config,
+    )
+    .unwrap();
+
+    // Verify the output is not identical to input (warp actually happened)
+    let mae = mean_absolute_error(&pixels, &result);
+    eprintln!("  mesh_warp analytic pinch: MAE vs identity = {mae:.4}");
+    assert!(
+        mae > 1.0,
+        "mesh_warp pinch should produce visible difference, MAE={mae:.4}"
+    );
+
+    // Verify corners are less affected than center (pinch effect)
+    // Corner pixel (0,0) should be closer to original than center pixel (16,16)
+    let corner_idx = 0;
+    let center_idx = (16 * w + 16) as usize * 3;
+    let corner_diff = (0..3)
+        .map(|c| (pixels[corner_idx + c] as i32 - result[corner_idx + c] as i32).abs())
+        .sum::<i32>();
+    let center_diff = (0..3)
+        .map(|c| (pixels[center_idx + c] as i32 - result[center_idx + c] as i32).abs())
+        .sum::<i32>();
+    eprintln!("  corner diff={corner_diff}, center diff={center_diff}");
+    // Center should be more affected by the pinch
+    assert!(
+        center_diff >= corner_diff,
+        "pinch should affect center more than corners"
+    );
+}
+
+// ─── Skeletonize ─────────────────────────────────────────────────────────
+//
+// Reference: skimage.morphology.skeletonize (Zhang-Suen / medial axis).
+// Both implement Zhang-Suen 1984, so results should be pixel-exact.
+
+#[test]
+fn skeletonize_vs_skimage() {
+    // Create a thick rectangle binary image
+    let w = 32u32;
+    let h = 32;
+    let mut pixels = vec![0u8; (w * h) as usize];
+    for y in 8..24 {
+        for x in 4..28 {
+            pixels[(y * w + x) as usize] = 255;
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let ours = filters::skeletonize(&pixels, &info, 0).unwrap();
+
+    // Python reference: skimage.morphology.skeletonize with Zhang-Suen method
+    let script = format!(
+        r#"
+import sys, numpy as np
+from skimage.morphology import skeletonize
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w})
+binary = px > 0
+skel = skeletonize(binary, method='zhang')
+out = (skel.astype(np.uint8)) * 255
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'skimage'") {
+            eprintln!("  skeletonize_vs_skimage: SKIP (scikit-image not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+
+    // Zhang-Suen is deterministic in principle, but pixel deletion order within
+    // each sub-iteration can vary (row-major vs set-based), causing a few
+    // boundary pixels to differ. Both produce valid skeletons.
+    let mae = mean_absolute_error(&ours, &output.stdout);
+    let max_err = max_absolute_error(&ours, &output.stdout);
+    eprintln!("  skeletonize vs skimage (rectangle): MAE={mae:.4}, max_err={max_err}");
+    // Very close but allow a few pixels of difference (MAE < 2.0 for binary)
+    assert!(
+        mae < 2.0,
+        "skeletonize vs skimage: MAE={mae:.4} too high (expected < 2.0)"
+    );
+}
+
+#[test]
+fn skeletonize_vs_opencv_thinning() {
+    // Cross-check against OpenCV's thinning (also Zhang-Suen)
+    let w = 32u32;
+    let h = 32;
+    // Create an L-shaped binary image
+    let mut pixels = vec![0u8; (w * h) as usize];
+    // Vertical bar
+    for y in 4..28 {
+        for x in 4..12 {
+            pixels[(y * w + x) as usize] = 255;
+        }
+    }
+    // Horizontal bar at bottom
+    for y in 20..28 {
+        for x in 4..28 {
+            pixels[(y * w + x) as usize] = 255;
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    let ours = filters::skeletonize(&pixels, &info, 0).unwrap();
+
+    let script = format!(
+        r#"
+import sys, numpy as np
+import cv2
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w})
+thinned = cv2.ximgproc.thinning(px, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+sys.stdout.buffer.write(thinned.tobytes())
+"#
+    );
+
+    let python = venv_python();
+    let output = std::process::Command::new(&python)
+        .arg("-c")
+        .arg(&script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(&pixels).unwrap();
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("No module named 'cv2'") || stderr.contains("ximgproc") {
+            eprintln!("  skeletonize_vs_opencv: SKIP (opencv-contrib not installed)");
+            return;
+        }
+        panic!("Python script failed: {stderr}");
+    }
+
+    // Both implement Zhang-Suen — very close, may differ by a few boundary pixels
+    let mae = mean_absolute_error(&ours, &output.stdout);
+    let max_err = max_absolute_error(&ours, &output.stdout);
+    eprintln!("  skeletonize vs OpenCV thinning (L-shape): MAE={mae:.4}, max_err={max_err}");
+    assert!(
+        mae < 2.0,
+        "skeletonize vs OpenCV: MAE={mae:.4} too high (expected < 2.0)"
+    );
+}

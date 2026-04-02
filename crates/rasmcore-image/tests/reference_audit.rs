@@ -3090,11 +3090,69 @@ fn reference_audit_summary() {
     eprintln!("    hue_rotate, saturate, rotate, trim, barrel, kuwahara, charcoal,");
     eprintln!("    oil_paint, motion_blur, erode, dilate, gaussian_blur_cv, shadow/highlight");
     eprintln!("  Property tests:            vibrance, bilateral, frequency_high, zoom_blur,");
-    eprintln!("    adaptive_threshold, canny, perspective_warp");
+    eprintln!("    adaptive_threshold, canny, perspective_warp, high_pass");
     eprintln!();
     eprintln!("Not yet validated against external reference:");
     eprintln!("  bokeh_blur, nlm_denoise, dehaze, clarity, pyramid_detail_remap,");
     eprintln!("  vignette, vignette_powerlaw, retinex_ssr/msr/msrcr, flood_fill,");
     eprintln!("  perlin_noise, simplex_noise, draw_*, threshold_binary,");
     eprintln!("  premultiply/unpremultiply, convolve (custom kernel)");
+}
+
+// ─── High-Pass Filter (ALGORITHM tier) ───────────────────────────────────
+
+#[test]
+fn algorithm_high_pass_vs_magick() {
+    // ImageMagick high-pass: subtract blurred from original, scale to mid-gray.
+    // magick input.png ( +clone -blur 0xSIGMA ) -compose Mathematics
+    //   -define compose:args='0,0.5,-0.5,0.5' -composite output.png
+    // This computes: 0.5 * original - 0.5 * blur + 0.5 (in [0,1] range)
+    // = (original - blur) / 2 + 128 (in [0,255] range) — same as our formula.
+    if !magick_available() {
+        eprintln!("SKIP algorithm_high_pass_vs_magick: magick not available");
+        return;
+    }
+
+    let w = 64u32;
+    let h = 64;
+    let radius = 4.0f32;
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    // Our output
+    let ours = rasmcore_image::domain::filters::high_pass(
+        rasmcore_image::domain::pipeline::Rect::new(0, 0, w, h),
+        &mut |_| Ok(pixels.to_vec()),
+        &info,
+        &rasmcore_image::domain::filters::HighPassParams { radius },
+    )
+    .unwrap();
+
+    // ImageMagick reference
+    let input_path = write_png(&pixels, w, h, 3);
+    let sigma = format!("{radius}");
+    let ref_path = magick_op(
+        &input_path,
+        &[
+            "(", "+clone", "-blur", &format!("0x{sigma}"), ")",
+            "-compose", "Mathematics",
+            "-define", "compose:args=0,0.5,-0.5,0.5",
+            "-composite",
+        ],
+    );
+
+    if let Some(ref_path) = ref_path {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&ours, &magick_output);
+        eprintln!("  high_pass vs ImageMagick: MAE = {error:.4}");
+        // ALGORITHM tier: border handling and blur kernel may differ
+        assert!(
+            error < 5.0,
+            "ALGORITHM: high_pass MAE should be < 5.0, got {error:.4}"
+        );
+        cleanup(&[&input_path, &ref_path]);
+    } else {
+        cleanup(&[&input_path]);
+        eprintln!("SKIP algorithm_high_pass_vs_magick: magick Mathematics compose failed");
+    }
 }
