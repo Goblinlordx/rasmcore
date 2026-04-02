@@ -36,6 +36,9 @@ fn to_domain_pixel_format(f: types::PixelFormat) -> domain::types::PixelFormat {
         types::PixelFormat::Yuv422p => domain::types::PixelFormat::Yuv422p,
         types::PixelFormat::Yuv444p => domain::types::PixelFormat::Yuv444p,
         types::PixelFormat::Nv12 => domain::types::PixelFormat::Nv12,
+        types::PixelFormat::Rgb16f => domain::types::PixelFormat::Rgb16f,
+        types::PixelFormat::Rgba16f => domain::types::PixelFormat::Rgba16f,
+        types::PixelFormat::Gray16f => domain::types::PixelFormat::Gray16f,
         types::PixelFormat::Rgb32f => domain::types::PixelFormat::Rgb32f,
         types::PixelFormat::Rgba32f => domain::types::PixelFormat::Rgba32f,
         types::PixelFormat::Gray32f => domain::types::PixelFormat::Gray32f,
@@ -56,8 +59,11 @@ fn to_wit_pixel_format(f: domain::types::PixelFormat) -> types::PixelFormat {
         domain::types::PixelFormat::Yuv422p => types::PixelFormat::Yuv422p,
         domain::types::PixelFormat::Yuv444p => types::PixelFormat::Yuv444p,
         domain::types::PixelFormat::Nv12 => types::PixelFormat::Nv12,
-        domain::types::PixelFormat::Cmyk8 => types::PixelFormat::Rgb8, // CMYK decoded to RGB before WIT
-        domain::types::PixelFormat::Cmyka8 => types::PixelFormat::Rgba8, // CMYKA decoded to RGBA before WIT
+        domain::types::PixelFormat::Cmyk8 => types::PixelFormat::Rgb8,
+        domain::types::PixelFormat::Cmyka8 => types::PixelFormat::Rgba8,
+        domain::types::PixelFormat::Rgb16f => types::PixelFormat::Rgb16f,
+        domain::types::PixelFormat::Rgba16f => types::PixelFormat::Rgba16f,
+        domain::types::PixelFormat::Gray16f => types::PixelFormat::Gray16f,
         domain::types::PixelFormat::Rgb32f => types::PixelFormat::Rgb32f,
         domain::types::PixelFormat::Rgba32f => types::PixelFormat::Rgba32f,
         domain::types::PixelFormat::Gray32f => types::PixelFormat::Gray32f,

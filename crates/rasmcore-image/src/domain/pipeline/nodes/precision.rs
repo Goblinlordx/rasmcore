@@ -10,7 +10,7 @@ use crate::domain::types::{ImageInfo, PixelFormat};
 use rasmcore_pipeline::Rect;
 
 /// Promotes pixel data from u8/u16 to f32 format.
-/// Inserted automatically after source nodes when pipeline is in HighPrecision mode.
+/// Inserted automatically after source nodes when pipeline is in HP mode.
 pub struct PromoteNode {
     upstream: u32,
     source_info: ImageInfo,
@@ -18,12 +18,25 @@ pub struct PromoteNode {
 }
 
 impl PromoteNode {
+    /// Promote to f32 (HighPrecision mode).
     pub fn new(upstream: u32, source_info: ImageInfo) -> Self {
-        let target_format = match source_info.format {
-            PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb32f,
-            PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray32f,
-            // Default to Rgba32f for everything else (Rgba8, Bgr8, etc.)
-            _ => PixelFormat::Rgba32f,
+        Self::with_precision(upstream, source_info, false)
+    }
+
+    /// Promote to f16 or f32 based on precision mode.
+    pub fn with_precision(upstream: u32, source_info: ImageInfo, half: bool) -> Self {
+        let target_format = if half {
+            match source_info.format {
+                PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb16f,
+                PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray16f,
+                _ => PixelFormat::Rgba16f,
+            }
+        } else {
+            match source_info.format {
+                PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb32f,
+                PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray32f,
+                _ => PixelFormat::Rgba32f,
+            }
         };
         Self {
             upstream,

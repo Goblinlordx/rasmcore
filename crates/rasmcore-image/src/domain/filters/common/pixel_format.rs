@@ -15,6 +15,9 @@ pub fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
         | PixelFormat::Rgb16
         | PixelFormat::Rgba16
         | PixelFormat::Gray16
+        | PixelFormat::Rgb16f
+        | PixelFormat::Rgba16f
+        | PixelFormat::Gray16f
         | PixelFormat::Rgb32f
         | PixelFormat::Rgba32f
         | PixelFormat::Gray32f => Ok(()),
@@ -32,6 +35,14 @@ pub fn is_16bit(format: PixelFormat) -> bool {
     )
 }
 
+/// Check if a pixel format is 16-bit float (half precision).
+pub fn is_f16(format: PixelFormat) -> bool {
+    matches!(
+        format,
+        PixelFormat::Rgb16f | PixelFormat::Rgba16f | PixelFormat::Gray16f
+    )
+}
+
 /// Check if a pixel format is 32-bit float.
 pub fn is_f32(format: PixelFormat) -> bool {
     matches!(
@@ -40,12 +51,17 @@ pub fn is_f32(format: PixelFormat) -> bool {
     )
 }
 
+/// Check if a pixel format is any high-precision float (f16 or f32).
+pub fn is_float(format: PixelFormat) -> bool {
+    is_f16(format) || is_f32(format)
+}
+
 /// Number of channels for a pixel format (not bytes — channels).
 pub fn channels(format: PixelFormat) -> usize {
     match format {
-        PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::Gray32f => 1,
-        PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::Rgb32f => 3,
-        PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::Rgba32f => 4,
+        PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::Gray16f | PixelFormat::Gray32f => 1,
+        PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::Rgb16f | PixelFormat::Rgb32f => 3,
+        PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::Rgba16f | PixelFormat::Rgba32f => 4,
         _ => 3,
     }
 }
@@ -80,6 +96,19 @@ pub fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
     u16_to_bytes(&u16s)
 }
 
+/// Read f16 samples from a byte buffer (little-endian).
+pub fn bytes_to_f16(bytes: &[u8]) -> Vec<half::f16> {
+    bytes
+        .chunks_exact(2)
+        .map(|c| half::f16::from_le_bytes([c[0], c[1]]))
+        .collect()
+}
+
+/// Write f16 samples to a byte buffer (little-endian).
+pub fn f16_to_bytes(values: &[half::f16]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
 /// Read f32 samples from a byte buffer (little-endian).
 pub fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
     bytes
@@ -93,35 +122,59 @@ pub fn f32_to_bytes(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
-/// Convert f32 pixel buffer to 8-bit for processing, then back to f32.
-/// Used when an operation only supports 8-bit internally and f32 input arrives.
+/// Convert float (f16 or f32) pixel buffer to 8-bit for processing, then back.
+/// Used when an operation only supports 8-bit internally and float input arrives.
 pub fn process_via_standard<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
 where
     F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
 {
-    let samples = bytes_to_f32(pixels);
-
-    // Convert f32 [0.0, 1.0] → u8 [0, 255]
-    let pixels_8: Vec<u8> = samples
-        .iter()
-        .map(|&v| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8)
-        .collect();
-
-    let info_8 = ImageInfo {
-        format: match info.format {
-            PixelFormat::Rgb32f => PixelFormat::Rgb8,
-            PixelFormat::Rgba32f => PixelFormat::Rgba8,
-            PixelFormat::Gray32f => PixelFormat::Gray8,
-            other => other,
-        },
-        ..*info
+    let (info_8, pixels_8) = match info.format {
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f | PixelFormat::Gray32f => {
+            let samples = bytes_to_f32(pixels);
+            let p8: Vec<u8> = samples
+                .iter()
+                .map(|&v| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8)
+                .collect();
+            let fmt = match info.format {
+                PixelFormat::Rgb32f => PixelFormat::Rgb8,
+                PixelFormat::Rgba32f => PixelFormat::Rgba8,
+                _ => PixelFormat::Gray8,
+            };
+            (ImageInfo { format: fmt, ..*info }, p8)
+        }
+        PixelFormat::Rgb16f | PixelFormat::Rgba16f | PixelFormat::Gray16f => {
+            let samples = bytes_to_f16(pixels);
+            let p8: Vec<u8> = samples
+                .iter()
+                .map(|v| (v.to_f32() * 255.0 + 0.5).clamp(0.0, 255.0) as u8)
+                .collect();
+            let fmt = match info.format {
+                PixelFormat::Rgb16f => PixelFormat::Rgb8,
+                PixelFormat::Rgba16f => PixelFormat::Rgba8,
+                _ => PixelFormat::Gray8,
+            };
+            (ImageInfo { format: fmt, ..*info }, p8)
+        }
+        _ => return f(pixels, info),
     };
 
     let result_8 = f(&pixels_8, &info_8)?;
 
-    // Convert u8 [0, 255] → f32 [0.0, 1.0]
-    let result_f32: Vec<f32> = result_8.iter().map(|&v| v as f32 / 255.0).collect();
-    Ok(f32_to_bytes(&result_f32))
+    // Convert back to original float format
+    match info.format {
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f | PixelFormat::Gray32f => {
+            let result_f32: Vec<f32> = result_8.iter().map(|&v| v as f32 / 255.0).collect();
+            Ok(f32_to_bytes(&result_f32))
+        }
+        PixelFormat::Rgb16f | PixelFormat::Rgba16f | PixelFormat::Gray16f => {
+            let result_f16: Vec<half::f16> = result_8
+                .iter()
+                .map(|&v| half::f16::from_f32(v as f32 / 255.0))
+                .collect();
+            Ok(f16_to_bytes(&result_f16))
+        }
+        _ => unreachable!(),
+    }
 }
 
 /// Convert 16-bit pixel buffer to 8-bit for processing, then back to 16-bit.

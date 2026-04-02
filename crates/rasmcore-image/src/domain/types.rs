@@ -18,6 +18,12 @@ pub enum PixelFormat {
     Yuv422p,
     Yuv444p,
     Nv12,
+    /// 16-bit float RGB (6 bytes/pixel, normalized [0.0, 1.0]).
+    Rgb16f,
+    /// 16-bit float RGBA (8 bytes/pixel, normalized [0.0, 1.0]).
+    Rgba16f,
+    /// 16-bit float grayscale (2 bytes/pixel, normalized [0.0, 1.0]).
+    Gray16f,
     /// 32-bit float RGB (12 bytes/pixel, normalized [0.0, 1.0]).
     Rgb32f,
     /// 32-bit float RGBA (16 bytes/pixel, normalized [0.0, 1.0]).
@@ -39,6 +45,9 @@ impl PixelFormat {
             PixelFormat::Cmyk8 => 4,
             PixelFormat::Cmyka8 => 5,
             PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p | PixelFormat::Nv12 => 4,
+            PixelFormat::Rgb16f => 6,
+            PixelFormat::Rgba16f => 8,
+            PixelFormat::Gray16f => 2,
             PixelFormat::Rgb32f => 12,
             PixelFormat::Rgba32f => 16,
             PixelFormat::Gray32f => 4,

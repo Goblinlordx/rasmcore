@@ -317,6 +317,7 @@ impl GuestImagePipeline for PipelineResource {
     fn set_precision(&self, precision: pipeline::PipelinePrecision) {
         let domain_precision = match precision {
             pipeline::PipelinePrecision::Standard => domain::pixel_sample::PipelinePrecision::Standard,
+            pipeline::PipelinePrecision::HalfPrecision => domain::pixel_sample::PipelinePrecision::HalfPrecision,
             pipeline::PipelinePrecision::HighPrecision => domain::pixel_sample::PipelinePrecision::HighPrecision,
         };
         self.precision.set(domain_precision);

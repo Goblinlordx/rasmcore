@@ -26,6 +26,7 @@ gif = "0.14"
 color_quant = "1.1"
 image-webp = "0.2"
 exr = "1.74"
+half = { version = "2.7", default-features = false }
 jxl-oxide = "0.12"
 justjp2 = { version = "0.1", default-features = false }
 resvg = "0.44"

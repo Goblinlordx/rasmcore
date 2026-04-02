@@ -1836,9 +1836,12 @@ pub fn pixel_format_to_u8(f: crate::domain::types::PixelFormat) -> u8 {
         PixelFormat::Yuv422p => 11,
         PixelFormat::Yuv444p => 12,
         PixelFormat::Nv12 => 13,
-        PixelFormat::Rgb32f => 14,
-        PixelFormat::Rgba32f => 15,
-        PixelFormat::Gray32f => 16,
+        PixelFormat::Rgb16f => 14,
+        PixelFormat::Rgba16f => 15,
+        PixelFormat::Gray16f => 16,
+        PixelFormat::Rgb32f => 17,
+        PixelFormat::Rgba32f => 18,
+        PixelFormat::Gray32f => 19,
     }
 }
 
@@ -1860,9 +1863,12 @@ pub fn u8_to_pixel_format(v: u8) -> Result<crate::domain::types::PixelFormat, Im
         11 => Ok(PixelFormat::Yuv422p),
         12 => Ok(PixelFormat::Yuv444p),
         13 => Ok(PixelFormat::Nv12),
-        14 => Ok(PixelFormat::Rgb32f),
-        15 => Ok(PixelFormat::Rgba32f),
-        16 => Ok(PixelFormat::Gray32f),
+        14 => Ok(PixelFormat::Rgb16f),
+        15 => Ok(PixelFormat::Rgba16f),
+        16 => Ok(PixelFormat::Gray16f),
+        17 => Ok(PixelFormat::Rgb32f),
+        18 => Ok(PixelFormat::Rgba32f),
+        19 => Ok(PixelFormat::Gray32f),
         _ => Err(ImageError::InvalidInput(format!("unknown pixel format: {v}"))),
     }
 }
