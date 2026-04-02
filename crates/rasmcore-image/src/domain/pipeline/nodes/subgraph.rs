@@ -340,7 +340,7 @@ impl AnalysisSink for AutoLevelsAnalysis {
             histogram[luma as usize] += 1;
         }
 
-        let clip_count = (n_pixels as f32 * self.clip_percent) as u32;
+        let clip_count = (n_pixels as f32 * self.clip_percent).max(1.0) as u32;
 
         // Find black point (clip_percent from the left)
         let mut accum = 0u32;
@@ -391,5 +391,249 @@ impl AnalysisSink for AutoLevelsAnalysis {
             white: white as f32 / 255.0,
             gamma,
         })
+    }
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct RawSource {
+        pixels: Vec<u8>,
+        info: ImageInfo,
+    }
+    impl RawSource {
+        fn new(pixels: Vec<u8>, info: ImageInfo) -> Self {
+            Self { pixels, info }
+        }
+    }
+    impl ImageNode for RawSource {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            _: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let full = Rect::new(0, 0, self.info.width, self.info.height);
+            if request == full {
+                return Ok(self.pixels.clone());
+            }
+            let bpp = bytes_per_pixel(self.info.format) as usize;
+            let stride = self.info.width as usize * bpp;
+            let mut out = Vec::new();
+            for row in request.y..(request.y + request.height) {
+                let start = row as usize * stride + request.x as usize * bpp;
+                let end = start + request.width as usize * bpp;
+                out.extend_from_slice(&self.pixels[start..end]);
+            }
+            Ok(out)
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
+    }
+
+    /// Identity filter that inverts each channel (simple, verifiable transform)
+    struct InvertNode {
+        upstream: u32,
+        info: ImageInfo,
+    }
+    impl ImageNode for InvertNode {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let pixels = upstream_fn(self.upstream, request)?;
+            Ok(pixels.iter().map(|&v| 255 - v).collect())
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
+        fn upstream_id(&self) -> Option<u32> {
+            Some(self.upstream)
+        }
+    }
+
+    fn rgb8_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    #[test]
+    fn subgraph_passthrough() {
+        // Sub-graph with no processing — just InputRef → OutputRef
+        let info = rgb8_info(2, 2);
+        let pixels: Vec<u8> = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
+
+        // Build outer graph: source → subgraph
+        let mut outer = NodeGraph::new(0);
+        let src = outer.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+
+        let (sg, _out_info) = SubGraphBuilder::new(info.clone()).build(src).unwrap();
+        let sg_id = outer.add_node(Box::new(sg));
+
+        let result = outer
+            .request_region(sg_id, Rect::new(0, 0, 2, 2))
+            .unwrap();
+        assert_eq!(result, pixels, "passthrough sub-graph should preserve pixels");
+    }
+
+    #[test]
+    fn subgraph_with_invert() {
+        // Sub-graph that inverts all pixels
+        let info = rgb8_info(2, 1);
+        let pixels: Vec<u8> = vec![100, 150, 200, 0, 50, 255];
+
+        let mut outer = NodeGraph::new(0);
+        let src = outer.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+
+        let (sg, _) = SubGraphBuilder::new(info.clone())
+            .add_step(|input_id, graph| {
+                let info = graph.node_info(input_id).unwrap();
+                graph.add_node(Box::new(InvertNode {
+                    upstream: input_id,
+                    info,
+                }))
+            })
+            .build(src)
+            .unwrap();
+        let sg_id = outer.add_node(Box::new(sg));
+
+        let result = outer.request_region(sg_id, Rect::new(0, 0, 2, 1)).unwrap();
+        let expected: Vec<u8> = pixels.iter().map(|&v| 255 - v).collect();
+        assert_eq!(result, expected, "sub-graph should invert pixels");
+    }
+
+    #[test]
+    fn subgraph_double_invert_is_identity() {
+        // Sub-graph that inverts twice → identity
+        let info = rgb8_info(4, 4);
+        let pixels: Vec<u8> = (0..48).collect();
+
+        let mut outer = NodeGraph::new(0);
+        let src = outer.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+
+        let (sg, _) = SubGraphBuilder::new(info.clone())
+            .add_step(|input_id, graph| {
+                let info = graph.node_info(input_id).unwrap();
+                graph.add_node(Box::new(InvertNode {
+                    upstream: input_id,
+                    info,
+                }))
+            })
+            .add_step(|input_id, graph| {
+                let info = graph.node_info(input_id).unwrap();
+                graph.add_node(Box::new(InvertNode {
+                    upstream: input_id,
+                    info,
+                }))
+            })
+            .build(src)
+            .unwrap();
+        let sg_id = outer.add_node(Box::new(sg));
+
+        let result = outer.request_region(sg_id, Rect::new(0, 0, 4, 4)).unwrap();
+        assert_eq!(result, pixels, "double invert should be identity");
+    }
+
+    #[test]
+    fn nested_subgraph() {
+        // Outer sub-graph contains an inner sub-graph
+        let info = rgb8_info(2, 1);
+        let pixels: Vec<u8> = vec![10, 20, 30, 40, 50, 60];
+
+        let mut outer = NodeGraph::new(0);
+        let src = outer.add_node(Box::new(RawSource::new(pixels.clone(), info.clone())));
+
+        // Inner sub-graph: invert
+        let inner_info = info.clone();
+        let (outer_sg, _) = SubGraphBuilder::new(info.clone())
+            .add_step(move |input_id, graph| {
+                // Build an inner sub-graph that inverts
+                let (inner_sg, _) = SubGraphBuilder::new(inner_info.clone())
+                    .add_step(|iid, g| {
+                        let i = g.node_info(iid).unwrap();
+                        g.add_node(Box::new(InvertNode {
+                            upstream: iid,
+                            info: i,
+                        }))
+                    })
+                    .build(input_id)
+                    .unwrap();
+                graph.add_node(Box::new(inner_sg))
+            })
+            .build(src)
+            .unwrap();
+        let sg_id = outer.add_node(Box::new(outer_sg));
+
+        let result = outer.request_region(sg_id, Rect::new(0, 0, 2, 1)).unwrap();
+        let expected: Vec<u8> = pixels.iter().map(|&v| 255 - v).collect();
+        assert_eq!(result, expected, "nested sub-graph should invert");
+    }
+
+    #[test]
+    fn auto_levels_analysis() {
+        // Test auto-levels on a known distribution
+        let info = rgb8_info(4, 1);
+        // Dark image: all pixels in 10-50 range
+        let pixels: Vec<u8> = vec![10, 10, 10, 30, 30, 30, 40, 40, 40, 50, 50, 50];
+
+        let analyzer = AutoLevelsAnalysis::default(); // 1% clip
+        let result = analyzer.analyze(&pixels, &info).unwrap();
+
+        match result {
+            AnalysisResult::Levels {
+                black,
+                white,
+                gamma,
+            } => {
+                // With 1% clip on 4 pixels, clip_count = 0 → black/white
+                // are the min/max luminance values present.
+                // Luminance of the pixels: ~10, ~30, ~40, ~50
+                // Black should be in range [0, 0.2] (low), white in [0.15, 0.25] (also low)
+                assert!(
+                    black < 0.2,
+                    "black={black:.4} should be low for dark image"
+                );
+                assert!(
+                    white < 0.3,
+                    "white={white:.4} should be low for dark image"
+                );
+                // Gamma should be computed
+                assert!(
+                    gamma > 0.0 && gamma < 20.0,
+                    "gamma={gamma:.2} should be finite and reasonable"
+                );
+                eprintln!("  auto_levels: black={black:.4} white={white:.4} gamma={gamma:.2} ✓");
+            }
+            _ => panic!("expected Levels result"),
+        }
+    }
+
+    #[test]
+    fn subgraph_info_matches_output() {
+        let info = rgb8_info(8, 8);
+        let pixels = vec![128u8; 8 * 8 * 3];
+
+        let mut outer = NodeGraph::new(0);
+        let src = outer.add_node(Box::new(RawSource::new(pixels, info.clone())));
+
+        let (sg, out_info) = SubGraphBuilder::new(info.clone()).build(src).unwrap();
+        assert_eq!(sg.info().width, 8);
+        assert_eq!(sg.info().height, 8);
+        assert_eq!(sg.info().format, PixelFormat::Rgb8);
+        assert_eq!(out_info.width, 8);
     }
 }
