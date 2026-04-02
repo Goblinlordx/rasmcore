@@ -9,7 +9,8 @@ use crate::domain::filters::common::*;
 /// - Output x-axis represents angle (0 to 2π across width)
 /// - Output y-axis represents radius (0 to max_radius across height)
 ///
-/// Equivalent to ImageMagick `-distort Polar "max_radius"`.
+/// Uses IM pixel-center convention (+0.5) and f64 precision.
+/// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
 #[rasmcore_macros::register_filter(
     name = "polar",
     category = "distortion",
@@ -35,24 +36,33 @@ pub fn polar(
         });
     }
 
-    let wf = info.width as f32;
-    let hf = info.height as f32;
+    // Use f64 throughout to match IM's double-precision pipeline
+    let wf = info.width as f64;
+    let hf = info.height as f64;
     let cx = wf * 0.5;
     let cy = hf * 0.5;
     let max_radius = cx.min(cy);
+    let two_pi = std::f64::consts::TAU;
 
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,
         DistortionSampling::Ewa,
         &|xf, yf| {
-            let two_pi = std::f32::consts::TAU;
-            let radius = yf / hf * max_radius;
-            let angle = xf / wf * two_pi - std::f32::consts::PI;
-            (cx + radius * angle.sin(), cy - radius * angle.cos())
+            // IM pixel-center convention: d.x = i + 0.5
+            let dx = xf as f64 + 0.5;
+            let dy = yf as f64 + 0.5;
+            let angle = dx / wf * two_pi;
+            let radius = dy / hf * max_radius;
+            // Map polar (angle, radius) → Cartesian source, then undo pixel-center
+            let sx = (cx + radius * angle.sin() - 0.5) as f32;
+            let sy = (cy - radius * angle.cos() - 0.5) as f32;
+            (sx, sy)
         },
         &|xf, yf| {
-            crate::domain::ewa::jacobian_polar(xf, yf, wf, hf, max_radius)
+            crate::domain::ewa::jacobian_polar(xf, yf,
+                info.width as f32, info.height as f32,
+                max_radius as f32)
         },
     )
 }
