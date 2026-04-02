@@ -113,32 +113,37 @@ function runTest() {
     assert(scriptNames.includes('my_script_invert'), 'Script "my_script_invert" registered');
     log('  Registered scripts: [' + scriptNames.join(', ') + ']', 'info-line');
 
+    // Each pipeline gets one write — auto-cleanup invalidates the graph after write.
+    // Use separate pipelines for original vs inverted comparisons.
+
     log('--- Test 2: Single apply (odd) should differ from original ---', 'info-line');
     const testPng = createTestPng();
-    const p2 = new Pipeline();
-    p2.loadScripts([INVERT_SCRIPT]);
-    const src = p2.read(testPng);
-    const inverted = p2.applyScriptFilter('my_script_invert', src, []);
-    const originalPng = p2.writePng(src, {}, undefined);
-    const invertedPng = p2.writePng(inverted, {}, undefined);
+    const pOrig = new Pipeline();
+    const originalPng = pOrig.writePng(pOrig.read(testPng), {}, undefined);
+
+    const pInv = new Pipeline();
+    pInv.loadScripts([INVERT_SCRIPT]);
+    const srcInv = pInv.read(testPng);
+    const invertedPng = pInv.writePng(pInv.applyScriptFilter('my_script_invert', srcInv, []), {}, undefined);
     assert(!arraysEqual(originalPng, invertedPng), 'Inverted output differs from original');
 
     log('--- Test 3: Double apply (even) should match original ---', 'info-line');
-    const p3 = new Pipeline();
-    p3.loadScripts([INVERT_SCRIPT]);
-    const s3 = p3.read(testPng);
-    const once = p3.applyScriptFilter('my_script_invert', s3, []);
-    const twice = p3.applyScriptFilter('my_script_invert', once, []);
-    const originalPng3 = p3.writePng(s3, {}, undefined);
-    const twicePng = p3.writePng(twice, {}, undefined);
-    assert(arraysEqual(originalPng3, twicePng), 'Double invert matches original (identity)');
+    const pDouble = new Pipeline();
+    pDouble.loadScripts([INVERT_SCRIPT]);
+    const s3 = pDouble.read(testPng);
+    const once = pDouble.applyScriptFilter('my_script_invert', s3, []);
+    const twice = pDouble.applyScriptFilter('my_script_invert', once, []);
+    const twicePng = pDouble.writePng(twice, {}, undefined);
+    assert(arraysEqual(originalPng, twicePng), 'Double invert matches original (identity)');
 
     log('--- Test 4: Script invert matches built-in invert ---', 'info-line');
-    const p4 = new Pipeline();
-    p4.loadScripts([INVERT_SCRIPT]);
-    const s4 = p4.read(testPng);
-    const scriptResult = p4.writePng(p4.applyScriptFilter('my_script_invert', s4, []), {}, undefined);
-    const builtinResult = p4.writePng(p4.invert(s4), {}, undefined);
+    const pScript = new Pipeline();
+    pScript.loadScripts([INVERT_SCRIPT]);
+    const s4s = pScript.read(testPng);
+    const scriptResult = pScript.writePng(pScript.applyScriptFilter('my_script_invert', s4s, []), {}, undefined);
+
+    const pBuiltin = new Pipeline();
+    const builtinResult = pBuiltin.writePng(pBuiltin.invert(pBuiltin.read(testPng)), {}, undefined);
     assert(arraysEqual(scriptResult, builtinResult), 'Script invert == built-in invert');
 
   } catch (e) {
