@@ -107,6 +107,79 @@ impl GpuCapable for BlurNode {
     }
 }
 
+impl GpuCapable for HighPassNode {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
+        if !is_rgba8(&self.source_info) || self.config.radius <= 0.0 {
+            return None;
+        }
+        let sigma = self.config.radius;
+        let kernel_radius = (sigma * 3.0).ceil() as u32;
+        if kernel_radius > 32 {
+            return None;
+        }
+
+        // Build Gaussian kernel (same as BlurNode)
+        let ksize = 2 * kernel_radius + 1;
+        let mut weights = Vec::with_capacity(ksize as usize);
+        let mut sum = 0.0f32;
+        for i in 0..ksize {
+            let x = i as f32 - kernel_radius as f32;
+            let w = (-0.5 * (x / sigma) * (x / sigma)).exp();
+            weights.push(w);
+            sum += w;
+        }
+        let inv_sum = 1.0 / sum;
+        let mut kernel_buf = Vec::with_capacity(ksize as usize * 4);
+        for w in &weights {
+            kernel_buf.extend_from_slice(&(w * inv_sum).to_le_bytes());
+        }
+
+        let mut blur_params = Vec::with_capacity(16);
+        blur_params.extend_from_slice(&width.to_le_bytes());
+        blur_params.extend_from_slice(&height.to_le_bytes());
+        blur_params.extend_from_slice(&kernel_radius.to_le_bytes());
+        blur_params.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut hp_params = Vec::with_capacity(16);
+        hp_params.extend_from_slice(&width.to_le_bytes());
+        hp_params.extend_from_slice(&height.to_le_bytes());
+        hp_params.extend_from_slice(&0u32.to_le_bytes());
+        hp_params.extend_from_slice(&0u32.to_le_bytes());
+
+        let blur_shader = GAUSSIAN_BLUR.clone();
+
+        Some(vec![
+            // 1. Snapshot original input at binding 3
+            GpuOp::Snapshot { binding: 3 },
+            // 2. Blur H pass
+            GpuOp::Compute {
+                shader: blur_shader.clone(),
+                entry_point: "blur_h",
+                workgroup_size: [256, 1, 1],
+                params: blur_params.clone(),
+                extra_buffers: vec![kernel_buf.clone()],
+            },
+            // 3. Blur V pass
+            GpuOp::Compute {
+                shader: blur_shader,
+                entry_point: "blur_v",
+                workgroup_size: [1, 256, 1],
+                params: blur_params,
+                extra_buffers: vec![kernel_buf],
+            },
+            // 4. High-pass: (original - blurred) / 2 + 128
+            //    Reads blurred from input (binding 0), original from snapshot (binding 3)
+            GpuOp::Compute {
+                shader: HIGH_PASS.clone(),
+                entry_point: "main",
+                workgroup_size: [16, 16, 1],
+                params: hp_params,
+                extra_buffers: vec![],
+            },
+        ])
+    }
+}
+
 impl GpuCapable for SharpenNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
         if !is_rgba8(&self.source_info) {
