@@ -1,0 +1,85 @@
+id: sampling-mode-audit_20260402041200Z
+title: 'Research: EWA vs Bilinear sampling audit for distortion filters'
+type: research
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: Benchmark each distortion filter (barrel, spherize, swirl, ripple, wave, polar, depolar, mesh_warp) against ImageMagick
+    and libvips using both EWA and Bilinear sampling. Document which mode produces the best parity for each filter and recommend
+    optimal sampling configuration.
+  context: 'During polar/depolar IM alignment work, we discovered that switching polar from EWA to Bilinear dropped MAE from
+    5.18 to 1.95 against IM DePolar. This raises the question: are the other distortion filters also using suboptimal sampling
+    modes? IM uses different resampling strategies per distortion type (Laguerre EWA for high-distortion, bilinear for simpler
+    mappings). We need a systematic audit to match professional tool behavior.'
+  codebase_analysis: 'Current sampling mode inventory:
+
+    - barrel: EwaClamp (MAE 1.04 vs IM)
+
+    - spherize: Ewa (MAE 0.04 vs numpy — no IM ref yet)
+
+    - swirl: Ewa (MAE 0.06 vs IM, MAE 2.34 in unit test)
+
+    - ripple: Ewa (MAE 0.23 vs numpy — no IM ref yet)
+
+    - wave: Bilinear (MAE 0.00 vs numpy)
+
+    - polar: Bilinear (MAE 1.95 vs IM DePolar)
+
+    - depolar: Ewa (MAE 2.55 vs IM Polar)
+
+    - mesh_warp: Bilinear
+
+
+    EWA modes: Ewa (zero-border fetch), EwaClamp (edge-clamp fetch).
+
+    All sampling code in ewa.rs (EwaSampler). The distortion engine in common/distortion.rs dispatches per mode.'
+  acceptance_criteria:
+  - MAE comparison table for all 8 distortion filters x 3 sampling modes x IM reference
+  - Document which resampler IM uses per distortion type (from source or empirical)
+  - Recommendation matrix with optimal sampling mode per filter
+  - If any filter would benefit from a mode change, note the expected MAE improvement
+  out_of_scope: Implementing sampling mode changes (separate track from findings). Writing new resampling kernels. GPU shader
+    changes. Non-distortion filters (spatial, convolution, etc.).
+  technical_notes: 'For each distortion filter, run the same test image through (a) our implementation with Ewa, (b) our implementation
+    with Bilinear, (c) our implementation with EwaClamp, and (d) IM reference. Compare MAE for each combo. Also test against
+    libvips warpPerspective/mapim where applicable. Document whether IM uses EWA or bilinear per operation (from IM source
+    or empirical testing). Output: a decision matrix recommending the optimal sampling mode per filter.'
+plan:
+- phase: Build benchmark harness
+  tasks:
+  - text: Write a Rust test harness that runs each distortion filter with all 3 sampling modes (Ewa, EwaClamp, Bilinear) on a standard test image and outputs raw RGB
+    done: false
+  - text: Write IM reference generator script for all 8 distortion filters with matched parameters
+    done: false
+- phase: Collect measurements
+  tasks:
+  - text: Run barrel with all 3 modes, compute MAE vs IM for each
+    done: false
+  - text: Run spherize with all 3 modes, compute MAE vs IM for each
+    done: false
+  - text: Run swirl with all 3 modes, compute MAE vs IM for each
+    done: false
+  - text: Run ripple with all 3 modes, compute MAE vs IM for each
+    done: false
+  - text: Run wave with all 3 modes, compute MAE vs IM for each
+    done: false
+  - text: Run polar with all 3 modes, compute MAE vs IM DePolar for each
+    done: false
+  - text: Run depolar with all 3 modes, compute MAE vs IM Polar for each
+    done: false
+  - text: Run mesh_warp with all 3 modes, compute MAE vs IM perspective for each
+    done: false
+- phase: IM source analysis
+  tasks:
+  - text: Document IM resampler per distortion type from IM 7.x source (distort.c)
+    done: false
+  - text: Note any per-operation overrides IM applies (filter type, support radius)
+    done: false
+- phase: Report
+  tasks:
+  - text: Produce decision matrix table (filter x mode x MAE) with recommended mode
+    done: false
+  - text: List filters that would benefit from a mode change and expected improvement
+    done: false
+extra: {}
