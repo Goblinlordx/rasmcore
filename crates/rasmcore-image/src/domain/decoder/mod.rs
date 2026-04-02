@@ -118,6 +118,16 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     if is_cube_lut(header) {
         return Some("cube".to_string());
     }
+    // .csp CineSpace LUT (text format — check for CSPLUTV100 header)
+    if is_csp_lut(header) {
+        return Some("csp".to_string());
+    }
+    // .3dl Autodesk LUT (text format — integer triplets, no distinguishing header)
+    // Note: .3dl detection is weaker since the format has no magic header.
+    // It must be detected after all binary formats and other text formats.
+    if is_3dl_lut(header) {
+        return Some("3dl".to_string());
+    }
     None
 }
 
@@ -140,6 +150,63 @@ pub fn decode_cube(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageErr
     let text = std::str::from_utf8(data)
         .map_err(|e| ImageError::InvalidInput(format!(".cube file is not valid UTF-8: {e}")))?;
     super::color_lut::parse_cube_lut(text)
+}
+
+/// Detect .csp CineSpace LUT format by checking for CSPLUTV100 header.
+fn is_csp_lut(data: &[u8]) -> bool {
+    let check_len = data.len().min(64);
+    if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
+        text.trim_start().starts_with("CSPLUTV100")
+    } else {
+        false
+    }
+}
+
+/// Detect .3dl Autodesk LUT format.
+///
+/// .3dl has no magic header — it's just lines of integer triplets.
+/// Heuristic: first few non-empty lines must be space-separated integers,
+/// at least 3 per line, and no alphabetic characters.
+fn is_3dl_lut(data: &[u8]) -> bool {
+    let check_len = data.len().min(512);
+    let text = match std::str::from_utf8(&data[..check_len]) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+
+    let mut triplet_count = 0;
+    for line in text.lines().take(10) {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // Must be all digits and whitespace
+        if line.chars().any(|c| c.is_alphabetic()) {
+            return false;
+        }
+        let nums: Vec<u32> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        if nums.len() >= 3 {
+            triplet_count += 1;
+        }
+    }
+    triplet_count >= 2
+}
+
+/// Decode a .3dl LUT file into a ColorLut3D.
+pub fn decode_3dl(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageError> {
+    let text = std::str::from_utf8(data)
+        .map_err(|e| ImageError::InvalidInput(format!(".3dl file is not valid UTF-8: {e}")))?;
+    super::color_lut::parse_3dl(text)
+}
+
+/// Decode a .csp CineSpace LUT file into a ColorLut3D.
+pub fn decode_csp(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageError> {
+    let text = std::str::from_utf8(data)
+        .map_err(|e| ImageError::InvalidInput(format!(".csp file is not valid UTF-8: {e}")))?;
+    super::color_lut::parse_csp(text)
 }
 
 /// Check if data starts with a HEIF/HEIC/AVIF ftyp box with a recognized brand.

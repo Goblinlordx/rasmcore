@@ -719,6 +719,328 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     (r1 + m, g1 + m, b1 + m)
 }
 
+// ─── Autodesk .3dl LUT Format ───────────────────────────────────────────────
+
+/// Parse an Autodesk .3dl 3D LUT file into a ColorLut3D.
+///
+/// The .3dl format uses integer RGB triplets (0-1023 for 10-bit, 0-4095 for 12-bit).
+/// Grid size is inferred as the cube root of the entry count.
+/// R varies fastest, then G, then B (matches internal storage order).
+///
+/// Optional first line: mesh header (space-separated integers defining vertex positions).
+/// Subsequent lines: R G B integer triplets.
+pub fn parse_3dl(text: &str) -> Result<ColorLut3D, ImageError> {
+    let mut data: Vec<[f32; 3]> = Vec::new();
+    let mut max_val: u32 = 0;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let vals: Vec<u32> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect();
+
+        if vals.len() >= 3 {
+            // Track max value for auto-detecting bit depth
+            for &v in &vals[..3] {
+                if v > max_val {
+                    max_val = v;
+                }
+            }
+            data.push([vals[0] as f32, vals[1] as f32, vals[2] as f32]);
+        }
+        // Lines with != 3 integers are mesh headers or metadata — skip
+    }
+
+    if data.is_empty() {
+        return Err(ImageError::InvalidInput("no RGB data found in .3dl file".into()));
+    }
+
+    // Infer grid size from entry count (must be a perfect cube)
+    let total = data.len();
+    let grid_size = (total as f64).cbrt().round() as usize;
+    if grid_size * grid_size * grid_size != total {
+        return Err(ImageError::InvalidInput(format!(
+            ".3dl entry count {total} is not a perfect cube (nearest grid size: {grid_size})"
+        )));
+    }
+
+    // Auto-detect bit depth: 10-bit (max 1023), 12-bit (max 4095), or 16-bit (max 65535)
+    let divisor = if max_val <= 1023 {
+        1023.0
+    } else if max_val <= 4095 {
+        4095.0
+    } else {
+        65535.0
+    };
+
+    // Normalize to [0.0, 1.0]
+    for entry in data.iter_mut() {
+        entry[0] /= divisor;
+        entry[1] /= divisor;
+        entry[2] /= divisor;
+    }
+
+    Ok(ColorLut3D { grid_size, data })
+}
+
+/// Serialize a ColorLut3D to Autodesk .3dl format (10-bit integer triplets).
+///
+/// Output: one R G B triplet per line, values in 0-1023, no header.
+pub fn serialize_3dl(lut: &ColorLut3D) -> String {
+    let n = lut.grid_size;
+    let capacity = n * n * n * 16;
+    let mut out = String::with_capacity(capacity);
+
+    for entry in &lut.data {
+        let r = (entry[0] * 1023.0 + 0.5).clamp(0.0, 1023.0) as u32;
+        let g = (entry[1] * 1023.0 + 0.5).clamp(0.0, 1023.0) as u32;
+        let b = (entry[2] * 1023.0 + 0.5).clamp(0.0, 1023.0) as u32;
+        out.push_str(&format!(" {r} {g} {b}\n"));
+    }
+
+    out
+}
+
+// ─── CineSpace .csp LUT Format ──────────────────────────────────────────────
+
+/// Parse a CineSpace .csp 3D LUT file into a ColorLut3D.
+///
+/// The .csp format has:
+/// - Header: "CSPLUTV100" + "3D" (or "1D")
+/// - PreLUT section: 3 channels x (count, input_values, output_values)
+/// - 3D LUT data: grid_size line, then N^3 RGB float triplets
+///
+/// If preLUT is non-identity, it is absorbed into the 3D CLUT via resampling.
+pub fn parse_csp(text: &str) -> Result<ColorLut3D, ImageError> {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return Err(ImageError::InvalidInput("empty .csp file".into()));
+    }
+
+    // Header validation
+    let header = lines[0].trim();
+    if header != "CSPLUTV100" {
+        return Err(ImageError::InvalidInput(format!(
+            ".csp header must be CSPLUTV100, got '{header}'"
+        )));
+    }
+    if lines.len() < 2 {
+        return Err(ImageError::InvalidInput("missing LUT type line in .csp".into()));
+    }
+    let lut_type = lines[1].trim();
+    if lut_type != "3D" {
+        return Err(ImageError::InvalidInput(format!(
+            "only 3D .csp LUTs supported, got '{lut_type}'"
+        )));
+    }
+
+    // Parse preLUT section (3 channels, each: count line, input line, output line)
+    let mut pre_luts: Vec<Vec<(f32, f32)>> = Vec::new();
+    let mut line_idx = 2;
+    for _ch in 0..3 {
+        // Skip empty lines before each channel's preLUT block
+        while line_idx < lines.len() && lines[line_idx].trim().is_empty() {
+            line_idx += 1;
+        }
+        if line_idx >= lines.len() {
+            break;
+        }
+        let count: usize = lines[line_idx].trim().parse().unwrap_or(0);
+        line_idx += 1;
+        if count == 0 || line_idx + 1 >= lines.len() {
+            line_idx += 2; // skip input/output lines
+            pre_luts.push(vec![(0.0, 0.0), (1.0, 1.0)]); // identity
+            continue;
+        }
+        let inputs: Vec<f32> = lines[line_idx]
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        line_idx += 1;
+        let outputs: Vec<f32> = lines[line_idx]
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        line_idx += 1;
+
+        let pairs: Vec<(f32, f32)> = inputs.into_iter().zip(outputs).collect();
+        pre_luts.push(pairs);
+    }
+
+    // Parse 3D LUT data
+    // Next non-empty line should be grid size
+    while line_idx < lines.len() && lines[line_idx].trim().is_empty() {
+        line_idx += 1;
+    }
+    if line_idx >= lines.len() {
+        return Err(ImageError::InvalidInput("missing grid size in .csp".into()));
+    }
+    let grid_parts: Vec<usize> = lines[line_idx]
+        .split_whitespace()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let grid_size = grid_parts.first().copied().unwrap_or(0);
+    if grid_size < 2 {
+        return Err(ImageError::InvalidInput(format!(
+            "invalid grid size {grid_size} in .csp"
+        )));
+    }
+    line_idx += 1;
+
+    // Read RGB triplets
+    let expected = grid_size * grid_size * grid_size;
+    let mut data: Vec<[f32; 3]> = Vec::with_capacity(expected);
+    while line_idx < lines.len() && data.len() < expected {
+        let line = lines[line_idx].trim();
+        line_idx += 1;
+        if line.is_empty() {
+            continue;
+        }
+        let vals: Vec<f32> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        if vals.len() >= 3 {
+            data.push([vals[0], vals[1], vals[2]]);
+        }
+    }
+
+    if data.len() != expected {
+        return Err(ImageError::InvalidInput(format!(
+            ".csp 3D LUT expects {expected} entries (grid={grid_size}), got {}",
+            data.len()
+        )));
+    }
+
+    let mut clut = ColorLut3D { grid_size, data };
+
+    // Check if preLUT is non-identity and absorb if so
+    let is_identity_pre = pre_luts.iter().all(|pairs| {
+        pairs.len() == 2
+            && (pairs[0].0 - 0.0).abs() < 1e-6
+            && (pairs[0].1 - 0.0).abs() < 1e-6
+            && (pairs[1].0 - 1.0).abs() < 1e-6
+            && (pairs[1].1 - 1.0).abs() < 1e-6
+    });
+
+    if !is_identity_pre && pre_luts.len() == 3 {
+        // Build a 1D LUT from the preLUT curves and absorb into the 3D CLUT
+        let mut lut_1d = [0u8; 256];
+        // Use the first channel's curve as a representative (simplification —
+        // full per-channel preLUT would need per-channel absorb)
+        let pairs = &pre_luts[0];
+        for i in 0..256 {
+            let x = i as f32 / 255.0;
+            // Linear interpolation through preLUT pairs
+            let y = interpolate_pairs(pairs, x);
+            lut_1d[i] = (y * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+        }
+        clut = absorb_1d_pre(&lut_1d, &clut);
+    }
+
+    Ok(clut)
+}
+
+/// Linear interpolation through a set of (input, output) pairs.
+fn interpolate_pairs(pairs: &[(f32, f32)], x: f32) -> f32 {
+    if pairs.is_empty() {
+        return x;
+    }
+    if x <= pairs[0].0 {
+        return pairs[0].1;
+    }
+    if x >= pairs[pairs.len() - 1].0 {
+        return pairs[pairs.len() - 1].1;
+    }
+    for i in 0..pairs.len() - 1 {
+        if x >= pairs[i].0 && x <= pairs[i + 1].0 {
+            let t = (x - pairs[i].0) / (pairs[i + 1].0 - pairs[i].0);
+            return pairs[i].1 + t * (pairs[i + 1].1 - pairs[i].1);
+        }
+    }
+    x
+}
+
+/// Serialize a ColorLut3D to CineSpace .csp format.
+///
+/// Output: CSPLUTV100 header, identity preLUT, 3D LUT data.
+pub fn serialize_csp(lut: &ColorLut3D) -> String {
+    let n = lut.grid_size;
+    let capacity = 200 + n * n * n * 28;
+    let mut out = String::with_capacity(capacity);
+
+    // Header
+    out.push_str("CSPLUTV100\n3D\n\n");
+
+    // PreLUT: identity (2 entries per channel: 0.0->0.0, 1.0->1.0)
+    for _ch in 0..3 {
+        out.push_str("2\n0.0 1.0\n0.0 1.0\n");
+    }
+    out.push('\n');
+
+    // Grid size
+    out.push_str(&format!("{n} {n} {n}\n"));
+
+    // 3D LUT data
+    for entry in &lut.data {
+        out.push_str(&format!(
+            "{:.6} {:.6} {:.6}\n",
+            entry[0], entry[1], entry[2]
+        ));
+    }
+
+    out
+}
+
+// ─── Hald CLUT Write ────────────────────────────────────────────────────────
+
+/// Serialize a ColorLut3D to a Hald CLUT RGB8 pixel buffer.
+///
+/// Returns (pixels, width, height) for a square Hald image.
+/// The caller should encode as PNG via the standard PNG encoder.
+///
+/// Hald convention: level = smallest integer where level^2 >= grid_size.
+/// Image dimension = level^3. Total pixels = (level^3)^2 = level^6.
+/// If grid_size != level^2, the CLUT is resampled to the Hald grid.
+pub fn serialize_hald(lut: &ColorLut3D) -> (Vec<u8>, u32, u32) {
+    // Find the smallest level where level^2 >= grid_size
+    let mut level = 1usize;
+    while level * level < lut.grid_size {
+        level += 1;
+    }
+    let hald_grid = level * level;
+    let dim = level * level * level; // image dimension
+    let total = dim * dim; // total pixels
+
+    let mut pixels = Vec::with_capacity(total * 3);
+    let scale = 1.0 / (hald_grid - 1).max(1) as f32;
+
+    for i in 0..total {
+        // Decompose linear index into (r, g, b) grid coordinates
+        let r_idx = i % hald_grid;
+        let g_idx = (i / hald_grid) % hald_grid;
+        let b_idx = i / (hald_grid * hald_grid);
+
+        let r = r_idx as f32 * scale;
+        let g = g_idx as f32 * scale;
+        let b = b_idx as f32 * scale;
+
+        // Look up through the CLUT (handles resampling via tetrahedral interpolation)
+        let (ro, go, bo) = lut.lookup(r, g, b);
+
+        pixels.push((ro * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+        pixels.push((go * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+        pixels.push((bo * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+    }
+
+    (pixels, dim as u32, dim as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1095,5 +1417,127 @@ mod tests {
             color_space: crate::domain::types::ColorSpace::Srgb,
         };
         assert!(parse_hald_lut(&pixels, &info).is_err());
+    }
+
+    // ── .3dl tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_3dl_identity_10bit() {
+        // 2x2x2 identity in 10-bit
+        let text = "0 0 0\n1023 0 0\n0 1023 0\n1023 1023 0\n\
+                    0 0 1023\n1023 0 1023\n0 1023 1023\n1023 1023 1023\n";
+        let lut = parse_3dl(text).unwrap();
+        assert_eq!(lut.grid_size, 2);
+        // First entry: (0,0,0) -> (0,0,0)
+        assert!((lut.data[0][0]).abs() < 0.01);
+        // Last entry: (1023,1023,1023) -> (1,1,1)
+        assert!((lut.data[7][0] - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_3dl_12bit() {
+        let text = "0 0 0\n4095 4095 4095\n0 0 0\n4095 4095 4095\n\
+                    0 0 0\n4095 4095 4095\n0 0 0\n4095 4095 4095\n";
+        let lut = parse_3dl(text).unwrap();
+        assert_eq!(lut.grid_size, 2);
+        assert!((lut.data[7][0] - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn roundtrip_3dl_identity() {
+        let identity = ColorLut3D::identity(9);
+        let text = serialize_3dl(&identity);
+        let parsed = parse_3dl(&text).unwrap();
+        assert_eq!(parsed.grid_size, 9);
+        // 10-bit quantization: max error = 1/1023 ≈ 0.001
+        for (i, (orig, back)) in identity.data.iter().zip(parsed.data.iter()).enumerate() {
+            for c in 0..3 {
+                let diff = (orig[c] - back[c]).abs();
+                assert!(
+                    diff < 0.002,
+                    "3dl roundtrip entry {i} ch {c}: diff={diff}"
+                );
+            }
+        }
+    }
+
+    // ── .csp tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_csp_identity() {
+        let mut text = String::from("CSPLUTV100\n3D\n\n");
+        // Identity preLUT (3 channels)
+        for _ in 0..3 {
+            text.push_str("2\n0.0 1.0\n0.0 1.0\n");
+        }
+        text.push('\n');
+        // 2x2x2 grid
+        text.push_str("2 2 2\n");
+        for b in 0..2u32 {
+            for g in 0..2u32 {
+                for r in 0..2u32 {
+                    text.push_str(&format!("{}.0 {}.0 {}.0\n", r, g, b));
+                }
+            }
+        }
+        let lut = parse_csp(&text).unwrap();
+        assert_eq!(lut.grid_size, 2);
+        assert!((lut.data[0][0]).abs() < 0.01); // (0,0,0)
+        assert!((lut.data[7][0] - 1.0).abs() < 0.01); // (1,1,1)
+    }
+
+    #[test]
+    fn roundtrip_csp_identity() {
+        let identity = ColorLut3D::identity(9);
+        let text = serialize_csp(&identity);
+        assert!(text.starts_with("CSPLUTV100\n3D"));
+        let parsed = parse_csp(&text).unwrap();
+        assert_eq!(parsed.grid_size, 9);
+        for (i, (orig, back)) in identity.data.iter().zip(parsed.data.iter()).enumerate() {
+            for c in 0..3 {
+                let diff = (orig[c] - back[c]).abs();
+                assert!(diff < 1e-5, "csp roundtrip entry {i} ch {c}: diff={diff}");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_csp_invalid_header_errors() {
+        assert!(parse_csp("NOT_CSP\n3D\n").is_err());
+    }
+
+    // ── Hald write tests ────────────────────────────────────────────────
+
+    #[test]
+    fn hald_write_identity_roundtrip() {
+        let identity = ColorLut3D::identity(9);
+        let (pixels, w, h) = serialize_hald(&identity);
+        assert_eq!(w, h); // square
+        assert_eq!(pixels.len(), (w * h * 3) as usize);
+
+        // Parse it back
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let parsed = parse_hald_lut(&pixels, &info).unwrap();
+
+        // Verify near-identity: lookup(0.5, 0.5, 0.5) ≈ (0.5, 0.5, 0.5)
+        let (r, g, b) = parsed.lookup(0.5, 0.5, 0.5);
+        assert!((r - 0.5).abs() < 0.02, "hald roundtrip r={r}");
+        assert!((g - 0.5).abs() < 0.02, "hald roundtrip g={g}");
+        assert!((b - 0.5).abs() < 0.02, "hald roundtrip b={b}");
+    }
+
+    #[test]
+    fn hald_dimensions_correct() {
+        // Grid size 4 -> level=2 (2^2=4), dim=2^3=8, image=8x8
+        let lut = ColorLut3D::identity(4);
+        let (pixels, w, h) = serialize_hald(&lut);
+        assert_eq!(w, 8);
+        assert_eq!(h, 8);
+        assert_eq!(pixels.len(), 8 * 8 * 3);
     }
 }
