@@ -1,0 +1,129 @@
+id: ops-coverage-refresh_20260402021542Z
+title: "Research: Refresh operations coverage gap — filters, transforms, effects vs IM, libvips, sharp, Pillow, photon_rs"
+type: research
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Refresh the stale operations coverage sections of the gap reports (last
+    updated Mar 30-31) to reflect significant progress. Add photon_rs as a new
+    comparison target. Focus exclusively on filters, transforms, effects, color
+    ops, analysis, and drawing — NOT format/codec support.
+  context: |
+    The filter/operation comparison tables in parity-gap-audit.md (Mar 31)
+    are significantly outdated. Many items listed as gaps are now implemented:
+    high_pass, LAB channel ops, mesh_warp, skeletonize, Harris corner detection,
+    template matching, GPU-accelerated filters, TrueType text rendering,
+    complex text shaping, and more.
+
+    User wants photon_rs added as comparison target. photon_rs has ~96 functions
+    across: color channels, effects (offsets, thresholding, duotone, solarize),
+    convolutions (blur, sharpen, edge detect), monochrome, colour space ops
+    (HSL, LCh, sRGB), 30+ preset filters, 10 blend modes, text/watermark,
+    and basic transforms (resize, crop, rotate, flip). It is WASM-first like
+    rasmcore but far narrower — rasmcore has 137+ registered operations with
+    GPU acceleration, tile-based pipeline, and native codecs.
+
+    Format/codec coverage is explicitly OUT OF SCOPE for this track.
+  codebase_analysis: |
+    Key ops improvements since last report (Mar 30-31):
+    SPATIAL: high_pass, GPU-accelerated gaussian_blur/bilateral/spherize
+    COLOR: LAB extract L/a/b, LAB sharpen, LAB adjust, GPU 3D CLUT
+    DISTORTION: mesh_warp (grid-based with bilinear inverse)
+    MORPHOLOGY: skeletonize (Zhang-Suen), GPU-capable
+    ANALYSIS: Harris corner detection, NCC template matching
+    TEXT: TrueType font rendering, complex text shaping
+    GPU: GpuCapable trait on spatial, distortion, color, morphology filters
+    PIPELINE: stateless graph description, fan-out/reuse, dynamic overlap
+
+    Existing report to update: .agent/kf/_reports/parity-gap-audit.md
+    (Section 2: Filter/Operation Comparison Matrix — vs libvips, vs IM)
+
+    photon_rs capabilities to cross-reference:
+    - docs.rs/photon-rs modules: channels, colour_spaces, conv, effects,
+      filters, helpers, monochrome, multiple, native, noise, text, transform
+  acceptance_criteria:
+    - Updated operations comparison table with current rasmcore state
+    - photon_rs column added to filter/transform/effects comparison tables
+    - Every done item verified against actual registered operations
+    - Clear identification of remaining gaps (what we still lack)
+    - Summary of areas where rasmcore surpasses ALL comparison targets
+    - No format/codec rows in the output — operations only
+    - No source code, tests, or project files modified
+  out_of_scope: |
+    Format/codec coverage (explicitly excluded). Implementing missing features.
+    Modifying source code or tests. Performance benchmarks.
+  technical_notes: |
+    APPROACH:
+    1. Read param-manifest.json for all registered filters + categories
+    2. Read domain modules for transforms, analysis ops, drawing ops
+    3. Catalog photon_rs operations from docs.rs module listing
+    4. Update parity-gap-audit.md Section 2 tables in-place
+    5. Produce a new .agent/kf/_reports/ops-coverage-matrix.md with:
+       - Category-by-category comparison (rasmcore vs IM vs libvips vs
+         sharp vs Pillow vs photon_rs)
+       - Remaining gaps with priority ratings
+       - Areas of rasmcore leadership
+
+    CATEGORIES TO COVER:
+    - Blur/sharpen/denoise
+    - Edge detection / analysis
+    - Morphology
+    - Color adjustment (exposure, contrast, saturation, curves, etc.)
+    - Color space operations
+    - Tone mapping / HDR
+    - Distortion / warping
+    - Transforms (resize, rotate, crop, flip, affine, perspective)
+    - Compositing / blending
+    - Drawing / text
+    - Content-aware (smart crop, seam carve, inpaint)
+    - Frequency domain
+    - Histogram operations
+    - Noise generation
+    - Comparison metrics (PSNR, SSIM, etc.)
+    - Segmentation / labeling
+    - Convolution
+    - LUT / color grading
+    - Dithering
+    - GPU acceleration coverage
+plan:
+  - phase: Inventory rasmcore operations
+    tasks:
+      - text: Read param-manifest.json — catalog all registered filters by category
+        done: false
+      - text: Read domain/filters/ modules — find unregistered ops, transforms, analysis functions
+        done: false
+      - text: List all GpuCapable trait implementations
+        done: false
+      - text: List all comparison/metric functions (psnr, ssim, mae, delta_e, etc.)
+        done: false
+      - text: List all drawing/text operations
+        done: false
+  - phase: Inventory comparison targets
+    tasks:
+      - text: Catalog photon_rs operations from docs.rs — all modules and public functions
+        done: false
+      - text: Cross-reference libvips operations list (vips -list classes or docs)
+        done: false
+      - text: Cross-reference ImageMagick operations (convert -list filter, -list compose, etc.)
+        done: false
+      - text: Note sharp and Pillow operation coverage from existing report + docs
+        done: false
+  - phase: Produce updated report
+    tasks:
+      - text: Create .agent/kf/_reports/ops-coverage-matrix.md with category-by-category tables
+        done: false
+      - text: Mark each operation as done/partial/missing per target, with notes
+        done: false
+      - text: Identify remaining gaps with priority (P0-P3) ratings
+        done: false
+      - text: Add summary section — areas of rasmcore leadership, competitive position
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify every rasmcore done item against actual code (grep function names)
+        done: false
+      - text: Verify no source code or test files were modified
+        done: false
+extra: {}
