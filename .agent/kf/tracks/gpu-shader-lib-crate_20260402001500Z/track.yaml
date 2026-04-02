@@ -5,146 +5,104 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    New crate providing reusable WGSL shader fragments (pixel ops, bilinear
+  summary: 'New crate providing reusable WGSL shader fragments (pixel ops, bilinear
+
     sampling) and composition functions to build complete shaders without
+
     copy-pasting boilerplate. Migrate all 18 existing shaders to use it.
-  context: |
-    Every WGSL shader in the project duplicates the same pack/unpack and
+
+    '
+  context: 'Every WGSL shader in the project duplicates the same pack/unpack and
+
     sample_bilinear functions. 18 shaders each copy ~15 lines of identical
+
     code. When we fix a bug in pack() or add a new pixel format, we must
+
     update every shader file individually.
 
+
     The CPU side already solves this — common filter utilities live in
+
     filters/common/ and are imported via use. WGSL has no module system,
+
     but Rust-side string composition achieves the same result.
-  codebase_analysis: |
-    CURRENT DUPLICATION (crates/rasmcore-image/src/shaders/):
-      fn unpack(pixel: u32) -> vec4<f32>  — identical in 18 shaders
-      fn pack(color: vec4<f32>) -> u32    — identical in 18 shaders
-      fn sample_bilinear(fx, fy)          — identical in 12 shaders (distortion + motion)
 
-    SHADER FILES (18 total):
-      gaussian_blur, box_blur, sharpen, bilateral, guided_filter, median,
-      spin_blur, motion_blur, zoom_blur, high_pass, spherize, swirl,
-      barrel, ripple, wave, polar, depolar, affine_resample
-
-    CURRENT USAGE PATTERN (gpu_impls.rs):
-      shader: include_str!("../../../shaders/gaussian_blur.wgsl")
-      Each shader is a standalone file with all dependencies inlined.
-
-    DEPENDENCY DIRECTION:
-      rasmcore-gpu-shaders (new) — owns WGSL fragments + compose API
-      rasmcore-image — depends on rasmcore-gpu-shaders for shader composition
-      rasmcore-pipeline — unchanged (owns GpuOp/GpuCapable traits only)
+    '
+  codebase_analysis: "CURRENT DUPLICATION (crates/rasmcore-image/src/shaders/):\n  fn unpack(pixel: u32) -> vec4<f32>  — identical\
+    \ in 18 shaders\n  fn pack(color: vec4<f32>) -> u32    — identical in 18 shaders\n  fn sample_bilinear(fx, fy)       \
+    \   — identical in 12 shaders (distortion + motion)\n\nSHADER FILES (18 total):\n  gaussian_blur, box_blur, sharpen, bilateral,\
+    \ guided_filter, median,\n  spin_blur, motion_blur, zoom_blur, high_pass, spherize, swirl,\n  barrel, ripple, wave, polar,\
+    \ depolar, affine_resample\n\nCURRENT USAGE PATTERN (gpu_impls.rs):\n  shader: include_str!(\"../../../shaders/gaussian_blur.wgsl\"\
+    )\n  Each shader is a standalone file with all dependencies inlined.\n\nDEPENDENCY DIRECTION:\n  rasmcore-gpu-shaders\
+    \ (new) — owns WGSL fragments + compose API\n  rasmcore-image — depends on rasmcore-gpu-shaders for shader composition\n\
+    \  rasmcore-pipeline — unchanged (owns GpuOp/GpuCapable traits only)\n"
   acceptance_criteria:
-    - New crate rasmcore-gpu-shaders in workspace
-    - WGSL fragments for pixel_ops (pack/unpack) and sample_bilinear
-    - compose() function that concatenates fragments + body into complete shader
-    - Convenience composition functions for common patterns (with_pixel_ops, with_sampling)
-    - All 18 existing shaders migrated to use composition — body files contain only Params + entry point
-    - Naga validation in build.rs validates composed shaders (not just fragments)
-    - All existing GpuCapable impls updated to use composed shaders via LazyLock
-    - No functional change — GPU output identical before and after
-  out_of_scope: |
-    WGSL preprocessor or macro system.
+  - New crate rasmcore-gpu-shaders in workspace
+  - WGSL fragments for pixel_ops (pack/unpack) and sample_bilinear
+  - compose() function that concatenates fragments + body into complete shader
+  - Convenience composition functions for common patterns (with_pixel_ops, with_sampling)
+  - All 18 existing shaders migrated to use composition — body files contain only Params + entry point
+  - Naga validation in build.rs validates composed shaders (not just fragments)
+  - All existing GpuCapable impls updated to use composed shaders via LazyLock
+  - No functional change — GPU output identical before and after
+  out_of_scope: 'WGSL preprocessor or macro system.
+
     naga-oil integration.
+
     New shader functionality (just refactoring existing).
+
     Changing the GpuOp or GpuCapable traits.
-  technical_notes: |
-    CRATE STRUCTURE:
-      crates/rasmcore-gpu-shaders/
-        Cargo.toml
-        src/
-          lib.rs          — pub API: constants + compose functions
-          wgsl/
-            pixel_ops.wgsl      — unpack/pack functions
-            sample_bilinear.wgsl — bilinear sampling (requires Params with width/height)
 
-    COMPOSITION API:
-      pub const PIXEL_OPS: &str = include_str!("wgsl/pixel_ops.wgsl");
-      pub const SAMPLE_BILINEAR: &str = include_str!("wgsl/sample_bilinear.wgsl");
-
-      /// Compose shader from fragments + body. Fragments are prepended in order.
-      pub fn compose(fragments: &[&str], body: &str) -> String;
-
-      /// Pixel ops only (pack/unpack). For blur, sharpen, bilateral, etc.
-      pub fn with_pixel_ops(body: &str) -> String;
-
-      /// Pixel ops + bilinear sampling. For distortions, affine, motion blur.
-      pub fn with_sampling(body: &str) -> String;
-
-    SHADER BODY CONVENTION:
-      Body files contain ONLY the filter-specific code:
-        struct Params { ... }
-        @group(0) @binding(0-2) var<...> ...
-        @compute @workgroup_size(...)
-        fn main(...) { ... }
-
-      The pack/unpack/sample_bilinear functions are composed in at the Rust level.
-      Binding declarations stay in the body (they are filter-specific).
-
-    MIGRATION PATTERN:
-      Before (gpu_impls.rs):
-        shader: include_str!("../../../shaders/spherize.wgsl"),
-
-      After (gpu_impls.rs):
-        use rasmcore_gpu_shaders;
-        static SPHERIZE_SHADER: LazyLock<String> = LazyLock::new(|| {
-            rasmcore_gpu_shaders::with_sampling(
-                include_str!("../../../shaders/spherize.wgsl")
-            )
-        });
-        // In gpu_ops():
-        shader: &SPHERIZE_SHADER,
-
-      NOTE: GpuOp.shader is &'static str. LazyLock<String> provides &str
-      via Deref, but GpuOp needs 'static. Either:
-        (a) Change GpuOp.shader to String (owned) — simplest
-        (b) Use LazyLock and leak the string — wasteful but works
-        (c) Use Cow<'static, str> — flexible
-      Recommend (a): change shader field to String. The executor clones
-      it anyway for shader cache hashing.
-
-    SAMPLE_BILINEAR CONSTRAINT:
-      sample_bilinear reads from binding(0) input array and uses
-      params.width / params.height for bounds. This requires:
-        - Params struct has width and height as first two u32 fields
-        - Input array is at binding(0)
-      This is already true for all existing shaders (it is the convention).
-      Document this contract in the fragment file header.
-
-    NAGA VALIDATION:
-      Fragments alone are NOT valid WGSL (missing bindings, entry points).
-      Validate only composed shaders. The build.rs naga pass should
-      compose each body with its required fragments before validation.
+    '
+  technical_notes: "CRATE STRUCTURE:\n  crates/rasmcore-gpu-shaders/\n    Cargo.toml\n    src/\n      lib.rs          — pub\
+    \ API: constants + compose functions\n      wgsl/\n        pixel_ops.wgsl      — unpack/pack functions\n        sample_bilinear.wgsl\
+    \ — bilinear sampling (requires Params with width/height)\n\nCOMPOSITION API:\n  pub const PIXEL_OPS: &str = include_str!(\"\
+    wgsl/pixel_ops.wgsl\");\n  pub const SAMPLE_BILINEAR: &str = include_str!(\"wgsl/sample_bilinear.wgsl\");\n\n  /// Compose\
+    \ shader from fragments + body. Fragments are prepended in order.\n  pub fn compose(fragments: &[&str], body: &str) ->\
+    \ String;\n\n  /// Pixel ops only (pack/unpack). For blur, sharpen, bilateral, etc.\n  pub fn with_pixel_ops(body: &str)\
+    \ -> String;\n\n  /// Pixel ops + bilinear sampling. For distortions, affine, motion blur.\n  pub fn with_sampling(body:\
+    \ &str) -> String;\n\nSHADER BODY CONVENTION:\n  Body files contain ONLY the filter-specific code:\n    struct Params\
+    \ { ... }\n    @group(0) @binding(0-2) var<...> ...\n    @compute @workgroup_size(...)\n    fn main(...) { ... }\n\n \
+    \ The pack/unpack/sample_bilinear functions are composed in at the Rust level.\n  Binding declarations stay in the body\
+    \ (they are filter-specific).\n\nMIGRATION PATTERN:\n  Before (gpu_impls.rs):\n    shader: include_str!(\"../../../shaders/spherize.wgsl\"\
+    ),\n\n  After (gpu_impls.rs):\n    use rasmcore_gpu_shaders;\n    static SPHERIZE_SHADER: LazyLock<String> = LazyLock::new(||\
+    \ {\n        rasmcore_gpu_shaders::with_sampling(\n            include_str!(\"../../../shaders/spherize.wgsl\")\n    \
+    \    )\n    });\n    // In gpu_ops():\n    shader: &SPHERIZE_SHADER,\n\n  NOTE: GpuOp.shader is &'static str. LazyLock<String>\
+    \ provides &str\n  via Deref, but GpuOp needs 'static. Either:\n    (a) Change GpuOp.shader to String (owned) — simplest\n\
+    \    (b) Use LazyLock and leak the string — wasteful but works\n    (c) Use Cow<'static, str> — flexible\n  Recommend\
+    \ (a): change shader field to String. The executor clones\n  it anyway for shader cache hashing.\n\nSAMPLE_BILINEAR CONSTRAINT:\n\
+    \  sample_bilinear reads from binding(0) input array and uses\n  params.width / params.height for bounds. This requires:\n\
+    \    - Params struct has width and height as first two u32 fields\n    - Input array is at binding(0)\n  This is already\
+    \ true for all existing shaders (it is the convention).\n  Document this contract in the fragment file header.\n\nNAGA\
+    \ VALIDATION:\n  Fragments alone are NOT valid WGSL (missing bindings, entry points).\n  Validate only composed shaders.\
+    \ The build.rs naga pass should\n  compose each body with its required fragments before validation.\n"
 plan:
-  - phase: Crate setup
-    tasks:
-      - text: Create rasmcore-gpu-shaders crate with Cargo.toml, add to workspace
-        done: false
-      - text: Extract pixel_ops.wgsl (pack/unpack) and sample_bilinear.wgsl fragments
-        done: false
-      - text: Implement compose(), with_pixel_ops(), with_sampling() functions in lib.rs
-        done: false
-  - phase: Migration
-    tasks:
-      - text: Change GpuOp.shader field from static str to String (or Cow)
-        done: false
-      - text: Update WgpuExecutor to handle owned shader source in cache key
-        done: false
-      - text: Migrate all 18 shader body files — remove duplicated pack/unpack/sample_bilinear
-        done: false
-      - text: Update all GpuCapable impls in gpu_impls.rs to use composition API with LazyLock
-        done: false
-      - text: Update ComposedAffineNode GpuCapable impl in affine.rs
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Update build.rs naga validation to compose fragments before validating
-        done: false
-      - text: Verify all composed shaders pass naga validation
-        done: false
-      - text: Verify existing tests pass unchanged
-        done: false
+- phase: Crate setup
+  tasks:
+  - text: Create rasmcore-gpu-shaders crate with Cargo.toml, add to workspace
+    done: true
+  - text: Extract pixel_ops.wgsl (pack/unpack) and sample_bilinear.wgsl fragments
+    done: true
+  - text: Implement compose(), with_pixel_ops(), with_sampling() functions in lib.rs
+    done: true
+- phase: Migration
+  tasks:
+  - text: Change GpuOp.shader field from static str to String (or Cow)
+    done: true
+  - text: Update WgpuExecutor to handle owned shader source in cache key
+    done: true
+  - text: Migrate all 18 shader body files — remove duplicated pack/unpack/sample_bilinear
+    done: true
+  - text: Update all GpuCapable impls in gpu_impls.rs to use composition API with LazyLock
+    done: true
+  - text: Update ComposedAffineNode GpuCapable impl in affine.rs
+    done: true
+- phase: Verification
+  tasks:
+  - text: Update build.rs naga validation to compose fragments before validating
+    done: true
+  - text: Verify all composed shaders pass naga validation
+    done: true
+  - text: Verify existing tests pass unchanged
+    done: true
 extra: {}
