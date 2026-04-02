@@ -2,124 +2,144 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
-
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct ZoomBlurParams {
-    pub center_x: f32,
-    pub center_y: f32,
-    pub factor: f32,
-}
-
-#[rasmcore_macros::register_filter(
-    name = "zoom_blur", gpu = "true",
-    category = "spatial",
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(
+    name = "zoom_blur", category = "spatial",
     group = "blur",
     variant = "zoom",
     reference = "radial kernel simulating lens zoom"
 )]
-pub fn zoom_blur(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ZoomBlurParams,
-) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let center_x = config.center_x;
-    let center_y = config.center_y;
-    let factor = config.factor;
+pub struct ZoomBlurParams {
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub center_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub center_y: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.1)]
+    pub factor: f32,
+}
 
-    validate_format(info.format)?;
+impl CpuFilter for ZoomBlurParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+        let pixels = upstream(request)?;
+        let info = &ImageInfo { width: request.width, height: request.height, ..*info };
+        let pixels = pixels.as_slice();
+        validate_format(info.format)?;
 
-    if factor == 0.0 {
-        return Ok(pixels.to_vec());
-    }
+        if self.factor == 0.0 {
+            return Ok(pixels.to_vec());
+        }
 
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            zoom_blur(r, &mut u, i8, config)
-        });
-    }
+        if is_16bit(info.format) {
+            let cfg = self.clone();
+            return process_via_8bit(pixels, info, |p8, i8| {
+                let r = Rect::new(0, 0, i8.width, i8.height);
+                let mut u = |_: Rect| Ok(p8.to_vec());
+                cfg.compute(r, &mut u, i8)
+            });
+        }
 
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let cx = center_x * w as f32;
-    let cy = center_y * h as f32;
+        let w = info.width as usize;
+        let h = info.height as usize;
+        let ch = channels(info.format);
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
 
-    let mut out = vec![0u8; w * h * ch];
+        let mut out = vec![0u8; w * h * ch];
 
-    for py in 0..h {
-        for px in 0..w {
-            // Ray endpoint: pixel + (center - pixel) * factor
-            let x_start = px as f32;
-            let y_start = py as f32;
-            let x_end = x_start + (cx - x_start) * factor;
-            let y_end = y_start + (cy - y_start) * factor;
+        for py in 0..h {
+            for px in 0..w {
+                let x_start = px as f32;
+                let y_start = py as f32;
+                let x_end = x_start + (cx - x_start) * self.factor;
+                let y_end = y_start + (cy - y_start) * self.factor;
 
-            // Adaptive sample count: ceil(distance) + 1, min 3
-            // Matches GEGL's motion-blur-zoom.c
-            let dist = ((x_end - x_start).powi(2) + (y_end - y_start).powi(2)).sqrt();
-            let mut xy_len = (dist.ceil() as usize) + 1;
-            xy_len = xy_len.max(3);
-
-            // Soft performance cap above 100 (GEGL behavior)
-            if xy_len > 100 {
-                xy_len = (100 + ((xy_len - 100) as f32).sqrt() as usize).min(200);
-            }
-
-            let inv_len = 1.0 / xy_len as f32;
-            let dxx = (x_end - x_start) * inv_len;
-            let dyy = (y_end - y_start) * inv_len;
-
-            // Walk along the ray, accumulating bilinear samples
-            let mut ix = x_start;
-            let mut iy = y_start;
-            let mut accum = vec![0.0f32; ch];
-
-            for _ in 0..xy_len {
-                // Bilinear interpolation with edge-clamp
-                let fx = ix.floor();
-                let fy = iy.floor();
-                let dx = ix - fx;
-                let dy = iy - fy;
-
-                let x0 = (fx as i32).clamp(0, w as i32 - 1) as usize;
-                let y0 = (fy as i32).clamp(0, h as i32 - 1) as usize;
-                let x1 = ((fx as i32) + 1).clamp(0, w as i32 - 1) as usize;
-                let y1 = ((fy as i32) + 1).clamp(0, h as i32 - 1) as usize;
-
-                for c in 0..ch {
-                    let p00 = pixels[(y0 * w + x0) * ch + c] as f32;
-                    let p10 = pixels[(y0 * w + x1) * ch + c] as f32;
-                    let p01 = pixels[(y1 * w + x0) * ch + c] as f32;
-                    let p11 = pixels[(y1 * w + x1) * ch + c] as f32;
-
-                    // GEGL bilinear: lerp columns, then across
-                    let mix0 = dy * (p01 - p00) + p00;
-                    let mix1 = dy * (p11 - p10) + p10;
-                    accum[c] += dx * (mix1 - mix0) + mix0;
+                let dist = ((x_end - x_start).powi(2) + (y_end - y_start).powi(2)).sqrt();
+                let mut xy_len = (dist.ceil() as usize) + 1;
+                xy_len = xy_len.max(3);
+                if xy_len > 100 {
+                    xy_len = (100 + ((xy_len - 100) as f32).sqrt() as usize).min(200);
                 }
 
-                ix += dxx;
-                iy += dyy;
-            }
+                let inv_len = 1.0 / xy_len as f32;
+                let dxx = (x_end - x_start) * inv_len;
+                let dyy = (y_end - y_start) * inv_len;
 
-            // Average all samples (equal weight — box filter)
-            let dst = (py * w + px) * ch;
-            for c in 0..ch {
-                out[dst + c] = (accum[c] * inv_len + 0.5).clamp(0.0, 255.0) as u8;
+                let mut ix = x_start;
+                let mut iy = y_start;
+                let mut accum = vec![0.0f32; ch];
+
+                for _ in 0..xy_len {
+                    let fx = ix.floor();
+                    let fy = iy.floor();
+                    let dx = ix - fx;
+                    let dy = iy - fy;
+                    let x0 = (fx as i32).clamp(0, w as i32 - 1) as usize;
+                    let y0 = (fy as i32).clamp(0, h as i32 - 1) as usize;
+                    let x1 = ((fx as i32) + 1).clamp(0, w as i32 - 1) as usize;
+                    let y1 = ((fy as i32) + 1).clamp(0, h as i32 - 1) as usize;
+
+                    for c in 0..ch {
+                        let p00 = pixels[(y0 * w + x0) * ch + c] as f32;
+                        let p10 = pixels[(y0 * w + x1) * ch + c] as f32;
+                        let p01 = pixels[(y1 * w + x0) * ch + c] as f32;
+                        let p11 = pixels[(y1 * w + x1) * ch + c] as f32;
+                        let mix0 = dy * (p01 - p00) + p00;
+                        let mix1 = dy * (p11 - p10) + p10;
+                        accum[c] += dx * (mix1 - mix0) + mix0;
+                    }
+
+                    ix += dxx;
+                    iy += dyy;
+                }
+
+                let dst = (py * w + px) * ch;
+                for c in 0..ch {
+                    out[dst + c] = (accum[c] * inv_len + 0.5).clamp(0.0, 255.0) as u8;
+                }
             }
         }
-    }
 
-    Ok(out)
+        Ok(out)
+    }
+}
+
+impl GpuFilter for ZoomBlurParams {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::GpuOp;
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static ZOOM_BLUR: LazyLock<String> =
+            LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/zoom_blur.wgsl")));
+
+        if self.factor == 0.0 {
+            return None;
+        }
+        let samples = ((self.factor.abs() * 64.0).ceil() as u32).clamp(8, 128);
+
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.center_x.to_le_bytes());
+        params.extend_from_slice(&self.center_y.to_le_bytes());
+        params.extend_from_slice(&self.factor.to_le_bytes());
+        params.extend_from_slice(&samples.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+
+        Some(vec![GpuOp::Compute {
+            shader: ZOOM_BLUR.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+        }])
+    }
 }
