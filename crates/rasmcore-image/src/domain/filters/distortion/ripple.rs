@@ -37,18 +37,6 @@ impl CpuFilter for RippleParams {
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
 
-        if is_16bit(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
-            let cfg = self.clone();
-            return process_via_8bit(&pixels, info16, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(px.to_vec());
-                cfg.compute(r, &mut u, i8)
-            });
-        }
-
         let amplitude = self.amplitude;
         let wl = if self.wavelength.abs() < 1e-6 { 1.0 } else { self.wavelength };
         let cx = self.center_x * info.width as f32;

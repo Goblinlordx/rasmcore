@@ -30,18 +30,6 @@ impl CpuFilter for BarrelParams {
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
 
-        if is_16bit(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let info16 = &ImageInfo { width: info.width, height: info.height, ..*info };
-            let cfg = self.clone();
-            return process_via_8bit(&pixels, info16, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                let mut u = |_: Rect| Ok(px.to_vec());
-                cfg.compute(r, &mut u, i8)
-            });
-        }
-
         let k1 = self.k1;
         let k2 = self.k2;
         // IM: center = w/2, rscale = 2/min(w,h), pixel-center convention (i+0.5)
