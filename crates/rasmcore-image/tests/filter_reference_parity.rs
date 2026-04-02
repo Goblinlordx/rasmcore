@@ -2651,3 +2651,519 @@ sys.stdout.buffer.write(result.tobytes())"
         );
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EFFECT PARITY — emboss, solarize, oil_paint, pixelate, halftone
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn close_emboss_against_numpy() {
+    // Emboss kernel: [-2,-1,0; -1,1,1; 0,1,2] with reflect padding, clamped to [0,255].
+    // Our convolve uses BORDER_REFLECT_101 (same as numpy 'reflect').
+    let (w, h) = (32u32, 32);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::emboss(r, &mut |_| Ok(pixels.clone()), &info).unwrap();
+
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+
+px = np.array({pixels:?}, dtype=np.float32).reshape({h}, {w}, 3)
+kernel = np.array([[-2,-1,0],[-1,1,1],[0,1,2]], dtype=np.float32)
+# Reflect padding (BORDER_REFLECT_101): edge pixel is not duplicated
+padded = np.pad(px, ((1,1),(1,1),(0,0)), mode='reflect')
+out = np.empty_like(px)
+for c in range(3):
+    ch = padded[:,:,c]
+    result = np.zeros(({h},{w}), dtype=np.float32)
+    for ky in range(3):
+        for kx in range(3):
+            result += kernel[ky, kx] * ch[ky:ky+{h}, kx:kx+{w}]
+    out[:,:,c] = result
+out = np.clip(np.round(out), 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    // Emboss is a direct kernel convolution — should be very close.
+    // Minor differences from reflect padding implementation details.
+    assert_close("emboss vs numpy", &ours, &reference, 1.0);
+}
+
+#[test]
+fn exact_solarize_against_pillow() {
+    // Solarize: if pixel >= threshold then 255 - pixel, else pixel.
+    // This is a simple point operation — should be pixel-exact.
+    let (w, h) = (16u32, 16);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let threshold: u8 = 128;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::solarize(
+        r,
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::SolarizeParams { threshold },
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+px = np.array({pixels:?}, dtype=np.uint8)
+# Match our implementation: if pixel >= threshold then 255 - pixel
+out = np.where(px >= {threshold}, 255 - px, px).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_exact("solarize t=128", &ours, &reference);
+}
+
+#[test]
+fn exact_solarize_threshold_zero() {
+    // threshold=0: all pixels >= 0, so all inverted → 255 - pixel
+    let (w, h) = (16u32, 16);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::solarize(
+        r,
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::SolarizeParams { threshold: 0 },
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+px = np.array({pixels:?}, dtype=np.uint8)
+out = (255 - px).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_exact("solarize t=0 (full invert)", &ours, &reference);
+}
+
+#[test]
+fn close_oil_paint_against_numpy() {
+    // Oil paint: for each pixel, find the most frequent intensity bin in the
+    // neighborhood and output the average color of that bin.
+    // We implement this directly in numpy to match our algorithm exactly.
+    let (w, h) = (32u32, 32);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let radius = 3u32;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::oil_paint(
+        r,
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::OilPaintParams { radius },
+    )
+    .unwrap();
+
+    // Replicate the exact algorithm: 256 intensity bins, BT.601 luma,
+    // first-max-count wins tie-breaking (lowest bin index with max count).
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+
+px = np.array({pixels:?}, dtype=np.uint8).reshape({h}, {w}, 3)
+radius = {radius}
+out = np.zeros_like(px)
+
+for y in range({h}):
+    for x in range({w}):
+        y0 = max(0, y - radius)
+        y1 = min({h}, y + radius + 1)
+        x0 = max(0, x - radius)
+        x1 = min({w}, x + radius + 1)
+        patch = px[y0:y1, x0:x1]
+        # BT.601 luma: (R*77 + G*150 + B*29 + 128) >> 8
+        luma = ((patch[:,:,0].astype(np.uint32) * 77
+               + patch[:,:,1].astype(np.uint32) * 150
+               + patch[:,:,2].astype(np.uint32) * 29
+               + 128) >> 8).astype(np.uint8)
+        flat_luma = luma.ravel()
+        flat_r = patch[:,:,0].ravel()
+        flat_g = patch[:,:,1].ravel()
+        flat_b = patch[:,:,2].ravel()
+        count = np.zeros(256, dtype=np.uint32)
+        sum_r = np.zeros(256, dtype=np.uint32)
+        sum_g = np.zeros(256, dtype=np.uint32)
+        sum_b = np.zeros(256, dtype=np.uint32)
+        for i in range(len(flat_luma)):
+            b_idx = int(flat_luma[i])
+            count[b_idx] += 1
+            sum_r[b_idx] += int(flat_r[i])
+            sum_g[b_idx] += int(flat_g[i])
+            sum_b[b_idx] += int(flat_b[i])
+        max_bin = np.argmax(count)
+        mc = count[max_bin]
+        out[y, x, 0] = sum_r[max_bin] // mc
+        out[y, x, 1] = sum_g[max_bin] // mc
+        out[y, x, 2] = sum_b[max_bin] // mc
+
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    // Algorithm-exact: same bins, same luma formula, same tie-breaking.
+    // Integer division rounding may cause ±1 difference.
+    assert_close("oil_paint r=3 vs numpy", &ours, &reference, 1.0);
+}
+
+#[test]
+fn exact_pixelate_against_numpy() {
+    // Pixelate: divide into blocks, compute average (rounded), fill block.
+    // Our rounding: (sum + count/2) / count — matches numpy with explicit rounding.
+    let (w, h) = (32u32, 32);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let block_size = 8u32;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::pixelate(
+        r,
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::PixelateParams { block_size },
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+
+px = np.array({pixels:?}, dtype=np.uint8).reshape({h}, {w}, 3)
+bs = {block_size}
+out = np.zeros_like(px)
+
+for by in range(0, {h}, bs):
+    bh = min(bs, {h} - by)
+    for bx in range(0, {w}, bs):
+        bw = min(bs, {w} - bx)
+        block = px[by:by+bh, bx:bx+bw]
+        count = bw * bh
+        # Match Rust rounding: (sum + count/2) / count
+        sums = block.astype(np.uint32).sum(axis=(0,1))
+        avg = ((sums + count // 2) // count).astype(np.uint8)
+        out[by:by+bh, bx:bx+bw] = avg
+
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_exact("pixelate bs=8", &ours, &reference);
+}
+
+#[test]
+fn exact_pixelate_non_aligned() {
+    // Test pixelate with image dimensions not evenly divisible by block_size
+    let (w, h) = (30u32, 25);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let block_size = 7u32;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::pixelate(
+        r,
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::PixelateParams { block_size },
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+
+px = np.array({pixels:?}, dtype=np.uint8).reshape({h}, {w}, 3)
+bs = {block_size}
+out = np.zeros_like(px)
+
+for by in range(0, {h}, bs):
+    bh = min(bs, {h} - by)
+    for bx in range(0, {w}, bs):
+        bw = min(bs, {w} - bx)
+        block = px[by:by+bh, bx:bx+bw]
+        count = bw * bh
+        sums = block.astype(np.uint32).sum(axis=(0,1))
+        avg = ((sums + count // 2) // count).astype(np.uint8)
+        out[by:by+bh, bx:bx+bw] = avg
+
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    assert_exact("pixelate bs=7 (non-aligned 30x25)", &ours, &reference);
+}
+
+#[test]
+fn halftone_structural_correctness() {
+    // Halftone: CMYK screen angles with sine-wave threshold.
+    // No standard reference tool produces identical output, so we validate
+    // structural properties: output is binary per-channel (only 0 or 255
+    // in CMYK domain), white input → white output, black → black.
+    let (w, h) = (64u32, 64);
+    let info = info_rgb8(w, h);
+    let config = filters::HalftoneParams {
+        dot_size: 6.0,
+        angle_offset: 0.0,
+    };
+
+    // White input → all CMYK channels are 0 → output should be white
+    let white = vec![255u8; (w * h * 3) as usize];
+    let r = Rect::new(0, 0, w, h);
+    let white_out = filters::halftone(
+        r,
+        &mut |_| Ok(white.clone()),
+        &info,
+        &config,
+    )
+    .unwrap();
+    assert!(
+        white_out.iter().all(|&v| v == 255),
+        "halftone of white input should be all white"
+    );
+
+    // Black input → K=1 → output should be all black
+    let black = vec![0u8; (w * h * 3) as usize];
+    let black_out = filters::halftone(
+        r,
+        &mut |_| Ok(black.clone()),
+        &info,
+        &config,
+    )
+    .unwrap();
+    assert!(
+        black_out.iter().all(|&v| v == 0),
+        "halftone of black input should be all black"
+    );
+
+    // Gradient input: output values should be limited set (binary CMYK screening)
+    // Each pixel is either screened (CMYK=1) or not (CMYK=0), so RGB channels
+    // are products of binary values → only 0 or 255.
+    let gradient = make_gradient_rgb(w, h);
+    let grad_out = filters::halftone(
+        r,
+        &mut |_| Ok(gradient.clone()),
+        &info,
+        &config,
+    )
+    .unwrap();
+    let unique_vals: std::collections::HashSet<u8> = grad_out.iter().copied().collect();
+    assert!(
+        unique_vals.is_subset(&[0u8, 255].iter().copied().collect()),
+        "halftone output should only contain 0 and 255, got {unique_vals:?}"
+    );
+
+    // Verify against our own Python reimplementation of the exact algorithm
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+import math
+
+px = np.array({gradient:?}, dtype=np.uint8).reshape({h}, {w}, 3)
+ds = 6.0
+angle_offset = 0.0
+angles_deg = [15.0 + angle_offset, 75.0 + angle_offset, 0.0 + angle_offset, 45.0 + angle_offset]
+angles_rad = [math.radians(a) for a in angles_deg]
+freq = math.pi / ds
+
+out = np.zeros_like(px)
+for y in range({h}):
+    for x in range({w}):
+        r_val = px[y, x, 0] / 255.0
+        g_val = px[y, x, 1] / 255.0
+        b_val = px[y, x, 2] / 255.0
+        k = 1.0 - max(r_val, g_val, b_val)
+        if k >= 1.0:
+            c_val, m_val, y_val = 0.0, 0.0, 0.0
+        else:
+            inv_k = 1.0 / (1.0 - k)
+            c_val = (1.0 - r_val - k) * inv_k
+            m_val = (1.0 - g_val - k) * inv_k
+            y_val = (1.0 - b_val - k) * inv_k
+        cmyk = [c_val, m_val, y_val, k]
+        screened = [0.0] * 4
+        xf, yf = float(x), float(y)
+        for i in range(4):
+            cos_a = math.cos(angles_rad[i])
+            sin_a = math.sin(angles_rad[i])
+            rx = xf * cos_a + yf * sin_a
+            ry = -xf * sin_a + yf * cos_a
+            screen = (math.sin(rx * freq) * math.sin(ry * freq) + 1.0) * 0.5
+            screened[i] = 1.0 if cmyk[i] > screen else 0.0
+        ro = round((1.0 - screened[0]) * (1.0 - screened[3]) * 255.0)
+        go = round((1.0 - screened[1]) * (1.0 - screened[3]) * 255.0)
+        bo = round((1.0 - screened[2]) * (1.0 - screened[3]) * 255.0)
+        out[y, x] = [ro, go, bo]
+
+sys.stdout.buffer.write(out.astype(np.uint8).tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    // Algorithm-exact: same trig, same CMYK conversion, same screening
+    assert_close("halftone ds=6 vs python", &grad_out, &reference, 1.0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SPATIAL GAP PARITY — motion_blur, gaussian_blur_cv
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn close_motion_blur_horizontal_against_numpy() {
+    // Motion blur at 0 degrees (horizontal) with a given length should be
+    // equivalent to a horizontal box blur of that length.
+    let (w, h) = (32u32, 32);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let length = 5u32;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::motion_blur(
+        r,
+        &mut |req| {
+            // Motion blur requests an expanded region; generate matching gradient
+            let mut p = Vec::with_capacity((req.width * req.height * 3) as usize);
+            for y in req.y..(req.y + req.height) {
+                for x in req.x..(req.x + req.width) {
+                    p.push(((x * 255) / w) as u8);
+                    p.push(((y * 255) / h) as u8);
+                    p.push(128);
+                }
+            }
+            Ok(p)
+        },
+        &info,
+        &filters::MotionBlurParams {
+            length,
+            angle_degrees: 0.0,
+        },
+    )
+    .unwrap();
+
+    // Build the same motion blur kernel in Python and convolve using numpy
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+import math
+
+# Generate the same gradient
+px = np.zeros(({h}, {w}, 3), dtype=np.float32)
+for y in range({h}):
+    for x in range({w}):
+        px[y, x, 0] = (x * 255) // {w}
+        px[y, x, 1] = (y * 255) // {h}
+        px[y, x, 2] = 128
+
+# Build motion blur kernel at 0 degrees (horizontal line through center)
+length = {length}
+side = 2 * length + 1
+kernel = np.zeros((side, side), dtype=np.float32)
+center = length
+dx = 1.0  # cos(0)
+dy = 0.0  # -sin(0)
+steps = int(math.ceil(length * 2.0)) * 2 + 1
+count = 0
+for i in range(steps):
+    t = (i / (steps - 1)) * 2.0 - 1.0
+    px_k = center + t * length * dx
+    py_k = center + t * length * dy
+    ix = int(round(px_k))
+    iy = int(round(py_k))
+    if 0 <= ix < side and 0 <= iy < side:
+        if kernel[iy, ix] == 0.0:
+            kernel[iy, ix] = 1.0
+            count += 1
+
+kernel_norm = kernel / count if count > 0 else kernel
+
+# Convolve with reflect padding
+kh, kw = kernel_norm.shape
+rh, rw = kh // 2, kw // 2
+padded = np.pad(px, ((rh, rh), (rw, rw), (0, 0)), mode='reflect')
+out = np.zeros_like(px)
+for c in range(3):
+    ch = padded[:,:,c]
+    result = np.zeros(({h},{w}), dtype=np.float32)
+    for ky in range(kh):
+        for kx in range(kw):
+            result += kernel_norm[ky, kx] * ch[ky:ky+{h}, kx:kx+{w}]
+    out[:,:,c] = result
+out = np.clip(np.round(out), 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+    );
+    let reference = run_python_ref(&script);
+    // Convolution with reflect padding — minor border differences possible
+    assert_close("motion_blur 0° len=5", &ours, &reference, 2.0);
+}
+
+#[test]
+fn close_gaussian_blur_cv_against_opencv() {
+    // Gaussian blur with sigma=1.5 should match OpenCV GaussianBlur
+    let (w, h) = (32u32, 32);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let sigma = 1.5f32;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::gaussian_blur_cv(
+        r,
+        &mut |req| {
+            let mut p = Vec::with_capacity((req.width * req.height * 3) as usize);
+            for y in req.y..(req.y + req.height) {
+                for x in req.x..(req.x + req.width) {
+                    p.push(((x * 255) / w) as u8);
+                    p.push(((y * 255) / h) as u8);
+                    p.push(128);
+                }
+            }
+            Ok(p)
+        },
+        &info,
+        &filters::GaussianBlurCvParams { sigma },
+    )
+    .unwrap();
+
+    let script = format!(
+        r#"
+import sys
+import numpy as np
+import cv2
+
+# Generate the same gradient
+px = np.zeros(({h}, {w}, 3), dtype=np.uint8)
+for y in range({h}):
+    for x in range({w}):
+        px[y, x, 0] = (x * 255) // {w}
+        px[y, x, 1] = (y * 255) // {h}
+        px[y, x, 2] = 128
+
+# OpenCV GaussianBlur with same sigma
+sigma = {sigma}
+ksize = int(round(sigma * 6.0 + 1.0))
+if ksize % 2 == 0:
+    ksize += 1
+ksize = max(ksize, 3)
+out = cv2.GaussianBlur(px, (ksize, ksize), sigma, sigma, borderType=cv2.BORDER_REFLECT_101)
+# OpenCV uses BGR internally but we pass RGB — GaussianBlur is channel-independent so no conversion needed
+sys.stdout.buffer.write(out.tobytes())
+"#,
+        sigma = sigma
+    );
+    let reference = run_python_ref(&script);
+    // Should be very close — same kernel formula and border mode
+    assert_close("gaussian_blur_cv σ=1.5 vs OpenCV", &ours, &reference, 1.0);
+}
