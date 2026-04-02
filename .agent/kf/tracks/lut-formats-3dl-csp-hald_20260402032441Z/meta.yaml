@@ -1,5 +1,5 @@
 title: LUT format support — .3dl, .csp read/write + Hald CLUT write
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'
