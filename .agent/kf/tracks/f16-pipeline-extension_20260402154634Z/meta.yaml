@@ -1,6 +1,6 @@
 title: f16 pipeline extension — half-precision PixelSample, format variants, EXR native
   f16
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'
