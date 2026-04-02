@@ -1,0 +1,8 @@
+title: Fluent SDK codegen with C FFI backend (Go + Python)
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- clib-ffi-header_20260402012600Z

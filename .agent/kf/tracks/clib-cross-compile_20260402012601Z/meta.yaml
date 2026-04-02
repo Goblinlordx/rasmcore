@@ -1,0 +1,8 @@
+title: Cross-compile librcimg for 6 desktop targets
+status: pending
+type: chore
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- clib-ffi-header_20260402012600Z
