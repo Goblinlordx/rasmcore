@@ -46,6 +46,36 @@ pub const PIXEL_OPS_F32: &str = include_str!("wgsl/pixel_ops_f32.wgsl");
 /// **Requires:** `@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>`.
 pub const SAMPLE_BILINEAR_F32: &str = include_str!("wgsl/sample_bilinear_f32.wgsl");
 
+/// Format-agnostic buffer I/O — u32-packed variant.
+///
+/// Declares `input: array<u32>` and `output: array<u32>` bindings at
+/// `@binding(0)` and `@binding(1)`, plus `load_pixel(idx) -> vec4<f32>`
+/// and `store_pixel(idx, color)` functions.
+///
+/// Shader bodies use only `load_pixel`/`store_pixel` and never reference
+/// the buffer type directly — making them format-agnostic when composed
+/// with either `IO_U32` or `IO_F32`.
+pub const IO_U32: &str = include_str!("wgsl/io_u32.wgsl");
+
+/// Format-agnostic buffer I/O — f32 vec4 variant.
+///
+/// Same API as `IO_U32` but declares `array<vec4<f32>>` bindings.
+/// `load_pixel`/`store_pixel` are identity operations.
+pub const IO_F32: &str = include_str!("wgsl/io_f32.wgsl");
+
+/// Compose a format-agnostic shader with u32-packed I/O.
+///
+/// The body should use `load_pixel(idx)`/`store_pixel(idx, color)` for
+/// buffer access and declare only `@binding(2)` (params) and higher.
+pub fn with_io(body: &str) -> String {
+    compose(&[IO_U32], body)
+}
+
+/// Compose a format-agnostic shader with f32 vec4 I/O.
+pub fn with_io_f32(body: &str) -> String {
+    compose(&[IO_F32], body)
+}
+
 /// Compose a complete shader from library fragments and a filter body.
 ///
 /// Fragments are prepended in order, followed by the body. The body should

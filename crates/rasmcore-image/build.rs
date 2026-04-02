@@ -636,6 +636,8 @@ fn main() {
         fs::read_to_string(gpu_shaders_dir.join("pixel_ops_f32.wgsl")).unwrap_or_default();
     let sample_bilinear_f32_frag =
         fs::read_to_string(gpu_shaders_dir.join("sample_bilinear_f32.wgsl")).unwrap_or_default();
+    let io_u32 = fs::read_to_string(gpu_shaders_dir.join("io_u32.wgsl")).unwrap_or_default();
+    let io_f32 = fs::read_to_string(gpu_shaders_dir.join("io_f32.wgsl")).unwrap_or_default();
 
     let shaders_dir = Path::new(&manifest_dir).join("src/shaders");
     if shaders_dir.is_dir() {
@@ -649,8 +651,13 @@ fn main() {
                     .unwrap_or_else(|e| panic!("Failed to read shader {}: {e}", path.display()));
                 let fname = path.file_name().unwrap().to_str().unwrap();
                 let is_f32 = fname.ends_with("_f32.wgsl");
+                // Format-agnostic shaders use load_pixel/store_pixel from I/O fragments
+                let uses_io = body.contains("load_pixel(") || body.contains("store_pixel(");
                 // Compose fragments needed by this shader body
-                let composed = if is_f32 {
+                let composed = if uses_io {
+                    // Format-agnostic: validate with u32 I/O (both variants have same API)
+                    format!("{io_u32}\n{body}")
+                } else if is_f32 {
                     // f32 shaders use f32 fragments
                     let needs_sample = body.contains("sample_bilinear_f32(")
                         && !body.contains("fn sample_bilinear_f32");

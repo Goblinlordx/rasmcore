@@ -8,7 +8,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::filter_traits::CpuFilter;
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 /// Gaussian weight: exp(-2 * (d/r)^2), drops to ~0.13 at edge
 #[inline]
@@ -59,11 +59,11 @@ impl CpuFilter for LiquifyPushParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) {
+        if is_16bit(info.format) || is_float(info.format) {
             let full = Rect::new(0, 0, info.width, info.height);
             let pixels = upstream(full)?;
             let cfg = self.clone();
-            return process_via_8bit(&pixels, info, |px, i8| {
+            return process_via_standard(&pixels, info, |px, i8| {
                 let r = Rect::new(0, 0, i8.width, i8.height);
                 cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
             });
@@ -103,6 +103,46 @@ impl CpuFilter for LiquifyPushParams {
     }
 }
 
+impl GpuFilter for LiquifyPushParams {
+    fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static PUSH_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_push.wgsl")));
+        static PUSH_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_push.wgsl")));
+
+        let shader = match buffer_format {
+            BufferFormat::F32Vec4 => PUSH_F32.clone(),
+            BufferFormat::U32Packed => PUSH_U32.clone(),
+        };
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&w.to_le_bytes());
+        params.extend_from_slice(&h.to_le_bytes());
+        params.extend_from_slice(&cx.to_le_bytes());
+        params.extend_from_slice(&cy.to_le_bytes());
+        params.extend_from_slice(&self.radius.to_le_bytes());
+        params.extend_from_slice(&self.strength.to_le_bytes());
+        params.extend_from_slice(&self.direction_x.to_le_bytes());
+        params.extend_from_slice(&self.direction_y.to_le_bytes());
+
+        Some(vec![GpuOp::Compute {
+            shader,
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+            buffer_format,
+        }])
+    }
+}
+
 // ─── Liquify Pinch ────────────────────────────────────────────────────────────
 
 /// Contract pixels toward brush center (pinch/pucker).
@@ -138,11 +178,11 @@ impl CpuFilter for LiquifyPinchParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) {
+        if is_16bit(info.format) || is_float(info.format) {
             let full = Rect::new(0, 0, info.width, info.height);
             let pixels = upstream(full)?;
             let cfg = self.clone();
-            return process_via_8bit(&pixels, info, |px, i8| {
+            return process_via_standard(&pixels, info, |px, i8| {
                 let r = Rect::new(0, 0, i8.width, i8.height);
                 cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
             });
@@ -185,6 +225,36 @@ impl CpuFilter for LiquifyPinchParams {
     }
 }
 
+impl GpuFilter for LiquifyPinchParams {
+    fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static PINCH_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_pinch.wgsl")));
+        static PINCH_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_pinch.wgsl")));
+
+        let shader = match buffer_format { BufferFormat::F32Vec4 => PINCH_F32.clone(), BufferFormat::U32Packed => PINCH_U32.clone() };
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&w.to_le_bytes());
+        params.extend_from_slice(&h.to_le_bytes());
+        params.extend_from_slice(&cx.to_le_bytes());
+        params.extend_from_slice(&cy.to_le_bytes());
+        params.extend_from_slice(&self.radius.to_le_bytes());
+        params.extend_from_slice(&self.strength.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+
+        Some(vec![GpuOp::Compute { shader, entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![], buffer_format }])
+    }
+}
+
 // ─── Liquify Expand ───────────────────────────────────────────────────────────
 
 /// Expand pixels away from brush center (bloat/punch).
@@ -220,11 +290,11 @@ impl CpuFilter for LiquifyExpandParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) {
+        if is_16bit(info.format) || is_float(info.format) {
             let full = Rect::new(0, 0, info.width, info.height);
             let pixels = upstream(full)?;
             let cfg = self.clone();
-            return process_via_8bit(&pixels, info, |px, i8| {
+            return process_via_standard(&pixels, info, |px, i8| {
                 let r = Rect::new(0, 0, i8.width, i8.height);
                 cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
             });
@@ -268,6 +338,36 @@ impl CpuFilter for LiquifyExpandParams {
     }
 }
 
+impl GpuFilter for LiquifyExpandParams {
+    fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static EXPAND_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_expand.wgsl")));
+        static EXPAND_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_expand.wgsl")));
+
+        let shader = match buffer_format { BufferFormat::F32Vec4 => EXPAND_F32.clone(), BufferFormat::U32Packed => EXPAND_U32.clone() };
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&w.to_le_bytes());
+        params.extend_from_slice(&h.to_le_bytes());
+        params.extend_from_slice(&cx.to_le_bytes());
+        params.extend_from_slice(&cy.to_le_bytes());
+        params.extend_from_slice(&self.radius.to_le_bytes());
+        params.extend_from_slice(&self.strength.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+
+        Some(vec![GpuOp::Compute { shader, entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![], buffer_format }])
+    }
+}
+
 // ─── Liquify Twirl ────────────────────────────────────────────────────────────
 
 /// Rotate pixels around brush center.
@@ -307,11 +407,11 @@ impl CpuFilter for LiquifyTwirlParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) {
+        if is_16bit(info.format) || is_float(info.format) {
             let full = Rect::new(0, 0, info.width, info.height);
             let pixels = upstream(full)?;
             let cfg = self.clone();
-            return process_via_8bit(&pixels, info, |px, i8| {
+            return process_via_standard(&pixels, info, |px, i8| {
                 let r = Rect::new(0, 0, i8.width, i8.height);
                 cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
             });
@@ -356,6 +456,37 @@ impl CpuFilter for LiquifyTwirlParams {
     }
 }
 
+impl GpuFilter for LiquifyTwirlParams {
+    fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static TWIRL_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_twirl.wgsl")));
+        static TWIRL_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_twirl.wgsl")));
+
+        let shader = match buffer_format { BufferFormat::F32Vec4 => TWIRL_F32.clone(), BufferFormat::U32Packed => TWIRL_U32.clone() };
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
+        let angle_rad = self.angle.to_radians();
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&w.to_le_bytes());
+        params.extend_from_slice(&h.to_le_bytes());
+        params.extend_from_slice(&cx.to_le_bytes());
+        params.extend_from_slice(&cy.to_le_bytes());
+        params.extend_from_slice(&self.radius.to_le_bytes());
+        params.extend_from_slice(&self.strength.to_le_bytes());
+        params.extend_from_slice(&angle_rad.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+
+        Some(vec![GpuOp::Compute { shader, entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![], buffer_format }])
+    }
+}
+
 // ─── Liquify Smooth ───────────────────────────────────────────────────────────
 
 /// Relax/attenuate displacement within brush radius.
@@ -397,11 +528,11 @@ impl CpuFilter for LiquifySmoothParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) {
+        if is_16bit(info.format) || is_float(info.format) {
             let full = Rect::new(0, 0, info.width, info.height);
             let pixels = upstream(full)?;
             let cfg = self.clone();
-            return process_via_8bit(&pixels, info, |px, i8| {
+            return process_via_standard(&pixels, info, |px, i8| {
                 let r = Rect::new(0, 0, i8.width, i8.height);
                 cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
             });

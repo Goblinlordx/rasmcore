@@ -1371,15 +1371,22 @@ impl NodeGraph {
 
         // Try GPU dispatch if executor and GPU ops are available for this node.
         // Clone Rc and extract ops before mutable self borrow for upstream fetch.
+        // Determine buffer format from pixel format: f32 formats use F32Vec4, all else U32Packed.
+        let buf_format = match info.format {
+            PixelFormat::Rgba32f | PixelFormat::Rgb32f | PixelFormat::Gray32f => {
+                rasmcore_pipeline::BufferFormat::F32Vec4
+            }
+            _ => rasmcore_pipeline::BufferFormat::U32Packed,
+        };
         let gpu_dispatch = self.gpu_executor.clone().and_then(|executor| {
-            let ops = self.gpu_nodes.get(node_id as usize)?.as_ref()?.gpu_ops(info.width, info.height)?;
+            let ops = self.gpu_nodes.get(node_id as usize)?.as_ref()?.gpu_ops_with_format(info.width, info.height, buf_format)?;
             let upstream_id = self.nodes[node_id as usize].upstream_id()?;
             Some((executor, ops, upstream_id))
         });
         if let Some((executor, ops, upstream_id)) = gpu_dispatch {
             let full_rect = Rect::new(0, 0, info.width, info.height);
             let input = self.request_region(upstream_id, full_rect)?;
-            match executor.execute(&ops, &input, info.width, info.height) {
+            match executor.execute_with_format(&ops, &input, info.width, info.height, buf_format) {
                 Ok(gpu_pixels) => {
                     let pixels = if request == full_rect {
                         gpu_pixels
