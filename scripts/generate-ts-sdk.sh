@@ -14,10 +14,10 @@ SDK_DIR="$PROJECT_ROOT/sdk/typescript/generated"
 # Find the built WASM component
 WASM_FILE=""
 for candidate in \
-  "$PROJECT_ROOT/target/wasm32-wasip1/debug/rasmcore_image.wasm" \
   "$PROJECT_ROOT/target/wasm32-wasip1/release/rasmcore_image.wasm" \
-  "$PROJECT_ROOT/target/wasm32-wasip2/debug/rasmcore_image.wasm" \
-  "$PROJECT_ROOT/target/wasm32-wasip2/release/rasmcore_image.wasm"; do
+  "$PROJECT_ROOT/target/wasm32-wasip2/release/rasmcore_image.wasm" \
+  "$PROJECT_ROOT/target/wasm32-wasip1/debug/rasmcore_image.wasm" \
+  "$PROJECT_ROOT/target/wasm32-wasip2/debug/rasmcore_image.wasm"; do
   if [ -f "$candidate" ]; then
     WASM_FILE="$candidate"
     break

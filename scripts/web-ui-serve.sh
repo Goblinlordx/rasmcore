@@ -9,13 +9,13 @@ WEB_UI="$ROOT/web-ui"
 
 SDK_PATH="${1:-$ROOT/sdk/typescript/generated}"
 SDK_JS="$SDK_PATH/rasmcore-image.js"
-WASM_FILE="$ROOT/target/wasm32-wasip1/debug/rasmcore_image.wasm"
+WASM_FILE="$ROOT/target/wasm32-wasip1/release/rasmcore_image.wasm"
 PORT="${2:-3000}"
 
-# Build WASM if missing
+# Build WASM (release) if missing
 if [ ! -f "$WASM_FILE" ]; then
-  echo "Building WASM component..."
-  cargo component build -p rasmcore-image
+  echo "Building WASM component (release)..."
+  cargo component build -p rasmcore-image --release
 fi
 
 # Generate SDK if missing or stale (older than WASM)
