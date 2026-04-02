@@ -12,6 +12,8 @@ mod gamma;
 pub use gamma::*;
 mod invert;
 pub use invert::*;
+mod invert_v2;
+pub use invert_v2::*;
 mod levels;
 pub use levels::*;
 mod posterize;

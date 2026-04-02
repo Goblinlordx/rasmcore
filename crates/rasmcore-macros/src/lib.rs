@@ -800,3 +800,270 @@ pub fn register_metric(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+// ─── Unified Filter Derive ─────────────────────────────────────────────────
+
+/// Unified filter registration: combines ConfigParams + filter registration.
+///
+/// # Usage
+///
+/// ```ignore
+/// #[derive(Filter)]
+/// #[filter(name = "blur", category = "spatial")]
+/// struct Blur {
+///     #[param(min = 0.0, max = 100.0, default = 3.0)]
+///     pub radius: f32,
+/// }
+///
+/// impl CpuFilter for Blur {
+///     fn compute(&self, request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo) -> Result<Vec<u8>> {
+///         // self.radius is the config param
+///     }
+/// }
+/// ```
+///
+/// Generates:
+/// - `param_descriptors()` and `config_hint()` (same as ConfigParams)
+/// - `Default` impl from `#[param(default = ...)]`
+/// - `StaticFilterRegistration` + `inventory::submit!`
+#[proc_macro_derive(Filter, attributes(filter, param, config_hint))]
+pub fn derive_filter(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemStruct);
+    let struct_name = &input.ident;
+
+    // ── Parse #[filter(...)] attribute ──────────────────────────────────
+    let mut filter_name = String::new();
+    let mut filter_category = String::new();
+    let mut filter_group = String::new();
+    let mut filter_variant = String::new();
+    let mut filter_reference = String::new();
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("filter") {
+            continue;
+        }
+        let _ = attr.parse_nested_meta(|meta| {
+            let key = meta.path.get_ident().unwrap().to_string();
+            let value = meta.value()?;
+            let lit: LitStr = value.parse()?;
+            match key.as_str() {
+                "name" => filter_name = lit.value(),
+                "category" => filter_category = lit.value(),
+                "group" => filter_group = lit.value(),
+                "variant" => filter_variant = lit.value(),
+                "reference" => filter_reference = lit.value(),
+                _ => {}
+            }
+            Ok(())
+        });
+    }
+
+    if filter_name.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "derive(Filter) requires #[filter(name = \"...\", category = \"...\")]",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    // ── Parse struct-level #[config_hint("...")] ──────���─────────────────
+    let struct_hint = input
+        .attrs
+        .iter()
+        .filter(|a| a.path().is_ident("config_hint"))
+        .filter_map(|a| {
+            let tokens: proc_macro2::TokenStream = a.meta.require_list().ok()?.tokens.clone();
+            let lit: LitStr = syn::parse2(tokens).ok()?;
+            Some(lit.value())
+        })
+        .next()
+        .unwrap_or_default();
+
+    // ── Parse fields (same logic as ConfigParams) ───────────────────────
+    let fields = match &input.fields {
+        Fields::Named(f) => &f.named,
+        _ => panic!("Filter only supports named struct fields"),
+    };
+
+    let mut descriptor_entries = Vec::new();
+    let mut default_entries = Vec::new();
+    let mut param_count: usize = 0;
+
+    for field in fields {
+        let field_name = field.ident.as_ref().unwrap();
+        let field_name_str = field_name.to_string();
+        let field_type = &field.ty;
+        let field_type_str = quote!(#field_type).to_string().replace(' ', "");
+        let is_primitive = is_primitive_param_type(&field_type_str);
+
+        let label = field
+            .attrs
+            .iter()
+            .filter(|a| a.path().is_ident("doc"))
+            .filter_map(|a| {
+                if let Meta::NameValue(nv) = &a.meta
+                    && let Expr::Lit(lit) = &nv.value
+                    && let Lit::Str(s) = &lit.lit
+                {
+                    return Some(s.value().trim().to_string());
+                }
+                None
+            })
+            .next()
+            .unwrap_or_default();
+
+        let mut min_s = String::from("null");
+        let mut max_s = String::from("null");
+        let mut step_s = String::from("null");
+        let mut default_s = String::new();
+        let mut hint_s = String::new();
+        let mut options_s = String::new();
+
+        for attr in &field.attrs {
+            if !attr.path().is_ident("param") {
+                continue;
+            }
+            let _ = attr.parse_nested_meta(|meta| {
+                let key = meta.path.get_ident().unwrap().to_string();
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                let val = match &lit {
+                    Lit::Float(f) => f.base10_digits().to_string(),
+                    Lit::Int(i) => i.base10_digits().to_string(),
+                    Lit::Str(s) => s.value(),
+                    Lit::Bool(b) => b.value.to_string(),
+                    _ => String::new(),
+                };
+                match key.as_str() {
+                    "min" => min_s = val,
+                    "max" => max_s = val,
+                    "step" => step_s = val,
+                    "default" => default_s = val,
+                    "hint" => hint_s = val,
+                    "options" => options_s = val,
+                    _ => {}
+                }
+                Ok(())
+            });
+        }
+
+        if !is_primitive {
+            let hint_override = hint_s.clone();
+            descriptor_entries.push(quote! {{
+                let nested = #field_type::param_descriptors();
+                let type_hint = #field_type::config_hint();
+                let hint = if #hint_override.is_empty() {
+                    type_hint.to_string()
+                } else {
+                    #hint_override.to_string()
+                };
+                for mut d in nested {
+                    d.name = format!("{}.{}", #field_name_str, d.name);
+                    if !hint.is_empty() {
+                        d.hint = hint.clone();
+                    }
+                    __descriptors.push(d);
+                }
+            }});
+            default_entries.push(quote! { #field_name: Default::default() });
+        } else {
+            param_count += 1;
+
+            let default_expr = if !default_s.is_empty() {
+                if default_s.contains('.') {
+                    let v: f64 = default_s.parse().unwrap_or(0.0);
+                    let lit = proc_macro2::Literal::f64_unsuffixed(v);
+                    quote! { #lit as #field_type }
+                } else if default_s == "true" {
+                    quote! { true }
+                } else if default_s == "false" {
+                    quote! { false }
+                } else if default_s.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-') {
+                    let v: i64 = default_s.parse().unwrap_or(0);
+                    let lit = proc_macro2::Literal::i64_unsuffixed(v);
+                    quote! { #lit as #field_type }
+                } else {
+                    quote! { Default::default() }
+                }
+            } else {
+                quote! { Default::default() }
+            };
+
+            default_entries.push(quote! { #field_name: #default_expr });
+
+            let options_pairs: Vec<(String, String)> = if options_s.is_empty() {
+                Vec::new()
+            } else {
+                options_s
+                    .split('|')
+                    .filter(|p| !p.is_empty())
+                    .filter_map(|p| p.split_once(':').map(|(v, d)| (v.trim().to_string(), d.trim().to_string())))
+                    .collect()
+            };
+            let opt_vals: Vec<&str> = options_pairs.iter().map(|(v, _)| v.as_str()).collect();
+            let opt_descs: Vec<&str> = options_pairs.iter().map(|(_, d)| d.as_str()).collect();
+
+            descriptor_entries.push(quote! {
+                __descriptors.push(::rasmcore_image::domain::filter_registry::ParamDescriptorJson {
+                    name: #field_name_str.to_string(),
+                    param_type: #field_type_str.to_string(),
+                    min: #min_s.to_string(),
+                    max: #max_s.to_string(),
+                    step: #step_s.to_string(),
+                    default_val: #default_s.to_string(),
+                    label: #label.to_string(),
+                    hint: #hint_s.to_string(),
+                    options: vec![#((#opt_vals.to_string(), #opt_descs.to_string())),*],
+                });
+            });
+        }
+    }
+
+    // ── Generate registration identifier ────────────────────────────────
+    let reg_ident = format_ident!(
+        "__RASMCORE_FILTER_{}",
+        filter_name.to_uppercase().replace('-', "_")
+    );
+
+    let expanded = quote! {
+        // ConfigParams functionality
+        impl #struct_name {
+            /// Get parameter descriptors for manifest generation.
+            pub fn param_descriptors() -> ::std::vec::Vec<::rasmcore_image::domain::filter_registry::ParamDescriptorJson> {
+                let mut __descriptors = ::std::vec::Vec::new();
+                #(#descriptor_entries)*
+                __descriptors
+            }
+
+            /// Type-level UI hint. Empty string if none.
+            pub fn config_hint() -> &'static str {
+                #struct_hint
+            }
+        }
+
+        impl ::std::default::Default for #struct_name {
+            fn default() -> Self {
+                Self { #(#default_entries),* }
+            }
+        }
+
+        // Filter registration
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub static #reg_ident: ::rasmcore_image::domain::filter_registry::StaticFilterRegistration =
+            ::rasmcore_image::domain::filter_registry::StaticFilterRegistration {
+                name: #filter_name,
+                category: #filter_category,
+                group: #filter_group,
+                variant: #filter_variant,
+                reference: #filter_reference,
+                param_count: #param_count,
+                fn_name: "",  // No bare fn — uses CpuFilter trait
+                module_path: module_path!(),
+            };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
