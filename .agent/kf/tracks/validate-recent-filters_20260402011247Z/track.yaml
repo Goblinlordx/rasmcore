@@ -5,102 +5,100 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add external reference parity tests (numpy/OpenCV/ImageMagick) for 4 recently
+  summary: 'Add external reference parity tests (numpy/OpenCV/ImageMagick) for 4 recently
+
     implemented filter groups that have domain unit tests but zero external reference
+
     validation: high_pass, LAB channel ops, mesh_warp, and skeletonize.
-  context: |
-    Project policy (product.yaml parity-and-benchmark-testing, codec-validation.md)
-    requires every module to have parity tests against best-in-class reference
-    implementations. Four recent filter implementations were merged with domain
-    unit tests only — no entries in filter_reference_parity.rs or reference_audit.rs.
 
-    Existing test infrastructure is mature:
-    - tests/filter_reference_parity.rs — Python venv (numpy, scipy, opencv-python-headless)
-      via run_python_ref() / venv_python() helpers. Uses MAE/PSNR/max_absolute_error.
-    - tests/reference_audit.rs — ImageMagick via ref_tools::magick_pipeline().
-    - Both skip gracefully when external tools are unavailable.
-  codebase_analysis: |
-    HIGH_PASS (spatial/high_pass.rs):
-      Formula: clamp((original[c] - blurred[c]) / 2 + 128, 0, 255)
-      4 domain tests (solid→mid-gray, zero-radius, reconstruction, large-radius).
-      frequency_high already has numpy parity in filter_reference_parity.rs — high_pass
-      uses a different formula (divide-by-2 offset) and is a separate registered filter.
-      Reference: numpy arithmetic or ImageMagick subtract+level approach.
-
-    LAB CHANNEL OPS (color/lab.rs):
-      lab_extract_l/a/b, lab_sharpen, lab_adjust — 8 domain tests.
-      Internal CLUT consistency test for lab_adjust (GPU path).
-      No external colorspace math validation.
-      Reference: skimage.color.rgb2lab / lab2rgb for conversion accuracy.
-
-    MESH WARP (distortion/mesh_warp.rs):
-      Backward-mapped grid warp with bilinear interpolation.
-      Only 2 tests: identity grid, uniform translation. Highest risk.
-      Reference: OpenCV cv2.remap with bilinear interpolation on equivalent grid.
-
-    SKELETONIZE (morphology/skeletonize.rs):
-      Zhang-Suen thinning algorithm. 7 domain tests + GPU/CPU consistency.
-      No validation that the algorithm produces correct Zhang-Suen output.
-      Reference: OpenCV cv2.ximgproc.thinning or skimage.morphology.skeletonize.
+    '
+  context: "Project policy (product.yaml parity-and-benchmark-testing, codec-validation.md)\nrequires every module to have\
+    \ parity tests against best-in-class reference\nimplementations. Four recent filter implementations were merged with domain\n\
+    unit tests only — no entries in filter_reference_parity.rs or reference_audit.rs.\n\nExisting test infrastructure is mature:\n\
+    - tests/filter_reference_parity.rs — Python venv (numpy, scipy, opencv-python-headless)\n  via run_python_ref() / venv_python()\
+    \ helpers. Uses MAE/PSNR/max_absolute_error.\n- tests/reference_audit.rs — ImageMagick via ref_tools::magick_pipeline().\n\
+    - Both skip gracefully when external tools are unavailable.\n"
+  codebase_analysis: "HIGH_PASS (spatial/high_pass.rs):\n  Formula: clamp((original[c] - blurred[c]) / 2 + 128, 0, 255)\n\
+    \  4 domain tests (solid→mid-gray, zero-radius, reconstruction, large-radius).\n  frequency_high already has numpy parity\
+    \ in filter_reference_parity.rs — high_pass\n  uses a different formula (divide-by-2 offset) and is a separate registered\
+    \ filter.\n  Reference: numpy arithmetic or ImageMagick subtract+level approach.\n\nLAB CHANNEL OPS (color/lab.rs):\n\
+    \  lab_extract_l/a/b, lab_sharpen, lab_adjust — 8 domain tests.\n  Internal CLUT consistency test for lab_adjust (GPU\
+    \ path).\n  No external colorspace math validation.\n  Reference: skimage.color.rgb2lab / lab2rgb for conversion accuracy.\n\
+    \nMESH WARP (distortion/mesh_warp.rs):\n  Backward-mapped grid warp with bilinear interpolation.\n  Only 2 tests: identity\
+    \ grid, uniform translation. Highest risk.\n  Reference: OpenCV cv2.remap with bilinear interpolation on equivalent grid.\n\
+    \nSKELETONIZE (morphology/skeletonize.rs):\n  Zhang-Suen thinning algorithm. 7 domain tests + GPU/CPU consistency.\n \
+    \ No validation that the algorithm produces correct Zhang-Suen output.\n  Reference: OpenCV cv2.ximgproc.thinning or skimage.morphology.skeletonize.\n"
   acceptance_criteria:
-    - high_pass parity test in filter_reference_parity.rs achieves MAE < 1.0 vs numpy reference
-    - lab_extract_l parity test achieves MAE < 1.0 vs skimage.color.rgb2lab L channel
-    - lab_adjust identity (zero shift) is pixel-exact
-    - mesh_warp bilinear interpolation achieves MAE < 2.0 vs OpenCV cv2.remap on same grid
-    - skeletonize achieves pixel-exact match vs skimage.morphology.skeletonize (Zhang-Suen)
-    - All tests skip gracefully when Python venv or external tools unavailable
-    - No regressions in existing filter_reference_parity.rs or reference_audit.rs tests
-  out_of_scope: |
-    Benchmarking (separate concern). GPU parity expansion (covered by gpu-cpu-parity track).
+  - high_pass parity test in filter_reference_parity.rs achieves MAE < 1.0 vs numpy reference
+  - lab_extract_l parity test achieves MAE < 1.0 vs skimage.color.rgb2lab L channel
+  - lab_adjust identity (zero shift) is pixel-exact
+  - mesh_warp bilinear interpolation achieves MAE < 2.0 vs OpenCV cv2.remap on same grid
+  - skeletonize achieves pixel-exact match vs skimage.morphology.skeletonize (Zhang-Suen)
+  - All tests skip gracefully when Python venv or external tools unavailable
+  - No regressions in existing filter_reference_parity.rs or reference_audit.rs tests
+  out_of_scope: 'Benchmarking (separate concern). GPU parity expansion (covered by gpu-cpu-parity track).
+
     Codec three-way validation (known gaps, deferred). Filters already covered by
+
     validate-pro-filters or validate-artistic-filters tracks.
-  technical_notes: |
-    Follow existing patterns in filter_reference_parity.rs:
+
+    '
+  technical_notes: 'Follow existing patterns in filter_reference_parity.rs:
+
     - Use venv_python() for Python subprocess
+
     - Use make_gradient_rgb() / make_checkerboard() for deterministic test images
+
     - Use mean_absolute_error() / max_absolute_error() / assert_exact() helpers
+
     - Each test should eprintln MAE/max_err for CI visibility
+
     - Skip gracefully if scipy/skimage/opencv not in venv
 
+
     For mesh_warp OpenCV comparison: construct equivalent cv2.remap maps from the
+
     grid control points, apply with INTER_LINEAR, compare output.
 
+
     For skeletonize: use skimage.morphology.skeletonize on same binary input,
+
     compare output pixel-exact (both implement Zhang-Suen, should match).
+
+    '
 plan:
-  - phase: High-pass filter parity
-    tasks:
-      - text: Add high_pass vs numpy parity test — compute (orig - gaussian_filter) / 2 + 128 in numpy, compare MAE < 1.0
-        done: false
-      - text: Add high_pass vs ImageMagick subtract+level parity test in reference_audit.rs
-        done: false
-  - phase: LAB channel ops parity
-    tasks:
-      - text: Add lab_extract_l vs skimage.color.rgb2lab parity test — L channel as grayscale, MAE < 1.0
-        done: false
-      - text: Add lab_extract_a and lab_extract_b vs skimage reference — verify a/b channel extraction
-        done: false
-      - text: Add lab_adjust identity test — zero a/b shift produces pixel-exact roundtrip
-        done: false
-      - text: Add lab_sharpen parity test — verify L-only sharpening preserves a/b channels exactly
-        done: false
-  - phase: Mesh warp parity
-    tasks:
-      - text: Add mesh_warp vs OpenCV cv2.remap parity test — construct equivalent remap maps from grid, MAE < 2.0
-        done: false
-      - text: Add mesh_warp edge case — non-uniform grid with known analytic displacement, verify interpolation
-        done: false
-  - phase: Skeletonize parity
-    tasks:
-      - text: Add skeletonize vs skimage.morphology.skeletonize parity test — pixel-exact Zhang-Suen match
-        done: false
-      - text: Add skeletonize vs OpenCV cv2.ximgproc.thinning cross-check on thick rectangle input
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Run full filter_reference_parity.rs suite — no regressions
-        done: false
-      - text: Run full reference_audit.rs suite — no regressions
-        done: false
+- phase: High-pass filter parity
+  tasks:
+  - text: Add high_pass vs numpy parity test — compute (orig - gaussian_filter) / 2 + 128 in numpy, compare MAE < 1.0
+    done: true
+  - text: Add high_pass vs ImageMagick subtract+level parity test in reference_audit.rs
+    done: true
+- phase: LAB channel ops parity
+  tasks:
+  - text: Add lab_extract_l vs skimage.color.rgb2lab parity test — L channel as grayscale, MAE < 1.0
+    done: true
+  - text: Add lab_extract_a and lab_extract_b vs skimage reference — verify a/b channel extraction
+    done: true
+  - text: Add lab_adjust identity test — zero a/b shift produces pixel-exact roundtrip
+    done: true
+  - text: Add lab_sharpen parity test — verify L-only sharpening preserves a/b channels exactly
+    done: true
+- phase: Mesh warp parity
+  tasks:
+  - text: Add mesh_warp vs OpenCV cv2.remap parity test — construct equivalent remap maps from grid, MAE < 2.0
+    done: true
+  - text: Add mesh_warp edge case — non-uniform grid with known analytic displacement, verify interpolation
+    done: true
+- phase: Skeletonize parity
+  tasks:
+  - text: Add skeletonize vs skimage.morphology.skeletonize parity test — pixel-exact Zhang-Suen match
+    done: true
+  - text: Add skeletonize vs OpenCV cv2.ximgproc.thinning cross-check on thick rectangle input
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run full filter_reference_parity.rs suite — no regressions
+    done: true
+  - text: Run full reference_audit.rs suite — no regressions
+    done: true
 extra: {}
