@@ -1,99 +1,142 @@
 id: brush-tools_20260402055402Z
-title: "Brush tools — clone stamp, healing brush, smudge, sponge"
+title: Brush tools — clone stamp, healing brush, smudge, sponge
 type: feature
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add four brush-based retouching tools: clone stamp (pixel copy from source),
+  summary: 'Add four brush-based retouching tools: clone stamp (pixel copy from source),
+
     healing brush (exemplar-based seamless inpaint), smudge (directional pixel
+
     averaging), and sponge (localized saturate/desaturate). All operate on a
+
     mask buffer defining the brush stroke region.
-  context: |
-    These are the most commonly requested prosumer features across Affinity Photo,
+
+    '
+  context: 'These are the most commonly requested prosumer features across Affinity Photo,
+
     Photopea, Pixlr, and PicsArt. rasmcore already has Telea inpainting (mask-based)
+
     and displacement_map (per-pixel warp fields), providing solid infrastructure.
 
+
     The brush interaction model (generating the mask/stroke path) is a UI concern.
+
     The engine provides: given pixels + mask + parameters, produce result.
-  codebase_analysis: |
-    Existing infrastructure:
+
+    '
+  codebase_analysis: 'Existing infrastructure:
+
     - domain/inpainting/mod.rs: Telea inpaint with binary mask input
+
     - filters/composite/mask_apply.rs: soft mask application
+
     - filters/composite/blend.rs: per-pixel blending with alpha
 
+
     Each brush tool is a pure stateless function:
+
     - source pixels (the image)
+
     - path (list of stroke points with position, radius, pressure)
+
     - tool-specific params (source offset for clone, radius for healing, etc.)
+
     - output: processed pixels
 
+
     The tool rasterizes the path into a mask internally, applies the operation,
+
     and returns the result. Fully stateless: path in, result out.
 
+
     Performance optimization (incremental stroke processing) is a cache concern,
+
     not a pipeline concern. The cache can store previous result + apply only the
+
     new path segment: reduce(prev_result, new_segment) -> updated_result.
+
     This is the same cache pattern used elsewhere in the pipeline.
 
+
     V1: stateless (full path reprocessed each call) — simple, correct, testable.
+
     V2: incremental cache — pure perf optimization, no API change.
+
+    '
   acceptance_criteria:
-    - Clone stamp filter: copy pixels from (x+dx, y+dy) to masked region with soft edges
-    - Healing brush filter: PatchMatch-based seamless clone that matches color/texture at boundary
-    - Smudge filter: directional weighted average along stroke direction vector
-    - Sponge filter: localized saturation adjustment (increase or decrease) in masked region
-    - All tools accept grayscale mask buffer for brush stroke region
-    - Mask intensity (0-255) controls tool strength/opacity
-    - Parity test for clone stamp (exact pixel copy)
-    - Visual test for healing brush (boundary blending quality)
-  out_of_scope: |
-    Brush stroke generation (UI concern). Tablet pressure sensitivity mapping.
+  - Clone stamp filter: copy pixels from (x+dx, y+dy) to masked region with soft edges
+  - Healing brush filter: PatchMatch-based seamless clone that matches color/texture at boundary
+  - Smudge filter: directional weighted average along stroke direction vector
+  - Sponge filter: localized saturation adjustment (increase or decrease) in masked region
+  - All tools accept grayscale mask buffer for brush stroke region
+  - Mask intensity (0-255) controls tool strength/opacity
+  - Parity test for clone stamp (exact pixel copy)
+  - Visual test for healing brush (boundary blending quality)
+  out_of_scope: 'Brush stroke generation (UI concern). Tablet pressure sensitivity mapping.
+
     Brush shape/hardness/spacing (UI generates the mask). Real-time preview.
-  technical_notes: |
-    Clone stamp: trivial — sample from (x+offset_x, y+offset_y), blend via mask.
+
+    '
+  technical_notes: 'Clone stamp: trivial — sample from (x+offset_x, y+offset_y), blend via mask.
+
 
     Healing brush: two approaches:
+
     1. Simple: clone + Poisson blending at boundary (GIMP approach)
+
     2. Full: PatchMatch (Barnes 2009) for exemplar search + gradient-domain blending
+
     Start with approach 1 (clone + boundary color match via gradient interpolation),
+
     since rasmcore already has Telea inpainting infrastructure.
 
+
     Smudge: for each pixel in mask, weighted average of pixel and its neighbor
+
     in the stroke direction. Stroke direction comes from a direction vector param.
 
+
     Sponge: apply saturate/desaturate filter only within masked region, scaled
+
     by mask intensity. Composable from existing saturate + mask_apply, but a
+
     dedicated filter is cleaner for the API.
 
+
     Reference implementations:
-    - GIMP: healing brush in C (GPLv3 — study algorithm only, don't copy code)
+
+    - GIMP: healing brush in C (GPLv3 — study algorithm only, don''t copy code)
+
     - Krita: smudge/liquify in C++ (GPLv3)
+
     - OpenCV: cv::inpaint, cv::seamlessClone (BSD)
+
+    '
 plan:
-  - phase: Clone stamp
-    tasks:
-      - text: Implement clone_stamp filter with source offset + mask buffer
-        done: false
-      - text: Parity test — verify exact pixel copy matches numpy reference
-        done: false
-  - phase: Healing brush
-    tasks:
-      - text: Implement healing_brush using clone + gradient-domain boundary blending
-        done: false
-      - text: Visual quality test — verify seamless boundary matching
-        done: false
-  - phase: Smudge and sponge
-    tasks:
-      - text: Implement smudge filter with direction vector + mask
-        done: false
-      - text: Implement sponge filter with mode (saturate/desaturate) + mask
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All new filters registered and appear in param-manifest.json
-        done: false
-      - text: Full test suite passes, WASM build clean
-        done: false
+- phase: Clone stamp
+  tasks:
+  - text: Implement clone_stamp filter with source offset + mask buffer
+    done: true
+  - text: Parity test — verify exact pixel copy matches numpy reference
+    done: true
+- phase: Healing brush
+  tasks:
+  - text: Implement healing_brush using clone + gradient-domain boundary blending
+    done: true
+  - text: Visual quality test — verify seamless boundary matching
+    done: true
+- phase: Smudge and sponge
+  tasks:
+  - text: Implement smudge filter with direction vector + mask
+    done: true
+  - text: Implement sponge filter with mode (saturate/desaturate) + mask
+    done: true
+- phase: Verification
+  tasks:
+  - text: All new filters registered and appear in param-manifest.json
+    done: true
+  - text: Full test suite passes, WASM build clean
+    done: true
 extra: {}
