@@ -1,0 +1,116 @@
+id: proxy-scale-params_20260403081601Z
+title: "Proxy mode with automatic spatial parameter scaling"
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Add pipeline-level proxy scale that automatically adjusts spatial parameters
+    (pixel-based inputs like radius, position, dimensions) when working at
+    reduced resolution. Filters declare which params are spatial via existing
+    hint vocabulary; the pipeline scales them transparently.
+  context: |
+    Proxy mode in this pipeline is just a resize node at the start — no special
+    infrastructure needed. But when working at 50% resolution, a blur radius=10
+    should become radius=5, crop at (100,200) should become (50,100), etc.
+
+    Currently the preview worker hardcodes PREVIEW_MAX=400 and the user adjusts
+    params at preview scale, which don't match full-res scale. Professional tools
+    handle this via proxy modes that scale spatial parameters automatically.
+
+    The existing param hint vocabulary already distinguishes spatial params:
+    - rc.pixels — spatial, should scale with proxy
+    - rc.percentage, rc.angle_deg, rc.toggle — unitless, should not scale
+    - rc.color_rgb — color, should not scale
+
+    The scaling should happen at the pipeline level so any SDK consumer gets it
+    for free. The filter code never changes — it receives pre-scaled params.
+  codebase_analysis: |
+    Key files:
+    - rasmcore-codegen/src/parse/config_params.rs — parses #[param(hint = "rc.pixels")]
+    - target/.../param-manifest.json — each param has a hint field
+    - wit/image/pipeline.wit — pipeline resource methods
+    - crates/rasmcore-image/src/adapter/pipeline_adapter.rs — pipeline adapter
+
+    Existing hint values that indicate spatial params:
+    - rc.pixels — explicit pixel dimension
+    - rc.spinner — numeric spinner (often pixel-based, needs per-param check)
+    - (no hint) with type u32 and name containing x/y/width/height/radius/size
+
+    The param manifest already carries hints. The codegen already parses them.
+    We need to:
+    1. Mark each param as scalable or not in the manifest/codegen
+    2. Store the proxy scale on the pipeline resource
+    3. Scale spatial params at the adapter boundary before passing to domain code
+  acceptance_criteria:
+    - Pipeline has setProxyScale(scale_factor) method via WIT
+    - Params with hint rc.pixels are automatically scaled by the proxy factor
+    - Crop x/y/width/height params are scaled
+    - Blur/sharpen radius params are scaled
+    - Distortion amplitude/wavelength params are scaled
+    - Percentage, angle, color, toggle params are NOT scaled
+    - Scaling is transparent to filter code
+    - Preview worker can use setProxyScale to match its PREVIEW_MAX downscale
+    - All existing tests pass (proxy scale defaults to 1.0 = no change)
+  out_of_scope: |
+    Automatic proxy resize (user does this with a resize node).
+    Spatial-aware undo/redo of param values.
+    UI-level param display conversion (showing full-res values while computing at proxy).
+  technical_notes: |
+    Implementation approach:
+
+    1. Add proxy_scale: f32 field to PipelineResource (default 1.0).
+    2. Add setProxyScale(scale: f32) to WIT and adapter.
+    3. In the generated pipeline adapter methods, before passing config to
+       the domain node constructor, scale spatial params:
+       - For each param field in the WIT config, check if the corresponding
+         manifest entry has hint = "rc.pixels" (or is otherwise spatial).
+       - If spatial: multiply by proxy_scale.
+    4. The codegen needs to emit the scaling code. This requires the manifest
+       hint info to be available at codegen time (it already is — the codegen
+       parses #[param(hint = "...")] attributes).
+    5. Add a scale_hint field to ParamField in codegen types:
+       - "spatial" for rc.pixels hints
+       - "none" for everything else
+    6. Generated adapter code checks scale_hint and applies proxy_scale.
+
+    Alternative simpler approach:
+    - Don't do it in codegen. Instead, the pipeline adapter has a generic
+      param-scaling pass that reads the manifest at runtime and scales
+      matching params before dispatch. This avoids codegen changes but
+      requires manifest access at runtime.
+
+    The codegen approach is more efficient (no runtime manifest lookup)
+    but the runtime approach is simpler to implement. Recommend starting
+    with runtime approach, optimize to codegen later if needed.
+plan:
+  - phase: "Pipeline proxy scale"
+    tasks:
+      - text: "Add proxy_scale field to PipelineResource (default 1.0)"
+        done: false
+      - text: "Add setProxyScale to WIT pipeline resource"
+        done: false
+      - text: "Wire adapter method"
+        done: false
+  - phase: "Param scaling infrastructure"
+    tasks:
+      - text: "Add spatial flag to ParamField in codegen types (derived from hint)"
+        done: false
+      - text: "Mark params with hint rc.pixels as spatial in param-manifest.json"
+        done: false
+      - text: "In generated pipeline adapter, scale spatial params by proxy_scale before constructing domain config"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Test blur radius scales correctly at 0.5x proxy"
+        done: false
+      - text: "Test crop dimensions scale correctly"
+        done: false
+      - text: "Test percentage/angle params do NOT scale"
+        done: false
+      - text: "Preview worker uses setProxyScale and params match full-res"
+        done: false
+      - text: "All existing tests pass (scale=1.0 is no-op)"
+        done: false
+extra: {}
