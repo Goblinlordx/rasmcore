@@ -203,18 +203,18 @@ mod tests {
 
     #[test]
     fn static_registration_via_proc_macro() {
-        // The #[register_filter] attribute on blur() in filters.rs should
-        // register it via inventory. Verify it's discoverable.
+        // The #[derive(Filter)] on BlurParams should register it via inventory.
         let regs = registered_filters();
         let blur_reg = regs.iter().find(|r| r.name == "blur");
         assert!(
             blur_reg.is_some(),
-            "blur should be registered via #[register_filter]. Found: {:?}",
+            "blur should be registered via derive(Filter). Found: {:?}",
             regs.iter().map(|r| r.name).collect::<Vec<_>>()
         );
         let blur = blur_reg.unwrap();
         assert_eq!(blur.category, "spatial");
-        assert_eq!(blur.fn_name, "blur");
+        // derive(Filter) sets fn_name to "" (no bare fn)
+        assert_eq!(blur.fn_name, "");
     }
 
     #[test]
