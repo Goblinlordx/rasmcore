@@ -227,9 +227,9 @@ pub fn write_tiled(
 
     // Short-circuit for LUT export: if a LUT encoder is registered for this
     // format, extract the fused CLUT and encode directly — no pixel execution.
-    if encoder::is_lut_format(format) {
+    if crate::domain::codec::is_lut_format(format) {
         let clut = graph.extract_all_color_ops();
-        if let Some(result) = encoder::encode_lut(&clut, format) {
+        if let Some(result) = crate::domain::codec::encode_lut(&clut, format) {
             return result;
         }
     }

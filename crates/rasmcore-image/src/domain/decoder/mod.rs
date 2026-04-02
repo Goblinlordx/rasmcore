@@ -241,7 +241,7 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
 }
 
 /// Detect .cube LUT format by looking for LUT_3D_SIZE in the first 1024 bytes.
-fn is_cube_lut(data: &[u8]) -> bool {
+pub(crate) fn is_cube_lut(data: &[u8]) -> bool {
     // .cube files are UTF-8 text — check for the required LUT_3D_SIZE keyword
     let check_len = data.len().min(1024);
     if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
@@ -262,7 +262,7 @@ pub fn decode_cube(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageErr
 }
 
 /// Detect .csp CineSpace LUT format by checking for CSPLUTV100 header.
-fn is_csp_lut(data: &[u8]) -> bool {
+pub(crate) fn is_csp_lut(data: &[u8]) -> bool {
     let check_len = data.len().min(64);
     if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
         text.trim_start().starts_with("CSPLUTV100")
@@ -276,7 +276,7 @@ fn is_csp_lut(data: &[u8]) -> bool {
 /// .3dl has no magic header — it's just lines of integer triplets.
 /// Heuristic: first few non-empty lines must be space-separated integers,
 /// at least 3 per line, and no alphabetic characters.
-fn is_3dl_lut(data: &[u8]) -> bool {
+pub(crate) fn is_3dl_lut(data: &[u8]) -> bool {
     let check_len = data.len().min(512);
     let text = match std::str::from_utf8(&data[..check_len]) {
         Ok(t) => t,
@@ -320,14 +320,14 @@ pub fn decode_csp(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageErro
 
 /// Check if data starts with a HEIF/HEIC/AVIF ftyp box with a recognized brand.
 #[cfg(feature = "native-heif")]
-fn is_heif(header: &[u8]) -> bool {
+pub(crate) fn is_heif(header: &[u8]) -> bool {
     rasmcore_isobmff::detect(header).is_some()
 }
 
 /// Check if data starts with JPEG 2000 magic bytes.
 /// JP2 container: 0x00 0x00 0x00 0x0C 0x6A 0x50 0x20 0x20 (JP2 signature box)
 /// J2K codestream: 0xFF 0x4F (SOC marker)
-fn is_jp2(header: &[u8]) -> bool {
+pub(crate) fn is_jp2(header: &[u8]) -> bool {
     // JP2 container signature
     if header.len() >= 12 && header[..4] == [0x00, 0x00, 0x00, 0x0C] && &header[4..8] == b"jP  " {
         return true;
@@ -342,7 +342,7 @@ fn is_jp2(header: &[u8]) -> bool {
 /// Check if data starts with JPEG XL magic bytes.
 /// Bare codestream: 0xFF 0x0A
 /// ISOBMFF container: 0x00 0x00 0x00 0x0C 0x4A 0x58 0x4C 0x20 ("....JXL ")
-fn is_jxl(header: &[u8]) -> bool {
+pub(crate) fn is_jxl(header: &[u8]) -> bool {
     if header.len() >= 2 && header[0] == 0xFF && header[1] == 0x0A {
         return true;
     }
@@ -354,7 +354,7 @@ fn is_jxl(header: &[u8]) -> bool {
 
 /// Check if data starts with SVG content.
 /// Matches XML prolog (`<?xml`) or direct `<svg` element, ignoring leading whitespace/BOM.
-fn is_svg(header: &[u8]) -> bool {
+pub(crate) fn is_svg(header: &[u8]) -> bool {
     // Skip UTF-8 BOM if present
     let data = if header.starts_with(&[0xEF, 0xBB, 0xBF]) {
         &header[3..]
@@ -386,7 +386,7 @@ fn is_svg(header: &[u8]) -> bool {
 }
 
 /// Decode SVG to RGBA8 pixels using resvg.
-fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_svg(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let svg_str = std::str::from_utf8(data)
         .map_err(|e| ImageError::InvalidInput(format!("SVG: invalid UTF-8: {e}")))?;
 
@@ -801,7 +801,7 @@ pub fn supported_formats() -> Vec<String> {
 }
 
 /// Decode a JPEG 2000 image using justjp2.
-fn decode_jp2(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_jp2(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let image =
         justjp2::decode(data).map_err(|e| ImageError::InvalidInput(format!("JP2 decode: {e}")))?;
 
@@ -877,7 +877,7 @@ fn clamp_to_u8(value: i32, precision: u32) -> u8 {
 }
 
 /// Decode a JPEG XL image using jxl-oxide.
-fn decode_jxl(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_jxl(data: &[u8]) -> Result<DecodedImage, ImageError> {
     use jxl_oxide::JxlImage;
 
     let image = JxlImage::builder()
@@ -927,7 +927,7 @@ fn decode_jxl(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// the HEVC decoder (nonfree-hevc feature) which is not yet implemented.
 /// Returns metadata-only result with dimensions and codec info.
 #[cfg(feature = "native-heif")]
-fn decode_heif(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_heif(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let file = rasmcore_isobmff::parse(data)
         .map_err(|e| ImageError::InvalidInput(format!("HEIF parse: {e}")))?;
 
@@ -1057,7 +1057,7 @@ fn decode_heif_grid(
 // ─── Native Trivial Codec Decoders ─────────────────────────────────────────
 
 #[cfg(feature = "native-qoi")]
-fn decode_native_qoi(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_qoi(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let (hdr, pixels) =
         rasmcore_qoi::decode(data).map_err(|e| ImageError::InvalidInput(format!("QOI: {e}")))?;
     let format = match hdr.channels {
@@ -1077,7 +1077,7 @@ fn decode_native_qoi(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 #[cfg(feature = "native-bmp")]
-fn decode_native_bmp(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_bmp(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let (hdr, mut pixels) =
         rasmcore_bmp::decode(data).map_err(|e| ImageError::InvalidInput(format!("BMP: {e}")))?;
     // Native BMP decoder may output RGBA8 even for 24-bit BMP (padding alpha).
@@ -1109,7 +1109,7 @@ fn decode_native_bmp(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 #[cfg(feature = "native-pnm")]
-fn decode_native_pnm(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_pnm(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let (hdr, pixels) =
         rasmcore_pnm::decode(data).map_err(|e| ImageError::InvalidInput(format!("PNM: {e}")))?;
     let format = match hdr.depth {
@@ -1132,7 +1132,7 @@ fn decode_native_pnm(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// Decode a FITS image using rasmcore-fits.
 /// Decode DNG RAW image using rasmcore-raw.
 #[cfg(feature = "native-raw")]
-fn decode_native_dng(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_dng(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let result =
         rasmcore_raw::decode(data).map_err(|e| ImageError::InvalidInput(format!("DNG: {e}")))?;
 
@@ -1148,7 +1148,7 @@ fn decode_native_dng(data: &[u8]) -> Result<DecodedImage, ImageError> {
     })
 }
 
-fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let (header, float_pixels) =
         rasmcore_fits::decode(data).map_err(|e| ImageError::InvalidInput(format!("FITS: {e}")))?;
 
@@ -1167,7 +1167,7 @@ fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 /// Decode PNG using the `png` crate directly (bypasses image crate).
-fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let icc_profile = extract_icc_profile(data);
 
     let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
@@ -1235,7 +1235,7 @@ fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 /// Decode JPEG using rasmcore-jpeg (pure Rust, supports sequential/progressive/arithmetic).
-fn decode_native_jpeg(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_jpeg(data: &[u8]) -> Result<DecodedImage, ImageError> {
     // Extract ICC profile from APP2 markers before decoding pixels
     let icc_profile = extract_jpeg_icc_profile(data);
 
@@ -1332,7 +1332,7 @@ fn extract_jpeg_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Decode TIFF using the tiff crate directly (bypasses image crate).
-fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let cursor = std::io::Cursor::new(data);
     let mut decoder = tiff::decoder::Decoder::new(cursor)
         .map_err(|e| ImageError::InvalidInput(format!("TIFF: {e}")))?;
@@ -1394,7 +1394,7 @@ fn decode_tiff_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
 ///
 /// Decodes the first frame of a GIF image. Supports GIF87a and GIF89a.
 /// Output is always RGBA8 (GIF uses palette + optional transparency).
-fn decode_native_gif(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_gif(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let mut opts = gif::DecodeOptions::new();
     opts.set_color_output(gif::ColorOutput::RGBA);
     let mut decoder = opts
@@ -1455,7 +1455,7 @@ fn decode_native_gif(data: &[u8]) -> Result<DecodedImage, ImageError> {
 ///
 /// ICO format: 6-byte header + 16-byte directory entries + image data.
 /// We extract the first entry and decode it (PNG-in-ICO is the modern standard).
-fn decode_native_ico(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_ico(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if data.len() < 22 {
         return Err(ImageError::InvalidInput("ICO: file too short".into()));
     }
@@ -1502,7 +1502,7 @@ fn decode_native_ico(data: &[u8]) -> Result<DecodedImage, ImageError> {
 ///
 /// Parses the header for dimensions, reads RGBE scanlines,
 /// and converts to 8-bit sRGB output.
-fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError> {
     // Parse header as bytes — only the header is ASCII, pixel data is binary
     let mut width = 0u32;
     let mut height = 0u32;
@@ -1581,7 +1581,7 @@ fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError> {
 }
 
 /// Decode WebP using the image-webp crate directly (bypasses image crate).
-fn decode_native_webp(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_webp(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(data))
         .map_err(|e| ImageError::InvalidInput(format!("WebP: {e}")))?;
 
@@ -1625,7 +1625,7 @@ fn decode_native_webp(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// Decode EXR (OpenEXR) using the exr crate directly.
 ///
 /// Reads the first layer as flat f32 samples, converts to RGBA8.
-fn decode_native_exr(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_exr(data: &[u8]) -> Result<DecodedImage, ImageError> {
     use exr::prelude::*;
 
     // Read as flat samples — simplest approach, no closure lifetime issues
@@ -1857,7 +1857,7 @@ fn decompress_bcn(
 ///
 /// Reference-validated formats: BC1, BC3 (IM parity MAE < 1.0).
 /// Not yet validated against a reference: BC2, BC4, BC5, BC7 (unit-tested only).
-fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
     if data.len() < 128 {
         return Err(ImageError::InvalidInput("DDS: header too short".into()));
     }
@@ -2045,7 +2045,7 @@ fn decode_dds_native(data: &[u8]) -> Result<DecodedImage, ImageError> {
 /// Checks header plausibility: valid image type, reasonable dimensions,
 /// valid bit depth, and data length consistent with declared size.
 #[cfg(feature = "native-tga")]
-fn detect_tga(data: &[u8]) -> bool {
+pub(crate) fn detect_tga(data: &[u8]) -> bool {
     if data.len() < 18 {
         return false;
     }
@@ -2066,7 +2066,7 @@ fn detect_tga(data: &[u8]) -> bool {
 }
 
 #[cfg(feature = "native-tga")]
-fn decode_native_tga(data: &[u8]) -> Result<DecodedImage, ImageError> {
+pub(crate) fn decode_native_tga(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let (header, pixels) =
         rasmcore_tga::decode(data).map_err(|e| ImageError::InvalidInput(format!("TGA: {e}")))?;
     let channels = pixels.len() / (header.width as usize * header.height as usize);
